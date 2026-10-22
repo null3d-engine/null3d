@@ -767,8 +767,6 @@ export class Pipelines {
 			{ binding: 10, visibility: compute, texture: { sampleType: 'uint' } },
 			{ binding: 11, visibility: compute, texture: { sampleType: 'unfilterable-float' } },
 		]);
-		// A batch's parameters at a dynamic offset, the pyramid, and the occluders' depth, read with
-		// textureLoad as a float texture: compatibility mode forbids depth textures in textureLoad.
 		// The cluster levels' pass: one dispatch's parameters at a dynamic offset, the scene's
 		// patches and indices, the view's compacted instances and indirect draws, then the view's
 		// runs, offsets, index list and draws.
@@ -783,6 +781,8 @@ export class Pipelines {
 			{ binding: 7, visibility: compute, buffer: { type: 'storage' } },
 			{ binding: 8, visibility: compute, buffer: { type: 'storage' } },
 		]);
+		// A batch's parameters at a dynamic offset, the pyramid, and the occluders' depth, read with
+		// textureLoad as a float texture: compatibility mode forbids depth textures in textureLoad.
 		this.defineLayout(LAYOUT_DEPTH_PYRAMID, 'depth pyramid', [
 			{ binding: 0, visibility: compute, buffer: { type: 'uniform', hasDynamicOffset: true } },
 			{ binding: 1, visibility: compute, buffer: { type: 'storage' } },

@@ -111,6 +111,20 @@ describe('meshes', () => {
 		expect(hull?.primitives.map((p) => p.material)).toEqual([0, 1]);
 	});
 
+	test('a primitive records the accessor behind each attribute, which a level shares with its base', () => {
+		const b = new GltfBuilder();
+		const positions = b.positions(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]));
+		const normals = b.accessor(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]), 3);
+		const base = b.mesh([{ attributes: { POSITION: positions, NORMAL: normals } }], 'base');
+		const level = b.mesh([{ attributes: { POSITION: positions, NORMAL: normals } }], 'base_lod1');
+		b.node({ mesh: base });
+		b.node({ mesh: level });
+		const [first, second] = parse(b.glb()).meshes;
+		// The second mesh names the first's accessors, so the parser can tell that it shares them.
+		expect(second?.primitives[0]?.accessors).toEqual(first?.primitives[0]?.accessors);
+		expect(first?.primitives[0]?.accessors).toEqual({ POSITION: positions, NORMAL: normals });
+	});
+
 	test('quantized attributes keep their integers, and normalized ones say so', () => {
 		const b = new GltfBuilder().uses('KHR_mesh_quantization', true);
 		const positions = b.positions(new Uint16Array([0, 0, 0, 1000, 0, 0, 0, 1000, 0]));
@@ -586,6 +600,46 @@ describe('materials, textures and lights', () => {
 		);
 		// A material without the extension lets no light through to its other side.
 		expect(data.materials[3]?.diffuseTransmission).toBeUndefined();
+	});
+
+	test('KHR_materials_transmission and KHR_materials_volume give the transmission and thickness maps', () => {
+		const b = specularBuilder()
+			.uses('KHR_materials_transmission')
+			.uses('KHR_materials_volume')
+			.uses('KHR_materials_specular');
+		const [glass, shiny, dull] = b.json.materials as [GltfJson, GltfJson, GltfJson];
+		glass.extensions = {
+			KHR_materials_transmission: { transmissionFactor: 1, transmissionTexture: { index: 0 } },
+			KHR_materials_volume: { thicknessFactor: 0.4, thicknessTexture: { index: 1 } },
+		};
+		shiny.extensions = {
+			KHR_materials_specular: { specularTexture: { index: 2 } },
+			KHR_materials_transmission: { transmissionFactor: 0.5, transmissionTexture: { index: 0 } },
+		};
+		// A material that lets no light through takes neither map.
+		dull.extensions = {
+			KHR_materials_transmission: { transmissionFactor: 0, transmissionTexture: { index: 0 } },
+			KHR_materials_volume: { thicknessTexture: { index: 1 } },
+		};
+		const data = parse(b.glb());
+		const [first, second, third] = data.materials;
+		expect(first?.transmission).toMatchObject({ factor: 1, thickness: 0.4 });
+		const transmission = first?.maps.transmissionMap ?? -1;
+		const thickness = first?.maps.thicknessMap ?? -1;
+		expect(transmission).toBeGreaterThanOrEqual(0);
+		expect(thickness).toBeGreaterThanOrEqual(0);
+		expect(data.textures[transmission]?.colorSpace).toBe('linear');
+		expect(data.textures[thickness]?.colorSpace).toBe('linear');
+		// The specular textures keep their slots, which the transmission textures would take.
+		expect(second?.maps.specularIntensityMap).toBeDefined();
+		expect(second?.maps.transmissionMap).toBeUndefined();
+		expect(second?.maps.thicknessMap).toBeUndefined();
+		expect(third?.transmission).toBeUndefined();
+		expect(third?.maps.transmissionMap).toBeUndefined();
+		expect(third?.maps.thicknessMap).toBeUndefined();
+		expect(data.notes).toContain(
+			"material 1's transmission and thickness textures, which a material with specular textures does not take",
+		);
 	});
 
 	test('a clear coat or a sheen wins over KHR_materials_diffuse_transmission', () => {

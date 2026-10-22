@@ -1055,6 +1055,38 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tolerance: OPTIMIZED_TOLERANCE,
 		deviceTolerance: OPTIMIZED_TOLERANCE,
 	},
+	// The same scene with levels of detail, whose ball is biased to draw its first level: the file
+	// gives each level the base mesh's vertex accessors, so the loader stores it over the base
+	// mesh's own vertices. The ball's silhouette moves by its level's error, so the picture keeps
+	// its own reference.
+	{
+		name: 'asset-scene-lod',
+		sketch: 'tests/pages/sketches/asset-scene-sketch.ts?file=lod',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+	},
+	// A skinned box built in code, bent by a joint, whose level names two of its twelve triangles
+	// and the box's own vertex accessors: the engine stores that level over the base's vertices, and
+	// the joint bends it too. Its copy gives the level accessors of its own and must draw the same
+	// pixels, which proves that a skinned level draws the base mesh's own vertices.
+	{
+		name: 'skinned-lod',
+		sketch: 'tests/pages/sketches/skinned-lod-sketch.ts',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+	},
+	// The same file with each level's vertices copied into accessors of its own, which the loader
+	// stores as a separate mesh: a level stored over its base mesh's vertices must draw exactly
+	// what the same level drawn from its own vertex stream drew.
+	{
+		name: 'asset-scene-lod-copied',
+		sketch: 'tests/pages/sketches/asset-scene-sketch.ts?file=lod&copied',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+		reference: 'asset-scene-lod',
+		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		deviceTolerance: { threshold: 0, maxDiffRatio: 0 },
+	},
 	// The outputs of assets convert: a skinned, morphed column from FBX halfway through its clip,
 	// the same column from OBJ, a pyramid from STL with face colors and a cube from PLY with corner
 	// colors. Each must load and draw alike on every tier.
@@ -2586,6 +2618,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: `${TRANSMISSION_SKETCH}?blend`,
 		hold: 0,
 		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
+	},
+	// The balls' transmission and thickness vary across them, from the two maps that take the
+	// specular maps' slots: bands of the transmission map's red and bands of the thickness map's
+	// green. A software GPU builds these shaders slowly.
+	{
+		name: 'transmission-maps',
+		sketch: `${TRANSMISSION_SKETCH}?maps`,
+		hold: 0,
+		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
+		timeoutSeconds: 60,
 	},
 	// Clear water over a bed of stones: the bed shows through the water, bent by its ripples.
 	{ name: 'transmission-water', sketch: TRANSMISSION_WATER_SKETCH, hold: 0 },

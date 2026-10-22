@@ -711,7 +711,7 @@ pub mod layout {
     /// Group 0 of the cluster levels' compute pipeline: the dispatch's parameters at a dynamic
     /// offset, then the scene's patches and mesh records, its tree indices, the view's compacted
     /// instances, and the view's counts, offsets, index list and indirect draws.
-    pub const CLUSTER_CULL: u32 = 50;
+    pub const CLUSTER_CULL: u32 = 52;
     /// Group 1 of render pipelines that read instances from data textures: the draw records.
     pub const DRAWS: u32 = 2;
     /// Group 2 of render pipelines that read instances from data textures: the textures.

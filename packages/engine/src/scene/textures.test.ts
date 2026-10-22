@@ -318,6 +318,28 @@ describe('textures.fromCanvas and texture.refresh', () => {
 		expect(memoryBytes(memory, DATA_ADDRESS, 4)).toEqual([31, 0, 0, 255]);
 	});
 
+	test('waits with a rectangle that is on its way instead of sending the whole canvas', () => {
+		const { textures, data, regions, clock, setUploading, setRegionReady } = fakeCore();
+		const texture = textures.fromCanvas(canvas(8, 8, place));
+		expect(data.length).toBe(1);
+		clock.now = 1;
+		expect(texture.refresh({ x: 1, y: 1, width: 2, height: 2 })).toBe(true);
+		// The rectangle waits to upload, so the next read cannot join it. It keeps both for the
+		// read after, and never sends the whole canvas in their place.
+		setUploading(true);
+		setRegionReady(false);
+		clock.now = 2;
+		expect(texture.refresh({ x: 5, y: 5, width: 2, height: 2 })).toBe(false);
+		expect(data.length).toBe(1);
+		// The upload lands, and the next read covers the change it waited with.
+		setUploading(false);
+		setRegionReady(true);
+		clock.now = 3;
+		expect(texture.refresh({ x: 6, y: 6, width: 1, height: 1 })).toBe(true);
+		expect(data.length).toBe(1);
+		expect(regions.at(-1)).toEqual([7, 1, 1, 6, 6]);
+	});
+
 	test('throws E1208 for a texture that follows no canvas, and for a rectangle outside it', () => {
 		const { textures, created } = fakeCore();
 		const plain = textures.fromData({ width: 1, height: 1, data: new Uint8Array(4) });

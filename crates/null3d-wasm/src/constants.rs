@@ -118,9 +118,8 @@ pub mod shading {
     pub const CUSTOM_OBJECT_IDS: u32 = 1 << 31;
 }
 
-/// The map slots that `setMaterialMap` takes, in the order of a material's row, then the maps of
-/// a layered material in [`LayerMap::ALL`]'s order, which take the slots that such a material has
-/// no other use for.
+/// The map slots that `setMaterialMap` takes, in the order of a material's row, then the maps that
+/// take a slot the material has no other use for, in [`LayerMap::ALL`]'s order.
 pub mod map_slot {
     use null3d_render::materials::{LayerMap, MAP_SLOTS, MapSlot};
 
@@ -148,6 +147,8 @@ pub mod map_slot {
     pub const IRIDESCENCE: u32 = layer(LayerMap::Iridescence);
     pub const IRIDESCENCE_THICKNESS: u32 = layer(LayerMap::IridescenceThickness);
     pub const ANISOTROPY: u32 = layer(LayerMap::Anisotropy);
+    pub const TRANSMISSION: u32 = layer(LayerMap::Transmission);
+    pub const THICKNESS: u32 = layer(LayerMap::Thickness);
 
     /// The number that `setMaterialMap` takes for a layer map: its place after the map slots.
     const fn layer(map: LayerMap) -> u32 {
@@ -500,6 +501,9 @@ pub mod arrays_problem {
     pub const MORPH_NOT_FINITE: u32 = 10;
     /// A vertex update named a mesh with joints or morph targets, which take no updates.
     pub const POSED: u32 = 11;
+    /// A level cannot draw the base mesh's vertices, because the base is split into parts or its
+    /// vertices are posed. The caller copies the level's vertices instead.
+    pub const LEVEL_BASE: u32 = 12;
     /// Plus the array's code; the second detail is the place of the value in the array.
     pub const NOT_FINITE: u32 = 16;
 }
@@ -1107,6 +1111,8 @@ pub fn typescript() -> String {
                 ("IRIDESCENCE", map_slot::IRIDESCENCE),
                 ("IRIDESCENCE_THICKNESS", map_slot::IRIDESCENCE_THICKNESS),
                 ("ANISOTROPY", map_slot::ANISOTROPY),
+                ("TRANSMISSION", map_slot::TRANSMISSION),
+                ("THICKNESS", map_slot::THICKNESS),
                 ("BUMP", map_slot::BUMP),
                 ("DISPLACEMENT", map_slot::DISPLACEMENT),
             ],
@@ -1588,6 +1594,7 @@ pub fn typescript() -> String {
                 ("MORPH_LENGTH", arrays_problem::MORPH_LENGTH),
                 ("MORPH_NOT_FINITE", arrays_problem::MORPH_NOT_FINITE),
                 ("POSED", arrays_problem::POSED),
+                ("LEVEL_BASE", arrays_problem::LEVEL_BASE),
                 ("NOT_FINITE", arrays_problem::NOT_FINITE),
             ],
         ),

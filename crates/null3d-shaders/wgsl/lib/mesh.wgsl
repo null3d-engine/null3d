@@ -455,6 +455,19 @@ fn material_anisotropy(id: u32) -> vec4f {
 }
 #endif
 
+#ifdef TRANSMISSION
+/// Which family of maps material `id` keeps in the light map's and the specular maps' slots: 2
+/// when they hold its transmission and thickness maps, and 0 otherwise, since a material that
+/// lets light through takes no layers.
+fn layer_maps_kind_of(id: u32) -> u32 {
+#ifdef WEBGL2
+    return u32(textureLoad(materials, vec2u(16u, id), 0).z);
+#else
+    return u32(materials[id].anisotropy.z);
+#endif
+}
+#endif
+
 #ifdef DECAL
 /// The values of decal material `id`: the cosines of the angles from the decal's direction at
 /// which it starts and stops fading, and the share of the box's depth over which it fades at each

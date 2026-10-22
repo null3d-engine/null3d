@@ -259,8 +259,10 @@ export const MAP_SLOT_SHEEN_ROUGHNESS = 12;
 export const MAP_SLOT_IRIDESCENCE = 13;
 export const MAP_SLOT_IRIDESCENCE_THICKNESS = 14;
 export const MAP_SLOT_ANISOTROPY = 15;
-export const MAP_SLOT_BUMP = 16;
-export const MAP_SLOT_DISPLACEMENT = 17;
+export const MAP_SLOT_TRANSMISSION = 16;
+export const MAP_SLOT_THICKNESS = 17;
+export const MAP_SLOT_BUMP = 18;
+export const MAP_SLOT_DISPLACEMENT = 19;
 
 export const MATERIAL_PARAM_COLOR = 0;
 export const MATERIAL_PARAM_OPACITY = 3;
@@ -605,6 +607,7 @@ export const ARRAYS_PROBLEM_MORPH_TOO_LARGE = 8;
 export const ARRAYS_PROBLEM_MORPH_LENGTH = 9;
 export const ARRAYS_PROBLEM_MORPH_NOT_FINITE = 10;
 export const ARRAYS_PROBLEM_POSED = 11;
+export const ARRAYS_PROBLEM_LEVEL_BASE = 12;
 export const ARRAYS_PROBLEM_NOT_FINITE = 16;
 
 export const LEVEL_PROBLEM_TOO_MANY = 1;

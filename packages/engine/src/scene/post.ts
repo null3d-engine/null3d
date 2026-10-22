@@ -540,17 +540,6 @@ function writeNumber(values: Float32Array, place: number, value: unknown): void 
 }
 
 /**
- * Where the baked grading table lives: the sketch's texture store. The grading values bake in a job
- * worker, and the table's texels go into one 3D texture, which the final pass reads.
- *
- * @internal
- */
-export interface GradeTarget {
-	/** Writes the table's texels, makes its texture the first time, and returns the texture's handle. */
-	write(texels: Float32Array): number;
-}
-
-/**
  * The post-processing settings, as `ctx.post`. The engine applies them to every pixel of the scene,
  * the background included, after lighting and before the canvas shows it.
  *
@@ -613,8 +602,11 @@ export class Post implements ViewHolder {
 		templates = new ShaderTemplates(),
 		/** False when each custom effect draws in a pass of its own, as ?join=off asks. */
 		joinEffects = true,
-		/** The texture store that holds the baked grading table. */
-		private readonly gradeTable?: GradeTarget,
+		/**
+		 * The texture store that holds the baked grading table: it writes the texels and holds the
+		 * texture, or `write` takes them.
+		 */
+		private readonly gradeTable?: { write(texels: Float32Array): number },
 	) {
 		this.effects = new EffectChain(core, templates, joinEffects);
 		core.holdViews(this);

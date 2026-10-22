@@ -176,9 +176,15 @@ function lazyAssets(
 	makers: import('../scene/assets').ModelMakers,
 ): Assets {
 	const extensions = new GltfExtensions();
-	const ready = awaitLater(
-		import('../scene/assets').then(({ Assets }) => new Assets(textures, base, makers, extensions)),
-	);
+	// The loader's file starts downloading at the first call that reads a file, never at the start:
+	// a page that loads nothing must download none of it.
+	let ready: Promise<Assets> | undefined;
+	const load = (): Promise<Assets> =>
+		(ready ??= awaitLater(
+			import('../scene/assets').then(
+				({ Assets }) => new Assets(textures, base, makers, extensions),
+			),
+		));
 	return new Proxy({} as Assets, {
 		get(_target, name: string | symbol) {
 			// The proxy must not look like a promise to the code that awaits a call's result.
@@ -188,14 +194,14 @@ function lazyAssets(
 			if (name === 'onProgress') {
 				return (handler: ProgressHandler) => {
 					let off: (() => void) | undefined;
-					void ready.then((assets) => {
+					void load().then((assets) => {
 						off = assets.onProgress(handler);
 					});
 					return () => off?.();
 				};
 			}
 			return (...args: unknown[]) =>
-				ready.then((assets) =>
+				load().then((assets) =>
 					(assets[name as keyof Assets] as unknown as (...a: unknown[]) => unknown)(...args),
 				);
 		},

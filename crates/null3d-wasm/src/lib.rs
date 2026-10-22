@@ -1605,7 +1605,8 @@ pub fn set_batch_layers(batch: u32, mask: u32) -> u32 {
 /// Gives every row of a batch a bounding sphere of the first call value's meters around its own
 /// origin, in place of the mesh's own radius. A vertex shader that carries rows away from their
 /// origins, such as traffic along a lane, needs this, or culling drops rows that are still on the
-/// screen. Every row is marked for update, so the next frame writes its new sphere.
+/// screen. Every row is marked for update, so the next frame writes its new sphere, and the
+/// renderer's tables are built again, so the GPU culling reads the new radius too.
 #[wasm_bindgen(js_name = setBatchBounds)]
 pub fn set_batch_bounds(batch: u32) -> u32 {
     with_engine(|e| {
@@ -1613,6 +1614,7 @@ pub fn set_batch_bounds(batch: u32) -> u32 {
         match e.batches.get_mut(Handle::from_raw(batch)) {
             Ok(batch) => {
                 batch.set_local_radius(radius);
+                e.structure_changed = true;
                 0
             }
             Err(error) => core_failure(error),
@@ -1807,17 +1809,48 @@ pub fn create_mesh_from_arrays(
     })
 }
 
+/// A mesh that draws the vertices of the live mesh `base` with the `indices` triangles that
+/// TypeScript wrote into the staging words, which the call frees. A level of a mesh with levels
+/// that the file stores as the base's own vertices with other indices costs the GPU indices
+/// alone. Returns the mesh id.
+#[wasm_bindgen(js_name = createLevelMesh)]
+pub fn create_level_mesh(base: u32, indices: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let words = indices as usize;
+        if staging.len() < words {
+            return Err(fail(codes::BAD_ARRAYS, [0, 0]));
+        }
+        // The caller names the base by the id that it was given, one more than the storage's.
+        let Some(base) = base.checked_sub(1) else {
+            return Err(fail(codes::BAD_ARRAYS, [arrays_problem::LEVEL_BASE, 0]));
+        };
+        // SAFETY: the words are initialized and aligned, and every bit pattern is an index.
+        let list = unsafe { std::slice::from_raw_parts(staging.as_ptr(), words) };
+        let added = e
+            .renderer
+            .settings_mut()
+            .meshes_mut()
+            .add_level(base, list)
+            .map(|id| id + 1)
+            .map_err(mesh_failure);
+        drop(staging);
+        added
+    })
+}
+
 /// The failure of a mesh that the storage refused.
 fn mesh_failure(error: MeshError) -> u32 {
-    let morph = |problem: u32, value: u32| fail(codes::BAD_ARRAYS, [problem, value]);
+    let arrays = |problem: u32, value: u32| fail(codes::BAD_ARRAYS, [problem, value]);
     match error {
         MeshError::Morph(MorphError::TooLarge) => {
-            morph(arrays_problem::MORPH_TOO_LARGE, MAX_DELTA_TEXELS)
+            arrays(arrays_problem::MORPH_TOO_LARGE, MAX_DELTA_TEXELS)
         }
-        MeshError::Morph(MorphError::Length) => morph(arrays_problem::MORPH_LENGTH, 0),
+        MeshError::Morph(MorphError::Length) => arrays(arrays_problem::MORPH_LENGTH, 0),
         MeshError::Morph(MorphError::NotFinite { array, at }) => {
-            morph(arrays_problem::MORPH_NOT_FINITE, at | array << 28)
+            arrays(arrays_problem::MORPH_NOT_FINITE, at | array << 28)
         }
+        MeshError::SharedUnavailable => arrays(arrays_problem::LEVEL_BASE, 0),
         _ => render_failure(render_detail::BAD_MESH, 0),
     }
 }
@@ -2370,8 +2403,9 @@ pub fn set_material_values(material: u32, at: u32, count: u32) -> u32 {
 
 // Gives a material a map in a slot, a texture's handle, or none with 0. Which objects draw with a
 // map changes the draw tables, as a new material does.
-/// Gives a material a map in a slot (`constants::map_slot`), or one of a layered material's maps
-/// after the slots, which the shader reads at the second texture coordinates when `second_uv` is 1.
+/// Gives a material a map in a slot (`constants::map_slot`), or one of the maps that take a slot
+/// the material has no other use for, after the slots. The shader reads it at the second texture
+/// coordinates when `second_uv` is 1.
 #[wasm_bindgen(js_name = setMaterialMap)]
 pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) -> u32 {
     // The engine's own calls name only the slots and layer maps that exist, and the height maps'
