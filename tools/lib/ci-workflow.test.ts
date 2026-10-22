@@ -276,6 +276,27 @@ describe("CI's workflow", () => {
 				expect(text, name).not.toMatch(/-p null3d-shaders-wasm\b|shader-module-exports/);
 	});
 
+	it('builds the production pages in one job, and every other browser job leaves them out', () => {
+		const builders = Object.entries(jobs).filter(([, job]) =>
+			commandsOf(job).some(({ text }) => text.includes('vite build')),
+		);
+		expect(builders.map(([name]) => name)).toEqual(['browser-production']);
+		for (const [name, job] of Object.entries(jobs)) {
+			const browserRuns = commandsOf(job).filter(({ text }) =>
+				text.includes('bun run --cwd tests test'),
+			);
+			if (browserRuns.length === 0) continue;
+			const production = browserRuns.every(({ text }) =>
+				text.includes('--project "production build'),
+			);
+			// A job of the production build serves the pages it built; any other job builds none.
+			expect(job.env?.NULL3D_PRODUCTION_PAGES, name).toBe(production ? undefined : 'skip');
+			if (production)
+				for (const { env } of browserRuns)
+					expect(env.NULL3D_PRODUCTION_PAGES, name).toBe('prebuilt');
+		}
+	});
+
 	it('names in each pass key every script that its part starts, with their imports', () => {
 		const keyed = Object.entries(jobs).filter(([, job]) =>
 			(job.steps ?? []).some(({ name }) => /^The key of this \w+'s inputs$/.test(name ?? '')),
