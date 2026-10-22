@@ -445,11 +445,11 @@ compiles from WGSL that ships with the package. Three properties carry the chang
   quad's corner on the screen's plane. The engine applies the instance transform afterwards, so
   the offset is that rotation's inverse applied to the wanted point.
 - The surface function folds the direction from the card toward the eye onto the octahedral grid,
-  finds the triangle of cell centres that holds it, and blends the three cells by its barycentric
+  finds the triangle of cell centers that holds it, and blends the three cells by its barycentric
   weights. The same weights blend their stored normals, which are decoded in each view's space and
   turned by the camera's axes, since the card faces the screen. The engine then lights the card
   with the scene's lights, exactly as it lights a mesh.
-- The atlas is twice what it was: a colour atlas, in sRGB, and a surface atlas whose red and green
+- The atlas is twice what it was: a color atlas, in sRGB, and a surface atlas whose red and green
   hold the octahedral code of the view's normal, blue the point's depth and alpha its coverage.
   `encodeImpostorSurface` writes those texels, so a bake stores the surface and never its light.
 
