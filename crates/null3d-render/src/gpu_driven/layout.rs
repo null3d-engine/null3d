@@ -18,7 +18,7 @@ use std::collections::TryReserveError;
 use std::ops::Range;
 
 use null3d_core::cells::CELL_SHIFT;
-use null3d_core::culling::NO_BUCKET;
+use null3d_core::culling::{NO_BUCKET, RowRanges, batch_ranges};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::levels::{LevelLink, NO_LINK};
@@ -58,6 +58,14 @@ const BUCKET_BYTES: u32 = BUCKET_WORDS * 4;
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 /// The index entries that fit in the bytes of one copied instance.
 pub(super) const INDEX_ENTRIES_PER_COPY: u32 = sizes::INSTANCE_STRIDE / sizes::INDEX_STRIDE;
+/// Floats of one source's distance range in the ranges texture: its start and its end, then two
+/// words that nothing reads, which fill the texture's texel.
+const RANGE_FLOATS: usize = sizes::RANGE_TEXELS as usize * 4;
+
+/// Appends one source's distance range to the ranges texture's data, as its texel.
+fn push_range(ranges: &mut Vec<f32>, start: f32, end: f32) {
+    ranges.extend_from_slice(&[start, end, 0.0, 0.0]);
+}
 
 // What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the bind
 // group of its material's map, the mesh page of its mesh's first part, its engine mesh id or a
@@ -378,6 +386,14 @@ pub(super) struct Layout {
     occluders: u32,
     /// The layer mask of every source.
     source_layers: Vec<u32>,
+    /// The distance range of every source, as the texel of the ranges texture that holds it: its
+    /// start distance, then its end distance, then two words that nothing reads.
+    source_ranges: Vec<f32>,
+    /// The texel rows of the distance ranges texture, 0 before it exists.
+    ranges_rows: u32,
+    /// True when any source of the scene draws in a distance band, which every layout of that
+    /// scene culls by, its own sources or another layout's.
+    has_ranges: bool,
     /// True when every scene slot holds the default mask in the layer table, as it does while no
     /// object has a mask of its own.
     scene_layers_default: bool,
@@ -475,13 +491,6 @@ impl Layout {
     /// Each bucket's link to its next level of detail, as the CPU culling reads it.
     pub(super) fn level_links(&self) -> &[LevelLink] {
         &self.level_links
-    }
-
-    /// True when the CPU culling picks a level for rows of `bucket`.
-    pub(super) fn picks(&self, bucket: u32) -> bool {
-        self.level_links
-            .get(bucket as usize)
-            .is_some_and(LevelLink::has_next)
     }
 
     /// The most words that the CPU culling lists for one view of this layout.
@@ -648,6 +657,7 @@ impl Layout {
         self.built = false;
         self.buffer_sizes = [0; 5];
         self.skin_firsts_rows = 0;
+        self.ranges_rows = 0;
         self.order_uploaded = false;
     }
 
@@ -953,7 +963,29 @@ impl Layout {
             Some(bucket)
         };
         let fades = drawn == Drawn::Scene && settings.levels_fade() && !self.index_instances;
-        expand_level_keys(key_counts, levels, fades, eligible, &level_bucket);
+        // The keys whose sources draw in a distance band, which need a fade bucket beside each of
+        // their levels only while the quality settings fade those bands.
+        let mut ranged_keys: Vec<BucketKey> = Vec::new();
+        if fades {
+            for slot in 0..scene_rows as usize {
+                let [start, end] = scene
+                    .draw_ranges()
+                    .get(slot * 2..slot * 2 + 2)
+                    .map_or([0.0, f32::INFINITY], |range| [range[0], range[1]]);
+                if start > 0.0 || end.is_finite() {
+                    ranged_keys.extend(scene_key(slot));
+                }
+            }
+            for (_, batch) in batches.iter() {
+                if !batch_ranges(batches, batch).is_none() {
+                    ranged_keys.extend(batch_key(batch));
+                }
+            }
+            ranged_keys.sort_unstable();
+            ranged_keys.dedup();
+        }
+        let ranged = |key: &BucketKey| ranged_keys.binary_search(key).is_ok();
+        expand_level_keys(key_counts, levels, fades, ranged, eligible, &level_bucket);
         self.depthless = key_counts
             .iter()
             .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
@@ -1195,9 +1227,22 @@ impl Layout {
         }
         self.occluders = occluders_in(&self.instance_buckets);
         self.source_layers.clear();
+        self.source_ranges.clear();
+        self.has_ranges = scene.draw_ranges().chunks(2).any(|range| {
+            range.first().is_some_and(|&start| start > 0.0)
+                || range.get(1).is_some_and(|&end| end.is_finite())
+        }) || batches
+            .iter()
+            .any(|(_, batch)| !batch_ranges(batches, batch).is_none());
         if self.owns_sources() {
             self.source_layers
                 .extend_from_slice(&scene.layers()[..scene_rows as usize]);
+            for range in scene.draw_ranges()[..scene_rows as usize * 2]
+                .as_chunks::<2>()
+                .0
+            {
+                push_range(&mut self.source_ranges, range[0], range[1]);
+            }
         }
         self.scene_layers_default = scene.common_layers().is_some();
         self.batch_rows.clear();
@@ -1215,6 +1260,20 @@ impl Layout {
             if self.owns_sources() {
                 let rows = self.source_layers.len() + batch.capacity() as usize;
                 self.source_layers.resize(rows, layers);
+                match batch_ranges(batches, batch) {
+                    RowRanges::One(range) => {
+                        for _ in 0..batch.capacity() {
+                            push_range(&mut self.source_ranges, range.start, range.end);
+                        }
+                    }
+                    RowRanges::Rows(values) => {
+                        let ranges = RowRanges::Rows(values);
+                        for row in 0..batch.capacity() as usize {
+                            let range = ranges.range(row);
+                            push_range(&mut self.source_ranges, range.start, range.end);
+                        }
+                    }
+                }
             }
         }
 
@@ -1227,7 +1286,8 @@ impl Layout {
         self.level_links.clear();
         self.level_links
             .extend(self.buckets.iter().map(|bucket| LevelLink {
-                error: bucket.levels.error,
+                value: bucket.levels.value,
+                switch: bucket.levels.switch,
                 next: bucket.levels.next.unwrap_or(NO_LINK),
                 fade: bucket.levels.fade.unwrap_or(NO_LINK),
             }));
@@ -1248,7 +1308,7 @@ impl Layout {
             (0..self.buckets.len() as u32).filter(|&bucket| self.marks[bucket as usize] != 0),
         );
         let fades = self.level_links.iter().any(LevelLink::has_next);
-        self.cull_rows = if fades {
+        self.cull_rows = if fades || self.has_ranges {
             self.sources.saturating_mul(4)
         } else {
             self.sources
@@ -1281,10 +1341,11 @@ impl Layout {
                 // instances move by themselves.
                 u32::from(bucket.indexed || bucket.moves),
                 // The culling shader reads a bucket as its index plus one, and 0 as none.
-                bucket.levels.error.to_bits(),
+                bucket.levels.value.to_bits(),
                 bucket.levels.next.map_or(0, |bucket| bucket + 1),
                 bucket.levels.fade.map_or(0, |bucket| bucket + 1),
                 bucket.bias.to_bits(),
+                bucket.levels.switch as u32,
             ]);
         }
         self.records_dirty = Some(0..self.buckets.len() as u32);
@@ -1397,6 +1458,7 @@ impl Layout {
         }
         if self.owns_sources() {
             recreated |= self.upload_skin_firsts(list, arena)?;
+            recreated |= self.upload_ranges(list, arena)?;
         }
         Ok(recreated)
     }
@@ -1433,6 +1495,34 @@ impl Layout {
             &[records, range.start * BUCKET_BYTES, at, bytes],
         )?;
         Ok(())
+    }
+
+    /// Makes the distance ranges texture big enough for the sources, with room to grow, and at
+    /// least one texel, which the culling groups bind while no source has a range, then uploads
+    /// each source's range. Returns true when it made the texture again.
+    fn upload_ranges(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<bool, RecordError> {
+        let count = (self.source_ranges.len() / RANGE_FLOATS) as u32;
+        let needed = count.div_ceil(sizes::RANGES_PER_TEXTURE_ROW);
+        let limit = BUDGET[Limit::TextureDimension2D as usize];
+        let texture = DataTexture::ranges(ids::INSTANCE_RANGES, 1);
+        let made = texture.grow(list, &mut self.ranges_rows, needed, limit)?;
+        if count > 0 {
+            let (at, _) = arena.push(floats_as_bytes(&self.source_ranges))?;
+            let rows = TextureRows {
+                first: 0,
+                count,
+                column: 0,
+                per_row: sizes::RANGES_PER_TEXTURE_ROW,
+                texels: sizes::RANGE_TEXELS,
+                bytes: 16,
+            };
+            data_texture::write_rows(list, ids::INSTANCE_RANGES, rows, at)?;
+        }
+        Ok(made)
     }
 
     /// Makes the skin firsts texture big enough for the first joints, with room to grow, and at
@@ -1692,6 +1782,124 @@ mod tests {
     use crate::geometry::box_geometry;
     use crate::gpu_driven::{RendererConfig, scene_settings};
     use crate::materials::Shading;
+
+    /// The texels of the ranges texture that a frame uploads, as the culling shader reads them.
+    fn uploaded_ranges(layout: &mut Layout) -> Vec<[f32; 4]> {
+        let mut list = DrawList::with_capacity(4096);
+        let mut arena = UploadArena::default();
+        arena.reset(1 << 16);
+        layout.apply(&mut list, &mut arena, u32::MAX).unwrap();
+        let base = arena.bytes().as_ptr() as usize;
+        let op = null3d_gpu::drawlist::decode(list.words())
+            .map(|command| command.unwrap())
+            .find(|command| {
+                command.op == Op::WriteTexture
+                    && command.operands.first() == Some(&ids::INSTANCE_RANGES)
+            })
+            .map(|command| command.operands.to_vec())
+            .expect("the frame writes the ranges texture");
+        let (at, bytes) = (op[8] as usize, op[9] as usize);
+        // The list records the upload's address as the low word of the arena's pointer, as WebAssembly
+        // holds pointers in one word; a native test reads the offset back the same way.
+        let start = (at as u32).wrapping_sub(base as u32) as usize;
+        let block = arena.bytes().len() - start;
+        assert!(
+            bytes <= block,
+            "the write takes {bytes} bytes from a block of {block}"
+        );
+        arena.bytes()[start..start + bytes]
+            .as_chunks::<16>()
+            .0
+            .iter()
+            .map(|texel| {
+                let mut row = [0.0f32; 4];
+                for (word, bytes) in row.iter_mut().zip(texel.as_chunks::<4>().0) {
+                    *word = f32::from_le_bytes(*bytes);
+                }
+                row
+            })
+            .collect()
+    }
+
+    /// The culling shader reads each source's range from the start of one texel of the ranges
+    /// texture. This gives three objects different ranges, records the frame's upload and reads
+    /// what the shader would see for each source.
+    #[test]
+    fn each_sources_range_reaches_its_own_texel_of_the_ranges_texture() {
+        let mut settings = scene_settings(&RendererConfig::default());
+        let box_mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+        let mesh = settings.meshes_mut().add(&box_mesh).unwrap() + 1;
+        let material = settings
+            .materials_mut()
+            .create(Shading::Lit, 0, [1.0; 4])
+            .unwrap()
+            + 1;
+        let mut scene = SceneStorage::with_capacity(8);
+        let mut commands = Vec::new();
+        let ranges = [(0.0f32, 10.0f32), (12.0, 30.0), (40.0, 50.0)];
+        let mut slots = Vec::new();
+        for &(start, end) in &ranges {
+            let object = scene.reserve().unwrap();
+            commands.push(Command::create(object, Handle::NONE, mesh, flags::VISIBLE));
+            commands.push(Command::set_material(object, material));
+            commands.push(Command::set_draw_range(object, start, end));
+            slots.push(scene.resolve(object).unwrap() as usize);
+        }
+        scene.apply_commands(&commands, 1).unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+
+        let mut layout = Layout::default();
+        let batches = BatchTable::with_capacity(1);
+        let mut pipelines = PipelineCache::default();
+        let targets = PassTargets {
+            color_format: format::CANVAS,
+            depth_format: format::DEPTH32_FLOAT,
+            samples: 4,
+            permutation: 0,
+        };
+        layout
+            .rebuild(
+                &settings,
+                &mut pipelines,
+                targets,
+                &scene,
+                &batches,
+                scene.parity(),
+                u32::MAX,
+                CasterPasses::default(),
+                Prepass::Off,
+                &Skinning::default(),
+                &mut KeyCounts::new(),
+                targets,
+                false,
+            )
+            .unwrap();
+
+        // Each object reads its own range from the texel of its source.
+        let texels = uploaded_ranges(&mut layout);
+        for ((start, end), slot) in ranges.iter().zip(slots) {
+            let texel = texels.get(slot).expect("the frame uploads every source");
+            assert_eq!(
+                [texel[0], texel[1]],
+                [*start, *end],
+                "source {slot} reads {texel:?}"
+            );
+        }
+    }
+
+    /// The culling shader reads each source's range from the start of one texel of the ranges
+    /// texture, so the data must give every source a whole texel: its start and end, then the
+    /// words that nothing reads. Data of two floats per source lands every second source's range
+    /// in the wrong texel and reads past the block.
+    #[test]
+    fn every_sources_range_fills_a_whole_texel_of_the_ranges_texture() {
+        let mut ranges = Vec::new();
+        push_range(&mut ranges, 12.0, 30.0);
+        push_range(&mut ranges, 0.0, f32::INFINITY);
+        assert_eq!(ranges.len(), 2 * RANGE_FLOATS);
+        assert_eq!(ranges.len() * 4, 2 * 16);
+        assert_eq!(ranges, [12.0, 30.0, 0.0, 0.0, 0.0, f32::INFINITY, 0.0, 0.0]);
+    }
 
     #[test]
     fn objects_with_bounds_of_their_own_or_none_cull_in_buckets_of_their_own() {

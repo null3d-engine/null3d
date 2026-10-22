@@ -179,6 +179,12 @@ pub struct InstanceBatch {
     active: u32,
     /// The layer mask of every row (see [`crate::layers`]).
     layers: u32,
+    /// The distances between which every row draws: its start distance and its end distance, 0
+    /// and infinity for none.
+    draw_range: [f32; 2],
+    /// The rows' own distance ranges, two floats per row, which a row without an entry takes from
+    /// the batch's. Empty until the first row sets one.
+    row_ranges: Vec<f32>,
     /// The shadow bits of every row: [`flags::CAST_SHADOWS`] and [`flags::RECEIVE_SHADOWS`].
     shadows: u32,
     /// True when rows have a colour and values of their own, which the world output carries.
@@ -396,6 +402,8 @@ impl InstanceBatch {
             local_radius,
             active: capacity,
             layers: DEFAULT_LAYERS,
+            draw_range: [0.0, f32::INFINITY],
+            row_ranges: Vec::new(),
             shadows: 0,
             with_values,
             source,
@@ -666,6 +674,46 @@ impl InstanceBatch {
     /// The layer mask of every row (see [`crate::layers`]).
     pub fn layers(&self) -> u32 {
         self.layers
+    }
+
+    /// The distances between which every row draws, as the start and the end distance.
+    pub fn draw_range(&self) -> [f32; 2] {
+        self.draw_range
+    }
+
+    /// Sets the distances between which every row draws: nothing nearer than `start`, which is 0
+    /// for none, and nothing past `end`, which is infinite for none. Each edge fades over a band.
+    /// The rows' own ranges, where the batch has made them, take the same range.
+    pub fn set_draw_range(&mut self, start: f32, end: f32) {
+        self.draw_range = [start, end];
+        for pair in self.row_ranges.as_chunks_mut::<2>().0 {
+            *pair = [start, end];
+        }
+    }
+
+    /// The rows' own distance ranges, two floats per row, or an empty slice until a row sets one.
+    pub fn row_ranges(&self) -> &[f32] {
+        &self.row_ranges
+    }
+
+    /// The rows' own distance ranges, two floats per row, made at their capacity and filled with
+    /// the batch's range on first use. Fails when memory cannot grow for them.
+    pub fn try_row_ranges_mut(&mut self) -> Result<&mut [f32], TryReserveError> {
+        let rows = self.capacity as usize;
+        if self.row_ranges.is_empty() && rows > 0 {
+            let mut ranges = filled(rows * 2, 0.0)?;
+            for pair in ranges.as_chunks_mut::<2>().0 {
+                pair[0] = self.draw_range[0];
+                pair[1] = self.draw_range[1];
+            }
+            self.row_ranges = ranges;
+        }
+        Ok(&mut self.row_ranges)
+    }
+
+    /// True when the batch or its rows draw in a distance range.
+    pub fn has_range(&self) -> bool {
+        !self.row_ranges.is_empty() || self.draw_range[0] > 0.0 || self.draw_range[1].is_finite()
     }
 
     /// Sets the layer mask of every row. The renderer reads it when it culls, so a change needs

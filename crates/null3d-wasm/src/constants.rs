@@ -52,6 +52,8 @@ pub mod batch_field {
     pub const DIRTY_WORDS: u32 = 6;
     /// An instance batch's own values, 4 floats a row, which shaders read.
     pub const VALUES: u32 = 7;
+    /// An instance batch's own distance ranges, 2 floats a row.
+    pub const RANGES: u32 = 8;
 }
 
 /// Fields of `debugLineArrays`.
@@ -143,6 +145,9 @@ pub mod map_slot {
     pub const COAT_NORMAL: u32 = layer(LayerMap::CoatNormal);
     pub const SHEEN_COLOR: u32 = layer(LayerMap::SheenColor);
     pub const SHEEN_ROUGHNESS: u32 = layer(LayerMap::SheenRoughness);
+    pub const IRIDESCENCE: u32 = layer(LayerMap::Iridescence);
+    pub const IRIDESCENCE_THICKNESS: u32 = layer(LayerMap::IridescenceThickness);
+    pub const ANISOTROPY: u32 = layer(LayerMap::Anisotropy);
 
     /// The number that `setMaterialMap` takes for a layer map: its place after the map slots.
     const fn layer(map: LayerMap) -> u32 {
@@ -169,6 +174,9 @@ pub mod probe_flag {
 pub mod effect_flag {
     /// The effect or the pass reads the scene's depth.
     pub const DEPTH: u32 = 1;
+    /// The flags' lowest bit of the bloom level that an effect reads, which the call holds plus
+    /// one: 0 reads no bloom. The level itself is 0 to 9.
+    pub const BLOOM_SHIFT: u32 = 8;
 }
 
 /// The kinds of pass that `addPass` adds.
@@ -743,6 +751,7 @@ pub fn typescript() -> String {
                 ("SET_SKIN", op::SET_SKIN),
                 ("SET_MORPH", op::SET_MORPH),
                 ("SET_LEVEL_BIAS", op::SET_LEVEL_BIAS),
+                ("SET_DRAW_RANGE", op::SET_DRAW_RANGE),
                 ("KEEP_WORLD", op::KEEP_WORLD),
                 ("WORDS", COMMAND_WORDS),
             ],
@@ -822,6 +831,7 @@ pub fn typescript() -> String {
                 ("FRAMES", batch_field::FRAMES),
                 ("DIRTY_WORDS", batch_field::DIRTY_WORDS),
                 ("VALUES", batch_field::VALUES),
+                ("RANGES", batch_field::RANGES),
             ],
         ),
         (
@@ -1046,6 +1056,8 @@ pub fn typescript() -> String {
                 ("PARALLAX", feature::PARALLAX),
                 ("NO_TONE_MAP", feature::NO_TONE_MAP),
                 ("SCENE_DEPTH", feature::SCENE_DEPTH),
+                ("IRIDESCENCE", feature::IRIDESCENCE),
+                ("ANISOTROPY", feature::ANISOTROPY),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -1092,6 +1104,9 @@ pub fn typescript() -> String {
                 ("COAT_NORMAL", map_slot::COAT_NORMAL),
                 ("SHEEN_COLOR", map_slot::SHEEN_COLOR),
                 ("SHEEN_ROUGHNESS", map_slot::SHEEN_ROUGHNESS),
+                ("IRIDESCENCE", map_slot::IRIDESCENCE),
+                ("IRIDESCENCE_THICKNESS", map_slot::IRIDESCENCE_THICKNESS),
+                ("ANISOTROPY", map_slot::ANISOTROPY),
                 ("BUMP", map_slot::BUMP),
                 ("DISPLACEMENT", map_slot::DISPLACEMENT),
             ],
@@ -1136,6 +1151,18 @@ pub fn typescript() -> String {
                 ),
                 ("SHEEN_COLOR", param::SHEEN_COLOR as u32),
                 ("SHEEN_ROUGHNESS", param::SHEEN_ROUGHNESS as u32),
+                ("IRIDESCENCE", param::IRIDESCENCE as u32),
+                ("IRIDESCENCE_IOR", param::IRIDESCENCE_IOR as u32),
+                (
+                    "IRIDESCENCE_THICKNESS_MIN",
+                    param::IRIDESCENCE_THICKNESS_MIN as u32,
+                ),
+                (
+                    "IRIDESCENCE_THICKNESS_MAX",
+                    param::IRIDESCENCE_THICKNESS_MAX as u32,
+                ),
+                ("ANISOTROPY", param::ANISOTROPY as u32),
+                ("ANISOTROPY_ROTATION", param::ANISOTROPY_ROTATION as u32),
                 ("DECAL_FADE_START", param::DECAL_FADE_START as u32),
                 ("DECAL_FADE_END", param::DECAL_FADE_END as u32),
                 ("DECAL_EDGE_FADE", param::DECAL_EDGE_FADE as u32),
@@ -1150,6 +1177,7 @@ pub fn typescript() -> String {
                 ("FLOATS", null3d_render::effects::EFFECT_FLOATS as u32),
                 ("TEXTURES", null3d_render::effects::MAX_TEXTURES as u32),
                 ("DEPTH", effect_flag::DEPTH),
+                ("BLOOM_SHIFT", effect_flag::BLOOM_SHIFT),
             ],
         ),
         // The kinds of pass that `addPass` adds, and the input images of a full-screen pass.

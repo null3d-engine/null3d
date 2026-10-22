@@ -249,7 +249,18 @@ export interface CoreGlue extends CoreErrors {
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
 	/** Gives every row of a batch a bounding sphere of `radius` meters around its own origin. */
+	/** Sets a batch's own bounding radius, which the next frame reads from the call values. */
 	setBatchBounds(batch: number): number;
+	/**
+	 * Sets the distances between which every row of a batch draws, from the first two call values:
+	 * its start distance and its end distance.
+	 */
+	setBatchDrawRange(batch: number): number;
+	/**
+	 * Makes a batch's array of row distance ranges, two floats per row, if it has none, and
+	 * returns its address. The rows start with the batch's range.
+	 */
+	reserveBatchRanges(batch: number): number;
 	/** Sets the layer mask of every row of a batch, as an unsigned 32-bit number. */
 	setBatchLayers(batch: number, mask: number): number;
 	/** Sets whether every row of a batch casts and receives shadows, from an object's flag bits. */
@@ -366,11 +377,12 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	destroyMeshes(count: number): number;
 	/**
-	 * Gives mesh `base` `count` lower levels of detail, whose mesh ids, then whose errors as 32-bit
-	 * floats, `meshArrays`'s words hold, from the most detailed down. `fades` lets two levels hand
-	 * over in a fading band. With `count` 0 the mesh loses its levels. 0 for success.
+	 * Gives mesh `base` `count` lower levels of detail, whose mesh ids, then whose switch values as
+	 * 32-bit floats, then whose switch measures, `meshArrays`'s words hold, from the most detailed
+	 * down. The bits of `fades`, from the base level, mark the levels that hand over in a fading
+	 * band. With `count` 0 the mesh loses its levels. 0 for success.
 	 */
-	setMeshLevels(base: number, count: number, fades: boolean): number;
+	setMeshLevels(base: number, count: number, fades: number): number;
 	/** The GPU bytes of every mesh: the mesh pages' buffers and the texture of morph deltas. */
 	meshMemoryBytes(): number;
 	/**
@@ -768,6 +780,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setLut(texture: number): number;
 	/**
+	 * Grades the canvas color with the built-in grading table in a 3D texture, or with none for 0,
+	 * from the next frame on: a job worker baked the sketch's grading values into it.
+	 */
+	setGrade(texture: number): number;
+	/**
 	 * Turns the vignette on with the post-processing values' intensity, size, falloff and roundness,
 	 * or off.
 	 */
@@ -1074,6 +1091,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'batchArrays',
 	'setBatchActiveCount',
 	'setBatchBounds',
+	'setBatchDrawRange',
+	'reserveBatchRanges',
 	'setBatchLayers',
 	'setBatchShadows',
 	'markBatchDirty',
@@ -1190,6 +1209,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setParallax',
 	'setOcclusionBuffer',
 	'setLut',
+	'setGrade',
 	'setVignette',
 	'setSharpen',
 	'environmentValues',

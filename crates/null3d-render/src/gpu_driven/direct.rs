@@ -20,7 +20,7 @@ use std::collections::TryReserveError;
 use null3d_core::cells::{CELL_SHIFT, ORIGIN_CELL};
 use null3d_core::culling::{
     BY_ROW, BucketedCull, CullRun, CullSet, CullView, LevelChoice, LevelRows, NO_BUCKET, RowBiases,
-    RowCells, RowRadii, SetLayers, SetOrder, cull_into_buckets,
+    RowCells, RowRadii, RowRanges, SetLayers, SetOrder, batch_ranges, cull_into_buckets,
 };
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
@@ -117,18 +117,9 @@ impl Direct {
         if self.views.len() <= view.index() {
             self.views.resize_with(view.index() + 1, ViewCull::default);
         }
-        let entry = &mut self.views[view.index()];
-        if entry.counts.len() < buckets as usize {
-            entry.counts.resize(buckets as usize, 0);
+        if self.views[view.index()].counts.len() < buckets as usize {
+            self.views[view.index()].counts.resize(buckets as usize, 0);
         }
-        let by_row = runs
-            .iter()
-            .filter(|run| run.bucket == BY_ROW || drawn.picks(run.bucket))
-            .count();
-        entry
-            .cull
-            .try_reserve(drawn.cull_rows(), runs.len() as u32, by_row as u32, buckets)
-            .map_err(out_of_memory)?;
         let scene_layers = scene
             .common_layers()
             .map_or(SetLayers::Rows(sources.layers()), SetLayers::All);
@@ -167,6 +158,7 @@ impl Direct {
                     cells: RowCells::Rows(scene.cells()),
                     radii: RowRadii::Rows(scene.local_radii()),
                     biases: RowBiases::Rows(scene.level_biases()),
+                    ranges: RowRanges::Rows(scene.draw_ranges()),
                 };
             }
             let batch = batches
@@ -181,6 +173,7 @@ impl Direct {
                     .map_or(RowCells::Rows(batch.cells()), RowCells::One),
                 radii: RowRadii::One(batch.local_radius()),
                 biases: RowBiases::One(1.0),
+                ranges: batch_ranges(batches, batch),
             }
         };
         let choice = LevelChoice {
@@ -188,6 +181,15 @@ impl Direct {
             links: drawn.level_links(),
             rows: &level_rows,
         };
+        let by_row = runs
+            .iter()
+            .filter(|run| choice.run_looks_up(run.bucket, run.set))
+            .count();
+        let entry = &mut self.views[view.index()];
+        entry
+            .cull
+            .try_reserve(drawn.cull_rows(), runs.len() as u32, by_row as u32, buckets)
+            .map_err(out_of_memory)?;
         let cull_view = CullView {
             frustum: &frame.frustum,
             offsets,

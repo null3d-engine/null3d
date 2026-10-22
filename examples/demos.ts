@@ -227,6 +227,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 120,
 	},
 	{
+		name: 'iridescence-and-anisotropy',
+		group: 'Light, materials and effects',
+		sketch: new URL('./iridescence-and-anisotropy/sketch.ts', import.meta.url),
+		code: 'iridescence-and-anisotropy/',
+		title: 'Iridescence and anisotropy',
+		scene: "Jeweller's bench at night",
+		summary:
+			'A jewel beetle turns on a plinth of brushed metal: its shell is a thin film whose colors run in rings over the wing cases, and the plinth stretches each highlight across its grain. Soap bubbles drift above it, each with a film of its own, over an oil slick that swirls a slower spectrum.',
+		hold: 2,
+		timeoutSeconds: 120,
+	},
+	{
 		name: 'property-animation',
 		group: 'Light, materials and effects',
 		sketch: new URL('./property-animation/sketch.ts', import.meta.url),
@@ -448,7 +460,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Post effects',
 		scene: 'Neon alley',
 		summary:
-			'Crates in a neon alley at night, whose wet asphalt mirrors the light through screen-space reflections, with bloom, ambient occlusion, an outline, depth of field, a vignette, a light sharpening and a lens grade of color fringes, an anamorphic streak and grain. Every 3 seconds the color grading table changes: none, warm, then cool.',
+			'Crates in a neon alley at night, whose wet asphalt mirrors the light through screen-space reflections, with bloom, ambient occlusion, an outline, depth of field, a vignette, a light sharpening and a lens grade of color fringes, an anamorphic streak and grain. Every 3 seconds the color grade changes: none, warm, then cool, set from the grading controls of white balance, lift, gamma, gain, saturation and split toning.',
 		hold: 4,
 	},
 	{
@@ -644,9 +656,9 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Instancing',
 		scene: '100,000 columns',
 		summary:
-			'100,000 columns in one batch at golden hour, and 10,000 on phones, with lanes of hover cars streaming across the sky in two more batches. Each frame the sketch writes the height of every row, and the place of every car, into the batch arrays, with no call per row.',
+			'100,000 columns in one batch at golden hour, and 10,000 on phones, with 30,000 to 100,000 hover cars streaming along the sky lanes above them. The sketch writes the height of every column, and the traffic-lanes add-on moves the cars in the vertex shader, so a frame costs no work per car.',
 		hold: 2,
-		timeoutSeconds: 60,
+		timeoutSeconds: 180,
 	},
 	{
 		name: 'forest',
@@ -656,7 +668,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Levels of detail',
 		scene: 'Mixed forest',
 		summary:
-			'56,000 trees of four kinds over rolling hills at golden hour, and 8,000 on phones. Three firs and a broadleaf tree are made in code at four levels of detail, and an understory of bushes covers the ground between the trunks. Each tree picks its own level in every frame by its size on the screen, and the levels share the pixels through a dither at a switch. On phones the nearest trees draw in full and the rest as cut-out cards. Press B to compare the hero fir beside the flight, which keeps its detail by its own threshold bias, with the trees around it.',
+			'56,000 trees of four kinds over rolling hills at golden hour, and 8,000 on phones. Three firs and a broadleaf tree are made in code at four levels of detail, and an understory of bushes covers the ground between the trunks and fades out at its own distance. Each tree picks its own level in every frame by its size on the screen, and the levels share the pixels through a dither at a switch. On phones the nearest trees draw in full and the rest as cut-out cards. Press B to compare the hero fir beside the flight, which keeps its detail by its own threshold bias, with the trees around it.',
 		hold: 2,
 		timeoutSeconds: 300,
 	},

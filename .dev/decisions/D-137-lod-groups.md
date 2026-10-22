@@ -313,6 +313,14 @@ job workers read it beside each row's sphere. `cull.wgsl` reads it from the buck
 takes 14 words in place of 13. A record that holds 0 keeps the quality settings' threshold, so a
 test needs no bias.
 
+## Addendum: the fade rule and the distance bands (22 October 2026)
+
+D-211 builds the fade rule, the three switch measures and the distance bands that this record's
+addendum of 19 October 2026 asked for. It supersedes two statements above: the fade is no longer
+a setting for every band, and a distance or a coverage no longer becomes an error at a reference
+screen. A bucket record now holds 15 words, the measure joined the switch value, and the culling
+shader reads a source's distance range from a data texture.
+
 ## Addendum: a level may shade with its own material (22 October 2026, M3-L2)
 
 A far level now draws with a material of its own where the author gives one, so it shades more
@@ -375,3 +383,29 @@ The weight is deliberately modest. The error that the simplifier reports include
 and the engine reads a level's error as a distance, so a heavy weight would make every textured
 mesh switch levels much farther out. At a sixty-fourth, the test scene's ball keeps four levels,
 where the same scene without texture coordinates in the error has six.
+
+## Addendum: the level pictures place each copy by its own distance (22 October 2026, M3-L2)
+
+The level image tests placed each copy at a depth equal to the share of its switch, and then moved
+it off the camera's axis to spread the copies across the picture. A copy off the axis lies farther
+from the camera than its depth, by 2 to 4 percent of the distance, so every copy sat a little
+nearer its next switch than the test meant.
+
+The five percent either side of a switch hid that in the pictures where the levels switch at once.
+The bias test did not hide it. Its objects take a bias of 2, which halves the switch and the copies'
+distance with it, while the sideways offset keeps its size. The nearest copy, at 95 percent of its
+switch, then crossed that switch and drew level one.
+
+Each copy now stands along its own ray at the exact distance the rule measures. The measured
+figures, from a native test on the job workers and from the picture on all three paths:
+
+| Object | Switch | Copy at 95 percent | Copy at 103 percent |
+| --- | --- | --- | --- |
+| No bias | 15.59 m | base level, one copy | level 1 |
+| Bias of 2 | 7.795 m | base level, one copy | level 1 |
+
+The biased switch is exactly half the unbiased one. The pictures moved by 0.5 to 0.9 percent for
+the tests that switch levels at once, and by 2.7 to 3.2 percent for the fading bands, whose dither
+depends on how far past a switch a copy lies. The new `lod-bias` picture has its own references in
+both environments: a bias of 2 puts the same levels at half the distance, so the copies are twice
+the size on screen and cannot share the plain picture.

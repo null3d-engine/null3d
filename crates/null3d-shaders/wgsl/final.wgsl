@@ -77,6 +77,8 @@ const DISPLAY_COLOR: u32 = 1u;
 const VIGNETTE: u32 = 2u;
 /// The settings flag that turns the color grading table on.
 const LUT: u32 = 4u;
+/// The settings flag that grades the display color with the built-in grading table.
+const GRADE: u32 = 256u;
 /// The settings flag that draws the outline's line.
 const OUTLINE: u32 = 8u;
 /// The settings flag that multiplies the HDR color by the automatic exposure's texel.
@@ -103,6 +105,11 @@ const GSR_DELTA_LIMIT: f32 = 23.0 / 255.0;
 const RCAS_LEAST: f32 = 0.0001;
 /// The most influence that RCAS's lobe takes at an edge, as FidelityFX limits it.
 const RCAS_LIMIT: f32 = 0.25 - (1.0 / 16.0);
+/// The texels along each side of the built-in grading table, and the scale and the offset that
+/// place a color in it: the domain's ends land on the centers of the first and last texels.
+const GRADE_SIZE: f32 = 32.0;
+const GRADE_SCALE: f32 = 1.0 - 1.0 / GRADE_SIZE;
+const GRADE_OFFSET: f32 = 0.5 / GRADE_SIZE;
 
 /// The pass's settings: the output settings, then the vignette's intensity, size, falloff and
 /// roundness, then the scale and the offset that place a display color in the table, with the
@@ -125,6 +132,7 @@ struct Settings {
 @group(0) @binding(10) var lut_sampler: sampler;
 @group(0) @binding(11) var outline_mask: texture_2d<f32>;
 @group(0) @binding(12) var exposure_texel: texture_2d<f32>;
+@group(0) @binding(13) var grade_table: texture_3d<f32>;
 
 /// The factor of the automatic exposure for this frame, or 1 while the flag is clear. The fragment
 /// shader reads it once, at its start.
@@ -565,13 +573,19 @@ fn display(texel: vec4f) -> vec4f {
 /// the pass grades nothing.
 fn finish(color: vec4f, position: vec2f) -> vec4f {
     let flags = settings.output.flags;
-    let grades = (flags & (LUT | VIGNETTE)) != 0u;
+    let grades = (flags & (LUT | GRADE | VIGNETTE)) != 0u;
     // A pass that holds display color and grades nothing leaves the color as it is, unless the
     // second step of the high dynamic range path asks for the dither (DITHER).
     if (display_color() && !grades && (flags & DITHER) == 0u) || color.a <= 0.0 {
         return color;
     }
     var c = color.rgb / color.a;
+    if (flags & GRADE) != 0u {
+        // The table's texels lie closer together toward black, where a grade's curve is steepest:
+        // the lookup takes the color's square root first.
+        let at = sqrt(saturate(c)) * GRADE_SCALE + GRADE_OFFSET;
+        c = textureSampleLevel(grade_table, lut_sampler, at, 0.0).rgb;
+    }
     if (flags & LUT) != 0u {
         let at = c * settings.lut_scale.xyz + settings.lut_offset.xyz;
         let graded = textureSampleLevel(lut, lut_sampler, at, 0.0).rgb;

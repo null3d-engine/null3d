@@ -53,6 +53,9 @@ struct EffectBlock {
     /// The output's width and height in pixels, its texture's height, and 1 for a full-screen pass
     /// of the render graph, or 0 for an effect, whose output has the input image's sizes.
     drawn: vec4f,
+    /// xy: the scale from the image's place to the bloom level's texture place. zw: its offset.
+    /// An effect that reads no bloom reads zeros.
+    bloom: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> effect_block: EffectBlock;
@@ -64,6 +67,9 @@ struct EffectBlock {
 #else
 @group(0) @binding(3) var effect_depth_texture: texture_2d<f32>;
 #endif
+#endif
+#ifdef EFFECT_BLOOM
+@group(0) @binding(4) var effect_bloom_texture: texture_2d<f32>;
 #endif
 
 /// What an effect reads for each pixel.
@@ -134,6 +140,21 @@ fn effectColor(uv: vec2f) -> vec4f {
 #endif
     return textureSampleLevel(effect_source, effect_sampler, at / effect_block.size.zw, 0.0);
 }
+
+#ifdef EFFECT_BLOOM
+/// The glow of the bloom chain's level that the effect reads at `uv` on the image, from 0 at the
+/// top left to 1 at the bottom right: linear high dynamic range color after the exposure, before
+/// the tone curve. A place outside the image reads its edge. The chain's step down already
+/// thresholded the glow, so the level holds light that passed a pixel's luminance test, blurred
+/// wider at each level.
+fn effectBloom(uv: vec2f) -> vec3f {
+    let at = vec2f(
+        uv.x * effect_block.bloom.x + effect_block.bloom.z,
+        uv.y * effect_block.bloom.y + effect_block.bloom.w,
+    );
+    return textureSampleLevel(effect_bloom_texture, effect_sampler, at, 0.0).rgb;
+}
+#endif
 
 #ifdef EFFECT_DEPTH
 /// The scene's depth at `uv`: 1 at the camera's near plane and 0 at its far plane, and 0 where

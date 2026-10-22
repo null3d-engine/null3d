@@ -36,9 +36,10 @@ traffic.update(eye, time.now);
   because the rows were shuffled once.
 - `update(eye, time)` moves the real lights to the nearest vehicles, four times a second. It looks
   at a share of the rows, so its cost does not follow the count. Give no `realLights` for none.
-- The hull's nose must point along local +Z, and its belly must sit just above y = 0. `look.size`
-  gives its half width, its height and its half length, which place the tail bars, the nose lamps
-  and the skirt.
+- `createVehicleHull(ctx, size)` builds a vehicle that fits the surface: its nose along local +Z,
+  its belly just above y = 0. `look.size` gives its half width, its height and its half length,
+  which place the tail bars, the nose lamps and the skirt. A hull of your own may replace it, as
+  long as it keeps that space.
 - The rows take four values each, which the shader reads as `object.values`: the start offset, the
   speed, the lane's length and the tint. Use one material for the same heading; the add-on makes
   four, one for each.
