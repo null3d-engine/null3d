@@ -1478,6 +1478,17 @@
       "detect": "\\bInstanced(Buffer)?(Geometry|Attribute|InterleavedBuffer)\\b|\\bInstancedBufferAttribute\\b"
     },
     {
+      "id": "vertex-draw",
+      "category": "Instancing and batching",
+      "three": "A BufferGeometry with no attributes, drawn from a vertex count in a ShaderMaterial (gl_VertexID and gl_InstanceID)",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.createVertexDraw({ shader, vertices, instances, bounds, ...material options })",
+      "notes": "The shader makes every vertex from @builtin(vertex_index) and @builtin(instance_index), and the draw holds no mesh data and no per-instance data, so a frame uploads nothing for it. three.js needs a geometry with a placeholder attribute and an InstancedBufferGeometry for the instance count. A draw blends, sorts as one object, takes no texture, casts no shadow, and a raycast does not hit its shapes.",
+      "docs": "api/vertex-draws",
+      "detect": "\\bgl_VertexID\\b|\\bgl_InstanceID\\b|\\binstanceCount\\s*="
+    },
+    {
       "id": "lod",
       "category": "Instancing and batching",
       "three": "LOD (addLevel)",

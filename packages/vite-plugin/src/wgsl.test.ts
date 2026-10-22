@@ -431,6 +431,29 @@ fn fs(@builtin(position) pixel: vec4f) -> @location(0) vec4f {
 		expect(compiled(await compileWgsl('src/glow.wgsl', SHADER, HINT)).kind).toBe('shader');
 	});
 
+	it('builds a draw shader as a custom material that reads no vertex buffer', async () => {
+		// A draw that makes its vertices from the two indices: the vertex entry point takes no mesh
+		// attribute and no InstanceIn, so the material's pipelines declare no vertex buffer.
+		const draw = `#import null3d::builtins::{camera, fill_builtins}
+
+@vertex
+fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> @builtin(position) vec4f {
+    fill_builtins(vec3f(0.0));
+    return camera.viewProjection * vec4f(f32(vertex), f32(instance), 0.0, 1.0);
+}
+
+@fragment
+fn fs() -> @location(0) vec4f {
+    return vec4f(1.0);
+}
+`;
+		const built = material(await compileWgsl('src/draw.wgsl', draw, HINT));
+		expect(built.meshless).toBe(true);
+		expect(built.locations).toEqual([]);
+		// A pass's own shader reads the vertex index alone, so it stays a whole shader.
+		expect(compiled(await compileWgsl('src/glow.wgsl', SHADER, HINT)).kind).toBe('shader');
+	});
+
 	it('places problems of a surface function in its own lines', async () => {
 		const broken = SURFACE.replace('4.0));', '4.0)) 2.0;');
 		const syntax = failure(await compileWgsl('src/stripes.wgsl', broken, HINT));
