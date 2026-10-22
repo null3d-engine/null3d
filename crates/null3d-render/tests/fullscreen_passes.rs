@@ -134,6 +134,7 @@ fn chain<B: FrameBuilder>(world: &mut World<B>) -> (ViewId, ViewId) {
     let effect = Effect {
         template: PASS_TEMPLATE,
         depth: false,
+        bloom: None,
         values: [0.0; EFFECT_FLOATS],
         maps: one_texture(echo_texture),
     };

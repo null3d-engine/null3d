@@ -224,6 +224,8 @@ export interface CompiledEffect<
 	}[keyof Uniforms & string][];
 	/** True when the effect reads the scene's depth. */
 	readonly depth: boolean;
+	/** True when the effect reads a level of bloom's chain, which `bloomLevel` names. */
+	readonly bloom: boolean;
 	/** True when the effect reads its input image at its own pixel alone and declares no
 	 * textures, so it joins the effect before it. */
 	readonly joins: boolean;

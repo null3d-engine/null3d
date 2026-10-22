@@ -177,13 +177,16 @@ export type {
 	BloomSettings,
 	DofSettings,
 	ExposureMetering,
+	GradingSettings,
 	OutlineSettings,
 	Post,
 	PostSettings,
+	SplitToningSettings,
 	SsrSettings,
 	ToneCurve,
 	ToneMapping,
 	VignetteSettings,
+	WhiteBalanceSettings,
 } from './scene/post';
 export type { Prefab, PrefabBounds, PrefabNode } from './scene/prefab';
 export type { ReflectionProbe, ReflectionProbeOptions } from './scene/probes';
