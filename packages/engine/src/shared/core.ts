@@ -249,7 +249,8 @@ export interface CoreGlue extends CoreErrors {
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
 	/** Gives every row of a batch a bounding sphere of `radius` meters around its own origin. */
-	setBatchBounds(batch: number, radius: number): number;
+	/** Sets a batch's own bounding radius, which the next frame reads from the call values. */
+	setBatchBounds(batch: number): number;
 	/**
 	 * Sets the distances between which every row of a batch draws, from the first two call values:
 	 * its start distance and its end distance.

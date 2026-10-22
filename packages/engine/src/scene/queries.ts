@@ -12,16 +12,18 @@
 import { checkLayers, type Described } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
-import type { Vec3Like } from '../math/types';
+import type { Vec2Like, Vec3Like } from '../math/types';
 import type { Ray } from './frame-cameras';
 import type { LineBatch } from './lines';
 import type { CoreMemory, ViewHolder } from './memory';
 import {
 	EVENT_DISTANCE,
+	EVENT_HAS_UV,
 	EVENT_NORMAL,
 	EVENT_POINT,
 	EVENT_ROW,
 	EVENT_TRIANGLE,
+	EVENT_UV,
 } from './pointer-events';
 import type { InstanceBatch, Object3D } from './scene';
 import type { PointBatch, SpriteBatch } from './sprites';
@@ -105,6 +107,19 @@ export interface RaycastHit extends OverlapHit {
 	 * point or a line.
 	 */
 	triangle: number;
+	/**
+	 * Where on the surface the ray hit, as the first texture coordinates of the hit triangle
+	 * blended across its three corners, as three.js's `intersection.uv`. Give the hit object an
+	 * array of two numbers, as it has arrays for `point` and `normal`, and every raycast fills it.
+	 * Read `hasUv` first: the numbers mean nothing when it is false.
+	 */
+	uv?: Vec2Like;
+	/**
+	 * True when the raycast found a triangle with a first texture coordinate set, so `uv` holds
+	 * where on the surface the ray hit. False for a hit on a sprite, a point or a line, and for a
+	 * mesh that has no such coordinates. Every raycast writes it.
+	 */
+	hasUv?: boolean;
 }
 
 /**
@@ -249,6 +264,8 @@ function newHit(): RaycastHit {
 		instance: -1,
 		point: [0, 0, 0],
 		normal: [0, 0, 0],
+		uv: [0, 0],
+		hasUv: false,
 		distance: 0,
 		triangle: -1,
 	};
@@ -371,6 +388,16 @@ export class SceneQueries implements ViewHolder {
 			point[k] = r[at + C.QUERY_HIT_POINT + k] as number;
 			normal[k] = r[at + C.QUERY_HIT_NORMAL + k] as number;
 		}
+		out.hasUv = (r[at + C.QUERY_HIT_HAS_UV] as number) !== 0;
+		// The array is made on the first hit that lands in an object without one, as a hit object
+		// itself is, so a caller that reuses its objects allocates nothing.
+		let uv = out.uv;
+		if (uv === undefined) {
+			uv = [0, 0];
+			out.uv = uv;
+		}
+		uv[0] = r[at + C.QUERY_HIT_UV] as number;
+		uv[1] = r[at + C.QUERY_HIT_UV + 1] as number;
 	}
 
 	/** Fills `out` with the first `count` hit records, adding hit objects where it is too short. */
@@ -423,6 +450,9 @@ export class SceneQueries implements ViewHolder {
 			out[EVENT_POINT + k] = r[C.QUERY_HIT_POINT + k] as number;
 			out[EVENT_NORMAL + k] = r[C.QUERY_HIT_NORMAL + k] as number;
 		}
+		out[EVENT_HAS_UV] = r[C.QUERY_HIT_HAS_UV] as number;
+		out[EVENT_UV] = r[C.QUERY_HIT_UV] as number;
+		out[EVENT_UV + 1] = r[C.QUERY_HIT_UV + 1] as number;
 		return this.targetAt(0);
 	}
 

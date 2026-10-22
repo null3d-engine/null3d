@@ -179,7 +179,7 @@ now 8%, so less of the tree dithers at once while the hand-over stays smooth. Th
 
 ## Addendum: M3's level-of-detail work (owner, 19 October 2026)
 
-A review on 19 October 2026 compared this system with other work. The sources were Hyper3D's article "[Level of detail 3D](https://hyper3d.ai/blog/level-of-detail-3d)", Unity 6's Mesh LOD and LOD Group, and Godot 4's mesh LOD and visibility ranges. They were also Bevy's visibility range, SpeedTree, meshoptimizer 1.x and its [`clusterlod.h`](https://github.com/zeux/meshoptimizer/blob/master/demo/clusterlod.h), [nanite-webgpu](https://github.com/Scthe/nanite-webgpu) and Unreal 5.7's Nanite foliage. The owner ruled that all of its proposals are built, cluster levels included. They are M3's first tasks, M3-L1 to M3-L4, before the tasks of [D-172](D-172-rive-city-follow-ups.md). They come first because they also correct guidance in this record and in the docs.
+A review on 19 October 2026 compared this system with other work. The sources were Hyper3D's article "[Level of detail 3D](https://hyper3d.ai/blog/level-of-detail-3d)", Unity 6's Mesh LOD and LOD Group, and Godot 4's mesh LOD and visibility ranges. They were also Bevy's visibility range, SpeedTree, meshoptimizer 1.x and its [`clusterlod.h`](https://github.com/zeux/meshoptimizer/blob/master/demo/clusterlod.h), [nanite-webgpu](https://github.com/Scthe/nanite-webgpu) and Unreal 5.7's Nanite foliage. The owner ruled that all of its proposals are built, cluster levels included. They are M3's first tasks, M3-L1 to M3-L4, before the tasks of [D-172](D-172-neon-harbour-follow-ups.md). They come first because they also correct guidance in this record and in the docs.
 
 The review found five weak points in what this record describes:
 
