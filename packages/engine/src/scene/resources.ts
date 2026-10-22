@@ -115,6 +115,7 @@ import type { CoreMemory } from './memory';
 import {
 	arraysProblem,
 	meshFromArrays,
+	meshFromLevel,
 	morphTargetCount,
 	updateVertices,
 	type VertexLayout,
@@ -247,19 +248,26 @@ export class MeshGeometry {
 	/**
 	 * Destroys the mesh, like three.js's `geometry.dispose()`. The engine frees its GPU memory and
 	 * its other data at once, and later meshes take its room. Destroy the objects and instance
-	 * batches that use it first, in the same frame or before. Throws E1111 while one
+	 * batches that use it first, in the same frame or before. Its lower levels go with it, since a
+	 * level draws its base's vertices. Throws E1111 while one
 	 * still uses it, and E1101 for a mesh that is destroyed already. Later calls that pass the mesh
 	 * throw E1101.
 	 */
 	destroy(): void {
 		const call = 'mesh.destroy';
-		const user = this.maker?.users?.userOf(new Set([this]));
+		// A level draws its base mesh's vertices, so the base takes it along. A level that the
+		// sketch destroyed itself is gone already.
+		const meshes = [
+			this,
+			...this.lowerLevels.filter((level) => level.mesh.live).map((level) => level.mesh),
+		];
+		const user = this.maker?.users?.userOf(new Set(meshes));
 		if (user)
 			throw new EngineError(
 				'E1111',
 				`${call}() was called on a mesh that ${user} still uses. Destroy the objects and instance batches that use it first.`,
 			);
-		destroyMeshes(this.core, [this], call);
+		destroyMeshes(this.core, meshes, call);
 	}
 
 	/**
@@ -270,8 +278,9 @@ export class MeshGeometry {
 	 * update every vertex. Colors take three or four values per vertex: three keep each vertex's
 	 * alpha. The mesh keeps the bounding sphere it was made with, so give objects that draw
 	 * vertices outside it bounds with `setBounds`. Joints, weights, and a mesh with joints or morph
-	 * targets take no updates. Throws E1206 for values that do not fit the mesh, and E1101 for a
-	 * destroyed mesh. Allocates nothing, so a call in every frame makes no garbage.
+	 * targets take no updates. A level that draws its base mesh's vertices writes them, so the base
+	 * and every level of it draw the new values. Throws E1206 for values that do not fit the mesh,
+	 * and E1101 for a destroyed mesh. Allocates nothing, so a call in every frame makes no garbage.
 	 */
 	updateVertices(
 		name: UpdatableAttribute,
@@ -947,6 +956,21 @@ export class Geometry {
 			morphTargets?.names?.slice() ?? [],
 			this,
 		);
+	}
+
+	/**
+	 * @internal A level that draws `base`'s vertices with the given triangles, or undefined when the
+	 * engine cannot share them and the caller gives the level its own arrays. Files whose levels
+	 * keep the base's vertex streams load every level this way, so a level costs indices alone.
+	 */
+	fromLevel(
+		base: MeshGeometry,
+		indices: Uint16Array | Uint32Array | readonly number[],
+	): MeshGeometry | undefined {
+		const call = 'geometry.fromLevel';
+		const id = meshFromLevel(this.core, base.id, indices, call);
+		if (id === undefined) return undefined;
+		return new MeshGeometry(id, this.core.glue.meshRadius(id), this.core, 0, [], this);
 	}
 }
 

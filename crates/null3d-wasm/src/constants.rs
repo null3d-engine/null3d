@@ -492,6 +492,9 @@ pub mod arrays_problem {
     pub const MORPH_NOT_FINITE: u32 = 10;
     /// A vertex update named a mesh with joints or morph targets, which take no updates.
     pub const POSED: u32 = 11;
+    /// A level cannot draw the base mesh's vertices, because the base is split into parts or its
+    /// vertices are posed. The caller copies the level's vertices instead.
+    pub const LEVEL_BASE: u32 = 12;
     /// Plus the array's code; the second detail is the place of the value in the array.
     pub const NOT_FINITE: u32 = 16;
 }
@@ -1560,6 +1563,7 @@ pub fn typescript() -> String {
                 ("MORPH_LENGTH", arrays_problem::MORPH_LENGTH),
                 ("MORPH_NOT_FINITE", arrays_problem::MORPH_NOT_FINITE),
                 ("POSED", arrays_problem::POSED),
+                ("LEVEL_BASE", arrays_problem::LEVEL_BASE),
                 ("NOT_FINITE", arrays_problem::NOT_FINITE),
             ],
         ),

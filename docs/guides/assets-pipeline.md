@@ -181,7 +181,7 @@ The command plans the levels as follows:
 4. A skinned mesh simplifies in its skeleton's rest pose, as it draws. Meshes with joints or morph targets keep their triangles more even, so they bend well.
 5. Each level stores its error: the largest distance between its surface and the full mesh's, in the units of the mesh's positions. Each level's error is at least 1.5 times the error of the level above, so the levels change at distances well apart.
 
-A simplified level shares the mesh's vertices, so only its indices add to the file. A card level stores its own positions, because its kept cards grew, so its position stream adds to the file.
+A simplified level shares the mesh's vertices, so only its indices add to the file. The engine loads such a level over the base mesh's own vertices too. The level then costs the GPU its indices alone. A card level stores its own positions, because its kept cards grew. Its position stream adds to the file, and the engine keeps a copy of it.
 
 The levels go into the file with `MSFT_lod`. Each node with levels stores the errors in its extras, as `NULL3D_lod_error`. A level is good enough where its error covers less than one pixel. The engine can then pick the level from the real screen height and the render scale. The extras also hold `MSFT_screencoverage` for other readers of `MSFT_lod`, made for a screen 1080 pixels high. A model whose file already has levels keeps them, with or without `--lod`. Their meshes take the steps of their base mesh, so they line up when drawn in its place. Their errors in `NULL3D_lod_error` change to those steps.
 

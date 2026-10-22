@@ -432,6 +432,42 @@ function nodeOf(node: NodeData): GltfExtensionData['node'] {
 /** The screen height in pixels at which `MSFT_screencoverage` turns into errors. */
 const COVERAGE_HEIGHT = 1080;
 
+/** The glTF names of the attributes that a primitive's vertices hold. */
+const ATTRIBUTE_NAMES = [
+	'POSITION',
+	'NORMAL',
+	'TEXCOORD_0',
+	'TEXCOORD_1',
+	'COLOR_0',
+	'TANGENT',
+	'JOINTS_0',
+	'WEIGHTS_0',
+] as const;
+
+/**
+ * True when a level primitive's vertices are its base primitive's own: the file names the same
+ * accessor for every attribute. The asset tool writes levels that way, which lets the engine store
+ * a level as its base's vertices with other indices: the planner simplifies by dropping vertices,
+ * so a level names a subset of the base's accessor in the same order. A level that names an
+ * accessor of its own, or whose base mesh the engine had to split into parts, copies the vertices
+ * instead.
+ */
+export function sharesVertices(
+	level: PrimitiveData | undefined,
+	base: PrimitiveData | undefined,
+): boolean {
+	if (level === undefined || base === undefined) return false;
+	if (level.indices === undefined) return false;
+	const one = level.accessors;
+	const other = base.accessors;
+	if (one === undefined || other === undefined) return false;
+	// The engine draws no level of a morphed or skinned mesh yet, and a level that shared posed
+	// vertices would need the base's poses.
+	if (base.morph !== undefined || base.joints !== undefined || base.normals === undefined)
+		return false;
+	return ATTRIBUTE_NAMES.every((name) => one[name] === other[name]);
+}
+
 /**
  * Gives each primitive's mesh of a node the levels of detail that `MSFT_lod` names: the same
  * primitive of each level node's mesh. Each level's error comes from the asset tool's
@@ -445,13 +481,13 @@ function setFileLevels(
 	base: readonly MeshGeometry[],
 	levels: NodeLevels,
 	data: GltfData,
-	meshOf: (k: number) => MeshGeometry[],
+	levelOf: (k: number) => MeshGeometry[],
 	materials: FileMaterials,
 	primitives: readonly PrimitiveData[],
 ): void {
 	const count = base.length;
 	if (levels.meshes.some((k) => (data.meshes[k] as MeshData).primitives.length !== count)) return;
-	const lower = levels.meshes.map(meshOf);
+	const lower = levels.meshes.map(levelOf);
 	for (const [p, mesh] of base.entries()) {
 		const errors =
 			levels.errors ??
@@ -495,6 +531,24 @@ async function buildPrefab(
 	const meshOf = (k: number) => {
 		meshes[k] ??= makeMeshes(context, data.meshes[k] as MeshData, made.meshes, address, call);
 		return meshes[k];
+	};
+	/**
+	 * A level's meshes built over its base's vertices, where the file gives the level the base's
+	 * own accessors: the level then costs indices alone. Each base keeps its own copy, since a
+	 * level belongs to the mesh whose vertices it draws.
+	 */
+	const levels = new Map<string, MeshGeometry[]>();
+	const levelOf = (baseIndex: number, k: number) => {
+		const key = `${baseIndex} ${k}`;
+		let lower = levels.get(key);
+		if (!lower) {
+			lower = makeMeshes(context, data.meshes[k] as MeshData, made.meshes, address, call, {
+				meshes: meshOf(baseIndex),
+				primitives: (data.meshes[baseIndex] as MeshData).primitives,
+			});
+			levels.set(key, lower);
+		}
+		return lower;
 	};
 	const lights = data.lights.map(lightTemplate);
 	const rig = await makeRig(context, data, address, call);
@@ -543,7 +597,14 @@ async function buildPrefab(
 		const mesh = n.mesh < 0 ? undefined : (data.meshes[n.mesh] as MeshData);
 		const made = n.mesh < 0 ? [] : meshOf(n.mesh);
 		if (n.levels && !n.skinned)
-			setFileLevels(made, n.levels, data, meshOf, materials, mesh?.primitives ?? []);
+			setFileLevels(
+				made,
+				n.levels,
+				data,
+				(k) => levelOf(n.mesh, k),
+				materials,
+				mesh?.primitives ?? [],
+			);
 		const parts = [
 			...(mesh?.primitives ?? []).map((p, k) => ({
 				mesh: made[k] as MeshGeometry,
@@ -801,7 +862,9 @@ const REST_JOINT: RigJoint = {
 
 /**
  * The engine's meshes of a glTF mesh, one for each primitive, with the stored tree and the blocker
- * that the asset tool gave each primitive. Each mesh also goes into `out` as it is made.
+ * that the asset tool gave each primitive. Each mesh also goes into `out` as it is made. A level
+ * whose primitive shares its base primitive's vertex accessors draws the base mesh's vertices from
+ * its own indices, so it costs the GPU indices alone; any other level copies its arrays.
  */
 function makeMeshes(
 	context: GltfContext,
@@ -809,6 +872,7 @@ function makeMeshes(
 	out: MeshGeometry[],
 	address: URL,
 	call: string,
+	base?: { meshes: readonly MeshGeometry[]; primitives: readonly PrimitiveData[] },
 ): MeshGeometry[] {
 	return mesh.primitives.map((p, k) => {
 		const arrays: MeshArrays = {
@@ -829,9 +893,11 @@ function makeMeshes(
 				},
 			}),
 		};
-		let made: MeshGeometry;
+		let made: MeshGeometry | undefined;
 		try {
-			made = context.geometry.fromArrays(arrays);
+			if (base?.meshes[k] !== undefined && sharesVertices(p, base.primitives[k]))
+				made = context.geometry.fromLevel(base.meshes[k] as MeshGeometry, p.indices ?? []);
+			made ??= context.geometry.fromArrays(arrays);
 		} catch (error) {
 			// A mesh too large for engine memory keeps its own code, which says how to make room.
 			if ((error as { code?: unknown }).code === 'E1109') throw error;

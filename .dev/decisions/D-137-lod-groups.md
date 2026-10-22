@@ -401,3 +401,23 @@ the tests that switch levels at once, and by 2.7 to 3.2 percent for the fading b
 depends on how far past a switch a copy lies. The new `lod-bias` picture has its own references in
 both environments: a bias of 2 puts the same levels at half the distance, so the copies are twice
 the size on screen and cannot share the plain picture.
+
+## Addendum: a level from a file costs its indices alone (22 October 2026, M3-L2R)
+
+The asset tool writes each level's triangles over the base mesh's own vertex accessors. The loader
+read them as a mesh of its own all the same, so it copied the whole vertex stream once per level.
+
+A level now draws the base mesh's vertices from its own indices. It shares the base's page and
+vertex ranges. The storage appends the level's triangles after the base's own. On WebGL2 it shifts
+them by the part's place in its page; on WebGPU the draw adds the part's base vertex. The level
+takes the base's radius, format and vertex count. It goes when the base goes. Taking the level out
+frees its indices alone, never the base's vertices.
+
+Two kinds of level still copy their vertices. One names its own positions, as the tool's cards do.
+The other has a base that the engine split into parts, or that joints or morph targets pose.
+
+The test scene's ball shows the saving. Its base has 1,225 vertices of 16 bytes, and four levels.
+Held as copies, the levels took 91,600 bytes of GPU memory. Held over the base's vertices, they
+take 13,200. The four levels save 78,400 bytes on that one mesh. One picture test draws the file
+with each level's accessors copied. Its picture must match the shared one: the shared level draws
+the same pixels as the copied level.

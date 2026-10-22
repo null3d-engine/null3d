@@ -1777,6 +1777,10 @@ pub fn create_level_mesh(base: u32, indices: u32) -> u32 {
         if staging.len() < words {
             return Err(fail(codes::BAD_ARRAYS, [0, 0]));
         }
+        // The caller names the base by the id that it was given, one more than the storage's.
+        let Some(base) = base.checked_sub(1) else {
+            return Err(fail(codes::BAD_ARRAYS, [arrays_problem::LEVEL_BASE, 0]));
+        };
         // SAFETY: the words are initialized and aligned, and every bit pattern is an index.
         let list = unsafe { std::slice::from_raw_parts(staging.as_ptr(), words) };
         let added = e
@@ -1793,15 +1797,16 @@ pub fn create_level_mesh(base: u32, indices: u32) -> u32 {
 
 /// The failure of a mesh that the storage refused.
 fn mesh_failure(error: MeshError) -> u32 {
-    let morph = |problem: u32, value: u32| fail(codes::BAD_ARRAYS, [problem, value]);
+    let arrays = |problem: u32, value: u32| fail(codes::BAD_ARRAYS, [problem, value]);
     match error {
         MeshError::Morph(MorphError::TooLarge) => {
-            morph(arrays_problem::MORPH_TOO_LARGE, MAX_DELTA_TEXELS)
+            arrays(arrays_problem::MORPH_TOO_LARGE, MAX_DELTA_TEXELS)
         }
-        MeshError::Morph(MorphError::Length) => morph(arrays_problem::MORPH_LENGTH, 0),
+        MeshError::Morph(MorphError::Length) => arrays(arrays_problem::MORPH_LENGTH, 0),
         MeshError::Morph(MorphError::NotFinite { array, at }) => {
-            morph(arrays_problem::MORPH_NOT_FINITE, at | array << 28)
+            arrays(arrays_problem::MORPH_NOT_FINITE, at | array << 28)
         }
+        MeshError::SharedUnavailable => arrays(arrays_problem::LEVEL_BASE, 0),
         _ => render_failure(render_detail::BAD_MESH, 0),
     }
 }
