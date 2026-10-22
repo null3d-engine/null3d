@@ -76,6 +76,7 @@ use crate::ssr::{self, Ssr, TraceFrame};
 use crate::subsurface::{self, SubsurfaceFrame};
 use crate::textures::TextureStore;
 use crate::textures::budget::NeedView;
+use crate::vertex_draws::VertexDrawTable;
 use crate::view::{CanvasRect, MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
 
 /// Engine mesh ids count from 1; 0 marks an object with no mesh, such as a group or a camera.
@@ -403,6 +404,18 @@ pub trait FrameBuilder {
     ) -> Result<(), TryReserveError> {
         Ok(())
     }
+    /// Gives mesh `mesh`, by its id that counts from 1, the tree of cluster patches that a model
+    /// file stores, or takes its tree away with `None`. The caller marks the scene's structure as
+    /// changed, which makes the next frame rebuild its draw tables. Fails only when memory cannot
+    /// grow.
+    fn set_mesh_patches(
+        &mut self,
+        mesh: u32,
+        tree: Option<crate::patches::PatchTree>,
+    ) -> Result<(), TryReserveError> {
+        self.settings_mut().patches_mut().set(mesh, tree);
+        Ok(())
+    }
     /// True when point or spot lights cast shadows into the shadow atlas in the frame recorded
     /// last.
     fn casts_tile_shadows(&self) -> bool {
@@ -415,6 +428,7 @@ pub trait FrameBuilder {
     fn remove_meshes(&mut self, ids: &[u32]) {
         let moves = self.settings_mut().meshes_mut().remove(ids);
         self.settings_mut().forget_removed_levels();
+        self.settings_mut().forget_removed_patches();
         self.meshes_moved(ids, &moves);
     }
     /// Makes the GPU copies of the meshes follow a removal: the pages and the delta texels upload
@@ -1033,8 +1047,13 @@ pub struct SceneSettings {
     decal_layers: u32,
     /// The particle systems of the particles add-on.
     particles: ParticleTable,
+    /// The draws that make their vertices from a vertex count alone.
+    vertex_draws: VertexDrawTable,
     /// The meshes with levels of detail.
     levels: Levels,
+    /// The meshes' trees of cluster patches, which large static meshes draw instead of their whole
+    /// triangle lists.
+    patches: crate::patches::PatchStorage,
     /// How the levels of detail are picked, which the quality settings set.
     level_quality: LevelQuality,
     /// The render scale that the levels of detail pick by: the frame's, which the WebGL2 builder's
@@ -1160,7 +1179,9 @@ impl SceneSettings {
             area_shading: AreaShading::default(),
             area_wanted: false,
             particles: ParticleTable::default(),
+            vertex_draws: VertexDrawTable::default(),
             levels: Levels::default(),
+            patches: crate::patches::PatchStorage::default(),
             level_quality: LevelQuality::default(),
             level_scale: RenderScale::FULL,
             pick: None,
@@ -2052,6 +2073,16 @@ impl SceneSettings {
         &self.levels
     }
 
+    /// The meshes' trees of cluster patches.
+    pub fn patches(&self) -> &crate::patches::PatchStorage {
+        &self.patches
+    }
+
+    /// The meshes' trees of cluster patches, which a file's load fills in.
+    pub fn patches_mut(&mut self) -> &mut crate::patches::PatchStorage {
+        &mut self.patches
+    }
+
     /// Gives the mesh with engine id `base` the lower levels `meshes`, from the most detailed
     /// down, with their errors in the base mesh's units, and the `materials` that they draw with (0
     /// for the level before's), or with none takes its levels away. `fades` lets two levels hand
@@ -2084,6 +2115,13 @@ impl SceneSettings {
     pub(crate) fn forget_removed_levels(&mut self) {
         let meshes = &self.meshes;
         self.levels
+            .forget_removed(|mesh| mesh.checked_sub(1).and_then(|id| meshes.mesh(id)).is_some());
+    }
+
+    /// Takes the trees of cluster patches away from the removed meshes.
+    pub(crate) fn forget_removed_patches(&mut self) {
+        let meshes = &self.meshes;
+        self.patches
             .forget_removed(|mesh| mesh.checked_sub(1).and_then(|id| meshes.mesh(id)).is_some());
     }
 
@@ -2616,6 +2654,16 @@ impl SceneSettings {
     /// The particle systems, to make, change and destroy them.
     pub fn particles_mut(&mut self) -> &mut ParticleTable {
         &mut self.particles
+    }
+
+    /// The draws that make their vertices from a vertex count alone.
+    pub fn vertex_draws(&self) -> &VertexDrawTable {
+        &self.vertex_draws
+    }
+
+    /// Those draws, to make, change and destroy them.
+    pub fn vertex_draws_mut(&mut self) -> &mut VertexDrawTable {
+        &mut self.vertex_draws
     }
 
     /// Moves the views on to the next frame: each mirror view takes the camera's layers unless it

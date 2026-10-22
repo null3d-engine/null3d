@@ -189,6 +189,24 @@ Over the 213 models of four Kenney city kits, `--lod` gives levels to 162. The 4
 
 `assets.loadGltf` gives each mesh its levels. So every copy of the model and every instance batch of it picks its level in each frame, as [Levels of detail](../concepts/lod.md) explains. Skinned meshes draw their full mesh for now. three.js's `GLTFLoader` ignores `MSFT_lod`, and draws the full mesh.
 
+### Cluster levels
+
+`--clusters` stores a tree of small patches for each large static mesh: a scan, a cliff, a building or a CAD model. Every patch holds about 128 triangles, and the patches above it replace groups of patches below. One mesh can then draw fine triangles near the camera and coarse triangles far from it. The whole levels draw one detail for the whole object instead.
+
+The command splits each mesh part into patches and builds the tree above them with meshoptimizer:
+
+1. The patches are compact pieces of the surface, so each one covers a small part of the screen.
+2. A patch above a group simplifies its children's triangles to about half of them. The group's border stays in place, so two patches of different detail still meet.
+3. Each patch stores its error, the largest distance between its surface and the surface below it, and a sphere around its triangles.
+
+The tree holds about twice the mesh's triangles. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. The tree goes into the file with `NULL3D_clusters`. Other glTF loaders ignore it and draw the whole mesh. The engine reads the tree, and draws the whole mesh until it draws patches.
+
+A mesh gets no tree in four cases. It has fewer than 20,000 triangles, or a skin or a morph target bends it. It also gets none when its material blends or masks, or more than four copies draw it. Those meshes keep whole levels.
+
+```sh
+bunx @null3d/cli assets optimize models/ public/models/ --lod --clusters
+```
+
 ### Fewer triangles in the full mesh
 
 `--simplify` lowers the full mesh itself, as gltfpack's `-si` does. `--simplify 0.5` aims to keep half of each mesh's triangles. The surface may move by no more than `--simplify-error` times the mesh's size, so a mesh may keep more. A mesh that cannot lose triangles within that limit keeps them all. The vertices that no triangle uses then leave the file.
@@ -203,6 +221,7 @@ The default limit, a hundredth of each mesh's size, changes little that a viewer
 | `draws` | The objects that the scene draws, with each instance of an instancing node, the parts and meshes they draw, the triangles at full detail, and the vertices the file stores |
 | `size` | The scene's size in its own units, from the meshes' bounds |
 | `levels of detail` | The meshes that got levels, and their triangles at each level, the full meshes first |
+| `cluster trees` | The meshes that got a tree of patches, the patches, the leaf patches, the tree's triangles against the full meshes', and the bytes the trees take |
 | `merged copies` | The meshes, materials, textures and vertex data that merged into an equal copy |
 | Textures | Each group of textures that share a size, a format and a color space |
 | `texture memory` | The textures' GPU memory with every mip level: where the GPU takes ETC2 and ASTC, as phones, tablets and Macs do; where it takes only BC7, as most Windows PCs do; and with no compressed format |
