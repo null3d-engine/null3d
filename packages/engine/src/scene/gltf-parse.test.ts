@@ -1448,6 +1448,98 @@ describe('stored trees and blockers', () => {
 	});
 });
 
+describe('trees of cluster patches', () => {
+	/** A box whose primitive carries the patch tree that `extensions` makes. */
+	const boxWith = (extensions: (b: GltfBuilder) => GltfJson) => {
+		const b = new GltfBuilder();
+		b.node({ mesh: b.mesh([{ ...boxPrimitive(b), extensions: extensions(b) }]) });
+		return b;
+	};
+	/** A tree of two patches over the box's vertices: a root and the leaf below it. */
+	const TREE = (b: GltfBuilder) => ({
+		NULL3D_clusters: {
+			indices: b.accessor(new Uint32Array([0, 1, 2, 3, 4, 5]), 1),
+			bounds: b.accessor(new Float32Array([0, 0, 0, 1, 0.5, 0.5, 0.5, 0.5]), 4),
+			patches: b.accessor(new Uint32Array([0, 3, 0, 0x3dcc_cccd, 3, 3, 1, 0]), 4),
+			root: 0,
+		},
+	});
+
+	test('a primitive keeps the tree of patches that the tool built', () => {
+		const [p] = parse(boxWith(TREE).glb()).meshes[0]?.primitives ?? [];
+		expect(p?.patches?.root).toBe(0);
+		expect(Array.from(p?.patches?.indices ?? [])).toEqual([0, 1, 2, 3, 4, 5]);
+		expect(Array.from(p?.patches?.words ?? [])).toEqual([0, 3, 0, 0x3dcc_cccd, 3, 3, 1, 0]);
+		expect(Array.from(p?.patches?.bounds ?? [])).toEqual([0, 0, 0, 1, 0.5, 0.5, 0.5, 0.5]);
+	});
+
+	test('a plain primitive has no tree', () => {
+		expect(parse(shipBuilder().glb()).meshes[0]?.primitives[0]?.patches).toBeUndefined();
+	});
+
+	test('a tree that breaks the rules gives E1416', () => {
+		const broken = (change: (tree: GltfJson, b: GltfBuilder) => void) =>
+			boxWith((b) => {
+				const extensions = TREE(b);
+				change(/** @type {GltfJson} */ (extensions.NULL3D_clusters), b);
+				return extensions;
+			});
+		const message = (b: GltfBuilder) => refusal(b.glb())[1];
+		expect(
+			message(
+				broken((tree) => {
+					tree.patches = 0;
+				}),
+			),
+		).toContain('patches are not four unsigned integers per patch');
+		expect(
+			message(
+				broken((tree, b) => {
+					tree.bounds = b.accessor(new Float32Array(3), 3);
+				}),
+			),
+		).toContain('patch bounds are not four floats per patch');
+		expect(
+			message(
+				broken((tree) => {
+					tree.root = 2;
+				}),
+			),
+		).toContain('patch tree has no root among its patches');
+		// Indices that name no whole triangles, and bounds that are not four floats a patch.
+		expect(
+			message(
+				broken((tree, b) => {
+					tree.bounds = b.accessor(new Float32Array(4), 2);
+				}),
+			),
+		).toContain('patch bounds are not four floats per patch');
+		const withWords = (words: number[]) => (tree: GltfJson, b: GltfBuilder) => {
+			tree.patches = b.accessor(new Uint32Array(words), 4);
+		};
+		// A run that is not whole triangles.
+		expect(message(broken(withWords([0, 4, 0, 0, 3, 3, 1, 0])))).toContain(
+			'patch 0 names no whole triangles of its tree',
+		);
+		// A run past the tree's indices.
+		expect(message(broken(withWords([4, 3, 0, 0, 3, 3, 1, 0])))).toContain(
+			'patch 0 names no whole triangles of its tree',
+		);
+		// A patch that is its own parent.
+		expect(message(broken(withWords([0, 3, 1, 0, 3, 3, 1, 0])))).toContain(
+			'patch 0 names the patch 1 as its parent',
+		);
+		// An index past the box's vertices.
+		expect(
+			message(
+				broken((tree, b) => {
+					tree.indices = b.accessor(new Uint32Array([0, 1, 2, 3, 4, 99]), 1);
+				}),
+			),
+		).toContain('past its 24 vertices');
+	});
+});
+
 describe("the asset tool's shader list", () => {
 	test('reads the recorded bits and files, and leaves out a name that is not text', () => {
 		const builder = shipBuilder();

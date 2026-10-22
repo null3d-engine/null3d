@@ -198,7 +198,7 @@ function vertexKey(streams, sizes, v) {
  * @param {Float32Array} positions
  * @returns {PlanningList}
  */
-function weld(prim, positions) {
+export function weld(prim, positions) {
 	const count = positions.length / 3;
 	const stream = (/** @type {string} */ semantic) => {
 		const accessor = prim.getAttribute(semantic);
