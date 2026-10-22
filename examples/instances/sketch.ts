@@ -86,13 +86,16 @@ export default defineSketch(async (ctx) => {
 	scene.createPointLight({ parent: bulb, color: '#ffb35c', intensity: 120, range: 16 });
 
 	const center = vec3.create();
+	/** The camera's place, which the traffic's real lights follow. */
+	const eye = vec3.create();
 	const traffic = createTraffic(ctx);
 	/** The part of each row's height that depends only on its column, worked out once per frame. */
 	const ripple = new Float32Array(SIDES.high);
 	return {
 		onUpdate(dt) {
 			const t = time.now;
-			traffic.update(t);
+			camera.getWorldPosition(eye);
+			traffic.update(eye, t);
 			if (!view.userCamera) {
 				camera.setPosition(Math.sin(t * 0.1) * 40, 11, Math.cos(t * 0.1) * 40);
 				camera.lookAt(TARGET[0], TARGET[1], TARGET[2]);

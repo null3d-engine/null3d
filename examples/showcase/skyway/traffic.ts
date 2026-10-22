@@ -2,9 +2,12 @@
 // vehicles' own lights, their bounds and the real lights nearest the camera. This file gives it the
 // city's plan, how many cars each preset draws, and the demo's car colours.
 import type { QualityPreset, SketchContext } from '@null3d/engine';
-import { createTrafficLanes, type TrafficLanes } from '../../addons/traffic-lanes/index';
+import {
+	createTrafficLanes,
+	createVehicleHull,
+	type TrafficLanes,
+} from '../../addons/traffic-lanes/index';
 import { EFFECT_LAYER } from '../../lib/layers';
-import { carHull } from './hull';
 import {
 	BLOCKS,
 	LANE_HIGH,
@@ -29,7 +32,7 @@ const LINES = Array.from({ length: BLOCKS + 1 }, (_, k) => streetLine(k));
 /** Builds the traffic of the sky lanes. */
 export function createTraffic(ctx: SketchContext): TrafficLanes {
 	return createTrafficLanes(ctx, {
-		mesh: carHull(ctx),
+		mesh: createVehicleHull(ctx, { halfWidth: 0.96, height: 1.1, halfLength: 2.0 }),
 		plan: {
 			lines: LINES,
 			from: -LANE_SPAN / 2,

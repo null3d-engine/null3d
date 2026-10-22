@@ -1,74 +1,49 @@
-// Hover traffic above the field: four lanes of cars that stream across the sky at different heights
-// and headings. Each car is a row of two instance batches, a body and a tail light strip, and the
-// sketch writes every row from the time alone, so a held frame draws the same cars on every run.
-import { quat, type SketchContext } from '@null3d/engine';
+// Hover traffic above the field, from the traffic-lanes add-on. The lanes surround the field, so
+// the cars stay a layer above the horizon and none passes near the lens. The add-on moves them in
+// the vertex shader, so a frame's work is the same at 30,000 cars and at 100,000.
+import type { QualityPreset, SketchContext } from '@null3d/engine';
+import {
+	createTrafficLanes,
+	createVehicleHull,
+	type TrafficLanes,
+} from '../addons/traffic-lanes/index';
 
-/** Each lane: its heading in radians, its height, its cars, and its sideways offset in meters. */
-const LANES = [
-	[Math.PI / 2, 17, 180, -55],
-	[-Math.PI / 2, 20, 180, -75],
-	[0, 19, 180, -45],
-	[Math.PI, 22, 180, 55],
-] as const;
-/** How far a lane runs before its cars wrap, in meters, and how fast they fly. */
-const REACH = 120;
-const SPEED = 22;
-/** The files of cars across each lane, and the space between them. */
-const FILES = 3;
-const GAP = 2.4;
+/** How many cars each preset draws. */
+export const CARS: Record<QualityPreset, number> = {
+	low: 30_000,
+	medium: 50_000,
+	high: 75_000,
+	ultra: 100_000,
+};
 
-export function createTraffic(ctx: SketchContext) {
-	const { scene, geometry, materials } = ctx;
-	const count = LANES.reduce((rows, lane) => rows + lane[2], 0);
-	const body = scene.createInstances(
-		geometry.box({ width: 1.4, height: 0.38, depth: 2.4 }),
-		count,
-		{
-			material: materials.standard({ color: '#2c3a52', metalness: 0.65, roughness: 0.32 }),
-			dynamic: true,
+/** The lines that carry lanes, in meters from the field's middle, and the cars' size. */
+const LINES = [-75, -55, -35, 35, 55, 75];
+const SIZE = { halfWidth: 0.7, height: 0.38, halfLength: 1.2 };
+
+/** Builds the traffic of the field's sky. */
+export function createTraffic(ctx: SketchContext): TrafficLanes {
+	return createTrafficLanes(ctx, {
+		mesh: createVehicleHull(ctx, SIZE),
+		plan: {
+			lines: LINES,
+			// The lanes run on past the field, so the cars stream in from the haze.
+			from: -1300,
+			to: 1300,
+			low: 16,
+			high: 34,
+			levels: 4,
+			offset: 4,
 		},
-	);
-	const lamp = materials.standard({
-		color: '#000000',
-		emissive: '#ff5a3c',
-		emissiveIntensity: 9,
+		counts: CARS,
+		look: {
+			body: '#2c3a52',
+			tail: '#ff5a3c',
+			nose: '#dfe9ff',
+			skirt: '#3a7fb0',
+			glow: 0.5,
+			size: [SIZE.halfWidth, SIZE.height, SIZE.halfLength],
+		},
+		// The four nearest cars carry a real light, so the traffic washes the field below it.
+		realLights: 4,
 	});
-	const tail = scene.createInstances(
-		geometry.box({ width: 1.1, height: 0.09, depth: 0.08 }),
-		count,
-		{ material: lamp, dynamic: true },
-	);
-	const turn = quat.create();
-	const up = [0, 1, 0] as const;
-	return {
-		/** Writes each car's place along its lane, and its tail lights behind it. */
-		update(t: number) {
-			const places = body.positions;
-			const turns = body.rotations;
-			const lights = tail.positions;
-			const tails = tail.rotations;
-			let row = 0;
-			for (const [heading, height, cars, offset] of LANES) {
-				const dx = Math.sin(heading);
-				const dz = Math.cos(heading);
-				quat.setAxisAngle(turn, up, heading);
-				for (let i = 0; i < cars; i++) {
-					const file = (i % FILES) - (FILES - 1) / 2;
-					const side = file * GAP + offset;
-					const run = (((i / cars) * 2 * REACH + SPEED * t) % (2 * REACH)) - REACH;
-					const x = dx * run + dz * side;
-					const z = dz * run - dx * side;
-					places[row * 3] = x;
-					places[row * 3 + 1] = height;
-					places[row * 3 + 2] = z;
-					turns.set(turn, row * 4);
-					lights[row * 3] = x - dx * 1.26;
-					lights[row * 3 + 1] = height;
-					lights[row * 3 + 2] = z - dz * 1.26;
-					tails.set(turn, row * 4);
-					row++;
-				}
-			}
-		},
-	};
 }

@@ -644,9 +644,9 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Instancing',
 		scene: '100,000 columns',
 		summary:
-			'100,000 columns in one batch at golden hour, and 10,000 on phones, with lanes of hover cars streaming across the sky in two more batches. Each frame the sketch writes the height of every row, and the place of every car, into the batch arrays, with no call per row.',
+			'100,000 columns in one batch at golden hour, and 10,000 on phones, with 30,000 to 100,000 hover cars streaming along the sky lanes above them. The sketch writes the height of every column, and the traffic-lanes add-on moves the cars in the vertex shader, so a frame costs no work per car.',
 		hold: 2,
-		timeoutSeconds: 60,
+		timeoutSeconds: 180,
 	},
 	{
 		name: 'forest',
