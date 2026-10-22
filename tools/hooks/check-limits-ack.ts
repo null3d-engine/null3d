@@ -40,7 +40,7 @@ export const LIMITS_ACK_RULE: AckRule = {
 	emptyMessage: (value) =>
 		`Limits-Checked value "${value}" acknowledges nothing: name the limits you measured and what each said.`,
 	guidance: [
-		'Run `bun run limits` before you commit (AGENTS.md, "Fixed limits"). It reports the picture',
+		'Run `bun run limits` before you commit (AGENTS.md, "Commands"). It reports the picture',
 		'references, the commit gates and the download sizes that this checkout last built, and it',
 		'names the command for each limit that only a build or a heavy run measures. Then add a',
 		'trailer that says what it reported, for example:\n',

@@ -1,6 +1,6 @@
 // One report of the fixed limits that judge this branch, so that a limit which is about to fail
 // names itself here instead of in CI. A branch can pass one limit and fail another without anyone
-// noticing, and each failure then reads as a mystery in a job log (AGENTS.md, "Fixed limits").
+// noticing, and each failure then reads as a mystery in a job log (AGENTS.md, "Commands").
 // This measures what needs no browser and no build: the picture references, the commit gates over
 // the commits that a merge into main would keep, and the download sizes of the last build that this
 // checkout wrote. A limit that only a build or a heavy run can measure is listed with its command,
