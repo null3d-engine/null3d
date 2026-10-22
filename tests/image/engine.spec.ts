@@ -266,11 +266,17 @@ for (const mode of ENGINE_MODES)
 /** The text as a regular expression that matches it alone. */
 const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** The address of a part's module on the dev server, and of its file with a hash in a build. */
-function partPatterns(modules: readonly string[]): RegExp[] {
+/**
+ * The address of a part's module on the dev server, and of its file with a hash in a build. A part
+ * whose module the start also holds has no file of its own on the dev server, since the page
+ * downloads the start's copy, so `builtOnly` asks for its built file alone: that file belongs to
+ * the thread that loads it on demand, and a page that fetches it at its start has loaded code early.
+ */
+function partPatterns(modules: readonly string[], { builtOnly = false } = {}): RegExp[] {
 	return [...new Set(modules)].map((module) => {
 		const stem = (module.split('/').at(-1) as string).replace(/\.ts$/, '');
-		return new RegExp(`/${escaped(module)}$|/${escaped(stem)}-[\\w-]{8}\\.js$`);
+		const built = `/${escaped(stem)}-[\\w-]{8}\\.js$`;
+		return builtOnly ? new RegExp(built) : new RegExp(`/${escaped(module)}$|${built}`);
 	});
 }
 
@@ -280,11 +286,16 @@ function partPatterns(modules: readonly string[]): RegExp[] {
  * lists these files apart from the start, and the WebAssembly modules that load on first use with
  * them.
  */
+const FIRST_USE_PARTS = LATER_PARTS.filter(
+	({ afterFirstFrame, onFirstCall }) => !afterFirstFrame && !onFirstCall,
+);
 const FIRST_USE_PATTERNS: readonly RegExp[] = [
 	...partPatterns(
-		LATER_PARTS.filter(({ afterFirstFrame, onFirstCall }) => !afterFirstFrame && !onFirstCall).map(
-			({ module }) => module,
-		),
+		FIRST_USE_PARTS.filter(({ alsoInStart }) => !alsoInStart).map(({ module }) => module),
+	),
+	...partPatterns(
+		FIRST_USE_PARTS.filter(({ alsoInStart }) => alsoInStart).map(({ module }) => module),
+		{ builtOnly: true },
 	),
 	...FIRST_USE_FILES.map((file) => {
 		const dot = file.lastIndexOf('.');
