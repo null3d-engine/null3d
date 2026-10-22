@@ -25,10 +25,11 @@ import {
 	readdirSync,
 	readFileSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { defaultEnvironment, launchBrowser } from '../packages/cli/src/browser.js';
 import {
 	FILES_LIST,
@@ -36,6 +37,8 @@ import {
 	NOTICES_FILE,
 	type OfflineFiles,
 } from '../packages/vite-plugin/src/index.ts';
+import { shaderCacheFolder } from '../packages/vite-plugin/src/shader-cache.ts';
+import { cacheDir, cacheOff, pruneCacheLocked, secondsSince } from '../tools/lib/build-cache.ts';
 import {
 	DEFAULT_PACK_DIR,
 	PACKAGES,
@@ -160,19 +163,43 @@ function serveBuild(dist: string, strict = true) {
 }
 
 /**
- * Waits for the page's start, and returns how it ended: the build that started, or the error.
- * Functions, not text: Playwright evaluates text with eval, which the strict policy blocks.
+ * The errors that `page` reports from now on, its own and those of its console, as they arrive. A
+ * check reads them when the page fails or never starts, so its failure says why.
+ */
+function pageErrors(page: Page): string[] {
+	const errors: string[] = [];
+	page.on('pageerror', (error) => errors.push(error.message));
+	page.on('console', (message) => {
+		if (message.type() === 'error') errors.push(message.text());
+	});
+	return errors;
+}
+
+/**
+ * Waits for the page's start, and returns how it ended: the build that started, or the error. It
+ * prints how long the start took, and a page that does not start within the limit fails with
+ * `what` and the page's `errors`. Functions, not text: Playwright evaluates text with eval, which
+ * the strict policy blocks.
  */
 async function startOf(
 	page: Page,
+	what: string,
+	errors: readonly string[],
 ): Promise<{ start: string | undefined; isolated: boolean; tier: string | undefined }> {
+	const started = performance.now();
 	const start = await page
 		.waitForFunction(
 			() => (globalThis as unknown as PageGlobals).document.documentElement.dataset.start,
 			undefined,
-			{ timeout: 30_000 },
+			{ timeout: PAGE_LIMIT_MS },
 		)
-		.then((handle) => handle.jsonValue());
+		.then((handle) => handle.jsonValue())
+		.catch((error: Error) => {
+			throw new Error(
+				`${what}: the page did not start within ${PAGE_LIMIT_MS / 1000} s (${error.message}); page errors: ${JSON.stringify(errors)}`,
+			);
+		});
+	console.log(`  ${what}: ${start} after ${secondsSince(started)} s`);
 	const isolated = await page.evaluate(
 		() => (globalThis as unknown as PageGlobals).crossOriginIsolated,
 	);
@@ -185,7 +212,7 @@ async function startOf(
 /** How long a browser may take to close before the test goes on without it. */
 const CLOSE_LIMIT_MS = 15_000;
 
-/** How long one page of the website's build may take to load and start, past Playwright's limits. */
+/** How long a page of a build may take to load and start, past Playwright's limits. */
 const PAGE_LIMIT_MS = 90_000;
 
 /**
@@ -264,12 +291,13 @@ async function startsUnderStrictPolicy(dist: string): Promise<void> {
 	console.log('\nStart under a strict Content-Security-Policy');
 	await withBrowser(dist, true, async (browser, server) => {
 		const page = await browser.newPage();
+		const errors = pageErrors(page);
 		const violations: string[] = [];
 		page.on('console', (message) => {
 			if (/Content.Security.Policy/i.test(message.text())) violations.push(message.text());
 		});
 		await page.goto(`${server.url.href}?threads=off`);
-		const { start, isolated } = await startOf(page);
+		const { start, isolated } = await startOf(page, 'under the strict policy', errors);
 		if (start !== 'threaded' || !isolated || violations.length > 0)
 			throw new Error(
 				`under a strict policy, with ?threads=off in the address, the page did not start the threaded engine: start ${start}, isolated ${isolated}, policy reports ${JSON.stringify(violations)}`,
@@ -296,8 +324,9 @@ async function playsOffline(dist: string): Promise<void> {
 			throw new Error(`${FILES_LIST} leaves the ${path} renderers out of the start`);
 	await withBrowser(dist, true, async (browser, server) => {
 		const page = await browser.newPage();
+		const errors = pageErrors(page);
 		await page.goto(server.url.href);
-		const first = await startOf(page);
+		const first = await startOf(page, 'the first visit', errors);
 		if (first.start !== 'threaded' || !first.isolated)
 			throw new Error(`the first visit did not start the threaded engine: ${first.start}`);
 		const cached = await page.evaluate(async () => {
@@ -319,7 +348,7 @@ async function playsOffline(dist: string): Promise<void> {
 			if (!request.url().endsWith(`/${FILES_LIST}`)) failed.push(request.url());
 		});
 		await page.reload();
-		const offline = await startOf(page);
+		const offline = await startOf(page, 'offline', errors);
 		if (offline.start !== 'threaded' || !offline.isolated || failed.length > 0)
 			throw new Error(
 				`offline, the page did not start the threaded engine from the cache alone: start ${offline.start}, isolated ${offline.isolated}, failed requests ${JSON.stringify(failed)}`,
@@ -331,7 +360,7 @@ async function playsOffline(dist: string): Promise<void> {
 			return;
 		}
 		await page.goto(`${server.url.href}?path=webgl2`);
-		const other = await startOf(page);
+		const other = await startOf(page, 'offline on webgl2', errors);
 		if (other.start !== 'threaded' || other.tier !== 'webgl2' || failed.length > 0)
 			throw new Error(
 				`offline, the page did not start on the GPU path that its first visit did not draw with: start ${other.start}, path ${other.tier}, failed requests ${JSON.stringify(failed)}`,
@@ -402,11 +431,26 @@ const SITE_PAGE = {
 		"\tbase: './',",
 		'\tplugins: [null3d({ urlSwitches: true })],',
 		"\tresolve: { dedupe: ['@null3d/engine', '@null3d/controls'] },",
-		"\tbuild: { outDir: '../dist-site', emptyOutDir: true },",
+		// The build's report of each file's compressed size compresses every chunk again, and the
+		// test never reads it.
+		"\tbuild: { outDir: '../dist-site', emptyOutDir: true, reportCompressedSize: false },",
 		'});',
 		'',
 	],
 };
+
+/**
+ * The website build's compiled shaders, kept between runs. The demos' custom materials each build
+ * into every variant of the standard material, and the plugin compiles them in the build. An entry
+ * is named by its WGSL, its path from the page, its variant spec and the compiler's version, so a
+ * kept entry never serves another source or another compiler. The project's own production build
+ * keeps no cache, so every run still compiles through the packed plugin. CI keeps the folder in the
+ * Actions cache. `NULL3D_NO_CACHE=1` builds without it.
+ */
+const SITE_SHADER_CACHE = cacheDir('fresh-project-shaders');
+
+/** The most that the kept shaders may hold: the demos' set, with room for a few changes of it. */
+const SITE_SHADER_CACHE_BYTES = 4 * 1024 * 1024 * 1024;
 
 /**
  * Builds a website's page of its own layout around a copy of the repository's examples folder, as
@@ -424,6 +468,12 @@ async function buildsExamples(project: string): Promise<void> {
 	mkdirSync(site);
 	for (const [file, lines] of Object.entries(SITE_PAGE))
 		writeFileSync(join(site, file), lines.join('\n'));
+	// The page's cache folder is a link to the kept one, so the build reads and writes it in place.
+	if (!cacheOff()) {
+		mkdirSync(SITE_SHADER_CACHE, { recursive: true });
+		mkdirSync(dirname(shaderCacheFolder(site)), { recursive: true });
+		symlinkSync(SITE_SHADER_CACHE, shaderCacheFolder(site), 'dir');
+	}
 	step(
 		'Build a website page of the demos',
 		site,
@@ -433,14 +483,11 @@ async function buildsExamples(project: string): Promise<void> {
 			VITE_NULL3D_SAMPLES_BASE: './samples/',
 		},
 	);
+	if (!cacheOff()) pruneCacheLocked(SITE_SHADER_CACHE, SITE_SHADER_CACHE_BYTES);
 	console.log('\nStart demos from the website build');
 	await withBrowser(join(project, 'dist-site'), false, async (browser, server) => {
 		const page = await browser.newPage();
-		const errors: string[] = [];
-		page.on('pageerror', (error) => errors.push(error.message));
-		page.on('console', (message) => {
-			if (message.type() === 'error') errors.push(message.text());
-		});
+		const errors = pageErrors(page);
 		for (const demo of BUILT_PAGES) {
 			const started = performance.now();
 			errors.length = 0;
