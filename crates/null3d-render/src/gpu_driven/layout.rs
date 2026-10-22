@@ -201,6 +201,9 @@ pub(super) struct Bucket {
     /// The threshold bias that picks its sources' levels of detail: 1 for the quality settings'
     /// threshold, and above or below 1 for a coarser or a finer level.
     pub(super) bias: f32,
+    /// The cluster tree that its mesh draws in the camera's views, as a place in
+    /// [`Layout::clusters`], or `None` for a bucket whose mesh draws its whole triangle list.
+    pub(super) cluster: Option<u32>,
 }
 
 /// One indexed indirect draw of each view: a part of a bucket's mesh.
@@ -329,6 +332,17 @@ struct BatchRows {
     layers: u32,
 }
 
+/// One cluster mesh: its first patch in the layout's tables, the patches it has, the slot of its
+/// copy in a view's compacted instances, the first of its indirect draws, and its base vertex.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(super) struct ClusterMesh {
+    pub(super) first_patch: u32,
+    pub(super) patch_count: u32,
+    pub(super) slot: u32,
+    pub(super) first_draw: u32,
+    pub(super) base_vertex: u32,
+}
+
 /// The source layout and bucket tables, rebuilt when the structure changes.
 #[derive(Default)]
 pub(super) struct Layout {
@@ -382,6 +396,12 @@ pub(super) struct Layout {
     pub(super) marks: Vec<u8>,
     /// The buckets that `marks` marks, in bucket order.
     pub(super) level_buckets: Vec<u32>,
+    /// The cluster meshes that the camera's views draw from their trees.
+    pub(super) clusters: Vec<ClusterMesh>,
+    /// Every cluster patch of those meshes, eight words each: its sphere and its record.
+    pub(super) cluster_patches: Vec<[u32; 8]>,
+    /// Every patch's indices, one patch after another.
+    pub(super) cluster_indices: Vec<u32>,
     /// Each bucket's base as the GPU holds its record, so a frame uploads the records of the
     /// buckets whose slice moved.
     pub(super) placed: Vec<u32>,
@@ -939,6 +959,9 @@ impl Layout {
         self.buckets.clear();
         self.draws.clear();
         self.skinned.clear();
+        self.clusters.clear();
+        self.cluster_patches.clear();
+        self.cluster_indices.clear();
         self.parallax = false;
         let (mut copied, mut indexed) = (0, 0);
         for &(key, count) in key_counts.iter() {
@@ -960,6 +983,42 @@ impl Layout {
             };
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let parts = meshes.parts(slot, pipeline.state & state_flags::LINE_LIST != 0);
+            // A mesh with a tree of cluster patches draws it in the camera's views, when its
+            // vertices fit one part, which every patch's indices then name.
+            let tree = settings
+                .patches()
+                .of(mesh)
+                .filter(|_| matches!(drawn, Drawn::Scene) && parts.len() == 1);
+            let slot_base = if by_index { indexed } else { copied };
+            let first_draw = self.draws.len() as u32;
+            let cluster = tree.map(|tree| {
+                let index = self.clusters.len() as u32;
+                self.clusters.push(ClusterMesh {
+                    first_patch: self.cluster_patches.len() as u32,
+                    patch_count: tree.len() as u32,
+                    slot: slot_base,
+                    first_draw,
+                    base_vertex: parts[0].base_vertex,
+                });
+                // A patch's run starts in its own mesh's indices, which follow the indices of the
+                // meshes before it in the scene's table.
+                let base = self.cluster_indices.len() as u32;
+                for (k, record) in tree.records().iter().enumerate() {
+                    let sphere = tree.bounds()[k];
+                    self.cluster_patches.push([
+                        sphere[0].to_bits(),
+                        sphere[1].to_bits(),
+                        sphere[2].to_bits(),
+                        sphere[3].to_bits(),
+                        record[0] + base,
+                        record[1],
+                        record[2],
+                        record[3],
+                    ]);
+                }
+                self.cluster_indices.extend_from_slice(tree.indices());
+                index
+            });
             // A displaced material moves vertices past its mesh's sphere, by up to its margin.
             let margin = settings.materials().bounds_margin(material.wrapping_sub(1));
             let (center, radius) = local_sphere(scene, bounds, slot.radius + margin);
@@ -1036,7 +1095,7 @@ impl Layout {
                 scene_depth,
                 base: *base,
                 capacity: count,
-                first_draw: self.draws.len() as u32,
+                first_draw,
                 draws: parts.len() as u32,
                 center,
                 radius,
@@ -1052,6 +1111,7 @@ impl Layout {
                 // A bucket of a scene object whose bias differs from the quality settings' holds
                 // that object's bias; every other bucket takes the threshold as it is.
                 bias: object.map_or(1.0, |slot| scene.level_biases()[slot as usize]),
+                cluster,
             });
             *base += count;
             self.draws.extend(parts.iter().enumerate().map(|(k, part)| {

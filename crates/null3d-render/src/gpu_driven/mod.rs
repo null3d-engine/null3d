@@ -133,6 +133,7 @@
 //! tables and scratch space between rebuilds. Only the first frames after the scene grows, with a
 //! new batch, mesh, view, or mesh and material pair, allocate.
 
+mod clusters;
 mod copies;
 mod cull;
 mod direct;
@@ -327,7 +328,35 @@ mod ids {
         light_grid(view) + 2
     }
     /// The uniform buffer of bloom's steps and of the final pass's bloom build.
-    pub const BLOOM: u32 = LIGHT_BUFFERS + 3 * MAX_VIEWS as u32;
+    /// Each view's cluster pass: its per-patch runs and offsets, its index list, its indirect
+    /// draws and its parameters, five ids from `CLUSTER_BUFFERS + 5 * view`, the view's bind group
+    /// after those, and the scene's tables after the groups.
+    const CLUSTER_BUFFERS: u32 = LIGHT_BUFFERS + 3 * MAX_VIEWS as u32;
+
+    pub const fn cluster_runs(view: ViewId) -> u32 {
+        CLUSTER_BUFFERS + 5 * view.index() as u32
+    }
+    pub const fn cluster_offsets(view: ViewId) -> u32 {
+        cluster_runs(view) + 1
+    }
+    pub const fn cluster_list(view: ViewId) -> u32 {
+        cluster_runs(view) + 2
+    }
+    pub const fn cluster_draws(view: ViewId) -> u32 {
+        cluster_runs(view) + 3
+    }
+    pub const fn cluster_params(view: ViewId) -> u32 {
+        cluster_runs(view) + 4
+    }
+    pub const fn cluster_group(view: ViewId) -> u32 {
+        CLUSTER_BUFFERS + 5 * MAX_VIEW_IDS as u32 + view.index() as u32
+    }
+    /// The scene's patch table and its indices, which every view's cluster pass reads.
+    pub const CLUSTER_PATCHES: u32 = CLUSTER_BUFFERS + 6 * MAX_VIEW_IDS as u32;
+    pub const CLUSTER_INDICES: u32 = CLUSTER_PATCHES + 1;
+    /// The cluster pass's one compute pipeline.
+    pub const CLUSTER: u32 = CLUSTER_INDICES + 1;
+    pub const BLOOM: u32 = CLUSTER + 1;
     /// The skinned vertex buffers that the skinning pass writes and the passes that draw skinned
     /// meshes read, one id each from here.
     const SKINNED: u32 = BLOOM + 1;
@@ -801,6 +830,8 @@ pub struct GpuDrivenRenderer {
     /// Grid-cell culling: the scene's still objects in cell order, and each cell's box.
     cells: CellCulling,
     culling: Culling,
+    /// The cluster levels' tables and each view's buffers.
+    clusters: clusters::Clusters,
     /// The views' CPU culling on the direct-draw path.
     direct: Direct,
     /// Each camera view's depth pyramid, with occlusion culling.
@@ -1047,6 +1078,7 @@ impl GpuDrivenRenderer {
             prepass_views: 0,
             cells: CellCulling::new(config.cell_culling, config.direct_draws),
             culling: Culling::new(config.index_instances),
+            clusters: clusters::Clusters::default(),
             direct: Direct::default(),
             pyramids: Pyramids::default(),
             lines: LinesPass::new(ids::LINES),
@@ -1538,6 +1570,7 @@ impl GpuDrivenRenderer {
         if !self.created {
             if !self.config.direct_draws {
                 cull::create_pipeline(list)?;
+                clusters::Clusters::create_pipeline(list)?;
             }
             lights::create_pipelines(list)?;
         }
@@ -1969,6 +2002,14 @@ impl GpuDrivenRenderer {
             }
             (false, false)
         };
+        // The scene's cluster tables follow its layout: they upload again when it changes.
+        let clusters_recreated = self.clusters.apply_tables(
+            list,
+            arena,
+            &self.layout,
+            upload_everything,
+            binding_bytes,
+        )?;
         // Build the motion tables when their layout changes, even while its pipelines load.
         // Once the view can draw, the scene may no longer need a layout upload.
         if motion && upload_everything {
@@ -2042,6 +2083,8 @@ impl GpuDrivenRenderer {
             } else {
                 self.culling
                     .apply(list, view, layout, recreated, binding_bytes, occludes)?;
+                self.clusters
+                    .apply(list, view, layout, clusters_recreated, binding_bytes)?;
             }
             if !records || self.config.direct_draws {
                 continue;
@@ -2242,6 +2285,22 @@ impl GpuDrivenRenderer {
                         cells,
                         levels.as_ref(),
                         &detail,
+                    )?;
+                    let draws_before = if levels.is_some() {
+                        layout.draws.len() as u32
+                    } else {
+                        0
+                    };
+                    self.clusters.upload(
+                        list,
+                        arena,
+                        view,
+                        layout,
+                        clusters::ViewRules {
+                            planes: frame.frustum.planes(),
+                            levels: detail.uniform(),
+                            draws_before,
+                        },
                     )?;
                 }
                 let offsets = if self.config.direct_draws {
@@ -2539,6 +2598,7 @@ impl GpuDrivenRenderer {
 
         let (layout, casters, culling, lines) =
             (&self.layout, &self.casters, &self.culling, &self.lines);
+        let clusters = &self.clusters;
         let pyramids = &self.pyramids;
         // Without marked occluders, or until occlusion culling's pipelines are built, the frame
         // draws no occluders' depth and builds no pyramid: each camera view culls once, as without
@@ -2626,12 +2686,15 @@ impl GpuDrivenRenderer {
                 }
                 Role::Cull(view) if direct_draws && drawn(view) => Ok(()),
                 Role::Cull(view) if drawn(view) => {
-                    let phase = if occluding && culling.occludes(view) {
-                        Phase::Early
-                    } else {
-                        Phase::Once
-                    };
-                    culling.record(list, view, layout_of(view), phase)
+                    let early = occluding && culling.occludes(view);
+                    let phase = if early { Phase::Early } else { Phase::Once };
+                    culling.record(list, view, layout_of(view), phase)?;
+                    // Cluster levels follow the phase that fills the draws that the view's opaque
+                    // pass reads: the late one where the view culls in two phases.
+                    if !early {
+                        clusters.record(list, view, layout_of(view))?;
+                    }
+                    Ok(())
                 }
                 Role::Prepass(view) | Role::Occluders(view) if drawn(view) => {
                     if direct_draws {
@@ -2664,7 +2727,8 @@ impl GpuDrivenRenderer {
                 }
                 Role::Pyramid(view) if drawn(view) && occluding => pyramids.record(list, view),
                 Role::LateCull(view) if drawn(view) && occluding => {
-                    culling.record(list, view, layout, Phase::Late)
+                    culling.record(list, view, layout, Phase::Late)?;
+                    clusters.record(list, view, layout)
                 }
                 Role::OutlineMask if drawn(ViewId::OUTLINE) => {
                     if direct_draws {

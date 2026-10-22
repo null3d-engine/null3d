@@ -58,7 +58,9 @@ The asset tool builds the tree with `--clusters`, as [the asset pipeline](../gui
 
 A view draws a patch while the patch's own error passes its threshold and the error of the patch above it does not. A patch that fails the threshold is too coarse for that distance, so the walk descends into its children. The patches that draw then cover the mesh once, and the patches of one group switch together, so no gap opens.
 
-The engine reads the tree from a file and draws the whole mesh for now. Drawing the patches of a tree is not built yet. Meshes that a skin or a morph target bends, meshes whose material blends or masks, and meshes with many copies keep whole levels.
+The engine draws a tree's patches on WebGPU. A compute pass picks the patches that a view draws, copies their indices into a list of the view's own, and the view draws them in one draw. A view that sees none of a mesh's patches draws none of it. The pass costs one dispatch over the patches and one copy of the indices that draw, and the list takes about four bytes an index.
+
+On WebGL2 the mesh still draws its whole triangle list, and the shadow maps draw it whole on both paths. Whole levels remain the fallback for those views. Meshes that a skin or a morph target bends, meshes whose material blends or masks, and meshes with many copies keep whole levels.
 
 ## How the engine picks a level
 
