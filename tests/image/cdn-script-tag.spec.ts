@@ -57,8 +57,8 @@ let cdnOrigin = '';
 
 test.beforeAll(async () => {
 	test.setTimeout(15 * 60_000);
-	// The web server chain builds this folder first; this call finds it up to date. Alone, as in a
-	// run of this file by itself, it makes the build here.
+	// No other step makes this build, so the test makes it here, or finds the one that an earlier run
+	// made up to date.
 	buildCdn(REPO_ROOT, BUILD);
 	// One server answers for both hosts on one port, so the page and the CDN differ in their origin
 	// as they do on the web.

@@ -90,10 +90,10 @@ import { keptCommits } from './hooks/check-trailers';
 import { copyInPlace, replaceFolder } from './lib/atomic-files';
 import {
 	acquireLock,
+	acquirePageBuildLock,
 	type CargoRun,
 	cacheDir,
 	cacheOff,
-	cacheRoot,
 	hashFiles,
 	hashOf,
 	type LineSink,
@@ -959,9 +959,7 @@ async function buildToolModules(
  */
 function buildEngineTestPage(): BuiltFile[] {
 	console.log('\nbuilding the engine test page for production');
-	// One page build at a time on the machine: two at once leave the bundler blocked in its own
-	// callback, gaining a tenth of a second of processor time a minute, and neither finishes.
-	const release = acquireLock(join(cacheRoot(), 'page-build.lock'));
+	const release = acquirePageBuildLock();
 	try {
 		const args = ['vite', 'build', '--sourcemap', 'hidden', '--outDir', JS_BUILD_DIR];
 		// The report names every file that the build writes, so a build with many first-use shader
