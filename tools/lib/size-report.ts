@@ -412,6 +412,12 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	},
 	{ name: 'sketch-worker-gpu.js', module: 'generated/gpu.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-tasks.js', module: 'shared/tasks.ts', loadedBy: 'sketch-worker-ktx2.js' },
+	// The worker bootstrap, which the first feature of a worker that starts one of its own loads.
+	{
+		name: 'sketch-worker-worker-start.js',
+		module: 'shared/worker-start.ts',
+		loadedBy: 'sketch-worker-tasks.js',
+	},
 	{ name: 'gltf-worker.js', module: 'workers/gltf-worker.ts', loadedBy: 'sketch-worker-gltf.js' },
 	{ name: 'gltf-meshopt.js', module: 'scene/gltf-meshopt.ts', loadedBy: 'gltf-worker.js' },
 	{ name: 'gltf-draco.js', module: 'scene/gltf-draco.ts', loadedBy: 'gltf-worker.js' },

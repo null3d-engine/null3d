@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>null3D from a CDN</title>
+		<style>
+			html,
+			body {
+				margin: 0;
+				height: 100%;
+				background: #0b1220;
+			}
+			canvas {
+				display: block;
+				width: 100%;
+				height: 100%;
+			}
+		</style>
+	</head>
+	<body>
+		<canvas id="scene"></canvas>
+		<script>
+			// An import map gives the engine its package name, as a bundled project has it. It is made
+			// here and appended before any module runs, which is when a browser reads one.
+			const given = new URLSearchParams(location.search).get('cdn');
+			if (given && new URLSearchParams(location.search).get('map') === '1') {
+				const url = given.endsWith('/') ? given : `${given}/`;
+				const map = document.createElement('script');
+				map.type = 'importmap';
+				map.textContent = JSON.stringify({ imports: { '@null3d/engine': `${url}lib/index.js` } });
+				document.head.append(map);
+			}
+		</script>
+		<script type="module">
+			// Where the CDN build lives. Point this at your own address. The test that runs this page
+			// passes the folder it serves with ?cdn=.
+			const base = new URLSearchParams(location.search).get('cdn') ?? 'https://cdn.example.com/null3d/';
+			const CDN = base.endsWith('/') ? base : `${base}/`;
+			// The page's own import, which the map names. The sketch below names the full address,
+			// because a worker does not read the page's import map.
+			const entry = new URLSearchParams(location.search).get('map') === '1' ? '@null3d/engine' : `${CDN}lib/index.js`;
+
+			try {
+				// The sketch is a module of its own: the engine runs it in a worker on a cross-origin
+				// isolated page, and on this page's thread otherwise, so a module keeps both paths the same.
+				const sketch = `
+import { defineSketch } from "${CDN}lib/index.js";
+
+export default defineSketch(({ scene, geometry, materials, page }) => {
+	scene.setBackground('#0b1220');
+	const camera = scene.createPerspectiveCamera({ fov: 45, position: [0, 1, 4], target: [0, 0, 0] });
+	scene.setActiveCamera(camera);
+	scene.createMesh({
+		mesh: geometry.box({ width: 1.4, height: 1.4, depth: 1.4 }),
+		material: materials.unlit({ color: '#ff6a00' }),
+	});
+	let frames = 0;
+	return { onUpdate() { if (++frames === 3) page.post('drawn', { frames }); } };
+});
+`;
+
+				const { createEngine } = await import(entry);
+				const engine = await createEngine({
+					canvas: document.querySelector('#scene'),
+					sketch: URL.createObjectURL(new Blob([sketch], { type: 'text/javascript' })),
+				});
+				// The page reads back the frame through the engine, as the engine's tests do.
+				engine.onSketchMessage(async (name) => {
+					if (name !== 'drawn') return;
+					try {
+						const { width, height, pixels } = await engine.captureFrame();
+						const at = ((height >> 1) * width + (width >> 1)) * 4;
+						window.cdnTry = {
+							build: engine.mode.build,
+							threaded: engine.capabilities.threaded,
+							mapped: entry === '@null3d/engine',
+							width,
+							height,
+							center: [pixels[at], pixels[at + 1], pixels[at + 2], pixels[at + 3]],
+						};
+					} catch (error) {
+						window.cdnTryError = String(error);
+					}
+				});
+			} catch (error) {
+				window.cdnTryError = String(error);
+			}
+		</script>
+	</body>
+</html>
