@@ -14,6 +14,7 @@ interface Step {
 	name?: string;
 	run?: string;
 	uses?: string;
+	'continue-on-error'?: boolean;
 	with?: Record<string, unknown>;
 	env?: Record<string, string>;
 }
@@ -316,16 +317,17 @@ describe("CI's workflow", () => {
 		}
 	});
 
-	it('fills the browser and sample caches in the build job, which every job that reads them waits for', () => {
+	it('fills the browser and sample caches in a job that no other job waits for', () => {
+		const filler = jobNamed('browser-caches');
+		expect(needsOf(filler)).toEqual(['changes']);
 		for (const action of ['./.github/actions/playwright-chromium', './.github/actions/samples']) {
-			const fills = (jobNamed('build').steps ?? []).some(
-				({ uses, with: given }) => uses === action && given?.['cache-only'] === 'true',
-			);
-			expect(fills, action).toBe(true);
-			for (const [name, job] of Object.entries(jobs))
-				if (name !== 'build' && (job.steps ?? []).some(({ uses }) => uses === action))
-					expect(needsOf(job), `${name} reads ${action}`).toContain('build');
+			const fill = (filler.steps ?? []).find(({ uses }) => uses === action);
+			expect(fill?.with?.['cache-only'], action).toBe('true');
+			// A stalled mirror must not fail the run: each job then installs for itself.
+			expect(fill?.['continue-on-error'], action).toBe(true);
 		}
+		for (const [name, job] of Object.entries(jobs))
+			if (name !== 'ci-passed') expect(needsOf(job), name).not.toContain('browser-caches');
 		// The browser's key is Playwright's version: the package files change far more often.
 		const browser = readFileSync(
 			join(ROOT, '.github/actions/playwright-chromium/action.yml'),
