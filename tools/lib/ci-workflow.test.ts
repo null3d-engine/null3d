@@ -351,18 +351,24 @@ describe("CI's workflow", () => {
 			commandsOf(job).some(({ text }) => text.includes('tests/lib/load-server.ts')),
 		);
 		expect(builders.map(([name]) => name)).toEqual(['load-pages']);
+		// The builds travel through one action, which packs each content once and unpacks it.
+		const hands = (job: Job, mode: string) =>
+			(job.steps ?? []).some(
+				({ uses, with: given }) => uses === './.github/actions/load-pages' && given?.mode === mode,
+			);
+		expect(hands(jobNamed('load-pages'), 'upload')).toBe(true);
 		const servers = Object.entries(jobs).filter(
 			([, job]) => job.env?.NULL3D_LOAD_PAGES === 'prebuilt',
 		);
 		expect(servers.length).toBeGreaterThan(0);
 		for (const [name, job] of servers) {
 			expect(needsOf(job), name).toContain('load-pages');
-			const downloads = (job.steps ?? []).some(
-				({ uses, with: given }) =>
-					uses?.startsWith('actions/download-artifact@') === true && given?.name === 'load-pages',
-			);
-			expect(downloads, name).toBe(true);
+			expect(hands(job, 'download'), name).toBe(true);
 		}
+		for (const [name, job] of Object.entries(jobs))
+			for (const { uses, with: given } of job.steps ?? [])
+				if (uses?.startsWith('actions/') && given?.name === 'load-pages')
+					expect.unreachable(`${name} moves the load builds without the load-pages action`);
 	});
 
 	it('names in each pass key every script that its part starts, with their imports', () => {
