@@ -142,6 +142,8 @@ The object hides where that diameter covers fewer pixels than the `lodThreshold`
 
 The object draws nothing past the band that follows the hide distance. That band, 8% of the hide distance long, thins the coarsest level out with the same dither. A shrinking object then fades away instead of popping. The band needs a fading build, which a level that fades has. A mesh whose levels all switch at once disappears at the hide distance.
 
+The shadow maps hide a caster at their own threshold, which is the camera's times `lodShadowFactor`. So a caster's shadow goes before the object itself, while the object covers a few pixels on the screen. The shadow passes draw no band.
+
 ## Distance bands
 
 `setDrawRange` gives a band of distances in which a mesh, an instance batch or one of its rows draws. It works as Godot's visibility range and Bevy's `VisibilityRange` do:
@@ -152,8 +154,6 @@ grass.setDrawRange(0, 60); // a far edge only
 ```
 
 The mesh draws only while the camera's distance to its nearest point lies inside the band. Each edge fades inside the range over an 8% band, through the same dither. A stone then fades in as it comes near and out as it passes. A mesh that lies outside its band costs no draw on either GPU path. The `lodFade` quality setting turns these edges off on Low, where the dither costs tile GPUs their hidden-surface removal. A row's own range, in the array that `ranges: true` makes for a batch, overrides the batch's.
-
-The shadow maps hide a caster at their own threshold, which is the camera's times `lodShadowFactor`. So a caster's shadow goes before the object itself, while the object covers a few pixels on the screen. The shadow passes draw no band.
 
 ## Shadows
 
