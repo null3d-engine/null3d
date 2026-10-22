@@ -1765,6 +1765,32 @@ pub fn create_mesh_from_arrays(
     })
 }
 
+/// A mesh that draws the vertices of the live mesh `base` with the `indices` triangles that
+/// TypeScript wrote into the staging words, which the call frees. A level of a mesh with levels
+/// that the file stores as the base's own vertices with other indices costs the GPU indices
+/// alone. Returns the mesh id.
+#[wasm_bindgen(js_name = createLevelMesh)]
+pub fn create_level_mesh(base: u32, indices: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let words = indices as usize;
+        if staging.len() < words {
+            return Err(fail(codes::BAD_ARRAYS, [0, 0]));
+        }
+        // SAFETY: the words are initialized and aligned, and every bit pattern is an index.
+        let list = unsafe { std::slice::from_raw_parts(staging.as_ptr(), words) };
+        let added = e
+            .renderer
+            .settings_mut()
+            .meshes_mut()
+            .add_level(base, list)
+            .map(|id| id + 1)
+            .map_err(mesh_failure);
+        drop(staging);
+        added
+    })
+}
+
 /// The failure of a mesh that the storage refused.
 fn mesh_failure(error: MeshError) -> u32 {
     let morph = |problem: u32, value: u32| fail(codes::BAD_ARRAYS, [problem, value]);
