@@ -637,3 +637,26 @@ fn a_bias_divides_the_switch_of_one_object() {
         Picked::One(1)
     ));
 }
+
+/// The GPU culling shader repeats the core rule that hides a bound under the threshold. Only a mesh
+/// with levels has a last level that holds no geometry, so the shader hides that way only for a
+/// bucket that links to a coarser level. A mesh without levels draws at every distance there as it
+/// does on the job workers. A distance range still hides every source.
+#[test]
+fn the_culling_shader_hides_under_the_threshold_only_a_mesh_with_levels() {
+    let cull = include_str!("../../null3d-shaders/wgsl/cull.wgsl");
+    let decision = cull
+        .split("let hide = 2.0 * s.radius * factor;")
+        .nth(1)
+        .and_then(|rest| rest.split("return out;").next())
+        .expect("the culling shader decides whether a source hides");
+    assert!(
+        decision.contains("next != 0u"),
+        "a mesh without levels draws at every distance, but the shader hides it: {decision}"
+    );
+    // A source outside its distance range draws nothing whether or not its mesh has levels.
+    assert!(
+        decision.contains("out.start") && decision.contains("out.end"),
+        "a distance range must hide every source: {decision}"
+    );
+}
