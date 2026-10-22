@@ -10,6 +10,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ALONE_PROJECT_SUFFIX, ALONE_TAG } from '../tests/lib/alone.ts';
+import { PRODUCTION_PAGES_SWITCH } from '../tests/lib/server.ts';
 import {
 	bestWeights,
 	groupTests,
@@ -164,10 +165,14 @@ console.log(
 	`CI runs ${runIds.join(', ')}: the median time of each of ${times.size} tests in their browser jobs.`,
 );
 
-// One list of every project: the alone projects hold the tests that run alone, and the others hold
-// the shards' tests in the order that the shards split them.
+// One list of every project that the shards run, as they run it, without the production build,
+// which a job of its own runs: the alone projects hold the tests that run alone, and the others
+// hold the shards' tests in the order that the shards split them.
 const listed = parseTestList(
-	run(['bunx', 'playwright', 'test', '--list'], { cwd: join(root, 'tests'), env: { CI: '1' } }),
+	run(['bunx', 'playwright', 'test', '--list'], {
+		cwd: join(root, 'tests'),
+		env: { CI: '1', [PRODUCTION_PAGES_SWITCH]: 'skip' },
+	}),
 );
 const testDir = join(root, 'tests/image');
 const parallelFiles = new Set(
