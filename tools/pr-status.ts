@@ -14,8 +14,9 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-/** The milestone pull request, and the plan that lists its tasks. */
+/** The milestone pull request, its title, and the plan that lists its tasks. */
 const PR = '549';
+const TITLE = 'feat: the 0.2 release work for level of detail, effects and add-ons';
 const PLAN = '.internal/plan/m3-breakdown.md';
 const BASE = 'origin/main';
 
@@ -124,7 +125,9 @@ function main(): void {
 	}
 	const file = join(tmpdir(), `pr-${PR}-body.md`);
 	writeFileSync(file, body);
-	execFileSync('gh', ['pr', 'edit', PR, '--body-file', file], { stdio: 'inherit' });
+	execFileSync('gh', ['pr', 'edit', PR, '--title', TITLE, '--body-file', file], {
+		stdio: 'inherit',
+	});
 	console.log(`wrote the description of pull request ${PR}`);
 }
 
