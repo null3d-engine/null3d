@@ -146,8 +146,8 @@ function normalized(gains: Rgb): Rgb {
 	return [gains[0] / l, gains[1] / l, gains[2] / l];
 }
 
-/** The white of daylight at 6504 kelvin, which a temperature corrects toward. */
-const D65 = chromaticityToRgb(blackBody(6504));
+/** The neutral white of daylight at 6500 kelvin, which a temperature corrects toward. */
+const D65 = chromaticityToRgb(blackBody(6500));
 
 /**
  * The factor of each channel that corrects color shot under the light of `temperature` kelvin, with
