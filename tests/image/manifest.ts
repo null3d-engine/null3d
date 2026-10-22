@@ -2158,6 +2158,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270] as const,
 	},
+	{
+		// A threshold of 16 pixels draws patches far coarser than the mesh, so the picture shows
+		// the near ground fine and the far ground simplified.
+		name: 'cluster-coarse',
+		sketch: 'tests/pages/sketches/cluster-sketch.ts?coarse',
+		hold: 0,
+		size: [480, 270] as const,
+	},
 	// Levels of detail: copies of a sphere whose levels each take a color, just before and just past
 	// each of three switch distances. Every GPU path must draw the first path's image, so each
 	// switches at the same distances. The copies draw as objects and as the rows of a batch, with
