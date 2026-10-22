@@ -308,7 +308,7 @@ function layerTextures(
 	const map = anisotropy.anisotropyTexture;
 	if (coatSheen && (iridescence ?? iridescenceThickness ?? map) !== undefined)
 		notes.push(
-			`${what}'s iridescence or anisotropy textures, which the engine does not draw beside a clear coat's or a sheen's textures`,
+			`${what}'s iridescence or anisotropy textures, which the engine does not draw beside a clear coat's or a sheen's`,
 		);
 	return {
 		coat: coatMap,
@@ -1507,9 +1507,7 @@ export function parseGltf(
 			// The stretch's direction comes from the surface's tangent frame, which the shader
 			// builds from the texture coordinates. A material with no map draws without it.
 			if (values.anisotropy !== undefined && values.anisotropy !== 0 && !Object.keys(maps).length) {
-				notes.push(
-					`${what}'s anisotropyStrength, which needs a map for the surface's texture coordinates`,
-				);
+				notes.push(`${what}'s anisotropyStrength, which needs a map for its texture coordinates`);
 				values.anisotropy = 0;
 				values.anisotropyRotation = 0;
 			}

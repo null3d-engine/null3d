@@ -841,7 +841,7 @@ describe('materials, textures and lights', () => {
 		expect(maps.iridescenceMap).toBeUndefined();
 		expect(maps.anisotropyMap).toBeUndefined();
 		expect(data.notes).toEqual([
-			"material 0's iridescence or anisotropy textures, which the engine does not draw beside a clear coat's or a sheen's textures",
+			"material 0's iridescence or anisotropy textures, which the engine does not draw beside a clear coat's or a sheen's",
 		]);
 	});
 
