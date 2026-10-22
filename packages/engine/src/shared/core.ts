@@ -734,6 +734,15 @@ export interface CoreGlue extends CoreErrors {
 	markParticleValues(id: number): number;
 	/** Lets soft particles fade near the surfaces behind them, or draws them with hard edges. */
 	setSoftParticles(on: boolean): number;
+	/**
+	 * Makes a draw of `vertices` vertices for each of `instances` copies for the object in scene
+	 * slot `slot`, and returns its id, or 0 when the scene holds the most draws already.
+	 */
+	createVertexDraw(slot: number, vertices: number, instances: number): number;
+	/** Forgets a draw that makes its own vertices. */
+	destroyVertexDraw(id: number): number;
+	/** Sets the vertices of one shape and the number of its copies of such a draw. */
+	setVertexDrawCounts(id: number, vertices: number, instances: number): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/** Lets materials with parallax draw it, or draws them with their displacement alone. */
@@ -1162,6 +1171,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'markParticleRecords',
 	'markParticleValues',
 	'setSoftParticles',
+	'createVertexDraw',
+	'destroyVertexDraw',
+	'setVertexDrawCounts',
 	'setSoftwareOcclusion',
 	'setParallax',
 	'setOcclusionBuffer',

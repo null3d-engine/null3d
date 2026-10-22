@@ -76,6 +76,7 @@ use crate::ssr::{self, Ssr, TraceFrame};
 use crate::subsurface::{self, SubsurfaceFrame};
 use crate::textures::TextureStore;
 use crate::textures::budget::NeedView;
+use crate::vertex_draws::VertexDrawTable;
 use crate::view::{CanvasRect, MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
 
 /// Engine mesh ids count from 1; 0 marks an object with no mesh, such as a group or a camera.
@@ -1033,6 +1034,8 @@ pub struct SceneSettings {
     decal_layers: u32,
     /// The particle systems of the particles add-on.
     particles: ParticleTable,
+    /// The draws that make their vertices from a vertex count alone.
+    vertex_draws: VertexDrawTable,
     /// The meshes with levels of detail.
     levels: Levels,
     /// How the levels of detail are picked, which the quality settings set.
@@ -1160,6 +1163,7 @@ impl SceneSettings {
             area_shading: AreaShading::default(),
             area_wanted: false,
             particles: ParticleTable::default(),
+            vertex_draws: VertexDrawTable::default(),
             levels: Levels::default(),
             level_quality: LevelQuality::default(),
             level_scale: RenderScale::FULL,
@@ -2615,6 +2619,16 @@ impl SceneSettings {
     /// The particle systems, to make, change and destroy them.
     pub fn particles_mut(&mut self) -> &mut ParticleTable {
         &mut self.particles
+    }
+
+    /// The draws that make their vertices from a vertex count alone.
+    pub fn vertex_draws(&self) -> &VertexDrawTable {
+        &self.vertex_draws
+    }
+
+    /// Those draws, to make, change and destroy them.
+    pub fn vertex_draws_mut(&mut self) -> &mut VertexDrawTable {
+        &mut self.vertex_draws
     }
 
     /// Moves the views on to the next frame: each mirror view takes the camera's layers unless it

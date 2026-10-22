@@ -24,6 +24,7 @@ use null3d_render::output::{Antialias, ToneMapping};
 use null3d_render::particles;
 use null3d_render::skinning::SkinningMode;
 use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET, MAX_LAYERS};
+use null3d_render::vertex_draws;
 use null3d_render::{debug_view, fog};
 
 /// Fields of `sceneArrays`.
@@ -978,6 +979,15 @@ pub fn typescript() -> String {
                 ("FRAME_FLOATS", particles::FRAME_FLOATS as u32),
                 ("MAX_SYSTEMS", particles::MAX_SYSTEMS as u32),
                 ("MAX_RECORDS", particles::MAX_RECORDS),
+            ],
+        ),
+        // The most that a draw which makes its own vertices holds.
+        (
+            "VERTEX_DRAW",
+            &[
+                ("MAX_DRAWS", vertex_draws::MAX_DRAWS as u32),
+                ("MAX_VERTICES", vertex_draws::MAX_VERTICES),
+                ("MAX_INSTANCES", vertex_draws::MAX_INSTANCES),
             ],
         ),
         (

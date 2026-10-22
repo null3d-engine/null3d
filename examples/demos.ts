@@ -451,6 +451,17 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'rain',
+		group: 'Light, materials and effects',
+		sketch: new URL('./rain/sketch.ts', import.meta.url),
+		title: 'Rain from a vertex count',
+		scene: 'A night street in the rain',
+		summary:
+			'Fifty thousand rain streaks from one draw with a vertex count and no mesh data: the shader makes every streak from its instance index and the time, wraps the field in a box around the camera, and the frame uploads nothing.',
+		hold: 1.5,
+		timeoutSeconds: 90,
+	},
+	{
 		name: 'particles',
 		group: 'Light, materials and effects',
 		sketch: new URL('./particles/sketch.ts', import.meta.url),
