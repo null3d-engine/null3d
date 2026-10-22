@@ -1134,12 +1134,15 @@ jobs:
     # The benchmark pages' tests on SwiftShader, in shards of about equal measured time.
     # Playwright's own --shard splits the test list into equal counts in file order, and these
     # tests differ too much in length for that: it gave one shard 221 tests and over 13 minutes,
-    # and the other 4 tests and 3 minutes. Shard 1 runs the tests that BENCH_SHARD_1 names, the
-    # parity shards the tests against three.js, and shard 2 every other test, so each test runs in
-    # exactly one shard.
+    # and the other 4 tests and 3 minutes. Shard 1 runs the tests that BENCH_SHARD_1 names, shard 2
+    # those that BENCH_S1 names, the parity shards the tests against three.js, and shard 3 every
+    # other test, so each test runs in exactly one shard.
     # S4's and S5's pages run in order in one worker each, and both sit in shard 1: beside the
     # parity tests' setup, S4 on WebGL2 twice measured no frame on SwiftShader. The engine's limit
     # of frames in flight failed open then (.dev/implementation-notes.md).
+    # In run 39854225392 (23 October 2026), shard 1 also held S1's three scenes and took 22.9
+    # minutes of tests: S3 546 s, S5 534 s, S1 376 s, S1-static 346 s, S1-cells 339 s and S4 332 s,
+    # on two workers. S1's scenes now run in shard 2.
     # Each parity scene's tests run in order in one worker, and Playwright's --shard keeps such a
     # group together, so the parity shards split the scenes by count. In main's run 38176334909
     # (11 October 2026), the parity tests took 13.2 minutes one after another, and the other tests
@@ -1160,19 +1163,23 @@ jobs:
           - shard: 1
             tests: --grep "$BENCH_SHARD_1"
           - shard: 2
-            tests: --grep-invert "$BENCH_SHARD_1|$PARITY_TESTS"
+            tests: --grep "$BENCH_S1"
           - shard: 3
-            tests: parity.spec.ts --shard=1/3
+            tests: --grep-invert "$BENCH_SHARD_1|$BENCH_S1|$PARITY_TESTS"
           - shard: 4
-            tests: parity.spec.ts --shard=2/3
+            tests: parity.spec.ts --shard=1/3
           - shard: 5
+            tests: parity.spec.ts --shard=2/3
+          - shard: 6
             tests: parity.spec.ts --shard=3/3
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       # The load pages job built the benchmark pages that these pages serve.
       NULL3D_LOAD_PAGES: prebuilt
       HUSKY: "0"
-      BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3|s1|s1-static|s1-cells)\b'
+      BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3)\b'
+      # S1's three scenes: the pattern's s1 also names s1-static and s1-cells.
+      BENCH_S1: 'pages\.spec\.ts.*\bs1\b'
       # The parity tests, by the title of each scene's group in bench/tests/parity.spec.ts.
       PARITY_TESTS: 'against three\.js'
     steps:

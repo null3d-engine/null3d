@@ -216,6 +216,16 @@ describe("CI's workflow", () => {
 		expect(parity.every(([, total]) => total === count)).toBe(true);
 	});
 
+	it("leaves out of the benchmark pages' remaining shard every test that another shard runs", () => {
+		const tests = (matrixOf('bench').include ?? []).map(({ tests }) => String(tests));
+		const named = tests.flatMap((t) => [...(/^--grep "\$(\w+)"$/.exec(t)?.slice(1) ?? [])]);
+		const rest = tests.filter((t) => t.startsWith('--grep-invert'));
+		expect(named.length).toBeGreaterThan(0);
+		expect(rest).toHaveLength(1);
+		for (const name of [...named, 'PARITY_TESTS']) expect(rest[0]).toContain(`$${name}`);
+		for (const name of named) expect(jobNamed('bench').env?.[name], name).toBeTruthy();
+	});
+
 	it("runs the shader build's determinism check in exactly one job", () => {
 		const parts = (matrixOf('rust-tests').include ?? []).filter(
 			({ shard }) => shard === 'determinism',
