@@ -138,7 +138,7 @@ export default defineSketch(async (context) => {
 		switches.has('inertial'),
 	);
 	const followTerrain = switches.has('terrain') ? createTerrainGround(context) : undefined;
-	const pickViews = switches.has('impostors') ? await createImpostorField(context) : undefined;
+	if (switches.has('impostors')) await createImpostorField(context);
 	// The camera's position for the add-ons' steps, and the target that the path writes beside it.
 	const cameraAt = new Float64Array(3);
 	const lookAt = new Float64Array(3);
@@ -252,10 +252,9 @@ export default defineSketch(async (context) => {
 		moveCasters?.(t);
 		moveSmoke?.(t);
 		turnDecals?.(t);
-		if (followTerrain || pickViews) {
+		if (followTerrain) {
 			s1Camera(t, cameraAt, lookAt);
 			followTerrain?.(cameraAt);
-			pickViews?.(cameraAt);
 		}
 		if (outlined) {
 			line.width = 2 + Math.sin(t);
