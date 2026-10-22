@@ -42,7 +42,7 @@ Errors grow from level to level. The asset tool works out each level's error for
 
 ## A material per level
 
-A level may name a material of its own. A far level then shades more cheaply than the near one: without a normal map, or with an opaque mask in place of an alpha-tested one:
+A level may name a material of its own, so a far level shades more cheaply. It can leave out the normal map, or use an opaque mask in place of an alpha-tested one:
 
 ```ts
 const bark = materials.standard({ map: barkMap, normalMap: barkNormal });
@@ -54,7 +54,7 @@ tree.setLevels([
 ]);
 ```
 
-A level without a material draws with the material of the level before it, and the base level draws with the object's or the instance batch's material. A glTF file gives a level its own material when the level node's primitive names another material than the node's primitive. Each material draws in its own buckets, so the far levels' pipelines leave out what their materials do not use.
+A level without a material draws with the material of the level before it. The base level draws with the object's or the instance batch's material. A glTF file gives a level its own material when the level node's primitive names another material than the node's primitive. Each material draws in its own buckets, so the far levels' pipelines leave out what their materials do not use.
 
 ## Levels from the asset tool
 
