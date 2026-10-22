@@ -8,8 +8,8 @@ mod subset;
 use std::collections::BTreeMap;
 
 use common::{
-    SEE_RULES, SHADER, assert_feature, assert_same, build, build_each_in_shader_compiler,
-    build_wgsl, column_of, compiler_processes, only_problem, project, wgsl,
+    SEE_RULES, SHADER, assert_feature, build, build_each_in_shader_compiler, build_wgsl, column_of,
+    compiler_processes, only_problem, project, same, wgsl,
 };
 
 use null3d_shaders::{
@@ -1250,7 +1250,9 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
 /// twenty or more feature sets those builds make; and a whole-shader first-use module, through
 /// `environment`. `lit` has the feature bits of the textured standard material, less its relief
 /// bits, at about a seventh of its builds. The textured material alone is most of the whole
-/// build, and two builds of it made this check the longest part of CI by far.
+/// build, and two builds of it made this check the longest part of CI by far. The module exports
+/// test of `null3d-shaders-wasm` builds the same list, for the same reason, and keeps a copy of it,
+/// since one crate's tests cannot read another's.
 const DETERMINISM_ENTRIES: &[&str] = &["lit", "environment", "pick", "timer_mark"];
 
 /// The one test that builds every shader of the repository. A full build takes minutes, and
@@ -1324,10 +1326,12 @@ fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule()
         };
         (again.map(|again| again.join().unwrap()), failures)
     });
-    if checks {
-        the_shader_compiler_builds_every_entry_of_the_repository(&inputs, &output);
-    }
     let mut failures = failures;
+    if checks {
+        failures.extend(the_shader_compiler_builds_every_entry_of_the_repository(
+            &inputs, &output,
+        ));
+    }
     if let Some(again) = again {
         // Rendering every module of a build costs minutes on the larger entries, so each output is
         // rendered once and both checks read the same modules.
@@ -1440,15 +1444,19 @@ fn every_module_kind(modules: &BTreeMap<String, String>) -> Result<(), String> {
 }
 
 /// Builds each entry of the manifest alone through the shader compiler when
-/// `NULL3D_SHADER_COMPILER` is set, and fails when its result differs from the native build of
-/// these inputs for that entry. Comparing with that build is what keeps the entry built once: the
+/// `NULL3D_SHADER_COMPILER` is set, and gives a failure for each piece whose result differs from
+/// the native build of these inputs for that entry. The failures join the test's other checks, so
+/// a run reports a difference beside every rule that the native build breaks. Comparing with that build is what keeps the entry built once: the
 /// reference `output` is the build the test's other checks read. An entry that builds nothing of
 /// its own, such as the template of custom materials, has no such build and is skipped. An entry
 /// that costs more than an even share of the compiler processes goes to them in pieces, each a
 /// part of its builds, so no process spends the run on one entry while the others wait.
-fn the_shader_compiler_builds_every_entry_of_the_repository(inputs: &Inputs, output: &Output) {
+fn the_shader_compiler_builds_every_entry_of_the_repository(
+    inputs: &Inputs,
+    output: &Output,
+) -> Vec<String> {
     if std::env::var_os("NULL3D_SHADER_COMPILER").is_none() {
-        return;
+        return Vec::new();
     }
     let costs = null3d_shaders::entry_costs(inputs).expect("the shader manifest");
     assert!(!costs.is_empty(), "the manifest names no shader");
@@ -1474,11 +1482,13 @@ fn the_shader_compiler_builds_every_entry_of_the_repository(inputs: &Inputs, out
         }
     }
     let requests: Vec<Inputs> = pieces.iter().map(|(_, piece)| piece.clone()).collect();
+    let mut failures = Vec::new();
     build_each_in_shader_compiler(&requests, |index, compiled| {
         let (name, piece) = &pieces[index];
         let builds = &null3d_shaders::build_names(piece).expect("the piece's manifest")[*name];
-        assert_same(name, &compiled, &one_entry(name, output, builds));
+        failures.extend(same(name, &compiled, &one_entry(name, output, builds)).err());
     });
+    failures
 }
 
 /// The result that the native build of the shard gives for one entry, with the named builds alone,

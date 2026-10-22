@@ -220,9 +220,9 @@ jobs:
   rust-tests:
     # The Rust tests through cargo-nextest, which runs the tests of every test file at once.
     # cargo test runs the files one after another, and a few slow files then set the job's time.
-    # The test that builds every shader takes longer than all the others together, and the test
-    # that prepares every shader module through the WebAssembly compiler builds the whole shader set
-    # as well, so each runs in shards of its own beside the other tests. The profiles in
+    # The test that builds every shader takes longer than all the others together. The
+    # shader-compiler job runs it in shards, through the compiler, with every check that reads the
+    # native build, so these parts run only its determinism check. The profiles in
     # .config/nextest.toml split the tests. The shader crates build optimized here, as the build
     # job's shader tool does.
     # --no-fail-fast runs every test after a failure, so a run reports every failing test.
@@ -261,47 +261,13 @@ jobs:
             tests: --workspace --profile ci
             partition: count:4/4
             limit: 35
-          # The whole shader build's shards split the manifest by each entry's build cost, and
-          # split the costliest entries' builds across shards too, so the shards take about equal
-          # time. The determinism check builds a few entries twice and compares the two builds, in a
-          # job of its own.
-          - part: the whole shader build (1 of 4)
-            id: whole-shader-build-1
-            tests: -p null3d-shaders --test build --profile whole-shader-build
-            shard: 0/4
-            limit: 25
-          - part: the whole shader build (2 of 4)
-            id: whole-shader-build-2
-            tests: -p null3d-shaders --test build --profile whole-shader-build
-            shard: 1/4
-            limit: 25
-          - part: the whole shader build (3 of 4)
-            id: whole-shader-build-3
-            tests: -p null3d-shaders --test build --profile whole-shader-build
-            shard: 2/4
-            limit: 25
-          - part: the whole shader build (4 of 4)
-            id: whole-shader-build-4
-            tests: -p null3d-shaders --test build --profile whole-shader-build
-            shard: 3/4
-            limit: 25
+          # The determinism check builds a few entries twice and compares the two builds, in a job
+          # of its own.
           - part: the shader build's determinism
             id: shader-determinism
             tests: -p null3d-shaders --test build --profile whole-shader-build
             shard: determinism
             limit: 25
-          # The module exports test prepares whole entries, so the costliest entry sets the longest
-          # shard's time, and a third shard would not shorten it.
-          - part: the shader module exports (1 of 2)
-            id: shader-module-exports-1
-            tests: -p null3d-shaders-wasm --profile shader-module-exports
-            shard: 0/2
-            limit: 45
-          - part: the shader module exports (2 of 2)
-            id: shader-module-exports-2
-            tests: -p null3d-shaders-wasm --profile shader-module-exports
-            shard: 1/2
-            limit: 45
     steps:
       - uses: actions/checkout@v5
       # A shader part reads only the shader crates, the crate they depend on, the Cargo files, the
@@ -468,10 +434,13 @@ jobs:
         uses: ./.github/actions/shaders
         with:
           run: bun tools/build-wasm.ts --pages-only
-      # The artifact's paths start at the repository's root, their closest shared folder.
+      # The artifact's paths start at the repository's root, their closest shared folder. It holds
+      # hundreds of megabytes of shader modules, and every later job waits for its upload, so it
+      # compresses at the fastest level.
       - uses: actions/upload-artifact@v4
         with:
           name: page-wasm
+          compression-level: 1
           path: |
             packages/engine/dist/
             packages/vite-plugin/dist/
@@ -648,11 +617,13 @@ jobs:
 
   shader-compiler:
     # The shader crate's build tests again through the build job's shader compiler, which must give
-    # the native build's results, then the compiler's own tests and the Vite plugin's WGSL tests.
-    # The repository's shader test splits into shards by build cost, as the whole shader build's
-    # does, and the first shard also runs the other tests. The compiler builds through WebAssembly
-    # on one thread for each process, so it needs twice the shards of the native build's test. A shard whose inputs passed in an earlier
-    # run passes again without building, as the shader parts of rust-tests do.
+    # the native build's results. The test that builds every shader splits into shards by build
+    # cost, and each shard builds its share natively, runs every check that reads that build, then
+    # builds the same share through the compiler on every core and compares the two. No other job
+    # runs those checks, so no other job builds the share natively. The first shard also runs the
+    # build file's other tests. The Vite plugin's compiler tests run in a job of their own below, so
+    # no shard runs them after its share. A shard whose inputs passed in an earlier run passes again
+    # without building, as the shader parts of rust-tests do.
     name: shader-compiler (${{ matrix.part }} of ${{ strategy.job-total }})
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
@@ -662,28 +633,34 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { part: 1, shard: 0/8 }
-          - { part: 2, shard: 1/8 }
-          - { part: 3, shard: 2/8 }
-          - { part: 4, shard: 3/8 }
-          - { part: 5, shard: 4/8 }
-          - { part: 6, shard: 5/8 }
-          - { part: 7, shard: 6/8 }
-          - { part: 8, shard: 7/8 }
+          - { part: 1, shard: 0/12 }
+          - { part: 2, shard: 1/12 }
+          - { part: 3, shard: 2/12 }
+          - { part: 4, shard: 3/12 }
+          - { part: 5, shard: 4/12 }
+          - { part: 6, shard: 5/12 }
+          - { part: 7, shard: 6/12 }
+          - { part: 8, shard: 7/12 }
+          - { part: 9, shard: 8/12 }
+          - { part: 10, shard: 9/12 }
+          - { part: 11, shard: 10/12 }
+          - { part: 12, shard: 11/12 }
     env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
       NULL3D_SHADER_SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@v5
-      # The shader compiler comes from the shader crates and the build tool, and the first shard's
-      # other tests read the Vite plugin and the packages' install as well.
-      # The key names the files that decide what the compiler produces, not the whole of tools/lib:
-      # that folder holds the size report, the limits report and the cache's own rules, and a change
-      # to any of them used to purge this pass and rebuild every shard cold (22 October 2026). A tool
-      # module that the shader build starts to import belongs in this list.
+      # The key names the files that decide what the compiler produces and the scripts that run it:
+      # the shader crates, the build tool that builds the compiler, the compiler's runner script and
+      # the Vite plugin, whose code the runner calls, with the packages' install. Not the whole of
+      # tools/lib: that folder holds the size report, the limits report and the cache's own rules,
+      # and a change to any of them used to purge this pass and rebuild every shard cold (22 October
+      # 2026). A script that a shard starts, or that such a script imports, belongs in this list, and
+      # tools/lib/ci-workflow.test.ts fails on one that the list leaves out.
       - name: The key of this shard's inputs
         id: inputs
-        run: echo "key=passed-v3-shader-compiler-${{ matrix.shard }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=passed-v4-shader-compiler-${{ matrix.shard }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shader-compiler.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}" >> "$GITHUB_OUTPUT"
       - name: Find an earlier pass with the same inputs
         id: passed
         uses: actions/cache/restore@v4
@@ -713,7 +690,7 @@ jobs:
           name: page-wasm
       - name: The shader compiler gives the native shader build's results
         if: steps.passed.outputs.cache-hit != 'true' && matrix.part == 1
-        run: bun run test:shader-compiler
+        run: bun run test:shader-compiler:build
       - name: The shader compiler gives the native shader build's results, for this shard's entries
         if: steps.passed.outputs.cache-hit != 'true' && matrix.part != 1
         env:
@@ -732,6 +709,68 @@ jobs:
       - name: Name the earlier pass
         if: steps.passed.outputs.cache-hit == 'true'
         run: echo "These inputs passed this shard in an earlier run, so it built nothing." | tee -a "$GITHUB_STEP_SUMMARY"
+
+  shader-compiler-plugin:
+    # The Vite plugin's tests through the build job's shader compiler: the plugin's calls of the
+    # compiler, its WGSL in a project, its declarations, its compiler pool, and the packing of every
+    # compiled shader of the repository's test pages and demos. They read the compiler and the shader
+    # modules that the build job made, and build no Rust, so they need no toolchain. The packing test
+    # takes as long as the others together, so it runs in a part of its own. A part whose inputs
+    # passed in an earlier run passes again, as the shader-compiler shards do. Its key names the
+    # files that decide what the compiler and the shader modules hold, the plugin and the test
+    # helper that its tests import, and the repository's WGSL that the part compiles: every module
+    # of the test pages, the fixtures and the demos for the packing test, and the two files whose
+    # declarations the plugin's tests compare for the other part.
+    name: shader-compiler-plugin (${{ matrix.script }})
+    needs: [build, changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        script: [test:shader-compiler:plugin, test:shader-compiler:pack]
+    env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - name: The key of this part's inputs
+        id: inputs
+        run: echo "key=passed-v1-shader-compiler-plugin-${{ matrix.script }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}-${{ matrix.script == 'test:shader-compiler:pack' && hashFiles('tests/pages/**', 'tests/fixtures/**', 'examples/**') || hashFiles('tests/fixtures/typed-uniforms/**', 'tests/pages/sketches/shaders/**') }}" >> "$GITHUB_OUTPUT"
+      - name: Find an earlier pass with the same inputs
+        id: passed
+        uses: actions/cache/restore@v4
+        with:
+          path: target/passed
+          key: ${{ steps.inputs.outputs.key }}
+          lookup-only: true
+      - uses: oven-sh/setup-bun@v2
+        if: steps.passed.outputs.cache-hit != 'true'
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - if: steps.passed.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        if: steps.passed.outputs.cache-hit != 'true'
+        with:
+          name: page-wasm
+      - name: The Vite plugin's tests through the shader compiler
+        if: steps.passed.outputs.cache-hit != 'true'
+        run: bun run ${{ matrix.script }}
+      - name: Record this part's pass of these inputs
+        if: steps.passed.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p target/passed
+          echo "$GITHUB_SHA" > target/passed/commit
+      - if: steps.passed.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: target/passed
+          key: ${{ steps.inputs.outputs.key }}
+      - name: Name the earlier pass
+        if: steps.passed.outputs.cache-hit == 'true'
+        run: echo "These inputs passed this part in an earlier run, so it built nothing." | tee -a "$GITHUB_STEP_SUMMARY"
 
   packages:
     # The npm packages as a developer installs them: each public package packed as the publish job
@@ -756,10 +795,12 @@ jobs:
         with:
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
-      # The step takes 1 to 3 minutes. Its limit ends a stuck browser well before the job's, with
-      # the step named as the one that ran out of time.
+      # The step takes about 9 to 10 minutes on 22 October 2026, and a loaded runner adds the rest:
+      # packing the packages, whose pack scripts build each package one after another, takes about
+      # 3, and the website build of the demos about 3 more. Its limit ends a stuck browser before
+      # the job's, with the step named as the one that ran out of time.
       - name: The packed packages in a fresh project
-        timeout-minutes: 12
+        timeout-minutes: 18
         env:
           # The build job's generated shader modules, which the artifact beside them carries. The
           # plugin uses them instead of the release asset, which no release offers yet, and instead
@@ -1215,6 +1256,7 @@ jobs:
       - size-parts
       - wasm-checks
       - shader-compiler
+      - shader-compiler-plugin
       - packages
       - city
       - browser
@@ -1256,7 +1298,8 @@ jobs:
           jq -e '.changes.outputs as $run | {
               "rust-lint": "code", "rust-tests": "code", "size-base": "code", "size-parts": "code",
               "wasm-checks": "code",
-              "shader-compiler": "code", "packages": "code", "heavy-checks": "code",
+              "shader-compiler": "code", "shader-compiler-plugin": "code", "packages": "code",
+              "heavy-checks": "code",
               "city": "full", "browser": "full", "browser-alone": "full",
               "browser-city": "full", "showcase": "full", "bench": "full", "real-browsers": "full",
               "allocation": "allocation", "skill-sketches": "sketches"

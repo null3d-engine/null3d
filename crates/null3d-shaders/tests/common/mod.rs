@@ -186,22 +186,29 @@ pub fn build_each_in_shader_compiler(inputs: &[Inputs], mut check: impl FnMut(us
     }
 }
 
-/// Fails at the first line where two results, printed as JSON, differ. `what` names the build that
+/// Fails at the first line where two results, printed as JSON, differ ([`same`]).
+pub fn assert_same(what: &str, compiled: &Value, native: &Value) {
+    if let Err(difference) = same(what, compiled, native) {
+        panic!("{difference}");
+    }
+}
+
+/// Names the first line where two results, printed as JSON, differ. `what` names the build that
 /// was compared. The results are printed only when they differ: a repository entry's result is
 /// hundreds of megabytes, and printing both would cost the test more memory than it needs to
 /// compare them.
-pub fn assert_same(what: &str, compiled: &Value, native: &Value) {
+pub fn same(what: &str, compiled: &Value, native: &Value) -> Result<(), String> {
     if compiled == native {
-        return;
+        return Ok(());
     }
     // A result that failed where the native build succeeded is reported by why it failed. Comparing
     // the two as text would name only the `ok` flag, and a stop for want of memory, which no shader
     // causes, would read as an unexplained difference.
     if compiled["ok"] == Value::Bool(false) {
-        panic!(
+        return Err(format!(
             "{what}: the shader compiler answered with a failure where the native build did not:\n{}",
             problems_of(compiled)
-        );
+        ));
     }
     let pretty = |value| serde_json::to_string_pretty(value).expect("JSON text");
     let (compiled, native) = (pretty(compiled), pretty(native));
@@ -210,12 +217,12 @@ pub fn assert_same(what: &str, compiled: &Value, native: &Value) {
         .zip(native.lines())
         .position(|(a, b)| a != b)
         .unwrap_or_else(|| compiled.lines().count().min(native.lines().count()));
-    panic!(
+    Err(format!(
         "{what}: the shader compiler's result differs from the native build's, first at line {}:\n  shader compiler: {}\n  native build:    {}",
         line + 1,
         compiled.lines().nth(line).unwrap_or("(the end)"),
         native.lines().nth(line).unwrap_or("(the end)"),
-    );
+    ))
 }
 
 /// Every problem of a failed result, one to a line, with its place when it names one.
