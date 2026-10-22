@@ -89,3 +89,4 @@ Options C, B and B. The helper decided on 22 October 2026; the owner's review is
 - A page that creates a material with a clear coat or a sheen downloads the film's and the lobe's code too, about 3 KB more. Its GPU cost is a flag test where neither applies.
 - The row's last texel is the anisotropy's, which the shader build's test that reads the row's size now names.
 - A material cannot have a clear coat's or a sheen's maps and iridescence's or the anisotropy's maps at once. A file that gives both loses the second family's maps, and the loader says so.
+- The model scenes `gltf-iridescence` and `gltf-anisotropy` make their files in code, since the sample content pins a real Khronos file in a repository of its own. Both match three.js on all three tiers under limits of 0.3% and 0.6%, which are the specular anti-aliasing family's. [Image tests](../image-tests.md) gives the figures.

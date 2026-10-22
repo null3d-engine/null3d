@@ -109,7 +109,8 @@ export const VIGNETTE_MAX_DIFFERENT_PERCENT = 2;
  * the rims of glossy spheres differ. The other lighting terms match. Each limit sits just above the
  * scene's largest share on SwiftShader and on the Mac's GPU, which `.dev/image-tests.md` records.
  * The toy car's chrome trim, window frames and lamp covers are the same case, on a model that also
- * carries a clear coat, a sheen and glass.
+ * carries a clear coat, a sheen and glass. The thin film and the stretched lobe draw highlights
+ * thinner and longer than a round one, so their rims move more pixels than any other scene's.
  */
 export const SPECULAR_AA_LIMITS = {
 	'standard-grid': 0.25,
@@ -122,6 +123,8 @@ export const SPECULAR_AA_LIMITS = {
 	'gltf-metal-rough': 0.34,
 	'gltf-specular': 0.16,
 	'gltf-ior': 0.21,
+	'gltf-iridescence': 0.3,
+	'gltf-anisotropy': 0.6,
 	'gltf-toy-car': 0.32,
 } as const;
 
@@ -437,6 +440,8 @@ const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 	'metal-rough': SPECULAR_AA_LIMITS['gltf-metal-rough'],
 	specular: SPECULAR_AA_LIMITS['gltf-specular'],
 	ior: SPECULAR_AA_LIMITS['gltf-ior'],
+	iridescence: SPECULAR_AA_LIMITS['gltf-iridescence'],
+	anisotropy: SPECULAR_AA_LIMITS['gltf-anisotropy'],
 	'toy-car': SPECULAR_AA_LIMITS['gltf-toy-car'],
 };
 
