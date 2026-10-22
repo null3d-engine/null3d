@@ -255,9 +255,15 @@ fn check_grade<B: FrameBuilder>(mut world: World<B>) {
         .unwrap();
     textures.set_data(table, 32, 32).unwrap().0.fill(0);
     world.renderer.settings_mut().set_grade(Some(table));
-    world.step(&mut mock, false);
-    let graded = bound_grade(&world.step(&mut mock, false)).expect("the frame makes the group");
-    assert_ne!(graded, blank);
+    // The texels upload in the next frames, and the group binds the table in the frame that finds
+    // them on the GPU.
+    let mut graded = None;
+    for _ in 0..3 {
+        if let Some(bound) = bound_grade(&world.step(&mut mock, false)) {
+            graded = Some(bound);
+        }
+    }
+    assert_ne!(graded.expect("a frame binds a grading table"), blank);
 
     // New texels that wait to upload leave the pass reading the table that is already on the GPU.
     let textures = world.renderer.settings_mut().textures_mut();
