@@ -10,12 +10,14 @@
 import { defineSketch, timeOfDay } from '@null3d/engine';
 import { interact } from '../lib/interact';
 import {
+	addHero,
 	BUSH,
 	bushRows,
 	cardArrays,
 	cardTexture,
 	countRows,
 	fillRows,
+	fitCounts,
 	ground,
 	KINDS,
 	landArrays,
@@ -110,27 +112,11 @@ export default defineSketch(async (ctx) => {
 		colors: true,
 	});
 	fillRows(undergrowth, bushRows(BUSHES, BUSH_RADIUS), 0);
-	// One hero fir stands beside the flight, as an object rather than an instance row: a bias of
-	// 0.25 keeps its finer levels at a distance where the trees around it turn coarse. The stats'
-	// triangle count shows the difference: press B to give it the threshold of the rest.
-	const hero = scene.createMesh({
-		mesh: (kinds[0] as (typeof kinds)[number]).mesh,
-		material: bark,
-		position: [30, ground(30, 150), 150],
-		scale: [8, 8, 8],
-		castShadows: true,
-		receiveShadows: true,
-	});
-	let heroKeen = true;
-	hero.setLevelBias(0.25);
-	const fit = () => {
-		const low = quality.preset === 'low';
-		for (const { trees, cards, count, near } of kinds) {
-			trees.setActiveCount(low ? near : count);
-			cards.setActiveCount(low ? count - near : 0);
-		}
-		undergrowth.setActiveCount(low ? BUSH_NEAR : BUSHES);
-	};
+	// One hero fir stands beside the flight: a bias keeps its finer levels where the trees around
+	// it turn coarse, and B gives it the threshold of the rest.
+	const hero = addHero(scene, kinds[0], bark, ground);
+	const fit = () =>
+		fitCounts(kinds, undergrowth, quality.preset === 'low', { all: BUSHES, near: BUSH_NEAR });
 	fit();
 	quality.onChange(fit);
 	// L draws every tree's base level, and the preset's threshold again on the next press.
@@ -138,10 +124,8 @@ export default defineSketch(async (ctx) => {
 
 	return {
 		onUpdate(dt) {
-			if (input.wasPressed('KeyB')) {
-				heroKeen = !heroKeen;
-				hero.setLevelBias(heroKeen ? 0.25 : 1);
-			}
+			if (input.wasPressed('KeyB')) hero.setBias();
+
 			if (input.wasPressed('KeyL')) {
 				const levels = quality.settings.lodThreshold > 0;
 				if (levels) threshold = quality.settings.lodThreshold;
