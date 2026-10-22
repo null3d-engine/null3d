@@ -9,8 +9,8 @@
 // touching the frame's own work. Two spot lights at the nose light the rain ahead, and a lamp under
 // the belly spills the car's colour on the air below it.
 import { math, type PerspectiveCamera, quat, type SketchContext, vec3 } from '@null3d/engine';
+import { createVehicleHull } from '../../addons/traffic-lanes/index';
 import { EFFECT_LAYER } from '../../lib/layers';
-import { carHull } from './hull';
 
 /** How far ahead of the camera the car flies, how far to its right, and how far below, in meters. */
 const [AHEAD, BESIDE, BELOW] = [26, 4.6, 5.2];
@@ -85,7 +85,12 @@ export function createHero(ctx: SketchContext, camera: PerspectiveCamera, start:
 		clearcoat: 1,
 		clearcoatRoughness: 0.12,
 	});
-	scene.createMesh({ mesh: carHull(ctx), material: paint, parent: body, layers: EFFECT_LAYER });
+	scene.createMesh({
+		mesh: createVehicleHull(ctx),
+		material: paint,
+		parent: body,
+		layers: EFFECT_LAYER,
+	});
 
 	// The engine's two nozzles, and the lamp that plays behind them.
 	const engine = materials.shader({ wgsl: glowWgsl, uniforms: { strength: 4 }, fog: false });

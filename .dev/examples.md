@@ -160,7 +160,7 @@ On 8 October 2026 the owner asked for feature demos that look much better, while
 | Demo | What it shows now |
 | --- | --- |
 | math | A flock of 300 drones circles a lamp over a landing pad at dusk. Each drone has a body, two arms, four spinning rotors, a cyan tail light that blooms and a small point light of its own. The lamp is a point light that casts the crates' shadows. The floor's texture is concrete grain with painted lines |
-| instances | 100,489 columns (317 on each side) in one batch at golden hour, and 10,201 on the Low preset of phones, with lanes of hover cars streaming across the sky in two more batches. The sky lights the columns through `assets.skyEnvironment()`. A lamp, which blooms, hovers over the center of the wave and lights the columns around it |
+| instances | 100,489 columns (317 on each side) in one batch at golden hour, and 10,201 on the Low preset of phones, with 30,000 to 100,000 hover cars streaming along the sky lanes above them, from the traffic-lanes add-on. The sky lights the columns through `assets.skyEnvironment()`. A lamp, which blooms, hovers over the center of the wave and lights the columns around it |
 | generators | The nine shapes in polished, gold and brushed metal, plastic, a tile texture that shows each shape's texture coordinates, and a ring that blooms, over a tiled terrace at golden hour |
 
 The rules that the reworked demos follow, and why:
@@ -180,6 +180,18 @@ The rules that the reworked demos follow, and why:
 - The instances demo takes its count of columns from a table by preset. `quality.onChange` sets the batch's active count again when the preset changes. The setup places the rows ring by ring from the middle out. So the first rows of any count fill a square in the middle of the field. Low draws 10,201 rows, the old demo's count, and the other presets draw all 100,489. The Mac held the full field at 120 fps on both GPU paths. No phone has run it yet.
 - The demos' interaction test (`tests/image/demo-interaction.spec.ts`) opens the math and instances demos on the Low preset. It checks the camera and the steering, not the look. On SwiftShader on the Mac, the full look took the instances test from 11.4 s to 25 to 30 s. The math test took 17 s. In CI, main's instances test already took 44.6 s of its 60 s, about four times its time on the Mac. On Low, the two tests took 7 to 10 s and 12 s on the Mac. With a quarter of the field on Low, the instances test took 14 s. That is too close to the limit in CI.
 - The three demos make the room environment, which takes time on a software GPU. On SwiftShader on the Mac their held frames took 6 to 15 s, four tests at once. So their image tests take 60 s, as the other demos with the room environment do, since CI's machines are slower.
+- The instances demo's lanes moved to the traffic-lanes add-on on 22 October 2026 (M3-B6). The demo draws 30,000 cars at Low and 100,000 at Ultra, where it drew 720 on the CPU. The add-on moves them in the vertex shader. It gives each heading's batch a lane-length bound,
+  so a frame's work does not follow the count. The lanes surround the field at 16 to 34 m over
+  2,600 m, so the cars stay a layer above the horizon. The fog hides most of them. Against the
+  old pictures the drawn ones differ in 2.6% of their pixels, and the references moved in both
+  sets. On 22 October 2026, at a Mac load of 28, the demo held these rates, from Low to Ultra:
+
+  | Path | Frame rate | GPU time |
+  | --- | --- | --- |
+  | WebGPU | 120, 119, 119, 119 fps | 3.7, 4.5, 4.6, 5.1 ms |
+  | WebGL2 | 120, 119, 119, 120 fps | 4.5, 5.2, 5.0, 5.0 ms |
+
+  The traffic added at most 0.6 ms to the GPU time and no error to the scene's updates.
 - The instances demo gained lanes of hover cars on 18 October 2026 (M2-EX43, [D-172](decisions/D-172-neon-harbour-follow-ups.md)). Four lanes cross the sky at 17 to 22 m, on lines 45 to 75 m from the field's center, so the traffic stays a distant layer above the horizon and no car passes near the lens. Each car is a row of a body batch and a tail light batch, which blooms. The sketch writes every row from the time alone, so a held frame draws the same cars. The lanes moved to `traffic.ts` beside the sketch, which stays under 150 lines. Against the old pictures the drawn ones differ in 1.44% to 1.49% of their pixels, against the limit of 0.1%. The references moved in both sets.
 
 ### Frame rates on the Mac
@@ -189,7 +201,7 @@ The figures come from Chrome 155 on a Mac with an Apple M5 Max, on 9 October 202
 | Demo | WebGPU, High | WebGL2, Medium |
 | --- | --- | --- |
 | math | 120 fps, GPU 5.1 to 5.6 ms, sketch 0.4 to 0.5 ms, 300 drone lights | 120 fps, GPU 5.6 to 6.6 ms, sketch 0.5 to 0.6 ms |
-| instances | 120 fps, GPU 4.2 to 4.8 ms, sketch 1.0 to 1.6 ms, 1.25 million triangles | 120 fps, GPU 3.0 to 5.4 ms, sketch 0.9 to 1.7 ms |
+| instances | 119 to 120 fps, GPU 3.7 to 5.1 ms | 119 to 120 fps, GPU 4.5 to 5.2 ms |
 | generators | 120 fps, GPU 3.9 to 4.7 ms | 120 fps, GPU 4.1 to 5.2 ms |
 
 Before the change, all three held 120 fps on both paths too. The instances demo had 10,000 rows then. On a phone, a loop over all 100,489 rows should take about four times as long as on the Mac. The phone and tablet checks of the three demos are still to run.
@@ -520,23 +532,34 @@ and a hero car with two screens.
 - **Post starts on.** Bloom, the vignette and ambient occlusion start on, where the other showcase
   scenes start them off (D-171). A night city of neon and lit windows reads flat without the glow
   of its lights. The owner has not reviewed the look yet.
-- **No Time of day group.** The scene is one night, and its sky, fog and exposure are set once. The
-  HUD keeps Camera, Atmosphere (Fog, Rain), Lighting (AO, Environment), Post, Traffic and Quality.
-- **Figures.** A first run in Chrome on the Mac measured these. The Mac has an Apple M5 Max and a
-  120 Hz display. The frame-budget governor was on, and the window was parked past the screen's
-  edge. The machine carried a shared build load of 83 at the time. The CPU figures are therefore
-  high, and the frame rates are a floor:
+- **Time of day.** The scene takes its sky, sun, fog and exposure from the shared stage, which
+  eases between looks and writes them every frame (`examples/lib/stage.ts`). Dusk and Night are the
+  stage's own moods. Storm is the scene's variation on the night: full cloud, a dimmed moon, fog
+  2.4 times as dense and rain 1.8 times as heavy. The stage writes the scene's lit fog with every
+  mood, through its `volumetric` option. It gained three scales for a scene whose own lights carry
+  it: the exposure, the environment light and the brightness of the sky. Skyway sets them to 4.5,
+  2.2 and 2.6, and lowers the cloud cover to 0.45. The HUD keeps Camera, Time of day, Atmosphere
+  (Fog, Rain), Lighting (AO, Environment), Post, Traffic and Quality.
+- **The moods were drawn and looked at.** The image test draws Night. Dusk warms the towers and
+  lifts the sky. Storm fills the sky with cloud, dims the moon, thickens the fog and drives the
+  rain. The physical sky is darker than the analytic night the scene drew before. The
+  references therefore moved in both sets by about 20% of their pixels.
+- **Figures.** A run in Chrome on the Mac measured these, with the shared stage, the traffic-lanes
+  add-on and its six real lights in the scene. The Mac has an Apple M5 Max and a 120 Hz display.
+  The frame-budget governor was on, and the window was parked past the screen's edge. The machine
+  carried a shared build load of about 36 at the time:
 
   | Preset | WebGPU | WebGL2 |
   | --- | --- | --- |
-  | Low, 30,000 cars | 120 fps, GPU 4.3 ms | 120 fps, GPU 5.7 ms |
-  | Medium, 50,000 cars | 119 fps, GPU 5.1 ms | 116 fps, GPU 12.4 ms |
-  | High, 75,000 cars | 117 fps, GPU 5.8 ms | WebGL2 runs at most Medium |
-  | Ultra, 100,000 cars | 72 fps, GPU 5.9 ms, sketch 8.6 ms | WebGL2 runs at most Medium |
+  | Low, 30,000 cars | 120 fps, GPU 4.3 ms | 120 fps, GPU 6.3 ms |
+  | Medium, 50,000 cars | 120 fps, GPU 4.4 ms | 108 fps, GPU 8.7 ms |
+  | High, 75,000 cars | 120 fps, GPU 4.8 ms | WebGL2 caps the settings at Medium |
+  | Ultra, 100,000 cars | 120 fps, GPU 5.1 ms | WebGL2 caps the settings at Medium |
 
   The GPU time barely rises from Low to Ultra. The same pixels shade the same towers, and the count
-  changes the vertices alone. Ultra's 72 frames a second came from the sketch thread under the load,
-  not from the GPU. A quiet run is still to be made.
+  changes the vertices alone. The scene's updates threw no error at any preset. On WebGL2 the
+  settings stop at Medium, but the demo's counts follow the preset that the page asked for. So
+  `preset=high` there draws 75,000 cars at Medium settings.
 - **On a phone**, WebGL2 runs Medium at most. Low should hold 60 frames a second on an S24-class
   phone. That preset draws 30,000 cars, about 900 towers, 180 lights, the rain and reflections at a
   quarter of the render size. Medium doubles the cars and raises the reflection scale. A mid-range
