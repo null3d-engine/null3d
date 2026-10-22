@@ -545,21 +545,33 @@ and a hero car with two screens.
   rain. The physical sky is darker than the analytic night the scene drew before. The
   references therefore moved in both sets by about 20% of their pixels.
 - **Figures.** A run in Chrome on the Mac measured these, with the shared stage, the traffic-lanes
-  add-on and its six real lights in the scene. The Mac has an Apple M5 Max and a 120 Hz display.
-  The frame-budget governor was on, and the window was parked past the screen's edge. The machine
-  carried a shared build load of about 36 at the time:
+  add-on and its six real lights, and the lens kit in the scene. The Mac has an Apple M5 Max and a
+  120 Hz display. The frame-budget governor was on, and the window was parked past the screen's
+  edge. The machine carried a shared build load of about 18 at the time:
 
   | Preset | WebGPU | WebGL2 |
   | --- | --- | --- |
-  | Low, 30,000 cars | 120 fps, GPU 4.3 ms | 120 fps, GPU 6.3 ms |
-  | Medium, 50,000 cars | 120 fps, GPU 4.4 ms | 108 fps, GPU 8.7 ms |
-  | High, 75,000 cars | 120 fps, GPU 4.8 ms | WebGL2 caps the settings at Medium |
-  | Ultra, 100,000 cars | 120 fps, GPU 5.1 ms | WebGL2 caps the settings at Medium |
+  | Low, 30,000 cars | 118 fps, GPU 5.0 ms | 120 fps, GPU 7.0 ms |
+  | Medium, 50,000 cars | 119 fps, GPU 5.3 ms | 108 fps, GPU 11.9 ms |
+  | High, 75,000 cars | 102 fps, GPU 5.6 ms | WebGL2 caps the settings at Medium |
+  | Ultra, 100,000 cars | 91 fps, GPU 5.8 ms | WebGL2 caps the settings at Medium |
 
   The GPU time barely rises from Low to Ultra. The same pixels shade the same towers, and the count
   changes the vertices alone. The scene's updates threw no error at any preset. On WebGL2 the
   settings stop at Medium, but the demo's counts follow the preset that the page asked for. So
   `preset=high` there draws 75,000 cars at Medium settings.
+- **The lens.** The picture's grade, its sharpening, its vignette and the camera's own marks come
+  from the lens-kit example add-on (`examples/addons/lens-kit/`). The grade, the sharpening and the
+  vignette are the core's own settings, which the kit sets from one look. Its one effect draws the
+  color fringes, the anamorphic streak, the grain and the speed blur, each off at 0. D-173 ruling 5
+  keeps it to the core's parts: it adds no second way to do any of them. The speed blur follows the
+  camera's travel, so a held frame has none. Against the pictures without it, the lens moves 0.66%
+  of the pixels on WebGPU and 0.2% on SwiftShader.
+- **The lens's cost.** The effect adds about 0.7 to 0.9 ms of GPU at every preset on WebGPU. On
+  WebGL2 it adds 0.7 ms at Low and 3.2 ms at Medium. These figures compare the scene with the lens
+  against the same scene without it at a load of 36. The core's sharpen, vignette and grade add
+  nothing to a frame, since they run in the final pass. A look that leaves all four of the effect's
+  values at 0 adds no effect at all.
 - **On a phone**, WebGL2 runs Medium at most. Low should hold 60 frames a second on an S24-class
   phone. That preset draws 30,000 cars, about 900 towers, 180 lights, the rain and reflections at a
   quarter of the render size. Medium doubles the cars and raises the reflection scale. A mid-range
