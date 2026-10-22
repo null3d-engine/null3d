@@ -2152,6 +2152,7 @@ impl CpuCulledRenderer {
         let (decals, decal_records_at) = (&self.decals, self.decal_records_at);
         let (redraws, redraw_records_at) = (&self.redraws, self.redraw_records_at);
         let particles = &self.particles;
+        let vertex_draws = self.settings.vertex_draws();
         let light_textures = &self.light_textures;
         // A view leaves out the objects whose maps show a target that it does not read.
         let settings = &self.settings;
@@ -2291,7 +2292,17 @@ impl CpuCulledRenderer {
                     let hidden = hidden_in(view);
                     let index = view.index();
                     transparent.record(
-                        list, arena, index, rows, draws, at, meshes, bind, &hidden, particles,
+                        list,
+                        arena,
+                        index,
+                        rows,
+                        draws,
+                        at,
+                        meshes,
+                        bind,
+                        &hidden,
+                        particles,
+                        vertex_draws,
                     )
                 }
                 Role::Weighted if culling.frame(ViewId::CAMERA).is_some() => {
@@ -2303,7 +2314,17 @@ impl CpuCulledRenderer {
                     let hidden = hidden_in(view);
                     let (index, rows) = (view.index(), SortedRows::Weighted);
                     transparent.record(
-                        list, arena, index, rows, draws, at, meshes, bind, &hidden, particles,
+                        list,
+                        arena,
+                        index,
+                        rows,
+                        draws,
+                        at,
+                        meshes,
+                        bind,
+                        &hidden,
+                        particles,
+                        vertex_draws,
                     )
                 }
                 Role::Decals if culling.frame(ViewId::CAMERA).is_some() => {
@@ -2329,6 +2350,7 @@ impl CpuCulledRenderer {
                         bind,
                         &hidden,
                         particles,
+                        vertex_draws,
                     )
                 }
                 Role::DecalRedraw if culling.frame(ViewId::CAMERA).is_some() => {
@@ -2352,6 +2374,7 @@ impl CpuCulledRenderer {
                         bind,
                         &hidden,
                         particles,
+                        vertex_draws,
                     )
                 }
                 Role::Pick if culling.frame(ViewId::CAMERA).is_some() => {

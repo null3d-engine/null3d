@@ -19,6 +19,7 @@ import {
 	acquireLock,
 	cacheDir,
 	cacheOff,
+	cacheRoot,
 	copyFolderAtomic,
 	filesIn,
 	hashFiles,
@@ -60,9 +61,6 @@ export const modulesCacheDir = (): string =>
  * cache's one root.
  */
 export const entryCacheDir = (): string => cacheDir('shader-cache');
-/** The lock file, which holds the process ID of the process that builds. */
-const LOCK = 'target/shader-modules.lock';
-
 interface ModuleRecord {
 	inputs: string;
 	modules: string;
@@ -290,10 +288,12 @@ function staleSetMessage(root: string): string {
 
 /**
  * Runs the work while this process holds the lock. A process that finds the lock waits for its
- * holder, and takes over a lock whose holder has stopped.
+ * holder, and takes over a lock whose holder has stopped. The lock lives in the shared cache, not
+ * in the checkout, because two shader builds from two checkouts at once leave each of them at about
+ * zero processor time and neither finishes.
  */
 function withLock(root: string, work: () => void): void {
-	const release = acquireLock(join(root, LOCK));
+	const release = acquireLock(join(cacheRoot(), 'shader-modules.lock'));
 	try {
 		work();
 	} finally {

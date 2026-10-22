@@ -113,7 +113,11 @@ export type {
 	EnvironmentFormat,
 	EnvironmentOptions,
 } from './scene/environment';
-export type { FeatureDraw, FeatureDrawOptions, FeatureDrawVertices } from './scene/feature-draws';
+export type {
+	FeatureDraw,
+	FeatureDrawOptions,
+	FeatureDrawVertices,
+} from './scene/feature-draws';
 export type { FeatureHandle, FeatureHostOptions } from './scene/feature-host';
 export { FeatureHost } from './scene/feature-host';
 export type {
@@ -323,6 +327,8 @@ export type {
 	TimeOfDayPreset,
 } from './scene/time-of-day';
 export { emptyTimeOfDay, timeOfDay } from './scene/time-of-day';
+export type { VertexDrawBounds, VertexDrawOptions } from './scene/vertex-draws';
+export { VertexDraw } from './scene/vertex-draws';
 export type {
 	TextureValues,
 	UniformType,

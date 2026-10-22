@@ -3,26 +3,34 @@ import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import type { CoreGlue } from '../shared/core';
 import { CoreMemory } from './memory';
-import { MeshGeometry } from './resources';
+import { Material, MeshGeometry } from './resources';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
 
 /**
  * Meshes 1 to 4 of one core, which records each set of levels it receives: the base mesh's id,
- * its levels' ids, their errors and whether they fade.
+ * its levels' ids, their errors, their material ids and whether they fade.
  */
 function meshes() {
 	const memory = new WebAssembly.Memory({ initial: 1 });
-	const sets: { base: number; ids: number[]; errors: number[]; fades: boolean }[] = [];
+	const sets: {
+		base: number;
+		ids: number[];
+		errors: number[];
+		materials: number[];
+		fades: boolean;
+	}[] = [];
 	const staging = 1024;
 	const glue = {
 		meshArrays: () => staging,
 		setMeshLevels: (base: number, count: number, fades: boolean) => {
 			const ids = [...new Uint32Array(memory.buffer, staging, count)];
 			const errors = [...new Float32Array(memory.buffer, staging + 4 * count, count)];
-			sets.push({ base, ids, errors, fades });
+			const materials = [...new Uint32Array(memory.buffer, staging + 8 * count, count)];
+			sets.push({ base, ids, errors, materials, fades });
 			return 0;
 		},
+		destroyMaterial: () => 0,
 		lastErrorCode: () => 0,
 		lastErrorDetail: () => 0,
 	} as unknown as CoreGlue;
@@ -33,7 +41,7 @@ function meshes() {
 		MeshGeometry,
 		MeshGeometry,
 	];
-	return { base, a, b, c, sets };
+	return { base, a, b, c, core, sets };
 }
 
 /** The error that a mesh.setLevels() call throws, or undefined. */
@@ -57,11 +65,49 @@ describe('mesh.setLevels', () => {
 		expect(sets[0]?.base).toBe(1);
 		expect(sets[0]?.ids).toEqual([2, 3]);
 		expect(sets[0]?.errors.map((e) => Math.round(e * 1000) / 1000)).toEqual([0.02, 0.1]);
+		expect(sets[0]?.materials).toEqual([0, 0]);
 		expect(sets[0]?.fades).toBe(true);
 		expect(base.levels.map((level) => level.mesh)).toEqual([a, b]);
 		base.setLevels([], { fade: false });
-		expect(sets[1]).toEqual({ base: 1, ids: [], errors: [], fades: false });
+		expect(sets[1]).toEqual({ base: 1, ids: [], errors: [], materials: [], fades: false });
 		expect(base.levels).toEqual([]);
+	});
+
+	test("hands the core a level's own material, and 0 for a level that inherits it", () => {
+		const { base, a, b, core, sets } = meshes();
+		const masked = new Material(5, core, 'materials.standard.set');
+		const rough = new Material(6, core, 'materials.standard.set');
+		base.setLevels([
+			{ mesh: a, error: 0.02, material: masked },
+			{ mesh: b, error: 0.1, material: rough },
+			{ mesh: a, error: 0.3 },
+		]);
+		expect(sets[0]?.materials).toEqual([5, 6, 0]);
+	});
+
+	test('refuses a material that is destroyed or from another engine, with E1221', () => {
+		const { base, a, core, sets } = meshes();
+		const destroyed = new Material(5, core, 'materials.standard.set');
+		destroyed.destroy();
+		const error = thrown(() => base.setLevels([{ mesh: a, error: 0.1, material: destroyed }]));
+		expect(error?.code).toBe('E1221');
+		expect(error?.message).toContain('a material that is destroyed');
+		const other = new Material(
+			5,
+			new CoreMemory(
+				{
+					meshArrays: () => 0,
+					lastErrorCode: () => 0,
+					lastErrorDetail: () => 0,
+				} as unknown as CoreGlue,
+				new WebAssembly.Memory({ initial: 1 }),
+			),
+			'materials.standard.set',
+		);
+		expect(
+			thrown(() => base.setLevels([{ mesh: a, error: 0.1, material: other }]))?.message,
+		).toContain('a material from another engine');
+		expect(sets).toEqual([]);
 	});
 
 	test("turns a distance into the error that covers a pixel there, at three.js's field of view on a screen 1,080 pixels high", () => {

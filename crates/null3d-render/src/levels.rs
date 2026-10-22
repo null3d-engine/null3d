@@ -4,15 +4,15 @@
 //! builders give each level.
 //!
 //! A mesh with levels names its lower levels, from the most detailed down, and each level's error,
-//! in the units of the base mesh's positions. Every object and every instance batch that draws the
-//! base mesh picks one level per frame and per view. The frame builders keep a bucket for each
-//! level of each such mesh, and with fading bands a fade bucket beside each. A level's bucket key
-//! names it by a level key ([`level_key`]), so a level's bucket never merges with the bucket of an
-//! object that draws the same simple mesh as a mesh of its own.
+//! in the units of the base mesh's positions. A level may also name a material of its own, so that
+//! a far level shades more cheaply than a near one. Every object and every instance batch that
+//! draws the base mesh picks one level per frame and per view. The frame builders keep a bucket for
+//! each level of each such mesh, and with fading bands a fade bucket beside each. A level's bucket
+//! key names it by a level key ([`level_key`]), so a level's bucket never merges with the bucket of
+//! an object that draws the same simple mesh as a mesh of its own.
 
 use null3d_gpu::drawlist::{permutation, template};
 
-use crate::meshes::MeshStorage;
 use crate::pipelines::DrawKey;
 
 /// What makes a bucket in both frame builders: its pipeline's key, its material's map group, the
@@ -52,11 +52,15 @@ pub fn key_level(key: u32) -> (u32, usize) {
     }
 }
 
-/// One mesh's levels: the engine mesh id of each, the base mesh first, and each one's error.
+/// One mesh's levels: the engine mesh id of each, the base mesh first, each one's error, and the
+/// material that a level draws with where it differs from the level before it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct LevelSet {
     meshes: [u32; MAX_LEVELS],
     errors: [f32; MAX_LEVELS],
+    /// The material of each level that names its own, 0 for a level that inherits the material of
+    /// the level before it. The base level's entry is always 0.
+    materials: [u32; MAX_LEVELS],
     count: u8,
     /// True when the levels hand over in a fading band, false when they switch at once.
     fades: bool,
@@ -81,6 +85,12 @@ impl LevelSet {
     /// The error of level `level`, 0 for the base mesh.
     pub fn error(&self, level: usize) -> f32 {
         self.errors[level]
+    }
+
+    /// The material that level `level` draws with, or 0 for a level that inherits the material of
+    /// the level before it. The base level never names one.
+    pub fn material(&self, level: usize) -> u32 {
+        self.materials[level]
     }
 
     /// True when the levels hand over in a fading band.
@@ -112,19 +122,26 @@ pub struct Levels {
 }
 
 impl Levels {
-    /// Gives the mesh with engine id `base` the lower levels `meshes`, with their `errors`, or with
-    /// none takes its levels away. `fades` makes the levels hand over in a fading band. The caller
-    /// checks that every mesh id names a live mesh.
+    /// Gives the mesh with engine id `base` the lower levels `meshes`, with their `errors` and the
+    /// `materials` that they draw with (0 for the level before's), or with none takes its levels
+    /// away. `fades` makes the levels hand over in a fading band. The caller checks that every mesh
+    /// id names a live mesh, and that `meshes`, `errors` and `materials` are the same length.
     pub fn set(
         &mut self,
         base: u32,
         meshes: &[u32],
         errors: &[f32],
+        materials: &[u32],
         fades: bool,
     ) -> Result<(), LevelError> {
         if meshes.len() + 1 > MAX_LEVELS || meshes.len() != errors.len() {
             return Err(LevelError::TooMany);
         }
+        assert_eq!(
+            materials.len(),
+            meshes.len(),
+            "each level names a material, 0 for the level before's"
+        );
         if base == 0 || meshes.iter().any(|&mesh| mesh == 0 || mesh == base) {
             return Err(LevelError::Mesh);
         }
@@ -158,6 +175,7 @@ impl Levels {
         set.meshes[0] = base;
         set.meshes[1..=meshes.len()].copy_from_slice(meshes);
         set.errors[1..=errors.len()].copy_from_slice(errors);
+        set.materials[1..=materials.len()].copy_from_slice(materials);
         Ok(())
     }
 
@@ -234,38 +252,23 @@ fn fade_key(key: BucketKey) -> BucketKey {
     (pipeline, key.1, key.2, key.3, key.4, key.5)
 }
 
-/// The key of level `level` of `set` beside the bucket key `key` of its base mesh: its mesh field
-/// is the level key, and its page is the page of the level's mesh's first part.
-fn level_bucket_key(
-    key: BucketKey,
-    set: &LevelSet,
-    level: usize,
-    meshes: &MeshStorage,
-) -> Option<BucketKey> {
-    let mesh = meshes.mesh(set.mesh(level).checked_sub(1)?)?;
-    let page = meshes.parts(mesh, false).first()?.page;
-    Some((
-        key.0,
-        key.1,
-        page,
-        level_key(set.mesh(0), level),
-        key.4,
-        key.5,
-    ))
-}
+/// The bucket of a level whose material may differ from the level before's, as the level's
+/// pipeline, map group, page, key, material and the fields of the bucket that names it ask.
+pub(crate) type LevelBucket<'a> = &'a dyn Fn(&BucketKey, usize) -> Option<BucketKey>;
 
 /// Adds the keys of the level buckets of every key in `keys` whose mesh has levels and that
 /// `eligible` lets pick them: one key for each lower level, and with `fade` one fade bucket for
 /// each level, where the set fades and the pipeline has fading builds. Each takes the count of the
-/// key it comes from, since any of its sources may draw any level. The keys are sorted again,
-/// and equal keys merge as [`crate::frame::collect_bucket_keys`] merges them. Allocates nothing
-/// once `keys` has room.
+/// key it comes from, since any of its sources may draw any level. `level_bucket` gives the bucket
+/// of a level, whose material may differ from the base key's, so the level's pipeline and map group
+/// come from the level's own mesh and material. The keys are sorted again, and equal keys merge as
+/// [`crate::frame::collect_bucket_keys`] merges them. Allocates nothing once `keys` has room.
 pub(crate) fn expand_level_keys(
     keys: &mut Vec<(BucketKey, u32)>,
     levels: &Levels,
-    meshes: &MeshStorage,
     fade: bool,
     eligible: impl Fn(&BucketKey) -> bool,
+    level_bucket: LevelBucket<'_>,
 ) {
     if !levels.any() {
         return;
@@ -276,17 +279,22 @@ pub(crate) fn expand_level_keys(
         let Some(set) = levels.of(key.3).filter(|_| eligible(&key)) else {
             continue;
         };
-        let fades = fade && set.fades() && fades_its_way(key.0);
-        if fades {
+        let fades = fade && set.fades();
+        if fades && fades_its_way(key.0) {
             keys.push((fade_key(key), count));
         }
+        // Each level inherits the material of the level before it, so the key that finds a level
+        // carries the previous level's effective material.
+        let mut carried = key;
         for level in 1..set.len() {
-            if let Some(level_key) = level_bucket_key(key, set, level, meshes) {
-                keys.push((level_key, count));
-                if fades {
-                    keys.push((fade_key(level_key), count));
-                }
+            let Some(level_key) = level_bucket(&carried, level) else {
+                continue;
+            };
+            keys.push((level_key, count));
+            if fades && fades_its_way(level_key.0) {
+                keys.push((fade_key(level_key), count));
             }
+            carried.4 = level_key.4;
         }
     }
     if keys.len() == original {
@@ -312,14 +320,15 @@ pub(crate) struct KeyLinks {
 }
 
 /// The links of the bucket key `key`, in the sorted `keys` that
-/// [`expand_level_keys`] made. A bucket of a mesh without levels, a fade bucket, and a base
-/// level's bucket that `eligible` keeps from picking have none.
+/// [`expand_level_keys`] made, with the same `level_bucket` that made them. A bucket of a mesh
+/// without levels, a fade bucket, and a base level's bucket that `eligible` keeps from picking have
+/// none.
 pub(crate) fn links_of(
     key: BucketKey,
     keys: &[(BucketKey, u32)],
     levels: &Levels,
-    meshes: &MeshStorage,
     eligible: impl Fn(&BucketKey) -> bool,
+    level_bucket: LevelBucket<'_>,
 ) -> KeyLinks {
     let (base, level) = key_level(key.3);
     let set = levels.of(base).filter(|_| level > 0 || eligible(&key));
@@ -330,10 +339,8 @@ pub(crate) fn links_of(
         key.and_then(|key| keys.binary_search_by_key(&key, |&(k, _)| k).ok())
             .map(|place| place as u32)
     };
-    // Every level's key holds its base key's fields, and the base key's page.
-    let base_key = level_bucket_key(key, set, 0, meshes);
     let next = (level + 1 < set.len())
-        .then(|| base_key.and_then(|base| level_bucket_key(base, set, level + 1, meshes)))
+        .then(|| level_bucket(&key, level + 1))
         .flatten();
     KeyLinks {
         error: set.error(level),
@@ -386,26 +393,89 @@ mod tests {
     }
 
     #[test]
+    fn a_level_inherits_the_material_of_the_level_before_it() {
+        let mut levels = Levels::default();
+        levels.set(1, &[2, 3], &[0.1, 0.2], &[7, 0], false).unwrap();
+        let bucket = |mesh: u32, material: u32| {
+            (
+                DrawKey {
+                    template: template::INSTANCED_LIT,
+                    permutation: 0,
+                    vertex_format: 0,
+                    state: 0,
+                    bias: DepthBias::NONE,
+                },
+                0,
+                0,
+                mesh,
+                material,
+                0,
+            )
+        };
+        let level_bucket = |base: &BucketKey, level: usize| {
+            let (mesh, _) = key_level(base.3);
+            let set = levels.of(mesh)?;
+            let material = match set.material(level) {
+                0 => base.4,
+                own => own,
+            };
+            Some(bucket(level_key(mesh, level), material))
+        };
+        let eligible = |_: &BucketKey| true;
+        let mut keys = vec![(bucket(1, 5), 3)];
+        expand_level_keys(&mut keys, &levels, false, eligible, &level_bucket);
+        let own = |level: usize| {
+            let (key, _) = keys
+                .iter()
+                .find(|(key, _)| key_level(key.3) == (1, level))
+                .unwrap();
+            key.4
+        };
+        // Level 1 names a material, and level 2, which names none, draws with level 1's.
+        assert_eq!((own(1), own(2)), (7, 7));
+        // The links walk from the base level to level 1 and from level 1 to level 2.
+        let links = |key: BucketKey| links_of(key, &keys, &levels, eligible, &level_bucket).next;
+        let first = keys
+            .iter()
+            .find(|(key, _)| key_level(key.3) == (1, 0))
+            .unwrap()
+            .0;
+        let next = links(first).unwrap() as usize;
+        assert_eq!(key_level(keys[next].0.3), (1, 1));
+        let next = links(keys[next].0).unwrap() as usize;
+        assert_eq!(key_level(keys[next].0.3), (1, 2));
+    }
+
+    #[test]
     fn sets_refuse_bad_levels_and_forget_removed_meshes() {
         let mut levels = Levels::default();
         assert_eq!(
-            levels.set(1, &[2, 3], &[0.1, 0.1], true),
+            levels.set(1, &[2, 3], &[0.1, 0.1], &[0, 0], true),
             Err(LevelError::Errors)
         );
-        assert_eq!(levels.set(1, &[2], &[0.0], true), Err(LevelError::Errors));
-        assert_eq!(levels.set(1, &[1], &[0.1], true), Err(LevelError::Mesh));
         assert_eq!(
-            levels.set(1, &[2; 8], &[0.1; 8], true),
+            levels.set(1, &[2], &[0.0], &[0], true),
+            Err(LevelError::Errors)
+        );
+        assert_eq!(
+            levels.set(1, &[1], &[0.1], &[0], true),
+            Err(LevelError::Mesh)
+        );
+        assert_eq!(
+            levels.set(1, &[2; 8], &[0.1; 8], &[0; 8], true),
             Err(LevelError::TooMany)
         );
-        levels.set(1, &[2, 3], &[0.1, 0.2], false).unwrap();
-        levels.set(4, &[5], &[0.1], true).unwrap();
+        levels.set(1, &[2, 3], &[0.1, 0.2], &[7, 0], false).unwrap();
+        levels.set(4, &[5], &[0.1], &[0], true).unwrap();
         assert!(levels.any());
+        // A level that names no material inherits the one before's.
+        assert_eq!(levels.of(1).unwrap().material(1), 7);
+        assert_eq!(levels.of(1).unwrap().material(2), 0);
         assert_eq!(levels.mesh_of_key(level_key(1, 2)), Some(3));
         assert_eq!(levels.mesh_of_key(level_key(1, 3)), None);
         levels.forget_removed(|mesh| mesh != 3);
         assert!(levels.of(1).is_none() && levels.of(4).is_some());
-        levels.set(4, &[], &[], true).unwrap();
+        levels.set(4, &[], &[], &[], true).unwrap();
         assert!(!levels.any());
     }
 }
