@@ -448,6 +448,15 @@ jobs:
             target/shader-modules.json
           if-no-files-found: error
           retention-days: 1
+      # Every job that runs a browser waits for this one, so a cache that misses fills here, once,
+      # and not in each of those jobs at once, each downloading the same files from the package
+      # mirror. When the cache holds the current version, each step only looks its key up.
+      - uses: ./.github/actions/playwright-chromium
+        with:
+          cache-only: "true"
+      - uses: ./.github/actions/samples
+        with:
+          cache-only: "true"
 
   size-base:
     # The sizes of the size check's base commit, built at that commit with its own toolchain,
