@@ -194,7 +194,7 @@ impl Clusters {
             (
                 ids::cluster_draws(view),
                 meshes.max(1) * INDIRECT_WORDS * 4,
-                usage::STORAGE | usage::COPY_DST,
+                usage::INDIRECT | usage::STORAGE | usage::COPY_DST,
             ),
             (
                 ids::cluster_params(view),
