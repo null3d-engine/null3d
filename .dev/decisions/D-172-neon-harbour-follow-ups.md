@@ -6,6 +6,8 @@ Summary: A study of Neon Harbour, a flying-car city that a showcase page draws i
 
 Neon Harbour is a working name, and it stands in for the name of the showcase and of the company whose runtime draws it. Those names belong to someone else, so no published file carries them (owner, 22 October 2026). Keep this name, and its British spelling, when you cite the study.
 
+The study's scene here is the Skyway showcase, in `examples/showcase/skyway/` (M3-C1). It is a showcase demo, not a feature demo, so it carries no line limit and its look is held to the showcase bar.
+
 ## Question
 
 Which of the techniques that Neon Harbour uses should null3D build, in which milestone, and how do they relate to the M2 work in progress?
