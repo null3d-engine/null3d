@@ -2,10 +2,11 @@
 // neon, and the camera sways in front of them. Bloom spreads the neon past its edges, ambient
 // occlusion darkens the corner, an outline marks one crate, depth of field focuses on that crate,
 // a vignette darkens the edges, and a light sharpening keeps the crate edges crisp. A lens grade
-// splits red from blue toward the edges, bleeds the bright neon sideways into an anamorphic streak
-// and adds film grain. Every 3 seconds the color grade changes: none, warm, then cool, each set from
-// the grading controls, which a job worker bakes into a table. The pointer moves the pink lamp, and
-// the bloom, the shading and the reflections in the puddles follow.
+// splits red from blue toward the edges and adds film grain, and a second effect reads a level of
+// bloom's chain to bleed the bright neon sideways into an anamorphic streak, rather than gathering
+// its own blur. Every 3 seconds the color grade changes: none, warm, then cool, each set from the
+// grading controls, which a job worker bakes into a table. The pointer moves the pink lamp, and the
+// bloom, the shading and the reflections in the puddles follow.
 import { defineSketch, type GradingSettings, type Vec3, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
 import { LENS_WGSL } from '../lib/lens';
@@ -13,6 +14,19 @@ import { enableReflections } from '../lib/ssr';
 
 /** Seconds that each color grade shows. */
 const STEP = 3;
+
+/**
+ * The anamorphic streak: the glow of bloom's chain's third level, stretched across the bright neon,
+ * tinted blue. The effect reads the level instead of gathering taps of its own.
+ */
+const STREAK_WGSL = /* wgsl */ `
+struct Uniforms { strength: f32 }
+
+fn effect(input: EffectInput) -> vec4f {
+    let glow = effectBloom(input.uv);
+    return vec4f(input.color.rgb + glow * uniforms.strength * vec3f(0.45, 0.65, 1.0), input.color.a);
+}
+`;
 
 /** Warmer whites, a lifted toe and a cool tint in the shadows. */
 const WARM: GradingSettings = {
@@ -47,7 +61,9 @@ export default defineSketch(async (ctx) => {
 		ssr: { maxDistance: 24, thickness: 0.6 },
 		sharpen: 0.5,
 	});
-	post.addEffect({ wgsl: LENS_WGSL, uniforms: { shift: 6, streak: 0.25, grain: 0.05 } });
+	// The lens effect keeps the color fringes and the grain. The streak comes from bloom's chain.
+	post.addEffect({ wgsl: LENS_WGSL, uniforms: { shift: 6, streak: 0, grain: 0.05 } });
+	post.addEffect({ wgsl: STREAK_WGSL, uniforms: { strength: 0.9 }, bloomLevel: 2, order: 1 });
 	scene.setBackground('#05060a');
 	scene.setFog({ color: '#0a0c14', density: 0.03 });
 	const camera = scene.createPerspectiveCamera({ fov: 45 });

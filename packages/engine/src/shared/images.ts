@@ -95,6 +95,11 @@ export interface CustomShader {
 	 */
 	readonly kind?: 'effect' | 'final' | 'finalBloom' | 'effectGroup' | 'effectFold';
 	/**
+	 * True for an effect whose WGSL reads a level of bloom's chain, so it draws in a pass of its
+	 * own and binds that level.
+	 */
+	readonly bloom?: boolean;
+	/**
 	 * The shader's builds. A group's or a fold's are empty until the thread that draws joins them
 	 * from its effects' pieces, at its first pipeline.
 	 */

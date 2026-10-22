@@ -49,6 +49,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `FilmPass`, `GlitchPass`, `HalftonePass`, `DotScreenPass`, `RenderPixelatedPass` | `post.addEffect` (0.2), one effect each | Port the shader as in section 6. Grain sized for display color looks weaker on HDR color: tune it by eye. `GlitchPass`'s random texture becomes the effect's texture, or `null3d::noise` |
 | `AfterimagePass` | No port | It blends in the frame before, which an effect cannot read. List it as dropped |
 | `ShaderPass(customShader)` | `post.addEffect({ wgsl, uniforms, order })` (0.2) | Section 6; GLSL to WGSL: `references/shaders.md` |
+| A streak or glare pass that blurs the bright parts on its own | `post.addEffect({ wgsl, bloomLevel })` (0.3) with WGSL that calls `effectBloom(input.uv)` | The effect reads a level of bloom's chain instead of blurring the picture again, so it costs one texture read. Level 0 is the narrowest glow |
 | `ClearPass`, `MaskPass`, `TexturePass` | A full-screen pass of your own WGSL (0.2), if still needed | Masks usually become layers |
 
 ## 3. pmndrs postprocessing effects

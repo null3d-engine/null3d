@@ -450,9 +450,11 @@ mod ids {
     pub const BLANK_OUTLINE: u32 = BLANK_AO + 1;
     /// The texture that custom effects bind in place of the scene's depth when they read none.
     pub const BLANK_EFFECT_DEPTH: u32 = BLANK_OUTLINE + 1;
+    /// The texel that custom effects bind in place of bloom's level when they read none.
+    pub const BLANK_EFFECT_BLOOM: u32 = BLANK_EFFECT_DEPTH + 1;
     /// The first step of the two-step pass's own blank color grading table and outline texture,
     /// which it owns so that it never destroys the final pass's.
-    pub const OUTPUT_BLANK_LUT: u32 = BLANK_EFFECT_DEPTH + 1;
+    pub const OUTPUT_BLANK_LUT: u32 = BLANK_EFFECT_BLOOM + 1;
     pub const OUTPUT_BLANK_OUTLINE: u32 = OUTPUT_BLANK_LUT + 1;
     /// The offset from each view's camera to each grid cell, which the culling pass reads: one row
     /// per view (see [`super::cull`]).
@@ -963,6 +965,7 @@ impl GpuDrivenRenderer {
                             sampler: ids::EFFECT_SAMPLER,
                             first_group: ids::EFFECT_GROUPS,
                             blank_depth: ids::BLANK_EFFECT_DEPTH,
+                            blank_bloom: ids::BLANK_EFFECT_BLOOM,
                         },
                         fullscreen: FullscreenIds {
                             buffer: ids::FULLSCREEN,

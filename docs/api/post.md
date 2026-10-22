@@ -436,6 +436,7 @@ post.removeEffect(effect);
 | `uniforms` | The first value of each field of the WGSL's `struct Uniforms`, by name | 0 for each field |
 | `textures` | The texture of each `var name: texture_2d<f32>;` that the WGSL declares, by name: a texture from a file or data, or a render pass's texture from `textures.fromPass` | None: white |
 | `order` | A number. Effects run from the lowest order to the highest. | 0 |
+| `bloomLevel` | The level of bloom's chain that the WGSL reads with `effectBloom`, a whole number from 0 for the narrowest glow to 9 for the widest | None: the WGSL reads no bloom |
 
 A custom tone curve takes the place of the built-in curves:
 
@@ -450,6 +451,7 @@ post.set({ toneMapping: reinhard });
 ```
 
 - Effects run on linear HDR color, after the exposure and before bloom and the tone curve. At most 8 run at once. The engine joins effects that read only their own pixel into fewer passes, while the render scale cannot drop below the whole canvas. While it can, each effect draws in a pass of its own, at every scale ([The post-processing chain](../concepts/post-processing.md#below-the-whole-canvass-render-scale)).
+- `effectBloom(input.uv)` returns the glow of the level that `bloomLevel` names, as linear HDR color after the exposure: an anamorphic streak, a glare or a halo can read bloom's chain instead of blurring the picture again. Bloom's chain holds light that passed its threshold, blurred wider at each level, with level 0 the narrowest. The level is drawn while `post.bloom` is on, and a level that the chain does not draw reads black. An effect that calls `effectBloom` draws in a pass of its own.
 - `setEffectUniform` allocates nothing, so a sketch can call it every frame. Keep a vector's values in one array that the sketch changes in place.
 - An effect samples a texture as `textureSampleLevel(name, nameSampler, uv, 0.0)`. A render pass's texture holds its bottom row first: sample it at `effectPassUv(input.uv)`. The textures are fixed when the effect is added, and an effect with textures draws in a pass of its own.
 - Effects and custom curves need HDR color. On a device without it they stay off, and development builds warn once.
