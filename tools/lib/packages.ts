@@ -24,6 +24,7 @@ import { dirname, join, posix, relative, resolve } from 'node:path';
 import ts from 'typescript';
 import { CORE_FILES } from '../../packages/vite-plugin/src/index.ts';
 import { secondsSince } from './build-cache.ts';
+import { refuseStaleCore } from './core-sources.ts';
 import { generateDocs, writeGeneratedDocs } from './docs.ts';
 import { walkFiles } from './files.ts';
 import { ensureShaderModules, isShaderModule, MODULE_DIR } from './shader-modules.ts';
@@ -588,6 +589,7 @@ export function shaderModuleJsFiles(root: string): string[] {
  * source.
  */
 export function packPackages(root: string, out: string): PackedPackage[] {
+	refuseStaleCore(root);
 	rmSync(out, { recursive: true, force: true });
 	mkdirSync(out, { recursive: true });
 	const folders = publicPackages(root);
