@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { PRODUCTION_BUILD_PAGES } from '../tests/lib/server.ts';
 import { acquirePageBuildLock, secondsSince } from './lib/build-cache.ts';
+import { coreFromOtherSources } from './lib/core-sources.ts';
 
 const root = join(import.meta.dirname, '..');
 
@@ -24,6 +25,8 @@ export function pagesToBuild(named: readonly string[]): string[] {
 }
 
 function main(): void {
+	const stale = coreFromOtherSources(root);
+	if (stale) throw new Error(stale);
 	for (const page of pagesToBuild(process.argv.slice(2))) {
 		const started = performance.now();
 		const release = acquirePageBuildLock();
