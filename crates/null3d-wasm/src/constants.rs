@@ -145,6 +145,9 @@ pub mod map_slot {
     pub const COAT_NORMAL: u32 = layer(LayerMap::CoatNormal);
     pub const SHEEN_COLOR: u32 = layer(LayerMap::SheenColor);
     pub const SHEEN_ROUGHNESS: u32 = layer(LayerMap::SheenRoughness);
+    pub const IRIDESCENCE: u32 = layer(LayerMap::Iridescence);
+    pub const IRIDESCENCE_THICKNESS: u32 = layer(LayerMap::IridescenceThickness);
+    pub const ANISOTROPY: u32 = layer(LayerMap::Anisotropy);
 
     /// The number that `setMaterialMap` takes for a layer map: its place after the map slots.
     const fn layer(map: LayerMap) -> u32 {
@@ -1050,6 +1053,8 @@ pub fn typescript() -> String {
                 ("PARALLAX", feature::PARALLAX),
                 ("NO_TONE_MAP", feature::NO_TONE_MAP),
                 ("SCENE_DEPTH", feature::SCENE_DEPTH),
+                ("IRIDESCENCE", feature::IRIDESCENCE),
+                ("ANISOTROPY", feature::ANISOTROPY),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -1096,6 +1101,9 @@ pub fn typescript() -> String {
                 ("COAT_NORMAL", map_slot::COAT_NORMAL),
                 ("SHEEN_COLOR", map_slot::SHEEN_COLOR),
                 ("SHEEN_ROUGHNESS", map_slot::SHEEN_ROUGHNESS),
+                ("IRIDESCENCE", map_slot::IRIDESCENCE),
+                ("IRIDESCENCE_THICKNESS", map_slot::IRIDESCENCE_THICKNESS),
+                ("ANISOTROPY", map_slot::ANISOTROPY),
                 ("BUMP", map_slot::BUMP),
                 ("DISPLACEMENT", map_slot::DISPLACEMENT),
             ],
@@ -1140,6 +1148,18 @@ pub fn typescript() -> String {
                 ),
                 ("SHEEN_COLOR", param::SHEEN_COLOR as u32),
                 ("SHEEN_ROUGHNESS", param::SHEEN_ROUGHNESS as u32),
+                ("IRIDESCENCE", param::IRIDESCENCE as u32),
+                ("IRIDESCENCE_IOR", param::IRIDESCENCE_IOR as u32),
+                (
+                    "IRIDESCENCE_THICKNESS_MIN",
+                    param::IRIDESCENCE_THICKNESS_MIN as u32,
+                ),
+                (
+                    "IRIDESCENCE_THICKNESS_MAX",
+                    param::IRIDESCENCE_THICKNESS_MAX as u32,
+                ),
+                ("ANISOTROPY", param::ANISOTROPY as u32),
+                ("ANISOTROPY_ROTATION", param::ANISOTROPY_ROTATION as u32),
                 ("DECAL_FADE_START", param::DECAL_FADE_START as u32),
                 ("DECAL_FADE_END", param::DECAL_FADE_END as u32),
                 ("DECAL_EDGE_FADE", param::DECAL_EDGE_FADE as u32),

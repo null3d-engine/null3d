@@ -846,8 +846,8 @@
       "three": "MeshPhysicalMaterial (clearcoat, transmission, sheen, iridescence, anisotropy, specular)",
       "status": "changed",
       "since": "0.1",
-      "target": "materials.standard, with ior, specularIntensity, specularColor and their maps, transmission, clearcoat and sheen",
-      "notes": "materials.standard takes ior, specularIntensity, specularColor, specularIntensityMap and specularColorMap with three.js's names and formulas, transmission, thickness, attenuationColor and attenuationDistance (see the transmission entry), and the clear coat and the sheen (see their entries). Iridescence and anisotropy come in 0.3. Until then, approximate them with the standard options or write a surface function.",
+      "target": "materials.standard, with ior, specularIntensity, specularColor and their maps, transmission, clearcoat, sheen, iridescence and anisotropy",
+      "notes": "materials.standard takes ior, specularIntensity, specularColor, specularIntensityMap and specularColorMap with three.js's names and formulas, transmission, thickness, attenuationColor and attenuationDistance (see the transmission entry), the clear coat and the sheen (see their entries), and iridescence and anisotropy (see their entries).",
       "docs": "api/materials",
       "detect": "\\bMeshPhysicalMaterial\\b"
     },
@@ -894,6 +894,28 @@
       "notes": "Same names, ranges and formulas, and glTF's KHR_materials_clearcoat loads into them. Give a clear coat option when you create the material, even as 0, to change it later. clearcoatMap and clearcoatRoughnessMap must be one texture, with the coat in red and its roughness in green, as glTF packs them: pack two textures into one. A material with a clear coat or a sheen takes no lightMap, specularIntensityMap or specularColorMap. A custom material sets s.clearcoat in its surface function.",
       "docs": "api/materials",
       "detect": "\\bclearcoat(Roughness|NormalScale|Map|RoughnessMap|NormalMap)?\\b"
+    },
+    {
+      "id": "mat-iridescence",
+      "category": "Materials",
+      "three": "MeshPhysicalMaterial iridescence / iridescenceIOR / iridescenceThicknessRange / iridescenceMap / iridescenceThicknessMap",
+      "status": "changed",
+      "since": "0.3",
+      "target": "materials.standard({ iridescence, iridescenceIor, iridescenceThicknessRange, iridescenceMap, iridescenceThicknessMap })",
+      "notes": "The same thin-film formulas, and glTF's KHR_materials_iridescence loads into them. three.js names the index of refraction iridescenceIOR and takes its thickness as one range; give iridescenceIor and iridescenceThicknessRange, in nanometers. Give an iridescence option when you create the material to change it later. A material with iridescence takes no lightMap, specularIntensityMap or specularColorMap, and no clear coat's or sheen's maps. A custom material sets s.iridescence, s.iridescenceIor and s.iridescenceThickness in its surface function.",
+      "docs": "api/materials",
+      "detect": "\\biridescence(IOR|Ior|ThicknessRange|Map|ThicknessMap)?\\b"
+    },
+    {
+      "id": "mat-anisotropy",
+      "category": "Materials",
+      "three": "MeshPhysicalMaterial anisotropy / anisotropyRotation / anisotropyMap",
+      "status": "changed",
+      "since": "0.3",
+      "target": "materials.standard({ anisotropy, anisotropyRotation, anisotropyMap })",
+      "notes": "The same anisotropic GGX lobe with three.js's formulas, and glTF's KHR_materials_anisotropy loads into it. A material with anisotropy needs a map, whose texture coordinates give the surface's tangent frame: three.js builds that frame from them too. It takes no lightMap, specularIntensityMap or specularColorMap, and no clear coat's or sheen's maps. Rectangles and tubes of light shade it as three.js does, without the stretch.",
+      "docs": "api/materials",
+      "detect": "\\banisotropy(Strength|Rotation|Map)\\b|[{,]\\s*anisotropy\\s*:"
     },
     {
       "id": "mat-sheen",

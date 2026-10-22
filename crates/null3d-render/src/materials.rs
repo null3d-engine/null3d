@@ -356,6 +356,16 @@ pub mod feature {
     /// material's row stores, as no shader reads it from the row: the frame reads it to bind the
     /// copy and to keep it from drawing before the copy exists.
     pub const SCENE_DEPTH: u32 = 1 << 24;
+    /// The surface reflects light through a thin film above it, as glTF's
+    /// `KHR_materials_iridescence` does: the film's interference tints the specular reflection by
+    /// the angle and the film's thickness, so a soap bubble or a beetle's shell shows the colors
+    /// of its thickness. It takes the builds of the layers above the base ([`COAT_SHEEN`]), whose
+    /// row holds its values, so a material without any layer pays nothing for them.
+    pub const IRIDESCENCE: u32 = 1 << 25;
+    /// The surface's specular lobe stretches along one direction of its tangent frame, as glTF's
+    /// `KHR_materials_anisotropy` does: highlights spread across the direction instead of around,
+    /// as brushed metal shows. It takes the builds of the layers above the base ([`COAT_SHEEN`]).
+    pub const ANISOTROPY: u32 = 1 << 26;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED
         | VERTEX_COLORS
@@ -381,7 +391,14 @@ pub mod feature {
         | WIREFRAME
         | PARALLAX
         | NO_TONE_MAP
-        | SCENE_DEPTH;
+        | SCENE_DEPTH
+        | IRIDESCENCE
+        | ANISOTROPY;
+
+    /// The features whose material lights layers above its base: a clear coat, a sheen,
+    /// iridescence or anisotropy. Each takes the shader builds that [`COAT_SHEEN`] names, whose
+    /// row holds every one of their values.
+    pub const LAYERS: u32 = COAT_SHEEN | IRIDESCENCE | ANISOTROPY;
 
     /// True for features that test alpha with the masked shader variant: a mask that neither
     /// blends nor lets light through.
@@ -450,6 +467,15 @@ pub mod flag {
     /// The shader encodes its color without the tone curve on the 8-bit path, where it applies the
     /// output transform itself.
     pub const NO_TONE_MAP: u32 = 1 << 21;
+    /// The material has the iridescence feature, so its shaders light the film: the light map's
+    /// slot then holds its iridescence map, whose red channel scales the iridescence, and the
+    /// specular intensity map's slot its thickness map, whose green channel mixes the thickness
+    /// range, where the row's layer maps are its family's.
+    pub const IRIDESCENCE: u32 = 1 << 22;
+    /// The material has the anisotropy feature, so its shaders stretch the lobe: the specular
+    /// color map's slot then holds its anisotropy map, the direction in red and green and the
+    /// strength in blue, where the row's layer maps are its family's.
+    pub const ANISOTROPY: u32 = 1 << 23;
 }
 
 /// The row flags (`flag::*` bits) of a material with `features` (`feature::*` bits). The base
@@ -474,10 +500,16 @@ const fn row_flags(features: u32) -> u32 {
     if features & feature::NO_TONE_MAP != 0 {
         flags |= flag::NO_TONE_MAP;
     }
+    if features & feature::IRIDESCENCE != 0 {
+        flags |= flag::IRIDESCENCE;
+    }
+    if features & feature::ANISOTROPY != 0 {
+        flags |= flag::ANISOTROPY;
+    }
     flags
 }
 
-/// Floats in each material's row: thirteen `vec4f`s.
+/// Floats in each material's row: seventeen `vec4f`s.
 pub const MATERIAL_FLOATS: usize = sizes::MATERIAL_BYTES as usize / 4;
 /// Floats of a row of custom values that a custom material's uniforms and texture layers use: eight
 /// `vec4f`s, as the shader compiler packs them. The rest of the row stays unused.
@@ -562,6 +594,26 @@ pub mod param {
     /// How far light spreads under the surface before it leaves it, in world units, taken as
     /// metres: the scatter distance of a channel whose share is 1.
     pub const SUBSURFACE_RADIUS: usize = 59;
+    /// How much of the light reflected by a thin film above the surface is iridescent, from 0 to 1,
+    /// in materials with the iridescence feature.
+    pub const IRIDESCENCE: usize = 60;
+    /// The index of refraction of the film above the surface, 1 or more: 1 makes it as thin as no
+    /// film at all.
+    pub const IRIDESCENCE_IOR: usize = 61;
+    /// The thickness of the film where the thickness map's green channel is 0, in nanometers.
+    pub const IRIDESCENCE_THICKNESS_MIN: usize = 62;
+    /// The thickness of the film where the thickness map's green channel is 1, in nanometers.
+    pub const IRIDESCENCE_THICKNESS_MAX: usize = 63;
+    /// How strongly the specular lobe stretches along a direction of the tangent frame, from 0 to
+    /// 1, in materials with the anisotropy feature.
+    pub const ANISOTROPY: usize = 64;
+    /// The direction along which the lobe stretches, in radians from the tangent.
+    pub const ANISOTROPY_ROTATION: usize = 65;
+    /// Which family's maps the light map's and the specular maps' slots hold, as
+    /// [`LayerMap::kind`] gives it: 0 for a clear coat's and a sheen's, and 1 for iridescence's and
+    /// the anisotropy's. The core sets it as it sets each layer map, so a shader reads the maps
+    /// that the material gave.
+    pub const LAYER_MAPS_KIND: usize = 66;
     /// A decal material's values take the place of the transmission's, which a decal never has.
     /// The cosine of the angle from the decal's direction at which it starts to fade.
     pub const DECAL_FADE_START: usize = TRANSMISSION;
@@ -584,11 +636,31 @@ pub mod param {
             | DIFFUSE_TRANSMISSION_COLOR
             | SUBSURFACE_COLOR => Some(3),
             NORMAL_SCALE | CLEARCOAT_NORMAL_SCALE => Some(2),
-            OPACITY | ALPHA_CUTOFF | METALNESS | ROUGHNESS | OCCLUSION_STRENGTH
-            | LIGHT_MAP_INTENSITY | EMISSIVE_INTENSITY | ENV_INTENSITY | REFLECTANCE
-            | SPECULAR_INTENSITY | TRANSMISSION | THICKNESS | IOR | ATTENUATION_DISTANCE
-            | CLEARCOAT | CLEARCOAT_ROUGHNESS | SHEEN_ROUGHNESS | DIFFUSE_TRANSMISSION
-            | SUBSURFACE_RADIUS => Some(1),
+            OPACITY
+            | ALPHA_CUTOFF
+            | METALNESS
+            | ROUGHNESS
+            | OCCLUSION_STRENGTH
+            | LIGHT_MAP_INTENSITY
+            | EMISSIVE_INTENSITY
+            | ENV_INTENSITY
+            | REFLECTANCE
+            | SPECULAR_INTENSITY
+            | TRANSMISSION
+            | THICKNESS
+            | IOR
+            | ATTENUATION_DISTANCE
+            | CLEARCOAT
+            | CLEARCOAT_ROUGHNESS
+            | SHEEN_ROUGHNESS
+            | DIFFUSE_TRANSMISSION
+            | SUBSURFACE_RADIUS
+            | IRIDESCENCE
+            | IRIDESCENCE_IOR
+            | IRIDESCENCE_THICKNESS_MIN
+            | IRIDESCENCE_THICKNESS_MAX
+            | ANISOTROPY
+            | ANISOTROPY_ROTATION => Some(1),
             _ => None,
         }
     }
@@ -646,10 +718,12 @@ impl MapSlot {
     pub const DIFFUSE_TRANSMISSION_COLOR: MapSlot = MapSlot::SpecularColor;
 }
 
-/// A map of a layered material ([`feature::COAT_SHEEN`]). Such a material has no light map and no
-/// specular maps, so the layers' maps take those slots, packed as glTF packs them: the coat in red
-/// and its roughness in green of one map, the coat's normals in another, and the sheen's color in
-/// RGB and its roughness in alpha of a third. A row flag says which channels of a shared map apply.
+/// A map of a material with layers above its base ([`feature::LAYERS`]). Such a material has no
+/// light map and no specular maps, so the layers' maps take those slots, packed as glTF packs them:
+/// the coat in red and its roughness in green of one map, the coat's normals in another, the sheen's
+/// color in RGB and its roughness in alpha of a third, the iridescence in the red of a fourth and
+/// its thickness in the green of a fifth, and the anisotropy in the RGB of a sixth. A row flag says
+/// which channels of a shared map apply.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LayerMap {
     /// The clear coat in red, in linear color.
@@ -662,24 +736,49 @@ pub enum LayerMap {
     SheenColor,
     /// The sheen's roughness in alpha, in the sheen color map's slot.
     SheenRoughness,
+    /// The iridescence in red, in linear color, in the light map's slot.
+    Iridescence,
+    /// The film's thickness in green, in linear color, in the specular intensity map's slot.
+    IridescenceThickness,
+    /// The anisotropy's direction in red and green and its strength in blue, in linear color, in
+    /// the specular color map's slot.
+    Anisotropy,
 }
 
 impl LayerMap {
     /// Every layer map, in the order that `setMaterialMap` numbers them after the map slots.
-    pub const ALL: [LayerMap; 5] = [
+    pub const ALL: [LayerMap; 8] = [
         LayerMap::Coat,
         LayerMap::CoatRoughness,
         LayerMap::CoatNormal,
         LayerMap::SheenColor,
         LayerMap::SheenRoughness,
+        LayerMap::Iridescence,
+        LayerMap::IridescenceThickness,
+        LayerMap::Anisotropy,
     ];
+
+    /// Which family of layers the map belongs to, as a row looks up its slots: 0 for a clear
+    /// coat's and a sheen's, and 1 for iridescence's and the anisotropy's.
+    pub const fn kind(self) -> f32 {
+        match self {
+            LayerMap::Coat
+            | LayerMap::CoatRoughness
+            | LayerMap::CoatNormal
+            | LayerMap::SheenColor
+            | LayerMap::SheenRoughness => 0.0,
+            LayerMap::Iridescence | LayerMap::IridescenceThickness | LayerMap::Anisotropy => 1.0,
+        }
+    }
 
     /// The slot that holds the map.
     pub const fn slot(self) -> MapSlot {
         match self {
-            LayerMap::Coat | LayerMap::CoatRoughness => MapSlot::Light,
-            LayerMap::CoatNormal => MapSlot::SpecularIntensity,
-            LayerMap::SheenColor | LayerMap::SheenRoughness => MapSlot::SpecularColor,
+            LayerMap::Coat | LayerMap::CoatRoughness | LayerMap::Iridescence => MapSlot::Light,
+            LayerMap::CoatNormal | LayerMap::IridescenceThickness => MapSlot::SpecularIntensity,
+            LayerMap::SheenColor | LayerMap::SheenRoughness | LayerMap::Anisotropy => {
+                MapSlot::SpecularColor
+            }
         }
     }
 
@@ -692,6 +791,7 @@ impl LayerMap {
             LayerMap::CoatNormal => 0,
             LayerMap::SheenColor => flag::SHEEN_COLOR_MAP,
             LayerMap::SheenRoughness => flag::SHEEN_ROUGHNESS_MAP,
+            LayerMap::Iridescence | LayerMap::IridescenceThickness | LayerMap::Anisotropy => 0,
         }
     }
 }
@@ -820,6 +920,9 @@ const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     row[param::CLEARCOAT_NORMAL_SCALE] = 1.0;
     row[param::CLEARCOAT_NORMAL_SCALE + 1] = 1.0;
     row[param::SHEEN_ROUGHNESS] = 1.0;
+    row[param::IRIDESCENCE_IOR] = 1.3;
+    row[param::IRIDESCENCE_THICKNESS_MIN] = 100.0;
+    row[param::IRIDESCENCE_THICKNESS_MAX] = 400.0;
     let mut k = 0;
     while k < 3 {
         row[param::DIFFUSE_TRANSMISSION_COLOR + k] = 1.0;
@@ -1345,6 +1448,11 @@ impl MaterialTable {
         let bit = map.flag();
         let on = if texture.is_none() { 0 } else { bit };
         *flags = ((*flags as u32 & !bit) | on) as f32;
+        // A live map names the family whose maps the slots hold, so the shader reads the maps that
+        // the material gave: the coat's and the sheen's, or iridescence's and the anisotropy's.
+        if !texture.is_none() {
+            self.rows[id as usize * MATERIAL_FLOATS + param::LAYER_MAPS_KIND] = map.kind();
+        }
         Ok(())
     }
 
@@ -1687,6 +1795,14 @@ mod tests {
             (param::SHEEN_ROUGHNESS, 1),
             (param::DIFFUSE_TRANSMISSION_COLOR, 3),
             (param::DIFFUSE_TRANSMISSION, 1),
+            (param::SUBSURFACE_COLOR, 3),
+            (param::SUBSURFACE_RADIUS, 1),
+            (param::IRIDESCENCE, 1),
+            (param::IRIDESCENCE_IOR, 1),
+            (param::IRIDESCENCE_THICKNESS_MIN, 1),
+            (param::IRIDESCENCE_THICKNESS_MAX, 1),
+            (param::ANISOTROPY, 1),
+            (param::ANISOTROPY_ROTATION, 1),
         ];
         starts.sort();
         for pair in starts.windows(2) {
@@ -1873,6 +1989,59 @@ mod tests {
         // The flags fit the float of the row exactly, above the second coordinates' bits.
         const { assert!(flag::SHEEN_ROUGHNESS_MAP < 1 << 24) };
         const { assert!(flag::COAT_MAP > flag::SECOND_UV << (MAP_SLOTS - 1)) };
+    }
+
+    #[test]
+    fn the_film_and_the_stretch_take_the_layer_slots_and_name_their_family() {
+        let mut table = MaterialTable::with_capacity(2);
+        let id = table
+            .create(
+                Shading::Lit,
+                feature::IRIDESCENCE | feature::ANISOTROPY,
+                [1.0; 4],
+            )
+            .unwrap();
+        let coat = table
+            .create(Shading::Lit, feature::COAT_SHEEN, [1.0; 4])
+            .unwrap();
+        // A material's layer maps say which family fills the light map's and the specular maps'
+        // slots, so a shader reads a coat map as a coat map and a film map as a film map.
+        table
+            .set_layer_map(id, LayerMap::Iridescence, Handle::from_raw(5), false)
+            .unwrap();
+        table
+            .set_layer_map(
+                id,
+                LayerMap::IridescenceThickness,
+                Handle::from_raw(6),
+                false,
+            )
+            .unwrap();
+        table
+            .set_layer_map(id, LayerMap::Anisotropy, Handle::from_raw(7), false)
+            .unwrap();
+        assert_eq!(
+            row(&table, id)[param::LAYER_MAPS_KIND],
+            LayerMap::Iridescence.kind()
+        );
+        assert_eq!(row(&table, coat)[param::LAYER_MAPS_KIND], 0.0);
+        assert_eq!(table.map(id, MapSlot::Light), Handle::from_raw(5));
+        assert_eq!(
+            table.map(id, MapSlot::SpecularIntensity),
+            Handle::from_raw(6)
+        );
+        assert_eq!(table.map(id, MapSlot::SpecularColor), Handle::from_raw(7));
+        // The film's and the stretch's values take the row's last two `vec4f`s, within them.
+        assert_eq!(param::IRIDESCENCE / 4, 15);
+        assert_eq!(param::ANISOTROPY / 4, 16);
+        assert_eq!(
+            row(&table, id)[param::IRIDESCENCE_IOR],
+            DEFAULT_ROW[param::IRIDESCENCE_IOR]
+        );
+        assert_eq!(
+            row(&table, id)[param::IRIDESCENCE_THICKNESS_MAX],
+            DEFAULT_ROW[param::IRIDESCENCE_THICKNESS_MAX]
+        );
     }
 
     #[test]
