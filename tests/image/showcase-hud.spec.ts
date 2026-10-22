@@ -317,21 +317,27 @@ test('the showcase HUD shows its toasts at the top centre', ALONE, async ({ page
 	expect(errors).toEqual([]);
 });
 
-test(
-	'the showcase HUD keeps the sky and the fog off until they turn on',
-	ALONE,
-	async ({ page }) => {
-		const errors = await openHud(page);
-		await holdForSwitches(page);
+// The sky and the fog each take about 8 minutes to go off and on again on CI's software GPU, so
+// each has a test, and a machine, of its own.
+test('the showcase HUD keeps the sky off until it turns on', ALONE, async ({ page }) => {
+	const errors = await openHud(page);
+	await holdForSwitches(page);
 
-		await switchPart(page, 'Sky', 'Atmosphere', 'atmosphere');
-		// The fog starts off, so it is turned on before the part that checks it goes off and on.
-		await pick(page, 'Atmosphere', 'atmosphere', 'Fog', 'Fog: on');
-		await switchPart(page, 'Fog', 'Atmosphere', 'atmosphere');
+	await switchPart(page, 'Sky', 'Atmosphere', 'atmosphere');
 
-		expect(errors).toEqual([]);
-	},
-);
+	expect(errors).toEqual([]);
+});
+
+test('the showcase HUD keeps the fog off until it turns on', ALONE, async ({ page }) => {
+	const errors = await openHud(page);
+	await holdForSwitches(page);
+
+	// The fog starts off, so it is turned on before the part that checks it goes off and on.
+	await pick(page, 'Atmosphere', 'atmosphere', 'Fog', 'Fog: on');
+	await switchPart(page, 'Fog', 'Atmosphere', 'atmosphere');
+
+	expect(errors).toEqual([]);
+});
 
 test(
 	'the showcase HUD keeps the environment light off until it turns on',
