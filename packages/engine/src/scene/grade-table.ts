@@ -2,11 +2,10 @@
 // in a job worker, and its texels go into one 3D texture here, so a change of the values costs the
 // frames nothing but an upload of that texture.
 
-import type { GradeTarget } from './post';
 import type { Texture, Textures } from './textures';
 
 /** The texture store's grading table: one texture of the bake's texels a side. */
-export class GradeTable implements GradeTarget {
+export class GradeTable {
 	private texture: Texture | undefined;
 
 	constructor(private readonly textures: Textures) {}

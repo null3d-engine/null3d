@@ -200,11 +200,12 @@ function resolve(values: GradeValues): GradingGains {
  * overshoot, so a color that crosses the clip inside a texel's cell still interpolates as the
  * reference does. This is the reference: the baked table matches it between its texels.
  */
-export function gradeColor(
-	c: Rgb,
-	values: GradeValues,
-	gains: GradingGains = resolve(values),
-): Rgb {
+export function gradeColor(c: Rgb, values: GradeValues): Rgb {
+	return gradeWith(c, values, resolve(values));
+}
+
+/** [`gradeColor`] with the gains resolved once, which a bake through the whole table reuses. */
+function gradeWith(c: Rgb, values: GradeValues, gains: GradingGains): Rgb {
 	const wb = gains.gains;
 	const balanced: Rgb = [c[0] * wb[0], c[1] * wb[1], c[2] * wb[2]];
 	const l = luma(balanced);
@@ -249,7 +250,7 @@ export function bakeGrade(values: GradeValues, size = GRADE_SIZE): Float32Array 
 			const green = (g / last) ** 2;
 			for (let r = 0; r < size; r++) {
 				const red = (r / last) ** 2;
-				const graded = gradeColor([red, green, blue], values, gains);
+				const graded = gradeWith([red, green, blue], values, gains);
 				texels[at++] = graded[0];
 				texels[at++] = graded[1];
 				texels[at++] = graded[2];
