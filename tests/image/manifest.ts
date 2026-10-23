@@ -1229,12 +1229,18 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Fifty textures that load in waves in a live engine, a band of rows per frame under a small
 	// upload budget, while their array grows twice, to 64 layers. No frame may upload more than the
 	// budget, and the GPU memory count must match the array.
+	// The budget is half a texture, so the page must draw about 120 frames before every image is on
+	// the GPU. CI's software GPU drew them at about half a second each and published no result
+	// within 60 seconds in any thread mode, its trail still counting frames down to the last few
+	// images. The limit therefore allows about twice what CI's slowest mode needs. The test's worst
+	// case, a page that stalls in every mode, grows to 11 minutes of a shard.
 	{
 		name: 'texture-arrays',
 		page: 'tests/pages/texture-arrays.html',
 		size: [400, 240],
 		modes: ALL_MODES,
 		expect: { withinBudget: true, memoryCounted: true },
+		timeoutSeconds: 120,
 	},
 	// A screen that follows a 1024 x 1024 OffscreenCanvas in the sketch and refreshes a 256 x 256
 	// rectangle of it at most 30 times a second. A refresh uploads only the rectangle, so every
