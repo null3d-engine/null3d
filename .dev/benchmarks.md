@@ -417,6 +417,14 @@ A run folder holds every page's full result, with frames and images, and stays o
 - On 23 October 2026 the masked side was no slower than the opaque one in Chrome on any path, and 0.29 ms slower at most in Safari with MSAA, for a screen of about 1.5 million pixels. So a scene whose masked areas cover much of the view pays under a third of a millisecond for them on this Mac.
 - In a real scene the prepass draws the opaque objects and leaves the masked ones out, so the two builds are not equal work there: masked surfaces shade their hidden layers on the paths that keep the prepass. [D-226](decisions/D-226-alpha-masked-lit-fragments-under-msaa.md) gives the figures and what they mean.
 
+## A tree of cluster patches
+
+- The `cluster-cost` page draws `tests/pages/assets/models/cluster-terrain.glb`, a heightfield of 32,768 triangles that the asset tool cut into a tree of 511 patches, with one directional light and one ambient light. It stands the camera 12, 30 and 80 meters from the middle of the ground and times two seconds at each distance after two seconds of warm-up, so the near patches draw at full detail and the far ones coarser ([D-231](decisions/D-231-cluster-levels-cost.md)).
+- The page reports the median GPU time of a frame where the device has a GPU timer, and the median frame interval and CPU time everywhere. `direct=off` keeps the start-up probe from choosing the path that draws the mesh whole: without it the figures describe another drawing.
+- Run it on a phone or a tablet with the plan: `bun run devices:cloud --only bsgalaxys25-chrome --plan cluster-cost`, or in Safari on the iPad with `bun tests/real-browsers.ts --plan cluster-cost --lan ipad-safari`. The plan is timed, so the runner measures the display's refresh rate before each page.
+- Run it on the Mac in a quiet lane: `NULL3D_CLUSTER_COST=1 bun run test:browser -- cluster-cost.spec.ts`. `NULL3D_CLUSTER_PRESETS` narrows the presets, as a list.
+- The frame's GPU time falls by about a quarter as the camera draws back, which is the saving that coarser patches make. [D-231](decisions/D-231-cluster-levels-cost.md) gives each device's figures.
+
 ## Double-sided see-through objects
 
 - The page switch `?sides=two` draws every box of S2 see-through and double-sided. The transparent pass then draws each run's back faces, then its front faces ([D-82](decisions/D-82-transparency-parity.md)). `?sides=one` draws the same boxes with `forceSinglePass`, in one draw. The difference between the two is the cost of the second draw.
