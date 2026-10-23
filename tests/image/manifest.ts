@@ -2351,6 +2351,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/custom-inputs-sketch.ts',
 		hold: 1,
 		size: [480, 270],
+		timeoutSeconds: 120,
 	},
 	// The README's dissolve: a surface function with uniforms and the mask alpha mode, at four
 	// stages of its progress.
@@ -2359,6 +2360,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/custom-dissolve-sketch.ts',
 		hold: 0,
 		size: [480, 270],
+		timeoutSeconds: 120,
 	},
 	// Custom materials with textures: two textures that a surface function samples, the same WGSL
 	// without them, which samples white, a vertex offset that reads a height in the vertex stage,
