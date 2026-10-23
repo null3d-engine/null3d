@@ -14,7 +14,7 @@
 //! is then.
 //!
 //! A map redraws only for a change that shows: its sun turning more than half a degree, one of its
-//! colour values drifting by a fiftieth, or its clouds drifting a tenth of a cell of their pattern.
+//! color values drifting by a fiftieth, or its clouds drifting a tenth of a cell of their pattern.
 //! Anything finer waits, so a sun that moves in every frame costs one stage a frame only while it
 //! crosses those steps. When the sky stops changing, one last fill captures it exactly, so a map
 //! never keeps a sun that stopped short of a step.
@@ -47,17 +47,17 @@ const STEP_WORDS: usize = 20;
 /// turns less darkens or brightens the light it gives a surface by far less than a level of 255.
 const SUN_STEP: f32 = std::f32::consts::PI / 360.0;
 
-/// The least drift of a colour value, relative to its size, that a map draws again for: a fiftieth.
+/// The least drift of a color value, relative to its size, that a map draws again for: a fiftieth.
 const COLOUR_STEP: f32 = 0.02;
 
 /// The least drift of the clouds across the sky, in cells of their pattern, that a map draws again
-/// for: a tenth. The pattern is a thousand times the drift of the clock times their speed, so they
-/// drift a tenth of a cell about every five seconds at three.js's speed.
+/// for: a tenth. The shaders read the pattern at a thousand times the clock's drift, so at
+/// three.js's speed the clouds cover a tenth of a cell in about five seconds.
 const CLOUD_STEP: f32 = 0.1;
 
-/// The height, in kilometres, under which a camera counts as this high when a map weighs how far
+/// The height, in kilometers, under which a camera counts as this high when a map weighs how far
 /// it moved. The sky changes little with height near the ground, so a camera below it must climb
-/// 10 metres before a map draws again.
+/// 10 meters before a map draws again.
 const FLAT_HEIGHT: f32 = 0.5;
 
 /// The sky that a map shows.
@@ -66,7 +66,7 @@ pub enum MapSky {
     /// The analytic sky, whose light frames take times `gain`: 1, or the factor that matches the
     /// analytic sky to the physical sky that it stands in for.
     Analytic { sky: Sky, gain: f32 },
-    /// The physical sky, seen from `height` kilometres above the ground.
+    /// The physical sky, seen from `height` kilometers above the ground.
     Physical { atmosphere: Atmosphere, height: f32 },
 }
 
@@ -95,7 +95,7 @@ impl MapSky {
     }
 
     /// True when a map of `self` keeps its levels for `other`: its sun stands within half a degree
-    /// of the other's, no colour value has drifted by a fiftieth, and its clouds have drifted less
+    /// of the other's, no color value has drifted by a fiftieth, and its clouds have drifted less
     /// than a tenth of their pattern's cell.
     fn near(&self, other: &Self) -> bool {
         self.compares(other, SUN_STEP, COLOUR_STEP, CLOUD_STEP)
@@ -108,7 +108,7 @@ impl MapSky {
     }
 
     /// True when `other` holds the same values as `self`, within `turn` radians of each sun's
-    /// direction, `drift` of each colour value relative to its size, and `clouds` cells of the
+    /// direction, `drift` of each color value relative to its size, and `clouds` cells of the
     /// clouds' pattern.
     fn compares(&self, other: &Self, turn: f32, drift: f32, clouds: f32) -> bool {
         match (self, other) {
@@ -232,8 +232,8 @@ fn within(a: f32, b: f32, drift: f32) -> bool {
     (a - b).abs() <= drift * a.abs().max(b.abs())
 }
 
-/// True when two heights above the ground, in kilometres, lie within `drift` of each other. A
-/// height under `FLAT_HEIGHT` counts as that high, so a camera near the ground must climb 10 metres
+/// True when two heights above the ground, in kilometers, lie within `drift` of each other. A
+/// height under `FLAT_HEIGHT` counts as that high, so a camera near the ground must climb 10 meters
 /// before a map draws again, as the physical sky's own tables wait for.
 fn same_height(a: f32, b: f32, drift: f32) -> bool {
     (a - b).abs() <= drift * a.abs().max(b.abs()).max(FLAT_HEIGHT)
@@ -280,7 +280,7 @@ impl SkyMaps {
         self.sky = Some(sky);
     }
 
-    /// Sets the height above the ground, in kilometres, from which a map of the physical sky sees
+    /// Sets the height above the ground, in kilometers, from which a map of the physical sky sees
     /// it: the height of the physical sky's tables.
     pub(crate) fn set_height(&mut self, height: f32) {
         if let Some(MapSky::Physical { height: h, .. }) = &mut self.sky {
