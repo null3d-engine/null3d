@@ -342,6 +342,13 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	createLevelMesh(base: number, indices: number): number;
 	/**
+	 * Gives the live mesh `mesh` the `indices` triangles at `meshArrays`'s address in place of the
+	 * ones it draws, which the call frees. 0 when the mesh takes them. A mesh that is split into
+	 * parts, morphed, a level of its own or drawn as lines returns its fault code, and keeps the
+	 * triangles it had.
+	 */
+	replaceMeshIndices(mesh: number, indices: number): number;
+	/**
 	 * Gives a mesh the tree over its triangles that a model file stores, from the first `bytes`
 	 * bytes at `meshArrays`'s address. 1 when the mesh takes it, 0 when the tree does not fit the
 	 * mesh, which then gets a tree of its own on the first query.
@@ -1122,6 +1129,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'meshArrays',
 	'createMeshFromArrays',
 	'createLevelMesh',
+	'replaceMeshIndices',
 	'setMeshBvh',
 	'setMeshBlocker',
 	'setMeshPatches',
