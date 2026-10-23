@@ -24,6 +24,7 @@ use null3d_core::lights::{
     AUTO_FALLBACK, LightShadow, LightTable, LightView, SunShadow, VisibleLight,
     farthest_receiver_distance, ladder_distance,
 };
+use null3d_core::memory::{MemoryRegister, MemoryUse, area};
 use null3d_core::morph::MorphWeights;
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
@@ -461,6 +462,9 @@ pub trait FrameBuilder {
     fn meshes_updated(&mut self, id: u32, positions: bool);
     /// The GPU bytes of the meshes: the buffers of every page and the texture of morph deltas.
     fn mesh_gpu_bytes(&self) -> u64;
+    /// Adds the bytes that the builder's tables, its cell culling and its upload arenas hold to the
+    /// memory register. The stats overlay asks while it shows its development figures.
+    fn account(&self, register: &mut MemoryRegister);
     /// Forgets every GPU object the draw lists created and every upload they made, so the next
     /// frame creates them all again and uploads the whole scene. The thread that draws asks for
     /// this after the browser took the GPU away and it made a new device.
@@ -640,12 +644,15 @@ pub(crate) struct UploadArena {
     /// Bytes that a reserve ahead of a frame replaced, kept until the next reset: the list of the
     /// frame that last used the arena may still point into them.
     kept: Vec<Vec<u8>>,
+    /// The most bytes that a frame has copied into the arena since it was made.
+    high_water: usize,
 }
 
 impl UploadArena {
     /// Empties the arena and makes room for `total` bytes. The list of the frame that last used
     /// the arena has been replayed, so its copies may move.
     pub(crate) fn reset(&mut self, total: usize) {
+        self.high_water = self.high_water.max(self.bytes.len());
         self.kept.clear();
         self.bytes.clear();
         self.volatile.clear();
@@ -690,6 +697,20 @@ impl UploadArena {
     /// holds, in order.
     pub(crate) fn volatile(&self) -> &[Range<usize>] {
         &self.volatile
+    }
+
+    /// The bytes that the arena's buffer, its range list and the buffers it kept hold, with the
+    /// most bytes that a frame has copied into it.
+    pub(crate) fn memory_use(&self) -> MemoryUse {
+        let kept: usize = self.kept.iter().map(Vec::capacity).sum();
+        let range = size_of::<Range<usize>>();
+        let reserved = self.bytes.capacity() + kept + self.volatile.capacity() * range;
+        let used = self.bytes.len() + self.volatile.len() * range;
+        MemoryUse::with_peak(
+            reserved as u64,
+            used as u64,
+            self.high_water.max(used) as u64,
+        )
     }
 
     /// Copies `bytes` into the arena as [`UploadArena::push`] does, and records the ranges at
@@ -781,6 +802,25 @@ impl ParityLists {
     /// How still the camera's view is: the frames it has accumulated, from 0 while it moves.
     pub(crate) fn still(&self) -> crate::still::Still {
         self.still
+    }
+
+    /// Adds the bytes that the parities' upload arenas hold to the uploads area, and those of the
+    /// draw lists and their snapshots to the draw-lists area.
+    pub(crate) fn account(&self, register: &mut MemoryRegister) {
+        let mut uploads = MemoryUse::default();
+        for arena in &self.arenas {
+            uploads.add(arena.memory_use());
+        }
+        register.add(area::UPLOADS, uploads);
+        let mut lists = MemoryUse::default();
+        for list in &self.lists {
+            let (reserved, used) = list.memory_use();
+            lists.add(MemoryUse::new(reserved as u64, used as u64));
+        }
+        for snapshot in &self.snapshots {
+            lists.add(snapshot.memory_use());
+        }
+        register.add(area::DRAW_LISTS, lists);
     }
 
     pub(crate) fn list(&self, frame: u32) -> &DrawList {
@@ -3891,6 +3931,22 @@ pub fn linear_to_srgb(c: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_upload_arenas_register_their_room_and_the_most_a_frame_filled() {
+        let mut arena = UploadArena::default();
+        arena.reset(1024);
+        arena.push(&[7u8; 300]).expect("room for the first frame");
+        let first = arena.memory_use();
+        assert!(first.reserved >= 1024, "{} bytes reserved", first.reserved);
+        assert_eq!(first.used, 300);
+        // The next reset records what the frame before it filled.
+        arena.reset(1024);
+        arena.push(&[7u8; 100]).expect("room for the second frame");
+        let second = arena.memory_use();
+        assert_eq!(second.peak, 300);
+        assert_eq!(second.used, 100);
+    }
 
     /// A pair of drawings that differ only in their template: a textured mesh keeps its maps'
     /// group when a probe lights it, and a plain lit pair reads none.

@@ -2377,6 +2377,14 @@ impl DrawList {
         &self.words
     }
 
+    /// The bytes that the recorded words reserve and use.
+    pub fn memory_use(&self) -> (usize, usize) {
+        (
+            self.words.capacity() * size_of::<u32>(),
+            self.words.len() * size_of::<u32>(),
+        )
+    }
+
     /// Address of the first word, for the replay loop's view on engine memory.
     pub fn as_ptr(&self) -> *const u32 {
         self.words.as_ptr()
