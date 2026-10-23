@@ -26,7 +26,7 @@ interface StagedResult {
 }
 
 for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
-	test(`staged levels draw the coarse level first and the fine one after, on ${gpu}`, async ({
+	test(`staged-levels draw the coarse level first and the fine one after, on ${gpu}`, async ({
 		page,
 	}) => {
 		test.setTimeout(180_000);
@@ -56,7 +56,7 @@ for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
 		expect(result.changed).toBeGreaterThan(0.01);
 	});
 
-test('a level limit of 1 downloads no stage, so the picture stays the coarse one', async ({
+test('staged-levels downloads no stage under a level limit of 1, so the picture stays coarse', async ({
 	page,
 }) => {
 	test.setTimeout(180_000);
@@ -67,7 +67,7 @@ test('a level limit of 1 downloads no stage, so the picture stays the coarse one
 	await page.goto('staged-levels.html?gpu=webgpu&max=1');
 	const result = await pageResult<StagedResult>(page, 120_000);
 	expect(result.failures).toEqual([]);
-	expect(result.loaded).toEqual({ levels: 0, staged: true });
+	expect(result.loaded).toEqual({ levels: 0, staged: false });
 	expect(result.expected).toBeGreaterThan(0);
 	expect(result.levels).toBe(0);
 	expect(stages).toEqual([]);

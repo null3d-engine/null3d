@@ -32,7 +32,7 @@ export default defineSketch(async ({ scene, assets, page }) => {
 	);
 	const levels = () => node?.mesh?.levels.length ?? -1;
 	let posted = levels();
-	page.post('loaded', { levels: posted, staged: MAX > 0 });
+	page.post('loaded', { levels: posted });
 	return {
 		onUpdate() {
 			const now = levels();

@@ -74,12 +74,15 @@ run('staged-levels', async () => {
 			else waiting.set(name, [...(waiting.get(name) ?? []), resolve]);
 		});
 	await engine.firstFrame;
-	const loaded = (await message('loaded')) as { levels: number; staged: boolean };
+	const loaded = (await message('loaded')) as { levels: number };
 	// The picture that the file draws, before any stage arrives: the spec holds them back.
 	const coarse = await engine.captureFrame();
 	window.__stagedCoarse = true;
+	// Without a level limit the loader draws the file's level and then every stage, so the page waits
+	// for the mesh to carry them all. With a limit it downloads no stage, and the count stays.
+	const staged = !params.has('max') && expected > 0;
 	let levels = loaded.levels;
-	while (loaded.staged && levels < expected) {
+	while (staged && levels < expected) {
 		const next = (await message('levels')) as { levels: number };
 		levels = next.levels;
 	}
@@ -88,7 +91,7 @@ run('staged-levels', async () => {
 	await engine.destroy();
 	return {
 		tier: engine.capabilities.tier,
-		loaded,
+		loaded: { ...loaded, staged },
 		expected,
 		levels,
 		size: [coarse.width, coarse.height],
