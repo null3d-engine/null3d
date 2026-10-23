@@ -127,7 +127,7 @@ once the chosen splats are packed, which a still picture waits for.
 - One draw for the whole cloud, whose rows the engine culls and sorts. A splat's cost is its card
   and the ellipse's math per pixel, so a large budget suits a fast GPU; the WebGL2 presets are lower
   for that reason.
-- The batch holds `capacity` rows of 56 bytes each, which is the cloud's memory.
+- The batch holds `capacity` rows of 56 bytes each, which is the cloud's memory. Without `capacity`, it holds the splats that the preset and the GPU path may draw, so a phone allocates less than a desktop.
 - The add-on reads the first band of each splat's spherical harmonics, which is its base color.
   Higher bands make a color change with the view; the add-on ignores them, which the extension
   allows.
