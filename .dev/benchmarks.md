@@ -82,6 +82,9 @@ under a second (runs 38679915189 and 38683080955).
 - On WebGL2, `measure` reports `visibleEntries`, the entries in each frame's list of visible objects, and the bench summary divides the upload by it. When only the camera moves, as in S1-static, the upload is about 4 bytes per entry.
 - null3D's benchmark pages start the warm-up when the GPU finishes the first frame. On a first visit, `createEngine` resolves only after the preset check, which runs after the first frame. A later start in the same browser takes the check's stored result, and `createEngine` resolves before the first frame. Runs on phones and tablets keep the browser's storage, so without the wait their warm-up would shrink by the time to the first frame. Playwright gives each benchmark run on the Mac fresh storage, so those runs check the preset each time.
 - `packages/cli/src/protocol.js` holds the protocol's warm-up, measured time and run count. It also holds the timed run of a null3D page, and the median and spread of runs. The command-line tool's `bench` command runs the same protocol on a project's page, so a change there changes both.
+- **A start figure needs the same load at both ends.** A page's core load and its first frame follow the machine's load, so a row taken on a busy machine starts slower without any code change. On 23 October 2026 the same commit read a core load of 2033 ms in one quiet row and 2292 ms in a busier one, while a different commit read 4038 ms in a row beside the first. Compare starts only between rows taken at matched load, three per end back to back, and read the request list beside the time. The same untouched page read 4,038 ms for its core in one row and 2,292 ms in a row taken minutes later.
+- **A build's module list is no evidence about the source graph.** The preload list of a built page follows the generated shader modules in the checkout, not only the engine's source. Building one commit with another commit's generated modules gave its page the other commit's preloads. Build both ends with their own generated files before you compare the lists or name a culprit from them.
+- **Two requests for one file are a fault, whatever their cost.** Each device row keeps every request the page made, in `downloads.files`, with its time. The engine's core fetched twice, 1 or 2 ms apart, is a real fault even when the seconds it adds are in doubt: something on the page asks for it twice at once. Do not dismiss it because the cost is small.
 
 ## The benchmark job in CI
 
@@ -368,12 +371,6 @@ A run folder holds every page's full result, with frames and images, and stays o
 - On the Mac: `bun run bench:run --scenes s6 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,threejs-webgl,scene-code`.
 - `?occlusion-turns` on null3D's page runs T-36 in place of the timed run. Software occlusion culling runs off and on in turns over the same stretches of the route. Then the page checks at stops along it that the culling hides nothing that shows, with the camera at rest. Last, it checks the same while the camera jumps a short way in every frame, so that no object shows late in motion. `bun run test:bench` runs a short form of it on the Mac's GPU. SwiftShader draws S6 too slowly, so CI skips it. The device runner's `occlusion-s6` plan runs it ([Devices](devices.md#the-s6-occlusion-plan), [D-22](decisions/D-22-occlusion-presets.md#software-occlusion-culling-on-webgl2)).
 - The report adds a table of each page's load, with the medians of its runs. It gives the times from the page's start to the first frame and to the whole city. It also gives when each model file arrived, and the megabytes of content downloaded. Each run loads in a fresh window of one browser, whose cache may still hold the files, and a local server sends them. So the times count the work after the download more than the download itself.
-- A start time is compared only between rows measured at matched load. On 23 October 2026 the same
-  untouched page read 4,038 ms for its core in one row and 2,292 ms in a row taken minutes later, so a
-  difference of a second between two rows proves nothing unless each side repeats a few times at
-  matched load. A build also carries the generated shader modules, and a page's preload list follows
-  that set: two builds with different modules preload differently with no source change, so a preload
-  difference is not evidence of a source difference.
 
 ## Shadows
 
