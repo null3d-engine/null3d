@@ -1092,25 +1092,26 @@ interface EngineWorkers {
 	jobs: EngineWorker[];
 }
 
-/** Whether the browser's WebGL2 context has `KHR_parallel_shader_compile`, on one that it lets go. */
-function hasParallelCompile(): boolean {
-	const probe = document.createElement('canvas').getContext('webgl2');
-	const parallel = probe ? probe.getExtension('KHR_parallel_shader_compile') !== null : false;
-	// A page may hold a few contexts only, and the probe needs no picture.
-	probe?.getExtension('WEBGL_lose_context')?.loseContext();
-	return parallel;
-}
-
-/** The two-step probe's line: the answers, the browser and whether it has the extension. */
-function twoStepText(answers: readonly (number | undefined)[], parallel: boolean): string {
+/** The two-step probe's line: the answers, the compile state, and the browser. */
+function twoStepText(
+	answers: readonly (number | undefined)[],
+	compiling: number,
+	parallel: boolean,
+): string {
 	const [wanted, declared, built, runs, scale] = answers;
 	const answer = (value: number | undefined) => value ?? '?';
-	return `two-step probe: ${navigator.userAgent} | wanted ${answer(wanted)} declared ${answer(declared)} built ${answer(built)} runs ${answer(runs)} scale ${answer(scale)} | parallel ${parallel ? 1 : 0}`;
+	return `two-step probe: ${navigator.userAgent} | wanted ${answer(wanted)} declared ${answer(declared)} built ${answer(built)} runs ${answer(runs)} scale ${answer(scale)} | compiling ${compiling} parallel ${parallel ? 1 : 0}`;
 }
 
-/** Shows the probe's line, and keeps it for the page to publish among its own figures. */
-function sayTwoStep(answers: readonly (number | undefined)[]): void {
-	const line = twoStepText(answers, hasParallelCompile());
+/**
+ * Shows the probe's line, and keeps it for the page to publish among its own figures. The compile
+ * state comes from the WebGL2 path's own slots, which the thread that draws fills at its last frame:
+ * the programs that may still be compiling, and whether its context has the extension.
+ */
+function sayTwoStep(answers: readonly (number | undefined)[], slots: Int32Array): void {
+	const compiling = Atomics.load(slots, Slot.WebglCompiling);
+	const parallel = Atomics.load(slots, Slot.WebglParallel) !== 0;
+	const line = twoStepText(answers, compiling, parallel);
 	(globalThis as { __null3dTwoStep?: string }).__null3dTwoStep = line;
 	console.warn(line);
 }
@@ -1119,23 +1120,23 @@ function sayTwoStep(answers: readonly (number | undefined)[]): void {
  * Reads the two-step pass's answers once, for the hold mode probe: a held frame is the frame that
  * the answers are about, so nothing watches the frames after it.
  */
-function readTwoStep(glue: CoreGlue, memory: WebAssembly.Memory): void {
+function readTwoStep(glue: CoreGlue, memory: WebAssembly.Memory, slots: Int32Array): void {
 	const at = glue.debugTwoStep();
-	sayTwoStep(at > 0 ? Array.from(new Int32Array(memory.buffer, at, 5)) : []);
+	sayTwoStep(at > 0 ? Array.from(new Int32Array(memory.buffer, at, 5)) : [], slots);
 }
 
 /**
  * Prints the two-step pass's answers for `?two-step=report` in a live page: the browser's user
  * agent, whether a frame wanted the pass, declared it, had its second step built and drew it, the
- * render scale in thousandths, and whether the browser has `KHR_parallel_shader_compile`. A
- * development tool that says which answer a browser loses.
+ * render scale in thousandths, and the WebGL2 path's compile state. A development tool that says
+ * which answer a browser loses.
  *
  * The sketch turns its effect on a moment into the scene, so the first presented frame asks for
  * nothing: the probe watches the frames from then, keeps the largest answer of each, waits a second
  * after the pass is first wanted, and prints what it saw. A page whose pass never wants prints the
  * zeros it kept, after ten seconds.
  */
-function logTwoStep(glue: CoreGlue, memory: WebAssembly.Memory): void {
+function logTwoStep(glue: CoreGlue, memory: WebAssembly.Memory, slots: Int32Array): void {
 	const end = performance.now() + 10_000;
 	const best = [0, 0, 0, 0, 0];
 	let wantedAt = 0;
@@ -1156,7 +1157,7 @@ function logTwoStep(glue: CoreGlue, memory: WebAssembly.Memory): void {
 			requestAnimationFrame(check);
 			return;
 		}
-		sayTwoStep(best);
+		sayTwoStep(best, slots);
 	};
 	requestAnimationFrame(check);
 }
@@ -2289,7 +2290,7 @@ async function startEngine(
 		marker?.endAfter(firstFrame);
 		const probeGlue = DEV && switches.twoStep ? localCore : undefined;
 		if (probeGlue)
-			void firstFrame.then(() => logTwoStep(probeGlue, wasmMemory as WebAssembly.Memory));
+			void firstFrame.then(() => logTwoStep(probeGlue, wasmMemory as WebAssembly.Memory, slots));
 		/** Hold mode's frame, read back once. */
 		let held: CapturedFrame | undefined;
 		/** The error of a thread that draws when it could not capture a frame. */
@@ -2445,7 +2446,7 @@ async function startEngine(
 			throw error;
 		}
 		if (DEV && switches.twoStep && localCore)
-			readTwoStep(localCore, wasmMemory as WebAssembly.Memory);
+			readTwoStep(localCore, wasmMemory as WebAssembly.Memory, slots);
 		const { summarizeFrames } = await loadFrameStats();
 		publishHold({
 			ok: true,
