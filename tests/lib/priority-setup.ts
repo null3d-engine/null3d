@@ -8,6 +8,8 @@ import { refuseBackgroundPriority } from './app-window.ts';
 
 /** The variables that turn on the specs that time an effect's cost on the computer's own GPU. */
 export const COST_VARIABLES = [
+	'NULL3D_ALPHA_MASK_COST',
+	'NULL3D_CLUSTER_COST',
 	'NULL3D_CONTACT_COST',
 	'NULL3D_FOG_COST',
 	'NULL3D_LOD_COST',
