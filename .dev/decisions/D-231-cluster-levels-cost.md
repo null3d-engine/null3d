@@ -1,9 +1,10 @@
 # D-231: What a tree of cluster patches costs
 
 Status: measured for M3-L3 on 23 October 2026, for the owner's review. Built: the pass, its
-pictures and the plan that times it on phones and tablets; the Mac's figures wait for a quiet
-machine. The drawing method is [D-213](D-213-cluster-levels.md)'s addendum; this record holds what
-it costs. Date: 2026-10-23. Task: M3-L3.
+pictures, the plan that times it on phones and tablets, and this measurement, whose Mac row is one
+preset's because the machine was rarely quiet enough for the others. The drawing method is
+[D-213](D-213-cluster-levels.md)'s addendum; this record holds what it costs. Date: 2026-10-23.
+Task: M3-L3.
 
 Summary: A heightfield of 32,768 triangles in a tree of 511 patches draws its frame in 3.1 to 4.8 ms
 of GPU time on a Galaxy S25 and 4.1 to 5.1 ms on an iPad Pro 13, as the camera stands 12, 30 and 80
@@ -35,6 +36,7 @@ the start-up probe cannot choose the path that draws the mesh whole.
 
 | Device | GPU path | Warp | 12 m | 30 m | 80 m |
 | --- | --- | --- | --- | --- | --- |
+| MacBook Pro, Chrome, Medium | WebGPU | 1600 × 900 | 0.7 ms | 0.2 ms | 0.5 ms |
 | Galaxy S25 (SM-S931B), Android 15, Chrome 152 | WebGPU | 1080 × 1863 | 4.72 ms | 4.39 ms | 3.41 ms |
 | Galaxy S25, Android 15, Chrome 152 | compatibility | 1080 × 1863 | 4.78 ms | 4.46 ms | 3.15 ms |
 | iPad Pro 13 (2025), iOS 26, Safari 26.6.1 | WebGPU | 2064 × 2528 | 4.58 ms | 4.15 ms | 4.12 ms |
@@ -44,7 +46,13 @@ The figures are the GPU time of the whole frame, not of the pass alone. The page
 that follows the camera, so the fall from the closest distance to the farthest is the saving that
 coarser patches make: on the Galaxy S25 it is 1.31 ms of 4.72, or 28 percent, and on the iPad's
 compatibility path 1.18 ms of 4.57, or 26 percent. The iPad's core WebGPU row falls less, by 0.46 ms,
-because its 2,064 by 2,528 pixels cost more fill than the far patches save in triangles.
+because its 2,064 by 2,528 pixels cost more fill than the far patches save in triangles. The Mac's
+row is the whole frame in 0.2 to 0.7 ms, where the frame runs at the display's 60 Hz; the tree costs
+it under a millisecond at every distance, and the figures there are at the timer's resolution.
+
+The Mac's run took the Medium preset alone: its cost page waits for a one-minute load under eight,
+and the fleet held the machine above that for the run's other three rows, each of which then failed
+without a figure. The figures above came from a load of 7.5 before the run and 15.9 after it.
 
 The WebGL2 path reports no GPU time on either device, since neither offers a timer there. Its frame
 interval and CPU time hold at the same figures as the WebGPU paths, 33.3 ms and about 0.5 ms on the
@@ -67,5 +75,5 @@ needs it.
 
 - The page and the plan stay as the way to measure the pass again when it changes.
 - A device without a GPU timer reports no GPU figure; its frame interval and CPU time stand in.
-- The Mac's figures are not in this table yet: the run needs the machine's load under eight, and the
-  fleet kept it far above that while the milestone landed.
+- The Mac's figures are one preset's: its cost page needs a one-minute load under eight, so the other
+  three rows wait for a quieter machine than the fleet left it.
