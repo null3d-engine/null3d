@@ -898,7 +898,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       # Its tests read no production build, so the run builds none (tests/playwright.config.ts).
@@ -922,7 +922,7 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "77:56:11:159:234:166:296:256:107:185:74:77:52:115:125:27:145:92:14:16:18:18:16:20:16:20:20:20:20:16:16:16:17:20:19:19:16:124:69:53"
+          PWTEST_SHARD_WEIGHTS: "91:56:14:158:113:105:133:9:314:283:73:137:129:47:40:59:24:26:105:125:47:125:43:68:113:110:92:97:46:61:24:29"
         run: bun run test:browser --grep-invert "@alone|$CITY_TESTS" --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
