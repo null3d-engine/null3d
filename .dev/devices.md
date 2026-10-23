@@ -783,3 +783,9 @@ Each of these cost time in the gate's first runs. Follow them in order before a 
 8. **The plain server must answer on the IPv4 loopback.** The phone reaches the plain server through a USB forwarding rule, which points at `127.0.0.1`. A server that binds the name `localhost` takes the IPv6 loopback on this Mac, so the forwarded port answers nothing and every phone page fails with `ERR_EMPTY_RESPONSE`. `vite.config.ts` now binds `127.0.0.1` for the plain server and every interface for the secure one. Check the port with `curl http://127.0.0.1:3000/tests/pages/runner.html` before a phone run: a refused connection means the wrong binding, not a dead device.
 9. **Clear the device's tabs before a run.** Close the tablet's runner tabs and force-stop the phone's browser (`adb shell am force-stop com.android.chrome`). An older runner page stays attached to the run it started: it shows that run's count, says "resting", and never takes a page from the new run, which looks exactly like a stalled device. Open the runner page again after the restart, with the runner's exact name.
 10. **Never serve two page-building runs at once from different tools.** The device runner and the bench build their pages into the same output, so a bench run that starts while a device plan is going wipes the pages the plan is serving. On 23 October 2026 that turned a tablet's comparison rounds into HTTP 404s. Run one at a time, or give each its own checkout.
+
+11. **A live build can hold a lock while doing nothing.** A build that finished its work, or one whose
+    child died, can sit at no CPU while holding a lock. Every other build and every picture run waits
+    behind it. On 23 October 2026 three runs were blocked this way, for seven to thirteen minutes each.
+    Before waiting on a lock, check its holder. If the process is alive but has used no CPU for minutes,
+    stop it, clear the lock, and tell its owner.
