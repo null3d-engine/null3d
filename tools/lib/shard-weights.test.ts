@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
 	bestWeights,
+	fillWeights,
 	groupTests,
 	type ListedTest,
 	medianTimes,
@@ -192,5 +193,25 @@ describe('bestWeights', () => {
 			expect(Math.max(...times)).toBe(11);
 		}
 		expect(weights).toEqual([2, 2]);
+	});
+});
+
+describe('fillWeights', () => {
+	it('fills each shard up to the limit, and gives a group longer than the limit a shard of its own', () => {
+		const groups = [group('a', 3), group('b', 3), group('c', 3), group('d', 9), group('e', 3)];
+		const weights = fillWeights([groups], 1, 6);
+		expect(weights).toEqual([2, 1, 1, 1]);
+		const times = splitByWeights(groups, weights).map((part) => shardSeconds(part, 1));
+		expect(times).toEqual([6, 3, 9, 3]);
+	});
+
+	it('keeps each shard within the limit in every run', () => {
+		const first = [group('a', 1), group('b', 1), group('c', 4), group('d', 1)];
+		const second = [group('a', 4), group('b', 1), group('c', 1), group('d', 1)];
+		const weights = fillWeights([first, second], 1, 5);
+		for (const run of [first, second]) {
+			const times = splitByWeights(run, weights).map((part) => shardSeconds(part, 1));
+			expect(Math.max(...times)).toBeLessThanOrEqual(5);
+		}
 	});
 });

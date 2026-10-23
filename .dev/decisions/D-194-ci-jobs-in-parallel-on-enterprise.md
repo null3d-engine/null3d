@@ -44,7 +44,7 @@ The owner chose Enterprise for one seat on 19 October 2026, and declined Blacksm
 
 With the queue gone, CI splits its slow jobs:
 
-- The browser tests run in 40 shards, and the tests that run alone in 3. The showcase HUD test splits into three tests, each in a job of its own.
+- The browser tests run in 40 shards, and the tests that run alone in 3. Since 23 October 2026 they run in 32, after the shaders test's parts became about five times faster ([Image tests](../image-tests.md)). The showcase HUD test splits into three tests, each in a job of its own.
 - The real-browser jobs run 22 shards for each browser. Each Safari shard holds at most 9.1 minutes of pages in the model, from the times run 39291513923 measured.
 - The benchmark page tests run in 5 shards. Three of them split the parity tests.
 - The size check measures the engine test page in 4 parts at once, and each part compresses on every core.
