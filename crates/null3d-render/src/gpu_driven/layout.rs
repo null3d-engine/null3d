@@ -598,19 +598,23 @@ impl Layout {
     }
 
     /// The most that one frame copies into its arena for the tables: the bucket table, the layer
-    /// table, the bucket records and the cell order.
+    /// table, the bucket records, the cell order and the ranges texture.
     pub(super) fn upload_bound(&self) -> usize {
-        let rows = self.sources as usize * 4 + self.owned(self.sources) as usize * 8;
+        let owned = self.owned(self.sources) as usize;
+        // Each source has a row of the bucket table. The layout that owns the tables gives each
+        // source a row of the layer table, a place in the cell order, and a texel of the ranges
+        // texture.
+        let rows = self.sources as usize * 4 + owned * (4 + 4 + RANGE_FLOATS * 4);
         let firsts = self.skin_firsts.len() * 4;
         // A frame that writes every record writes the skinned objects' bounds again after them.
         let writes = if self.skinned.is_empty() { 1 } else { 2 };
         // The scene's layout may build its table of object ranges in the frame, after this bound.
-        let ranges = if self.owns_sources() {
+        let object_ranges = if self.owns_sources() {
             sizes::OBJECT_RANGE_BYTES as usize
         } else {
             0
         };
-        rows + firsts + self.buckets.len() * BUCKET_BYTES as usize * writes + ranges
+        rows + firsts + self.buckets.len() * BUCKET_BYTES as usize * writes + object_ranges
     }
 
     /// Makes room for the bucket table, the layer table and the cell order of `sources` sources.
@@ -1977,6 +1981,66 @@ mod tests {
         for texel in &texels[scene_rows..scene_rows + 4] {
             assert_eq!(texel[2], 2600.0, "{texel:?}");
         }
+    }
+
+    /// A frame that rebuilds the layout copies a row of the bucket table for every source and,
+    /// in the layout that owns the tables, a row of the layer table, a place in the cell order
+    /// and a texel of the ranges texture. The room that the layout asks for must cover every one
+    /// of those copies, so a frame whose arena holds exactly that room records no overflow.
+    #[test]
+    fn the_room_a_layout_asks_for_covers_every_table_a_rebuild_copies() {
+        let mut settings = scene_settings(&RendererConfig {
+            max_materials: 4,
+            ..RendererConfig::default()
+        });
+        let mesh = settings
+            .meshes_mut()
+            .add(&box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap())
+            .unwrap()
+            + 1;
+        let material = settings
+            .materials_mut()
+            .create(Shading::Lit, 0, [1.0; 4])
+            .unwrap()
+            + 1;
+        let mut scene = SceneStorage::with_capacity(8);
+        scene.apply_commands(&[], 1).unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+        let mut batches = BatchTable::with_capacity(1);
+        batches
+            .create(4096, false, false, mesh, material, 0.9)
+            .unwrap();
+        let mut layout = Layout::default();
+        let mut pipelines = PipelineCache::default();
+        let targets = PassTargets {
+            color_format: format::CANVAS,
+            depth_format: format::DEPTH32_FLOAT,
+            samples: 4,
+            permutation: 0,
+        };
+        layout
+            .rebuild(
+                &settings,
+                &mut pipelines,
+                targets,
+                &scene,
+                &batches,
+                scene.parity(),
+                u32::MAX,
+                CasterPasses::default(),
+                Prepass::Off,
+                &Skinning::default(),
+                &mut KeyCounts::new(),
+                targets,
+                false,
+            )
+            .unwrap();
+        let mut list = DrawList::with_capacity(1 << 16);
+        let mut arena = UploadArena::default();
+        arena.reset(layout.upload_bound());
+        layout
+            .apply(&mut list, &mut arena, u32::MAX)
+            .expect("the frame's tables fit the room the layout asked for");
     }
 
     #[test]
