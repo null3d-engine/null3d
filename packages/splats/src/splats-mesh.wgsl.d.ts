@@ -2,5 +2,5 @@
 // Edit the WGSL, not this file.
 import type { CompiledMaterial } from '@null3d/vite-plugin';
 
-declare const shader: CompiledMaterial<Readonly<Record<string, never>>>;
+declare const shader: CompiledMaterial<Record<never, never>, never>;
 export default shader;

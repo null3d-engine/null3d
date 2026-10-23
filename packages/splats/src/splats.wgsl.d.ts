@@ -2,10 +2,13 @@
 // Edit the WGSL, not this file.
 import type { CompiledMaterial } from '@null3d/vite-plugin';
 
-declare const shader: CompiledMaterial<{
-	readonly extent: 'f32';
-	readonly blur: 'f32';
-	readonly softness: 'f32';
-	readonly cutoff: 'f32';
-}>;
+declare const shader: CompiledMaterial<
+	{
+		readonly extent: 'f32';
+		readonly blur: 'f32';
+		readonly softness: 'f32';
+		readonly cutoff: 'f32';
+	},
+	never
+>;
 export default shader;
