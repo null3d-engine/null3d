@@ -1,4 +1,4 @@
-# D-228: A memory register for the stats overlay
+# D-233: A memory register for the stats overlay
 
 Status: decided, 23 October 2026. Task: M3-R3.
 
