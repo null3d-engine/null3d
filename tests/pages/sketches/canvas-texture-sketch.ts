@@ -80,7 +80,7 @@ function paintMarker(
 	context.fillRect(x, y, MARKER, MARKER);
 }
 
-export default defineSketch(({ scene, geometry, materials, textures, page, time }) => {
+export default defineSketch(({ scene, geometry, materials, textures, page, time, quality }) => {
 	scene.setBackground('#202830');
 	const camera = scene.createPerspectiveCamera({
 		fov: 45,
@@ -147,12 +147,20 @@ export default defineSketch(({ scene, geometry, materials, textures, page, time 
 		if (name === 'stop') {
 			running = false;
 			stopping = true;
+			// The test compares each thread mode's picture with the first mode's. The frame-budget
+			// governor lowers the render scale on a slow machine, and a frame drawn below the
+			// canvas's size differs from one drawn at it, so the captured frame draws at the full
+			// size whatever the machine's speed. The measured frames keep the governor's scale,
+			// which is what keeps a slow machine's frames quick.
+			quality.set({ minRenderScale: 1, maxRenderScale: 1 });
 		}
 	});
 
 	return {
 		onUpdate() {
-			if (!ready && textures.uploads().waiting === 0) {
+			// The setup's whole-canvas uploads must be behind the measurement: a frame that still
+			// records one would read as a refresh of the whole canvas rather than of a rectangle.
+			if (!ready && textures.uploads().waiting === 0 && textures.uploads().lastFrameBytes === 0) {
 				ready = true;
 				page.post('ready');
 			}
@@ -191,6 +199,7 @@ export default defineSketch(({ scene, geometry, materials, textures, page, time 
 					frames: time.frame,
 					size: SIZE,
 					marker: MARKER,
+					renderScale: quality.renderScale,
 				});
 			}
 		},

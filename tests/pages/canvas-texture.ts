@@ -19,6 +19,8 @@ interface ScreenStats {
 	frames: number;
 	size: number;
 	marker: number;
+	/** The part of the canvas's size that the engine drew the scene at. */
+	renderScale: number;
 }
 
 /** Seconds that one measured window covers. */
@@ -121,6 +123,7 @@ run('canvas-texture', async () => {
 		uploadMiB: uploads.mean / (1024 * 1024),
 		uploadP99KiB: uploads.p99 / 1024,
 		largestFrameBytes: stats.largestFrameBytes,
+		renderScale: stats.renderScale,
 		withinBudget,
 		partial,
 		rateKept,
