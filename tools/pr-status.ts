@@ -29,10 +29,22 @@ const PARTIAL: Readonly<Record<string, string>> = {
 };
 
 /** Tasks built on a helper branch, with nothing of them on this branch yet. */
-const ON_BRANCH = new Set(['M3-A4', 'M3-A6', 'M3-A8', 'M3-B4', 'M3-G2', 'M3-G3']);
+const ON_BRANCH = new Set(['M3-B4']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
-const INCOMPLETE = new Set(['M3-A2', 'M3-A10', 'M3-B1', 'M3-L4', 'M3-R12', 'M3-R13', 'M3-R17']);
+const INCOMPLETE = new Set([
+	'M3-A2',
+	'M3-A10',
+	'M3-B1',
+	'M3-D9',
+	'M3-L1',
+	'M3-L2',
+	'M3-L3',
+	'M3-L4',
+	'M3-R12',
+	'M3-R13',
+	'M3-R17',
+]);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
