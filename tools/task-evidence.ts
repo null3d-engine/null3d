@@ -31,6 +31,7 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-D2':
 		'Version check in each foundation add-on (`packages/engine/src/shared/version.ts`); `packages/cli/src/upgrade.js`',
 	'M3-D3': "E1417's message names the add-on: `packages/engine/src/errors/codes.ts:417`",
+	'M3-D4': "The particle buffer's record layout and limits: `docs/concepts/particle-buffer.md`",
 	'M3-D5': '`examples/addons/README.md` and two add-ons in that layout',
 	'M3-D6': 'The plugin interface version check: `packages/engine/src/shared/version.ts`',
 	'M3-D7': 'The WebGL2 texture-unit allocator: `packages/engine/src/gpu/webgl2/`',
@@ -42,22 +43,23 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-E2': 'Add-on tasks on the job workers: `packages/engine/src/shared/tasks.ts`',
 	'M3-E3': 'glTF extension handlers: `packages/engine/src/scene/gltf.ts`, `assets.ts`',
 	'M3-E4':
-		'Scene inputs on a custom material (`sceneInputs`): `packages/engine/src/scene/materials.ts`, `docs/api/materials.md:542`',
+		'Scene inputs on a custom material (`sceneInputs`): `packages/engine/src/scene/resources.ts`, `docs/api/materials.md:542`',
 	'M3-E6':
 		'A feature declares its preset settings and figures: `packages/engine/src/scene/features.ts`; `docs/concepts/quality-presets.md:293-295`',
 	'M3-G1':
 		'`KHR_animation_pointer`: `packages/engine/src/scene/gltf-animation.ts`, `property-animation.ts`',
 	'M3-G4':
-		"`transmissionMap` and `thicknessMap`: `packages/engine/src/scene/materials.ts`, the shaders' thickness reads",
+		"`transmissionMap` and `thicknessMap`: `packages/engine/src/scene/resources.ts`, the shaders' thickness reads",
 	'M3-K1': '`scene.createView({ camera, rect })`: `packages/engine/src/scene/scene.ts`',
-	'M3-K2': '`TransformControls` and `DragControls`: `packages/controls/src/gizmo-drag.ts`',
+	'M3-K2':
+		'`TransformControls` and `DragControls`: `packages/controls/src/transform-controls.ts`, `packages/controls/src/drag-controls.ts`',
 	'M3-K3':
 		'Spot-light cookies, `light.map`: `packages/engine/src/scene/scene.ts`, `docs/api/lights.md`',
 	'M3-K4':
 		'CSS3D labels: `packages/engine/src/sketch/ui.ts`, `packages/engine/src/page/label-loop.ts`, `packages/engine/src/shared/labels.ts`',
 	'M3-K5': '`scene.overrideMaterial`: `packages/engine/src/scene/scene.ts`, `docs/api/scene.md`',
 	'M3-K6':
-		'`toneMapped = false`: `packages/engine/src/scene/materials.ts`, `docs/api/materials.md`',
+		'`toneMapped = false`: `packages/engine/src/scene/resources.ts`, `docs/api/materials.md`',
 	'M3-L1':
 		'`crates/null3d-core/src/levels.rs:256` (`distance`, nearest point of the bounds); `crates/null3d-shaders/wgsl/cull.wgsl:363` (`level_of`); `crates/null3d-shaders/wgsl/lib/mesh.wgsl:679-709` (a dither phase per copy); `docs/concepts/lod.md` (fade, distance, small objects, bands)',
 	'M3-L2':
@@ -68,4 +70,6 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'One feature description: `packages/engine/src/scene/features.ts`, `docs/api/features.md`',
 	'M3-R6':
 		'D-226 records the timings on Chrome and Safari: at most 0.29 ms in Safari, nothing measurable in Chrome, so the pattern stays',
+	'M3-R18':
+		'What ships contacts no server of its own: `docs/getting-started/network-use.md`, the guard `tools/lib/network-use.ts` and `docs/getting-started/third-party-notices.md`',
 };
