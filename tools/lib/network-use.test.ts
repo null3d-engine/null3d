@@ -6,6 +6,9 @@ import { allowedHost, FETCH_SITES, networkProblems } from './network-use.ts';
 
 const ROOT = join(import.meta.dir, '../..');
 
+/** The scan reads every shipped source file, which a loaded machine does slowly past the 5 s default. */
+const REPOSITORY_SCAN_MS = 60_000;
+
 describe('allowedHost', () => {
 	test('accepts a recorded host and its subdomains', () => {
 		expect(allowedHost('example.com')).toContain('error messages');
@@ -77,6 +80,7 @@ describe('networkProblems', () => {
 		const root = fixture({
 			'packages/cli/bin/null3d.js': 'console.log(1);',
 			'packages/terrain/src/index.test.ts': 'fetch(url);',
+			'packages/engine/src/generated/shaders.js': 'fetch(url);',
 			'examples/addons/lens-kit/index.ts': 'new XMLHttpRequest();',
 		});
 		const { problems, files } = networkProblems(root);
@@ -86,11 +90,15 @@ describe('networkProblems', () => {
 });
 
 describe('the repository', () => {
-	test('ships no network call beyond the recorded ones', () => {
-		const { problems, calls } = networkProblems(ROOT);
-		expect(problems).toEqual([]);
-		expect(calls).toBe(Object.values(FETCH_SITES).reduce((total, site) => total + site.count, 0));
-	});
+	test(
+		'ships no network call beyond the recorded ones',
+		() => {
+			const { problems, calls } = networkProblems(ROOT);
+			expect(problems).toEqual([]);
+			expect(calls).toBe(Object.values(FETCH_SITES).reduce((total, site) => total + site.count, 0));
+		},
+		REPOSITORY_SCAN_MS,
+	);
 
 	test('states the promise, and the build switch, on the network use page', () => {
 		const page = readFileSync(join(ROOT, 'docs/getting-started/network-use.md'), 'utf8');

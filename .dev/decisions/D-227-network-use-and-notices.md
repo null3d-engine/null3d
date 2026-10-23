@@ -27,9 +27,10 @@ does each package ship, and which license does each part carry?
 
 ## Data
 
-The audit read every shipped file under `packages/*/src`, `packages/*/bin` and
-`examples/addons`: 348 files. It found nine `fetch` call sites, all in the engine and in the Vite
-plugin.
+The audit read every shipped source file under `packages/*/src`, `packages/*/bin` and
+`examples/addons`: 346 files. The build's generated shader modules are not read, since the shader
+library that the build writes them from is. The audit found nine `fetch` call sites, all in the
+engine and in the Vite plugin.
 
 | File | Calls | What it downloads |
 | --- | --- | --- |
