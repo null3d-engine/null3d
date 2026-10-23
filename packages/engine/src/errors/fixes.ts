@@ -64,6 +64,8 @@ export const ERROR_FIXES = {
 		"Give each feature and output a name of its own. Give a frame point and a kind that go together, such as 'opaque' with 'draw' or 'post' with 'fullscreen'. Keep an order inside its band. Name resources, lighting slots and views from the lists. Give every output a neutral default: 'black', 'white' or 'transparent'. One feature provides each lighting slot. Give each setting's presets a value that its values take, and a governor only with a budget. Give the budget four times in ms above 0.",
 	E1224:
 		'Give scene.overrideMaterial a material that draws meshes, from materials.standard(), materials.unlit(), materials.shader() or materials.decal(), or null to draw each mesh with its own material.',
+	E1225:
+		"Give each add-on a namespace of its own: one name at declareAddonNamespace(), claimed once where the add-on's module loads. Let its shader library default to that name, keep its error codes inside 2000 to 9999, and give its quality keys names that the engine's table lacks. Give each feature, output and lighting slot a name that no other add-on registers. Two add-ons that share a name cannot load together.",
 	E1301:
 		'Remove a ?gpu= switch or createEngine gpu option that forces a path this browser lacks. Update the browser, or turn on hardware acceleration in its settings.',
 	E1302:

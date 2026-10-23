@@ -6,12 +6,16 @@
 // feature with its own settings, a budget and a memory figure, and posts what the engine resolved
 // for it; `preset` switches the preset and posts the same for the new one.
 import {
+	declareAddonNamespace,
 	defineFeature,
 	defineSketch,
 	type FeatureHandle,
 	FeatureHost,
 	type QualityPreset,
 } from '@null3d/engine';
+
+/** The test add-on's names, claimed once as the sketch's module loads. */
+const NAMESPACE = declareAddonNamespace({ name: 'stats_test' });
 
 export default defineSketch(({ scene, geometry, materials, debug, page, quality, engine }) => {
 	let feature: FeatureHandle | undefined;
@@ -40,6 +44,7 @@ export default defineSketch(({ scene, geometry, materials, debug, page, quality,
 				quality,
 				tier: engine.capabilities.tier,
 				page,
+				namespace: NAMESPACE,
 			});
 			feature = host.add(
 				defineFeature({
