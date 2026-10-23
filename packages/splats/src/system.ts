@@ -286,6 +286,8 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 				// A chunk that arrived while the worker chose draws in the next selection.
 				dirty = version !== seen;
 				settleWaiters();
+				// A caller that waits for a settled set keeps the selections coming.
+				if (waiters.length > 0) choose();
 			})
 			.catch((error: unknown) => {
 				inFlight = false;
