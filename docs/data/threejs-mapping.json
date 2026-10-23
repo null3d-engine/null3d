@@ -1726,7 +1726,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "A light probe grid for bounce light (scene.setLightProbeGrid), with ambient occlusion (post.set({ ao }))",
-      "notes": "null3D has no bounce light from the screen and no voxel cone tracing. The probe grid gives coloured bounce light everywhere, from objects off the screen too, at a fixed cost per pixel. Light from moving objects reaches it only when the sketch bakes it again.",
+      "notes": "null3D has no bounce light from the screen and no voxel cone tracing. The probe grid gives colored bounce light everywhere, from objects off the screen too, at a fixed cost per pixel. Light from moving objects reaches it only when the sketch bakes it again.",
       "docs": "api/scene",
       "detect": "\\b(SSGI|VXGI)Node\\b|\\bssgi\\s*\\("
     },
@@ -1968,7 +1968,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "createTerrain(ctx, { size, height, layers, splat, maxLevel, split }) from @null3d/terrain; terrain.update(cameraX, cameraZ) in onUpdate; terrain.heightAt(x, z)",
-      "notes": "A port replaces one displaced grid with a height field drawn as a camera-centred quadtree of blocks: the ground near the camera keeps fine detail, the far hills draw coarse blocks, and a skirt around each block hides the seam where two levels meet. Up to four tiled layers blend by a splat map, which the add-on fills by default from the height and the slope, in place of a hand-painted or vertex-colored ground. The terrain carries no collision, so a port that walked on the ground reads heightAt and normalAt to place objects instead of a physics collider. A port that morphed two levels on the GPU keeps its own morph; this add-on draws the levels as they are and closes the seam with the skirt.",
+      "notes": "A port replaces one displaced grid with a height field drawn as a camera-centerd quadtree of blocks: the ground near the camera keeps fine detail, the far hills draw coarse blocks, and a skirt around each block hides the seam where two levels meet. Up to four tiled layers blend by a splat map, which the add-on fills by default from the height and the slope, in place of a hand-painted or vertex-colored ground. The terrain carries no collision, so a port that walked on the ground reads heightAt and normalAt to place objects instead of a physics collider. A port that morphed two levels on the GPU keeps its own morph; this add-on draws the levels as they are and closes the seam with the skirt.",
       "docs": "api/terrain",
       "detect": "\\bImprovedNoise\\b|\\bgenerateHeight\\b|\\bgetHeightAt\\b"
     },
@@ -2000,9 +2000,9 @@
       "three": "GaussianSplat / GaussianSplatPLYLoader / SPZLoader / SPLATLoader / KSPLATLoader (addons)",
       "status": "changed",
       "since": "0.3",
-      "target": "The Gaussian splats add-on",
-      "notes": "Not built yet. A splats add-on comes in step 0.3, with detail levels, streaming, a splat budget and depth mixing with meshes. It reads KHR_gaussian_splatting glTF files and SPZ files.",
-      "docs": "porting/threejs-unsupported",
+      "target": "const splats = await createSplats(ctx, { url }) from @null3d/splats; assets.loadGltf for a KHR_gaussian_splatting model",
+      "notes": "Importing @null3d/splats registers the KHR_gaussian_splatting reader, so a glTF model of splats loads with assets.loadGltf. An SPZ file loads through createSplats, which cuts the cloud into detail levels, chooses the splats that draw within a budget that follows the quality preset and the GPU path, and lets the engine sort them by depth. Update them once in each frame with splats.update(camera.position). The first spherical-harmonic band gives each splat's color; higher bands are ignored. three.js's GaussianSplat and its loaders are add-ons, so each name maps to this one add-on.",
+      "docs": "api/splats",
       "detect": "\\bGaussianSplat\\w*\\b|\\b(SPZ|SPLAT|KSPLAT)Loader\\b"
     },
     {

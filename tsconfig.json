@@ -33,6 +33,7 @@
 		"packages/geometry/**",
 		"packages/particles/**",
 		"packages/impostors/**",
-		"packages/terrain/**"
+		"packages/terrain/**",
+		"packages/splats/**"
 	]
 }
