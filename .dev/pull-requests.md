@@ -86,6 +86,11 @@ a branch on a moved main is cheap.
   record that names the bytes of each of them. A set that misses one, or holds a file with other bytes
   than its record, is a miss, so the build runs again rather than reporting "up to date" while a file
   is absent or half written.
+- A checkout's own record of its modules also keeps each module file's size and time of change, to
+  the second. When every file still has them, the modules are the ones the record hashed, and the
+  check reads no byte; otherwise it hashes the set, about 2.8 GB, as before. Each commit's type check
+  and test run starts with this check: on 23 October 2026 it took 8.6 to 36 s by hashing, and 0.3 s
+  with the sizes and times.
 - Each cache prunes itself: while it holds more than 24 GiB it removes its least recently used entries,
   and an entry used within the last two hours stays, because another checkout's build may be reading
   it. A cache key names every input of the build, including the build's own code, and a build hashes
