@@ -118,14 +118,9 @@ impl MapSky {
                     && within(a.turbidity, b.turbidity, drift)
                     && within(a.mie_coefficient, b.mie_coefficient, drift)
                     && within(a.mie_directional_g, b.mie_directional_g, drift)
-                    && within(a.cloud_scale, b.cloud_scale, drift)
-                    && within(a.cloud_speed, b.cloud_speed, drift)
-                    && within(a.cloud_coverage, b.cloud_coverage, drift)
-                    && within(a.cloud_density, b.cloud_density, drift)
-                    && within(a.cloud_elevation, b.cloud_elevation, drift)
                     && within(a.second_sky_weight, b.second_sky_weight, drift)
                     && within(*ga, *gb, drift)
-                    && same_clouds(a.clouds(), b.clouds(), clouds)
+                    && same_clouds(a, b, drift, clouds)
                     && (a.second_sky_weight <= 0.0
                         || same_direction(a.second_sun_position, b.second_sun_position, turn))
             }
@@ -153,12 +148,7 @@ impl MapSky {
                     && within(a.ground_albedo, b.ground_albedo, drift)
                     && within(a.altitude, b.altitude, drift)
                     && within(a.meters_per_unit, b.meters_per_unit, drift)
-                    && within(a.cloud_scale, b.cloud_scale, drift)
-                    && within(a.cloud_speed, b.cloud_speed, drift)
-                    && within(a.cloud_coverage, b.cloud_coverage, drift)
-                    && within(a.cloud_density, b.cloud_density, drift)
-                    && within(a.cloud_elevation, b.cloud_elevation, drift)
-                    && same_clouds(a.clouds(), b.clouds(), clouds)
+                    && same_clouds(a, b, drift, clouds)
                     && same_height(*ha, *hb, drift)
             }
             _ => false,
@@ -195,8 +185,15 @@ fn same_direction(a: [f32; 3], b: [f32; 3], turn: f32) -> bool {
     dot > 0.0 && length(cross) <= turn.sin() * la * lb
 }
 
-/// The clouds of a sky: their coverage, the speed that moves them and the clock that does.
-type Clouds = (f32, f32, f32);
+/// The clouds that a sky draws: their shape, the speed that moves them and the clock that does.
+struct Clouds {
+    scale: f32,
+    speed: f32,
+    coverage: f32,
+    density: f32,
+    elevation: f32,
+    time: f32,
+}
 
 /// A sky's settings, seen by the values that its clouds draw with.
 trait Clouded {
@@ -205,26 +202,45 @@ trait Clouded {
 
 impl Clouded for Sky {
     fn clouds(&self) -> Clouds {
-        (self.cloud_coverage, self.cloud_speed, self.time)
+        Clouds {
+            scale: self.cloud_scale,
+            speed: self.cloud_speed,
+            coverage: self.cloud_coverage,
+            density: self.cloud_density,
+            elevation: self.cloud_elevation,
+            time: self.time,
+        }
     }
 }
 
 impl Clouded for Atmosphere {
     fn clouds(&self) -> Clouds {
-        (self.cloud_coverage, self.cloud_speed, self.time)
+        Clouds {
+            scale: self.cloud_scale,
+            speed: self.cloud_speed,
+            coverage: self.cloud_coverage,
+            density: self.cloud_density,
+            elevation: self.cloud_elevation,
+            time: self.time,
+        }
     }
 }
 
-/// True when the clouds of two skies have drifted by less than `cells` cells of their pattern from
-/// one another. The sky's shaders read the pattern at a thousand times the drift of the clock times
-/// the speed. A sky that draws no clouds keeps as still as it likes.
-fn same_clouds(ours: Clouds, theirs: Clouds, cells: f32) -> bool {
-    let (coverage, speed, time) = ours;
-    let (other_coverage, other_speed, other_time) = theirs;
-    if coverage <= 0.0 || other_coverage <= 0.0 {
-        return true;
-    }
-    (time * speed - other_time * other_speed).abs() * 1000.0 <= cells
+/// True when two skies draw clouds that lie within `drift` of each other in each value, and that
+/// have drifted less than `cells` cells of their pattern apart. The sky's shaders read the pattern
+/// at a thousand times the drift of the clock times the speed. A sky that draws no clouds has none
+/// to compare, so it holds as still as it likes.
+fn same_clouds(ours: &impl Clouded, theirs: &impl Clouded, drift: f32, cells: f32) -> bool {
+    let ours = ours.clouds();
+    let theirs = theirs.clouds();
+    within(ours.scale, theirs.scale, drift)
+        && within(ours.speed, theirs.speed, drift)
+        && within(ours.coverage, theirs.coverage, drift)
+        && within(ours.density, theirs.density, drift)
+        && within(ours.elevation, theirs.elevation, drift)
+        && (ours.coverage <= 0.0
+            || theirs.coverage <= 0.0
+            || (ours.time * ours.speed - theirs.time * theirs.speed).abs() * 1000.0 <= cells)
 }
 
 /// True when `a` and `b` lie within `drift` of each other, relative to the larger.
