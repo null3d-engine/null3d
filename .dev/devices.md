@@ -789,3 +789,14 @@ Each of these cost time in the gate's first runs. Follow them in order before a 
     behind it. On 23 October 2026 three runs were blocked this way, for seven to thirteen minutes each.
     Before waiting on a lock, check its holder. If the process is alive but has used no CPU for minutes,
     stop it, clear the lock, and tell its owner.
+
+12. **A process belongs to a worktree, not to a person.** Two sessions can hold runs in one checkout, and
+    a run that looks like a leftover may be the other session's live work. On 23 October 2026 one helper
+    killed two picture runs of the coordinator's for that reason, and the gate's references waited
+    forty minutes. Before stopping anything, check the process's parent and its start time, not only its
+    working folder, and agree with the other session which of you runs in that checkout at all.
+
+13. **A picture test can skip the production page build.** The image tests draw from the development
+    pages, so `NULL3D_PRODUCTION_PAGES=skip bun run test:images -g "<name>"` runs them without the
+    production build. On 23 October 2026 that build stalled or was killed five times in a row, and the
+    skip took the failed step out of the path: the same six pictures drew in twenty seconds.
