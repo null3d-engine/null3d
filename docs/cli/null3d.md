@@ -35,7 +35,7 @@ bunx @null3d/cli create my-game --template empty
 | --- | --- | --- |
 | `--template <name>` | The template to copy | `empty` |
 
-The folder must not exist, or it must be empty. The command writes its own version into the project's package pins, and it installs nothing. Run `bun install` in the new folder, then `bunx vite`. [Project structure](../getting-started/project-structure.md) lists the files and explains the agent hook.
+The folder must not exist, or it must be empty. The command never overwrites an existing `.claude/settings.json`, because that file can hold your own hooks. The command writes its own version into the project's package pins, and it installs nothing. Run `bun install` in the new folder, then `bunx vite`. [Project structure](../getting-started/project-structure.md) lists the files and explains the agent hook.
 
 ## shot
 

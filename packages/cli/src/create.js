@@ -139,6 +139,10 @@ export function createProject({
 	if (existsSync(target)) {
 		if (!statSync(target).isDirectory())
 			throw new UsageError(`"${dir}" is a file, and create needs a folder`);
+		if (existsSync(join(target, '.claude', 'settings.json')))
+			throw new UsageError(
+				`"${dir}" already has .claude/settings.json, which can hold your own hooks. create left it as it is: use an empty folder, or move that file first`,
+			);
 		if (readdirSync(target).length > 0)
 			throw new UsageError(`"${dir}" is not empty, and create needs an empty folder`);
 	}

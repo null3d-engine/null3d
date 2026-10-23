@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { UsageError } from './args.js';
@@ -137,6 +145,30 @@ describe('createProject', () => {
 		expect(() => createProject({ dir: join(root, 'game'), template: 'missing' })).toThrow(
 			'it has no "missing" template; its templates: empty',
 		);
+	});
+
+	it('leaves an existing agent settings file as it is', () => {
+		const root = tempRoot();
+		const target = join(root, 'game');
+		mkdirSync(join(target, '.claude'), { recursive: true });
+		const settings = join(target, '.claude', 'settings.json');
+		const own = '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[]}]}}\n';
+		writeFileSync(settings, own);
+
+		expect(() => createProject({ dir: target, version: '0.1.0' })).toThrow('.claude/settings.json');
+		expect(readFileSync(settings, 'utf8')).toBe(own);
+		expect(readdirSync(join(target, '.claude'))).toEqual(['settings.json']);
+	});
+
+	it('does not overwrite the settings of a project that it made before', () => {
+		const root = tempRoot();
+		const target = join(root, 'game');
+		createProject({ dir: target, version: '0.1.0' });
+		const settings = join(target, '.claude', 'settings.json');
+		const before = readFileSync(settings, 'utf8');
+
+		expect(() => createProject({ dir: target, version: '0.2.0' })).toThrow('.claude/settings.json');
+		expect(readFileSync(settings, 'utf8')).toBe(before);
 	});
 
 	it('ships a template with the agent files', () => {
