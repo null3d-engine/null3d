@@ -76,6 +76,13 @@ function repository(): string {
 	});
 }
 
+/** The environment without CI's demand that the shader set be freshly built. */
+function withoutFreshShaders(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	const copy = { ...env };
+	delete copy.NULL3D_REQUIRE_FRESH_SHADERS;
+	return copy;
+}
+
 describe('the shader modules', () => {
 	it('are the main module and the device modules beside it', () => {
 		expect(isShaderModule('shaders.ts')).toBe(true);
@@ -163,6 +170,29 @@ describe('the shader modules', () => {
 		expect(ensureShaderModules(root)).toBe(false);
 	});
 
+	it('read no module byte when every file has the size and time that the record keeps', () => {
+		withScratchCaches(() => {
+			const root = repository();
+			mkdirSync(join(root, 'target'));
+			const record = { inputs: inputHash(root), modules: moduleHash(root) };
+			writeFileSync(join(root, RECORD), JSON.stringify(record));
+			// The first check reads the bytes, which match, and keeps the files' sizes and times.
+			expect(ensureShaderModules(root)).toBe(false);
+			expect(JSON.parse(readFileSync(join(root, RECORD), 'utf8')).stats).toBeString();
+			// The main module, which the hash reads, cannot be read, so a check that passes read no byte.
+			const main = join(root, MODULE_DIR, 'shaders.ts');
+			chmodSync(main, 0o000);
+			try {
+				expect(ensureShaderModules(root)).toBe(false);
+			} finally {
+				chmodSync(main, 0o644);
+			}
+			// A module of another size is a change: the bytes then decide, and the stub cargo fails the build.
+			writeFileSync(main, 'export const CHANGED = 1;\n');
+			expect(() => ensureShaderModules(root)).toThrow();
+		});
+	});
+
 	it('run the build when a module changed, and release the lock when the build fails', () => {
 		withScratchCaches(() => {
 			const root = repository();
@@ -199,15 +229,24 @@ describe('the shader modules', () => {
 			mkdirSync(lock, { recursive: true });
 			writeFileSync(join(lock, 'pid'), String(process.pid));
 			// In a process of its own, so that a wait for the lock fails the test rather than hanging it.
-			const run = spawnSync(
-				'bun',
-				[
-					'-e',
-					`import { ensureShaderModules } from ${JSON.stringify(join(import.meta.dirname, 'shader-modules.ts'))}; console.log(ensureShaderModules(${JSON.stringify(root)}))`,
-				],
-				{ env: process.env, encoding: 'utf8', timeout: 30_000 },
+			// The script is a file of its own because a `-e` import of an absolute TypeScript path is
+			// not portable: on CI's runner the child prints nothing at all.
+			const script = join(root, 'copy-set.ts');
+			writeFileSync(
+				script,
+				`import { ensureShaderModules } from ${JSON.stringify(join(import.meta.dirname, 'shader-modules.ts'))};\nconsole.log(ensureShaderModules(${JSON.stringify(root)}));\n`,
 			);
-			expect(run.stdout.trim()).toBe('false');
+			const run = spawnSync('bun', [script], {
+				// CI's docs-and-tools job asks for fresh shaders, and the child would inherit it and
+				// refuse the cached set before it read it, which is not what this test is about.
+				env: withoutFreshShaders(process.env),
+				encoding: 'utf8',
+				timeout: 30_000,
+			});
+			if (run.stdout.trim() !== 'false')
+				throw new Error(
+					`the child printed ${JSON.stringify(run.stdout.trim())}, not false, and wrote ${JSON.stringify(run.stderr.trim())}`,
+				);
 			expect(readFileSync(join(root, MODULE_DIR, 'shaders.ts'), 'utf8')).toBe(files['shaders.ts']);
 			expect(existsSync(join(lock, 'pid'))).toBe(true);
 		});

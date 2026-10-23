@@ -340,3 +340,13 @@ WebGL2 gives each shader stage 16 texture units. The lit shader reads most of th
 The refusal comes at the first draw of a material, when its program is prepared, and not at `materials.shader()`. An add-on's shader can arrive as a first-use loader, so the material's variants may be empty when it is created, while the program always has its composed source. WebGPU needs no such check: the engine's own layouts already stay within its 16 sampled textures, and a device refusal there names E1305.
 
 The test add-on is a stage of 17 declared textures in `programs.test.ts`, beside the existing test that every build of the engine's own shaders stays within the units.
+
+## Addendum, 23 October 2026: H1's storage surface is one texture at a fixed binding
+
+Status: decided by the coordinator on 2026-10-23. Task: M3-E8.
+
+An add-on's compute pass writes one storage texture at a fixed binding of the pass's group. The add-on's uniforms and sampled textures follow it in the same layout that a full-screen effect uses. The shader download and the bind group layout stay the same whatever a scene uses, so an add-on does not pay for a surface that it ignores.
+
+**Rejected: declared storage bindings.** The pass would declare each binding by name, kind, format and access, and the engine would build the layout. That covers a ping-pong pair or a storage buffer in one pass. It also makes the shader download and the layout depend on the add-on, gives every page the code for a surface that it may not use, and turns one fixed thing to test into a set. A pass that needs two textures uses two passes and swaps its target.
+
+**Consequences.** A ping-pong pair is two passes. A storage buffer waits for the first user that needs one, and M3-E9's GPU-written count buffer reuses this surface rather than bringing a second one. The target's default format is `rgba16float`. The call refuses on WebGL2, which has no compute, and the docs give the full-screen fallback.

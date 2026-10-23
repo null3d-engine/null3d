@@ -12,7 +12,7 @@
 // source, its manifest table and the library modules it imports. A change to one shader compiles
 // only that shader, and a change to a library module compiles only the entries that import it. The
 // cache is shared by every checkout and reused across a change of any WGSL file.
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { copyInPlace } from './atomic-files';
 import {
@@ -66,6 +66,8 @@ interface ModuleRecord {
 	modules: string;
 	/** The module files of the set, so a run that must not build can name the files it lacks. */
 	names?: readonly string[];
+	/** The hash of each module file's name, size and time of change, as `moduleStats` gives it. */
+	stats?: string;
 }
 
 /**
@@ -242,10 +244,38 @@ function readRecord(root: string): ModuleRecord | null {
 	}
 }
 
-/** True when the modules on disk are the ones the last build wrote from these inputs. */
+/**
+ * A hash of each module file's name, size and time of change, to the second, which a copy that keeps
+ * times, such as CI's archive, keeps too. Reading it takes a listing and a stat of each file, where
+ * `moduleHash` reads every byte of the set, gigabytes of it.
+ */
+function moduleStats(root: string): string {
+	const folder = join(root, MODULE_DIR);
+	const names = existsSync(folder) ? readdirSync(folder).filter(isShaderModule).sort() : [];
+	return hashOf(
+		names
+			.map((name) => {
+				const stat = statSync(join(folder, name));
+				return `${name}\t${stat.size}\t${Math.floor(stat.mtimeMs / 1000)}`;
+			})
+			.join('\n'),
+	);
+}
+
+/**
+ * True when the modules on disk are the ones the last build wrote from these inputs. When every
+ * module file has the size and time of change that the record keeps, the set is the one the record
+ * hashed, and no byte is read. Otherwise the bytes decide, and a set whose bytes still match keeps
+ * its files' new sizes and times in the record, so the next check reads none.
+ */
 function isFresh(root: string, inputs: string): boolean {
 	const record = readRecord(root);
-	return record?.inputs === inputs && record.modules === moduleHash(root);
+	if (record?.inputs !== inputs) return false;
+	const stats = moduleStats(root);
+	if (record.stats === stats) return true;
+	if (record.modules !== moduleHash(root)) return false;
+	writeRecord(root, record);
+	return true;
 }
 
 /**
@@ -394,8 +424,10 @@ function moduleNames(root: string): string[] {
 }
 
 /** Writes the record of a build, in place. */
+/** Writes the record of the modules on disk, with their files' sizes and times as they are now. */
 function writeRecord(root: string, record: ModuleRecord): void {
-	writeFileAtomic(join(root, RECORD), `${JSON.stringify(record, null, '\t')}\n`);
+	const kept = { ...record, stats: moduleStats(root) };
+	writeFileAtomic(join(root, RECORD), `${JSON.stringify(kept, null, '\t')}\n`);
 }
 
 /**
