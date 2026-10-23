@@ -122,6 +122,7 @@ Drawing:
 | Camera-facing quads that the sketch moves itself | `scene.createSprites` (0.2) | `api/sprites` |
 | Fire, smoke, sparks, rain, leaves and other particle effects | `createParticles` from `@null3d/particles` (0.2) | `api/particles` |
 | Hills, valleys and other ground from a height field | `createTerrain` from `@null3d/terrain` (0.2) | `api/terrain` |
+| Gaussian splats from a scan or a training run, as SPZ or `KHR_gaussian_splatting` files | `createSplats` from `@null3d/splats` (0.3) | `api/splats` |
 | Point clouds | `scene.createPoints` (0.2) | `api/points` |
 | Lines with pixel or world widths | `scene.createLines` (0.2) | `api/lines` |
 | Shapes for debugging only | `debug.line`, `debug.box`, `debug.axes` | `api/debug` |
