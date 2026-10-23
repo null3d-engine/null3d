@@ -1404,6 +1404,32 @@ export class Object3D implements Described {
 		this.scene.command(C.COMMAND_SET_FLAGS, this.handle, flag, on ? flag : 0, call);
 		this.keepFlag(flag, on);
 	}
+
+	/**
+	 * Replaces the object's bounding sphere, which culling and the light's hero shadow test, with a
+	 * sphere of your own: `center` relative to the object's origin, and `radius`, both before the
+	 * object's scale. Use it when a shader moves vertices outside a mesh's sphere. A mesh takes its
+	 * mesh's sphere at first, and `setMesh` gives that back; a group has none, so it needs a sphere
+	 * of its own wherever one is read, as the hero shadow that names it reads it.
+	 */
+	setBounds(center: Vec3Like, radius: number): void {
+		const x = center[0] as number;
+		const y = center[1] as number;
+		const z = center[2] as number;
+		if (DEV) {
+			checkLive('setBounds', this);
+			checkVector('setBounds', this, x, y, z);
+			checkNumber('setBounds', 'radius', radius, this);
+			if (radius < 0)
+				throw new EngineError(
+					'E1108',
+					`setBounds() got the radius ${radius} on ${this.describe()}, below 0.`,
+				);
+		}
+		this.scene.writeBounds(this.row, x, y, z, radius);
+		if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
+		this.setFlag('setBounds', C.FLAG_CUSTOM_BOUNDS, true);
+	}
 }
 
 /**
@@ -1726,30 +1752,6 @@ export class Mesh extends Object3D {
 	 */
 	setFrustumCulled(culled: boolean): void {
 		this.setFlag('setFrustumCulled', C.FLAG_UNCULLED, !culled);
-	}
-
-	/**
-	 * Replaces the mesh's bounding sphere, which culling tests, with a sphere of your own: `center`
-	 * relative to the object's origin, and `radius`, both before the object's scale. Use it when a
-	 * shader moves vertices outside the mesh's sphere. `setMesh` gives the mesh's sphere back.
-	 */
-	setBounds(center: Vec3Like, radius: number): void {
-		const x = center[0] as number;
-		const y = center[1] as number;
-		const z = center[2] as number;
-		if (DEV) {
-			checkLive('setBounds', this);
-			checkVector('setBounds', this, x, y, z);
-			checkNumber('setBounds', 'radius', radius, this);
-			if (radius < 0)
-				throw new EngineError(
-					'E1108',
-					`setBounds() got the radius ${radius} on ${this.describe()}, below 0.`,
-				);
-		}
-		this.scene.writeBounds(this.row, x, y, z, radius);
-		if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
-		this.setFlag('setBounds', C.FLAG_CUSTOM_BOUNDS, true);
 	}
 }
 

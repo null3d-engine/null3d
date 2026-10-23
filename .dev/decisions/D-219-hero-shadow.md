@@ -56,10 +56,14 @@ The demo's scene adds one tile pass while the car stands still only in the frame
 - [Shadows](../../docs/concepts/shadows.md#a-hero-shadow) describes the feature for users, and the demo is `examples/hero-shadow`.
 - The reach below the object is sixteen radii (`HERO_REACH`), about what a low sun stretches an object's shadow over. A ground far below the object, or a very low sun, cuts the shadow at the box's far face and leaves the cascades beyond it. Revisit the constant with the first scene that needs a longer one.
 
-## A group cannot be a hero
+## Which objects can be heroes
 
-A light's hero must be a mesh: the box fits the object's world bounding sphere, and a mesh carries one,
-either from its vertices or from `setBounds`. A group carries no sphere of its own, so naming one as a
-hero draws no tile and the surfaces near it fall back to the cascades, without an error. The demo
-therefore names the car's body mesh and widens its sphere to hold the whole car. Giving a group a
-sphere of its own is a later addition, and it should refuse a group until then.
+The box fits the object's world bounding sphere. A mesh carries one from its vertices, or the one that
+`setBounds` gives it. A group has none of its own, so naming one as a hero draws no tile and the
+surfaces near it fall back to the cascades, without an error.
+
+Every object now carries a sphere when `setBounds` gives it one: the call moved from meshes to the
+object class, so a group whose parts are known to span a box can be a hero too. The demo still names
+the car's body mesh and widens its sphere to hold the whole car, which needs no group bounds, and the
+test that the hero's tile is marked by a caster near it covers the group path through the same
+sphere.
