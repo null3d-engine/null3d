@@ -120,15 +120,18 @@ describe('parseScript', () => {
 		);
 	});
 
-	it('refuses two shot steps with one name', () => {
+	it('refuses two shot steps with one name, and two shots at one time', () => {
 		expect(mistake('1 shot start\n2 shot start')).toBe(
 			'script line 2: two shot steps are named "start"',
+		);
+		expect(mistake('1 shot start\n1 shot driving')).toBe(
+			'script line 2: another shot step is at 1 s. Give each shot its own time',
 		);
 	});
 });
 
 describe('scriptProgram', () => {
-	it('gives the engine every step but the shots, and gives a pointer its last place', () => {
+	it('gives the engine every step but the shots, and leaves a press without a place where the pointer is', () => {
 		const steps = parseScript(
 			['0 pointer move 640 360', '1 pointer up', '2 set car.position=1, 2, 3', '3 shot start'].join(
 				'\n',
@@ -137,7 +140,7 @@ describe('scriptProgram', () => {
 		expect(scriptProgram(steps)).toEqual({
 			steps: [
 				{ at: 0, verb: 'pointer', action: 'move', x: 640, y: 360 },
-				{ at: 1, verb: 'pointer', action: 'up', x: 0, y: 0 },
+				{ at: 1, verb: 'pointer', action: 'up' },
 				{ at: 2, verb: 'set', target: 'car', path: 'position', value: [1, 2, 3] },
 			],
 		});

@@ -239,7 +239,8 @@ function readLine(text, line) {
 
 /**
  * The steps that the text of a script gives, in time order. Throws a UsageError that names the line
- * for a line that is not a step, a time that falls back, and two shot steps with one name.
+ * for a line that is not a step, a time that falls back, two shot steps with one name, and two
+ * shots at one time.
  *
  * @param {string} text
  * @returns {ScriptStep[]}
@@ -248,6 +249,7 @@ export function parseScript(text) {
 	/** @type {ScriptStep[]} */
 	const steps = [];
 	const shotNames = new Set();
+	const shotTimes = new Set();
 	const lines = text.split(/\r?\n/);
 	for (let index = 0; index < lines.length; index++) {
 		const line = (lines[index] ?? '').trim();
@@ -262,7 +264,12 @@ export function parseScript(text) {
 		if (step.verb === 'shot') {
 			if (shotNames.has(step.name))
 				throw new UsageError(`script line ${number}: two shot steps are named "${step.name}"`);
+			if (shotTimes.has(step.at))
+				throw new UsageError(
+					`script line ${number}: another shot step is at ${step.at} s. Give each shot its own time`,
+				);
 			shotNames.add(step.name);
+			shotTimes.add(step.at);
 		}
 		steps.push(step);
 	}
@@ -299,7 +306,13 @@ export function scriptProgram(steps) {
 		.filter((step) => step.verb !== 'shot')
 		.map((step) =>
 			step.verb === 'pointer'
-				? { at: step.at, verb: step.verb, action: step.action, x: step.x ?? 0, y: step.y ?? 0 }
+				? {
+						at: step.at,
+						verb: step.verb,
+						action: step.action,
+						...(step.x !== undefined && { x: step.x }),
+						...(step.y !== undefined && { y: step.y }),
+					}
 				: step,
 		);
 	return { steps: /** @type {import('./page.js').HoldScriptStep[]} */ (program) };

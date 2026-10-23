@@ -1170,7 +1170,8 @@ describe('hold mode with a timed script', () => {
 		const { runner } = await holdOf(
 			[
 				{ at: 0, verb: 'pointer', action: 'move', x: 100, y: 50 },
-				{ at: 0.2, verb: 'pointer', action: 'down', x: 100, y: 50 },
+				// A press without a place keeps the pointer where it is.
+				{ at: 0.2, verb: 'pointer', action: 'down' },
 			],
 			0.5,
 			[],
