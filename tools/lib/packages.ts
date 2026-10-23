@@ -128,6 +128,10 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		required: [
 			'dist/assets.wasm',
 			'src/assets/encode-worker.js',
+			'templates/empty/AGENTS.md',
+			'templates/empty/.claude/agent-hook.mjs',
+			'templates/empty/.claude/settings.json',
+			'templates/empty/src/sketch.ts',
 			'vendor/basis/basis_encoder.js',
 			'vendor/basis/basis_encoder.wasm',
 			'vendor/basis/package.json',

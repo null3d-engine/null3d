@@ -433,6 +433,9 @@ jobs:
     timeout-minutes: 60
     env:
       HUSKY: "0"
+    outputs:
+      # The size parts of this run, for the size-parts matrix below.
+      size-parts: ${{ steps.size-parts.outputs.parts }}
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
@@ -463,6 +466,18 @@ jobs:
         uses: ./.github/actions/shaders
         with:
           run: bun tools/build-wasm.ts --pages-only
+      # One size part when the newest size memo holds the sizes of these shader modules, which hold
+      # nearly all of the engine test page's bytes, so that the part compresses only a few files;
+      # the full split otherwise. A run that cannot tell takes the full split.
+      - uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/null3d/size-memo
+          key: size-memo-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: size-memo-${{ runner.os }}-
+      - id: size-parts
+        run: |
+          parts=$(bun tools/lib/size-memo.ts --parts) || parts='[1,2,3,4]'
+          echo "parts=$parts" | tee -a "$GITHUB_OUTPUT"
       # Every later job downloads these files, about 2.8 GB, as one archive: as the artifact's own
       # zip they took 510 MB and 77 s to upload in run 39869813447, and about 122 MB this way.
       - uses: ./.github/actions/archive
@@ -558,7 +573,10 @@ jobs:
     # and compressing its files at the highest gzip and Brotli levels is the size check's work: the
     # first-use shader files hold almost all of the build's bytes. Each part builds the same page
     # and measures its share of the files, on every core of its machine, and the wasm-checks job
-    # judges them together ([Benchmarks](.dev/benchmarks.md#download-size)).
+    # judges them together ([Benchmarks](.dev/benchmarks.md#download-size)). A part compresses only
+    # the files whose bytes the size memo lacks, which are the files that changed since the run that
+    # kept the memo. The build job runs one part when that memo was measured from these shader
+    # modules, and four otherwise.
     name: size-parts (${{ matrix.part }} of ${{ strategy.job-total }})
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
@@ -567,7 +585,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2, 3, 4]
+        part: ${{ fromJSON(needs.build.outputs.size-parts) }}
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
@@ -581,6 +599,13 @@ jobs:
         with:
           mode: download
           name: page-wasm
+      # The size memo: each file's sizes by the hash of its bytes, under a stamp of the compressors,
+      # so any run's memo serves, and the newest holds the files closest to this build's.
+      - uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/null3d/size-memo
+          key: size-memo-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: size-memo-${{ runner.os }}-
       - name: Measure this part of the engine test page's files
         run: bun tools/build-wasm.ts --check-size --prebuilt --part ${{ matrix.part }}/${{ strategy.job-total }}
       - uses: actions/upload-artifact@v4
@@ -626,6 +651,17 @@ jobs:
           merge-multiple: true
       - name: Check the sizes of the build job's files against the base's build
         run: bun tools/build-wasm.ts --check-size --prebuilt --judge-parts target/size-parts
+      # The check writes the parts' memo entries before it judges the sizes, and only when a part
+      # compressed a file that the memo lacked, so a run that changed no file keeps no new memo.
+      - name: Find a new size memo
+        id: memo
+        if: "!cancelled()"
+        run: test -f ~/.cache/null3d/size-memo/sizes.json && echo "new=true" >> "$GITHUB_OUTPUT" || true
+      - uses: actions/cache/save@v4
+        if: "!cancelled() && steps.memo.outputs.new == 'true' && env.SAVE_CACHES == 'true'"
+        with:
+          path: ~/.cache/null3d/size-memo
+          key: size-memo-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
       # The check writes the sizes before it judges them, so main keeps them also after a failure.
       - name: Keep the sizes of this commit of main
         if: "!cancelled() && github.event_name == 'push' && hashFiles('target/size-report.json') != ''"

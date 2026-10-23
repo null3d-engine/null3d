@@ -10,6 +10,8 @@
 //
 // CI can split the measuring into parts that run at the same time: each part builds the same page
 // and measures its own share of the files, and one step merges the parts' sizes and judges them.
+// A file's sizes depend only on its bytes and the compressors, so a measuring can take them from a
+// memo of earlier measurings, by the hash of the bytes, and compress only the files that changed.
 import { createHash } from 'node:crypto';
 import { availableParallelism } from 'node:os';
 import { posix } from 'node:path';
@@ -45,6 +47,33 @@ const BROTLI_OPTIONS = { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } };
 const gzipAsync = promisify(gzip);
 const brotliAsync = promisify(brotliCompress);
 
+/**
+ * The compressors and their settings that a size memo's entries hold for. A memo made under
+ * another stamp, such as by another runtime's zlib, holds no entry for this one.
+ */
+export const SIZE_MEMO_STAMP = JSON.stringify({
+	gzip: GZIP_OPTIONS,
+	brotli: BROTLI_OPTIONS,
+	zlib: process.versions.zlib,
+	runtime: process.versions.bun ?? process.version,
+});
+
+/**
+ * The sizes that earlier measurings found, by the SHA-256 of a file's bytes, and the entries of the
+ * files that this measuring met, which are what a later measuring needs.
+ */
+export interface SizeMemo {
+	known: ReadonlyMap<string, SizeEntry>;
+	met: Map<string, SizeEntry>;
+	/** How many files this measuring compressed, because the memo held no entry for them. */
+	compressed: number;
+}
+
+/** A memo of the given entries, by the hash of a file's bytes. */
+export function sizeMemo(known: Readonly<Record<string, SizeEntry>> = {}): SizeMemo {
+	return { known: new Map(Object.entries(known)), met: new Map(), compressed: 0 };
+}
+
 /** [`measure`]'s sizes, with both compressions on the runtime's worker threads. */
 async function measureAsync(bytes: Buffer): Promise<SizeEntry> {
 	const [gzipped, brotli] = await Promise.all([
@@ -69,18 +98,35 @@ export interface ReportFile {
 /**
  * The size of each of `files`, by name, in their order. `onMeasured` follows each file as it ends.
  * The files compress on every core at once: as many at a time as the machine has cores, each read
- * only when its turn comes, so the memory held stays a few files.
+ * only when its turn comes, so the memory held stays a few files. With a memo, a file whose bytes
+ * the memo knows takes its sizes from there, and every file's entry goes into the memo's `met`.
  */
 export async function measureFiles(
 	files: readonly ReportFile[],
 	onMeasured?: (file: ReportFile) => void,
+	memo?: SizeMemo,
 ): Promise<Map<string, SizeEntry>> {
 	const measured = new Array<SizeEntry>(files.length);
 	let next = 0;
+	// Each set of bytes that the memo lacks compresses once, however many files hold it.
+	const compressing = new Map<string, Promise<SizeEntry>>();
+	const sizeOf = async (bytes: Buffer): Promise<SizeEntry> => {
+		if (!memo) return measureAsync(bytes);
+		const hash = createHash('sha256').update(bytes).digest('hex');
+		const known = memo.known.get(hash);
+		let size = known ? Promise.resolve(known) : compressing.get(hash);
+		if (!size) {
+			size = measureAsync(bytes);
+			compressing.set(hash, size);
+			memo.compressed++;
+		}
+		memo.met.set(hash, await size);
+		return size;
+	};
 	const worker = async () => {
 		for (let at = next++; at < files.length; at = next++) {
 			const file = files[at] as ReportFile;
-			measured[at] = await measureAsync(file.read());
+			measured[at] = await sizeOf(file.read());
 			onMeasured?.(file);
 		}
 	};
@@ -158,6 +204,7 @@ export async function measureSizePart(
 	files: readonly ReportFile[],
 	spec: PartSpec,
 	onMeasured?: (file: ReportFile) => void,
+	memo?: SizeMemo,
 ): Promise<SizePart> {
 	const share = partShare(files, spec);
 	const own = files.filter(({ name }) => share.has(name));
@@ -166,7 +213,7 @@ export async function measureSizePart(
 		of: spec.count,
 		build: buildHash(files),
 		files: files.map(({ name }) => name),
-		sizes: Object.fromEntries(await measureFiles(own, onMeasured)),
+		sizes: Object.fromEntries(await measureFiles(own, onMeasured, memo)),
 	};
 }
 

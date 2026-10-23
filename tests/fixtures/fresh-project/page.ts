@@ -21,6 +21,9 @@ try {
 		preload: ['sprites'],
 		gpu: path === 'webgpu' || path === 'webgl2' ? path : 'auto',
 	});
+	// The first frame is where the engine asks for the shaders a pass needs, so the start is read
+	// after it: an offline page that cannot get one fails here, with this check and not the next.
+	await engine.firstFrame;
 	root.dataset.tier = engine.capabilities.tier;
 	root.dataset.start = engine.capabilities.threaded ? 'threaded' : 'single-threaded';
 } catch (e) {

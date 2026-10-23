@@ -116,6 +116,14 @@ import {
 	growthSummary,
 } from './lib/size-check';
 import {
+	keepSizeMemo,
+	mergeSizeMemoParts,
+	readSizeMemo,
+	recordedModules,
+	sizeMemoPartFile,
+	writeSizeMemo,
+} from './lib/size-memo';
+import {
 	type Budget,
 	type BuiltFile,
 	budgetProblems,
@@ -1034,18 +1042,42 @@ async function writeSizePart(spec: PartSpec): Promise<void> {
 	const started = performance.now();
 	let done = 0;
 	let tenths = 0;
-	const record = await measureSizePart(files, spec, ({ weight }) => {
-		done += weight;
-		const reached = total > 0 ? Math.floor((done / total) * 10) : 10;
-		if (reached <= tenths) return;
-		tenths = reached;
-		const seconds = secondsSince(started);
-		console.log(`  ${tenths * 10}% of the part's bytes measured, after ${seconds} s`);
-	});
+	const memo = readSizeMemo();
+	const record = await measureSizePart(
+		files,
+		spec,
+		({ weight }) => {
+			done += weight;
+			const reached = total > 0 ? Math.floor((done / total) * 10) : 10;
+			if (reached <= tenths) return;
+			tenths = reached;
+			const seconds = secondsSince(started);
+			console.log(`  ${tenths * 10}% of the part's bytes measured, after ${seconds} s`);
+		},
+		memo,
+	);
+	printMemoUse(share.size, memo.compressed);
 	const path = join(root, SIZE_PARTS_DIR, sizePartFile(spec));
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, `${JSON.stringify(record, null, '\t')}\n`);
+	writeSizeMemo(join(root, SIZE_PARTS_DIR, sizeMemoPartFile(spec)), memo);
 	console.log(`\nwrote ${relative(root, path)}`);
+}
+
+/** Prints how many of a measuring's files it compressed, and how many the memo held. */
+function printMemoUse(files: number, compressed: number): void {
+	console.log(
+		`compressed ${compressed} of ${files} files; the size memo held the sizes of the rest`,
+	);
+}
+
+/** The sizes of `files`, through the memo, which then holds the entries of these files alone. */
+async function measureWithMemo(files: readonly ReportFile[]): Promise<Map<string, SizeEntry>> {
+	const memo = readSizeMemo();
+	const sizes = await measureFiles(files, undefined, memo);
+	printMemoUse(files.length, memo.compressed);
+	keepSizeMemo(memo, recordedModules(root));
+	return sizes;
 }
 
 /** The sizes of the engine test page's files, merged from every part's file in `dir`. */
@@ -1274,8 +1306,16 @@ async function main(): Promise<void> {
 	// a build here otherwise: the same sizes in the same order either way.
 	const page =
 		options.judgeParts === undefined
-			? await measureFiles(engineTestPageFiles())
+			? await measureWithMemo(engineTestPageFiles())
 			: readSizeParts(options.judgeParts);
+	if (options.judgeParts !== undefined) {
+		// The parts' entries are those of every file of this build, so they make the next memo.
+		const entries = mergeSizeMemoParts(resolve(root, options.judgeParts));
+		// Parts can each compress the same bytes, so their count can pass the count of distinct files.
+		console.log(
+			`the size parts compressed ${entries.compressed} files; the next size memo holds the sizes of ${entries.met.size} distinct files${keepSizeMemo(entries, recordedModules(root)) ? '' : ', and is not kept, since it would not change'}`,
+		);
+	}
 	const sizes: Record<string, SizeEntry> = {};
 	for (const variant of VARIANTS)
 		for (const file of CORE_FILES)

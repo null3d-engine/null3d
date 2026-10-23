@@ -73,9 +73,15 @@ const NOTES: Readonly<Record<string, string>> = {
 		'the hook exists and is unit-tested; its first users are the splats and water add-ons, which are not on the branch',
 	'M3-A10': 'the sharpening draws, but its evidence does not close the task',
 	'M3-B1': 'the lens kit has no picture test and no cost per preset',
-	'M3-L4': 'the impostor cards are done; staged loading, coarse first, is not',
+	'M3-D9':
+		'the command fails on an add-on that imports the engine internal entry, but no test or recorded run calls it on the foundation add-ons',
+	'M3-L1':
+		'every item is built with its pictures, but D-211 records Mac figures alone: the phone GPU time the fade item asks for, and the iPad and phone figures the section asks for, are missing',
 	'M3-L2':
 		'the render order and the instanced feature draw are built; its picture references are not drawn',
+	'M3-L3':
+		'the WebGPU path draws the patches, but D-213 records the WebGL2 multi-draw path, the whole-level fallback and the GPU time as not built',
+	'M3-L4': 'the impostor cards are done; staged loading, coarse first, is not',
 	'M3-F3':
 		'dropped with the temporal resolve it waited on (D-206); the owner may change the ruling',
 	'M3-F10': 'dropped with the temporal resolve it needs (D-206); the owner may change the ruling',

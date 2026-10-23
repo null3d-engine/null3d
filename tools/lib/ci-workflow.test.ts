@@ -11,6 +11,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { PRODUCTION_BUILD_PAGES, PRODUCTION_BUILD_TESTS } from '../../tests/lib/server.ts';
 
 interface Step {
+	id?: string;
 	name?: string;
 	run?: string;
 	uses?: string;
@@ -21,6 +22,7 @@ interface Step {
 
 interface Job {
 	needs?: string | string[];
+	outputs?: Record<string, string>;
 	if?: string;
 	env?: Record<string, string>;
 	strategy?: { matrix?: Record<string, unknown> & { include?: Record<string, unknown>[] } };
@@ -193,7 +195,6 @@ describe("CI's workflow", () => {
 			['browser', 'shard'],
 			['browser-alone', 'shard'],
 			['real-browsers', 'shard'],
-			['size-parts', 'part'],
 		] as const) {
 			const shards = matrixOf(name)[key] as number[];
 			expect(shards, name).toEqual(oneTo(shards.length));
@@ -370,6 +371,32 @@ describe("CI's workflow", () => {
 			expect(needsOf(job), name).toContain('load-pages');
 			expect(hands(job, 'load-pages', 'download'), name).toBe(true);
 		}
+	});
+
+	it('lets every size part read the size memo, which the job that judges the parts keeps', () => {
+		const cacheStep = (job: string, action: string) =>
+			(jobNamed(job).steps ?? []).find(
+				({ uses, with: given }) => uses === action && String(given?.path).endsWith('/size-memo'),
+			);
+		const restore = cacheStep('size-parts', 'actions/cache/restore@v4');
+		const save = cacheStep('wasm-checks', 'actions/cache/save@v4');
+		expect(restore?.with?.path).toBe(save?.with?.path);
+		// Any run's memo serves, so the parts take the newest under the prefix of the key that the
+		// judge saves under.
+		const prefix = String(restore?.with?.['restore-keys']);
+		expect(String(save?.with?.key).startsWith(prefix)).toBe(true);
+		expect(needsOf(jobNamed('wasm-checks'))).toContain('size-parts');
+		// The build job reads the same memo and picks the count of parts, which
+		// tools/lib/size-memo.ts numbers from 1, and the matrix takes it.
+		const build = jobNamed('build');
+		expect(cacheStep('build', 'actions/cache/restore@v4')?.with?.['restore-keys']).toBe(prefix);
+		const pick = (build.steps ?? []).find(({ id }) => id === 'size-parts');
+		expect(pick?.run).toContain('bun tools/lib/size-memo.ts --parts');
+		expect(build.outputs?.['size-parts']).toContain('steps.size-parts.outputs.parts');
+		expect(String(matrixOf('size-parts').part)).toContain(
+			'fromJSON(needs.build.outputs.size-parts)',
+		);
+		expect(needsOf(jobNamed('size-parts'))).toContain('build');
 	});
 
 	it("moves the build job's files and the load builds only through the archive action", () => {
