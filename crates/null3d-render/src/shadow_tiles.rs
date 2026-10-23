@@ -334,6 +334,14 @@ impl Caster {
         (dot(center, center) <= reach * reach).then_some(center)
     }
 
+    /// True when the caster's sphere touches the box of the sun's `hero`, whose layers it shares.
+    fn touches_hero(&self, hero: &HeroShadow) -> bool {
+        let radius = self.sphere[3];
+        radius != HIDDEN_RADIUS
+            && hero.layers & self.layers != 0
+            && hero.bounds.touches(self.center_world(), radius)
+    }
+
     /// Where the caster's sphere center lies from the world's origin.
     fn center_world(&self) -> [f64; 3] {
         let [x, y, z, _] = self.sphere;
@@ -1093,6 +1101,7 @@ impl ShadowTiles {
         }
         if all {
             self.slots.iter_mut().for_each(|slot| slot.clean = false);
+            self.hero.clean = false;
         }
     }
 
@@ -1119,7 +1128,8 @@ impl ShadowTiles {
             let reached = self
                 .lit
                 .iter()
-                .any(|lit| before.center_from(&shadows[lit.shadow as usize]).is_some());
+                .any(|lit| before.center_from(&shadows[lit.shadow as usize]).is_some())
+                || self.hero.key.is_some_and(|hero| before.touches_hero(&hero));
             if !reached || !casts(input.scene, slot) {
                 continue;
             }
@@ -1151,26 +1161,21 @@ impl ShadowTiles {
                 }
             }
         }
-        if let Some(hero) = self.hero.key {
-            let touches = |caster: &Caster| {
-                let radius = caster.sphere[3];
-                radius != HIDDEN_RADIUS
-                    && hero.layers & caster.layers != 0
-                    && hero.bounds.touches(caster.center_world(), radius)
-            };
-            if touches(before) || touches(now) {
-                self.hero.clean = false;
-            }
+        if let Some(hero) = self.hero.key
+            && (before.touches_hero(&hero) || now.touches_hero(&hero))
+        {
+            self.hero.clean = false;
         }
     }
 
     /// True when every tile of the frame's lights must draw already, so no caster can mark more.
     fn all_marked(&self) -> bool {
-        self.lit.iter().all(|lit| {
+        let lights = self.lit.iter().all(|lit| {
             self.slots[lit.first as usize..(lit.first + lit.faces) as usize]
                 .iter()
                 .all(|slot| !slot.clean)
-        })
+        });
+        lights && (self.hero.key.is_none() || !self.hero.clean)
     }
 }
 
