@@ -533,6 +533,7 @@ mod tests {
             manifest: manifest.to_owned(),
             files,
             parts: std::collections::BTreeMap::new(),
+            only: Default::default(),
         };
         let costs = entry_costs(&inputs).unwrap();
         assert_eq!(costs, [("big".to_owned(), 4), ("small".to_owned(), 1)]);

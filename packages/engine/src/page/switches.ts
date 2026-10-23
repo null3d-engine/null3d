@@ -267,6 +267,12 @@ export interface Switches {
 	 */
 	glTiming: GlTimingMode | undefined;
 	/**
+	 * `record` for `?permutations=record`, which collects the permutation words that the scene's
+	 * pipelines ask for and publishes them on `window.__null3dPermutations`, so a tool can write the
+	 * list that a narrowed shader build builds.
+	 */
+	permutations: 'record' | undefined;
+	/**
 	 * The milliseconds that ?replay-delay= makes the thread that draws wait before it replays each
 	 * frame's list, or undefined for no wait. The sketch thread then steps the next frame first.
 	 */
@@ -381,6 +387,7 @@ export function parseSwitches(search: string): Switches {
 		still: params.get('still-camera') !== 'off',
 		bench: params.has('bench'),
 		stats: statsSwitch(params.get('stats')),
+		permutations: params.get('permutations') === 'record' ? 'record' : undefined,
 		glTiming: !params.has('gl-timing')
 			? undefined
 			: params.get('gl-timing') === 'sync'

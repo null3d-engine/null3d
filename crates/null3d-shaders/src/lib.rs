@@ -112,6 +112,12 @@ pub struct Inputs {
     /// per-entry cache, whose key covers the whole entry.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub parts: BTreeMap<String, Part>,
+    /// The permutation words to build, as a production build lists the ones its scenes use, or
+    /// empty to build every word. A word that a variant cannot make builds nothing there, so one
+    /// list serves every template: each build takes the word it is asked for, and a template
+    /// without some of the word's bits builds the word that remains.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub only: BTreeSet<u32>,
 }
 
 impl Inputs {
@@ -125,6 +131,7 @@ impl Inputs {
             manifest,
             files,
             parts: BTreeMap::new(),
+            only: BTreeSet::new(),
         })
     }
 }
@@ -192,10 +199,14 @@ pub fn build_with_cache_reporting(
     let manifest = parse_manifest(inputs)?;
     let mut compiler = Compiler::new(&inputs.files)?;
     compiler.engine = true;
+    compiler.only = inputs.only.clone();
     check_files(inputs, &manifest).or(())?;
 
     let mut errors = BuildError::default();
-    let mut output = Output::default();
+    let mut output = Output {
+        listed: inputs.only.clone(),
+        ..Default::default()
+    };
     let mut stats = CacheStats::default();
     let entries = build_entries(
         compiler,
@@ -270,7 +281,9 @@ pub fn build_names(inputs: &Inputs) -> Result<BTreeMap<String, Vec<String>>, Bui
         .iter()
         .map(|(name, shader)| {
             let part = inputs.parts.get(name).copied().unwrap_or(Part::WHOLE);
-            let builds = planned_builds(&shader.variants, |place, _, _| part.holds(place));
+            let builds = planned_builds(&shader.variants, &inputs.only, |place, _, _| {
+                part.holds(place)
+            });
             let names = builds.into_iter().map(|(_, build)| build.name).collect();
             (name.clone(), names)
         })
@@ -322,6 +335,14 @@ fn build_entries(
     errors: &mut BuildError,
     stats: &mut CacheStats,
 ) -> Result<Vec<BTreeMap<String, VariantOutput>>, BuildError> {
+    // The listed words, as the cache key names them: an entry built for one list is not the entry
+    // that a build of another list may reuse.
+    let listed = inputs
+        .only
+        .iter()
+        .map(|word| format!("{word:08x}"))
+        .collect::<Vec<_>>()
+        .join(",");
     let shaders: Vec<_> = manifest.shaders.iter().collect();
     let mut found = Vec::with_capacity(shaders.len());
     let mut jobs = Vec::new();
@@ -336,7 +357,7 @@ fn build_entries(
         } else {
             let table = toml::to_string(shader).unwrap_or_default();
             let source = &inputs.files[&shader.file];
-            let key = cache.key(shader_name, &shader.file, source, &table);
+            let key = cache.key(shader_name, &shader.file, source, &table, &listed);
             cache
                 .load(shader_name, &key, &inputs.files)
                 .ok_or(Some(key))
@@ -351,8 +372,10 @@ fn build_entries(
             Err(_) => {
                 stats.compiled += 1;
                 let part = part.unwrap_or(Part::WHOLE);
-                let builds =
-                    planned_builds(&shader.variants, |place, _, _| part.holds(place)).into_iter();
+                let builds = planned_builds(&shader.variants, &inputs.only, |place, _, _| {
+                    part.holds(place)
+                })
+                .into_iter();
                 jobs.extend(builds.map(|(variant, build)| Job {
                     entry,
                     variant,
@@ -499,15 +522,18 @@ fn threads(_jobs: usize) -> usize {
 
 /// The builds of an entry's variants in build order, each with its variant, that `keep` takes. It
 /// gets each build's place in that order, counted from 0, its variant and its permutation word.
-fn planned_builds(
-    variants: &BTreeMap<String, Variant>,
+/// `only` names the words to build, and an empty set builds every build.
+fn planned_builds<'a>(
+    variants: &'a BTreeMap<String, Variant>,
+    only: &BTreeSet<u32>,
     keep: impl Fn(usize, &Variant, u32) -> bool,
-) -> Vec<(&Variant, Build)> {
+) -> Vec<(&'a Variant, Build)> {
     let mut planned = Vec::new();
     let mut place = 0;
     for (name, variant) in variants {
         for build in variant.builds(name) {
-            if keep(place, variant, build.permutation) {
+            let listed = only.is_empty() || only.contains(&build.permutation);
+            if listed && keep(place, variant, build.permutation) {
                 planned.push((variant, build));
             }
             place += 1;
@@ -574,6 +600,8 @@ pub struct Compiler {
     engine: bool,
     /// Warnings of the builds since the last [`Compiler::take_warnings`].
     warnings: BuildError,
+    /// The permutation words to build, or empty to build every word.
+    only: BTreeSet<u32>,
 }
 
 impl Compiler {
@@ -587,6 +615,7 @@ impl Compiler {
             hosts: HashMap::new(),
             engine: false,
             warnings: BuildError::default(),
+            only: BTreeSet::new(),
         })
     }
 
@@ -642,7 +671,7 @@ impl Compiler {
         let held = |place, variant: &Variant, permutation| {
             share.is_none_or(|share| share.holds(place, variant, permutation))
         };
-        for (variant, build) in planned_builds(variants, held) {
+        for (variant, build) in planned_builds(variants, &self.only, held) {
             match self.variant(path, source, pipelines, variant, &build) {
                 Ok(Built {
                     output, warnings, ..
@@ -948,8 +977,18 @@ pub fn write_cached_reporting(
     cache: &Cache,
     progress: Progress<'_>,
 ) -> Result<(Written, CacheStats), BuildError> {
-    let inputs = Inputs::read(root)?;
-    let (output, stats) = build_with_cache_reporting(&inputs, cache, progress)?;
+    write_cached_reporting_inputs(root, &Inputs::read(root)?, cache, progress)
+}
+
+/// [`write_cached_reporting`] with the inputs already read, so a caller that narrows them builds
+/// and writes what it narrowed.
+pub fn write_cached_reporting_inputs(
+    root: &Path,
+    inputs: &Inputs,
+    cache: &Cache,
+    progress: Progress<'_>,
+) -> Result<(Written, CacheStats), BuildError> {
+    let (output, stats) = build_with_cache_reporting(inputs, cache, progress)?;
     let modules = typescript(&output);
     let mut written = Written::Unchanged;
     for path in stale_modules(root, &modules) {

@@ -5,6 +5,7 @@
 // the engine's memory, and the next engine on the same canvas starts it again with its own.
 
 import { messageOf } from '../errors/message';
+import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
 import { captureFrame, captureImage, preloadDeviceFiles, startDrawing } from '../render/draw';
 import { controlViews } from '../shared/control';
 import { setWakeByMessage } from '../shared/wake';
@@ -39,6 +40,9 @@ startWorker(
 			try {
 				canvas = message.canvas ?? canvas;
 				if (!canvas) throw new Error('the page gave the render worker no canvas');
+				// The scene's pipelines ask for their variants as it warms up, so a recording that
+				// starts here lists every word that the scene draws with.
+				if (message.recordPermutations) recordPermutations();
 				host = new DrawingHost();
 				imagePort = message.imagePort;
 				controlSlots = controlViews(message.control).slots;
@@ -61,6 +65,7 @@ startWorker(
 					role: 'render',
 					threaded: message.build === 'threaded',
 					tier: drawing.renderer.tier,
+					...(message.recordPermutations ? { permutations: stopRecordingPermutations() } : {}),
 				});
 			} catch (e) {
 				await host.release();

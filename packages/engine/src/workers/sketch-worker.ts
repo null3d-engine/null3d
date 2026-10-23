@@ -7,6 +7,7 @@
 // engine on the same canvas starts it again.
 
 import { messageOf } from '../errors/message';
+import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
 import { type DrawModule, loadDrawModule, preloadDeviceFiles } from '../render/load-draw';
 import type { Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
@@ -112,6 +113,9 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			let tier: Tier | undefined;
 			if (message.renderer && drawModule) {
 				draw = await drawModule;
+				// This thread draws in low-latency mode, so a recording here lists the words that its
+				// pipelines ask for, beside the ones that the page's other threads list.
+				if (message.renderer.recordPermutations) recordPermutations();
 				step('renderer loaded');
 				const drawing = await host.start(
 					draw.startDrawing({
@@ -141,6 +145,9 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 				threaded: core.isThreadedBuild(),
 				version: core.engineVersion(),
 				tier,
+				...(message.renderer?.recordPermutations
+					? { permutations: stopRecordingPermutations() }
+					: {}),
 			});
 		} catch (e) {
 			await host.release();

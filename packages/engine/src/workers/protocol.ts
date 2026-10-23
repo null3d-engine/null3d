@@ -58,6 +58,11 @@ export interface RendererSetup extends FramePacing {
 	glTiming?: GlTimingMode;
 	/** The features whose shader files load before the first frame, as `createEngine` lists them. */
 	preload?: readonly string[];
+	/**
+	 * True when the page records the permutation words that its pipelines ask for, as a build of a
+	 * narrowed shader set lists, through the `?permutations=record` switch.
+	 */
+	recordPermutations?: boolean;
 }
 
 export type SketchWorkerInit = CoreHandoff & {
@@ -142,6 +147,8 @@ export type WorkerReply =
 			/** The core's version, from each thread that runs a copy of the core. */
 			version?: string;
 			tier?: Tier;
+			/** The permutation words that the pipelines asked for, when a recording ran. */
+			permutations?: number[];
 	  }
 	| { type: 'error'; role: 'sketch' | 'render' | 'job'; message: string }
 	/**
