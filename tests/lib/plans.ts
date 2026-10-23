@@ -243,6 +243,8 @@ export type Check =
 	| { kind: 'environment'; tier: Tier }
 	/** The grass cost page: a field of blades still and swaying by their row values, in turns. */
 	| { kind: 'grass'; tier: Tier }
+	/** The alpha-mask cost page: masked lit quads opaque and masked in turns, with and without MSAA. */
+	| { kind: 'alpha-mask'; tier: Tier; antialias: 'msaa' | 'none' }
 	/** The sky map cost page: each stage of a sky map's refresh, timed on one GPU path. */
 	| { kind: 'sky-map'; tier: Tier }
 	/** The sky refresh page: the frames from a sun move until the sky's light follows it. */
@@ -1357,6 +1359,36 @@ export function grassPlan(): PlanItem<Check>[] {
 	);
 }
 
+/** The GPU paths of the alpha-mask plan's pages: the two WebGPU paths draw on WebGPU's tier. */
+const ALPHA_MASK_PATHS = [
+	['webgpu', 'webgpu'],
+	['compat', 'webgpu'],
+	['webgl2', 'webgl2'],
+] as const;
+
+/**
+ * What an alpha-masked lit fragment costs under MSAA: the curtain of masked lit quads of the
+ * alpha-mask-cost page, timed with every quad opaque and masked in turns, with MSAA and with no
+ * antialiasing, on each GPU path. D-223 records the results.
+ */
+export function alphaMaskPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const [path, tier] of ALPHA_MASK_PATHS)
+		for (const antialias of ['msaa', 'none'] as const)
+			items.push(
+				pageItem(
+					`alpha-mask-${antialias}-${path}`,
+					'alpha-mask-cost',
+					{ kind: 'alpha-mask', tier, antialias },
+					{
+						switches: [`gpu=${path}`, `aa=${antialias}`, 'preset=high', 'prepass=off'],
+						timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+					},
+				),
+			);
+	return items;
+}
+
 /** The GPU paths of the sky plan's pages, with the tier each draws on. */
 const SKY_PATHS = [
 	['webgpu', 'webgpu'],
@@ -1881,6 +1913,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
 	grass: grassPlan,
+	'alpha-mask-cost': alphaMaskPlan,
 	sky: skyPlan,
 	reflection: reflectionPlan,
 	occlusion: occlusionPlan,
@@ -2723,14 +2756,17 @@ export function judge(
 			return skinningProblems(result as ItemResult & SkinningResult);
 		case 'effect':
 		case 'environment':
-		case 'grass': {
+		case 'grass':
+		case 'alpha-mask': {
 			const cost = result as ItemResult & { failures?: string[]; on?: { intervalMs?: number } };
 			const feature =
 				check.kind === 'effect'
 					? check.effect
 					: check.kind === 'grass'
 						? 'the grass swaying'
-						: 'the environment';
+						: check.kind === 'alpha-mask'
+							? 'the mask on'
+							: 'the environment';
 			return [
 				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
 				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${feature} on`]),
