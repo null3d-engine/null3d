@@ -31,6 +31,7 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-D2':
 		'Version check in each foundation add-on (`packages/engine/src/shared/version.ts`); `packages/cli/src/upgrade.js`',
 	'M3-D3': "E1417's message names the add-on: `packages/engine/src/errors/codes.ts:417`",
+	'M3-D4': "The particle buffer's record layout and limits: `docs/concepts/particle-buffer.md`",
 	'M3-D5': '`examples/addons/README.md` and two add-ons in that layout',
 	'M3-D6': 'The plugin interface version check: `packages/engine/src/shared/version.ts`',
 	'M3-D7': 'The WebGL2 texture-unit allocator: `packages/engine/src/gpu/webgl2/`',
