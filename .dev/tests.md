@@ -49,7 +49,7 @@ That run was one of the causes of an incident the same day: several helper agent
 | `tests/lib/jitter.test.ts` | 291 MB | 9 s |
 | Importing the checks plan alone | 267 MB | 5 s |
 | Reading the set's text for its counts | 108 MB | 4 s |
-| `bun run typecheck`, whose root project covers `tests/lib` | 636 MB | 86 s |
+| `bun run typecheck`, 21 projects, at most eight at once | 3.9 GB, or 2.1 GB with current incremental records | 150 s, or 44 s with current records, on a Mac at a load of 88 to 109; one project after another took 481 s at a load of about 50 |
 | `tests/lib/shader-set.test.ts`, in a process of its own | 5.3 GB | 60 s |
 | `packages/engine/src/gpu/webgl2/programs.test.ts`, in a process of its own | 4.2 GB | 48 s |
 | `packages/engine/src/math/tree-shaking.test.ts`, in a process of its own | 7.8 GB | 30 s |
