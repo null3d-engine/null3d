@@ -85,6 +85,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'concepts/handles', title: 'Handles and objects', since: '0.1', summary: '30-bit handles; wrapper objects; stale-handle errors; keeping per-object data in your own arrays.' },
 	{ id: 'concepts/static-dynamic', title: 'Static and dynamic objects', since: '0.1', summary: 'When to mark objects static; setters versus direct array writes; dirty ranges.' },
 	{ id: 'concepts/instances', title: 'Instances and batching', since: '0.1', summary: 'createInstances; typed-array views; markDirty; automatic batching; per-instance attributes.' },
+	{ id: 'concepts/particle-buffer', title: 'The particle buffer', since: '0.2', summary: 'createParticleBuffer; 32-byte records; the values and the frame values; writing births; uploads and limits.' },
 	{ id: 'concepts/backends', title: 'GPU tiers and backends', since: '0.1', summary: 'WebGPU core, compatibility mode and WebGL2; capability flags; the portable budget; never branching on GPU names.' },
 	{ id: 'concepts/quality-presets', title: 'Quality presets, dynamic resolution and frame budgets', since: '0.1', summary: 'Low to Ultra; pixel-ratio caps; the preset check; switching presets; the frame-budget governor; quality events for sketch code.' },
 	{ id: 'concepts/color-management', title: 'Color management', since: '0.1', summary: 'Linear working space; sRGB hex colors and linear arrays; HDR color; exposure and tone mapping; transparent canvases; parity with three.js.' },
