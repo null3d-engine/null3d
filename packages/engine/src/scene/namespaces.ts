@@ -11,6 +11,7 @@
 
 import { EngineError } from '../errors/engine-error';
 import { QUALITY_SETTINGS } from '../quality/presets';
+import { checkPluginInterface, type PluginInterfaceRange } from '../shared/version';
 import type { FeatureSlot } from './features';
 
 /**
@@ -42,6 +43,13 @@ export interface AddonNamespace {
 	 * keys of the engine's own quality table or another add-on's.
 	 */
 	readonly qualityKeys?: readonly string[];
+	/**
+	 * The plugin interface versions that the add-on was built for, both included. The engine refuses
+	 * a page whose interface lies outside the range, with E1433, which names the add-on and both
+	 * versions. An add-on that ships with the engine leaves it out and keeps its exact version pin
+	 * through `checkAddonVersion`.
+	 */
+	readonly pluginInterface?: PluginInterfaceRange;
 }
 
 /** The engine's own name, and the prefix of its shader library. */
@@ -60,7 +68,13 @@ const CODES_FROM = 2000;
 const CODES_TO = 9999;
 
 /** The options that namespace takes, which the check refuses when it meets another one. */
-const TAKES: ReadonlySet<string> = new Set(['name', 'shaderLibrary', 'errorCodes', 'qualityKeys']);
+const TAKES: ReadonlySet<string> = new Set([
+	'name',
+	'shaderLibrary',
+	'errorCodes',
+	'qualityKeys',
+	'pluginInterface',
+]);
 
 /** The keys of the engine's own quality table, which an add-on cannot take. */
 const ENGINE_KEYS: ReadonlySet<string> = new Set(Object.keys(QUALITY_SETTINGS));
@@ -106,7 +120,12 @@ function sameNamespace(
 	} else if (codes[0] !== held[0] || codes[1] !== held[1]) return false;
 	const keys = description.qualityKeys ?? [];
 	const own = claimed.qualityKeys ?? [];
-	return keys.length === own.length && keys.every((key) => own.includes(key));
+	if (keys.length !== own.length || !keys.every((key) => own.includes(key))) return false;
+	const plugin = description.pluginInterface;
+	const declared = claimed.pluginInterface;
+	if (plugin === undefined || declared === undefined)
+		return plugin === undefined && declared === undefined;
+	return plugin.min === declared.min && plugin.max === declared.max;
 }
 
 /**
@@ -155,7 +174,8 @@ export class AddonNamespaces {
 	 * Checks a namespace and registers it. Throws E1225 for an option that a namespace does not
 	 * take, a name or shader library that is invalid or that the engine or another add-on holds, an
 	 * error-code range outside 2000 to 9999 or over another add-on's, and a quality key of the
-	 * engine's own quality table or another add-on's.
+	 * engine's own quality table or another add-on's. Throws E1433 for a plugin interface range that
+	 * the engine's interface lies outside.
 	 */
 	claim(description: AddonNamespace): AddonNamespace {
 		const call = 'declareAddonNamespace';
@@ -171,6 +191,8 @@ export class AddonNamespaces {
 					`got the option '${option}'; a namespace takes ${[...TAKES].map((name) => `'${name}'`).join(', ')}.`,
 				);
 		const name = checkAddonName(call, description.name, 'add-on name');
+		if (description.pluginInterface !== undefined)
+			checkPluginInterface(name, description.pluginInterface);
 		// A module that the page loads again, as a development reload does, claims the same names.
 		const claimed = this.addons.get(name);
 		if (claimed !== undefined) {
@@ -192,11 +214,14 @@ export class AddonNamespaces {
 			);
 		const range = this.checkRange(call, name, description.errorCodes);
 		const qualityKeys = this.checkQualityKeys(call, name, description.qualityKeys);
+		const plugin = description.pluginInterface;
 		const namespace: AddonNamespace = Object.freeze({
 			name,
 			shaderLibrary: library,
 			errorCodes: range,
 			qualityKeys,
+			pluginInterface:
+				plugin === undefined ? undefined : Object.freeze({ min: plugin.min, max: plugin.max }),
 		});
 		this.addons.set(name, namespace);
 		this.libraries.set(library, name);

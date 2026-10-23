@@ -165,6 +165,7 @@ export const NAMESPACE = declareAddonNamespace({
   shaderLibrary: 'water',        // The prefix of its WGSL modules: #import water::waves. It defaults to name.
   errorCodes: [2100, 2199],      // The codes of the add-on's own errors.
   qualityKeys: [],               // Keys that it adds to the quality settings that a sketch reads.
+  pluginInterface: { min: 1, max: 1 }, // The plugin interface versions it was built for. An engine add-on leaves this out.
 });
 ```
 
@@ -173,6 +174,8 @@ A name takes 1 to 32 lowercase letters, digits or underscore characters, and it 
 `FeatureHost` takes the namespace. A feature that the host registers exports its name, its outputs and its lighting slots to the whole thread. A second add-on that registers one of them is refused. The host's budgets carry the add-on's name too, so two add-ons keep their own budgets. A host refuses a namespace that the thread's registry does not hold.
 
 Each refusal is an [E1225](../errors/E1225.md) that names both owners. A page and its sketches have one thread each, and the add-ons of one thread share one registry. A module that loads again, as a development reload does, gets the same namespace when it declares the same names.
+
+An add-on from another developer also declares the range of plugin interfaces that it was built for. A page whose engine lies outside the range stops with [E1433](../errors/E1433.md), which names the add-on and both versions. An add-on that ships with the engine leaves the range out and keeps its exact version pin through `checkAddonVersion`.
 
 ## Preset settings and the frame-budget governor
 
