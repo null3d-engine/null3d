@@ -1,4 +1,4 @@
-# D-232: What WebGL2 draws for a tree of cluster patches
+# D-234: What WebGL2 draws for a tree of cluster patches
 
 Status: decided by the work of M3-L3 on 23 October 2026, for the owner's review. Built: the WebGPU
 path, its pictures and its figures ([D-231](D-231-cluster-levels-cost.md)). Not built: the
