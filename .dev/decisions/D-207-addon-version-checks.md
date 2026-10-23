@@ -62,3 +62,7 @@ A self-built add-on takes the same command: its `peerDependencies` and `devDepen
 - `docs/api/engine.md` describes the check for add-on authors, `docs/cli/null3d.md` documents the command, and the develop skill's command table and troubleshooting table name both.
 - The fresh-project run shows the packaged command moving a manifest's null3D package to the engine's version, and its dry run writing nothing. The check skips with a message when the checkout has no built asset tool.
 - The marketplace after 1.0 needs ranges rather than exact pins for add-ons from other sellers ([D-173](D-173-addon-hooks.md)). That ruling changes this check's comparison, and only this function.
+
+## Addendum, 23 October 2026: the range check for outside add-ons
+
+Task M3-D6 built the range check as a second function, `checkPluginInterface(name, range)`, rather than changing this one ([D-223](D-223-plugin-interface-version.md)). The engine's own add-ons keep the exact pin: their versions stay in step with the engine's, so a range would only weaken a check that the release makes exact anyway.

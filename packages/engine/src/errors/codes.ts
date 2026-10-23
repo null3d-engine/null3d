@@ -500,6 +500,14 @@ const DOCS = {
 			'E1432: @null3d/controls 0.1.0 was built for null3D 0.1.0, and this page runs null3D 0.2.0.',
 		since: '0.3',
 	},
+	E1433: {
+		title: 'Add-on for another plugin interface',
+		cause:
+			"An add-on from another developer loaded against a plugin interface that its declared range does not include, or the add-on declares no range of whole versions. An outside add-on declares the plugin interface versions that it works with, because it ships on its own schedule. The engine's own add-ons pin the engine version instead. The message names the add-on, the range it declares and this engine's plugin interface version.",
+		example:
+			'E1433: @acme/splats was built for plugin interface 1 to 2, and this page has plugin interface 3 (null3D 0.3.0).',
+		since: '0.3',
+	},
 	E1501: {
 		title: 'Render space full',
 		cause:

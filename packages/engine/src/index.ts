@@ -348,7 +348,13 @@ export { TaskFailure } from './shared/task-failure';
 export { TaskLoadError } from './shared/task-load-error';
 export type { Task, WasmFile } from './shared/tasks';
 export type { Tier } from './shared/tier';
-export { checkAddonVersion, VERSION } from './shared/version';
+export type { PluginInterfaceRange } from './shared/version';
+export {
+	checkAddonVersion,
+	checkPluginInterface,
+	PLUGIN_INTERFACE_VERSION,
+	VERSION,
+} from './shared/version';
 export type {
 	SketchCallbacks,
 	SketchContext,

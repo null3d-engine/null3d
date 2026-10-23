@@ -132,6 +132,8 @@ export const ERROR_FIXES = {
 		"Serve the engine's area-light-tables.bin file at the address that the message names. A build with the null3D Vite plugin copies it beside the engine's code: deploy it with the rest of the build. When the engine's files come from another origin, that server must send Access-Control-Allow-Origin, and the page's connect-src must allow the origin.",
 	E1432:
 		"Run bunx @null3d/cli upgrade in the project's folder, then bun install, so that every null3D package takes one version. An add-on that the project builds itself names the engine version that the project develops against.",
+	E1433:
+		"Install the release of the add-on that matches this engine's plugin interface, or run the project on an engine whose plugin interface the add-on declares. The engine's own add-ons need no range: run bunx @null3d/cli upgrade, then bun install, so that each one takes the engine's version.",
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses. For a large crowd of skinned characters on WebGPU, use models with fewer vertices or fewer copies. Each copy skins its own vertices, even when copies share a mesh. The crowd draws again once it fits.',
 	E1502:
