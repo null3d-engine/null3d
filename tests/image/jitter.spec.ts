@@ -25,7 +25,10 @@ for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
 				warnings.push(message.text());
 		});
 		await page.goto(`jitter.html?gpu=${gpu}&images`);
-		const result = await pageResult<JitterResult>(page, 240_000);
+		// The WebGPU tier has not been seen to finish this page on CI's software renderer, in the
+		// runs of 23 and 24 October 2026, where the WebGL2 tier took 120 seconds: the wait is four
+		// times that, and a tier that still fails needs the page looked at rather than the wait.
+		const result = await pageResult<JitterResult>(page, 480_000);
 		expect(result.error).toBeUndefined();
 		saveJitterResult(join(REPO_ROOT, 'test-results', 'jitter', gpu), result);
 		console.log(jitterRows(gpu, result).join('\n'));
