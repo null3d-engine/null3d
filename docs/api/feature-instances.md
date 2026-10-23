@@ -103,10 +103,22 @@ The draw's material is opaque. The options take the material's other values, suc
 
 ## The buffers
 
-`draw.instances` and `draw.counts` are the engine's buffers for the draw. A compute pass binds them:
+`draw.instances` and `draw.counts` are the engine's buffers for the draw. A compute pass binds them with its `buffers` option, which takes the draw's two handles in binding order:
 
 - `draw.instances` holds `capacity` rows of 16 floats each. Each row is three world-matrix rows, with the translation in each row's `w`, then the ids. The engine's instance buffers hold the same shape. The vertex shader reads a row by `instance_index` through `find_instance`.
 - `draw.counts` holds one 32-bit word: the count that the draw renders.
+
+```ts
+render.addPass({
+  kind: 'compute',
+  description: defineFeature({ name: 'fill', frame: 'opaque', kind: 'compute', band: 'before' }),
+  wgsl: fill,
+  buffers: [draw.counts, draw.instances],
+  dispatch: [1, 1, 1],
+});
+```
+
+The shader declares the count as `var<storage, read_write> counts: atomic<u32>;` and the rows as `var<storage, read_write> instances: array<vec4f>;`, at the pass group's two fixed storage bindings. A pass fills one target: its texture, or the draw's two buffers. A pass that fills buffers gives its workgroup counts, because it has no target size to divide.
 
 The add-on's compute writes the count each frame. The engine copies the word into the draw's indirect arguments after the compute pass. It does so before the pass that draws. The count that the GPU writes is then the count that the GPU draws. A hidden draw copies nothing, so it draws nothing.
 

@@ -42,6 +42,8 @@ export type FeatureInstanceVertices = MeshArrays;
 export interface FeatureInstanceBuffer {
 	/** The engine's name for the buffer, which a compute pass binds. */
 	readonly buffer: number;
+	/** The buffer's size in bytes, which a compute pass binds. */
+	readonly bytes: number;
 }
 
 /**
@@ -257,7 +259,7 @@ export function createFeatureInstances<const Wgsl extends string | CompiledWgsl>
 		batch.setFrustumCulled(false);
 		if (layers !== undefined) batch.setLayers(layers);
 		batch.setActiveCount(count);
-		const none = { buffer: 0 };
+		const none = { buffer: 0, bytes: 0 };
 		return new FeatureInstances(
 			host.core,
 			0,
@@ -287,8 +289,14 @@ export function createFeatureInstances<const Wgsl extends string | CompiledWgsl>
 		throw error;
 	}
 	if (count > 0) host.core.glue.setFeatureInstanceCount(id, count);
-	const counts = { buffer: host.core.glue.featureInstanceCountBuffer(id) };
-	const instances = { buffer: host.core.glue.featureInstanceBuffer(id) };
+	const counts = {
+		buffer: host.core.glue.featureInstanceCountBuffer(id),
+		bytes: C.FEATURE_INSTANCE_COUNT_BYTES,
+	};
+	const instances = {
+		buffer: host.core.glue.featureInstanceBuffer(id),
+		bytes: capacity * C.FEATURE_INSTANCE_INSTANCE_BYTES,
+	};
 	return new FeatureInstances(
 		host.core,
 		id,

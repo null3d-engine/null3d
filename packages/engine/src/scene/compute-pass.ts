@@ -7,6 +7,7 @@
 // could run, before the renderer sees it.
 
 import { EngineError } from '../errors/engine-error';
+import type { FeatureInstanceBuffer } from './feature-instances';
 import type { FeatureDescription } from './features';
 import type { CompiledWgsl } from './resources';
 import type { TextureValues, UniformValues } from './wgsl-uniforms';
@@ -25,8 +26,9 @@ export type ComputeDispatch = 'writes' | readonly [number, number, number];
 
 /**
  * Options of `render.addPass` for a compute pass, which runs a compiled WGSL compute shader and
- * writes one storage texture. The description places the pass in the frame, and the pass's target
- * is the texture that `textures.fromPass` gives to materials, effects and other passes.
+ * writes one storage texture, or the two buffers of an instance draw. The description places the
+ * pass in the frame, and the pass's texture target is the texture that `textures.fromPass` gives
+ * to materials, effects and other passes.
  *
  * @category api/render
  */
@@ -37,8 +39,18 @@ export interface ComputePassOptions<Wgsl extends string | CompiledWgsl = string 
 	readonly description: FeatureDescription;
 	/** The compiled WGSL, whose `@compute` entry point writes the storage texture. */
 	readonly wgsl: Wgsl;
-	/** The name of the storage texture that the pass writes, which `textures.fromPass` reads. */
-	readonly writes: string;
+	/**
+	 * The name of the storage texture that the pass writes, which `textures.fromPass` reads. Leave
+	 * it out for a pass that writes only the buffers of an instance draw.
+	 */
+	readonly writes?: string;
+	/**
+	 * The two buffers of one instance draw that the pass writes, in their binding order: the draw's
+	 * count word, then its per-instance rows. The shader declares them at the two fixed storage
+	 * bindings of a compute pass's group, and the draw reads them in the same frame. A pass with
+	 * buffers and no texture gives its workgroup counts.
+	 */
+	readonly buffers?: readonly [FeatureInstanceBuffer, FeatureInstanceBuffer];
 	/**
 	 * The invocations along each axis. The default is the shader's `@workgroup_size`, which the
 	 * engine reads. A value that differs from it throws, so a page cannot dispatch another grid.
@@ -192,8 +204,68 @@ export function checkComputeOptions(
 			call,
 			`got the feature '${options.description.name}' with the kind ${JSON.stringify(options.description.kind)}; a compute pass takes a description with the kind 'compute'.`,
 		);
-	if (typeof options.writes !== 'string' || options.writes.length === 0)
-		throw invalid(call, 'got no writes name; name the storage texture that the pass fills.');
+	const hasTexture = typeof options.writes === 'string' && options.writes.length > 0;
+	if (options.writes !== undefined && !hasTexture)
+		throw invalid(call, 'got an empty writes name; name the storage texture that the pass fills.');
+	const hasBuffers = options.buffers !== undefined;
+	if (hasTexture && hasBuffers)
+		throw invalid(
+			call,
+			`got the writes texture '${options.writes}' and buffers; a pass fills one target, so give the texture or the buffers.`,
+		);
+	if (!hasTexture && !hasBuffers)
+		throw invalid(
+			call,
+			'got no target; name the storage texture that the pass fills, or give the two buffers of an instance draw.',
+		);
+	if (hasBuffers) {
+		const buffers = options.buffers as readonly unknown[];
+		if (!Array.isArray(buffers) || buffers.length !== 2)
+			throw invalid(
+				call,
+				'got buffers that are not the two of one instance draw; give its count word, then its per-instance buffer.',
+			);
+		const handles = buffers.map(
+			(buffer) =>
+				buffer as { readonly buffer?: unknown; readonly bytes?: unknown } | null | undefined,
+		);
+		for (const handle of handles)
+			if (
+				typeof handle?.buffer !== 'number' ||
+				!Number.isInteger(handle.buffer) ||
+				handle.buffer < 1 ||
+				typeof handle.bytes !== 'number' ||
+				!Number.isInteger(handle.bytes) ||
+				handle.bytes < 1
+			)
+				throw invalid(
+					call,
+					'got a buffer that the engine did not make; give the count and instance handles of an instance draw.',
+				);
+		const ids = handles.map((handle) => handle?.buffer);
+		if (ids[0] === ids[1])
+			throw invalid(
+				call,
+				'got the same buffer twice; give the count word and the per-instance buffer.',
+			);
+	}
+	if (!hasTexture) {
+		for (const [name, value] of [
+			['format', options.format],
+			['size', options.size],
+			['scale', options.scale],
+		] as const)
+			if (value !== undefined)
+				throw invalid(
+					call,
+					`got a ${name} without a writes texture; the buffers of an instance draw fix their own sizes and formats.`,
+				);
+		if (options.dispatch === undefined || options.dispatch === 'writes')
+			throw invalid(
+				call,
+				`got the dispatch ${JSON.stringify(options.dispatch ?? 'writes')} without a writes texture; a pass that fills buffers gives its workgroup counts.`,
+			);
+	}
 	if (options.size !== undefined && options.scale !== undefined)
 		throw invalid(call, 'got both a size and a scale; give one, or neither for the render size.');
 	if (options.every !== undefined && (!Number.isInteger(options.every) || options.every < 1))

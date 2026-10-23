@@ -116,5 +116,6 @@ page's count.
   `docs/api/feature-draws.md` name it.
 - `InstanceBatch.setFrustumCulled` is new on both paths, so a page can keep a batch that its own
   cull decides.
-- The compute pass must bind these two buffers; the storage buffer's bind group layout is E8's
-  surface to extend, not a second surface.
+- The compute pass's `buffers` option takes the draw's two handles in binding order, as the fixed
+  storage-buffer bindings of its group; the storage buffer's layout is E8's surface to extend, not
+  a second surface.
