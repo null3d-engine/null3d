@@ -72,6 +72,7 @@ import {
 	type ShaderSender,
 } from '../shared/images';
 import { MEMORY_AREA_COUNT } from '../shared/memory-area';
+import { MemoryViews } from '../shared/memory-views';
 import { Counter, FrameRecorder, MemoryFigure, Phase, Role } from '../shared/metrics';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
@@ -840,7 +841,7 @@ export class SketchRunner {
 		}
 		const at = glue.debugTwoStep();
 		if (at === 0) return;
-		const answers = new Int32Array(memory.buffer, at, 5);
+		const answers = new MemoryViews(memory).view(Int32Array, at, 5);
 		for (let k = 0; k < 5; k++)
 			Atomics.store(control.slots, Slot.TwoStepWanted + k, answers[k] as number);
 	}
