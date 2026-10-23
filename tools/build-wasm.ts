@@ -119,6 +119,7 @@ import {
 	keepSizeMemo,
 	mergeSizeMemoParts,
 	readSizeMemo,
+	recordedModules,
 	sizeMemoPartFile,
 	writeSizeMemo,
 } from './lib/size-memo';
@@ -1075,7 +1076,7 @@ async function measureWithMemo(files: readonly ReportFile[]): Promise<Map<string
 	const memo = readSizeMemo();
 	const sizes = await measureFiles(files, undefined, memo);
 	printMemoUse(files.length, memo.compressed);
-	keepSizeMemo(memo);
+	keepSizeMemo(memo, recordedModules(root));
 	return sizes;
 }
 
@@ -1310,8 +1311,10 @@ async function main(): Promise<void> {
 	if (options.judgeParts !== undefined) {
 		// The parts' entries are those of every file of this build, so they make the next memo.
 		const entries = mergeSizeMemoParts(resolve(root, options.judgeParts));
-		printMemoUse(entries.met.size, entries.compressed);
-		keepSizeMemo(entries);
+		// Parts can each compress the same bytes, so their count can pass the count of distinct files.
+		console.log(
+			`the size parts compressed ${entries.compressed} files; the next size memo holds the sizes of ${entries.met.size} distinct files${keepSizeMemo(entries, recordedModules(root)) ? '' : ', and is not kept, since it would not change'}`,
+		);
 	}
 	const sizes: Record<string, SizeEntry> = {};
 	for (const variant of VARIANTS)
