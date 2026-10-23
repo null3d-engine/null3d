@@ -173,9 +173,25 @@ export function inputFiles(root: string, crate = SHADER_CRATE): string[] {
 	return files.sort();
 }
 
+/**
+ * The file whose lines list the permutation words that a narrowed build makes, from
+ * `NULL3D_SHADER_PERMUTATIONS`, or undefined when the build makes every word. Its text is an input
+ * of the build, so a changed list builds again rather than reusing entries of another list.
+ */
+export function permutationListFile(): string | undefined {
+	const file = process.env.NULL3D_SHADER_PERMUTATIONS;
+	return file === undefined || file === '' ? undefined : file;
+}
+
+/** The bytes of the permutation list, or empty bytes when the build makes every word. */
+function permutationListText(): Buffer {
+	const file = permutationListFile();
+	return file === undefined ? Buffer.alloc(0) : readFileSync(file);
+}
+
 /** A hash of every input of the build of `crate`, the shader build's by default. */
 export function inputHash(root: string, crate = SHADER_CRATE): string {
-	return hashFiles(root, inputFiles(root, crate));
+	return hashOf(hashFiles(root, inputFiles(root, crate)), permutationListText());
 }
 
 /**
@@ -556,6 +572,10 @@ function shaderProgram(root: string, entries?: string): string {
  */
 function runShaderBuild(root: string, extra: readonly string[] = [], cache?: CompilerCache): void {
 	const buildArgs = ['--root', root, ...extra];
+	// A list of permutation words narrows the build to them, and its bytes are an input of the
+	// build, so entries of another list are never reused for this one.
+	const permutations = permutationListFile();
+	if (permutations !== undefined) buildArgs.push('--permutations', permutations);
 	let used: CompilerCache | undefined;
 	if (shaderCacheOff()) {
 		buildArgs.push('--no-cache');

@@ -55,7 +55,7 @@
 #![feature(alloc_error_hook)]
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Once;
 
 use null3d_shaders::{
@@ -518,6 +518,7 @@ fn inputs() -> Inputs {
         manifest: MANIFEST.replace("\r\n", "\n"),
         files,
         parts: BTreeMap::new(),
+        only: BTreeSet::new(),
     }
 }
 
