@@ -74,7 +74,9 @@
 //                       stops along the route that it hides nothing that shows, or sky, which
 //                       times each stage of a sky map's refresh and counts the frames from a sun
 //                       move to the new light on each GPU path, or reflection, which times S1 with
-//                       a reflection pass at a quarter and at half the render size against none
+//                       a reflection pass at a quarter and at half the render size against none,
+//                       or alpha-mask-cost, which times masked lit quads against opaque ones with
+//                       MSAA and without on each GPU path
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages
@@ -1089,6 +1091,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'soak',
 	'texture-cache',
 	'reflection',
+	'alpha-mask-cost',
 ]);
 
 /**
