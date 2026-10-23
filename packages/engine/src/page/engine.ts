@@ -1092,6 +1092,80 @@ interface EngineWorkers {
 	jobs: EngineWorker[];
 }
 
+/** The two-step probe's line: the answers, the compile state, and the browser. */
+function twoStepText(answers: readonly number[], compiling: number, parallel: boolean): string {
+	const [wanted, declared, built, runs, scale] = answers;
+	return `two-step probe: ${navigator.userAgent} | wanted ${wanted} declared ${declared} built ${built} runs ${runs} scale ${scale} | compiling ${compiling} parallel ${parallel ? 1 : 0}`;
+}
+
+/**
+ * Shows the probe's line, and keeps it for the page to publish among its own figures. Every number
+ * comes from the control block: the thread that runs the sketch writes the pass's answers after
+ * each frame, and the thread that draws writes the compile state of the WebGL2 path, which is the
+ * programs that may still compile and whether its context has the extension.
+ */
+function sayTwoStep(slots: Int32Array): void {
+	const answers = [
+		Slot.TwoStepWanted,
+		Slot.TwoStepDeclared,
+		Slot.TwoStepBuilt,
+		Slot.TwoStepRuns,
+		Slot.TwoStepScale,
+	].map((slot) => Atomics.load(slots, slot)) as number[];
+	const compiling = Atomics.load(slots, Slot.WebglCompiling);
+	const parallel = Atomics.load(slots, Slot.WebglParallel) !== 0;
+	const line = twoStepText(answers, compiling, parallel);
+	(globalThis as { __null3dTwoStep?: string }).__null3dTwoStep = line;
+	console.warn(line);
+}
+
+/**
+ * Prints the two-step pass's answers for `?two-step=report`: the browser's user agent, whether a
+ * frame wanted the pass, declared it, had its second step built and drew it, the render scale in
+ * thousandths, and the WebGL2 path's compile state. A development tool that says which answer a
+ * browser loses.
+ *
+ * `held` reads the answers once, after the held frame that they are about. A live page turns its
+ * effect on a moment into the scene, so the first presented frame asks for nothing: the probe then
+ * watches the frames, keeps the largest answer of each, waits a second after the pass is first
+ * wanted, and prints what it saw. A page whose pass never wants prints the zeros it kept, after ten
+ * seconds.
+ */
+function logTwoStep(slots: Int32Array, held: boolean): void {
+	if (held) {
+		sayTwoStep(slots);
+		return;
+	}
+	const end = performance.now() + 10_000;
+	const best = [0, 0, 0, 0, 0];
+	let wantedAt = 0;
+	const check = () => {
+		const answers = [
+			Slot.TwoStepWanted,
+			Slot.TwoStepDeclared,
+			Slot.TwoStepBuilt,
+			Slot.TwoStepRuns,
+			Slot.TwoStepScale,
+		].map((slot) => Atomics.load(slots, slot)) as number[];
+		for (let i = 0; i < 5; i++) best[i] = Math.max(best[i] ?? 0, answers[i] as number);
+		const now = performance.now();
+		if (answers[0]) {
+			if (wantedAt === 0) wantedAt = now;
+			// A second of frames after the pass is wanted covers a pipeline that builds in the
+			// background, which the frame that wanted it may have missed.
+			if (now - wantedAt < 1000) {
+				requestAnimationFrame(check);
+				return;
+			}
+		} else if (now < end) {
+			requestAnimationFrame(check);
+			return;
+		}
+		sayTwoStep(slots);
+	};
+	requestAnimationFrame(check);
+}
+
 /** Every worker of a set, in the order the page stops them. */
 function allWorkers(workers: EngineWorkers | undefined): EngineWorker[] {
 	if (!workers) return [];
@@ -2115,6 +2189,7 @@ async function startEngine(
 					pageUrl: pageUrl ?? sketchUrl,
 					maxTargetFps: maxTarget,
 					threads: engineThreads,
+					twoStepProbe: DEV && switches.twoStep,
 					showStats: events.stats,
 					wantJobs,
 					sendLabelSlot: events.labelSlot,
@@ -2169,6 +2244,7 @@ async function startEngine(
 				quality,
 				maxTargetFps: maxTarget,
 				threads: engineThreads,
+				twoStepProbe: DEV && switches.twoStep,
 			};
 			withCore.add(sketch);
 			if (renderThread === 'sketch-worker') {
@@ -2215,6 +2291,7 @@ async function startEngine(
 			requestAnimationFrame(check);
 		});
 		marker?.endAfter(firstFrame);
+		if (DEV && switches.twoStep) void firstFrame.then(() => logTwoStep(slots, false));
 		/** Hold mode's frame, read back once. */
 		let held: CapturedFrame | undefined;
 		/** The error of a thread that draws when it could not capture a frame. */
@@ -2369,6 +2446,7 @@ async function startEngine(
 			await stop();
 			throw error;
 		}
+		if (DEV && switches.twoStep) logTwoStep(slots, true);
 		const { summarizeFrames } = await loadFrameStats();
 		publishHold({
 			ok: true,

@@ -247,6 +247,11 @@ export type Check =
 	| { kind: 'alpha-mask'; tier: Tier; antialias: 'msaa' | 'none' }
 	/** The cluster cost page: a tree of cluster patches timed at three distances. */
 	| { kind: 'cluster'; tier: Tier }
+	/**
+	 * A development page that only reports what it found, such as the two-step probe: its result
+	 * holds the figures, and nothing judges them.
+	 */
+	| { kind: 'probe'; tier: Tier }
 	/** The sky map cost page: each stage of a sky map's refresh, timed on one GPU path. */
 	| { kind: 'sky-map'; tier: Tier }
 	/** The sky refresh page: the frames from a sun move until the sky's light follows it. */
@@ -1416,6 +1421,31 @@ export function clusterCostPlan(): PlanItem<Check>[] {
 	return items;
 }
 
+/**
+ * The two-step probe: the sharpening's sketch with `?two-step=report`, a development page that logs
+ * the two-step pass's answers once its frame is on screen, with the browser and the WebGL2 path's
+ * compile state. One page holds the frame the image test draws, as the manifest runs it, and one
+ * plays it live, as an effect cost page does. A run names the browsers to compare, and their lines
+ * read side by side. It times nothing.
+ */
+export function twoStepPlan(): PlanItem<Check>[] {
+	const sketch = encodeURIComponent('/tests/pages/sketches/sharpen-sketch.ts?sharpen=1');
+	return [
+		{
+			id: 'two-step-held',
+			path: `/tests/pages/image.html?gpu=webgl2&hold=0&preset=high&size=320x180&two-step=report&sketch=${sketch}`,
+			timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+			check: { kind: 'probe', tier: 'webgl2' },
+		},
+		{
+			id: 'two-step-live',
+			path: '/tests/pages/effect-cost.html?gpu=webgl2&scale=1&effect=sharpen&strength=1&two-step=report',
+			timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+			check: { kind: 'probe', tier: 'webgl2' },
+		},
+	];
+}
+
 /** The GPU paths of the sky plan's pages, with the tier each draws on. */
 const SKY_PATHS = [
 	['webgpu', 'webgpu'],
@@ -1942,6 +1972,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	grass: grassPlan,
 	'alpha-mask-cost': alphaMaskPlan,
 	'cluster-cost': clusterCostPlan,
+	'two-step': twoStepPlan,
 	sky: skyPlan,
 	reflection: reflectionPlan,
 	occlusion: occlusionPlan,
@@ -2782,6 +2813,9 @@ export function judge(
 		}
 		case 'skinning':
 			return skinningProblems(result as ItemResult & SkinningResult);
+		case 'probe':
+			// The page reports what it found, and the run's result holds it.
+			return [];
 		case 'effect':
 		case 'environment':
 		case 'grass':

@@ -800,6 +800,9 @@ pub(crate) struct FrameGraph {
     pick_resolve_pass: Option<PassId>,
     /// The render scale of the frame being recorded.
     scale: RenderScale,
+    /// The two-step answers of the last recorded frame, for the development probe that asks why a
+    /// browser skipped the pass: wanted, declared, built and drawn, then the scale in thousandths.
+    two_step_report: [u32; 5],
     /// The passes that can take the scene color to the canvas, once declared.
     outputs: Option<Outputs>,
     /// Bloom's steps and their GPU objects, on the HDR path.
@@ -1129,6 +1132,7 @@ impl FrameGraph {
             pick_pass: None,
             pick_resolve_pass: None,
             scale: RenderScale::FULL,
+            two_step_report: [0; 5],
             outputs: None,
             bloom_pass: scene_color
                 .is_hdr()
@@ -4815,7 +4819,21 @@ impl FrameGraph {
         marks.clear();
         let recorded = self.record_steps(list, clear, skips, &mut record, finish, &mut marks);
         self.word_marks = marks;
+        self.two_step_report = [
+            self.two_step_wanted() as u32,
+            self.two_step_declared as u32,
+            self.two_step_built as u32,
+            self.two_step_runs() as u32,
+            self.scale.thousandths(),
+        ];
         recorded
+    }
+
+    /// The two-step answers of the last recorded frame, for the development probe: whether the
+    /// frame wanted the two-step pass, declared it, had its second step built and drew it, and the
+    /// render scale in thousandths.
+    pub(crate) fn two_step_report(&self) -> [u32; 5] {
+        self.two_step_report
     }
 
     /// Records the plan's passes for [`FrameGraph::record`], and notes the words that a still view

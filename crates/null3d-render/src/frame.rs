@@ -491,6 +491,10 @@ pub trait FrameBuilder {
     fn check_graph(&mut self) -> Result<(), GraphError>;
     /// The render graph as Graphviz DOT text, compiled first.
     fn graph_dot(&mut self) -> String;
+    /// The two-step answers of the last recorded frame, for the development probe: whether the
+    /// frame wanted the two-step pass, declared it, had its second step built and drew it, and the
+    /// render scale in thousandths.
+    fn two_step_report(&self) -> [u32; 5];
     /// True when the frame recorded last draws with what the frame before it drew, as
     /// screen-space reflections read the frame before's color. Hold mode then records its frame
     /// twice, so the frame it shows has a frame before it.
