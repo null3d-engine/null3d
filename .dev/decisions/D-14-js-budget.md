@@ -887,9 +887,9 @@ away. The next change that touches the start needs a trim, not another rise.
 
 The cluster levels' culling pass is a compute shader of 9,738 bytes of WGSL, 2,736 after Brotli, and
 every page's start carries it although only the WebGPU path builds its pipeline. It moved pipelined
-WebGL2 mode's start by 650 bytes, where it compresses beside the shader text already there, and the
-start measured 186,507 bytes. That fits the 184 KB line that this morning's fix set, so it needs no
-rise of its own and takes none.
+WebGL2 mode's start by 650 bytes, where it compresses beside the shader text already there. That
+fits the room that this morning's 184 KB line leaves, so it needs no rise of its own and takes none;
+the landing's build prints the figure.
 
 The trim it owes is to build the pass with the builds the engine loads on a feature's first use, as
 a material's shader does: a page that never draws a cluster tree then downloads none of it, and
