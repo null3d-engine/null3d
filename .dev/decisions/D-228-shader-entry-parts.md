@@ -1,4 +1,4 @@
-# D-225: The shader cache keeps parts of an entry
+# D-228: The shader cache keeps parts of an entry
 
 Status: decided. Date: 22 October 2026. Task: none.
 
