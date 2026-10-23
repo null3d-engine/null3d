@@ -7,6 +7,7 @@ import { EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { Assets, type GltfExtensionData, type GltfExtensionHandler } from './assets';
 import { type GltfContext, makePrefab } from './gltf';
+import { GltfExtensions, registerGltfExtension } from './gltf-extensions';
 import { parseGltf, readContainer } from './gltf-parse';
 import type { Material, MeshGeometry } from './resources';
 import type { Textures } from './textures';
@@ -206,5 +207,34 @@ test('a handler without extension names or without load() is refused', () => {
 	expect(() => assets.registerGltfExtension({ extensions: [], load: () => {} })).toThrow('E1213');
 	expect(() =>
 		assets.registerGltfExtension({ extensions: [EXTENSION] } as unknown as GltfExtensionHandler),
+	).toThrow('E1213');
+});
+
+test('an add-on handler serves every sketch, and a sketch’s own takes its place', () => {
+	const name = 'EXT_addon_marker';
+	const addon: GltfExtensionHandler = { extensions: [name], load: () => {} };
+	const remove = registerGltfExtension(addon);
+	try {
+		// Every sketch's registry reads the add-on's handler, with no call on its assets.
+		expect(new GltfExtensions().all()).toContain(addon);
+		// A handler that the sketch registers for the extension reads the files in its place.
+		const own: GltfExtensionHandler = { extensions: [name], load: () => {} };
+		const extensions = new GltfExtensions();
+		const removeOwn = extensions.register(own);
+		const all = extensions.all();
+		expect(all).toContain(own);
+		expect(all).not.toContain(addon);
+		removeOwn();
+		expect(extensions.all()).toContain(addon);
+	} finally {
+		remove();
+	}
+	expect(new GltfExtensions().all()).not.toContain(addon);
+});
+
+test('an add-on handler without extension names or without load() is refused', () => {
+	expect(() => registerGltfExtension({ extensions: [], load: () => {} })).toThrow('E1213');
+	expect(() =>
+		registerGltfExtension({ extensions: [EXTENSION] } as unknown as GltfExtensionHandler),
 	).toThrow('E1213');
 });
