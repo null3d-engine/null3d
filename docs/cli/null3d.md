@@ -139,11 +139,11 @@ A script is a text file with one step on each line. Each line starts with the sk
 | `dump <object>.<property>`, `dump <object>` | Records a value, or every property of an object, at the step's time |
 | `shot <name>` | Draws an image at the step's time. The name becomes part of the file's name |
 
-The times never fall back. The command names the line that is wrong for a line that is no step, a time that falls back, and two shot steps with one name.
+The times never fall back. The command names the line that is wrong for a line that is no step, or a time that falls back. It also refuses two shot steps with one name, or at one time.
 
 ### Objects in a script
 
-A step names an object by the name that the scene gave it. `#camera` names the active camera. The last dot separates the object from the property, so an object's name may have dots of its own: `Cube.001.position` writes the position of the object named `Cube.001`.
+A step names an object by the name that the scene gave it. `#camera` names the active camera. The last dot separates the object from the property. An object's name may have dots of its own: `Cube.001.position` writes the position of the object named `Cube.001`.
 
 A property is one that `animateProperty` takes. Every object has `position` (three numbers), `rotation` (four numbers, as a quaternion), `scale` (three numbers) and `visible` (a flag). A camera adds `fov`, `near`, `far` and, for an orthographic camera, `height`. A light adds `intensity`, `color` (three numbers from 0 to 1), `range`, `decay`, `angle` and `penumbra`.
 
