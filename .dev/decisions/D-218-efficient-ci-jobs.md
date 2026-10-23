@@ -65,3 +65,14 @@ How the data was produced: `gh api repos/{owner}/{repo}/actions/runs/<run>/jobs`
   - Each pass key names every script that its part starts, with the files that those scripts import. A part that reads the build job's shader modules names the files they are built from.
 - This replaces D-192's rule that the module exports test reads the engine's whole build, and changes D-194's shader test layout.
 - The estimated run time when shader inputs change is about 16 minutes, and about 15 with the faster build job. A run without shader changes stays at about 15 minutes, which `packages` sets.
+
+## Update, 24 October 2026: the compiler shards read the native build
+
+Each `shader-compiler` shard built its share natively, ran the GLSL and WGSL rules on that build, and then built the same share through the compiler. The `shader-entries` jobs had compiled every entry natively already, and the `build` job keeps them in the Actions cache. So the `build` job now hands on that cache's key and folders as outputs, and each shard restores the cache and reads its native build there, through `NULL3D_SHADER_ENTRIES` (`crates/null3d-shaders/tests/build.rs`). An entry that the cache lacks still compiles. The determinism part never reads the cache, since it must compile each build twice.
+
+The two GLSL rule checks then took most of what was left. They read each stage of each build in turn, on one core: 572 MB of GLSL for shard 7/12, of which only 374 MB was distinct text. Each check now reads every distinct text once, with the texts spread over the machine's cores, and reports the same lines in the same order.
+
+On this Mac, shard 7/12 without the compiler took 272 s, and the checks 98 s of it. With the cache its native build took 6 s, and with the spread checks the whole test took 25 s. In test run 40031098178 every shard compiled no entry and read them all from the cache. The shards' test times came to 3,213 s in all, against 5,059 s in run 40022423739, 36% less, and the longest fell from 539 to 364 s. The jobs took 5.1 to 8.7 minutes, against 6.0 to 10.2.
+
+The Actions keys of the shader caches moved into `bun tools/shaders.ts --cache-keys`, which prints the whole key and its two fallback prefixes, so the shaders action and the `shader-entries` job no longer each build the branch's part of the key.
+
