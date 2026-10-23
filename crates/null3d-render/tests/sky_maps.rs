@@ -18,8 +18,10 @@ use null3d_render::view::{ViewFrame, ViewId};
 /// The width of the cube's largest faces, and its mip levels.
 const SIZE: u32 = 16;
 const LEVELS: u32 = 4;
-/// The map's stages, the copy included, which the thread that draws plans apart from the levels.
+/// The map's stages, the copy included, which the thread that draws plans apart from the levels,
+/// for a map of `SIZE`, and the stages that the engine's built-in map has.
 const STAGES: u32 = 9;
+const SKY_STAGES: u32 = 20;
 
 /// The stages that a frame records, each with its texture, its generator and its sun's position.
 fn stages(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32, [f32; 3])> {
@@ -192,4 +194,218 @@ fn a_sky_map_fills_whole_then_refreshes_one_stage_a_frame() {
     check_sky_maps(webgl2, |r: &CpuCulledRenderer| {
         camera_environment(r.view_frame(ViewId::CAMERA))
     });
+}
+
+/// A point toward the sun `degrees` above the horizon, toward -Z, at a fixed distance.
+fn sun_at(degrees: f32) -> [f32; 3] {
+    let radians = degrees.to_radians();
+    [0.0, radians.cos() * 1000.0, -radians.sin() * 1000.0]
+}
+
+/// A world whose sky map, faces `SIZE` texels wide and `count` stages long, has filled whole with
+/// the sky of `sky`, and the map's texture and generator.
+fn filled_map(
+    world: &mut World,
+    mock: &mut MockBackend,
+    sky: Background,
+    count: u32,
+) -> (u32, u32) {
+    world.step(mock, true);
+    world
+        .renderer
+        .settings_mut()
+        .set_background_source(Some(sky));
+    let settings = world.renderer.settings_mut();
+    let cube = settings
+        .textures_mut()
+        .create_cube(SIZE, LEVELS, format::RGB9E5_UFLOAT)
+        .unwrap();
+    let generator = settings.textures_mut().set_generated(cube).unwrap();
+    settings.sky_maps_mut().add(cube, count);
+    let taken = world.frame - 1;
+    mock.provide_generator(generator);
+    world
+        .renderer
+        .settings_mut()
+        .textures_mut()
+        .sync(generator, taken);
+    let commands = world.step(mock, false);
+    assert_eq!(
+        stages(&commands).len(),
+        count as usize,
+        "the map fills whole"
+    );
+    let id = world
+        .renderer
+        .settings()
+        .textures()
+        .ready_cube(cube)
+        .expect("the map is ready")
+        .0;
+    (id, generator)
+}
+
+/// Records `count` frames with `world`'s sky as it is, and returns the stages that they recorded
+/// between them.
+fn run_frames(world: &mut World, mock: &mut MockBackend, count: usize) -> usize {
+    (0..count)
+        .map(|_| stages(&world.step(mock, false)).len())
+        .sum()
+}
+
+#[test]
+fn a_sky_map_redraws_only_for_a_sun_past_half_a_degree() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    let (id, generator) = filled_map(&mut world, &mut mock, sky(sun_at(45.0)), STAGES);
+
+    // A sun that turns less than half a degree from the map's keeps its levels, frame after
+    // frame, however far it drifts in all.
+    let set = |world: &mut World, sun: [f32; 3]| {
+        world
+            .renderer
+            .settings_mut()
+            .set_background_source(Some(sky(sun)));
+    };
+    for degrees in [45.1, 45.2, 45.3, 45.4] {
+        set(&mut world, sun_at(degrees));
+        assert_eq!(
+            run_frames(&mut world, &mut mock, 1),
+            0,
+            "a sun {degrees} degrees up redraws nothing"
+        );
+    }
+
+    // A sun past half a degree from the map's starts a refresh at the map's own steps.
+    set(&mut world, sun_at(45.6));
+    let commands = world.step(&mut mock, false);
+    assert_eq!(stages(&commands), [(id, generator, 0, sun_at(45.6))]);
+    assert_eq!(
+        run_frames(&mut world, &mut mock, STAGES as usize - 1),
+        STAGES as usize - 1
+    );
+    // The map shows that sun now, so a still sky records nothing more.
+    assert_eq!(run_frames(&mut world, &mut mock, 3), 0);
+
+    // A sun that stops short of a step has its own exact capture once the sky comes to rest: the
+    // first still frame starts it, and no frame after it draws again.
+    set(&mut world, sun_at(45.7));
+    assert_eq!(
+        run_frames(&mut world, &mut mock, 1),
+        0,
+        "the move's own frame waits"
+    );
+    let commands = world.step(&mut mock, false);
+    assert_eq!(
+        stages(&commands),
+        [(id, generator, 0, sun_at(45.7))],
+        "the resting sky fills exactly"
+    );
+    assert_eq!(
+        run_frames(&mut world, &mut mock, STAGES as usize - 1),
+        STAGES as usize - 1,
+        "the resting sky fills exactly"
+    );
+    assert_eq!(
+        run_frames(&mut world, &mut mock, 2),
+        0,
+        "the map holds that sun"
+    );
+
+    // Clouds that drift by less than a tenth of their pattern's cell wait, however long they
+    // take over it. Clouds have to cover the sky to drift at all.
+    let cloudy = |time: f32| {
+        let mut background = sky(sun_at(45.7));
+        if let BackgroundSource::Sky(ref mut stars) = background.source {
+            stars.cloud_coverage = 0.4;
+            stars.time = time;
+        }
+        background
+    };
+    world
+        .renderer
+        .settings_mut()
+        .set_background_source(Some(cloudy(100.0)));
+    assert_eq!(
+        run_frames(&mut world, &mut mock, STAGES as usize),
+        STAGES as usize,
+        "a sky that gains clouds draws them"
+    );
+    world
+        .renderer
+        .settings_mut()
+        .set_background_source(Some(cloudy(101.0)));
+    assert_eq!(run_frames(&mut world, &mut mock, 4), 0, "a second waits");
+    // Ten seconds move them a fifth of a cell, which draws them again.
+    world
+        .renderer
+        .settings_mut()
+        .set_background_source(Some(cloudy(110.0)));
+    assert_eq!(
+        run_frames(&mut world, &mut mock, 1),
+        1,
+        "a tenth of a cell draws again"
+    );
+
+    // A colour that drifts past a fiftieth redraws the map, at rest or not.
+    let mut airier = sky(sun_at(45.7));
+    if let BackgroundSource::Sky(ref mut stars) = airier.source {
+        stars.turbidity *= 1.03;
+    }
+    world
+        .renderer
+        .settings_mut()
+        .set_background_source(Some(airier));
+    assert_eq!(
+        run_frames(&mut world, &mut mock, 1),
+        1,
+        "a 3% drift draws again"
+    );
+}
+
+/// The frames of `count` that recorded a sky-map stage, for a sun that rises `degrees` a frame,
+/// with clouds that drift in every frame, as a sketch that writes its sky in every frame does.
+/// `clouds` gives the sky clouds.
+fn day_frames(count: usize, degrees: f32, clouds: bool) -> usize {
+    let at = |frame: usize| {
+        let mut background = sky(sun_at(degrees * frame as f32));
+        if let BackgroundSource::Sky(ref mut stars) = background.source {
+            stars.cloud_coverage = if clouds { 0.4 } else { 0.0 };
+            stars.time = frame as f32 / 60.0;
+        }
+        background
+    };
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    filled_map(&mut world, &mut mock, at(0), SKY_STAGES);
+    (1..=count)
+        .map(|frame| {
+            world
+                .renderer
+                .settings_mut()
+                .set_background_source(Some(at(frame)));
+            usize::from(!stages(&world.step(&mut mock, false)).is_empty())
+        })
+        .sum()
+}
+
+#[test]
+fn a_day_cycle_draws_the_sky_map_only_for_the_frames_its_sun_steps() {
+    // Ten seconds of a ten-minute day, which turns 0.01 degrees a frame: the map draws for a step
+    // of half a degree, about two frames in five. The same ten seconds before the threshold drew
+    // in every frame that the sun moved.
+    let drawn = day_frames(600, 0.01, true);
+    assert!(
+        (200..=240).contains(&drawn),
+        "a ten-minute day drew {drawn} of 600 frames"
+    );
+
+    // A day of a minute turns 0.1 degrees a frame, so a step comes every five frames and the map
+    // draws in every frame, as it did before the threshold.
+    let drawn = day_frames(600, 0.1, false);
+    assert!(drawn >= 590, "a one-minute day drew {drawn} of 600 frames");
+
+    // A still sun draws only for the clouds' own step: once in these ten seconds.
+    let drawn = day_frames(600, 0.0, true);
+    assert!(drawn <= 40, "drifting clouds drew {drawn} of 600 frames");
 }

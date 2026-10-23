@@ -13,6 +13,12 @@
 //! comes while a refresh runs waits for it to end, and then starts the next one with the sky as it
 //! is then.
 //!
+//! A map redraws only for a change that shows: its sun turning more than half a degree, one of its
+//! colour values drifting by a fiftieth, or its clouds drifting a tenth of a cell of their pattern.
+//! Anything finer waits, so a sun that moves in every frame costs one stage a frame only while it
+//! crosses those steps. When the sky stops changing, one last fill captures it exactly, so a map
+//! never keeps a sun that stopped short of a step.
+//!
 //! The map's diffuse light comes from the CPU ([`crate::sky_light`]), worked out when a fill
 //! starts. Frames take it in the frame of the last stage, with the map's new levels, so the diffuse
 //! light and the reflections change together.
@@ -36,6 +42,23 @@ use crate::textures::TextureStore;
 /// Words of a stage's command: the texture, the generator, the stage, the panorama and the sky's
 /// 16 values.
 const STEP_WORDS: usize = 20;
+
+/// The least turn of a sun, in radians, that a map draws again for: half a degree. A sun that
+/// turns less darkens or brightens the light it gives a surface by far less than a level of 255.
+const SUN_STEP: f32 = std::f32::consts::PI / 360.0;
+
+/// The least drift of a colour value, relative to its size, that a map draws again for: a fiftieth.
+const COLOUR_STEP: f32 = 0.02;
+
+/// The least drift of the clouds across the sky, in cells of their pattern, that a map draws again
+/// for: a tenth. The pattern is a thousand times the drift of the clock times their speed, so they
+/// drift a tenth of a cell about every five seconds at three.js's speed.
+const CLOUD_STEP: f32 = 0.1;
+
+/// The height, in kilometres, under which a camera counts as this high when a map weighs how far
+/// it moved. The sky changes little with height near the ground, so a camera below it must climb
+/// 10 metres before a map draws again.
+const FLAT_HEIGHT: f32 = 0.5;
 
 /// The sky that a map shows.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -70,6 +93,157 @@ impl MapSky {
             }),
         }
     }
+
+    /// True when a map of `self` keeps its levels for `other`: its sun stands within half a degree
+    /// of the other's, no colour value has drifted by a fiftieth, and its clouds have drifted less
+    /// than a tenth of their pattern's cell.
+    fn near(&self, other: &Self) -> bool {
+        self.compares(other, SUN_STEP, COLOUR_STEP, CLOUD_STEP)
+    }
+
+    /// True when `other` is the same sky down to the last value that a map draws, but for its
+    /// clouds: they drift on their own, and only their step draws the map again.
+    fn same(&self, other: &Self) -> bool {
+        self.compares(other, 0.0, 0.0, f32::INFINITY)
+    }
+
+    /// True when `other` holds the same values as `self`, within `turn` radians of each sun's
+    /// direction, `drift` of each colour value relative to its size, and `clouds` cells of the
+    /// clouds' pattern.
+    fn compares(&self, other: &Self, turn: f32, drift: f32, clouds: f32) -> bool {
+        match (self, other) {
+            (Self::Analytic { sky: a, gain: ga }, Self::Analytic { sky: b, gain: gb }) => {
+                same_direction(a.sun_position, b.sun_position, turn)
+                    && within(rayleigh_coefficient(a), rayleigh_coefficient(b), drift)
+                    && within(a.turbidity, b.turbidity, drift)
+                    && within(a.mie_coefficient, b.mie_coefficient, drift)
+                    && within(a.mie_directional_g, b.mie_directional_g, drift)
+                    && within(a.cloud_scale, b.cloud_scale, drift)
+                    && within(a.cloud_speed, b.cloud_speed, drift)
+                    && within(a.cloud_coverage, b.cloud_coverage, drift)
+                    && within(a.cloud_density, b.cloud_density, drift)
+                    && within(a.cloud_elevation, b.cloud_elevation, drift)
+                    && within(a.second_sky_weight, b.second_sky_weight, drift)
+                    && within(*ga, *gb, drift)
+                    && same_clouds(a.clouds(), b.clouds(), clouds)
+                    && (a.second_sky_weight <= 0.0
+                        || same_direction(a.second_sun_position, b.second_sun_position, turn))
+            }
+            (
+                Self::Physical {
+                    atmosphere: a,
+                    height: ha,
+                },
+                Self::Physical {
+                    atmosphere: b,
+                    height: hb,
+                },
+            ) => {
+                // The air between the camera and the surfaces is not the sky that a map draws, so
+                // its aerial perspective counts for nothing here.
+                same_direction(a.sun_position, b.sun_position, turn)
+                    && same_direction(a.moon_position, b.moon_position, turn)
+                    && within(a.sun_intensity, b.sun_intensity, drift)
+                    && within(a.moon_intensity, b.moon_intensity, drift)
+                    && within(a.stars, b.stars, drift)
+                    && within(a.rayleigh, b.rayleigh, drift)
+                    && within(a.haze, b.haze, drift)
+                    && within(a.ozone, b.ozone, drift)
+                    && within(a.mie_directional_g, b.mie_directional_g, drift)
+                    && within(a.ground_albedo, b.ground_albedo, drift)
+                    && within(a.altitude, b.altitude, drift)
+                    && within(a.meters_per_unit, b.meters_per_unit, drift)
+                    && within(a.cloud_scale, b.cloud_scale, drift)
+                    && within(a.cloud_speed, b.cloud_speed, drift)
+                    && within(a.cloud_coverage, b.cloud_coverage, drift)
+                    && within(a.cloud_density, b.cloud_density, drift)
+                    && within(a.cloud_elevation, b.cloud_elevation, drift)
+                    && same_clouds(a.clouds(), b.clouds(), clouds)
+                    && same_height(*ha, *hb, drift)
+            }
+            _ => false,
+        }
+    }
+}
+
+/// The Rayleigh coefficient that the analytic sky scatters its air by: its setting, less what a sun
+/// sunk far below the horizon takes from it, as three.js's `sunFade` does.
+fn rayleigh_coefficient(sky: &Sky) -> f32 {
+    let fade = (sky.sun_position[1] / 450_000.0).exp().min(1.0);
+    sky.rayleigh - (1.0 - fade)
+}
+
+/// True when the points `a` and `b` lie within `turn` radians of each other.
+fn same_direction(a: [f32; 3], b: [f32; 3], turn: f32) -> bool {
+    if a == b {
+        return true;
+    }
+    let length = |v: [f32; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    let (la, lb) = (length(a), length(b));
+    if la <= 0.0 || lb <= 0.0 {
+        return false;
+    }
+    // The sine of the angle between the points, from their cross product: a cosine rounds a turn
+    // under two degrees to 1 on a sun hundreds of thousands of units away, which is exactly the
+    // turn that a map weighs.
+    let cross = [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ];
+    let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    dot > 0.0 && length(cross) <= turn.sin() * la * lb
+}
+
+/// The clouds of a sky: their coverage, the speed that moves them and the clock that does.
+type Clouds = (f32, f32, f32);
+
+/// A sky's settings, seen by the values that its clouds draw with.
+trait Clouded {
+    fn clouds(&self) -> Clouds;
+}
+
+impl Clouded for Sky {
+    fn clouds(&self) -> Clouds {
+        (self.cloud_coverage, self.cloud_speed, self.time)
+    }
+}
+
+impl Clouded for Atmosphere {
+    fn clouds(&self) -> Clouds {
+        (self.cloud_coverage, self.cloud_speed, self.time)
+    }
+}
+
+/// True when the clouds of two skies have drifted by less than `cells` cells of their pattern from
+/// one another. The sky's shaders read the pattern at a thousand times the drift of the clock times
+/// the speed. A sky that draws no clouds keeps as still as it likes.
+fn same_clouds(ours: Clouds, theirs: Clouds, cells: f32) -> bool {
+    let (coverage, speed, time) = ours;
+    let (other_coverage, other_speed, other_time) = theirs;
+    if coverage <= 0.0 || other_coverage <= 0.0 {
+        return true;
+    }
+    (time * speed - other_time * other_speed).abs() * 1000.0 <= cells
+}
+
+/// True when `a` and `b` lie within `drift` of each other, relative to the larger.
+fn within(a: f32, b: f32, drift: f32) -> bool {
+    (a - b).abs() <= drift * a.abs().max(b.abs())
+}
+
+/// True when two heights above the ground, in kilometres, lie within `drift` of each other. A
+/// height under `FLAT_HEIGHT` counts as that high, so a camera near the ground must climb 10 metres
+/// before a map draws again, as the physical sky's own tables wait for.
+fn same_height(a: f32, b: f32, drift: f32) -> bool {
+    (a - b).abs() <= drift * a.abs().max(b.abs()).max(FLAT_HEIGHT)
+}
+
+/// True when a map that shows `shown` starts a fill for `sky`: the sky has moved past the step that
+/// a map draws for, or it has come to rest, which `settled` says, and the map does not hold it
+/// exactly.
+fn start_fill(shown: &MapSky, sky: &MapSky, settled: bool) -> bool {
+    !shown.near(sky) || (settled && !shown.same(sky))
 }
 
 /// One sky map.
@@ -90,6 +264,8 @@ pub struct SkyMaps {
     /// The sky that the maps show: the settings of the scene's last sky background, or none
     /// before the first.
     sky: Option<MapSky>,
+    /// The sky of the frame before the last recorded one, to tell when the sky has come to rest.
+    before: Option<MapSky>,
     maps: Vec<SkyMap>,
 }
 
@@ -112,16 +288,29 @@ impl SkyMaps {
         }
     }
 
+    /// True when the sky of this frame holds the values of the frame before, so it has come to
+    /// rest and a map that lags it captures it exactly.
+    fn settled(&self) -> bool {
+        match (&self.before, &self.sky) {
+            (Some(before), Some(sky)) => before.same(sky),
+            _ => false,
+        }
+    }
+
     /// True when a map of the physical sky starts a fill in this frame once it has the panorama:
-    /// a map whose texture is ready, which no fill runs on, and which does not show the sky yet.
+    /// a map whose texture is ready, which no fill runs on, and whose sky has moved past the step
+    /// that a map draws for, or has come to rest and the map does not hold it exactly.
     pub(crate) fn wants_panorama(&self, textures: &TextureStore) -> bool {
-        let Some(sky @ MapSky::Physical { .. }) = self.sky else {
+        let Some(sky @ MapSky::Physical { .. }) = &self.sky else {
             return false;
         };
+        let settled = self.settled();
         self.maps.iter().any(|map| {
             map.fill.is_none()
                 && textures.generated_cube(map.texture).is_some()
-                && map.shown.is_none_or(|(shown, _)| shown != sky)
+                && map
+                    .shown
+                    .is_none_or(|(shown, _)| start_fill(&shown, sky, settled))
         })
     }
 
@@ -174,6 +363,8 @@ impl SkyMaps {
         model: Option<&AirModel>,
     ) -> Result<(), RecordError> {
         self.maps.retain(|map| textures.is_live(map.texture));
+        let settled = self.settled();
+        self.before = self.sky;
         let Some(sky) = self.sky else {
             return Ok(());
         };
@@ -183,9 +374,12 @@ impl SkyMaps {
                 map.fill = None;
                 continue;
             };
+            let start = map
+                .shown
+                .is_none_or(|(shown, _)| start_fill(&shown, &sky, settled));
             let (first, sky, sh) = match map.fill {
                 Some(fill) => fill,
-                None if map.shown.is_some_and(|(shown, _)| shown == sky) => continue,
+                None if !start => continue,
                 None if matches!(sky, MapSky::Physical { .. }) && !panorama_drawn => continue,
                 None => (0, sky, sky.sh(model)),
             };
