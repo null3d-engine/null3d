@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import {
 	chmodSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
+	readFileSync,
 	rmSync,
 	writeFileSync,
 } from 'node:fs';
@@ -23,6 +25,7 @@ import {
 	isShaderModule,
 	MODULE_DIR,
 	moduleHash,
+	modulesCacheDir,
 	RECORD,
 	setIsComplete,
 } from './shader-modules';
@@ -173,6 +176,43 @@ describe('the shader modules', () => {
 			expect(existsSync(join(root, 'target/shader-modules.lock'))).toBe(false);
 		});
 	});
+
+	it("copy a set that the shared cache holds without waiting for another checkout's build", () => {
+		withScratchCaches(() => {
+			const root = repository();
+			mkdirSync(join(root, 'target'));
+			// The set of these inputs, as another checkout's build stored it.
+			const cached = join(modulesCacheDir(), inputHash(root));
+			mkdirSync(cached, { recursive: true });
+			const files = {
+				'shaders.ts': 'export const CACHED = 1;\n',
+				'shaders-wgsl.js': 'export {};\n',
+			};
+			const record: Record<string, string> = {};
+			for (const [name, text] of Object.entries(files)) {
+				writeFileSync(join(cached, name), text);
+				record[name] = hashOf(text);
+			}
+			writeFileSync(join(cached, 'modules.json'), JSON.stringify(record));
+			// A build holds the lock, under the id of a running process: this test's.
+			const lock = join(process.env.NULL3D_BUILD_CACHE ?? '', 'shader-modules.lock');
+			mkdirSync(lock, { recursive: true });
+			writeFileSync(join(lock, 'pid'), String(process.pid));
+			// In a process of its own, so that a wait for the lock fails the test rather than hanging it.
+			const run = spawnSync(
+				'bun',
+				[
+					'-e',
+					`import { ensureShaderModules } from ${JSON.stringify(join(import.meta.dirname, 'shader-modules.ts'))}; console.log(ensureShaderModules(${JSON.stringify(root)}))`,
+				],
+				{ env: process.env, encoding: 'utf8', timeout: 30_000 },
+			);
+			expect(run.stdout.trim()).toBe('false');
+			expect(readFileSync(join(root, MODULE_DIR, 'shaders.ts'), 'utf8')).toBe(files['shaders.ts']);
+			expect(existsSync(join(lock, 'pid'))).toBe(true);
+		});
+		// The run starts a process of its own, which a loaded machine starts slowly.
+	}, 60_000);
 
 	it('fail at once instead of building when the run takes the modules from the build job', () => {
 		withScratchCaches(() => {
