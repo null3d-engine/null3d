@@ -66,8 +66,12 @@ run('addon-tasks', async () => {
 		});
 	});
 	if (outcome.failed) throw new Error(outcome.failed);
-	// The answer arrives between frames, so give the frames after it time to draw before reading.
-	await engine.measure(0.3);
+	// The answer arrives between frames, and the frame that draws its marker may come later than a
+	// fixed wait allows on a slow machine. Wait for a frame that the sketch computed after the answer
+	// and the renderer drew, which carries the marker's move, then read the picture.
+	const until = performance.now() + 30_000;
+	let frames = 0;
+	while (frames === 0 && performance.now() < until) frames = (await engine.measure(0.1)).frames;
 	const { width, height, pixels } = await engine.captureFrame();
 	progress(`captured ${width} by ${height}`);
 	const mode = engine.mode;
