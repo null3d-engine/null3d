@@ -388,14 +388,18 @@ jobs:
           save-if: false
       - name: Compile this shard's shader entries into the per-entry cache
         if: steps.whole.outputs.cache-hit != 'true'
-        run: bun tools/shaders.ts --entries-shard $(( ${{ matrix.shard }} - 1 ))/${{ strategy.job-total }} --entries-out target/shader-entries
-      - uses: actions/upload-artifact@v4
+        run: |
+          mkdir -p target/shader-entries
+          bun tools/shaders.ts --entries-shard $(( ${{ matrix.shard }} - 1 ))/${{ strategy.job-total }} --entries-out target/shader-entries
+      # The entries repeat much of their text, so one archive of them all packs far smaller than
+      # the artifact's own zip, which compresses each file alone (D-235).
+      - uses: ./.github/actions/archive
         if: steps.whole.outputs.cache-hit != 'true'
         with:
+          mode: upload
           name: shader-entries-${{ matrix.shard }}
-          path: target/shader-entries/
-          if-no-files-found: ignore
-          retention-days: 1
+          root: target/shader-entries
+          paths: .
 
   browser-caches:
     # Fills the caches of Playwright's browser and of the sample content when they miss, once, so
@@ -460,12 +464,13 @@ jobs:
         run: bun tools/shaders.ts --cache-keys | tee -a "$GITHUB_OUTPUT"
       # The entries that the shader-entries jobs compiled, into the per-entry cache under the
       # compiler's stamp. A run whose caches held every entry has none to download.
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         continue-on-error: true
         with:
+          mode: download
+          name: shader-entries
           pattern: shader-entries-*
-          merge-multiple: true
-          path: ${{ steps.entry-keys.outputs.entries-dir }}/${{ steps.entry-keys.outputs.stamp }}
+          root: ${{ steps.entry-keys.outputs.entries-dir }}/${{ steps.entry-keys.outputs.stamp }}
       # The WebAssembly files and the tools' modules, which the build script keeps under a key of
       # every input: the core's Rust sources, the flags, the toolchain and the wasm-bindgen and
       # wasm-opt releases. A run that changed none of them copies every file in place and runs no
