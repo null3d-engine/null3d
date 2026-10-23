@@ -22,4 +22,4 @@ The rules match the list that the ESLint plugin will share. When that plugin is 
 
 ## Consequences
 
-`@null3d/cli` ships the templates in its package, and `create` fills in the version and the project's name. The docs add `getting-started/project-structure` and a `create` section on `cli/null3d`. A future template, such as the character or product-viewer template, carries the same two agent files.
+`@null3d/cli` ships the templates in its package, and `create` fills in the version and the project's name. It refuses to overwrite an existing `.claude/settings.json`, so a project keeps hooks of its own. The docs add `getting-started/project-structure` and a `create` section on `cli/null3d`. A future template, such as the character or product-viewer template, carries the same two agent files.
