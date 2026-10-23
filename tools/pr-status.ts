@@ -52,6 +52,11 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-A10': 'the sharpening draws, but its evidence does not close the task',
 	'M3-B1': 'the lens kit has no picture test and no cost per preset',
 	'M3-L4': 'the impostor cards are done; staged loading, coarse first, is not',
+	'M3-L2':
+		'the render order and the instanced feature draw are built; its picture references are not drawn',
+	'M3-F3':
+		'dropped with the temporal resolve it waited on (D-206); the owner may change the ruling',
+	'M3-F10': 'dropped with the temporal resolve it needs (D-206); the owner may change the ruling',
 	'M3-R12': 'the build compiles only the listed permutations; the time and size are not recorded',
 	'M3-R13': 'the fallbacks exist; no test names the three checks the task asks for',
 	'M3-R17': 'the develop skill has neither section the task asks for',
@@ -122,7 +127,9 @@ function description(): string {
 				: ON_BRANCH.has(id)
 					? ' — on a helper branch'
 					: INCOMPLETE.has(id) || NOTES[id]
-						? ` — ${NOTES[id]}`
+						? NOTES[id]
+							? ` — ${NOTES[id]}`
+							: ' — the branch check is owed'
 						: landed.has(id) && !(id in TASK_EVIDENCE)
 							? ' — the branch check is owed'
 							: '';
