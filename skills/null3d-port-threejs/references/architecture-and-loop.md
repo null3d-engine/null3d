@@ -26,7 +26,7 @@ three.js apps usually run everything on the main thread: DOM, input, scene updat
 | HTML UI, menus, HUD, lil-gui panels, stats panels | `page.ts` | Messages to and from the sketch |
 | Labels (CSS2DRenderer, CSS3DRenderer) | Both | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page (0.2); `transform: 'world'` or `'billboard'` makes the element a plane of the scene |
 | Audio (Web Audio, three.js Audio) | `page.ts` | Sketch sends events and positions |
-| Video elements | `page.ts` | In 0.3: `engine.registerVideo` and `textures.fromVideo`. Until then, send `ImageBitmap` frames (null3d-develop recipe 14) |
+| Video elements | `page.ts` | `engine.registerVideo` on the page and `textures.fromVideo` in the sketch (0.3): the page sends one image per frame that the video presents. Keep a frame within the upload budget (null3d-develop recipe 14) |
 | `localStorage`, cookies, URL parameters | `page.ts` | Send what the sketch needs at start; IndexedDB also works in the sketch |
 | `fetch` of JSON, binary data, models | `sketch.ts` | Workers have `fetch`; relative URLs resolve against the page |
 | `GLTFLoader` with `KTX2Loader` (0.2) | `sketch.ts` | `assets.loadGltf(url)` parses in a worker and needs no decoder paths; `scene.instantiate(prefab)` for each copy |
