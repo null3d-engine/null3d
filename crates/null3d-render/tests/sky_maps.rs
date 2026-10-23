@@ -46,6 +46,7 @@ fn sky(sun: [f32; 3]) -> Background {
         intensity: 1.0,
         blur: 0.0,
         rotation: [0.0; 3],
+        sun_visibility: 1.0,
     }
 }
 
