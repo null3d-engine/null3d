@@ -284,6 +284,6 @@ A stage costs about 1 ms of GPU time on a MacBook Pro (the sections above). So a
 
 ### Prices
 
-- A map can show a sun up to half a degree, a color up to a fiftieth, and its clouds up to a tenth of a cell, away from the picture's. The sky refresh test and the sky step test weigh those steps in the picture.
+- A map can show a sun up to half a degree, a color up to a fiftieth, and its clouds up to a tenth of a cell, away from the picture's. The sky step test weighs those steps in the picture: it sinks the sun from 8 to 4 degrees above the horizon, where its light changes fastest, and no two frames may lie more than 8 levels of 255 apart. On 23 October 2026 the steps measured 4 to 5 levels on the Mac's GPU, over a sweep that moved the light 26 levels, on WebGPU, in compatibility mode and on WebGL2.
 - A sun that crosses a step in under 20 frames keeps the map drawing in every frame, as before. That is 1.5 degrees a second and faster, and it covers the showcase's own day cycle.
 - A scene whose sun rests while its clouds drift keeps clouds in its reflections that stand up to five seconds behind the sky's own. That is the price of the rule; the alternative was drawing the map in every frame for as long as the page runs.
