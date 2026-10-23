@@ -8,13 +8,10 @@ import { expect, type Page, test } from '@playwright/test';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
 
-test.describe.configure({ mode: 'parallel' });
 // A test resizes six times, and each resize makes the frame's targets again. In parallel on a
 // software renderer, Playwright's default sixty seconds cut them on 24 October 2026, where the
 // same file run in order took about fourteen minutes for twenty-nine tests.
-test.beforeEach((_fixtures, testInfo) => {
-	testInfo.setTimeout(180_000);
-});
+test.describe.configure({ mode: 'parallel', timeout: 180_000 });
 
 /** A pixel ratio cap below the screen's. */
 const CAPPED_RATIO = 1.5;
