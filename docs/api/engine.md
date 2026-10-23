@@ -218,6 +218,8 @@ checkPluginInterface('my-addon', { min: 1, max: 2 }); // the interface versions 
 
 A page whose engine has an interface version outside that range stops with [E1433](../errors/E1433.md) before it draws. The message names the add-on, the range it declares and the engine's interface version. Install the add-on release that matches the engine's interface, or run the engine version that the add-on declares. A single-version range, such as `{ min: 1, max: 1 }`, pins one interface exactly.
 
+An add-on that claims a namespace gives the range in [`declareAddonNamespace()`](features.md#namespaces) instead, as `pluginInterface: { min, max }`, and the claim runs the same check. Use the direct call for an add-on that claims no namespace.
+
 The engine's own add-ons need no range. They ship in step with the engine and use `checkAddonVersion`, above.
 
 ## Related pages
