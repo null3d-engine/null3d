@@ -754,6 +754,12 @@ export const PROBE_SKETCH = 'tests/pages/sketches/probe-sketch.ts';
  * levels. The flat test turns box projection off, so the floor reflects the walls as if they lay
  * far away. The blend test splits the room into two probes that fade into each other. The probe
  * captures in the held frame, whose filter runs before the camera's passes.
+ *
+ * The capture test runs the engine live, because a held frame captures a probe once whatever the
+ * sketch calls. A glowing sphere on a dark floor moves twice: once with probe.capture() after it,
+ * and once without. The page reports the column of the floor's reflection after each move, so the
+ * test proves that a call captures what moved, and that a probe which captures once keeps its map
+ * until one comes.
  */
 function probeTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -766,6 +772,18 @@ function probeTests(): ImageTest[] {
 		test('probe-rough', '?rough'),
 		test('probe-flat', '?flat'),
 		test('probe-blend', '?two'),
+		{
+			name: 'probe-capture',
+			page: 'tests/pages/probe-capture.html',
+			size: [320, 180],
+			// ?target-fps=1 keeps the frame-budget governor from lowering the render scale while a
+			// slow GPU draws the scene, which would draw the settled frame upscaled.
+			switches: ['target-fps=1'],
+			expect: { beforeLeft: true, refreshed: true, stale: true },
+			// Every step waits for the floor's reflection to settle, which a software GPU's slow
+			// frames stretch out.
+			timeoutSeconds: 120,
+		},
 	];
 }
 

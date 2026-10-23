@@ -94,6 +94,8 @@ The probe tests draw a closed room whose walls glow a color each, with a mirror 
 
 A probe captures in one frame and lights surfaces from then on, one probe a frame. So hold mode records the held frame once more while a probe waits for its capture, and the thread that draws draws both frames in turn. It keeps two frames' lists, so a held frame shows at most two probes. A test or a demo with more probes shows the environment in the rest of their boxes.
 
+The moving-object test runs the engine live instead, in `tests/pages/probe-capture.ts`. A held frame draws no frame before the held one. So the probe's first capture happens at the held time, whatever the sketch calls. No hold test can show a map that a call refreshed. The page puts a glowing sphere on a dark mirror floor. It moves the sphere twice: once with `probe.capture()` after the move, and once without. After each move it reads the floor's reflection of the sphere from a settled frame. The reflection follows the call and stays where it was without one. So the test fails if a call captures nothing, or if a probe that refreshes once captures on its own. It runs on every GPU tier.
+
 ## The cookbook's recipes
 
 Each recipe on the docs' cookbook page, `docs/cookbook/index.md`, is a complete sketch. The tests of the skills' sketches run them too (`tests/lib/skill-sketches.ts`): the unit test type checks each one against the engine, and `tests/image/skill-sketches.spec.ts` draws each one in hold mode on every GPU tier. A recipe that picks a camera must draw more than its background. The tests compare no reference image, so a recipe can change without new references in both sets. The demos in `examples/` carry the reference images instead.

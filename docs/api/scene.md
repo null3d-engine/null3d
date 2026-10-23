@@ -384,7 +384,7 @@ export default defineSketch(async ({ scene, assets, input }) => {
 | `layers` | The default layer | The layers of the objects that the captures draw |
 | `priority` | 0 | Where boxes overlap, the higher priority wins, then the smaller box |
 
-`probe.set(options)` sets every option again: a new position or new layers capture again. `probe.capture()` captures again after objects around the probe moved. `probe.destroy()` removes the probe, and its box takes the light of other probes or of the environment from the next frame.
+`probe.set(options)` sets every option again. A new position or new layers capture again. `probe.capture()` captures again in a frame soon after the call, as after an object around the probe moved. The surfaces in its box read the new map from that frame. Without a call, a probe that refreshes once keeps its last map. `probe.destroy()` removes the probe. Its box takes the light of other probes or of the environment from the next frame.
 
 A scene has at most 16 probes, and their captures take 6 of the 32 views that the scene and its [passes](render.md) share. Each throws E1430 past its limit. Development builds throw E1213 for an option that probes do not take, E1203 for a number that is not finite, and E1108 for a negative blend or intensity, or a box whose `min` does not lie below its `max`. They also throw E1101 for a call on a probe that was destroyed.
 
