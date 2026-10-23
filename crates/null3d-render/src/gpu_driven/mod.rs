@@ -889,6 +889,9 @@ pub struct GpuDrivenRenderer {
     /// True when the cascades' uniform block holds cascades, which receivers then read.
     cascades_held: bool,
     created: bool,
+    /// True once the frame created the cluster pass's pipeline, which waits for a tree of cluster
+    /// patches to draw.
+    cluster_pipeline: bool,
     /// True from the creation of three.js's table of specular terms until a frame uploads it.
     dfg_pending: bool,
     /// The cube texture that the camera views' frame groups bind: the environment's, or the
@@ -1128,6 +1131,7 @@ impl GpuDrivenRenderer {
             tiles_made: 0,
             cascades_held: false,
             created: false,
+            cluster_pipeline: false,
             pick: crate::pick::PickState::default(),
             copy_views: Vec::new(),
             copy_offsets: crate::frame::CellOffsets::default(),
@@ -1272,6 +1276,20 @@ impl GpuDrivenRenderer {
         }
         self.copy_views = views;
         Ok(())
+    }
+
+    /// True when a layout that a culling role draws holds a tree of cluster patches, so the frame
+    /// dispatches the cluster pass and needs its pipeline.
+    fn draws_cluster_trees(&self) -> bool {
+        [
+            &self.layout,
+            &self.casters,
+            &self.outlined,
+            &self.scattering,
+            &self.moving,
+        ]
+        .iter()
+        .any(|layout| !layout.cluster_patches.is_empty())
     }
 
     /// Records a frame into its parity's list and arena: the pipelines the GPU lacks, then the
@@ -1575,9 +1593,16 @@ impl GpuDrivenRenderer {
         if !self.created {
             if !self.config.direct_draws {
                 cull::create_pipeline(list)?;
-                clusters::Clusters::create_pipeline(list)?;
             }
             lights::create_pipelines(list)?;
+        }
+        // The cluster pass's shader loads on first use, so its pipeline is made with the first
+        // frame that draws a tree of cluster patches. A page whose scene holds no tree never
+        // downloads that shader.
+        if !self.cluster_pipeline && !self.config.direct_draws && self.draws_cluster_trees() {
+            clusters::Clusters::create_pipeline(list)?;
+            self.cluster_pipeline = true;
+            created_pipelines = true;
         }
         if motion {
             created_pipelines |= self.motion.create_pipeline(list)?;
@@ -3222,6 +3247,7 @@ impl FrameBuilder for GpuDrivenRenderer {
     fn reset_gpu(&mut self) {
         self.lists.reset_gpu();
         self.created = false;
+        self.cluster_pipeline = false;
         self.bound_environment = ids::BLANK_ENVIRONMENT;
         self.bound_probe_grid = ids::BLANK_PROBE_GRID;
         self.bound_probes = None;
