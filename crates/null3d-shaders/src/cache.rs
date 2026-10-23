@@ -17,9 +17,10 @@
 //! the costliest entries, stores the part in a file named for the entry, its key and the part. A
 //! build that misses the whole entry joins a complete set of parts of one count into it, stores the
 //! whole entry and removes the parts, and a build of one part reads the whole entry's builds when
-//! it has them. Each build of the entry repeats the same library texts, so a long text is
-//! stored once and referenced by every build that uses it. The folder is pruned to a size limit
-//! after each store, oldest first, with a recent entry spared because a build may be reading it.
+//! it has them. Many builds of an entry make the same WGSL or GLSL source, so the file holds each
+//! source once and each build names its sources by number, and a read gives every build that names
+//! a source the same text in memory. The folder is pruned to a size limit after each store, oldest
+//! first, with a recent entry spared because a build may be reading it.
 //!
 //! Only the build command, which runs natively, reads and writes the cache. The shader compiler
 //! that a page or a bundler loads is built for WebAssembly, where the cache is off and its file
@@ -32,12 +33,16 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::Arc;
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::{GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Pipeline, WgslOutput};
 use crate::{Part, VariantOutput};
 
 /// The version of the cache's file format and key. Bump it when either changes, so an entry an
 /// older format wrote is never read with a new meaning.
-const FORMAT: &str = "2";
+const FORMAT: &str = "3";
 
 /// How many bytes one cache folder may hold before its oldest entries go. The build tools bound the
 /// caches under their one root with the same figure (tools/lib/build-cache.ts), so one rule covers
@@ -49,16 +54,6 @@ const LIMIT_BYTES: u64 = 24 * 1024 * 1024 * 1024;
 /// may still be running.
 #[cfg(not(target_arch = "wasm32"))]
 const IN_USE_SECS: u64 = 2 * 60 * 60;
-
-/// A text at least this long is stored once per entry and referenced by the builds that use it. One
-/// entry holds thousands of builds, and the same library text runs through all of them: storing each
-/// of them whole made a single entry 1.5 GB (code review M-32).
-#[cfg(not(target_arch = "wasm32"))]
-const MIN_SHARED_TEXT: usize = 40;
-
-/// The field a shared text is referenced by, as `{"$text": index}`.
-#[cfg(not(target_arch = "wasm32"))]
-const TEXT_REF: &str = "$text";
 
 /// How many entries a run compiled and how many it reused.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -140,17 +135,14 @@ impl Cache {
         if let Some(variants) = self.read(&part_file(name, key, part), key, files) {
             return Some(variants);
         }
-        // The whole entry narrows in its stored form, so only the part's builds expand.
-        let entry = self.read_entry(&entry_file(name, key), key, files)?;
-        let serde_json::Value::Object(mut whole) = entry.variants else {
-            return None;
-        };
-        let narrowed = builds
+        let mut whole = self.read_entry(&entry_file(name, key), key, files)?;
+        builds
             .iter()
-            .map(|build| Some((build.clone(), whole.remove(build)?)))
-            .collect::<Option<serde_json::Map<_, _>>>()?;
-        drop(whole);
-        variants_from(serde_json::Value::Object(narrowed), entry.texts)
+            .map(|build| {
+                let variant = whole.variants.remove(build)?.output(&whole.texts)?;
+                Some((build.clone(), variant))
+            })
+            .collect()
     }
 
     /// The variants of one cache file, when it was written under `key` and every dependency's
@@ -162,8 +154,7 @@ impl Cache {
         key: &str,
         files: &BTreeMap<String, String>,
     ) -> Option<BTreeMap<String, VariantOutput>> {
-        let entry = self.read_entry(file, key, files)?;
-        variants_from(entry.variants, entry.texts)
+        self.read_entry(file, key, files)?.outputs()
     }
 
     /// One cache file in its stored form, when it was written under `key` and every dependency's
@@ -191,11 +182,11 @@ impl Cache {
     /// next build reads one file, and its parts are removed. A set with a part that does not read
     /// is passed over.
     ///
-    /// The parts join in their stored form, one at a time, and the joined entry streams to its
-    /// file, so the join holds about one whole entry's file and one part's, never the expanded
-    /// builds twice. The expanded builds are made once, at the end, as a read of the whole entry
-    /// makes them. The costliest entry's builds take several times its file's size once expanded,
-    /// and holding them all beside a copy for the store ran CI's build job out of memory (D-235).
+    /// The parts join in their stored form, one at a time, with each source held once for the
+    /// whole entry, and the joined entry streams to its file. So the join holds the whole entry's
+    /// sources and one part's file, as a read of the whole entry does. The costliest entry's
+    /// builds take several times its file's size when each holds its own copy of its sources, and
+    /// holding all those copies beside more for the store ran CI's build job out of memory (D-235).
     #[cfg(not(target_arch = "wasm32"))]
     fn join_parts(
         &self,
@@ -236,14 +227,14 @@ impl Cache {
             for part in parts {
                 let _ = fs::remove_file(folder.join(part_file(name, key, part)));
             }
-            return variants_from(entry.variants, entry.texts);
+            return entry.outputs();
         }
         None
     }
 
-    /// The `parts` of the entry `name` joined into one entry in its stored form, with each shared
-    /// text held once for the whole entry, or nothing when a part does not read. Only one part's
-    /// file is held at a time.
+    /// The `parts` of the entry `name` joined into one entry in its stored form, with each source
+    /// held once for the whole entry, or nothing when a part does not read. Only one part's file is
+    /// held at a time.
     #[cfg(not(target_arch = "wasm32"))]
     fn join_entries(
         &self,
@@ -253,29 +244,16 @@ impl Cache {
         parts: impl Iterator<Item = Part>,
     ) -> Option<Entry> {
         let mut texts = SharedTexts::default();
-        let mut variants = serde_json::Map::new();
+        let mut variants = BTreeMap::new();
         let mut deps = BTreeMap::new();
         for part in parts {
-            let entry = self.read_entry(&part_file(name, key, part), key, files)?;
-            let numbers: Vec<usize> = entry
-                .texts
-                .into_iter()
-                .map(|text| texts.number(text))
-                .collect();
-            let serde_json::Value::Object(mut builds) = entry.variants else {
-                return None;
-            };
-            let mut numbered = true;
-            for build in builds.values_mut() {
-                each_text_ref(build, &mut |node, index| match numbers.get(index) {
-                    Some(&number) => node[TEXT_REF] = number.into(),
-                    None => numbered = false,
-                });
+            let mut entry = self.read_entry(&part_file(name, key, part), key, files)?;
+            let numbers: Vec<usize> = entry.texts.iter().map(|text| texts.number(text)).collect();
+            drop(entry.texts);
+            for variant in entry.variants.values_mut() {
+                variant.renumber(&numbers)?;
             }
-            if !numbered {
-                return None;
-            }
-            variants.append(&mut builds);
+            variants.append(&mut entry.variants);
             deps.extend(entry.deps.into_iter().map(|dep| (dep.file, dep.hash)));
         }
         Some(Entry {
@@ -285,7 +263,7 @@ impl Cache {
                 .map(|(file, hash)| Dep { file, hash })
                 .collect(),
             texts: texts.into_list(),
-            variants: serde_json::Value::Object(variants),
+            variants,
         })
     }
 
@@ -367,11 +345,15 @@ impl Cache {
                 })
             })
             .collect();
-        let (variants, texts) = share_texts(variants);
+        let mut texts = SharedTexts::default();
+        let variants = variants
+            .iter()
+            .map(|(name, variant)| (name.clone(), StoredVariant::of(variant, &mut texts)))
+            .collect();
         let entry = Entry {
             key: key.to_owned(),
             deps,
-            texts,
+            texts: texts.into_list(),
             variants,
         };
         self.write_entry(file_name, &entry);
@@ -441,123 +423,182 @@ struct Entry {
     key: String,
     /// The library files the entry used, with the hash of each.
     deps: Vec<Dep>,
-    /// The texts that the builds share, which they reference by index.
-    #[serde(default)]
-    texts: Vec<String>,
-    /// The compiled variants by build name, with each shared text replaced by its index.
-    variants: serde_json::Value,
+    /// The WGSL and GLSL sources of the entry's builds, each once. Thousands of builds share most
+    /// of them: writing each build's sources out whole made a single entry 1.5 GB (code review
+    /// M-32), and holding a copy for each build took several times the file's size in memory.
+    texts: Vec<Arc<str>>,
+    /// The builds by name, each naming its sources by their place in `texts`.
+    variants: BTreeMap<String, StoredVariant>,
 }
 
-/// The compiled variants as JSON, with every long text stored once in `texts` and referenced by
-/// index, so a text that runs through thousands of builds is held once for the entry.
 #[cfg(not(target_arch = "wasm32"))]
-fn share_texts(variants: &BTreeMap<String, VariantOutput>) -> (serde_json::Value, Vec<String>) {
-    fn walk(node: &mut serde_json::Value, texts: &mut SharedTexts) {
-        match node {
-            serde_json::Value::String(text) if text.len() >= MIN_SHARED_TEXT => {
-                let index = texts.number(std::mem::take(text));
-                *node = serde_json::json!({ TEXT_REF: index });
+impl Entry {
+    /// The compiled variants, each source the entry's one copy of it, or nothing when a build names
+    /// a source that the entry lacks.
+    fn outputs(self) -> Option<BTreeMap<String, VariantOutput>> {
+        let texts = self.texts;
+        self.variants
+            .into_iter()
+            .map(|(name, variant)| Some((name, variant.output(&texts)?)))
+            .collect()
+    }
+}
+
+/// One build as the cache stores it: a [`VariantOutput`] whose sources are numbers in its entry's
+/// texts.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Deserialize, Serialize)]
+struct StoredVariant {
+    permutation: u32,
+    wgsl: Option<StoredWgsl>,
+    glsl: Option<BTreeMap<String, StoredProgram>>,
+}
+
+/// A [`WgslOutput`] as the cache stores it.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Deserialize, Serialize)]
+struct StoredWgsl {
+    source: usize,
+    pipelines: BTreeMap<String, Pipeline>,
+}
+
+/// A [`GlslProgram`] as the cache stores it.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Deserialize, Serialize)]
+struct StoredProgram {
+    vertex: StoredStage,
+    fragment: StoredStage,
+}
+
+/// A [`GlslStage`] as the cache stores it.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Deserialize, Serialize)]
+struct StoredStage {
+    source: usize,
+    uniform_blocks: Vec<GlslUniformBlock>,
+    textures: Vec<GlslTexture>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl StoredVariant {
+    /// `variant` as the cache stores it, with each source numbered in `texts`.
+    fn of(variant: &VariantOutput, texts: &mut SharedTexts) -> Self {
+        let VariantOutput {
+            permutation,
+            wgsl,
+            glsl,
+        } = variant;
+        let stage = |stage: &GlslStage, texts: &mut SharedTexts| {
+            let GlslStage {
+                source,
+                uniform_blocks,
+                textures,
+            } = stage;
+            StoredStage {
+                source: texts.number(source),
+                uniform_blocks: uniform_blocks.clone(),
+                textures: textures.clone(),
             }
-            serde_json::Value::Array(items) => {
-                for item in items.iter_mut() {
-                    walk(item, texts);
-                }
-            }
-            serde_json::Value::Object(fields) => {
-                for field in fields.values_mut() {
-                    walk(field, texts);
-                }
-            }
-            _ => {}
+        };
+        Self {
+            permutation: *permutation,
+            wgsl: wgsl
+                .as_ref()
+                .map(|WgslOutput { source, pipelines }| StoredWgsl {
+                    source: texts.number(source),
+                    pipelines: pipelines.clone(),
+                }),
+            glsl: glsl.as_ref().map(|programs| {
+                programs
+                    .iter()
+                    .map(|(name, GlslProgram { vertex, fragment })| {
+                        let program = StoredProgram {
+                            vertex: stage(vertex, texts),
+                            fragment: stage(fragment, texts),
+                        };
+                        (name.clone(), program)
+                    })
+                    .collect()
+            }),
         }
     }
-    let mut value = serde_json::to_value(variants).unwrap_or(serde_json::Value::Null);
-    let mut texts = SharedTexts::default();
-    walk(&mut value, &mut texts);
-    (value, texts.into_list())
+
+    /// The numbers of this build's sources, for the caller to read or change.
+    fn sources(&mut self) -> impl Iterator<Item = &mut usize> {
+        let wgsl = self.wgsl.iter_mut().map(|wgsl| &mut wgsl.source);
+        let glsl = self.glsl.iter_mut().flat_map(|programs| {
+            programs
+                .values_mut()
+                .flat_map(|program| [&mut program.vertex.source, &mut program.fragment.source])
+        });
+        wgsl.chain(glsl)
+    }
+
+    /// Moves this build's sources from a part's numbers to the joined entry's: the source a part
+    /// numbered `n` is `numbers[n]` in the joined entry. Nothing when a source is outside `numbers`.
+    fn renumber(&mut self, numbers: &[usize]) -> Option<()> {
+        for source in self.sources() {
+            *source = *numbers.get(*source)?;
+        }
+        Some(())
+    }
+
+    /// The compiled variant, each source a shared copy of its text in `texts`, or nothing when a
+    /// source is outside `texts`.
+    fn output(mut self, texts: &[Arc<str>]) -> Option<VariantOutput> {
+        if self.sources().any(|source| *source >= texts.len()) {
+            return None;
+        }
+        let stage = |stage: StoredStage| GlslStage {
+            source: Arc::clone(&texts[stage.source]),
+            uniform_blocks: stage.uniform_blocks,
+            textures: stage.textures,
+        };
+        Some(VariantOutput {
+            permutation: self.permutation,
+            wgsl: self.wgsl.map(|wgsl| WgslOutput {
+                source: Arc::clone(&texts[wgsl.source]),
+                pipelines: wgsl.pipelines,
+            }),
+            glsl: self.glsl.map(|programs| {
+                programs
+                    .into_iter()
+                    .map(|(name, program)| {
+                        let program = GlslProgram {
+                            vertex: stage(program.vertex),
+                            fragment: stage(program.fragment),
+                        };
+                        (name, program)
+                    })
+                    .collect()
+            }),
+        })
+    }
 }
 
-/// The shared texts of one entry, each held once and numbered in the order first met.
+/// The sources of one entry, each held once and numbered in the order first met.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Default)]
 struct SharedTexts {
-    numbers: std::collections::HashMap<String, usize>,
+    numbers: std::collections::HashMap<Arc<str>, usize>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl SharedTexts {
     /// The number of `text`: its own when it was met before, else the next one.
-    fn number(&mut self, text: String) -> usize {
+    fn number(&mut self, text: &Arc<str>) -> usize {
         let next = self.numbers.len();
-        *self.numbers.entry(text).or_insert(next)
+        *self.numbers.entry(Arc::clone(text)).or_insert(next)
     }
 
     /// The texts in the order of their numbers.
-    fn into_list(self) -> Vec<String> {
-        let mut list = vec![String::new(); self.numbers.len()];
+    fn into_list(self) -> Vec<Arc<str>> {
+        let mut list: Vec<Option<Arc<str>>> = vec![None; self.numbers.len()];
         for (text, number) in self.numbers {
-            list[number] = text;
+            list[number] = Some(text);
         }
-        list
+        list.into_iter().flatten().collect()
     }
-}
-
-/// Calls `visit` with each shared-text reference in `node` and the index it holds, so the caller
-/// can replace the reference.
-#[cfg(not(target_arch = "wasm32"))]
-fn each_text_ref(
-    node: &mut serde_json::Value,
-    visit: &mut impl FnMut(&mut serde_json::Value, usize),
-) {
-    match node {
-        serde_json::Value::Array(items) => {
-            for item in items.iter_mut() {
-                each_text_ref(item, visit);
-            }
-        }
-        serde_json::Value::Object(fields) => {
-            if fields.len() == 1
-                && let Some(index) = fields.get(TEXT_REF).and_then(serde_json::Value::as_u64)
-            {
-                visit(node, index as usize);
-                return;
-            }
-            for field in fields.values_mut() {
-                each_text_ref(field, visit);
-            }
-        }
-        _ => {}
-    }
-}
-
-/// The compiled variants that `share_texts` wrote, with each shared text put back. The last
-/// reference to a text takes it and the others copy it, so the texts are never held beside all
-/// their copies.
-#[cfg(not(target_arch = "wasm32"))]
-fn variants_from(
-    mut value: serde_json::Value,
-    mut texts: Vec<String>,
-) -> Option<BTreeMap<String, VariantOutput>> {
-    let mut left = vec![0_usize; texts.len()];
-    each_text_ref(&mut value, &mut |_, index| {
-        if let Some(count) = left.get_mut(index) {
-            *count += 1;
-        }
-    });
-    each_text_ref(&mut value, &mut |node, index| {
-        let Some(count) = left.get_mut(index) else {
-            return;
-        };
-        *count -= 1;
-        let text = if *count == 0 {
-            std::mem::take(&mut texts[index])
-        } else {
-            texts[index].clone()
-        };
-        *node = serde_json::Value::String(text);
-    });
-    drop(texts);
-    serde_json::from_value(value).ok()
 }
 
 /// One library file that an entry used, and the hash of its contents.
@@ -688,7 +729,7 @@ mod tests {
                 VariantOutput {
                     permutation: index as u32,
                     wgsl: Some(WgslOutput {
-                        source: text.to_owned(),
+                        source: text.into(),
                         pipelines: BTreeMap::new(),
                     }),
                     glsl: None,
@@ -733,6 +774,15 @@ mod tests {
             .unwrap()
             .len();
         assert!(stored * 4 < plain, "stored {stored} bytes, plain {plain}");
+        // The builds that a read gives back hold the module as one text in memory, not a copy each.
+        let loaded = cache.load("mipmap", &key, &files).unwrap();
+        let source = |build: &VariantOutput| Arc::clone(&build.wgsl.as_ref().unwrap().source);
+        let first = source(&loaded["build0"]);
+        assert!(
+            loaded
+                .values()
+                .all(|build| Arc::ptr_eq(&source(build), &first))
+        );
         let _ = fs::remove_dir_all(&folder);
     }
 
