@@ -400,7 +400,10 @@ async function playsOffline(dist: string): Promise<void> {
 		});
 		await page.reload();
 		const offline = await startOf(page, 'offline', errors);
-		if (offline.start !== 'threaded' || !offline.isolated || failed.length > 0)
+		// The first frame's shader request can fail after the start resolves, so this check is
+		// given the next start's failures rather than carrying this one's into it.
+		const firstPathFailed = failed.splice(0, failed.length);
+		if (offline.start !== 'threaded' || !offline.isolated || firstPathFailed.length > 0)
 			throw new Error(
 				`offline, the page did not start the threaded engine from the cache alone: start ${offline.start}, isolated ${offline.isolated}, failed requests ${JSON.stringify(failed)}`,
 			);
