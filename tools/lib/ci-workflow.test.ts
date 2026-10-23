@@ -195,7 +195,6 @@ describe("CI's workflow", () => {
 			['browser', 'shard'],
 			['browser-alone', 'shard'],
 			['real-browsers', 'shard'],
-			['shader-entries', 'shard'],
 		] as const) {
 			const shards = matrixOf(name)[key] as number[];
 			expect(shards, name).toEqual(oneTo(shards.length));

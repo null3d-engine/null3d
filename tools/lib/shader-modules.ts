@@ -395,9 +395,8 @@ function entryFiles(folder: string): string[] {
 /**
  * Compiles shard `shard` of the manifest's entries, written `i/n` with `i` from 0, into the
  * per-entry cache, under the same folder and compiler stamp that a normal build reads, and writes
- * no module. The split cuts an entry that costs more than an even share into parts, which the cache
- * keeps beside the entry's key, so a later build joins a complete set of them into the entry, and
- * compiles none of the entries that the shards stored. The entries that the cache
+ * no module. The split keeps each entry whole, so a later build finds the entry under the key it
+ * looks for, and compiles none of the entries that the shards stored. The entries that the cache
  * already held are reused, not compiled. When `out` names a folder, the entries that this run
  * stored are copied there, and none that the cache held before, so a CI job can upload only its
  * new entries. Returns their file names.
