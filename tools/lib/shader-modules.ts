@@ -292,7 +292,7 @@ function staleSetMessage(root: string): string {
  * in the checkout, because two shader builds from two checkouts at once leave each of them at about
  * zero processor time and neither finishes.
  */
-function withLock(root: string, work: () => void): void {
+function withLock(work: () => void): void {
 	const release = acquireLock(join(cacheRoot(), 'shader-modules.lock'));
 	try {
 		work();
@@ -474,8 +474,13 @@ export function ensureShaderModules(root: string): boolean {
 	const inputs = inputHash(root);
 	if (isFresh(root, inputs)) return false;
 	if (freshShadersRequired()) throw new Error(staleSetMessage(root));
+	// A set that the shared cache holds needs no build, so it is copied without the lock, which
+	// keeps two builds from running at once: a checkout whose set is cached never waits for
+	// another checkout's build. Each module takes its place whole, and a set that lacks its record
+	// is a miss, so a copy beside a build that stores the same set reads the whole set or nothing.
+	if (restoreFromCache(root, inputs)) return false;
 	let built = false;
-	withLock(root, () => {
+	withLock(() => {
 		// Another process may have built them, or another checkout may hold them, while this one waited.
 		if (isFresh(root, inputs)) return;
 		if (restoreFromCache(root, inputs)) return;
