@@ -2871,6 +2871,13 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(switches.length > 0 && { switches }),
 			...(demo.hdr === false && { expect: { hdr: false } }),
 			...(demo.timeoutSeconds !== undefined && { timeoutSeconds: demo.timeoutSeconds }),
+			// The screens draw their readings into a 2D canvas, and each browser rasterises that
+			// text its own way: the readings and the layout match everywhere, while the digits'
+			// edges differ. On 24 October 2026 Safari differed on 1.0 per cent of the pixels and
+			// Firefox on 1.8, against a device tolerance of half a per cent.
+			...(demo.name === 'canvas-screen' && {
+				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.025 },
+			}),
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
 		};
 	}),
