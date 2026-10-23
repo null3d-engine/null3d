@@ -438,6 +438,13 @@ describe("CI's workflow", () => {
 		// The pushes after it run in the pull request's own group, so they never cancel it.
 		expect(group).toContain("github.event.action == 'ready_for_review'");
 		expect(group).toContain("format('pr-{0}{1}'");
+		// A later full run waits for it, so it ends with a result.
+		const cancel = String(
+			(workflow as { concurrency?: { 'cancel-in-progress'?: string } }).concurrency?.[
+				'cancel-in-progress'
+			],
+		);
+		expect(cancel).toContain("github.event.action != 'ready_for_review'");
 	});
 
 	it("moves the build job's files and the load builds only through the archive action", () => {
