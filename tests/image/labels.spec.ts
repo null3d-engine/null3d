@@ -26,7 +26,8 @@ for (const mode of ENGINE_MODES)
 		page,
 	}) => {
 		await page.goto(`labels.html?${mode.query}`);
-		const result = await pageResult<{ ok: boolean; error?: string }>(page, 30_000);
+		// The page samples for a bounded time after the engine starts, which a software GPU takes seconds over.
+		const result = await pageResult<{ ok: boolean; error?: string }>(page, 60_000);
 		expect(result.error).toBeUndefined();
 		const { samples, places } = (await page.evaluate(
 			() => (globalThis as { labels?: () => Promise<Samples> }).labels?.() as Promise<Samples>,
