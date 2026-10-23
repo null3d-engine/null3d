@@ -2,6 +2,7 @@
 //! WebGL2. The records serialize with the field names of the generated TypeScript module's types.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use null3d_gpu::drawlist::permutation;
 use serde::{Deserialize, Serialize};
@@ -129,8 +130,9 @@ pub struct VariantOutput {
 /// One WGSL module and the entry points of each render pipeline.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct WgslOutput {
-    /// The module that naga writes from the composed, validated and compacted module.
-    pub source: String,
+    /// The module that naga writes from the composed, validated and compacted module. It is a
+    /// shared text, so the builds that the cache gives back with the same module hold one copy.
+    pub source: Arc<str>,
     /// Render pipelines by name.
     pub pipelines: BTreeMap<String, Pipeline>,
 }
@@ -148,8 +150,9 @@ pub struct GlslProgram {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GlslStage {
-    /// The shader source.
-    pub source: String,
+    /// The shader source. It is a shared text, so the builds that the cache gives back with the
+    /// same shader hold one copy.
+    pub source: Arc<str>,
     /// Uniform blocks, sorted by WGSL binding.
     pub uniform_blocks: Vec<GlslUniformBlock>,
     /// Texture uniforms, sorted by WGSL binding.
