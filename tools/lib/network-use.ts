@@ -2,6 +2,8 @@
 // server of their own. Shipped code may call `fetch` only in the files below, and may name an
 // absolute address only for the hosts below, which are examples, links or names that never resolve.
 // A new call fails the check until this record and docs/getting-started/network-use.md say why.
+// The build's own output is not read: the shader modules under `generated` are written from the
+// shader library, which the check reads as source.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
@@ -96,6 +98,9 @@ export function allowedHost(host: string): string | undefined {
 		?.why;
 }
 
+/** A folder whose files the build writes, so they are not hand-written source. */
+const GENERATED = new Set(['generated', 'node_modules']);
+
 /** The shipped source files under `dir`, as absolute paths. */
 function sourceFiles(dir: string): string[] {
 	let entries: string[];
@@ -106,7 +111,7 @@ function sourceFiles(dir: string): string[] {
 	}
 	return entries
 		.filter((entry) => SOURCE.test(entry) && !NOT_SHIPPED.test(entry))
-		.filter((entry) => !entry.split(sep).includes('node_modules'))
+		.filter((entry) => !entry.split(sep).some((part) => GENERATED.has(part)))
 		.map((entry) => join(dir, entry));
 }
 
