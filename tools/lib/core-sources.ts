@@ -30,6 +30,8 @@ export function coreSourcesStamp(root: string): string {
  * A page build refuses that state with this message, so the fault names itself at build time.
  */
 export function coreFromOtherSources(root: string): string | null {
+	// A project that installs the engine package holds no core crate, so its core needs no check.
+	if (!existsSync(join(root, CORE_CRATE, 'Cargo.toml'))) return null;
 	const sources = coreSourcesStamp(root);
 	for (const build of CORE_BUILDS) {
 		const glue = join(root, 'packages/engine/dist/wasm', build, 'null3d.js');
@@ -40,6 +42,12 @@ export function coreFromOtherSources(root: string): string | null {
 			return `the ${build} engine core in ${root} was built from other Rust sources than this checkout holds. Run bun run build.`;
 	}
 	return null;
+}
+
+/** Stops a build with the message above when a core in `root` came from other sources. */
+export function refuseStaleCore(root: string): void {
+	const stale = coreFromOtherSources(root);
+	if (stale) throw new Error(stale);
 }
 
 /** A generated module's text with the stamp of the sources that its core was built from. */
