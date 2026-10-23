@@ -123,7 +123,7 @@ The browser shards loaded no city page but S6's 3 image tests. The benchmark job
 | (b) Build the city only in the shard that runs S6's tests | One build | Playwright picks the shard by the test count, and the benchmark build needs the files in both shards |
 | (c) A `city` job builds the files once and hands them over as artifacts (chosen) | One build per run; the other jobs only download | The jobs that load S6 start after it, up to 7 minutes later on a miss |
 
-The browser shards leave S6's image tests out, by the pattern `CITY_TESTS` in `ci.yml`. A `browser (the city)` job runs them after the `city` job. The benchmark and real-browser jobs wait for the `city` job too. `bun run test:browser-weights` leaves those tests out of the shards' times. The coordinator asked on 8 October 2026 for a fix that keeps the time limits, and the limits stay as they were.
+The browser shards leave S6's image tests out, by the pattern `CITY_TESTS` in `ci.yml`. A `browser (the city)` job runs them after the `city` job. The benchmark and real-browser jobs wait for the `city` job too. Since 23 October 2026 the `load-pages` job builds the files in place of the `city` job: it needs them for the benchmark pages anyway, and every job that waited for the `city` job waited for it too, so the `city` job only added 3.8 minutes to the longest chain of a full run. `bun run test:browser-weights` leaves those tests out of the shards' times. The coordinator asked on 8 October 2026 for a fix that keeps the time limits, and the limits stay as they were.
 
 
 ### A CI check of the streamed load
