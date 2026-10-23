@@ -13,7 +13,11 @@
 //! again. A folder that cannot be read or written costs the next run its work and nothing else.
 //!
 //! An entry is one file named for its entry and its key, so two versions of one entry never
-//! overwrite each other. Each build of the entry repeats the same library texts, so a long text is
+//! overwrite each other. A build that compiles one part of an entry's builds, as CI's shards do for
+//! the costliest entries, stores the part in a file named for the entry, its key and the part. A
+//! build that misses the whole entry joins a complete set of parts of one count into it, stores the
+//! whole entry and removes the parts, and a build of one part reads the whole entry's builds when
+//! it has them. Each build of the entry repeats the same library texts, so a long text is
 //! stored once and referenced by every build that uses it. The folder is pruned to a size limit
 //! after each store, oldest first, with a recent entry spared because a build may be reading it.
 //!
@@ -29,7 +33,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 
-use crate::VariantOutput;
+use crate::{Part, VariantOutput};
 
 /// The version of the cache's file format and key. Bump it when either changes, so an entry an
 /// older format wrote is never read with a new meaning.
@@ -107,8 +111,8 @@ impl Cache {
     }
 
     /// The compiled output of the entry `name`, when the folder holds it under `key` and every
-    /// dependency's contents match. `files` are the shader sources by path relative to the shader
-    /// folder.
+    /// dependency's contents match, or holds a complete set of its parts of one count, which it
+    /// joins. `files` are the shader sources by path relative to the shader folder.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load(
         &self,
@@ -116,9 +120,61 @@ impl Cache {
         key: &str,
         files: &BTreeMap<String, String>,
     ) -> Option<BTreeMap<String, VariantOutput>> {
+        self.read(&entry_file(name, key), key, files)
+            .or_else(|| self.join_parts(name, key, files))
+    }
+
+    /// The compiled output of one part of the entry `name`: the part's own file under `key`, or the
+    /// whole entry narrowed to `builds`, the names of the part's builds. The whole entry answers for
+    /// any part of it, so a shard that splits the entry otherwise than an earlier one still reuses
+    /// what that one stored.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn load_part(
+        &self,
+        name: &str,
+        key: &str,
+        part: Part,
+        builds: &[String],
+        files: &BTreeMap<String, String>,
+    ) -> Option<BTreeMap<String, VariantOutput>> {
+        if let Some(variants) = self.read(&part_file(name, key, part), key, files) {
+            return Some(variants);
+        }
+        // The whole entry narrows in its stored form, so only the part's builds expand.
+        let entry = self.read_entry(&entry_file(name, key), key, files)?;
+        let serde_json::Value::Object(mut whole) = entry.variants else {
+            return None;
+        };
+        let narrowed = builds
+            .iter()
+            .map(|build| Some((build.clone(), whole.remove(build)?)))
+            .collect::<Option<serde_json::Map<_, _>>>()?;
+        drop(whole);
+        variants_from(serde_json::Value::Object(narrowed), entry.texts)
+    }
+
+    /// The variants of one cache file, when it was written under `key` and every dependency's
+    /// contents match `files`.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn read(
+        &self,
+        file: &str,
+        key: &str,
+        files: &BTreeMap<String, String>,
+    ) -> Option<BTreeMap<String, VariantOutput>> {
+        let entry = self.read_entry(file, key, files)?;
+        variants_from(entry.variants, entry.texts)
+    }
+
+    /// One cache file in its stored form, when it was written under `key` and every dependency's
+    /// contents match `files`. The file's bytes are dropped once parsed, so the largest entry is
+    /// never held as bytes and as data at once.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn read_entry(&self, file: &str, key: &str, files: &BTreeMap<String, String>) -> Option<Entry> {
         let folder = self.folder.as_ref()?;
-        let text = fs::read_to_string(folder.join(entry_file(name, key))).ok()?;
-        let entry: Entry = serde_json::from_str(&text).ok()?;
+        let bytes = fs::read(folder.join(file)).ok()?;
+        let entry: Entry = serde_json::from_slice(&bytes).ok()?;
+        drop(bytes);
         if entry.key != key {
             return None;
         }
@@ -127,7 +183,110 @@ impl Cache {
                 return None;
             }
         }
-        variants_from(entry.variants, &entry.texts)
+        Some(entry)
+    }
+
+    /// The entry `name` joined from a complete set of its parts of one count under `key`, which the
+    /// folder's file names show without reading the files. The joined entry is stored whole, so the
+    /// next build reads one file, and its parts are removed. A set with a part that does not read
+    /// is passed over.
+    ///
+    /// The parts join in their stored form, one at a time, and the joined entry streams to its
+    /// file, so the join holds about one whole entry's file and one part's, never the expanded
+    /// builds twice. The expanded builds are made once, at the end, as a read of the whole entry
+    /// makes them. The costliest entry's builds take several times its file's size once expanded,
+    /// and holding them all beside a copy for the store ran CI's build job out of memory (D-235).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn join_parts(
+        &self,
+        name: &str,
+        key: &str,
+        files: &BTreeMap<String, String>,
+    ) -> Option<BTreeMap<String, VariantOutput>> {
+        let folder = self.folder.as_ref()?;
+        let prefix = format!("{name}.{key}.part-");
+        let mut counts: BTreeMap<usize, std::collections::BTreeSet<usize>> = BTreeMap::new();
+        for item in fs::read_dir(folder).ok()?.flatten() {
+            let file = item.file_name();
+            let Some(rest) = file
+                .to_str()
+                .and_then(|file| file.strip_prefix(&prefix))
+                .and_then(|rest| rest.strip_suffix(".json"))
+            else {
+                continue;
+            };
+            let Some((index, count)) = rest.split_once("-of-") else {
+                continue;
+            };
+            if let (Ok(index), Ok(count)) = (index.parse::<usize>(), count.parse::<usize>())
+                && index < count
+            {
+                counts.entry(count).or_default().insert(index);
+            }
+        }
+        for (count, indices) in counts {
+            if indices.len() != count {
+                continue;
+            }
+            let parts = (0..count).map(|index| Part { index, count });
+            let Some(entry) = self.join_entries(name, key, files, parts.clone()) else {
+                continue;
+            };
+            self.write_entry(&entry_file(name, key), &entry);
+            for part in parts {
+                let _ = fs::remove_file(folder.join(part_file(name, key, part)));
+            }
+            return variants_from(entry.variants, entry.texts);
+        }
+        None
+    }
+
+    /// The `parts` of the entry `name` joined into one entry in its stored form, with each shared
+    /// text held once for the whole entry, or nothing when a part does not read. Only one part's
+    /// file is held at a time.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn join_entries(
+        &self,
+        name: &str,
+        key: &str,
+        files: &BTreeMap<String, String>,
+        parts: impl Iterator<Item = Part>,
+    ) -> Option<Entry> {
+        let mut texts = SharedTexts::default();
+        let mut variants = serde_json::Map::new();
+        let mut deps = BTreeMap::new();
+        for part in parts {
+            let entry = self.read_entry(&part_file(name, key, part), key, files)?;
+            let numbers: Vec<usize> = entry
+                .texts
+                .into_iter()
+                .map(|text| texts.number(text))
+                .collect();
+            let serde_json::Value::Object(mut builds) = entry.variants else {
+                return None;
+            };
+            let mut numbered = true;
+            for build in builds.values_mut() {
+                each_text_ref(build, &mut |node, index| match numbers.get(index) {
+                    Some(&number) => node[TEXT_REF] = number.into(),
+                    None => numbered = false,
+                });
+            }
+            if !numbered {
+                return None;
+            }
+            variants.append(&mut builds);
+            deps.extend(entry.deps.into_iter().map(|dep| (dep.file, dep.hash)));
+        }
+        Some(Entry {
+            key: key.to_owned(),
+            deps: deps
+                .into_iter()
+                .map(|(file, hash)| Dep { file, hash })
+                .collect(),
+            texts: texts.into_list(),
+            variants: serde_json::Value::Object(variants),
+        })
     }
 
     /// The compiled output of an entry. The cache is off in the shader compiler, which a page or a
@@ -137,6 +296,20 @@ impl Cache {
         &self,
         _name: &str,
         _key: &str,
+        _files: &BTreeMap<String, String>,
+    ) -> Option<BTreeMap<String, VariantOutput>> {
+        None
+    }
+
+    /// The compiled output of one part of an entry. The cache is off in the shader compiler, which
+    /// a page or a bundler loads, so it never has a part.
+    #[cfg(target_arch = "wasm32")]
+    pub fn load_part(
+        &self,
+        _name: &str,
+        _key: &str,
+        _part: Part,
+        _builds: &[String],
         _files: &BTreeMap<String, String>,
     ) -> Option<BTreeMap<String, VariantOutput>> {
         None
@@ -154,9 +327,37 @@ impl Cache {
         files: &BTreeMap<String, String>,
         variants: &BTreeMap<String, VariantOutput>,
     ) {
-        let Some(folder) = self.folder.as_ref() else {
+        self.write(&entry_file(name, key), key, deps, files, variants);
+    }
+
+    /// Stores the compiled output of one part of the entry `name` under `key`, as [`Cache::store`]
+    /// stores a whole entry. A later build joins a complete set of parts into the whole entry.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn store_part(
+        &self,
+        name: &str,
+        key: &str,
+        part: Part,
+        deps: &[String],
+        files: &BTreeMap<String, String>,
+        variants: &BTreeMap<String, VariantOutput>,
+    ) {
+        self.write(&part_file(name, key, part), key, deps, files, variants);
+    }
+
+    /// Writes one cache file of `variants`, with the contents of each dependency in `deps`.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn write(
+        &self,
+        file_name: &str,
+        key: &str,
+        deps: &[String],
+        files: &BTreeMap<String, String>,
+        variants: &BTreeMap<String, VariantOutput>,
+    ) {
+        if self.folder.is_none() {
             return;
-        };
+        }
         let deps: Vec<Dep> = deps
             .iter()
             .filter_map(|file| {
@@ -173,21 +374,31 @@ impl Cache {
             texts,
             variants,
         };
-        let Ok(text) = serde_json::to_string(&entry) else {
+        self.write_entry(file_name, &entry);
+    }
+
+    /// Writes one cache file, whole or not at all, and prunes the folder. The JSON streams to the
+    /// file as it is made, so a large entry is never held as data and as text at once.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn write_entry(&self, file_name: &str, entry: &Entry) {
+        let Some(folder) = self.folder.as_ref() else {
             return;
         };
         if fs::create_dir_all(folder).is_err() {
             return;
         }
-        let file = folder.join(entry_file(name, key));
-        let staging = folder.join(format!(
-            "{}.{}.tmp",
-            entry_file(name, key),
-            std::process::id()
-        ));
+        let file = folder.join(file_name);
+        let staging = folder.join(format!("{file_name}.{}.tmp", std::process::id()));
         // Write the entry whole or not at all, so a stopped run leaves no half entry.
-        if fs::write(&staging, text).is_ok() {
+        let written = fs::File::create(&staging).ok().and_then(|out| {
+            let mut out = std::io::BufWriter::new(out);
+            serde_json::to_writer(&mut out, entry).ok()?;
+            std::io::Write::flush(&mut out).ok()
+        });
+        if written.is_some() {
             let _ = fs::rename(&staging, &file);
+        } else {
+            let _ = fs::remove_file(&staging);
         }
         // Pruning here bounds the folder that this run writes into, whether the build tools or a
         // direct `cargo run` started it (code review H-16).
@@ -201,6 +412,20 @@ impl Cache {
         &self,
         _name: &str,
         _key: &str,
+        _deps: &[String],
+        _files: &BTreeMap<String, String>,
+        _variants: &BTreeMap<String, VariantOutput>,
+    ) {
+    }
+
+    /// Stores the compiled output of one part of an entry. The cache is off in the shader
+    /// compiler, which a page or a bundler loads, so it stores nothing.
+    #[cfg(target_arch = "wasm32")]
+    pub fn store_part(
+        &self,
+        _name: &str,
+        _key: &str,
+        _part: Part,
         _deps: &[String],
         _files: &BTreeMap<String, String>,
         _variants: &BTreeMap<String, VariantOutput>,
@@ -227,66 +452,18 @@ struct Entry {
 /// index, so a text that runs through thousands of builds is held once for the entry.
 #[cfg(not(target_arch = "wasm32"))]
 fn share_texts(variants: &BTreeMap<String, VariantOutput>) -> (serde_json::Value, Vec<String>) {
-    fn walk(
-        node: &mut serde_json::Value,
-        texts: &mut Vec<String>,
-        seen: &mut std::collections::HashMap<String, usize>,
-    ) {
+    fn walk(node: &mut serde_json::Value, texts: &mut SharedTexts) {
         match node {
             serde_json::Value::String(text) if text.len() >= MIN_SHARED_TEXT => {
-                let index = match seen.get(text) {
-                    Some(index) => *index,
-                    None => {
-                        texts.push(text.clone());
-                        let index = texts.len() - 1;
-                        seen.insert(text.clone(), index);
-                        index
-                    }
-                };
+                let index = texts.number(std::mem::take(text));
                 *node = serde_json::json!({ TEXT_REF: index });
             }
-            serde_json::Value::Array(items) => {
-                for item in items.iter_mut() {
-                    walk(item, texts, seen);
-                }
-            }
-            serde_json::Value::Object(fields) => {
-                for field in fields.values_mut() {
-                    walk(field, texts, seen);
-                }
-            }
-            _ => {}
-        }
-    }
-    let mut value = serde_json::to_value(variants).unwrap_or(serde_json::Value::Null);
-    let mut texts = Vec::new();
-    let mut seen = std::collections::HashMap::new();
-    walk(&mut value, &mut texts, &mut seen);
-    (value, texts)
-}
-
-/// The compiled variants that `share_texts` wrote, with each shared text put back.
-#[cfg(not(target_arch = "wasm32"))]
-fn variants_from(
-    mut value: serde_json::Value,
-    texts: &[String],
-) -> Option<BTreeMap<String, VariantOutput>> {
-    fn walk(node: &mut serde_json::Value, texts: &[String]) {
-        match node {
-            serde_json::Value::String(_) => {}
             serde_json::Value::Array(items) => {
                 for item in items.iter_mut() {
                     walk(item, texts);
                 }
             }
             serde_json::Value::Object(fields) => {
-                if fields.len() == 1
-                    && let Some(serde_json::Value::Number(index)) = fields.get(TEXT_REF)
-                    && let Some(text) = index.as_u64().and_then(|index| texts.get(index as usize))
-                {
-                    *node = serde_json::Value::String(text.clone());
-                    return;
-                }
                 for field in fields.values_mut() {
                     walk(field, texts);
                 }
@@ -294,7 +471,92 @@ fn variants_from(
             _ => {}
         }
     }
-    walk(&mut value, texts);
+    let mut value = serde_json::to_value(variants).unwrap_or(serde_json::Value::Null);
+    let mut texts = SharedTexts::default();
+    walk(&mut value, &mut texts);
+    (value, texts.into_list())
+}
+
+/// The shared texts of one entry, each held once and numbered in the order first met.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Default)]
+struct SharedTexts {
+    numbers: std::collections::HashMap<String, usize>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl SharedTexts {
+    /// The number of `text`: its own when it was met before, else the next one.
+    fn number(&mut self, text: String) -> usize {
+        let next = self.numbers.len();
+        *self.numbers.entry(text).or_insert(next)
+    }
+
+    /// The texts in the order of their numbers.
+    fn into_list(self) -> Vec<String> {
+        let mut list = vec![String::new(); self.numbers.len()];
+        for (text, number) in self.numbers {
+            list[number] = text;
+        }
+        list
+    }
+}
+
+/// Calls `visit` with each shared-text reference in `node` and the index it holds, so the caller
+/// can replace the reference.
+#[cfg(not(target_arch = "wasm32"))]
+fn each_text_ref(
+    node: &mut serde_json::Value,
+    visit: &mut impl FnMut(&mut serde_json::Value, usize),
+) {
+    match node {
+        serde_json::Value::Array(items) => {
+            for item in items.iter_mut() {
+                each_text_ref(item, visit);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            if fields.len() == 1
+                && let Some(index) = fields.get(TEXT_REF).and_then(serde_json::Value::as_u64)
+            {
+                visit(node, index as usize);
+                return;
+            }
+            for field in fields.values_mut() {
+                each_text_ref(field, visit);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The compiled variants that `share_texts` wrote, with each shared text put back. The last
+/// reference to a text takes it and the others copy it, so the texts are never held beside all
+/// their copies.
+#[cfg(not(target_arch = "wasm32"))]
+fn variants_from(
+    mut value: serde_json::Value,
+    mut texts: Vec<String>,
+) -> Option<BTreeMap<String, VariantOutput>> {
+    let mut left = vec![0_usize; texts.len()];
+    each_text_ref(&mut value, &mut |_, index| {
+        if let Some(count) = left.get_mut(index) {
+            *count += 1;
+        }
+    });
+    each_text_ref(&mut value, &mut |node, index| {
+        let Some(count) = left.get_mut(index) else {
+            return;
+        };
+        *count -= 1;
+        let text = if *count == 0 {
+            std::mem::take(&mut texts[index])
+        } else {
+            texts[index].clone()
+        };
+        *node = serde_json::Value::String(text);
+    });
+    drop(texts);
     serde_json::from_value(value).ok()
 }
 
@@ -315,6 +577,13 @@ struct Dep {
 #[cfg(not(target_arch = "wasm32"))]
 fn entry_file(name: &str, key: &str) -> String {
     format!("{name}.{key}.json")
+}
+
+/// The file name of one part of an entry's builds: the entry's name, its key and the part, so a
+/// build that misses the whole entry finds a complete set of parts by their names alone.
+#[cfg(not(target_arch = "wasm32"))]
+fn part_file(name: &str, key: &str, part: Part) -> String {
+    format!("{name}.{key}.part-{}-of-{}.json", part.index, part.count)
 }
 
 /// One cache file as pruning sees it: its path, its size and when it was written.
