@@ -247,3 +247,43 @@ The moon's light keeps its floor of 25 degrees, so the sky's sun stands at least
 - A refresh now takes 20 frames, not 7. So the light lags a moved sun by about 320 ms at 60 frames a second, not 100 ms. On the Mac, the GPU time of a whole refresh doubles, though no frame's share grows.
 - Each sky map keeps about 9 MB of GPU memory for its stages. A second sky map is rarely useful, since every sky map shows the one sky.
 - The sky model now has three copies: the shaders' `null3d::atmosphere`, the core's `sky_light.rs` for the diffuse light, and the clear sky in `time-of-day.ts`. A change to three.js's sky must change all three. The sky refresh test and the time-of-day image tests compare the first two, through the rough sphere's diffuse light.
+
+## Addendum, 23 October 2026: a map draws again only for a change that shows
+
+Status: decided, 23 October 2026. Task: M3-R10.
+
+The record above starts a refresh for every change of the sky. A sun that moves in every frame therefore keeps a map drawing in every frame, and a scene whose clouds drift draws it forever, even with a still sun. A map now draws again only when its sky moves past a step that a viewer would see, and one last fill captures the sky exactly when its sun comes to rest.
+
+### The rule
+
+Each frame, a map compares the sky it holds with the scene's sky, in the values that its draws read:
+
+- **The suns.** Each sun, the second sky's included, stands within half a degree of the map's. The comparison uses the sine of the turn, from the cross product. A cosine rounds a turn under two degrees to 1 on a sun hundreds of thousands of units away, which is exactly the turn that a map weighs: the first draft read every small turn as no turn at all, and the test that steps a sun by a tenth of a degree caught it.
+- **The colors.** Each value lies within a fiftieth of the map's, relative to the larger. For the analytic sky these are the Rayleigh coefficient that the shader scatters by (the setting less what a sun sunk far below the horizon takes from it), the turbidity, the Mie coefficient and its directional factor, the cloud scale, speed, coverage, density and elevation, the second sky's weight, and the gain that matches the analytic sky to the physical one that it stands in for. The physical sky adds its sun's and moon's lights, its stars, its haze, its ozone, its ground albedo, its altitude, the scene's scale and the camera's height. A height under half a kilometer counts as half a kilometer, so a camera near the ground climbs 10 meters, as the physical sky's own tables wait for.
+- **The clouds.** Their pattern drifts by less than a tenth of a cell. The shaders read the pattern at a thousand times the clock times the speed, so at three.js's speed a tenth of a cell is about five seconds. A sky that draws no clouds keeps as still as it likes.
+- **The sun's disc flag counts for nothing.** A map draws no disc, since the scene's directional light gives the sun's own light.
+
+A sun that stops between two steps would leave the map up to half a degree behind for good. So a sky whose values held from the frame before counts as at rest, and a map that does not hold it exactly then starts one last fill. The clouds are left out of that test: they drift on their own, and their step draws the map again anyway.
+
+The rule lives in `MapSky::compares` in `crates/null3d-render/src/sky_maps.rs`. The analytic sky and the physical sky's panorama both follow it, and the panorama is drawn only in a frame whose fill starts.
+
+### What it saves
+
+A fill takes 20 frames, one stage a frame, so a map can start a new one only after the last ends. The unit test `a_day_cycle_draws_the_sky_map_only_for_the_frames_its_sun_steps` (`crates/null3d-render/tests/sky_maps.rs`) counts the frames that record a stage, at 60 frames a second with the built-in map's stages, for a sketch that writes its sky in every frame. Before this addendum, every one of those frames drew a stage.
+
+| Sun | Frames that drew a stage, of 1,800 | Fills a minute | Share of the frames |
+| --- | --- | --- | --- |
+| Still, with the default clouds drifting | 100 | 12 | 6% |
+| An hour a day, 0.1 degrees a second | 100 | 12 | 6% |
+| A ten-minute day, 0.6 degrees a second | 700 | 70 | 39% |
+| The showcase's Auto day, 80 seconds, at 4.5 degrees a second | 1,794 | 180 | 100% |
+
+The unit test itself counts 600 frames, where a ten-minute day draws 220 of them.
+
+A stage costs about 1 ms of GPU time on a MacBook Pro (the sections above). So a still sky with drifting clouds gives back about 0.93 ms of every frame, and an hour-long day the same. The ten-minute day gives back about 0.6 ms. A day a minute keeps the map drawing in every frame, as it did before, because a fill of 20 frames cannot take the place of a step every 5 frames. [Benchmarks](../benchmarks.md#sky-map-refreshes) says how to take the counts again.
+
+### Prices
+
+- A map can show a sun up to half a degree, a color up to a fiftieth, and its clouds up to a tenth of a cell, away from the picture's. The sky step test weighs those steps in the picture: it sinks the sun from 8 to 4 degrees above the horizon, where its light changes fastest, and no two frames may lie more than 8 levels of 255 apart. On 23 October 2026 the steps measured 4 to 5 levels on the Mac's GPU, over a sweep that moved the light 26 levels, on WebGPU, in compatibility mode and on WebGL2.
+- A sun that crosses a step in under 20 frames keeps the map drawing in every frame, as before. That is 1.5 degrees a second and faster, and it covers the showcase's own day cycle.
+- A scene whose sun rests while its clouds drift keeps clouds in its reflections that stand up to five seconds behind the sky's own. That is the price of the rule; the alternative was drawing the map in every frame for as long as the page runs.

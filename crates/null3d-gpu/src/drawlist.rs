@@ -802,6 +802,11 @@ pub mod layout {
     /// [`EFFECT_BLOOM`] with a multisampled scene depth, whose sample 0 the effect reads. Only
     /// WebGPU has it.
     pub const EFFECT_BLOOM_DEPTH_MS: u32 = 51;
+    /// Group 1 of a sky layer's draw, an add-on's layer over the core sky: its uniform block alone.
+    /// The core sky's cloud settings, the share of the sun that the layer hides and the layer's own
+    /// opacity reach it, so a layer obeys the settings the core sky obeys (see
+    /// [`template::BACKGROUND_LAYER`](super::template::BACKGROUND_LAYER)).
+    pub const BACKGROUND_LAYER: u32 = 53;
     /// The final pass with custom effects folded into it: [`FINAL`]'s bindings, then the effects'
     /// uniform buffer at binding 4 and the scene's depth, or a blank texture, at binding 5, as
     /// plain floats.
@@ -1732,9 +1737,12 @@ pub mod sizes {
     /// one binding of the frame's group (D-146).
     pub const SHADOW_SETTINGS_BYTES: u32 =
         SHADOW_UNIFORM_BYTES + SHADOW_TILES_UNIFORM_BYTES + SHADOW_HERO_UNIFORM_BYTES;
-    /// Bytes of the background's uniform block: nine vectors, which the cube map, the sky and a
-    /// plain color read (see `null3d_render::background`).
-    pub const BACKGROUND_UNIFORM_BYTES: u32 = 144;
+    /// Bytes of the background's uniform block: ten vectors, which the cube map, the sky, a plain
+    /// color and a sky layer's sun visibility read (see `null3d_render::background`).
+    pub const BACKGROUND_UNIFORM_BYTES: u32 = 160;
+    /// Bytes of a sky layer's uniform block: two vectors, the core sky's cloud settings and the
+    /// layer's own view values (see `null3d_render::background`).
+    pub const BACKGROUND_LAYER_UNIFORM_BYTES: u32 = 32;
 }
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
@@ -1852,6 +1860,11 @@ pub mod template {
     /// three.js's analytic sky behind every object, drawn as [`BACKGROUND_CUBE`] is, from the
     /// values of the background's uniform block alone.
     pub const BACKGROUND_SKY: u32 = 36;
+    /// A sky layer that an add-on draws over the core sky, right after the background's own draw:
+    /// [`BACKGROUND_CUBE`]'s box around the camera at the far plane, whose fragments call the
+    /// layer's own `skyLayer` function. The bind group of index 0 is the frame's, and that of index
+    /// 1 the layer's, of layout [`BACKGROUND_LAYER`](super::layout::BACKGROUND_LAYER).
+    pub const BACKGROUND_LAYER: u32 = 79;
     /// The depth of a masked shadow caster: [`SHADOW_DEPTH`]'s vertices, with each fragment of the
     /// caster's material tested as its shading tests it, by the material's opacity and vertex
     /// alpha, so masked surfaces cut holes in their shadows. It binds as the depth template does.

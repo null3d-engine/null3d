@@ -417,6 +417,14 @@ A run folder holds every page's full result, with frames and images, and stays o
 - On 23 October 2026 the masked side was no slower than the opaque one in Chrome on any path, and 0.29 ms slower at most in Safari with MSAA, for a screen of about 1.5 million pixels. So a scene whose masked areas cover much of the view pays under a third of a millisecond for them on this Mac.
 - In a real scene the prepass draws the opaque objects and leaves the masked ones out, so the two builds are not equal work there: masked surfaces shade their hidden layers on the paths that keep the prepass. [D-226](decisions/D-226-alpha-masked-lit-fragments-under-msaa.md) gives the figures and what they mean.
 
+## A tree of cluster patches
+
+- The `cluster-cost` page draws `tests/pages/assets/models/cluster-terrain.glb`, a heightfield of 32,768 triangles that the asset tool cut into a tree of 511 patches, with one directional light and one ambient light. It stands the camera 12, 30 and 80 meters from the middle of the ground and times two seconds at each distance after two seconds of warm-up, so the near patches draw at full detail and the far ones coarser ([D-231](decisions/D-231-cluster-levels-cost.md)).
+- The page reports the median GPU time of a frame where the device has a GPU timer, and the median frame interval and CPU time everywhere. `direct=off` keeps the start-up probe from choosing the path that draws the mesh whole: without it the figures describe another drawing.
+- Run it on a phone or a tablet with the plan: `bun run devices:cloud --only bsgalaxys25-chrome --plan cluster-cost`, or in Safari on the iPad with `bun tests/real-browsers.ts --plan cluster-cost --lan ipad-safari`. The plan is timed, so the runner measures the display's refresh rate before each page.
+- Run it on the Mac in a quiet lane: `NULL3D_CLUSTER_COST=1 bun run test:browser -- cluster-cost.spec.ts`. `NULL3D_CLUSTER_PRESETS` narrows the presets, as a list.
+- The frame's GPU time falls as the camera draws back, which is the saving that coarser patches make: by about a quarter on the phone and on the tablet's compatibility mode, and by a tenth on the tablet's core WebGPU path, where the fill of its many pixels weighs more. [D-231](decisions/D-231-cluster-levels-cost.md) gives each device's figures.
+
 ## Double-sided see-through objects
 
 - The page switch `?sides=two` draws every box of S2 see-through and double-sided. The transparent pass then draws each run's back faces, then its front faces ([D-82](decisions/D-82-transparency-parity.md)). `?sides=one` draws the same boxes with `forceSinglePass`, in one draw. The difference between the two is the cost of the second draw.
@@ -430,6 +438,25 @@ A run folder holds every page's full result, with frames and images, and stays o
 - `?sky=clear` draws the sky without clouds, `?sky=still` keeps its sun and clouds still, and `?sky=room` draws the built-in room as the background, which reads one texel a pixel. The page kinds `null3d-webgpu-sky-clear` and `null3d-webgpu-sky-room` take turns with the others, so one phone session splits the sky's cost between its air, its clouds and the box it draws.
 - `?sky=texture` draws a texture made from data as the background, which covers the view with one triangle, where the room and the sky draw a box of 12 triangles around the camera. The switch `?backgroundFirst` adds a small box whose opaque material writes no depth, which makes any background draw before the objects with no depth test. The page kinds `null3d-webgpu-sky-texture`, `null3d-webgpu-sky-room-first` and `null3d-webgpu-sky-texture-first` use them, and `null3d-webgpu-first` adds the small box alone, the twin of `null3d-webgpu`. A phone session over these pages tells whether a background's cost comes from its shape or from its place in the pass: `bun run devices:cloud --only bsgalaxys25-chrome,bspixel9-chrome --plan bench -- --scenes s1 --pages null3d-webgpu,null3d-webgpu-first,null3d-webgpu-sky-room,null3d-webgpu-sky-room-first,null3d-webgpu-sky-texture,null3d-webgpu-sky-texture-first,null3d-webgpu-sky-clear --switches governor=off`.
 - The switch `?extraBox` adds the same small box with a material that writes depth, as the page kind `null3d-webgpu-box`. On the Galaxy S25, `null3d-webgpu-box`, `null3d-webgpu-first` and every background page cost about 4.8 ms more GPU time than `null3d-webgpu`. So on that phone, most of the difference between a page and its sky twin is a step that any extra draw costs. [D-68](decisions/D-68-backgrounds.md) gives the figures and the probes that would find the step's cause.
+
+### Sky map refreshes
+
+A sky map draws again only when its sun turns half a degree, a color value drifts by a fiftieth, or its clouds drift a tenth of a cell of their pattern. One last fill captures the sky exactly when its sun rests ([D-118](decisions/D-118-sky-environment.md#addendum-23-october-2026-a-map-draws-again-only-for-a-change-that-shows)). So the cost of a moving sky is the frames that record a stage, not the frames that move the sun.
+
+- `cargo test -p null3d-render --test sky_maps a_day_cycle -- --nocapture` counts them for a sun scripted to cross the sky, over scenes with a still sun, an hour-long day, a ten-minute day and a day a minute, with clouds drifting as `examples/` draws them. Each case reports the count of frames that drew a stage. The test takes about three seconds and needs no browser.
+- `bun run --cwd tests test image/sky-step.spec.ts` weighs the steps in the picture. It sinks the sun from 8 to 4 degrees above the horizon, where its light changes fastest, then fails when two captured frames lie more than 8 levels of 255 apart, or when the sweep does not move the light 15 levels. It runs on every GPU tier. On 23 October 2026 the steps measured 4 to 5 levels, over a sweep of 26.
+- A stage's own GPU time comes from `tests/pages/sky-map-cost.ts`, as [Stages by faces](decisions/D-118-sky-environment.md#stages-by-faces) gives it: about 1 ms on the Mac and about 5 ms on a software GPU.
+
+On 23 October 2026, at 60 frames a second with the built-in map's 20 stages, 1,800 frames drew these counts. Before the rule, every one of them drew a stage.
+
+| Sun | Frames that drew a stage | Fills a minute |
+| --- | --- | --- |
+| Still, clouds drifting | 100 | 12 |
+| An hour a day | 100 | 12 |
+| A ten-minute day | 700 | 70 |
+| The Auto day of `examples/lib/stage.ts`, 80 seconds | 1,794 | 180 |
+
+A sun that crosses a half-degree step faster than a fill's 20 frames keeps the map drawing in every frame, which is why the showcases' own day cycle saves nothing and a still sky saves almost all of it.
 
 ## Sweeps for the open defaults
 

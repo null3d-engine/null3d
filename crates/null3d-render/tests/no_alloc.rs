@@ -798,6 +798,7 @@ fn map_upload_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
             intensity: 1.0,
             blur: 0.0,
             rotation: [0.0; 3],
+            sun_visibility: 1.0,
         }));
     world.record(true);
     let textures = world.renderer.settings_mut().textures_mut();
@@ -1415,6 +1416,7 @@ fn physical_sky_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
             intensity: 1.0,
             blur: 0.0,
             rotation: [0.0; 3],
+            sun_visibility: 1.0,
         }));
     feature_allocations(
         &mut world,

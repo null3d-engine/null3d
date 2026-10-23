@@ -562,11 +562,14 @@ and a hero car with two screens.
   `preset=high` there draws 75,000 cars at Medium settings.
 - **The lens.** The picture's grade, its sharpening, its vignette and the camera's own marks come
   from the lens-kit example add-on (`examples/addons/lens-kit/`). The grade, the sharpening and the
-  vignette are the core's own settings, which the kit sets from one look. Its one effect draws the
-  color fringes, the anamorphic streak, the grain and the speed blur, each off at 0. D-173 ruling 5
+  vignette are the core's own settings, which the kit sets from one look: the grade is the core's
+  grading controls, which a job worker bakes into its table, so the kit keeps no table of its own.
+  Its one effect draws the color fringes, the anamorphic streak, the grain and the speed blur, each
+  off at 0. The streak reads level 2 of bloom's chain with `effectBloom`, so it spreads the light
+  that bloom already thresholded and blurred instead of blurring the picture again. D-173 ruling 5
   keeps it to the core's parts: it adds no second way to do any of them. The speed blur follows the
   camera's travel, so a held frame has none. Against the pictures without it, the lens moves 0.66%
-  of the pixels on WebGPU and 0.2% on SwiftShader.
+  of the pixels on WebGPU and 0.2% on SwiftShader, drawn before the streak read bloom's chain.
 - **The lens's cost.** The effect adds about 0.7 to 0.9 ms of GPU at every preset on WebGPU. On
   WebGL2 it adds 0.7 ms at Low and 3.2 ms at Medium. These figures compare the scene with the lens
   against the same scene without it at a load of 36. The core's sharpen, vignette and grade add
