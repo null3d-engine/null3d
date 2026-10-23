@@ -411,6 +411,28 @@ describe("CI's workflow", () => {
 		for (const [name, job] of readers) expect(needsOf(job), name).toContain('load-pages');
 	});
 
+	it("keeps the build job's WebAssembly files in the cache, under the build script's own key", () => {
+		const steps = jobNamed('build').steps ?? [];
+		const key = steps.find(({ id }) => id === 'wasm-key');
+		expect(key?.run).toContain('bun tools/build-wasm.ts --cache-key');
+		const cacheOf = (action: string) =>
+			steps.find(
+				({ uses, with: given }) =>
+					uses === action && String(given?.path).endsWith('/wasm-artifacts'),
+			);
+		const restore = cacheOf('actions/cache/restore@v4');
+		const save = cacheOf('actions/cache/save@v4');
+		expect(String(restore?.with?.key)).toContain('steps.wasm-key.outputs.key');
+		expect(save?.with?.key).toBe(restore?.with?.key);
+		// The restore comes before the build that copies the files from it, and the save after.
+		const at = (step: Step | undefined) => steps.indexOf(step as Step);
+		const build = steps.findIndex(({ name }) =>
+			/WebAssembly files that the test pages need/.test(name ?? ''),
+		);
+		expect(at(restore)).toBeLessThan(build);
+		expect(at(save)).toBeGreaterThan(build);
+	});
+
 	it("moves the build job's files and the load builds only through the archive action", () => {
 		expect(hands(jobNamed('build'), 'page-wasm', 'upload')).toBe(true);
 		for (const [name, job] of Object.entries(jobs))

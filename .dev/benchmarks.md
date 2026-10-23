@@ -37,7 +37,7 @@ The benchmarks measure the engine as developers ship it. A production build leav
 
 The build caches live under one root, `~/.cache/null3d` by default, each in a named subfolder.
 `shader-modules` holds the built shader modules, `shader-cache` the per-entry shader build, and
-`wasm-artifacts` the built wasm and tool modules. `size-memo` holds the size check's compressed sizes
+`wasm-artifacts` the built wasm and tool modules, which CI's build job keeps in the Actions cache under `bun tools/build-wasm.ts --cache-key`. `size-memo` holds the size check's compressed sizes
 ([Download size](#download-size)), and `sccache` the compiled Rust crates when sccache is installed. `NULL3D_BUILD_CACHE` names another root and moves them all; the older per-cache
 variables still name one folder. Clearing the root is always safe, because every entry is a pure
 function of its inputs and a missing entry only costs the build time. Each checkout builds Rust into
