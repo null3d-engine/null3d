@@ -955,6 +955,12 @@ pub mod permutation {
     /// faces keep their depth, as the faces of a double-sided caster must: they hold its own lit
     /// side.
     pub const CASTER_OFFSET: u32 = 16384;
+    /// The final pass's build that scales the drawn corner up to the canvas and sharpens it, which
+    /// the second step of the two-step pass draws. The other builds read the one texel under each
+    /// pixel and hold none of that code: a software GPU pays for code in every frame, even in a
+    /// loop of no rounds. It shares [`CASTER_OFFSET`]'s value: only the final pass lists it, and
+    /// only the shadow casters' and the depth templates list the caster offset.
+    pub const UPSCALE: u32 = CASTER_OFFSET;
     /// The final pass adds bloom's levels to the scene color before the output transform.
     pub const BLOOM: u32 = 32768;
     /// A custom material's template draws an object into GPU picking's id target: the vertex
@@ -1036,7 +1042,7 @@ pub mod permutation {
     pub const WEIGHTED: u32 = 1 << 31;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 34] = [
+    pub const NAMES: [(&str, u32); 35] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -1053,6 +1059,7 @@ pub mod permutation {
         ("PREPASS", PREPASS),
         ("HALF", HALF),
         ("CASTER_OFFSET", CASTER_OFFSET),
+        ("UPSCALE", UPSCALE),
         ("BLOOM", BLOOM),
         ("PICK", PICK),
         ("OUTLINE_VISIBLE", OUTLINE_VISIBLE),
@@ -1075,7 +1082,11 @@ pub mod permutation {
 
     /// Pairs of names that share one value, because no template lists both: the shader build
     /// refuses a template that lists two names of one value, and any other shared value.
-    pub const SHARED: [(&str, &str); 2] = [("FXAA", "AREA_LIGHTS"), ("BLOOM", "PICK")];
+    pub const SHARED: [(&str, &str); 3] = [
+        ("FXAA", "AREA_LIGHTS"),
+        ("CASTER_OFFSET", "UPSCALE"),
+        ("BLOOM", "PICK"),
+    ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
     /// the draw index where WebGL2 has multi-draw, tone mapping in the shader where the device
@@ -1118,8 +1129,9 @@ pub mod permutation {
     /// The layers shade, so casters never have them, and only the test switch reads instances by
     /// index, which no layered build needs. A weighted surface blends, so it tests no mask, lets
     /// no light through and never fades, and it draws in the sorted pass's rows, which never read
-    /// instances by index.
-    pub const APART: [(u32, u32); 54] = [
+    /// instances by index. The final pass's upscale draws only in the two-step pass's second step,
+    /// with neither FXAA nor bloom.
+    pub const APART: [(u32, u32); 56] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -1174,6 +1186,8 @@ pub mod permutation {
         (WEIGHTED, OUTLINE_VISIBLE),
         (WEIGHTED, LOD_FADE),
         (LOD_FADE, DISPLACEMENT),
+        (UPSCALE, FXAA),
+        (UPSCALE, BLOOM),
     ];
 
     /// True when a permutation word holds every bit that each of its bits needs ([`NEEDS`]), and
