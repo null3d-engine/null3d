@@ -114,6 +114,11 @@ export interface SketchCore {
 	onAskBuilds(handler: BuildsAsker): void;
 	/** Asks the thread that draws to load the shader files of features that the sketch will use. */
 	sendPreload: PreloadSender;
+	/**
+	 * True when the page asked for the development probe of the two-step pass, whose answers it
+	 * reads from the control block after each frame.
+	 */
+	twoStepProbe: boolean;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
 	pageUrl: string;
 	/**
@@ -295,6 +300,8 @@ export class SketchRunner {
 	private gpuEpoch = 0;
 	/** True while the page lets a still view accumulate its frames, as the frame loop last read it. */
 	private stillEnabled = true;
+	/** True once the development probe of the two-step pass asked the core for its answers. */
+	private twoStepAsked = false;
 	/**
 	 * Frames left before the next publish of the memory figures, while a reader samples them. It is
 	 * 0 while nobody samples, so the first frame that samples publishes them.
@@ -820,6 +827,24 @@ export class SketchRunner {
 	}
 
 	/** The render scale of the frame being drawn, in thousandths. */
+	/**
+	 * Writes the two-step pass's answers for the frame that just recorded into the control block,
+	 * where the page's probe reads them: whether the frame wanted the pass, declared it, had its
+	 * second step built and drew it, and the render scale in thousandths.
+	 */
+	private reportTwoStep(): void {
+		const { glue, memory, control } = this.sketch;
+		if (!this.twoStepAsked) {
+			this.twoStepAsked = true;
+			glue.setDebugTwoStep(true);
+		}
+		const at = glue.debugTwoStep();
+		if (at === 0) return;
+		const answers = new Int32Array(memory.buffer, at, 5);
+		for (let k = 0; k < 5; k++)
+			Atomics.store(control.slots, Slot.TwoStepWanted + k, answers[k] as number);
+	}
+
 	private renderScale(): number {
 		return this.governorLoop ? this.governor.scale : this.heldScale;
 	}
@@ -1373,6 +1398,7 @@ export class SketchRunner {
 		}
 		if (glue.recordFrame(frame, width, height, scale, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
+		if (this.sketch.twoStepProbe) this.reportTwoStep();
 		Atomics.store(slots, Slot.RenderScale, scale);
 		// Input names frames in the engine's count, so each frame of the setup and of the preset
 		// check keeps its own camera: a click can come while any of them is on screen.
