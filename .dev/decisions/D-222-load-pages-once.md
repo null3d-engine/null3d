@@ -25,7 +25,7 @@ How the data was produced: the shard's job log, and the run record that it uploa
 ## Decision
 
 - `bun tests/lib/load-server.ts` makes every load build, and prints each build's time.
-- The `load-pages` job runs it once, after the build and city jobs, and hands both folders on through `.github/actions/load-pages`, which stores each content once (see the update below).
+- The `load-pages` job runs it once, after the build and city jobs, and hands both folders on through `.github/actions/archive` with `link` set, which stores each content once (see the update below).
 - Each `real-browsers` shard downloads them and sets `NULL3D_LOAD_PAGES=prebuilt`: the runner then builds none, and stops with the command to run when a build that its plan loads is missing.
 - The `bench` shards and the `allocation` jobs download them too, with the same switch. The benchmark pages' server, `serveBenchPages`, and the benchmark tests' Playwright server then serve the build as it is.
 
@@ -46,5 +46,5 @@ How the data was produced: the zip's central directory, read from the artifact's
 ## Consequences
 
 - `tests/lib/load-server.ts` holds the switch and the script. `tests/real-browsers.ts` and `bench/lib/serve.ts` make their builds through it, and `bench/playwright.config.ts` reads the switch.
-- `tools/lib/ci-workflow.test.ts` checks that only `load-pages` makes the builds, and that a job with the switch waits for that job and downloads its files through `.github/actions/load-pages`, which no job bypasses.
+- `tools/lib/ci-workflow.test.ts` checks that only `load-pages` makes the builds, and that a job with the switch waits for that job and downloads its files through `.github/actions/archive`, which no job bypasses for this artifact or the build job's.
 - [Image tests](../image-tests.md#ci) describes the job.

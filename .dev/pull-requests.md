@@ -368,13 +368,14 @@ The faults that the reviews of 22 October 2026 found, first in run 39744891020, 
 - The first benchmark shard took 24.3 minutes in run 39854225392 and ended the whole run, while the others took 6.6 to 13.9. Its split was made by hand from a measurement of 11 October, and its six scenes had grown slower since. A split by hand needs a new measurement when its tests grow. S1's three scenes now run in a shard of their own.
 - One showcase HUD test checked the sky and then the fog for 20.9 minutes in the same run, the longest browser job. The two checks share only the page's setup, 204 s of it, so each is now a test with a job of its own.
 - The `load-pages` job's artifact held the startup pages and the benchmark pages, 8.52 GB in 19,827 files, of which 7,271 contents and 2.90 GB were distinct: each page's build writes the whole shader set. Its 51 downloads took 86 runner-minutes in run 39854225392. The job now links equal files and ships one archive that holds each content once ([D-222](decisions/D-222-load-pages-once.md#update-23-october-2026-each-content-once)).
+- The build job uploaded its 2.8 GB of files as the artifact's own zip, 510 MB in 77 s in run 39869813447, on the path of every later job, and about 125 jobs downloaded it. The zip compresses each file on its own and on one core. The same files as one tar file with `zstd` on every core take about 122 MB, in seconds.
 - A pass key that held all of `tools/lib` rebuilt every shard after a change to the size report (fixed in e970ab6a1). A key that left out the compiler's runner script, and the WGSL that the packing test compiles, reused a pass after a change to them.
 
 The ways to reuse work:
 
 | Work | How a job reuses it |
 | --- | --- |
-| The WebAssembly files, the shader compiler and the shader modules | The `build` job's artifact, `page-wasm`. A job that downloads it sets `NULL3D_REQUIRE_FRESH_SHADERS`, so a stale set fails the job instead of a slow build of it again |
+| The WebAssembly files, the shader compiler and the shader modules | The `build` job's archive, `page-wasm`, through `.github/actions/archive`. A job that downloads it sets `NULL3D_REQUIRE_FRESH_SHADERS`, so a stale set fails the job instead of a slow build of it again |
 | Rust builds | `Swatinem/rust-cache`, keyed by the workspace's `Cargo.toml` |
 | Shader entries and module sets | `.github/actions/shaders` and the `shader-entries` jobs ([Builds](#builds)) |
 | A test that reads the whole shader set | A pass marker in the Actions cache, under a key of the files that the part reads |
@@ -392,7 +393,7 @@ Before you add or change a job or a step, answer these questions:
 6. Does it use every core? Does its split follow measured cost, and does the costliest unit split?
 7. Does it need to run on every push? Gate it on the `changes` job, or let it reuse its pass, when its inputs seldom change.
 8. Does the change touch a file that a cache's key covers, without changing what the cache holds? Keep test-only code in the tests, outside the key. A list that two shader tests shared from the shader library changed the compiler's stamp, and every shader had to compile again, on the Mac and in CI ([D-218](decisions/D-218-efficient-ci-jobs.md)).
-9. When it hands files to other jobs, does the artifact hold a content more than once? Builds that share files ship them once, through hard links in one archive. Does its compression suit them? An artifact that many jobs download keeps the default level. The fastest level suits one large upload that the critical path waits for and that a few jobs download. A file that `zstd` compressed on every core uploads at level 0, as `load-pages` does ([D-218](decisions/D-218-efficient-ci-jobs.md)).
+9. When it hands many files or large files to other jobs, does it use `.github/actions/archive`? The action packs them into one tar file that `zstd` compresses on every core and across files, which the artifact's own zip does neither of. With `link`, builds that share files ship each content once. A small artifact can stay a plain one ([D-218](decisions/D-218-efficient-ci-jobs.md)).
 
 How to review a run:
 
