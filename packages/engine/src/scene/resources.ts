@@ -130,6 +130,7 @@ import {
 	meshFromArrays,
 	meshFromLevel,
 	morphTargetCount,
+	replaceMeshIndices,
 	updateVertices,
 	type VertexLayout,
 } from './mesh-arrays';
@@ -447,6 +448,17 @@ export class MeshGeometry {
 		this.core.u32(at + 12 * count, count).set(materials);
 		this.core.check(this.core.glue.setMeshLevels(id, count, fades), call, 'a mesh', true);
 		this.lowerLevels = levels.map((level) => ({ ...level }));
+	}
+
+	/**
+	 * @internal Gives the mesh the triangles `indices` in place of the ones it draws, which name its
+	 * own vertices. A staged level uses it to make its base the finer level as it arrives, so the
+	 * objects that draw the base draw the new geometry at once. Returns false when the mesh cannot
+	 * take another triangle list. It changes nothing else about the mesh: its vertices, bounds and
+	 * levels stay.
+	 */
+	replaceTriangles(indices: Uint16Array | Uint32Array | readonly number[]): boolean {
+		return replaceMeshIndices(this.core, this.id, indices, 'mesh.replaceTriangles');
 	}
 }
 

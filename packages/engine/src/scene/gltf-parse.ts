@@ -857,6 +857,8 @@ export interface NodeData {
 	weights?: number[];
 	/** The levels of detail of the node's mesh, from `MSFT_lod`, when it gives any. */
 	levels?: NodeLevels;
+	/** The levels of detail that the node's mesh downloads after the file, when it gives any. */
+	stages?: NodeStages;
 }
 
 /**
@@ -869,6 +871,19 @@ export interface NodeLevels {
 	meshes: number[];
 	errors?: number[];
 	coverage?: number[];
+}
+
+/**
+ * The levels of detail that a node's mesh downloads after the file, from the asset tool's
+ * `NULL3D_stages`: the error of the level that the file itself holds, and each further stage's
+ * file, its length in bytes and the error of the level it holds, in the units of the mesh's
+ * positions. The stages run from the level after the file's own down to the finest, and each
+ * replaces the triangles of the mesh that the stage before left.
+ */
+export interface NodeStages {
+	/** The error of the level that the file's own triangles measure. */
+	error: number;
+	levels: { url: string; bytes: number; error: number }[];
 }
 
 /** An image: its bytes when the file holds it, or its address when the file names it. */
@@ -2175,6 +2190,8 @@ function parseNodes(
 		}
 		const lod = extensions.MSFT_lod as Entry | undefined;
 		if (lod && data.mesh >= 0) data.levels = parseLevels(lod, node, defs, meshes.length, what);
+		if (data.mesh >= 0)
+			data.stages = parseStages((node.extras as Entry | undefined)?.NULL3D_stages);
 		return data;
 	});
 	return { nodes, place };
@@ -2208,6 +2225,40 @@ function parseLevels(
 	const errors = read(extras.NULL3D_lod_error, meshes.length);
 	const coverage = errors ? undefined : read(extras.MSFT_screencoverage, meshes.length);
 	return { meshes, errors, coverage };
+}
+
+/** The longest stage address that a file may name, in characters: enough for any URL a server gives. */
+const MAX_STAGE_URL = 2048;
+
+/**
+ * A node's staged levels from its extras' `NULL3D_stages`: the error of the level that the file
+ * holds, then each stage's address, its length in bytes and the error of the level it holds. A
+ * stage without an address, a whole length or a real error is left out, and the stages after it go
+ * with it, since each one replaces the triangles that the stage before left. The last stage holds
+ * the mesh itself, whose error is 0.
+ */
+function parseStages(value: unknown): NodeStages | undefined {
+	if (value === null || typeof value !== 'object') return undefined;
+	const { error, levels: given } = value as Entry;
+	if (typeof error !== 'number' || !(error > 0) || !Number.isFinite(error)) return undefined;
+	if (!Array.isArray(given)) return undefined;
+	const levels: NodeStages['levels'] = [];
+	for (const entry of given) {
+		const { url, bytes, error: levelError } = (entry ?? {}) as Entry;
+		if (
+			typeof url !== 'string' ||
+			url.length === 0 ||
+			url.length > MAX_STAGE_URL ||
+			!Number.isInteger(bytes) ||
+			(bytes as number) <= 0 ||
+			typeof levelError !== 'number' ||
+			!(levelError >= 0) ||
+			!Number.isFinite(levelError)
+		)
+			break;
+		levels.push({ url, bytes: bytes as number, error: levelError });
+	}
+	return levels.length > 0 ? { error, levels } : undefined;
 }
 
 /** A node's position, rotation and scale, from its matrix or its own values. */

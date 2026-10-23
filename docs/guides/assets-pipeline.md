@@ -54,6 +54,7 @@ scene.instantiate(ship);
 | Option | Effect | Without it |
 | --- | --- | --- |
 | `--lod` | Adds levels of detail to each mesh of 64 triangles or more | No levels |
+| `--stages` | With `--lod`, writes each mesh's levels as separate files beside the model, for a model that draws its coarse level first | Levels in the file |
 | `--simplify <share>` | Keeps this share of each mesh's triangles, from 0 to 1, as far as `--simplify-error` allows | 1: every triangle |
 | `--simplify-error <share>` | The most that `--simplify` may move a mesh's surface, as a share of the mesh's size | 0.01 |
 | `--max-texture-size <pixels>` | The largest side of a texture: a power of two up to 2048 | 2048 |
@@ -188,6 +189,14 @@ The levels go into the file with `MSFT_lod`. Each node with levels stores the er
 Over the 213 models of four Kenney city kits, `--lod` gives levels to 162. The 45 models of under 64 triangles get none, and so do six flat road pieces that cannot lose a quarter of their triangles.
 
 `assets.loadGltf` gives each mesh its levels. So every copy of the model and every instance batch of it picks its level in each frame, as [Levels of detail](../concepts/lod.md) explains. A skinned mesh draws its levels too, because the tool's levels name the mesh's own vertices and the skin moves them. three.js's `GLTFLoader` ignores `MSFT_lod`, and draws the full mesh.
+
+### Levels as separate downloads
+
+`--stages` writes the levels as separate files, so a model shows its coarse shape at once and gets finer while the page draws it. The command keeps the full vertex stream and the coarsest level in the model file, and writes each finer level to a file beside it, named after the model. Each node that draws the mesh names its stages in its extras, with the error of each level, as `NULL3D_stages`.
+
+The engine downloads the stages in order, from the next coarsest down to the finest, and draws each as it arrives. A copy that a page already made refines in place, with no new object and no flicker. A stage holds indices alone, because every level names the mesh's own vertices. A mesh whose levels hold positions of their own, such as a level of cards, keeps its levels in the file, as `MSFT_lod` gives them. So does a mesh with one level.
+
+The loader's `maxLevels` option stops the downloads after that many levels, the file's own counted first. A page whose camera never comes close enough to show the finest level sets it to 1, or to the number of levels that show. Other glTF readers draw the coarsest level, since the finer ones are not in the file.
 
 ### Cluster levels
 

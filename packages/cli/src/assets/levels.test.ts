@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Document, type Node, type Primitive } from '@gltf-transform/core';
-import { planLevels, storeLevels } from './levels.js';
+import { MODELS_DIR, terrainDocument } from './cluster-fixture.js';
+import {
+	planLevels,
+	STAGE_HEADER_SIZE,
+	STAGE_LEVELS,
+	STAGE_MAGIC,
+	STAGE_VERSION,
+	storeLevels,
+	storeStages,
+} from './levels.js';
 import { lodOf } from './lod-extension.js';
+import { buildStagedModel, STAGED_FILE } from './staged-fixture.js';
 
 /** The most cards a mesh of trees has in the test, and each card's side. */
 const CARDS = 40;
@@ -286,4 +298,104 @@ describe('texture coordinates in the levels error', () => {
 		expect(flatError).toBeGreaterThan(0);
 		expect(bentError).toBeGreaterThan(flatError * 2);
 	});
+});
+
+/** The lists that a stage file holds, read as the engine reads them. */
+function stageLists(bytes: Uint8Array): Uint32Array[] {
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	expect([view.getUint32(0, true), view.getUint32(4, true), view.getUint32(8, true)]).toEqual([
+		STAGE_MAGIC,
+		STAGE_VERSION,
+		STAGE_LEVELS,
+	]);
+	const lists: Uint32Array[] = [];
+	let at = STAGE_HEADER_SIZE * 4;
+	for (let k = 0; k < view.getUint32(12, true); k++) {
+		const length = view.getUint32(at, true);
+		const width = view.getUint32(at + 4, true);
+		const bytesOf = Math.ceil((length * width) / 4) * 4;
+		const list = new Uint32Array(length);
+		if (width === 2) list.set(new Uint16Array(bytes.buffer, bytes.byteOffset + at + 8, length));
+		else list.set(new Uint32Array(bytes.buffer, bytes.byteOffset + at + 8, length));
+		lists.push(list);
+		at += 8 + bytesOf;
+	}
+	expect(at).toBe(bytes.byteLength);
+	return lists;
+}
+
+describe('levels as separate downloads', () => {
+	it('keeps the coarsest level in the file and writes each finer one to a stage, coarsest first', async () => {
+		const doc = terrainDocument();
+		const plans = await planLevels(doc);
+		const mesh = doc.getRoot().listMeshes()[0];
+		if (!mesh) throw new Error('the terrain has no mesh');
+		const plan = plans.get(mesh);
+		if (!plan) throw new Error('the terrain has no levels');
+		const levels = plan.levels;
+		expect(levels.length).toBeGreaterThanOrEqual(2);
+		const stages = new Map<string, Uint8Array>();
+		const prim = mesh.listPrimitives()[0] as Primitive;
+		const own = Array.from(prim.getIndices()?.getArray() ?? []);
+		const summary = storeStages(doc, plans, stages, 'model');
+		expect(summary.meshes).toBe(1);
+		// The file draws its coarsest level, over the mesh's full vertex stream.
+		const coarsest = levels[levels.length - 1];
+		expect(Array.from(prim.getIndices()?.getArray() ?? [])).toEqual(
+			Array.from(coarsest?.indices[0] ?? []),
+		);
+		expect(prim.getAttribute('POSITION')?.getCount()).toBeGreaterThan(
+			new Set(coarsest?.indices[0]).size,
+		);
+		// A stage for each finer level and one for the mesh itself, from the coarsest down.
+		expect(stages.size).toBe(levels.length);
+		expect(summary.files).toBe(stages.size);
+		const node = mesh.listParents().find((p) => p.propertyType === 'Node') as Node;
+		const staged = node.getExtras().NULL3D_stages as {
+			error: number;
+			levels: { url: string; bytes: number; error: number }[];
+		};
+		expect(staged.error).toBeCloseTo(coarsest?.error as number, 5);
+		expect(staged.levels).toHaveLength(levels.length);
+		levels.slice(0, -1).forEach((level, k) => {
+			const entry = staged.levels[levels.length - 2 - k];
+			if (!entry) throw new Error(`the node names no stage ${k}`);
+			// The first stage holds the level after the file's own, and the last the mesh itself.
+			expect(entry.error).toBeCloseTo(level.error, 5);
+			const file = stages.get(entry.url);
+			if (!file) throw new Error(`the tool wrote no ${entry.url}`);
+			expect(file.byteLength).toBe(entry.bytes);
+			expect(Array.from(stageLists(file)[0] ?? [])).toEqual(Array.from(level.indices[0] ?? []));
+		});
+		// The last stage is the mesh itself, exact, so the finest picture is the full mesh.
+		const last = staged.levels[staged.levels.length - 1];
+		if (!last) throw new Error('the node names no last stage');
+		expect(last.error).toBe(0);
+		expect(Array.from(stageLists(stages.get(last.url) as Uint8Array)[0] ?? [])).toEqual(own);
+		// The levels that stay in the file would have named their level nodes.
+		expect(lodOf(node)).toBeNull();
+	});
+
+	it('keeps whole levels in the file for a mesh whose levels hold positions of their own', async () => {
+		const { doc, mesh } = treeDocument();
+		const plans = await planLevels(doc);
+		const stages = new Map<string, Uint8Array>();
+		storeStages(doc, plans, stages, 'model');
+		expect(stages.size).toBe(0);
+		const node = mesh.listParents().find((p) => p.propertyType === 'Node') as Node;
+		expect(lodOf(node)?.listLevels().length).toBeGreaterThan(0);
+		expect(node.getExtras().NULL3D_stages).toBeUndefined();
+	});
+});
+
+describe('the staged test model', () => {
+	it('holds what the tool builds from the heightfield, and its stages beside it', async () => {
+		const model = await buildStagedModel();
+		const committed = readFileSync(join(MODELS_DIR, STAGED_FILE));
+		expect(Buffer.from(model.glb).equals(committed)).toBe(true);
+		for (const [name, bytes] of model.stages) {
+			const file = readFileSync(join(MODELS_DIR, name));
+			expect(Buffer.from(bytes).equals(file), name).toBe(true);
+		}
+	}, 180_000);
 });

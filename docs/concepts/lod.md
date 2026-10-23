@@ -68,6 +68,14 @@ A level without a material draws with the material of the level before it. The b
 bunx @null3d/cli assets optimize models/ public/models/ --lod
 ```
 
+The tool can also write each level as a separate download, so a model's coarse shape shows at once and finer detail arrives while the page draws it:
+
+```sh
+bunx @null3d/cli assets optimize models/ public/models/ --lod --stages
+```
+
+The model file then holds the full vertices and the coarsest level, and each finer level downloads from a file of its own. The engine draws each level as it arrives, and the copies that already draw the model refine in place. `assets.loadGltf` takes `maxLevels` to stop after that many levels, counting the file's own: a page whose objects never come close enough to show the finest level sets 1, and downloads less. [The asset pipeline](../guides/assets-pipeline.md#levels-as-separate-downloads) has the detail.
+
 Each level has about half the triangles of the level above, and shares the mesh's vertices. The loader stores each level over the base mesh's own vertices, so the level costs the GPU its indices alone. Some levels keep a copy of their vertices instead. A level of cards brings positions of its own, and a level whose base mesh the engine had to split into parts cannot share them. Each level stores its error in the units of the mesh's own positions. The tool stores the levels with the `MSFT_lod` glTF extension. Each node with levels keeps their errors in its extras, as `NULL3D_lod_error`. `assets.loadGltf` gives each mesh its levels. So a model's copies and its instance batches pick their levels with no code. Other glTF loaders draw the full mesh. Another tool may store screen coverage alone, in `MSFT_screencoverage`. The loader gives each level that coverage, so its switch stays at the same distance on every screen height. A measured error changes the picture by less than a pixel at its switch, so those levels switch at once. A coverage given by hand keeps a fading band. A file may bring its own levels, such as levels made in Blender, with errors in the units of the mesh's positions. `assets optimize` keeps them. It stores each level's positions in its base mesh's integer steps and converts the errors to those steps.
 
 ## Cluster levels
