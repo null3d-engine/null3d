@@ -431,6 +431,25 @@ A run folder holds every page's full result, with frames and images, and stays o
 - `?sky=texture` draws a texture made from data as the background, which covers the view with one triangle, where the room and the sky draw a box of 12 triangles around the camera. The switch `?backgroundFirst` adds a small box whose opaque material writes no depth, which makes any background draw before the objects with no depth test. The page kinds `null3d-webgpu-sky-texture`, `null3d-webgpu-sky-room-first` and `null3d-webgpu-sky-texture-first` use them, and `null3d-webgpu-first` adds the small box alone, the twin of `null3d-webgpu`. A phone session over these pages tells whether a background's cost comes from its shape or from its place in the pass: `bun run devices:cloud --only bsgalaxys25-chrome,bspixel9-chrome --plan bench -- --scenes s1 --pages null3d-webgpu,null3d-webgpu-first,null3d-webgpu-sky-room,null3d-webgpu-sky-room-first,null3d-webgpu-sky-texture,null3d-webgpu-sky-texture-first,null3d-webgpu-sky-clear --switches governor=off`.
 - The switch `?extraBox` adds the same small box with a material that writes depth, as the page kind `null3d-webgpu-box`. On the Galaxy S25, `null3d-webgpu-box`, `null3d-webgpu-first` and every background page cost about 4.8 ms more GPU time than `null3d-webgpu`. So on that phone, most of the difference between a page and its sky twin is a step that any extra draw costs. [D-68](decisions/D-68-backgrounds.md) gives the figures and the probes that would find the step's cause.
 
+### Sky map refreshes
+
+A sky map draws again only when its sun turns half a degree, a color value drifts by a fiftieth, or its clouds drift a tenth of a cell of their pattern. One last fill captures the sky exactly when its sun rests ([D-118](decisions/D-118-sky-environment.md#addendum-23-october-2026-a-map-draws-again-only-for-a-change-that-shows)). So the cost of a moving sky is the frames that record a stage, not the frames that move the sun.
+
+- `cargo test -p null3d-render --test sky_maps a_day_cycle -- --nocapture` counts them for a sun scripted to cross the sky, over scenes with a still sun, an hour-long day, a ten-minute day and a day a minute, with clouds drifting as `examples/` draws them. Each case reports the count of frames that drew a stage. The test takes about three seconds and needs no browser.
+- `bun run test:images -g "sky step"` weighs the steps in the picture: it sweeps the sun slowly and fails when two captured frames lie more than a few levels of 255 apart, or when the sweep as a whole does not move the light. It runs on every GPU tier.
+- A stage's own GPU time comes from `tests/pages/sky-map-cost.ts`, as [Stages by faces](decisions/D-118-sky-environment.md#stages-by-faces) gives it: about 1 ms on the Mac and about 5 ms on a software GPU.
+
+On 23 October 2026, at 60 frames a second with the built-in map's 20 stages, 1,800 frames drew these counts. Before the rule, every one of them drew a stage.
+
+| Sun | Frames that drew a stage | Fills a minute |
+| --- | --- | --- |
+| Still, clouds drifting | 100 | 12 |
+| An hour a day | 100 | 12 |
+| A ten-minute day | 700 | 70 |
+| The Auto day of `examples/lib/stage.ts`, 80 seconds | 1,794 | 180 |
+
+A sun that crosses a half-degree step faster than a fill's 20 frames keeps the map drawing in every frame, which is why the showcases' own day cycle saves nothing and a still sky saves almost all of it.
+
 ## Sweeps for the open defaults
 
 Three sweeps measure the defaults that are still open: the latency mode, the job worker count and the shared memory's maximum. Each runs on the Mac, and on a phone or an iPad through the device runner.
