@@ -31,8 +31,18 @@ const PARTIAL: Readonly<Record<string, string>> = {
 /** Tasks built on a helper branch, with nothing of them on this branch yet. */
 const ON_BRANCH = new Set(['M3-A4', 'M3-A6', 'M3-A8', 'M3-B4', 'M3-G2', 'M3-G3']);
 
+/** A task that a commit names, but that the audit of the branch found unfinished. */
+const INCOMPLETE = new Set(['M3-A2', 'M3-A10', 'M3-B1', 'M3-L4', 'M3-R12', 'M3-R13', 'M3-R17']);
+
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
+	'M3-A2': 'the canvas texture draws, but its picture test is red',
+	'M3-A10': 'the sharpening draws, but its evidence does not close the task',
+	'M3-B1': 'the lens kit has no picture test and no cost per preset',
+	'M3-L4': 'the impostor cards are done; staged loading, coarse first, is not',
+	'M3-R12': 'the build compiles only the listed permutations; the time and size are not recorded',
+	'M3-R13': 'the fallbacks exist; no test names the three checks the task asks for',
+	'M3-R17': 'the develop skill has neither section the task asks for',
 	'M3-A11':
 		'refused for 0.1.0; with it TAA, many lights and the temporal upscaler are dropped (D-206)',
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
@@ -88,7 +98,7 @@ function description(): string {
 			// branch keeps the empty box and says its state in the note; anything else reads as text.
 			// A task whose code sits only on a helper branch is not done: the pull request merges the
 			// branch, so an unmerged task would claim work that a reader cannot find here.
-			const done = landed.has(id) && !PARTIAL[id] && !ON_BRANCH.has(id);
+			const done = landed.has(id) && !PARTIAL[id] && !ON_BRANCH.has(id) && !INCOMPLETE.has(id);
 			const mark = done ? 'x' : ' ';
 			const note = PARTIAL[id]
 				? ` — part landed: ${PARTIAL[id]}`
