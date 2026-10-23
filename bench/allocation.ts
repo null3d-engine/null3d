@@ -790,7 +790,9 @@ async function main(): Promise<void> {
 		? await launchChromium({ headless: true, args: [...SWIFTSHADER_ARGS, ...browserArgs] })
 		: await launchInWindow({ channel: 'chrome', args: browserArgs });
 	try {
-		const page = await newParkedPage(browser, { viewport: { width: 1400, height: 800 } });
+		const page = await newParkedPage(browser, {
+			viewport: process.env.DIAG_SMALL ? { width: 700, height: 400 } : { width: 1400, height: 800 },
+		});
 		const kind = gpu === 'webgl2' ? 'null3d-webgl2' : 'null3d-webgpu';
 		// `?keep` runs the scene as a timed run draws it until the page closes, with no measurement of
 		// the page's own, so no timer of the page's runs and the engine never stops before the samples

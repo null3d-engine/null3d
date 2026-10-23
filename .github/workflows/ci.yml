@@ -110,9 +110,11 @@ jobs:
       size-parts: "${{ steps.size-parts.outputs.parts }}"
     steps:
       - uses: actions/checkout@v5
-      - name: Install the pinned Rust toolchain
+      - &item0
+        name: Install the pinned Rust toolchain
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+      - &item1
+        uses: Swatinem/rust-cache@v2
         with:
           shared-key: "shader-build-${{ hashFiles('Cargo.toml') }}"
           save-if: "${{ env.SAVE_CACHES == 'true' }}"
@@ -210,6 +212,8 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+      - *item0
+      - *item1
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "${{ env.BUN_VERSION }}"
@@ -228,5 +232,14 @@ jobs:
       - uses: ./.github/actions/city
         with:
           mode: download
-      - name: "Time S1 on SwiftShader: plain and at half the pixel ratio, twice each"
-        run: "set +e\nfor v in plain --half-ratio plain --half-ratio; do\n  flag=$v; [ \"$v\" = plain ] && flag=\n  echo \"== variant: $v\"\n  start=$(date +%s)\n  bun run bench:allocation --gpu ${{ matrix.gpu }} $flag > out.txt 2>&1\n  grep -E \"Warmed up|sampled .* frames|error\" out.txt | head -5\n  echo \"   job seconds: $(( $(date +%s) - start ))\"\ndone"
+      - name: Restore the shader caches and check the modules
+        uses: ./.github/actions/shaders
+        with:
+          run: bun tools/shaders.ts
+        env:
+          NULL3D_REQUIRE_FRESH_SHADERS: "0"
+      - name: Time the variants on this runner
+        env:
+          NULL3D_REQUIRE_FRESH_SHADERS: "0"
+          GPU: "${{ matrix.gpu }}"
+        run: "set +e\ntime_it() {\n  echo \"== $1\"; start=$(date +%s)\n  bun run bench:allocation --gpu \"$GPU\" > out.txt 2>&1\n  grep -E \"Warmed up|sampled .* frames\" out.txt | head -3\n  echo \"   seconds: $(( $(date +%s) - start ))\"\n}\ntime_it \"current, prebuilt pages\"\nexport DIAG_SMALL=1; time_it \"current, prebuilt pages, 700 by 400 window\"; unset DIAG_SMALL\nunset NULL3D_LOAD_PAGES\nfor v in four-tap no-loops current; do\n  bun bench/diag-final.ts $v\n  bun tools/shaders.ts > shaders.txt 2>&1; grep -E \"compiled\" shaders.txt\n  time_it \"$v, pages built here\"\ndone"
