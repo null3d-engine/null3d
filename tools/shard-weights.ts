@@ -6,6 +6,8 @@
 //   bun run test:browser-weights --run <id>      take the times from that CI run; give it more than once
 //                                                for the median of several
 //   bun run test:browser-weights --shards <n>    find weights for that many shards
+//   bun run test:browser-weights --target <min>  fill each shard to about that many minutes, with as
+//                                                many shards as that takes
 // It needs the GitHub CLI. `.dev/image-tests.md` says when to retune the weights.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -13,6 +15,7 @@ import { ALONE_PROJECT_SUFFIX, ALONE_TAG } from '../tests/lib/alone.ts';
 import { PRODUCTION_PAGES_SWITCH } from '../tests/lib/server.ts';
 import {
 	bestWeights,
+	fillWeights,
 	groupTests,
 	medianTimes,
 	parseTestList,
@@ -202,6 +205,11 @@ function show(label: string, weights: number[]): void {
 }
 if (currentWeights.length === shards) show('Weights now ', currentWeights);
 show('Best weights', bestWeights([groups, ...runGroups], shards, WORKERS));
+const target = option('--target');
+if (target !== undefined) {
+	const filled = fillWeights([groups, ...runGroups], WORKERS, Number(target) * 60);
+	show(`Weights to ${target} minutes, ${filled.length} shards`, filled);
+}
 
 const aloneGroups = groupTests(alone, times, new Set()).groups;
 console.log(

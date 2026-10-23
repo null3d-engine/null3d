@@ -180,6 +180,33 @@ export function splitByWeights(
 }
 
 /**
+ * One shard's groups from `index` on, in order, for as long as the shard stays within the limit in
+ * every run: the count of their tests, and the index of the first group left. With `takeOne`, the
+ * shard takes its first group even when that group alone passes the limit.
+ */
+function fillShard(
+	runs: readonly (readonly TestGroup[])[],
+	workers: number,
+	limit: number,
+	index: number,
+	takeOne: boolean,
+): { count: number; next: number } {
+	const groups = runs[0]!;
+	const free = runs.map(() => new Array<number>(workers).fill(0));
+	let count = 0;
+	let at = index;
+	while (at < groups.length) {
+		const next = free.map((times) => times.indexOf(Math.min(...times)));
+		const after = runs.map((run, i) => free[i]![next[i]!]! + groupSeconds(run[at]!));
+		if (after.some((seconds) => seconds > limit) && !(takeOne && at === index)) break;
+		for (let i = 0; i < runs.length; i++) free[i]![next[i]!] = after[i]!;
+		count += groups[at]!.seconds.length;
+		at++;
+	}
+	return { count, next: at };
+}
+
+/**
  * The count of tests in each shard, if the groups fit in the given shards with each shard taking no
  * more than the limit in every run. Each shard takes groups in order for as long as it stays within
  * the limit.
@@ -190,23 +217,35 @@ function cutsWithin(
 	workers: number,
 	limit: number,
 ): number[] | undefined {
-	const groups = runs[0]!;
 	const counts: number[] = [];
 	let index = 0;
 	for (let shard = 0; shard < shards; shard++) {
-		const free = runs.map(() => new Array<number>(workers).fill(0));
-		let count = 0;
-		while (index < groups.length) {
-			const next = free.map((times) => times.indexOf(Math.min(...times)));
-			const after = runs.map((run, i) => free[i]![next[i]!]! + groupSeconds(run[index]!));
-			if (after.some((seconds) => seconds > limit)) break;
-			for (let i = 0; i < runs.length; i++) free[i]![next[i]!] = after[i]!;
-			count += groups[index]!.seconds.length;
-			index++;
-		}
+		const { count, next } = fillShard(runs, workers, limit, index, false);
 		counts.push(count);
+		index = next;
 	}
-	return index === groups.length ? counts : undefined;
+	return index === runs[0]!.length ? counts : undefined;
+}
+
+/**
+ * The weights that fill each shard in order up to the limit in every run, with as many shards as
+ * that takes; a group longer than the limit takes a shard of its own. bestWeights makes the slowest
+ * shard as short as it can be and fills the others as full as that one, which a long group that
+ * cannot split keeps high; these weights leave each shard below the limit instead, for a slow
+ * machine.
+ */
+export function fillWeights(
+	runs: readonly (readonly TestGroup[])[],
+	workers: number,
+	limit: number,
+): number[] {
+	const counts: number[] = [];
+	for (let index = 0; index < runs[0]!.length; ) {
+		const { count, next } = fillShard(runs, workers, limit, index, true);
+		counts.push(count);
+		index = next;
+	}
+	return counts;
 }
 
 /**
