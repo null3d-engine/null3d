@@ -153,6 +153,27 @@ The view mask chooses the views that the feature records in:
 
 The default is `['main']`.
 
+## Namespaces
+
+An add-on claims a namespace as its module loads, beside `checkAddonVersion`. The namespace gives it a name, a shader library, an error-code range and quality keys. The engine's names and the other add-ons' names stay with their owners, so two add-ons cannot give one name two meanings.
+
+```ts
+import { declareAddonNamespace } from '@null3d/engine';
+
+export const NAMESPACE = declareAddonNamespace({
+  name: 'water',                 // The add-on's name in errors.
+  shaderLibrary: 'water',        // The prefix of its WGSL modules: #import water::waves. It defaults to name.
+  errorCodes: [2100, 2199],      // The codes of the add-on's own errors.
+  qualityKeys: [],               // Keys that it adds to the quality settings that a sketch reads.
+});
+```
+
+A name takes 1 to 32 lowercase letters, digits or underscore characters, and it starts with a letter. The engine reserves `null3d` for both the name and the shader library. The engine's own error codes lie below 2000. An add-on's range therefore lies from 2000 to 9999, and two add-ons' ranges do not overlap. A quality key must not be a key of the engine's [quality table](../concepts/quality-presets.md#the-settings-of-each-preset) or another add-on's.
+
+`FeatureHost` takes the namespace. A feature that the host registers exports its name, its outputs and its lighting slots to the whole thread. A second add-on that registers one of them is refused. The host's budgets carry the add-on's name too, so two add-ons keep their own budgets. A host refuses a namespace that the thread's registry does not hold.
+
+Each refusal is an [E1225](../errors/E1225.md) that names both owners. A page and its sketches have one thread each, and the add-ons of one thread share one registry. A module that loads again, as a development reload does, gets the same namespace when it declares the same names.
+
 ## Preset settings and the frame-budget governor
 
 A feature declares its own settings with a value on each preset, in the form of the engine's own [quality table](../concepts/quality-presets.md#the-settings-of-each-preset). `FeatureHost` resolves them for the preset in use. The frame-budget governor's steps reach them too.
@@ -164,6 +185,7 @@ const features = new FeatureHost({
   quality,                        // ctx.quality
   tier: engine.capabilities.tier, // ctx.engine.capabilities.tier
   page,                           // ctx.page, for the stats overlay
+  namespace: NAMESPACE,           // the add-on's namespace, from declareAddonNamespace()
 });
 
 const splats = features.add(

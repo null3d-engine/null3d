@@ -154,6 +154,12 @@ export type {
 	LineValues,
 } from './scene/lines';
 export type { Lut, LutData, LutDomain } from './scene/lut';
+export type { AddonNamespace, ExportedNames } from './scene/namespaces';
+export {
+	AddonNamespaces,
+	addonNamespaces,
+	declareAddonNamespace,
+} from './scene/namespaces';
 export type {
 	ParticleBuffer,
 	ParticleBufferOptions,

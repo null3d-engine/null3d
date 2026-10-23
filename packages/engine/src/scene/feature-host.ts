@@ -22,6 +22,12 @@ import {
 	featureSettingValue,
 	governedValue,
 } from './features';
+import {
+	type AddonNamespace,
+	type AddonNamespaces,
+	addonNamespaces,
+	type ExportedNames,
+} from './namespaces';
 
 /**
  * What a feature host reads, and where its figures go.
@@ -38,6 +44,17 @@ export interface FeatureHostOptions {
 	 * without it keeps its figures to itself.
 	 */
 	readonly page?: { post(type: string, data?: unknown): void };
+	/**
+	 * The add-on's namespace, which `declareAddonNamespace` claims as the add-on loads. Its name
+	 * scopes the features' budgets, and the names that the features export are checked against
+	 * every other add-on of the thread.
+	 */
+	readonly namespace: AddonNamespace;
+	/**
+	 * The thread's registry of add-on namespaces. It is the thread's own by default, which every
+	 * add-on shares. Give another one only to keep a test's names to itself.
+	 */
+	readonly namespaces?: AddonNamespaces;
 }
 
 /** One add-on feature in a host: its resolved values and its budget's state. */
@@ -63,8 +80,8 @@ interface Hosted {
 }
 
 /** The name of the budget that a feature registers with the sketch's quality. */
-function budgetName(feature: string): string {
-	return `feature:${feature}`;
+function budgetName(addon: string, feature: string): string {
+	return `feature:${addon}:${feature}`;
 }
 
 /**
@@ -104,19 +121,29 @@ export interface FeatureHandle {
 export class FeatureHost {
 	private readonly registry = new FeatureRegistry();
 	private readonly hosted = new Map<string, Hosted>();
+	private readonly namespaces: AddonNamespaces;
+	private readonly addon: string;
 	private readonly forget: () => void;
 	private figures: readonly FeatureStats[] = Object.freeze([]);
 	private stopped = false;
 
 	/** Starts following the sketch's quality. */
 	constructor(private readonly options: FeatureHostOptions) {
+		this.namespaces = options.namespaces ?? addonNamespaces();
+		this.addon = options.namespace.name;
+		if (this.namespaces.get(this.addon) === undefined)
+			throw new EngineError(
+				'E1225',
+				`FeatureHost() got the add-on '${this.addon}', which has no namespace in this thread. Claim it with declareAddonNamespace() as the add-on loads.`,
+			);
 		this.forget = options.quality.onChange(() => this.follow());
 	}
 
 	/**
 	 * Checks a description, registers it, and returns the feature's handle. Throws E1223 for a
 	 * description that `defineFeature` refuses, and for a feature or output name that another
-	 * feature of this host has.
+	 * feature of this host has. Throws E1225 for a feature name, output or lighting slot that
+	 * another add-on registers.
 	 */
 	add(description: FeatureDescription): FeatureHandle {
 		if (this.stopped)
@@ -125,6 +152,12 @@ export class FeatureHost {
 				'FeatureHost.add() ran after the host stopped. Make a new host for a new feature.',
 			);
 		const feature = this.registry.add(description);
+		try {
+			this.namespaces.claimFeature(this.addon, exportedNames(feature));
+		} catch (error) {
+			this.registry.remove(feature.name);
+			throw error;
+		}
 		const { quality } = this.options;
 		const hosted: Hosted = {
 			feature,
@@ -152,6 +185,7 @@ export class FeatureHost {
 		hosted.budget?.remove();
 		this.hosted.delete(name);
 		this.registry.remove(name);
+		this.namespaces.releaseFeature(this.addon, exportedNames(hosted.feature));
 		this.report();
 		return true;
 	}
@@ -182,7 +216,10 @@ export class FeatureHost {
 		if (this.stopped) return;
 		this.stopped = true;
 		this.forget();
-		for (const hosted of this.hosted.values()) hosted.budget?.remove();
+		for (const hosted of this.hosted.values()) {
+			hosted.budget?.remove();
+			this.namespaces.releaseFeature(this.addon, exportedNames(hosted.feature));
+		}
 		this.hosted.clear();
 		this.figures = Object.freeze([]);
 		this.options.page?.post(FEATURE_STATS_MESSAGE, this.figures);
@@ -217,7 +254,7 @@ export class FeatureHost {
 		const { name } = hosted.feature;
 		const ms = budget.presets[presetIndex(hosted.preset)] as number;
 		const registered = this.options.quality.setBudget({
-			name: budgetName(name),
+			name: budgetName(this.addon, name),
 			ms,
 			min: budget.min ?? 0,
 			onScale: (scale) => {
@@ -301,6 +338,15 @@ export class FeatureHost {
 		this.figures = Object.freeze(figures);
 		this.options.page?.post(FEATURE_STATS_MESSAGE, this.figures);
 	}
+}
+
+/** The names that one feature exports to every add-on of the thread. */
+function exportedNames(feature: FeatureDescription): ExportedNames {
+	return {
+		feature: feature.name,
+		outputs: Object.keys(feature.outputs ?? {}),
+		slots: feature.provides ?? [],
+	};
 }
 
 /** A feature's figures, from its resolved settings and its budget's times. */

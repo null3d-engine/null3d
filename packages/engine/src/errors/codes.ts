@@ -243,6 +243,14 @@ const DOCS = {
 			'E1224: scene.overrideMaterial got a sprite material. It takes a material that draws meshes, from materials.standard(), materials.unlit(), materials.shader() or materials.decal().',
 		since: '0.3',
 	},
+	E1225: {
+		title: 'Add-on name clash',
+		cause:
+			'An add-on registered a name that the engine or another add-on holds: its namespace, its shader library, an error-code range, a quality key, or the name of a feature, output or lighting slot. Two add-ons cannot share a name, a range or a key, because the engine would have two answers for one of them.',
+		example:
+			"E1225: FeatureHost.add() got the feature 'splats' for the add-on 'particles', which the add-on 'splats_pack' registers already. Give the feature a name of its own.",
+		since: '0.3',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',
