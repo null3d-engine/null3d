@@ -135,6 +135,7 @@ use crate::handle::{Handle, SlotAllocator};
 use crate::jobs::JobSystem;
 use crate::layers::DEFAULT_LAYERS;
 use crate::math::{self, Affine, Affine64, IDENTITY_ROTATION, IDENTITY64};
+use crate::memory::{MemoryRegister, MemoryUse, area, vec_bytes};
 use crate::shared::SharedMut;
 use crate::world::{HIDDEN_RADIUS, UNBOUNDED_RADIUS, WorldArrays, WorldPtrs};
 
@@ -723,6 +724,57 @@ impl SceneStorage {
     /// The number of objects the storage holds.
     pub fn capacity(&self) -> u32 {
         self.slots.capacity()
+    }
+
+    /// Adds the bytes of each array that the storage owns to the memory register: its rows, its
+    /// world output, its slot allocator, its cell table and its level table.
+    pub fn account(&self, register: &mut MemoryRegister) {
+        let mut scene = MemoryUse::default();
+        for array in [
+            self.slots.memory_use(),
+            self.created.memory_use(),
+            vec_bytes(&self.positions),
+            vec_bytes(&self.position_cells),
+            vec_bytes(&self.rotations),
+            vec_bytes(&self.scales),
+            vec_bytes(&self.local_radii),
+            vec_bytes(&self.local_centers),
+            vec_bytes(&self.render_orders),
+            vec_bytes(&self.level_biases),
+            vec_bytes(&self.draw_ranges),
+            vec_bytes(&self.parents),
+            vec_bytes(&self.flags),
+            vec_bytes(&self.meshes),
+            vec_bytes(&self.materials),
+            vec_bytes(&self.skins),
+            vec_bytes(&self.morphs),
+            vec_bytes(&self.layers),
+            vec_bytes(&self.cells),
+            self.moved.memory_use(),
+            vec_bytes(&self.depths),
+            self.dirty.memory_use(),
+            self.branches.memory_use(),
+            self.tracked.memory_use(),
+            self.late.memory_use(),
+            self.world[0].memory_use(),
+            self.world[1].memory_use(),
+            vec_bytes(&self.changed_frames),
+            self.changed.memory_use(),
+            self.rows_changed.memory_use(),
+            self.dead_pending.memory_use(),
+            vec_bytes(&self.order),
+            vec_bytes(&self.child_offsets),
+            vec_bytes(&self.child_list),
+        ] {
+            scene.add(array);
+        }
+        for (_, worlds) in &self.retired {
+            scene.add(worlds[0].memory_use());
+            scene.add(worlds[1].memory_use());
+        }
+        register.add(area::SCENE, scene);
+        register.add(area::CELLS, self.table.memory_use());
+        register.add(area::LEVELS, vec_bytes(&self.levels));
     }
 
     /// Raises the number of objects the storage holds to `capacity`, keeping every object, handle
@@ -2305,6 +2357,32 @@ mod tests {
         let before = bytes(&scene);
         scene.try_grow(2047).unwrap();
         assert_eq!((bytes(&scene) - before) / 1024, ROW_BYTES as usize);
+    }
+
+    #[test]
+    fn the_register_counts_each_new_objects_row() {
+        let bytes = |scene: &SceneStorage| {
+            let mut register = MemoryRegister::new();
+            register.begin();
+            scene.account(&mut register);
+            let mut total = 0;
+            for area in register.areas() {
+                total += area.reserved;
+            }
+            total
+        };
+        let mut scene = SceneStorage::with_capacity(1023);
+        let before = bytes(&scene);
+        scene.try_grow(2047).unwrap();
+        // The buffers of the growth's old world arrays go once no frame reads them.
+        scene.begin_frame(3);
+        let rows = 2047 - 1023;
+        let per_object = (bytes(&scene) - before) / rows;
+        let expected = u64::from(ROW_BYTES);
+        assert!(
+            per_object.abs_diff(expected) * 20 <= expected,
+            "{per_object} bytes per object, against the row's {expected}"
+        );
     }
 
     #[test]

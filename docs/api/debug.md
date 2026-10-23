@@ -182,6 +182,7 @@ The header stays in the corner when the card opens, and the card opens under it,
 | Work bars | CPU time per frame of each engine thread, and the GPU's time per frame, against the target |
 | `Held back by` | Below the target frame rate, the part of the frame that holds it back |
 | `Memory` | The engine's memory, the GPU's textures and buffers, and the page's JavaScript heap, as one bar with a legend |
+| `Memory by system` | Development builds only: one row for each engine table and allocator, with the bytes that it uses, reserves and has used at most |
 | Whole page | The memory of the whole page and its workers, as the browser counts it |
 | Counts | Draw calls, triangles and objects per frame |
 | `Add-ons` | One row for each add-on feature that reports figures: its GPU time, its settings, its budget and its memory. The section shows only while a feature reports figures |
@@ -246,6 +247,7 @@ export default defineSketch(({ debug, page, time }) => {
 | `textureBytes`, `meshBytes` | The GPU memory of the scene's textures and of its meshes, as `quality.textureMemory.bytes` and `geometry.memoryBytes` give them |
 | `gpuTextureBytes`, `gpuBufferBytes` | The GPU memory of every texture and of every buffer that the engine holds, render targets and shadow maps included ([GPU memory](#gpu-memory)) |
 | `textureBudgetBytes`, `droppedLevels` | The texture memory budget, and the largest mip levels that the budget dropped |
+| `memoryAreas` | The memory register's figures, three numbers for each area in the order of the card's rows: the bytes that it reserves, uses and has used at most. All zero where the page asked for no report |
 | `tier`, `preset`, `renderScale` | The GPU path, the quality preset, and the share of the canvas's size that the scene draws at |
 
 ### Triangles and objects
@@ -267,6 +269,8 @@ The engine counts every draw of every pass on the thread that draws. That covers
 | Whole page | The memory of the whole page and its workers, from `performance.measureUserAgentSpecificMemory`, where the browser gives it |
 
 The memory bar's parts add up to the total beside `Memory`. The whole page's figure is not that total, so it has its own line. The browser counts a shared memory once for each thread that holds it. Every engine thread holds the engine's WebAssembly memory, so the browser's figure counts it many times. Beside the browser's figure, the overlay gives the figure with the shared memory counted once. The browser answers once every worker has run the measurement, or after about a minute. While a measurement runs, the engine's idle job workers leave the job loop to run it between frame jobs, so it does not wait on them. `measurePageMemory()` from `@null3d/engine/stats` takes one measurement the same way, for a page that wants the browser's own breakdown. Until the first one ends, the line reads `measuring`. The page asks for one measurement at a time.
+
+**Memory by system.** A development build also lists the memory of each engine table and allocator under `Memory by system`, three figures to a row: the bytes that the area uses, reserves and has used at most. The rows cover the scene's own rows and world output, the instance batches, the grid cells, the level table, the frame builder's bucket-key scratch, the shadow casters' table, the other draw tables, the upload arenas, the recorded draw lists and the animation table. Each figure's tooltip gives its exact bytes. The register runs only while the card is open, and only in a development build, so a production page pays nothing for it. The figures name faults that a single memory total hides: a table that keeps a high-water mark after a scene shrinks shows in its peak, and an arena that grew for a frame shows the same.
 
 Some browsers offer the measurement but never answer it. When no answer comes within two minutes of the first request, the overlay hides the line. The page then asks no more for the rest of its life. An answer that comes later still shows.
 
