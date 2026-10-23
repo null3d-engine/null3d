@@ -9,19 +9,21 @@
 // production. The build must hold the engine's third-party notices, and its page must start the
 // threaded engine in a browser under a strict Content-Security-Policy, whatever test switches the
 // address holds. Last, the project's service worker caches the build on a first visit, and the
-// page must start the threaded engine again with the server stopped, on both GPU paths. Then the
-// project builds a page of its own layout around a copy of this repository's examples folder, as a
-// website that holds the repository as a submodule does. Two demos, and a comparison in each
-// engine, must start from that build. Run `bun run build` first, for the WebAssembly files. Run
+// page must start the threaded engine again with the server stopped, on both GPU paths. While those
+// two checks run, the project builds a page of its own layout around a copy of this repository's
+// examples folder, as a website that holds the repository as a submodule does. Two demos, and a
+// comparison in each engine, must start from that build. Run `bun run build` first, for the WebAssembly files. Run
 // from the repository root:
 //   bun run test:packages [--keep]    --keep leaves the project's folder in place after a pass
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
+	closeSync,
 	copyFileSync,
 	cpSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	openSync,
 	readdirSync,
 	readFileSync,
 	rmSync,
@@ -121,6 +123,55 @@ function step(
 	});
 	if (result.status !== 0)
 		throw new Error(`${title} failed with ${result.error?.message ?? `status ${result.status}`}`);
+}
+
+/** A command that runs while the steps after it do. */
+interface BackgroundStep {
+	/** Waits for the command's end, prints its output, and fails as `step` does when it failed. */
+	finish(): Promise<void>;
+	/** Stops the command, when a step before its end failed. */
+	stop(): void;
+}
+
+/**
+ * Starts a command in `cwd`, as `step` runs one, and returns while it runs. Its output goes to the
+ * file `log` until `finish` prints it, so that it does not mix with the output of the steps that
+ * run meanwhile, and no pipe fills while a step holds this process.
+ */
+function stepInBackground(
+	title: string,
+	cwd: string,
+	command: string,
+	args: readonly string[],
+	log: string,
+	env: Record<string, string> = {},
+): BackgroundStep {
+	console.log(`\n${title}, while the steps below run: ${command} ${args.join(' ')}`);
+	const output = openSync(log, 'w');
+	const child = spawn(command, args, {
+		cwd,
+		stdio: ['ignore', output, output],
+		env: { ...process.env, ...env },
+	});
+	closeSync(output);
+	// Why the command failed, or nothing when it passed.
+	const ended = new Promise<string | undefined>((resolve) => {
+		child.once('error', (error) => resolve(error.message));
+		child.once('exit', (code, signal) =>
+			resolve(code === 0 ? undefined : signal ? `signal ${signal}` : `status ${code}`),
+		);
+	});
+	return {
+		async finish() {
+			const failure = await ended;
+			console.log(`\n${title}, which ran while the steps above did:`);
+			process.stdout.write(readFileSync(log, 'utf8'));
+			if (failure) throw new Error(`${title} failed with ${failure}`);
+		},
+		stop() {
+			if (child.exitCode === null && child.signalCode === null) child.kill();
+		},
+	};
 }
 
 /** A browser, as the command-line tool starts it. */
@@ -453,11 +504,12 @@ const SITE_SHADER_CACHE = cacheDir('fresh-project-shaders');
 const SITE_SHADER_CACHE_BYTES = 4 * 1024 * 1024 * 1024;
 
 /**
- * Builds a website's page of its own layout around a copy of the repository's examples folder, as
- * a website does that holds the repository as a submodule and installs the packages from npm. The
- * build takes the packages from the project's tarballs, and each page of BUILT_PAGES must start.
+ * Starts the build of a website's page of its own layout around a copy of the repository's examples
+ * folder, as a website does that holds the repository as a submodule and installs the packages from
+ * npm. The build takes the packages from the project's tarballs and reads nothing of the project's
+ * own build, so it runs while the checks of that build do.
  */
-async function buildsExamples(project: string): Promise<void> {
+function startSiteBuild(project: string): BackgroundStep {
 	const copy = join(project, 'null3d');
 	cpSync(join(ROOT, 'examples'), join(copy, 'examples'), {
 		recursive: true,
@@ -474,16 +526,28 @@ async function buildsExamples(project: string): Promise<void> {
 		mkdirSync(dirname(shaderCacheFolder(site)), { recursive: true });
 		symlinkSync(SITE_SHADER_CACHE, shaderCacheFolder(site), 'dir');
 	}
-	step(
+	const build = stepInBackground(
 		'Build a website page of the demos',
 		site,
 		join(project, 'node_modules/.bin/vite'),
 		['build'],
+		join(project, 'site-build.log'),
 		{
 			VITE_NULL3D_SAMPLES_BASE: './samples/',
 		},
 	);
-	if (!cacheOff()) pruneCacheLocked(SITE_SHADER_CACHE, SITE_SHADER_CACHE_BYTES);
+	return {
+		stop: build.stop,
+		async finish() {
+			await build.finish();
+			if (!cacheOff()) pruneCacheLocked(SITE_SHADER_CACHE, SITE_SHADER_CACHE_BYTES);
+		},
+	};
+}
+
+/** Waits for the website build, and then each page of BUILT_PAGES must start from it. */
+async function startsSiteDemos(project: string, build: BackgroundStep): Promise<void> {
+	await build.finish();
 	console.log('\nStart demos from the website build');
 	await withBrowser(join(project, 'dist-site'), false, async (browser, server) => {
 		const page = await browser.newPage();
@@ -525,6 +589,7 @@ async function main(): Promise<void> {
 	const project = mkdtempSync(join(tmpdir(), 'null3d-fresh-project-'));
 	console.log(`\nThe fresh project: ${project}`);
 	let passed = false;
+	let site: BackgroundStep | undefined;
 	try {
 		cpSync(TEMPLATE, project, { recursive: true });
 		const pinned = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).devDependencies;
@@ -569,12 +634,14 @@ async function main(): Promise<void> {
 		const expected = `${own('engine')}\n\n${own('geometry')}\n`;
 		if (!existsSync(notices) || readFileSync(notices, 'utf8') !== expected)
 			throw new Error(`the production build lacks the packages' notices in ${NOTICES_FILE}`);
+		site = startSiteBuild(project);
 		await startsUnderStrictPolicy(join(project, 'dist'));
 		await playsOffline(join(project, 'dist'));
-		await buildsExamples(project);
+		await startsSiteDemos(project, site);
 		passed = true;
 		console.log(`\nThe packed packages pass in a fresh project (${packed.length} packages).`);
 	} finally {
+		site?.stop();
 		if (passed && !keep) rmSync(project, { recursive: true, force: true });
 		else console.log(`The project stays in ${project}.`);
 	}
