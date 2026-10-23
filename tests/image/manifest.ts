@@ -2878,6 +2878,12 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(demo.name === 'canvas-screen' && {
 				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.025 },
 			}),
+			// The rain and the lens marks land on pixels that each browser's own GPU rounds its
+			// own way: every run that judged it found the same city, pose and traffic. Firefox
+			// differed on 0.9 per cent of the pixels on 24 October 2026.
+			...(demo.name === 'skyway' && {
+				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.012 },
+			}),
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
 		};
 	}),
