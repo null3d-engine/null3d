@@ -1,6 +1,6 @@
 //! The per-entry shader cache: a change to one shader compiles only that shader, a change to a
 //! library module compiles only the entries that import it, and a whole build reuses the entries
-//! and the parts of entries that shards of the manifest stored.
+//! that shards of the manifest stored.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -52,31 +52,6 @@ variants.plain = { targets = ["wgsl"] }
     }
 }
 
-/// Entry `a` with four builds, which a split by build cuts into parts, and entry `b` with one.
-fn project_with_parts() -> Inputs {
-    let mut inputs = project(A, B);
-    inputs.manifest = r#"[shaders.a]
-file = "a.wgsl"
-variants.one = { targets = ["wgsl"] }
-variants.two = { targets = ["wgsl"] }
-variants.three = { targets = ["wgsl"] }
-variants.four = { targets = ["wgsl"] }
-
-[shaders.b]
-file = "b.wgsl"
-variants.plain = { targets = ["wgsl"] }
-"#
-    .to_owned();
-    inputs
-}
-
-/// `inputs` with entry `a` narrowed to one part of its builds.
-fn with_part(inputs: &Inputs, index: usize, count: usize) -> Inputs {
-    let mut inputs = inputs.clone();
-    inputs.parts.insert("a".to_owned(), Part { index, count });
-    inputs
-}
-
 /// The math module with a change that reaches every shader that calls `square`.
 fn changed_math() -> String {
     math().replace("return x * x;", "return x * x + 1.0;")
@@ -117,18 +92,6 @@ impl Scratch {
             .collect();
         assert_eq!(found.len(), 1, "one cached entry named {name}");
         found.pop().unwrap()
-    }
-}
-
-impl Scratch {
-    /// The names of the cache files that hold parts of entries.
-    fn part_files(&self) -> Vec<String> {
-        fs::read_dir(&self.0)
-            .unwrap()
-            .filter_map(Result::ok)
-            .map(|entry| entry.file_name().to_string_lossy().into_owned())
-            .filter(|name| name.contains(".part-"))
-            .collect()
     }
 }
 
@@ -266,16 +229,20 @@ fn a_warm_cache_gives_the_same_output_as_a_cold_build() {
 #[test]
 fn a_whole_build_reuses_every_entry_that_the_shards_stored() {
     let scratch = Scratch::new();
-    let inputs = project_with_parts();
-    // Each shard fills the cache with its share, as CI's jobs do, each on a machine of its own. The
-    // split cuts `a` into parts, and the whole build joins them.
-    let plan = ShardPlan::by_build(&inputs, 2).unwrap();
-    assert!(
-        (0..2).any(|index| plan.inputs(&inputs, index).parts.contains_key("a")),
-        "the split cuts `a` into parts"
-    );
+    let inputs = project(A, B);
+    // Each shard of whole entries fills the cache with its own entries, as CI's jobs do, each on a
+    // machine of its own. The whole build then finds every entry under the key it looks for.
+    let plan = ShardPlan::by_entry(&inputs, 2).unwrap();
     for index in 0..2 {
-        null3d_shaders::build_with_cache(&plan.inputs(&inputs, index), &scratch.cache()).unwrap();
+        let shard = plan.inputs(&inputs, index);
+        let (_, stats) = null3d_shaders::build_with_cache(&shard, &scratch.cache()).unwrap();
+        assert_eq!(
+            stats,
+            CacheStats {
+                compiled: 1,
+                reused: 0
+            }
+        );
     }
     let (output, stats) = null3d_shaders::build_with_cache(&inputs, &scratch.cache()).unwrap();
     assert_eq!(
@@ -289,59 +256,15 @@ fn a_whole_build_reuses_every_entry_that_the_shards_stored() {
 }
 
 #[test]
-fn the_parts_that_shards_stored_join_into_the_whole_entry() {
+fn an_entry_that_builds_one_part_never_enters_the_cache() {
     let scratch = Scratch::new();
-    let inputs = project_with_parts();
-    for index in 0..2 {
-        let (_, stats) =
-            null3d_shaders::build_with_cache(&with_part(&inputs, index, 2), &scratch.cache())
-                .unwrap();
-        // The first part's build stores `b` too, which the second then reuses.
-        assert_eq!(stats.compiled, 2 - index, "part {index} of `a`");
-    }
-    assert_eq!(scratch.part_files().len(), 2);
-    let (output, stats) = null3d_shaders::build_with_cache(&inputs, &scratch.cache()).unwrap();
-    assert_eq!(
-        stats,
-        CacheStats {
-            compiled: 0,
-            reused: 2
-        }
-    );
-    assert_eq!(output, null3d_shaders::build(&inputs).unwrap());
-    // The joined entry is stored whole, and its parts go.
-    assert!(
-        scratch.part_files().is_empty(),
-        "{:?}",
-        scratch.part_files()
-    );
-    scratch.entry("a");
-}
-
-#[test]
-fn a_part_reads_its_builds_from_the_whole_entry() {
-    let scratch = Scratch::new();
-    let inputs = project_with_parts();
+    let mut inputs = project(A, B);
+    // The key covers the whole entry, so a part of its builds must never answer for it.
+    inputs
+        .parts
+        .insert("a".to_owned(), Part { index: 0, count: 2 });
     build(&scratch, &inputs);
-    let part = with_part(&inputs, 1, 2);
-    let (output, stats) = null3d_shaders::build_with_cache(&part, &scratch.cache()).unwrap();
-    assert_eq!(
-        stats,
-        CacheStats {
-            compiled: 0,
-            reused: 2
-        }
-    );
-    assert_eq!(output, null3d_shaders::build(&part).unwrap());
-    assert!(scratch.part_files().is_empty());
-}
-
-#[test]
-fn an_incomplete_set_of_parts_compiles_the_whole_entry() {
-    let scratch = Scratch::new();
-    let inputs = project_with_parts();
-    null3d_shaders::build_with_cache(&with_part(&inputs, 0, 2), &scratch.cache()).unwrap();
-    let (output, stats) = null3d_shaders::build_with_cache(&inputs, &scratch.cache()).unwrap();
+    let (_, stats) = null3d_shaders::build_with_cache(&inputs, &scratch.cache()).unwrap();
     assert_eq!(
         stats,
         CacheStats {
@@ -349,7 +272,14 @@ fn an_incomplete_set_of_parts_compiles_the_whole_entry() {
             reused: 1
         }
     );
-    assert_eq!(output, null3d_shaders::build(&inputs).unwrap());
+    let (_, stats) = null3d_shaders::build_with_cache(&project(A, B), &scratch.cache()).unwrap();
+    assert_eq!(
+        stats,
+        CacheStats {
+            compiled: 1,
+            reused: 1
+        }
+    );
 }
 
 #[test]

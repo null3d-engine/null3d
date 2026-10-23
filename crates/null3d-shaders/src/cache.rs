@@ -13,11 +13,7 @@
 //! again. A folder that cannot be read or written costs the next run its work and nothing else.
 //!
 //! An entry is one file named for its entry and its key, so two versions of one entry never
-//! overwrite each other. A build that compiles one part of an entry's builds, as CI's shards do for
-//! the costliest entries, stores the part in a file named for the entry, its key and the part. A
-//! build that misses the whole entry joins a complete set of parts of one count into it, stores the
-//! whole entry and removes the parts, and a build of one part reads the whole entry's builds when
-//! it has them. Each build of the entry repeats the same library texts, so a long text is
+//! overwrite each other. Each build of the entry repeats the same library texts, so a long text is
 //! stored once and referenced by every build that uses it. The folder is pruned to a size limit
 //! after each store, oldest first, with a recent entry spared because a build may be reading it.
 //!
@@ -33,7 +29,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 
-use crate::{Part, VariantOutput};
+use crate::VariantOutput;
 
 /// The version of the cache's file format and key. Bump it when either changes, so an entry an
 /// older format wrote is never read with a new meaning.
@@ -111,8 +107,8 @@ impl Cache {
     }
 
     /// The compiled output of the entry `name`, when the folder holds it under `key` and every
-    /// dependency's contents match, or holds a complete set of its parts of one count, which it
-    /// joins. `files` are the shader sources by path relative to the shader folder.
+    /// dependency's contents match. `files` are the shader sources by path relative to the shader
+    /// folder.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load(
         &self,
@@ -120,46 +116,8 @@ impl Cache {
         key: &str,
         files: &BTreeMap<String, String>,
     ) -> Option<BTreeMap<String, VariantOutput>> {
-        match self.read(&entry_file(name, key), key, files) {
-            Some((variants, _)) => Some(variants),
-            None => self.join_parts(name, key, files),
-        }
-    }
-
-    /// The compiled output of one part of the entry `name`: the part's own file under `key`, or the
-    /// whole entry narrowed to `builds`, the names of the part's builds. The whole entry answers for
-    /// any part of it, so a shard that splits the entry otherwise than an earlier one still reuses
-    /// what that one stored.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn load_part(
-        &self,
-        name: &str,
-        key: &str,
-        part: Part,
-        builds: &[String],
-        files: &BTreeMap<String, String>,
-    ) -> Option<BTreeMap<String, VariantOutput>> {
-        if let Some((variants, _)) = self.read(&part_file(name, key, part), key, files) {
-            return Some(variants);
-        }
-        let (mut whole, _) = self.read(&entry_file(name, key), key, files)?;
-        builds
-            .iter()
-            .map(|build| Some((build.clone(), whole.remove(build)?)))
-            .collect()
-    }
-
-    /// The variants and the dependency files of one cache file, when it was written under `key`
-    /// and every dependency's contents match `files`.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn read(
-        &self,
-        file: &str,
-        key: &str,
-        files: &BTreeMap<String, String>,
-    ) -> Option<(BTreeMap<String, VariantOutput>, Vec<String>)> {
         let folder = self.folder.as_ref()?;
-        let text = fs::read_to_string(folder.join(file)).ok()?;
+        let text = fs::read_to_string(folder.join(entry_file(name, key))).ok()?;
         let entry: Entry = serde_json::from_str(&text).ok()?;
         if entry.key != key {
             return None;
@@ -169,68 +127,7 @@ impl Cache {
                 return None;
             }
         }
-        let deps = entry.deps.into_iter().map(|dep| dep.file).collect();
-        Some((variants_from(entry.variants, &entry.texts)?, deps))
-    }
-
-    /// The entry `name` joined from a complete set of its parts of one count under `key`, which the
-    /// folder's file names show without reading the files. The joined entry is stored whole, so the
-    /// next build reads one file, and its parts are removed. A set with a part that does not read
-    /// is passed over.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn join_parts(
-        &self,
-        name: &str,
-        key: &str,
-        files: &BTreeMap<String, String>,
-    ) -> Option<BTreeMap<String, VariantOutput>> {
-        let folder = self.folder.as_ref()?;
-        let prefix = format!("{name}.{key}.part-");
-        let mut counts: BTreeMap<usize, std::collections::BTreeSet<usize>> = BTreeMap::new();
-        for item in fs::read_dir(folder).ok()?.flatten() {
-            let file = item.file_name();
-            let Some(rest) = file
-                .to_str()
-                .and_then(|file| file.strip_prefix(&prefix))
-                .and_then(|rest| rest.strip_suffix(".json"))
-            else {
-                continue;
-            };
-            let Some((index, count)) = rest.split_once("-of-") else {
-                continue;
-            };
-            if let (Ok(index), Ok(count)) = (index.parse::<usize>(), count.parse::<usize>())
-                && index < count
-            {
-                counts.entry(count).or_default().insert(index);
-            }
-        }
-        for (count, indices) in counts {
-            if indices.len() != count {
-                continue;
-            }
-            let parts = (0..count).map(|index| Part { index, count });
-            let read: Option<Vec<_>> = parts
-                .clone()
-                .map(|part| self.read(&part_file(name, key, part), key, files))
-                .collect();
-            let Some(read) = read else {
-                continue;
-            };
-            let mut variants = BTreeMap::new();
-            let mut deps = std::collections::BTreeSet::new();
-            for (part_variants, part_deps) in read {
-                variants.extend(part_variants);
-                deps.extend(part_deps);
-            }
-            let deps: Vec<String> = deps.into_iter().collect();
-            self.write(&entry_file(name, key), key, &deps, files, &variants);
-            for part in parts {
-                let _ = fs::remove_file(folder.join(part_file(name, key, part)));
-            }
-            return Some(variants);
-        }
-        None
+        variants_from(entry.variants, &entry.texts)
     }
 
     /// The compiled output of an entry. The cache is off in the shader compiler, which a page or a
@@ -245,20 +142,6 @@ impl Cache {
         None
     }
 
-    /// The compiled output of one part of an entry. The cache is off in the shader compiler, which
-    /// a page or a bundler loads, so it never has a part.
-    #[cfg(target_arch = "wasm32")]
-    pub fn load_part(
-        &self,
-        _name: &str,
-        _key: &str,
-        _part: Part,
-        _builds: &[String],
-        _files: &BTreeMap<String, String>,
-    ) -> Option<BTreeMap<String, VariantOutput>> {
-        None
-    }
-
     /// Stores the compiled output of the entry `name` under `key`, with the contents of each
     /// dependency in `deps`, so a later run can tell whether one of them changed. A write that
     /// fails leaves the cache as it was.
@@ -266,34 +149,6 @@ impl Cache {
     pub fn store(
         &self,
         name: &str,
-        key: &str,
-        deps: &[String],
-        files: &BTreeMap<String, String>,
-        variants: &BTreeMap<String, VariantOutput>,
-    ) {
-        self.write(&entry_file(name, key), key, deps, files, variants);
-    }
-
-    /// Stores the compiled output of one part of the entry `name` under `key`, as [`Cache::store`]
-    /// stores a whole entry. A later build joins a complete set of parts into the whole entry.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn store_part(
-        &self,
-        name: &str,
-        key: &str,
-        part: Part,
-        deps: &[String],
-        files: &BTreeMap<String, String>,
-        variants: &BTreeMap<String, VariantOutput>,
-    ) {
-        self.write(&part_file(name, key, part), key, deps, files, variants);
-    }
-
-    /// Writes one cache file, whole or not at all, and prunes the folder.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn write(
-        &self,
-        file_name: &str,
         key: &str,
         deps: &[String],
         files: &BTreeMap<String, String>,
@@ -324,8 +179,12 @@ impl Cache {
         if fs::create_dir_all(folder).is_err() {
             return;
         }
-        let file = folder.join(file_name);
-        let staging = folder.join(format!("{file_name}.{}.tmp", std::process::id()));
+        let file = folder.join(entry_file(name, key));
+        let staging = folder.join(format!(
+            "{}.{}.tmp",
+            entry_file(name, key),
+            std::process::id()
+        ));
         // Write the entry whole or not at all, so a stopped run leaves no half entry.
         if fs::write(&staging, text).is_ok() {
             let _ = fs::rename(&staging, &file);
@@ -342,20 +201,6 @@ impl Cache {
         &self,
         _name: &str,
         _key: &str,
-        _deps: &[String],
-        _files: &BTreeMap<String, String>,
-        _variants: &BTreeMap<String, VariantOutput>,
-    ) {
-    }
-
-    /// Stores the compiled output of one part of an entry. The cache is off in the shader
-    /// compiler, which a page or a bundler loads, so it stores nothing.
-    #[cfg(target_arch = "wasm32")]
-    pub fn store_part(
-        &self,
-        _name: &str,
-        _key: &str,
-        _part: Part,
         _deps: &[String],
         _files: &BTreeMap<String, String>,
         _variants: &BTreeMap<String, VariantOutput>,
@@ -470,13 +315,6 @@ struct Dep {
 #[cfg(not(target_arch = "wasm32"))]
 fn entry_file(name: &str, key: &str) -> String {
     format!("{name}.{key}.json")
-}
-
-/// The file name of one part of an entry's builds: the entry's name, its key and the part, so a
-/// build that misses the whole entry finds a complete set of parts by their names alone.
-#[cfg(not(target_arch = "wasm32"))]
-fn part_file(name: &str, key: &str, part: Part) -> String {
-    format!("{name}.{key}.part-{}-of-{}.json", part.index, part.count)
 }
 
 /// One cache file as pruning sees it: its path, its size and when it was written.

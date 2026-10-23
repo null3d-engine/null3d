@@ -13,13 +13,11 @@
 //! `NULL3D_NO_SHADER_CACHE=1`, compiles every entry again.
 //!
 //! `--entries-shard i/n` compiles only shard `i` of `n`, counted from 0, of the manifest's
-//! entries, split by estimated build cost (`ShardPlan::by_build`), into the cache, and writes no
-//! module. An entry that costs more than an even share goes to the shards in parts, and the cache
-//! keeps each part beside the whole entry's key. An entry keeps its key in a shard: the key reads
-//! only the entry's own source, its manifest table and the compiler's stamp, and the narrowed
-//! inputs keep the library modules whole. So several machines can each fill the cache with one
-//! shard, and a later build that finds every entry, or every part of it, in the cache compiles
-//! none.
+//! entries, split by estimated build cost into whole entries (`ShardPlan::by_entry`), into the
+//! cache, and writes no module. An entry keeps its key in a shard: the key reads only the entry's
+//! own source, its manifest table and the compiler's stamp, and the narrowed inputs keep the
+//! library modules whole. So several machines can each fill the cache with one shard, and a later
+//! build that finds every entry in the cache compiles none.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -106,7 +104,7 @@ fn main() -> ExitCode {
 /// Compiles the entries of one shard into the cache, and writes no module.
 fn build_entries_shard(root: &std::path::Path, cache: &Cache, shard: Shard) -> ExitCode {
     let outcome = Inputs::read(root).and_then(|inputs| {
-        let plan = ShardPlan::by_build(&inputs, shard.count)?;
+        let plan = ShardPlan::by_entry(&inputs, shard.count)?;
         print!("This run fills the cache with shard {shard} of the shader entries.\n{plan}");
         let progress = Progress::new();
         null3d_shaders::build_with_cache_reporting(
