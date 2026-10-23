@@ -118,6 +118,7 @@ Drawing:
 | Hundreds to millions of copies of one mesh | `scene.createInstances` with typed arrays | `concepts/instances` |
 | Objects that move every frame | `dynamic: true`, or a dynamic batch | `concepts/static-dynamic` |
 | Less detail far away | `mesh.setLevels([{ mesh, error }])`, or levels from `bunx @null3d/cli assets optimize --lod`, which `assets.loadGltf` reads (0.2) | `concepts/lod` |
+| A large static mesh, detailed near and coarse far | `bunx @null3d/cli assets optimize --clusters`, which stores a tree of patches that the engine draws on WebGPU, in one draw for a mesh that draws once | `concepts/lod` |
 | Camera-facing quads that the sketch moves itself | `scene.createSprites` (0.2) | `api/sprites` |
 | Fire, smoke, sparks, rain, leaves and other particle effects | `createParticles` from `@null3d/particles` (0.2) | `api/particles` |
 | Hills, valleys and other ground from a height field | `createTerrain` from `@null3d/terrain` (0.2) | `api/terrain` |

@@ -41,7 +41,10 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			test.setTimeout(costTimeout(600_000));
 			const loadBefore = await waitForQuiet();
 			await page.setViewportSize({ width: 1600, height: 900 });
-			await page.goto(`cluster-cost.html?gpu=${gpu}&preset=${preset}`);
+			// The patch pass runs on the indirect path, which the switch forces: the start-up probe
+			// may pick the direct path, which draws the whole mesh, and the figures would tell of
+			// another drawing.
+			await page.goto(`cluster-cost.html?gpu=${gpu}&preset=${preset}&direct=off`);
 			const result = await pageResult<ClusterCostResult>(page, 200_000);
 			expect(result.error).toBeUndefined();
 			console.log(
