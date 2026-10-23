@@ -9,20 +9,21 @@
 //   bun run test:browser-weights --target <min>  fill each shard to about that many minutes, with as
 //                                                many shards as that takes
 // It needs the GitHub CLI. `.dev/image-tests.md` says when to retune the weights.
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ALONE_PROJECT_SUFFIX, ALONE_TAG } from '../tests/lib/alone.ts';
 import { PRODUCTION_PAGES_SWITCH } from '../tests/lib/server.ts';
+import { SHARD_TOTAL_ENV } from './lib/shard-groups-reporter.ts';
 import {
 	bestWeights,
 	fillWeights,
-	groupTests,
 	medianTimes,
+	parseTestGroups,
 	parseTestList,
 	parseTestTimes,
-	runsInParallel,
 	shardSeconds,
 	splitByWeights,
+	timedGroups,
 } from './lib/shard-weights.ts';
 
 /** The workflow whose browser job the weights are for. */
@@ -81,7 +82,6 @@ const current = WEIGHTS_LINE.exec(workflow)?.[1];
 if (!current) throw new Error(`${WORKFLOW} has no PWTEST_SHARD_WEIGHTS`);
 const cityPattern = CITY_LINE.exec(workflow)?.[1];
 if (!cityPattern) throw new Error(`${WORKFLOW} has no CITY_TESTS`);
-const cityTests = new RegExp(cityPattern);
 const currentWeights = current.split(':').map(Number);
 const shards = Number(option('--shards') ?? currentWeights.length);
 
@@ -168,32 +168,34 @@ console.log(
 	`CI runs ${runIds.join(', ')}: the median time of each of ${times.size} tests in their browser jobs.`,
 );
 
-// One list of every project that the shards run, as they run it, without the production build,
-// which a job of its own runs: the alone projects hold the tests that run alone, and the others
-// hold the shards' tests in the order that the shards split them.
-const listed = parseTestList(
-	run(['bunx', 'playwright', 'test', '--list'], {
-		cwd: join(root, 'tests'),
-		env: { CI: '1', [PRODUCTION_PAGES_SWITCH]: 'skip' },
-	}),
-);
-const testDir = join(root, 'tests/image');
-const parallelFiles = new Set(
-	readdirSync(testDir).filter(
-		(file) =>
-			file.endsWith('.spec.ts') && runsInParallel(readFileSync(join(testDir, file), 'utf8')),
+// The tests that the shards run, in the groups and the order in which Playwright splits them, as
+// CI selects them: without the production build, which a job of its own runs, the tests that run
+// alone and S6's, which have jobs of their own.
+const listEnv = { CI: '1', [PRODUCTION_PAGES_SWITCH]: 'skip', [SHARD_TOTAL_ENV]: String(shards) };
+const shardedGroups = parseTestGroups(
+	run(
+		[
+			'bunx',
+			'playwright',
+			'test',
+			'--list',
+			'--reporter',
+			join(root, 'tools/lib/shard-groups-reporter.ts'),
+			'--grep-invert',
+			`${ALONE_TAG}|${cityPattern}`,
+		],
+		{ cwd: join(root, 'tests'), env: listEnv },
 	),
 );
-const alone = listed.filter((test) => test.project.endsWith(ALONE_PROJECT_SUFFIX));
-const sharded = listed.filter(
-	(test) => !test.project.endsWith(ALONE_PROJECT_SUFFIX) && !cityTests.test(test.title),
-);
+const alone = parseTestList(
+	run(['bunx', 'playwright', 'test', '--list'], { cwd: join(root, 'tests'), env: listEnv }),
+).filter((test) => test.project.endsWith(ALONE_PROJECT_SUFFIX));
 
-const { groups, missing } = groupTests(sharded, times, parallelFiles);
+const { groups, missing } = timedGroups(shardedGroups, times);
 console.log(
-	`Shards: ${sharded.length} tests in ${groups.length} groups, ${WORKERS} workers each; ${missing} tests have no time in the runs and take their file's mean.`,
+	`Shards: ${shardedGroups.flat().length} tests in ${groups.length} groups, ${WORKERS} workers each; ${missing} tests have no time in the runs and take their file's mean.`,
 );
-const runGroups = eachRun.map((one) => groupTests(sharded, one, parallelFiles).groups);
+const runGroups = eachRun.map((one) => timedGroups(shardedGroups, one).groups);
 /** Prints the modelled shard times of the weights, with the median times and with each run's. */
 function show(label: string, weights: number[]): void {
 	const modelled = splitByWeights(groups, weights).map((part) => shardSeconds(part, WORKERS));
@@ -211,7 +213,10 @@ if (target !== undefined) {
 	show(`Weights to ${target} minutes, ${filled.length} shards`, filled);
 }
 
-const aloneGroups = groupTests(alone, times, new Set()).groups;
+const aloneGroups = timedGroups(
+	alone.map((test) => [test]),
+	times,
+).groups;
 console.log(
 	`Tests that run alone (${ALONE_TAG}): ${alone.length} tests, ${minutes(shardSeconds(aloneGroups, 1))} minutes one after another.`,
 );
