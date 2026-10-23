@@ -2177,26 +2177,33 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Cluster levels: a heightfield of 32,768 triangles that the asset tool cut into a tree of
 	// patches. The camera looks along the ground, so the near edge draws fine patches and the far
 	// edge coarse ones, in one draw for the whole mesh. The second test stands farther back, where
-	// every patch that draws is coarser.
+	// every patch that draws is coarser. The patch pass runs on the indirect path, so the tests
+	// force it: the start-up probe may pick the direct path, which draws the whole mesh, and the
+	// picture then depends on which path the probe measured.
 	{
 		name: 'cluster',
 		sketch: 'tests/pages/sketches/cluster-sketch.ts',
 		hold: 0,
 		size: [480, 270] as const,
+		switches: ['direct=off'],
 	},
 	{
 		name: 'cluster-far',
 		sketch: 'tests/pages/sketches/cluster-sketch.ts?d=70',
 		hold: 0,
 		size: [480, 270] as const,
+		switches: ['direct=off'],
 	},
 	{
 		// A threshold of 16 pixels draws patches far coarser than the mesh, so the picture shows
-		// the near ground fine and the far ground simplified.
+		// the near ground fine and the far ground simplified. The WebGL2 path draws the whole mesh
+		// and so draws no difference from the plain test, so this one takes the WebGPU tiers.
 		name: 'cluster-coarse',
 		sketch: 'tests/pages/sketches/cluster-sketch.ts?coarse',
 		hold: 0,
 		size: [480, 270] as const,
+		tiers: ['webgpu', 'compat'] as const,
+		switches: ['direct=off'],
 	},
 	// Levels of detail: copies of a sphere whose levels each take a color, just before and just past
 	// each of three switch distances. Every GPU path must draw the first path's image, so each
