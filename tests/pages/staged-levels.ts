@@ -86,7 +86,20 @@ run('staged-levels', async () => {
 		const next = (await message('levels')) as { levels: number };
 		levels = next.levels;
 	}
-	const fine = await engine.captureFrame();
+	// The thread that draws keeps frames queued ahead of a change, so its capture can answer with the
+	// frame it drew before the stage's upload landed. The picture after the stages is therefore the
+	// first frame that differs from the coarse one: only a frame the renderer drew after the change
+	// can differ, and a page on a slow runner waits as long as the drawing takes.
+	const waitStart = performance.now();
+	let fine = await engine.captureFrame();
+	while (staged && changed(coarse.pixels, fine.pixels).changed === 0) {
+		if (performance.now() - waitStart > 10_000)
+			throw new Error(
+				'no frame drawn after the stages arrived differs from the picture before them',
+			);
+		await new Promise((resolve) => requestAnimationFrame(resolve));
+		fine = await engine.captureFrame();
+	}
 	const picture = changed(coarse.pixels, fine.pixels);
 	await engine.destroy();
 	return {
