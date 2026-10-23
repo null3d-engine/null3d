@@ -269,7 +269,7 @@ and the budget, nearest first, and the sketch writes the chosen rows between two
 are cut one at a time, so the cloud appears coarse to fine and a large file holds up no frame.
 
 The budget is a feature setting through M3-E6's `FeatureHost`: 100,000 splats on Low to 800,000 on
-Ultra, halved on WebGL2, lowered by the frame-budget governor. The host reports the batch's memory to
+Ultra, with lower counts on WebGL2, and the frame-budget governor lowers it again. The host reports the batch's memory to
 the stats overlay. GPU time is not measured for add-on features yet, so the overlay shows it as not
 measured.
 
