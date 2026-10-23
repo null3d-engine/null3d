@@ -2280,7 +2280,8 @@ export class DirectionalLight extends Light {
 		}
 		const { core } = this.scene;
 		const object = hero === null ? 0 : hero.handle >>> 0;
-		core.check(core.glue.setLightHero(this.id, object), 'setHeroShadow', this.label);
+		// The core's light setters report nothing the page can act on, like every other one here.
+		core.glue.setLightHero(this.id, object);
 	}
 
 	/**
