@@ -66,6 +66,7 @@ impl Scene {
                 layers: SetLayers::All(1),
             },
             orders: Some(&self.orders),
+            order: 0.0,
         }
     }
 
@@ -117,6 +118,70 @@ fn many_rows_sort_as_a_stable_comparison_sort_does() {
             "{workers} workers sort another way"
         );
     }
+}
+
+#[test]
+fn a_sets_own_order_places_its_rows_before_depth() {
+    // Two sets of two rows. Set 1 holds a lower order, so both of its rows draw before set 0's,
+    // though they are farther from the view.
+    let xs = [0.0; 4];
+    let zs = [-1.0, -2.0, -10.0, -20.0];
+    let radii = [1.0; 4];
+    let runs = [
+        CullRun {
+            set: 0,
+            start: 0,
+            end: 2,
+            bucket: 0,
+            base: 0,
+            cell: 0,
+        },
+        CullRun {
+            set: 1,
+            start: 2,
+            end: 4,
+            bucket: 0,
+            base: 0,
+            cell: 0,
+        },
+    ];
+    let sets = |set: u32| SortSet {
+        rows: CullSet {
+            spheres: SphereArrays {
+                xs: &xs,
+                ys: &xs,
+                zs: &zs,
+                radii: &radii,
+            },
+            cells: &[],
+            order: SetOrder::Rows,
+            layers: SetLayers::All(1),
+        },
+        orders: None,
+        order: if set == 1 { -1.0 } else { 0.0 },
+    };
+    let open = [0.0, 0.0, 0.0, f32::MAX];
+    let frustum = Frustum::from_planes([open; 6]);
+    let offsets = [[0.0; 4]];
+    let view = CullView {
+        frustum: &frustum,
+        offsets: &offsets,
+        layers: ALL_LAYERS,
+        occlusion: None,
+    };
+    let jobs = JobSystem::new(0);
+    let mut out = DepthSorted::default();
+    out.try_reserve(4, 2).unwrap();
+    cull_and_sort(&jobs, view, [0.0, 0.0, -1.0, 0.0], &sets, &runs, &mut out);
+    let sorted: Vec<u32> = out
+        .items()
+        .iter()
+        .map(|&item| {
+            let (run, offset) = split_item(item);
+            runs[run].start + offset
+        })
+        .collect();
+    assert_eq!(sorted, [3, 2, 1, 0]);
 }
 
 #[test]

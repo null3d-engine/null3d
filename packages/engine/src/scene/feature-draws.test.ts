@@ -3,7 +3,7 @@
 // frees. The test uses stand-ins for the geometry, material and object makers, so it reads no GPU
 // and ships nothing.
 import { describe, expect, it } from 'bun:test';
-import { createFeatureDraw, type FeatureDrawHost } from './feature-draws';
+import { createFeatureDraw, createFeatureInstances, type FeatureDrawHost } from './feature-draws';
 import { defineFeature, type FeatureDescription } from './features';
 
 /** The vertex data of one square, which a stand-in geometry accepts. */
@@ -31,6 +31,24 @@ function standIns() {
 		setRenderOrder: (order: number) => orders.push(order),
 	};
 	const shaders: unknown[] = [];
+	/** The instance batches that the host made, with the options that made each one. */
+	const instances: { mesh: unknown; count: number; options: Record<string, unknown> }[] = [];
+	const batch = {
+		count: 0,
+		positions: new Float32Array(12),
+		rotations: new Float32Array(16),
+		scales: new Float32Array(12),
+		colors: undefined as Float32Array | undefined,
+		values: undefined as Float32Array | undefined,
+		setActiveCount: (count: number) => calls.push(`active ${count}`),
+		markDirty: (start: number, count: number) => calls.push(`dirty ${start} ${count}`),
+		setRenderOrder: (order: number) => orders.push(order),
+		setLayers: () => {},
+		setCastShadows: () => {},
+		setReceiveShadows: () => {},
+		setBoundingRadius: () => {},
+		destroy: () => calls.push('batch.destroy'),
+	};
 	const host: FeatureDrawHost = {
 		geometry: {
 			fromArrays: () => {
@@ -52,12 +70,23 @@ function standIns() {
 			expect(place.name).toBe('cloud');
 			return object as never;
 		},
+		createInstances: (drawn, count, options) => {
+			calls.push('createInstances');
+			expect(drawn).toBe(mesh as never);
+			instances.push({
+				mesh: drawn,
+				count,
+				options: options as unknown as Record<string, unknown>,
+			});
+			batch.count = count;
+			return batch as never;
+		},
 		fail: (detail) => {
 			calls.push('fail');
 			return new Error(`E1223: ${detail}`);
 		},
 	};
-	return { host, calls, orders, shaders, material, mesh, object };
+	return { host, calls, orders, shaders, instances, material, mesh, object, batch };
 }
 
 /** A minimal draw description. */
@@ -174,5 +203,113 @@ describe('createFeatureDraw', () => {
 		calls.length = 0;
 		made.destroy();
 		expect(calls).toEqual(['object.destroy', 'material.destroy', 'mesh.destroy']);
+	});
+});
+
+describe('createFeatureInstances', () => {
+	it('makes the mesh, the material and the batch from the options', () => {
+		const { host, calls, shaders, instances } = standIns();
+		const made = createFeatureInstances(
+			draw(),
+			{
+				shader: WGSL,
+				vertices: VERTICES,
+				capacity: 12,
+				dynamic: true,
+				colors: true,
+				values: true,
+				uniforms: { size: 1 },
+			},
+			host,
+		);
+		expect(calls).toEqual(['shader', 'fromArrays', 'createInstances']);
+		expect(made.name).toBe('cloud');
+		expect(made.count).toBe(12);
+		expect(shaders[0]).toMatchObject({
+			wgsl: 'wgsl',
+			uniforms: { size: 1 },
+			alphaMode: 'opaque',
+		});
+		expect(instances[0]).toMatchObject({
+			count: 12,
+			options: { dynamic: true, colors: true, values: true },
+		});
+	});
+
+	it('draws a transparent description with a blended material', () => {
+		const { host, shaders } = standIns();
+		createFeatureInstances(
+			draw({ frame: 'transparent' }),
+			{ shader: WGSL, vertices: VERTICES, capacity: 4 },
+			host,
+		);
+		expect(shaders[0]).toMatchObject({ alphaMode: 'blend' });
+	});
+
+	it('places each band and order on the batch', () => {
+		const cases: readonly [Partial<FeatureDescription>, number][] = [
+			[{ band: 'before', order: -2 }, -2_097_154],
+			[{ band: 'normal', order: 7 }, 7],
+			[{ band: 'after', order: 1_048_576 }, 3_145_728],
+		];
+		for (const [overrides, expected] of cases) {
+			const { host, orders } = standIns();
+			createFeatureInstances(
+				draw({ frame: 'transparent', ...overrides }),
+				{ shader: WGSL, vertices: VERTICES, capacity: 4 },
+				host,
+			);
+			expect(orders).toEqual([expected]);
+		}
+	});
+
+	it('passes the draw calls to the batch', () => {
+		const { host, calls, batch } = standIns();
+		const made = createFeatureInstances(
+			draw(),
+			{ shader: WGSL, vertices: VERTICES, capacity: 8 },
+			host,
+		);
+		expect(made.positions).toBe(batch.positions);
+		expect(made.rotations).toBe(batch.rotations);
+		expect(made.scales).toBe(batch.scales);
+		calls.length = 0;
+		made.setActiveCount(3);
+		made.markDirty();
+		expect(calls).toEqual(['active 3', 'dirty 0 8']);
+	});
+
+	it('refuses a description that it cannot place', () => {
+		const { host } = standIns();
+		const compute = defineFeature({ name: 'cloud', frame: 'resolve', kind: 'fullscreen' });
+		expect(() =>
+			createFeatureInstances(compute, { shader: WGSL, vertices: VERTICES, capacity: 4 }, host),
+		).toThrow('E1223');
+		expect(() =>
+			createFeatureInstances(
+				draw({ views: ['reflection'] }),
+				{ shader: WGSL, vertices: VERTICES, capacity: 4 },
+				host,
+			),
+		).toThrow('E1223');
+		expect(() =>
+			createFeatureInstances(
+				draw({ frame: 'transparent' }),
+				{ shader: WGSL, vertices: VERTICES, capacity: 4, alphaMode: 'opaque' },
+				host,
+			),
+		).toThrow('E1223');
+	});
+
+	it('frees the batch, the material and the shape', () => {
+		const { host, calls } = standIns();
+		const made = createFeatureInstances(
+			draw(),
+			{ shader: WGSL, vertices: VERTICES, capacity: 4 },
+			host,
+		);
+		calls.length = 0;
+		made.destroy();
+		expect(calls).toEqual(['batch.destroy', 'material.destroy', 'mesh.destroy']);
 	});
 });

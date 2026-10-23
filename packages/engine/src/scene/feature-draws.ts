@@ -12,6 +12,7 @@
 
 import type { FeatureDescription } from './features';
 import type {
+	AlphaMode,
 	CompiledWgsl,
 	Geometry,
 	Material,
@@ -21,7 +22,7 @@ import type {
 	ShaderOptions,
 	ShaderValues,
 } from './resources';
-import type { Mesh, Quat, Vec3 } from './scene';
+import type { InstanceBatch, InstanceOptions, Mesh, Quat, Vec3 } from './scene';
 
 /**
  * The vertex data of one shape that a draw shows: the arrays that `geometry.fromArrays` takes. The
@@ -51,6 +52,37 @@ export interface FeatureDrawOptions<Wgsl extends string | CompiledWgsl = string 
 	/** The scale of the draw on each axis. The default is (1, 1, 1). */
 	readonly scale?: Vec3;
 	/** The layers the draw is on, as a 32-bit mask. The default, 1, is layer 0. */
+	readonly layers?: number;
+}
+
+/**
+ * Options of `scene.addFeatureInstances` besides the feature description. They take the shader
+ * options of a custom material, and the row arrays of an instance batch: a color and four values
+ * for each row, when the options ask for them.
+ *
+ * @category api/feature-draws
+ */
+export interface FeatureInstancesOptions<Wgsl extends string | CompiledWgsl = string | CompiledWgsl>
+	extends Omit<ShaderOptions<Wgsl>, 'wgsl'> {
+	/** The draw's WGSL, compiled by the null3D Vite plugin. */
+	readonly shader: Wgsl;
+	/** The vertex data of the one shape that each instance draws. */
+	readonly vertices: FeatureDrawVertices;
+	/** The number of instances, which is the batch's capacity and never changes. */
+	readonly capacity: number;
+	/** Every row updates and uploads every frame; a static batch uploads the rows you mark. */
+	readonly dynamic?: boolean;
+	/** Adds a linear RGBA color for each row, which tints the material's base color and opacity. */
+	readonly colors?: boolean;
+	/** Adds four numbers of your own for each row, which a surface function reads as `object.values`. */
+	readonly values?: boolean;
+	/** The point that every row's position is relative to, kept at full precision. */
+	readonly origin?: Vec3;
+	/** Makes every row cast the shadows of the lights that cast them. The default is false. */
+	readonly castShadows?: boolean;
+	/** Makes every row receive shadows. The default is false. */
+	readonly receiveShadows?: boolean;
+	/** The layers of every row, as a 32-bit mask. The default, 1, is layer 0. */
 	readonly layers?: number;
 }
 
@@ -122,6 +154,124 @@ export class FeatureDraw<Wgsl extends string | CompiledWgsl = string | CompiledW
 	}
 }
 
+/**
+ * One add-on draw that draws its one shape as many instances, which a feature description
+ * declared. The page writes a row for each instance, and the engine culls, sorts and draws the
+ * rows as it does those of `scene.createInstances`. Change the rows, the uniforms and the draw's
+ * place with the calls that this class gives, and free it with `destroy`.
+ *
+ * @category api/feature-draws
+ */
+export class FeatureInstances<Wgsl extends string | CompiledWgsl = string | CompiledWgsl> {
+	/** @internal */
+	constructor(
+		/** The feature's name, from the description. */
+		readonly name: string,
+		/** @internal The instance batch that holds and draws the rows. */
+		private readonly batch: InstanceBatch,
+		/** The draw's custom material, whose uniforms the WGSL reads. */
+		readonly material: Material<ShaderValues<Wgsl>>,
+		/** @internal The mesh that holds the shape each instance draws. */
+		private readonly mesh: MeshGeometry,
+	) {}
+
+	/** The number of instances: the batch's capacity. */
+	get count(): number {
+		return this.batch.count;
+	}
+
+	/** The position of each instance, 3 floats per row. */
+	get positions(): Float32Array {
+		return this.batch.positions;
+	}
+
+	/** The rotation of each instance as a quaternion (x, y, z, w), 4 floats per row. */
+	get rotations(): Float32Array {
+		return this.batch.rotations;
+	}
+
+	/** The scale of each instance on each axis, 3 floats per row. */
+	get scales(): Float32Array {
+		return this.batch.scales;
+	}
+
+	/** The linear RGBA color of each row, 4 floats per row, with the `colors` option. */
+	get colors(): Float32Array | undefined {
+		return this.batch.colors;
+	}
+
+	/** The four numbers of each row, 4 floats per row, with the `values` option. */
+	get values(): Float32Array | undefined {
+		return this.batch.values;
+	}
+
+	/** Draws only the first `count` rows, as `batch.setActiveCount` does. */
+	setActiveCount(count: number): void {
+		this.batch.setActiveCount(count);
+	}
+
+	/**
+	 * Marks rows for the next upload of a static batch, as `batch.markDirty` does. With no
+	 * arguments it marks every row.
+	 */
+	markDirty(start = 0, count = this.count - start): void {
+		this.batch.markDirty(start, count);
+	}
+
+	/**
+	 * Sets where the instances draw among the other blended objects of the frame, as the
+	 * description's band and order set it at first. A lower order draws first at any depth, and
+	 * the rows still sort back to front among themselves.
+	 */
+	setRenderOrder(order: number): void {
+		this.batch.setRenderOrder(order);
+	}
+
+	/** Puts every instance on the layers of a 32-bit mask, as `batch.setLayers` does. */
+	setLayers(mask: number): void {
+		this.batch.setLayers(mask);
+	}
+
+	/** Makes every instance cast the shadows of the lights that cast them. */
+	setCastShadows(cast: boolean): void {
+		this.batch.setCastShadows(cast);
+	}
+
+	/** Makes shadows fall on every instance. */
+	setReceiveShadows(receive: boolean): void {
+		this.batch.setReceiveShadows(receive);
+	}
+
+	/**
+	 * Gives every instance a bounding sphere of `radius` meters around its row's position, as
+	 * `batch.setBoundingRadius` does. A shader that moves an instance beyond the shape's radius
+	 * needs it.
+	 */
+	setBoundingRadius(radius: number): void {
+		this.batch.setBoundingRadius(radius);
+	}
+
+	/** Changes one uniform of the draw, or one of its material values, by name. */
+	setUniform<Name extends keyof ShaderValues<Wgsl> & string>(
+		name: Name,
+		value: NonNullable<ShaderValues<Wgsl>[Name]>,
+	): void {
+		this.material.setUniform(name, value);
+	}
+
+	/** Changes several uniforms and material values at once, as `material.set` does. */
+	set(values: ShaderValues<Wgsl>): void {
+		this.material.set(values);
+	}
+
+	/** Frees the instances, the material and the shape. Later calls on it throw E1101. */
+	destroy(): void {
+		this.batch.destroy();
+		this.material.destroy();
+		this.mesh.destroy();
+	}
+}
+
 /** What the adapter asks the scene for: the makers of a mesh and a material, the object, and errors. */
 export interface FeatureDrawHost {
 	readonly geometry: Geometry;
@@ -137,6 +287,8 @@ export interface FeatureDrawHost {
 			readonly layers?: number;
 		},
 	): Mesh;
+	/** Makes the instance batch that draws one shape `count` times. */
+	createInstances(mesh: MeshGeometry, count: number, options: InstanceOptions): InstanceBatch;
 	/**
 	 * The error that a description the adapter cannot place throws, which the scene makes so this
 	 * module shares no engine module with the start's files.
@@ -161,17 +313,15 @@ function renderOrder(description: FeatureDescription): number {
 }
 
 /**
- * Makes the draw that `description` declares: checks that the description is a draw this adapter
- * can place, builds the mesh and the material from the options, and creates the object that draws
- * them. Throws E1223 for a description that is not a `'draw'`, for a frame point or view that the
- * adapter does not place, and for an alpha mode that draws in another pass than the frame names.
+ * The alpha mode that a draw description names, after the checks that both draw adapters make:
+ * the kind, the frame point, the view, and the pass that the alpha mode draws in.
  */
-export function createFeatureDraw<const Wgsl extends string | CompiledWgsl>(
+function checkedAlphaMode(
 	description: FeatureDescription,
-	options: FeatureDrawOptions<Wgsl>,
+	alphaModeOption: AlphaMode | undefined,
 	host: FeatureDrawHost,
-	call = 'addFeatureDraw',
-): FeatureDraw<Wgsl> {
+	call: string,
+): AlphaMode {
 	const invalid = (detail: string) => host.fail(`${call}() ${detail}`);
 	if (description.kind !== 'draw')
 		throw invalid(
@@ -188,7 +338,7 @@ export function createFeatureDraw<const Wgsl extends string | CompiledWgsl>(
 		throw invalid(
 			`got the feature '${description.name}' with the views ${JSON.stringify(views)}; a draw records in the main view alone, because the adapter places no other view yet.`,
 		);
-	const alphaMode = options.alphaMode ?? alpha;
+	const alphaMode = alphaModeOption ?? alpha;
 	// A material that blends draws in the transparent pass, and one that does not draws in the
 	// opaque pass. A description that names the other pass would draw somewhere it never said.
 	const blended = alphaMode === 'blend';
@@ -196,6 +346,22 @@ export function createFeatureDraw<const Wgsl extends string | CompiledWgsl>(
 		throw invalid(
 			`got the feature '${description.name}' at the frame '${frame}' with the alpha mode '${alphaMode}'. That mode draws in the ${blended ? 'transparent' : 'opaque'} pass, so give the frame that names it, or leave the alpha mode out.`,
 		);
+	return alphaMode;
+}
+
+/**
+ * Makes the draw that `description` declares: checks that the description is a draw this adapter
+ * can place, builds the mesh and the material from the options, and creates the object that draws
+ * them. Throws E1223 for a description that is not a `'draw'`, for a frame point or view that the
+ * adapter does not place, and for an alpha mode that draws in another pass than the frame names.
+ */
+export function createFeatureDraw<const Wgsl extends string | CompiledWgsl>(
+	description: FeatureDescription,
+	options: FeatureDrawOptions<Wgsl>,
+	host: FeatureDrawHost,
+	call = 'addFeatureDraw',
+): FeatureDraw<Wgsl> {
+	const alphaMode = checkedAlphaMode(description, options.alphaMode, host, call);
 	const { geometry, materials } = host;
 	// The draw's own fields stay here: the material takes the rest, with the shader under the name
 	// that it reads.
@@ -224,4 +390,60 @@ export function createFeatureDraw<const Wgsl extends string | CompiledWgsl>(
 	}
 	object.setRenderOrder(renderOrder(description));
 	return new FeatureDraw(description.name, object, material, mesh);
+}
+
+/**
+ * Makes the instanced draw that `description` declares: the checks of `createFeatureDraw`, then
+ * the mesh and the material from the options, and the instance batch that draws the shape once
+ * per row. The batch takes the description's band and order, so a blended draw sorts among the
+ * other blended objects. Throws E1223 as `createFeatureDraw` does.
+ */
+export function createFeatureInstances<const Wgsl extends string | CompiledWgsl>(
+	description: FeatureDescription,
+	options: FeatureInstancesOptions<Wgsl>,
+	host: FeatureDrawHost,
+	call = 'addFeatureInstances',
+): FeatureInstances<Wgsl> {
+	const alphaMode = checkedAlphaMode(description, options.alphaMode, host, call);
+	const { geometry, materials } = host;
+	const {
+		shader,
+		vertices,
+		capacity,
+		dynamic,
+		colors,
+		values,
+		origin,
+		castShadows,
+		receiveShadows,
+		layers,
+		...materialOptions
+	} = options;
+	const vertexColors = vertices.colors !== undefined;
+	const material = materials.shader({
+		...materialOptions,
+		wgsl: shader,
+		alphaMode,
+		vertexColors: options.vertexColors ?? vertexColors,
+	} as ShaderOptions<Wgsl>);
+	const mesh = geometry.fromArrays(vertices);
+	let batch: InstanceBatch;
+	try {
+		batch = host.createInstances(mesh, capacity, {
+			material: material as unknown as Material,
+			dynamic,
+			colors,
+			values,
+			origin,
+			castShadows,
+			receiveShadows,
+			layers,
+		});
+	} catch (error) {
+		material.destroy();
+		mesh.destroy();
+		throw error;
+	}
+	batch.setRenderOrder(renderOrder(description));
+	return new FeatureInstances(description.name, batch, material, mesh);
 }

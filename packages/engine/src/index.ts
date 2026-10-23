@@ -117,6 +117,8 @@ export type {
 	FeatureDraw,
 	FeatureDrawOptions,
 	FeatureDrawVertices,
+	FeatureInstances,
+	FeatureInstancesOptions,
 } from './scene/feature-draws';
 export type { FeatureHandle, FeatureHostOptions } from './scene/feature-host';
 export { FeatureHost } from './scene/feature-host';

@@ -46,7 +46,12 @@ import {
 } from './background';
 import { type ColorInput, linearColor, writeLinearColor } from './color';
 import { Environment, type EnvironmentOptions, SceneEnvironment } from './environment';
-import type { FeatureDraw, FeatureDrawOptions } from './feature-draws';
+import type {
+	FeatureDraw,
+	FeatureDrawOptions,
+	FeatureInstances,
+	FeatureInstancesOptions,
+} from './feature-draws';
 import type { FeatureDescription } from './features';
 import { type FogOptions, setSceneFog } from './fog';
 import {
@@ -2724,6 +2729,19 @@ export class InstanceBatch implements ViewHolder {
 	}
 
 	/**
+	 * Sets where the batch's rows draw among the other blended objects, as `mesh.setRenderOrder`
+	 * does: a lower order draws first at any depth. The rows still sort back to front among
+	 * themselves. The default is 0. The renderer reads the order each frame, so a change rebuilds
+	 * nothing.
+	 */
+	setRenderOrder(order: number): void {
+		if (DEV) checkNumber('setRenderOrder', 'order', order, this);
+		const { core } = this.scene;
+		core.check(core.glue.setBatchRenderOrder(this.id, order), 'setRenderOrder', undefined, true);
+		for (const part of this.parts) core.glue.setBatchRenderOrder(part, order);
+	}
+
+	/**
 	 * Gives every row's bounding sphere the radius `radius`, in meters, in place of the mesh's own
 	 * radius, which culling tests. The spheres stay centered on their rows. A vertex shader that
 	 * carries rows away from their origins, such as traffic along a lane, needs this: the engine
@@ -4543,6 +4561,59 @@ export class Scene implements ViewHolder {
 				geometry: makers.geometry,
 				materials: makers.materials,
 				createMesh: (mesh, material, place) => this.createMesh({ mesh, material, ...place }),
+				createInstances: (mesh, count, instanceOptions) =>
+					this.createInstances(mesh, count, instanceOptions),
+				fail: (detail) => new EngineError('E1223', detail),
+			},
+			call,
+		);
+	}
+
+	/**
+	 * Creates an add-on draw that draws one shape many times, with an instance for each row that
+	 * the page fills. It is the instanced form of [`addFeatureDraw`], and the draw of a feature
+	 * description with `kind: 'draw'`: the description places it in the frame, and the options
+	 * give its shader, its one shape and its capacity.
+	 *
+	 * The rows come from the engine's instance batches, so the page writes `positions`,
+	 * `rotations`, `scales` and, with the options, a color and four values per row. Culling, the
+	 * upload of changed rows, and the back-to-front sort of blended rows work as they do for
+	 * `scene.createInstances`. The shader reads each instance's transform through `InstanceIn` and
+	 * `find_instance` from `null3d::mesh`, and a surface function reads the row's values as
+	 * `object.values`.
+	 *
+	 * A description at the `'transparent'` frame draws through the transparent pass, where the
+	 * description's band and order place the batch among the other blended objects. Its rows still
+	 * sort back to front among themselves. The call loads the draw adapter on first use.
+	 *
+	 * Throws E1223 for a description that the adapter cannot place, E1108 for a capacity that is
+	 * not a whole number from 1, E1215, E1216 and E1217 for WGSL and values that
+	 * `materials.shader` refuses, E1206 for vertex data that makes no mesh, and E1406 when the
+	 * adapter does not download.
+	 */
+	async addFeatureInstances<const Wgsl extends string | CompiledWgsl>(
+		description: FeatureDescription,
+		options: FeatureInstancesOptions<Wgsl>,
+	): Promise<FeatureInstances<Wgsl>> {
+		const call = 'addFeatureInstances';
+		const { capacity } = options;
+		if (!Number.isInteger(capacity) || capacity < 1)
+			throw new EngineError(
+				'E1108',
+				`${call}() got the capacity ${capacity}; it takes a whole number from 1.`,
+			);
+		const { makers } = this;
+		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		const draws = await loadFeatureDraws(call);
+		return draws.createFeatureInstances(
+			description,
+			options,
+			{
+				geometry: makers.geometry,
+				materials: makers.materials,
+				createMesh: (mesh, material, place) => this.createMesh({ mesh, material, ...place }),
+				createInstances: (mesh, count, instanceOptions) =>
+					this.createInstances(mesh, count, instanceOptions),
 				fail: (detail) => new EngineError('E1223', detail),
 			},
 			call,

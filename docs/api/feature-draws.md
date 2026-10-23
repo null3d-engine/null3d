@@ -3,7 +3,7 @@ id: api/feature-draws
 title: Add-on feature draws
 status: experimental
 since: "0.3"
-summary: "scene.addFeatureDraw turns a draw feature description into a draw of your WGSL, your vertices, your uniforms and the description's sort place, on both GPU paths and in every thread mode."
+summary: "scene.addFeatureDraw and scene.addFeatureInstances turn a draw feature description into a draw of your WGSL, your vertices or your instances, your uniforms and the description's sort place, on both GPU paths and in every thread mode."
 ---
 
 # Add-on feature draws
@@ -12,18 +12,27 @@ summary: "scene.addFeatureDraw turns a draw feature description into a draw of y
 
 ```mermaid
 flowchart LR
-    description["defineFeature<br/>frame 'transparent', kind 'draw'"] --> call["scene.addFeatureDraw"]
-    shader["Your WGSL"] --> call
-    vertices["Your vertices"] --> call
-    uniforms["Your uniforms"] --> call
-    call --> object["A scene object<br/>your shader, your vertex format"]
+    description["defineFeature<br/>frame 'transparent', kind 'draw'"] --> draw["scene.addFeatureDraw"]
+    description --> instances["scene.addFeatureInstances"]
+    shader["Your WGSL"] --> draw
+    shader --> instances
+    vertices["Your vertices"] --> draw
+    vertices --> instances
+    rows["Your rows<br/>positions, rotations, scales"] --> instances
+    uniforms["Your uniforms"] --> draw
+    uniforms --> instances
+    draw --> object["A scene object<br/>your shader, your vertex format"]
+    instances --> batch["An instance batch<br/>one shape, many rows"]
     object --> list["The frame's draw list"]
+    batch --> list
     list --> gpu["WebGPU or WebGL2"]
 ```
 
 `scene.addFeatureDraw` draws a shape that an add-on declares. The add-on gives the WGSL, the vertex data of one shape, and the uniforms that change its look. The description says where the draw records, and the band and order say where a blended draw sorts. The engine makes the mesh, the material and the scene object, and records them in the frame's draw list like the scene's other objects. The draw therefore reaches WebGPU and WebGL2, in the pipelined, low-latency and single-threaded modes, with the same picture.
 
-This is the adapter for a [feature description](features.md) with `kind: 'draw'`. The description carries the sorting and the resources; the shader, the vertex format and the uniforms are the draw's own declaration, which this call takes.
+`scene.addFeatureInstances` draws one shape many times, with one instance for each row that the page fills. It takes the same description and the same shader options. [Instanced draws](#instanced-draws) gives it.
+
+This is the adapter for a [feature description](features.md) with `kind: 'draw'`. The description carries the sorting and the resources; the shader, the vertex format and the uniforms are the draw's own declaration, which these calls take.
 
 ## A point cloud
 
@@ -73,7 +82,7 @@ export default defineSketch(async ({ scene }) => {
 
 ## The description
 
-`addFeatureDraw` reads these fields of the description. The [feature description page](features.md) gives the others: `name`, `reads`, `writes`, `outputs`, `provides` and the callbacks.
+Both draw calls read these fields of the description. The [feature description page](features.md) gives the others: `name`, `reads`, `writes`, `outputs`, `provides` and the callbacks.
 
 | Field | What a draw takes |
 | --- | --- |
@@ -103,6 +112,61 @@ The uniforms that the add-on declares in `struct Uniforms` are the draw's payloa
 
 The draw also takes the material's values, such as `color`, `alphaMode`, `blending`, `depthWrite`, `doubleSided` and `map`, with the same names and meanings as `materials.shader`. A texture that its WGSL declares comes from `textures`, as `materials.shader` takes it.
 
+## Instanced draws
+
+`scene.addFeatureInstances` draws one shape many times, with one instance for each row of an instance batch. It takes the same description and shader options, and the page fills the rows. The engine culls, sorts and draws the rows as it does the rows of `scene.createInstances`.
+
+```ts
+const description = defineFeature({ name: 'discs', frame: 'transparent', kind: 'draw' });
+const discs = await scene.addFeatureInstances(description, {
+  shader: DISC,
+  vertices: quad, // the one shape that each instance draws
+  capacity: 10_000, // the rows, which never changes
+  alphaMode: 'blend',
+  depthWrite: false,
+});
+for (let i = 0; i < discs.count; i++) {
+  discs.positions[i * 3] = (i % 100) - 50;
+  discs.scales[i * 3] = 0.2;
+}
+```
+
+The rows are the arrays of an instance batch: `positions` (3 floats), `rotations` (4), `scales` (3) and, with the options, `colors` (4) and `values` (4). The call keeps the batch's own calls:
+
+| Call | What it does |
+| --- | --- |
+| `count` | The capacity: the number of rows that the draw may use |
+| `setActiveCount(n)` | Draws only the first `n` rows |
+| `markDirty(start, count)` | Uploads the rows that changed, on a static draw |
+| `setRenderOrder(order)` | Places the instances among the other blended objects |
+| `setLayers(mask)` | Puts every instance on the mask's layers |
+| `setCastShadows(on)`, `setReceiveShadows(on)` | Sets the shadows of every instance |
+| `setBoundingRadius(radius)` | Gives each instance a bound of its own, for a shader that moves it |
+| `setUniform`, `set` | Changes the shader's uniforms |
+| `destroy()` | Frees the instances, the material and the shape |
+
+A full shader reads each instance's transform through `InstanceIn` and `find_instance` from `null3d::mesh`:
+
+```wgsl
+#import null3d::mesh::{InstanceIn, clip_position, find_instance}
+
+struct Varyings {
+    @builtin(position) clip: vec4f,
+}
+
+@vertex
+fn vs(@location(0) position: vec3f, i: InstanceIn) -> Varyings {
+    let found = find_instance(i);
+    var out: Varyings;
+    out.clip = clip_position(found, position);
+    return out;
+}
+```
+
+A full shader reads no `object.values`: the engine fills those for a surface function alone. Use `values` with a surface function, such as a vertex offset that sways each instance by its own phase. [Instances and batching](../concepts/instances.md) gives both forms.
+
+A blended draw's rows sort back to front among themselves. The description's band and order place the whole draw among the other blended objects, and `setRenderOrder` changes that place later.
+
 ## Where it sorts
 
 A draw's vertex data and material draw as one scene object. The engine culls it by its bounds and draws it once per view that sees it:
@@ -115,7 +179,8 @@ A draw can cast the shadows that a directional light casts with `castShadows`, a
 ## Limits
 
 - The adapter places the main view alone. A scene pass and a reflection pass do not draw a feature draw yet, and a description that names one throws E1223.
-- A draw has one shape and one material. A compact buffer of many copies that a shader expands, as a large splat scene needs, is not this hook: it needs the draws whose count the engine or the GPU writes, which arrive with the add-on that first uses them.
+- A draw has one shape and one material. `addFeatureInstances` draws that shape once for each row that the page fills. A count that the GPU writes is not this hook, and it arrives with the compute hook.
+- A full shader reads each instance's transform, and a surface function reads the row's `values`. One shader cannot do both yet.
 - The feature description's `reads`, `writes`, `outputs` and `provides` stay with the [feature registry](features.md): this draw reads and writes no scene resource and provides no lighting slot.
 
 ## Errors
@@ -123,6 +188,7 @@ A draw can cast the shadows that a directional light casts with `castShadows`, a
 | Code | Cause |
 | --- | --- |
 | E1223 | A description that the draw adapter cannot place: another kind, another frame point, another view, or an alpha mode that draws in the other pass. |
+| E1108 | An instance capacity that is not a whole number from 1. |
 | E1206 | Vertex data that makes no mesh, as `geometry.fromArrays` reports it. |
 | E1215, E1216, E1217 | WGSL that the plugin did not compile, a uniform or a texture that the WGSL does not declare, or an option that the material does not take. |
 | E1406 | The draw adapter did not download. |

@@ -179,6 +179,9 @@ pub struct InstanceBatch {
     active: u32,
     /// The layer mask of every row (see [`crate::layers`]).
     layers: u32,
+    /// The order in which the rows draw among other blended objects: a lower order draws first at
+    /// any depth. The rows still sort back to front among themselves.
+    render_order: f32,
     /// The distances between which every row draws: its start distance and its end distance, 0
     /// and infinity for none.
     draw_range: [f32; 2],
@@ -402,6 +405,7 @@ impl InstanceBatch {
             local_radius,
             active: capacity,
             layers: DEFAULT_LAYERS,
+            render_order: 0.0,
             draw_range: [0.0, f32::INFINITY],
             row_ranges: Vec::new(),
             shadows: 0,
@@ -720,6 +724,19 @@ impl InstanceBatch {
     /// no rebuild and no update of the rows.
     pub fn set_layers(&mut self, mask: u32) {
         self.layers = mask;
+    }
+
+    /// The order in which the batch's rows draw among the other blended objects, as a scene
+    /// object's render order. A lower order draws first at any depth, and the rows still sort back
+    /// to front among themselves. The order is 0 until [`InstanceBatch::set_render_order`] sets it.
+    pub fn render_order(&self) -> f32 {
+        self.render_order
+    }
+
+    /// Sets the order in which the batch's rows draw among the other blended objects. The renderer
+    /// reads it each frame, so a change needs no rebuild and no update of the rows.
+    pub fn set_render_order(&mut self, order: f32) {
+        self.render_order = order;
     }
 
     /// The shadow bits of every row: whether the rows cast shadows ([`flags::CAST_SHADOWS`]) and

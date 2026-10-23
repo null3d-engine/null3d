@@ -23,7 +23,9 @@
 //! [`SortedLayout::gather`] copies the spheres, cells, layer masks and render orders of the
 //! blended scene objects into arrays of their own, once per frame. Culling then reads as many
 //! spheres as there are blended objects, not the whole scene. The rows of a batch whose material
-//! blends are culled in place, and have render order 0. [`SortedLayout::sort`] culls and sorts the
+//! blends are culled in place, and take the batch's render order: a batch with a lower order than
+//! its neighbours draws first at any depth, and its rows sort back to front among themselves.
+//! [`SortedLayout::sort`] culls and sorts the
 //! rows for one view, then groups them into draws: runs of neighbors in the sorted order that share
 //! a bucket. Each such run draws with one instanced draw per part of its bucket's mesh, so a batch
 //! of blended rows alone in its view draws in one draw per part, whatever its order.
@@ -748,6 +750,7 @@ impl SortedLayout {
                         layers: scene_layers,
                     },
                     orders: Some(&self.orders),
+                    order: 0.0,
                 };
             }
             let batch = batches
@@ -761,6 +764,7 @@ impl SortedLayout {
                     layers: SetLayers::All(batch.layers()),
                 },
                 orders: None,
+                order: batch.render_order(),
             }
         };
         let view = CullView {

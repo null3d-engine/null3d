@@ -181,3 +181,12 @@ fn batches_match_the_reference_with_and_without_workers() {
         }
     }
 }
+
+#[test]
+fn a_batch_keeps_its_render_order() {
+    let mut table = BatchTable::with_capacity(4);
+    let id = table.create(4, false, false, 1, 1, 0.5).unwrap();
+    assert_eq!(table.get(id).unwrap().render_order(), 0.0);
+    table.get_mut(id).unwrap().set_render_order(-1.5);
+    assert_eq!(table.get(id).unwrap().render_order(), -1.5);
+}

@@ -1602,6 +1602,20 @@ pub fn set_batch_layers(batch: u32, mask: u32) -> u32 {
     })
 }
 
+/// Sets the order in which a batch's rows draw among the other blended objects: a lower order
+/// draws first at any depth, and the rows sort back to front among themselves. The renderer reads
+/// the order each frame, so a change needs no rebuild and no update of the rows.
+#[wasm_bindgen(js_name = setBatchRenderOrder)]
+pub fn set_batch_render_order(batch: u32, order: f32) -> u32 {
+    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
+        Ok(batch) => {
+            batch.set_render_order(order);
+            0
+        }
+        Err(error) => core_failure(error),
+    })
+}
+
 /// Gives every row of a batch a bounding sphere of the first call value's meters around its own
 /// origin, in place of the mesh's own radius. A vertex shader that carries rows away from their
 /// origins, such as traffic along a lane, needs this, or culling drops rows that are still on the

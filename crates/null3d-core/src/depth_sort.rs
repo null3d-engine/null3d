@@ -46,8 +46,11 @@ const DIGITS: usize = 256;
 pub struct SortSet<'a> {
     /// What culling reads of the set's rows, whose positions are its rows ([`SetOrder::Rows`]).
     pub rows: CullSet<'a>,
-    /// Each row's render order, or `None` when every row has order 0.
+    /// Each row's render order, or `None` when every row has the set's `order`.
     pub orders: Option<&'a [f32]>,
+    /// The set's own render order, which every row takes when it gives none of its own. It is 0
+    /// for a set whose rows draw with the depth sort alone.
+    pub order: f32,
 }
 
 /// The run index and the row of a sorted item: the item of row `start + offset` of run `run`.
@@ -212,7 +215,7 @@ pub fn cull_and_sort<'a>(
                 let [x, y, z, _] = view.offsets[cell as usize];
                 let (cx, cy, cz) = (spheres.xs[i] + x, spheres.ys[i] + y, spheres.zs[i] + z);
                 let distance = depth[0] * cx + depth[1] * cy + depth[2] * cz + depth[3];
-                let order = set.orders.map_or(0.0, |orders| orders[i]);
+                let order = set.orders.map_or(set.order, |orders| orders[i]);
                 let key = sort_key(order, distance);
                 keys[k] = key;
                 items[k] = item_of(index, row - run.start);
@@ -457,6 +460,7 @@ mod tests {
                     layers,
                 },
                 orders,
+                order: 0.0,
             }
         }
     }
@@ -590,6 +594,7 @@ mod tests {
                 ..rows.set(None, SetLayers::All(1)).rows
             },
             orders: None,
+            order: 0.0,
         };
         cull_and_sort(&JobSystem::new(0), view, plane, &sets, &runs, &mut out);
         assert_eq!(sorted(&out, &runs), [(0, 1), (0, 0), (0, 2)]);

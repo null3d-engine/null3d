@@ -263,6 +263,11 @@ export interface CoreGlue extends CoreErrors {
 	reserveBatchRanges(batch: number): number;
 	/** Sets the layer mask of every row of a batch, as an unsigned 32-bit number. */
 	setBatchLayers(batch: number, mask: number): number;
+	/**
+	 * Sets the order in which a batch's rows draw among the other blended objects. A lower order
+	 * draws first at any depth, and the rows sort back to front among themselves.
+	 */
+	setBatchRenderOrder(batch: number, order: number): number;
 	/** Sets whether every row of a batch casts and receives shadows, from an object's flag bits. */
 	setBatchShadows(batch: number, bits: number): number;
 	markBatchDirty(batch: number, start: number, count: number): number;
@@ -1105,6 +1110,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setBatchDrawRange',
 	'reserveBatchRanges',
 	'setBatchLayers',
+	'setBatchRenderOrder',
 	'setBatchShadows',
 	'markBatchDirty',
 	'memoryEpoch',

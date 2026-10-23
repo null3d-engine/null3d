@@ -8,7 +8,7 @@ summary: "One description for an add-on's render work: the frame point, the read
 
 # Add-on feature descriptions
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A description with `kind: 'draw'` can become a draw with [`scene.addFeatureDraw`](feature-draws.md). The other kinds do not reach the frame yet: each arrives with the add-on hook that first uses it. Until then, a registration checks the shape and changes nothing that draws. A feature's preset settings, budget and stats work today. Its GPU time reads as not measured until the engine records its frame work.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A description with `kind: 'draw'` can become a draw with [`scene.addFeatureDraw`](feature-draws.md), or an instanced draw with [`scene.addFeatureInstances`](feature-draws.md#instanced-draws). The other kinds do not reach the frame yet: each arrives with the add-on hook that first uses it. Until then, a registration checks the shape and changes nothing that draws. A feature's preset settings, budget and stats work today. Its GPU time reads as not measured until the engine records its frame work.
 
 ```mermaid
 flowchart LR
@@ -249,6 +249,7 @@ A feature has one GPU timing scope. The engine times the feature's work in the f
 An adapter turns a checked description into work in the frame. One adapter exists:
 
 - **Draws:** [`scene.addFeatureDraw(description, options)`](feature-draws.md) draws the add-on's WGSL over its own vertices, with its uniforms, at the description's frame point. The band and order place a blended draw among the transparent pass's objects. The adapter places the main view alone.
+- **Instanced draws:** [`scene.addFeatureInstances(description, options)`](feature-draws.md#instanced-draws) draws one shape once for each row that the page fills, through an instance batch. The rows carry a transform each, and the band and order place a blended batch among the transparent pass's objects. The adapter places the main view alone.
 
 The other hooks still need their own payload, and they arrive with the add-on that uses them first:
 

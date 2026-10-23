@@ -406,8 +406,8 @@
       "three": "object.renderOrder",
       "status": "direct",
       "since": "0.1",
-      "target": "mesh.setRenderOrder(n)",
-      "notes": "Orders blended objects, lower first, before their depth, as in three.js. The engine orders opaque and masked objects itself for speed. The rows of an instance batch sort by depth one by one, where three.js sorts an InstancedMesh as one object.",
+      "target": "mesh.setRenderOrder(n), batch.setRenderOrder(n)",
+      "notes": "Orders blended objects, lower first, before their depth, as in three.js. The engine orders opaque and masked objects itself for speed. The rows of an instance batch sort by depth one by one, where three.js sorts an InstancedMesh as one object; batch.setRenderOrder(n) places the whole batch among the other blended objects.",
       "docs": "api/objects",
       "detect": "\\.renderOrder\\s*="
     },

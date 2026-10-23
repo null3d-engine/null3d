@@ -297,3 +297,15 @@ index. A caster, motion or pick build shades no surface, so its layout leaves th
   `docs/guides/custom-shaders.md` and the mapping's new entry.
 - **Shaders:** the copy's shaders load with the material, through the `particles` first-use file,
   which already holds them.
+
+## Addendum, 23 October 2026: the instanced draw of H2
+
+Status: decided by the coordinator on 2026-10-23, at the owner's word: "we will still do these core hooks, right? if so then we can do splats afterwards. don't defer anything that can actually be done in m3." Task: M3-E9.
+
+`scene.addFeatureInstances(description, options)` is the draw adapter for one shape drawn many times. It reuses the engine's instance-batch path rather than adding a second draw machinery: the page fills `positions`, `rotations` and `scales` (and, with the options, a color and four values per row), and culling, uploads, the row-by-row sort of blended rows and both GPU paths come from `createInstances`. The adapter adds the description's checks, the capacity, and the band and order.
+
+What it deliberately does not do: a count that the GPU writes, and per-instance data beyond a transform and the four values. A full shader reads each instance's transform through `InstanceIn`, and it reads no row values, which `fill_builtins` leaves at zero. Splats need per-splat opacity and spherical harmonics, so the draw gains a per-instance buffer with the compute hook's storage surface. The adapter's options leave room for it.
+
+**The batch render order.** A description's band and order must place a blended batch, and instance batches had no render order: the sort treated every batch row as order 0. `InstanceBatch.setRenderOrder(order)` adds it. The core keeps the order on the batch, the sort takes a set's constant order, and the renderer passes the batch's. The rows still sort by depth inside the order. It is a general batch call, not a splats special case, and it rebuilds no draw table.
+
+**Tests.** Unit tests cover the adapter's checks, its creation and its frees, and the batch's order. A core test sorts two sets with different constant orders. The browser test `feature-instances` draws an opaque and a blended instanced draw on every GPU tier and thread mode; it and its references follow once the browser run is allowed. The docs are `api/feature-draws`, the instances concept and API pages, and the three.js mapping.

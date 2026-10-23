@@ -3,7 +3,7 @@ id: concepts/instances
 title: Instances and batching
 status: experimental
 since: "0.1"
-summary: "createInstances; typed-array views; markDirty; automatic batching; per-row colors and values."
+summary: "createInstances; typed-array views; markDirty; automatic batching; per-row colors, values and render order."
 ---
 
 # Instances and batching
@@ -162,6 +162,14 @@ function remove(row: number): void {
 Keep each row's own data, such as a velocity, in your own typed arrays in the same row order, and move it the same way. An active count past the capacity throws [E1108](../errors/E1108.md).
 
 `destroy()` removes a batch at once and frees its rows. After it, stop using the batch and every array that you read from it. Its calls throw [E1101](../errors/E1101.md), and so do its array getters, such as `positions`, in every build. An array that you read before the destroy can point at memory that the engine gives to another batch.
+
+## Render order
+
+`setRenderOrder(n)` places the batch's rows among the other blended objects, as `mesh.setRenderOrder` does: a lower order draws first at any depth. The rows still sort back to front among themselves, so the order decides where the batch sits against other blended objects, and the depth decides where each row sits inside it. The default is 0. An order rebuilds no draw table, so a sketch can change it at any time.
+
+```ts
+smoke.setRenderOrder(-1); // every row of the smoke draws before the other blended objects
+```
 
 ## Culling
 
