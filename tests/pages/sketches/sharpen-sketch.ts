@@ -23,7 +23,7 @@ export default defineSketch(({ scene, materials, geometry, post, quality }) => {
 	// governor lowers the render scale on a slow machine, so a loaded Mac drew this wall through a
 	// different path from the one the references hold. The captured frame draws at full size
 	// whatever the machine's speed.
-	quality.set({ minRenderScale: 1, maxRenderScale: 1 });
+	quality.set({ minRenderScale: 0.75, maxRenderScale: 0.75 });
 	// An orthographic view keeps each box's edge on the same pixels at every device's canvas.
 	const camera = scene.createOrthographicCamera({ height: HEIGHT, near: 0.1, far: 100 });
 	camera.setPosition(0, 0, 10);

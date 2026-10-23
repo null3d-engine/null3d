@@ -2587,6 +2587,31 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		modes: ALL_MODES,
 	},
+	// Gaussian splats from an SPZ file that the sketch makes: a knot of splats above a ground, with a
+	// bar in front of part of it, so the picture shows the splats hiding behind a mesh and fading where
+	// they meet the ground. The selection runs on a job worker before the held frame draws.
+	{
+		name: 'splats',
+		sketch: 'tests/pages/sketches/splats-sketch.ts',
+		hold: 0,
+		modes: ALL_MODES,
+	},
+	// The same cloud with the budget capped, so fewer splats draw: the worker keeps the most
+	// important prefix of each chunk, and the picture must differ from the whole cloud's.
+	{
+		name: 'splats-budget',
+		sketch: 'tests/pages/sketches/splats-sketch.ts?budget=9000',
+		hold: 0,
+		modes: ALL_MODES,
+	},
+	// The same add-on's glTF reader: a model that carries KHR_gaussian_splatting, which the add-on
+	// reads as its module loads. Its splats draw in the file's order inside each part.
+	{
+		name: 'splats-gltf',
+		sketch: 'tests/pages/sketches/splats-gltf-sketch.ts',
+		hold: 0,
+		modes: ALL_MODES,
+	},
 	// 100,000 sprites of a dynamic batch in one draw: a field of them seen from above, and a row of
 	// sprites sized in pixels whose centers lie outside the view. It holds its first frame, and takes
 	// S1's limit: SwiftShader draws 100,000 rows on WebGPU in tens of seconds.

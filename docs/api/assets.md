@@ -131,6 +131,13 @@ remove(); // the handler reads no more files
 
 `registerGltfExtension(handler)` returns a function that unregisters the handler. Two handlers cannot read one extension. The call throws [E1213](../errors/E1213.md) for that case, for a handler that names no extension, and for a handler without a `load` function.
 
+An add-on registers its own handler as its module loads, with the engine's `registerGltfExtension`,
+which serves every sketch of the thread. A page that imports the add-on then loads the add-on's
+files with no other call, and a file that requires the extension names the package to import instead
+of failing with E1417. `@null3d/splats` reads `KHR_gaussian_splatting` this way. A handler that a
+sketch registers with `assets.registerGltfExtension` for the same extension reads its files in the
+add-on's place.
+
 The loader calls `load` once for each primitive that carries one of the handler's extensions. It gets `data`, which describes the primitive, and `context`, which holds the engine's makers:
 
 | Member | Gives |

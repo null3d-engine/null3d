@@ -24,6 +24,8 @@ export const PROJECTS = [
 	'packages/impostors/tsconfig.test.json',
 	'packages/particles',
 	'packages/particles/tsconfig.test.json',
+	'packages/splats',
+	'packages/splats/tsconfig.test.json',
 	'packages/terrain',
 	'packages/terrain/tsconfig.test.json',
 	'packages/cli',
