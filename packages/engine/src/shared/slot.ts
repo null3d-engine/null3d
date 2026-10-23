@@ -135,6 +135,16 @@ export const FrameRest1 = 34;
  */
 export const StillOff = 35;
 /**
+ * The programs that may still be compiling in the background on WebGL2, as the thread that draws
+ * found them at its last frame, for the development probe of the two-step pass.
+ */
+export const WebglCompiling = 41;
+/**
+ * Nonzero when the WebGL2 context that the engine draws with has `KHR_parallel_shader_compile`, for
+ * the development probe of the two-step pass.
+ */
+export const WebglParallel = 42;
+/**
  * Each read of GPU picking's ring: the thread that draws adds one once the read's bytes are in
  * engine memory. The sketch takes a read's answer when its slot is not 0.
  */

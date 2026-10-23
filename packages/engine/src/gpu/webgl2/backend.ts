@@ -705,6 +705,16 @@ export class WebGL2Backend {
 		return i;
 	}
 
+	/** The programs that may still be compiling in the background, for the two-step probe. */
+	get compilingCount(): number {
+		return this.compiling.length;
+	}
+
+	/** True when the context has `KHR_parallel_shader_compile` and the device compiles with it. */
+	get parallelCompile(): boolean {
+		return this.parallel !== null;
+	}
+
 	/**
 	 * True while a program is compiling in the background, or a pipeline waits for its custom
 	 * material's shader. Pipelines whose shaders arrived are created first.
