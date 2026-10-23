@@ -50,7 +50,7 @@ jobs:
     # - code: false when every file is a docs file: a Markdown file, or a file in .dev/, docs/ or
     #   skills/. Only the docs-and-tools job reads those, apart from the sketches below. The other
     #   quick checks and every browser, benchmark and macOS job then skip.
-    # - full: the browser, city, benchmark page and real-browser jobs run. A draft skips them too.
+    # - full: the browser, load page, benchmark page and real-browser jobs run. A draft skips them too.
     # - allocation: the allocation job runs, in a full run that changes the code whose per-frame
     #   allocation it checks, or the check itself: the engine's render, GPU, sketch, scene and shared
     #   code, the add-ons, the core's crates, and the benchmark pages and the check's tools.
@@ -1037,38 +1037,11 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
 
-  city:
-    # S6's city files, built once per run and handed to the jobs that load S6 as artifacts. A build
-    # without the cache takes about 6 minutes here, which every shard of a job could not spare
-    # (D-106). With the cache, which a pull request reads from main, it takes seconds.
-    name: city files
-    needs: [build, changes]
-    if: needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      NULL3D_REQUIRE_FRESH_SHADERS: "1"
-      HUSKY: "0"
-    steps:
-      - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-      - uses: ./.github/actions/archive
-        with:
-          mode: download
-          name: page-wasm
-      - uses: ./.github/actions/samples
-      - uses: ./.github/actions/city
-        with:
-          mode: build
-
   browser-city:
     # S6's image tests, the browser tests that load the city's files, which the browser job's shards
-    # leave out, so that only this job waits for the city job.
+    # leave out, so that only this job waits for the load pages job, which builds those files.
     name: browser (the city)
-    needs: [build, city, changes]
+    needs: [build, load-pages, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1206,7 +1179,7 @@ jobs:
     # figures.
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     # Every build of the pages holds S6's, so every shard needs the city's files.
-    needs: [build, city, load-pages, changes]
+    needs: [build, load-pages, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     # The shards run close to their measured times, and a slow software-renderer runner stretches
@@ -1284,7 +1257,7 @@ jobs:
     # browser optimizes after fewer calls, so the warm-up is 1,200 frames and the job takes about 4
     # minutes.
     name: allocation (${{ matrix.gpu }})
-    needs: [build, city, load-pages, changes]
+    needs: [build, load-pages, changes]
     if: needs.changes.outputs.allocation == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1325,9 +1298,12 @@ jobs:
     # The production builds that the real-browser shards load: the benchmark pages and the startup
     # pages. Each bundles the whole shader set, and each shard built both before its first page, for
     # up to 11 minutes on a macOS machine in run 39554447893. This job builds them once, and every
-    # shard downloads them and builds none (NULL3D_LOAD_PAGES).
+    # shard downloads them and builds none (NULL3D_LOAD_PAGES). The benchmark pages bundle S6's city
+    # files, so this job also builds those, or takes them from the cache, and hands them to every
+    # job that loads S6. A job of its own did that before, and sat between the build job and this one
+    # on the longest chain of a full run: 3.8 minutes in run 39944103955.
     name: load pages
-    needs: [build, city, changes]
+    needs: [build, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1347,7 +1323,7 @@ jobs:
       - uses: ./.github/actions/samples
       - uses: ./.github/actions/city
         with:
-          mode: download
+          mode: build
       - name: The benchmark pages and the startup pages, built for production
         run: bun tests/lib/load-server.ts
       - uses: ./.github/actions/archive
@@ -1371,7 +1347,7 @@ jobs:
     # count beside it.
     # A draft pull request skips them, so that unfinished work holds no macOS machine (D-99).
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.shards }})
-    needs: [build, city, load-pages, changes]
+    needs: [build, load-pages, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
     # Each shard should take at most about 12 minutes, setup included. In run 39291513923 Safari's
@@ -1488,7 +1464,6 @@ jobs:
       - shader-compiler
       - shader-compiler-plugin
       - packages
-      - city
       - load-pages
       - browser
       - browser-alone
@@ -1532,7 +1507,7 @@ jobs:
               "wasm-checks": "code",
               "shader-compiler": "code", "shader-compiler-plugin": "code", "packages": "code",
               "heavy-checks": "code", "browser-caches": "code",
-              "city": "full", "load-pages": "full", "browser": "full", "browser-alone": "full", "browser-production": "full",
+              "load-pages": "full", "browser": "full", "browser-alone": "full", "browser-production": "full",
               "browser-city": "full", "showcase": "full", "bench": "full", "real-browsers": "full",
               "allocation": "allocation", "skill-sketches": "sketches"
             } as $gate | length > 0 and all(to_entries[]; .value.result == "success"

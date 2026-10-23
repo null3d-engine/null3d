@@ -394,7 +394,7 @@ The ways to reuse work:
 | A test that reads the whole shader set | A pass marker in the Actions cache, under a key of the files that the part reads |
 | The size check's base | The `size-base` cache, by commit |
 | The size check's compressed sizes | The size memo, by the hash of each file's bytes: each `size-parts` job restores the newest, and `wasm-checks` keeps the parts' entries when a part compressed a file ([Download size](benchmarks.md#download-size)) |
-| The city's files | The `city` job's artifact |
+| The city's files | The `load-pages` job's artifacts, built there or taken from the city cache |
 | Packages, Playwright's Chromium and the sample content | `.github/actions/bun-install`, `.github/actions/playwright-chromium` and `.github/actions/samples` |
 
 Before you add or change a job or a step, answer these questions:

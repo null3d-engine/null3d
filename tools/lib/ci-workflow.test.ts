@@ -195,7 +195,6 @@ describe("CI's workflow", () => {
 			['browser', 'shard'],
 			['browser-alone', 'shard'],
 			['real-browsers', 'shard'],
-			['size-parts', 'part'],
 			['shader-entries', 'shard'],
 		] as const) {
 			const shards = matrixOf(name)[key] as number[];
@@ -399,6 +398,17 @@ describe("CI's workflow", () => {
 			'fromJSON(needs.build.outputs.size-parts)',
 		);
 		expect(needsOf(jobNamed('size-parts'))).toContain('build');
+	});
+
+	it('builds the city in the load pages job, which every job that downloads the city waits for', () => {
+		const cityMode = (job: Job) =>
+			(job.steps ?? []).find(({ uses }) => uses === './.github/actions/city')?.with?.mode;
+		const builders = Object.entries(jobs).filter(([, job]) => cityMode(job) === 'build');
+		// The benchmark pages bundle the city's files, so the job that builds them builds the city too.
+		expect(builders.map(([name]) => name)).toEqual(['load-pages']);
+		const readers = Object.entries(jobs).filter(([, job]) => cityMode(job) === 'download');
+		expect(readers.length).toBeGreaterThan(0);
+		for (const [name, job] of readers) expect(needsOf(job), name).toContain('load-pages');
 	});
 
 	it("moves the build job's files and the load builds only through the archive action", () => {
