@@ -1093,22 +1093,25 @@ interface EngineWorkers {
 }
 
 /** The two-step probe's line: the answers, the compile state, and the browser. */
-function twoStepText(
-	answers: readonly (number | undefined)[],
-	compiling: number,
-	parallel: boolean,
-): string {
+function twoStepText(answers: readonly number[], compiling: number, parallel: boolean): string {
 	const [wanted, declared, built, runs, scale] = answers;
-	const answer = (value: number | undefined) => value ?? '?';
-	return `two-step probe: ${navigator.userAgent} | wanted ${answer(wanted)} declared ${answer(declared)} built ${answer(built)} runs ${answer(runs)} scale ${answer(scale)} | compiling ${compiling} parallel ${parallel ? 1 : 0}`;
+	return `two-step probe: ${navigator.userAgent} | wanted ${wanted} declared ${declared} built ${built} runs ${runs} scale ${scale} | compiling ${compiling} parallel ${parallel ? 1 : 0}`;
 }
 
 /**
- * Shows the probe's line, and keeps it for the page to publish among its own figures. The compile
- * state comes from the WebGL2 path's own slots, which the thread that draws fills at its last frame:
- * the programs that may still be compiling, and whether its context has the extension.
+ * Shows the probe's line, and keeps it for the page to publish among its own figures. Every number
+ * comes from the control block: the thread that runs the sketch writes the pass's answers after
+ * each frame, and the thread that draws writes the compile state of the WebGL2 path, which is the
+ * programs that may still compile and whether its context has the extension.
  */
-function sayTwoStep(answers: readonly (number | undefined)[], slots: Int32Array): void {
+function sayTwoStep(slots: Int32Array): void {
+	const answers = [
+		Slot.TwoStepWanted,
+		Slot.TwoStepDeclared,
+		Slot.TwoStepBuilt,
+		Slot.TwoStepRuns,
+		Slot.TwoStepScale,
+	].map((slot) => Atomics.load(slots, slot)) as number[];
 	const compiling = Atomics.load(slots, Slot.WebglCompiling);
 	const parallel = Atomics.load(slots, Slot.WebglParallel) !== 0;
 	const line = twoStepText(answers, compiling, parallel);
@@ -1117,35 +1120,36 @@ function sayTwoStep(answers: readonly (number | undefined)[], slots: Int32Array)
 }
 
 /**
- * Reads the two-step pass's answers once, for the hold mode probe: a held frame is the frame that
- * the answers are about, so nothing watches the frames after it.
- */
-function readTwoStep(glue: CoreGlue, memory: WebAssembly.Memory, slots: Int32Array): void {
-	const at = glue.debugTwoStep();
-	sayTwoStep(at > 0 ? Array.from(new Int32Array(memory.buffer, at, 5)) : [], slots);
-}
-
-/**
- * Prints the two-step pass's answers for `?two-step=report` in a live page: the browser's user
- * agent, whether a frame wanted the pass, declared it, had its second step built and drew it, the
- * render scale in thousandths, and the WebGL2 path's compile state. A development tool that says
- * which answer a browser loses.
+ * Prints the two-step pass's answers for `?two-step=report`: the browser's user agent, whether a
+ * frame wanted the pass, declared it, had its second step built and drew it, the render scale in
+ * thousandths, and the WebGL2 path's compile state. A development tool that says which answer a
+ * browser loses.
  *
- * The sketch turns its effect on a moment into the scene, so the first presented frame asks for
- * nothing: the probe watches the frames from then, keeps the largest answer of each, waits a second
- * after the pass is first wanted, and prints what it saw. A page whose pass never wants prints the
- * zeros it kept, after ten seconds.
+ * `held` reads the answers once, after the held frame that they are about. A live page turns its
+ * effect on a moment into the scene, so the first presented frame asks for nothing: the probe then
+ * watches the frames, keeps the largest answer of each, waits a second after the pass is first
+ * wanted, and prints what it saw. A page whose pass never wants prints the zeros it kept, after ten
+ * seconds.
  */
-function logTwoStep(glue: CoreGlue, memory: WebAssembly.Memory, slots: Int32Array): void {
+function logTwoStep(slots: Int32Array, held: boolean): void {
+	if (held) {
+		sayTwoStep(slots);
+		return;
+	}
 	const end = performance.now() + 10_000;
 	const best = [0, 0, 0, 0, 0];
 	let wantedAt = 0;
 	const check = () => {
-		const at = glue.debugTwoStep();
-		const answers = at > 0 ? new Int32Array(memory.buffer, at, 5) : undefined;
-		if (answers) for (let i = 0; i < 5; i++) best[i] = Math.max(best[i] ?? 0, answers[i] ?? 0);
+		const answers = [
+			Slot.TwoStepWanted,
+			Slot.TwoStepDeclared,
+			Slot.TwoStepBuilt,
+			Slot.TwoStepRuns,
+			Slot.TwoStepScale,
+		].map((slot) => Atomics.load(slots, slot)) as number[];
+		for (let i = 0; i < 5; i++) best[i] = Math.max(best[i] ?? 0, answers[i] as number);
 		const now = performance.now();
-		if (answers?.[0]) {
+		if (answers[0]) {
 			if (wantedAt === 0) wantedAt = now;
 			// A second of frames after the pass is wanted covers a pipeline that builds in the
 			// background, which the frame that wanted it may have missed.
@@ -1157,7 +1161,7 @@ function logTwoStep(glue: CoreGlue, memory: WebAssembly.Memory, slots: Int32Arra
 			requestAnimationFrame(check);
 			return;
 		}
-		sayTwoStep(best, slots);
+		sayTwoStep(slots);
 	};
 	requestAnimationFrame(check);
 }
@@ -2142,9 +2146,6 @@ async function startEngine(
 			localCore = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
 			wasmMemory = memory;
-			// The development probe of the two-step pass asks for its answers before the first frame
-			// records them, and prints them once that frame is on screen.
-			if (DEV && switches.twoStep) started.glue.setDebugTwoStep(true);
 			const imageTable = new ImageTable();
 			const render = threads?.render;
 			// The page's on-demand loader sends its tasks to this engine's job workers; without them, it
@@ -2188,6 +2189,7 @@ async function startEngine(
 					pageUrl: pageUrl ?? sketchUrl,
 					maxTargetFps: maxTarget,
 					threads: engineThreads,
+					twoStepProbe: DEV && switches.twoStep,
 					showStats: events.stats,
 					wantJobs,
 					sendLabelSlot: events.labelSlot,
@@ -2242,6 +2244,7 @@ async function startEngine(
 				quality,
 				maxTargetFps: maxTarget,
 				threads: engineThreads,
+				twoStepProbe: DEV && switches.twoStep,
 			};
 			withCore.add(sketch);
 			if (renderThread === 'sketch-worker') {
@@ -2288,9 +2291,7 @@ async function startEngine(
 			requestAnimationFrame(check);
 		});
 		marker?.endAfter(firstFrame);
-		const probeGlue = DEV && switches.twoStep ? localCore : undefined;
-		if (probeGlue)
-			void firstFrame.then(() => logTwoStep(probeGlue, wasmMemory as WebAssembly.Memory, slots));
+		if (DEV && switches.twoStep) void firstFrame.then(() => logTwoStep(slots, false));
 		/** Hold mode's frame, read back once. */
 		let held: CapturedFrame | undefined;
 		/** The error of a thread that draws when it could not capture a frame. */
@@ -2445,8 +2446,7 @@ async function startEngine(
 			await stop();
 			throw error;
 		}
-		if (DEV && switches.twoStep && localCore)
-			readTwoStep(localCore, wasmMemory as WebAssembly.Memory, slots);
+		if (DEV && switches.twoStep) logTwoStep(slots, true);
 		const { summarizeFrames } = await loadFrameStats();
 		publishHold({
 			ok: true,
