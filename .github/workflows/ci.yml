@@ -45,12 +45,17 @@ jobs:
         run: |
           set +e
           nproc; free -g; lscpu | grep -E "Model name|^CPU\(s\)"
-          for round in B A B A; do
-            if [ $round = A ]; then sha=b9fc91903f9324eaf8ed946334f13cd7902ec15d; else sha=16628a5dd90524ce8cf3a1d2112f561513cd1a86; fi
+          for round in C B C B; do
+            case $round in
+              A) sha=b9fc91903f9324eaf8ed946334f13cd7902ec15d ;;
+              B) sha=16628a5dd90524ce8cf3a1d2112f561513cd1a86 ;;
+              C) sha=d3c78bda15a2b6e3127a1a1ba70aab2def27f4ad ;;
+            esac
+            pages=$round; [ $round = C ] && pages=B
             git checkout -q -f $sha
             git apply "$RUNNER_TEMP/resize-timing.patch"
             rm -rf packages/engine/dist packages/vite-plugin/dist packages/cli/dist packages/engine/src/generated target/shader-modules.json test-results
-            zstd -dc "$RUNNER_TEMP/$round/page-wasm.tar.zst" | tar -xf -
+            zstd -dc "$RUNNER_TEMP/$pages/page-wasm.tar.zst" | tar -xf -
             echo "=== round $round at $sha"
             started=$(date +%s)
             RESIZE_TIMING_LOG="$RUNNER_TEMP/timing-$round.log" bun run test:browser --grep-invert "@alone|$CITY_TESTS" --shard=30/31 2>&1 | tee "$RUNNER_TEMP/round.log" | grep -E "✓|✘|passed|failed|flaky"
