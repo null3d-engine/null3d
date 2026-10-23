@@ -13,6 +13,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { TASK_EVIDENCE } from './task-evidence.ts';
 
 /** The milestone pull request, its title, and the plan that lists its tasks. */
 const PR = '549';
@@ -22,7 +23,6 @@ const BASE = 'origin/main';
 
 /** Tasks whose work is partly on the branch: the part that landed, and the part that remains. */
 const PARTIAL: Readonly<Record<string, string>> = {
-	'M3-L3': 'the planner and the stored tree are in; the GPU stage is landing now',
 	'M3-C1':
 		'the scene, its lanes, rain and the hero car are in; the moods, the instances demo and the device figures remain',
 	'M3-T1': 'the measured fence is in; the trim is on its branch',
@@ -98,15 +98,22 @@ function description(): string {
 			// branch keeps the empty box and says its state in the note; anything else reads as text.
 			// A task whose code sits only on a helper branch is not done: the pull request merges the
 			// branch, so an unmerged task would claim work that a reader cannot find here.
-			const done = landed.has(id) && !PARTIAL[id] && !ON_BRANCH.has(id) && !INCOMPLETE.has(id);
+			const done =
+				landed.has(id) &&
+				!PARTIAL[id] &&
+				!ON_BRANCH.has(id) &&
+				!INCOMPLETE.has(id) &&
+				id in TASK_EVIDENCE;
 			const mark = done ? 'x' : ' ';
 			const note = PARTIAL[id]
 				? ` — part landed: ${PARTIAL[id]}`
 				: ON_BRANCH.has(id)
 					? ' — on a helper branch'
-					: NOTES[id]
+					: INCOMPLETE.has(id) || NOTES[id]
 						? ` — ${NOTES[id]}`
-						: '';
+						: landed.has(id) && !(id in TASK_EVIDENCE)
+							? ' — the branch check is owed'
+							: '';
 			lines.push(`- [${mark}] **${id}** ${name}${note}`);
 		}
 		lines.push('');
