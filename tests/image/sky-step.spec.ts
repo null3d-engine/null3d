@@ -36,11 +36,14 @@ const distance = (a: number[], b: number[]) =>
 
 for (const gpu of Object.keys(TIERS) as (keyof typeof TIERS)[])
 	test(`a slow sun's light steps smoothly on ${gpu}`, async ({ page }) => {
-		test.setTimeout(120_000);
+		// CI's software GPU drew this page in 54.3 seconds on compat and 50.8 on webgl2, and the
+		// webgpu tier published nothing in 90: the WebGPU path draws this sweep slowest. Both waits
+		// allow a run twice as slow as the slowest tier's figure, and the test's limit clears them.
+		test.setTimeout(210_000);
 		await page.goto(`sky-step.html?gpu=${gpu}&fps=20`);
 		const result = await pageResult<{ error?: string; tier: string; frames: Frame[] }>(
 			page,
-			90_000,
+			180_000,
 		).catch(async (failure) => {
 			// A page that never reports is either slow or stopped: its trail says which, and how far
 			// its captures got.
