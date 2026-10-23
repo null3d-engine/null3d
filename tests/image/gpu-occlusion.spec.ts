@@ -22,9 +22,12 @@ const TIERS = [
 
 for (const { tier, query } of TIERS)
 	test(`GPU occlusion culling draws what culling without it draws on ${tier}`, async ({ page }) => {
-		test.setTimeout(150_000);
+		// CI's software GPU drew this room in 90 to 96 seconds on the webgpu tier, and its
+		// compatibility tier published nothing in 120 on two runs. The waits allow a run twice as
+		// slow as the webgpu tier's, and the test's limit clears them.
+		test.setTimeout(270_000);
 		await page.goto(`gpu-occlusion.html?${query}`);
-		const result = await pageResult<OcclusionResult>(page, 120_000);
+		const result = await pageResult<OcclusionResult>(page, 240_000);
 		console.log(`occlusion on ${tier}: ${JSON.stringify(result)}`);
 		expect(result.error).toBeUndefined();
 		expect(result.tier).toBe(tier);
