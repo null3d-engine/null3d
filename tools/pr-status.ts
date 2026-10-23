@@ -80,16 +80,16 @@ const GROUPS: readonly (readonly [string, string])[] = [
 const git = (...args: string[]) =>
 	execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
-/** Every task ID that a kept commit's `Task:` trailer names. */
+/** Every task ID that a kept commit's `Task:` trailer names. A split task keeps a lower-case tail. */
 function landedTasks(): Set<string> {
 	const out = git('log', '--format=%b', `${BASE}..HEAD`);
-	return new Set(out.match(/M3-[A-Z0-9]+/g) ?? []);
+	return new Set(out.match(/M3-[A-Z0-9]+[a-z]?/g) ?? []);
 }
 
 /** Each task of the plan, in its order, with the name it was given. */
 function planTasks(): { id: string; name: string }[] {
 	const text = readFileSync(PLAN, 'utf8');
-	return [...text.matchAll(/^(M3-[A-Z0-9]+) (.+?)(?: \(P.*)?$/gm)].map((match) => ({
+	return [...text.matchAll(/^(M3-[A-Z0-9]+[a-z]?) (.+?)(?: \(P.*)?$/gm)].map((match) => ({
 		id: match[1] as string,
 		name: (match[2] as string).trim(),
 	}));

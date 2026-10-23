@@ -220,6 +220,17 @@ export function gateSteps({ commit, quick }: GateOptions): GateStep[] {
 				out.exitCode === 0 ? workflowResult(out.output) : { figure: 'gh failed', verdict: 'fail' },
 		},
 		{
+			// The build comes first because every step after it loads the engine core: a core left
+			// over from other sources is refused at the first page, and each such step then measures
+			// nothing. It is also the budget step, so its figures are the ones the gate records.
+			id: 'budgets',
+			item: '4',
+			what: "Each core WebAssembly build within 600 KB after Brotli, and the engine's JavaScript per thread mode within its budget",
+			command: ['bun', 'run', 'build'],
+			timed: false,
+			read: (out) => ({ figure: budgetLines(out.output), verdict: byExit(out) }),
+		},
+		{
 			id: 'images-gpu',
 			item: '1',
 			what: "The image test manifest in Chrome on the Mac's GPU, on all three tiers",
@@ -243,14 +254,6 @@ export function gateSteps({ commit, quick }: GateOptions): GateStep[] {
 			command: ['bun', 'run', 'parity', '--', '--tier', 'webgpu,webgl2'],
 			timed: false,
 			read: (out) => ({ figure: parityCount(out.output), verdict: byExit(out) }),
-		},
-		{
-			id: 'budgets',
-			item: '4',
-			what: "Each core WebAssembly build within 600 KB after Brotli, and the engine's JavaScript per thread mode within its budget",
-			command: ['bun', 'run', 'build'],
-			timed: false,
-			read: (out) => ({ figure: budgetLines(out.output), verdict: byExit(out) }),
 		},
 		...(
 			[
