@@ -176,6 +176,7 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | Symptom | Likely cause | Fix | Docs |
 | --- | --- | --- | --- |
 | Blank canvas; console mentions `SharedArrayBuffer` or `crossOriginIsolated` | No isolation headers | The null3D Vite plugin, or set COOP `same-origin` and COEP `require-corp` on the host | `getting-started/hosting` |
+| The production build's worker files are tens of MB each, or Vite warns that workers do not build as ES modules | The build runs without the null3D Vite plugin, or another setting replaced its worker format | Add the plugin to `vite.config.ts`, and leave `worker.format` unset | `getting-started/install` |
 | Offline, the engine runs single-threaded, or a development build warns that a service worker controls a page that is not isolated | The service worker answers the page without its COOP and COEP headers | Cache the page's own response with `cache.addAll`, which keeps the headers, or copy them into the response the worker makes | `getting-started/hosting` |
 | Offline, the start or a feature's first use fails to download a file | The service worker caches no copy of that feature's files | Cache the `start` group and each feature that the game uses from `null3d-files.json` | `getting-started/hosting` |
 | Blank canvas; console shows CORS errors for models or textures | Assets from another origin without CORS or CORP headers | Serve them with `Access-Control-Allow-Origin` or `Cross-Origin-Resource-Policy` | `getting-started/hosting` |
