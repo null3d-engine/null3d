@@ -1,6 +1,6 @@
 # D-236: The final pass's upscale and sharpening take a build of their own
 
-Status: decided for the branch, pending the full picture run on the Mac before it lands. Date: 24 October 2026. Task: none.
+Status: decided. Date: 24 October 2026. Task: none.
 
 Summary: The final pass's upscale and sharpening sit in loops that run no rounds at the whole canvas's scale, and CI's software GPU still paid for their code in every frame: S1 drew 4.1 times faster on WebGL2 and 6.2 times faster on WebGPU on one runner without the two loops. They now live only in the pass's UPSCALE builds, which the two-step pass's second step draws. Every other build reads the texel under each pixel. The start shader files lost 0.9 KB after Brotli in all.
 
@@ -48,5 +48,6 @@ How the data was produced: the first table from the job logs of run 40004372878;
 
 ## Consequences
 
+- The full picture set on the Mac passed at the head that landed: 1,448 pictures, every tier, against unchanged references, in 14.4 minutes with none failing.
 - The first frame that lets the scale drop, or turns the sharpening on, now makes the second step's pipeline and draws at the whole scale; the next frame draws the two steps. `tests/render_scale.rs` and `tests/sharpen.rs` check that frame.
 - `.dev/image-tests.md` tells how to time a change on CI's software GPU.
