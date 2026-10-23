@@ -95,7 +95,7 @@ figures go in this table when they are taken.
 
 - The WebGL2 multi-draw path and Firefox's whole-level fallback draw the whole triangle list. The
   tree's cut into whole levels, which the Consequences above promise with this path, is also not
-  built; `--lod` still makes a mesh's whole levels separately. [D-232](D-232-what-webgl2-draws-for-a-cluster-tree.md)
+  built; `--lod` still makes a mesh's whole levels separately. [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)
   decides what a WebGL2 page draws and what each route still needs.
 - The direct-draw path, which a WebGPU device takes when its start-up probe measures it faster,
   records no cluster pass, so a cluster mesh draws whole there too. The image tests force the
