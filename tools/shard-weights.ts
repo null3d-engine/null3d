@@ -32,7 +32,7 @@ const CITY_LINE = /CITY_TESTS: '([^']+)'/;
 const DEFAULT_RUNS = 5;
 /** The count of main's newest passing runs to search for runs with browser jobs. */
 const SEARCH_RUNS = 50;
-/** The workers of each shard: Playwright's default of half the cores of CI's two-core runners. */
+/** The workers of each shard: Playwright's default of half the cores of CI's four-core runners. */
 const WORKERS = 2;
 
 const root = join(import.meta.dirname, '..');
