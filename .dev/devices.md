@@ -800,3 +800,8 @@ Each of these cost time in the gate's first runs. Follow them in order before a 
     pages, so `NULL3D_PRODUCTION_PAGES=skip bun run test:images -g "<name>"` runs them without the
     production build. On 23 October 2026 that build stalled or was killed five times in a row, and the
     skip took the failed step out of the path: the same six pictures drew in twenty seconds.
+
+14. **Clearing a deadlocked lane must not stop the work inside it.** Check every wrapper's child before
+    stopping anything: a wrapper at zero CPU may be guarding a job that is doing real work between
+    steps. On 23 October 2026 a coordinator cleared a jammed lane and killed two timing runs that way,
+    losing about twenty minutes of measurement each time.

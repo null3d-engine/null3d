@@ -226,7 +226,7 @@ The `Docs-Checked:` trailer names the `.dev` page that holds the reason, or says
 
 ## Commit gates
 
-`bun install` sets up git hooks that keep the docs in line with the code. Never skip them with `--no-verify`: CI runs the same checks on main, and a failure there turns main red for everyone. A push to main also runs the pre-push check below, which reads the commits that the push adds.
+`bun install` sets up git hooks that keep the docs in line with the code. Never skip them with `--no-verify`, and never turn them off with `HUSKY=0`: CI runs the same checks on main, and a failure there turns main red for everyone. A busy machine is no reason to skip a hook. Wait for the machine, or commit later. A push to main also runs the pre-push check below, which reads the commits that the push adds.
 
 Before each commit:
 
