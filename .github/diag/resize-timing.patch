@@ -1,5 +1,5 @@
 diff --git a/tests/image/resize.spec.ts b/tests/image/resize.spec.ts
-index 2dae84f36..105816005 100644
+index 2dae84f36..15403ead0 100644
 --- a/tests/image/resize.spec.ts
 +++ b/tests/image/resize.spec.ts
 @@ -4,6 +4,7 @@
@@ -10,7 +10,26 @@ index 2dae84f36..105816005 100644
  import { expect, type Page, test } from '@playwright/test';
  import { ENGINE_MODES } from '../lib/engine-checks.ts';
  import { pageResult } from '../lib/page-result.ts';
-@@ -58,14 +59,20 @@ const RESIZE_TIMEOUT_MS = 30_000;
+@@ -13,6 +14,18 @@ import { pageResult } from '../lib/page-result.ts';
+ // same file run in order took about fourteen minutes for twenty-nine tests.
+ test.describe.configure({ mode: 'parallel', timeout: 180_000 });
+ 
++test.beforeEach(({ page }, info) => {
++	if (!info.title.includes('pixel ratio cap')) return;
++	page.on('console', (message) => {
++		const text = message.text();
++		if (!text.startsWith('[diag]')) return;
++		appendFileSync(
++			process.env.RESIZE_TIMING_LOG ?? '/tmp/resize-timing.log',
++			`${new Date().toISOString()} ${info.title} | ${text}\n`,
++		);
++	});
++});
++
+ /** A pixel ratio cap below the screen's. */
+ const CAPPED_RATIO = 1.5;
+ /**
+@@ -58,14 +71,20 @@ const RESIZE_TIMEOUT_MS = 30_000;
  /** Sets each window size, and waits until the drawing buffer is the canvas's CSS size times `ratio`. */
  async function expectBuffers(page: Page, ratio: number): Promise<void> {
  	for (const size of WINDOW_SIZES) {
@@ -37,3 +56,49 @@ index 2dae84f36..105816005 100644
  	}
  }
  
+diff --git a/tests/pages/resize.ts b/tests/pages/resize.ts
+index b3eac7ff1..8537acf3e 100644
+--- a/tests/pages/resize.ts
++++ b/tests/pages/resize.ts
+@@ -43,8 +43,9 @@ run('resize', async () => {
+ 		canvas,
+ 		sketch: new URL('./sketches/quality-sketch.ts', import.meta.url),
+ 		maxPixelRatio: cap === null ? undefined : Number(cap),
+-		onSketchMessage: (name) => {
++		onSketchMessage: (name, data) => {
+ 			if (name === 'changed') heardChange();
++			if (name === 'diag') console.log(`[diag] ${JSON.stringify(data)}`);
+ 		},
+ 	});
+ 	engine.onFailure((error) => {
+diff --git a/tests/pages/sketches/quality-sketch.ts b/tests/pages/sketches/quality-sketch.ts
+index 337ebdcfe..e6b0c1047 100644
+--- a/tests/pages/sketches/quality-sketch.ts
++++ b/tests/pages/sketches/quality-sketch.ts
+@@ -20,4 +20,26 @@ export default defineSketch(({ quality, page, textures }) => {
+ 			page.post('refused', (error as Error).message);
+ 		}
+ 	});
++	let frames = 0;
++	let since = performance.now();
++	let last = since;
++	let worst = 0;
++	return {
++		onUpdate() {
++			const now = performance.now();
++			worst = Math.max(worst, now - last);
++			last = now;
++			frames++;
++			if (now - since >= 1000) {
++				page.post('diag', {
++					scale: quality.renderScale,
++					fps: Math.round((frames * 10000) / (now - since)) / 10,
++					worstMs: Math.round(worst),
++				});
++				frames = 0;
++				since = now;
++				worst = 0;
++			}
++		},
++	};
+ });
