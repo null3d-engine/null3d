@@ -151,6 +151,8 @@ run('stats', async (): Promise<StatsResult> => {
 		mode: engine.mode,
 		gpuTimer,
 		noPageMemory: params.has('no-page-memory'),
+		// The memory register reports in development builds only.
+		register: import.meta.env.DEV,
 		instances: null,
 		feature: null,
 	};
@@ -212,6 +214,7 @@ run('stats', async (): Promise<StatsResult> => {
 		// The overlay refreshes a few times a second, so it can show the GPU row as still measuring
 		// for a moment after the figures hold a GPU time.
 		(!gpuTimer || /^\d/.test(readOverlay(canvas)?.figures.gpu ?? '')) &&
+		(!import.meta.env.DEV || 'area:scene' in (readOverlay(canvas)?.figures ?? {})) &&
 		/^[1-9]/.test(readOverlay(canvas)?.figures.triangles ?? '');
 	const until = performance.now() + WAIT_MS;
 	let figures = await askFigures();

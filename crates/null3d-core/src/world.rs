@@ -12,6 +12,7 @@ use std::simd::f32x4;
 
 use crate::alloc::filled;
 use crate::math::{Affine, Affine4, transpose4};
+use crate::memory::{MemoryUse, vec_bytes};
 
 /// Floats per world matrix.
 pub const MATRIX_FLOATS: usize = 12;
@@ -83,6 +84,22 @@ pub struct WorldArrays {
 const NEW_ROW_VALUES: [f32; ROW_VALUE_FLOATS] = [1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0];
 
 impl WorldArrays {
+    /// The bytes that the arrays hold.
+    pub(crate) fn memory_use(&self) -> MemoryUse {
+        let mut use_ = MemoryUse::default();
+        for array in [
+            vec_bytes(&self.matrices),
+            vec_bytes(&self.xs),
+            vec_bytes(&self.ys),
+            vec_bytes(&self.zs),
+            vec_bytes(&self.radii),
+            vec_bytes(&self.values),
+        ] {
+            use_.add(array);
+        }
+        use_
+    }
+
     /// Arrays for `rows` rows, every row hidden, with row values when `with_values` is set.
     pub(crate) fn new(rows: usize, with_values: bool) -> Self {
         let Ok(arrays) = Self::try_new(rows, with_values) else {

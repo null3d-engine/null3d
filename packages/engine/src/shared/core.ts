@@ -173,6 +173,14 @@ export interface CoreGlue extends CoreErrors {
 	drawListAddress(parity: number): number;
 	drawListWords(frame: number): number;
 	/**
+	 * Fills the memory register with what each table and allocator holds, and returns the address
+	 * of three numbers per area: the bytes that it reserves, uses and has used at most. A
+	 * development build asks for a report while the stats overlay shows its card.
+	 */
+	updateMemoryRegister(): number;
+	/** The number of memory areas that `updateMemoryRegister` reports. */
+	memoryAreas(): number;
+	/**
 	 * Makes room for `points` points of debug lines, keeping those written since the last recorded
 	 * frame. The arrays can move, so their addresses must be read again.
 	 */
@@ -1097,6 +1105,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'resetGpu',
 	'drawListAddress',
 	'drawListWords',
+	'updateMemoryRegister',
+	'memoryAreas',
 	'reserveDebugLines',
 	'debugLineArrays',
 	'drawDebugLines',

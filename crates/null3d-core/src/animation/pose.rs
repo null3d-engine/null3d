@@ -6,6 +6,7 @@ use std::simd::prelude::*;
 
 use super::{AnimationError, POSE_FIELDS, field, filled, lanes_for};
 use crate::math::Affine;
+use crate::memory::{MemoryUse, buffer_bytes};
 
 /// A local pose by field: translation, rotation and scale of each joint, in ten arrays of `lanes`
 /// values (see the module documentation of [`crate::animation`]). Joints past the skeleton's
@@ -17,6 +18,11 @@ pub struct Pose {
 }
 
 impl Pose {
+    /// The bytes that the pose's values hold.
+    pub(crate) fn memory_use(&self) -> MemoryUse {
+        buffer_bytes(&self.values)
+    }
+
     /// The pose of `joints` joints that all hold the identity transform.
     pub fn identity(joints: u32) -> Result<Pose, AnimationError> {
         let lanes = lanes_for(joints);
