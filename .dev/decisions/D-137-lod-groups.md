@@ -429,7 +429,11 @@ The test scene's ball shows the saving. Its base has 1,225 vertices of 16 bytes,
 Held as copies, the levels took 91,600 bytes of GPU memory. Held over the base's vertices, they
 take 13,200. The four levels save 78,400 bytes on that one mesh. One picture test draws the file
 with each level's accessors copied. Its picture must match the shared one: the shared level draws
-the same pixels as the copied level.
+the same pixels as the copied level. On 23 October 2026 that held on the Mac, which matched the two
+frames in every pixel on its GPU and on its software GPU. CI's software GPU differed in one to three
+pixels of the 640 x 360 frame, each by one step of 255. The same vertices, read from another place
+in a buffer, round so there. The test keeps the exact match on the Mac and allows sixteen pixels on
+SwiftShader ([Image tests](../image-tests.md#references)).
 
 ## Addendum, 23 October 2026: impostor cards that blend three views and relight
 
