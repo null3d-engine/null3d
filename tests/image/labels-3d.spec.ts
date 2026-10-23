@@ -7,7 +7,7 @@ import { expect, test } from '@playwright/test';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
 
-const softwareGpu = () => test.info().project.name.startsWith('chromium-swiftshader');
+const softwareGpu = () => test.info().project.name.includes('swiftshader');
 
 interface Boxes {
 	/** Each element's x, y, width and height, in CSS pixels. */
