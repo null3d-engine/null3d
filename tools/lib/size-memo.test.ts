@@ -3,10 +3,12 @@ import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+	FULL_SIZE_PARTS,
 	keepSizeMemo,
 	mergeSizeMemoParts,
 	readSizeMemo,
 	sizeMemoPartFile,
+	sizePartsFor,
 	writeSizeMemo,
 } from './size-memo';
 import { type SizeEntry, sizePartFile } from './size-report';
@@ -43,16 +45,40 @@ describe('the size memo file', () => {
 
 	it('is kept only when the measuring compressed a file, and never while the caches are off', () => {
 		const path = join(folder(), 'sizes.json');
-		expect(keepSizeMemo(entries({ a: size(8) }, 0), path)).toBe(false);
+		expect(keepSizeMemo(entries({ a: size(8) }, 0), null, path)).toBe(false);
 		expect(existsSync(path)).toBe(false);
 		process.env.NULL3D_NO_CACHE = '1';
-		expect(keepSizeMemo(entries({ a: size(8) }), path)).toBe(false);
+		expect(keepSizeMemo(entries({ a: size(8) }), null, path)).toBe(false);
 		expect(existsSync(path)).toBe(false);
 		writeSizeMemo(path, entries({ a: size(8) }));
 		expect(readSizeMemo(path).known.size).toBe(0);
 		delete process.env.NULL3D_NO_CACHE;
-		expect(keepSizeMemo(entries({ a: size(8) }), path)).toBe(true);
+		expect(keepSizeMemo(entries({ a: size(8) }), null, path)).toBe(true);
 		expect(readSizeMemo(path).known.size).toBe(1);
+	});
+
+	it('is kept when the measuring met other shader modules than the memo names, though it compressed nothing', () => {
+		const path = join(folder(), 'sizes.json');
+		writeSizeMemo(path, entries({ a: size(8) }), 'set-1');
+		expect(keepSizeMemo(entries({ a: size(8) }, 0), 'set-1', path)).toBe(false);
+		expect(keepSizeMemo(entries({ a: size(8) }, 0), 'set-2', path)).toBe(true);
+		expect(sizePartsFor('set-2', path)).toEqual([1]);
+	});
+
+	it('needs one size part for the shader modules that the memo names, and the full split otherwise', () => {
+		const path = join(folder(), 'sizes.json');
+		const full = Array.from({ length: FULL_SIZE_PARTS }, (_, i) => i + 1);
+		expect(sizePartsFor('set-1', path)).toEqual(full);
+		writeSizeMemo(path, entries({ a: size(8) }), 'set-1');
+		expect(sizePartsFor('set-1', path)).toEqual([1]);
+		expect(sizePartsFor('set-2', path)).toEqual(full);
+		expect(sizePartsFor(null, path)).toEqual(full);
+		// A memo that other compressors made holds no size for this runtime.
+		writeFileSync(
+			path,
+			JSON.stringify({ stamp: 'another zlib', compressed: 0, sizes: {}, modules: 'set-1' }),
+		);
+		expect(sizePartsFor('set-1', path)).toEqual(full);
 	});
 
 	it("merges every part's entries, and leaves out the parts' size files and another stamp's", () => {
