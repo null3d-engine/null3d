@@ -712,12 +712,12 @@ A feature that most pages do not use keeps its shader builds out of the start fi
 
 ## The memory register
 
-- The stats overlay's `Memory by system` rows come from a register that each table fills on demand ([D-228](decisions/D-228-memory-register.md)). The page asks for a report from the sketch thread while the card is open and the build is a development one, and the sketch publishes three numbers per area in the metrics buffer's header beside the memory figures.
-- A report walks the tables and sums `Vec::capacity` and `Vec::len`; it allocates nothing and runs a few times a second at most. Nothing runs while the card is closed, so a shipped page pays only the bytes of the code.
-- The areas, in the overlay's order, are in `crates/null3d-core/src/memory.rs` and `packages/engine/src/shared/memory-area.ts`. Adding one means adding a constant, a name at the same place in both files, and the table's `account` call.
-- A table that keeps memory across frames reports what it holds now. An allocator that reuses its memory every frame reports its high-water mark itself: `UploadArena` records the previous frame's fill when it resets, so a report that lands on a quiet frame still shows the busiest one.
+- The stats overlay's `Memory by system` rows come from a register that each table fills on demand ([D-228](decisions/D-228-memory-register.md)). The page asks the sketch thread for a report while the card is open, in a development build. The sketch publishes three numbers per area in the metrics buffer's header, beside the memory figures.
+- A report walks the tables and sums `Vec::capacity` and `Vec::len`. It allocates nothing and runs a few times a second at most. Nothing runs while the card is closed, so a shipped page pays only the bytes of the code.
+- The areas, in the overlay's order, are in `crates/null3d-core/src/memory.rs` and `packages/engine/src/shared/memory-area.ts`. Adding one means a constant and a name at the same place in both files, and the table's `account` call.
+- A table that keeps memory across frames reports what it holds now. An allocator that reuses its memory every frame reports its high-water mark itself. `UploadArena` records the previous frame's fill when it resets. A quiet frame then still shows the busiest one.
 - A scene growth keeps its old world buffers for two frames, so a report in those frames counts both. That is real memory, and it leaves the figure by the third frame.
-- Measuring a page's memory against D-130's method: run the scene at two sizes and divide each row's growth by the objects between them. The rows that D-130 named reproduce its figures ([D-228](decisions/D-228-memory-register.md) has the Battle numbers). The rows add up to about half of the WebAssembly memory's growth, because WebAssembly memory never shrinks: the buffers that a table replaced while it grew stay in the heap, and no live table reports them. Read the rows for what the tables hold, and the engine memory figure for what the heap holds.
+- Measuring a page's memory against D-130's method: run the scene at two sizes and divide each row's growth by the objects between them. The rows that D-130 named reproduce its figures ([D-228](decisions/D-228-memory-register.md) has the Battle numbers). The rows add up to about half of the WebAssembly memory's growth, because that memory never shrinks. The buffers that a table replaced while it grew stay in the heap, and no live table reports them. Read the rows for what the tables hold, and the engine memory figure for what the heap holds.
 
 ## Frames in flight
 
