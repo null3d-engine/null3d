@@ -737,8 +737,11 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
 #endif
     }
     // At the whole canvas's scale the second step sharpens the display color that the first step
-    // drew. Below it the upscale sharpens its own taps, so the value adds nothing there.
-    if whole && (settings.output.flags & SHARPEN) != 0u {
+    // drew. Below it the upscale sharpens its own taps, so the value adds nothing there. The call
+    // sits in a loop of no rounds while the sketch asks for no sharpening: a software GPU runs both
+    // sides of a branch, so a plain test would still read the four texels that the sharpening needs.
+    let sharpen_rounds = select(0u, 1u, whole && (settings.output.flags & SHARPEN) != 0u);
+    for (var sharp_round = 0u; sharp_round < sharpen_rounds; sharp_round++) {
         color = sharpened(color, first, render, size, light, shade, settings.sharpen.x);
     }
     // The upscale runs in a loop of no rounds at the whole canvas's scale, so a software GPU, such
