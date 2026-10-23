@@ -797,7 +797,7 @@ impl Compiler {
                 )]
             })?;
             Some(WgslOutput {
-                source: finish_source(&literals::compact_floats(&written)),
+                source: finish_source(&literals::compact_floats(&written)).into(),
                 pipelines: pipelines.clone(),
             })
         } else {
