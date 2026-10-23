@@ -118,6 +118,11 @@ a branch on a moved main is cheap.
   build runs as before, as in CI.
 - When a core change seems to be ignored, build with `NULL3D_NO_CACHE=1`, and check the flags word
   that a material row holds before looking anywhere else.
+- An open question, from 23 October 2026: a locally packed engine can lack
+  `lib/generated/shader-features.js` although the packages job passes in CI. A hand-run
+  `bun pm pack` in `packages/engine` without `prepack`, and the packages test in one worktree, both
+  produced a tarball whose page module imports that file while the file is left out. The cause is
+  not found, and the packaging rules were left as they are.
 
 A project that the Vite plugin builds has a shader cache of its own. The plugin keeps every compiled
 shader in that project's `node_modules/.cache/null3d-shaders`. The key is the WGSL, the path, the
