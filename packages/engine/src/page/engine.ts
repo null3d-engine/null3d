@@ -9,6 +9,7 @@ import { EngineError, errorFixesReady, errorOfMessage } from '../errors/engine-e
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
 import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
+import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
 import { maxTargetFps, type PresetCheck, type TargetFps } from '../quality/check';
 import {
 	choosePreset,
@@ -101,6 +102,7 @@ import {
 	takeParkedWorker,
 	takeWhenFree,
 } from './ownership';
+import { PermutationRecording } from './permutation-recording';
 import { type PointerLockOptions, requestPointerLock } from './pointer-lock';
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
@@ -879,6 +881,11 @@ export class EngineWorker {
 	private readyPromise: Promise<WorkerReply>;
 	private readonly stoppedPromise: Promise<void>;
 	private worker: Worker;
+	/**
+	 * The recording that gathers the words of each thread that draws, when the page records them.
+	 * Set before the page waits for any worker's ready reply.
+	 */
+	recording?: PermutationRecording;
 	private started = false;
 	/** True once the worker reported that its script, and the files it imports, loaded. */
 	private scriptLoaded = false;
@@ -940,6 +947,12 @@ export class EngineWorker {
 			worker.onmessage = (event: MessageEvent<WorkerReply>) => {
 				const reply = event.data;
 				switch (reply.type) {
+					case 'ready':
+						// A recording run collects each drawing thread's words, and publishes them only
+						// once every thread that draws has answered, so a partial list is never written.
+						if (reply.permutations !== undefined)
+							this.recording?.answered(reply.role, reply.permutations);
+						break;
 					case 'sketch-message':
 						events.sketchMessage(reply.name, reply.data);
 						return;
@@ -2225,6 +2238,23 @@ async function startEngine(
 		};
 		/** Each engine thread's name and the roles it runs, for the frame figures. */
 		engineThreads = [...threadRoles(mode)];
+		// A recording run gathers the words of every thread that draws, and publishes them where the
+		// tool that writes the build's list reads them.
+		const recording =
+			switches.permutations === 'record'
+				? new PermutationRecording(
+						renderThread === 'render-worker'
+							? 'render'
+							: renderThread === 'sketch-worker'
+								? 'sketch'
+								: 'page',
+					)
+				: undefined;
+		if (recording) for (const worker of allWorkers(threads)) worker.recording = recording;
+		if (recording && renderThread === 'main') {
+			recordPermutations();
+			recording.expectPage(() => stopRecordingPermutations());
+		}
 		// What the thread that draws needs besides its canvas, whichever thread that is.
 		const rendererSetup: Omit<RendererSetup, 'canvas'> = {
 			tier,
@@ -2236,6 +2266,8 @@ async function startEngine(
 			hold: hold !== undefined,
 			glTiming: switches.glTiming,
 			preload: options.preload,
+			// The recording run lists the words that the scene draws with, for a narrowed build.
+			recordPermutations: switches.permutations === 'record',
 		};
 
 		const device = coreDevice(tier, report, {
