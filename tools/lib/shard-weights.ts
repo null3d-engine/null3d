@@ -1,11 +1,14 @@
 // The model behind the browser job's shard weights. Playwright splits the tests between shards by
-// count, in its own order of them, and puts each group of tests whole in the shard where the group's
-// first test falls. A file that runs its tests in order is one group, and each test of a file that
-// runs its tests in parallel is a group of its own. A shard's workers each take the next group as
-// they come free. Given each test's time from a CI run, the model finds the cuts that make the
-// slowest shard as short as possible.
+// count, in its own order of groups, and puts each group of tests whole in the shard where the
+// group's first test falls. A file that runs its tests in order is one group, and each test of a
+// file that runs its tests in parallel is a group of its own. Playwright orders a project's groups by
+// the worker that each needs before their files, so `shard-groups-reporter.ts` gives the groups as
+// Playwright makes them. A shard's workers each take the next group as they come free. Given each
+// test's time from a CI run, the model finds the cuts that make the slowest shard as short as
+// possible.
 import { stripVTControlCharacters } from 'node:util';
 import { ALONE_PROJECT_SUFFIX } from '../../tests/lib/alone.ts';
+import { GROUP_LINE } from './shard-groups-reporter.ts';
 
 /** One test in Playwright's order. */
 export interface ListedTest {
@@ -29,8 +32,6 @@ const RESULT_LINE =
 	/([✓✘-])\s+\d+ \[([^\]]+)\] › (?:image\/)?([^:\s]+):\d+:\d+ › (.*?)(?: \(retry #\d+\))?(?: \(([\d.]+)(ms|s|m|h)\))?$/;
 /** A line of `playwright test --list`. */
 const LIST_LINE = /^\s+\[([^\]]+)\] › ([^:\s]+):\d+:\d+ › (.*)$/;
-/** A file's own line that makes all its tests run in parallel. */
-const PARALLEL_FILE = /^test\.describe\.configure\(\{ mode: 'parallel' \}\);?$/m;
 
 /**
  * The key of a test's time. It leaves out the alone projects' suffix, so that a test keeps its time
@@ -95,50 +96,50 @@ export function parseTestList(list: string): ListedTest[] {
 	return tests;
 }
 
-/** Whether a test file's source makes all its tests run in parallel. */
-export function runsInParallel(source: string): boolean {
-	return PARALLEL_FILE.test(source);
+/**
+ * The groups of `playwright test --list` with `shard-groups-reporter.ts`, in Playwright's order,
+ * each with its tests in order.
+ */
+export function parseTestGroups(output: string): ListedTest[][] {
+	const groups: ListedTest[][] = [];
+	for (const line of output.split('\n')) {
+		if (line.trimEnd() === GROUP_LINE) groups.push([]);
+		else {
+			const [test] = parseTestList(line);
+			if (test) groups.at(-1)?.push(test);
+		}
+	}
+	return groups.filter((group) => group.length > 0);
 }
 
 /**
- * Playwright's groups of the tests, in order, each test with its time. A test with no time in the
- * run takes the mean of its file's tests that have one, or the median of all tests if none has.
+ * The groups with each test's time. A test with no time in the run takes the mean of its file's
+ * tests that have one, or the median of all tests if none has.
  */
-export function groupTests(
-	tests: ListedTest[],
+export function timedGroups(
+	listed: readonly (readonly ListedTest[])[],
 	times: Map<string, number>,
-	parallelFiles: ReadonlySet<string>,
 ): { groups: TestGroup[]; missing: number } {
 	const allMedian = median([...times.values()]);
 	const fileTimes = new Map<string, number[]>();
-	for (const test of tests) {
+	for (const test of listed.flat()) {
 		const seconds = times.get(timeKey(test.project, test.file, test.title));
 		if (seconds === undefined) continue;
 		const list = fileTimes.get(test.file) ?? [];
 		list.push(seconds);
 		fileTimes.set(test.file, list);
 	}
-	const groups: TestGroup[] = [];
 	let missing = 0;
-	for (const test of tests) {
-		let seconds = times.get(timeKey(test.project, test.file, test.title));
-		if (seconds === undefined) {
+	const groups = listed.map((tests): TestGroup => {
+		const seconds = tests.map((test) => {
+			const known = times.get(timeKey(test.project, test.file, test.title));
+			if (known !== undefined) return known;
 			missing++;
 			const same = fileTimes.get(test.file);
-			seconds = same ? same.reduce((sum, value) => sum + value, 0) / same.length : allMedian;
-		}
-		const last = groups.at(-1);
-		if (
-			!last ||
-			parallelFiles.has(test.file) ||
-			last.project !== test.project ||
-			last.file !== test.file
-		) {
-			groups.push({ project: test.project, file: test.file, seconds: [seconds] });
-		} else {
-			last.seconds.push(seconds);
-		}
-	}
+			return same ? same.reduce((sum, value) => sum + value, 0) / same.length : allMedian;
+		});
+		return { project: tests[0]!.project, file: tests[0]!.file, seconds };
+	});
 	return { groups, missing };
 }
 
