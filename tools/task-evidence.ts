@@ -1,10 +1,18 @@
 // What proves each completed task on the milestone branch: the test or picture that a reader
 // can open. The pull request marks a task done only when its commit is on the branch and this
 // file names the evidence, so a tick always means the work is here and something checks it.
-// The entries come from three read-only audits of the branch on 23 October 2026.
+// The entries come from read-only audits of the branch on 23 October 2026.
 export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
-	'M3-L3':
-		'the cluster pictures in both reference sets and the Rust tests the landing ran; D-213 records the drawing method and what is not built',
+	'M3-A4':
+		'`bloomLevel` in `packages/engine/src/scene/effects.ts`; documented in `docs/api/post.md`',
+	'M3-A6':
+		'`setDrawRange` in `packages/engine/src/scene/scene.ts`; the ranges texture bound by the replay page',
+	'M3-A8':
+		'Grading controls in `packages/engine/src/scene/post.ts`; the Skyway pictures exercise them',
+	'M3-G2':
+		'`KHR_materials_iridescence` in `packages/engine/src/scene/gltf-parse.ts`; `iridescence.wgsl`, with pictures',
+	'M3-G3':
+		'`KHR_materials_anisotropy` in `packages/engine/src/scene/gltf-parse.ts`; `MATERIAL_PARAM_ANISOTROPY`, with pictures',
 	'M3-A1':
 		'Raycast and pick hits carry `uv`: `packages/engine/src/scene/queries.ts`, `docs/api/raycast.md`',
 	'M3-A10':
