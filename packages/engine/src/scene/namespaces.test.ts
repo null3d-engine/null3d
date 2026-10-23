@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
+import { PLUGIN_INTERFACE_VERSION } from '../shared/version';
 import { AddonNamespaces, addonNamespaces, declareAddonNamespace } from './namespaces';
 
 // The page sets the table of fixes that ends each error's message before it can raise an error.
@@ -96,6 +97,49 @@ describe('the namespace that an add-on claims', () => {
 		expect(() =>
 			namespaces.claim({ name: 'water', prefix: 'water::' } as unknown as { name: string }),
 		).toThrow(/E1225: declareAddonNamespace\(\) got the option 'prefix'/);
+	});
+});
+
+describe('the plugin interface range that an add-on declares', () => {
+	it('keeps a range that holds the engine’s interface', () => {
+		const namespaces = new AddonNamespaces();
+		const water = namespaces.claim({
+			name: 'water',
+			pluginInterface: {
+				min: PLUGIN_INTERFACE_VERSION,
+				max: PLUGIN_INTERFACE_VERSION,
+			},
+		});
+		expect(water.pluginInterface).toEqual({
+			min: PLUGIN_INTERFACE_VERSION,
+			max: PLUGIN_INTERFACE_VERSION,
+		});
+		expect(Object.isFrozen(water.pluginInterface)).toBe(true);
+	});
+
+	it('refuses a range that leaves out the engine’s interface, and names the add-on', () => {
+		const namespaces = new AddonNamespaces();
+		const above = PLUGIN_INTERFACE_VERSION + 1;
+		expect(() =>
+			namespaces.claim({ name: 'water', pluginInterface: { min: above, max: above } }),
+		).toThrow(/E1433: water was built for plugin interface /);
+		expect(namespaces.get('water')).toBeUndefined();
+	});
+
+	it('refuses a range that is no range of whole versions', () => {
+		const namespaces = new AddonNamespaces();
+		expect(() => namespaces.claim({ name: 'water', pluginInterface: { min: 3, max: 2 } })).toThrow(
+			/E1433: water declares plugin interface versions 3 to 2/,
+		);
+	});
+
+	it('gives the same namespace to a reload with the same range', () => {
+		const namespaces = new AddonNamespaces();
+		const first = namespaces.claim({ name: 'water', pluginInterface: { min: 1, max: 2 } });
+		expect(namespaces.claim({ name: 'water', pluginInterface: { min: 1, max: 2 } })).toBe(first);
+		expect(() => namespaces.claim({ name: 'water', pluginInterface: { min: 1, max: 3 } })).toThrow(
+			/E1225/,
+		);
 	});
 });
 
