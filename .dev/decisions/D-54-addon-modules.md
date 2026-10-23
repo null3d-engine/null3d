@@ -293,3 +293,7 @@ does not throw E1213.
 ### Built
 
 The add-on draws from both file kinds: an SPZ file whose cloud a sketch writes in code, and a glTF model that carries `KHR_gaussian_splatting`. The image tests draw a knot of splats above a ground with a bar in front of it, the same cloud under a capped budget, and a ribbon from a glTF model. Each draws on all three tiers and in all five thread modes: all 45 runs passed on the Mac's GPU and all 45 on SwiftShader on 23 October 2026, and each mode drew the other modes' picture. The iPhone and S24-class figures remain to be measured.
+
+### Not the first user of a GPU-written instance count
+
+M3-E9 plans a draw whose instance count the GPU writes. The splats add-on is not its first user. The splats draw is the engine's instance batch: the transparent pass culls and sorts its rows back to front on the job workers, and a GPU-written count would skip that sorted list, so the splats would blend in the wrong order. The count is also no per-frame problem here. It changes when the camera or the budget crosses a threshold, and the sketch then packs the chosen rows once between two frames. E9 therefore needs another first user, such as vegetation or hair, or a hook that keeps the engine's sorted rows.
