@@ -200,6 +200,25 @@ fn report(stats: &CacheStats) {
         "The shader build compiled {} entries and reused {}.",
         stats.compiled, stats.reused
     );
+    report_peak_memory();
+}
+
+/// Prints the most memory the build held at once, where the system reports it, so that a CI log
+/// shows how close the build came to its machine's limit before a build runs out (D-235).
+fn report_peak_memory() {
+    #[cfg(target_os = "linux")]
+    if let Some(kib) = std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|status| {
+            status.lines().find_map(|line| {
+                let kib = line.strip_prefix("VmHWM:")?.trim().strip_suffix("kB")?;
+                kib.trim().parse::<u64>().ok()
+            })
+        })
+    {
+        let gigabytes = kib as f64 * 1024.0 / 1e9;
+        println!("The shader build held at most {gigabytes:.1} GB of memory at once.");
+    }
 }
 
 fn usage(problem: &str) -> ExitCode {

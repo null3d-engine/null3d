@@ -54,6 +54,8 @@ The first join stopped CI's `build` job in three runs in a row: 39953294861, 399
 | The shader build's peak, a whole-entry read before this update | 16.3 GB resident, 15.3 GB footprint |
 | The shader build's peak, the join below | 14.1 GB resident, 12.8 GB footprint |
 | The shader build's peak, a whole-entry read after this update | 14.0 GB resident, 13.0 GB footprint |
+| The shader build's peak, the join with each source held once in memory | 7.3 GB resident, 5.8 GB footprint |
+| The shader build's peak, a whole-entry read with each source held once in memory | 6.9 GB resident, 6.6 GB footprint |
 | The memory of CI's `ubuntu-latest` runner | 16 GB |
 
 How the data was produced: the six `shader-entries` artifacts of run 39953294861 went into a cache folder on the Mac. A checkout of that run's commit, dc2ed4f8b, gives the same inputs and compiler stamp as CI. For each row, `/usr/bin/time -l` ran `shader-build --root <checkout> --cache <folder> --stamp <stamp>` on a fresh copy of the folder. Every run reused all 74 entries. The expanded size is the sum of the texts that the references name, counted by a script over the whole entry's file.
@@ -65,6 +67,12 @@ The first join expanded all six parts at once. To store the joined entry, it the
 - A read drops the file's bytes once it has parsed them. When the builds expand, the last reference to a text takes it, and the others copy it.
 - A shard that reads its part from the whole entry narrows the entry in its stored form, so only the part's builds expand.
 
-The budget: the shader build runs alone in the `build` job, since `tools/build-wasm.ts` finishes the shader modules before it starts the WebAssembly builds. Its peak, the join included, stays at or below a read of the whole entry. It leaves room under the runner's memory: about 2 GB on this data. A change that raises the peak states the new figure, measured as above. The expanded builds are most of the peak, and they grow with the manifest. Holding each shared text once in memory, not a copy in each build, would cut `standard_maps` from 6.3 GB to about 2 GB. That change reaches the shader output types that the whole crate uses.
+The expanded builds were then most of the peak, and they grow with the manifest. So, at the owner's word the same day, the builds share their sources in memory too:
 
-`crates/null3d-shaders/tests/cache.rs` checks that the joined entry reads back, and that it holds each shared text once, as an entry built whole does.
+- The WGSL and GLSL sources of the shader output types are shared texts (`Arc<str>`). A build that the cache gives back holds its entry's one copy of each source, not a copy of its own.
+- The cache file stores each build in a typed form whose sources are numbers in the entry's list of sources, which a read hands out as shared texts. The format before held the builds as JSON values with `{"$text": n}` references, which a read copied into each build. The cache's format version went from 2 to 3, so the first build after the change compiles every entry once.
+- The two rows with each source held once in memory used the same data, converted to the new format by a script, and a build of the tool that keeps the old format version so that the file names still match. Both runs found the shader modules already up to date, so the output is byte for byte the same.
+
+The budget: the shader build runs alone in the `build` job, since `tools/build-wasm.ts` finishes the shader modules before it starts the WebAssembly builds. Its peak, the join included, stays at or below a read of the whole entry, and leaves room under the runner's memory: about 9 GB on this data. A change that raises the peak states the new figure, measured as above. On Linux the shader build prints its peak at the end of its report, from the kernel's high-water mark, so each CI log shows it.
+
+`crates/null3d-shaders/tests/cache.rs` checks that the joined entry reads back, and that it holds each shared text once, as an entry built whole does. A unit test in `cache.rs` checks that the builds a read gives back share one copy of a source in memory.

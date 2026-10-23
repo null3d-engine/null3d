@@ -207,3 +207,7 @@ the startup build and the browser tests call it. So do the pack step, the CDN bu
 build. A project that installs the engine package holds no core crate, so the check leaves
 it alone. The release's publish job builds the core from the tag before it packs, and it now refuses
 a stale core too.
+
+## Addendum, 23 October 2026: each source by number, and shared in memory
+
+The per-entry shader cache's format version is now 3. A file holds each WGSL and GLSL source of its entry once, and each build names its sources by their number in that list, in place of the `{"$text": n}` references to texts of 40 characters or more. A read gives every build that names a source the same text in memory, since the shader output types now hold their sources as shared texts. The shader build's peak on CI's data fell from 14.1 GB to 7.3 GB ([D-235](D-235-shader-entry-parts.md#update-23-october-2026-the-joins-memory)).
