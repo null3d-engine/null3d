@@ -13,7 +13,9 @@
 //! A tone curve's WGSL declares `fn toneCurve(color: vec3f) -> vec3f`, which the final pass (the
 //! shader that the manifest marks with `custom_tone_curves = true`) calls in place of its own
 //! curves. The build adds the WGSL after the final pass's last line and builds every variant but
-//! the HALF builds with the shader def CUSTOM_TONE_CURVE.
+//! the HALF and UPSCALE builds with the shader def CUSTOM_TONE_CURVE: a curve's pipelines take
+//! neither bit, and the two-step pass's second step, the one build with the upscale, draws without
+//! the curve.
 //!
 //! An effect's WGSL may declare textures, as a custom material's does (see [`crate::textures`]):
 //! the build binds them in the maps' group, group 1, loads their layers from the end of the
@@ -225,7 +227,7 @@ fn source_problems(
 
 impl Compiler {
     /// Builds an effect's WGSL into every variant of the effect template, or a tone curve's into
-    /// every variant of the final pass but its HALF builds.
+    /// every variant of the final pass but its HALF and UPSCALE builds.
     pub fn compile_effect(
         &mut self,
         templates: &PostTemplates,
@@ -340,7 +342,7 @@ impl Compiler {
                 let mut permutations: Vec<String> = variant
                     .permutations
                     .iter()
-                    .filter(|bit| *bit != "HALF")
+                    .filter(|bit| *bit != "HALF" && *bit != "UPSCALE")
                     .cloned()
                     .collect();
                 if function == EFFECT {

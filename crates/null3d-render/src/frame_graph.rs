@@ -774,8 +774,9 @@ pub(crate) struct FrameGraph {
     /// True when the declarations hold the two-step pass: the render scale can drop below the whole
     /// canvas. A frame draws the two steps only below it, so a crossing declares nothing again.
     two_step_declared: bool,
-    /// True once the second step's pipeline is built. Until then a frame below the whole canvas's
-    /// scale keeps to the one final pass, which scales the image up by itself.
+    /// True once the second step's pipeline is built. It is the final pass's only build with the
+    /// upscale and the sharpening, so until then the frame draws at the whole canvas's scale and
+    /// does not sharpen: the one final pass reads the texel under each pixel.
     two_step_built: bool,
     /// True while the sketch sets a color grading table or the vignette, so the final pass runs to
     /// grade the image even where the scene could resolve into the canvas.
@@ -3668,7 +3669,11 @@ impl FrameGraph {
         scale: RenderScale,
     ) -> Result<(), RecordError> {
         let previous = self.scale;
-        self.scale = if self.final_runs() {
+        // Only the second step's build scales the image up, so the frame keeps the whole canvas's
+        // scale until that build is built. A device's first frame counts every pipeline as built
+        // and waits for them, so a page that starts below the whole scale draws there from its
+        // first frame.
+        self.scale = if self.final_runs() && self.two_step_built {
             scale
         } else {
             RenderScale::FULL
@@ -5533,6 +5538,8 @@ mod tests {
         });
         reflection.follow_camera(1, 1);
         frames.sync(&[View::default(), reflection]);
+        // A device's first frame counts the second step's build as built, so the frame may drop.
+        frames.request_pipelines(&mut PipelineCache::default(), 0);
         let mut list = DrawList::with_capacity(256);
         let half = RenderScale::from_thousandths(500);
         let made = |frames: &FrameGraph| frames.made.iter().map(|made| made.1).collect::<Vec<_>>();
@@ -5584,7 +5591,10 @@ mod tests {
     #[test]
     fn a_full_screen_pass_fills_a_share_of_the_render_size_before_the_camera_that_shows_it() {
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        frames.set_scaling(true);
         frames.sync(&[View::default(), fullscreen(PassSource::None, true)]);
+        // A device's first frame counts the second step's build as built, so the frame may drop.
+        frames.request_pipelines(&mut PipelineCache::default(), 0);
         let mut list = DrawList::with_capacity(256);
         frames
             .prepare(&mut list, (64, 48), RenderScale::from_thousandths(500))
