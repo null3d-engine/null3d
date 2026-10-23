@@ -66,7 +66,7 @@ Eight packages are public. Each one's `prepack` script runs `bun tools/build-pac
 | `@null3d/geometry` | `lib/`, and `THIRD-PARTY-NOTICES.txt` with the three.js and earcut licences, which the Vite plugin adds to a build's notices. The plugin finds the file through the package's `./package.json` export, so the package keeps that export | The engine's `lib/`, whose declarations it reads, then its own |
 | `@null3d/impostors` | `lib/` | The engine's `lib/`, whose declarations it reads, then its own |
 | `@null3d/particles` | `lib/` | The engine's `lib/`, whose declarations it reads, then its own |
-| `@null3d/terrain` | `lib/`, with `terrain.wgsl`, which the built module imports and the Vite plugin compiles for the project | The engine's `lib/`, whose declarations it reads, then its own |
+| `@null3d/terrain` | `lib/`, with its surface shader compiled into `terrain.wgsl.js` and the sets of its builds beside it, and no raw `.wgsl` file | The engine's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/cli` | `bin/` and `src/`, plain JavaScript with JSDoc types. The Basis Universal encoder in `vendor/`, and the asset tool's formats in `dist/assets.wasm` | Nothing |
 
 ### Source in the repository, built files on npm

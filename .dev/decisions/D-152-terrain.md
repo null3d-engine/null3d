@@ -51,7 +51,11 @@ Option B needs a per-block morph factor in the shader, so each block would take 
 
 ### How the shader reaches a project that installs the package
 
-The null3D Vite plugin compiles a project's own WGSL, and it skips `node_modules`, as [D-54](D-54-addon-modules.md) says. A tagged literal in the package's own source would stay an uncompiled string once the package is built into `lib/`, and `materials.shader` would refuse it. So the surface function lives in `packages/terrain/src/terrain.wgsl`, the module imports it, and the plugin compiles it in the project that uses the package, wherever the package sits. The package build now copies a package's `.wgsl` files into `lib/`, beside the JavaScript and the declarations, and the pack check requires `lib/terrain.wgsl`. The plugin writes `terrain.wgsl.d.ts` beside the file, as it does for any `.wgsl` file, so TypeScript sees the uniforms and the texture names.
+The null3D Vite plugin compiles a project's own WGSL, and it skips `node_modules`, as [D-54](D-54-addon-modules.md) says. A tagged literal in the package's own source would stay an uncompiled string once the package is built into `lib/`, and `materials.shader` would refuse it. So the surface function lives in `packages/terrain/src/terrain.wgsl` and the module imports it.
+
+The pack step compiles that file, as [D-54's addendum](D-54-addon-modules.md) requires: the built module imports `terrain.wgsl.js`, which holds the compiled shader, and a module for each set of the material's builds sits beside it. A project that installs the package takes the compiled form as it is, and a page that loads the package from a CDN can load it. No raw `.wgsl` file leaves the repository. The plugin still writes `terrain.wgsl.d.ts` beside the source file, as it does for any `.wgsl` file, so TypeScript sees the uniforms and the texture names, and the pack copies that declaration into `lib/`.
+
+The earlier form copied the raw file into `lib/` for the user's plugin to compile. It kept the package small but cost every project a shader compile, and it left a CDN page with a file that a browser cannot import.
 
 ## Data
 
