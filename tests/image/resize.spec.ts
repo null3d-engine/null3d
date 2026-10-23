@@ -8,6 +8,8 @@ import { expect, type Page, test } from '@playwright/test';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
 
+test.describe.configure({ mode: 'parallel' });
+
 /** A pixel ratio cap below the screen's. */
 const CAPPED_RATIO = 1.5;
 /**
