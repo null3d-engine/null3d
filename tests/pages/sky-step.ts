@@ -3,9 +3,9 @@
 // sun slowly, and captures frames back to back through the sweep and the frames after it. For each
 // capture it reports the mean colour of the mirror sphere's middle and of the rough sphere's front.
 import { createEngine } from '@null3d/engine';
-import { run } from './lib/result';
+import { progress, run } from './lib/result';
 
-const [WIDTH, HEIGHT] = [480, 270];
+const [WIDTH, HEIGHT] = [320, 180];
 /** The camera's field of view and distance, and where the sketch puts each sphere it reads. */
 const FOV = 40;
 const DISTANCE = 6;
@@ -13,7 +13,7 @@ const MIRROR: [number, number] = [-1.2, 0];
 const ROUGH: [number, number] = [1.2, 0];
 /** The captures before the sweep, and the capture count that ends the page. */
 const BEFORE = 2;
-const MOST_CAPTURES = 270;
+const MOST_CAPTURES = 100;
 
 /** The pixel of a point of the spheres' plane. */
 function pixel([x, y]: [number, number]): [number, number] {
@@ -55,7 +55,12 @@ run('sky-step', async () => {
 	};
 	for (let k = 0; k < BEFORE; k++) await capture();
 	engine.postToSketch('sweep');
-	for (let k = 0; k < MOST_CAPTURES; k++) await capture();
+	// A software GPU draws far slower than a real one, so the trail says how far the captures got
+	// when a run ends without a result.
+	for (let k = 0; k < MOST_CAPTURES; k++) {
+		await capture();
+		if (k % 10 === 9) progress(`captured ${k + 1}`);
+	}
 	await engine.destroy();
 	return { tier: engine.capabilities.tier, frames };
 });
