@@ -210,6 +210,7 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | `createEngine` rejects with E1410 | The sketch module did not load, at the first import or at the second, which the engine makes after a console warning: a wrong address, or an error that its top-level code threw | Pass `sketch: new URL('./sketch.ts', import.meta.url)`; fix the error that the message quotes | `errors/E1410` |
 | Pointer position off by a factor | Mixing CSS pixels and render pixels | `input.pointer.x` and `y` are CSS pixels, as `ctx.engine.viewport` gives the canvas size | `api/input` |
 | E1432 at the start of a sketch that imports an add-on | The add-on and the engine are at different versions, and each add-on pins the engine version it was built for | `bunx @null3d/cli upgrade`, then `bun install`, so every null3D package takes one version | `errors/E1432`, `cli/null3d` |
+| E1433 at the start of a sketch that imports an add-on from another developer | The add-on declares a plugin interface range that this engine's interface is outside | Install the add-on release that matches the engine's plugin interface, or run the engine version that the add-on declares | `errors/E1433`, `api/engine` |
 
 ## 9. Before you ship
 

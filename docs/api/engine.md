@@ -206,6 +206,20 @@ import { checkAddonVersion } from '@null3d/engine';
 checkAddonVersion('my-addon', '0.2.0'); // the engine version this build was made for
 ```
 
+### Add-ons from other developers
+
+An add-on that ships on its own schedule declares the range of plugin interface versions that it works with, instead of one engine version. The plugin interface is the set of public calls and hooks that an add-on builds against. Its version is a whole number, `PLUGIN_INTERFACE_VERSION`, which changes only when a stable hook changes. It does not change with every engine release.
+
+```ts
+import { checkPluginInterface } from '@null3d/engine';
+
+checkPluginInterface('my-addon', { min: 1, max: 2 }); // the interface versions this build works with
+```
+
+A page whose engine has an interface version outside that range stops with [E1433](../errors/E1433.md) before it draws. The message names the add-on, the range it declares and the engine's interface version. Install the add-on release that matches the engine's interface, or run the engine version that the add-on declares. A single-version range, such as `{ min: 1, max: 1 }`, pins one interface exactly.
+
+The engine's own add-ons need no range. They ship in step with the engine and use `checkAddonVersion`, above.
+
 ## Related pages
 
 - [Your first scene](../getting-started/first-scene.md): a page and a sketch that run together.
