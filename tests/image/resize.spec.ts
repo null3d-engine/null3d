@@ -120,6 +120,10 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		test(`a sketch changes the pixel ratio cap during play on ${gpu}, ${mode.name}`, async ({
 			page,
 		}) => {
+			// Six resizes, which CI's software GPU took longer than a test's default minute for: all
+			// five of the webgpu modes were cut at 59.9 seconds, where the resize beside this one
+			// took 55.0 at most. The limit allows a run twice as slow as that.
+			test.setTimeout(120_000);
 			const ratio = await openPage(page, `gpu=${gpu}&${mode.query}`);
 			await page.evaluate(setMaxPixelRatio, CAPPED_RATIO);
 			await expectBuffers(page, CAPPED_RATIO);
