@@ -76,3 +76,7 @@ The expanded builds were then most of the peak, and they grow with the manifest.
 The budget: the shader build runs alone in the `build` job, since `tools/build-wasm.ts` finishes the shader modules before it starts the WebAssembly builds. Its peak, the join included, stays at or below a read of the whole entry, and leaves room under the runner's memory: about 9 GB on this data. A change that raises the peak states the new figure, measured as above. On Linux the shader build prints its peak at the end of its report, from the kernel's high-water mark, so each CI log shows it.
 
 `crates/null3d-shaders/tests/cache.rs` checks that the joined entry reads back, and that it holds each shared text once, as an entry built whole does. A unit test in `cache.rs` checks that the builds a read gives back share one copy of a source in memory.
+
+## Update, 24 October 2026: eight jobs
+
+CI runs eight `shader-entries` jobs in place of six. With six, each took 4.7 to 6.7 minutes in run 39968242466, with about 16.7% of the builds. In run 40016767660 one runner in eastus2 compiled its share at about a third of that rate. It ran out of the job's 20-minute limit halfway. The diagnostic runs 39997019327 and 40000657532 found one runner 2 to 3.6 times slower than another on the same build. So the shares need room for a slow runner, rather than the job a longer limit. Eight jobs give each about 12.5% of the builds, in about three quarters of the time. A slow runner's share then takes about 15 minutes, which fits.
