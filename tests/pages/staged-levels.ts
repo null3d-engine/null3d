@@ -6,7 +6,7 @@
 // loads no stage at all, and gives the picture that a page which never shows the finest level
 // draws.
 import { createEngine } from '@null3d/engine';
-import { run } from './lib/result';
+import { run, toBase64 } from './lib/result';
 
 declare global {
 	interface Window {
@@ -97,6 +97,8 @@ run('staged-levels', async () => {
 		size: [coarse.width, coarse.height],
 		changed: picture.changed,
 		drawn: picture.drawn,
+		coarsePixels: toBase64(coarse.pixels),
+		finePixels: toBase64(fine.pixels),
 		failures,
 	};
 });
