@@ -1,0 +1,39 @@
+diff --git a/tests/image/resize.spec.ts b/tests/image/resize.spec.ts
+index 2dae84f36..105816005 100644
+--- a/tests/image/resize.spec.ts
++++ b/tests/image/resize.spec.ts
+@@ -4,6 +4,7 @@
+ // resizes another canvas: the page's own, or the one a worker took over. A sketch that changes the
+ // cap during play resizes the buffer too. A canvas that no CSS sizes keeps its size, and a canvas
+ // larger than the GPU's largest texture draws at a lower ratio.
++import { appendFileSync } from 'node:fs';
+ import { expect, type Page, test } from '@playwright/test';
+ import { ENGINE_MODES } from '../lib/engine-checks.ts';
+ import { pageResult } from '../lib/page-result.ts';
+@@ -58,14 +59,20 @@ const RESIZE_TIMEOUT_MS = 30_000;
+ /** Sets each window size, and waits until the drawing buffer is the canvas's CSS size times `ratio`. */
+ async function expectBuffers(page: Page, ratio: number): Promise<void> {
+ 	for (const size of WINDOW_SIZES) {
++		const started = Date.now();
+ 		await page.setViewportSize(size);
+ 		const css = { width: size.width / 2, height: size.height / 2 };
+-		await expect
+-			.poll(() => page.evaluate(canvasSize), { timeout: RESIZE_TIMEOUT_MS })
+-			.toEqual({
+-				css,
+-				buffer: { width: Math.round(css.width * ratio), height: Math.round(css.height * ratio) },
+-			});
++		try {
++			await expect
++				.poll(() => page.evaluate(canvasSize), { timeout: RESIZE_TIMEOUT_MS })
++				.toEqual({
++					css,
++					buffer: { width: Math.round(css.width * ratio), height: Math.round(css.height * ratio) },
++				});
++		} finally {
++			const line = `${new Date().toISOString()} ${test.info().title} | ratio ${ratio} window ${size.width}x${size.height} | ${Date.now() - started} ms\n`;
++			appendFileSync(process.env.RESIZE_TIMING_LOG ?? '/tmp/resize-timing.log', line);
++		}
+ 	}
+ }
+ 
