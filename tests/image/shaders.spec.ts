@@ -3,6 +3,7 @@
 // variants make more parts. A last test fakes Safari's Metal fault in one link, which the page
 // links again.
 import { expect, test } from '@playwright/test';
+import { browserOptions, defaultEnvironment } from '../../packages/cli/src/browser.js';
 import { pageResultWhileProgressing } from '../lib/page-result.ts';
 import { glslProgramCount } from '../lib/shader-programs.ts';
 
@@ -23,6 +24,20 @@ interface ShaderResult {
 
 /** Real-GPU runs (every run outside CI) refuse a software GPU, which would hide driver bugs. */
 const realGpu = !process.env.CI;
+
+/**
+ * ANGLE's Vulkan backend builds each program's whole pipeline when it links, to warm its pipeline
+ * cache, and on SwiftShader that pipeline's machine code was nearly all of a part's time: on 23
+ * October 2026 part 1's GLSL took 24.5 s on 12 to 15 cores with it, and 3.4 s on one core without.
+ * The test reads ANGLE's compile and link results and logs, which came out the same either way, so
+ * its browser builds no pipeline at link. The warm-up is the Vulkan backend's, so a real GPU's
+ * backend has none to leave out.
+ */
+const NO_LINK_WARMUP = '--disable-angle-features=warmUpPipelineCacheAtLink';
+const launchOptions = browserOptions(defaultEnvironment());
+test.use({
+	launchOptions: { ...launchOptions, args: [...(launchOptions.args ?? []), NO_LINK_WARMUP] },
+});
 
 /**
  * The most GLSL programs that one part compiles. CI's SwiftShader takes about 70 ms for each, so a

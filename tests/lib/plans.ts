@@ -245,6 +245,8 @@ export type Check =
 	| { kind: 'grass'; tier: Tier }
 	/** The alpha-mask cost page: masked lit quads opaque and masked in turns, with and without MSAA. */
 	| { kind: 'alpha-mask'; tier: Tier; antialias: 'msaa' | 'none' }
+	/** The cluster cost page: a tree of cluster patches timed at three distances. */
+	| { kind: 'cluster'; tier: Tier }
 	/** The sky map cost page: each stage of a sky map's refresh, timed on one GPU path. */
 	| { kind: 'sky-map'; tier: Tier }
 	/** The sky refresh page: the frames from a sun move until the sky's light follows it. */
@@ -1389,6 +1391,31 @@ export function alphaMaskPlan(): PlanItem<Check>[] {
 	return items;
 }
 
+/**
+ * What a tree of cluster patches costs: the heightfield of the cluster-cost page, timed at three
+ * camera distances on one GPU path, so the figures show both the saving that coarse patches make
+ * and the cost of the pass that picks them. D-213 records the results.
+ */
+export function clusterCostPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const [path, tier] of ALPHA_MASK_PATHS)
+		items.push(
+			pageItem(
+				`cluster-${path}`,
+				'cluster-cost',
+				{ kind: 'cluster', tier },
+				{
+					// The patch pass belongs to the path that culls on the GPU, so the switches
+					// keep the start-up probe from choosing the direct path, which draws the whole
+					// mesh and would time another drawing.
+					switches: [`gpu=${path}`, 'preset=high', 'direct=off'],
+					timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+				},
+			),
+		);
+	return items;
+}
+
 /** The GPU paths of the sky plan's pages, with the tier each draws on. */
 const SKY_PATHS = [
 	['webgpu', 'webgpu'],
@@ -1914,6 +1941,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'environment-load': environmentLoadPlan,
 	grass: grassPlan,
 	'alpha-mask-cost': alphaMaskPlan,
+	'cluster-cost': clusterCostPlan,
 	sky: skyPlan,
 	reflection: reflectionPlan,
 	occlusion: occlusionPlan,
@@ -2770,6 +2798,21 @@ export function judge(
 			return [
 				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
 				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${feature} on`]),
+			];
+		}
+		case 'cluster': {
+			// The page times the same tree at three distances, so a run that measured no frame at
+			// one of them tells nothing about how the cost falls as the camera draws back.
+			const cost = result as ItemResult & {
+				failures?: string[];
+				sides?: { distance: number; intervalMs?: number }[];
+			};
+			return [
+				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
+				...((cost.sides ?? []).length > 0 ? [] : ['the page measured no distance']),
+				...(cost.sides ?? [])
+					.filter((side) => !side.intervalMs)
+					.map((side) => `the page measured no frame at ${side.distance} m`),
 			];
 		}
 		case 'gpu-occlusion': {
