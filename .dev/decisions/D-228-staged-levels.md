@@ -49,10 +49,10 @@ The model is the cluster test's heightfield of 32,768 triangles, optimized with 
 | Stage files | 6 files, 6,168 to 196,632 bytes each, 387,216 bytes in all |
 | The bytes that arrive after the first picture | 85% of the staged model's bytes |
 | The finest stage, the full mesh's 32,768 triangles | 196,632 bytes, of which 98,304 indices at 2 bytes |
-| Browser test `staged-levels`, first picture against the last | Not measured yet: the test waits for a quiet machine (tests/image/staged-levels.spec.ts) |
-| The same with `maxLevels: 1` | Not measured yet. The test checks that it requests no stage and that the two pictures equal |
+| Browser test `staged-levels`, first picture against the last | Passes on SwiftShader under `CI=1` and on the Mac's GPU, on all three tiers. The stage files arrive, the mesh carries every level, and more than 1% of the pixels change, with the ground over more than 40% of the picture |
+| The same with `maxLevels: 1` | Passes: the page requests no stage file, the mesh keeps no level, and the two pictures are equal within 0.1% of their pixels |
 
-How the data was produced: `bun packages/cli/src/assets/staged-fixture.ts`, which prints each file's size. The browser test runs on the Mac's GPU with `bun run test:images -g staged-levels`; its figures go here when it has run.
+How the data was produced: `bun packages/cli/src/assets/staged-fixture.ts`, which prints each file's size. The browser test runs with `bun run test:browser -- image/staged-levels.spec.ts`, and with `CI=1` for the software GPU's set: four tests, three tiers and the level limit.
 
 ## Decision
 
