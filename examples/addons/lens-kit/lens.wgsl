@@ -1,13 +1,14 @@
 // The lens kit's one effect: the camera's own marks on the picture. It runs on linear HDR color
-// before bloom and the tone curve, as the engine's effects do. Each mark is off at 0, so a look
-// that wants only the grade pays for no tap of its own.
+// after the exposure and before the tone curve, as the engine's effects do, and reads a level of
+// bloom's chain for the streak, so bloom draws before it. Each mark is off at 0, so a look that
+// wants only the grade pays for no tap of its own.
 
 #import null3d::noise::{random2}
 
 struct Uniforms {
     // How far the red and the blue pull apart toward the corners, in pixels.
     aberration: f32,
-    // The share of the light brighter than white that bleeds sideways.
+    // The share of bloom's glow that bleeds sideways.
     streak: f32,
     // How much the grain changes each pixel's brightness, from 0 to 1.
     grain: f32,
@@ -26,13 +27,13 @@ fn effect(input: EffectInput) -> vec4f {
         color.b = effectColor(input.uv - shift).b;
     }
 
-    // The anamorphic streak: light brighter than white bleeds sideways, in a blue-white flare.
+    // The anamorphic streak: bloom's own glow, spread sideways into a blue-white flare. The chain
+    // has thresholded and blurred the light already, so the streak never blurs the picture again.
     if (uniforms.streak > 0.0) {
         var glow = vec3f(0.0);
         for (var i = 1; i <= 5; i++) {
             let across = vec2f(f32(i) * 3.0 / input.size.x, 0.0);
-            glow += max(effectColor(input.uv - across).rgb - vec3f(1.0), vec3f(0.0));
-            glow += max(effectColor(input.uv + across).rgb - vec3f(1.0), vec3f(0.0));
+            glow += effectBloom(input.uv - across) + effectBloom(input.uv + across);
         }
         color += glow * 0.1 * uniforms.streak * vec3f(0.45, 0.65, 1.0);
     }

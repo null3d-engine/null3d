@@ -7,8 +7,14 @@
 // showcase scenes do: `c` switches between Auto, which flies the route, and Manual, which hands the
 // camera to the user. The HUD's Traffic buttons change how many cars fly, and the Quality buttons
 // change the preset. The stats overlay is on from the first frame.
-import { defineSketch, type QualityPreset, timeOfDay, vec3 } from '@null3d/engine';
-import { createLensKit, nightGrade } from '../../addons/lens-kit/index';
+import {
+	defineSketch,
+	type GradingSettings,
+	type QualityPreset,
+	timeOfDay,
+	vec3,
+} from '@null3d/engine';
+import { createLensKit } from '../../addons/lens-kit/index';
 import { type CameraBounds, type Cinematic, createCinematic, type Shot } from '../../lib/cinematic';
 import {
 	ATMOSPHERE,
@@ -57,6 +63,19 @@ const MOOD_OPTIONS = [
 const isSkywayMood = (name: unknown): name is SkywayMood => MOODS.includes(name as SkywayMood);
 /** The point that the lens focuses on, kept up to date by the route. */
 const TARGET: [number, number, number] = [-525, 90, 560];
+
+/** The night grade: a little contrast, cool shadows, warm highlights and a little more color. */
+const NIGHT_GRADE: GradingSettings = {
+	lift: [-0.02, -0.02, -0.02],
+	gain: [1.05, 1.05, 1.05],
+	saturation: 1.08,
+	splitToning: {
+		shadows: [0.35, 0.55, 1],
+		highlights: [1, 0.86, 0.66],
+		balance: 0,
+		strength: 0.06,
+	},
+};
 
 /**
  * The route: a circuit of four street canyons, climbing from the south entrance to the tower tops
@@ -166,6 +185,7 @@ export default defineSketch(async (ctx) => {
 	};
 	let mood: SkywayMood = 'Night';
 	const params = new URL(import.meta.url).searchParams;
+	const lensOff = params.get('lens') === 'off';
 	const start = params.get('mood');
 	if (isSkywayMood(start)) mood = start;
 	stage.set(STAGE_MOOD[mood]);
@@ -186,13 +206,14 @@ export default defineSketch(async (ctx) => {
 	});
 	// The lens kit gives the picture its grade, its sharpening, its vignette and the camera's own
 	// marks: the fringes, the streak on the brightest light, grain and a little speed blur.
-	const lensKit = await createLensKit(ctx, {
+	const lensKit = createLensKit(ctx, {
 		sharpen: 0.35,
 		vignette: { intensity: 0.55, size: 1.05, falloff: 2.2 },
-		grade: { data: nightGrade(), intensity: 0.85 },
-		aberration: 0.8,
-		streak: 0.45,
-		grain: 0.035,
+		grading: NIGHT_GRADE,
+		aberration: lensOff ? 0 : 0.8,
+		streak: lensOff ? 0 : 0.45,
+		bloomLevel: 2,
+		grain: lensOff ? 0 : 0.035,
 		// The speed blur follows the camera's own travel, below, so a held frame has none.
 		speedBlur: 0,
 	});

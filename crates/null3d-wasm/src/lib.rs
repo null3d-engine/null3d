@@ -1839,6 +1839,40 @@ pub fn create_level_mesh(base: u32, indices: u32) -> u32 {
     })
 }
 
+/// Gives the live mesh `mesh` the `indices` triangles that TypeScript wrote into the staging words,
+/// which the call frees, in place of the triangles it drew. A staged level that arrives after its
+/// base replaces the base's triangles this way, so the objects that draw the base draw the finer
+/// geometry at once. The indices name the mesh's own vertices. Fails with the problem for a mesh
+/// that cannot take them: one that is split into parts, morphed, a level of its own, or drawn as
+/// lines. Returns 0 when the mesh takes the list.
+#[wasm_bindgen(js_name = replaceMeshIndices)]
+pub fn replace_mesh_indices(mesh: u32, indices: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let words = indices as usize;
+        if staging.len() < words {
+            return Err(fail(codes::BAD_ARRAYS, [0, 0]));
+        }
+        // SAFETY: the words are initialized and aligned, and every bit pattern is an index.
+        let list = unsafe { std::slice::from_raw_parts(staging.as_ptr(), words) };
+        let replaced = e
+            .renderer
+            .settings_mut()
+            .meshes_mut()
+            .replace_indices(mesh.checked_sub(1).unwrap_or(u32::MAX), list);
+        drop(staging);
+        match replaced {
+            Ok(()) => {
+                // The mesh's raycast tree held the old triangles.
+                e.queries.mesh_changed(mesh);
+                e.structure_changed = true;
+                Ok(0)
+            }
+            Err(error) => Ok(mesh_failure(error)),
+        }
+    })
+}
+
 /// The failure of a mesh that the storage refused.
 fn mesh_failure(error: MeshError) -> u32 {
     let arrays = |problem: u32, value: u32| fail(codes::BAD_ARRAYS, [problem, value]);
@@ -4217,6 +4251,7 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
             intensity,
             blur,
             rotation,
+            sun_visibility: 1.0,
         }));
         0
     })
@@ -4285,9 +4320,11 @@ pub fn set_physical_sky(on: bool) -> u32 {
 
 // Makes cube texture `texture`, which a generator fills, a sky map: an environment map of the
 // scene's sky, which fills in the first frame after the generator ran and refreshes over the next
-// frames, one of its `stages` stages a frame, whenever the sky changes. Before the scene's first
-// sky background, the maps show the sky of the background's values, which TypeScript writes
-// first. Fails for a texture that is not live.
+// frames, one of its `stages` stages a frame, whenever the sky moves past a step that shows: half
+// a degree of its sun, a fiftieth of a color value, or a tenth of a cell of its clouds. A sky that
+// comes to rest fills once more, exactly. Before the scene's first sky background, the maps show
+// the sky of the background's values, which TypeScript writes first. Fails for a texture that is
+// not live.
 /// Makes a generated cube texture a map of the scene's sky.
 #[wasm_bindgen(js_name = addSkyMap)]
 pub fn add_sky_map(texture: u32, stages: u32) -> u32 {

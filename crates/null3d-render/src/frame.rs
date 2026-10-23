@@ -2301,6 +2301,14 @@ impl SceneSettings {
         self.update_sky();
     }
 
+    /// Sets what of the sun the sky draws, from 0 for none to 1 for all of it, as a sky layer
+    /// covers the disc. It scales the disc and its glow, never the lights that a page set.
+    pub fn set_sun_visibility(&mut self, visibility: f32) {
+        if let Some(background) = self.background.as_mut() {
+            background.sun_visibility = visibility.clamp(0.0, 1.0);
+        }
+    }
+
     /// Draws the physical sky while `on`, else the analytic sky in its place, as the quality
     /// settings choose.
     pub fn set_physical_sky(&mut self, on: bool) {
