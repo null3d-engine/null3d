@@ -561,9 +561,9 @@ export class Pipelines {
 	private readonly pyramid: ShaderVariants;
 	private readonly pyramidLayout: GPUPipelineLayout;
 	/**
-	 * The cluster pass's shader, which the device's module holds once the manifest lists it. It is
-	 * read by name so that a build whose generated modules are older than the manifest still
-	 * type checks, and the pipeline reports the shader as missing instead.
+	 * The cluster pass's builds, which arrive with the cluster levels feature's shader file. It is
+	 * read by name so that a build whose generated modules are older than the manifest still type
+	 * checks, and the pipeline reports the shader as missing instead.
 	 */
 	private readonly cluster: ShaderVariants | undefined;
 	private readonly clusterLayout: GPUPipelineLayout;
@@ -1712,6 +1712,7 @@ export class Pipelines {
 	computeVariants(template: number, permutation = 0): ShaderVariants | undefined {
 		if (template === TEMPLATE_SKIN) return this.skin;
 		if (template === TEMPLATE_DEPTH_PYRAMID) return this.pyramid;
+		if (template === TEMPLATE_CLUSTER) return this.cluster;
 		if (template === TEMPLATE_CULL && permutation & PERMUTATION_MOTION) return this.cullMotion;
 		if (EXPOSURE_ENTRY_POINTS[template] !== undefined) return this.exposureHistogram;
 		return OCCLUSION_ENTRY_POINTS[template] !== undefined ? this.occlusion : undefined;
