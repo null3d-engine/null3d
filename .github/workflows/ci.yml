@@ -107,8 +107,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
 
       # Git keeps no generated file (D-105). The install step wrote them before the shader modules
@@ -155,8 +156,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/samples
       - run: bun run test:heavy
@@ -461,20 +463,13 @@ jobs:
         uses: ./.github/actions/shaders
         with:
           run: bun tools/build-wasm.ts --pages-only
-      # The artifact's paths start at the repository's root, their closest shared folder. It keeps
-      # the default compression level: every later job downloads it, and at the fastest level it grew
-      # by about a third, which those downloads paid for many times over the upload's saving.
-      - uses: actions/upload-artifact@v4
+      # Every later job downloads these files, about 2.8 GB, as one archive: as the artifact's own
+      # zip they took 510 MB and 77 s to upload in run 39869813447, and about 122 MB this way.
+      - uses: ./.github/actions/archive
         with:
+          mode: upload
           name: page-wasm
-          path: |
-            packages/engine/dist/
-            packages/vite-plugin/dist/
-            packages/cli/dist/
-            packages/engine/src/generated/
-            target/shader-modules.json
-          if-no-files-found: error
-          retention-days: 1
+          paths: packages/engine/dist packages/vite-plugin/dist packages/cli/dist packages/engine/src/generated target/shader-modules.json
 
   size-base:
     # The sizes of the size check's base commit, built at that commit with its own toolchain,
@@ -582,8 +577,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - name: Measure this part of the engine test page's files
         run: bun tools/build-wasm.ts --check-size --prebuilt --part ${{ matrix.part }}/${{ strategy.job-total }}
@@ -615,8 +611,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: actions/download-artifact@v4
         with:
@@ -710,9 +707,10 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - if: steps.passed.outputs.cache-hit != 'true'
         run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         if: steps.passed.outputs.cache-hit != 'true'
         with:
+          mode: download
           name: page-wasm
       - name: The shader compiler gives the native shader build's results
         if: steps.passed.outputs.cache-hit != 'true' && matrix.part == 1
@@ -777,9 +775,10 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - if: steps.passed.outputs.cache-hit != 'true'
         run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         if: steps.passed.outputs.cache-hit != 'true'
         with:
+          mode: download
           name: page-wasm
       - name: The Vite plugin's tests through the shader compiler
         if: steps.passed.outputs.cache-hit != 'true'
@@ -817,8 +816,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
       # The website build's compiled shaders, which the test keeps between runs. An entry is named by
@@ -877,8 +877,9 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       # The build job's files, at their places in the repository.
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
@@ -919,8 +920,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
@@ -969,8 +971,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
@@ -1010,8 +1013,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/samples
       - uses: ./.github/actions/city
@@ -1036,8 +1040,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
@@ -1085,8 +1090,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
@@ -1118,8 +1124,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
       # The cookbook's recipes load sample files.
@@ -1191,12 +1198,15 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
-        with:
-          name: page-wasm
-      - uses: ./.github/actions/load-pages
+      - uses: ./.github/actions/archive
         with:
           mode: download
+          name: page-wasm
+      - uses: ./.github/actions/archive
+        with:
+          mode: download
+          name: load-pages
+          root: target
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
       # S6 loads the city's files, which the city job built.
@@ -1243,12 +1253,15 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
-        with:
-          name: page-wasm
-      - uses: ./.github/actions/load-pages
+      - uses: ./.github/actions/archive
         with:
           mode: download
+          name: page-wasm
+      - uses: ./.github/actions/archive
+        with:
+          mode: download
+          name: load-pages
+          root: target
       - uses: ./.github/actions/playwright-chromium
       # The benchmark pages' build holds S6's pages, which load the city's files.
       - uses: ./.github/actions/samples
@@ -1277,8 +1290,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/samples
       - uses: ./.github/actions/city
@@ -1286,9 +1300,13 @@ jobs:
           mode: download
       - name: The benchmark pages and the startup pages, built for production
         run: bun tests/lib/load-server.ts
-      - uses: ./.github/actions/load-pages
+      - uses: ./.github/actions/archive
         with:
           mode: upload
+          name: load-pages
+          root: target
+          paths: bench-pages startup-pages
+          link: "true"
 
   real-browsers:
     # Safari on GitHub's macOS machines and Firefox on its Linux machines, through the same test
@@ -1335,12 +1353,15 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
-        with:
-          name: page-wasm
-      - uses: ./.github/actions/load-pages
+      - uses: ./.github/actions/archive
         with:
           mode: download
+          name: page-wasm
+      - uses: ./.github/actions/archive
+        with:
+          mode: download
+          name: load-pages
+          root: target
       - uses: ./.github/actions/samples
       # S6 loads the city's files, which the city job built.
       - uses: ./.github/actions/city
@@ -1380,8 +1401,9 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
       # The engine's API reference names the shader features, which the shader modules hold.
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - name: Push main's commit and its generated files to the generated branch
         run: |
