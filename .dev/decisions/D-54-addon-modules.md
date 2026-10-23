@@ -245,14 +245,14 @@ engine's. It claims the namespace `splats` and the error codes 2100 to 2199. It 
 both containers: a legacy file is one gzip stream, and a version 4 file is a plain header, a table of
 contents and one zstd stream for each array, through the browser's `DecompressionStream`. It reads
 glTF files that carry `KHR_gaussian_splatting`, and it draws the first spherical-harmonic band's
-colour; higher bands are ignored, which the extension allows.
+color; higher bands are ignored, which the extension allows.
 
 ### The draw goes through the feature draw hook
 
 The cloud is one instance batch whose rows are the splats that draw: `scene.addFeatureInstances`, the
 many-copies form of M3-E1's feature draw. The add-on gives one quad and a surface function, and each
-row brings a centre, rotations and spreads (the row's place, its quaternion and its scales), a linear
-RGBA colour (the row's colour) and four values. The shader projects each row's covariance, sizes a
+row brings a center, rotations and spreads (the row's place, its quaternion and its scales), a linear
+RGBA color (the row's color) and four values. The shader projects each row's covariance, sizes a
 camera-facing card to its ellipse, and fades the card with the same ellipse; it reads the copy of the
 scene's depth (M3-E4) to fade a splat where it meets a mesh.
 

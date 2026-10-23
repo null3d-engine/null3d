@@ -2001,7 +2001,7 @@
       "status": "changed",
       "since": "0.3",
       "target": "const splats = await createSplats(ctx, { url }) from @null3d/splats; assets.loadGltf for a KHR_gaussian_splatting model",
-      "notes": "Importing @null3d/splats registers the KHR_gaussian_splatting reader, so a glTF model of splats loads with assets.loadGltf. An SPZ file loads through createSplats, which cuts the cloud into detail levels, chooses the splats that draw within a budget that follows the quality preset and the GPU path, and lets the engine sort them by depth. Update them once in each frame with splats.update(camera.position). The first spherical-harmonic band gives each splat's color; higher bands are ignored. three.js's GaussianSplat and its loaders are add-ons, so each name maps to this one add-on.",
+      "notes": "Importing @null3d/splats registers the KHR_gaussian_splatting reader, so a glTF model of splats loads with assets.loadGltf. An SPZ file loads through createSplats, which cuts the cloud into detail levels, chooses the splats that draw within a budget that follows the quality preset and the GPU path, and lets the engine sort them by depth. Update them once in each frame with splats.update(eye), from the camera's getPosition. The first spherical-harmonic band gives each splat's color; higher bands are ignored. three.js's GaussianSplat and its loaders are add-ons, so each name maps to this one add-on.",
       "docs": "api/splats",
       "detect": "\\bGaussianSplat\\w*\\b|\\b(SPZ|SPLAT|KSPLAT)Loader\\b"
     },

@@ -129,13 +129,14 @@ export interface Splats {
 }
 
 /**
- * Draws a cloud of Gaussian splats in a sketch. The cloud comes from an SPZ file, from the data of
- * another reader, or from a glTF model that carries `KHR_gaussian_splatting`, which this call
- * registers with the sketch's assets. It draws with detail levels, a budget that follows the
- * quality preset and the GPU path, and a soft mix with the scene's opaque meshes.
+ * Draws a cloud of Gaussian splats in a sketch. The cloud comes from an SPZ file, or from the data
+ * of another reader. A glTF model that carries `KHR_gaussian_splatting` loads through
+ * `assets.loadGltf`, because the add-on's module registers the reader as it loads. A cloud draws
+ * with detail levels, a budget that follows the quality preset and the GPU path, and a soft mix
+ * with the scene's opaque meshes.
  *
- * Call `splats.update(camera.position)` once in each frame, and free the cloud with
- * `splats.destroy()`.
+ * Call `splats.update(eye)` once in each frame, with the camera's position from `getPosition`, and
+ * free the cloud with `splats.destroy()`.
  *
  * @category api/splats
  */

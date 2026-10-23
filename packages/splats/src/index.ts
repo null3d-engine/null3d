@@ -8,5 +8,5 @@ export type { SplatData } from './format';
 export { checkSplats, colorOfSh } from './format';
 export { SPLAT_EXTENSION } from './gltf';
 export { decodeSpz } from './spz';
-export type { Splats, SplatsOptions } from './system';
+export type { Splats, SplatsDraw, SplatsOptions } from './system';
 export { createSplats } from './system';
