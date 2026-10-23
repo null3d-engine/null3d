@@ -16,6 +16,7 @@
 // - after-destroy: a sketch on the page's thread calls the engine after destroy(), and again once
 //   a second engine runs: both calls fail with E1420.
 import { createEngine, type Engine, type EngineError } from '@null3d/engine';
+import { framesDrawn } from './lib/measure';
 import { liveWorkers, progress, run } from './lib/result';
 import type { FailuresSketch } from './sketches/failures-sketch';
 
@@ -32,11 +33,6 @@ async function started(url = sketch, signal?: AbortSignal): Promise<Engine> {
 	const engine = await createEngine({ canvas, sketch: url, signal });
 	await engine.firstFrame;
 	return engine;
-}
-
-/** The frames that an engine draws in half a second. */
-async function framesOf(engine: Engine): Promise<number> {
-	return (await engine.measure(0.5)).frames;
 }
 
 /**
@@ -105,7 +101,7 @@ run('failures', async () => {
 		}
 		const second = await started();
 		progress('second engine started');
-		const frames = await framesOf(second);
+		const frames = await framesDrawn(second);
 		const workersOfSecond = liveWorkers();
 		await second.destroy();
 		const workersAfter = liveWorkers();
@@ -126,7 +122,7 @@ run('failures', async () => {
 			() => 'started',
 			(error: EngineError) => error.code,
 		);
-		const frames = await framesOf(first);
+		const frames = await framesDrawn(first);
 		await first.destroy();
 		return { code, frames };
 	}
@@ -139,7 +135,7 @@ run('failures', async () => {
 		const afterDestroy = codeOf(box);
 		const second = await started();
 		const whileAnotherRuns = codeOf(box);
-		const frames = await framesOf(second);
+		const frames = await framesDrawn(second);
 		await second.destroy();
 		return { afterDestroy, whileAnotherRuns, destroyed: left.destroyed, frames };
 	}
