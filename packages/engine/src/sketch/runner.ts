@@ -71,6 +71,7 @@ import {
 	type PreloadSender,
 	type ShaderSender,
 } from '../shared/images';
+import { MEMORY_AREA_COUNT } from '../shared/memory-area';
 import { Counter, FrameRecorder, MemoryFigure, Phase, Role } from '../shared/metrics';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
@@ -299,6 +300,8 @@ export class SketchRunner {
 	 * 0 while nobody samples, so the first frame that samples publishes them.
 	 */
 	private memoryWait = 0;
+	/** True once the first report checked that the core's areas are the ones the page names. */
+	private areasChecked = false;
 	private readonly record: FrameRecorder;
 	/** One recorder per job worker, for the busy time the core reports for it each frame. */
 	private readonly jobRecords: FrameRecorder[];
@@ -866,6 +869,22 @@ export class SketchRunner {
 		record.publishMemory(MemoryFigure.TextureBudgetBytes, textures.budgetBytes);
 		record.publishMemory(MemoryFigure.DroppedLevels, textures.droppedLevels);
 		record.publishMemory(MemoryFigure.MeshBytes, this.context.geometry.memoryBytes);
+		if (!DEV) return;
+		const glue = this.sketch.glue;
+		const at = glue.updateMemoryRegister();
+		if (!this.areasChecked) {
+			this.areasChecked = true;
+			// The page names the areas, so a core that reports others would mislabel them.
+			if (glue.memoryAreas() !== MEMORY_AREA_COUNT)
+				console.error(
+					`the core reports ${glue.memoryAreas()} memory areas, not ${MEMORY_AREA_COUNT}`,
+				);
+		}
+		if (at !== 0)
+			record.publishMemoryRegister(
+				this.core.heap(Float64Array),
+				at / Float64Array.BYTES_PER_ELEMENT,
+			);
 	}
 
 	/**

@@ -33,6 +33,7 @@ use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, LoopExit, WorkerId
 use null3d_core::levels::Switch;
 use null3d_core::lights::{LightTable, kind as light_kind, value as light_value};
 use null3d_core::lines::{LineLook, LineMode};
+use null3d_core::memory::{AREA_COUNT as MEMORY_AREA_COUNT, MemoryRegister};
 use null3d_core::morph::MorphWeights;
 use null3d_core::occlusion::BlockerMesh;
 use null3d_core::scene::{CommandRing, SceneStorage, flags};
@@ -199,6 +200,10 @@ struct Engine {
     lights: LightTable,
     snapshot: FrameSnapshot,
     renderer: Box<dyn FrameBuilder>,
+    /// What each table and allocator holds, for the stats overlay's development figures.
+    memory: MemoryRegister,
+    /// The register's figures as the page reads them: each area's reserved, used and peak bytes.
+    memory_values: Box<[f64]>,
     structure_changed: bool,
     /// True when the last recorded frame rebuilt its draw tables.
     rebuilt: bool,
@@ -581,6 +586,8 @@ pub fn init_engine(
         batches: BatchTable::with_capacity(max_batches),
         lights: LightTable::new(),
         snapshot: FrameSnapshot::with_capacity(UPLOAD_RANGES),
+        memory: MemoryRegister::new(),
+        memory_values: vec![0.0; MEMORY_AREA_COUNT * 3].into_boxed_slice(),
         renderer: if webgl2 {
             Box::new(CpuCulledRenderer::new(CpuCulledConfig {
                 canvas,
@@ -1236,6 +1243,36 @@ pub fn draw_list_address(parity: u32) -> u32 {
 #[wasm_bindgen(js_name = drawListWords)]
 pub fn draw_list_words(frame: u32) -> u32 {
     value_with_engine(|e| Ok(e.renderer.list(frame).len() as u32))
+}
+
+// --- The memory register, which only development pages read ---
+//
+// Each table and allocator reports the bytes that it reserves, uses and has used at most. A report
+// runs only when the page asks for one, so a page that shows no development figures pays nothing.
+// The figures go into three numbers per area, in the order of `null3d_core::memory::area`, which
+// the page names (`packages/engine/src/shared/memory-area.ts`).
+
+/// Fills the register with what each table and allocator holds, and returns the address of three
+/// numbers per area: the bytes that it reserves, uses and has used at most.
+#[wasm_bindgen(js_name = updateMemoryRegister)]
+pub fn update_memory_register() -> u32 {
+    value_with_engine(|e| {
+        e.memory.begin();
+        e.scene.account(&mut e.memory);
+        e.batches.account(&mut e.memory);
+        e.renderer.account(&mut e.memory);
+        if let Some(animations) = &e.animations {
+            animations.account(&mut e.memory);
+        }
+        e.memory.report(&mut e.memory_values);
+        Ok(address(&e.memory_values[..]))
+    })
+}
+
+/// The number of memory areas that `updateMemoryRegister` reports.
+#[wasm_bindgen(js_name = memoryAreas)]
+pub fn memory_areas() -> u32 {
+    MEMORY_AREA_COUNT as u32
 }
 
 // --- Debug lines, which only development builds of the engine draw ---

@@ -21,6 +21,8 @@
 
 use std::ops::Range;
 
+use null3d_core::memory::{MemoryUse, vec_bytes};
+
 /// The bases of the jitter sequence's two axes: Halton(2, 3).
 const HALTON_X: u32 = 2;
 const HALTON_Y: u32 = 3;
@@ -126,6 +128,14 @@ pub(crate) struct Snapshot {
 }
 
 impl Snapshot {
+    /// The bytes that the frame it kept holds.
+    pub(crate) fn memory_use(&self) -> MemoryUse {
+        let mut use_ = MemoryUse::default();
+        use_.add(vec_bytes(&self.words));
+        use_.add(vec_bytes(&self.bytes));
+        use_
+    }
+
     /// True when `words` outside `word_marks`, and `bytes` outside `byte_marks`, are the same as
     /// the frame this snapshot kept, and then keeps this frame in its place. The first frame of a
     /// parity, and the first after [`Snapshot::forget`], have nothing to compare with, so they read
