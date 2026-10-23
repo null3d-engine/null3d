@@ -811,3 +811,5 @@ Each of these cost time in the gate's first runs. Follow them in order before a 
     stopping anything: a wrapper at zero CPU may be guarding a job that is doing real work between
     steps. On 23 October 2026 a coordinator cleared a jammed lane and killed two timing runs that way,
     losing about twenty minutes of measurement each time.
+
+15. **A stale wrapper can look like a running job.** A shell from an earlier session keeps its command line forever, so a pattern search for a job's name finds it long after the job ended. A watcher that waits for that name to disappear never fires. Match the program and its own arguments, such as the build script's path, and check the process start time before believing a match is live work.
