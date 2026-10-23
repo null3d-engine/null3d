@@ -21,6 +21,7 @@ import {
 } from '../generated/core';
 import type { CoreGlue } from '../shared/core';
 import type { GeneratorSource } from '../shared/images';
+import { VIDEO_FOLLOW } from '../shared/videos';
 import { CoreMemory } from './memory';
 import { type TextureOptions, Textures } from './textures';
 
@@ -52,6 +53,7 @@ const REGION_ADDRESS = DATA_ADDRESS + 4096;
 function fakeCore(
 	arrived?: (id: number) => Promise<void>,
 	clock: { frame: number; now: number } = { frame: 3, now: 0 },
+	page: (type: string, data?: unknown) => void = () => {},
 ) {
 	const created: number[][] = [];
 	const images: number[][] = [];
@@ -59,6 +61,8 @@ function fakeCore(
 	const regions: number[][] = [];
 	const destroyed: number[] = [];
 	const sent: [number, ImageBitmap | GeneratorSource][] = [];
+	/** The messages that the sketch sent to the page. */
+	const posts: [string, unknown][] = [];
 	let nextImage = 0;
 	/** True while a texture of the fake core waits for its texels. */
 	let uploading = false;
@@ -107,7 +111,21 @@ function fakeCore(
 	const memory = new WebAssembly.Memory({ initial: 1 });
 	const core = new CoreMemory(glue, memory);
 	const send = (id: number, bitmap: ImageBitmap | GeneratorSource) => sent.push([id, bitmap]);
-	const textures = new Textures(core, send, clock, 0, undefined, arrived);
+	const textures = new Textures(
+		core,
+		send,
+		clock,
+		0,
+		undefined,
+		arrived,
+		false,
+		false,
+		undefined,
+		(type, message) => {
+			posts.push([type, message]);
+			page(type, message);
+		},
+	);
 	return {
 		textures,
 		created,
@@ -116,6 +134,7 @@ function fakeCore(
 		regions,
 		destroyed,
 		sent,
+		posts,
 		memory,
 		clock,
 		setUploading: (value: boolean) => {
@@ -371,6 +390,89 @@ describe('textures.fromCanvas and texture.refresh', () => {
 		const texture = textures.fromCanvas(canvas(2, 2, place));
 		texture.destroy();
 		expect(() => texture.refresh()).toThrow('E1101');
+	});
+});
+
+describe('textures.fromVideo', () => {
+	test("makes a texture that waits for the page, and asks for the video's frames", () => {
+		const { textures, created, posts } = fakeCore();
+		const texture = textures.fromVideo('intro');
+		// The first frame gives the texture its size, so it starts at one texel.
+		expect(created).toEqual([[1, 1, 1, ...DEFAULT_CODES]]);
+		expect(posts).toEqual([[VIDEO_FOLLOW, { name: 'intro', follow: true }]]);
+		expect(texture.video).toEqual({ name: 'intro' });
+	});
+
+	test('uploads each frame that the page sends, and the frame gives the texture its size', () => {
+		const { textures, created, images, sent } = fakeCore();
+		const texture = textures.fromVideo('intro');
+		const first = image(512, 288);
+		textures.receiveVideoFrame({ name: 'intro', image: first });
+		expect(images).toEqual([[7, 512, 288, 0]]);
+		expect(sent).toEqual([[1, first]]);
+		expect([texture.width, texture.height]).toEqual([512, 288]);
+		const second = image(512, 288);
+		textures.receiveVideoFrame({ name: 'intro', image: second });
+		// A frame of the same size goes into the same texture, with no new texture for it.
+		expect(created.length).toBe(1);
+		expect(sent).toEqual([
+			[1, first],
+			[2, second],
+		]);
+	});
+
+	test('drops a frame that comes while the one before it uploads, and closes it', () => {
+		const { textures, images, setUploading } = fakeCore();
+		textures.fromVideo('intro');
+		textures.receiveVideoFrame({ name: 'intro', image: image(64, 64) });
+		setUploading(true);
+		const dropped = image(64, 64);
+		textures.receiveVideoFrame({ name: 'intro', image: dropped });
+		expect(images.length).toBe(1);
+		// A closed image has no pixels, which the next test can see.
+		expect([dropped.width, dropped.height]).toEqual([0, 0]);
+		// The upload lands, and the next frame goes in its turn.
+		setUploading(false);
+		textures.receiveVideoFrame({ name: 'intro', image: image(64, 64) });
+		expect(images.length).toBe(2);
+	});
+
+	test('closes a frame for a video that no texture follows', () => {
+		const { textures, images, posts } = fakeCore();
+		const frame = image(64, 64);
+		textures.receiveVideoFrame({ name: 'gone', image: frame });
+		expect(images).toEqual([]);
+		expect(posts).toEqual([]);
+		expect(frame.width).toBe(0);
+	});
+
+	test("stops the page's frames once the texture goes", () => {
+		const { textures, posts } = fakeCore();
+		const texture = textures.fromVideo('intro');
+		texture.destroy();
+		expect(posts).toEqual([
+			[VIDEO_FOLLOW, { name: 'intro', follow: true }],
+			[VIDEO_FOLLOW, { name: 'intro', follow: false }],
+		]);
+		const late = image(64, 64);
+		textures.receiveVideoFrame({ name: 'intro', image: late });
+		expect(late.width).toBe(0);
+	});
+
+	test('takes a name again once the texture that followed it goes', () => {
+		const { textures, created, posts } = fakeCore();
+		textures.fromVideo('intro').destroy();
+		textures.fromVideo('intro');
+		expect(created.length).toBe(2);
+		expect(posts.at(-1)).toEqual([VIDEO_FOLLOW, { name: 'intro', follow: true }]);
+	});
+
+	test('throws E1208 for a name another texture follows, and for a name without characters', () => {
+		const { textures, created } = fakeCore();
+		textures.fromVideo('intro');
+		expect(() => textures.fromVideo('intro')).toThrow('which a texture follows already');
+		expect(() => textures.fromVideo('')).toThrow("got '' as the video");
+		expect(created.length).toBe(1);
 	});
 });
 

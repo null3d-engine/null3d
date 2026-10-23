@@ -53,6 +53,7 @@ import {
 } from '../generated/core';
 import type { QualitySettingName, QualitySettings } from '../quality/presets';
 import type { GeneratorSource, ImageSender } from '../shared/images';
+import { VIDEO_FOLLOW, type VideoFollowMessage, type VideoFrameMessage } from '../shared/videos';
 import type { EnvironmentFormat } from './environment';
 import { toHalfFloats } from './half-float';
 import type { CoreMemory } from './memory';
@@ -210,6 +211,13 @@ interface CanvasSource {
 }
 
 /**
+ * A texture's link to a video on the page, which `engine.registerVideo` registered under its name.
+ */
+interface VideoSource {
+	readonly name: string;
+}
+
+/**
  * A texture's size and texels for `textures.fromData`, with its options.
  *
  * @category api/textures
@@ -252,6 +260,9 @@ export interface TextureMemory {
  * and gives them to `target`, a hidden texture of that size.
  */
 export type TextureReloader = (level: number, target: Texture) => Promise<void>;
+
+/** Sends a message from the sketch to the page, as the sketch's `page.post` does. */
+export type PageSender = (type: string, data?: unknown) => void;
 
 /** The loads again that run at once, at most, so a burst of them does not crowd the network. */
 const RELOADS_AT_ONCE = 2;
@@ -330,6 +341,8 @@ export class Texture {
 	private destroyed = false;
 	/** @internal How the texture follows a canvas, for a texture that `textures.fromCanvas` made. */
 	canvas?: CanvasSource;
+	/** @internal The video that the page sends frames of, for a texture that `textures.fromVideo` made. */
+	video?: VideoSource;
 
 	/** @internal */
 	constructor(
@@ -440,6 +453,7 @@ export class Texture {
 		this.textures.destroy(this);
 		this.destroyed = true;
 		this.canvas = undefined;
+		this.video = undefined;
 	}
 
 	/** @internal True until `destroy` runs. */
@@ -461,6 +475,8 @@ export class Textures {
 	private budgetEpoch = 0;
 	/** Loads again under way. */
 	private reloading = 0;
+	/** The texture that follows each video on the page, by the video's name. */
+	private readonly videos = new Map<string, Texture>();
 
 	/** @internal The texture memory, as `quality.textureMemory` reports it. */
 	readonly memory: TextureMemory;
@@ -483,6 +499,8 @@ export class Textures {
 		 */
 		readonly textureCache = false,
 		private readonly ownMemory: () => void = () => {},
+		/** @internal Sends a message from the sketch to the page, as `ctx.page.post` does. */
+		private readonly page: PageSender = () => {},
 	) {
 		const stat = (field: number) => this.stat(field);
 		this.memory = {
@@ -597,6 +615,56 @@ export class Textures {
 		};
 		this.setData(texture, this.canvasRows(context, 0, 0, width, height), call);
 		return texture;
+	}
+
+	/**
+	 * A texture that follows a video on the page, which `engine.registerVideo` registered under
+	 * `name`. The page sends the image of each frame that the video presents, and the texture
+	 * uploads the newest one in its turn, within the frame's upload budget. A paused video presents
+	 * no frames, so its texture costs nothing then. The image stands upright on a plane, with v = 0
+	 * at its bottom row, as an image that
+	 * `textures.fromImageBitmap` takes, and the first frame gives the texture its size. Until a
+	 * frame is on the GPU, materials draw with their colors alone. Call this once for each video,
+	 * and `texture.destroy` to stop the page's frames. Throws E1208 for a name that is not a string
+	 * with at least one character, or that another texture follows.
+	 */
+	fromVideo(name: string, options: TextureOptions = {}): Texture {
+		const call = 'textures.fromVideo';
+		if (DEV) {
+			if (typeof name !== 'string' || name.length === 0)
+				throw invalid(
+					call,
+					`got ${quote(name)} as the video's name. Give the name that engine.registerVideo() gave the video on the page.`,
+				);
+			if (this.videos.has(name))
+				throw invalid(
+					call,
+					`got the name "${name}", which a texture follows already. Follow each video with one texture.`,
+				);
+		}
+		const texture = this.create(1, 1, 1, 'rgba8unorm', options, 'image', call);
+		texture.video = { name };
+		this.videos.set(name, texture);
+		// The page sends the frame that the video shows now, which a video that is paused at this
+		// call has too. The frames after it come as the video presents them.
+		this.page(VIDEO_FOLLOW, { name, follow: true } satisfies VideoFollowMessage);
+		return texture;
+	}
+
+	/**
+	 * @internal Gives the texture that follows the video under the frame's name the frame's image.
+	 * A frame that comes while the one before it still uploads is dropped, so a frame larger than
+	 * the upload budget shows fewer frames a second rather than starting its upload again. A frame
+	 * for a video that no texture follows here is closed.
+	 */
+	receiveVideoFrame(frame: VideoFrameMessage): void {
+		if (!frame?.image) return;
+		const texture = this.videos.get(frame.name);
+		if (!texture?.live || this.uploading(texture)) {
+			frame.image.close();
+			return;
+		}
+		this.setImage(texture, frame.image, 0, 'textures.fromVideo');
 	}
 
 	/** @internal Reads a canvas's rectangle, with its rows turned over so that the last comes first. */
@@ -1222,6 +1290,15 @@ export class Textures {
 
 	/** @internal */
 	destroy(texture: Texture): void {
+		// The page stops sending a video's frames once no texture shows them.
+		if (texture.video) {
+			this.videos.delete(texture.video.name);
+			this.page(VIDEO_FOLLOW, {
+				name: texture.video.name,
+				follow: false,
+			} satisfies VideoFollowMessage);
+			texture.video = undefined;
+		}
 		this.reloaders.delete(texture.handle);
 		this.core.checkGrowth(
 			this.core.glue.destroyTexture(texture.handle, this.time.frame),

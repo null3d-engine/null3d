@@ -160,6 +160,11 @@ import {
 	textureCacheProblems,
 } from './texture-cache.ts';
 import {
+	type VideoTextureResult,
+	videoTextureNote,
+	videoTextureProblems,
+} from './video-texture-checks.ts';
+import {
 	saveVisualResult,
 	VISUAL_LIMITS,
 	type VisualResult,
@@ -203,6 +208,8 @@ export type Check =
 	| { kind: 'uploads'; tier: Tier }
 	/** The mip levels page: each way of making mip levels on WebGL2, read back level by level. */
 	| { kind: 'mip-levels' }
+	/** The video texture page: a video on the page shown on a surface, within the upload budget. */
+	| { kind: 'video-texture'; tier: Tier }
 	/** The environment generator page: the built-in room made on the GPU, read back level by level. */
 	| { kind: 'environment-generator'; tier: Tier }
 	/** The skinning pass page: the WebGPU skinning shader on fixed meshes, read back and drawn. */
@@ -561,6 +568,16 @@ export function checksPlan({ shaders = 'all' }: PlanSettings = {}): PlanItem<Che
 		),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
 		pageItem('mip-levels', 'mip-levels', { kind: 'mip-levels' }),
+		// A video on the page as a texture in the sketch: its frames arrive within the upload
+		// budget, a paused video uploads nothing, and the frame's colours are the page's colours.
+		...TIERS.map((tier) =>
+			pageItem(
+				`video-texture-${tier}`,
+				'video-texture',
+				{ kind: 'video-texture', tier },
+				{ switches: [`gpu=${tier}`], timeoutSeconds: 120 },
+			),
+		),
 		...(['webgpu', 'compat', 'webgl2'] as const).map((path) =>
 			pageItem(
 				`environment-generator-${path}`,
@@ -2659,6 +2676,11 @@ export function judge(
 			const mips = result as unknown as MipLevelsResult;
 			context?.note?.(mipLevelsNote(mips));
 			return mipLevelsProblems(mips);
+		}
+		case 'video-texture': {
+			const video = result as unknown as VideoTextureResult;
+			context?.note?.(videoTextureNote(video));
+			return videoTextureProblems(video);
 		}
 		case 'environment-generator': {
 			const { lines, problems } = generatorReport(result as unknown as GeneratorResult);
