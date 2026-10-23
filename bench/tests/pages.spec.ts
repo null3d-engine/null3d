@@ -173,14 +173,29 @@ const shortRunCount = (scene: (typeof SCENES)[number]): number =>
 			: shortRunAsked(scene);
 
 /**
- * Where a short run on SwiftShader counts as far slower than usual. On CI's runners, null3D started
- * S4 in about 30 seconds, preset check included, and finished 0.3 to 0.4 frames a second. A start
- * of three times that, or a third of that frame rate, means that the page itself got slower. The
- * S1 pages now share a four-core runner with another software page, and started in 60.9 and 63.4
- * seconds in three runs on 23 October 2026, so twice the design figure no longer tells a slow page
- * from a busy machine.
+ * The most that a page may take to start on SwiftShader, by the page's name without its switches.
+ * On CI's runners S1 started in 60.9 and 63.4 seconds, so the shared figure is 90: a page that
+ * regresses from ten seconds to a minute and a half still fails it.
+ *
+ * A page earns an entry only from its own measured starts, and an entry is the last thing raised
+ * when a page drifts, never the first. The shared figure is what catches a page that got slower, so
+ * a page enters this map when its own measurements, not one slow run, show it needs the room.
+ *
+ * S3 is the one page that does. Its two pages started in 22.8, 25.2, 26.5, 43.0, 45.0 and 23.2
+ * seconds across runs, then in 70.5 and 84.8 seconds on a run where the rest of the shard was slow.
+ * The shared 90 would clear the slowest of those by six per cent, which is not the room that a run
+ * twice as slow needs.
  */
-const SWIFTSHADER_SLOWEST = { startMs: 90_000, completedFps: 0.1 };
+const SWIFTSHADER_START_MS: Readonly<Record<string, number>> = {
+	's3 on null3d-webgpu': 180_000,
+	's3 on null3d-webgpu-low': 180_000,
+};
+
+/** The most that any other page may take to start on SwiftShader. */
+const SWIFTSHADER_START_MS_DEFAULT = 90_000;
+
+/** The fewest frames a second that a short run may finish on SwiftShader. */
+const SWIFTSHADER_COMPLETED_FPS = 0.1;
 
 /** A run's frames, start time and frame rates, as one line for the log. */
 function runFigures(result: BenchReport): string {
@@ -194,17 +209,21 @@ function runFigures(result: BenchReport): string {
 	].join(', ');
 }
 
-/** Fails a run whose start or frame rate is far from the usual SwiftShader figures. */
-function expectUsualSpeed(name: string, result: BenchReport): void {
+/**
+ * Fails a run whose start or frame rate is far from the usual SwiftShader figures. `page` is the
+ * page without its switches, which its start's ceiling follows, and `name` is the run as the log
+ * and the failure name it.
+ */
+function expectUsualSpeed(page: string, name: string, result: BenchReport): void {
 	const start = result.stats?.load?.engineStartMs;
 	const fps = result.stats?.completedFps;
 	if (start !== undefined)
 		expect(start, `${name} took far longer than usual to start`).toBeLessThan(
-			SWIFTSHADER_SLOWEST.startMs,
+			SWIFTSHADER_START_MS[page] ?? SWIFTSHADER_START_MS_DEFAULT,
 		);
 	if (fps != null)
 		expect(fps, `${name} drew far fewer frames than usual`).toBeGreaterThan(
-			SWIFTSHADER_SLOWEST.completedFps,
+			SWIFTSHADER_COMPLETED_FPS,
 		);
 }
 
@@ -228,7 +247,8 @@ async function runShortBenchmark(
 	const seconds = shortRunSeconds(scene, kind);
 	const first = await run(seconds);
 	if (!SWIFTSHADER) return first;
-	const name = `${scene} on ${kind} (${switches})`;
+	const pageKey = `${scene} on ${kind}`;
+	const name = `${pageKey} (${switches})`;
 	console.log(`${name} on SwiftShader: ${runFigures(first)}`);
 	if (first.frames > 0) return first;
 	test.slow();
@@ -238,8 +258,8 @@ async function runShortBenchmark(
 	const message = `${name} counted no frame on SwiftShader in ${seconds} s, so it ran again for ${seconds * 8} s. First try: ${runFigures(first)}. Second try: ${runFigures(second)}.`;
 	console.log(`::warning title=A second try on SwiftShader::${message}`);
 	test.info().annotations.push({ type: 'second try on SwiftShader', description: message });
-	expectUsualSpeed(`${name}'s first try`, first);
-	expectUsualSpeed(`${name}'s second try`, second);
+	expectUsualSpeed(pageKey, `${name}'s first try`, first);
+	expectUsualSpeed(pageKey, `${name}'s second try`, second);
 	return second;
 }
 
