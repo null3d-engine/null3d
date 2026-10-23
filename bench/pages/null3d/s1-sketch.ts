@@ -120,6 +120,9 @@ export default defineSketch(async (context) => {
 	const camera = setUpView(context, VIEW_LIGHTS, BACKGROUND, { cascades });
 	const moveCamera = followPath(camera, s1Camera);
 	const switches = new URL(import.meta.url).searchParams;
+	if (switches.has('scale99'))
+		await context.quality.set({ minRenderScale: 0.99, maxRenderScale: 0.99 });
+	if (switches.has('sharpen')) context.post.set({ sharpen: 0.5 });
 	const count = readCount(import.meta.url);
 	const poseSwarm = switches.has('sprites')
 		? await createSpriteSwarm(context, count)

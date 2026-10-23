@@ -211,7 +211,7 @@ const SWIFTSHADER_COUNT = 1000;
 const SWIFTSHADER_JS_FLAGS =
 	'--invocation-count-for-maglev=100 --invocation-count-for-turbofan=500 --minimum-invocations-after-ic-update=100';
 /** The warm-up's frames on SwiftShader, with the lower counts of `SWIFTSHADER_JS_FLAGS`. */
-const SWIFTSHADER_WARMUP_FRAMES = 1200;
+const SWIFTSHADER_WARMUP_FRAMES = 150;
 /**
  * Samples the check takes one after another. Allocation in every frame shows in each of them. An
  * event that happens once, such as the browser installing code it has just optimized, lands in one.
@@ -557,6 +557,8 @@ interface PageSwitch {
  */
 export const PAGE_SWITCHES: readonly PageSwitch[] = [
 	{ flag: '--blend', query: '&blend' },
+	{ flag: '--scale99', query: '&scale99' },
+	{ flag: '--sharpen', query: '&sharpen' },
 	{ flag: '--grading', query: '&grading' },
 	{ flag: '--sprites', query: '&sprites' },
 	{ flag: '--lines', query: '&lines' },
