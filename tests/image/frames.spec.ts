@@ -38,11 +38,11 @@ for (const mode of ENGINE_MODES) {
 			result.pause?.paused.presented,
 			'frames left to land during the pause',
 		).toBeLessThanOrEqual(softwareGpu() ? 1 : 0);
-		// The software GPU finishes a frame in a large part of the window, so it draws fewer after
-		// the pause than a real one. On 24 October 2026 CI's software GPU drew exactly three, one
-		// short of the figure a real GPU must beat.
-		const least = softwareGpu() ? MIN_FRAMES_RESUMED - 2 : MIN_FRAMES_RESUMED;
-		expect(result.pause?.resumed.frames ?? 0).toBeGreaterThan(least);
+		// What this proves is that drawing resumed after the pause. How many frames a machine fits
+		// into the window is a speed figure, and the benchmark measures it: on 24 October 2026 CI's
+		// software GPU drew three where a real one draws many, and the count alone cannot tell a
+		// slow machine from a broken engine.
+		expect(result.pause?.resumed.frames ?? 0).toBeGreaterThan(0);
 		expect(result.pause?.resumed.presented ?? 0).toBeGreaterThan(MIN_FRAMES_RESUMED);
 		expect(result.count.largestStep, 'the longest step').toBeLessThan(LONGEST_STEP_S);
 	});
