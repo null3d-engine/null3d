@@ -144,7 +144,7 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'An island and a crystal made with geometry.fromArrays. The engine computes their normals: smooth where triangles share vertices, and hard edges where they do not. Each vertex of the island has a color of its own, and a reflection pass mirrors the island in the water.',
 		hold: 1,
-		timeoutSeconds: 60,
+		timeoutSeconds: 120,
 	},
 	{
 		name: 'extra-shapes',
@@ -155,7 +155,7 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'A torus knot, polyhedra, a lathe, an extruded star, a tube and a flat heart from @null3d/geometry, with the parameters of three.js geometry classes, in glass, metals and glazed clay over a polished stone floor.',
 		hold: 1,
-		timeoutSeconds: 60,
+		timeoutSeconds: 120,
 	},
 	{
 		name: 'vertex-updates',
@@ -295,7 +295,7 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			"900 crystals in one batch take their color and their place in a wave from their row, which a custom material reads as input.instance. Three stones share one material, whose bands follow each stone's own axis through object.worldMatrix, and the picked stone lights up by object.id.",
 		hold: 1,
-		timeoutSeconds: 60,
+		timeoutSeconds: 120,
 	},
 	{
 		name: 'weighted-transparency',
