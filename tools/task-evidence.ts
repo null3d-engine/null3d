@@ -69,4 +69,6 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'One feature description: `packages/engine/src/scene/features.ts`, `docs/api/features.md`',
 	'M3-R6':
 		'D-226 records the timings on Chrome and Safari: at most 0.29 ms in Safari, nothing measurable in Chrome, so the pattern stays',
+	'M3-R18':
+		'What ships contacts no server of its own: `docs/getting-started/network-use.md`, the guard `tools/lib/network-use.ts` and `docs/getting-started/third-party-notices.md`',
 };
