@@ -919,6 +919,12 @@ export function downloadSizes(
  * 182 KB the same morning, because the night's work left the largest start at 181,958 bytes, 314
  * bytes under the line, and the next feature would have stopped every build on the machine for as
  * long as a raise waited. The trim above is still owed and still pays it back.
+ *
+ * The cluster levels' culling pass draws its shader into the start of every page, 2.7 KB after
+ * Brotli, although only the WebGPU path builds its pipeline: the measured start moved by 650 bytes
+ * and stays inside this budget. The trim it owes is to load that shader on the feature's first use,
+ * as a material's shader loads, which returns the whole shader to pages that never draw a cluster
+ * tree and keeps WebGL2's start as it was.
  */
 export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 184 * 1024 };
 

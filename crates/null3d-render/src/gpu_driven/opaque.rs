@@ -524,6 +524,33 @@ impl Draws<'_> {
                     bucket.capacity.max(1) * stride,
                 ],
             )?;
+            // A cluster mesh draws the indices that the cluster pass copied for this view, in one
+            // draw that the pass sized, instead of its whole triangle list. The direct-draw path
+            // counts its own instances and records no cluster pass, so it draws the whole list.
+            if let Some(cluster) = bucket.cluster.filter(|_| self.counts.is_none()) {
+                let draw = layout.draws[bucket.first_draw as usize];
+                let (page_vertices, _) = meshes.ids(draw.page);
+                if vertices != Some((page_vertices, 0)) {
+                    list.push(Op::SetVertexBuffer, &[0, page_vertices, 0, 0])?;
+                    vertices = Some((page_vertices, 0));
+                }
+                let tree_indices = ids::cluster_list(view);
+                if indices != Some(tree_indices) {
+                    list.push(
+                        Op::SetIndexBuffer,
+                        &[tree_indices, index_format::UINT32, 0, 0],
+                    )?;
+                    indices = Some(tree_indices);
+                }
+                list.push(
+                    Op::DrawIndexedIndirect,
+                    &[
+                        ids::cluster_draws(view),
+                        super::clusters::Clusters::draw_offset(cluster),
+                    ],
+                )?;
+                continue;
+            }
             for index in bucket.first_draw..bucket.first_draw + bucket.draws {
                 let draw = layout.draws[index as usize];
                 let (page_vertices, page_indices) = meshes.ids(draw.page);

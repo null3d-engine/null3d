@@ -199,7 +199,7 @@ The command splits each mesh part into patches and builds the tree above them wi
 2. A patch above a group simplifies its children's triangles to about half of them. The group's border stays in place, so two patches of different detail still meet.
 3. Each patch stores its error, the largest distance between its surface and the surface below it, and a sphere around its triangles.
 
-The tree holds about twice the mesh's triangles. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. The tree goes into the file with `NULL3D_clusters`. Other glTF loaders ignore it and draw the whole mesh. The engine reads the tree, and draws the whole mesh until it draws patches.
+The tree holds about twice the mesh's triangles. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. The tree goes into the file with `NULL3D_clusters`. Other glTF loaders ignore it and draw the whole mesh. The engine draws the patches on the WebGPU path that culls on the GPU, when one copy of the mesh draws. It draws the whole mesh on WebGL2, where the start-up probe picks the path that draws objects directly, and where several copies draw at once.
 
 A mesh gets no tree in four cases. It has fewer than 20,000 triangles, or a skin or a morph target bends it. It also gets none when its material blends or masks, or more than four copies draw it. Those meshes keep whole levels.
 

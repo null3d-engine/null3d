@@ -2230,7 +2230,8 @@ impl SceneSettings {
         band: f32,
     ) -> LevelRule {
         let lens = view.and_then(|view| Some((view, view.camera()?.1)));
-        // A source's distance band reads the rule even when no mesh has levels.
+        // A source's distance band reads the rule even when no mesh has levels, and a scene with a
+        // tree of cluster patches picks its patches by the same rule.
         let Some((view, lens)) = lens else {
             return LevelRule::default();
         };
