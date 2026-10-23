@@ -23,7 +23,7 @@ const HELD_FPS = 30;
 const HELD_FPS_SHARE = 0.1;
 /** The slowest display on which the test holds the rate, with callbacks left over to skip. */
 /** True on CI's software GPU, whose frames can take longer than a held target's interval. */
-const softwareGpu = () => test.info().project.name.startsWith('chromium-swiftshader');
+const softwareGpu = () => test.info().project.name.includes('swiftshader');
 const MIN_REFRESH_HZ = 60;
 
 for (const mode of ENGINE_MODES) {
