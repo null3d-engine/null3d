@@ -1536,6 +1536,18 @@ pub fn batch_arrays(batch: u32, field: u32) -> u32 {
     })
 }
 
+/// Keeps every row of a batch whatever a view's frustum says, or culls its rows again.
+#[wasm_bindgen(js_name = setBatchUnculled)]
+pub fn set_batch_unculled(batch: u32, unculled: bool) -> u32 {
+    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
+        Ok(batch) => {
+            batch.set_unculled(unculled);
+            0
+        }
+        Err(error) => core_failure(error),
+    })
+}
+
 /// Draws only the first `count` rows, or for a line batch, the segments of its first `count`
 /// points.
 #[wasm_bindgen(js_name = setBatchActiveCount)]
@@ -3753,6 +3765,72 @@ pub fn set_vertex_draw_counts(id: u32, vertices: u32, instances: u32) -> u32 {
             .vertex_draws_mut()
             .set_counts(id, vertices, instances);
         0
+    })
+}
+
+/// Makes a draw of at most `capacity` instances for the object in scene slot `slot`, whose
+/// instance count the GPU writes, and returns its id: 0 when the scene holds the most such draws
+/// already.
+#[wasm_bindgen(js_name = createFeatureInstances)]
+pub fn create_feature_instances(slot: u32, capacity: u32) -> u32 {
+    value_with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .feature_instances_mut()
+            .create(slot, capacity)
+            .map_err(|_| out_of_memory(0))
+    })
+}
+
+/// Forgets a draw whose instance count the GPU writes. Its object draws nothing from then on.
+#[wasm_bindgen(js_name = destroyFeatureInstances)]
+pub fn destroy_feature_instances(id: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .feature_instances_mut()
+            .destroy(id);
+        0
+    })
+}
+
+/// Sets the count that a shadow view draws and that a page without compute sets for a draw whose
+/// instance count the GPU writes.
+#[wasm_bindgen(js_name = setFeatureInstanceCount)]
+pub fn set_feature_instance_count(id: u32, count: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .feature_instances_mut()
+            .set_count(id, count);
+        0
+    })
+}
+
+/// The id of the per-instance buffer that a draw whose instance count the GPU writes reads.
+#[wasm_bindgen(js_name = featureInstanceBuffer)]
+pub fn feature_instance_buffer(id: u32) -> u32 {
+    null3d_render::gpu_driven::feature_buffer_ids(id).0
+}
+
+/// The id of the count word that a draw whose instance count the GPU writes takes.
+#[wasm_bindgen(js_name = featureInstanceCountBuffer)]
+pub fn feature_instance_count_buffer(id: u32) -> u32 {
+    null3d_render::gpu_driven::feature_buffer_ids(id).1
+}
+
+/// Writes `count` per-instance rows from `values` at row `start`, as the engine's instance
+/// buffers hold them: three world-matrix rows, then the ids. Returns 0, or 1 for a draw that the
+/// values do not fit.
+#[wasm_bindgen(js_name = setFeatureInstanceRows)]
+pub fn set_feature_instance_rows(id: u32, start: u32, count: u32, values: &[f32]) -> u32 {
+    with_engine(|e| {
+        u32::from(
+            !e.renderer
+                .settings_mut()
+                .feature_instances_mut()
+                .set_rows(id, values, start, count),
+        )
     })
 }
 

@@ -170,7 +170,7 @@ use crate::final_pass::FinalIds;
 use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
-    RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group,
+    RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, floats_as_bytes,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
@@ -451,8 +451,19 @@ mod ids {
     pub const ACCUMULATE: u32 = EXPOSURE_STATE + 1;
     /// The settings of the final pass's still build, which draws a still view's accumulated color.
     pub const STILL_SETTINGS: u32 = ACCUMULATE + 1;
+    /// Each feature-instance draw's per-instance buffer, then its count word, from
+    /// `FEATURE_INSTANCES + 2 * (id - 1)`.
+    pub const FEATURE_INSTANCES: u32 = STILL_SETTINGS + 1;
+
+    pub const fn feature_instances(id: u32) -> u32 {
+        FEATURE_INSTANCES + 2 * (id - 1)
+    }
+    pub const fn feature_count(id: u32) -> u32 {
+        feature_instances(id) + 1
+    }
+
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = STILL_SETTINGS + 1;
+    pub const PAGES: u32 = FEATURE_INSTANCES + 2 * crate::feature_instances::MAX_FEATURE_INSTANCES;
 
     /// The blank texture array that frame groups bind while the scene has no probe and no area
     /// light. The probes own the frame group's shared array, which holds the light tables' layers
@@ -723,6 +734,18 @@ mod ids {
     }
 }
 
+/// The ids of a feature-instance draw's per-instance buffer and its count word, which the frame
+/// makes and the draw binds and copies from.
+pub fn feature_buffer_ids(id: u32) -> (u32, u32) {
+    (ids::feature_instances(id), ids::feature_count(id))
+}
+
+/// The id of a view's buffer of indirect draws, whose instance counts the frame copies a
+/// feature-instance draw's count into.
+pub fn view_indirect_buffer(view: ViewId) -> u32 {
+    ids::indirect(view)
+}
+
 /// Sizes the builder allocates once, what the device offers, and how its frames reach the canvas.
 #[derive(Clone, Copy, Debug)]
 pub struct RendererConfig {
@@ -910,6 +933,9 @@ pub struct GpuDrivenRenderer {
     /// offsets from each view's camera to the cells, which that sizing computes in turn.
     copy_views: Vec<copies::CopyView>,
     copy_offsets: crate::frame::CellOffsets,
+    /// The capacity that each feature-instance draw's buffers were made for, by id from 1, or 0
+    /// before they exist.
+    feature_capacity: Vec<u32>,
 }
 
 /// The builder's scene settings from `config`: meshes in shared buffers, each page within one
@@ -1131,6 +1157,7 @@ impl GpuDrivenRenderer {
             pick: crate::pick::PickState::default(),
             copy_views: Vec::new(),
             copy_offsets: crate::frame::CellOffsets::default(),
+            feature_capacity: vec![0; crate::feature_instances::MAX_FEATURE_INSTANCES as usize],
             dfg_pending: false,
             bound_environment: ids::BLANK_ENVIRONMENT,
             bound_probe_grid: ids::BLANK_PROBE_GRID,
@@ -1997,17 +2024,20 @@ impl GpuDrivenRenderer {
             }
             (shared, casters)
         } else {
-            self.layout.update_membership(list, arena, input, parity)?;
+            let features = self.settings.feature_instances();
+            self.layout
+                .update_membership(list, arena, input, features, parity)?;
             if shadows {
-                self.casters.update_membership(list, arena, input, parity)?;
+                self.casters
+                    .update_membership(list, arena, input, features, parity)?;
             }
             if outlines {
                 self.outlined
-                    .update_membership(list, arena, input, parity)?;
+                    .update_membership(list, arena, input, features, parity)?;
             }
             if scatters {
                 self.scattering
-                    .update_membership(list, arena, input, parity)?;
+                    .update_membership(list, arena, input, features, parity)?;
             }
             (false, false)
         };
@@ -2037,6 +2067,8 @@ impl GpuDrivenRenderer {
         if scatters {
             self.scattering.upload_records(list, arena)?;
         }
+        // A feature-instance draw's buffers exist before any bundle names them.
+        self.feature_buffers(list, arena)?;
         // The motion view draws while a pass reads the motion and the device draws its target. Its
         // bundles and culling groups name the copies of the last frame's data, which can grow.
         let motion_on = motion && self.graph.motion_draws();
@@ -2051,7 +2083,9 @@ impl GpuDrivenRenderer {
                 motion_new = true;
             }
             if !upload_everything {
-                self.moving.update_membership(list, arena, input, parity)?;
+                let features = self.settings.feature_instances();
+                self.moving
+                    .update_membership(list, arena, input, features, parity)?;
             }
             self.motion.reserve(input.snapshot.uploads().len() + 1)?;
             let stale = self.motion.prepare(
@@ -2251,6 +2285,16 @@ impl GpuDrivenRenderer {
             .enumerate()
             .filter(|(_, frame)| frame.is_some())
             .fold(0u32, |mask, (index, _)| mask | 1 << index);
+        // The reset that each view's culling uploads zeroes the indirect counts, so the page's
+        // counts go into the templates first: a shadow view draws them, because the add-on's
+        // compute writes the main view's count alone.
+        let features = self.settings.feature_instances();
+        let radii = input.scene.world(parity).radii();
+        self.layout.set_feature_counts(features, radii);
+        self.casters.set_feature_counts(features, radii);
+        self.outlined.set_feature_counts(features, radii);
+        self.scattering.set_feature_counts(features, radii);
+        self.moving.set_feature_counts(features, radii);
         self.light_clusters.upload(
             list,
             arena,
@@ -2617,6 +2661,9 @@ impl GpuDrivenRenderer {
         let camera = self.frames[ViewId::CAMERA.index()].as_ref();
         self.lines
             .upload(list, arena, &input.lines, camera.map(|frame| &frame.camera))?;
+        // The culling reset zeroed the indirect draws, so the page's counts reach them from here,
+        // and every compute step copies the add-on's own counts over them before the pass.
+        self.copy_feature_counts(list, input.scene.world(parity).radii())?;
 
         let (layout, casters, culling, lines) =
             (&self.layout, &self.casters, &self.culling, &self.lines);
@@ -2693,6 +2740,9 @@ impl GpuDrivenRenderer {
         let pick_pipeline = self.pick.resolve.map_or(0, |(id, _)| id);
         let pick_group = self.pick.group;
         let pick_pixel = pick_frame.map(|(_, pixel)| pixel);
+        let feature_layout = &self.layout;
+        let feature_table = self.settings.feature_instances();
+        let feature_radii = input.scene.world(parity).radii();
         self.graph.record(
             list,
             |view| settings.clear_color_of(view),
@@ -2849,6 +2899,9 @@ impl GpuDrivenRenderer {
                 ),
                 _ => Ok(()),
             },
+            // A feature's compute pass writes its count word before the pass that draws it, so
+            // the word reaches the indirect draws once the compute step ends.
+            |list| copy_feature_counts(list, feature_layout, feature_table, feature_radii),
             |list| {
                 if motion_on {
                     motion_state.finish(list, parity, layout, skinning)?;
@@ -2874,6 +2927,85 @@ impl GpuDrivenRenderer {
         self.tiles
             .finish(input.frame, created_pipelines, input.pipelines_built);
         Ok(upload_everything)
+    }
+
+    /// Makes each feature-instance draw's buffers when they do not exist or the capacity grew, and
+    /// writes the page's count into each count word. The frame records this before its compute
+    /// passes, so a scene whose add-on writes the count with compute starts from the page's count
+    /// and the compute's own write lands after it.
+    fn feature_buffers(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        if self.settings.feature_instances().is_empty() {
+            return Ok(());
+        }
+        let places = self.settings.feature_instances().capacity();
+        for place in 0..places {
+            let id = place as u32 + 1;
+            let Some((_, capacity, count)) = self.settings.feature_instances().record(id) else {
+                continue;
+            };
+            let index = place;
+            if self.feature_capacity.get(index).copied() != Some(capacity) {
+                list.push(
+                    Op::CreateBuffer,
+                    &[
+                        ids::feature_instances(id),
+                        capacity * crate::feature_instances::INSTANCE_BYTES,
+                        usage::VERTEX | usage::STORAGE | usage::COPY_DST,
+                    ],
+                )?;
+                list.push(
+                    Op::CreateBuffer,
+                    &[
+                        ids::feature_count(id),
+                        4,
+                        usage::STORAGE | usage::COPY_DST | usage::COPY_SRC,
+                    ],
+                )?;
+                if index >= self.feature_capacity.len() {
+                    self.feature_capacity.resize(index + 1, 0);
+                }
+                self.feature_capacity[index] = capacity;
+            }
+            let (at, bytes) = arena.push(&count.to_le_bytes())?;
+            list.push(Op::WriteBuffer, &[ids::feature_count(id), 0, at, bytes])?;
+            // The rows that the page wrote reach the add-on's own instance buffer.
+            let floats = crate::feature_instances::INSTANCE_FLOATS as usize;
+            if let Some((start, rows)) = self.settings.feature_instances_mut().take_changed(id) {
+                let from = start as usize * floats;
+                let to = (start as usize + rows as usize) * floats;
+                let bytes = floats_as_bytes(&self.settings.feature_instances().rows(id)[from..to]);
+                let (at, bytes) = arena.push(bytes)?;
+                list.push(
+                    Op::WriteBuffer,
+                    &[
+                        ids::feature_instances(id),
+                        start * crate::feature_instances::INSTANCE_BYTES,
+                        at,
+                        bytes,
+                    ],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Copies each feature-instance draw's count word into the instance count of its bucket's
+    /// indirect draws. The main view takes the add-on's word, which its compute pass writes each
+    /// frame; a view of a light's shadows takes the page's count, because the add-on's compute
+    /// writes the main view's count alone.
+    /// The count that a view of a light's shadows draws for feature-instance draw `id`, or `None`
+    /// when no shadow view draws it. A shadow view takes the page's count, because the add-on's
+    /// compute writes the main view's count alone.
+    pub fn feature_shadow_count(&self, id: u32) -> Option<u32> {
+        self.casters.feature_template_count(id)
+    }
+
+    fn copy_feature_counts(&self, list: &mut DrawList, radii: &[f32]) -> Result<(), RecordError> {
+        copy_feature_counts(list, &self.layout, self.settings.feature_instances(), radii)
     }
 
     /// True when this frame draws the pick that waits: the resolve pipeline and the pick pipeline
@@ -3263,6 +3395,8 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.decal_frame_stale = true;
         self.meshes.forget();
         self.pipelines.forget();
+        // The add-on's buffers went with the old device, so the next frame makes them again.
+        self.feature_capacity.fill(0);
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
         self.settings.light_tables_mut().reset_gpu();
@@ -3305,4 +3439,37 @@ impl FrameBuilder for GpuDrivenRenderer {
     fn allow_motion(&mut self, one_sample: bool, multisampled: bool) {
         self.graph.allow_motion(one_sample, multisampled);
     }
+}
+
+/// The add-on's count words of the feature-instance draws, copied into the main view's indirect
+/// draws. A feature's compute pass writes each word before the pass that draws it, so the frame
+/// copies the word again after every compute step.
+fn copy_feature_counts(
+    list: &mut DrawList,
+    layout: &Layout,
+    features: &crate::feature_instances::FeatureInstanceTable,
+    radii: &[f32],
+) -> Result<(), RecordError> {
+    if features.is_empty() {
+        return Ok(());
+    }
+    for bucket in layout.buckets.iter().filter(|bucket| bucket.feature != 0) {
+        // A hidden object's entry keeps the reset's 0, so its draw draws nothing.
+        if layout::feature_hidden(radii, bucket) {
+            continue;
+        }
+        for index in bucket.first_draw..bucket.first_draw + bucket.draws {
+            list.push(
+                Op::CopyBufferToBuffer,
+                &[
+                    ids::feature_count(bucket.feature),
+                    0,
+                    ids::indirect(ViewId::CAMERA),
+                    index * INDIRECT_BYTES + 4,
+                    4,
+                ],
+            )?;
+        }
+    }
+    Ok(())
 }

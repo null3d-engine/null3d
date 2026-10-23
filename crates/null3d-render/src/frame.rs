@@ -43,6 +43,7 @@ use crate::dof::{self, Dof, DofFrame};
 use crate::effects::{EFFECT_FLOATS, Effect, EffectJoins, EffectMaps, MAX_EFFECTS, MAX_TEXTURES};
 use crate::environment::{Environment, EnvironmentUniform};
 use crate::exposure::{AutoExposure, ExposureFrame, Meter};
+use crate::feature_instances::FeatureInstanceTable;
 use crate::fog::{self, Fog};
 use crate::fog_volume::{self, FogVolumeFrame, Volumetric};
 use crate::frame_data::{FrameUniform, normalized_direction};
@@ -1052,6 +1053,8 @@ pub struct SceneSettings {
     particles: ParticleTable,
     /// The draws that make their vertices from a vertex count alone.
     vertex_draws: VertexDrawTable,
+    /// The draws of an add-on feature whose instance count the GPU writes.
+    feature_instances: FeatureInstanceTable,
     /// The meshes with levels of detail.
     levels: Levels,
     /// The meshes' trees of cluster patches, which large static meshes draw instead of their whole
@@ -1185,6 +1188,7 @@ impl SceneSettings {
             area_wanted: false,
             particles: ParticleTable::default(),
             vertex_draws: VertexDrawTable::default(),
+            feature_instances: FeatureInstanceTable::default(),
             levels: Levels::default(),
             patches: crate::patches::PatchStorage::default(),
             level_quality: LevelQuality::default(),
@@ -2693,6 +2697,16 @@ impl SceneSettings {
     /// Those draws, to make, change and destroy them.
     pub fn vertex_draws_mut(&mut self) -> &mut VertexDrawTable {
         &mut self.vertex_draws
+    }
+
+    /// The draws of an add-on feature whose instance count the GPU writes.
+    pub fn feature_instances(&self) -> &FeatureInstanceTable {
+        &self.feature_instances
+    }
+
+    /// Those draws, to make, change and destroy them.
+    pub fn feature_instances_mut(&mut self) -> &mut FeatureInstanceTable {
+        &mut self.feature_instances
     }
 
     /// Moves the views on to the next frame: each mirror view takes the camera's layers unless it

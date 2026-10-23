@@ -121,6 +121,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/features', title: 'Add-on feature descriptions', since: '0.3', summary: 'One description for an add-on feature: frame point, reads and writes, callbacks, outputs with neutral defaults, lighting slots, order band and view mask.' },
 	{ id: 'api/vertex-draws', title: 'Draws from a vertex count', since: '0.2', summary: 'scene.createVertexDraw: a custom material and a vertex count with no mesh data, the vertex and instance index in the shader, a bounds sphere, and helpers that wrap positions around the camera.' },
 	{ id: 'api/feature-draws', title: 'Add-on feature draws', since: '0.3', summary: 'scene.addFeatureDraw: a draw feature with its WGSL, vertices, uniforms and sort place, on both GPU paths and in every thread mode.' },
+	{ id: 'api/feature-instances', title: 'Add-on instance draws', since: '0.3', summary: 'scene.addFeatureInstances: a draw of a capacity of instances whose live count the GPU writes, and the batch that the CPU fills on WebGL2.' },
 	{ id: 'api/quality', title: 'Quality API', since: '0.1', summary: 'quality.preset, quality.set, quality.setPreset, the preset check, frame budgets, quality events.' },
 	{ id: 'api/debug', title: 'Debug drawing and stats', since: '0.1', summary: 'debug.line, box, sphere, arrow, axes, grid, frustum and light; engine.measure and its figures; debug.view; debug.stats.' },
 	{ id: 'api/math', title: 'Math helpers', since: '0.1', summary: 'vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds.' },

@@ -115,7 +115,7 @@ A draw can cast the shadows that a directional light casts with `castShadows`, a
 ## Limits
 
 - The adapter places the main view alone. A scene pass and a reflection pass do not draw a feature draw yet, and a description that names one throws E1223.
-- A draw has one shape and one material. A compact buffer of many copies that a shader expands, as a large splat scene needs, is not this hook: it needs the draws whose count the engine or the GPU writes, which arrive with the add-on that first uses them.
+- A draw has one shape and one material. A compact buffer of many copies that a shader expands, as a large splat scene needs, is not this hook: [instance draws](feature-instances.md) draw a capacity of instances whose live count the GPU writes.
 - The feature description's `reads`, `writes`, `outputs` and `provides` stay with the [feature registry](features.md): this draw reads and writes no scene resource and provides no lighting slot.
 
 ## Errors

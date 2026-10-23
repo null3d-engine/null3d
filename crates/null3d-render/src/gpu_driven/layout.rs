@@ -214,6 +214,14 @@ pub(super) struct Bucket {
     /// The cluster tree that its mesh draws in the camera's views, as a place in
     /// [`Layout::clusters`], or `None` for a bucket whose mesh draws its whole triangle list.
     pub(super) cluster: Option<u32>,
+    /// The id of the feature-instance draw that fills this bucket's per-instance buffer and whose
+    /// count word the bucket's indirect draws take, or 0 for a bucket of the engine's own.
+    pub(super) feature: u32,
+    /// The most instances that the feature draw's buffer holds, 0 for a bucket of the engine's own.
+    pub(super) feature_capacity: u32,
+    /// The scene slot of the object that places the feature draw, or `u32::MAX` for a bucket of the
+    /// engine's own.
+    pub(super) feature_slot: u32,
 }
 
 /// One indexed indirect draw of each view: a part of a bucket's mesh.
@@ -253,9 +261,10 @@ fn entry(bucket: u32, cell: u32, occluder: bool) -> u32 {
 }
 
 /// A scene object's entry in the bucket table: its bucket, whether it is an occluder, and its
-/// cell, or `HIDDEN` while it is hidden, which its world radius says.
-fn scene_entry(home: u32, world_radius: f32, cell: u32, object_flags: u32) -> u32 {
-    if world_radius == f32::NEG_INFINITY {
+/// cell, or `HIDDEN` while it is hidden, which its world radius says, and for an object whose
+/// feature-instance draw the GPU counts, which the culling shader never visits.
+fn scene_entry(home: u32, world_radius: f32, cell: u32, object_flags: u32, gpu_count: bool) -> u32 {
+    if gpu_count || world_radius == f32::NEG_INFINITY {
         HIDDEN
     } else {
         entry(home, cell, object_flags & flags::OCCLUDER != 0)
@@ -270,6 +279,13 @@ fn row_entry(bucket: u32, batch: &InstanceBatch, row: u32, active: u32) -> u32 {
     } else {
         HIDDEN
     }
+}
+
+/// True when the object that places a feature-instance bucket is hidden, so its draw draws nothing
+/// whatever its own count says.
+pub(super) fn feature_hidden(radii: &[f32], bucket: &Bucket) -> bool {
+    bucket.feature_slot != u32::MAX
+        && radii.get(bucket.feature_slot as usize) == Some(&f32::NEG_INFINITY)
 }
 
 /// The occluders among entries.
@@ -1152,6 +1168,10 @@ impl Layout {
             // outline, motion and pick builds drop it.
             let scene_depth = matches!(drawn, Drawn::Scene | Drawn::Subsurface)
                 && settings.materials().reads_scene_depth(material - 1);
+            // A feature-instance draw fills a bucket of its own from its own buffer, so its count
+            // word comes from the page or the add-on's compute rather than from culling.
+            let feature = object.and_then(|slot| settings.feature_instances().id_of(slot));
+            let record = feature.and_then(|id| settings.feature_instances().record(id));
             self.buckets.push(Bucket {
                 pipeline,
                 prepass,
@@ -1178,6 +1198,9 @@ impl Layout {
                 // that object's bias; every other bucket takes the threshold as it is.
                 bias: object.map_or(1.0, |slot| scene.level_biases()[slot as usize]),
                 cluster,
+                feature: feature.unwrap_or(0),
+                feature_capacity: record.map_or(0, |(_, capacity, _)| capacity),
+                feature_slot: object.unwrap_or(u32::MAX),
             });
             *base += count;
             self.draws.extend(parts.iter().enumerate().map(|(k, part)| {
@@ -1215,8 +1238,9 @@ impl Layout {
                 self.skinned.push((home, slot as u32));
             }
             self.home_buckets.push(home);
+            let gpu_count = settings.feature_instances().id_of(slot as u32).is_some();
             self.instance_buckets
-                .push(scene_entry(home, radius, cell, flags));
+                .push(scene_entry(home, radius, cell, flags, gpu_count));
         }
         self.skinned.sort_unstable();
         if self.owns_sources() {
@@ -1358,6 +1382,46 @@ impl Layout {
         self.records_dirty = Some(0..self.buckets.len() as u32);
         self.built = true;
         Ok(())
+    }
+
+    /// The count that a view drawing this layout draws for feature-instance draw `id`, or `None`
+    /// when the layout holds no bucket for it.
+    pub(super) fn feature_template_count(&self, id: u32) -> Option<u32> {
+        let bucket = self.buckets.iter().find(|bucket| bucket.feature == id)?;
+        Some(self.indirect_template[(bucket.first_draw * sizes::INDIRECT_WORDS + 1) as usize])
+    }
+
+    /// Sets each feature-instance draw's count in the template that a frame's reset uploads. A
+    /// shadow view draws that count, because the add-on's compute writes the main view's count
+    /// alone. The culling shader never visits these buckets, so it keeps the count as it is.
+    /// `radii` holds each scene slot's world radius: a hidden object draws nothing, as its draw
+    /// would in any other bucket, so its count is 0.
+    pub(super) fn set_feature_counts(
+        &mut self,
+        features: &crate::feature_instances::FeatureInstanceTable,
+        radii: &[f32],
+    ) {
+        for bucket in self.buckets.iter().filter(|bucket| bucket.feature != 0) {
+            let count = Self::feature_count(features, radii, bucket);
+            for index in bucket.first_draw..bucket.first_draw + bucket.draws {
+                self.indirect_template[(index * sizes::INDIRECT_WORDS + 1) as usize] = count;
+            }
+        }
+    }
+
+    /// The count that a bucket's feature-instance draw draws: the page's count, or 0 while the
+    /// object that places it is hidden.
+    pub(super) fn feature_count(
+        features: &crate::feature_instances::FeatureInstanceTable,
+        radii: &[f32],
+        bucket: &Bucket,
+    ) -> u32 {
+        if feature_hidden(radii, bucket) {
+            return 0;
+        }
+        features
+            .record(bucket.feature)
+            .map_or(0, |(_, _, count)| count)
     }
 
     /// Gives each bucket of skinned objects the sphere that holds its objects' spheres, which the
@@ -1563,6 +1627,7 @@ impl Layout {
         list: &mut DrawList,
         arena: &mut UploadArena,
         input: &FrameInput<'_>,
+        features: &crate::feature_instances::FeatureInstanceTable,
         parity: usize,
     ) -> Result<(), RecordError> {
         let scene = input.scene;
@@ -1585,8 +1650,16 @@ impl Layout {
         );
         let mut check = |start: u32, count: u32| -> Result<(), RecordError> {
             let slots = start..(start + count).min(scene_rows);
-            let entry =
-                |s: usize| scene_entry(home_buckets[s], radii[s], cells[s], object_flags[s]);
+            let entry = |s: usize| {
+                let counted = features.id_of(s as u32).is_some();
+                scene_entry(
+                    home_buckets[s],
+                    radii[s],
+                    cells[s],
+                    object_flags[s],
+                    counted,
+                )
+            };
             let range = slots.start as usize..slots.end as usize;
             let before = occluders_in(&instance_buckets[range.clone()]);
             if let Some(rows) = sync_rows(instance_buckets, slots.clone(), entry) {
@@ -2195,5 +2268,83 @@ mod tests {
         let words = BUCKET_WORDS as usize;
         assert_eq!(layout.bucket_records[words + 13], 0.5f32.to_bits());
         assert_eq!(layout.bucket_records[13], 1.0f32.to_bits());
+    }
+
+    #[test]
+    fn a_feature_instance_draw_keeps_a_bucket_of_its_own_that_culling_never_counts() {
+        let mut settings = scene_settings(&RendererConfig {
+            max_materials: 4,
+            ..RendererConfig::default()
+        });
+        let box_mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+        let mesh = settings.meshes_mut().add(&box_mesh).unwrap() + 1;
+        let material = settings.materials_mut().create(Shading::Lit, 0, [1.0; 4]);
+        let material = material.unwrap() + 1;
+        let mut scene = SceneStorage::with_capacity(8);
+        let object = scene.reserve().unwrap();
+        let mut commands = vec![
+            Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+            Command::set_material(object, material),
+        ];
+        commands.push(Command::set_flags(
+            object,
+            flags::CUSTOM_BOUNDS,
+            flags::CUSTOM_BOUNDS,
+        ));
+        scene.apply_commands(&commands, 1).unwrap();
+        scene.set_local_radius(object, 2.0).unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+        let slot = scene.resolve(object).unwrap();
+        let id = settings.feature_instances_mut().create(slot, 40).unwrap();
+        assert!(settings.feature_instances_mut().set_count(id, 6));
+
+        let mut layout = Layout::default();
+        let batches = BatchTable::with_capacity(1);
+        let mut pipelines = PipelineCache::default();
+        let targets = PassTargets {
+            color_format: format::CANVAS,
+            depth_format: format::DEPTH32_FLOAT,
+            samples: 4,
+            permutation: 0,
+        };
+        layout
+            .rebuild(
+                &settings,
+                &mut pipelines,
+                targets,
+                &scene,
+                &batches,
+                scene.parity(),
+                u32::MAX,
+                CasterPasses::default(),
+                Prepass::Off,
+                &Skinning::default(),
+                &mut KeyCounts::new(),
+                targets,
+                false,
+            )
+            .unwrap();
+        // The object's entry draws nowhere, so the culling shader never counts its instances.
+        assert_eq!(layout.instance_buckets[slot as usize], HIDDEN);
+        let (first_draw, feature_capacity) = layout
+            .buckets
+            .iter()
+            .find(|bucket| bucket.feature == id)
+            .map(|bucket| (bucket.first_draw, bucket.feature_capacity))
+            .expect("the draw has a bucket");
+        assert_eq!(feature_capacity, 40);
+        let count_word = (first_draw * sizes::INDIRECT_WORDS + 1) as usize;
+        // The template that the frame's reset uploads keeps the page's count, which a shadow view
+        // draws.
+        assert_eq!(layout.indirect_template[count_word], 0);
+        layout.set_feature_counts(settings.feature_instances(), scene.world(1).radii());
+        assert_eq!(layout.feature_template_count(id), Some(6));
+        assert_eq!(layout.indirect_template[count_word], 6);
+    }
+
+    #[test]
+    fn an_entry_counted_on_the_gpu_is_hidden_from_culling() {
+        assert_eq!(scene_entry(4, 1.0, 3, flags::VISIBLE, true), HIDDEN);
+        assert_ne!(scene_entry(4, 1.0, 3, flags::VISIBLE, false), HIDDEN);
     }
 }
