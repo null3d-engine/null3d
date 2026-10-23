@@ -629,6 +629,57 @@ impl MeshStorage {
         })
     }
 
+    /// Gives the live mesh `mesh` another triangle list in place of the one it draws, for geometry
+    /// that arrives after the mesh: a staged level replaces its base's triangles as each part of its
+    /// file downloads. The indices name the mesh's own vertices. The mesh draws in one part, holds
+    /// no morph targets and no level of its own, and has no edge list, since one belongs to the
+    /// triangles that it was made from.
+    ///
+    /// The new list takes room after the old one in the part's page, which the next upload sends.
+    /// The old list stays in the page until the mesh goes, so a mesh that takes a whole chain of
+    /// staged lists holds about one more list than its finest. The mesh keeps its vertices, its
+    /// bounds, its format and its joint spheres.
+    pub fn replace_indices(&mut self, mesh: u32, indices: &[u32]) -> Result<(), MeshError> {
+        if !indices.len().is_multiple_of(3) {
+            return Err(MeshError::NotTriangles);
+        }
+        let slot = *self
+            .meshes
+            .get(mesh as usize)
+            .filter(|_| self.live.get(mesh as usize) == Some(&true))
+            .ok_or(MeshError::UnknownMesh)?;
+        if slot.part_count != 1
+            || slot.sources != 0
+            || slot.targets != 0
+            || slot.base.is_some()
+            || self.edge_parts.get(slot.first_part as usize).is_some()
+        {
+            return Err(MeshError::SharedUnavailable);
+        }
+        let part = self.parts[slot.first_part as usize];
+        if let Some(&index) = indices.iter().find(|&&index| index >= part.vertex_count) {
+            return Err(MeshError::IndexOutOfRange {
+                index,
+                vertices: part.vertex_count,
+            });
+        }
+        // Pages store page positions, so each index moves by where the part's vertices sit.
+        // Shared buffers store the mesh's own indices and the draw adds the part's first vertex.
+        let shift = match self.packing {
+            Packing::Pages => part.first_vertex,
+            Packing::SharedBuffers => 0,
+        };
+        let page = &mut self.pages[part.page as usize];
+        reserve(&mut page.indices, indices.len())?;
+        let first_index = page.indices.len() as u32;
+        page.indices
+            .extend(indices.iter().map(|&index| (index + shift) as u16));
+        let placed = &mut self.parts[slot.first_part as usize];
+        placed.first_index = first_index;
+        placed.index_count = indices.len() as u32;
+        Ok(())
+    }
+
     /// Adds a mesh that draws the vertices of the live mesh `base` with the triangles `indices`,
     /// which name the base mesh's vertices in its own order: the storage that the asset tool's
     /// levels need, whose vertex streams are the base's. A level names a subset of the base's
@@ -1281,6 +1332,76 @@ mod tests {
                 })
             })
             .collect()
+    }
+
+    #[test]
+    fn a_replaced_triangle_list_draws_its_own_vertices_after_the_old_one() {
+        for packing in [Packing::Pages, Packing::SharedBuffers] {
+            let mut storage = MeshStorage::new(packing);
+            let geometry = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+            let mesh = storage.add(&geometry).unwrap();
+            let before = *storage.mesh(mesh).unwrap();
+            let parts = storage.parts(&before, false).to_vec();
+            // The last four triangles of the box take the place of its whole list.
+            let indices = geometry.indices[geometry.indices.len() - 12..].to_vec();
+            storage.replace_indices(mesh, &indices).unwrap();
+            let after = *storage.mesh(mesh).unwrap();
+            let replaced = storage.parts(&after, false).to_vec();
+            // The mesh keeps one part, its vertices, its format and its bounds, and takes the new
+            // list after the one it drew.
+            assert_eq!(after.part_count, 1);
+            assert_eq!(after.vertex_count, before.vertex_count);
+            assert_eq!(after.format, before.format);
+            assert_eq!(after.radius, before.radius);
+            assert_eq!(replaced[0].index_count, 12);
+            assert_eq!(
+                replaced[0].first_index,
+                parts[0].first_index + parts[0].index_count
+            );
+            assert_eq!(
+                resolved_vertices(&storage, mesh),
+                original_vertices(&geometry)[geometry.indices.len() - 12..].to_vec()
+            );
+        }
+    }
+
+    #[test]
+    fn a_replacement_is_refused_for_a_mesh_that_cannot_take_one() {
+        let mut storage = MeshStorage::new(Packing::Pages);
+        let geometry = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+        let mesh = storage.add(&geometry).unwrap();
+        // A list that is not whole triangles names a vertex the mesh does not have.
+        assert_eq!(
+            storage.replace_indices(mesh, &[0, 1]),
+            Err(MeshError::NotTriangles)
+        );
+        assert!(matches!(
+            storage.replace_indices(mesh, &[0, 1, 999]),
+            Err(MeshError::IndexOutOfRange { .. })
+        ));
+        // A level of another mesh takes no list of its own: it draws its base's triangles.
+        let level = storage.add_level(mesh, &geometry.indices[..6]).unwrap();
+        assert_eq!(
+            storage.replace_indices(level, &geometry.indices[..6]),
+            Err(MeshError::SharedUnavailable)
+        );
+        assert_eq!(
+            storage.replace_indices(999, &geometry.indices[..3]),
+            Err(MeshError::UnknownMesh)
+        );
+    }
+
+    #[test]
+    fn a_replaced_list_keeps_the_mesh_one_whose_pages_are_shared() {
+        // A second mesh's data follows the first in its page, so the new list must not move it.
+        let mut storage = MeshStorage::new(Packing::Pages);
+        let first = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+        let second = sphere_geometry(0.5, [8, 6], (0.0, TAU), (0.0, PI)).unwrap();
+        let a = storage.add(&first).unwrap();
+        let b = storage.add(&second).unwrap();
+        let before = resolved_vertices(&storage, b);
+        storage.replace_indices(a, &first.indices[..6]).unwrap();
+        assert_eq!(resolved_vertices(&storage, b), before);
     }
 
     #[test]
