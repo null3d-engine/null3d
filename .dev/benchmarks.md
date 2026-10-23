@@ -532,6 +532,12 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 ## Allocation and profiling
 
 - `bun run bench:allocation` samples allocations after a warm-up of at least 30 seconds and 3,600 frames. The browser optimizes code that runs once per frame only after thousands of frames, so a display at 60 Hz takes a minute. `--warmup-frames` sets another count for a quick look. A shorter warm-up can fail on code that the browser has not optimized yet.
+- A page that runs slowly is not always the scene's fault: on 23 October 2026 the allocation warm-up
+  drew S1 at 1.4 times the old rate on the same Mac. The counters were identical except the GPU time,
+  and 33 of the 32 ms sat in the final pass. Four texel reads for sharpening had been put in a plain
+  branch, and a software GPU runs both sides of a branch, so every software page paid them with
+  sharpening off. Read the per-pass GPU times before blaming a scene, and put optional reads in a loop
+  of no rounds rather than a branch.
 - While it warms up and samples, the check moves the mouse over the canvas and presses a key and the mouse button. So the samples cover the sketch's reading of input, and that code is warm when they start.
 - Two render-worker places are judged per browser call, not per frame: the browser's own objects between tasks, `(IDLE)`, and objects in the JS engine's code, `(JS)`. The browser calls the render worker at the display's rate, while the check counts frames. On SwiftShader a frame that takes a second takes about fifty calls. These places then weigh about fifty times as much per frame. On 20 October 2026 two slow runners failed on that, at 865 and 965 bytes a frame at `(IDLE)`. A run of the same code whose warm-up was 2.6 times faster read 698 for the whole worker. The budgets are 48 and 24 bytes per call, the figures a real GPU reads per frame. The render loop counts the calls for the check. The software GPU keeps per-frame figures as a fallback, raised to 1,024 and 640.
 - Places that allocate because the browser does have budgets with their reasons in `bench/allocation.ts`. Two places took the base run over their allowance on 15 October 2026, so they carry budgets of their own now. The frame's pending reads allocate 18.2 bytes per frame, with S1 reading once a frame. The wake path's slot change allocates 17.5. Their allowances were 4 and 16 bytes. Every other place must stay under 4 bytes per frame. Add `--n 30000` to include the staging ring.
