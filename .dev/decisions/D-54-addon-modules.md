@@ -289,3 +289,7 @@ does not throw E1213.
   engine sorts one by one.
 - A splat casts no shadow and receives none.
 - The cards need the scene's depth copy, whose cost the material's scene input carries.
+
+### Built
+
+The add-on draws from both file kinds: an SPZ file whose cloud a sketch writes in code, and a glTF model that carries `KHR_gaussian_splatting`. The image tests draw a knot of splats above a ground with a bar in front of it, the same cloud under a capped budget, and a ribbon from a glTF model. Each draws on all three tiers and in all five thread modes: all 45 runs passed on the Mac's GPU and all 45 on SwiftShader on 23 October 2026, and each mode drew the other modes' picture. The iPhone and S24-class figures remain to be measured.
