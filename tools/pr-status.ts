@@ -86,7 +86,9 @@ function description(): string {
 			if (!letters.includes(id.split('-')[1]?.[0] ?? '')) continue;
 			// GitHub draws a checkbox only for `[x]` and `[ ]`, so a task that is part done or on a
 			// branch keeps the empty box and says its state in the note; anything else reads as text.
-			const done = landed.has(id) && !PARTIAL[id];
+			// A task whose code sits only on a helper branch is not done: the pull request merges the
+			// branch, so an unmerged task would claim work that a reader cannot find here.
+			const done = landed.has(id) && !PARTIAL[id] && !ON_BRANCH.has(id);
 			const mark = done ? 'x' : ' ';
 			const note = PARTIAL[id]
 				? ` — part landed: ${PARTIAL[id]}`
