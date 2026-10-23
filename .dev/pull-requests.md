@@ -64,7 +64,8 @@ A build compiles the Rust crates for two WebAssembly variants and the build tool
 modules for every feature, and then builds the test page for the size report. It is the longest step
 in a landing, so keep the count down. Every build cache lives under one root, `null3d` under
 `XDG_CACHE_HOME` or `~/.cache/null3d`, each in a named subfolder: `shader-modules`, `shader-cache`,
-`wasm-artifacts`, `samples`, `gpu-check-baselines` and, when sccache is installed, `sccache`.
+`wasm-artifacts`, `samples`, `gpu-check-baselines`, `size-memo` and, when sccache is installed,
+`sccache`.
 `NULL3D_BUILD_CACHE` names another root, and the older per-cache variables still name one folder.
 Clearing the root is always safe, because every entry is a pure function of its inputs, so re-checking
 a branch on a moved main is cheap.
@@ -370,6 +371,7 @@ The faults that the reviews of 22 October 2026 found, first in run 39744891020, 
 - One showcase HUD test checked the sky and then the fog for 20.9 minutes in the same run, the longest browser job. The two checks share only the page's setup, 204 s of it, so each is now a test with a job of its own.
 - The `load-pages` job's artifact held the startup pages and the benchmark pages, 8.52 GB in 19,827 files, of which 7,271 contents and 2.90 GB were distinct: each page's build writes the whole shader set. Its 51 downloads took 86 runner-minutes in run 39854225392. The job now links equal files and ships one archive that holds each content once ([D-222](decisions/D-222-load-pages-once.md#update-23-october-2026-each-content-once)).
 - The build job uploaded its 2.8 GB of files as the artifact's own zip, 510 MB in 77 s in run 39869813447, on the path of every later job, and about 125 jobs downloaded it. The zip compresses each file on its own and on one core. The same files as one tar file with `zstd` on every core take about 122 MB, in seconds.
+- Each of the four `size-parts` jobs compressed a quarter of the engine test page's 6,046 files, 718 MB, at the highest gzip and Brotli levels. In run 39900270572 that took 154 to 302 s in each part, 17 runner-minutes on every run. Most of the files held the same bytes as in the run before, and their sizes depend only on their bytes. The size memo keeps the sizes by the hash of the bytes, so a part compresses only the files that changed ([Download size](benchmarks.md#download-size)).
 - A pass key that held all of `tools/lib` rebuilt every shard after a change to the size report (fixed in e970ab6a1). A key that left out the compiler's runner script, and the WGSL that the packing test compiles, reused a pass after a change to them.
 
 The ways to reuse work:
@@ -381,6 +383,7 @@ The ways to reuse work:
 | Shader entries and module sets | `.github/actions/shaders` and the `shader-entries` jobs ([Builds](#builds)) |
 | A test that reads the whole shader set | A pass marker in the Actions cache, under a key of the files that the part reads |
 | The size check's base | The `size-base` cache, by commit |
+| The size check's compressed sizes | The size memo, by the hash of each file's bytes: each `size-parts` job restores the newest, and `wasm-checks` keeps the parts' entries when a part compressed a file ([Download size](benchmarks.md#download-size)) |
 | The city's files | The `city` job's artifact |
 | Packages, Playwright's Chromium and the sample content | `.github/actions/bun-install`, `.github/actions/playwright-chromium` and `.github/actions/samples` |
 

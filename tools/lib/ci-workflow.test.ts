@@ -372,6 +372,21 @@ describe("CI's workflow", () => {
 		}
 	});
 
+	it('lets every size part read the size memo, which the job that judges the parts keeps', () => {
+		const cacheStep = (job: string, action: string) =>
+			(jobNamed(job).steps ?? []).find(
+				({ uses, with: given }) => uses === action && String(given?.path).endsWith('/size-memo'),
+			);
+		const restore = cacheStep('size-parts', 'actions/cache/restore@v4');
+		const save = cacheStep('wasm-checks', 'actions/cache/save@v4');
+		expect(restore?.with?.path).toBe(save?.with?.path);
+		// Any run's memo serves, so the parts take the newest under the prefix of the key that the
+		// judge saves under.
+		const prefix = String(restore?.with?.['restore-keys']);
+		expect(String(save?.with?.key).startsWith(prefix)).toBe(true);
+		expect(needsOf(jobNamed('wasm-checks'))).toContain('size-parts');
+	});
+
 	it("moves the build job's files and the load builds only through the archive action", () => {
 		expect(hands(jobNamed('build'), 'page-wasm', 'upload')).toBe(true);
 		for (const [name, job] of Object.entries(jobs))
