@@ -135,6 +135,17 @@ function toneMappingTests(): ImageTest[] {
  */
 const OPTIMIZED_TOLERANCE = { threshold: 0.1, maxDiffRatio: 0.02 };
 
+/**
+ * How far a level stored over its base mesh's vertices may stray from the same level stored as a
+ * mesh of its own, on CI's software GPU. Both draw the same vertices and indices, from another
+ * place in the buffer, and SwiftShader's rasterizer rounds a few pixels of the frame by one step
+ * of 255 there. The Mac draws both pictures identically, on its GPU and on its software GPU, so it
+ * keeps the exact tolerance. A device keeps the default one on the real-GPU references.
+ */
+const LEVEL_ROUNDING_TOLERANCE = {
+	maxDiffRatio: 16 / (MODELS_IMAGE.width * MODELS_IMAGE.height),
+};
+
 /** The sketch of the bloom tests: glowing shapes on a dark ground (bench/scenes/bloom.ts). */
 const BLOOM_SKETCH = 'tests/pages/sketches/bloom-sketch.ts';
 
@@ -1076,8 +1087,12 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 	},
 	// The same file with each level's vertices copied into accessors of its own, which the loader
-	// stores as a separate mesh: a level stored over its base mesh's vertices must draw exactly
-	// what the same level drawn from its own vertex stream drew.
+	// stores as a separate mesh: a level stored over its base mesh's vertices must draw what the
+	// same level drawn from its own vertex stream drew. Both carry the same arrays and indices, and
+	// the Mac draws the two frames alike, so the exact tolerance holds there. CI's software GPU
+	// rounds a pixel or three of the two buffer layouts by one step, which the SwiftShader
+	// tolerance allows. The test keeps the device tolerance of `asset-scene-lod`, whose picture it
+	// borrows: narrowing it to zero asked a device for a Mac picture bit for bit.
 	{
 		name: 'asset-scene-lod-copied',
 		sketch: 'tests/pages/sketches/asset-scene-sketch.ts?file=lod&copied',
@@ -1085,7 +1100,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		reference: 'asset-scene-lod',
 		tolerance: { threshold: 0, maxDiffRatio: 0 },
-		deviceTolerance: { threshold: 0, maxDiffRatio: 0 },
+		swiftShaderTolerance: LEVEL_ROUNDING_TOLERANCE,
 	},
 	// The outputs of assets convert: a skinned, morphed column from FBX halfway through its clip,
 	// the same column from OBJ, a pyramid from STL with face colors and a cube from PLY with corner
