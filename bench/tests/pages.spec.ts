@@ -175,9 +175,12 @@ const shortRunCount = (scene: (typeof SCENES)[number]): number =>
 /**
  * Where a short run on SwiftShader counts as far slower than usual. On CI's runners, null3D started
  * S4 in about 30 seconds, preset check included, and finished 0.3 to 0.4 frames a second. A start
- * of twice that, or a third of that frame rate, means that the page itself got slower.
+ * of three times that, or a third of that frame rate, means that the page itself got slower. The
+ * S1 pages now share a four-core runner with another software page, and started in 60.9 and 63.4
+ * seconds in three runs on 23 October 2026, so twice the design figure no longer tells a slow page
+ * from a busy machine.
  */
-const SWIFTSHADER_SLOWEST = { startMs: 60_000, completedFps: 0.1 };
+const SWIFTSHADER_SLOWEST = { startMs: 90_000, completedFps: 0.1 };
 
 /** A run's frames, start time and frame rates, as one line for the log. */
 function runFigures(result: BenchReport): string {
