@@ -36,3 +36,20 @@ export async function framesDrawn(engine: Engine, seconds = 0.5, windows = 10): 
 		frames = (await engine.measure(seconds)).frames;
 	return frames;
 }
+
+/**
+ * Measures the engine for `seconds`, and again in the same window while that window holds no frame:
+ * a software GPU on a busy machine can take longer than one window for a frame, and the figures of
+ * a window without one say nothing about the work the engine does. The last measurement comes back
+ * after `windows` windows, whatever it holds.
+ */
+export async function measureDrawing(
+	engine: Engine,
+	seconds: number,
+	windows = 10,
+): Promise<FrameMetrics> {
+	let stats = await engine.measure(seconds);
+	for (let window = 1; window < windows && stats.frames === 0; window++)
+		stats = await engine.measure(seconds);
+	return stats;
+}
