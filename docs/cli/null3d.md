@@ -3,12 +3,12 @@ id: cli/null3d
 title: "The `null3d` command"
 status: experimental
 since: "0.1"
-summary: "create, test, bench, shot, upgrade, assets, docs, port, skills, mcp, doctor."
+summary: "create, test, bench, check-addon, shot, upgrade, assets, docs, port, skills, mcp, doctor."
 ---
 
 # The `null3d` command
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `assets`, and step 0.3 adds `upgrade`. The API is experimental, so it can still change between versions. The commands `create`, `docs`, `port`, `skills`, `mcp` and `doctor` are not built yet. Coding agents must not use them. `test` runs image tests, but no behavior tests yet.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `assets`, and step 0.3 adds `upgrade` and `check-addon`. The API is experimental, so it can still change between versions. The commands `create`, `docs`, `port`, `skills`, `mcp` and `doctor` are not built yet. Coding agents must not use them. `test` runs image tests, but no behavior tests yet.
 
 The `@null3d/cli` package holds the `null3d` command. You need no command to build or run a sketch: Vite and the null3D Vite plugin do that. The command does jobs that a bundler does not do, such as drawing a frame of your scene with no person watching.
 
@@ -252,6 +252,32 @@ When a run fails, `bench` says why after the figures of its path, and exits with
 - Compare runs on one computer, one after another.
 - Vite builds `index.html` alone, unless `build.rolldownOptions.input` in your Vite config lists more pages. For a page outside the build, `bench` says so.
 - The page must start the engine as it loads. A page that waits for a click never starts the engine, so `bench` gives up after `--timeout` seconds.
+
+## check-addon
+
+`check-addon` runs the engine's gates on one add-on package. An add-on's author runs it before a release, and a listing runs it before it publishes the add-on. It prints one line for each gate, and exits with 1 when a gate fails.
+
+```sh
+bunx @null3d/cli check-addon addons/splats
+```
+
+| Gate | What it checks |
+| --- | --- |
+| package | the folder has a manifest with a name and an entry file |
+| public API | the add-on's shipped code imports only `@null3d/engine` and `@null3d/engine/stats` |
+| interface | the entry declares the plugin interface range that it works with, or, for a `@null3d/...` package, pins the exact engine version |
+| shaders | a build compiles the add-on's WGSL for WebGPU and WebGL2 |
+| sizes | each file that the add-on loads after the start holds to its budget |
+| page | the page starts from another origin under the strict policy, and its cost is measured per quality preset |
+
+The shader and size gates build the add-on with the Vite and the null3D plugin that it installs. The page gates take the page of the first test in `null3d.json`, or the page that `--page` names. The page gates are skipped when there is no page.
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--page <path>` | The page to open, from the project's root, such as `/demo.html` | The first test's page in `null3d.json` |
+| `--skip-browser` | Runs no gate that opens a browser | The page gates run |
+
+Each page gate draws as `bench` does: with Chrome on the computer's GPU, or with Playwright's Chromium on SwiftShader when the CI variable is set. The cost gate measures the production build on each quality preset. It prints the GPU time per frame where the device times it, and the CPU time otherwise.
 
 ## assets
 

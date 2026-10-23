@@ -920,12 +920,13 @@ export function downloadSizes(
  * bytes under the line, and the next feature would have stopped every build on the machine for as
  * long as a raise waited. The trim above is still owed and still pays it back.
  *
- * It went to 186 KB on 23 October 2026, for the cluster levels' culling pass: its shader is 2.7 KB
- * after Brotli and every page's start holds it, so the largest start measured 186,507 bytes. The
- * pass runs only on the WebGPU path, so the trim it owes is to load the shader on the feature's
- * first use, as a material's shader loads.
+ * The cluster levels' culling pass draws its shader into the start of every page, 2.7 KB after
+ * Brotli, although only the WebGPU path builds its pipeline: the measured start moved by 650 bytes
+ * and stays inside this budget. The trim it owes is to load that shader on the feature's first use,
+ * as a material's shader loads, which returns the whole shader to pages that never draw a cluster
+ * tree and keeps WebGL2's start as it was.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 186 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 184 * 1024 };
 
 /**
  * The budget for each part that loads after the start. The Brotli figure rose on 22 October 2026,

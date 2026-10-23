@@ -382,6 +382,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'hero-shadow',
+		group: 'Light, materials and effects',
+		sketch: new URL('./hero-shadow/sketch.ts', import.meta.url),
+		code: 'hero-shadow/',
+		title: 'Hero shadow',
+		scene: 'Launch yard at sunset',
+		summary:
+			"A car on a launch pad in the low evening sun, made in code, with stone blocks around the yard. The sun's cascades hold the blocks' long shadows at a few centimeters per texel, while the car gets a shadow map of its own, fitted tightly to it, several times finer. Every 3 seconds the car's hero shadow turns off and on again, so the difference shows.",
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'camera-lens',
 		group: 'Light, materials and effects',
 		sketch: new URL('./camera-lens/sketch.ts', import.meta.url),

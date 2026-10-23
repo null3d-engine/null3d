@@ -25,6 +25,7 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 | `bunx @null3d/cli test --update-references` | Keeps each new or changed image as its reference; check the images before committing them |
 | `bunx @null3d/cli bench [--gpu webgpu,webgl2] [--page /other.html]` | Builds the project for production and measures the page headless: 5 fresh runs of 30 seconds, each after 5 seconds of warm-up. Prints the median and the spread of CPU time per frame by thread, GPU time and frame rates, and saves every run's figures in `bench.json` |
 | `bunx @null3d/cli bench --runs 3 --seconds 10 --warmup 5 --size 390x844` | Measures with fewer or shorter runs, or in another window size in CSS pixels. Compare only runs made with the same options on the same computer |
+| `bunx @null3d/cli check-addon [folder] [--page /demo.html] [--skip-browser]` | Runs the engine's gates on one add-on package: its public imports, its plugin interface range, a build of its shaders for both GPU paths, the size of its first-use files, and, with a page, its start from another origin under the strict policy and its cost per quality preset. Prints one line per gate and exits with 1 when one fails |
 | `bunx @null3d/cli upgrade [--to 0.2.0] [--dry-run]` | Moves every `@null3d` package in `package.json` to one version: the installed engine's, or the one `--to` names. Writes the manifest only, and edits no code; run `bun install` after it |
 | `bunx @null3d/cli doctor` (0.3, not built yet) | Checks versions, headers, asset CORS, and the capabilities of the local browser |
 | `bunx @null3d/cli docs show <id>` / `bunx @null3d/cli docs search "<words>"` (0.3, not built yet) | Prints docs for the installed engine version |
@@ -176,6 +177,7 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | Symptom | Likely cause | Fix | Docs |
 | --- | --- | --- | --- |
 | Blank canvas; console mentions `SharedArrayBuffer` or `crossOriginIsolated` | No isolation headers | The null3D Vite plugin, or set COOP `same-origin` and COEP `require-corp` on the host | `getting-started/hosting` |
+| The production build's worker files are tens of MB each, or Vite warns that workers do not build as ES modules | The build runs without the null3D Vite plugin, or another setting replaced its worker format | Add the plugin to `vite.config.ts`, and leave `worker.format` unset | `getting-started/install` |
 | Offline, the engine runs single-threaded, or a development build warns that a service worker controls a page that is not isolated | The service worker answers the page without its COOP and COEP headers | Cache the page's own response with `cache.addAll`, which keeps the headers, or copy them into the response the worker makes | `getting-started/hosting` |
 | Offline, the start or a feature's first use fails to download a file | The service worker caches no copy of that feature's files | Cache the `start` group and each feature that the game uses from `null3d-files.json` | `getting-started/hosting` |
 | Blank canvas; console shows CORS errors for models or textures | Assets from another origin without CORS or CORP headers | Serve them with `Access-Control-Allow-Origin` or `Cross-Origin-Resource-Policy` | `getting-started/hosting` |
@@ -210,6 +212,7 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | `createEngine` rejects with E1410 | The sketch module did not load, at the first import or at the second, which the engine makes after a console warning: a wrong address, or an error that its top-level code threw | Pass `sketch: new URL('./sketch.ts', import.meta.url)`; fix the error that the message quotes | `errors/E1410` |
 | Pointer position off by a factor | Mixing CSS pixels and render pixels | `input.pointer.x` and `y` are CSS pixels, as `ctx.engine.viewport` gives the canvas size | `api/input` |
 | E1432 at the start of a sketch that imports an add-on | The add-on and the engine are at different versions, and each add-on pins the engine version it was built for | `bunx @null3d/cli upgrade`, then `bun install`, so every null3D package takes one version | `errors/E1432`, `cli/null3d` |
+| E1433 at the start of a sketch that imports an add-on from another developer | The add-on declares a plugin interface range that this engine's interface is outside | Install the add-on release that matches the engine's plugin interface, or run the engine version that the add-on declares | `errors/E1433`, `api/engine` |
 
 ## 9. Before you ship
 

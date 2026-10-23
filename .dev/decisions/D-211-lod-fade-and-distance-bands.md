@@ -34,3 +34,16 @@ D-137's addendum of 19 October 2026 asked for three changes:
 - Keeping the conversion of a distance or a coverage to an error: it moves those switches with the render height and the render scale, so a model's levels do not stay where its author put them.
 - A second band value for distance edges: one 8% band serves both, and two values would need a second uniform word and a second test surface for no measured gain.
 - Fading a distance band through a blend or a separate pass: the level dither already exists on both paths, draws each pixel once, and needs no sorting.
+
+## Addendum, 23 October 2026: the GPU path hides only where a level follows
+
+The rule's reason is that the last level holds no geometry. The CPU culling asked for that level
+first (`levels.rs`, `links[home].has_next()`), but the GPU shader hid a bound that covers fewer
+pixels than the threshold wherever the source had no coarser level either. A mesh without levels
+therefore lost its sub-pixel bounds on WebGPU and kept them on WebGL2. The s1-cells picture showed
+it plainly: 790 dots in its reference, 141 on the GPU path, and every lost one a pixel or two
+across, while the bright dots of four pixels stayed. The shader now asks the same question as the
+CPU rule before it hides (9de6eb96d).
+
+The s1 picture group passes again in both reference sets on both paths, 7 of 7 each, so no
+reference moved and the rule keeps the s1 dots on every path.

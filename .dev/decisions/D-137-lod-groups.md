@@ -430,3 +430,34 @@ Held as copies, the levels took 91,600 bytes of GPU memory. Held over the base's
 take 13,200. The four levels save 78,400 bytes on that one mesh. One picture test draws the file
 with each level's accessors copied. Its picture must match the shared one: the shared level draws
 the same pixels as the copied level.
+
+## Addendum, 23 October 2026: impostor cards that blend three views and relight
+
+D-151 recorded three-view blending as a later step, and said the impostor cards are a sprite batch
+that shows the stored view nearest the camera. The atlas was also shaded for one sun, so a scene
+whose sun moves showed cards lit for a sun that had set. M3-L4 asked for both faults to go.
+
+The cards are now one instance batch of quads, drawn by the add-on's own material, which the engine
+compiles from WGSL that ships with the package. Three properties carry the change:
+
+- The vertex offset faces every quad to the screen. It reads the instance's world matrix, whose
+  columns are the card's axes turned into the view's space, and returns the move that puts the
+  quad's corner on the screen's plane. The engine applies the instance transform afterwards, so
+  the offset is that rotation's inverse applied to the wanted point.
+- The surface function folds the direction from the card toward the eye onto the octahedral grid,
+  finds the triangle of cell centers that holds it, and blends the three cells by its barycentric
+  weights. The same weights blend their stored normals, which are decoded in each view's space and
+  turned by the camera's axes, since the card faces the screen. The engine then lights the card
+  with the scene's lights, exactly as it lights a mesh.
+- The atlas is twice what it was: a color atlas, in sRGB, and a surface atlas whose red and green
+  hold the octahedral code of the view's normal, blue the point's depth and alpha its coverage.
+  `encodeImpostorSurface` writes those texels, so a bake stores the surface and never its light.
+
+The add-on still changes no engine source, as D-151 ruled: the material, the quad and the octahedral
+code all sit in `@null3d/impostors`. The octahedral fold now exists twice, once in TypeScript for
+the bake and the unit tests and once in WGSL for the card, so a change to one must change the other;
+the picture test draws the cards around many directions so a disagreement shows.
+
+The eye comes from the frame's camera, so the cards have no per-frame call. `update` left the API,
+and with it the origin that the sprite batch needed: the engine draws everything relative to the
+camera, so world positions keep their precision far from the world's origin.

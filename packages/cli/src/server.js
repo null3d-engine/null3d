@@ -18,6 +18,8 @@ import { stripVTControlCharacters } from 'node:util';
  * @property {string[]} errors The errors that the server logged, oldest first.
  * @property {(path: string) => boolean} hasFile Whether the server serves a file at a path from
  *   its root, from the project's folder or from its folder of public files.
+ * @property {string} [buildDir] The folder of a production build, which this server serves; a dev
+ *   server has none.
  * @property {() => Promise<void>} close
  */
 
@@ -149,6 +151,7 @@ export async function startBuildServer() {
 		return {
 			url,
 			errors,
+			buildDir: outDir,
 			hasFile: (path) => existsSync(join(outDir, path)),
 			async close() {
 				await preview.close();

@@ -35,3 +35,22 @@ A branch from before the split edited the old single table. [Branches and parall
 - Mip bias 0: today's pass 2.184 ms, GSR 0.537 ms, so GSR is 1.647 ms faster. Image scores at the engine's setting favour GSR: SSIM 0.9552 against 0.9532, MAE 1.48 against 1.49.
 - Mip bias -1: today's pass 2.434 ms, GSR 0.732 ms, so GSR is 1.702 ms faster. GSR scores slightly lower there: SSIM 0.9586 against 0.9655, MAE 1.34 against 1.20.
 - The rule that decides the upscaler asks for a cost inside 0.2 ms. GSR is faster by more than eight times that on this iPad, and better at the engine's mip bias, so the iPad keeps GSR 1.
+
+## iPad Pro 13-inch, iPadOS 26, Safari, 23 October 2026, on BrowserStack
+
+The M2 gate's timed rows were rerun on the newest tip through BrowserStack's cloud iPad Pro 13, the
+same device the gate commit was measured on. Each row draws the showcase scene for 300 seconds, rests
+five minutes while the device cools, and reports the frames presented.
+
+| Scene | Path | Newest tip | Gate commit |
+| --- | --- | --- | --- |
+| S4 | WebGPU | 60.0 | 59.6 |
+| S4 | WebGL2 | 60.0 | 60.0 |
+| S5 | WebGPU | 29.0 | 36.1 |
+| S5 | WebGL2 | 49.2 (59.4 once the preset falls to Low) | 60.0 |
+| S6 | WebGPU | 59.8 | 59.8 |
+| S6 | WebGL2 | 59.8 | 59.9 |
+
+The device holds its target on every scene but S5, and S5 has lost frames on both paths since the gate
+commit. The engine's own threads use 3.1 ms of a 33 ms frame there, so the loss is on the graphics side.
+The rows were read from `target/runs/20261023-002748-showcase/bsipadpro13-safari` in the gate checkout.

@@ -530,14 +530,33 @@ impl Cascade {
 /// from positions relative to the camera into its clip space, its culling frustum, and the change
 /// in depth over one meter along the light's direction.
 fn box_view(bounds: &CascadeBox, position: [f64; 3]) -> (Mat4, Frustum, f32) {
-    let [x, y, z] = bounds.axes;
     // The box's center relative to the camera, along the light's axes.
     let [cx, cy, cz]: [f32; 3] =
         std::array::from_fn(|k| (bounds.center[k] - dot_far(position, bounds.axes[k])) as f32);
     let radius = bounds.radius;
-    let (far_face, light_face) = (cz - radius, cz + radius + bounds.margin);
+    ortho_view(
+        bounds.axes,
+        [cx, cy, cz],
+        radius,
+        cz - radius,
+        cz + radius + bounds.margin,
+    )
+}
+
+/// The view of a box along the light's `axes`, whose center lies at `center` relative to the
+/// camera, half `half` wide across the light and running from `far_face` to `light_face` along it:
+/// its matrix, its culling frustum and the change in depth over one meter along the light.
+fn ortho_view(
+    axes: [[f32; 3]; 3],
+    center: [f32; 3],
+    half: f32,
+    far_face: f32,
+    light_face: f32,
+) -> (Mat4, Frustum, f32) {
+    let [x, y, z] = axes;
+    let [cx, cy, _] = center;
     let depth = light_face - far_face;
-    let (s, sz) = (1.0 / radius, 1.0 / depth);
+    let (s, sz) = (1.0 / half, 1.0 / depth);
     let (tx, ty, tz) = (-cx * s, -cy * s, -far_face * sz);
     // Column-major: each column holds one axis's share of x, y and depth in clip space.
     let view_proj = [
@@ -563,6 +582,120 @@ fn box_view(bounds: &CascadeBox, position: [f64; 3]) -> (Mat4, Frustum, f32) {
     let mut planes = *Frustum::from_view_projection(&view_proj).planes();
     planes[5] = [0.0; 4];
     (view_proj, Frustum::from_planes(planes), sz)
+}
+
+/// How far past the hero object, in multiples of its bounding sphere's radius, its box reaches
+/// away from the light: the distance over which its shadow lands on other surfaces. A parallel
+/// light stretches an object's shadow without limit, so the box holds as much of it as a low sun
+/// makes on the ground near the object, about a dozen radii, with room to spare.
+pub const HERO_REACH: f32 = 15.0;
+
+/// The box that the sun's hero shadow draws: a square across the light around the object's
+/// bounding sphere, reaching a little past it toward the light and further past it away from the
+/// light, where its shadow falls.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct HeroBox {
+    /// The light's axes: x and y across its view, and z toward the light.
+    pub axes: [[f32; 3]; 3],
+    /// The object's bounding sphere center along each of the light's axes, from the world's
+    /// origin.
+    pub center: [f64; 3],
+    /// Half the box's side across the light.
+    pub half: f32,
+    /// How far the box reaches past the center toward the light.
+    pub toward: f32,
+    /// How far it reaches past the center away from the light.
+    pub away: f32,
+}
+
+impl HeroBox {
+    /// The box fitted to the bounding sphere of `radius` at `center` from the world's origin, for a
+    /// light that travels along `direction`, which has length 1.
+    pub fn fit(direction: [f32; 3], center: [f64; 3], radius: f32) -> Self {
+        let axes = light_axes(direction);
+        Self {
+            axes,
+            center: std::array::from_fn(|k| dot_far(center, axes[k])),
+            half: radius,
+            toward: radius,
+            away: radius * (1.0 + HERO_REACH),
+        }
+    }
+
+    /// The size in meters of one texel of a layer of `size` texels on each side.
+    pub fn texel(&self, size: u32) -> f32 {
+        2.0 * self.half / size.max(1) as f32
+    }
+
+    /// The box's view for a camera at `camera` from the world's origin: its matrix from positions
+    /// relative to the camera, its culling frustum, and the change in depth over one meter along
+    /// the light.
+    pub fn view(&self, camera: [f64; 3]) -> (Mat4, Frustum, f32) {
+        let [cx, cy, cz]: [f32; 3] =
+            std::array::from_fn(|k| (self.center[k] - dot_far(camera, self.axes[k])) as f32);
+        ortho_view(
+            self.axes,
+            [cx, cy, cz],
+            self.half,
+            cz - self.away,
+            cz + self.toward,
+        )
+    }
+
+    /// True when a sphere of `radius` at `center` from the world's origin touches the box.
+    pub fn touches(&self, center: [f64; 3], radius: f32) -> bool {
+        let reach = f64::from(self.half + radius);
+        let along = |k: usize| dot_far(center, self.axes[k]) - self.center[k];
+        along(0).abs() <= reach
+            && along(1).abs() <= reach
+            && along(2) >= -(f64::from(self.away) + f64::from(radius))
+            && along(2) <= f64::from(self.toward) + f64::from(radius)
+    }
+}
+
+/// The sun's hero object in one frame: the box fitted to it, and the values its receivers read.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HeroShadow {
+    pub bounds: HeroBox,
+    /// The light's layer mask: its tile draws the casters whose masks share a bit with it.
+    pub layers: u32,
+    /// The light's bias toward the light, in meters.
+    pub bias: f32,
+    /// The light's normal bias, in meters.
+    pub normal_bias: f32,
+}
+
+impl HeroShadow {
+    /// The hero shadow of the object in scene slot `row`, for a light that travels along
+    /// `direction`, which has length 1. `None` for an object without bounds, which draws no
+    /// shadow.
+    pub fn of(
+        scene: &SceneStorage,
+        parity: usize,
+        row: u32,
+        direction: [f32; 3],
+        layers: u32,
+        bias: f32,
+        normal_bias: f32,
+    ) -> Option<Self> {
+        let world = scene.world(parity);
+        let [x, y, z, radius] = world.sphere(row as usize);
+        if radius.is_nan() || radius <= 0.0 || radius >= null3d_core::world::UNBOUNDED_RADIUS {
+            return None;
+        }
+        // The sphere lies relative to its cell's center, which the object's cell position gives.
+        let at = scene.cell_position(row, parity);
+        let absolute = at.absolute();
+        let center = std::array::from_fn(|k| {
+            absolute[k] + (f64::from([x, y, z][k]) - f64::from(at.local[k]))
+        });
+        Some(Self {
+            bounds: HeroBox::fit(direction, center, radius),
+            layers,
+            bias,
+            normal_bias,
+        })
+    }
 }
 
 /// The frames in the schedule's cycle: a multiple of every interval from 1 to [`MAX_INTERVAL`].
@@ -781,6 +914,8 @@ pub struct ShadowFrame {
     /// The frame's clock, as the camera's view has it, which the vertex offsets of custom
     /// materials' casters read.
     pub clock: [f32; 4],
+    /// The object whose shadow the light draws into a tile of its own, while it names one.
+    pub hero: Option<HeroShadow>,
 }
 
 impl ShadowFrame {
@@ -1161,6 +1296,41 @@ mod tests {
     const DOWN_AND_ACROSS: [f32; 3] = [-0.408_248_3, -0.816_496_6, -0.408_248_3];
 
     #[test]
+    fn the_hero_s_box_holds_the_object_and_the_place_its_shadow_lands() {
+        let center = [3.0, 1.5, -2.0];
+        let radius = 0.8;
+        let hero = HeroBox::fit(DOWN_AND_ACROSS, center, radius);
+        assert_eq!(hero.half, radius);
+        assert_eq!(hero.toward, radius);
+        assert_eq!(hero.away, radius * (1.0 + HERO_REACH));
+        // The object's own sphere lies inside it, and so does a surface where its shadow lands,
+        // along the light past the object.
+        let along = DOWN_AND_ACROSS.map(f64::from);
+        let at = |metres: f64| std::array::from_fn(|k| center[k] + along[k] * metres);
+        assert!(hero.touches(center, radius), "{hero:?} {center:?} {radius}");
+        assert!(hero.touches(at(f64::from(radius) * 2.0), 0.1));
+        // A sphere far across the light, or far past where the shadow lands, does not.
+        let across = hero.axes[0].map(f64::from);
+        let beside = std::array::from_fn(|k| center[k] + across[k] * (radius as f64 * 3.0));
+        assert!(!hero.touches(beside, 0.1));
+        assert!(!hero.touches(at(-(f64::from(radius) * f64::from(HERO_REACH + 3.0))), 0.1));
+    }
+
+    #[test]
+    fn the_hero_s_tile_holds_four_times_the_first_cascade_s_texels_at_ten_metres() {
+        let cascades = fit(&camera(), &LENS, 1.5, DOWN_AND_ACROSS, &SETTINGS);
+        let first = cascades.used()[0];
+        assert!(first.end > 10.0, "the first cascade holds 10 m");
+        // An object of about a car's size, which its own tile of 1,024 texels fits tightly.
+        let hero = HeroBox::fit(DOWN_AND_ACROSS, [0.0, 1.0, 10.0], 0.9).texel(1024);
+        assert!(
+            hero * 4.0 <= first.texel,
+            "the hero's texel {hero} m against the first cascade's {} m",
+            first.texel
+        );
+    }
+
+    #[test]
     fn cascades_seen_from_another_camera_keep_their_boxes_and_their_distances() {
         let fitted = [3.0, 0.0, -2.0];
         let drawing = [-10.0, 20.0, 15.0];
@@ -1401,6 +1571,7 @@ mod tests {
             drawn: 0b111,
             depth: CascadeDepth::default(),
             clock: [2.5, 0.016, 0.0, 0.0],
+            hero: None,
         };
         let size = SETTINGS.map_size as f32;
         for (k, cascade) in frame.cascades.used().iter().enumerate() {

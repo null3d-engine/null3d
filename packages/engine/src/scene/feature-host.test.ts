@@ -7,8 +7,9 @@ import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { presetSettings, type QualityPreset, type QualitySettings } from '../quality/presets';
 import { SketchQuality } from '../sketch/quality';
-import { FeatureHost } from './feature-host';
+import { FeatureHost, type FeatureHostOptions } from './feature-host';
 import { defineFeature, type FeatureDescription, type FeatureStats } from './features';
+import { AddonNamespaces } from './namespaces';
 
 // The page sets the table of fixes that ends each error's message before it can raise an error.
 beforeEach(() => setErrorFixes(ERROR_FIXES));
@@ -35,6 +36,35 @@ function notify(quality: SketchQuality): void {
 	for (const handler of quality.handlers) handler(quality);
 }
 
+/** A feature host for one add-on, on a namespace registry of the test's own. */
+function hostOn(
+	options: Omit<FeatureHostOptions, 'namespace' | 'namespaces'>,
+	addon = 'test',
+): FeatureHost {
+	const namespaces = new AddonNamespaces();
+	const namespace = namespaces.claim({ name: addon });
+	return new FeatureHost({ ...options, namespace, namespaces });
+}
+
+/** Two feature hosts of different add-ons, which share one namespace registry. */
+function twoHosts(quality = qualityOn()): { water: FeatureHost; terrain: FeatureHost } {
+	const namespaces = new AddonNamespaces();
+	return {
+		water: new FeatureHost({
+			quality,
+			tier: 'webgpu',
+			namespace: namespaces.claim({ name: 'water' }),
+			namespaces,
+		}),
+		terrain: new FeatureHost({
+			quality,
+			tier: 'webgpu',
+			namespace: namespaces.claim({ name: 'terrain' }),
+			namespaces,
+		}),
+	};
+}
+
 /** A feature whose setting falls with the governor's scale, and whose cadence doubles. */
 function glow(overrides: Partial<FeatureDescription> = {}): FeatureDescription {
 	return defineFeature({
@@ -57,7 +87,7 @@ function glow(overrides: Partial<FeatureDescription> = {}): FeatureDescription {
 describe('the preset rows of an add-on feature', () => {
 	it('gives each preset and GPU path its own value', async () => {
 		const quality = qualityOn('medium');
-		const host = new FeatureHost({ quality, tier: 'webgpu' });
+		const host = hostOn({ quality, tier: 'webgpu' });
 		const feature = host.add(glow());
 		expect(feature.settings.samples).toBe(22);
 		expect(feature.settings.cadence).toBe(1);
@@ -69,7 +99,7 @@ describe('the preset rows of an add-on feature', () => {
 	});
 
 	it('takes the WebGL2 column where a row gives one', () => {
-		const host = new FeatureHost({ quality: qualityOn('ultra'), tier: 'webgl2' });
+		const host = hostOn({ quality: qualityOn('ultra'), tier: 'webgl2' });
 		const feature = host.add(glow());
 		expect(feature.settings.cadence).toBe(2);
 		host.destroy();
@@ -79,7 +109,7 @@ describe('the preset rows of an add-on feature', () => {
 		const quality = qualityOn('high');
 		const seen: { preset: QualityPreset; settings: Readonly<QualitySettings>; samples: unknown }[] =
 			[];
-		const host = new FeatureHost({ quality, tier: 'webgpu' });
+		const host = hostOn({ quality, tier: 'webgpu' });
 		host.add(
 			glow({
 				quality: (preset, settings, feature) => {
@@ -127,7 +157,7 @@ describe('the preset rows of an add-on feature', () => {
 describe('the governor’s steps reaching an add-on feature', () => {
 	it('registers the budget on each preset and follows the budget scale', async () => {
 		const quality = qualityOn('medium');
-		const host = new FeatureHost({ quality, tier: 'webgpu' });
+		const host = hostOn({ quality, tier: 'webgpu' });
 		const feature = host.add(glow());
 		expect(feature.budgetScale).toBe(1);
 		expect(feature.budgetMs).toBe(4);
@@ -152,7 +182,7 @@ describe('the governor’s steps reaching an add-on feature', () => {
 
 	it('keeps a setting inside the highest value of its range', () => {
 		const quality = qualityOn('ultra');
-		const host = new FeatureHost({ quality, tier: 'webgpu' });
+		const host = hostOn({ quality, tier: 'webgpu' });
 		const feature = host.add(glow());
 		stepTo(quality, 4);
 		expect(feature.settings.cadence).toBe(16);
@@ -161,7 +191,7 @@ describe('the governor’s steps reaching an add-on feature', () => {
 
 	it('stops the steps when the host is destroyed', () => {
 		const quality = qualityOn('medium');
-		const host = new FeatureHost({ quality, tier: 'webgpu' });
+		const host = hostOn({ quality, tier: 'webgpu' });
 		const feature = host.add(glow());
 		host.destroy();
 		expect(quality.budgets.steps).toBe(0);
@@ -173,7 +203,7 @@ describe('the figures of an add-on feature', () => {
 	it('names its values, its budget and its memory, with one GPU scope', () => {
 		const quality = qualityOn('medium');
 		const reported: (readonly FeatureStats[])[] = [];
-		const host = new FeatureHost({
+		const host = hostOn({
 			quality,
 			tier: 'webgpu',
 			page: { post: (_name, data) => reported.push(data as readonly FeatureStats[]) },
@@ -196,7 +226,7 @@ describe('the figures of an add-on feature', () => {
 
 	it('removes a feature and gives its budget back', () => {
 		const quality = qualityOn('medium');
-		const host = new FeatureHost({ quality, tier: 'webgpu' });
+		const host = hostOn({ quality, tier: 'webgpu' });
 		const feature = host.add(glow());
 		expect(quality.budgets.steps).toBe(4);
 		feature.remove();
@@ -204,5 +234,82 @@ describe('the figures of an add-on feature', () => {
 		expect(host.get('glow')).toBeUndefined();
 		expect(quality.budgets.steps).toBe(0);
 		host.destroy();
+	});
+});
+
+describe('names that two add-ons cannot share', () => {
+	it('refuses a host for an add-on that declared no namespace', () => {
+		expect(
+			() =>
+				new FeatureHost({
+					quality: qualityOn('medium'),
+					namespace: { name: 'undeclared' },
+					namespaces: new AddonNamespaces(),
+				}),
+		).toThrow(
+			/E1225: FeatureHost\(\) got the add-on 'undeclared', which has no namespace in this thread\./,
+		);
+	});
+
+	it('refuses a feature name that another add-on registers, and names both', () => {
+		const quality = qualityOn('medium');
+		const { water, terrain } = twoHosts(quality);
+		water.add(glow({ name: 'waves' }));
+		expect(() => terrain.add(glow({ name: 'waves' }))).toThrow(
+			/E1225: FeatureHost.add\(\) got the feature 'waves' for the add-on 'terrain', which the add-on 'water' registers already\./,
+		);
+		// The refused feature left nothing behind in its own host or in the shared names.
+		expect(terrain.get('waves')).toBeUndefined();
+		expect(terrain.stats).toEqual([]);
+		water.destroy();
+		terrain.destroy();
+	});
+
+	it('refuses an output name that another add-on publishes', () => {
+		const { water, terrain } = twoHosts();
+		water.add(glow({ name: 'waves', outputs: { spray: { default: 'black' } } }));
+		expect(() =>
+			terrain.add(glow({ name: 'rock', outputs: { spray: { default: 'white' } } })),
+		).toThrow(
+			/E1225: .*got the output 'spray' for the add-on 'terrain', which the add-on 'water' publishes already\./,
+		);
+		terrain.destroy();
+		water.destroy();
+	});
+
+	it('refuses a lighting slot that another add-on provides', () => {
+		const { water, terrain } = twoHosts();
+		water.add(glow({ name: 'waves', provides: ['sky'] }));
+		expect(() => terrain.add(glow({ name: 'rock', provides: ['sky'] }))).toThrow(
+			/E1225: .*got the slot 'sky' for the add-on 'terrain', which the add-on 'water' provides already\./,
+		);
+		terrain.destroy();
+		water.destroy();
+	});
+
+	it('gives a removed feature’s names to another add-on', () => {
+		const { water, terrain } = twoHosts();
+		const waves = water.add(glow({ name: 'waves' }));
+		expect(() => terrain.add(glow({ name: 'waves' }))).toThrow(/E1225/);
+		waves.remove();
+		expect(terrain.add(glow({ name: 'waves' })).name).toBe('waves');
+		terrain.destroy();
+		water.destroy();
+	});
+
+	it('gives each add-on’s features their own budgets', () => {
+		const quality = qualityOn('medium');
+		const { water, terrain } = twoHosts(quality);
+		const waves = water.add(glow({ name: 'waves' }));
+		const rock = terrain.add(glow({ name: 'rock' }));
+		// One governor step reaches the budgets of both add-ons.
+		stepTo(quality, 1);
+		expect(waves.budgetScale).toBe(0.75);
+		expect(rock.budgetScale).toBe(0.75);
+		rock.remove();
+		expect(waves.budgetScale).toBe(0.75);
+		expect(quality.budgets.steps).toBe(4);
+		terrain.destroy();
+		water.destroy();
 	});
 });

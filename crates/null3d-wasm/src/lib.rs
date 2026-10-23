@@ -3350,6 +3350,17 @@ pub fn set_light_color(light: u32, which: u32) -> u32 {
     })
 }
 
+/// Sets the object whose shadow the light draws into a tile of its own to the object whose handle
+/// is `object`, or stops with 0.
+#[wasm_bindgen(js_name = setLightHero)]
+pub fn set_light_hero(light: u32, object: u32) -> u32 {
+    with_engine(|e| {
+        e.lights
+            .set_hero(light, Handle::from_raw(object))
+            .map_or_else(core_failure, |()| 0)
+    })
+}
+
 /// Sets one of a light's numbers to the first call value.
 #[wasm_bindgen(js_name = setLightValue)]
 pub fn set_light_value(light: u32, which: u32) -> u32 {

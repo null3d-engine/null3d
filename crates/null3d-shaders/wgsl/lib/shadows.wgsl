@@ -77,12 +77,23 @@ struct ShadowTiles {
 @group(0) @binding(14) var shadow_texels: sampler;
 #endif
 @group(0) @binding(5) var shadow_sampler: sampler_comparison;
-/// The frame's shadow settings: the sun's cascades and the point and spot lights' tiles in one
-/// block (D-146). One block rather than two frees binding 10 of the frame's group for the light
-/// probe grid, and the two parts are uploaded together whenever either changes.
+/// The sun's hero shadow: the tile that holds one object's own shadow, fitted tightly to it, which
+/// receivers near the object read in place of the cascades.
+struct ShadowHero {
+    /// The matrix from positions relative to the camera into the tile's clip space.
+    view_proj: mat4x4f,
+    /// The size in meters of one texel, the light's bias and normal bias in meters, and the tile's
+    /// layer plus one, or 0 when the light names no hero.
+    params: vec4f,
+}
+
+/// The frame's shadow settings: the sun's cascades, the point and spot lights' tiles and the sun's
+/// hero in one block (D-146). One block rather than two frees binding 10 of the frame's group for
+/// the light probe grid, and the parts are uploaded together whenever one changes.
 struct ShadowSettings {
     cascades: ShadowCascades,
     tiles: ShadowTiles,
+    hero: ShadowHero,
 }
 
 @group(0) @binding(6) var<uniform> shadows: ShadowSettings;
@@ -302,12 +313,40 @@ fn sun_biases(cascade: u32) -> vec2f {
     return vec2f(max(shadows.cascades.biases.x, least), shadows.cascades.biases.y);
 }
 
+/// How much of the main directional light reaches a point through the light's hero tile, or -1
+/// where the hero's box does not reach the point, which the cascades then shadow. The box holds
+/// the object's own shadow alone, so a point outside it in the light's view sees no caster of the
+/// tile's.
+fn sun_hero(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
+    let params = shadows.hero.params;
+    if params.w < 0.5 {
+        return -1.0;
+    }
+    let offset = bias_offset(normal, to_light, params.yz, params.x);
+    let clip = shadows.hero.view_proj * vec4f(relative + offset, 1.0);
+    if clip.z < 0.0 || clip.z > 1.0 || max(abs(clip.x), abs(clip.y)) > 1.0 {
+        return -1.0;
+    }
+    var uv = clip.xy * vec2f(0.5, -0.5) + 0.5;
+#ifdef WEBGL2
+    // WebGL2 keeps the rows of a drawn texture bottom first.
+    uv.y = 1.0 - uv.y;
+#endif
+    return filtered(shadows.tiles.kernel, uv, u32(params.w) - 1u, clip.z);
+}
+
 /// How much of the main directional light reaches a point: 1 in full light, 0 in full shadow.
 /// `relative` is the point's position relative to the main camera: in another view, its position
 /// relative to that view's camera plus the frame's `shadow_origin`. `normal` is its unit normal,
 /// which moves the point off its own surface before the lookup, and `to_light` the unit direction toward
 /// the light.
 fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
+    // The hero object draws its own shadow into a tile of the atlas, fitted tightly to it. A
+    // receiver inside that box reads it before the cascades, whose texels are far coarser there.
+    let hero = sun_hero(relative, normal, to_light);
+    if hero >= 0.0 {
+        return hero;
+    }
     let count = u32(shadows.cascades.forward.w);
     let seen = relative + shadows.cascades.origin.xyz;
     let along = dot(seen, shadows.cascades.forward.xyz);
