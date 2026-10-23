@@ -21,9 +21,12 @@ permissions:
 
 # A newer push to main cancels main's run still in progress, so CI's machines test only the newest
 # code (the owner's choice, D-157). A cancelled job then reads "cancelled", as a job that hits its
-# time limit does; ci-passed says which of the two stopped it.
+# time limit does; ci-passed says which of the two stopped it. A draft's full run, which marking it
+# ready for review starts, has a group of its own, so the draft can go back to draft at once and the
+# pushes after it do not cancel the run: it reads the pull request's caches, which a run started by
+# hand on its branch cannot.
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'main') || github.run_id }}
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}{1}', github.event.pull_request.number, github.event.action == 'ready_for_review' && '-full' || '') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'main') || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
 env:
