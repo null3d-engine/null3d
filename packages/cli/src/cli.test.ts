@@ -22,12 +22,13 @@ describe('main', () => {
 		expect(await main([])).toBe(0);
 		expect(log.mock.lastCall?.[0]).toContain("shot         Draws one frame of the project's page");
 		expect(log.mock.lastCall?.[0]).toContain('test         Type checks and lints the project');
+		expect(log.mock.lastCall?.[0]).toContain('create       Makes a new project from a template');
 	});
 
 	it('fails on a command it does not have, and names its commands', async () => {
-		expect(await main(['create'])).toBe(1);
+		expect(await main(['scaffold'])).toBe(1);
 		expect(error.mock.lastCall?.[0]).toBe(
-			'null3d has no "create" command. Its commands: assets, bench, check-addon, shot, test, upgrade. Run bunx @null3d/cli --help for more.',
+			'null3d has no "scaffold" command. Its commands: assets, bench, check-addon, create, shot, test, upgrade. Run bunx @null3d/cli --help for more.',
 		);
 		expect(await main(['toString'])).toBe(1);
 	});
