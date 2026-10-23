@@ -88,6 +88,34 @@ fn check_probes<B: FrameBuilder>(mut world: World<B>) {
     // A probe that captures once records no filter after.
     assert!(filters(&world.step(&mut mock, false)).is_empty());
 
+    // A probe that captured once captures again on request, as after an object around it moved,
+    // and the frame that captures filters before the camera's passes.
+    world.renderer.settings_mut().probes_mut().capture(0);
+    let mut found = Vec::new();
+    for _ in 0..3 {
+        commands = world.step(&mut mock, false);
+        found = filters(&commands);
+        if !found.is_empty() {
+            break;
+        }
+    }
+    assert_eq!(
+        found.len(),
+        1,
+        "a probe that captures once captures again on request"
+    );
+    let (place, words) = &found[0];
+    assert_eq!((words[2], words[3]), (0, generator));
+    let passes_after = commands[*place..]
+        .iter()
+        .filter(|(op, _)| *op == Op::BeginRenderPass)
+        .count();
+    assert!(
+        passes_after >= 1,
+        "the camera draws after the filter of a capture on request"
+    );
+    assert!(!world.renderer.settings().probes().waiting());
+
     // The last probe takes its views with it, and the frames after still replay.
     world.renderer.settings_mut().remove_probe(0);
     assert_eq!(world.renderer.settings().views().len(), views + 6);
@@ -101,7 +129,7 @@ fn check_probes<B: FrameBuilder>(mut world: World<B>) {
 }
 
 #[test]
-fn a_probe_captures_and_filters_in_one_frame_on_both_paths() {
+fn a_probe_captures_when_made_and_again_on_request_on_both_paths() {
     check_probes(World::new());
     check_probes(World::build(CpuCulledRenderer::new(CpuCulledConfig {
         multi_draw: true,
