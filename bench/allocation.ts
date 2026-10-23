@@ -559,6 +559,7 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 	{ flag: '--blend', query: '&blend' },
 	{ flag: '--scale99', query: '&scale99' },
 	{ flag: '--sharpen', query: '&sharpen' },
+	{ flag: '--half-ratio', query: '&halfRatio' },
 	{ flag: '--grading', query: '&grading' },
 	{ flag: '--sprites', query: '&sprites' },
 	{ flag: '--lines', query: '&lines' },

@@ -228,5 +228,5 @@ jobs:
       - uses: ./.github/actions/city
         with:
           mode: download
-      - name: "Time S1 on SwiftShader: plain, 0.99 scale, sharpened, plain again"
-        run: "set +e\nfor v in plain --scale99 --sharpen plain; do\n  flag=$v; [ \"$v\" = plain ] && flag=\n  echo \"== variant: $v\"\n  start=$(date +%s)\n  bun run bench:allocation --gpu ${{ matrix.gpu }} $flag > out.txt 2>&1\n  grep -E \"Warmed up|sampled .* frames|error\" out.txt | head -5\n  echo \"   job seconds: $(( $(date +%s) - start ))\"\ndone"
+      - name: "Time S1 on SwiftShader: plain and at half the pixel ratio, twice each"
+        run: "set +e\nfor v in plain --half-ratio plain --half-ratio; do\n  flag=$v; [ \"$v\" = plain ] && flag=\n  echo \"== variant: $v\"\n  start=$(date +%s)\n  bun run bench:allocation --gpu ${{ matrix.gpu }} $flag > out.txt 2>&1\n  grep -E \"Warmed up|sampled .* frames|error\" out.txt | head -5\n  echo \"   job seconds: $(( $(date +%s) - start ))\"\ndone"

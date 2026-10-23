@@ -123,6 +123,7 @@ export default defineSketch(async (context) => {
 	if (switches.has('scale99'))
 		await context.quality.set({ minRenderScale: 0.99, maxRenderScale: 0.99 });
 	if (switches.has('sharpen')) context.post.set({ sharpen: 0.5 });
+	if (switches.has('halfRatio')) await context.quality.set({ maxPixelRatio: 0.5 });
 	const count = readCount(import.meta.url);
 	const poseSwarm = switches.has('sprites')
 		? await createSpriteSwarm(context, count)
