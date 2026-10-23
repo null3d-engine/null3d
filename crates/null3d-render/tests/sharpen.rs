@@ -52,6 +52,9 @@ fn check_sharpening<B: FrameBuilder>(mut world: World<B>) {
     let plain = world.step(&mut mock, true);
     assert_eq!(passes(&plain), 2);
     world.renderer.settings_mut().set_sharpen(Some(0.5));
+    // The frame that turns the sharpening on asks for the second step's build, the pass's only one
+    // with the upscale and the sharpening, and draws without it until the build is built.
+    assert_eq!(passes(&world.step(&mut mock, false)), 2);
     let sharpened = world.step(&mut mock, false);
     // The scene's pass, the first step into the display target, and the second step into the
     // canvas, which draws at the whole canvas's scale.
@@ -76,6 +79,8 @@ fn check_eight_bit<B: FrameBuilder>(mut world: World<B>) {
     let mut mock = MockBackend::default();
     assert_eq!(passes(&world.step(&mut mock, true)), 1);
     world.renderer.settings_mut().set_sharpen(Some(0.5));
+    // The final pass draws at once, and the two steps once the second step's build is built.
+    assert_eq!(passes(&world.step(&mut mock, false)), 2);
     assert_eq!(passes(&world.step(&mut mock, false)), 3);
     world.renderer.settings_mut().set_sharpen(None);
     assert_eq!(passes(&world.step(&mut mock, false)), 1);

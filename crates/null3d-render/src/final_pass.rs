@@ -88,8 +88,9 @@ impl FinalUniform {
 /// shader makes its triangle from the vertex index, so it reads no vertex buffer, and the triangle
 /// covers the canvas whichever way it winds. The FXAA build smooths edges, and the bloom build
 /// blends in bloom's base level. A custom tone curve's builds take the templates from `curve` on:
-/// the first binds as the pass does, and the next as its bloom build does.
-const fn pipeline(fxaa: bool, bloom: bool, curve: Option<u32>) -> PipelineKey {
+/// the first binds as the pass does, and the next as its bloom build does. The `upscale` build
+/// scales the corner up and sharpens it, for the second step of the two-step pass.
+const fn pipeline(fxaa: bool, bloom: bool, curve: Option<u32>, upscale: bool) -> PipelineKey {
     PipelineKey {
         template: match (curve, bloom) {
             (Some(first), false) => first,
@@ -98,7 +99,8 @@ const fn pipeline(fxaa: bool, bloom: bool, curve: Option<u32>) -> PipelineKey {
             (None, true) => template::FINAL_BLOOM,
         },
         permutation: if fxaa { permutation::FXAA } else { 0 }
-            | if bloom { permutation::BLOOM } else { 0 },
+            | if bloom { permutation::BLOOM } else { 0 }
+            | if upscale { permutation::UPSCALE } else { 0 },
         vertex_format: 0,
         color_format: format::CANVAS,
         depth_format: format::NONE,
@@ -330,7 +332,7 @@ impl FinalPass {
                     } else {
                         0
                     },
-                    ..pipeline(false, false, Some(template))
+                    ..pipeline(false, false, Some(template), false)
                 };
                 let id = pipelines.id(key);
                 self.fold_pipeline = Some((template, multisampled, id));
@@ -351,10 +353,11 @@ impl FinalPass {
         bloom: bool,
     ) -> Option<u32> {
         if self.pipeline.is_none() {
-            self.pipeline = Some(pipelines.id(pipeline(self.fxaa, false, self.tone_curve)));
+            self.pipeline = Some(pipelines.id(pipeline(self.fxaa, false, self.tone_curve, false)));
         }
         if bloom && self.bloom_pipeline.is_none() {
-            self.bloom_pipeline = Some(pipelines.id(pipeline(self.fxaa, true, self.tone_curve)));
+            self.bloom_pipeline =
+                Some(pipelines.id(pipeline(self.fxaa, true, self.tone_curve, false)));
         }
         self.bloom_pipeline
     }
@@ -365,7 +368,8 @@ impl FinalPass {
     }
 
     /// Asks `pipelines`, once, for the second step's plain pipeline, which scales the first step's
-    /// display color up to the canvas, and returns its id.
+    /// display color up to the canvas and sharpens it, and returns its id. It is the pass's only
+    /// build with the upscale.
     pub(crate) fn request_present(&mut self, pipelines: &mut PipelineCache) -> u32 {
         let present = self
             .present
@@ -373,7 +377,7 @@ impl FinalPass {
             .expect("only the plain final pass draws the second step");
         *present
             .pipeline
-            .get_or_insert_with(|| pipelines.id(pipeline(false, false, None)))
+            .get_or_insert_with(|| pipelines.id(pipeline(false, false, None, true)))
     }
 
     /// Makes the pass's own GPU objects when the GPU lacks them, and binds what `inputs` reads in
@@ -808,8 +812,8 @@ mod tests {
         assert_eq!(flags & OutputUniform::DITHER, 0);
 
         // The second step reads the first step's display color and dithers it, since the first step
-        // read high dynamic range color. It draws with its own plain pipeline, and binds a group of
-        // its own beside the pass's, so a frame that crosses the whole canvas's scale makes none.
+        // read high dynamic range color. It draws with the pass's UPSCALE build, and binds a group
+        // of its own beside the pass's, so a frame that crosses the whole canvas's scale makes none.
         let mut second = FinalPass::new(
             IDS,
             SceneColor::from_format(format::RGBA16_FLOAT),
@@ -819,7 +823,10 @@ mod tests {
         let mut pipelines = PipelineCache::default();
         second.request_pipeline(&mut pipelines, false);
         let present = second.request_present(&mut pipelines);
-        assert_eq!(pipelines.keys()[present as usize - 1].permutation, 0);
+        assert_eq!(
+            pipelines.keys()[present as usize - 1].permutation,
+            permutation::UPSCALE
+        );
         let groups = |list: &DrawList| -> Vec<u32> {
             null3d_gpu::drawlist::decode(list.words())
                 .map(|command| command.unwrap())
