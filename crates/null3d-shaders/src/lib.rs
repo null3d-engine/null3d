@@ -309,7 +309,8 @@ struct Built {
 
 /// The variants of every entry, in the manifest's order. An entry comes from the cache when it
 /// holds it; the builds of the other entries compile together, spread over the machine's cores.
-/// An entry that the inputs give a part builds only that part's builds, and skips the cache.
+/// An entry that the inputs give a part builds only that part's builds, and the cache keeps them
+/// as that part of the entry, under the entry's key, which a later build of the whole entry joins.
 /// Problems go to `errors` in the order that building one entry after another gives. An entry
 /// with a problem returns whatever it built, which the caller discards; it is never stored, so a
 /// later run compiles it again.
@@ -328,18 +329,25 @@ fn build_entries(
     for (entry, (shader_name, shader)) in shaders.iter().enumerate() {
         let part = inputs.parts.get(shader_name.as_str()).copied();
         // The cache is off in the shader compiler, which a page or a bundler loads, so its key and
-        // its manifest table leave no trace there. An entry that builds one part of its builds
-        // has no key: the key covers the whole entry, so the part is neither read nor stored.
+        // its manifest table leave no trace there. A part of an entry's builds is kept under the
+        // whole entry's key, beside the part.
         #[cfg(not(target_arch = "wasm32"))]
-        let cached = if part.is_some() {
-            Err(None)
-        } else {
+        let cached = {
             let table = toml::to_string(shader).unwrap_or_default();
             let source = &inputs.files[&shader.file];
             let key = cache.key(shader_name, &shader.file, source, &table);
-            cache
-                .load(shader_name, &key, &inputs.files)
-                .ok_or(Some(key))
+            let found = match part {
+                Some(part) => {
+                    let builds: Vec<String> =
+                        planned_builds(&shader.variants, |place, _, _| part.holds(place))
+                            .into_iter()
+                            .map(|(_, build)| build.name)
+                            .collect();
+                    cache.load_part(shader_name, &key, part, &builds, &inputs.files)
+                }
+                None => cache.load(shader_name, &key, &inputs.files),
+            };
+            found.ok_or(Some(key))
         };
         #[cfg(target_arch = "wasm32")]
         let cached = {
@@ -403,7 +411,12 @@ fn build_entries(
             let source = &inputs.files[&shader.file];
             files.extend(compiler.library.imported_files(source));
             let deps: Vec<String> = files.into_iter().collect();
-            cache.store(shader_name, &key, &deps, &inputs.files, &built);
+            match inputs.parts.get(shader_name.as_str()) {
+                Some(&part) => {
+                    cache.store_part(shader_name, &key, part, &deps, &inputs.files, &built);
+                }
+                None => cache.store(shader_name, &key, &deps, &inputs.files, &built),
+            }
         }
         #[cfg(target_arch = "wasm32")]
         let _ = (key, failed, shader);
