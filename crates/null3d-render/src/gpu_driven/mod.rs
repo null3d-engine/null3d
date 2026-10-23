@@ -3336,6 +3336,10 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.graph.dot()
     }
 
+    fn two_step_report(&self) -> [u32; 5] {
+        self.graph.two_step_report()
+    }
+
     fn reads_last_frame(&self) -> bool {
         self.graph.ssr_draws()
     }

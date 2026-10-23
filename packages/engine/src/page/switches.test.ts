@@ -15,6 +15,7 @@ describe('parseSwitches', () => {
 			parallelCompile: true,
 			freshShaders: false,
 			freshCheck: false,
+			twoStep: false,
 			wakeByMessage: false,
 			displayChecks: true,
 			hdr: true,
