@@ -309,21 +309,31 @@ async function oneShot(options, png) {
 		report = made.report;
 		if (made.image) writePng(png, made.image);
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		report = {
-			ok: false,
-			page: options.page,
-			code: null,
-			error: message,
-			errors: [],
-			warnings: [],
-		};
+		report = failedReport(options.page, error);
 	} finally {
 		await runner?.close();
 	}
 	writeJson(json, report);
 	console.log(shotSummary(report, { ...options, png: shownPath(png), json: shownPath(json) }));
 	return report.ok ? 0 : 1;
+}
+
+/**
+ * The report of a run that failed outside the page, such as a browser that did not open.
+ *
+ * @param {string} page The page as asked for.
+ * @param {unknown} error
+ * @returns {ShotReport}
+ */
+function failedReport(page, error) {
+	return {
+		ok: false,
+		page,
+		code: null,
+		error: error instanceof Error ? error.message : String(error),
+		errors: [],
+		warnings: [],
+	};
 }
 
 /**
@@ -362,22 +372,31 @@ async function scriptShots(options, base, steps) {
 				const png = shot === undefined ? undefined : shotFileName(base, shot);
 				const json = png === undefined ? undefined : png.replace(/\.png$/i, '.json');
 				if (png !== undefined) rmSync(png, { force: true });
-				const held = await holdPage(runner, {
-					...options,
-					path: options.page,
-					time: at,
-					script: program,
-				});
-				const made = shotReport(held, {
-					environment: runner.environment,
-					browser: runner.browserName,
-					image: png === undefined ? '' : basename(png),
-				});
-				if (made.report.script !== undefined) reads.push(made.report.script);
-				if (shot !== undefined && png !== undefined && json !== undefined) {
-					if (made.image) writePng(png, made.image);
-					writeJson(json, made.report);
-					drawn.push({ step: shot, report: made.report, png, json });
+				try {
+					const held = await holdPage(runner, {
+						...options,
+						path: options.page,
+						time: at,
+						script: program,
+					});
+					const made = shotReport(held, {
+						environment: runner.environment,
+						browser: runner.browserName,
+						image: png === undefined ? '' : basename(png),
+					});
+					if (made.report.script !== undefined) reads.push(made.report.script);
+					if (shot !== undefined && png !== undefined && json !== undefined) {
+						if (made.image) writePng(png, made.image);
+						writeJson(json, made.report);
+						drawn.push({ step: shot, report: made.report, png, json });
+					}
+				} catch (error) {
+					// A browser that failed to open is the run's failure, not the command's: say
+					// which shot failed and go on to the next one.
+					if (shot === undefined || png === undefined || json === undefined) continue;
+					const report = failedReport(options.page, error);
+					writeJson(json, report);
+					drawn.push({ step: shot, report, png, json });
 				}
 			}
 	} finally {
@@ -387,14 +406,7 @@ async function scriptShots(options, base, steps) {
 		for (const shot of shotSteps(steps)) {
 			const png = shotFileName(base, shot);
 			const json = png.replace(/\.png$/i, '.json');
-			const report = {
-				ok: false,
-				page: options.page,
-				code: null,
-				error: failure,
-				errors: [],
-				warnings: [],
-			};
+			const report = failedReport(options.page, failure);
 			writeJson(json, report);
 			drawn.push({ step: shot, report, png, json });
 		}
