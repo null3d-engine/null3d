@@ -248,6 +248,8 @@ export interface CoreGlue extends CoreErrors {
 	setBatchOrigin(batch: number): number;
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
+	/** Keeps every row of a batch whatever a view's frustum says, or culls its rows again. */
+	setBatchUnculled(batch: number, unculled: boolean): number;
 	/** Gives every row of a batch a bounding sphere of `radius` meters around its own origin. */
 	/** Sets a batch's own bounding radius, which the next frame reads from the call values. */
 	setBatchBounds(batch: number): number;
@@ -776,6 +778,29 @@ export interface CoreGlue extends CoreErrors {
 	destroyVertexDraw(id: number): number;
 	/** Sets the vertices of one shape and the number of its copies of such a draw. */
 	setVertexDrawCounts(id: number, vertices: number, instances: number): number;
+	/**
+	 * Makes a draw of at most `capacity` instances for the object in scene slot `slot`, whose
+	 * instance count the GPU writes, and returns its id, or 0 when the scene holds the most such
+	 * draws already.
+	 */
+	createFeatureInstances(slot: number, capacity: number): number;
+	/** Forgets a draw whose instance count the GPU writes. */
+	destroyFeatureInstances(id: number): number;
+	/** The id of the per-instance buffer that such a draw reads. */
+	featureInstanceBuffer(id: number): number;
+	/** The id of the count word that such a draw takes. */
+	featureInstanceCountBuffer(id: number): number;
+	/**
+	 * Sets the count that a shadow view draws and that a page without compute sets for a draw
+	 * whose instance count the GPU writes.
+	 */
+	setFeatureInstanceCount(id: number, count: number): number;
+	/**
+	 * Writes `count` per-instance rows from `values` at row `start`, as the engine's instance
+	 * buffers hold them: three world-matrix rows, then the ids. Returns 0, or 1 for values that a
+	 * draw does not take.
+	 */
+	setFeatureInstanceRows(id: number, start: number, count: number, values: Float32Array): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/** Lets materials with parallax draw it, or draws them with their displacement alone. */
@@ -1101,6 +1126,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'destroyBatch',
 	'batchArrays',
 	'setBatchActiveCount',
+	'setBatchUnculled',
 	'setBatchBounds',
 	'setBatchDrawRange',
 	'reserveBatchRanges',
@@ -1218,6 +1244,12 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createVertexDraw',
 	'destroyVertexDraw',
 	'setVertexDrawCounts',
+	'createFeatureInstances',
+	'destroyFeatureInstances',
+	'featureInstanceBuffer',
+	'featureInstanceCountBuffer',
+	'setFeatureInstanceCount',
+	'setFeatureInstanceRows',
 	'setSoftwareOcclusion',
 	'setParallax',
 	'setOcclusionBuffer',

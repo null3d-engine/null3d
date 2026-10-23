@@ -249,6 +249,7 @@ A feature has one GPU timing scope. The engine times the feature's work in the f
 An adapter turns a checked description into work in the frame. One adapter exists:
 
 - **Draws:** [`scene.addFeatureDraw(description, options)`](feature-draws.md) draws the add-on's WGSL over its own vertices, with its uniforms, at the description's frame point. The band and order place a blended draw among the transparent pass's objects. The adapter places the main view alone.
+- **Instance draws:** [`scene.addFeatureInstances(description, options)`](feature-instances.md) draws a capacity of instances from the add-on's own buffer, at a count that the GPU writes on WebGPU and that the page fills on WebGL2. The adapter places the main view alone, at the opaque point.
 
 The other hooks still need their own payload, and they arrive with the add-on that uses them first:
 

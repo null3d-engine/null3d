@@ -78,6 +78,7 @@ pub mod dof;
 pub mod effects;
 pub mod environment;
 pub mod exposure;
+pub mod feature_instances;
 mod final_pass;
 pub mod fog;
 pub mod fog_volume;

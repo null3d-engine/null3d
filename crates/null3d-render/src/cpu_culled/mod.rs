@@ -2425,6 +2425,8 @@ impl CpuCulledRenderer {
                 }
                 _ => Ok(()),
             },
+            // The CPU path draws every count that the page sets, so no count waits for a pass.
+            |_| Ok(()),
             |list| {
                 if motion_on {
                     motion_state.finish(list, input.parity(), skins)?;

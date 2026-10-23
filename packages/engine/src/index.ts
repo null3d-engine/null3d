@@ -121,6 +121,12 @@ export type {
 export type { FeatureHandle, FeatureHostOptions } from './scene/feature-host';
 export { FeatureHost } from './scene/feature-host';
 export type {
+	FeatureInstanceBuffer,
+	FeatureInstanceOptions,
+	FeatureInstances,
+	FeatureInstanceVertices,
+} from './scene/feature-instances';
+export type {
 	FeatureBand,
 	FeatureBudget,
 	FeatureDescription,

@@ -2563,6 +2563,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		modes: ALL_MODES,
 	},
+	// An add-on's draw whose instance count the GPU writes: a field of quads that the page fills,
+	// which every GPU path and thread mode must draw the same. WebGPU takes the count through the
+	// engine's copy into the indirect draw; WebGL2 draws an instance batch of the same rows.
+	{
+		name: 'feature-instances',
+		sketch: 'tests/pages/sketches/feature-instances-sketch.ts',
+		hold: 0,
+		modes: ALL_MODES,
+	},
 	// 100,000 sprites of a dynamic batch in one draw: a field of them seen from above, and a row of
 	// sprites sized in pixels whose centers lie outside the view. It holds its first frame, and takes
 	// S1's limit: SwiftShader draws 100,000 rows on WebGPU in tens of seconds.
