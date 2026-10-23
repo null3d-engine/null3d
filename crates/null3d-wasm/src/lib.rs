@@ -4217,6 +4217,7 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
             intensity,
             blur,
             rotation,
+            sun_visibility: 1.0,
         }));
         0
     })

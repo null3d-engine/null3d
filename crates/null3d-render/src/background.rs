@@ -84,6 +84,9 @@ pub struct Background {
     /// The turn of a cube map or an environment about the scene, as Euler angles in radians in
     /// three.js's default order, X then Y then Z, as `scene.backgroundRotation`.
     pub rotation: [f32; 3],
+    /// What of the sun the sky draws: 1 while no sky layer hides it, and less as a layer covers it.
+    /// It scales the disc and its glow, and leaves the directional light's intensity alone.
+    pub sun_visibility: f32,
 }
 
 /// three.js's sky, with the names of its uniforms.
@@ -173,6 +176,8 @@ struct BackdropUniform {
     cloud_place: [f32; 4],
     /// A plain color, exposed linear color, and 1 when the background draws it, else 0.
     color: [f32; 4],
+    /// What of the sun the sky draws, which scales its disc and glow, then three spare values.
+    layer: [f32; 4],
 }
 
 const _: () =
@@ -189,6 +194,7 @@ impl BackdropUniform {
                 levels.saturating_sub(1) as f32,
                 0.0,
             ],
+            layer: [background.sun_visibility, 0.0, 0.0, 0.0],
             ..Self::default()
         };
         match background.source {
@@ -532,6 +538,7 @@ mod tests {
             intensity: 2.0,
             blur: 0.5,
             rotation: [0.0, 0.0, 0.0],
+            sun_visibility: 1.0,
         }
     }
 
