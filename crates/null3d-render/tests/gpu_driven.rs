@@ -258,8 +258,9 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
 
     // Lit and unlit, and the final pass's, made for frames whose render scale drops.
     assert_eq!(count(&commands, Op::CreateRenderPipeline), 3);
-    // Culling, and the three steps of light clustering.
-    assert_eq!(count(&commands, Op::CreateComputePipeline), 4);
+    // Culling, the three steps of light clustering, and the cluster levels' pass, whose three
+    // dispatches share one pipeline.
+    assert_eq!(count(&commands, Op::CreateComputePipeline), 5);
     assert_eq!(count(&commands, Op::ResizeCanvas), 1);
     // The color and depth targets, the shadow map and the shadow atlas, one texel each while no
     // light casts shadows, the blank array that holds the light tables and the probes' maps, the
@@ -602,9 +603,9 @@ fn pipelines_follow_the_shading_model_and_objects_sharing_a_mesh_and_material_sh
     world.record(true);
     let first = world.commands();
     // Pipelines depend on the shading model, not on materials: lit, unlit, the final pass, the
-    // culling pass and light clustering's three.
+    // culling pass, light clustering's three and the cluster levels' pass.
     assert_eq!(count(&first, Op::CreateRenderPipeline), 3);
-    assert_eq!(count(&first, Op::CreateComputePipeline), 4);
+    assert_eq!(count(&first, Op::CreateComputePipeline), 5);
     // One draw per mesh and material: the world's three, one for the ten boxes, one per ball.
     assert_eq!(count(&first, Op::DrawIndexedIndirect), 3 + 1 + 10);
 

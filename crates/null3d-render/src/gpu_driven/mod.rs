@@ -3242,6 +3242,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.motion.forget_gpu();
         self.pick.reset_gpu();
         self.culling.forget_gpu();
+        self.clusters.forget_gpu();
         self.pyramids.forget_gpu();
         self.views_made = 0;
         self.prepass_views = 0;
