@@ -1,0 +1,95 @@
+Third-party code in the null3D Vite plugin
+
+The @null3d/vite-plugin package ships a WebAssembly module, dist/shader-compiler.wasm, which the
+build runs to compile the engine's WGSL. The module is built from the null3D crates and the Rust
+crates below. Each section names the crates, their licenses, and the notices that a license asks a
+copy to carry. The npm packages that the plugin depends on carry their own licenses.
+
+==============================================================================
+naga, naga-types and naga_oil: WGSL parsing, validation and translation
+==============================================================================
+
+naga 30.0.1, naga-types 30.0.1 and naga_oil 0.23.0, from https://github.com/gfx-rs/wgpu and
+https://github.com/bevyengine/naga_oil. Each is offered under the MIT License or the Apache
+License 2.0, and null3D takes them under the MIT License.
+
+Copyright the gfx-rs developers and the naga_oil contributors.
+==============================================================================
+serde, serde_json and the toml crates: the module's data formats
+==============================================================================
+
+serde 1.0.229, serde_core 1.0.229 and serde_json 1.0.151 are each offered under the MIT License
+or the Apache License 2.0, and null3D takes them under the MIT License.
+
+Copyright the serde authors.
+
+toml 1.1.6, toml_datetime 1.1.1, toml_parser 1.1.3, toml_writer 1.1.2 and serde_spanned 1.1.1
+are each offered under the MIT License or the Apache License 2.0, and null3D takes them under the
+MIT License.
+
+Copyright (c) the toml contributors.
+
+==============================================================================
+The remaining crates of the shader compiler
+==============================================================================
+
+Each crate below is offered under the MIT License or the Apache License 2.0, and null3D takes it
+under the MIT License, except where the line gives another license or another choice. The version
+is the one in the module, and each crate's own package carries its copyright notice.
+
+- arrayvec 0.7.8, bit-set 0.10.0, bit-vec 0.9.1, bitflags 2.13.2, cfg-if 1.0.5, equivalent
+  1.0.2, half 2.7.1, hashbrown 0.17.1, indexmap 2.14.2, itoa 1.0.18, log 0.4.34, num-traits
+  0.2.19, once_cell 1.21.4, pin-project-lite 0.2.17, regex 1.13.1, regex-automata 0.4.18,
+  regex-syntax 0.8.11, rustc-hash 1.1.0, smallvec 1.16.2, thiserror 2.0.21, unicode-width 0.2.2
+  and zerocopy 0.8.59: Copyright their authors.
+- aho-corasick 1.1.5, memchr 2.8.3 and termcolor 1.4.1, each offered under the Unlicense or the
+  MIT License, and null3D takes them under the MIT License: Copyright (c) Andrew Gallant.
+- data-encoding 2.11.1, libm 0.2.16, tracing 0.1.44, tracing-core 0.1.36, winnow 1.0.4 and zmij
+  1.0.23, under the MIT License: Copyright their authors.
+- crunchy 0.2.4, under the MIT License: Copyright (c) Eira Fransham.
+- foldhash 0.2.0, under the Zlib License: Copyright (c) Orson Peters. Its license text follows.
+- codespan-reporting 0.12.0 and 0.13.1, under the Apache License 2.0: Copyright (c) Brendan
+  Zabarauskas. The license text is in the package's LICENSE-APACHE file.
+
+==============================================================================
+The MIT License
+==============================================================================
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+The Zlib License, as foldhash ships it
+==============================================================================
+
+Copyright (c) 2024 Orson Peters
+
+This software is provided 'as-is', without any express or implied warranty. In no event will the
+authors be held liable for any damages arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose, including commercial
+applications, and to alter it and redistribute it freely, subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not claim that you wrote the
+   original software. If you use this software in a product, an acknowledgment in the product
+   documentation would be appreciated but is not required.
+
+2. Altered source versions must be plainly marked as such, and must not be misrepresented as being
+   the original software.
+
+3. This notice may not be removed or altered from any source distribution.
