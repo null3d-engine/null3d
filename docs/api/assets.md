@@ -60,6 +60,8 @@ export default defineSketch(async ({ scene, assets }) => {
 });
 ```
 
+A model that the tool wrote with `--stages` holds its coarsest level, and downloads each finer level from a file of its own. `loadGltf` returns once the coarse level is ready, and the copies that you make then refine as the finer levels arrive. `maxLevels` stops the downloads after that many levels, the file's own counted first: set 1 to draw the coarse level alone and download no stage. [Levels of detail](../concepts/lod.md#levels-from-the-asset-tool) explains the files.
+
 A worker parses the file outside the sketch's frames, and decodes the images that the file holds there. The first `loadGltf` call downloads the loader and its worker, about 15 KB after Brotli, so a page without glTF files downloads neither. The files that a `.gltf` file names download through `assets`, so `preload` and `onProgress` cover them too. The engine copies the vertex data into its own memory, and keeps no other copy of it.
 
 The `assets` API itself loads with its first call too, so a page that loads no file downloads none of it. Every call answers once that code has arrived. Two calls answer with a function of their own, `onProgress` and `registerGltfExtension`, so they answer at once and register the handler when it arrives.

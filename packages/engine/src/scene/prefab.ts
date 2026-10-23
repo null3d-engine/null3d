@@ -241,6 +241,11 @@ export class Prefab {
 			);
 	}
 
+	/** @internal True until `destroy` runs: a background load stops when the model goes. */
+	get live(): boolean {
+		return !this.destroyed;
+	}
+
 	/** The names of the model's clips, which a copy's animator plays. */
 	get clips(): readonly string[] {
 		return this.rig ? [...this.rig.clips.keys()] : [];

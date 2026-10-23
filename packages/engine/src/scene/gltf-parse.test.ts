@@ -1717,3 +1717,51 @@ describe("the asset tool's shader list", () => {
 		expect(parse(wrong.glb()).shaders).toBeUndefined();
 	});
 });
+
+describe("the asset tool's staged levels", () => {
+	test('reads each stage with the error of the level that the file holds', () => {
+		const builder = shipBuilder();
+		builder.json.nodes[0].extras = {
+			NULL3D_stages: {
+				error: 0.2,
+				levels: [
+					{ url: 'ship.m0.lod2.bin', bytes: 120, error: 0.1 },
+					{ url: 'ship.m0.lod3.bin', bytes: 60, error: 0.04 },
+				],
+			},
+		};
+		const hull = parse(builder.glb()).nodes.find((node) => node.name === 'Hull');
+		expect(hull?.stages).toEqual({
+			error: 0.2,
+			levels: [
+				{ url: 'ship.m0.lod2.bin', bytes: 120, error: 0.1 },
+				{ url: 'ship.m0.lod3.bin', bytes: 60, error: 0.04 },
+			],
+		});
+	});
+
+	test('stops at a stage that holds no address, no length or no error', () => {
+		const builder = shipBuilder();
+		builder.json.nodes[0].extras = {
+			NULL3D_stages: {
+				error: 0.2,
+				levels: [
+					{ url: 'a.bin', bytes: 120, error: 0.1 },
+					{ url: '', bytes: 60, error: 0.04 },
+					{ url: 'c.bin', bytes: 30, error: 0.01 },
+				],
+			},
+		};
+		const hull = parse(builder.glb()).nodes.find((node) => node.name === 'Hull');
+		expect(hull?.stages?.levels).toEqual([{ url: 'a.bin', bytes: 120, error: 0.1 }]);
+	});
+
+	test('gives no stages for a file without them, or one whose own level has no error', () => {
+		const plain = parse(shipBuilder().glb()).nodes.find((node) => node.name === 'Hull');
+		expect(plain?.stages).toBeUndefined();
+		const wrong = shipBuilder();
+		wrong.json.nodes[0].extras = { NULL3D_stages: { levels: [{ url: 'a', bytes: 1, error: 1 }] } };
+		const hull = parse(wrong.glb()).nodes.find((node) => node.name === 'Hull');
+		expect(hull?.stages).toBeUndefined();
+	});
+});
