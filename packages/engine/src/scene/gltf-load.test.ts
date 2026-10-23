@@ -3,7 +3,7 @@
 // base's vertices.
 
 import { expect, test } from 'bun:test';
-import { type GltfContext, makeTextures, sharesVertices } from './gltf';
+import { type GltfContext, makeTextures, readStage, sharesVertices } from './gltf';
 import type { GltfData, PrimitiveData, TextureUse } from './gltf-parse';
 
 const use = (image: number): TextureUse => ({
@@ -113,4 +113,46 @@ test('a level copies its vertices when its base morphs or has no indices', () =>
 		),
 	).toBe(false);
 	expect(sharesVertices({ ...primitive(), indices: undefined }, base)).toBe(false);
+});
+
+/** A stage file of `lists`, each at the width that its largest index takes, as the asset tool writes it. */
+function stageFile(lists: readonly number[][]): ArrayBuffer {
+	const placed = lists.map((list) => {
+		const size = list.some((index) => index > 0xffff) ? 4 : 2;
+		return { list, size, bytes: Math.ceil((list.length * size) / 4) * 4 };
+	});
+	const length = 16 + placed.reduce((sum, list) => sum + 8 + list.bytes, 0);
+	const bytes = new ArrayBuffer(length);
+	const view = new DataView(bytes);
+	view.setUint32(0, 0x5344334e, true);
+	view.setUint32(4, 1, true);
+	view.setUint32(8, 0, true);
+	view.setUint32(12, lists.length, true);
+	let at = 16;
+	for (const { list, size, bytes: count } of placed) {
+		view.setUint32(at, list.length, true);
+		view.setUint32(at + 4, size, true);
+		const array =
+			size === 2
+				? new Uint16Array(bytes, at + 8, count / 2)
+				: new Uint32Array(bytes, at + 8, count / 4);
+		array.set(list);
+		at += 8 + count;
+	}
+	return bytes;
+}
+
+test('a stage file gives the triangle lists of the node its primitives, at either width', () => {
+	const lists = [
+		[0, 1, 2, 2, 3, 0],
+		[0, 70_000, 2, 2, 70_000, 0],
+	];
+	const read = readStage(stageFile(lists), 2);
+	expect(read?.map((list) => Array.from(list))).toEqual(lists);
+	// A file of another version, kind or list count, or one cut short, is left out.
+	const wrong = stageFile(lists);
+	new DataView(wrong).setUint32(4, 2, true);
+	expect(readStage(wrong, 2)).toBeUndefined();
+	expect(readStage(stageFile(lists), 1)).toBeUndefined();
+	expect(readStage(stageFile(lists).slice(0, 20), 2)).toBeUndefined();
 });
