@@ -15,6 +15,119 @@ export const MAX_HOLD_SECONDS = 600;
 export const HOLD_RESULT_GLOBAL = '__null3dHold';
 
 /**
+ * The global that a test tool sets before the page loads, with the timed script that hold mode
+ * performs. Hold mode reads it once, as it starts, and a live engine ignores it.
+ */
+export const HOLD_SCRIPT_GLOBAL = '__null3dHoldScript';
+
+/**
+ * One step of a timed script that hold mode performs while it steps the sketch. A tool gives each
+ * step the sketch time, in seconds, at which the hold performs it, and the steps come in time order.
+ *
+ * @category api/engine
+ */
+export type HoldScriptStep =
+	| {
+			/** The sketch time of the step, in seconds. */
+			at: number;
+			verb: 'key';
+			/** The key's `KeyboardEvent.code` name, such as `KeyW` or `Space`. */
+			code: string;
+			/** True for a press, false for a release. */
+			down: boolean;
+	  }
+	| {
+			/** The sketch time of the step, in seconds. */
+			at: number;
+			verb: 'pointer';
+			/** What the pointer does: move, press, release, or scroll the wheel. */
+			action: 'move' | 'down' | 'up' | 'wheel';
+			/** The pointer's distance from the canvas's left edge, in CSS pixels. */
+			x: number;
+			/** The pointer's distance from the canvas's top edge, in CSS pixels. */
+			y: number;
+	  }
+	| {
+			/** The sketch time of the step, in seconds. */
+			at: number;
+			verb: 'set';
+			/** The object's name, or `#camera` for the scene's active camera. */
+			target: string;
+			/** The property path that `animateProperty` takes, such as `position` or `fov`. */
+			path: string;
+			/** The value's numbers: three for a position, four for a rotation, one for a flag. */
+			value: readonly number[];
+	  }
+	| {
+			/** The sketch time of the step, in seconds. */
+			at: number;
+			verb: 'dump';
+			/** The object's name, or `#camera` for the scene's active camera. */
+			target: string;
+			/** One property path to record, or every property of the object when it is absent. */
+			path?: string;
+	  };
+
+/**
+ * A timed script that hold mode performs: its steps, in time order.
+ *
+ * @category api/engine
+ */
+export interface HoldScript {
+	/** The steps of the script, in time order, with the sketch time at which each one happens. */
+	steps: readonly HoldScriptStep[];
+}
+
+/**
+ * What a dump step read from its target.
+ *
+ * @category api/engine
+ */
+export interface HoldDump {
+	/** The sketch time of the step, in seconds. */
+	at: number;
+	/** The target as the step named it. */
+	target: string;
+	/** The property path, when the step named one. */
+	path?: string;
+	/** The property's numbers, or the object's properties by name. */
+	value: readonly number[] | Readonly<Record<string, unknown>>;
+}
+
+/**
+ * A script step that failed, with the reason in plain words.
+ *
+ * @category api/engine
+ */
+export interface HoldScriptProblem {
+	/** The sketch time of the step, in seconds. */
+	at: number;
+	/** The step as it was written, such as `set "cr".position`. */
+	step: string;
+	/** Why the step failed, such as why a target is not in the scene. */
+	error: string;
+}
+
+/**
+ * What the steps of a timed script gave while hold mode performed it.
+ *
+ * @category api/engine
+ */
+export interface HoldScriptResult {
+	/** What each dump step read. */
+	dumps: HoldDump[];
+	/** The steps that failed, in time order. */
+	problems: HoldScriptProblem[];
+}
+
+/** Reads the timed script that a test tool set before the page loaded, if it set one. */
+export function holdScript(): HoldScript | undefined {
+	const value = (globalThis as Record<string, unknown>)[HOLD_SCRIPT_GLOBAL];
+	if (value === undefined || value === null) return undefined;
+	return value as HoldScript;
+}
+
+/**
  * The frame that hold mode drew and read back, as `window.__null3dHold` holds it.
  *
  * @category api/engine
@@ -47,6 +160,11 @@ export interface HeldFrame {
 	 * engine times the GPU only while `engine.measure` runs.
 	 */
 	stats: FrameSummary;
+	/**
+	 * What a timed script's dump steps read, and the steps that failed, when the page gave a script.
+	 * A step that failed stops no hold: the tool that gave the script decides what a failure means.
+	 */
+	script?: HoldScriptResult;
 }
 
 /**
