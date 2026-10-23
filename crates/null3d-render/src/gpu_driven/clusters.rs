@@ -311,6 +311,14 @@ impl Clusters {
         Ok(())
     }
 
+    /// Forgets the scene's tables and every view's buffers, so each is made again, after the thread
+    /// that draws replaced the GPU.
+    pub(super) fn forget_gpu(&mut self) {
+        self.tables = [0; 2];
+        self.table_words = [0; 2];
+        self.views.clear();
+    }
+
     /// The byte offset of a cluster mesh's indirect draw in a view's draw buffer.
     pub(super) const fn draw_offset(cluster: u32) -> u32 {
         cluster * INDIRECT_WORDS * 4
