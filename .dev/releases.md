@@ -144,9 +144,10 @@ This is part of making 0.1.0. npm cannot publish a package's first version throu
    npm publish target/packages/null3d-impostors-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-particles-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-terrain-0.0.0.tgz --access public --provenance=false
+   npm publish target/packages/null3d-splats-0.0.0.tgz --access public --provenance=false
    ```
 
-5. On npmjs.com, open each of the eight packages' settings, and add a trusted publisher: GitHub Actions, the owner `null3d-engine`, the repository `null3d` and the workflow `release.yml`.
+5. On npmjs.com, open each of the nine packages' settings, and add a trusted publisher: GitHub Actions, the owner `null3d-engine`, the repository `null3d` and the workflow `release.yml`.
 6. Run the Release workflow with `minor`. Its `publish-npm` job publishes 0.1.0 of every package through trusted publishing, with provenance.
 
 Until step 5, the publish job fails at the first package that has no trusted publisher. It skips the versions that npm has, so run it again after the setup.

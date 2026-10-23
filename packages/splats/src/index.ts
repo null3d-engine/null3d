@@ -1,3 +1,8 @@
+import { checkAddonVersion } from '@null3d/engine';
+import { VERSION } from './version';
+
+checkAddonVersion('@null3d/splats', VERSION);
+
 // Gaussian splats for null3D sketches: SPZ files and glTF models that carry KHR_gaussian_splatting,
 // drawn as soft camera-facing Gaussians that mix with the scene's meshes by depth. A cloud is cut
 // into chunks with detail levels, an add-on task chooses which splats draw within a budget that
