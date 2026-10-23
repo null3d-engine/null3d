@@ -869,3 +869,17 @@ failed on the tip's first runs. And `js/render-worker.js` grew from 17,993 to 18
 Both need a `Size-Growth:` line, as the commit gate asks. The start's remaining room is the finding
 that matters: the next feature that touches the start has nowhere to go, so a trim is due before
 another one lands.
+
+## The start's budget rises to 184 KB, 23 October 2026
+
+The first-use fix moved three shared modules out of the loader's file and into the start's own files,
+where every page loads them. The work that followed, the levels, the transmission maps and the hero
+shadow, added start code of its own. A production page build of the tip then measured 186,587 bytes
+after Brotli in pipelined WebGL2 mode, which is 219 over the 182 KB budget.
+
+The budget rises to 184 KB, or 188,416 bytes, leaving 1,829 bytes of room. The owner's rule of
+22 October allows the start's budget to rise as needed without asking. This is the smallest step that
+keeps the check useful, because a rise of 2 KB cannot hide a feature's cost the way a larger one would.
+
+The squeeze stands. This is the second rise in three days, and M3-T1's target of 160 KB is still far
+away. The next change that touches the start needs a trim, not another rise.
