@@ -199,15 +199,22 @@ describe('the shader modules', () => {
 			mkdirSync(lock, { recursive: true });
 			writeFileSync(join(lock, 'pid'), String(process.pid));
 			// In a process of its own, so that a wait for the lock fails the test rather than hanging it.
-			const run = spawnSync(
-				'bun',
-				[
-					'-e',
-					`import { ensureShaderModules } from ${JSON.stringify(join(import.meta.dirname, 'shader-modules.ts'))}; console.log(ensureShaderModules(${JSON.stringify(root)}))`,
-				],
-				{ env: process.env, encoding: 'utf8', timeout: 30_000 },
+			// The script is a file of its own because a `-e` import of an absolute TypeScript path is
+			// not portable: on CI's runner the child prints nothing at all.
+			const script = join(root, 'copy-set.ts');
+			writeFileSync(
+				script,
+				`import { ensureShaderModules } from ${JSON.stringify(join(import.meta.dirname, 'shader-modules.ts'))};\nconsole.log(ensureShaderModules(${JSON.stringify(root)}));\n`,
 			);
-			expect(run.stdout.trim()).toBe('false');
+			const run = spawnSync('bun', [script], {
+				env: process.env,
+				encoding: 'utf8',
+				timeout: 30_000,
+			});
+			if (run.stdout.trim() !== 'false')
+				throw new Error(
+					`the child printed ${JSON.stringify(run.stdout.trim())}, not false, and wrote ${JSON.stringify(run.stderr.trim())}`,
+				);
 			expect(readFileSync(join(root, MODULE_DIR, 'shaders.ts'), 'utf8')).toBe(files['shaders.ts']);
 			expect(existsSync(join(lock, 'pid'))).toBe(true);
 		});
