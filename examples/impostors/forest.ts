@@ -71,6 +71,25 @@ export function bands(): Bands {
 	};
 }
 
+/** The part of an instance batch that a tree writes to. */
+interface Batch {
+	positions: Float32Array;
+	rotations: Float32Array;
+	scales: Float32Array;
+	markDirty(first: number, count: number): void;
+}
+
+/** Puts each tree in `trees` into `batch` from copy `first`, and marks that range changed. */
+export function fillTrees(batch: Batch, trees: readonly Tree[], first = 0): void {
+	for (const [k, tree] of trees.entries()) {
+		const at = first + k;
+		batch.positions.set([tree.x, tree.y, tree.z], at * 3);
+		batch.rotations.set([0, Math.sin(tree.turn / 2), 0, Math.cos(tree.turn / 2)], at * 4);
+		batch.scales.fill(tree.scale, at * 3, at * 3 + 3);
+	}
+	batch.markDirty(first, trees.length);
+}
+
 /** A copy's transform, column-major: moved to the tree, turned about y and scaled. */
 export function place({ x, y, z, turn, scale }: Tree): number[] {
 	const [c, s] = [Math.cos(turn) * scale, Math.sin(turn) * scale];

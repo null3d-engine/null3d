@@ -3,8 +3,9 @@
 // texel, while the car's own shadow map fits it tightly and holds its shadow several times finer.
 // Every 3 seconds the car's hero shadow turns off and on again, so the difference shows. All of it
 // is made in code.
-import { defineSketch, type MeshOptions, math, timeOfDay, vec3 } from '@null3d/engine';
+import { defineSketch, math, timeOfDay, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
+import { car } from './car';
 
 /** The seconds of each half cycle of the hero's shadow turning off and on. */
 const CYCLE = 3;
@@ -58,8 +59,6 @@ export default defineSketch(async (ctx) => {
 	});
 
 	const yard = materials.standard({ color: '#9a958c', roughness: 0.85 });
-	const paint = materials.standard({ color: '#c8452f', roughness: 0.35, metalness: 0.4 });
-	const glass = materials.standard({ color: '#20262e', roughness: 0.1, metalness: 0.6 });
 	const stone = materials.standard({ color: '#7d7a72', roughness: 0.9 });
 	const shadowed = { castShadows: true, receiveShadows: true };
 
@@ -78,48 +77,9 @@ export default defineSketch(async (ctx) => {
 			receiveShadows: true,
 		});
 
-	// The car: a body, a glass cabin, a roof and four wheels, which cast and receive shadows together.
-	const car = scene.createGroup({ position: [0, 0, 0] });
-	const on = (options: MeshOptions) => scene.createMesh({ ...options, parent: car, ...shadowed });
-	// The hero is the body: a light names an object whose bounds it fits, and a group carries no
-	// bounds of its own. The body's sphere is widened to hold the whole car, since the box that the
-	// hero's tile fits reaches from it.
-	const body = on({
-		mesh: geometry.box({ width: 1.8, height: 0.55, depth: 4.1 }),
-		material: paint,
-		position: [0, 0.62, 0],
-	});
-	body.setBounds([0, 0.75, 0], 2.2);
-	on({
-		mesh: geometry.box({ width: 1.5, height: 0.5, depth: 2.1 }),
-		material: glass,
-		position: [0, 1.15, -0.25],
-	});
-	on({
-		mesh: geometry.box({ width: 1.62, height: 0.1, depth: 2.0 }),
-		material: paint,
-		position: [0, 1.42, -0.3],
-	});
-	const rubber = materials.standard({ color: '#1b1b1d', roughness: 0.8 });
-	for (const [x, z] of [
-		[-0.86, 1.3],
-		[0.86, 1.3],
-		[-0.86, -1.35],
-		[0.86, -1.35],
-	]) {
-		const wheel = on({
-			mesh: geometry.cylinder({
-				radiusTop: 0.34,
-				radiusBottom: 0.34,
-				height: 0.24,
-				radialSegments: 24,
-			}),
-			material: rubber,
-			position: [x, 0.34, z],
-		});
-		// The cylinder stands on its Y axis, so a quarter turn lays it on its side.
-		wheel.setRotationEuler(0, 0, Math.PI / 2);
-	}
+	// The car, whose body is the hero: the sun fits a tile to it, several times finer than the
+	// cascades that hold the blocks' long shadows.
+	const body = car(ctx);
 
 	// Stone blocks around the pad, far enough that the car's tile holds none of them. Their
 	// shadows come from the cascades, which the hero's sharp one shows against.

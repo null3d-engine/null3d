@@ -11,6 +11,7 @@ import {
 	bands,
 	CARD_EDGE,
 	CELL,
+	fillTrees,
 	ground,
 	hills,
 	impostorAtlases,
@@ -61,12 +62,7 @@ export default defineSketch(async (ctx) => {
 		castShadows: true,
 		receiveShadows: true,
 	});
-	near.forEach((tree, k) => {
-		pines.positions.set([tree.x, tree.y, tree.z], k * 3);
-		pines.rotations.set([0, Math.sin(tree.turn / 2), 0, Math.cos(tree.turn / 2)], k * 4);
-		pines.scales.fill(tree.scale, k * 3, k * 3 + 3);
-	});
-	pines.markDirty(0, near.length);
+	fillTrees(pines, near);
 
 	// The middle band: the coarsest level of the same pine, merged into one mesh per grid cell.
 	const coarsest = pineArrays(3);
@@ -115,12 +111,7 @@ export default defineSketch(async (ctx) => {
 
 	// L swaps the far band between the cards and a batch of detail meshes, for comparison.
 	const detail = scene.createInstances(pineWithLevels(geometry), far.length, { material: wood });
-	far.forEach((tree, k) => {
-		detail.positions.set([tree.x, tree.y, tree.z], k * 3);
-		detail.rotations.set([0, Math.sin(tree.turn / 2), 0, Math.cos(tree.turn / 2)], k * 4);
-		detail.scales.fill(tree.scale, k * 3, k * 3 + 3);
-	});
-	detail.markDirty(0, far.length);
+	fillTrees(detail, far);
 	detail.setActiveCount(0);
 	let cardsOn = true;
 	// T sweeps the sun across the sky, so the cards' light follows the meshes' light: the bake holds
