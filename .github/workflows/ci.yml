@@ -462,11 +462,27 @@ jobs:
           pattern: shader-entries-*
           merge-multiple: true
           path: ${{ steps.entry-keys.outputs.entries-dir }}/${{ steps.entry-keys.outputs.stamp }}
+      # The WebAssembly files and the tools' modules, which the build script keeps under a key of
+      # every input: the core's Rust sources, the flags, the toolchain and the wasm-bindgen and
+      # wasm-opt releases. A run that changed none of them copies every file in place and runs no
+      # cargo, wasm-bindgen or wasm-opt, which took 118 s of run 39944103955's build job.
+      - id: wasm-key
+        run: bun tools/build-wasm.ts --cache-key | tee -a "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        id: wasm
+        with:
+          path: ~/.cache/null3d/wasm-artifacts
+          key: wasm-artifacts-${{ runner.os }}-${{ steps.wasm-key.outputs.key }}
       # The shader caches between runs: a run builds only the shaders whose inputs changed.
       - name: Build the shader modules and the WebAssembly files that the test pages need
         uses: ./.github/actions/shaders
         with:
           run: bun tools/build-wasm.ts --pages-only
+      - uses: actions/cache/save@v4
+        if: steps.wasm.outputs.cache-hit != 'true' && env.SAVE_CACHES == 'true'
+        with:
+          path: ~/.cache/null3d/wasm-artifacts
+          key: wasm-artifacts-${{ runner.os }}-${{ steps.wasm-key.outputs.key }}
       # One size part when the newest size memo holds the sizes of these shader modules, which hold
       # nearly all of the engine test page's bytes, so that the part compresses only a few files;
       # the full split otherwise. A run that cannot tell takes the full split.
