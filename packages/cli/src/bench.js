@@ -172,7 +172,7 @@ async function within(promise, ms, error) {
  * @param {{ warmupSeconds: number, measureSeconds: number }} protocol
  * @returns {Promise<BenchRun>}
  */
-async function measurePage(page, url, timeoutMs, { warmupSeconds, measureSeconds }) {
+export async function measurePage(page, url, timeoutMs, { warmupSeconds, measureSeconds }) {
 	/** @type {string | undefined} */
 	let thrown;
 	page.on('pageerror', (error) => {
