@@ -326,19 +326,20 @@ jobs:
 
   shader-entries:
     # The shader build's entries, compiled in shards at once into the per-entry cache, so that the
-    # build job compiles none of them itself. Each shard takes a share of the manifest's entries by
-    # build cost. A run whose module set the Actions cache already holds has nothing to compile, so
-    # each shard stops after one cache lookup. Each shard uploads only the entries it compiled, and
-    # never saves the Actions cache: the build job saves the whole set. The textured standard
-    # material makes most of the builds, and a cache entry holds a whole entry, so its shard sets
-    # this job's time, and more shards would not shorten it.
+    # build job compiles none of them itself. Each shard takes a share of the manifest's builds by
+    # build cost, and an entry that costs more than an even share, such as the textured standard
+    # material, goes to the shards in parts. The cache keeps each part beside the entry's key, and
+    # the build job joins a complete set into the entry. A run whose module set the Actions cache
+    # already holds has nothing to compile, so each shard stops after one cache lookup. Each shard
+    # uploads only the entries and parts it compiled, and never saves the Actions cache: the build
+    # job saves the whole set.
     name: shader-entries (${{ matrix.shard }} of ${{ strategy.job-total }})
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4, 5, 6]
     env:
       HUSKY: "0"
     steps:

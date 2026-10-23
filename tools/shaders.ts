@@ -7,7 +7,8 @@
 //   bun tools/shaders.ts --cache-keys >> "$GITHUB_OUTPUT"
 // `--entries-shard i/n` compiles only shard i of n, counted from 0, of the manifest's entries, split
 // by estimated build cost, into the per-entry cache that a normal build reads, at
-// `<entries-dir>/<stamp>`. It writes no module. With `--entries-out <folder>`, it also copies the
+// `<entries-dir>/<stamp>`. An entry that costs more than an even share goes to the shards in parts,
+// which the cache keeps beside the entry's key and a later build joins. It writes no module. With `--entries-out <folder>`, it also copies the
 // entries that it stored there, and none that the cache held before, so each of several CI jobs can
 // upload its own new entries, and the job that builds the modules can put them all back into that
 // folder first and compile none of them:
