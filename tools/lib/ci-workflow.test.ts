@@ -89,12 +89,17 @@ function commandsOf(job: Job): Command[] {
 	);
 }
 
-/** The jobs whose steps download the build job's files. */
-const downloadsBuild = (job: Job) =>
+/** The archive action, which hands the build job's files and the load builds on (D-222). */
+const ARCHIVE = './.github/actions/archive';
+
+/** True when `job` moves the archive `name` through the archive action, in `mode`. */
+const hands = (job: Job, name: string, mode: 'upload' | 'download') =>
 	(job.steps ?? []).some(
-		({ uses, with: given }) =>
-			uses?.startsWith('actions/download-artifact@') === true && given?.name === 'page-wasm',
+		({ uses, with: given }) => uses === ARCHIVE && given?.name === name && given?.mode === mode,
 	);
+
+/** The jobs whose steps download the build job's files. */
+const downloadsBuild = (job: Job) => hands(job, 'page-wasm', 'download');
 
 /** Every file below a folder of the repository, by its path from the root. */
 function filesBelow(folder: string): string[] {
@@ -351,24 +356,31 @@ describe("CI's workflow", () => {
 			commandsOf(job).some(({ text }) => text.includes('tests/lib/load-server.ts')),
 		);
 		expect(builders.map(([name]) => name)).toEqual(['load-pages']);
-		// The builds travel through one action, which packs each content once and unpacks it.
-		const hands = (job: Job, mode: string) =>
-			(job.steps ?? []).some(
-				({ uses, with: given }) => uses === './.github/actions/load-pages' && given?.mode === mode,
-			);
-		expect(hands(jobNamed('load-pages'), 'upload')).toBe(true);
+		// The builds travel through the archive action, which packs each content once.
+		const upload = (jobNamed('load-pages').steps ?? []).find(
+			({ uses, with: given }) => uses === ARCHIVE && given?.name === 'load-pages',
+		);
+		expect(upload?.with?.mode).toBe('upload');
+		expect(upload?.with?.link).toBe('true');
 		const servers = Object.entries(jobs).filter(
 			([, job]) => job.env?.NULL3D_LOAD_PAGES === 'prebuilt',
 		);
 		expect(servers.length).toBeGreaterThan(0);
 		for (const [name, job] of servers) {
 			expect(needsOf(job), name).toContain('load-pages');
-			expect(hands(job, 'download'), name).toBe(true);
+			expect(hands(job, 'load-pages', 'download'), name).toBe(true);
 		}
+	});
+
+	it("moves the build job's files and the load builds only through the archive action", () => {
+		expect(hands(jobNamed('build'), 'page-wasm', 'upload')).toBe(true);
 		for (const [name, job] of Object.entries(jobs))
 			for (const { uses, with: given } of job.steps ?? [])
-				if (uses?.startsWith('actions/') && given?.name === 'load-pages')
-					expect.unreachable(`${name} moves the load builds without the load-pages action`);
+				if (
+					uses?.startsWith('actions/') &&
+					['page-wasm', 'load-pages'].includes(String(given?.name))
+				)
+					expect.unreachable(`${name} moves ${given?.name} without the archive action`);
 	});
 
 	it('names in each pass key every script that its part starts, with their imports', () => {

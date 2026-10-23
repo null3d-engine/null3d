@@ -107,8 +107,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
 
       # Git keeps no generated file (D-105). The install step wrote them before the shader modules
@@ -155,8 +156,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/samples
       - run: bun run test:heavy
@@ -461,20 +463,13 @@ jobs:
         uses: ./.github/actions/shaders
         with:
           run: bun tools/build-wasm.ts --pages-only
-      # The artifact's paths start at the repository's root, their closest shared folder. It keeps
-      # the default compression level: every later job downloads it, and at the fastest level it grew
-      # by about a third, which those downloads paid for many times over the upload's saving.
-      - uses: actions/upload-artifact@v4
+      # Every later job downloads these files, about 2.8 GB, as one archive: as the artifact's own
+      # zip they took 510 MB and 77 s to upload in run 39869813447, and about 122 MB this way.
+      - uses: ./.github/actions/archive
         with:
+          mode: upload
           name: page-wasm
-          path: |
-            packages/engine/dist/
-            packages/vite-plugin/dist/
-            packages/cli/dist/
-            packages/engine/src/generated/
-            target/shader-modules.json
-          if-no-files-found: error
-          retention-days: 1
+          paths: packages/engine/dist packages/vite-plugin/dist packages/cli/dist packages/engine/src/generated target/shader-modules.json
 
   size-base:
     # The sizes of the size check's base commit, built at that commit with its own toolchain,
@@ -582,8 +577,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - name: Measure this part of the engine test page's files
         run: bun tools/build-wasm.ts --check-size --prebuilt --part ${{ matrix.part }}/${{ strategy.job-total }}
@@ -615,8 +611,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: actions/download-artifact@v4
         with:
@@ -710,9 +707,10 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - if: steps.passed.outputs.cache-hit != 'true'
         run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         if: steps.passed.outputs.cache-hit != 'true'
         with:
+          mode: download
           name: page-wasm
       - name: The shader compiler gives the native shader build's results
         if: steps.passed.outputs.cache-hit != 'true' && matrix.part == 1
@@ -777,9 +775,10 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - if: steps.passed.outputs.cache-hit != 'true'
         run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         if: steps.passed.outputs.cache-hit != 'true'
         with:
+          mode: download
           name: page-wasm
       - name: The Vite plugin's tests through the shader compiler
         if: steps.passed.outputs.cache-hit != 'true'
@@ -817,8 +816,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
       # The website build's compiled shaders, which the test keeps between runs. An entry is named by
@@ -877,8 +877,9 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       # The build job's files, at their places in the repository.
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
@@ -919,8 +920,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
@@ -969,11 +971,17 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
+      # The CDN test loads one add-on from the part's build: its packed library, with its shader
+      # compiled, is served from the second origin.
+      - name: The terrain add-on's package, which the CDN test loads
+        if: matrix.id == 'engine'
+        run: bun tools/build-package.ts terrain
       - name: The production build of the part's test pages
         run: bun run build:test-pages ${{ matrix.pages }}
       - name: The part's production build tests, on SwiftShader, WebGPU and WebGL2
@@ -1010,8 +1018,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/samples
       - uses: ./.github/actions/city
@@ -1036,8 +1045,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
@@ -1085,8 +1095,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
@@ -1118,8 +1129,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
       # The cookbook's recipes load sample files.
@@ -1138,14 +1150,18 @@ jobs:
     # Playwright's own --shard splits the test list into equal counts in file order, and these
     # tests differ too much in length for that: it gave one shard 221 tests and over 13 minutes,
     # and the other 4 tests and 3 minutes. Shard 1 runs the tests that BENCH_SHARD_1 names, shard 2
-    # those that BENCH_S1 names, the parity shards the tests against three.js, and shard 3 every
-    # other test, so each test runs in exactly one shard.
+    # those that BENCH_S1 names, shard 3 those that BENCH_VISUAL names, the parity shards the tests
+    # against three.js, and shard 4 every other test, so each test runs in exactly one shard.
     # S4's and S5's pages run in order in one worker each, and both sit in shard 1: beside the
     # parity tests' setup, S4 on WebGL2 twice measured no frame on SwiftShader. The engine's limit
     # of frames in flight failed open then (.dev/implementation-notes.md).
     # In run 39854225392 (23 October 2026), shard 1 also held S1's three scenes and took 22.9
     # minutes of tests: S3 546 s, S5 534 s, S1 376 s, S1-static 346 s, S1-cells 339 s and S4 332 s,
     # on two workers. S1's scenes now run in shard 2.
+    # The visual tests of the shadows read many frames on SwiftShader, and a page benchmark beside one
+    # starts late: in run 39869813447, S2's pages took 50 s to their first frame beside them, against
+    # 4 to 5 s on a Mac at both of that run's commits, and the other scenes' pages, away from them,
+    # started faster than a day before. So the visual tests run in a shard of their own.
     # Each parity scene's tests run in order in one worker, and Playwright's --shard keeps such a
     # group together, so the parity shards split the scenes by count. In main's run 38176334909
     # (11 October 2026), the parity tests took 13.2 minutes one after another, and the other tests
@@ -1168,12 +1184,14 @@ jobs:
           - shard: 2
             tests: --grep "$BENCH_S1"
           - shard: 3
-            tests: --grep-invert "$BENCH_SHARD_1|$BENCH_S1|$PARITY_TESTS"
+            tests: --grep "$BENCH_VISUAL"
           - shard: 4
-            tests: parity.spec.ts --shard=1/3
+            tests: --grep-invert "$BENCH_SHARD_1|$BENCH_S1|$BENCH_VISUAL|$PARITY_TESTS"
           - shard: 5
-            tests: parity.spec.ts --shard=2/3
+            tests: parity.spec.ts --shard=1/3
           - shard: 6
+            tests: parity.spec.ts --shard=2/3
+          - shard: 7
             tests: parity.spec.ts --shard=3/3
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
@@ -1183,6 +1201,8 @@ jobs:
       BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3)\b'
       # S1's three scenes: the pattern's s1 also names s1-static and s1-cells.
       BENCH_S1: 'pages\.spec\.ts.*\bs1\b'
+      # The visual tests of the shadows, which read many frames.
+      BENCH_VISUAL: 'visual\.spec\.ts'
       # The parity tests, by the title of each scene's group in bench/tests/parity.spec.ts.
       PARITY_TESTS: 'against three\.js'
     steps:
@@ -1191,12 +1211,15 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
-        with:
-          name: page-wasm
-      - uses: ./.github/actions/load-pages
+      - uses: ./.github/actions/archive
         with:
           mode: download
+          name: page-wasm
+      - uses: ./.github/actions/archive
+        with:
+          mode: download
+          name: load-pages
+          root: target
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
       # S6 loads the city's files, which the city job built.
@@ -1243,12 +1266,15 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
-        with:
-          name: page-wasm
-      - uses: ./.github/actions/load-pages
+      - uses: ./.github/actions/archive
         with:
           mode: download
+          name: page-wasm
+      - uses: ./.github/actions/archive
+        with:
+          mode: download
+          name: load-pages
+          root: target
       - uses: ./.github/actions/playwright-chromium
       # The benchmark pages' build holds S6's pages, which load the city's files.
       - uses: ./.github/actions/samples
@@ -1277,8 +1303,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - uses: ./.github/actions/samples
       - uses: ./.github/actions/city
@@ -1286,9 +1313,13 @@ jobs:
           mode: download
       - name: The benchmark pages and the startup pages, built for production
         run: bun tests/lib/load-server.ts
-      - uses: ./.github/actions/load-pages
+      - uses: ./.github/actions/archive
         with:
           mode: upload
+          name: load-pages
+          root: target
+          paths: bench-pages startup-pages
+          link: "true"
 
   real-browsers:
     # Safari on GitHub's macOS machines and Firefox on its Linux machines, through the same test
@@ -1335,12 +1366,15 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
-        with:
-          name: page-wasm
-      - uses: ./.github/actions/load-pages
+      - uses: ./.github/actions/archive
         with:
           mode: download
+          name: page-wasm
+      - uses: ./.github/actions/archive
+        with:
+          mode: download
+          name: load-pages
+          root: target
       - uses: ./.github/actions/samples
       # S6 loads the city's files, which the city job built.
       - uses: ./.github/actions/city
@@ -1380,8 +1414,9 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
       # The engine's API reference names the shader features, which the shader modules hold.
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         with:
+          mode: download
           name: page-wasm
       - name: Push main's commit and its generated files to the generated branch
         run: |

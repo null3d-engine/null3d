@@ -25,13 +25,13 @@ const panel = (page: Page, name: string) => page.locator(`#hud-panel-${name}`);
  * first frame is part of that, and on a software GPU it arrives long after the controls do, so each
  * test's budget covers that wait and the picks or switches after it, and each test runs alone.
  *
- * Alone for two reasons. Their pictures need the engine to draw frames, and on CI's two-core runner
- * a heavy test beside one starves its page's frames, which is the fault D-186 measures. And their
+ * Alone for two reasons. Their pictures need the engine to draw frames, and on CI's runner a heavy
+ * test beside one starves its page's frames, which is the fault D-186 measures. And their
  * budget cannot sit in a shard: a shard's limit is 25 minutes, which covers its tests taking twice
  * as long as the median, and these tests fail exactly on a slow machine. The waits below are sized
  * for a software renderer on a loaded runner: a first frame there took longer than three minutes,
  * and a switch showed no new frame within one. The whole sequence of picks and switches takes 14 to
- * 24 minutes on CI's software GPU, so the file splits it into three tests that CI can run at once.
+ * 24 minutes on CI's software GPU, so the file splits it into four tests that CI can run at once.
  * Each pays for its own page's first frame, and the sky and fog test, with two of the three
  * switches, is the longest. Each budget sits under the limit of the job that runs the test, so a
  * page that truly stops drawing still fails by name rather than by the job's clock.

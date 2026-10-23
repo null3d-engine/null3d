@@ -693,6 +693,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setLightValue(light: number, which: number): number;
 	/**
+	 * Sets the object whose shadow a directional light draws into a tile of its own to `object`, or
+	 * stops with 0.
+	 */
+	setLightHero(light: number, object: number): number;
+	/**
 	 * Sets the number that each light created from now on starts with to the first call value:
 	 * `which` is one of the `LIGHT_VALUE_*` codes.
 	 */
@@ -1183,6 +1188,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'destroyLight',
 	'setLightColor',
 	'setLightValue',
+	'setLightHero',
 	'setLightDefault',
 	'setBackground',
 	'postValues',

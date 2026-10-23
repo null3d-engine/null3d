@@ -20,7 +20,7 @@ flowchart LR
 
 The `@null3d/terrain` package draws a height field as terrain. It divides the ground into a quadtree of blocks. A block near the camera draws a fine grid, and a block far away draws a coarse grid over more ground. The ground near the camera then keeps its detail, and the far hills stay cheap. One material blends up to four tiled color layers over every block by a splat map.
 
-The package is built on the engine's public API. It ships `.wgsl` for its surface function, which the null3D Vite plugin compiles with the rest of a project's shaders.
+The package is built on the engine's public API. Its surface function ships compiled, so your build does not compile it, and the package needs no extra setup for it.
 
 ```sh
 bun add @null3d/terrain
@@ -88,7 +88,7 @@ The terrain carries no collision. Read `heightAt(x, z)` and `normalAt(x, z, out)
 
 A terrain draws one mesh per visible block. The blocks near the camera are the most and the finest, and the few coarse blocks cover the rest. A 1,200 meter ground at the default settings draws about 200 blocks, near 130,000 triangles, whatever the camera does. A block splits or merges only when the camera crosses a cell. A crossing can need tens of new blocks, so each `update` builds at most `blocksPerUpdate` of them, 16 by default. The ground draws its last complete selection until the new one is built, and `terrain.building` is true meanwhile. The first update builds its whole selection, so call it in the setup if that frame matters. A block that the view leaves gives up its mesh to the next block that the ground needs. A terrain that follows a moving camera therefore builds meshes only until it holds `maxBlocks` of them, and its frame path allocates nothing. `terrain.setVisible(false)` hides the ground, and `setVisible(true)` shows the current selection again.
 
-A sketch that never imports `@null3d/terrain` ships no terrain code and starts no terrain work. The package follows the engine's add-on rules, so its surface function compiles into the project's shaders and loads with them.
+A sketch that never imports `@null3d/terrain` ships no terrain code and starts no terrain work. The package follows the engine's add-on rules: its surface function ships compiled, and its builds load when a terrain first draws.
 
 ## Compared with three.js
 

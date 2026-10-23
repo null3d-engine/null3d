@@ -23,7 +23,16 @@ import {
 import { dirname, join, posix, relative, resolve } from 'node:path';
 import ts from 'typescript';
 import { CORE_FILES } from '../../packages/vite-plugin/src/index.ts';
+import {
+	buildSets,
+	loadBuilds,
+	ModuleBuilds,
+	setModule,
+} from '../../packages/vite-plugin/src/material-builds.ts';
+import { ShaderPack } from '../../packages/vite-plugin/src/pack.ts';
+import { compileWgslFileSync } from '../../packages/vite-plugin/src/wgsl.ts';
 import { secondsSince } from './build-cache.ts';
+import { refuseStaleCore } from './core-sources.ts';
 import { generateDocs, writeGeneratedDocs } from './docs.ts';
 import { walkFiles } from './files.ts';
 import { ensureShaderModules, isShaderModule, MODULE_DIR } from './shader-modules.ts';
@@ -109,15 +118,8 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		needs: ['engine'],
 		required: ['THIRD-PARTY-NOTICES.txt'],
 	},
-	terrain: {
-		compile: true,
-		shaders: false,
-		docs: false,
-		needs: ['engine'],
-		// The surface function lives in a .wgsl file, which the built module imports and the null3D
-		// Vite plugin compiles for the project that uses the package.
-		required: ['lib/terrain.wgsl'],
-	},
+	// The surface function lives in a .wgsl file, which the pack compiles into a module of its own.
+	terrain: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
 	cli: {
 		compile: false,
 		shaders: false,
@@ -155,13 +157,12 @@ const RELATIVE = /^\.{1,2}\//;
 const BUILT_FILE = /\.(?:js|d\.ts)$/;
 
 /**
- * A file that the build copies from `src/` into `lib/` as it is: JavaScript, type declarations, and
- * the WGSL that a package's own modules import, which the Vite plugin compiles in the project that
- * uses the package. Only the first two have their imports rewritten.
+ * A file that the build copies from `src/` into `lib/` as it is: JavaScript and type declarations,
+ * which have their imports rewritten. A `.wgsl` file is not one: the pack compiles it instead.
  */
-const COPIED_FILE = /\.(?:js|d\.ts|wgsl)$/;
+const COPIED_FILE = /\.(?:js|d\.ts)$/;
 
-/** A WGSL file, which a module imports for the null3D Vite plugin to compile. */
+/** A WGSL file, which the pack compiles into a module that holds the compiled shader. */
 const WGSL_FILE = /\.wgsl$/;
 
 /** The built files in `lib/` of each repository-only entry point of a package. */
@@ -199,10 +200,9 @@ export function builtAddress(
 				[`${base}/index.js`, `${address}/index.js`],
 			];
 	// A script becomes the `.js` file that TypeScript wrote, or a folder its `index.js`. A `.wgsl`
-	// file stays itself: the build copies it into `lib/`, and the null3D Vite plugin compiles it in
-	// the project that uses the package.
+	// file becomes the module that holds its compiled shader, whose name adds `.js`.
 	for (const [path, rewritten] of candidates)
-		if ((/\.[cm]?js$/.test(path) || WGSL_FILE.test(path)) && exists(path)) return rewritten;
+		if (/\.[cm]?js$/.test(path) && exists(path)) return rewritten;
 	return null;
 }
 
@@ -331,10 +331,61 @@ function run(command: string, args: readonly string[], cwd: string): string {
 	return result.stdout;
 }
 
+/** The WGSL files in a package's `src/`, as paths from its folder. */
+export function shaderSources(dir: string): string[] {
+	return walkFiles(dir, 'src', (path) => WGSL_FILE.test(path));
+}
+
+/**
+ * The files that a packed package holds for its WGSL: the compiled module of each of its shader
+ * files, which it must hold, and the raw file, which it must not.
+ */
+export function shaderFiles(
+	root: string,
+	folder: string,
+): { required: string[]; forbidden: string[] } {
+	const sources = shaderSources(join(root, 'packages', folder)).map(
+		(path) => `${LIB_DIR}/${path.slice('src/'.length)}`,
+	);
+	return { required: sources.map((path) => `${path}.js`), forbidden: sources };
+}
+
+/**
+ * Compiles each WGSL file in a package's `src/` into `lib/`: the module that exports the compiled
+ * shader, and a module for each set of a custom material's builds. A project that installs the
+ * package takes the compiled form as it is, so its build never compiles the shader, and a page
+ * that loads the package from a CDN can load it too. The raw file stays out of `lib/`. A shader
+ * that does not compile fails the pack with a message that names the file.
+ */
+export function compileShaders(root: string, dir: string): void {
+	for (const path of shaderSources(dir)) {
+		const named = posix.join(relative(root, dir), path);
+		const compiled = compileWgslFileSync(named, named, readFileSync(join(dir, path), 'utf8'));
+		if ('error' in compiled) throw new Error(compiled.error.message);
+		for (const warning of compiled.warnings) console.warn(warning);
+		const builds = new ModuleBuilds();
+		const pack = new ShaderPack();
+		const value = builds.value(pack, compiled.shader);
+		const sets = buildSets(builds.materials);
+		const name = path.slice('src/'.length);
+		const base = posix.basename(name);
+		const to = join(dir, LIB_DIR, `${name}.js`);
+		const folder = dirname(to);
+		mkdirSync(folder, { recursive: true });
+		for (const set of sets)
+			writeFileSync(join(folder, `${base}-${set.name}.js`), setModule(set.records));
+		writeFileSync(
+			to,
+			`export default ${value};\n${pack.unpacker()}${loadBuilds(sets, (set) => `./${base}-${set}.js`)}`,
+		);
+	}
+}
+
 /**
  * Builds a package's `src/` into `lib/`: TypeScript writes the JavaScript and the declarations,
- * the build copies the JavaScript and declaration files that `src/` holds as they are, and then
- * rewrites every relative address to the built file. Fails when an import answers no built file.
+ * the build copies the JavaScript and declaration files that `src/` holds as they are, compiles
+ * the WGSL files, and then rewrites every relative address to the built file. Fails when an import
+ * answers no built file.
  */
 function compile(root: string, dir: string, build: PackageBuild): void {
 	const lib = join(dir, LIB_DIR);
@@ -373,6 +424,7 @@ function compile(root: string, dir: string, build: PackageBuild): void {
 		mkdirSync(dirname(to), { recursive: true });
 		copyFileSync(join(dir, path), to);
 	}
+	compileShaders(root, dir);
 	for (const path of walkFiles(dir, 'src', (path) => /(?<!\.test|\.d)\.ts$/.test(path))) {
 		const classes = internalConstructorClasses(readFileSync(join(dir, path), 'utf8'));
 		if (classes.length === 0) continue;
@@ -496,14 +548,15 @@ export function exportTargets(exports: unknown): string[] {
 /**
  * What is wrong with a packed package, from its manifest and the paths of the files it holds
  * (without the tarball's `package/` folder). The rules: public with provenance, no `workspace:`
- * versions, every export and command present, every file in `required` present, and no file in
- * `forbidden`.
+ * versions, every export and command present, every file in `required` present, no file in
+ * `forbidden`, and no raw WGSL file in `rawShaders`.
  */
 export function packageProblems(
 	manifest: Manifest,
 	files: ReadonlySet<string>,
 	required: readonly string[],
 	forbidden: readonly string[] = [],
+	rawShaders: readonly string[] = [],
 ): string[] {
 	const problems: string[] = [];
 	const { publishConfig } = manifest;
@@ -526,6 +579,9 @@ export function packageProblems(
 	for (const file of required) if (!files.has(file)) problems.push(`it lacks ${file}`);
 	for (const file of forbidden)
 		if (files.has(file)) problems.push(`it holds ${file}, which only the repository uses`);
+	for (const file of rawShaders)
+		if (files.has(file))
+			problems.push(`it holds ${file}, whose compiled module must take its place`);
 	return problems;
 }
 
@@ -588,6 +644,7 @@ export function shaderModuleJsFiles(root: string): string[] {
  * source.
  */
 export function packPackages(root: string, out: string): PackedPackage[] {
+	refuseStaleCore(root);
 	rmSync(out, { recursive: true, force: true });
 	mkdirSync(out, { recursive: true });
 	const folders = publicPackages(root);
@@ -621,8 +678,9 @@ function packEach(root: string, out: string, folders: readonly string[]): Packed
 				.filter((line) => line.startsWith('package/') && !line.endsWith('/'))
 				.map((line) => line.slice('package/'.length)),
 		);
-		const required = [...(PACKAGES[folder]?.required ?? [])];
-		const forbidden = [...repositoryOnlyFiles(packageBuild(folder))];
+		const shaders = shaderFiles(root, folder);
+		const required = [...(PACKAGES[folder]?.required ?? []), ...shaders.required];
+		const forbidden = repositoryOnlyFiles(packageBuild(folder));
 		if (PACKAGES[folder]?.shaders) {
 			required.push(...shaderDeclarationFiles(root));
 			forbidden.push(...shaderModuleJsFiles(root));
@@ -630,7 +688,7 @@ function packEach(root: string, out: string, folders: readonly string[]): Packed
 			if (existsSync(join(root, 'packages', folder, SHADER_ARTIFACT)))
 				required.push(SHADER_ARTIFACT);
 		}
-		for (const problem of packageProblems(manifest, files, required, forbidden))
+		for (const problem of packageProblems(manifest, files, required, forbidden, shaders.forbidden))
 			problems.push(`${manifest.name}: ${problem}`);
 		packed.push({ folder, name: manifest.name, version: manifest.version, tarball });
 	}

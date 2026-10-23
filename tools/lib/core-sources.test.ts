@@ -6,6 +6,7 @@ import {
 	coreFromOtherSources,
 	coreSourcesServer,
 	coreSourcesStamp,
+	refuseStaleCore,
 	STAMP_MODULE,
 	stampGlue,
 } from './core-sources';
@@ -83,18 +84,18 @@ describe('the dev server', () => {
 	});
 });
 
-describe('the core that a page build ships', () => {
-	/** A checkout with the core's crate and no built core yet. */
-	const checkout = () => repository();
-	/** Writes a built core whose glue carries `stamp`. */
-	const buildCore = (root: string, stamp: string) => {
-		for (const build of ['single', 'threaded']) {
-			const glue = join(root, `packages/engine/dist/wasm/${build}/null3d.js`);
-			mkdirSync(dirname(glue), { recursive: true });
-			writeFileSync(glue, stampGlue('export {};\n', stamp));
-		}
-	};
+/** A checkout with the core's crate and no built core yet. */
+const checkout = () => repository();
+/** Writes a built core whose glue carries `stamp`. */
+const buildCore = (root: string, stamp: string) => {
+	for (const build of ['single', 'threaded']) {
+		const glue = join(root, `packages/engine/dist/wasm/${build}/null3d.js`);
+		mkdirSync(dirname(glue), { recursive: true });
+		writeFileSync(glue, stampGlue('export {};\n', stamp));
+	}
+};
 
+describe('the core that a page build ships', () => {
 	it('accepts the cores that this checkout built', () => {
 		const root = checkout();
 		buildCore(root, coreSourcesStamp(root));
@@ -114,5 +115,25 @@ describe('the core that a page build ships', () => {
 		buildCore(root, coreSourcesStamp(root));
 		writeFileSync(join(root, 'packages/engine/dist/wasm/threaded/null3d.js'), 'export {};\n');
 		expect(coreFromOtherSources(root)).toContain('the threaded engine core');
+	});
+});
+
+describe('a build that packs or ships the core', () => {
+	it('stops with the message that names bun run build', () => {
+		const root = checkout();
+		buildCore(root, '0123456789abcdef');
+		expect(() => refuseStaleCore(root)).toThrow('Run bun run build.');
+	});
+
+	it('passes a core that this checkout built', () => {
+		const root = checkout();
+		buildCore(root, coreSourcesStamp(root));
+		expect(() => refuseStaleCore(root)).not.toThrow();
+	});
+
+	it('asks nothing of a project that installs the engine package', () => {
+		const root = fixture({ 'package.json': '{ "name": "a project" }\n' });
+		expect(coreFromOtherSources(root)).toBeNull();
+		expect(() => refuseStaleCore(root)).not.toThrow();
 	});
 });

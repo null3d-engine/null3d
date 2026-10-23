@@ -3,25 +3,25 @@ id: api/impostors
 title: Impostors (@null3d/impostors)
 status: experimental
 since: "0.2"
-summary: "createImpostors: far objects as camera-facing cards that show the stored view nearest the camera; mergeFarGeometry: one mesh per far grid cell."
+summary: "createImpostors: far objects as camera-facing cards that blend the three stored views nearest the camera and light from baked normals; mergeFarGeometry: one mesh per far grid cell."
 ---
 
 # Impostors
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: a bake helper that draws the views with the engine's scene passes, blending the three nearest views, and an `assets impostor` command. Coding agents must not use these yet.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: a bake helper that draws the views with the engine's scene passes, and an `assets impostor` command. Coding agents must not use these yet.
 
 The demo "Impostors" in `examples/impostors` draws a pine forest three ways by distance. Level-of-detail meshes stand near, one merged mesh stands per grid cell in the middle, and cards of a code-made atlas stand far out. Press L there to draw the far band as meshes instead, and compare.
 
 ```mermaid
 flowchart LR
-    views["A bake draws the object<br/>from each cell's direction"] --> atlas["One atlas texture:<br/>the octahedral grid<br/>of views"]
-    atlas --> cards["createImpostors:<br/>a sprite batch of cards<br/>that face the camera"]
-    eye["The camera's position<br/>each frame"] --> pick["update(eye) writes<br/>the nearest view<br/>into each card's frame"]
-    pick --> cards
+    views["A bake draws the object<br/>from each cell's direction"] --> atlas["Two atlases: the octahedral<br/>grid of colors, and the grid<br/>of normals and depths"]
+    atlas --> cards["createImpostors:<br/>one instance batch of cards<br/>that face the screen"]
+    eye["The frame's camera"] --> blend["The card's material blends<br/>the three nearest views<br/>and lights them"]
+    blend --> cards
     copies["Many copies of a mesh,<br/>a far level of detail"] --> merge["mergeFarGeometry:<br/>one mesh per grid cell"]
 ```
 
-A far object covers few pixels, so its triangles cost work that no one sees. A level of detail cuts the triangles but keeps one draw per object. An impostor goes further. A bake draws the object from many directions into one atlas ahead of time. Far away, the object draws as one card that faces the camera. The card shows the stored view nearest the camera. Many cards draw in one sprite batch.
+A far object covers few pixels, so its triangles cost work that no one sees. A level of detail cuts the triangles but keeps one draw per object. An impostor goes further. A bake draws the object from many directions into atlases ahead of time. Far away, the object draws as one card that faces the screen. The card blends the three stored views nearest the camera, and the light falls on it from the normals the bake stored, so a card follows the scene's sun. Many cards draw in one instance batch.
 
 `@null3d/impostors` holds the cards and a second tool for far geometry. `mergeFarGeometry` writes many copies of a mesh into the arrays of one mesh. A whole grid cell of a forest or a skyline then draws in one draw.
 
@@ -35,61 +35,52 @@ bun add @null3d/engine @null3d/impostors
 
 ## Create the cards
 
-`createImpostors` makes one sprite batch: one card per position, each showing a cell of the atlas. The cards face the camera, cull and sort as every sprite does, on WebGPU and WebGL2.
+`createImpostors` makes one instance batch: one quad per position, drawn by the package's material. Each quad faces the screen, and the material blends the three atlas views nearest the direction from the card toward the eye. The cards cull and draw as any batch does, on WebGPU and WebGL2.
 
 ```ts
 import { createImpostors, octahedralAtlas } from '@null3d/impostors';
 import { defineSketch } from '@null3d/engine';
 
-export default defineSketch(async ({ scene, assets }) => {
+export default defineSketch(({ scene, materials, geometry, assets }) => {
   const camera = scene.createPerspectiveCamera({ position: [0, 8, 30], target: [0, 3, 0] });
   scene.setActiveCamera(camera);
 
-  // The atlas holds the object's views. A bake makes it, or a tool writes it.
+  // The atlases hold the object's views. A bake makes them, or a tool writes them.
   const atlas = octahedralAtlas(8);
-  const texture = await assets.loadTexture('forest-tree-impostor.png');
+  const color = await assets.loadTexture('forest-tree-impostor.png');
+  const surface = await assets.loadTexture('forest-tree-impostor-surface.png');
   const positions = new Float32Array(20_000 * 3);
   for (let i = 0; i < 20_000; i++) {
     positions.set([(i % 100) * 2 - 100, 0, Math.floor(i / 100) * 2 - 100], i * 3);
   }
-  const trees = await createImpostors(scene, {
-    texture,
-    atlas,
-    positions,
-    size: 6,
-    center: [0.5, 0],
-    alphaMode: 'mask',
-  });
-
-  // The camera's position, which each frame writes into the same array.
-  const eye: [number, number, number] = [0, 0, 0];
-  return {
-    onUpdate() {
-      // The camera has no parent here, so its own position is its world position.
-      camera.getPosition(eye);
-      trees.update(eye);
-    },
-  };
+  const trees = createImpostors(
+    { scene, materials, geometry },
+    { color, surface, atlas, positions, size: 6, alphaMode: 'mask' },
+  );
 });
 ```
 
-`update(eye)` writes into each card the cell nearest the direction from the card toward the eye. Call it once a frame with the camera's position in the world. Keep one array for the position, as above, so the frame loop allocates nothing.
+The cards need no per-frame call. The material reads the eye from the frame's camera, so a camera that flies through the forest changes what every card shows with nothing written on the CPU. That is also why the cards take world positions: the engine draws everything relative to the camera, so a forest far from the world's origin keeps the precision of 32-bit floats.
 
-A camera with no parent reports its own position at once with `getPosition`. `camera.getWorldPosition` reports the world matrix of the frame that last ran. A sketch's first update therefore reads the world's origin, and every card shows the view from there. Use `getWorldPosition` from the second frame on, or `getPosition` while the camera has no parent.
+The cards are a static batch. After you change cards' positions or sizes through `trees.batch`, call `trees.markDirty(start, count)` for those cards. The batch uploads them, and the next frame draws them where they now stand.
 
-A card shows one view: three-way blending is a later step.
-
-The cards are a static sprite batch. `update` marks only the cards whose view changed, so a still camera uploads nothing. When the eye has not moved since the last call, `update` returns at once. After you change cards' positions, sizes or colors through `trees.sprites`, call `trees.markDirty(start, count)` for those cards. The batch then uploads them, and the next `update` picks every view again.
-
-The positions are relative to `origin`, which is the world's origin by default. Set `origin` near a forest far from the world's origin, so the cards keep the precision of 32-bit floats. `update` takes the eye in the world, and subtracts the origin itself.
+A card's light comes from the scene's lights, as a mesh's does. The surface atlas holds each view's normal, so the sun lights the side of the tree that it would light on the mesh.
 
 ## The atlas and its cells
 
-`octahedralAtlas(views)` gives the squarest grid that holds at least `views` views, as `{ columns, rows }`. The cells count from the top left, along each row and then down, as a sprite atlas does.
+`octahedralAtlas(views)` gives the squarest grid that holds at least `views` views, as `{ columns, rows }`. The cells count from the top left, along each row and then down, as an image's rows do. The rows of the texture run from the bottom up, as `textures.fromData` reads them.
 
 `frameDirection(frame, atlas)` gives the direction a cell's view is drawn from. `impostorFrame(direction, atlas)` gives the cell a direction shows. A bake walks `frameDirection` over every frame. The cards pick their cells as `impostorFrame` does. The two agree on every cell, because they are inverses. `encodeOctahedral` and `decodeOctahedral` fold the directions onto one square. The front half of the sphere fills the square's middle diamond, and the back half fills its four corners. So a grid covers both poles too. The back pole, straight behind, lands on the corner at the bottom right.
 
 A bake needs the direction of each cell and one camera per cell, looking from that direction at a distance that frames the object. The engine's [`render.addPass`](../concepts/render-graph.md) draws a camera's view into a texture. So a sketch can bake the views at run time and copy them into one atlas.
+
+## The surface atlas
+
+The second atlas holds what the card's light needs, in the cells of the first: red and green are the octahedral code of the view's normal, blue is the point's depth from the view's front, 0, to its back, 1, and alpha is its coverage. The normal lies in the view's space, where x and y run across and up the picture and z points at the viewer, so the bake stores the surface itself and never its light.
+
+`encodeImpostorSurface(normal, depth, coverage, out)` writes those four bytes. A bake calls it for each texel of each cell, after `frameDirection` gives the cell's direction. Nothing reads the depth yet: the hand-over from a card to the mesh beside it will use it.
+
+The demo's bake in `examples/impostors/forest.ts` shows the whole loop.
 
 ## Merged far geometry
 
@@ -113,7 +104,7 @@ for (const group of farCellGroups(centers, 64)) {
 
 ## Compared with three.js
 
-three.js has no impostor or merged-far-geometry helper. Its `LOD` picks one whole object by distance, which null3D does with [`mesh.setLevels`](geometry.md). Build the impostor atlas and the merged meshes outside a three.js renderer too, and draw the cards as `Sprite`s and the merged mesh as a `Mesh`.
+three.js has no impostor or merged-far-geometry helper. Its `LOD` picks one whole object by distance, which null3D does with [`mesh.setLevels`](geometry.md). Build the atlases and the merged meshes outside a three.js renderer too, and draw the cards as `InstancedMesh` of one quad with a `ShaderMaterial`, and the merged mesh as a `Mesh`.
 
 ## API reference
 

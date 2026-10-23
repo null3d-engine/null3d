@@ -1725,9 +1725,13 @@ pub mod sizes {
     /// Bytes of the uniform block of the shadow atlas's tiles: a matrix for each of the 24 tiles,
     /// then a vector for each, then the filter's vector.
     pub const SHADOW_TILES_UNIFORM_BYTES: u32 = 1936;
-    /// Bytes of the frame's shadow settings: the cascades' block followed by the tiles' block, one
-    /// binding of the frame's group (D-146).
-    pub const SHADOW_SETTINGS_BYTES: u32 = SHADOW_UNIFORM_BYTES + SHADOW_TILES_UNIFORM_BYTES;
+    /// Bytes of the uniform block of the sun's hero shadow: its matrix, then its vector of the
+    /// texel size, the light's biases and its layer.
+    pub const SHADOW_HERO_UNIFORM_BYTES: u32 = 80;
+    /// Bytes of the frame's shadow settings: the cascades' block, the tiles' block and the hero's,
+    /// one binding of the frame's group (D-146).
+    pub const SHADOW_SETTINGS_BYTES: u32 =
+        SHADOW_UNIFORM_BYTES + SHADOW_TILES_UNIFORM_BYTES + SHADOW_HERO_UNIFORM_BYTES;
     /// Bytes of the background's uniform block: nine vectors, which the cube map, the sky and a
     /// plain color read (see `null3d_render::background`).
     pub const BACKGROUND_UNIFORM_BYTES: u32 = 144;
@@ -2712,6 +2716,10 @@ pub fn typescript_constants() -> String {
                 (
                     "SHADOW_TILES_UNIFORM_BYTES",
                     sizes::SHADOW_TILES_UNIFORM_BYTES,
+                ),
+                (
+                    "SHADOW_HERO_UNIFORM_BYTES",
+                    sizes::SHADOW_HERO_UNIFORM_BYTES,
                 ),
                 ("BACKGROUND_UNIFORM_BYTES", sizes::BACKGROUND_UNIFORM_BYTES),
             ],

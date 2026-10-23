@@ -221,6 +221,7 @@ impl<B: FrameBuilder> World<B> {
             auto: false,
             contact: 0.0,
             layers: DEFAULT_LAYERS,
+            hero: None,
         }));
     }
 

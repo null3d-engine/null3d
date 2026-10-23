@@ -114,6 +114,59 @@ export class ModuleBuilds {
 	}
 }
 
+/** One set of a module's custom material builds, as its own module carries them. */
+export interface BuildSet {
+	/** The module's name, which tells the set's builds apart from a build of other ones. */
+	readonly name: string;
+	/** The GPU path and the permutation bits of the set, as the engine names it: `"wgsl 2"`. */
+	readonly key: string;
+	/** The builds of each material of the module, by name. */
+	readonly records: readonly Builds[];
+}
+
+/**
+ * The sets that hold `materials`' builds: one for each GPU path and value of its fixed bits, each
+ * with the builds of every material that the set serves.
+ */
+export function buildSets(materials: readonly Builds[]): BuildSet[] {
+	const sets: BuildSet[] = [];
+	for (const target of ['wgsl', 'glsl'] as const)
+		for (const set of setsOf(target)) {
+			const records = materials.map((variants) => buildsOfSet(variants, target, set));
+			if (records.every((record) => Object.keys(record).length === 0)) continue;
+			const json = JSON.stringify(records);
+			const digest = createHash('sha256').update(json).digest('hex').slice(0, 16);
+			sets.push({ name: `material-${target}-${set}-${digest}`, key: `${target} ${set}`, records });
+		}
+	return sets;
+}
+
+/** The code of the module that holds one set of builds. */
+export function setModule(records: readonly Builds[]): string {
+	const pack = new ShaderPack();
+	return `export default ${pack.value(records)};\n${pack.unpacker()}`;
+}
+
+/**
+ * The function that imports the set of builds that a material needs when the engine first needs
+ * it, or nothing for a module without sets. `address` gives the module of each set, which is a
+ * virtual module on the dev server and a file beside the module in a packed package.
+ */
+export function loadBuilds(sets: readonly BuildSet[], address: (name: string) => string): string {
+	if (sets.length === 0) return '';
+	const loaders = sets.map(
+		({ name, key }) => `${JSON.stringify(key)}: () => import(${JSON.stringify(address(name))})`,
+	);
+	return `
+function ${LOAD_BUILDS}(target, set) {
+	const load = {
+		${loaders.join(',\n\t\t')},
+	}[target + ' ' + set];
+	return load ? load() : Promise.resolve({ default: [] });
+}
+`;
+}
+
 /** The sets of builds that the plugin wrote, by the name of each set's virtual module. */
 export class MaterialBuilds {
 	private readonly sets = new Map<string, Builds[]>();
@@ -126,44 +179,21 @@ export class MaterialBuilds {
 	 * previous compile go, unless another module has the same.
 	 */
 	finish(file: string, builds: ModuleBuilds): string {
-		const names = new Set<string>();
-		const loaders: string[] = [];
-		if (builds.materials.length > 0)
-			for (const target of ['wgsl', 'glsl'] as const)
-				for (const set of setsOf(target)) {
-					const records = builds.materials.map((variants) => buildsOfSet(variants, target, set));
-					if (records.every((record) => Object.keys(record).length === 0)) continue;
-					const json = JSON.stringify(records);
-					const digest = createHash('sha256').update(json).digest('hex').slice(0, 16);
-					const name = `material-${target}-${set}-${digest}`;
-					this.sets.set(name, records);
-					names.add(name);
-					loaders.push(
-						`${JSON.stringify(`${target} ${set}`)}: () => import(${JSON.stringify(`${MATERIAL_BUILDS}${name}`)})`,
-					);
-				}
+		const sets = buildSets(builds.materials);
+		const names = new Set(sets.map((set) => set.name));
+		for (const set of sets) this.sets.set(set.name, [...set.records]);
 		const before = this.owners.get(file);
 		if (names.size > 0) this.owners.set(file, names);
 		else this.owners.delete(file);
 		for (const name of before ?? [])
 			if (!names.has(name) && !this.owned(name)) this.sets.delete(name);
-		if (loaders.length === 0) return '';
-		return `
-function ${LOAD_BUILDS}(target, set) {
-	const load = {
-		${loaders.join(',\n\t\t')},
-	}[target + ' ' + set];
-	return load ? load() : Promise.resolve({ default: [] });
-}
-`;
+		return loadBuilds(sets, (name) => `${MATERIAL_BUILDS}${name}`);
 	}
 
 	/** The code of the virtual module `id`, or undefined for a module that this plugin did not name. */
 	module(id: string): string | undefined {
 		const records = this.sets.get(id.slice(id.lastIndexOf('/') + 1));
-		if (!records) return undefined;
-		const pack = new ShaderPack();
-		return `export default ${pack.value(records)};\n${pack.unpacker()}`;
+		return records && setModule(records);
 	}
 
 	/** True when a module's current compile has the set named `name`. */

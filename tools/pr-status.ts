@@ -22,11 +22,7 @@ const BASE = 'origin/main';
 
 /** Tasks whose work is partly on the branch: the part that landed, and the part that remains. */
 const PARTIAL: Readonly<Record<string, string>> = {
-	'M3-L1':
-		'the distance rule, small-object culling and the per-copy dither are in; the distance bands with M3-A6 remain',
-	'M3-L2':
-		'copy slices, a level material and the per-object bias are in; index-range levels and skinned levels remain',
-	'M3-L3': 'the planner and the stored tree are in; the GPU stage is on its branch',
+	'M3-L3': 'the planner and the stored tree are in; the GPU stage is landing now',
 	'M3-C1':
 		'the scene, its lanes, rain and the hero car are in; the moods, the instances demo and the device figures remain',
 	'M3-T1': 'the measured fence is in; the trim is on its branch',
@@ -79,7 +75,7 @@ function description(): string {
 	const lines = [
 		'One pull request for the whole of the milestone that ships 0.2.0. It is not merged until every task below is done, so the list moves as the work lands.',
 		'',
-		'**How to read the marks:** `[x]` landed on this branch. `[~]` part of it landed, the rest is in progress. `[>]` built or being built on a helper branch, nothing landed here yet. `[ ]` not started.',
+		'**How to read the marks:** `[x]` done and on this branch. `[ ]` not done, with its state in the note after the name: part landed, on a helper branch, or not started.',
 		'',
 		`The milestone holds ${tasks.length} tasks. ${tasks.filter(({ id }) => landed.has(id) && !PARTIAL[id]).length} are landed, ${Object.keys(PARTIAL).length} are part landed, ${ON_BRANCH.size} are in progress on a branch, and ${open.length} are open.`,
 		'',
@@ -88,10 +84,12 @@ function description(): string {
 		lines.push(`### ${title}`, '');
 		for (const { id, name } of tasks) {
 			if (!letters.includes(id.split('-')[1]?.[0] ?? '')) continue;
-			// A task that is partly on the branch reads as partly done, whatever its trailer says.
-			const mark = PARTIAL[id] ? '~' : landed.has(id) ? 'x' : ON_BRANCH.has(id) ? '>' : ' ';
+			// GitHub draws a checkbox only for `[x]` and `[ ]`, so a task that is part done or on a
+			// branch keeps the empty box and says its state in the note; anything else reads as text.
+			const done = landed.has(id) && !PARTIAL[id];
+			const mark = done ? 'x' : ' ';
 			const note = PARTIAL[id]
-				? ` — ${PARTIAL[id]}`
+				? ` — part landed: ${PARTIAL[id]}`
 				: ON_BRANCH.has(id)
 					? ' — on a helper branch'
 					: NOTES[id]

@@ -449,6 +449,19 @@ describe('structural changes', () => {
 });
 
 describe('scene.find', () => {
+	test('bounds belong to every object, so a group can carry the sphere a hero shadow reads', () => {
+		const { scene, row, take } = fakeCore();
+		const car = scene.createGroup();
+		expect(row(car, 'radii')).toEqual([0]);
+		take();
+		car.setBounds([0, 1, -0.5], 2.5);
+		expect(row(car, 'centers')).toEqual([0, 1, -0.5]);
+		expect(row(car, 'radii')).toEqual([2.5]);
+		expect(take()).toEqual([
+			[C.COMMAND_SET_FLAGS, car.handle, C.FLAG_CUSTOM_BOUNDS, C.FLAG_CUSTOM_BOUNDS],
+		]);
+	});
+
 	test('finds the first live object with a name, in the order of creation', () => {
 		const { scene } = fakeCore();
 		const first = scene.createGroup({ name: 'crate' });

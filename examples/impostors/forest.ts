@@ -1,11 +1,16 @@
 // The impostors demo's scenery, made in code: the shared pine generator on rolling hills, split by
 // distance from the middle into three bands. The nearest band stands as level-of-detail meshes in
 // one instance batch, the middle band as one merged mesh per grid cell, and the farthest as cards
-// of the octahedral atlas. The atlas is drawn here too: each cell holds the pine as a cut-out seen
-// from that cell's direction, lit by the sun from that side, so a card's picture changes as the
-// camera moves around it.
+// of the octahedral atlas. The atlases are drawn here too: each cell holds the pine as a cut-out
+// seen from that cell's direction, with the colour of its needles and its normal and depth, so the
+// card is lit by the sun that the scene has now and a moving sun turns across it.
 import { math } from '@null3d/engine';
-import { frameDirection, type OctahedralAtlas, octahedralAtlas } from '@null3d/impostors';
+import {
+	encodeImpostorSurface,
+	frameDirection,
+	type OctahedralAtlas,
+	octahedralAtlas,
+} from '@null3d/impostors';
 import { ground } from '../lib/pines';
 
 export { ground, hills, pineArrays, pineWithLevels } from '../lib/pines';
@@ -66,6 +71,25 @@ export function bands(): Bands {
 	};
 }
 
+/** The part of an instance batch that a tree writes to. */
+interface Batch {
+	positions: Float32Array;
+	rotations: Float32Array;
+	scales: Float32Array;
+	markDirty(first: number, count: number): void;
+}
+
+/** Puts each tree in `trees` into `batch` from copy `first`, and marks that range changed. */
+export function fillTrees(batch: Batch, trees: readonly Tree[], first = 0): void {
+	for (const [k, tree] of trees.entries()) {
+		const at = first + k;
+		batch.positions.set([tree.x, tree.y, tree.z], at * 3);
+		batch.rotations.set([0, Math.sin(tree.turn / 2), 0, Math.cos(tree.turn / 2)], at * 4);
+		batch.scales.fill(tree.scale, at * 3, at * 3 + 3);
+	}
+	batch.markDirty(first, trees.length);
+}
+
 /** A copy's transform, column-major: moved to the tree, turned about y and scaled. */
 export function place({ x, y, z, turn, scale }: Tree): number[] {
 	const [c, s] = [Math.cos(turn) * scale, Math.sin(turn) * scale];
@@ -94,50 +118,68 @@ function canopy(y: number): number {
 }
 
 /**
- * The octahedral atlas of a pine whose near band stands as meshes: every cell holds the tree's
- * cut-out seen from the cell's direction, shaded for the sun's side and height. `light` is the
- * direction the sunlight travels, so the sun sits opposite it. The rows run from the bottom up, as
- * `textures.fromData` reads them, and the cells count from the top left, as sprites show them.
+ * The two octahedral atlases of a pine whose near band stands as meshes. Every cell of the colour
+ * atlas holds the tree's cut-out seen from the cell's direction, as its own colour, with no light
+ * in it: the card material lights it from the sun that the scene has now. The surface atlas holds
+ * the same cells' normals, in each view's space, and their depth, so the light bends across the
+ * canopy and the cards of a turning sun stay lit from the side it stands on. The rows run from the
+ * bottom up, as `textures.fromData` reads them, and the cells count from the top left, as sprites
+ * show them.
  */
-export function impostorAtlas(light: readonly [number, number, number]): {
+export function impostorAtlases(): {
 	atlas: OctahedralAtlas;
-	width: number;
-	height: number;
-	data: Uint8Array;
+	color: { width: number; height: number; data: Uint8Array };
+	surface: { width: number; height: number; data: Uint8Array };
 } {
 	const { columns, rows } = CELLS;
 	const width = columns * TEXELS;
 	const height = rows * TEXELS;
-	const data = new Uint8Array(width * height * 4);
-	const sunAzimuth = Math.atan2(-(light[0] as number), -(light[2] as number));
+	const color = new Uint8Array(width * height * 4);
+	const surface = new Uint8Array(width * height * 4);
 	const direction: [number, number, number] = [0, 0, 0];
+	const normal: [number, number, number] = [0, 0, 1];
+	const texel = new Uint8Array(4);
 	for (let frame = 0; frame < columns * rows; frame++) {
 		frameDirection(frame, CELLS, direction);
-		const [dx, dy, dz] = direction;
-		// A view toward the sun sees the dark side of the canopy, and one away from it the lit side.
-		const fromSun = 0.5 - 0.5 * Math.cos(Math.atan2(dx, dz) - sunAzimuth);
-		const lit = (0.5 + 0.5 * fromSun) * (0.85 + 0.15 * dy);
 		const left = (frame % columns) * TEXELS;
 		const bottom = (rows - 1 - Math.floor(frame / columns)) * TEXELS;
 		for (let y = 0; y < TEXELS; y++)
 			for (let x = 0; x < TEXELS; x++) {
 				// The texel's place across the tree, and its height from the ground.
 				const [across, up] = [((x + 0.5) / TEXELS - 0.5) * 2, (y + 0.5) / TEXELS];
-				const edge = 1 - 2 / TEXELS;
 				const canopyEdge = canopy(up) * (1 + 0.06 * Math.sin(up * 40));
 				const foliage = Math.abs(across) < canopyEdge && up > 0.1 && up < 0.99;
 				const bole = Math.abs(across) < 0.035 && up < 0.72;
-				const at = ((bottom + y) * width + left + x) * 4;
 				if (!foliage && !bole) continue;
-				// Darker toward the outline, as a needle canopy is, and green deep inside.
+				const at = ((bottom + y) * width + left + x) * 4;
+				// Darker toward the outline and greener inside, as a needle canopy's own colour is.
 				const inside = foliage ? 1 - Math.abs(across) / Math.max(canopyEdge, 0.001) : 1;
-				const shade = (foliage ? 0.55 + 0.45 * inside : 0.5) * lit * (0.75 + 0.35 * up) * edge;
-				const color = foliage ? [26, 74, 34] : [58, 44, 32];
-				data[at] = Math.min(255, (color[0] as number) * shade);
-				data[at + 1] = Math.min(255, (color[1] as number) * shade);
-				data[at + 2] = Math.min(255, (color[2] as number) * shade);
-				data[at + 3] = 255;
+				const shade = (foliage ? 0.55 + 0.45 * inside : 0.5) * (0.75 + 0.35 * up);
+				const tone = foliage ? [26, 74, 34] : [58, 44, 32];
+				color[at] = Math.min(255, (tone[0] as number) * shade);
+				color[at + 1] = Math.min(255, (tone[1] as number) * shade);
+				color[at + 2] = Math.min(255, (tone[2] as number) * shade);
+				color[at + 3] = 255;
+				// The side of the tree that this point shows faces out of the plant, so its normal
+				// turns across the picture toward the outline; the canopy also tilts up.
+				const side = Math.max(-1, Math.min(1, across / Math.max(canopyEdge, 0.05)));
+				normal[0] = side;
+				normal[1] = foliage ? 0.35 : 0;
+				normal[2] = Math.sqrt(Math.max(0, 1 - side * side));
+				const reach = Math.hypot(normal[0], normal[1], normal[2]) || 1;
+				normal[0] /= reach;
+				normal[1] /= reach;
+				normal[2] /= reach;
+				encodeImpostorSurface(normal, 1 - normal[2], 1, texel);
+				surface[at] = texel[0] as number;
+				surface[at + 1] = texel[1] as number;
+				surface[at + 2] = texel[2] as number;
+				surface[at + 3] = texel[3] as number;
 			}
 	}
-	return { atlas: CELLS, width, height, data };
+	return {
+		atlas: CELLS,
+		color: { width, height, data: color },
+		surface: { width, height, data: surface },
+	};
 }
