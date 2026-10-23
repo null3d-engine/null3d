@@ -37,9 +37,6 @@ const PRESET_SPLATS = [100_000, 250_000, 500_000, 800_000] as const;
 /** The WebGL2 presets, which sort and upload the same splats with fewer threads in reach. */
 const WEBGL2_SPLATS = [50_000, 120_000, 250_000, 400_000] as const;
 
-/** The most splats that a batch holds without an explicit capacity, the Ultra preset's count. */
-const MOST_SPLATS = Math.max(...PRESET_SPLATS);
-
 /** The bytes of one batch row: its place, rotation, scales and color. */
 const ROW_BYTES = (3 + 4 + 3 + 4) * 4;
 
@@ -75,7 +72,8 @@ export interface SplatsOptions {
 	readonly extent?: number;
 	/**
 	 * The most splats that the batch holds, which caps every preset's budget. The default is the
-	 * Ultra preset's count, or the cloud's own count where that is smaller.
+	 * preset's own count on this device, or the cloud's own count where that is smaller, so a
+	 * cloud allocates what the device may draw.
 	 */
 	readonly capacity?: number;
 }
@@ -147,10 +145,9 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 		options.data ?? (await decodeFile(options.url as string | URL)),
 		'the splat cloud',
 	);
-	const capacity = Math.max(
-		1,
-		Math.min(Math.floor(options.capacity ?? MOST_SPLATS), Math.max(data.count, 1)),
-	);
+	// The rows that the batch holds, which the preset and the GPU path decide once the host has
+	// resolved them: a phone then pays for the splats that it may draw, not for the Ultra count.
+	let capacity = 1;
 	const description = defineFeature({
 		name: 'splats',
 		frame: 'transparent',
@@ -174,6 +171,13 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 		namespace: NAMESPACE,
 	});
 	const feature = host.add(description);
+	capacity = Math.max(
+		1,
+		Math.min(
+			Math.floor(options.capacity ?? (feature.settings.drawn as number)),
+			Math.max(data.count, 1),
+		),
+	);
 	const draw = await ctx.scene.addFeatureInstances(description, {
 		shader: splatShader,
 		vertices: QUAD,
