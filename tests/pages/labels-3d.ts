@@ -15,8 +15,14 @@ declare global {
 	}
 }
 
-/** Frames on screen that the page samples. */
+/** Frames on screen that the page samples, at most. */
 const SAMPLES = 90;
+/**
+ * How long the page samples for, in seconds. A sample needs the frame on screen to change, and a
+ * software renderer draws only a few frames a second, so a count alone would outlast the test's
+ * wait on a busy machine. The test checks a floor of samples of its own.
+ */
+const SAMPLE_SECONDS = 25;
 
 /** An element of the card's size, in CSS pixels, with no border or padding, in both engines. */
 function card(width: number, height: number, color: string): HTMLElement {
@@ -96,6 +102,7 @@ run('labels-3d', async () => {
 	await engine.firstFrame;
 	/** The frame whose labels the element showed, then its center, for each frame it moved. */
 	const samples: number[] = [];
+	const until = performance.now() + SAMPLE_SECONDS * 1000;
 	await new Promise<void>((resolve) => {
 		let last = -1;
 		const sample = () => {
@@ -105,7 +112,7 @@ run('labels-3d', async () => {
 				const [x, y, width, height] = boxOf(face);
 				samples.push(frame, x + width / 2, y + height / 2);
 			}
-			if (samples.length >= SAMPLES * 3) resolve();
+			if (samples.length >= SAMPLES * 3 || performance.now() >= until) resolve();
 			else requestAnimationFrame(sample);
 		};
 		requestAnimationFrame(sample);
