@@ -259,7 +259,8 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
     // Lit and unlit, and the final pass's, made for frames whose render scale drops.
     assert_eq!(count(&commands, Op::CreateRenderPipeline), 3);
     // Culling, the three steps of light clustering, and the cluster levels' pass, whose three
-    // dispatches share one pipeline.
+    // dispatches share one pipeline. The pass builds its pipeline at the first frame, before any
+    // tree exists, so its shader's download overlaps the page's own loads.
     assert_eq!(count(&commands, Op::CreateComputePipeline), 5);
     assert_eq!(count(&commands, Op::ResizeCanvas), 1);
     // The color and depth targets, the shadow map and the shadow atlas, one texel each while no
