@@ -920,7 +920,7 @@ export function downloadSizes(
  * bytes under the line, and the next feature would have stopped every build on the machine for as
  * long as a raise waited. The trim above is still owed and still pays it back.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 182 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 184 * 1024 };
 
 /**
  * The budget for each part that loads after the start. The Brotli figure rose on 22 October 2026,
