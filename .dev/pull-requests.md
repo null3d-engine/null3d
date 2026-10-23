@@ -412,7 +412,7 @@ Before you add or change a job or a step, answer these questions:
 6. Does it use every core? Does its split follow measured cost, and does the costliest unit split?
 7. Does it need to run on every push? Gate it on the `changes` job, or let it reuse its pass, when its inputs seldom change.
 8. Does the change touch a file that a cache's key covers, without changing what the cache holds? Keep test-only code in the tests, outside the key. A list that two shader tests shared from the shader library changed the compiler's stamp, and every shader had to compile again, on the Mac and in CI ([D-218](decisions/D-218-efficient-ci-jobs.md)).
-9. When it hands many files or large files to other jobs, does it use `.github/actions/archive`? The action packs them into one tar file that `zstd` compresses on every core and across files, which the artifact's own zip does neither of. With `link`, builds that share files ship each content once. A small artifact can stay a plain one ([D-218](decisions/D-218-efficient-ci-jobs.md)).
+9. When it hands many files or large files to other jobs, does it use `.github/actions/archive`? The action packs them into one tar file that `zstd` compresses on every core and across files, which the artifact's own zip does neither of. With `link`, builds that share files ship each content once. A small artifact can stay a plain one ([D-218](decisions/D-218-efficient-ci-jobs.md)). The unpack passes with a warning when zstd meets a closed pipe after tar has unpacked the whole archive, and fails on any other error.
 
 How to review a run:
 

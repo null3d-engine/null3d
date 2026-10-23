@@ -77,8 +77,23 @@ runs:
       env:
         ROOT: ${{ inputs.root }}
         FOLDER: ${{ runner.temp }}/${{ inputs.name }}
+      # A tar that stops reading at the archive's end marker can close the pipe while zstd still
+      # writes the padding behind it. zstd then fails on the broken pipe, with its message or with
+      # the pipe's signal, although tar has unpacked every file, so that one failure, after tar
+      # passed, shows as a warning. Any other failure of either fails the step.
       run: |
         mkdir -p "$ROOT"
         shopt -s nullglob
-        for archive in "$FOLDER"/*.tar.zst; do zstd -dc "$archive" | tar -xf - -C "$ROOT"; done
-        rm -rf "$FOLDER"
+        set +o pipefail
+        errors="$RUNNER_TEMP/zstd-errors"
+        for archive in "$FOLDER"/*.tar.zst; do
+          zstd -dc "$archive" 2>"$errors" | tar -xf - -C "$ROOT"
+          status=("${PIPESTATUS[@]}")
+          cat "$errors" >&2
+          if [ "${status[1]}" != 0 ]; then exit "${status[1]}"; fi
+          if [ "${status[0]}" != 0 ]; then
+            [ "${status[0]}" = 141 ] || grep -q "Broken pipe" "$errors" || exit "${status[0]}"
+            echo "::warning::zstd met a closed pipe after tar unpacked all of $(basename "$archive")"
+          fi
+        done
+        rm -rf "$FOLDER" "$errors"
