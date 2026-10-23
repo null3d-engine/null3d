@@ -6,6 +6,7 @@
 import { join } from 'node:path';
 import { defineConfig } from 'vite';
 import null3d from '../packages/vite-plugin/src/index.ts';
+import { refuseStaleCore } from '../tools/lib/core-sources.ts';
 import { samplesServer } from '../tools/lib/samples.ts';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
 import { sourceResolve } from '../tools/lib/source-condition.ts';
@@ -15,7 +16,10 @@ const repo = join(import.meta.dirname, '..');
 export default defineConfig(({ isPreview }) => {
 	// The engine imports the shader modules, which git does not keep. A preview serves a build that
 	// already holds them.
-	if (!isPreview) ensureShaderModules(repo);
+	if (!isPreview) {
+		refuseStaleCore(repo);
+		ensureShaderModules(repo);
+	}
 	return {
 		root: import.meta.dirname,
 		base: './',
