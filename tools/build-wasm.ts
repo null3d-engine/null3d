@@ -1310,8 +1310,10 @@ async function main(): Promise<void> {
 	if (options.judgeParts !== undefined) {
 		// The parts' entries are those of every file of this build, so they make the next memo.
 		const entries = mergeSizeMemoParts(resolve(root, options.judgeParts));
-		printMemoUse(entries.met.size, entries.compressed);
-		keepSizeMemo(entries);
+		// Parts can each compress the same bytes, so their count can pass the count of distinct files.
+		console.log(
+			`the size parts compressed ${entries.compressed} files; the next size memo holds the sizes of ${entries.met.size} distinct files${keepSizeMemo(entries) ? '' : ', and is not kept, since nothing was compressed'}`,
+		);
 	}
 	const sizes: Record<string, SizeEntry> = {};
 	for (const variant of VARIANTS)
