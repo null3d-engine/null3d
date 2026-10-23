@@ -411,6 +411,13 @@ describe("CI's workflow", () => {
 		for (const [name, job] of readers) expect(needsOf(job), name).toContain('load-pages');
 	});
 
+	it("gives a draft's full run, started by marking it ready, a concurrency group of its own", () => {
+		const group = String((workflow as { concurrency?: { group?: string } }).concurrency?.group);
+		// The pushes after it run in the pull request's own group, so they never cancel it.
+		expect(group).toContain("github.event.action == 'ready_for_review'");
+		expect(group).toContain("format('pr-{0}{1}'");
+	});
+
 	it("moves the build job's files and the load builds only through the archive action", () => {
 		expect(hands(jobNamed('build'), 'page-wasm', 'upload')).toBe(true);
 		for (const [name, job] of Object.entries(jobs))
