@@ -483,6 +483,37 @@ describe('scene.find', () => {
 	});
 });
 
+describe('hold script property paths', () => {
+	test('writes a property that a script sets, and reads it back after the frame', () => {
+		const { scene } = fakeCore();
+		const car = scene.createGroup({ name: 'car' });
+		scene.setScriptPath(car, 'position', [1, 2, 3]);
+		scene.setScriptPath(car, 'scale', [2, 2, 2]);
+		scene.setScriptPath(car, 'visible', [0]);
+		expect(scene.readScriptPath(car, 'position')).toEqual([1, 2, 3]);
+		expect(scene.readScriptPath(car, 'scale')).toEqual([2, 2, 2]);
+		expect(scene.readScriptPath(car, 'visible')).toEqual([0]);
+	});
+
+	test('takes the property paths of animateProperty, and says what a wrong one misses', () => {
+		const { scene } = fakeCore();
+		const car = scene.createGroup({ name: 'car' });
+		expect(() => scene.setScriptPath(car, 'speed', [1])).toThrow('set() got "speed"');
+		expect(() => scene.setScriptPath(car, 'position', [1])).toThrow('which takes 3');
+		expect(() => scene.readScriptPath(car, 'intensity')).toThrow('which it does not take');
+	});
+
+	test('reads a camera lens, and names the objects that are close to a name', () => {
+		const { scene } = fakeCore();
+		scene.createGroup({ name: 'car' });
+		scene.createGroup({ name: 'crate' });
+		const camera = scene.createPerspectiveCamera({ fov: 60 });
+		expect(scene.readScriptPath(camera, 'fov')).toEqual([60]);
+		expect(scene.nearNames('cr')).toEqual(['crate']);
+		expect(scene.nearNames('zzz')).toEqual(['car', 'crate']);
+	});
+});
+
 describe('scene.createView', () => {
 	/** A camera of the scene, from the fake core. */
 	const camera = (scene: Scene) => scene.createPerspectiveCamera({ fov: 60 });
