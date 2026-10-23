@@ -34,9 +34,17 @@ const ON_BRANCH = new Set(['M3-B4']);
 /** A task that a commit names, but that the audit of the branch found unfinished. */
 const INCOMPLETE = new Set([
 	'M3-A2',
+	'M3-A4',
+	'M3-A6',
+	'M3-A9',
 	'M3-A10',
 	'M3-B1',
 	'M3-D9',
+	'M3-E1',
+	'M3-E2',
+	'M3-E3',
+	'M3-E4',
+	'M3-E6',
 	'M3-L1',
 	'M3-L2',
 	'M3-L3',
@@ -49,6 +57,20 @@ const INCOMPLETE = new Set([
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
 	'M3-A2': 'the canvas texture draws, but its picture test is red',
+	'M3-A4': "the bloom levels are readable, but the lens kit's streak does not read them",
+	'M3-A6':
+		'the band is tested on the CPU-culled path only; the GPU-driven path binds the ranges texture without one',
+	'M3-A9': 'the hero shadow draws, but D-219 still holds an empty cost placeholder',
+	'M3-E1':
+		'the hook exists and is unit-tested; its first user (the splats add-on) is not on the branch',
+	'M3-E2':
+		'the hook exists and is unit-tested; its first user is the splats add-on, which is not on the branch',
+	'M3-E3':
+		'the hook exists and is unit-tested; its first user is the splats add-on, which is not on the branch',
+	'M3-E4':
+		'the hook exists and is unit-tested; its first user is the splats add-on, which is not on the branch',
+	'M3-E6':
+		'the hook exists and is unit-tested; its first users are the splats and water add-ons, which are not on the branch',
 	'M3-A10': 'the sharpening draws, but its evidence does not close the task',
 	'M3-B1': 'the lens kit has no picture test and no cost per preset',
 	'M3-L4': 'the impostor cards are done; staged loading, coarse first, is not',
@@ -83,7 +105,14 @@ const git = (...args: string[]) =>
 /** Every task ID that a kept commit's `Task:` trailer names. A split task keeps a lower-case tail. */
 function landedTasks(): Set<string> {
 	const out = git('log', '--format=%b', `${BASE}..HEAD`);
-	return new Set(out.match(/M3-[A-Z0-9]+[a-z]?/g) ?? []);
+	// Only a trailer claims a task. A commit body that mentions an ID in prose, such as a
+	// `Docs-Checked:` line, must not tick it: the audit of 23 October found one task ticked that
+	// no commit had ever named in a trailer.
+	const claimed = out
+		.split('\n')
+		.filter((line) => /^Task:\s/.test(line))
+		.join('\n');
+	return new Set(claimed.match(/M3-[A-Z0-9]+[a-z]?/g) ?? []);
 }
 
 /** Each task of the plan, in its order, with the name it was given. */
