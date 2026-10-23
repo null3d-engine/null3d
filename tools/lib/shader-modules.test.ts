@@ -76,6 +76,13 @@ function repository(): string {
 	});
 }
 
+/** The environment without CI's demand that the shader set be freshly built. */
+function withoutFreshShaders(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	const copy = { ...env };
+	delete copy.NULL3D_REQUIRE_FRESH_SHADERS;
+	return copy;
+}
+
 describe('the shader modules', () => {
 	it('are the main module and the device modules beside it', () => {
 		expect(isShaderModule('shaders.ts')).toBe(true);
@@ -207,7 +214,9 @@ describe('the shader modules', () => {
 				`import { ensureShaderModules } from ${JSON.stringify(join(import.meta.dirname, 'shader-modules.ts'))};\nconsole.log(ensureShaderModules(${JSON.stringify(root)}));\n`,
 			);
 			const run = spawnSync('bun', [script], {
-				env: process.env,
+				// CI's docs-and-tools job asks for fresh shaders, and the child would inherit it and
+				// refuse the cached set before it read it, which is not what this test is about.
+				env: withoutFreshShaders(process.env),
 				encoding: 'utf8',
 				timeout: 30_000,
 			});
