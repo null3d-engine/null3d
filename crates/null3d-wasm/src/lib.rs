@@ -73,7 +73,7 @@ use null3d_render::mirror::Mirror;
 use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
 use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
-use null3d_render::patches::PatchTree;
+use null3d_render::patches::{PatchError, PatchTree};
 use null3d_render::physical_sky::Atmosphere;
 use null3d_render::pipelines::DepthBias;
 use null3d_render::probe_grid::ProbeGrid;
@@ -2014,20 +2014,19 @@ pub fn set_mesh_patches(mesh: u32, patches: u32, indices: u32, root: u32) -> u32
                 })
                 .collect();
             let first = records * 8;
-            PatchTree::new(
+            Some(PatchTree::new(
                 staging[first..first + indices as usize].to_vec(),
                 bounds,
                 runs,
                 root,
                 vertices,
-            )
-            .ok()
+            ))
         } else {
             None
         };
         drop(staging);
         match tree {
-            Some(tree) => {
+            Some(Ok(tree)) => {
                 let stored = e.renderer.set_mesh_patches(mesh, Some(tree));
                 e.structure_changed = true;
                 stored.map(|()| 1).map_err(|_| {
@@ -2036,6 +2035,14 @@ pub fn set_mesh_patches(mesh: u32, patches: u32, indices: u32, root: u32) -> u32
                     })
                 })
             }
+            Some(Err(error)) => Ok(match error {
+                PatchError::Empty => 2,
+                PatchError::Root => 3,
+                PatchError::Record => 4,
+                PatchError::Parent => 5,
+                PatchError::Vertex => 6,
+                PatchError::Bounds => 7,
+            }),
             None => Ok(0),
         }
     })

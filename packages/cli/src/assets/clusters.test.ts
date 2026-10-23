@@ -1,10 +1,11 @@
 import { afterAll, describe, expect, it, setDefaultTimeout } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Accessor, Document, NodeIO } from '@gltf-transform/core';
 import { parseGltf, readContainer } from '../../../engine/src/scene/gltf-parse.ts';
 import { clustersOf, NULL3D_CLUSTERS, Null3dClusters } from './cluster-extension.js';
+import { buildClusterFixture, CLUSTER_FILE, MODELS_DIR } from './cluster-fixture.js';
 import {
 	CLUSTER_MIN_TRIANGLES,
 	CLUSTER_TRIANGLES,
@@ -306,6 +307,12 @@ describe('the tree of a large mesh', () => {
 		expect(summary.triangles).toBeGreaterThan(summary.base);
 		expect(summary.bytes).toBeGreaterThan(0);
 	});
+
+	it('writes the model that the cluster sketch loads, byte for byte', async () => {
+		const built = await buildClusterFixture();
+		const committed = readFileSync(join(MODELS_DIR, CLUSTER_FILE));
+		expect(Buffer.from(built).equals(committed)).toBe(true);
+	}, 180_000);
 
 	it('writes the tree where the engine reads it', async () => {
 		const { doc, plans } = await planned;

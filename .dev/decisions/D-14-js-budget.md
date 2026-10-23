@@ -883,3 +883,16 @@ keeps the check useful, because a rise of 2 KB cannot hide a feature's cost the 
 
 The squeeze stands. This is the second rise in three days, and M3-T1's target of 160 KB is still far
 away. The next change that touches the start needs a trim, not another rise.
+## The cluster levels' shader, 23 October 2026
+
+The cluster levels' culling pass is a compute shader of 9,738 bytes of WGSL, 2,736 after Brotli, and
+every page's start carries it although only the WebGPU path builds its pipeline. It moved pipelined
+WebGL2 mode's start by 650 bytes, where it compresses beside the shader text already there. That
+fits the room that this morning's 184 KB line leaves, so it needs no rise of its own and takes none;
+the landing's build prints the figure.
+
+The trim it owes is to build the pass with the builds the engine loads on a feature's first use, as
+a material's shader does: a page that never draws a cluster tree then downloads none of it, and
+WebGL2, which never builds the pass, keeps its start. [D-213](D-213-cluster-levels.md) holds the
+drawing method and its numbers.
+

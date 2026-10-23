@@ -708,6 +708,10 @@ pub mod layout {
     /// view's parameters, the scene's tables, its compacted instances and indirect draws, then its
     /// depth pyramid or a placeholder, the cell offsets texture and the skin firsts texture.
     pub const CULL: u32 = 1;
+    /// Group 0 of the cluster levels' compute pipeline: the dispatch's parameters at a dynamic
+    /// offset, then the scene's patches and mesh records, its tree indices, the view's compacted
+    /// instances, and the view's counts, offsets, index list and indirect draws.
+    pub const CLUSTER_CULL: u32 = 52;
     /// Group 1 of render pipelines that read instances from data textures: the draw records.
     pub const DRAWS: u32 = 2;
     /// Group 2 of render pipelines that read instances from data textures: the textures.
@@ -2001,6 +2005,9 @@ pub mod template {
     pub const PICK_MAPS: u32 = 76;
     /// GPU picking with a masked unlit map: the pick template that binds its single base color map.
     pub const PICK_TEXTURE_MAPS: u32 = 77;
+    /// Cluster levels: one compute pipeline whose dispatch counts, scans or copies the patches of
+    /// a view, which the dispatch's parameters pick. WebGPU only.
+    pub const CLUSTER: u32 = 78;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -2008,7 +2015,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 77] = [
+    pub const NAMES: [(&str, u32); 78] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2085,6 +2092,7 @@ pub mod template {
         ("PICK_RESOLVE", PICK_RESOLVE),
         ("PICK_MAPS", PICK_MAPS),
         ("PICK_TEXTURE_MAPS", PICK_TEXTURE_MAPS),
+        ("CLUSTER", CLUSTER),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2187,6 +2195,7 @@ pub mod groups {
         (template::FINAL_BLOOM, own!(layout::FINAL_BLOOM)),
         (template::EXPOSURE_LUMINANCE, own!(layout::EFFECT)),
         (template::CULL, own!(layout::CULL)),
+        (template::CLUSTER, own!(layout::CLUSTER_CULL)),
         (template::LIGHT_COUNT, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_PLACE, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_WRITE, own!(layout::LIGHT_CLUSTERS)),
@@ -2585,6 +2594,7 @@ pub fn typescript_constants() -> String {
                 ("WEIGHTED_COMPOSITE", layout::WEIGHTED_COMPOSITE),
                 ("WEIGHTED_DEPTH_MS", layout::WEIGHTED_DEPTH_MS),
                 ("TRANSMISSION_COPY_MS", layout::TRANSMISSION_COPY_MS),
+                ("CLUSTER_CULL", layout::CLUSTER_CULL),
                 ("SUBSURFACE_BLUR", layout::SUBSURFACE_BLUR),
                 ("SUBSURFACE_COMPOSITE", layout::SUBSURFACE_COMPOSITE),
                 ("SUBSURFACE_COMPOSITE_MS", layout::SUBSURFACE_COMPOSITE_MS),
