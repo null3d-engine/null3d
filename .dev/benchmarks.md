@@ -423,7 +423,7 @@ A run folder holds every page's full result, with frames and images, and stays o
 - The page reports the median GPU time of a frame where the device has a GPU timer, and the median frame interval and CPU time everywhere. `direct=off` keeps the start-up probe from choosing the path that draws the mesh whole: without it the figures describe another drawing.
 - Run it on a phone or a tablet with the plan: `bun run devices:cloud --only bsgalaxys25-chrome --plan cluster-cost`, or in Safari on the iPad with `bun tests/real-browsers.ts --plan cluster-cost --lan ipad-safari`. The plan is timed, so the runner measures the display's refresh rate before each page.
 - Run it on the Mac in a quiet lane: `NULL3D_CLUSTER_COST=1 bun run test:browser -- cluster-cost.spec.ts`. `NULL3D_CLUSTER_PRESETS` narrows the presets, as a list.
-- The frame's GPU time falls by about a quarter as the camera draws back, which is the saving that coarser patches make. [D-231](decisions/D-231-cluster-levels-cost.md) gives each device's figures.
+- The frame's GPU time falls as the camera draws back, which is the saving that coarser patches make: by about a quarter on the phone and on the tablet's compatibility mode, and by a tenth on the tablet's core WebGPU path, where the fill of its many pixels weighs more. [D-231](decisions/D-231-cluster-levels-cost.md) gives each device's figures.
 
 ## Double-sided see-through objects
 
