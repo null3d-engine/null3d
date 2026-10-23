@@ -8,7 +8,7 @@ summary: "create, test, bench, check-addon, shot, upgrade, assets, docs, port, s
 
 # The `null3d` command
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `assets`, and step 0.3 adds `upgrade` and `check-addon`. The API is experimental, so it can still change between versions. The commands `create`, `docs`, `port`, `skills`, `mcp` and `doctor` are not built yet. Coding agents must not use them. `test` runs image tests, but no behavior tests yet.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `assets`, and step 0.3 adds `create`, `upgrade` and `check-addon`. The API is experimental, so it can still change between versions. The commands `docs`, `port`, `skills`, `mcp` and `doctor` are not built yet. Coding agents must not use them. `test` runs image tests, but no behavior tests yet.
 
 The `@null3d/cli` package holds the `null3d` command. You need no command to build or run a sketch: Vite and the null3D Vite plugin do that. The command does jobs that a bundler does not do, such as drawing a frame of your scene with no person watching.
 
@@ -21,6 +21,21 @@ bunx @null3d/cli --version
 ```
 
 The command needs Node 20.19 or later, or Node 22.12 or later, as Vite 8 does.
+
+## create
+
+`create` writes a new project from a template. The project runs with Vite, and it holds the rules and the hook that an AI agent uses.
+
+```sh
+bunx @null3d/cli create my-game
+bunx @null3d/cli create my-game --template empty
+```
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--template <name>` | The template to copy | `empty` |
+
+The folder must not exist, or it must be empty. The command writes its own version into the project's package pins, and it installs nothing. Run `bun install` in the new folder, then `bunx vite`. [Project structure](../getting-started/project-structure.md) lists the files and explains the agent hook.
 
 ## shot
 

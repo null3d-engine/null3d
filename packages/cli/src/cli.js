@@ -25,6 +25,10 @@ const COMMANDS = {
 		summary: "Runs the engine's gates on one add-on package, as a listing does",
 		load: () => import('./check-addon.js'),
 	},
+	create: {
+		summary: 'Makes a new project from a template, with an AGENTS.md and an agent hook',
+		load: () => import('./create.js'),
+	},
 	shot: {
 		summary: "Draws one frame of the project's page headless, and saves it as a PNG file",
 		load: () => import('./shot.js'),
