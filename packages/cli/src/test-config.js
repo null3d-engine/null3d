@@ -21,7 +21,7 @@ const MAX_HOLD = 600;
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /** The settings of a test. */
-const SETTINGS = ['name', 'sketch', 'page', 'hold', 'size', 'tiers'];
+const SETTINGS = ['name', 'sketch', 'page', 'hold', 'script', 'size', 'tiers'];
 
 /**
  * @typedef {object} ImageTest One image test of the project.
@@ -29,7 +29,9 @@ const SETTINGS = ['name', 'sketch', 'page', 'hold', 'size', 'tiers'];
  * @property {string} [sketch] The sketch module to draw, from the project's folder, with any query
  *   of its own.
  * @property {string} [page] The page to open instead, from the dev server's root.
- * @property {number} hold The sketch time to hold at, in seconds.
+ * @property {number} [hold] The sketch time to hold at, in seconds. Give `hold` or `script`.
+ * @property {string} [script] A timed script, from the project's folder, whose shot steps each draw
+ *   an image. Give `hold` or `script`.
  * @property {readonly [number, number]} size The image's width and height in pixels.
  * @property {readonly Tier[]} tiers The GPU tiers to draw on.
  */
@@ -77,7 +79,7 @@ function readTest(entry, exists) {
 	const problems = Object.keys(test)
 		.filter((key) => !SETTINGS.includes(key))
 		.map((key) => `"${key}" is not a setting of a test. A test takes ${SETTINGS.join(', ')}`);
-	const { name, sketch, page, hold, size = DEFAULT_SIZE, tiers = TIERS } = test;
+	const { name, sketch, page, hold, script, size = DEFAULT_SIZE, tiers = TIERS } = test;
 	if (typeof name !== 'string' || !NAME.test(name))
 		problems.push(
 			`"name" takes lowercase words joined by dashes, such as "harbor-at-night", not ${JSON.stringify(name)}`,
@@ -95,10 +97,21 @@ function readTest(entry, exists) {
 		problems.push(
 			`"page" takes a path on the dev server that starts with /, such as "/", not ${JSON.stringify(page)}`,
 		);
-	if (typeof hold !== 'number' || !(hold >= 0 && hold <= MAX_HOLD))
+	if ((hold === undefined) === (script === undefined))
+		problems.push(
+			'give either "hold", the sketch time in seconds, or "script", a timed script whose shot steps draw the images',
+		);
+	else if (hold !== undefined && (typeof hold !== 'number' || !(hold >= 0 && hold <= MAX_HOLD)))
 		problems.push(
 			`"hold" takes the sketch time in seconds, from 0 to ${MAX_HOLD}, not ${JSON.stringify(hold)}`,
 		);
+	else if (script !== undefined) {
+		if (typeof script !== 'string' || !script)
+			problems.push(
+				`"script" takes a path from the project's folder, such as "tests/drive.script", not ${JSON.stringify(script)}`,
+			);
+		else if (!exists(script)) problems.push(`the script ${script} does not exist`);
+	}
 	const parsedSize = typeof size === 'string' ? parseSize(size) : undefined;
 	if (!parsedSize) problems.push(sizeRule('"size"', String(size)));
 	const tierText = tierProblem(tiers);
@@ -108,7 +121,8 @@ function readTest(entry, exists) {
 		name: /** @type {string} */ (name),
 		...(sketch !== undefined ? { sketch: /** @type {string} */ (sketch) } : {}),
 		...(page !== undefined ? { page: /** @type {string} */ (page) } : {}),
-		hold: /** @type {number} */ (hold),
+		...(hold !== undefined ? { hold: /** @type {number} */ (hold) } : {}),
+		...(script !== undefined ? { script: /** @type {string} */ (script) } : {}),
 		size: /** @type {readonly [number, number]} */ (parsedSize),
 		tiers: /** @type {readonly Tier[]} */ (tiers),
 	};
