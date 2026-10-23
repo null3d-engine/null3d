@@ -1422,26 +1422,24 @@ export function clusterCostPlan(): PlanItem<Check>[] {
 }
 
 /**
- * The two-step probe: the sharpening's sketch in hold mode on WebGL2, a development page that logs
- * the two-step pass's answers for the held frame, with the browser's user agent and whether it has
- * `KHR_parallel_shader_compile`. A run names the browsers to compare, and their lines read side by
- * side. It times nothing. The sketch runs on the page's thread, so the page holds the core that
- * records the frame and can read the pass's answers.
+ * The two-step probe: the sharpening's sketch with `?two-step=report`, a development page that logs
+ * the two-step pass's answers once its frame is on screen, with the browser and the WebGL2 path's
+ * compile state. One page holds the frame the image test draws, as the manifest runs it, and one
+ * plays it live, as an effect cost page does. A run names the browsers to compare, and their lines
+ * read side by side. It times nothing.
  */
 export function twoStepPlan(): PlanItem<Check>[] {
 	const sketch = encodeURIComponent('/tests/pages/sketches/sharpen-sketch.ts?sharpen=1');
 	return [
 		{
-			id: 'two-step-webgl2',
-			path: `/tests/pages/image.html?gpu=webgl2&hold=0&size=320x180&two-step=report&sketch-thread=main&sketch=${sketch}`,
+			id: 'two-step-held',
+			path: `/tests/pages/image.html?gpu=webgl2&hold=0&preset=high&size=320x180&two-step=report&sketch=${sketch}`,
 			timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
 			check: { kind: 'probe', tier: 'webgl2' },
 		},
-		// The same picture with the sketch on the worker, where the page has no core to ask: the
-		// pictures alone say whether a browser loses the sharpening there.
 		{
-			id: 'two-step-webgl2-worker',
-			path: `/tests/pages/image.html?gpu=webgl2&hold=0&size=320x180&sketch=${sketch}`,
+			id: 'two-step-live',
+			path: '/tests/pages/effect-cost.html?gpu=webgl2&scale=1&effect=sharpen&strength=1&two-step=report',
 			timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
 			check: { kind: 'probe', tier: 'webgl2' },
 		},
