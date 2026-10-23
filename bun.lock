@@ -140,7 +140,6 @@
       },
       "peerDependencies": {
         "@null3d/engine": "workspace:*",
-        "@null3d/vite-plugin": "workspace:*",
       },
     },
     "packages/vite-plugin": {

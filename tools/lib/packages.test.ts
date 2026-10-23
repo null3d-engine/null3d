@@ -1,9 +1,11 @@
 import { afterAll, describe, expect, it } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
 	builtAddress,
+	compileShaders,
 	exportTargets,
 	internalConstructorClasses,
 	type Manifest,
@@ -12,9 +14,13 @@ import {
 	repositoryOnlyFiles,
 	rewriteAddresses,
 	shaderDeclarationFiles,
+	shaderFiles,
 	shaderModuleJsFiles,
 } from './packages';
 import { MODULE_DIR } from './shader-modules';
+
+/** True when the shader compiler's build is present, which the pack tests need. */
+const COMPILES = process.env.NULL3D_SHADER_COMPILER !== undefined;
 
 /** The built files of a small package, by path in `lib/`. */
 const BUILT = new Set([
@@ -24,7 +30,7 @@ const BUILT = new Set([
 	'page/engine.js',
 	'render/draw.js',
 	'scene/ktx2.js',
-	'shader.wgsl',
+	'shader.wgsl.js',
 	'workers/sketch-worker.js',
 	'workers/transcoder-worker.js',
 	'shared/index.js',
@@ -43,8 +49,8 @@ describe('builtAddress', () => {
 		);
 	});
 
-	it('keeps a copied .wgsl file, which the null3D Vite plugin compiles', () => {
-		expect(builtAddress('material.js', './shader.wgsl', exists)).toBe('./shader.wgsl');
+	it('gives the module that holds the compiled shader of a .wgsl file', () => {
+		expect(builtAddress('material.js', './shader.wgsl', exists)).toBe('./shader.wgsl.js');
 	});
 
 	it('is null when no built file answers', () => {
@@ -154,6 +160,13 @@ describe('packageProblems', () => {
 		expect(packageProblems(manifest, files, ['docs/index.md'])).toEqual([]);
 	});
 
+	it('names a raw shader file that the tarball holds', () => {
+		const holding = new Set([...files, 'lib/glow.wgsl']);
+		expect(packageProblems(manifest, holding, [], [], ['lib/glow.wgsl'])).toEqual([
+			'it holds lib/glow.wgsl, whose compiled module must take its place',
+		]);
+	});
+
 	it('names each missing file, workspace version and publish setting', () => {
 		const broken: Manifest = {
 			...manifest,
@@ -170,6 +183,94 @@ describe('packageProblems', () => {
 			'it lacks bin/demo.js, which its manifest names',
 			'it lacks docs/api.md',
 		]);
+	});
+});
+
+/** A package folder of a temporary repository, with the files that `files` gives it. */
+const folders: string[] = [];
+function packageFixture(files: Readonly<Record<string, string>>): { root: string; dir: string } {
+	const root = mkdtempSync(join(tmpdir(), 'null3d-shaders-'));
+	const dir = join(root, 'packages/demo');
+	writeFileSync(join(root, 'package.json'), '{"type":"module"}');
+	for (const [path, text] of Object.entries(files)) {
+		mkdirSync(dirname(join(dir, path)), { recursive: true });
+		writeFileSync(join(dir, path), text);
+	}
+	folders.push(root);
+	return { root, dir };
+}
+afterAll(() => {
+	for (const folder of folders) rmSync(folder, { recursive: true, force: true });
+});
+
+/** A custom material's WGSL, as a package's shader file holds it. */
+const MATERIAL = `
+struct Uniforms {
+	tint: vec4f,
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+	var s = defaultSurface(input);
+	s.baseColor *= material.tint.rgb;
+	return s;
+}`;
+
+/** WGSL with a render pipeline whose fragment stage names something undefined. */
+const BROKEN = `
+@vertex fn vertex(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+	return vec4f(0.0, 0.0, 0.0, 1.0);
+}
+
+@fragment fn fragment() -> @location(0) vec4f {
+	return vec4f(nope);
+}`;
+
+describe('shaderFiles', () => {
+	it('requires the compiled module of each shader file, and forbids the raw file', () => {
+		const { root } = packageFixture({
+			'src/parts/glow.wgsl': MATERIAL,
+			'src/index.ts': '',
+		});
+		expect(shaderFiles(root, 'demo')).toEqual({
+			required: ['lib/parts/glow.wgsl.js'],
+			forbidden: ['lib/parts/glow.wgsl'],
+		});
+	});
+});
+
+describe('compileShaders', () => {
+	it('refuses WGSL that is no shader, and names the file', () => {
+		const { root, dir } = packageFixture({ 'src/empty.wgsl': '// nothing here\n' });
+		expect(() => compileShaders(root, dir)).toThrow(
+			/packages\/demo\/src\/empty\.wgsl:1:1: the WGSL has no entry point/,
+		);
+	});
+
+	describe.skipIf(!COMPILES)('with the shader compiler', () => {
+		it('writes the compiled module and its build sets, and no raw WGSL', async () => {
+			const { root, dir } = packageFixture({ 'src/glow.wgsl': MATERIAL });
+			compileShaders(root, dir);
+			const lib = join(dir, 'lib');
+			expect(existsSync(join(lib, 'glow.wgsl'))).toBe(false);
+			expect(existsSync(join(lib, 'glow.wgsl.js'))).toBe(true);
+			expect(
+				readdirSync(lib).filter((name) => name.startsWith('glow.wgsl-material-wgsl-')),
+			).not.toEqual([]);
+			const { default: shader } = await import(pathToFileURL(join(lib, 'glow.wgsl.js')).href);
+			expect(shader.kind).toBe('material');
+			expect(shader.functions).toEqual(['surface']);
+			// The builds load on first use, from the set modules beside the shader's own module.
+			expect(Object.keys(shader.variants)).toEqual([]);
+			const builds = await shader.builds('wgsl', 0);
+			expect(Object.keys(builds).length).toBeGreaterThan(0);
+		});
+
+		it('fails on WGSL that does not compile, and names the file and the place', () => {
+			const { root, dir } = packageFixture({ 'src/broken.wgsl': BROKEN });
+			expect(() => compileShaders(root, dir)).toThrow(
+				/packages\/demo\/src\/broken\.wgsl:\d+:\d+: no definition in scope for identifier: `nope`/,
+			);
+		});
 	});
 });
 

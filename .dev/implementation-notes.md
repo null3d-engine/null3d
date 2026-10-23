@@ -327,6 +327,11 @@ M2-E1 reserved the opcode numbers that other M2 tasks need, so lanes that work a
 - A class that only the engine makes marks its constructor `@internal`. Stripping it would leave the class constructible with no arguments, so the build writes `protected constructor();` in its place. Protected, not private, so that the engine's own subclasses still type check.
 - The internal entry point that tests import (`src/internal.ts`) leaves the package. The tarball check fails if it returns (review R8, R8-10).
 
+## Shaders in a packed add-on
+
+- A package's WGSL is compiled while the package is built, not in the project that installs it. `tools/lib/packages.ts` compiles each `.wgsl` file in a package's `src/` and writes `lib/<file>.wgsl.js`, in the shape that the Vite plugin gives a project's own WGSL: the shader's records, with its text in tables that it reads on first use, and a module for each set of a custom material's builds, which a device loads when it first needs one ([D-54](decisions/D-54-addon-modules.md)).
+- The compile runs on the calling thread, through `compileWgslSync` in the plugin, so the pack keeps its order. A shader that does not compile stops the pack with its file, line and column. The raw file stays out of the tarball, and the pack check refuses it and requires the compiled module.
+
 ## Loading WebAssembly under a strict policy
 
 A game may send a strict Content-Security-Policy, such as `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'`. The engine starts under it in every thread mode. The production build tests (`tests/image/content-security-policy.spec.ts`) and the fresh-project test (`tests/fresh-project.ts`) check that.
