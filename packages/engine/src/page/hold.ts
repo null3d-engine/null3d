@@ -42,10 +42,10 @@ export type HoldScriptStep =
 			verb: 'pointer';
 			/** What the pointer does: move, press, release, or scroll the wheel. */
 			action: 'move' | 'down' | 'up' | 'wheel';
-			/** The pointer's distance from the canvas's left edge, in CSS pixels. */
-			x: number;
-			/** The pointer's distance from the canvas's top edge, in CSS pixels. */
-			y: number;
+			/** The pointer's distance from the canvas's left edge, in CSS pixels, or where it is. */
+			x?: number;
+			/** The pointer's distance from the canvas's top edge, in CSS pixels, or where it is. */
+			y?: number;
 	  }
 	| {
 			/** The sketch time of the step, in seconds. */

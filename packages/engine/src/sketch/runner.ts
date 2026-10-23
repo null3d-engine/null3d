@@ -1592,16 +1592,20 @@ function writeKeyEvent(control: ControlViews, down: boolean, key: number, frame:
 function writePointerEvent(
 	control: ControlViews,
 	step: Extract<HoldScriptStep, { verb: 'pointer' }>,
-	pointer: { buttons: number },
+	pointer: { x: number; y: number; buttons: number },
 	frame: number,
 ): void {
+	// A press or a release without a place keeps the pointer where it is. A move or a wheel
+	// scroll carries its own numbers.
+	const x = step.x ?? pointer.x;
+	const y = step.y ?? pointer.y;
 	switch (step.action) {
 		case 'move':
 			writeInputEvent(
 				control,
 				EVENT_POINTER_MOVE,
-				step.x,
-				step.y,
+				x,
+				y,
 				0,
 				MAIN_POINTER,
 				pointer.buttons,
@@ -1613,8 +1617,8 @@ function writePointerEvent(
 			writeInputEvent(
 				control,
 				EVENT_POINTER_DOWN,
-				step.x,
-				step.y,
+				x,
+				y,
 				0,
 				MAIN_POINTER,
 				pointer.buttons | MAIN_BUTTON,
@@ -1626,8 +1630,8 @@ function writePointerEvent(
 			writeInputEvent(
 				control,
 				EVENT_POINTER_UP,
-				step.x,
-				step.y,
+				x,
+				y,
 				0,
 				MAIN_POINTER,
 				pointer.buttons & ~MAIN_BUTTON,
@@ -1636,7 +1640,7 @@ function writePointerEvent(
 			);
 			return;
 		case 'wheel':
-			writeInputEvent(control, EVENT_WHEEL, step.x, step.y, 0, 0, 0, 0, frame);
+			writeInputEvent(control, EVENT_WHEEL, x, y, 0, 0, 0, 0, frame);
 			return;
 	}
 }
