@@ -24,10 +24,11 @@ permissions:
 # time limit does; ci-passed says which of the two stopped it. A draft's full run, which marking it
 # ready for review starts, has a group of its own, so the draft can go back to draft at once and the
 # pushes after it do not cancel the run: it reads the pull request's caches, which a run started by
-# hand on its branch cannot.
+# hand on its branch cannot. A later full run waits for the one in progress instead of cancelling
+# it, so every full run that starts ends with a result, and GitHub keeps only the newest one waiting.
 concurrency:
   group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}{1}', github.event.pull_request.number, github.event.action == 'ready_for_review' && '-full' || '') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'main') || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+  cancel-in-progress: ${{ (github.event_name == 'pull_request' && github.event.action != 'ready_for_review') || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
 env:
   # Bun before 1.4.3 closes Playwright's pipe to Chrome at random, which hangs browser steps
