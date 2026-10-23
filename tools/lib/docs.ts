@@ -78,6 +78,8 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'getting-started/install', title: 'Install null3D', since: '0.1', summary: 'The npm packages; the Vite plugin; package versions always match; the optional `null3d` command.' },
 	{ id: 'getting-started/first-scene', title: 'Your first scene', since: '0.1', summary: 'page.ts with createEngine; sketch.ts with defineSketch; camera, light, mesh; running it with Vite.' },
 	{ id: 'getting-started/hosting', title: 'Hosting and cross-origin isolation', since: '0.1', summary: 'COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the single-threaded fallback.' },
+	{ id: 'getting-started/network-use', title: 'Network use', since: '0.2', summary: "What null3D downloads, when each file loads, the build's one download, and how to keep a page on its own origin." },
+	{ id: 'getting-started/third-party-notices', title: 'Third-party notices', since: '0.2', summary: 'The third-party code in each null3D package, its license, and the notices file that a build writes beside the page.' },
 	{ id: 'getting-started/cdn', title: 'Try null3D from a CDN', since: '0.2', summary: 'The CDN build; one HTML file with no bundler; import maps; the policy and CORS headers; both thread modes; what needs a build step.' },
 	{ id: 'getting-started/project-structure', title: 'Project structure', since: '0.3', summary: 'Starting from a template with `bunx @null3d/cli create`; page.ts, sketch.ts, assets/, AGENTS.md, .claude/skills/; what runs where.' },
 
