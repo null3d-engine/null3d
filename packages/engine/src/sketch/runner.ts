@@ -36,6 +36,13 @@ import {
 } from '../generated/core';
 import { FORMAT_CANVAS, PERMUTATION_DRAW_INDEX, PERMUTATION_TONE_MAP } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
+import type {
+	HoldDump,
+	HoldScript,
+	HoldScriptProblem,
+	HoldScriptResult,
+	HoldScriptStep,
+} from '../page/hold';
 import { type CoreDevice, cellTableWarning } from '../page/limits';
 import { FULL_SCALE, Governor, GovernorLoop, thousandths } from '../quality/governor';
 import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
@@ -47,7 +54,7 @@ import { CoreMemory } from '../scene/memory';
 import { Post } from '../scene/post';
 import { Render } from '../scene/render';
 import { Geometry, Materials } from '../scene/resources';
-import { Scene } from '../scene/scene';
+import { Camera, Light, type Object3D, Scene } from '../scene/scene';
 import { ShaderPreloads } from '../scene/shader-preloads';
 import { ShaderTemplates } from '../scene/shader-templates';
 import { Textures } from '../scene/textures';
@@ -56,10 +63,18 @@ import {
 	type ControlViews,
 	controlLabels,
 	controlViews,
+	EVENT_KEY_DOWN,
+	EVENT_KEY_UP,
+	EVENT_POINTER_DOWN,
+	EVENT_POINTER_MOVE,
+	EVENT_POINTER_UP,
+	EVENT_WHEEL,
+	FLAG_PRIMARY,
 	frameAfter,
 	frameReached,
 	nextFrame,
 	Slot,
+	writeInputEvent,
 } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { stopHelperWorkers } from '../shared/helper-workers';
@@ -86,6 +101,9 @@ export type PagePoster = (type: string, data: unknown, transfer?: Transferable[]
 /** Fixed sizes of the engine core. */
 const MAX_BATCHES = 256;
 const COMMAND_CAPACITY = 1 << 16;
+/** The id of the pointer that a timed script drives, and the bit of its main button. */
+const MAIN_POINTER = 1;
+const MAIN_BUTTON = 1;
 
 export interface SketchCore {
 	glue: CoreGlue;
@@ -387,18 +405,22 @@ export class SketchRunner {
 	private readonly ui: Ui;
 	/** True once the sketch thread has warned that the grid cells ran out. */
 	private cellsWarned = false;
+	/** What a timed script's steps gave, once hold mode has performed them. */
+	private scriptResult: HoldScriptResult | undefined;
 	readonly context: SketchContext;
 
 	/**
 	 * Starts the engine on the core's thread. `holdSeconds` starts hold mode at that sketch time: it
 	 * seeds this thread's math.random, and routes Math.random to it, at once. So the runner must
 	 * exist before the sketch module loads, and `setup` then steps the sketch to that time.
+	 * `holdScript` gives hold mode the input steps, property writes and dumps to perform as it steps.
 	 */
 	constructor(
 		post: PagePoster,
 		private readonly metrics: ArrayBufferLike,
 		private readonly sketch: SketchCore,
 		private readonly holdSeconds?: number,
+		private readonly holdScript?: HoldScript,
 	) {
 		this.record = new FrameRecorder(metrics, Role.Sketch);
 		this.jobRecords = Array.from(
@@ -1109,17 +1131,36 @@ export class SketchRunner {
 	 * capture, it steps the sketch once more at the
 	 * same time, and that thread draws both frames in turn. The first failure in the sketch or the
 	 * core stops the hold with E1408.
+	 *
+	 * A timed script that the page gave is performed alongside the steps: its input events reach the
+	 * frame that falls at their time, its property writes land before that frame, and its dumps read
+	 * the state after it. A step that fails is recorded and the hold goes on.
 	 */
 	private async hold(seconds: number): Promise<void> {
 		const steps = holdSteps(seconds);
 		const { slots } = this.sketch.control;
 		const { glue } = this.sketch;
+		const script = this.holdScript;
+		const scriptSteps = script?.steps ?? [];
+		const keys = new Map(this.sketch.keyCodes.map((code, key) => [code, key]));
+		const dumps: HoldDump[] = [];
+		const problems: HoldScriptProblem[] = [];
+		let cursor = 0;
 		let frame = 0;
 		let first = 0;
 		this.holding = true;
 		try {
 			for (let step = 0; step <= steps; step++) {
 				this.clock.holdStep(step, steps, seconds);
+				const now = this.clock.now;
+				// Input and property writes land before the frame at their time, so the frame reads
+				// them. Dumps wait for it, so they read the state that it gave.
+				this.scriptDumps.length = 0;
+				while (cursor < scriptSteps.length && (scriptSteps[cursor] as HoldScriptStep).at <= now) {
+					const one = scriptSteps[cursor++] as HoldScriptStep;
+					if (one.verb === 'dump') this.scriptDumps.push(one);
+					else this.performScriptStep(one, keys, problems);
+				}
 				// A held frame whose passes read the motion since the frame before it, as the motion
 				// debug view does, has the thread that draws draw the frame before it first.
 				const before = step === steps - 1 && glue.holdsFrameBefore() !== 0;
@@ -1138,6 +1179,7 @@ export class SketchRunner {
 				}
 				frame = this.frame();
 				if (first === 0 && (before || step === steps)) first = frame;
+				for (const one of this.scriptDumps) this.dumpScriptStep(one, dumps, problems);
 			}
 			// A reflection probe captures in one frame and lights surfaces from then on, and the
 			// capture views take one probe a frame, so a second frame at the same time captures the
@@ -1155,9 +1197,120 @@ export class SketchRunner {
 		} finally {
 			this.holding = false;
 		}
+		if (script !== undefined) this.scriptResult = { dumps, problems };
 		Atomics.store(slots, Slot.HeldFrom, first);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);
+	}
+
+	/** The dump steps that fall at the frame that is about to run, which read it after it ran. */
+	private readonly scriptDumps: Extract<HoldScriptStep, { verb: 'dump' }>[] = [];
+
+	/** What a timed script's steps gave, once hold mode has performed them. */
+	get holdScriptResult(): HoldScriptResult | undefined {
+		return this.scriptResult;
+	}
+
+	/**
+	 * Performs one step of a timed script that lands before a frame: writes the input event that the
+	 * next frame reads, or writes a property at once. A step that fails leaves a problem and the rest
+	 * of the script goes on.
+	 */
+	private performScriptStep(
+		step: HoldScriptStep,
+		keys: ReadonlyMap<string, number>,
+		problems: HoldScriptProblem[],
+	): void {
+		const text = scriptStepText(step);
+		try {
+			if (step.verb === 'key') {
+				const key = keys.get(step.code);
+				if (key === undefined)
+					problems.push({
+						at: step.at,
+						step: text,
+						error: `the engine reads no key named "${step.code}". Name a key by its code on a standard keyboard, such as KeyA, Space or ArrowLeft.`,
+					});
+				else writeKeyEvent(this.sketch.control, step.down, key, this.nextInputFrame());
+				return;
+			}
+			if (step.verb === 'pointer') {
+				writePointerEvent(this.sketch.control, step, this.input.pointer, this.nextInputFrame());
+				return;
+			}
+			if (step.verb === 'set') {
+				const target = this.scriptTarget(step, problems);
+				if (target !== undefined) this.context.scene.setScriptPath(target, step.path, step.value);
+			}
+		} catch (error) {
+			problems.push({ at: step.at, step: text, error: messageOf(error) });
+		}
+	}
+
+	/** Records what a dump step reads, or the problem that stopped it. */
+	private dumpScriptStep(
+		step: Extract<HoldScriptStep, { verb: 'dump' }>,
+		dumps: HoldDump[],
+		problems: HoldScriptProblem[],
+	): void {
+		const target = this.scriptTarget(step, problems);
+		if (target === undefined) return;
+		const { scene } = this.context;
+		try {
+			if (step.path !== undefined) {
+				dumps.push({
+					at: step.at,
+					target: step.target,
+					path: step.path,
+					value: scene.readScriptPath(target, step.path),
+				});
+				return;
+			}
+			const visible = scene.readScriptPath(target, 'visible');
+			dumps.push({
+				at: step.at,
+				target: step.target,
+				value: {
+					name: target.name,
+					kind: target instanceof Camera ? 'camera' : target instanceof Light ? 'light' : 'object',
+					position: scene.readScriptPath(target, 'position'),
+					rotation: scene.readScriptPath(target, 'rotation'),
+					scale: scene.readScriptPath(target, 'scale'),
+					visible: visible[0] === 1,
+				},
+			});
+		} catch (error) {
+			problems.push({ at: step.at, step: scriptStepText(step), error: messageOf(error) });
+		}
+	}
+
+	/**
+	 * The object that a script step names: an object by name, or the scene's active camera. A name
+	 * that finds nothing leaves a problem that says so, with the names that are close.
+	 */
+	private scriptTarget(
+		step: Extract<HoldScriptStep, { verb: 'set' | 'dump' }>,
+		problems: HoldScriptProblem[],
+	): Object3D | undefined {
+		const { scene } = this.context;
+		const found = step.target === '#camera' ? scene.shownCamera : scene.find(step.target);
+		if (found !== undefined) return found;
+		const near = scene.nearNames(step.target.replace(/^#/, ''));
+		const where =
+			step.target === '#camera'
+				? 'the scene has no active camera'
+				: `the scene has no object named "${step.target}"`;
+		const hint =
+			near.length > 0
+				? ` Names that are close: ${near.map((name) => `"${name}"`).join(', ')}.`
+				: ' The scene has no named objects.';
+		problems.push({ at: step.at, step: scriptStepText(step), error: `${where}.${hint}` });
+		return undefined;
+	}
+
+	/** The number of the frame that the next input event reaches. */
+	private nextInputFrame(): number {
+		return nextFrame(this.recorded.frame);
 	}
 
 	/**
@@ -1249,6 +1402,11 @@ export class SketchRunner {
 					this.reducedMotion = reducedMotion;
 					this.notify(this.preferenceHandlers, undefined);
 				}
+			} else if (this.holding && this.holdScript !== undefined) {
+				// A hold that performs a timed script reads the events that the steps wrote, so a held
+				// frame driven by input stays the same on every run.
+				this.input.beginFrame(frame, 0);
+				this.context.scene.dispatchPointerEvents(this.reportError);
 			}
 			const change = this.quality.takeChange();
 			if (change !== 0) {
@@ -1406,5 +1564,79 @@ export class SketchRunner {
 		// A pick whose read landed answers now, before the next frame's update.
 		this.context.scene.pollPicks(this.sketch.control.slots);
 		return frame;
+	}
+}
+
+/** A step of a timed script as a person writes it, for a message about the step. */
+function scriptStepText(step: HoldScriptStep): string {
+	switch (step.verb) {
+		case 'key':
+			return `key ${step.code} ${step.down ? 'down' : 'up'}`;
+		case 'pointer':
+			return `pointer ${step.action}`;
+		case 'set':
+			return `set "${step.target}".${step.path}`;
+		case 'dump':
+			return step.path === undefined
+				? `dump "${step.target}"`
+				: `dump "${step.target}".${step.path}`;
+	}
+}
+
+/** Writes a key's press or release for the frame that reads it. */
+function writeKeyEvent(control: ControlViews, down: boolean, key: number, frame: number): void {
+	writeInputEvent(control, down ? EVENT_KEY_DOWN : EVENT_KEY_UP, 0, 0, key, 0, 0, 0, frame);
+}
+
+/** Writes a pointer's step for the frame that reads it. The script's pointer is the main pointer. */
+function writePointerEvent(
+	control: ControlViews,
+	step: Extract<HoldScriptStep, { verb: 'pointer' }>,
+	pointer: { buttons: number },
+	frame: number,
+): void {
+	switch (step.action) {
+		case 'move':
+			writeInputEvent(
+				control,
+				EVENT_POINTER_MOVE,
+				step.x,
+				step.y,
+				0,
+				MAIN_POINTER,
+				pointer.buttons,
+				FLAG_PRIMARY,
+				frame,
+			);
+			return;
+		case 'down':
+			writeInputEvent(
+				control,
+				EVENT_POINTER_DOWN,
+				step.x,
+				step.y,
+				0,
+				MAIN_POINTER,
+				pointer.buttons | MAIN_BUTTON,
+				FLAG_PRIMARY,
+				frame,
+			);
+			return;
+		case 'up':
+			writeInputEvent(
+				control,
+				EVENT_POINTER_UP,
+				step.x,
+				step.y,
+				0,
+				MAIN_POINTER,
+				pointer.buttons & ~MAIN_BUTTON,
+				FLAG_PRIMARY,
+				frame,
+			);
+			return;
+		case 'wheel':
+			writeInputEvent(control, EVENT_WHEEL, step.x, step.y, 0, 0, 0, 0, frame);
+			return;
 	}
 }

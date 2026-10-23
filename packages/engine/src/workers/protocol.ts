@@ -4,6 +4,7 @@ import type { StatsRequest } from '../debug/stats-options';
 import { messageOf } from '../errors/message';
 import type { PowerPreference } from '../page/capabilities';
 import type { EngineCapabilities } from '../page/engine';
+import type { HoldScript, HoldScriptResult } from '../page/hold';
 import type { CoreDevice } from '../page/limits';
 import type { GlTimingMode } from '../page/switches';
 import type { FramePacing } from '../render/loop';
@@ -81,6 +82,8 @@ export type SketchWorkerInit = CoreHandoff & {
 	renderer?: DrawingWorkerSetup;
 	/** Hold mode's sketch time in seconds, which the sketch worker steps the sketch to after setup. */
 	hold?: number;
+	/** A timed script that hold mode performs as it steps the sketch. */
+	holdScript?: HoldScript;
 	/** The quality preset and settings that the page chose. */
 	quality: QualityStart;
 	/** The highest target frame rate, as the sketch runner's options give it. */
@@ -182,6 +185,8 @@ export type WorkerReply =
 	| { type: 'label'; id: string; table: number; slot: number; generation: number }
 	/** The sketch worker asks the page to start job workers up to `count`, as its parallel work grew. */
 	| { type: 'jobs-wanted'; count: number }
+	/** What a timed script's steps gave, after the sketch worker performed them in a hold. */
+	| { type: 'hold-script'; result: HoldScriptResult }
 	| ({ type: 'captured' } & CapturedFrame)
 	| { type: 'captured-image'; image: Blob }
 	| { type: 'capture-failed'; message: string };

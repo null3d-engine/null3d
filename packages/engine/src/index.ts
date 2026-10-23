@@ -67,7 +67,16 @@ export type {
 	SecondRates,
 	ThreadStats,
 } from './page/frame-stats';
-export type { HeldFrame, HoldFailure, HoldResult } from './page/hold';
+export type {
+	HeldFrame,
+	HoldDump,
+	HoldFailure,
+	HoldResult,
+	HoldScript,
+	HoldScriptProblem,
+	HoldScriptResult,
+	HoldScriptStep,
+} from './page/hold';
 export type { EngineLabels } from './page/labels';
 export type { PointerLockOptions } from './page/pointer-lock';
 export type { DepthMode, LatencyMode, SketchThread } from './page/switches';

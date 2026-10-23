@@ -3,6 +3,7 @@ import { messageOf } from '../errors/message';
 import * as C from '../generated/core';
 import { FORMAT_CANVAS, FORMAT_RGBA16_FLOAT } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
+import type { HoldScript } from '../page/hold';
 import type { CoreDevice } from '../page/limits';
 import { presetSettings } from '../quality/presets';
 import { callValueArguments } from '../scene/fake-call-values';
@@ -209,6 +210,8 @@ async function start(
 		drawing,
 		grows = false,
 		holdSeconds,
+		holdScript,
+		keyCodes = [],
 		shared = false,
 		cellsRefused,
 		control = controlViews(createControlBuffer(shared)),
@@ -220,6 +223,8 @@ async function start(
 		drawing?: FakeDrawing;
 		grows?: boolean;
 		holdSeconds?: number;
+		holdScript?: HoldScript;
+		keyCodes?: readonly string[];
 		shared?: boolean;
 		cellsRefused?: () => number;
 		control?: ReturnType<typeof controlViews>;
@@ -249,7 +254,7 @@ async function start(
 			glue: fakeGlue(log, memory, calls, grows, cellsRefused, jobs),
 			memory,
 			control,
-			keyCodes: [],
+			keyCodes,
 			jobWorkers: jobs.most,
 			device: {
 				webgl2: true,
@@ -301,6 +306,7 @@ async function start(
 			sendLabelSlot: () => {},
 		},
 		holdSeconds,
+		holdScript,
 	);
 	let context: SketchContext | undefined;
 	try {
@@ -1092,5 +1098,126 @@ describe('SketchRunner and quality presets', () => {
 		stopDrawing();
 		expect(context.quality.preset).toBe('medium');
 		expect(updates.at(-1)?.check?.targetFps).toBe(30);
+	});
+});
+
+describe('hold mode with a timed script', () => {
+	/** A hold of `seconds` that performs `steps`, with a group named Car in the scene. */
+	const holdOf = (
+		steps: HoldScript['steps'],
+		seconds = 0.5,
+		keyCodes: readonly string[] = [],
+		log: (context: SketchContext, seconds: number) => object = () => ({}),
+	) =>
+		start(
+			(context) => {
+				context.scene.createGroup({ name: 'Car' });
+				return log(context, seconds);
+			},
+			undefined,
+			{ holdSeconds: seconds, holdScript: { steps }, keyCodes },
+		);
+
+	it('writes a property before the frame at its time, and dumps it after', async () => {
+		const { runner } = await holdOf([
+			{ at: 0, verb: 'set', target: 'Car', path: 'position', value: [1, 2, 3] },
+			{ at: 0.25, verb: 'set', target: 'Car', path: 'visible', value: [0] },
+			{ at: 0.25, verb: 'dump', target: 'Car', path: 'position' },
+			{ at: 0.5, verb: 'dump', target: 'Car' },
+		]);
+		const result = runner.holdScriptResult;
+		expect(result?.problems).toEqual([]);
+		expect(result?.dumps[0]).toEqual({
+			at: 0.25,
+			target: 'Car',
+			path: 'position',
+			value: [1, 2, 3],
+		});
+		expect(result?.dumps[1]).toMatchObject({
+			at: 0.5,
+			target: 'Car',
+			value: { name: 'Car', kind: 'object', position: [1, 2, 3], visible: false },
+		});
+	});
+
+	it('gives a key pressed at its time to the frames that follow, and releases it', async () => {
+		/** The key's state at each frame from a third of a second to a half. */
+		const states: boolean[] = [];
+		const { runner } = await holdOf(
+			[
+				{ at: 0, verb: 'key', code: 'KeyW', down: true },
+				{ at: 0.4, verb: 'key', code: 'KeyW', down: false },
+			],
+			0.5,
+			['KeyW'],
+			({ input, time }) => ({
+				onUpdate: () => {
+					if (time.now > 0.3 && time.now < 0.5) states.push(input.isDown('KeyW'));
+				},
+			}),
+		);
+		expect(runner.holdScriptResult?.problems).toEqual([]);
+		expect(states.length).toBeGreaterThan(3);
+		expect(states.slice(0, -2)).toContain(true);
+		expect(states.slice(-1)).toEqual([false]);
+	});
+
+	it('moves and presses the pointer, which the frames read as the mouse', async () => {
+		/** The pointer's position and main button in the frame at a half second. */
+		let seen: [number, number, number] = [0, 0, 0];
+		const { runner } = await holdOf(
+			[
+				{ at: 0, verb: 'pointer', action: 'move', x: 100, y: 50 },
+				{ at: 0.2, verb: 'pointer', action: 'down', x: 100, y: 50 },
+			],
+			0.5,
+			[],
+			({ input, time }) => ({
+				onUpdate: () => {
+					if (time.now === 0.5) seen = [input.pointer.x, input.pointer.y, input.pointer.buttons];
+				},
+			}),
+		);
+		expect(runner.holdScriptResult?.problems).toEqual([]);
+		expect(seen).toEqual([100, 50, 1]);
+	});
+
+	it('says why a target is not in the scene, and names those that are close', async () => {
+		const { runner } = await holdOf([
+			{ at: 0.1, verb: 'set', target: 'Cr', path: 'position', value: [0, 0, 0] },
+		]);
+		expect(runner.holdScriptResult?.problems).toEqual([
+			{
+				at: 0.1,
+				step: 'set "Cr".position',
+				error: 'the scene has no object named "Cr". Names that are close: "Car".',
+			},
+		]);
+	});
+
+	it('says why a property is not one that the object takes', async () => {
+		const { runner } = await holdOf([
+			{ at: 0, verb: 'set', target: 'Car', path: 'speed', value: [1] },
+		]);
+		const problem = runner.holdScriptResult?.problems[0];
+		expect(problem?.step).toBe('set "Car".speed');
+		expect(problem?.error).toContain('set() got "speed" on "Car"');
+		expect(problem?.error).toContain('position');
+	});
+
+	it('says why a key is not one that the engine reads, and goes on', async () => {
+		const { runner } = await holdOf([
+			{ at: 0, verb: 'key', code: 'KeyZ', down: true },
+			{ at: 0.5, verb: 'dump', target: 'Car', path: 'position' },
+		]);
+		expect(runner.holdScriptResult?.problems).toEqual([
+			{
+				at: 0,
+				step: 'key KeyZ down',
+				error:
+					'the engine reads no key named "KeyZ". Name a key by its code on a standard keyboard, such as KeyA, Space or ArrowLeft.',
+			},
+		]);
+		expect(runner.holdScriptResult?.dumps).toHaveLength(1);
 	});
 });

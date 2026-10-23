@@ -4,9 +4,10 @@
 // has loaded the engine core.
 
 import { type LabelRegion, labelBytes, labelRegion, setLabelCapacity3d } from './labels';
+import * as Slot from './slot';
 
 /** Int32 slots of the control block, read as `Slot.Running`. */
-export * as Slot from './slot';
+export { Slot };
 
 const SLOT_COUNT = 41;
 
@@ -122,6 +123,46 @@ export function controlViews(buffer: ArrayBufferLike): ControlViews {
 		inputInts: new Int32Array(buffer, slotBytes, INPUT_RING_EVENTS * INPUT_EVENT_INTS),
 		inputFloats: new Float32Array(buffer, slotBytes, INPUT_RING_EVENTS * INPUT_EVENT_INTS),
 	};
+}
+
+/**
+ * Writes one input record at the ring's write index, where the sketch reads it at the start of its
+ * next frame. The page's input capture writes the user's events this way; hold mode writes a timed
+ * script's events this way, on the thread that runs the sketch.
+ *
+ * @param {ControlViews} views
+ * @param {InputEventType} type
+ * @param {number} x The pointer's distance from the canvas's left edge, or a wheel's scroll.
+ * @param {number} y The pointer's distance from the canvas's top edge, or a wheel's scroll.
+ * @param {number} code The key's number, or a mouse button's.
+ * @param {number} id The pointer's id.
+ * @param {number} buttons The pointer's buttons, as `PointerEvent.buttons` gives them.
+ * @param {number} flags The event's flags, as the `FLAG_` names give them.
+ * @param {number} frame The frame on screen at the event, in the engine's count.
+ */
+export function writeInputEvent(
+	views: ControlViews,
+	type: InputEventType,
+	x: number,
+	y: number,
+	code: number,
+	id: number,
+	buttons: number,
+	flags: number,
+	frame: number,
+): void {
+	const { slots, inputInts: ints, inputFloats: floats } = views;
+	const index = Atomics.load(slots, Slot.InputWrite);
+	const base = (index & (INPUT_RING_EVENTS - 1)) * INPUT_EVENT_INTS;
+	ints[base + FIELD_TYPE] = type;
+	ints[base + FIELD_FRAME] = frame;
+	floats[base + FIELD_X] = x;
+	floats[base + FIELD_Y] = y;
+	ints[base + FIELD_CODE] = code;
+	ints[base + FIELD_ID] = id;
+	ints[base + FIELD_BUTTONS] = buttons;
+	ints[base + FIELD_FLAGS] = flags;
+	Atomics.store(slots, Slot.InputWrite, (index + 1) | 0);
 }
 
 // The engine's frame numbers, as every thread and the core count them. The control slots hold them
