@@ -1009,6 +1009,8 @@ pub fn typescript() -> String {
                 ("MAX_DRAWS", feature_instances::MAX_FEATURE_INSTANCES),
                 ("MAX_CAPACITY", feature_instances::MAX_CAPACITY),
                 ("INSTANCE_FLOATS", feature_instances::INSTANCE_FLOATS),
+                ("INSTANCE_BYTES", feature_instances::INSTANCE_BYTES),
+                ("COUNT_BYTES", feature_instances::COUNT_BYTES),
             ],
         ),
         // The most that a draw which makes its own vertices holds.

@@ -24,6 +24,9 @@ pub const INSTANCE_FLOATS: u32 = 16;
 /// Bytes of one instance in the add-on's buffer, as the compacted instance buffer holds it.
 pub const INSTANCE_BYTES: u32 = INSTANCE_FLOATS * size_of::<f32>() as u32;
 
+/// Bytes of a draw's count word.
+pub const COUNT_BYTES: u32 = 4;
+
 /// The most instances that a draw may hold, which bounds its buffer's bytes.
 pub const MAX_CAPACITY: u32 = 1 << 20;
 

@@ -142,3 +142,96 @@ describe('the compute pass options', () => {
 		expect(thrown(() => checkComputeOptions(options({ every: 0 })))).toStartWith('E1220');
 	});
 });
+
+describe('a compute pass that writes an instance draw', () => {
+	it("takes the draw's two buffers and needs no writes texture", () => {
+		const counts = { buffer: 41, bytes: 4 };
+		const instances = { buffer: 42, bytes: 4096 };
+		expect(
+			checkComputeOptions(
+				options({ writes: undefined, buffers: [counts, instances], dispatch: [16, 1, 1] }),
+			),
+		).toEqual({ workgroup: [8, 8, 1], format: 'rgba16float' });
+	});
+
+	it('refuses a texture and buffers together', () => {
+		const buffers: [{ buffer: number; bytes: number }, { buffer: number; bytes: number }] = [
+			{ buffer: 41, bytes: 4 },
+			{ buffer: 42, bytes: 4096 },
+		];
+		expect(
+			thrown(() => checkComputeOptions(options({ buffers, dispatch: [16, 1, 1] }))),
+		).toStartWith('E1220');
+	});
+
+	it('refuses a pass with no target at all', () => {
+		expect(thrown(() => checkComputeOptions(options({ writes: undefined })))).toStartWith('E1220');
+	});
+
+	it('refuses a buffer that the engine did not make, or one buffer twice', () => {
+		const counts = { buffer: 41, bytes: 4 };
+		expect(
+			thrown(() =>
+				checkComputeOptions(
+					options({
+						writes: undefined,
+						buffers: [counts, { buffer: 0, bytes: 0 }],
+						dispatch: [16, 1, 1],
+					}),
+				),
+			),
+		).toStartWith('E1220');
+		expect(
+			thrown(() =>
+				checkComputeOptions(
+					options({
+						writes: undefined,
+						buffers: [counts, { buffer: 42, bytes: 0 }],
+						dispatch: [16, 1, 1],
+					}),
+				),
+			),
+		).toStartWith('E1220');
+		expect(
+			thrown(() =>
+				checkComputeOptions(
+					options({ writes: undefined, buffers: [counts, counts], dispatch: [16, 1, 1] }),
+				),
+			),
+		).toStartWith('E1220');
+	});
+
+	it("refuses a texture's size and format without a texture", () => {
+		const buffers: [{ buffer: number; bytes: number }, { buffer: number; bytes: number }] = [
+			{ buffer: 41, bytes: 4 },
+			{ buffer: 42, bytes: 4096 },
+		];
+		for (const overrides of [
+			{ format: 'r32float' as const },
+			{ size: [256, 256] as const },
+			{ scale: 0.5 },
+		])
+			expect(
+				thrown(() =>
+					checkComputeOptions(
+						options({ writes: undefined, buffers, dispatch: [16, 1, 1], ...overrides }),
+					),
+				),
+			).toStartWith('E1220');
+	});
+
+	it('refuses a dispatch that divides a target size the pass has no texture for', () => {
+		const buffers: [{ buffer: number; bytes: number }, { buffer: number; bytes: number }] = [
+			{ buffer: 41, bytes: 4 },
+			{ buffer: 42, bytes: 4096 },
+		];
+		expect(thrown(() => checkComputeOptions(options({ writes: undefined, buffers })))).toStartWith(
+			'E1220',
+		);
+		expect(
+			thrown(() =>
+				checkComputeOptions(options({ writes: undefined, buffers, dispatch: 'writes' })),
+			),
+		).toStartWith('E1220');
+	});
+});

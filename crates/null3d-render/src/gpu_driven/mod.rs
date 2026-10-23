@@ -2961,7 +2961,7 @@ impl GpuDrivenRenderer {
                     Op::CreateBuffer,
                     &[
                         ids::feature_count(id),
-                        4,
+                        crate::feature_instances::COUNT_BYTES,
                         usage::STORAGE | usage::COPY_DST | usage::COPY_SRC,
                     ],
                 )?;
