@@ -160,15 +160,9 @@ Netlify, Cloudflare Pages and Vercel send Brotli to browsers that accept it. Git
 
 ## Publish the third-party notices
 
-The engine ships code from other projects:
+The engine and some add-ons ship code from other projects, under their licenses. A production build with the null3D Vite plugin collects every package's notices into `null3d-third-party-notices.txt` beside the page. Keep that file with the build when you publish it, or show its text in your game's credits.
 
-- the Basis Universal transcoder for KTX2 files, with the Zstandard code inside it
-- the meshoptimizer decoder for meshopt-compressed glTF files
-- Draco's decoder for Draco-compressed glTF files
-- a table of values from three.js, in the engine core
-- the Rust crates in the engine core
-
-Their licences ask each copy to carry their notices. A production build with the null3D Vite plugin writes these notices to `null3d-third-party-notices.txt` beside the page. Keep that file with the build when you publish it, or show its text in your game's credits. The same text is in `node_modules/@null3d/engine/THIRD-PARTY-NOTICES.txt`. The command-line tool's notices stay out of the file, because a page ships none of the tool's code.
+[Third-party notices](third-party-notices.md) lists every part and its license. The same text is in `node_modules/@null3d/engine/THIRD-PARTY-NOTICES.txt`. The command-line tool's notices stay out of the file, because a page ships none of the tool's code.
 
 ## Let browsers keep the build files
 

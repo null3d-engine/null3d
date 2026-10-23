@@ -53,3 +53,51 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+==============================================================================
+Rust crates in the asset module (dist/assets.wasm)
+==============================================================================
+
+The asset tool's formats are compiled from Rust. The Rust standard library and wasm-bindgen are
+offered under the MIT License or the Apache License 2.0, and null3D takes them under the MIT
+License.
+
+The OpenEXR reader uses two crates, each under the BSD 3-Clause license:
+
+exr 1.74.2: Copyright (c) Contributors to the OpenEXR Project, and Copyright (c) Contributors to
+the exrs Project
+
+lebe 0.5.3: Copyright (c) 2022 Contributors to the lebe Project
+
+Redistribution and use in source and binary forms, with or without modification, are permitted
+provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions
+   and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, this list of
+   conditions and the following disclaimer in the documentation and/or other materials provided
+   with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its contributors may be used to
+   endorse or promote products derived from this software without specific prior written
+   permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY
+WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+The remaining crates are each under the MIT License, or offer it beside another license, and
+null3D takes the MIT License. Copyright their authors.
+
+adler2 2.0.1, bit_field 0.10.3, bitflags 2.13.2, bytemuck 1.25.2, cfg-if 1.0.5, crunchy 0.2.4,
+half 2.7.1, libm 0.2.16, miniz_oxide 0.8.9, num-complex 0.4.6, num-traits 0.2.19, pulp 0.22.3,
+pulp-wasm-simd-flag 0.1.1, raw-cpuid 11.6.0, reborrow 0.5.5, simd-adler32 0.3.10, smallvec
+1.16.2, zerocopy 0.8.59 and zune-inflate 0.2.54.
+
+The MIT License is the one that the ufbx section above gives.
