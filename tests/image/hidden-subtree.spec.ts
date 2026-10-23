@@ -37,8 +37,11 @@ for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
 	test(`objects below a hidden ancestor draw in place in the frame that shows them, on ${gpu}`, async ({
 		page,
 	}) => {
+		// CI's software GPU drew this page in 49.4 and 50.1 seconds on the webgpu tier, and cut it
+		// at 60 on a slower run. Both waits allow twice that figure.
+		test.setTimeout(150_000);
 		await page.goto(`hidden-subtree.html?gpu=${gpu}`);
-		const result = await pageResult<HiddenResult>(page, 60_000);
+		const result = await pageResult<HiddenResult>(page, 120_000);
 		expect(result.error).toBeUndefined();
 		const { hide, reference } = result.pictures;
 		expect(hide.failures).toEqual([]);
