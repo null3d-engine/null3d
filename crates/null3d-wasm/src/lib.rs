@@ -13,7 +13,7 @@
 //! engine's error table.
 
 use std::cell::{Cell, UnsafeCell};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use null3d_core::animation::{
@@ -3366,6 +3366,39 @@ pub fn render_graph_dot() -> String {
     // SAFETY: as in `with_engine`.
     let engine = unsafe { (*ENGINE.0.get()).as_mut() };
     engine.map_or_else(String::new, |e| e.renderer.graph_dot())
+}
+
+/// True while the development probe of the two-step pass is on, which `setDebugTwoStep` sets.
+static TWO_STEP_PROBE: AtomicBool = AtomicBool::new(false);
+
+/// The two-step answers of the last recorded frame. They are atomics because the page reads them
+/// while the sketch thread records frames: whether the frame wanted the two-step pass, declared it,
+/// had its second step built and drew it, then the render scale in thousandths.
+static TWO_STEP_VALUES: [AtomicU32; 5] = [const { AtomicU32::new(0) }; 5];
+
+/// Turns the development probe of the two-step pass on or off. Its answers stay zero until it is on,
+/// so a page that never asks for them prints nothing.
+#[wasm_bindgen(js_name = setDebugTwoStep)]
+pub fn set_debug_two_step(on: bool) {
+    TWO_STEP_PROBE.store(on, Ordering::Relaxed);
+}
+
+/// The two-step answers of the last recorded frame, as the address of five 32-bit words in engine
+/// memory: whether the frame wanted the two-step pass, declared it, had its second step built and
+/// drew it, then the render scale in thousandths. The address is zero, with no answers to read,
+/// until `setDebugTwoStep(true)`.
+#[wasm_bindgen(js_name = debugTwoStep)]
+pub fn debug_two_step() -> u32 {
+    if !TWO_STEP_PROBE.load(Ordering::Relaxed) {
+        return 0;
+    }
+    // SAFETY: as in `with_engine`.
+    let engine = unsafe { (*ENGINE.0.get()).as_ref() };
+    let report = engine.map_or([0; 5], |e| e.renderer.two_step_report());
+    for (word, value) in TWO_STEP_VALUES.iter().zip(report) {
+        word.store(value, Ordering::Relaxed);
+    }
+    TWO_STEP_VALUES.as_ptr() as usize as u32
 }
 
 /// Fits the main directional light's cascades to the camera's view again, after a camera with the

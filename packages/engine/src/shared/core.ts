@@ -690,6 +690,17 @@ export interface CoreGlue extends CoreErrors {
 	/** The render graph of the passes as they are now, as Graphviz DOT text. */
 	renderGraphDot(): string;
 	/**
+	 * Turns the development probe of the two-step pass on. Its answers stay zero until it is on, so
+	 * nothing reads them unless the page asked.
+	 */
+	setDebugTwoStep(on: boolean): void;
+	/**
+	 * The two-step answers of the last recorded frame, as the address of five 32-bit words: whether
+	 * the frame wanted the two-step pass, declared it, had its second step built and drew it, then
+	 * the render scale in thousandths. Zero until `setDebugTwoStep(true)`.
+	 */
+	debugTwoStep(): number;
+	/**
 	 * Adds a row to the light table for the object `handle`; `kind` is one of the `LIGHT_KIND_*`
 	 * codes. Returns the light's id.
 	 */
@@ -1201,6 +1212,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createPassTexture',
 	'renderGraphMessage',
 	'renderGraphDot',
+	'setDebugTwoStep',
+	'debugTwoStep',
 	'createLight',
 	'copyLight',
 	'destroyLight',
