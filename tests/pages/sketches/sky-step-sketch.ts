@@ -5,12 +5,14 @@
 // spheres' colours, so a test can weigh each step as the viewers see it.
 import { defineSketch } from '@null3d/engine';
 
-/** The sun's height above the horizon where the sweep starts, in degrees, and where it ends. */
+/** The sun's height above the horizon where the sweep starts, in degrees, and where it ends: three
+ * half-degree steps, the step that a map draws for. */
 const START = 8;
-const END = 4;
+const END = 6.5;
 /** The frames of the sweep. The sun sinks slow enough that a fill of 20 frames fits inside each
- * half-degree step, so the light moves in steps of a half degree and not of a fill's lag. */
-const FRAMES = ((START - END) / 0.5) * 30;
+ * half-degree step, so the light moves in steps of a half degree and not of a fill's lag. The
+ * finished run needs few frames: a software GPU draws them far slower than a real one. */
+const FRAMES = 72;
 
 export default defineSketch(async ({ scene, assets, geometry, materials, post, page, quality }) => {
 	quality.set({ minRenderScale: 1 });
