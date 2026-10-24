@@ -1,7 +1,38 @@
 // The real-light search: the pool of lights goes to the cars nearest the camera. The lanes near the
-// camera are read in full, so the pool holds the true nearest cars, whatever the count.
+// camera are read in full, so the pool holds the true nearest cars, whatever the count. The search
+// keeps its choice between searches, so a car near the edge does not switch on and off.
 import { expect, test } from 'bun:test';
-import { type LaneSearch, laneGroups, moveLights } from './lights';
+import {
+	type LaneSearch,
+	LIGHT_KEEP,
+	LIGHT_SECONDS,
+	type LightPool,
+	laneGroups,
+	moveLights,
+} from './lights';
+
+/** An empty pool of `slots` lights, before its first search. */
+function freshPool(slots: number): LightPool {
+	return {
+		distance: new Float32Array(slots).fill(Number.POSITIVE_INFINITY),
+		place: new Float32Array(slots * 3),
+		key: new Int32Array(slots).fill(-1),
+		searchedAt: Number.NEGATIVE_INFINITY,
+	};
+}
+
+/** One still car on a lane that runs along x, which the eye reads from `x`. */
+function stillCar(x: number, y: number, z: number): LaneSearch {
+	const positions = new Float32Array([x, y, z]);
+	const values = new Float32Array([0, 0, 1000, 0]);
+	return {
+		alongX: true,
+		yaw: Math.PI / 2,
+		active: 1,
+		batch: { positions, values },
+		groups: laneGroups(positions, 1, true),
+	};
+}
 
 /** A car's place at `time`, as the vertex shader moves it along an x-aligned lane. */
 function carPlace(
@@ -104,10 +135,7 @@ test('the rows of one lane group together, whatever their order', () => {
 for (const rows of [30_000, 100_000]) {
 	test(`at ${rows} rows the pool holds the nearest cars`, () => {
 		const { search, truth } = traffic(rows);
-		const pool = {
-			distance: new Float32Array(6).fill(Number.POSITIVE_INFINITY),
-			place: new Float32Array(18),
-		};
+		const pool = freshPool(6);
 		moveLights([search], [3, 26, 4], 0, 150, pool);
 		const found = truth.slice(0, 6).map((place) => ({
 			place,
@@ -130,10 +158,43 @@ for (const rows of [30_000, 100_000]) {
 
 test('the pool turns off when no car is near', () => {
 	const { search } = traffic(30_000);
-	const pool = {
-		distance: new Float32Array(4).fill(Number.POSITIVE_INFINITY),
-		place: new Float32Array(12),
-	};
+	const pool = freshPool(4);
 	moveLights([search], [0, 5000, 0], 0, 150, pool);
 	expect(Array.from(pool.distance)).toEqual([Infinity, Infinity, Infinity, Infinity]);
+});
+
+test('the search keeps its choice between searches', () => {
+	const { search } = traffic(30_000);
+	const pool = freshPool(1);
+	const eye = [3, 26, 4];
+	expect(moveLights([search], eye, 0, 150, pool)).toBe(true);
+	const held = pool.place[0] as number;
+	// The eye moves far away, but a call inside the cadence does not search, so the light stays.
+	expect(moveLights([search], [5000, 26, 4], LIGHT_SECONDS / 2, 150, pool)).toBe(false);
+	expect(pool.place[0]).toBe(held);
+	// Once the cadence passes, the search follows the eye and turns the light off.
+	expect(moveLights([search], [5000, 26, 4], LIGHT_SECONDS, 150, pool)).toBe(true);
+	expect(pool.distance[0]).toBe(Infinity);
+});
+
+test('a car at the edge keeps its light a little past the range', () => {
+	const car = stillCar(0, 0, 0);
+	const pool = freshPool(1);
+	const range = 150;
+	// The car starts inside the range, so it takes the light.
+	moveLights([car], [range - 1, 0, 0], 0, range, pool);
+	expect(pool.distance[0]).toBe(range - 1);
+	// The eye moves so that the car is just past the range: the car keeps the light, so a camera
+	// that drifts across the edge cannot blink it.
+	const past = (range + range * LIGHT_KEEP) / 2;
+	moveLights([car], [past, 0, 0], LIGHT_SECONDS, range, pool);
+	expect(pool.distance[0]).toBe(past);
+	// Past the kept range, the light goes to nobody and the car turns off.
+	const beyond = range * LIGHT_KEEP + 1;
+	moveLights([car], [beyond, 0, 0], LIGHT_SECONDS * 2, range, pool);
+	expect(pool.distance[0]).toBe(Infinity);
+	// A car that never held a light enters only inside the range.
+	const fresh = freshPool(1);
+	moveLights([car], [past, 0, 0], 0, range, fresh);
+	expect(fresh.distance[0]).toBe(Infinity);
 });

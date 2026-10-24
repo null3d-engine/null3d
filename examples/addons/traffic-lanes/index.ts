@@ -8,7 +8,9 @@
 // the movement together.
 //
 // The add-on also has an option for real lights: it keeps a pool of point lights and moves them to
-// the nearest vehicles, a few times a second, so the road near the camera catches their glow.
+// the vehicles nearest the camera, a few times a second, so the road near the camera catches their
+// glow. A car that holds a light keeps it a little past the light's range, so it cannot blink at
+// the edge of the range.
 import {
 	type ColorInput,
 	type MeshGeometry,
@@ -17,9 +19,8 @@ import {
 	quat,
 	type SketchContext,
 	type Vec3Like,
-	vec3,
 } from '@null3d/engine';
-import { type LightPool, laneGroups, moveLights } from './lights';
+import { LIGHT_RANGE, type LightPool, laneGroups, moveLights } from './lights';
 import vehicleShader from './vehicle.wgsl';
 
 /** The size of a vehicle that `createVehicleHull` builds. */
@@ -206,8 +207,10 @@ export interface TrafficLaneOptions {
 	/** The layer mask of every row. Give the effect layer to keep a route guard off the traffic. */
 	layers?: number;
 	/**
-	 * How many of the nearest vehicles get a real point light, a few times a second. The default is
-	 * 0. Each one costs a surface as a point light does, so keep the count small.
+	 * How many vehicles get a real point light. The lights go to the vehicles nearest the camera,
+	 * and the pool searches a few times a second. A car keeps its light a little past the light's
+	 * range, so it does not blink at the edge. The default is 0. Each light costs a surface as a
+	 * point light does, so keep the count small.
 	 */
 	realLights?: number;
 }
@@ -240,10 +243,6 @@ const HEADINGS = [
 	{ yaw: 0, alongX: false, sign: 1 },
 	{ yaw: Math.PI, alongX: false, sign: -1 },
 ] as const;
-
-/** How far from the camera a real light may sit, in meters, and how often the pool searches. */
-const LIGHT_RANGE = 150;
-const LIGHT_SECONDS = 0.25;
 
 /** Builds the traffic of a plan of lanes. */
 export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptions): TrafficLanes {
@@ -369,9 +368,13 @@ export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptio
 	);
 	const bestDistance = new Float32Array(realLights).fill(Number.POSITIVE_INFINITY);
 	const bestPlace = new Float32Array(realLights * 3);
-	const pool: LightPool = { distance: bestDistance, place: bestPlace };
-	const eyeAt = vec3.create();
-	let searchedAt = Number.NEGATIVE_INFINITY;
+	const bestKey = new Int32Array(realLights).fill(-1);
+	const pool: LightPool = {
+		distance: bestDistance,
+		place: bestPlace,
+		key: bestKey,
+		searchedAt: Number.NEGATIVE_INFINITY,
+	};
 	let drawn = 0;
 
 	/** Draws `count` vehicles, each heading taking its share from the front of its shuffled rows. */
@@ -404,10 +407,8 @@ export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptio
 			for (const light of lights) light.destroy();
 		},
 		update(eye, time) {
-			if (realLights === 0 || time - searchedAt < LIGHT_SECONDS) return;
-			searchedAt = time;
-			vec3.set(eyeAt, eye[0] as number, eye[1] as number, eye[2] as number);
-			moveLights(batches, eyeAt, time, LIGHT_RANGE, pool);
+			if (realLights === 0) return;
+			if (!moveLights(batches, eye, time, LIGHT_RANGE, pool)) return;
 			for (let slot = 0; slot < realLights; slot++) {
 				const light = lights[slot] as (typeof lights)[number];
 				if ((bestDistance[slot] as number) === Number.POSITIVE_INFINITY) {
