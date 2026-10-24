@@ -179,21 +179,6 @@ describe("CI's workflow", () => {
 		expect(gated).toEqual(others);
 	});
 
-	it('starts every job after the changes job, which waits on a push to a pull request', () => {
-		// A newer push in the wait cancels the run before any job but that one has started.
-		const waits = (name: string, seen = new Set<string>()): boolean =>
-			needsOf(jobs[name]).some(
-				(need) => need === 'changes' || (!seen.has(need) && waits(need, seen.add(need))),
-			);
-		const early = Object.keys(jobs).filter((name) => name !== 'changes' && !waits(name));
-		expect(early).toEqual([]);
-		const wait = jobNamed('changes').steps?.[0];
-		expect(wait?.if).toBe(
-			"github.event_name == 'pull_request' && github.event.action == 'synchronize'",
-		);
-		expect(wait?.run).toMatch(/^sleep \d+$/);
-	});
-
 	it("lets a job skip only on the changes job's answer that ci-passed allows", () => {
 		const step = jobNamed('ci-passed').steps?.find(({ name }) => name === 'Every job passed');
 		const gate = Object.fromEntries(
@@ -576,13 +561,19 @@ describe("CI's workflow", () => {
 		// The pushes after it run in the pull request's own group, so they never cancel it.
 		expect(group).toContain("github.event.action == 'ready_for_review'");
 		expect(group).toContain("format('pr-{0}{1}'");
-		// A later full run waits for it, so it ends with a result.
+	});
+
+	it('cancels a run in progress only on a push to main, so every other run that starts ends', () => {
+		// Cancelling a started pull request run threw its work away: its landings come in bursts,
+		// and a later run waits instead, while GitHub drops an older waiting run before it starts.
 		const cancel = String(
 			(workflow as { concurrency?: { 'cancel-in-progress'?: string } }).concurrency?.[
 				'cancel-in-progress'
 			],
 		);
-		expect(cancel).toContain("github.event.action != 'ready_for_review'");
+		expect(cancel).toMatch(
+			/^\$\{\{ github\.event_name == 'push' && github\.ref == 'refs\/heads\/main' \}\}$/,
+		);
 	});
 
 	it("moves the build job's files and the load builds only through the archive action", () => {
