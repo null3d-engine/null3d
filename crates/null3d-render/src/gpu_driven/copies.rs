@@ -29,6 +29,7 @@ use null3d_core::world::UNBOUNDED_RADIUS;
 
 use super::layout::{BUCKET_WORDS, INDEX_ENTRIES_PER_COPY, Layout};
 use crate::frame::{CellOffsets, RecordError};
+use crate::levels::{StageWatches, key_level};
 
 /// How far from a switch distance a source counts toward both levels that it may pick, as a share
 /// of the distance. It dwarfs the difference that a CPU and a GPU can make of the same distance,
@@ -49,6 +50,37 @@ impl Layout {
     /// True when a bucket of this layout holds a level's copies.
     pub(super) fn picks_levels(&self) -> bool {
         !self.level_buckets.is_empty()
+    }
+
+    /// Notes the levels that the copies counted last were picked at, for the staged levels that a
+    /// loader waits on: a level whose bucket holds a copy was picked. A mesh that the layout draws
+    /// at no level restarts its warm-up, so a page that loads a model before it draws it keeps its
+    /// stages. `counted` says that this frame counted copies; false resets every warm-up. Costs
+    /// nothing while no loader waits.
+    pub(super) fn note_stage_picks(&self, watches: &mut StageWatches, frame: u64, counted: bool) {
+        if watches.is_empty() {
+            return;
+        }
+        if !counted {
+            watches.hold(frame, |_| false);
+            return;
+        }
+        watches.hold(frame, |mesh| self.draws_mesh(mesh));
+        for &bucket in &self.level_buckets {
+            let count = self.copy_counts.get(bucket as usize).copied().unwrap_or(0);
+            if count > 0 {
+                let (mesh, level) = key_level(self.buckets[bucket as usize].mesh_key);
+                watches.picked(mesh, level);
+            }
+        }
+    }
+
+    /// True when a bucket of the layout draws `mesh` at some level: a source of the mesh exists in
+    /// the scene, whatever the view shows.
+    fn draws_mesh(&self, mesh: u32) -> bool {
+        self.level_buckets
+            .iter()
+            .any(|&bucket| key_level(self.buckets[bucket as usize].mesh_key).0 == mesh)
     }
 
     /// Counts the copies that `views` place in each bucket, and gives each bucket a slice of that

@@ -1114,6 +1114,9 @@ pub struct SceneSettings {
     feature_instances: FeatureInstanceTable,
     /// The meshes with levels of detail.
     levels: Levels,
+    /// The meshes whose finer levels a loader still waits on, and the levels that the views picked
+    /// since each watch began.
+    stage_watches: crate::levels::StageWatches,
     /// The meshes' trees of cluster patches, which large static meshes draw instead of their whole
     /// triangle lists.
     patches: crate::patches::PatchStorage,
@@ -1251,6 +1254,7 @@ impl SceneSettings {
             vertex_draws: VertexDrawTable::default(),
             feature_instances: FeatureInstanceTable::default(),
             levels: Levels::default(),
+            stage_watches: crate::levels::StageWatches::default(),
             patches: crate::patches::PatchStorage::default(),
             level_quality: LevelQuality::default(),
             level_scale: RenderScale::FULL,
@@ -2289,11 +2293,48 @@ impl SceneSettings {
     }
 
     /// Takes the levels away from the meshes that are no longer live, and from the meshes whose
-    /// levels name one.
+    /// levels name one, and stops the watches of the staged levels that are gone.
     pub(crate) fn forget_removed_levels(&mut self) {
         let meshes = &self.meshes;
-        self.levels
-            .forget_removed(|mesh| mesh.checked_sub(1).and_then(|id| meshes.mesh(id)).is_some());
+        let live = |mesh: u32| mesh.checked_sub(1).and_then(|id| meshes.mesh(id)).is_some();
+        self.levels.forget_removed(live);
+        self.stage_watches.forget(live);
+    }
+
+    /// The engine's frame number, as the clock holds it: the frame that the renderer began last,
+    /// or 0 before its first frame.
+    fn frame(&self) -> u32 {
+        f32::to_bits(self.clock[2])
+    }
+
+    /// Watches the levels that the views pick for `mesh` from the frame that the renderer began
+    /// last on, in place of a watch that the mesh had. A loader calls it before it waits for the
+    /// next stage of the mesh's levels.
+    pub fn watch_stage_levels(&mut self, mesh: u32) {
+        if mesh != 0 {
+            self.stage_watches.watch(mesh, u64::from(self.frame()));
+        }
+    }
+
+    /// The levels of `mesh` that a view picked since its watch began, one bit each, bit 0 for the
+    /// mesh itself. 0 for a mesh that no loader watches.
+    pub fn stage_level_picks(&self, mesh: u32) -> u32 {
+        self.stage_watches.picks(mesh)
+    }
+
+    /// The frames that drew `mesh` since its watch began, 0 for a mesh that no loader watches.
+    pub fn stage_frames(&self, mesh: u32) -> u32 {
+        self.stage_watches.frames(mesh, u64::from(self.frame()))
+    }
+
+    /// The watches of the staged levels, which a frame's builder notes its picks in.
+    pub(crate) fn stage_watches_mut(&mut self) -> &mut crate::levels::StageWatches {
+        &mut self.stage_watches
+    }
+
+    /// True while a loader waits for a stage, so a frame with none pays almost nothing.
+    pub(crate) fn watches_stages(&self) -> bool {
+        !self.stage_watches.is_empty()
     }
 
     /// Takes the trees of cluster patches away from the removed meshes.

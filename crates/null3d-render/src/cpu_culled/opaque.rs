@@ -871,6 +871,7 @@ mod tests {
             for bucket in 0..2 {
                 layout.buckets.push(Bucket {
                     material: 1,
+                    mesh_key: 1,
                     group: 0,
                     shift: 0,
                     moves: false,
