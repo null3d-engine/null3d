@@ -35,9 +35,9 @@ video.src = '/clips/intro.mp4';
 video.muted = true;
 video.loop = true;
 video.playsInline = true;
-// Keep the element in the page but out of sight. Some browsers decode no frame of an element
-// that display: none hides, so park it past the page's edge instead. Its sound comes from the
-// page as any video's does.
+// Keep the element in the page but out of sight. An element that display: none hides may give no
+// frame in some browsers, so park it past the page's edge instead. Its sound comes from the page
+// as any video's does.
 video.style.position = 'absolute';
 video.style.left = '-10000px';
 video.style.width = '1px';
@@ -97,7 +97,7 @@ The video's own frame rate sets the cost. A 30 frames a second video uploads its
 - A video from another origin needs `video.crossOrigin = 'anonymous'` and the server's CORS headers. Without them, the browser refuses to copy the video's pixels into an image. No frames arrive, and the texture keeps the frame it had.
 - A browser that refuses to play the video, as an autoplay policy does before the user acts, sends no frames. The material then draws with its color alone, and the engine reports no error.
 - The engine reads each frame through `createImageBitmap`, which every supported browser has. It does not need `VideoFrame`, which Safari and Firefox cannot make from a video element.
-- Keep the element in the page's layout, out of sight. Some browsers decode no frame of an element that `display: none` hides.
+- Keep the element in the page's layout, out of sight. An element that `display: none` hides may give no frame in some browsers.
 - A browser reports each frame that the video presents, and the page sends that frame. Some browsers report none for a video element that the page never shows. The page then checks the video's time on each display frame while it plays, and stops that check while the video is paused.
 - A phone plays a video at the rate that its heat allows, and the browser may lower that rate. A video that must keep time with the scene, such as a synchronized caption track, reads the video's time in the page.
 - The video's own element handles playback. The engine never plays, pauses or seeks it, so a page that shows a video in the scene and on the page at once runs one element and one timeline.

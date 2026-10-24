@@ -65,7 +65,7 @@ figure after the pause is not the video: the engine writes about a kilobyte of i
 frame, such as the values that a draw reads, and it is the same on both GPU paths and on both
 renderers. A frame of the video in that window would be hundreds of times larger, and the check
 still fails one. The colors of both bands sat within one step of the data textures' colors on
-Safari and WebGL2, and within two steps on Firefox. The page's copy time is the time that
+Safari, and within two steps on Firefox and on Chromium. The page's copy time is the time that
 `createImageBitmap` takes to resolve; Safari's figure is far shorter than the others, so its copy
 may finish later, when the image is read.
 
