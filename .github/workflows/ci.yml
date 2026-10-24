@@ -1053,14 +1053,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # `later` names the test files that load the terrain add-on's package, which packs
+          # while the part's other tests run.
           - id: engine
             part: the engine and KTX2 pages
             pages: engine ktx2-files texture-cache
-            tests: engine.spec.ts content-security-policy.spec.ts cdn.spec.ts ktx2.spec.ts
+            tests: engine.spec.ts content-security-policy.spec.ts ktx2.spec.ts
+            later: cdn.spec.ts
           - id: others
             part: the errors, sketch shaders, stats and glTF pages
             pages: errors sketch-shaders stats gltf-files
             tests: errors.spec.ts sketch-shaders.spec.ts stats.spec.ts gltf.spec.ts
+            later: ""
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
@@ -1077,22 +1081,37 @@ jobs:
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
-      # The CDN test loads one add-on from the part's build: its packed library, with its shader
-      # compiled, is served from the second origin.
-      - name: The terrain add-on's package, which the CDN test loads
-        if: matrix.id == 'engine'
-        run: bun tools/build-package.ts terrain
       - name: The production build of the part's test pages
         run: bun run build:test-pages ${{ matrix.pages }}
+      # The CDN test loads one add-on from the part's build: its packed library, with its shader
+      # compiled, is served from the second origin. The package packs in the background while the
+      # other tests run, after the page builds, which each take about 10 GB of memory: it took 61 s
+      # before them in run 40066039696, on the part's longest chain.
+      - name: The terrain add-on's package, which the CDN test loads, packed beside the tests
+        if: matrix.later != ''
+        run: |
+          nohup bash -c 'bun tools/build-package.ts terrain > "$RUNNER_TEMP/terrain.log" 2>&1; echo $? > "$RUNNER_TEMP/terrain.status"' > /dev/null 2>&1 &
       - name: The part's production build tests, on SwiftShader, WebGPU and WebGL2
         env:
           NULL3D_PRODUCTION_PAGES: prebuilt
         run: bun run test:browser ${{ matrix.tests }} --project "production build"
+      - name: The terrain add-on's package, once it has packed
+        if: matrix.later != '' && !cancelled()
+        timeout-minutes: 10
+        run: |
+          while [ ! -f "$RUNNER_TEMP/terrain.status" ]; do sleep 2; done
+          cat "$RUNNER_TEMP/terrain.log"
+          exit "$(cat "$RUNNER_TEMP/terrain.status")"
+      - name: The part's production build tests that load the package
+        if: matrix.later != '' && !cancelled()
+        env:
+          NULL3D_PRODUCTION_PAGES: prebuilt
+        run: bun run test:browser ${{ matrix.later }} --project "production build"
       - name: The part's production build tests that run alone
         if: "!cancelled()"
         env:
           NULL3D_PRODUCTION_PAGES: prebuilt
-        run: bun run test:browser ${{ matrix.tests }} --project "production build, alone" --workers=1 --pass-with-no-tests
+        run: bun run test:browser ${{ matrix.tests }} ${{ matrix.later }} --project "production build, alone" --workers=1 --pass-with-no-tests
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
