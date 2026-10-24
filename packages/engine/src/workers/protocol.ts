@@ -11,6 +11,7 @@ import type { FramePacing } from '../render/loop';
 import type { Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { type Build, loadGlue, type StartedCore, startCore } from '../shared/core';
+import type { ReplayProgram, ReplayResult } from '../shared/recording';
 import type { WAKE } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import type { QualityStart, QualityUpdate } from '../sketch/quality';
@@ -84,6 +85,10 @@ export type SketchWorkerInit = CoreHandoff & {
 	hold?: number;
 	/** A timed script that hold mode performs as it steps the sketch. */
 	holdScript?: HoldScript;
+	/** A recording whose frames the sketch runs, one per frame, with the input that it read. */
+	replay?: ReplayProgram;
+	/** True when the page records the session's frames and input, for a bug report. */
+	record?: boolean;
 	/** The quality preset and settings that the page chose. */
 	quality: QualityStart;
 	/** The highest target frame rate, as the sketch runner's options give it. */
@@ -189,6 +194,10 @@ export type WorkerReply =
 	| { type: 'jobs-wanted'; count: number }
 	/** What a timed script's steps gave, after the sketch worker performed them in a hold. */
 	| { type: 'hold-script'; result: HoldScriptResult }
+	/** What a replay gave, after the sketch worker ran the recording's frames. */
+	| { type: 'replay-done'; result: ReplayResult }
+	/** The recording of the session so far, which the page saves as a file. */
+	| { type: 'recording'; bytes: Uint8Array }
 	| ({ type: 'captured' } & CapturedFrame)
 	| { type: 'captured-image'; image: Blob }
 	| { type: 'capture-failed'; message: string };
@@ -200,6 +209,8 @@ export type SketchWorkerMessage =
 	| ShaderPreload
 	| RendererRequest
 	| { type: 'post'; name: string; data: unknown }
+	/** Asks the sketch worker to save the recording of the session so far. */
+	| { type: 'save-recording' }
 	/** Hot updates of the project's WGSL on the dev server, for the sketch's custom materials. */
 	| { type: 'wgsl'; updates: readonly WgslUpdate[] }
 	/**

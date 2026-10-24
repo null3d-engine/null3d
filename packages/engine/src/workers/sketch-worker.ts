@@ -43,7 +43,10 @@ const step = startSteps('sketch');
 
 startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => {
 	const message = event.data;
-	if (message.type === 'load-renderer') {
+	if (message.type === 'save-recording') {
+		const bytes = await runner?.saveRecording();
+		if (bytes !== undefined) replyToPage({ type: 'recording', bytes }, [bytes.buffer]);
+	} else if (message.type === 'load-renderer') {
 		drawLoad ??= loadDrawModule();
 	} else if (message.type === 'load-shaders') {
 		drawLoad ??= loadDrawModule();
@@ -94,6 +97,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					capabilities: message.capabilities,
 					...senders,
 					pageUrl: message.pageUrl,
+					sketchUrl: message.sketchUrl,
 					maxTargetFps: message.maxTargetFps,
 					threads: message.threads,
 					twoStepProbe: message.twoStepProbe,
@@ -105,6 +109,8 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 				},
 				message.hold,
 				message.holdScript,
+				message.replay,
+				message.record,
 			);
 			step('engine created');
 			// The sketch downloads while the renderer starts. The renderer starts before the setup,
@@ -139,8 +145,12 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			// that the page's start waits for.
 			const scriptResult = runner.holdScriptResult;
 			if (scriptResult !== undefined) replyToPage({ type: 'hold-script', result: scriptResult });
+			// The page publishes this with the held frame, so it must arrive before the ready reply.
+			const replayResult = runner.replayOutcome;
+			if (replayResult !== undefined) replyToPage({ type: 'replay-done', result: replayResult });
 			step(message.hold === undefined ? 'sketch loaded' : 'sketch loaded and held');
-			if (!tier && message.hold === undefined) void runPipelined(runner, message.control, fault);
+			if (!tier && message.hold === undefined && message.replay === undefined)
+				void runPipelined(runner, message.control, fault);
 			replyToPage({
 				type: 'ready',
 				role: 'sketch',
