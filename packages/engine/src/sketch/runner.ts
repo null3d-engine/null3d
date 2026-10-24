@@ -305,6 +305,9 @@ export class SketchRunner {
 	private readonly clock = new FrameClock();
 	/** The fixed steps' clock, which the sketch's options set up. */
 	private fixed = new FixedClock();
+	/** The page's count of resumes as the last frame read it, and whether the page showed since. */
+	private resumes = -1;
+	private resumed = false;
 	/** The sketch's `time`, which each frame updates in place. Its frames are those that run the sketch. */
 	private readonly time = { now: 0, dt: 0, frame: 0 };
 	/**
@@ -1181,7 +1184,10 @@ export class SketchRunner {
 	 * `timestamp` is the frame's time in milliseconds.
 	 */
 	step(timestamp: number): number {
-		this.clock.advance(timestamp, Atomics.load(this.sketch.control.slots, Slot.Resumes));
+		const resumes = Atomics.load(this.sketch.control.slots, Slot.Resumes);
+		this.resumed = this.resumes >= 0 && resumes !== this.resumes;
+		this.resumes = resumes;
+		this.clock.advance(timestamp, resumes);
 		return this.frame();
 	}
 
@@ -1448,7 +1454,8 @@ export class SketchRunner {
 		// render scale of this frame, and whose change handlers hear of a shadow step.
 		if (play && this.governorLoop) {
 			this.governorLoop.now[0] = start;
-			this.governorLoop.frame();
+			this.governorLoop.frame(this.resumed);
+			this.resumed = false;
 			if (this.governor.stepChanges !== this.stepChanges) this.applyGovernedSteps();
 		}
 		// Handlers that hear of a restart may create objects with new pipelines, so their frame
