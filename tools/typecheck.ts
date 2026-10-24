@@ -34,6 +34,7 @@ export const PROJECTS = [
 	'packages/three-compat/tsconfig.test.json',
 	'packages/water',
 	'packages/water/tsconfig.test.json',
+	'packages/water/tsconfig.page.json',
 	'packages/cli',
 	'tests/pages',
 	'tests/fixtures/project',
