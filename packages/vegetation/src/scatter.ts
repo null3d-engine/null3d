@@ -4,7 +4,14 @@
 // and the tiles are placed in a fixed order inside the build, so any order that a page adds them
 // in gives the same points.
 
-import { type EcoInput, type EcoLayer, type EcoRule, LAYER_ORDER, ruleScore } from './ecology';
+import {
+	checkRules,
+	type EcoInput,
+	type EcoLayer,
+	type EcoRule,
+	LAYER_ORDER,
+	ruleScore,
+} from './ecology';
 import type { GroundMaps } from './ground';
 import { hashAt, pcg, unitAt } from './hash';
 import { type VarianceMaps, varianceMaps } from './variance';
@@ -279,6 +286,7 @@ export class EcoScatter {
 
 	constructor(options: ScatterOptions) {
 		const { ground, rules } = options;
+		checkRules(rules);
 		this.seed = options.seed >>> 0;
 		this.ground = ground;
 		this.rules = rules;

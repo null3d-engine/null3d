@@ -154,6 +154,9 @@ export function ruleScore(rule: EcoRule, read: (input: EcoInput) => number): num
 	return score;
 }
 
+/** The most saplings that one adult gathers beneath it, which keeps a valley's build bounded. */
+const MAX_CLUSTER = 64;
+
 /** The problems that a set of rules has, as sentences; an empty list means they place plants. */
 function ruleProblems(rules: readonly EcoRule[]): string[] {
 	const problems: string[] = [];
@@ -178,6 +181,8 @@ function ruleProblems(rules: readonly EcoRule[]): string[] {
 				problems.push(`${at}.cluster.min must be a whole number from 0.`);
 			if (!Number.isInteger(cluster.max) || cluster.max < cluster.min)
 				problems.push(`${at}.cluster.max must be a whole number of cluster.min or more.`);
+			if (cluster.max > MAX_CLUSTER)
+				problems.push(`${at}.cluster.max must be ${MAX_CLUSTER} or less.`);
 		}
 		if (rule.clump && !(rule.clump[0] >= 0 && rule.clump[0] <= rule.clump[1] && rule.clump[1] <= 1))
 			problems.push(`${at}.clump must hold two numbers from 0 to 1, smallest first.`);
