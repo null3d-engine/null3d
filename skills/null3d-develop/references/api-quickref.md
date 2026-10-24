@@ -53,6 +53,7 @@ const engine = await createEngine({
   onProgress: (stage) => {},             // 'core', then 'sketch' after the setup and any preset check, then 'first-frame'; 'memory-wait' first if the browser refuses memory for 10 s (0.2)
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
   onSketchError: (error) => {},            // (0.2) each distinct error the sketch's own code threw in a frame; the engine keeps drawing
+  onWorkerRetry: (worker, script) => {},   // (0.2) a worker's script did not load and the engine started a second copy; the console warns too
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
   transparent: false,    // true for a see-through canvas, with premultiplied alpha

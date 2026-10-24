@@ -3,7 +3,7 @@
 // change its `Worker` between starts, and each start then reaches the class the thread holds.
 import { describe, expect, test } from 'bun:test';
 import type { WasmError } from './wasm';
-import { spawnWorker } from './worker-start';
+import { spawnWorker, watchWorkerError } from './worker-start';
 
 const error: WasmError = (code, message) => new Error(`${code}: ${message}`) as never;
 
@@ -27,5 +27,37 @@ describe('spawnWorker', () => {
 			globalThis.Worker = Native;
 		}
 		expect(made).toEqual(['first file:///first.js', 'second file:///second.js']);
+	});
+});
+
+describe('watchWorkerError', () => {
+	/** A worker stand-in that a test fires an error event at. */
+	const worker = () => new EventTarget() as unknown as Worker;
+
+	test('hears a plain error event, which a script that did not load sends, with no message', () => {
+		const messages: string[] = [];
+		const target = worker();
+		watchWorkerError(target, (message) => messages.push(message));
+		target.dispatchEvent(new Event('error'));
+		expect(messages).toEqual(['']);
+	});
+
+	test('reports the message of a worker that threw', () => {
+		const messages: string[] = [];
+		const target = worker();
+		watchWorkerError(target, (message) => messages.push(message));
+		const event = new Event('error');
+		Object.defineProperty(event, 'message', { value: 'boom' });
+		target.dispatchEvent(event);
+		expect(messages).toEqual(['boom']);
+	});
+
+	test('stops listening once the returned function runs', () => {
+		const messages: string[] = [];
+		const target = worker();
+		const remove = watchWorkerError(target, (message) => messages.push(message));
+		remove();
+		target.dispatchEvent(new Event('error'));
+		expect(messages).toEqual([]);
 	});
 });
