@@ -419,6 +419,12 @@ export interface CoreGlue extends CoreErrors {
 	stageLevelPicks(base: number): number;
 	/** The frames that drew the mesh `base` since its watch began, 0 for a mesh that no watch has. */
 	stageFrames(base: number): number;
+	/**
+	 * Stops watching the levels that the views pick for the mesh `base`, so the frames that follow
+	 * pay nothing while no loader waits on it. The loader watches the mesh again when its camera
+	 * could want another stage.
+	 */
+	unwatchStageLevels(base: number): number;
 	/** The GPU bytes of every mesh: the mesh pages' buffers and the texture of morph deltas. */
 	meshMemoryBytes(): number;
 	/**
@@ -1245,6 +1251,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'watchStageLevels',
 	'stageLevelPicks',
 	'stageFrames',
+	'unwatchStageLevels',
 	'meshMemoryBytes',
 	'createMaterial',
 	'setMaterialValue',

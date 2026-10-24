@@ -455,7 +455,7 @@ const bitmap = await assets.loadImageBitmap('/ui/logo.png', { colorSpace, flipY,
 // relative addresses resolve against the page; errors: E1411 download, E1412 decode, E1413 CORS
 const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
 const upload = await assets.loadGltf(userFile, { rewriteUrl: (a) => (a.origin === location.origin ? a : null) }); // (0.2) check the addresses a user's model names
-const coarseOnly = await assets.loadGltf('/forest.glb', { maxLevels: 1 }); // (0.3) a --stages model: 1 draws only the level in the file; the loader also skips a level the camera never draws
+const coarseOnly = await assets.loadGltf('/forest.glb', { maxLevels: 1 }); // (0.3) a --stages model: 1 draws only the level in the file; the loader holds back a level the camera never draws, and fetches it once the camera comes close
 const stop = assets.registerGltfExtension({                     // (0.3) an add-on draws a glTF extension's primitives; the parts join the model
   extensions: ['KHR_gaussian_splatting'],                       // load(data, makers) returns { mesh, material } or a list, from makers.geometry and makers.materials
   load: (data, makers) => ({ mesh: makers.geometry.box(), material: makers.materials.unlit({ color: [1, 1, 1] }) }),

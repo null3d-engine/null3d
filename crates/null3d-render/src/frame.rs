@@ -2322,6 +2322,12 @@ impl SceneSettings {
         self.stage_watches.picks(mesh)
     }
 
+    /// Stops watching the levels that the views pick for `mesh`, so the frames that follow pay
+    /// nothing while no loader waits on the mesh. A later watch starts the count again.
+    pub fn unwatch_stage_levels(&mut self, mesh: u32) {
+        self.stage_watches.release(mesh);
+    }
+
     /// The frames that drew `mesh` since its watch began, 0 for a mesh that no loader watches.
     pub fn stage_frames(&self, mesh: u32) -> u32 {
         self.stage_watches.frames(mesh, u64::from(self.frame()))
