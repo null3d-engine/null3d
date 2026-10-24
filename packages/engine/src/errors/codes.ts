@@ -524,6 +524,14 @@ const DOCS = {
 			'E1434: assets.loadLightProbeGrid() could not read https://example.com/light/grid.json: its version is 2, and this engine reads version 1.',
 		since: '0.3',
 	},
+	E1435: {
+		title: 'Recording not read',
+		cause:
+			'createEngine() could not read the recording that ?replay= names, or the recording does not match this page. The file may not be a null3D recording, may come from another version of the format, may be cut short, or may name keys or fixed steps that this engine does not have. The message names the fault.',
+		example:
+			'E1435: createEngine() could not read the recording https://example.com/bug.n3dr: the file is not a null3D recording: it does not start with the format marker. Save the recording again, or ask for a new one.',
+		since: '0.3',
+	},
 	E1501: {
 		title: 'Render space full',
 		cause:

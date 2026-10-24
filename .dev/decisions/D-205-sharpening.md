@@ -2,8 +2,8 @@
 
 Status: decided by the M3-A10 task on 21 October 2026, for the owner's review. Built: the
 `post.set({ sharpen })` value, RCAS in `final.wgsl`, the two-step pass at the whole canvas's scale,
-the image tests and the cost page. The Mac's cost is recorded below; the iPad's and the S24-class
-phone's costs are not recorded yet. Date: 2026-10-21. Task: M3-A10.
+the image tests and the cost page. The Mac's cost and the iPad's and the phones' costs are recorded
+below. Date: 2026-10-21. Task: M3-A10.
 
 Summary: A sharpening value from 0 to 1 sharpens display color with FSR 1's RCAS in the second step
 of the final pass. That step now draws at the whole canvas's render scale while the value is set. It
@@ -69,6 +69,44 @@ fell under 8 and printed it before and after. The device column gives those read
 to 9.1 after the compatibility-mode half-scale test, when other work started. That test's two sides
 read the same figure.
 
+The same page ran on the iPad and on two phones through BrowserStack Automate on 24 October 2026,
+one session at a time. Each side is the median of three turns of two seconds. Each device ran both
+render scales on each GPU path that it has. The iPad's window was 1,032 by 1,264 CSS pixels at 2x,
+and its display ran at 59 Hz. The phones' window was 360 by 621 CSS pixels at 3x, and their
+displays ran at 30 Hz.
+
+| Measure | Off | On | Device and browser |
+| --- | --- | --- | --- |
+| GPU time per frame, WebGPU, scale 1 | 4.686 ms | 5.634 ms | iPad Pro 13 (2025), iOS 26, Safari 26.6.1 |
+| GPU time per frame, WebGPU, scale 0.5 | 4.337 ms | 4.265 ms | iPad Pro 13 (2025), iOS 26, Safari 26.6.1 |
+| Frame interval, WebGL2, scale 1 | 15.53 ms | 15.54 ms | iPad Pro 13 (2025), iOS 26, Safari 26.6.1 |
+| Frame interval, WebGL2, scale 0.5 | 15.56 ms | 15.56 ms | iPad Pro 13 (2025), iOS 26, Safari 26.6.1 |
+| GPU time per frame, WebGPU, scale 1 | 3.801 ms | 5.177 ms | Galaxy S25 (SM-S931B), Android 15, Chrome 152.0.7977.54 |
+| GPU time per frame, WebGPU, scale 0.5 | 4.588 ms | 4.588 ms | Galaxy S25 (SM-S931B), Android 15, Chrome 152.0.7977.54 |
+| Frame interval, WebGL2, scale 1 | 33.330 ms | 33.325 ms | Galaxy S25 (SM-S931B), Android 15, Chrome 152.0.7977.54 |
+| Frame interval, WebGL2, scale 0.5 | 33.330 ms | 33.330 ms | Galaxy S25 (SM-S931B), Android 15, Chrome 152.0.7977.54 |
+| Frame interval, WebGL2, scale 1 | 33.323 ms | 33.325 ms | Galaxy S24 (SM-S921B), Android 16, Chrome 152.0.7977.54 |
+| Frame interval, WebGL2, scale 0.5 | 33.328 ms | 33.325 ms | Galaxy S24 (SM-S921B), Android 16, Chrome 152.0.7977.54 |
+
+At the whole canvas's scale the sharpening adds 0.948 ms on the iPad, which is 20 percent of its
+4.686 ms frame. On the Galaxy S25 it adds 1.376 ms, which is 36 percent of that device's 3.801 ms
+frame. At half scale it adds nothing on either device, as on the Mac. The two sides of each pair
+agree within the run's noise.
+
+The iPad draws at 2,064 by 2,528 pixels, where one full-screen pass costs 0.948 ms. The Mac's
+1,920 by 1,080 pixels cost 0.393 ms on the same path. So the tablet pays about 2.4 times as much
+for 2.5 times the pixels. The Galaxy S25's cost per pixel is higher still, which is the shape of a
+phone GPU.
+
+WebGL2 gives no GPU timer on the iPad or on either phone, and both Android displays ran at 30 Hz.
+So those four rows hold the frame interval alone, and the value fits inside a frame there. On the
+S24 the render worker's CPU time rose from 0.955 ms to 1.125 ms with the value on at the whole
+canvas's scale. It did not rise at half scale. The S24 has no WebGPU adapter, so its two WebGPU
+pages skipped.
+
+The cloud devices control neither heat nor display settings, so their figures are guides. The GPU
+times come from each device's own timer and do not follow the display's rate.
+
 ## Decision
 
 The sharpening is a value of the post-processing settings, from 0 for off to 1 for the most. It
@@ -96,5 +134,6 @@ the upscaled image would need the upscale again for each of the four neighbors.
   an edge by about 10 steps, which the default threshold would not count.
 - The sharpening keeps each pixel's coverage and sharpens premultiplied color, as the upscale does
   below a render scale of 1, so a transparent canvas's edges sharpen the same way there.
-- The cost on the iPad and on an S24-class phone is owed, and the phone rows follow from the device
-  runs that the coordinator plans.
+- The sharpening adds 0.948 ms on an iPad Pro 13 at the whole canvas's scale, and 1.376 ms on a
+  Galaxy S25. It adds nothing at half scale on either. WebGL2 on the iPad and on both phones has no
+  GPU timer, and the Galaxy S24 has no WebGPU adapter. Those rows keep the frame interval alone.

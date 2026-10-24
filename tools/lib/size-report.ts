@@ -379,6 +379,27 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-renderer.js', module: 'render/draw.ts', loadedBy: 'page.js' },
 	...drawingParts('page', 'page-renderer.js'),
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
+	// A page records or replays only with a switch, so the format and the reader load then, and the
+	// save button loads only for a page that records. The page and the sketch worker each bundle
+	// their own copy of the format, as they do the glTF and KTX2 loaders, so each graph has a part.
+	{
+		name: 'page-recording.js',
+		module: 'shared/recording.ts',
+		loadedBy: 'page.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'sketch-worker-recording.js',
+		module: 'shared/recording.ts',
+		loadedBy: 'sketch-worker.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'page-record-button.js',
+		module: 'page/record-button.ts',
+		loadedBy: 'page.js',
+		onFirstCall: true,
+	},
 	// A page that shows no video downloads none of the support that follows one.
 	{ name: 'page-videos.js', module: 'page/videos.ts', loadedBy: 'page.js', onFirstCall: true },
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
@@ -1015,8 +1036,21 @@ export function downloadSizes(
  * over the old line, for the timed script that hold mode performs. The script's steps and the scene
  * property reads and writes that they use are in the sketch runner, and the page and a script share
  * one writer of input records. The rise leaves 1,164 bytes of room.
+ *
+ * It went to 191 KB on 25 October 2026: the recording and its replay added 722 bytes after Brotli
+ * to the start, for the page's replay switch, the download and check of a recording, and the offer
+ * to save one. The day's other landings had already filled most of the room: the base reached
+ * 194,126 bytes of the 194,560 line, so the feature landed 288 bytes over. The rise leaves 736
+ * bytes.
+ *
+ * It went to 192 KB the same day, because the 191 KB figure was a local build's against a stale
+ * base: CI measured the same commit's pipelined WebGL2 start at 196,106 bytes, 522 over that line,
+ * and every run stopped on it. The time of a GPU frame as the span of its passes had also grown the
+ * frame figures and the stats overlay. The rise leaves 502 bytes. The start went from 186 KB to
+ * 192 KB in two days, and the owner ruled on 25 October 2026 to keep raising the line as needed for
+ * now. A trim that wins bytes back runs beside the raises, and no crossing waits for it.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 190 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 192 * 1024 };
 
 /**
  * The budget for each part that loads after the start. The Brotli figure rose on 22 October 2026,
@@ -1067,11 +1101,16 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
  * fill with over a hundred builds: the largest file went from 1,332,440 to 1,752,865 bytes
  * uncompressed and from 39,341 to 49,501 bytes after Brotli. A separate permutation value would
  * have doubled the lit builds instead, past the build budget.
+ *
+ * The Brotli figure rose to 56 KB on 24 October 2026 for the water add-on (D-14's addendum of that
+ * date). Its surface function rides every build of the standard material, and the largest set is
+ * 1,204.5 KB uncompressed and 53.3 KB after Brotli, so the add-on's own gate would have failed on a
+ * feature that works as the engine's own materials do.
  */
 export const FIRST_USE_SHADER_BUDGET: Budget = {
 	raw: 1_792 * 1024,
 	gzip: 320 * 1024,
-	brotli: 52 * 1024,
+	brotli: 56 * 1024,
 };
 
 /**

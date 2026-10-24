@@ -236,11 +236,11 @@ last, and returns flat arrays of nine floats for each point.
   tint and lichen all come from the integer hash, and the rotation is stored as a share of a whole
   turn rather than an angle in radians. A point list therefore matches bit for bit on every device,
   with no tolerance to argue about. A strict comparison across devices needed this: `Math.sin` and
-  `Math.atan2` are allowed to differ in their last bit between engines, and a position built from
-  them would not compare equal.
-- **The tiles cannot change the result.** A candidate's cell is indexed over the whole square, not
-  over the tile, and the build walks the cells of the tiles added in one row-by-row order. The first
-  plant to claim a place keeps it. Both the order that the tiles arrive in and the tile size
+  `Math.atan2` are allowed to differ in their last bit between engines. A position built from them
+  would not compare equal.
+- **The tiles cannot change the result.** A candidate's cell is indexed over the whole square. It
+  is not indexed over a tile. The build walks the cells of the tiles added in one row-by-row order.
+  The first plant to claim a place keeps it. Both the order that the tiles arrive in and the tile size
   therefore leave the points identical, and the test checks all three. The first version walked the
   tiles one after another, which placed each tile band's rows before the next tile band's, so a
   larger tile won other shared places.
@@ -252,14 +252,30 @@ last, and returns flat arrays of nine floats for each point.
   law, so one channel holds most of it and the maximum left the rest of the ground at 0.06. The
   percentile gives the channels 1 and the slopes near 0, which is what a species' curve can use.
 - **The curves were fitted to Creek's measured ground.** The first set was written from the general
-  shape of a valley and placed 57 plants in Creek, with nothing in the ground layer at all: the
-  bounds were narrower than the ground's own bands. The built-in rules now follow the measured
+  shape of a valley. It placed 57 plants in Creek, with nothing at all in the ground layer, because
+  its bounds were narrower than the ground's own bands. The built-in rules now follow the measured
   percentiles of each input over the valley. A scene on other terrain moves the numbers that differ.
 
-**Figures.** Creek's 160 m valley, placed with its eight species at seed 7: 951 points, in 51 ms on
-an Apple M5 Max laptop. The layers hold 104 canopy trees, 178 saplings, 645 ground plants and 24
-dead wood. The checksum of that placement is 232657082, which the device page compares on every
-device and both GPU paths.
+**Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds 955 points. They
+are 104 canopy trees, 174 saplings, 651 ground plants and 26 dead wood. The checksum of that placement is
+916344353. The device page compares it on every device and both GPU paths. On the Mac the scatter
+takes about 10 ms in Chrome and the ground maps about 45 ms.
+
+On 25 October 2026 the `vegetation-scatter` plan ran on two cloud phones, each page reporting the
+middle of three timed placements.
+
+| Device | Plants | Checksum | Placement | Ground maps | Display |
+| --- | --- | --- | --- | --- | --- |
+| Galaxy S24, Chrome, WebGL2 page | 955 | 916344353 | 9.0 ms | 85.9 ms | 30 Hz |
+| Galaxy S24, Chrome, WebGPU page | 955 | 916344353 | 11.7 ms | 60.0 ms | 30 Hz |
+| Galaxy S25, Chrome, WebGL2 page | 955 | 916344353 | 9.8 ms | 51.3 ms | 30 Hz |
+| Galaxy S25, Chrome, WebGPU page | 955 | 916344353 | 5.9 ms | 50.9 ms | 30 Hz |
+
+The placement runs on the CPU and starts no engine, so both pages of a device run the same work.
+The S24 has no WebGPU adapter, so its second page named a path that it did not start. Both displays
+ran at 30 Hz, and the cloud reported each phone hot, so read the times as upper bounds. The run
+files are [the S24's](../tested-devices/galaxy-s24-sm-s921b-chrome/20261024-202948-vegetation-scatter.md)
+and [the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261024-203522-vegetation-scatter.md).
 
 **Options rejected.**
 
@@ -270,3 +286,42 @@ device and both GPU paths.
   that a candidate grows fades each species into its neighbor's ground.
 - **Occupancy resolved per tile.** A tile that arrived later would have seen another tile's plants
   and refused its own, so the result would follow the streaming order.
+## Addendum: the bark and leaf atlases, and why the browser paints them
+
+M3-V5 built the atlases that give a plant its bark and its leaves. `bakePlantAtlases` paints four
+textures from integer hashes in the browser, the first time a page asks for them, and `plantMaterial`
+draws a trunk or a crown from them. The plan asked for the atlas to be painted on the GPU and kept,
+and the second half of that is what decided the first.
+
+**What the atlases hold.** The bark block is 256 texels square and tiles around and along a branch:
+stretched Voronoi plates, warped by fractal noise, with cracks between them and fibres up the trunk.
+The leaf block is 512 by 256 texels, in eight cells of 128: four leaf clusters, a needle spray, a
+frond, a blade and a broad leaf. A leaf comes from an outline with veins written into a height field,
+and the gradient of that field gives the normal map. Each atlas has a colour map, in sRGB, whose
+values multiply the species' own colour, and a linear surface map: the normal in red and green, the
+leaf's coverage or the bark's roughness in blue, and the leaf's thickness in alpha.
+
+**A pass texture keeps no image once its pass stops drawing.** A full-screen pass that paints the
+atlas once and then waits, through `every` or through `render.setPassEnabled(pass, false)`, leaves
+the materials that sample its texture with nothing: every picture came out black. The engine's
+documentation promises that a pass keeps its last image, and the render graph keeps the same
+resource, so it is the image that is lost rather than the binding. Painting the atlas in every frame
+that a plant draws is the only way a pass texture would hold it, and that is far too slow: on
+CI's software GPU the vegetation pages then took more than sixty seconds and timed out.
+
+**A pass texture keeps no alpha either.** A fragment shader's alpha does not reach a material that
+samples the pass's texture: a leaf's cut-out drew as a filled square. Even the per-frame route would
+have needed the coverage moved into a colour channel.
+
+**So the browser paints, and the engine keeps.** The pixels come from the same integer hashes that
+the shaders would use, so every device paints the same atlas and no file is downloaded. The engine
+makes each texture's mip levels, whose average alpha is the leaf's coverage, and a masked material
+fades its cut edges with alpha to coverage. That keeps a shrinking card's coverage without a
+pyramid of levels painted by hand. A test holds the property: three leaf cards of one square of the
+atlas, at 12, 24 and 48 metres from one camera, cover the same share of their own boxes.
+`tests/image/leaf-card-coverage.spec.ts` runs it on all three GPU paths, and the
+`vegetation-coverage` picture shows the same for three crowns at three distances.
+
+**Owed.** The paint's time on each device, which the device record keeps, and the owner's judgement
+of the generated leaves beside Creek's painted textures, which the `vegetation-versus-creek` picture
+shows side by side.

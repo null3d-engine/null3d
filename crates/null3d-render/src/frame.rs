@@ -2814,8 +2814,9 @@ impl SceneSettings {
                 self.materials.set_height_unit(id, unit(units[MAP_SLOTS]));
                 group
             } else {
+                let scene = self.materials.reads_scene_depth(id);
                 self.textures
-                    .map_set_group(&maps, height, parallax)
+                    .map_set_group(&maps, height, parallax, scene)
                     .unwrap_or(0)
             };
         }
@@ -3834,7 +3835,7 @@ fn resolve_maps(textures: &mut TextureStore, maps: &mut EffectMaps, values: &mut
     let mut slots = [Handle::NONE; MAP_SLOTS];
     slots[..maps.textures.len()].copy_from_slice(&maps.textures);
     maps.group = textures
-        .map_set_group(&slots, Handle::NONE, false)
+        .map_set_group(&slots, Handle::NONE, false, false)
         .unwrap_or(0);
     maps.views = textures.group_pass_views(maps.group);
     write_layers(textures, maps, values);

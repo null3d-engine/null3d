@@ -876,6 +876,8 @@ const JOINTS_PER_ROW: u32 = 512u;
 
 #ifdef WEBGL2
 @group(2) @binding(4) var joint_matrices: texture_2d<f32>;
+#else ifdef JOINTS_AFTER_SCENE
+@group(3) @binding(0) var joint_matrices: texture_2d<f32>;
 #else ifdef JOINTS_AFTER_MAPS
 @group(2) @binding(0) var joint_matrices: texture_2d<f32>;
 #else

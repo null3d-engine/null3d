@@ -993,3 +993,67 @@ fn the_car_paints_glint_model_builds_on_both_paths() {
     assert!(built.variants["webgpu"].wgsl.is_some());
     assert!(built.variants["webgl2"].glsl.is_some());
 }
+
+/// A surface function that samples a texture and reads the copy of the scene's depth, with a
+/// vertex offset, so the build also makes its caster, motion and pick variants.
+const DEEP_TEXTURED: &str = "var foam: texture_2d<f32>;
+
+fn vertexOffset(input: VertexInput) -> vec3f {
+    return vec3f(0.0);
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let uv = input.fragCoord.xy / frame.resolution;
+    s.baseColor *= textureSample(foam, foamSampler, input.uv).rgb;
+    s.alpha = clamp(sceneDistance(uv) * 0.1, 0.0, 1.0);
+    return s;
+}
+";
+
+/// A material with both its own textures and the scene's depth binds three groups of its own, so
+/// the joint texture of its SKIN builds sits after them. Its caster, motion and pick builds shade
+/// no surface and drop the depth's group, so the joint texture follows the maps' group alone.
+#[test]
+fn textures_beside_the_scene_depth_push_the_joint_texture_after_both_groups() {
+    let built = compile(DEEP_TEXTURED).expect("the textured material that reads the depth builds");
+    assert!(built.scene_depth);
+    let mut seen = 0;
+    for (name, variant) in &built.variants {
+        if !name.starts_with("webgpu_") {
+            continue;
+        }
+        let Some(wgsl) = &variant.wgsl else { continue };
+        if !wgsl.source.contains("joint_matrices") {
+            continue;
+        }
+        seen += 1;
+        let kind = name.strip_prefix("webgpu_").unwrap_or_default();
+        let culled = ["shadow", "motion", "pick"]
+            .iter()
+            .any(|culled| kind.starts_with(culled));
+        if culled {
+            assert!(
+                wgsl.source
+                    .contains("@group(2) @binding(0) var joint_matrices"),
+                "{name}"
+            );
+        } else {
+            assert!(
+                wgsl.source
+                    .contains("@group(3) @binding(0) var joint_matrices"),
+                "{name}"
+            );
+            assert!(
+                wgsl.source
+                    .contains("@group(2) @binding(0) var scene_depth_copy"),
+                "{name}"
+            );
+            assert!(
+                wgsl.source.contains("@group(1) @binding(0) var foam"),
+                "{name}"
+            );
+        }
+    }
+    assert!(seen > 0, "some build skins the mesh");
+}

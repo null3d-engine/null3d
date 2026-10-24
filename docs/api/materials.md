@@ -765,7 +765,7 @@ const sheet = materials.shader({
 - A surface in the opaque pass reads 0, the far plane, because the copy comes later. A surface in a scene pass or a reflection pass reads 0 too, because its view makes no copy.
 - The copy is made while a material that declares the input draws, whatever the quality preset says. It costs one full-screen pass and one texture of four bytes for each pixel.
 - On WebGL2 the copy holds the depth that the device stores. Where the device draws `reversed-gl` depth, `sceneDistance` is less precise. The engine draws `reversed` depth where the browser has `EXT_clip_control`.
-- A material that reads the scene's depth declares no textures of its own. The depth group and the maps' group together would pass WebGPU's 16 sampled textures in the fragment stage. Development builds throw E1217 for that combination.
+- A material that reads the scene's depth takes up to seven textures of its own: its maps' group gives up one slot, so that the copy of the depth fits the fragment stage beside the maps under WebGPU's limit of 16 sampled textures. A material that declares eight textures beside the depth is refused, and development builds throw E1217 and name how many to drop.
 - The declaration and the WGSL must agree. Development builds throw E1217 for a declaration that the WGSL never uses, and for WGSL that reads the depth without the declaration. They throw it for a scene input that custom materials do not read yet too.
 
 [Surface functions](../shaders/surface-functions.md#the-scenes-depth) shows the helpers among the WGSL.

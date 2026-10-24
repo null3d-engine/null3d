@@ -4,7 +4,8 @@
 // the guards that read the whole repository, which a merge can break with no conflict: the decision
 // records' numbers, and the unit tests that hold the release guide, the shipped network calls and
 // the timing specs' switches to every package and spec in the tree. They take seconds, where the
-// unit suite takes minutes, and without them each such fault showed only a CI run later. Any other
+// unit suite takes minutes, and without them each such fault showed only a CI run later. A landing
+// that changes Rust also runs the tests of the crates it changes, in the queue's CPU lane. Any other
 // branch only saves work, so the hook runs nothing for it. A push to main runs those guards too,
 // and first checks the commits it adds:
 //   1. their messages and trailers, with commitlint and check-trailers.ts over main's commit before
@@ -138,14 +139,18 @@ export function changedCrates(
 }
 
 /**
- * The unit tests that read every package or spec of the repository, so a merge that adds one can
- * break them: the release guide's package table, the record of shipped network calls, and the
- * timing specs' switch names. Each file takes a few seconds.
+ * The unit tests that read every package, spec or crate of the repository, so a merge that adds one
+ * can break them: the release guide's package table, the CDN build's add-ons, the record of shipped
+ * network calls, the timing specs' switch names, and CI's workflow against the scripts and files
+ * that its jobs read.
+ * Each file takes a few seconds at most.
  */
 export const GUARD_TESTS = [
 	'tools/lib/release.test.ts',
+	'tools/lib/cdn.test.ts',
 	'tools/lib/network-use.test.ts',
 	'tests/lib/priority-setup.test.ts',
+	'tools/lib/ci-workflow.test.ts',
 ] as const;
 
 /** One step of the check: what it runs, why, and the queue lane it takes, or none. */
@@ -204,17 +209,42 @@ export function plan(
 		lane: 'CPU_ONLY',
 		command: ['cargo', 'check', '--workspace'],
 	});
+	const tests = crateTests(files, crates, nextest);
+	return tests ? [...steps, tests] : steps;
+}
+
+/** The tests of the crates that `files` change, or none when they change no crate. */
+export function crateTests(
+	files: readonly string[],
+	crates: ReadonlyMap<string, string>,
+	nextest: boolean,
+): Step | undefined {
 	const names = changedCrates(files, crates);
-	if (names.length === 0) return steps;
+	if (names.length === 0) return undefined;
 	const packages = names.flatMap((name) => ['-p', name]);
-	steps.push({
+	return {
 		why: `the push changes these crates, so their tests must pass: ${names.join(', ')}`,
 		lane: 'CPU_ONLY',
 		command: nextest
 			? ['cargo', 'nextest', 'run', '--no-fail-fast', '--profile', 'ci', ...packages]
 			: ['cargo', 'test', '--no-fail-fast', ...packages, '--', '--skip', WHOLE_SHADER_BUILD],
-	});
-	return steps;
+	};
+}
+
+/**
+ * The steps of a landing on the milestone branch that changes `files`: the guards over the tree,
+ * then, when the landing changes Rust, the tests of the crates it changes, in the queue's CPU lane.
+ * A landing that changes no Rust pays nothing more than the guards. The whole workspace is neither
+ * checked nor tested, as main's push does: a landing's merge can still break a crate it changed, as
+ * a depth-reading material's textures broke a render test on 25 October 2026, which only CI found.
+ */
+export function landingSteps(
+	files: readonly string[],
+	crates: ReadonlyMap<string, string>,
+	nextest: boolean,
+): Step[] {
+	const tests = touchesRust([...files]) ? crateTests(files, crates, nextest) : undefined;
+	return tests ? [...guardSteps(), tests] : guardSteps();
 }
 
 const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' }).trim();
@@ -306,8 +336,12 @@ function main(): void {
 			);
 			return;
 		}
+		const files = NO_COMMIT.test(landing.remoteSha)
+			? []
+			: git('diff', '--name-only', landing.remoteSha, landing.localSha).split('\n').filter(Boolean);
+		const steps = landingSteps(files, workspaceCrates(), touchesRust(files) && hasNextest());
 		console.log('pre-push: checking the landing on the milestone branch');
-		runSteps(guardSteps(), 'the milestone branch', jobQueue());
+		runSteps(steps, 'the milestone branch', jobQueue());
 		return;
 	}
 	const base = baseOf(push);

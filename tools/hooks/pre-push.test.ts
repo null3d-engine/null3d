@@ -4,10 +4,12 @@ import { existsSync } from 'node:fs';
 import {
 	baseOf,
 	changedCrates,
+	crateTests,
 	GUARD_TESTS,
 	guardSteps,
 	keepaliveSeconds,
 	LANDING_VARIABLE,
+	landingSteps,
 	MILESTONE_REF,
 	milestoneRefusal,
 	parsePush,
@@ -159,6 +161,34 @@ describe('guardSteps', () => {
 	});
 });
 
+describe('landingSteps', () => {
+	const lanes = (files: string[]) =>
+		landingSteps(files, CRATES, true).map((step) => [step.lane, step.command.join(' ')]);
+
+	it('runs only the guards for a landing that changes no Rust', () => {
+		const guards = guardSteps().map((step) => [step.lane, step.command.join(' ')]);
+		expect(lanes(['.dev/x.md'])).toEqual(guards);
+		expect(lanes(['packages/engine/src/index.ts', 'tests/lib/x.test.ts'])).toEqual(guards);
+	});
+
+	it('tests the crates that a landing changes, in the CPU lane, and checks no whole workspace', () => {
+		const steps = lanes(['crates/null3d-render/src/textures.rs', 'packages/engine/src/index.ts']);
+		expect(steps.slice(0, -1)).toEqual(
+			guardSteps().map((step) => [step.lane, step.command.join(' ')]),
+		);
+		expect(steps.at(-1)).toEqual([
+			'CPU_ONLY',
+			'cargo nextest run --no-fail-fast --profile ci -p null3d-render',
+		]);
+		expect(steps.some(([, command]) => command?.includes('--workspace'))).toBe(false);
+	});
+
+	it('shares the crate tests with a push to main', () => {
+		const files = ['crates/null3d-render/src/textures.rs'];
+		expect(crateTests(files, CRATES, true)).toEqual(plan('b2', 'a1', files, CRATES, true).at(-1));
+	});
+});
+
 describe('plan', () => {
 	const commands = (files: string[], nextest = true) =>
 		plan('b2', 'a1', files, CRATES, nextest).map((step) => [step.lane, step.command.join(' ')]);
@@ -171,7 +201,7 @@ describe('plan', () => {
 			['DIRECT', 'bun tools/decisions.ts --check'],
 			[
 				'DIRECT',
-				'bun test tools/lib/release.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts',
+				'bun test tools/lib/release.test.ts tools/lib/cdn.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts tools/lib/ci-workflow.test.ts',
 			],
 		]);
 	});
@@ -184,7 +214,7 @@ describe('plan', () => {
 			['DIRECT', 'bun tools/decisions.ts --check'],
 			[
 				'DIRECT',
-				'bun test tools/lib/release.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts',
+				'bun test tools/lib/release.test.ts tools/lib/cdn.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts tools/lib/ci-workflow.test.ts',
 			],
 			['CPU_ONLY', 'cargo check --workspace'],
 			['CPU_ONLY', 'cargo nextest run --no-fail-fast --profile ci -p null3d-render'],

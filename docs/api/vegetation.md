@@ -8,7 +8,7 @@ summary: "Trees, conifers, shrubs, ferns, hostas and grass grown from a species 
 
 # Vegetation (@null3d/vegetation)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the bark and leaf textures, the leaf and bark materials, the grass and the far-tree impostors. This page covers the species generator, which draws plants with materials of your own, and the scatter, which places them by ecological rules.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the scatter by ecological rules, the grass, the far-tree impostors and the leaf and bark materials of the vegetation pipeline. This page covers the species generator, the bark and leaf atlases that the browser paints at first use, and the material that draws a plant from them.
 
 ```mermaid
 flowchart LR
@@ -32,10 +32,16 @@ bun add @null3d/vegetation
 ```ts
 // sketch.ts
 import { defineSketch } from '@null3d/engine';
-import { builtInSpecies, generateVariantSet } from '@null3d/vegetation';
+import {
+  bakePlantAtlases,
+  builtInSpecies,
+  generateVariantSet,
+  leafCellFor,
+  plantMaterial,
+} from '@null3d/vegetation';
 
 export default defineSketch((ctx) => {
-  const { scene, geometry, materials } = ctx;
+  const { scene, geometry } = ctx;
   const camera = scene.createPerspectiveCamera({ fov: 50, position: [14, 6, 18], target: [0, 4, 0] });
   scene.setActiveCamera(camera);
   scene.createDirectionalLight({ direction: [-0.4, -1, -0.3], intensity: 3 });
@@ -43,8 +49,14 @@ export default defineSketch((ctx) => {
 
   const oak = builtInSpecies('oak');
   if (!oak) return {};
-  const bark = materials.standard({ color: oak.color.bark, roughness: 0.9 });
-  const leaves = materials.standard({ color: oak.color.leaf, doubleSided: true });
+  const atlases = bakePlantAtlases(ctx);
+  const bark = plantMaterial(ctx, { atlases, part: 'wood', color: oak.color.bark });
+  const leaves = plantMaterial(ctx, {
+    atlases,
+    part: 'leaves',
+    cell: leafCellFor(oak),
+    color: oak.color.leaf,
+  });
 
   for (const [index, asset] of generateVariantSet(oak, { seed: 7 }).entries()) {
     for (const part of asset.levels[0]?.parts ?? []) {
@@ -185,7 +197,36 @@ The built-in set holds thirteen species and six variants each. Grown in one call
 
 Growth is linear in the branch count and the card count. A species whose record raises `children` at several levels grows many more branches and costs more to generate. Keep a plant under 255 branches, and let a species with more rely on a coarser record instead.
 
-Reading Creek's 160 m valley into the ground maps and placing its eight species takes about 50 ms on an Apple M5 Max laptop, for about a thousand points. Ground cover is the most of it. A species at one meter of spacing offers tens of thousands of candidates.
+Reading Creek's 160 m valley into the ground maps and placing its eight species takes about 55 ms on an Apple M5 Max laptop, for about a thousand points. Ground cover is the most of it. A species at one meter of spacing offers tens of thousands of candidates.
+## Bark and leaf textures
+
+A plant ships no image file, so its bark and leaves come from two atlases that the browser paints the first time a page asks for them. `bakePlantAtlases` paints them, and `plantMaterial` draws a plant part from them.
+
+```mermaid
+flowchart LR
+    hashes["Integer hashes:<br/>no image file"] --> paint["The atlases:<br/>a colour map<br/>and a surface map"]
+    paint --> material["plantMaterial:<br/>colour, normal,<br/>coverage and thickness"]
+    material --> mesh["A trunk or a leaf card"]
+```
+
+```ts
+const atlases = bakePlantAtlases(ctx);
+const bark = plantMaterial(ctx, { atlases, part: 'wood', color: oak.color.bark });
+const leaves = plantMaterial(ctx, {
+  atlases,
+  part: 'leaves',
+  cell: leafCellFor(oak),
+  color: oak.color.leaf,
+});
+```
+
+- **Bark** comes from stretched cells warped by noise, with cracks between them and fibres up the trunk. It tiles around and along a branch.
+- **Leaves** come from outlines with veins written into a height field, which the surface map's normal follows. Its blue channel holds the leaf's coverage, and its alpha its thickness.
+- **The leaf block holds eight cells**: four leaf clusters, a needle spray, a frond, a blade and a broad leaf. `leafCellFor` picks one from a species record.
+- **The colour map multiplies the species' colour.** It holds the veins, the shade of each leaf and the lift of its ridges, so two species that share a cell still differ.
+- **The engine makes each texture's mip levels.** A masked material fades its cut edges with alpha to coverage, so a leaf card that shrinks keeps the share of the picture that its leaves cover, and a crown far away stays as dense as it is up close.
+- **The four textures take about 4.6 MB of texture memory.** They are painted once, in the setup, and kept for the visit.
+
 
 ## Compared with three.js
 

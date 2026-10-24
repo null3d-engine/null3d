@@ -1002,6 +1002,10 @@ async function buildToolModules(
  */
 function buildEngineTestPage(): BuiltFile[] {
 	console.log('\nbuilding the engine test page for production');
+	// The build folder is outside the project, so the build does not empty it. A file of an earlier
+	// build would then read as a part of this one, and a chunk that this build writes to another
+	// name leaves the earlier copy behind.
+	rmSync(join(root, JS_BUILD_DIR), { recursive: true, force: true });
 	const release = acquirePageBuildLock();
 	try {
 		const args = ['vite', 'build', '--sourcemap', 'hidden', '--outDir', JS_BUILD_DIR];

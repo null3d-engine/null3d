@@ -21,6 +21,7 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 | `bunx vite` | Dev server; the null3D Vite plugin adds the cross-origin isolation headers and compiles WGSL. Editing only WGSL updates the running page without a reload (0.2) |
 | `bunx @null3d/cli shot --out shot.png [--time 2.0] [--size 1280x720] [--gpu webgl2] [--page /other.html]` | Draws one held frame of the page headless and saves it, plus `shot.json` with the frame's time, number and GPU tier and the page's errors and warnings. When no frame is drawn, it says why and exits with 1 |
 | `bunx @null3d/cli shot --script drive.script --out tour.png` | Drives the page through the timed script's states, and draws each `shot` step: `tour-start.png`, `tour-<state>.png`, and a JSON file beside each. Key, pointer and property steps land at their sketch times. A failing step fails the command |
+| `bunx @null3d/cli shot --replay bug.n3dr --out bug.png` | Replays a recording, which a page makes with `?record`, and draws its last frame. The recording holds each frame's step and the input that the sketch read, from the session's first frame, so the frames are the ones the session drew. `--time` and `--script` cannot be given with it |
 | `bunx @null3d/cli test` | Type checks with the project's TypeScript, runs its `lint` script, and draws each image test in `null3d.json` headless on each of its tiers, against its reference. Prints one line per result with the image files, and exits with 1 when one fails |
 | `bunx @null3d/cli test --gpu webgpu,webgl2` | Draws the image tests on these GPU tiers only |
 | `bunx @null3d/cli test --update-references` | Keeps each new or changed image as its reference; check the images before committing them |
@@ -145,6 +146,7 @@ Engine docs: `api/debug`, `guides/debugging`.
 | `debug.view('normals')`, `'depth'`, `'wireframe'`, `'overdraw'`; `'lit'` to go back | The whole scene with one debug shading in place of every material. Views ignore maps, alpha and custom shaders | Development only |
 | `debug.line`, `box`, `sphere`, `arrow`, `axes`, `grid`, `frustum`, `light` | Lines for one frame, so call them in `onUpdate` in every frame that needs them | Development only |
 | `debug.skeleton` (0.2) | The bones of a skinned mesh | Development only |
+| `?record` on the page, then `?replay=<file>` or `shot --replay <file>` | A bug report from a phone. `?record` records each frame's step and the input that the sketch read, and shows a save button; the file replays here to the same frames. A sketch that reads the quality preset can differ, because the replay picks this computer's preset (`guides/testing`) | Every build |
 
 In a production build, the debug drawing calls and `debug.view` do nothing, but the code that computes their arguments still runs. Wrap work that only feeds them in `if (import.meta.env.DEV)`. A debug view's first frame builds its pipelines, so objects can be missing for a few frames after a change.
 
