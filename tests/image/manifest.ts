@@ -417,8 +417,17 @@ function lensKitTests(): ImageTest[] {
 			swiftShaderTolerance: { threshold: 0.1, maxDiffRatio: 0.005 },
 		},
 		test('aberration', 'aberration', ['webgpu', 'webgl2']),
-		test('streak', 'streak', ['webgpu', 'webgl2']),
-		test('grain', 'grain', ['webgpu', 'webgl2']),
+		// The streak and the grain move a pixel by a few steps, which the default threshold does
+		// not count: a picture that lost either mark would still match. The threshold is tight
+		// enough to count the mark, and the software GPU rounds the same pixels within a step.
+		{
+			...test('streak', 'streak', ['webgpu', 'webgl2']),
+			tolerance: { threshold: 0.02, maxDiffRatio: 0.005 },
+		},
+		{
+			...test('grain', 'grain', ['webgpu', 'webgl2']),
+			tolerance: { threshold: 0.02, maxDiffRatio: 0.005 },
+		},
 		test('speed-blur', 'speed', ['webgpu', 'webgl2']),
 	];
 }
