@@ -180,3 +180,63 @@ edge. It ships as a foundation add-on (M3-F7) with this shape:
 - **Why an add-on.** The add-on extends the outline only through the core feature's own settings and
   the public passes and effects ([D-173](D-173-addon-hooks.md) ruling 11), so another developer
   could build it. The engine's start code is unchanged.
+
+## Addendum, 25 October 2026: what a glint model needs
+
+Status: open. This record asks the owner to choose between building H4 (M3-E7) now and amending
+ruling 17. No glint model has landed.
+
+Ruling 17 asks for Deliot and Belcour's glints, and the audit of 24 October 2026 found that the
+car-paint add-on ships one random normal tilt per cell instead. The add-on cannot do better with the
+hook it has, for two measured reasons:
+
+- The glint model multiplies the continuous specular of each light by `b(N, p) / (N p)`. `b` is a
+  binomial count over the `N` facets in the pixel footprint, and `p` is the share of facets whose
+  normals reflect that light toward the eye. `p` is a function of the half vector, so the model runs
+  inside a light's shading, not on the surface alone.
+- A custom material's `surface` function sees no light. `docs/shaders/builtins.md` says "Light
+  values are not built yet", and the `Surface` record has no specular scale or lobe. The engine
+  computes each light's specular after the surface function returns. So the add-on can bend the
+  normal and change the roughness, and nothing more.
+
+[Hook H4](D-173-addon-hooks.md) is the place this belongs. Its first user is car paint's glints, and
+the clear-coat check (F6) closed it for the hashed-normal model. That model does not meet ruling 17,
+so H4 is needed after all.
+
+### The smallest sound H4
+
+- The WGSL declares `fn glint(input: GlintInput) -> vec3f`. `GlintInput` holds the surface's normal,
+  the view and light directions, the half vector, the base roughness, the base reflectance, the
+  light's irradiance, the base specular radiance, and one `vec4f` that the surface function fills
+  with the flake footprint and tilt.
+- The engine calls it for the sun and for each point and spot light, and adds its result to that
+  light's specular. Area lights keep their own path, which is an LTC integral and needs the
+  area-light form of the paper. A page with area lights draws them without glints, and the docs say
+  so.
+- A material that declares the hook gets its own builds, as a material with a surface function does.
+  Every other material keeps its builds and its speed.
+- The `Surface` record gains one field, `glint: vec4f`, which `defaultSurface` sets to zero. Only
+  WGSL that names it carries the flake data.
+
+### Cost
+
+- Engine code: the hook table and its signature check, `GlintInput` and the call in the direct-light
+  path, the `Surface` field, and the thread of one `vec4f` through the lighting functions. About 200
+  to 300 lines in four files, on both GPU paths through the existing WGSL-to-GLSL step.
+- Tests: a shader-crate test for the signature and the builds, the add-on's own images redrawn, and
+  the cost per preset recorded. The paint's five pictures move on three tiers in both reference
+  sets, which needs a quiet Mac and a SwiftShader run. The `GPU-Checked:` line needs the GPU timer.
+- Time: about one and a half to two helper-days, most of it the references and the cost run.
+- The plan's 0.3 to 1 ms is the glint shader alone on a full screen, which matches a per-light
+  branch of a few dozen instructions.
+
+### Options
+
+| Option | Verdict |
+| --- | --- |
+| A: build H4 (M3-E7) in its own branch, then M3-B5's flakes use it | Recommended if glints are to ship in 0.3.0. It clears both tasks and leaves the API one hook |
+| B: keep the hashed normal, and the owner amends ruling 17 and the B5 line | Needs an owner ruling. It drops a feature the owner approved |
+| C: ship a model that still resolves to one tilt per cell and call it glints | Rejected. It leaves the code and the task's promise disagreeing, which the audit already found |
+
+The machine ran at a load near 100 on 25 October 2026, so no reference or cost run could be made
+for option A in that session.
