@@ -227,7 +227,7 @@ fn surface(input: SurfaceInput) -> Surface {
     // Far away a cell is smaller than a few pixels: the wall page's own average, whose alpha holds
     // the window's share of light, replaces the rooms and the grid.
     let average = vec3f(0.95, 0.72, 0.46) * material.litShare * wall.a;
-    emissive = mix(emissive, average * on * material.roomLight * 0.9, far);
+    emissive = mix(emissive, average * on * material.roomLight * 0.35, far);
 
     // The wall itself, and the glass as a dark pane that mirrors the street. The window's light is
     // emitted, so it adds over the pane.
