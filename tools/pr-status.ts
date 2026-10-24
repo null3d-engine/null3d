@@ -29,7 +29,7 @@ const PARTIAL: Readonly<Record<string, string>> = {
 };
 
 /** Tasks built on a helper branch, with nothing of them on this branch yet. */
-const ON_BRANCH = new Set(['M3-B4']);
+const ON_BRANCH = new Set(['M3-A3', 'M3-B4', 'M3-E9', 'M3-R14']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
 const INCOMPLETE = new Set([
