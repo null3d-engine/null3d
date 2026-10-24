@@ -441,6 +441,8 @@ How to review a run:
 
 `tools/lib/ci-workflow.test.ts` checks the parts of these rules that the workflow file shows. Every job that runs `cargo` or `rustup` restores a Rust cache. Every job that downloads the build job's files sets `NULL3D_REQUIRE_FRESH_SHADERS`. Only `shader-compiler` runs the test that builds every shader, apart from the determinism part. Each pass key names every script that its part starts, with the files that the scripts import. A part that reads the build job's shader modules names the files they are built from.
 
+Four unit test files read the workflow file: `tools/lib/ci-workflow.test.ts`, `tests/lib/runs.test.ts`, `tools/hooks/ack-hooks.test.ts` and `tools/lib/links.test.ts`. Run all of them before a workflow change lands: `bun test $(grep -rlE 'workflows/ci\.yml' --include='*.test.ts' tests tools bench)`. On 24 October 2026 the change that moved the milestone's quick checks to its pushes passed the workflow tests. But `tests/lib/runs.test.ts` still expected the removed `changes` job in a job's needs, and was fixed only after the landing.
+
 ## Several copies on one machine
 
 People and agents often work in several copies of the repository at once, such as git worktrees.
