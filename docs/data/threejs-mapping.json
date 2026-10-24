@@ -1307,8 +1307,8 @@
       "three": "VideoTexture",
       "status": "changed",
       "since": "0.3",
-      "target": "In 0.3: engine.registerVideo on the page and textures.fromVideo in the sketch. Until then, send ImageBitmap frames from the page and call texture.update(bitmap)",
-      "notes": "The ImageBitmap route decodes and uploads every frame, so keep frames small (null3d-develop recipe 14).",
+      "target": "engine.registerVideo(video, { name }) on the page, then textures.fromVideo(name) in the sketch",
+      "notes": "A video element lives on the page, where it plays with its own controls and sound, so the page owns it and the sketch shows it. The page sends the image of each frame that the video presents, scaled down to maxSize, and the sketch uploads the newest one within the frame's upload budget. A paused video presents no frame, so it costs nothing, and the sketch's call sends the frame that the video holds then. Keep a frame within the upload budget, 2 MiB on Low: 512 texels of a 16:9 video is 576 KiB. Safari and Firefox cannot make a VideoFrame from a video element, so every browser reads frames through createImageBitmap.",
       "docs": "guides/video-textures",
       "detect": "\\bVideoTexture\\b"
     },
