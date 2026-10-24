@@ -42,7 +42,6 @@ const INCOMPLETE = new Set([
 	'M3-E6',
 	'M3-E8',
 	'M3-E10',
-	'M3-F2',
 	'M3-L1',
 	'M3-L3',
 	'M3-L4',
@@ -63,8 +62,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"the compute pass and its WebGL2 fragment form are built and tested; the first-user outcome waits on M3-F9's ocean, because the splats add-on cannot take the hook",
 	'M3-E10':
 		"the sky layer's template, ids and sizes are in place but unregistered; the example add-on that draws a sky layer, the task's first user, does not exist",
-	'M3-F2':
-		'the add-on, both file kinds, depth mixing and the pictures on both paths are in; its streaming within budget on the iPad and an S24-class phone is not recorded',
 	'M3-B1': 'the lens kit has no picture test and no cost per preset',
 	'M3-D9':
 		'the command and its refusal of an add-on that imports the engine internal entry are tested; no recorded run holds it over every foundation add-on',
