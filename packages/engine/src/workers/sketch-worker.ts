@@ -148,7 +148,13 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			// The page publishes this with the held frame, so it must arrive before the ready reply.
 			const replayResult = runner.replayOutcome;
 			if (replayResult !== undefined) replyToPage({ type: 'replay-done', result: replayResult });
-			step(message.hold === undefined ? 'sketch loaded' : 'sketch loaded and held');
+			step(
+				message.replay !== undefined
+					? 'sketch loaded and replayed'
+					: message.hold === undefined
+						? 'sketch loaded'
+						: 'sketch loaded and held',
+			);
 			if (!tier && message.hold === undefined && message.replay === undefined)
 				void runPipelined(runner, message.control, fault);
 			replyToPage({
