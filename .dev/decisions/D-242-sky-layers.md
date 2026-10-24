@@ -152,6 +152,18 @@ already mirrored between `null3d::atmosphere` and `sky_light.rs`. The two grids 
 map without a layer and the CPU model agree; the mirror sphere and the rough sphere of the
 `sky-layer-light` page check both places on every GPU tier.
 
+### The pictures
+
+`tests/image/sky-layer-light.spec.ts` draws a mirror sphere and a rough sphere under a still night
+sky, installs a green layer, removes it, and checks that each sphere takes the layer's green and
+loses it, and that neither shows it while the other does not beyond the frames that the light takes
+to follow the map. It runs on every GPU tier through the `sky` plan.
+
+The aurora demo's pictures move in both reference sets: its ice now mirrors the curtains and the ice
+and snow take their green from the sky's light, and the sketch's stand-in ambient light is gone. The
+references are redrawn from the first run after this change, on the Mac's GPU and with `CI=1`, and
+`.dev/image-tests.md` gains the remake's entry with its figures then.
+
 ### The map's light and a layer that never arrives
 
 A map fills with the layer only once the page's shader has reached the thread that draws. If it has
