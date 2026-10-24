@@ -1327,10 +1327,11 @@ fn bent_normal(
 }
 #endif
 
+#ifdef CUSTOM
 /// The surface input of a pixel whose point relative to the camera is `relative`, whose mesh
-/// normal is `normal`, and whose triangle faces the camera when `front` is true: the values that
-/// every build which reads a surface takes from the vertex stage. A build adds its texture
-/// coordinates, its vertex color, its ids and its pixel position.
+/// normal is `normal`, and whose triangle faces the camera when `front` is true: the values that a
+/// mask's test reads, without its texture coordinates, its vertex color or its pixel position. The
+/// masked builds of a custom material's shadow and motion call it.
 fn surface_place(relative: vec3f, normal: vec3f, front: bool) -> SurfaceInput {
     var input: SurfaceInput;
     input.relativePosition = relative;
@@ -1351,6 +1352,7 @@ fn surface_place(relative: vec3f, normal: vec3f, front: bool) -> SurfaceInput {
     input.frontFacing = front;
     return input;
 }
+#endif
 
 /// The surface as the material's own values make it: its base color times the vertex color, its
 /// metalness, roughness and emissive light, and the normal of the input, with the material's
@@ -1604,7 +1606,22 @@ fn fs(in: MotionOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef ALPHA_HASH
     hash_place = in.mesh_place;
 #endif
-    var input = surface_place(in.relative, in.normal, front);
+    var input: SurfaceInput;
+    input.relativePosition = in.relative;
+    // Toward the camera: from the point for a perspective camera, and one direction for an
+    // orthographic camera, whose view rays are parallel.
+    let eye = engine_frame.camera_position;
+    input.viewDirection = normalize(eye.xyz - in.relative * eye.w);
+    // A face's normal comes from how the position changes between pixels. The two GPU paths count
+    // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
+    // flat normals face it.
+    let face = normalize(cross(dpdx(in.relative), dpdy(in.relative)));
+    let face_normal = select(-face, face, dot(face, input.viewDirection) >= 0.0);
+    // Back faces draw only for double-sided materials, and light as front faces do.
+    let smooth_normal = normalize(in.normal) * select(-1.0, 1.0, front);
+    let flat_shading = (u32(material_row.strengths.z) & FLAT_SHADING) != 0u;
+    input.normal = select(smooth_normal, face_normal, flat_shading);
+    input.vertexColor = vec4f(1.0);
 #ifdef VERTEX_COLOR
     input.vertexColor = in.vertex_color;
 #endif
@@ -2421,7 +2438,22 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef CUSTOM_TEXTURES
     load_custom_texture_layers(in.material);
 #endif
-    var input = surface_place(in.relative, in.normal, front);
+    var input: SurfaceInput;
+    input.relativePosition = in.relative;
+    // Toward the camera: from the point for a perspective camera, and one direction for an
+    // orthographic camera, whose view rays are parallel.
+    let eye = engine_frame.camera_position;
+    input.viewDirection = normalize(eye.xyz - in.relative * eye.w);
+    // A face's normal comes from how the position changes between pixels. The two GPU paths count
+    // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
+    // flat normals face it.
+    let face = normalize(cross(dpdx(in.relative), dpdy(in.relative)));
+    let face_normal = select(-face, face, dot(face, input.viewDirection) >= 0.0);
+    // Back faces draw only for double-sided materials, and light as front faces do.
+    let smooth_normal = normalize(in.normal) * select(-1.0, 1.0, front);
+    let flat_shading = (u32(material_row.strengths.z) & FLAT_SHADING) != 0u;
+    input.normal = select(smooth_normal, face_normal, flat_shading);
+    input.vertexColor = vec4f(1.0);
 #ifdef VERTEX_COLOR
     input.vertexColor = in.vertex_color;
 #endif
@@ -2444,6 +2476,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     input.tangent = in.tangent;
     input.bitangent = in.bitangent;
 #endif
+    input.frontFacing = front;
 #ifdef CUSTOM
     // Pixel rows count upward on WebGL2, so its rows turn to count from the top, as on WebGPU.
     var coord = in.clip.xyz;
