@@ -79,7 +79,7 @@ PASS  cost per preset: low 0.42 ms of GPU time, medium 0.51 ms of GPU time, high
 PASS  allocation per preset: low 0 bytes, medium 0 bytes, high 0 bytes, ultra 0 bytes per frame in the add-on's own code, on Chrome 141
 ```
 
-Use `--skip-browser` on a machine that has no GPU or no browser. The shader build and the size gate need the add-on's own Vite and null3D plugin.
+Use `--skip-browser` on a machine that has no GPU or no browser. Use `--skip-cost` when the machine is loaded, since a cost figure would then measure the load: the page and allocation gates still run, and the cost gate stays owed. The shader build and the size gate need the add-on's own Vite and null3D plugin.
 
 The cost figures are measured, and the check prints them; it does not compare them with a number that the add-on claims. The page builds for production, so the figures match what a user gets.
 

@@ -300,3 +300,15 @@ the entry's raw figure.
 A module's value now keeps no pieces for an effect whose `joins` is false, as it keeps none of its
 builds. The add-on's entry fell to 18 KB, within the 64 KB budget. Joined effects and tone curves
 keep their pieces, which their hosts read. A test in `material-builds.test.ts` covers both cases.
+
+## Addendum, 25 October 2026: the cost gate left out on a loaded machine
+
+The water add-on's first browser runs came when the machine held a load of 90 to 155, with six
+jobs ahead in the shared browser lane. The page and allocation gates measure what the page draws
+and allocates, and a loaded machine does not change those figures. The cost gate measures time, and
+a figure taken beside a saturated machine would report the load instead of the add-on.
+
+`check-addon` takes `--skip-cost`, which leaves out the cost gate alone and prints why. The page
+and allocation gates still run, and the cost gate stays owed until a quiet window. The option is
+not for CI, which measures on a machine of its own: it is for an author checking a package while
+other work runs beside it.
