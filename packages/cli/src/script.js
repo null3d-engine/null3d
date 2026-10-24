@@ -327,9 +327,53 @@ export function scriptProgram(steps) {
 export const shotSteps = (steps) => steps.filter((step) => step.verb === 'shot');
 
 /**
- * The dump steps of a script, in time order.
+ * The sketch times at which a script draws a shot or reads a dump, in order, once each: the times
+ * at which a command holds the page.
  *
  * @param {readonly ScriptStep[]} steps
- * @returns {DumpStep[]}
+ * @returns {number[]}
  */
-export const dumpSteps = (steps) => steps.filter((step) => step.verb === 'dump');
+export const scriptReadTimes = (steps) =>
+	[
+		...new Set(
+			steps.filter((step) => step.verb === 'shot' || step.verb === 'dump').map((step) => step.at),
+		),
+	].sort((a, b) => a - b);
+
+/**
+ * The shot step at a time, or undefined when the script draws no image then.
+ *
+ * @param {readonly ScriptStep[]} steps
+ * @param {number} at
+ * @returns {ShotStep | undefined}
+ */
+export function shotAt(steps, at) {
+	const found = steps.find((step) => step.verb === 'shot' && step.at === at);
+	return found?.verb === 'shot' ? found : undefined;
+}
+
+/**
+ * What several holds of one script read, once each: every dump in time order, and every step that
+ * failed. A command holds the page once at each time that a step reads, so early steps appear in
+ * each hold's result.
+ *
+ * @param {readonly (import('./page.js').HoldScriptResult | undefined)[]} reads
+ * @returns {{ dumps: import('./page.js').HoldDump[], problems: import('./page.js').HoldScriptProblem[] }}
+ */
+export function scriptReads(reads) {
+	/** @type {Map<string, import('./page.js').HoldDump>} */
+	const dumps = new Map();
+	/** @type {Map<string, import('./page.js').HoldScriptProblem>} */
+	const problems = new Map();
+	for (const read of reads) {
+		for (const dump of read?.dumps ?? []) {
+			const key = `${dump.at}\n${dump.target}\n${dump.path ?? ''}\n${JSON.stringify(dump.value)}`;
+			if (!dumps.has(key)) dumps.set(key, dump);
+		}
+		for (const problem of read?.problems ?? []) {
+			const key = `${problem.at}\n${problem.step}\n${problem.error}`;
+			if (!problems.has(key)) problems.set(key, problem);
+		}
+	}
+	return { dumps: [...dumps.values()], problems: [...problems.values()] };
+}

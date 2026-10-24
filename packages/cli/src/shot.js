@@ -8,7 +8,14 @@ import { parseSize, readOptions, readSeconds, sizeRule, UsageError } from './arg
 import { heldImage, TIERS } from './page.js';
 import { writePng } from './png.js';
 import { holdPage, startRunner } from './runner.js';
-import { readScript, scriptProgram, shotSteps } from './script.js';
+import {
+	readScript,
+	scriptProgram,
+	scriptReads,
+	scriptReadTimes,
+	shotAt,
+	shotSteps,
+} from './script.js';
 import { counted, listed, shownPath } from './text.js';
 
 /** @import { Environment } from './browser.js' */
@@ -273,18 +280,6 @@ export async function run(args) {
 export const shotFileName = (base, step) => base.replace(/\.png$/i, `-${step.name}.png`);
 
 /**
- * The shot step at a time, or undefined when the script draws no image then.
- *
- * @param {readonly ScriptStep[]} steps
- * @param {number} at
- * @returns {ShotStep | undefined}
- */
-const shotAt = (steps, at) => {
-	const found = steps.find((step) => step.verb === 'shot' && step.at === at);
-	return found?.verb === 'shot' ? found : undefined;
-};
-
-/**
  * Draws one frame without a script, and prints its summary.
  *
  * @param {ShotOptions} options
@@ -349,11 +344,7 @@ function failedReport(page, error) {
 async function scriptShots(options, base, steps) {
 	const program = scriptProgram(steps);
 	/** The times at which the script reads a dump or draws a shot, in order, once each. */
-	const times = [
-		...new Set(
-			steps.filter((step) => step.verb === 'shot' || step.verb === 'dump').map((step) => step.at),
-		),
-	].sort((a, b) => a - b);
+	const times = scriptReadTimes(steps);
 	/** @type {DrawnShot[]} */
 	const drawn = [];
 	/** @type {HoldScriptResult[]} */
@@ -433,10 +424,6 @@ async function scriptShots(options, base, steps) {
  */
 export function scriptSummary(drawn, reads) {
 	const lines = [];
-	/** One line for each step that failed, in time order, once each. */
-	const problems = new Map();
-	/** One line for each dump that a hold read, once each. */
-	const dumps = new Map();
 	for (const { step, report, png, json } of drawn) {
 		if (report.ok) {
 			lines.push(
@@ -451,18 +438,13 @@ export function scriptSummary(drawn, reads) {
 		}
 		lines.push(...listed(report.errors, 'error'), ...listed(report.warnings, 'warning'));
 	}
-	for (const read of reads) {
-		for (const problem of read.problems) {
-			const key = `${problem.at}\n${problem.step}\n${problem.error}`;
-			if (!problems.has(key))
-				problems.set(key, `Step at ${problem.at} s, ${problem.step}, failed: ${problem.error}`);
-		}
-		for (const dump of read.dumps) {
-			const key = `${dump.at}\n${dump.target}\n${dump.path ?? ''}\n${JSON.stringify(dump.value)}`;
-			if (!dumps.has(key)) dumps.set(key, dumpLine(dump));
-		}
-	}
-	lines.push(...dumps.values(), ...problems.values());
+	const read = scriptReads(reads);
+	lines.push(
+		...read.dumps.map(dumpLine),
+		...read.problems.map(
+			(problem) => `Step at ${problem.at} s, ${problem.step}, failed: ${problem.error}`,
+		),
+	);
 	return lines.join('\n');
 }
 

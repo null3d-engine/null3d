@@ -11,7 +11,14 @@ import { heldImage, REPORTED_TIERS, TIERS } from './page.js';
 import { readPng, writePng } from './png.js';
 import { lint, typeCheck } from './project-checks.js';
 import { holdPage, startRunner } from './runner.js';
-import { readScript, scriptProgram, shotSteps } from './script.js';
+import {
+	readScript,
+	scriptProgram,
+	scriptReads,
+	scriptReadTimes,
+	shotAt,
+	shotSteps,
+} from './script.js';
 import { dumpLine } from './shot.js';
 import { sketchPagePath, sketchPagePlugin } from './sketch-page.js';
 import { CONFIG_FILE, DEFAULT_SIZE, EXAMPLE, readTestConfig } from './test-config.js';
@@ -264,21 +271,14 @@ async function imageTest(runner, root, test, tier, update, note) {
 			},
 		];
 	const program = scriptProgram(steps);
-	const times = [
-		...new Set(
-			steps.filter((step) => step.verb === 'shot' || step.verb === 'dump').map((step) => step.at),
-		),
-	].sort((a, b) => a - b);
 	/** @type {Outcome[]} */
 	const outcomes = [];
-	/** @type {Map<string, string>} */
-	const dumps = new Map();
-	/** @type {Map<string, string>} */
-	const problems = new Map();
-	for (const at of times) {
-		const shot = steps.find((step) => step.verb === 'shot' && step.at === at);
+	/** @type {import('./page.js').HoldScriptResult[]} */
+	const reads = [];
+	for (const at of scriptReadTimes(steps)) {
+		const shot = shotAt(steps, at);
 		const held = await holdOf(runner, test, tier, at, program);
-		if (shot !== undefined && shot.verb === 'shot')
+		if (shot !== undefined)
 			outcomes.push(judgedHold(runner, root, tier, update, `${test.name}-${shot.name}`, held));
 		else if (!held.result.ok || held.errors.length > 0) {
 			const reason = held.result.ok
@@ -286,23 +286,15 @@ async function imageTest(runner, root, test, tier, update, note) {
 				: held.result.error;
 			outcomes.push({ status: 'FAIL', text: `${test.name} at ${at} s on ${tier}: ${reason}` });
 		}
-		const script = held.result.ok ? held.result.script : undefined;
-		for (const problem of script?.problems ?? []) {
-			const key = `${problem.at}\n${problem.step}\n${problem.error}`;
-			if (!problems.has(key))
-				problems.set(key, `step at ${problem.at} s, ${problem.step}, failed: ${problem.error}`);
-		}
-		for (const dump of script?.dumps ?? []) {
-			const key = `${dump.at}\n${dump.target}\n${dump.path ?? ''}\n${JSON.stringify(dump.value)}`;
-			if (!dumps.has(key)) {
-				const line = dumpLine(dump);
-				dumps.set(key, line);
-				note(line);
-			}
-		}
+		if (held.result.ok && held.result.script !== undefined) reads.push(held.result.script);
 	}
-	for (const problem of problems.values())
-		outcomes.push({ status: 'FAIL', text: `${test.name} on ${tier}: ${problem}` });
+	const read = scriptReads(reads);
+	for (const dump of read.dumps) note(dumpLine(dump));
+	for (const problem of read.problems)
+		outcomes.push({
+			status: 'FAIL',
+			text: `${test.name} on ${tier}: step at ${problem.at} s, ${problem.step}, failed: ${problem.error}`,
+		});
 	return outcomes;
 }
 
