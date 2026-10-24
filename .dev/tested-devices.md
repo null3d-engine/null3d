@@ -157,6 +157,54 @@ the tablet was an oak at Ultra: 5.42 ms for 27,090 triangles. The tablet's runs:
 The other three are in their folders: the iPhone and the iPad at 20261024-084032, and the S24 at
 20261024-084231.
 
+### The splats add-on's first full run, iPad Pro 13 and Galaxy S24
+
+The splats streaming page drew a 400,000-splat cloud at the Low preset on the cloud iPad and the
+cloud S24-class phone ([its plan](devices.md#the-splats-plan)). Each path drew exactly the budget
+that it settled on, so the cloud stayed within it.
+
+| Device and path | Budget | Drawn | Chunks | Presented fps | First frame |
+| --- | --- | --- | --- | --- | --- |
+| iPad Pro 13, WebGPU | 100,000 | 100,000 | 10 | 1.07 | 28.6 s |
+| iPad Pro 13, WebGL2 | 50,000 | 50,000 | 10 | 3.29 | 28.0 s |
+| Galaxy S24, WebGL2 | 37,500 | 37,500 | 10 | 12.4 | 27.5 s |
+
+The iPad's display ran at 59 Hz. The S24's ran at 30 Hz, so the runner marks its timing figures
+unreliable. The cloud in these runs was built in the page's code and handed to the add-on as a blob,
+so the add-on was not yet downloading a stream. The add-on's streaming reads an index and downloads
+only the chunks that the view needs.
+
+The runs:
+[20261024-074806-splats](tested-devices/ipad-pro-13-safari/20261024-074806-splats.md) and
+[20261024-074630-splats](tested-devices/galaxy-s24-sm-s921b-chrome/20261024-074630-splats.md).
+
+### The splats add-on streaming, iPad Pro 13 and Galaxy S24
+
+Both cloud devices ran the streaming plan on 24 October 2026 ([its plan](devices.md#the-splats-plan)).
+The page read an index of 11 chunk files, 5,628,772 bytes for 400,000 splats, and the add-on
+downloaded only the chunks that the view asked for.
+
+| Device and path | Chunks loaded at the first view | Bytes at the first view | Bytes in the cloud | Presented fps |
+| --- | --- | --- | --- | --- |
+| Galaxy S24, WebGL2 | 3 of 11 | 1,890,725 | 5,628,772 | 12.74 |
+| iPad Pro 13, WebGL2 | 5 of 11 | 3,451,272 | 5,628,772 | 3.28 |
+| iPad Pro 13, WebGPU | 11 of 11 | 5,628,772 | 5,628,772 | 1.06 |
+
+The S24's view needed 34% of the cloud, and the iPad's WebGL2 view 61%. The iPad's WebGPU path
+loaded the whole cloud: the engine's startup preset check drew at Medium, whose budget wanted every
+chunk at a coarse level, before it settled at Low. No chunk failed on any page, and each draw held
+its settled budget: 37,500, 50,000 and 75,000 splats.
+
+The 100,000-splat quarter clouds arrived whole on both devices, because each cut made one chunk of
+almost all the splats.
+
+The S24's display ran at 30 Hz and the Mac was loaded, so the timing figures are unreliable. The
+rates follow the earlier runs of the same cloud: 12.4, 3.29 and 1.07 frames a second.
+
+The runs:
+[20261024-171907-splats](tested-devices/ipad-pro-13-safari/20261024-171907-splats.md) and
+[20261024-171610-splats](tested-devices/galaxy-s24-sm-s921b-chrome/20261024-171610-splats.md).
+
 ### The splats add-on at a quarter of its count, iPad Pro 13
 
 The splats streaming page drew 100,000 splats at the same pixel count as its full run of 400,000
@@ -169,7 +217,11 @@ The splats streaming page drew 100,000 splats at the same pixel count as its ful
 
 The full count drew 1.07 frames a second on WebGPU and 3.29 on WebGL2 in the same cloud, earlier
 that day. So a quarter of the count gave between two and three times the rate, and not four times.
-The cards' fill sets much of the cost, and the work of each splat sets the rest. The budgets differ
-between the two runs, because each session's preset check settled at its own count.
+The cards' fill sets much of the cost, and the work of each splat sets the rest.
+
+The WebGPU budget reads 250,000, which is Medium's count rather than Low's 100,000. The page reported
+again only when the drawn count changed. This cloud's 100,000 splats fit under both Medium's 250,000
+and Low's 100,000, so the move to Low changed no drawn count, sent no new report, and left the
+earlier figure in place. The record's first version gave a different cause, which was wrong.
 
 The run: [20261024-111706-splats](tested-devices/ipad-pro-13-safari/20261024-111706-splats.md).
