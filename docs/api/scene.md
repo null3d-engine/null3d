@@ -237,15 +237,22 @@ Development builds throw E1203 for a number that is not finite, and E1108 for a 
 
 ### Sky layers
 
-`scene.setSkyLayer({ wgsl })` draws an add-on's own layer over the sky: the top of the sky, a second layer of clouds, an aurora or a space backdrop. The layer's WGSL declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer` and the null3D Vite plugin builds it into the engine's sky-layer template, which owns the box around the camera, the bindings, the depth state and the blend. The layer draws right after the background, in the pixels that no object covers, on WebGPU, WebGL2 and in compatibility mode.
+`scene.setSkyLayer(description, { wgsl })` draws an add-on's own layer over the sky: the top of the sky, a second layer of clouds, an aurora or a space backdrop. The description is a [feature description](features.md): it names the feature and records at the `'background'` point, as a `'draw'`, provides `'sky'`, and draws in the `'main'`, `'scenePass'` and `'reflection'` views. The layer's WGSL declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer` and the null3D Vite plugin builds it into the engine's sky-layer template, which owns the box around the camera, the bindings, the depth state and the blend. The layer draws right after the background, in the pixels that no object covers, on WebGPU, WebGL2 and in compatibility mode.
 
 ```ts
-import { defineSketch } from '@null3d/engine';
+import { defineFeature, defineSketch } from '@null3d/engine';
 import curtain from './curtain.wgsl';
 
 export default defineSketch(({ scene }) => {
   scene.setBackground({ sky: { cloudCoverage: 0.1 } });
-  const layer = scene.setSkyLayer({ wgsl: curtain, sun: 0.2 });
+  const description = defineFeature({
+    name: 'curtain',
+    frame: 'background',
+    kind: 'draw',
+    provides: ['sky'],
+    views: ['main', 'scenePass', 'reflection'],
+  });
+  const layer = scene.setSkyLayer(description, { wgsl: curtain, sun: 0.2 });
   return {
     onUpdate(time) {
       layer.set({ opacity: 0.8 + 0.2 * Math.sin(time.now) });
