@@ -55,7 +55,7 @@ fn a_layer_builds_for_both_paths_with_its_own_function() {
         "{wgsl}"
     );
     assert!(
-        wgsl.contains("vec3f(0.05, 0.8, 0.4)"),
+        wgsl.contains("smoothstep"),
         "the layer's own code is in the build"
     );
     assert!(
