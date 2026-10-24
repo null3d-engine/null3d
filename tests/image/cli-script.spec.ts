@@ -126,6 +126,8 @@ test.describe('the input demo through three states', () => {
 
 	// One run draws all three states, and each test compares one of its images with its reference.
 	test.beforeAll(async () => {
+		// The hook draws three states, and the software GPU that CI uses takes minutes over them.
+		test.setTimeout(600_000);
 		drawn = mkdtempSync(join(REPO_ROOT, 'target/cli-script-demo-'));
 		const run = await runCli(REPO_ROOT, [
 			'shot',
