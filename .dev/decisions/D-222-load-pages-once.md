@@ -43,6 +43,10 @@ How the data was produced: the zip's central directory, read from the artifact's
 - `bun tools/link-duplicates.ts` makes each set of files with equal contents one file with several names. `tar` then stores each content once, and `zstd` compresses the archive on every core. The upload stores it as it is, at level 0.
 - Each job that serves the builds downloads the archive and unpacks it, through the same action.
 
+## Update, 24 October 2026: the two builds stay in turn
+
+The `load-pages` job builds the benchmark pages and then the startup pages: 59 s and 75 s in run 40049563192. Test run 40053641808 built both at the same time on one runner. The benchmark pages took 61 s and the startup pages 126 s, so the job would save about 8 s. Each build alone held 13 to 14 GB at its peak, and the two together left 1.4 GB of the runner's 16 GB free. So the builds stay one after the other.
+
 ## Consequences
 
 - `tests/lib/load-server.ts` holds the switch and the script. `tests/real-browsers.ts` and `bench/lib/serve.ts` make their builds through it, and `bench/playwright.config.ts` reads the switch.
