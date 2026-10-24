@@ -164,13 +164,15 @@ Four pages passed, and none was skipped. The display ran at 30 Hz, so every fram
 | Forest Medium | WebGL2 | 0.5 | 1,820.8 | 105.5 | n/a | 38,690,000 | 47 | 210.2 | 11.8 | 86.3 |
 
 The run: [20261024-111020-vegetation](tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261024-111020-vegetation.md).
-Three pages passed, three were skipped, one failed, and one is void. The device offers no
-compatibility adapter, so the plan skipped its compatibility pages. It skipped them only after the
-first one had run: Creek at Low in compatibility mode is the void row. Its engine lost the GPU on
-the first frame with E1302, `vkQueueSubmit failed with VK_ERROR_DEVICE_LOST`, and found no adapter
-to start another. The page then reported 3 frames in 5.5 s, so the runner counted a pass with no
-triangles and no texture bytes. Its figures are in no table here and must not be read. The device's
-own fault is in [Driver bug reports](driver-bugs.md).
+**One row is void.** Creek at Low in compatibility mode lost the GPU on its first frame with E1302,
+`vkQueueSubmit failed with VK_ERROR_DEVICE_LOST`. The page forced a mode that the device does not
+offer, and no adapter was left to start another.
+
+Three pages passed, three were skipped, and one failed. The device offers no compatibility adapter,
+so the plan skipped its compatibility pages, and it skipped them only after that first one had run.
+The page then reported 3 frames in 5.5 s, so the runner counted a pass with no triangles and no
+texture bytes. Its figures are in no table here and must not be read. The device's own fault is in
+[Driver bug reports](driver-bugs.md).
 
 Creek at Medium failed: its first frame took 42 s, and then the measure drew no frame in 5.5 s. The
 tablet is the slowest measured device. It draws Creek at Low under one frame a second, and the
