@@ -3,7 +3,7 @@
 // that the scene supports.
 import { describe, expect, it } from 'bun:test';
 import type { SketchContext } from '@null3d/engine';
-import { TIME_NAMES, TIME_SKY } from './controls';
+import { type HudGroup, TIME_NAMES, TIME_SKY } from './controls';
 import { createShowcaseEffects, shadowStep } from './showcase-effects';
 
 /** A cinematic that records how the page's camera picks reach it. */
@@ -19,7 +19,14 @@ function stubFilm() {
 }
 
 /** A scene whose every part records what the controls write to it. */
-function stub(options: { dslr?: boolean; start?: Record<string, boolean> } = {}) {
+function stub(
+	options: {
+		dslr?: boolean;
+		start?: Record<string, boolean>;
+		own?: readonly string[];
+		extra?: () => readonly HudGroup[];
+	} = {},
+) {
 	const seen: string[] = [];
 	const posts: unknown[] = [];
 	const shown: string[] = [];
@@ -106,6 +113,8 @@ function stub(options: { dslr?: boolean; start?: Record<string, boolean> } = {})
 			post: ['dof', 'exposure'],
 		},
 		apply: (id, on) => seen.push(`${id} ${on}`),
+		...(options.own !== undefined && { own: options.own }),
+		...(options.extra !== undefined && { extra: options.extra }),
 		mood: (mood) => seen.push(`mood ${mood}`),
 		hour: (hours) => seen.push(`hour ${hours}`),
 		film: () => film,
@@ -327,5 +336,29 @@ describe('the shadow range', () => {
 		const writes = ranges.length;
 		effects.update(0);
 		expect(ranges.length).toBe(writes);
+	});
+});
+
+describe('a scene’s own effects', () => {
+	it('lets the scene answer a switch that a shared case would take', () => {
+		const { effects, seen, posts } = stub({ own: ['vignette'] });
+		effects.set('vignette', true);
+		// The scene's own answer runs, and the shared vignette case writes nothing.
+		expect(seen).toEqual(['vignette true']);
+		expect(posts).toEqual([]);
+	});
+
+	it('shows the scene’s own groups before Quality', () => {
+		const { effects } = stub({
+			extra: () => [{ name: 'traffic', title: 'Traffic', radio: true, buttons: [] }],
+		});
+		expect(effects.groups().map((group) => group.name)).toEqual([
+			'hour',
+			'atmosphere',
+			'lighting',
+			'post',
+			'traffic',
+			'quality',
+		]);
 	});
 });

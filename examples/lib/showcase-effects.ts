@@ -38,7 +38,7 @@ export interface ShowcaseEffectsOptions {
 	/** The scene's sun: the shadows switch casts them or not. */
 	sun: DirectionalLight;
 	/** How far the sun's shadows reach, which follows the camera as it draws back from the scene. */
-	shadowReach: ShadowReach;
+	shadowReach?: ShadowReach;
 	/** The scene's stage, which owns the sky, the fog and the environment light switches. */
 	stage: Stage;
 	/** The effects that start on, with every id that the scene answers. */
@@ -51,6 +51,13 @@ export interface ShowcaseEffectsOptions {
 	};
 	/** The scene's own answer to an effect that is not one of the shared ones. */
 	apply(id: string, on: boolean): void;
+	/**
+	 * The ids that the scene's own `apply` answers, even where a shared case takes the name, such as
+	 * a lens that the scene's own kit writes.
+	 */
+	own?: readonly string[];
+	/** Groups that the scene adds before the Quality group, such as its own counts. */
+	extra?: () => readonly HudGroup[];
 	/** The scene's own choice of a mood, such as the look its caustics and its air take. */
 	mood(mood: import('./stage').Mood): void;
 	/** The scene's own answer to a new hour from the slider, such as the look its air takes. */
@@ -133,15 +140,16 @@ export function createShowcaseEffects(
 	const { page, post, quality } = ctx;
 	const { camera, sun, stage, start, supported, apply, mood, hour, film, fov, focalLength, focus } =
 		options;
-	const { shadowReach } = options;
 	// The shadow range in use, and the camera's place and direction that it is fitted to.
-	let shadowRange = shadowReach.distance;
-	sun.setShadow({ distance: shadowRange });
+	let shadowRange = options.shadowReach?.distance ?? 0;
+	if (options.shadowReach) sun.setShadow({ distance: shadowRange });
 	const eye = vec3.create();
 	const turn = quat.create();
 	const ahead = vec3.create();
 	/** Fits the shadow range to how far the camera looks past the far side of the scene's core. */
 	const fitShadows = (): void => {
+		const shadowReach = options.shadowReach;
+		if (!shadowReach) return;
 		camera.getPosition(eye);
 		camera.getRotation(turn);
 		vec3.transformQuat(ahead, AHEAD, turn);
@@ -182,6 +190,11 @@ export function createShowcaseEffects(
 
 	const set = (id: string, lit: boolean): void => {
 		on[id] = lit;
+		// A scene's own lens or post effect answers its switch itself, so a shared case never takes it.
+		if (options.own?.includes(id)) {
+			apply(id, lit);
+			return;
+		}
 		switch (id) {
 			case 'sky':
 			case 'fog':
@@ -287,6 +300,7 @@ export function createShowcaseEffects(
 			),
 			toggleGroup('lighting', 'Lighting', LIGHTING, supported.lighting, (id) => on[id] ?? false),
 			toggleGroup('post', 'Post', POST, supported.post, (id) => on[id] ?? false),
+			...(options.extra?.() ?? []),
 			{
 				...radioGroup('quality', 'Quality', QUALITY, quality.preset),
 				// The level of detail is a quality setting, and a threshold of 0 draws every mesh at
