@@ -17,7 +17,10 @@
 //      runs in CI only: it takes half an hour or more.
 // A machine's job queue runs the steps when git's `null3d.jobQueue` setting, or the environment's
 // NULL3D_JOB_QUEUE, names its script: the trailer check in its quick lane, the cargo steps in its
-// CPU lane, so a push does not load a busy machine outside the queue. Elsewhere the steps run
+// CPU lane, so a push does not load a busy machine outside the queue. The guards over the tree run
+// outside it: they are a few seconds of work, and on a loaded machine the wait for a quick slot plus
+// their run passed the lane's five-minute limit and refused two landings on 25 October 2026, which
+// left only the emergency trailer to get past a slow machine. Elsewhere the steps run
 // directly. The emergency bypass is a `Push-Check-Skipped: <reason>` trailer on a pushed commit.
 // git opens the connection to the remote before it runs this check, and holds it, silent, for the
 // whole check, so the machine's ssh must keep that connection alive: a peer closes a quiet one after
@@ -145,10 +148,10 @@ export const GUARD_TESTS = [
 	'tests/lib/priority-setup.test.ts',
 ] as const;
 
-/** One step of the check: what it runs, why, and the queue lane it takes. */
+/** One step of the check: what it runs, why, and the queue lane it takes, or none. */
 export interface Step {
 	why: string;
-	lane: 'QUICK' | 'CPU_ONLY';
+	lane: 'QUICK' | 'CPU_ONLY' | 'DIRECT';
 	command: string[];
 }
 
@@ -157,12 +160,12 @@ export function guardSteps(): Step[] {
 	return [
 		{
 			why: 'two decision records must not share a number, which a merge can bring together',
-			lane: 'QUICK',
+			lane: 'DIRECT',
 			command: ['bun', 'tools/decisions.ts', '--check'],
 		},
 		{
 			why: 'a merge can add a package, a network call or a timing spec that a repository-wide guard must know',
-			lane: 'QUICK',
+			lane: 'DIRECT',
 			command: ['bun', 'test', ...GUARD_TESTS],
 		},
 	];
@@ -355,10 +358,11 @@ function main(): void {
 function runSteps(steps: readonly Step[], target: string, queue: string | undefined): void {
 	for (const step of steps) {
 		console.log(`pre-push: ${step.command.join(' ')}\n  because ${step.why}`);
-		const command = queue ? ['zsh', queue, ...step.command] : step.command;
+		const queued = queue !== undefined && step.lane !== 'DIRECT';
+		const command = queued ? ['zsh', queue, ...step.command] : step.command;
 		const result = spawnSync(command[0] ?? '', command.slice(1), {
 			stdio: ['ignore', 'inherit', 'inherit'],
-			env: queue ? { ...process.env, [step.lane]: '1' } : process.env,
+			env: queued ? { ...process.env, [step.lane]: '1' } : process.env,
 		});
 		if (result.status !== 0) {
 			console.error(`\npush to ${target} refused: \`${step.command.join(' ')}\` failed (above).`);
