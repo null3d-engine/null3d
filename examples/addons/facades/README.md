@@ -104,6 +104,17 @@ the same reads at a coarser mip level.
 The two wall pages hold 256 KB each, about 342 KB with their mip levels, and the code page holds
 1 KB.
 
+`tests/image/facades-cost.spec.ts` times a wall of rooms against a plain wall of the same size, on
+each GPU path and preset, at 1920 by 1080 with a render scale of 1. It runs only in a quiet window
+on a computer with a GPU of its own:
+
+```sh
+NULL3D_FACADE_COST=1 bun run test:browser -- facades-cost.spec.ts
+```
+
+Its per-preset figures are owed. The run needs the load under 8, and the fleet held the Mac above
+that mark through the night this add-on was built.
+
 ## Limits
 
 - The shader draws on both GPU paths. It reads the wall pages through explicit derivatives, so its
