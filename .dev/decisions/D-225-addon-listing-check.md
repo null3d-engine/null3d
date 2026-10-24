@@ -115,5 +115,22 @@ The coordinator moved it to M3-D9a on 23 October 2026, with the profiler port na
 
 [M3-F7](../../.dev/decisions/D-179-technique-rulings-2026-10-15.md) landed `@null3d/three-compat` as a
 foundation that holds a package, after the run above. The foundations that no package holds are now
-physics, MSDF text, water and vegetation. The command has not yet run over three-compat, so this
-record owes a seventh row.
+physics, MSDF text, water and vegetation.
+
+The command ran over it the same evening, and it is the first add-on the size gate has failed:
+
+| Add-on | package | public API | interface | shaders | sizes | page and cost |
+| --- | --- | --- | --- | --- | --- | --- |
+| `@null3d/three-compat` | PASS | PASS | PASS | PASS | FAIL | SKIP |
+
+```text
+FAIL  sizes: 2 files load more than the budget for a file after the start
+      addon.js is 181.9 KB raw, over its 64.0 KB budget
+      addon.js is 24.8 KB gzip, over its 24.0 KB gzip budget
+```
+
+The package's own sources are 24 KB, so the entry is mostly something else, most likely the compiled
+shader builds of its two tone curves and its outline passes. That is the shape that
+[D-56](D-56-first-use-shader-files.md) moved out of code for the engine: shader text belongs in a
+file that loads on the feature's first use, under the shader budget, not inside the add-on's entry.
+The gate did its job: three-compat shipped over budget because nothing had measured it.
