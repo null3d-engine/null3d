@@ -21,6 +21,7 @@ import {
 	cacheOff,
 	cacheRoot,
 	cargoEnv,
+	HEAVY_SLOT_ENV,
 	hashFiles,
 	hashOf,
 	pruneCache,
@@ -308,6 +309,50 @@ describe('acquireLock', () => {
 			expect(out).toContain('acquired');
 		} finally {
 			child.kill();
+			rmSync(folder, { recursive: true, force: true });
+		}
+	});
+
+	it("marks its job's queue slot while it waits, and only for a lock that frees the slot", async () => {
+		const folder = mkdtempSync(join(tmpdir(), 'null3d-lock-'));
+		const lock = join(folder, 'page-build.lock');
+		const slot = join(folder, 'c1');
+		mkdirSync(slot);
+		const module = join(import.meta.dir, 'build-cache.ts');
+		const release = acquireLock(lock);
+		const waiter = (options: string) =>
+			spawn(
+				'bun',
+				[
+					'-e',
+					`import { acquireLock } from ${JSON.stringify(module)}; const r = acquireLock(${JSON.stringify(lock)}, ${options}); console.log('acquired'); r();`,
+				],
+				{ stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, [HEAVY_SLOT_ENV]: slot } },
+			);
+		const plain = waiter('{}');
+		const freeing = waiter('{ freesSlot: true }');
+		let out = '';
+		freeing.stdout.on('data', (chunk) => {
+			out += chunk;
+		});
+		/** Waits up to 10 s for `done`, which a loaded machine may take seconds to reach. */
+		const until = async (done: () => boolean) => {
+			for (let k = 0; k < 100 && !done(); k++) await Bun.sleep(100);
+		};
+		try {
+			await until(() => out.includes('waiting for the lock'));
+			// Only the waiter whose lock frees the slot marks it, by its own id, and says so.
+			expect(readdirSync(slot)).toEqual([`waiting-${freeing.pid}`]);
+			expect(readFileSync(join(slot, `waiting-${freeing.pid}`), 'utf8')).toBe(`${lock}\n`);
+			expect(out).toContain('counts as free while it waits');
+			release();
+			await until(() => out.includes('acquired'));
+			// Each took the lock in turn, and the mark went once its waiter held the lock.
+			expect(out).toContain('acquired');
+			expect(readdirSync(slot)).toEqual([]);
+		} finally {
+			plain.kill();
+			freeing.kill();
 			rmSync(folder, { recursive: true, force: true });
 		}
 	});
