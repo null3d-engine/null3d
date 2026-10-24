@@ -83,6 +83,15 @@ bytes on the page as `__null3dRecording`, for a tool that reads them. `engine.sa
 returns the same bytes for a sketch or a tool, and `bunx @null3d/cli shot --replay <file>` serves a file to
 the page and draws the replay's last frame, so the Mac replays a phone's file with one command.
 
+## Evidence
+
+A Galaxy S24 on Chrome 152, through BrowserStack, recorded a session of 20 frames whose longest
+step was 0.25 seconds, with a key and a touch. The file replayed on the Mac, and every one of the
+20 frame lines matched the phone's: the frame number, the sketch time, the step, the key state, the
+pointer position and the seeded number. The long step is part of what matched, so the replay
+carries a hitch instead of smoothing it. The run is in `.dev/tested-devices/`, and
+`tests/image/recording-replay.spec.ts` repeats the comparison from a device run's result.
+
 ## Consequences
 
 - `packages/engine/src/shared/recording.ts` holds the format, the recorder and the reader. Its code
