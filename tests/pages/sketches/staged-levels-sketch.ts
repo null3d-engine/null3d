@@ -6,8 +6,9 @@
 // finest level. `?far` stands the camera beyond every switch distance, where only the file's own
 // level draws, so the loader gives up the stages that would never draw. `?near` starts at the far
 // camera, waits until the loader gave those stages up, and then comes close: the stages that the
-// camera now needs must arrive. The sketch posts 'loaded' with the levels the file gave, 'levels'
-// with the count whenever it changes, and 'near' when it moves the camera close.
+// camera now needs must arrive. The page keeps the quality settings still, so the picture changes
+// only when a stage arrives. The sketch posts 'loaded' with the levels the file gave, 'levels' with
+// the count whenever it changes, and 'near' when it moves the camera close.
 import { defineSketch } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -25,7 +26,12 @@ const NEAR = params.has('near');
  */
 const NEAR_AFTER_FRAMES = 240;
 
-export default defineSketch(async ({ scene, assets, page }) => {
+export default defineSketch(async ({ scene, assets, page, quality }) => {
+	// The page compares two of its own frames, so the picture must not move between them. On a slow
+	// renderer the frame-budget governor lowers the render scale once, finds the step does not pay,
+	// and raises it again, which redraws the scene at another scale partway through the comparison.
+	// A capture keeps the settings as set instead (D-237).
+	await quality.set({ governor: false });
 	scene.setBackground('#8fa4b8');
 	scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3.2 });
 	scene.createAmbientLight({ intensity: 0.5 });
