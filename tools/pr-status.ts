@@ -35,16 +35,7 @@ const PARTIAL: Readonly<Record<string, string>> = {
 const ON_BRANCH = new Set(['M3-E9', 'M3-R14']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
-const INCOMPLETE = new Set([
-	'M3-B1',
-	'M3-D9',
-	'M3-E2',
-	'M3-E6',
-	'M3-E8',
-	'M3-L1',
-	'M3-L3',
-	'M3-R12',
-]);
+const INCOMPLETE = new Set(['M3-B1', 'M3-E2', 'M3-E6', 'M3-E8', 'M3-L1', 'M3-L3', 'M3-R12']);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
@@ -61,7 +52,7 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-B1':
 		'the pictures hold every lens mark now, and the streak and grain ones were tightened after they proved nothing at the default threshold: each mark moves about 2.8 per cent of the pixels against a half per cent limit. The cost per preset is still owed — it needs a machine idle enough for a quiet timing run, and the fleet has not given one since this morning',
 	'M3-D9':
-		'the command and its refusal of an add-on that imports the engine internal entry are tested; no recorded run holds it over every foundation add-on',
+		'the command and its refusal are tested, and the two gate faults its first runs found are fixed: the size gate held compiled shader-build files to the code budget, and the fixture sketch never moved so no frame drew. The recorded run over all six foundation add-ons is still owed, because the machine never admitted it',
 	'M3-L1':
 		'every item is built with its pictures, but D-211 records Mac figures alone: the phone GPU time the fade item asks for, and the iPad and phone figures the section asks for, are missing',
 	'M3-L3':
