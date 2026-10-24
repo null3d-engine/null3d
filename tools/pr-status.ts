@@ -118,7 +118,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"the 4x shadow detail holds only for an object up to 1.8 m on High, and the costs were taken at loads of 13.6 to 26.3 against the spec's own limit of 8",
 	'M3-A11':
 		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
-	'M3-B6': 'the real-light option lights a fixed share of the cars, not the nearest ones',
 	'M3-E10':
 		'a sky layer draws into neither the environment map nor the CPU sky light, and D-242 drops both without a ruling',
 	'M3-R1':
