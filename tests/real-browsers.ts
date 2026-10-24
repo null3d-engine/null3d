@@ -1449,6 +1449,10 @@ async function runPlan(
 					return recovery.onQuiet(runner, seconds, at);
 				},
 				onHandover: recovery.onHandover,
+				onSilence: (runner, ms, item) =>
+					console.log(
+						`${runner}: its runner page's longest silence was ${(ms / 1000).toFixed(1)} s${item ? `, on ${item}` : ''}`,
+					),
 				endTurn: (runner) => guard.endTurn(runner) || cloud?.lost(runner) === true,
 				...(remote && {
 					startMs: CLOUD_START_MS,
