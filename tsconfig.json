@@ -35,6 +35,7 @@
 		"packages/impostors/**",
 		"packages/terrain/**",
 		"packages/three-compat/**",
-		"packages/splats/**"
+		"packages/splats/**",
+		"packages/water/**"
 	]
 }

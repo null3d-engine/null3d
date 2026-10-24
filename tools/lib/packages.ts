@@ -131,6 +131,8 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 	// Its task module is built as the JavaScript that the job workers import, and its two shaders
 	// compile into modules of their own.
 	splats: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	// Its surface and underwater WGSL compile into modules of their own.
+	water: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
 	cli: {
 		compile: false,
 		shaders: false,

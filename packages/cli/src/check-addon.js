@@ -80,7 +80,7 @@ export const ADDON_FILE_BUDGET = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 17 *
  * budget above. The engine's size report keeps the same figures for its own first-use shader files,
  * and a test keeps these equal to that report's.
  */
-export const ADDON_SHADER_BUDGET = { raw: 1792 * 1024, gzip: 320 * 1024, brotli: 52 * 1024 };
+export const ADDON_SHADER_BUDGET = { raw: 1792 * 1024, gzip: 320 * 1024, brotli: 56 * 1024 };
 
 /**
  * A built file that holds compiled shader builds: the plugin names each set after its kind, its

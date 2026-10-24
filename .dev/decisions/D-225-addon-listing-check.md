@@ -255,3 +255,15 @@ PASS  allocation per preset: low 5.8 KB, medium 5.8 KB, high 5.8 KB, ultra 5.8 K
 The place is the add-on's own step, in the sketch worker, and the page's other threads allocate the
 rest. The gate passes with those figures rather than failing, as its verdict says. A listing that
 wants a budget for the add-on's own code adds one; the gate's figures are what such a budget reads.
+
+## Addendum, 24 October 2026: the pieces of an effect that draws alone
+
+M3-F5's water add-on was the first package to carry a custom effect that reads the scene's depth.
+Such an effect cannot join the effect before it, so it draws a pass of its own with its builds. The
+plugin kept its pieces, the top-level items that a joined effect adds to a host, in the module
+anyway. They were 93 KB of the 111 KB entry, for data that no host reads, and the size gate failed
+the entry's raw figure.
+
+A module's value now keeps no pieces for an effect whose `joins` is false, as it keeps none of its
+builds. The add-on's entry fell to 18 KB, within the 64 KB budget. Joined effects and tone curves
+keep their pieces, which their hosts read. A test in `material-builds.test.ts` covers both cases.

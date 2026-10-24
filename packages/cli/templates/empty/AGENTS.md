@@ -33,7 +33,7 @@ scene.
 | Ground from a height field | `@null3d/terrain` | built |
 | Rigid bodies, joints and character movement | the physics add-on | not built yet; run Rapier or cannon-es in the sketch worker |
 | Text in the scene | the MSDF text add-on | not built yet; use HTML labels |
-| Water with waves and foam | `@null3d/water` | not built yet; use a custom material and a reflection pass |
+| A river or a lake, with waves, foam and soft shores | `@null3d/water` | built; see the docs page api/water |
 | Trees, shrubs, grass and wind | the vegetation add-on | not built yet |
 | three.js look modes for a port | `@null3d/three-compat` | built |
 
