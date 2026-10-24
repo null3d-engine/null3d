@@ -20,30 +20,13 @@ export const MAX_RECORDING_SECONDS = 600;
 
 /** The most frames and input records that a recording keeps, so a broken page cannot exhaust memory. */
 const MAX_FRAMES = 2_000_000;
-const MAX_EVENTS = 4_000_000;
+const MAX_EVENTS = 1_000_000;
 
 /** The flag that marks a recording that stopped at its limit before the session ended. */
 const FLAG_STOPPED = 1;
 
-/** The numbers of one input record, in the order that the file stores them. */
-export interface RecordedEvent {
-	/** The event's type, as the input ring's `EVENT_` names give it. */
-	type: number;
-	/** A key's index in the dictionary for a key event, or the record's own code. */
-	code: number;
-	/** The event's flags, as `FLAG_` names give them. */
-	flags: number;
-	/** The pointer's or the pad's id. */
-	id: number;
-	/** The pointer's buttons, or a pad button's value. */
-	buttons: number;
-	/** The pointer's distance from the canvas's left edge, or a wheel's first delta. */
-	x: number;
-	/** The pointer's distance from the canvas's top edge, or a wheel's second delta. */
-	y: number;
-}
-
-/** The numbers of one event, as the recording stores them side by side. */
+/** The numbers of one event, as the recording stores them side by side: type, code, flags, id,
+ * buttons, x and y. */
 export const EVENT_STRIDE = 7;
 
 /**
