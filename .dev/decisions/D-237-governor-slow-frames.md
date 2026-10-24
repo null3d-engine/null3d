@@ -71,6 +71,8 @@ Rule 1 lands only if the completed frames' busy time tells a slow frame from a p
   All ten runs passed on the Mac's software renderer, in 5.7 minutes. The canvas tuned to 2560 by 1440 pixels. There the whole scale drew 4.5 to 9.9 frames a second, or 101 to 223 ms a frame. The governor stepped about 3 s after it came on. The first frame after the step took 1.25 to 2.42 s, so each trial read a held frame rather than a judged second. The frame counts agree: the return came two or three sketch frames after the step. No run stepped below 0.95, and none changed the scale again in the 16 s that followed.
 - The governor's stress test (`tests/pages/governor.ts`): the render scale may change direction no more than twice in the last seconds of its hold. A setting that holds must not swing back and forth, while the walk down is one direction however many steps it takes.
 
+  Both GPU paths passed on the Mac in a quiet slot, in 2.2 minutes. The hold settled the render scale at 0.55 and changed it no further in the last 15 seconds. The frames held 90% of 60 frames a second in 14 of those seconds on WebGPU and in all 15 on WebGL2.
+
 ## Consequences
 
 - Rule 1 changes `GovernorLoop.frame`, which measures the longest busy time of the frames that finished in a gap. It also changes `Governor.gap`, which judges a held frame as the windows it spans. A held frame after a step down fails the trial at once, before any further step. Seven new unit tests in `governor.test.ts` check the rules, beside the six of the trial.
