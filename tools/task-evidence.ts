@@ -40,6 +40,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'One file format for baked probe grids and light maps: `packages/engine/src/scene/baked-light.ts`, `assets.loadLightProbeGrid`, `assets.loadLightMap` and `assets.lightProbeGridFile`, with every fault named as E1434; the guide `docs/guides/baked-light-data.md`, a round-trip test and two fixtures; D-243',
 	'M3-B6':
 		'Instanced lanes that move in the vertex shader: `examples/addons/traffic-lanes/`, drawn by the instances demo at 30,000 and 100,000 vehicles and by Skyway. The real lights now go to the nearest cars, not a fixed share of the rows: `lights.test.ts` compares the search with a full one at both counts and checks that the nearest car has a light',
+	'M3-E10':
+		"A sky layer declares an M3-R1 feature description at the background point, and `scene.setSkyLayer` refuses any other shape with E1223: `packages/engine/src/scene/background.ts`, with `errors.spec.ts` raising the wrong shape in a running sketch on every thread mode. The aurora add-on in `examples/addons/aurora/` is the first user, with the `aurora` demo and its six pictures on every tier; D-242's addendum of 25 October 2026 records the narrowed line",
 	'M3-G4':
 		"`transmissionMap` and `thicknessMap`: `packages/engine/src/scene/resources.ts`, the shaders' thickness reads",
 	'M3-K1': '`scene.createView({ camera, rect })`: `packages/engine/src/scene/scene.ts`',
