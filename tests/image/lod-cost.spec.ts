@@ -14,6 +14,9 @@ import {
 	waitForQuiet,
 } from '../lib/effect-cost.ts';
 import { pageResult } from '../lib/page-result.ts';
+import { TIMING_BROWSER } from '../lib/timing-browser.ts';
+
+test.use(TIMING_BROWSER);
 
 const count = process.env.NULL3D_LOD_COUNT ?? '40000';
 const presets = (process.env.NULL3D_LOD_PRESETS ?? 'low,medium,high,ultra').split(',');

@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseReviewArgs } from '../review-images.ts';
@@ -33,6 +41,7 @@ const [BOXES, BOXES_COPIED, GRID] = imageRuns(TESTS) as [
 ];
 const REAL: Place = { environment: 'chrome-real-gpu' };
 const SAFARI: Place = { runner: 'mac-safari', device: 'mac' };
+const SWIFT: Place = { environment: 'chromium-swiftshader' };
 
 const image = (red: number) => ({
 	width: 2,
@@ -141,6 +150,86 @@ describe('the review', () => {
 	});
 });
 
+describe('a SwiftShader reference', () => {
+	const drawn = (env: Record<string, string | undefined>, red = 10) => {
+		const kept = { actions: process.env.GITHUB_ACTIONS, run: process.env.GITHUB_RUN_ID };
+		process.env.GITHUB_ACTIONS = env.GITHUB_ACTIONS;
+		process.env.GITHUB_RUN_ID = env.GITHUB_RUN_ID;
+		if (env.GITHUB_ACTIONS === undefined) delete process.env.GITHUB_ACTIONS;
+		if (env.GITHUB_RUN_ID === undefined) delete process.env.GITHUB_RUN_ID;
+		try {
+			compareWithReference(GRID, SWIFT, image(red), dirs);
+		} finally {
+			if (kept.actions === undefined) delete process.env.GITHUB_ACTIONS;
+			else process.env.GITHUB_ACTIONS = kept.actions;
+			if (kept.run === undefined) delete process.env.GITHUB_RUN_ID;
+			else process.env.GITHUB_RUN_ID = kept.run;
+		}
+		return readCandidates(dirs.candidates).filter((c) => c.drawnIn === 'chromium-swiftshader');
+	};
+	const target = () => join(dirs.references, 'chromium-swiftshader/webgpu/grid.png');
+	const record = () => join(dirs.references, '..', 'local-references.json');
+
+	it('is refused from this machine, naming the test, the file and the way to take it from CI', () => {
+		const candidates = drawn({});
+		expect(candidates[0]?.ciRun).toBeUndefined();
+		const accepted = acceptCandidates(candidates, dirs.references, undefined, { record: record() });
+		expect(accepted.written).toEqual([]);
+		expect(accepted.refused).toHaveLength(1);
+		expect(accepted.refused[0]).toContain('grid on webgpu, drawn in chromium-swiftshader');
+		expect(accepted.refused[0]).toContain(
+			'chromium-swiftshader/webgpu/grid.png was drawn on this machine, not by CI',
+		);
+		expect(accepted.refused[0]).toContain('bun run images:review --ci <run> --accept grid');
+		expect(existsSync(target())).toBe(false);
+		expect(existsSync(record())).toBe(false);
+	});
+
+	it("is taken from CI's own drawing, or from a CI run that the review fetched", () => {
+		const fromCi = drawn({ GITHUB_ACTIONS: 'true', GITHUB_RUN_ID: '42' });
+		expect(fromCi[0]?.ciRun).toBe('42');
+		expect(
+			acceptCandidates(fromCi, dirs.references, undefined, { record: record() }).refused,
+		).toEqual([]);
+		expect(existsSync(target())).toBe(true);
+		rmSync(target());
+		// A local CI=1 run sets no GitHub variable, so only a fetched run vouches for its images.
+		const fetched = drawn({});
+		const accepted = acceptCandidates(fetched, dirs.references, undefined, {
+			ciRun: '7',
+			record: record(),
+		});
+		expect(accepted.refused).toEqual([]);
+		expect(existsSync(target())).toBe(true);
+	});
+
+	it('is taken from this machine only with a reason, which the record keeps until CI draws it', () => {
+		const accepted = acceptCandidates(drawn({}), dirs.references, undefined, {
+			localReason: 'CI cannot run this page yet',
+			record: record(),
+			today: '2026-10-25',
+		});
+		expect(accepted.refused).toEqual([]);
+		expect(JSON.parse(readFileSync(record(), 'utf8'))).toEqual({
+			'chromium-swiftshader/webgpu/grid.png': {
+				test: 'grid',
+				tier: 'webgpu',
+				date: '2026-10-25',
+				reason: 'CI cannot run this page yet',
+			},
+		});
+		acceptCandidates(
+			drawn({ GITHUB_ACTIONS: 'true', GITHUB_RUN_ID: '43' }, 200),
+			dirs.references,
+			undefined,
+			{
+				record: record(),
+			},
+		);
+		expect(JSON.parse(readFileSync(record(), 'utf8'))).toEqual({});
+	});
+});
+
 describe('parseReviewArgs', () => {
 	it('reads what to accept and where the images are', () => {
 		expect(parseReviewArgs([])).toEqual({});
@@ -150,5 +239,10 @@ describe('parseReviewArgs', () => {
 		expect(parseReviewArgs(['--ci', '18712345678'])).toEqual({ ci: '18712345678' });
 		expect(() => parseReviewArgs(['--ci', 'latest'])).toThrow('unknown option --ci');
 		expect(() => parseReviewArgs(['--from', 'a', '--ci', '1'])).toThrow('use --from or --ci');
+		expect(parseReviewArgs(['--accept', '--local-reason', 'a page CI cannot run'])).toEqual({
+			accept: [],
+			localReason: 'a page CI cannot run',
+		});
+		expect(() => parseReviewArgs(['--local-reason'])).toThrow('unknown option --local-reason');
 	});
 });

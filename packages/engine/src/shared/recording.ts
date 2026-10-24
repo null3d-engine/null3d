@@ -5,7 +5,8 @@
 // phone reproduces on a computer.
 //
 // The recorder lives on the sketch's thread, so it records what the sketch read, not what the page
-// sent. A frame that read no input costs four bytes in memory and about two in the file.
+// sent. A frame with no input costs sixteen bytes in its frame arrays and nine in the file: the
+// step's eight-byte number and a one-byte count.
 
 import { EVENT_KEY_DOWN, EVENT_KEY_UP } from './control';
 

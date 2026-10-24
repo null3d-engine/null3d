@@ -325,3 +325,59 @@ atlas, at 12, 24 and 48 metres from one camera, cover the same share of their ow
 **Owed.** The paint's time on each device, which the device record keeps, and the owner's judgement
 of the generated leaves beside Creek's painted textures, which the `vegetation-versus-creek` picture
 shows side by side.
+
+## Addendum: the leaf cells, redrawn so that each holds leaves
+
+The first atlas passed its coverage test and still looked wrong. Each cell held one smooth outline
+repeated along a twig, and the leaves of a cell merged into a slab. The cells' colour also sat near
+white, so a crown read as a pale tiled pattern. Creek's painted oak holds many leaves that differ in
+tone, shape and edge. That gap is what M3-V5's judgement asked about.
+
+**The fault.** The painter never multiplied a leaf's half width by the leaf's aspect. Every leaf
+painted between three and twenty times too wide for the shape its family described. A single cell
+still looked like a leaf, because a leaf that is too wide is still a leaf. A crown did not: its cards
+merged into slabs, and no outline could be seen. Each cell's leaves covered each other into one blob,
+whatever the family drew. The aspect now scales the half width, so every silhouette draws at the size
+that its shape means. Whoever changes a painter should check it on a repeated card as well as on one
+cell, since one cell hides this fault. A unit test now counts the separate leaves of a cell and needs
+at least four, which a painter of too-wide leaves cannot reach.
+
+**What a cell holds now.** A family sets each leaf's outline. That outline has a width profile along
+the midrib and teeth along the edges. A family may also give the lobes of an oak or a hosta, and the
+veins. Each leaf of a card then draws its own numbers from its seed. These cover its profile and
+aspect, and its tooth count and depth. They also cover its lobe depth, vein count and strength, a bow
+of its midrib and a narrower side. Its brightness and its lean to yellow come from them too. One leaf
+in five has a round bite out of an edge, so a crown never reads as a pattern. The cells keep their
+eight kinds. Four are broadleaf sprays: an oak's lobes, a beech's fine teeth, a birch's small teeth
+and a willow's narrow blade. The fifth is a conifer spray of needle pairs, and the sixth a fern's
+frond of lobed pinnae. The seventh is a clump of eleven grass blades. The eighth is a broad hosta
+leaf, with a smaller one behind it.
+
+**The colour map.** A leaf runs from darker at its base to lighter at its tip. A slow blotch mottles
+its blade, its veins take a line of shade or light, and its rim darkens by half. That rim lets two
+overlapping leaves read apart, as a painted card's dark edges do. A leaf also darkens where another
+leaf lies over it, as a pile of leaves shades itself. The channels are scaled so that the brightest
+one stays under white. A warm leaf then shows its hue instead of clipping to a pale pink or blue.
+Across a cell, the green channel spreads with a standard deviation of 22 to 26 of 255. The darkest
+leaf lies near 128.
+
+**What takes no leaf.** A texel that no leaf covers takes its cell's mean leaf colour and mean height.
+Mip levels average colour without weighting by alpha. A background of its own would therefore pull a
+distant crown's hue toward it. A height of its own would bend the normal at every silhouette. A
+cluster cell covers 0.35 to 0.40 of its box, and a cell paints at least four separate leaves. The
+coverage test reads 0.406, 0.416 and 0.415 of a card's box at 12, 24 and 48 metres, on all three GPU
+paths. That share is higher than the 0.34 of the first atlas, because a cell now holds more leaves.
+The property that the test checks is unchanged: a card keeps its share as it shrinks.
+
+**The bake's time.** `paintLeaf` takes about 230 ms, and `paintBark` about 160 ms, on an Apple M5 Max
+laptop under load. The figures were about 300 ms and 136 ms before the change. The leaf's cost fell
+because each leaf now rejects a texel outside a box around its outline, before working out the outline.
+
+**What the pictures show.** The `vegetation-atlas` picture draws the change plainly. Its leaf card was
+one large leaf with a midrib, and it is now a twig of eleven lobed leaves. The `vegetation-versus-creek`
+picture shows the generated oak beside Creek's painted one, and the leaves there now have outlines,
+veins and tones of their own. That picture still shows a gap: the generated crown is paler and flatter
+than Creek's. The atlas is a map that multiplies a species' colour. The crown is lit by one uniform
+light with no crown occlusion, so the leaves differ by their own paint alone. Creek's texture carries
+painted shadowing as well. The rest of that gap belongs to M3-V7, not to the atlas. That task adds the
+leaf material with crown-bent normals, a tint for each tree and crown occlusion.

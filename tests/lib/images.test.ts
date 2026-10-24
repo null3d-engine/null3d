@@ -9,6 +9,7 @@ import { ENGINE_MODES, type EngineMode } from './engine-checks.ts';
 import {
 	borrowedRun,
 	type CandidateFacts,
+	ciRunOf,
 	clearCandidate,
 	clearCandidates,
 	compareWithReference,
@@ -555,8 +556,17 @@ describe('comparing an image with its reference', () => {
 			status: 'new',
 			reference: 'chrome-real-gpu/webgpu/boxes.png',
 			tolerance: TOLERANCE,
+			// CI's own drawing names its run, which a software-GPU reference needs.
+			...(ciRunOf(process.env) && { ciRun: ciRunOf(process.env) }),
 		});
 		expect(readPng(`${saved}.png`)).toEqual(image([10, 20, 30]));
+	});
+
+	it('names the CI run that drew an image only inside GitHub Actions, not in a local CI=1 run', () => {
+		expect(ciRunOf({ GITHUB_ACTIONS: 'true', GITHUB_RUN_ID: '40109903483' })).toBe('40109903483');
+		expect(ciRunOf({ CI: '1' })).toBeUndefined();
+		expect(ciRunOf({ CI: 'true', GITHUB_RUN_ID: '1' })).toBeUndefined();
+		expect(ciRunOf({ GITHUB_ACTIONS: 'true' })).toBeUndefined();
 	});
 
 	it('passes an image within the tolerance, and saves nothing', () => {

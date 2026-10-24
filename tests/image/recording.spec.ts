@@ -100,7 +100,9 @@ test('a recorded session replays to the same frames', async ({ page }) => {
 
 test('the device page records a session with a long frame', async ({ page }) => {
 	// The page drives its own keyboard and touch, holds a frame long enough to be a hitch, saves,
-	// and publishes the session. The device run uses the same page, so this checks it here.
+	// and publishes the session. The device run uses the same page, so this checks it here. It then
+	// replays the file and compares every frame line: a slow GPU draws fewer frames in the session's
+	// fixed time, so the test asks for the replay, not for a frame count.
 	await page.goto('recording-device.html?record&threads=off');
 	await page.waitForFunction(
 		() => (globalThis as { __null3dResult?: unknown }).__null3dResult !== undefined,
@@ -112,13 +114,34 @@ test('the device page records a session with a long frame', async ({ page }) => 
 			(globalThis as { __null3dResult?: Record<string, unknown> }).__null3dResult as {
 				ok: boolean;
 				error?: string;
-				frames: number;
+				log: string[];
 				longestStep: number;
 				recording: string;
 			},
 	);
 	expect(result.ok, result.error).toBe(true);
-	expect(result.frames).toBeGreaterThan(20);
+	expect(result.log.length).toBeGreaterThan(0);
 	expect(result.longestStep).toBeGreaterThanOrEqual(0.2);
 	expect(result.recording.length).toBeGreaterThan(100);
+
+	await page.route(
+		(url) => url.pathname === '/device.n3dr',
+		(route) =>
+			route.fulfill({
+				status: 200,
+				contentType: 'application/octet-stream',
+				body: Buffer.from(result.recording, 'base64'),
+			}),
+	);
+	await page.goto('recording.html?replay=/device.n3dr');
+	await page.waitForFunction(
+		() =>
+			(globalThis as RecordingPage).recordingReady === true ||
+			(globalThis as RecordingPage).recordingError !== undefined,
+		undefined,
+		{ timeout: 30_000 },
+	);
+	expect(await page.evaluate(() => (globalThis as RecordingPage).recordingError)).toBeUndefined();
+	const replayed = await settledLog(page);
+	expect(replayed).toEqual(result.log);
 });
