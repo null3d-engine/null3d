@@ -106,7 +106,9 @@ export function setUpView(
 }
 
 /**
- * Moves a camera along a path of the shared scene module. It allocates nothing per call. The browser
+ * Moves a camera along a path of the shared scene module. It allocates nothing per call, and it
+ * copies the path's position into `copyTo` when the caller gives an array, so a step that reads the
+ * camera's position takes no fraction. The browser
  * boxes each fraction passed to a call that it does not inline, and it may never inline `lookAt`
  * into a function that runs once per frame. So the rotation comes from the quaternion helper, which
  * reads arrays, and goes to `setRotation`, which is as small as `setPosition`. A camera looks down
@@ -115,12 +117,15 @@ export function setUpView(
 export function followPath(
 	camera: Camera,
 	path: (t: number, outPosition: OutArray, outTarget: OutArray) => void,
+	copyTo?: Float64Array,
 ): (t: number) => void {
 	const position = new Float64Array(3);
 	const target = new Float64Array(3);
 	const rotation = quat.create();
 	return (t) => {
 		path(t, position, target);
+		// A step that reads the camera's position takes it here, where no fraction crosses a call.
+		copyTo?.set(position);
 		quat.lookAt(rotation, target, position);
 		camera.setPosition(position[0] as number, position[1] as number, position[2] as number);
 		camera.setRotation(

@@ -28,48 +28,57 @@ const LEVELS = [
 	[100, 50, 25, 13],
 ] as const;
 
+/** The counts that the task left in the buffer, one for each chunk. */
+function countsOf(view: Float32Array, chunks: number): number[] {
+	const at = HEADER + chunks * STRIDE;
+	return Array.from({ length: chunks }, (_, i) => view[at + i] as number);
+}
+
 describe('the splat selection task', () => {
 	it('gives each chunk the level that its distance asks for', () => {
 		const view = buffer(LEVELS);
 		view[BUDGET] = 1000;
 		const { output } = run({ view });
+		expect(output).toBe(true);
 		// The near chunk draws in full, and the far ones at their coarsest level.
-		expect(output.counts[0]).toBe(100);
-		expect(output.counts[1]).toBe(13);
-		expect(output.counts[2]).toBe(13);
-		expect(output.total).toBe(126);
+		expect(countsOf(view, 3)).toEqual([100, 13, 13]);
 		expect(view[TOTAL]).toBe(126);
 	});
 
 	it('lowers a level where the budget runs out, nearest first', () => {
 		const view = buffer(LEVELS);
 		view[BUDGET] = 120;
-		const { output } = run({ view });
-		expect(output.counts[0]).toBe(100);
-		expect(output.counts[1]).toBe(13);
-		// The last chunk takes the little that the budget leaves.
-		expect(output.counts[2]).toBe(7);
-		expect(output.total).toBe(120);
+		run({ view });
+		expect(countsOf(view, 3)).toEqual([100, 13, 7]);
+		expect(view[TOTAL]).toBe(120);
 	});
 
 	it('takes a coarser level of the near chunk before the far chunks', () => {
 		const view = buffer(LEVELS);
 		view[BUDGET] = 60;
-		const { output } = run({ view });
+		run({ view });
 		// The nearest chunk halves instead of leaving the far chunks nothing.
-		expect(output.counts[0]).toBe(50);
-		expect(output.counts[1]).toBe(10);
-		expect(output.counts[2]).toBe(0);
-		expect(output.total).toBe(60);
+		expect(countsOf(view, 3)).toEqual([50, 10, 0]);
+		expect(view[TOTAL]).toBe(60);
 	});
 
 	it('takes the camera into account', () => {
 		const view = buffer(LEVELS);
 		view[BUDGET] = 1000;
 		view[EYE] = 100;
-		const { output } = run({ view });
+		run({ view });
 		// The camera stands at the second chunk now.
-		expect(output.counts[1]).toBe(100);
-		expect(output.counts[0]).toBe(13);
+		expect(countsOf(view, 3)).toEqual([13, 100, 13]);
+	});
+
+	it('reuses its scratch when the chunk count stays the same', () => {
+		const first = buffer(LEVELS);
+		first[BUDGET] = 1000;
+		run({ view: first });
+		const second = buffer(LEVELS);
+		second[BUDGET] = 60;
+		run({ view: second });
+		expect(countsOf(second, 3)).toEqual([50, 10, 0]);
+		expect(second[TOTAL]).toBe(60);
 	});
 });

@@ -772,3 +772,50 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 		}
 	});
 });
+
+/** A project whose page names a task module, as an add-on declares one. */
+const TASK_PROJECT = {
+	'index.html': '<!doctype html><script type="module" src="./src/page.ts"></script>',
+	'src/page.ts':
+		"export const task = { name: 'probe', script: new URL('./task.ts', import.meta.url) };\n",
+	'src/task.ts': `interface Input {
+	view: Int32Array;
+}
+
+export function run(input: Input): { output: boolean } {
+	void input;
+	return { output: true };
+}
+`,
+};
+
+describe('a module that a task names', () => {
+	it('is built as a module, not copied with its types, so a worker can import it', async () => {
+		const chunks = await buildProject(fixture(TASK_PROJECT));
+		const task = chunks.find((chunk) => chunk.facadeModuleId?.endsWith('src/task.ts'));
+		expect(task).toBeDefined();
+		// The worker imports this address, and a browser cannot parse raw TypeScript.
+		expect(task?.code).not.toContain('interface Input');
+		expect(task?.code).not.toContain(': Input');
+		expect(task?.code).toContain('run');
+	});
+});
+
+/** A project whose sketch module imports another module on demand, as a worker runs it. */
+const PRELOAD_PROJECT = {
+	'index.html': '<!doctype html><script type="module" src="./src/page.ts"></script>',
+	'src/page.ts': "export const sketch = new URL('./sketch.ts', import.meta.url);\n",
+	'src/sketch.ts': `const defineSketch = (setup: () => unknown) => setup;
+export default defineSketch(() => ({ later: () => import('./later.ts') }));
+`,
+	'src/later.ts': 'export const later = true;\n',
+};
+
+describe('a chunk that a worker imports', () => {
+	it('does not preload its dynamic imports through the page, which has no document there', async () => {
+		const chunks = await buildProject(fixture(PRELOAD_PROJECT));
+		const sketch = chunks.find((chunk) => chunk.facadeModuleId?.endsWith('src/sketch.ts'));
+		expect(sketch?.dynamicImports.length).toBeGreaterThan(0);
+		expect(sketch?.code).not.toContain('__vite__mapDeps(');
+	});
+});

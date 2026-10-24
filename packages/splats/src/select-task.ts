@@ -37,30 +37,56 @@ function levelOf(distance: number, radius: number): number {
 	return LEVELS - 1;
 }
 
-/** Chooses each chunk's count, and answers them for the sketch's thread. */
-export function run(input: unknown): { output: { counts: number[]; total: number } } {
+/**
+ * The scratch of the last call's chunk count. A worker keeps the module between tasks, so the
+ * arrays are made once and reused: a call that runs in every frame allocates nothing.
+ */
+let scratch = {
+	chunks: -1,
+	distances: new Float32Array(0),
+	levels: new Uint8Array(0),
+	order: [] as number[],
+};
+
+/** Orders two chunk indices by their distance from the camera, nearest first. */
+function byDistance(a: number, b: number): number {
+	return (scratch.distances[a] as number) - (scratch.distances[b] as number);
+}
+
+/**
+ * Chooses each chunk's count, writes them after the chunks, and answers that it filled the buffer.
+ * The sketch's thread reads the counts from the same buffer, so no count crosses a message.
+ */
+export function run(input: unknown): { output: boolean } {
 	const { view } = input as { view: Float32Array };
 	const chunks = view[CHUNK_COUNT] as number;
+	if (chunks !== scratch.chunks) {
+		scratch = {
+			chunks,
+			distances: new Float32Array(chunks),
+			levels: new Uint8Array(chunks),
+			order: new Array<number>(chunks),
+		};
+	}
+	const { distances, levels, order } = scratch;
 	const budget = view[BUDGET] as number;
 	const eyeX = view[EYE] as number;
 	const eyeY = view[EYE + 1] as number;
 	const eyeZ = view[EYE + 2] as number;
-	const counts = new Array<number>(chunks).fill(0);
-	const levels = new Uint8Array(chunks);
-	const distances = new Float32Array(chunks);
-	const order = new Array<number>(chunks);
 	for (let i = 0; i < chunks; i++) {
 		const at = HEADER + i * STRIDE;
-		const x = view[at] as number;
-		const y = view[at + 1] as number;
-		const z = view[at + 2] as number;
+		const dx = (view[at] as number) - eyeX;
+		const dy = (view[at + 1] as number) - eyeY;
+		const dz = (view[at + 2] as number) - eyeZ;
 		const radius = view[at + 3] as number;
-		const distance = Math.hypot(x - eyeX, y - eyeY, z - eyeZ);
-		distances[i] = Math.max(distance - radius, 0);
+		const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+		distances[i] = distance > radius ? distance - radius : 0;
 		levels[i] = levelOf(distance, radius);
 		order[i] = i;
 	}
-	order.sort((a, b) => (distances[a] as number) - (distances[b] as number));
+	order.sort(byDistance);
+	const countsAt = HEADER + chunks * STRIDE;
+	for (let i = 0; i < chunks; i++) view[countsAt + i] = 0;
 	let left = budget;
 	let total = 0;
 	for (const i of order) {
@@ -69,12 +95,12 @@ export function run(input: unknown): { output: { counts: number[]; total: number
 		let level = levels[i] as number;
 		// The level's count if it fits, else a coarser one; the coarsest takes what is left.
 		while (level < LEVELS - 1 && (view[at + 4 + level] as number) > left) level++;
-		const chosen = Math.min(view[at + 4 + level] as number, left);
-		counts[i] = chosen;
+		const available = view[at + 4 + level] as number;
+		const chosen = available < left ? available : left;
+		view[countsAt + i] = chosen;
 		left -= chosen;
 		total += chosen;
 	}
-	for (let i = 0; i < chunks; i++) view[HEADER + chunks * STRIDE + i] = counts[i] as number;
 	view[TOTAL] = total;
-	return { output: { counts, total } };
+	return { output: true };
 }
