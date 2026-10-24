@@ -600,6 +600,15 @@ The page kinds that end in `-timed` start null3D on WebGL2 with `?gl-timing`. Th
 - On the iPad: `bun tests/real-browsers.ts --plan bench --scenes s4 --pages null3d-webgl2-timed,null3d-webgl2-synced --runs 2 --seconds 10 --lan ipad-safari`.
 - On 2 October 2026 these pages found the two waits that [Safari's WebGL2 path](implementation-notes.md#safaris-webgl2-path) describes. In S3, `fenceSync` took 22 ms per frame. In S4, the synced page put 16 ms on one texture write per frame.
 
+## How the GPU time is measured
+
+- On WebGPU, `measure` and the stats overlay report `gpuMs` from timestamp queries on each pass. A timed frame's commands open with a start mark, an empty compute pass that the timer dispatches first, and each pass writes a timestamp when it begins and when it ends.
+- The frame's time is the latest pass end less the earliest pass begin, the start mark's. It is not the sum of the passes' own times. A tile GPU overlaps the spans of its passes, so a sum counts the shared time more than once. A pass that the GPU left untimed, or timed out of order, stays out of the span and of the frame's parts. The frame keeps the others.
+- The browser gives no period for its timestamps. The step between them is the greatest common divisor of the offsets that the frame reads back, so the figure follows the grid of any browser. `gpuStepMs` holds that step in milliseconds, or null when the times look exact.
+- Timing runs start the browser with `GPU_TIMING_ARGS` from `packages/cli/src/browser.js`: `--enable-webgpu-developer-features` and `--disable-dawn-features=timestamp_quantization`. Dawn otherwise rounds every timestamp to its privacy grid, and a short pass then reads as 0 ms. `bun run bench:run`, the timing browser tests and the command-line tool's `bench` command use those flags.
+- `bun run bench:run` keeps the medians of the figure in each run's result, and `engine.measure` reports `gpuStepMs` beside it. The stats overlay shows the mean of the last half second, from the same records, and `debug.frameStats()` gives the same figures. A run that still rounds reports its step there, and its `gpuMs` is then only as fine as that step.
+- On WebGL2 the frame's replay runs inside one query, so there is no span to take and no step to find: `gpuMs` covers the whole frame, and `gpuStepMs` is null.
+
 ## GPU time per pass
 
 - On WebGPU, `measure` returns `gpuPassMs` beside `gpuMs`: the copies before the frame's first pass, each pass, and the time between passes. The bench plan's results keep it in each result's stats.
