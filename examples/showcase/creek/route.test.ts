@@ -3,12 +3,12 @@
 // comes within the clearance of a tree's trunk or the cave rock, so a route edit cannot reintroduce
 // a clip.
 import { expect, test } from 'bun:test';
+import { waveHeight } from '@null3d/water';
 import { routePosition, routeTimeline } from '../../lib/cinematic';
 import { TREES } from './flora';
-import { groundHeight, streamZ, WATER } from './land';
+import { FLOW, groundHeight, streamZ, WATER } from './land';
 import { SHOTS } from './sketch';
 import { CAVE, rockPlaces } from './stones';
-import { surfaceHeight } from './water';
 
 /** How many points of the loop the check samples. A spline bends between the shots, so the
  * checks sample finely enough to catch a bulge that a shot's own pose does not show. */
@@ -71,7 +71,7 @@ test('the creek route dips under the water for five to seven seconds, clear of t
 		const t = k * step;
 		routePosition(route, t, pose);
 		const [x, y, z] = [pose[0] as number, pose[1] as number, pose[2] as number];
-		if (y >= surfaceHeight(x, z, t)) continue;
+		if (y >= waveHeight(x, z, t, WATER, [FLOW, 0], 1)) continue;
 		under += step;
 		const where = `${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}`;
 		expect(y, `the dip runs into the bed at ${where}`).toBeGreaterThan(
