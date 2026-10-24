@@ -60,7 +60,6 @@ const INCOMPLETE = new Set([
 	'M3-E10',
 	'M3-D7',
 	'M3-D8',
-	'M3-K4',
 	'M3-R1',
 	'M3-O1',
 	'M3-G1',
@@ -135,7 +134,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-D7':
 		'the link check runs before the texture-unit count, so an over-budget material gives a plain link error rather than the E1209 the docs promise',
 	'M3-D8': 'two add-ons that declare one name with the same fields share a namespace silently',
-	'M3-K4': 'no three.js CSS3D example is ported or tested',
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
