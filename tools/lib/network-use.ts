@@ -64,6 +64,7 @@ export const FORBIDDEN_APIS: readonly (readonly [string, RegExp])[] = [
 	['WebTransport', /\bWebTransport\b/],
 	['RTCPeerConnection', /\bRTCPeerConnection\b/],
 	['sendBeacon', /\bsendBeacon\b/],
+	['importScripts', /\bimportScripts\b/],
 	['navigator.connection', /\bnavigator\.connection\b/],
 ];
 
@@ -87,10 +88,13 @@ export const ALLOWED_HOSTS: readonly AllowedHost[] = [
 	{ host: 'x', why: "a stand-in base, so that a request's own path parses" },
 ];
 
-/** `fetch(` without a receiver, so a method named fetch does not count. */
-const FETCH_CALL = /(?<![.\w])fetch\s*\(/;
+/**
+ * A call to the global `fetch`: bare, or reached through the global object. A method that happens
+ * to be named `fetch` does not count.
+ */
+const FETCH_CALL = /(?:(?:globalThis|window|self)\s*(?:\?\.|\.)\s*fetch|(?<![.\w])fetch)\s*\(/g;
 /** An absolute address in a string, as a template or a plain literal gives it. */
-const ABSOLUTE_URL = /https?:\/\/([^\s"'`)]+)/g;
+const ABSOLUTE_URL = /(https?|wss?):\/\/([^\s"'`)]+)/g;
 /** The source files that a package ships: no tests, declarations or installed packages. */
 const SOURCE = /\.(?:[cm]?[jt]s)$/;
 const NOT_SHIPPED = /\.test\.[cm]?[jt]s$|\.d\.[cm]?ts$/;
@@ -162,10 +166,11 @@ export function networkProblems(root: string): {
 				`${path}: has ${found} fetch calls, and network-use.ts records ${site.count}. Update the record and the network use page`,
 			);
 		for (const match of text.matchAll(ABSOLUTE_URL)) {
-			const host = (match[1] ?? '').split('/')[0] ?? '';
+			const scheme = match[1] ?? '';
+			const host = (match[2] ?? '').split('/')[0] ?? '';
 			if (!allowedHost(host))
 				problems.push(
-					`${path}: names https://${host}, which is not a recorded example, link or local name`,
+					`${path}: names ${scheme}://${host}, which is not a recorded example, link or local name`,
 				);
 		}
 	}
