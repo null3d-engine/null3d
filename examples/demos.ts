@@ -222,7 +222,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Clear coat and sheen',
 		scene: 'Rainy showroom',
 		summary:
-			'A car built in code, its paint with metal flakes under a mirror-smooth clear coat, on a varnished plinth. Rain falls on wet cobbles whose puddles are a clear coat with rain rings, and velvet glows at its edges with sheen.',
+			'A car built in code, its candy red paint with glinting metal flakes and door seams under a mirror-smooth clear coat, and carbon fibre trim whose tows shine along their length, on a varnished plinth. Rain falls on wet cobbles whose puddles are a clear coat with rain rings, and velvet glows at its edges with sheen.',
 		hold: 1,
 		timeoutSeconds: 120,
 	},
