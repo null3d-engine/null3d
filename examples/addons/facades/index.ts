@@ -15,10 +15,12 @@ import {
 	buildWallAtlas,
 	CODE_SIZE,
 	FACADE_KINDS,
-	type FacadeKind,
 	type GlassRect,
 } from './atlases';
 import shader from './facade.wgsl';
+
+/** A wall finish that the add-on generates, drawn from the wall page's four tiles. */
+export type FacadeKind = (typeof FACADE_KINDS)[number];
 
 /** A facade's window pattern, in metres. A value that a look leaves out keeps its default. */
 export interface FacadeWindow {
@@ -55,6 +57,12 @@ export interface FacadeRoom {
 	blinds?: boolean;
 }
 
+/** The shop fronts along a facade's street level. */
+export interface FacadeShops {
+	/** The street level's height above the mesh's base, in metres. The default is 6 m. */
+	height?: number;
+}
+
 /** The power-on wave: the moment and the point from which a scene's lights come on. */
 export interface FacadeWave {
 	/** The point on the ground that the wave starts from, as x and z. The default is the origin. */
@@ -84,6 +92,8 @@ export interface FacadeLook {
 	room?: FacadeRoom;
 	/** The power-on wave, and the time that it starts. */
 	power?: FacadeWave;
+	/** Bright shop fronts along the street level, or `false` for wall alone. The default is `false`. */
+	shops?: FacadeShops | false;
 }
 
 /** A facade material, and the controls that its scene drives. */
@@ -172,6 +182,7 @@ function build(
 ): Facade {
 	const room = { ...DEFAULT_ROOM, ...look.room };
 	const wave = { ...DEFAULT_WAVE, ...look.power };
+	const shops = look.shops === false || look.shops === undefined ? 0 : (look.shops.height ?? 6);
 	const kind = look.kind ?? 'seed';
 	const atlas = buildWallAtlas(glass);
 	const codes = buildCodeAtlas();
@@ -223,7 +234,7 @@ function build(
 			farFade: oneWindow ? 0.5 : 0.3,
 			farFull: oneWindow ? 1.2 : 0.75,
 			wallTile: kind === 'seed' ? -1 : FACADE_KINDS.indexOf(kind),
-			shopHeight: 0,
+			shopHeight: oneWindow ? 0 : shops,
 			mode: oneWindow ? 1 : 0,
 			furniture: room.furniture ? 1 : 0,
 			blinds: room.blinds ? 1 : 0,
