@@ -68,7 +68,9 @@ zero processor time, do not kill it on the number alone: sample it with `sample 
 what it waits on, then tell the coordinator which lock it is. A build that is compiling shows
 processor time, and one in a lock shows none.
 
-A job waiting for a lock is not the fault: the holder is. Two of the night of 24 October's kills were
+A job waiting for a lock is not the fault: the holder is. The holder may itself be a wrapper
+waiting on a busy child, so sample the child before deciding. A parent at zero per cent with a child
+at several hundred is a build doing its work. Two of the night of 24 October's kills were
 waiters, killed because a sample showed them waiting, while the holder went on blocking the lane.
 Read the lock's own file for the holder's process and sample that one; kill the waiter and the lane
 gains nothing but a lost job.
