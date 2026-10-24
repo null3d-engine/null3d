@@ -14,7 +14,7 @@ null3D sends nothing to any server of its own. The engine and its add-ons have n
 
 ## What the engine downloads
 
-The engine downloads its own files from the address where the page serves them. That address is the page's own origin, or a CDN that the page names. [Hosting](hosting.md#the-engines-files-on-a-cdn) covers the CDN case.
+The engine downloads its own files from the address where the page serves them. That address is the page's own origin, or a CDN that the page names. [Hosting](hosting.md#the-engines-files-on-a-cdn) covers the CDN case. A replay page names a recording, and the engine downloads that file from the address the page gives it; no other address is used for it.
 
 | File | When it loads |
 | --- | --- |

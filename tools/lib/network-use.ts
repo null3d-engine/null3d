@@ -27,8 +27,8 @@ export const FETCH_SITES: Readonly<Record<string, FetchSite>> = {
 		why: "starts the engine core's own file, beside the engine's code",
 	},
 	'packages/engine/src/page/engine.ts': {
-		count: 1,
-		why: 'prefetches the sketch module that the page passes in',
+		count: 2,
+		why: 'prefetches the sketch module that the page passes in, and downloads the recording that a replay page names',
 	},
 	'packages/engine/src/scene/area-light-tables.ts': {
 		count: 1,
