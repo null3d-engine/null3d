@@ -164,17 +164,20 @@ fn batch_pipelines_read_values_where_the_shading_has_such_builds() {
     let rows = permutation::ROW_VALUES;
     assert_eq!(key(lit, true).permutation & rows, rows);
     assert_eq!(key(lit, false).permutation & rows, 0);
-    // Rows with values test a mask against its cutoff.
+    // Rows with values take the mask's own test, as the meshes do.
     let masked = key(hashed, true);
     assert_eq!(
         masked.permutation & (rows | permutation::ALPHA_MASK | permutation::ALPHA_HASH),
-        rows | permutation::ALPHA_MASK
+        rows | permutation::ALPHA_MASK | permutation::ALPHA_HASH
     );
     assert_eq!(
         key(hashed, false).permutation & permutation::ALPHA_HASH,
         permutation::ALPHA_HASH
     );
-    assert_eq!(key(covered, true).state & state_flags::ALPHA_TO_COVERAGE, 0);
+    assert_eq!(
+        key(covered, true).state & state_flags::ALPHA_TO_COVERAGE,
+        state_flags::ALPHA_TO_COVERAGE
+    );
     // A surface that lets light through, and a whole shader of the sketch's, draw rows without
     // their values.
     assert_eq!(key(glass, true).permutation & rows, 0);
