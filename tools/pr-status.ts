@@ -33,7 +33,6 @@ const ON_BRANCH = new Set(['M3-A3', 'M3-B4', 'M3-E9', 'M3-R14']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
 const INCOMPLETE = new Set([
-	'M3-A9',
 	'M3-B1',
 	'M3-D9',
 	'M3-E2',
@@ -53,7 +52,7 @@ const INCOMPLETE = new Set([
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
 	'M3-A9':
-		"the hero shadow and its tile are in; D-219's cost table is still empty, and the measured figures sit on the unlanded `m3-a9-hero-cost` branch",
+		'the hero tile and its cost figures are in: a still hero adds no pass, a moving one adds a depth pass of 0.028 to 0.037 ms, and WebGL2 reads the tile for 0.27 ms less than the cascades (D-219)',
 	'M3-E2':
 		"the task hook and the splats add-on's distance selection run on the job workers on both paths; the allocation check the task asks for is missing",
 	'M3-E4':
