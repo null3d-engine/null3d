@@ -35,8 +35,13 @@ video.src = '/clips/intro.mp4';
 video.muted = true;
 video.loop = true;
 video.playsInline = true;
-// The element stays in the page, out of sight. Its sound comes from the page as any video's does.
-video.style.display = 'none';
+// Keep the element in the page but out of sight. Some browsers decode no frame of an element
+// that display: none hides, so park it past the page's edge instead. Its sound comes from the
+// page as any video's does.
+video.style.position = 'absolute';
+video.style.left = '-10000px';
+video.style.width = '1px';
+video.style.height = '1px';
 document.body.append(video);
 
 engine.registerVideo(video, { name: 'intro', maxSize: 512 });
@@ -81,16 +86,19 @@ The video's own frame rate sets the cost. A 30 frames a second video uploads its
 ## What a video costs while it does nothing
 
 - A video that no texture follows sends no frames, because the sketch asks for them. A page that registers a video and never shows it pays nothing.
+- A sketch that follows a name that the page never registers gets no frame, and draws with its material's color alone. The engine reports no error.
 - A paused video presents no frame, so the page sends none. The engine makes no image and uploads nothing, and the texture keeps the last frame.
-- Each frame is one `ImageBitmap` that the browser makes from the video. The engine closes it once the frame is on the GPU, and allocates no texture for it: each frame goes into the texture that the sketch made.
+- Each frame is one `ImageBitmap` that the browser makes from the video. It goes into the texture that the sketch made, so the engine allocates no texture for it. The engine closes the image once the frame is on the GPU.
 
 ## Browser limits
 
 - A browser plays the video formats that it supports, as for any video element. An H.264 MP4 file plays in the browsers that the engine runs on.
 - A page shows a video with sound only after the user acts, unless the video is muted. Start a muted video as the example does, or play it from a click.
-- A video from another origin needs `video.crossOrigin = 'anonymous'` and the server's CORS headers. Without them the browser refuses to copy the video's pixels into an image, and no frames arrive.
+- A video from another origin needs `video.crossOrigin = 'anonymous'` and the server's CORS headers. Without them, the browser refuses to copy the video's pixels into an image. No frames arrive, and the texture keeps the frame it had.
+- A browser that refuses to play the video, as an autoplay policy does before the user acts, sends no frames. The material then draws with its color alone, and the engine reports no error.
 - The engine reads each frame through `createImageBitmap`, which every supported browser has. It does not need `VideoFrame`, which Safari and Firefox cannot make from a video element.
-- A browser reports each frame that the video presents, and the page sends that frame. Where a browser reports none, as some do for a video element that the page never shows, the page checks the video's time on each display frame while it plays. That check stops while the video is paused.
+- Keep the element in the page's layout, out of sight. Some browsers decode no frame of an element that `display: none` hides.
+- A browser reports each frame that the video presents, and the page sends that frame. Some browsers report none for a video element that the page never shows. The page then checks the video's time on each display frame while it plays, and stops that check while the video is paused.
 - A phone plays a video at the rate that its heat allows, and the browser may lower that rate. A video that must keep time with the scene, such as a synchronized caption track, reads the video's time in the page.
 - The video's own element handles playback. The engine never plays, pauses or seeks it, so a page that shows a video in the scene and on the page at once runs one element and one timeline.
 

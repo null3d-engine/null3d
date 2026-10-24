@@ -449,7 +449,8 @@ A video element lives on the page. `engine.registerVideo` follows it there, and 
 ```ts
 // page.ts
 const video = Object.assign(document.createElement('video'), { src: '/intro.mp4', muted: true, loop: true, playsInline: true });
-video.style.display = 'none';
+// In the page but out of sight: some browsers decode no frame of an element that display: none hides.
+Object.assign(video.style, { position: 'absolute', left: '-10000px', width: '1px', height: '1px' });
 document.body.append(video);
 engine.registerVideo(video, { name: 'intro', maxSize: 512 });   // 512 x 288: 576 KiB a frame
 await video.play();                                             // muted, so no click is needed

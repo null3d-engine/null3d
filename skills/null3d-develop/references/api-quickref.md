@@ -68,6 +68,7 @@ await engine.firstFrame;                 // the GPU finished the first frame: re
 engine.postToSketch('difficulty', { level: 2 });            // an optional third argument lists transferables
 const off = engine.onSketchMessage((type, data) => { /* ... */ }); // the first handler also gets earlier messages
 off();                                   // every on... call returns a function that removes its handler
+const stopFrames = engine.registerVideo(video, { name: 'intro', maxSize: 512 }); // (0.3) the sketch follows it with textures.fromVideo('intro'); stopFrames() stops the frames
 engine.detach();                         // single-page apps: canvas off the page, engine paused, scene kept
 engine.attach(container);                // canvas back on the page; the engine resumes with no new start
 engine.setPaused(true);                  // the first step after resuming counts no time
