@@ -77,7 +77,7 @@ stone foam map. Its bisect switches keep working: `without=water` leaves the wat
   host. The underwater effect's were 93 KB of the add-on's entry. D-225 records the fix.
 - The Creek's image references may move where its analytic bed met the general depth read. They are
   redrawn when the images run, with their reason sent before the change is accepted.
-- The branch landed on the milestone's tip with E4a on top; E4a's own record took D-255 there,
+- The branch landed on the milestone's tip with E4a on top; E4a's own record took D-256 there,
   because main had taken D-250 for the timed script while both were in flight.
 - The page and allocation gates ran in the browser against E4a's engine: the water page starts from
   another origin under the strict policy, threaded and single-threaded, and the add-on's own code

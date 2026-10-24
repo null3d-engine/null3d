@@ -1,4 +1,4 @@
-# D-255: a depth-reading material carries textures
+# D-256: a depth-reading material carries textures
 
 Status: decided. Date: 24 October 2026. Task: M3-E4a.
 
