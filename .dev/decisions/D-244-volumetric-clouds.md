@@ -71,6 +71,11 @@ The march sits in a slab along each ray whose height follows the elevation setti
 the same pattern that the flat layer samples, so a cloud of the same setting stands in the same place
 on both tiers and at the same size.
 
+The sky's uniform block keeps the page's coverage, because the march reads it. A sky shader
+therefore leaves its flat layer out from the block's step count, not from a zeroed coverage: the
+analytic sky zeroes the coverage in its own copy of the settings, and the physical sky and its
+panorama skip their flat layer while the step count is above 0.
+
 The clouds of a reflected sky take their light from the sky that they cover: the analytic map's
 clouds read the analytic sky's sun, air and overhead light, and the physical panorama's clouds read
 the panorama's own color. A reflected sky is filtered for a roughness before anyone sees it, so the

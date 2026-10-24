@@ -3,7 +3,7 @@
 // `?mode=physical` draws the physical sky and its map. The step count comes from the page's
 // `?cloudSteps=` switch, which the manifest sets for each tier, so a GPU path whose preset stops at
 // Medium draws the tier too.
-import { defineSketch } from '@null3d/engine';
+import { defineSketch, timeOfDay } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
 const mode = params.get('mode') ?? 'sky';
@@ -23,10 +23,8 @@ const SKY = {
 	time: 12,
 };
 
-/** The same air as the physical sky. */
-const ATMOSPHERE = {
-	sunPosition: [0.35, 0.22, -0.9] as [number, number, number],
-	sunIntensity: 3.6,
+/** The physical sky's clouds, in the air and the light that `timeOfDay` gives. */
+const PHYSICAL_CLOUDS = {
 	cloudCoverage: 0.5,
 	cloudDensity: 0.5,
 	cloudElevation: 0.45,
@@ -35,7 +33,7 @@ const ATMOSPHERE = {
 	time: 12,
 };
 
-export default defineSketch(async ({ scene, geometry, materials, assets }) => {
+export default defineSketch(async ({ scene, geometry, materials, assets, post }) => {
 	scene.setActiveCamera(
 		scene.createPerspectiveCamera({
 			fov: 65,
@@ -46,7 +44,20 @@ export default defineSketch(async ({ scene, geometry, materials, assets }) => {
 		}),
 	);
 	const physical = mode === 'physical';
-	scene.setBackground(physical ? { atmosphere: ATMOSPHERE } : { sky: SKY });
+	// The physical sky draws its own light, so its exposure, its light and its map come from
+	// `timeOfDay`, as the physical sky's own tests take them.
+	const day = physical ? timeOfDay('goldenHour', { heading: 2.2 }) : undefined;
+	scene.setBackground(
+		day ? { atmosphere: { ...day.atmosphere, ...PHYSICAL_CLOUDS } } : { sky: SKY },
+	);
+	if (day) {
+		post.set({ exposure: day.exposure });
+		scene.createDirectionalLight({
+			direction: day.light.direction,
+			color: day.light.color,
+			intensity: day.light.intensity,
+		});
+	}
 	if (mode !== 'sky') {
 		scene.setEnvironment(await assets.skyEnvironment());
 		const sphere = geometry.sphere({ radius: 0.55, widthSegments: 48, heightSegments: 32 });
