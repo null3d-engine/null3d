@@ -9,6 +9,10 @@
 // the stages had already brought: it compares that picture with the picture that the loader's level
 // limit of 1 draws, which downloads no stage at all. The two must be the same picture. It also
 // checks that the limit makes the page request no stage file.
+//
+// The near test starts at the camera that draws only the file's own level, waits out the decision
+// that gives the finer stages up, and then comes close: the stages that the camera now needs must
+// arrive, so giving a stage up is not the end of the chain.
 import { expect, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -23,6 +27,8 @@ interface StagedResult {
 	changed: number;
 	/** The share of the coarse picture that draws over its background. */
 	drawn: number;
+	/** The share of the picture after the stages that draws over its own background. */
+	fineDrawn: number;
 	/** The picture before the stages arrived, and the picture after them, as base64 RGBA. */
 	coarsePixels: string;
 	finePixels: string;
@@ -116,6 +122,40 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 		expect(asked.size).toBe(1);
 		// The level that arrived never drew, so both pictures show the file's own level.
 		expect(differing(far.coarsePixels, far.finePixels)).toBeLessThan(0.001);
+	});
+
+for (const gpu of ['webgpu', 'webgl2'] as const)
+	test(`staged-levels bring a stage back when the camera comes close, on ${gpu}`, async ({
+		page,
+	}) => {
+		test.setTimeout(240_000);
+		/** The stage files that the page asked for. */
+		const asked = new Set<string>();
+		page.on('request', (request) => {
+			if (/\.m\d+\.lod\d+\.bin$/.test(request.url())) asked.add(request.url());
+		});
+		/** The stage files' answers, which wait for the coarse picture. */
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		await page.route(/\.m\d+\.lod\d+\.bin$/, async (route) => {
+			await gate;
+			await route.continue();
+		});
+		await page.goto(`staged-levels.html?gpu=${gpu}&near`);
+		await page.waitForFunction(() => (globalThis as { __stagedCoarse?: boolean }).__stagedCoarse);
+		release?.();
+		const result = await pageResult<StagedResult>(page, 180_000);
+		expect(result.failures).toEqual([]);
+		expect(result.loaded).toEqual({ levels: 0, staged: true });
+		expect(result.expected).toBeGreaterThan(2);
+		// The camera stood beyond every switch until the loader gave the finer stages up, then came
+		// close. Its pick brings them back, so every stage file is asked for and becomes a level.
+		expect(result.levels).toBe(result.expected);
+		expect(asked.size).toBe(result.expected);
+		// The close camera draws the ground, so the pick that brought the stages back was real.
+		expect(result.fineDrawn).toBeGreaterThan(0.4);
 	});
 
 test("staged-levels draws the file's own level first, and a level limit downloads no stage", async ({
