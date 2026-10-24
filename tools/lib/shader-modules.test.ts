@@ -11,7 +11,7 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { basename, delimiter, join } from 'node:path';
 import { hashOf } from './build-cache';
 import { fixture } from './fixture';
 import {
@@ -328,7 +328,9 @@ done`;
 				writeFileSync(join(folder, 'pick.old.json'), '{}');
 				const out = join(root, 'target', 'shader-entries');
 				expect(buildEntriesShard(root, '1/2', out).stored).toEqual(['lit.new.json']);
-				expect(readdirSync(out)).toEqual(['lit.new.json']);
+				// They go out under the name of the folder that holds them.
+				expect(readdirSync(out)).toEqual([compilerStamp(root)]);
+				expect(readdirSync(join(out, compilerStamp(root)))).toEqual(['lit.new.json']);
 				// The folder records the compiler whose program wrote the entries it holds.
 				expect(readdirSync(folder).sort()).toEqual([
 					'compiler',
@@ -349,8 +351,9 @@ done`;
 				const out = join(root, 'target', 'shader-entries');
 				const first = buildEntriesShard(root, '0/2', out);
 				expect(first.folder).toBe(join(entryCacheDir(), compilerStamp(root)));
-				expect(readdirSync(out).sort()).toEqual(['lit.new.json', 'program']);
-				expect(readdirSync(join(out, 'program'))).toEqual(['shader-build']);
+				const handed = join(out, compilerStamp(root));
+				expect(readdirSync(handed).sort()).toEqual(['lit.new.json', 'program']);
+				expect(readdirSync(join(handed, 'program'))).toEqual(['shader-build']);
 				// Another checkout of the same compiler runs the kept program, and cargo builds nothing.
 				const other = repository();
 				rmSync(join(first.folder, 'lit.new.json'));
@@ -375,6 +378,29 @@ done`;
 				const second = buildEntriesShard(root, '0/1');
 				expect(second.folder).toBe(first.folder);
 				expect(readFileSync(log, 'utf8').trim().split('\n')).toEqual([first.folder, first.folder]);
+			},
+			0,
+			buildsProgram,
+		);
+	});
+
+	it('hands over new entries under the earlier folder that the same program reads', () => {
+		withScratchCaches(
+			() => {
+				const { root } = shardRepository();
+				const first = buildEntriesShard(root, '0/1');
+				rmSync(join(first.folder, 'lit.new.json'));
+				// A comment changes the stamp of the compiler's sources and leaves its program as it was,
+				// so the shard fills the earlier folder, and the job that joins the entries must too.
+				writeFileSync(join(root, 'crates/null3d-gpu/src/lib.rs'), '// a comment\n');
+				const out = join(root, 'target', 'shader-entries');
+				const second = buildEntriesShard(root, '0/1', out);
+				expect(second.folder).toBe(first.folder);
+				const stamp = compilerStamp(root);
+				expect(basename(first.folder)).not.toBe(stamp);
+				expect(readdirSync(join(out, basename(first.folder)))).toEqual(['lit.new.json']);
+				// The program goes under this stamp's folder, where the joining job's build looks first.
+				expect(readdirSync(join(out, stamp, 'program'))).toEqual(['shader-build']);
 			},
 			0,
 			buildsProgram,
