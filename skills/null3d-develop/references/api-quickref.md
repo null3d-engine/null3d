@@ -781,7 +781,7 @@ import { runTask, type Task } from '@null3d/engine';
 
 const sort: Task = {
   name: 'splat-sort',                                   // an add-on's own name
-  script: new URL('./sort-task.js', import.meta.url),   // a module that exports run(input, wasm)
+  script: new URL('./sort-task.ts', import.meta.url),   // a module that exports run(input, wasm)
   wasm: [{ name: 'sort', url: new URL('./sort.wasm', import.meta.url), what: 'the sorter' }],
 };
 const answer = await runTask<{ order: number[] }>(sort, { view }, []);  // view: a SharedArrayBuffer
@@ -791,4 +791,5 @@ const answer = await runTask<{ order: number[] }>(sort, { view }, []);  // view:
 - An answer arrives between two frames, so its `then` callback runs before the next `onUpdate`, and that frame draws what the task wrote.
 - A `SharedArrayBuffer` in the input is shared with the worker, not copied. Write it with `Atomics` while the task runs, and read it once the promise resolves.
 - Tasks run at the same time in different job workers. Their answers come back in no fixed order.
+- The build bundles the module that the task names, so it may be TypeScript. A browser cannot import raw TypeScript, so do not copy the file yourself.
 - A failed task rejects with a `TaskFailure` whose `stage` is `'load'`, `'run'` or `'stopped'`. A WebAssembly file that does not download or compile rejects with an engine error.
