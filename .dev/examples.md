@@ -431,6 +431,37 @@ The galaxy's sketch time is the loop that turns every star and writes its row. I
 - The curtains are flat in the sky and have no parallax. The camera stays at eye height over the ice, so the layer reads as a sky and not as a wall.
 - The image test holds the demo at 1.5 seconds, where the aurora's swell has moved the layer by less than a step.
 
+## The screens add-on (M3-B3, 24 October 2026)
+
+`examples/addons/screens/` draws displays in the world on `OffscreenCanvas` objects. A screen holds
+one canvas-backed texture, reads it at its own refresh rate, and uploads only the rectangles that
+changed. Its LCD material draws the panel's structure by distance: red, green and blue bars in each
+texel, a drifting scan band, dark gaps between the rows, dead texels and a boot glitch. A click on
+the plane maps back to the canvas's own coordinates. The design and its measured cost are in
+[D-253](decisions/D-253-in-world-screens.md).
+
+- The `canvas-screen` demo draws three wall panels at 20, 12 and 8 Hz, and a console panel close to
+  the camera whose texels cover several pixels, so its sub-pixels, scan band and dead texels show.
+  A click turns a panel down or up, with a boot glitch on the way on. Its first picture is painted
+  before the texture reads the canvas, so a held frame shows it.
+- The picking demo's wall plan is now a screen from the add-on. A click's point on the canvas comes
+  from the add-on's mapping of the hit's texture coordinates, and the plan uploads only the two
+  rectangles that a click changes: its new square and the square it drops.
+- The showroom demo, `coat-and-sheen`, has a tablet beside the plinth from the add-on. A tap cycles
+  its pages, and the new page uploads as one change. The panel shows its sub-pixels when the camera
+  comes close.
+- Skyway's hero car draws its speed and altitude panels, and a navigation panel between them, from
+  the add-on, in `examples/showcase/skyway/cockpit.ts`. The deck panels refresh at 12 Hz and the map
+  at 8 Hz, and each uploads only the rectangles of its canvas that its reading changed.
+- The security camera's monitor keeps its own small LCD look in `monitor.ts`, because its picture
+  comes from a render pass rather than a canvas. Its look could move onto the add-on's material if
+  the add-on took any texture, and that is a later change.
+- Against the old pictures, the Mac's GPU drew 4.063% to 4.104% of the pixels differently for
+  `demo-canvas-screen`, 0.222% to 0.410% for `demo-picking` and 0.332% to 0.354% for
+  `demo-coat-and-sheen`. SwiftShader drew 4.092% to 4.137%, 0.215% to 0.415% and 0.325% to 0.351%.
+  The limit is 0.1%, and the two sets moved together, so no `Mac-References:` trailer applies. The
+  figures and the commands to redraw the pictures are in [Image tests](image-tests.md#references).
+
 ## The automatic exposure demo (M2-EX31, 11 October 2026)
 
 `auto-exposure: Courtyard and hall` shows automatic exposure ([D-148](decisions/D-148-automatic-exposure.md)). The camera walks from a sunny courtyard into a dark stone hall, turns round, and walks out again, in a loop of 20 seconds. The eye opens in the hall, and closes again when the camera faces the bright door. E turns automatic exposure off and on, so a visitor can see the fixed exposure that the camera would have.
