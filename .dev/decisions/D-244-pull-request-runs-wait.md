@@ -1,7 +1,8 @@
 # D-244: A push to a pull request waits 3 minutes before its jobs start
 
-Status: decided on 24 October 2026, landed in ci/pr-debounce (03008ecce). Date: 2026-10-24.
-Task: none.
+Status: decided on 24 October 2026, landed in ci/pr-debounce (03008ecce). The update below, landed
+in ci/pr-runs-finish the same day, replaces it: a newer push no longer cancels a started run, and
+the wait goes. Date: 2026-10-24. Task: none.
 
 Summary: On a push to a pull request, the `changes` job first sleeps 180 seconds. Every other
 job of the run waits for it. A newer push in that time cancels the run at the cost of that one
@@ -57,3 +58,35 @@ UTC on 24 October 2026. A job-minute is a minute of one job's own time.
 - Shorten the wait only when landings stop coming in bursts. Measure the gaps between pull request
   runs first, and the share of cancelled runs that went within the wait, as above.
 - `.dev/pull-requests.md` describes the wait where it lists what CI runs where.
+
+## Update, 24 October 2026: a started pull request run is never cancelled, and the wait goes
+
+The wait made CI do more work for fewer results. Both windows are the milestone branch's pull
+request runs, at about 14 runs an hour:
+
+| Window | Hours | Runs | Finished | Job-minutes per hour | Results per hour |
+| --- | --- | --- | --- | --- | --- |
+| 06:14 to 09:54, no wait | 3.7 | 51 | 7 (376 job-minutes) | about 350 | 1.9 |
+| 10:01 to 11:25, 180 s wait | 1.4 | 19 | 1 (172 job-minutes) | about 505 | 0.7 |
+
+- In the second window, 17 runs were cancelled, for 489 job-minutes. The 11 cancelled in their wait
+  cost 0 to 3 job-minutes each, as planned.
+- Landings came in bursts about every 8 to 10 minutes, and the wait made each run 3 minutes longer.
+  The run that outlived its wait started every job. The next burst cancelled it 6 to 8 minutes
+  later, at 43 to 125 job-minutes each: runs 40084466698, 40086717874, 40087624075, 40088214674 and
+  40088876596.
+- The estimate above assumed that runs would be cancelled at the same times as before the wait.
+  They were not.
+
+Decision:
+
+- `cancel-in-progress` holds only for pushes to main. A newer push to a pull request leaves its run
+  in progress, and the newer run waits. GitHub keeps only the newest waiting run in the group, and
+  drops an older one before it starts any job. So every started run ends with a result, and a burst
+  of landings collapses into the next run at no cost.
+- The `changes` job's sleep goes. `shader-entries` and `commits` start at once again, which gives
+  full runs back the 10 to 20 seconds.
+- Only a cancel by hand ends a pull request's run early. The landing session cancels the pull request
+  run of a commit when it starts a full run of the same commit.
+- The pull request runs stay: each tells whether a landing broke the build before the next one lands.
+- A workflow test fails when `cancel-in-progress` holds for any event but a push to main.
