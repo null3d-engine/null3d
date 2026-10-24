@@ -73,10 +73,22 @@ What the shape of the figures already shows:
 - With no hero the atlas holds no layer, and the frame draws the passes it drew before. The Rust
   test `the_hero_draws_its_own_tile` checks the layer count, the two cascade passes and the zeroed
   values.
-- The atlas holds the tile, and every layer of a texture array takes one size. A tile above the
-  preset's `shadowTileSize` sets the size of every layer: (lights + 1) x size x size x 4 bytes. The
-  demo has no spot or point light that casts, so its atlas is one layer: 4 MiB at 1,024, 16 MiB at
-  2,048 and 64 MiB at 4,096. A scene with 16 light tiles at 2,048 takes 272 MiB.
+- The atlas holds the tile, and every layer of a texture array takes one size, on both GPU paths.
+  So a hero tile above the preset's `shadowTileSize` sets the size of every layer. The atlas takes
+  (light tiles + 1) x size x size x 4 bytes.
+
+| Preset | Hero tile | Light tiles at most | Every layer | Atlas at most | The demo's atlas, one layer |
+| --- | --- | --- | --- | --- | --- |
+| Low | 1,024 | 4 | 1,024 | 20 MiB | 4 MiB |
+| Medium | 2,048 | 8 | 2,048 | 144 MiB | 16 MiB |
+| High | 2,048 | 16 | 2,048 | 272 MiB | 16 MiB |
+| Ultra | 4,096 | 24 | 4,096 | 1,600 MiB | 64 MiB |
+
+The light tiles are those that `shadowTiles` allows, and the frame draws only those that the visible
+spot and point lights fill, so a scene with fewer such lights takes less. The demo names no spot or
+point light that casts, so its atlas is the hero's layer alone. The largest case, Ultra with 24
+spot or point tiles, takes 1.6 GiB, which is why Ultra stays a desktop preset and the governor does
+not lower the tile size: a reallocation mid-play is the worse look (see the addendum).
 
 ## Consequences
 
