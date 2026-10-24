@@ -257,6 +257,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 	});
 	let frame = 0;
 	const current: [number, number] = [0, 0];
+	const causticLight: [number, number, number] = [0, 0, 0];
 	const over = (x: number, z: number): WaterBody | undefined => {
 		for (const body of bodies) if (body.contains(x, z)) return body;
 		return undefined;
@@ -289,7 +290,17 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			body.currentAt(x, z, out);
 		},
 		setCaustics(light) {
-			material.set({ caustics: [light[0], light[1], light[2]] });
+			// A caller may set the mood every frame, so an unchanged light costs nothing.
+			if (
+				causticLight[0] === light[0] &&
+				causticLight[1] === light[1] &&
+				causticLight[2] === light[2]
+			)
+				return;
+			causticLight[0] = light[0];
+			causticLight[1] = light[1];
+			causticLight[2] = light[2];
+			material.set({ caustics: causticLight });
 		},
 		destroy() {
 			stop();
