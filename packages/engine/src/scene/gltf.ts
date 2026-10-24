@@ -34,7 +34,7 @@ import { DEV } from '../shared/dev';
 import { onEngineStop } from '../shared/helper-workers';
 import { compileOnce, type WasmFile } from '../shared/tasks';
 import type { WasmError } from '../shared/wasm';
-import { bootstrapFailure, spawnWorker } from '../shared/worker-start';
+import { bootstrapFailure, spawnWorker, watchWorkerError } from '../shared/worker-start';
 import type { GltfAnswer, GltfDecoder, GltfRequest } from '../workers/gltf-worker';
 import { type AnimationRig, destroyRig, loadAnimationRig } from './animation';
 import type {
@@ -185,10 +185,7 @@ class Parser {
 			if (!('needs' in event.data)) this.waiting.delete(event.data.id);
 			waiting.resolve(event.data);
 		};
-		this.worker.onerror = (event) => {
-			event.preventDefault();
-			this.stop(event.message || 'its script did not load');
-		};
+		watchWorkerError(this.worker, (message) => this.stop(message || 'its script did not load'));
 	}
 
 	/** Stops the worker, and fails every waiting request with `reason`. */

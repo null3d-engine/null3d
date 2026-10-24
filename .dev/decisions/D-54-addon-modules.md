@@ -365,3 +365,127 @@ test scene whose cards cover the screen many times over must not tune the engine
 
 The runs are the two 24 October 2026 records for [the cloud iPad](../tested-devices/ipad-pro-13-safari/20261024-074806-splats.md)
 and [the Galaxy S24](../tested-devices/galaxy-s24-sm-s921b-chrome/20261024-074630-splats.md).
+
+## Addendum, 25 October 2026: the add-ons in the CDN build
+
+The 22 October build carried the engine alone. A page with no bundler could not use an add-on. Its
+guide said a page loads an add-on only from a build of its own. Rule 7 above asks that an add-on
+work from a CDN. D-173's platform task asks for a test that loads one add-on from the CDN build.
+
+### The fault in the layout
+
+An add-on's built code imports the engine by its package name, `@null3d/engine`. A page's import
+map resolves that name for the page's own modules. It does not reach a worker, and an add-on's code
+runs in the sketch worker and the job workers. A copy of the package beside the engine would
+therefore start on the page and fail on the first worker.
+
+### The build now
+
+`bun run build:cdn` builds each foundation add-on with the same pack-time compile that the npm
+packages take, so its WGSL is compiled and no `.wgsl` file ships. It copies the add-on to
+`addons/<name>/` in the layout of the add-on's package. It rewrites each JavaScript file's engine
+imports to a relative address that reaches the engine in the same build, such as
+`../../../lib/index.js`. Both the page and every worker then resolve the same engine module from
+the same version of the build.
+
+The build writes `null3d-third-party-notices.txt` at its root, with the engine's notices first and
+each add-on's after it. A host publishes the folder, which is a redistribution, so the notices
+travel with it.
+
+### What proves it
+
+`tests/image/cdn-script-tag.spec.ts` serves the build from another origin and draws a terrain from
+it. The terrain's shader comes from the pack-time compile, and the add-on's code imports the engine
+beside it. The page renders on each GPU path that the browser offers, in both thread modes. The
+four tests are WebGPU, compatibility mode and WebGL2 threaded, and WebGL2 single-threaded without
+the isolation headers. On the Mac on 25 October 2026 all four passed. Every path drew the same
+frame mean, which shows that each path showed the same ground.
+
+### Options rejected
+
+- **Leave the add-ons out.** The page cannot load them, and the add-on rule above stays unmet.
+- **Give the page's import map the add-on's engine import.** A worker reads no import map, so the
+  add-on fails as soon as the sketch runs in a worker.
+- **Ship a second copy of the engine beside each add-on.** A page would load two engine modules and
+  could mix versions.
+
+## Addendum, 25 October 2026: a splat stream loads the chunks that the view needs
+
+Status: decided while building M3-F2. Date: 2026-10-25. Task: M3-F2.
+
+The add-on downloaded every cloud as one file and cut it only after the whole download had ended.
+So a large cloud showed nothing until all of its bytes had arrived. The plan asks for streaming in
+its What and again in its Done when. The add-on now reads a small index first. It then downloads
+only the chunks that the selection wants, nearest first.
+
+### The stream is an index of SPZ files
+
+- SPZ version 4 stores one zstd stream for each attribute of the whole cloud. Its table of
+  contents names six streams. It does not name a part of the cloud that a reader could fetch on
+  its own. So a stream cannot be cut out of an ordinary SPZ file.
+- The index is a JSON file of a few kilobytes. It names each chunk's file, its count, its bounds
+  and its size. Each chunk is an ordinary SPZ file, so the reader that already reads SPZ files
+  reads a chunk with no change. The reader, `decodeSpz`, and the writer, `encodeSpz`, stay the
+  only code that knows the SPZ layout.
+- A binary container would put the same table in one file. The index keeps each chunk a file that
+  a CDN caches on its own, and a person can read the index without a tool. It also needs no second
+  binary format to validate.
+- `chunkSplats` cuts a cloud, and `encodeSpz` writes each chunk. A converter makes a stream by
+  writing the chunks as files and naming them in the index.
+- A whole SPZ file and a glTF model load as they did. A page that wants no stream pays nothing.
+
+### The load path
+
+`createSplats` reads the index, which arrives at once, and makes the draw from its counts and
+bounds. The selection task chooses each chunk's prefix from the chunk's bounds, which the index
+gives before any chunk has loaded. The sketch turns that answer into a fetch order, nearest first,
+and the loader keeps four requests in flight.
+
+A chunk that fails is fetched twice more, with a wait that doubles. A request that sends nothing
+for 30 seconds is given up and counted as a failure. A chunk that still fails is reported in the
+console and counted in `splats.failed`. The rest of the cloud keeps drawing. A chunk that arrives
+after the camera moved away stays in memory but takes no row. The pack follows the last
+selection's counts, so a late chunk never draws where it no longer belongs.
+
+`ready` resolves when the chunks that the last update wants have loaded. So the first drawn view
+has no hole. A moving camera can show a part of the cloud. The chunks that come into view arrive
+while it draws. `bytes` gives the cloud's size and `loadedBytes` gives the part that has arrived.
+
+### Measured
+
+
+The test cloud of 400,000 splats is 5,628,772 bytes in 11 chunk files, and its index is 1.6 KB. Two
+cloud devices ran the streaming plan on 24 October 2026:
+
+| Device and path | Chunks loaded at the first view | Bytes at the first view | Presented fps |
+| --- | --- | --- | --- |
+| Galaxy S24, WebGL2 | 3 of 11 | 1,890,725 (34%) | 12.74 |
+| iPad Pro 13, WebGL2 | 5 of 11 | 3,451,272 (61%) | 3.28 |
+| iPad Pro 13, WebGPU | 11 of 11 | 5,628,772 (100%) | 1.06 |
+
+The S24's display ran at 30 Hz and the Mac was loaded, so every timing figure there is unreliable.
+The rates follow the runs of the same cloud before the stream: 12.4, 3.29 and 1.07 frames a second.
+The draw held its settled budget on each page, and no chunk failed.
+
+The iPad's WebGPU path loaded the whole cloud. The engine's startup preset check drew the feature at
+Medium before it settled at Low. Medium's 250,000-splat budget wanted every chunk at a coarse level.
+A cloud with many more chunks than the budget covers would load only its share. This one has 11, so
+the check wanted all of them. No test cloud should be tuned to hide that. A page that minds the
+check's download can set its own cap for the start, through `setBudget`.
+
+The runs are [the iPad record](../tested-devices/ipad-pro-13-safari/20261024-171907-splats.md) and
+[the S24 record](../tested-devices/galaxy-s24-sm-s921b-chrome/20261024-171610-splats.md).
+
+### The budget question stays open
+
+The count budget still decides what draws. The open question of the 24 October addendum above stays
+open. The streaming run repeats its figures at the cloud devices' own pixel counts. The iPad drew
+75,000 splats at 1.06 frames a second on WebGPU, and 50,000 at 3.28 on WebGL2. The S24 drew 37,500 at
+12.74 on a 30 Hz display. The Mac control at the iPad's 11.4 million pixels measured 25,000 splats
+at 11.67 frames a second with 142.9 ms of GPU time. Everything but the splats took 0.72 ms.
+
+So a count alone cannot hold a frame target on a screen whose cards cover many pixels. The owner
+decides between the two options that the 24 October addendum gives: keep the count, or add a
+coverage budget beside it. Streaming changes neither: it lowers the bytes that a view downloads, not
+the fill that its splats cost.
+

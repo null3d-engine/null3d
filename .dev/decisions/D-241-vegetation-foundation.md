@@ -164,8 +164,8 @@ Medium it takes 163.9 and 537.5 MiB. Forest Low on WebGPU takes 30.9 to 57.4 MiB
 34.4 MiB of buffers, and its WebAssembly memory grows to 328.8 MiB. At Ultra it reaches 864 MiB.
 
 **Tree generation.** A worker built a stand-in parametric tree in the style of Weber and Penn. It ran at
-each preset's detail, for four species and six seeds each. The set of 24 variants took 14 to 22 ms
-on the iPhone and the iPad. It took 31 to 45 ms on the S24, and 44 to 84 ms on the tablet. The arrays take
+each preset's detail, for four species and six seeds each. The set of 24 variants took 14 to 23 ms
+on the iPhone and the iPad. It took 33 to 47 ms on the S24, and 49 to 94 ms on the tablet. The arrays take
 7.0 MB at Low and 22.7 MB at Ultra, and the triangles run from 123,876 to 474,096. The slowest
 single variant was an oak at Ultra on the tablet: 5.42 ms for 27,090 triangles. This is a stand-in;
 M3-V4's generator replaces it, and its figures set the shape of the budget.
@@ -185,3 +185,35 @@ M3-V4's generator replaces it, and its figures set the shape of the budget.
 - **Memory:** the variant arrays may take the measured 7.0 to 22.7 MB. The GPU textures must stay
   within the measured figures for the same demo and preset, which the add-on shares with the scene.
   Creek's 3.1 MB of Blender models leave, and the arrays replace them.
+
+## Addendum: the package name, confirmed, and the generator's shape
+
+M3-V4 built the add-on as `@null3d/vegetation`, confirming the working name. The generator follows
+this record's look and answers four questions the record left to the build.
+
+- **The leaf-card level rule lives in the generator, as Q2's option A had it.** The asset tool keeps
+  its own step for meshes from files. One test holds both to the rule (`tests/lib/leaf-card-rule.test.ts`):
+  the cards take a space-filling order through their middles. Every second card of the level above
+  is kept, and each kept card grows about its middle by the square root of that step. The largest
+  dropped card is the level's error. The generator's curve key is coarser than the tool's, which
+  orders the same way and costs less at grow time.
+- **A rosette thins its leaves the same way and widens a kept leaf.** Lengthening it would move the
+  tip past the crown's bounds, and the design requires that a level switch never moves the bounds.
+- **A plant keeps at most 255 branches.** A vertex names its branch's wind record with eight bits.
+  A species record whose counts would exceed that stops growing, and the built-in records stay well
+  under it.
+- **A conifer's needle card stands for a spray of needles.** The first pictures showed a bare trunk
+  with a few specks. A card 0.05 m wide and 0.3 m tall is less than half a pixel wide at the
+  picture's framing. The card is 0.35 m wide and 0.7 m tall now, with 24 to a twig. The branch
+  record is unchanged, so the crown keeps its taper. The conifer's asset grows from 498 to 627 KB.
+  The needle atlas of M3-V5 draws the needles inside the card, and a card too small for its spray
+  could not carry them.
+- **The asset is one merged mesh for each part at each level, not a set of shared twig modules.**
+  The shared-twig idea from the research would need one draw for each module. A scene's 256 batches
+  cannot hold the tree variants beside the grass and the impostor cards. The merged parts keep the
+  measured memory. A tree takes about 0.3 to 0.5 MB over its levels, and the add-on's 78 variants
+  take about 18 MB.
+
+The built-in set holds thirteen species and six variants each. It grows on the calling thread or in
+one of the engine's job workers, with the same asset either way. Every choice comes from the
+integer hash that the shaders' `pcg` also computes.

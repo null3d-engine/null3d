@@ -32,7 +32,7 @@ const PARTIAL: Readonly<Record<string, string>> = {
 };
 
 /** Tasks built on a helper branch, with nothing of them on this branch yet. */
-const ON_BRANCH = new Set(['M3-E9', 'M3-R14']);
+const ON_BRANCH = new Set(['M3-E9', 'M3-R14', 'M3-V2']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
 // An audit of the branch on 24 October 2026 read every ticked task against its own "Done when" and
@@ -46,6 +46,7 @@ const INCOMPLETE = new Set([
 	'M3-L3',
 	'M3-R12',
 	'M3-R22',
+	'M3-E7',
 	'M3-L2',
 	'M3-L4',
 	'M3-A1',
@@ -55,19 +56,10 @@ const INCOMPLETE = new Set([
 	'M3-A10',
 	'M3-A11',
 	'M3-B5',
-	'M3-B6',
-	'M3-E10',
-	'M3-D1',
 	'M3-D7',
 	'M3-D8',
-	'M3-K2',
-	'M3-K4',
 	'M3-R1',
-	'M3-E2',
-	'M3-F2',
 	'M3-O1',
-	'M3-R16',
-	'M3-R17',
 	'M3-G1',
 	'M3-G2',
 	'M3-G3',
@@ -76,7 +68,6 @@ const INCOMPLETE = new Set([
 	'M3-R3',
 	'M3-R4',
 	'M3-R19',
-	'M3-R20',
 	'M3-R21',
 	'M3-V1',
 	'M3-V3',
@@ -86,14 +77,10 @@ const INCOMPLETE = new Set([
 const NOTES: Readonly<Record<string, string>> = {
 	'M3-A9':
 		'the hero tile and its cost figures are in: a still hero adds no pass, a moving one adds a depth pass of 0.028 to 0.037 ms, and WebGL2 reads the tile for 0.27 ms less than the cascades (D-219)',
-	'M3-E2':
-		"the task hook and the splats add-on's distance selection run on the job workers on both paths, and the allocation check judges them: 653.5 bytes a frame on the sketch worker and 163.8 on the render worker on the Mac, 1,119.1 and 91.9 on the software renderer, with every per-frame place inside its budget. The check found two production-build faults, both fixed: a task module reached the worker as raw source, and Vite's preload helper read `document` in the sketch worker",
 	'M3-E6':
 		"splats' budget follows the preset and reaches the overlay; water's reflection cadence, the other first user, is not on the branch",
 	'M3-E8':
 		"the compute pass and its WebGL2 fragment form are built and tested; the first-user outcome waits on M3-F9's ocean, because the splats add-on cannot take the hook",
-	'M3-E10':
-		"the template, the call and the aurora add-on are in and unit-tested; the demo and its six picture references are owed and land together, because a picture test with no reference turns every helper's limits check red",
 	'M3-B1':
 		'the pictures hold every lens mark now, and the streak and grain ones were tightened after they proved nothing at the default threshold: each mark moves about 2.8 per cent of the pixels against a half per cent limit. The cost per preset is still owed — it needs a machine idle enough for a quiet timing run, and the fleet has not given one since this morning',
 	'M3-D9':
@@ -140,21 +127,12 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-B6': 'the real-light option lights a fixed share of the cars, not the nearest ones',
 	'M3-E10':
 		'a sky layer draws into neither the environment map nor the CPU sky light, and D-242 drops both without a ruling',
-	'M3-D1': 'no page draws an add-on from the CDN, and the test draws on no GPU tier',
 	'M3-D7':
 		'the link check runs before the texture-unit count, so an over-budget material gives a plain link error rather than the E1209 the docs promise',
 	'M3-D8': 'two add-ons that declare one name with the same fields share a namespace silently',
-	'M3-K2': 'no touch test covers the rotate and scale gizmos',
-	'M3-K4': 'no three.js CSS3D example is ported or tested',
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
-	'M3-E2':
-		"only the chunk-budget ordering goes through the task hook; the per-splat sort is the engine's own transparent sort",
-	'M3-F2':
-		"streaming is not built, and the budget's meaning is open for the owner after the iPad drew 1.07 frames a second",
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
-	'M3-R16': 'no test creates a project and runs it with the hook on',
-	'M3-R17': 'no skill evaluation ran as the plan defines one',
 	'M3-G1': "the Khronos sample's texture-transform pointers are not animated",
 	'M3-G2': 'no Khronos iridescence sample is tested',
 	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',
@@ -165,9 +143,10 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-R4': 'D-247 does not compare frame time, and the Mac GPU figure is owed',
 	'M3-R19':
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
-	'M3-R20': 'no test or record shows the governor returning within a second',
 	'M3-R21':
 		'the picture step does not read the heavy-test jobs, so the screens and skyway pictures are not gated; the fix is on a helper branch',
+	'M3-E7':
+		"the lobe hook is landed and its wrong signature is refused, but the task's proof is car paint's glints, which are on a branch with their pictures still owed",
 	'M3-V1':
 		'Creek has no WebGPU figure on any device, and no vegetation task after it has its own budget per preset',
 	'M3-V3': 'the Mac, iPad and phone GPU time and memory are not recorded',

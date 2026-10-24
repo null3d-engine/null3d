@@ -4,6 +4,7 @@
 // batches, so the whole town draws in a few calls. A clock tower of stone stands at the square's
 // corner, with a lit face and a spire.
 import { quat, type SketchContext, vec3 } from '@null3d/engine';
+import { createWindow } from '../../addons/facades/index';
 import { Noise, random, type TexelSample, textureSet } from '../../lib/procedural';
 import { groundHeight } from './land';
 
@@ -213,19 +214,6 @@ function stoneTexel(u: number, v: number, out: TexelSample): void {
 	out.occlusion = 0.5 + 0.5 * (1 - across);
 }
 
-/** A window's texel: a warm pane, divided by a dark mullion, inside a dark frame. */
-function windowTexel(u: number, v: number, out: TexelSample): void {
-	const frame = Math.min(u, 1 - u, v, 1 - v) * 2;
-	const mullion = Math.min(Math.abs(u - 0.5), Math.abs(v - 0.5)) * 2;
-	const pane = smooth(Math.min(frame, mullion) / 0.09);
-	out.height = 0.5;
-	out.r = pane;
-	out.g = pane * 0.95;
-	out.b = pane * 0.8;
-	out.roughness = 0.4;
-	out.occlusion = pane ? 1 : 0.2;
-}
-
 const SNOW: V3 = [0.82, 0.88, 1];
 const GABLE: V3 = [0.6, 0.58, 0.54];
 
@@ -391,7 +379,7 @@ export interface Home {
 
 /** The town's houses, tower, lit windows and doors, with what the air and the props need. */
 export function createHouses(
-	{ scene, geometry, materials, textures }: SketchContext,
+	ctx: SketchContext,
 	textureSize: number,
 ): {
 	homes: Home[];
@@ -400,6 +388,7 @@ export function createHouses(
 	power(share: number): void;
 	clear(x: number, z: number): boolean;
 } {
+	const { scene, geometry, materials, textures } = ctx;
 	const wallMaps = textureSet(textures, textureSize, timberTexel, 4);
 	const roofMaps = textureSet(textures, Math.max(128, textureSize >> 1), roofTexel);
 	const stoneMaps = textureSet(textures, Math.max(128, textureSize >> 1), stoneTexel);
@@ -408,15 +397,6 @@ export function createHouses(
 	const stoneMat = materials.standard({ ...stoneMaps, roughness: 0.95 });
 	const next = random(83);
 
-	const glass = new Uint8Array(64 * 64 * 4);
-	const sample: TexelSample = { height: 0, r: 0, g: 0, b: 0, roughness: 1, occlusion: 1 };
-	for (let i = 0; i < 64 * 64; i++) {
-		windowTexel(((i % 64) + 0.5) / 64, (Math.floor(i / 64) + 0.5) / 64, sample);
-		glass.set(
-			[Math.round(sample.r * 255), Math.round(sample.g * 255), Math.round(sample.b * 255), 255],
-			i * 4,
-		);
-	}
 	const windowRows: {
 		at: V3;
 		yaw: number;
@@ -502,26 +482,17 @@ export function createHouses(
 		homes.push({ x: potAt[0], z: potAt[2], top: base + 2.1 });
 	}
 
+	// Each pane looks into a room: a lamp's pool, a floor, a ceiling, a block of furniture, and
+	// blinds or a curtain in some. The room's light is the pane's own, which the hour dims.
+	const panes = createWindow(ctx, {
+		kind: 'timber',
+		window: { width: 0.73, height: 1.01, frame: 0.055 },
+		room: { depth: 1.7, light: 3.4, flicker: 0.5 },
+	});
 	const windows = scene.createInstances(
 		geometry.plane({ width: 1, height: 1 }),
 		windowRows.length,
-		{
-			material: materials.shader({
-				wgsl: WINDOW_WGSL,
-				color: '#120f0b',
-				roughness: 0.5,
-				textures: {
-					glassMap: textures.fromData({
-						width: 64,
-						height: 64,
-						data: glass,
-						colorSpace: 'srgb',
-						mipmaps: true,
-					}),
-				},
-			}),
-			values: true,
-		},
+		{ material: panes.material, values: true },
 	);
 	windowRows.forEach((row, k) => {
 		windows.positions.set(row.at, k * 3);
@@ -530,6 +501,8 @@ export function createHouses(
 		(windows.values as Float32Array).set([row.lit, row.warm, next(), row.cool], k * 4);
 	});
 	windows.markDirty();
+	// The town lights up as the scene starts: the wave runs out from the square.
+	panes.start(0);
 
 	/** The share of the windows' light that the hour allows: none by day, all at night. */
 	let glow = 1;
@@ -667,24 +640,3 @@ export function chimney(): Build {
 	box(b, [0, 2.03, 0], [2 * w + 0.24, 0.14, 2 * w + 0.24], SNOW);
 	return b;
 }
-
-/** The window shader: a dark frame whose pane glows warm from the row's own tint and flicker. */
-const WINDOW_WGSL = /* wgsl */ `
-#import null3d::noise::{value2}
-
-var glassMap: texture_2d<f32>;
-
-fn surface(input: SurfaceInput) -> Surface {
-    var s = defaultSurface(input);
-    let t = textureSample(glassMap, glassMapSampler, input.uv);
-    let v = object.values;
-    // A candle behind the pane flickers a little; its phase comes from the row.
-    let flicker = 0.88 + 0.12 * value2(vec2f(v.z * 40.0, frame.time * 0.7));
-    let warm = mix(vec3f(1.0, 0.58, 0.26), vec3f(1.0, 0.82, 0.55), v.y);
-    let tint = select(warm, vec3f(0.6, 0.72, 1.0), v.w > 0.5);
-    s.baseColor = t.rgb * 0.05;
-    s.emissive = t.rgb * tint * v.x * flicker * 2.6;
-    s.roughness = 0.45;
-    return s;
-}
-`;

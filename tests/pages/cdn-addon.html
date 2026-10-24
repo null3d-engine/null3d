@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>null3D add-on from a CDN</title>
+		<style>
+			html,
+			body {
+				margin: 0;
+				height: 100%;
+				background: #0b1220;
+			}
+			canvas {
+				display: block;
+				width: 100%;
+				height: 100%;
+			}
+		</style>
+	</head>
+	<body>
+		<canvas id="scene"></canvas>
+		<script>
+			// An import map names the packages, as a bundled project does. It is made here and appended
+			// before any module runs, which is when a browser reads one.
+			const given = new URLSearchParams(location.search).get('cdn');
+			if (given) {
+				const url = given.endsWith('/') ? given : `${given}/`;
+				const map = document.createElement('script');
+				map.type = 'importmap';
+				map.textContent = JSON.stringify({
+					imports: {
+						'@null3d/engine': `${url}lib/index.js`,
+						'@null3d/terrain': `${url}addons/terrain/lib/index.js`,
+					},
+				});
+				document.head.append(map);
+			}
+		</script>
+		<script type="module">
+			// Where the CDN build lives. The test that runs this page passes the folder it serves.
+			const base =
+				new URLSearchParams(location.search).get('cdn') ?? 'https://cdn.example.com/null3d/';
+			const CDN = base.endsWith('/') ? base : `${base}/`;
+
+			try {
+				// The sketch is a module of its own, which the engine runs in a worker on an isolated
+				// page and on this page's thread otherwise. It names the add-on and the engine by their
+				// full addresses, because a worker reads no page's import map. The add-on's own code
+				// imports the engine from the same build by a relative address.
+				const sketch = `
+import { defineSketch } from "${CDN}lib/index.js";
+import { createTerrain, terrainTextures } from "${CDN}addons/terrain/lib/index.js";
+
+export default defineSketch((ctx) => {
+	const { scene, textures, page } = ctx;
+	scene.setBackground('#0b1220');
+	scene.createAmbientLight({ intensity: 0.7 });
+	scene.createDirectionalLight({ direction: [0.4, -1, 0.3], intensity: 2.4 });
+	const camera = scene.createPerspectiveCamera({
+		fov: 50,
+		position: [0, 180, 180],
+		target: [0, 0, 0],
+	});
+	scene.setActiveCamera(camera);
+	// The layers are made in code, so the page loads no file of its own beside the CDN's.
+	const layers = terrainTextures(textures, { size: 64, seed: 3 });
+	const terrain = createTerrain(ctx, {
+		size: 400,
+		height: (x, z) => 6 * Math.sin(x * 0.02) * Math.cos(z * 0.02),
+		resolution: 128,
+		layers: [
+			{ map: layers.grass, tile: 8, roughness: 1 },
+			{ map: layers.soil, tile: 12, roughness: 1 },
+		],
+		maxLevel: 4,
+	});
+	const eye = [0, 0, 0];
+	let frames = 0;
+	return {
+		onUpdate() {
+			camera.getWorldPosition(eye);
+			terrain.update(eye);
+			if (++frames === 4) page.post('drawn', { frames });
+		},
+	};
+});
+`;
+
+				// The page's own import, which the import map names.
+				const { createEngine } = await import('@null3d/engine');
+				const engine = await createEngine({
+					canvas: document.querySelector('#scene'),
+					sketch: URL.createObjectURL(new Blob([sketch], { type: 'text/javascript' })),
+				});
+				// The page reads its frame back through the engine, as the engine's tests do, and counts
+				// the pixels that the ground fills: the ground shows its green layers over the blue
+				// background that the scene sets.
+				engine.onSketchMessage(async (name) => {
+					if (name !== 'drawn') return;
+					try {
+						const { width, height, pixels } = await engine.captureFrame();
+						let covered = 0;
+						let sampled = 0;
+						const sum = [0, 0, 0];
+						for (let y = 0; y < height; y += 4)
+							for (let x = 0; x < width; x += 4) {
+								const at = (y * width + x) * 4;
+								const r = pixels[at];
+								const g = pixels[at + 1] ?? 0;
+								const b = pixels[at + 2] ?? 0;
+								if (g > r && g > b) covered++;
+								sampled++;
+								sum[0] += r;
+								sum[1] += g;
+								sum[2] += b;
+							}
+						window.cdnAddon = {
+							build: engine.mode.build,
+							threaded: engine.capabilities.threaded,
+							tier: engine.capabilities.tier,
+							width,
+							height,
+							covered: sampled > 0 ? covered / sampled : 0,
+							mean: sum.map((total) => (sampled > 0 ? total / sampled : 0)),
+						};
+					} catch (error) {
+						window.cdnAddonError = String(error);
+					}
+				});
+			} catch (error) {
+				window.cdnAddonError = String(error);
+			}
+		</script>
+	</body>
+</html>

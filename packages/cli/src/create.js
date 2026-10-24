@@ -1,6 +1,7 @@
 // null3d create: makes a new project from one of the templates that ship with this command. It
 // copies the template's files, writes the version of the command and the project's name into
-// them, and installs nothing. The template holds an AGENTS.md for AI agents and a Claude Code hook.
+// them, and installs nothing. The template holds an AGENTS.md for AI agents and one hook that
+// Claude Code and Codex run.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,8 +34,8 @@ nothing.
 Options:
   --template <name>   The template to use (${DEFAULT_TEMPLATE})
 
-The project holds an AGENTS.md for AI agents and a Claude Code hook in .claude/. Run bun install in
-the new folder, then bunx vite.`;
+The project holds an AGENTS.md for AI agents and one hook, which Claude Code and Codex run, in
+.claude/ and .codex/. Run bun install in the new folder, then bunx vite.`;
 
 /**
  * @typedef {object} CreateOptions

@@ -1164,7 +1164,8 @@ export type CostedEffect =
 	| 'fog'
 	| 'effects'
 	| 'sky'
-	| 'sharpen';
+	| 'sharpen'
+	| 'compute';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1234,6 +1235,8 @@ export function effectPlan(
 		],
 		// The two steps of the pass at the whole canvas's scale, and the sharpening in the second.
 		sharpen: [['', []]],
+		// A compute pass whose output a vertex offset reads, for the vegetation wind path's budgets.
+		compute: [['', []]],
 	};
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
@@ -1262,7 +1265,7 @@ export function effectPlan(
 							...switches,
 							...callSwitches,
 						],
-						timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+						timeoutSeconds: effect === 'compute' ? 180 : EFFECT_TIMEOUT_SECONDS,
 					},
 				),
 			),
@@ -1466,12 +1469,13 @@ export function twoStepPlan(): PlanItem<Check>[] {
 }
 
 /**
- * The splats add-on's streaming on each GPU path: a cloud cut into chunks that the draw takes as
- * they arrive, whose count the preset's budget caps. The page reports the splats that draw against
- * the budget, the frame rate, the first-frame time and the bytes that the page downloaded. Each path
- * runs the whole cloud and a quarter of it at the same pixel count, so the two show whether the
- * cost follows the count or the screen's fill. The capabilities page comes first, so a device
- * without WebGPU skips that page.
+ * The splats add-on's streaming on each GPU path: the page reads a stream index from the test
+ * server and downloads only the chunks that the view needs, whose count the preset's budget caps.
+ * The page reports the splats that draw against the budget, the chunks and bytes that arrived, the
+ * frame rate, the first-frame time and the bytes that the page downloaded. Each path runs the whole
+ * cloud and a quarter of it at the same pixel count, so the two show whether the cost follows the
+ * count or the screen's fill. The capabilities page comes first, so a device without WebGPU skips
+ * that page.
  */
 export function splatsPlan(): PlanItem<Check>[] {
 	return [
@@ -2155,6 +2159,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	fog: () => effectPlan('fog'),
 	effects: () => effectPlan('effects'),
 	sharpen: () => effectPlan('sharpen'),
+	compute: () => effectPlan('compute'),
 	'physical-sky': () => effectPlan('sky'),
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,
