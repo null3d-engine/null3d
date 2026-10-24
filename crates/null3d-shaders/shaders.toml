@@ -459,6 +459,17 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["SKIN", "OUTLINE_VISIBLE", "INSTANCE_INDEX"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "OUTLINE_VISIBLE", "SKIN"], targets = ["glsl"] }
 
+# The tone mask: the objects whose material keeps its color as the display shows it, drawn as
+# instanced meshes, whose visible parts mark the mask's blue channel. It reads each instance as the
+# mesh templates do, and loads by device with them. SKIN skins in the vertex shader, as the mesh
+# templates' SKIN builds do.
+[shaders.tone_mask]
+file = "tone_mask.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["SKIN", "INSTANCE_INDEX"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "SKIN"], targets = ["glsl"] }
+
 # GPU picking: each object written with the source key of its object or of its instance's row,
 # where the scene's depth leaves it. The pass runs after the opaque pass, uses the scene's depth
 # with a test that writes no depth, so a fragment that a material's mask discarded (which wrote no

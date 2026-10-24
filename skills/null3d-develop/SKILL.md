@@ -181,7 +181,7 @@ Effects:
 | Need | Use | Docs |
 | --- | --- | --- |
 | Tone mapping and exposure | `post.set({ toneMapping, exposure })`; `ev100` (0.2) for lights in real units | `api/post` |
-| A sign, panel or heads-up display that keeps its exact color | `materials.unlit({ color, toneMapped: false })` on the 8-bit path, which `createEngine({ hdr: false })` takes | `api/materials`, `concepts/color-management` |
+| A sign, panel or heads-up display that keeps its exact color | `materials.unlit({ color, toneMapped: false })`; on the HDR path a blended surface keeps the curve | `api/materials`, `concepts/color-management` |
 | Bloom | `post.set({ bloom: { intensity, threshold, knee, blend, weights } })` (0.2); quality setting `bloomSize` | `api/post`, `concepts/post-processing` |
 | Color grading from a `.cube` or `.3dl` file, and a vignette | `post.set({ lut: await assets.loadLut(url), vignette: { intensity, size } })` (0.2) | `api/post`, `api/assets` |
 | Color grading made in code, with no file | `post.set({ lut: await assets.lutFromData({ size, data }) })` (0.2): three numbers per texel, red fastest, as a `.cube` file | `api/assets` |

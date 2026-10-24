@@ -344,6 +344,12 @@ The refusal comes at the first draw of a material, when its program is prepared,
 
 The test add-on is a stage of 17 declared textures in `programs.test.ts`, beside the existing test that every build of the engine's own shaders stays within the units.
 
+### Addendum, 25 October 2026: the count runs before the link, against the device's units
+
+The count above ran after `prepareProgram` read the program's link result. On a device with 16 units, a stage of 17 textures therefore threw the driver's plain link error, and E1209 never came. The count now runs first, on the declared sources of both stages. It compares against the units that the device reports for each stage (`MAX_VERTEX_TEXTURE_IMAGE_UNITS` and `MAX_TEXTURE_IMAGE_UNITS`), rather than the 16 that every device gives. A device that reports more units lets a larger stage link.
+
+The browser test `tests/image/program-units.spec.ts` builds a program by hand, with one texture more than the device's fragment stage holds. It reads the link result before the engine does. It then checks that the engine throws E1209 with the device's real count. `programs.test.ts` keeps the boundary tests with an explicit limit.
+
 ## Addendum, 23 October 2026: H1's storage surface is one texture at a fixed binding
 
 Status: decided by the coordinator on 2026-10-23. Task: M3-E8.

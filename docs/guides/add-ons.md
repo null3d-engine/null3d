@@ -14,7 +14,7 @@ An add-on is a package that adds a feature above the engine's public API. It has
 
 ## Claim the add-on's names
 
-An add-on calls `declareAddonNamespace` once, as its module loads. The call claims the add-on's name, its shader library name, its range of error codes and its quality keys. It also declares the plugin interface versions that the add-on was built for.
+An add-on calls `declareAddonNamespace` once, as its module loads. The call claims the add-on's name, its package, its shader library name, its range of error codes and its quality keys. It also declares the plugin interface versions that the add-on was built for.
 
 ```ts
 // src/index.ts
@@ -22,6 +22,7 @@ import { declareAddonNamespace, PLUGIN_INTERFACE_VERSION } from '@null3d/engine'
 
 declareAddonNamespace({
 	name: 'splats',
+	package: '@acme/splats',
 	shaderLibrary: 'splats',
 	errorCodes: [3100, 3199],
 	qualityKeys: ['splatBudget'],
@@ -29,7 +30,7 @@ declareAddonNamespace({
 });
 ```
 
-The name takes lowercase letters, digits and underscores, and starts with a letter. The engine owns `null3d`, and codes below 2000 are the engine's own. The engine refuses a name or a code that another add-on holds.
+The name takes lowercase letters, digits and underscores, and starts with a letter. The package names the module that owns the add-on, and it gives the same value every time the add-on loads, so a development reload takes back its namespace. A second add-on that takes the name is refused. The engine owns `null3d`, and codes below 2000 are the engine's own. The engine refuses a name or a code that another add-on holds.
 
 The plugin interface version changes only when a stable hook changes, so an add-on can span many engine releases. A page whose engine lies outside the declared range stops with [E1433](../errors/E1433.md) before it draws. The message names the add-on, the range and the engine's interface. The version is `PLUGIN_INTERFACE_VERSION` in the engine that the add-on builds against. Widen the range only after the add-on works with the wider interface.
 

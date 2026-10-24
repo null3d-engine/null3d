@@ -46,8 +46,8 @@ pub const MAX_VIEWS: usize = 32;
 /// The most views of every kind: the views of cameras, then the cascades of the directional
 /// light's shadows, then the tiles of the point and spot lights' shadow atlas, which cull and draw
 /// as views do, then the view of the outline effect's mask, then the view of the subsurface blur's
-/// skin pass, and the motion view.
-pub const MAX_VIEW_IDS: usize = MAX_VIEWS + MAX_CASCADES + MAX_TILES + 3;
+/// skin pass, the motion view, and the view of the tone mask.
+pub const MAX_VIEW_IDS: usize = MAX_VIEWS + MAX_CASCADES + MAX_TILES + 4;
 
 /// The first id of the shadow atlas's tiles.
 const FIRST_TILE: usize = MAX_VIEWS + MAX_CASCADES;
@@ -71,6 +71,11 @@ impl ViewId {
     /// The motion view: the camera's view, which culls and draws only the objects that move, into
     /// the motion target (see [`crate::motion`]).
     pub const MOTION: ViewId = ViewId((FIRST_TILE + MAX_TILES + 2) as u16);
+
+    /// The view of the tone mask: the camera's view, which culls and draws only the objects whose
+    /// material keeps its color as the display shows it, into the blue channel of the outline
+    /// mask, after the motion view.
+    pub const TONE: ViewId = ViewId((FIRST_TILE + MAX_TILES + 3) as u16);
 
     /// The view's place in the list, from 0.
     pub const fn index(self) -> usize {

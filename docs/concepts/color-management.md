@@ -74,7 +74,7 @@ Effects that need HDR color, such as bloom, move compatibility mode to HDR color
 
 A material with `toneMapped: false` keeps its color as the display shows it, as three.js's `toneMapped: false` does. Use it for a panel, a sign or another object whose colors are set for the screen, such as a heads-up display in the world.
 
-The 8-bit path honours it in each material's own shader, which tone maps there: the shader encodes the color without the curve. The HDR path tone maps the whole image once, in its final pass. That pass has no per-pixel flag that says which surface skipped the curve, so there the curve still maps this material's color. To show the exact color on such a device, draw the scene on the 8-bit path: `createEngine({ hdr: false })` starts there. [The post-processing chain](post-processing.md) explains what else that path changes.
+The 8-bit path honours it in each material's own shader, which tone maps there: the shader encodes the color without the curve. The HDR path tone maps the whole image once, in its final pass. While a material keeps its display color, that pass also reads a mask of the surfaces whose material does so, and it skips the curve for those pixels. A blended surface keeps the curve on the HDR path, because a blended pixel mixes two surfaces and the mask cannot say which one owns it. Draw such a surface on the 8-bit path with `createEngine({ hdr: false })` if it needs the exact color. [The post-processing chain](post-processing.md) explains what else that path changes.
 
 The vignette and the sRGB encoding still apply to such a material. The exposure scales its colors before them, as it scales every other color.
 

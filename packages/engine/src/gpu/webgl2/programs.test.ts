@@ -168,7 +168,7 @@ describe('WebGL2 texture-unit allocator', () => {
 		);
 		const thrown = (() => {
 			try {
-				checkStageUnits(many, 'fragment');
+				checkStageUnits(many, 'fragment', MIN_STAGE_TEXTURE_UNITS);
 				return null;
 			} catch (error) {
 				return error as { code?: string; message: string };
@@ -176,7 +176,7 @@ describe('WebGL2 texture-unit allocator', () => {
 		})();
 		expect(thrown?.code).toBe('E1209');
 		expect(thrown?.message).toContain(
-			`reads ${MIN_STAGE_TEXTURE_UNITS + 1} textures in its fragment stage`,
+			`reads ${MIN_STAGE_TEXTURE_UNITS + 1} textures in its fragment stage, and a stage has ${MIN_STAGE_TEXTURE_UNITS} units`,
 		);
 	});
 
@@ -184,7 +184,16 @@ describe('WebGL2 texture-unit allocator', () => {
 		const full = stage(
 			Array.from({ length: MIN_STAGE_TEXTURE_UNITS }, (_, binding) => texture(binding)),
 		);
-		expect(() => checkStageUnits(full, 'fragment')).not.toThrow();
+		expect(() => checkStageUnits(full, 'fragment', MIN_STAGE_TEXTURE_UNITS)).not.toThrow();
+	});
+
+	it('holds a stage to the units that the device reports, not to the fewest of any device', () => {
+		const many = stage(
+			Array.from({ length: MIN_STAGE_TEXTURE_UNITS + 1 }, (_, binding) => texture(binding)),
+		);
+		expect(() => checkStageUnits(many, 'fragment', MIN_STAGE_TEXTURE_UNITS)).toThrow(/E1209/);
+		expect(() => checkStageUnits(many, 'fragment', MIN_STAGE_TEXTURE_UNITS + 1)).not.toThrow();
+		expect(() => checkStageUnits(many, 'fragment', 64)).not.toThrow();
 	});
 });
 
@@ -233,6 +242,9 @@ describe('WebGL2 programs that a driver optimized', () => {
 		const gl = {
 			LINK_STATUS: 0x8b82,
 			INVALID_INDEX: 0xffffffff,
+			MAX_VERTEX_TEXTURE_IMAGE_UNITS: 0x8b45,
+			MAX_TEXTURE_IMAGE_UNITS: 0x8b46,
+			getParameter: () => 16,
 			getProgramParameter: () => true,
 			detachShader: () => {},
 			deleteShader: () => {},
@@ -293,6 +305,10 @@ describe("WebGL2 links that Safari's Metal translator broke", () => {
 			LINK_STATUS: 0x8b82,
 			VERTEX_SHADER: 0x8b31,
 			FRAGMENT_SHADER: 0x8b30,
+			// The units that a device reports, which every WebGL2 device gives a stage at least 16 of.
+			MAX_VERTEX_TEXTURE_IMAGE_UNITS: 0x8b45,
+			MAX_TEXTURE_IMAGE_UNITS: 0x8b46,
+			getParameter: (parameter: number) => (parameter === 0x8b45 ? 32 : 16),
 			createProgram: () => ({}),
 			createShader: () => ({ log: shaderLogs[shaders++] ?? '' }),
 			shaderSource: (_: unknown, source: string) => sources.push(source),

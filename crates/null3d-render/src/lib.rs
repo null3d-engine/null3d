@@ -128,6 +128,7 @@ pub mod still;
 pub mod subsurface;
 pub mod taa;
 pub mod textures;
+pub mod tone_mask;
 mod transmission;
 pub mod vertex_draws;
 pub mod view;

@@ -146,7 +146,7 @@ const DOCS = {
 	E1209: {
 		title: 'Too many textures',
 		cause:
-			'A material whose shader reads more textures than a WebGL2 shader stage has units. The engine numbers the textures that a program reads, and WebGL2 gives every stage 16 units. The lit shader reads most of them, so a custom material or add-on draw reaches the limit with its own textures, beside the maps and the shadows.',
+			'A material whose shader reads more textures than a WebGL2 shader stage has units. The engine numbers the textures that a program reads, and WebGL2 gives every stage at least 16 units, as many as the device reports. The lit shader reads most of them, so a custom material or add-on draw reaches the limit with its own textures, beside the maps and the shadows.',
 		example:
 			'E1209: a WebGL2 program reads 18 textures in its fragment stage, and a stage has 16 units: give the material fewer textures.',
 		since: '0.3',
@@ -246,9 +246,9 @@ const DOCS = {
 	E1225: {
 		title: 'Add-on name clash',
 		cause:
-			'An add-on registered a name that the engine or another add-on holds: its namespace, its shader library, an error-code range, a quality key, or the name of a feature, output or lighting slot. Two add-ons cannot share a name, a range or a key, because the engine would have two answers for one of them.',
+			'An add-on registered a name that the engine or another add-on holds: its namespace, its shader library, an error-code range, a quality key, or the name of a feature, output or lighting slot. A namespace also names the package that owns it, so a second add-on that takes the name is refused even when its other fields match, while a reload of the same package keeps its namespace. Two add-ons cannot share a name, a range or a key, because the engine would have two answers for one of them.',
 		example:
-			"E1225: FeatureHost.add() got the feature 'splats' for the add-on 'particles', which the add-on 'splats_pack' registers already. Give the feature a name of its own.",
+			"E1225: declareAddonNamespace() got the add-on name 'water' for the package '@ben/water', which the package '@ana/water' claims already. Give each add-on a name of its own.",
 		since: '0.3',
 	},
 	E1301: {
