@@ -121,7 +121,7 @@ Globals that the vertex offset and the surface function both read (`shaders/buil
 
 | Name | Fields | Notes |
 | --- | --- | --- |
-| `frame` | `time`, `deltaTime` (seconds), `index` (u32, from 1), `resolution` (vec2f, pixels at the render scale, as `@builtin(position)` counts them) | The sketch's `time`; the held time in hold mode |
+| `frame` | `time`, `deltaTime` (seconds), `index` (u32, from 1), `lastFrame` (bool, true in the motion pass's call for the frame before), `resolution` (vec2f, pixels at the render scale, as `@builtin(position)` counts them) | The sketch's `time`; the held time in hold mode |
 | `camera` | `position` (absolute world position), `viewProjection` (`mat4x4f`, from positions relative to the camera to clip space); `view`, `projection` (`mat4x4f`), `near`, `far` (0.2) | `projection * view == viewProjection`; `view` is the rotation only; reversed depth, 1 at the near plane |
 | `object` | `position` (the object's or instance's origin in the world); `values` (`vec4f`), `worldMatrix` (`mat4x4f`), `normalMatrix` (`mat3x3f`), `id` (`u32`) (0.2) | `worldMatrix`'s translation is relative to the camera. `id` equals `mesh.shaderId` or `batch.shaderId`, and stays while the object lives |
 | `material` | Your uniforms, as `struct Uniforms` declares them | See section 4 |

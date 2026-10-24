@@ -525,6 +525,20 @@ pub(crate) struct TilePasses {
     pub(crate) size: u32,
 }
 
+/// The pass targets that the objects of the shadow, motion and pick passes sample, each as a mask
+/// of view places. A material's vertex offset or surface function may read a texture that a
+/// compute pass wrote in the same frame, and each pass that draws that material must run after the
+/// pass that writes it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct DrawnViews {
+    /// The targets that the shadow casters' materials sample.
+    pub(crate) casters: u32,
+    /// The targets that the moving objects' materials sample.
+    pub(crate) motion: u32,
+    /// The targets that the pickable objects' materials sample.
+    pub(crate) pick: u32,
+}
+
 /// What a declared pass records.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Role {
@@ -882,6 +896,13 @@ pub(crate) struct FrameGraph {
     compute: ComputePasses,
     /// The views that are compute passes, as a mask of their places.
     compute_views: u32,
+    /// The views whose targets a material of a scene draw may sample, as a mask of their places:
+    /// compute passes, and the fragment forms that run in their place on WebGL2. A pass that draws
+    /// such a material runs after each of these that its material samples.
+    material_views: u32,
+    /// The views whose pass targets the objects of the shadow, motion and pick passes sample, as
+    /// masks of view places, which the builder's layouts give.
+    drawn_views: DrawnViews,
     /// The effects that run, in order: the first `effect_count` slots.
     effects: [Effect; MAX_EFFECTS],
     effect_count: usize,
@@ -1205,6 +1226,8 @@ impl FrameGraph {
             compute_ids: ids.compute,
             compute: ComputePasses::new(ids.compute),
             compute_views: 0,
+            material_views: 0,
+            drawn_views: DrawnViews::default(),
             effects: [NO_EFFECT; MAX_EFFECTS],
             effect_count: 0,
             effect_depths: 0,
@@ -1600,6 +1623,16 @@ impl FrameGraph {
             self.declared = false;
         }
         self.tiles = tiles;
+    }
+
+    /// Sets the pass targets that the shadow, motion and pick passes' materials sample, from the
+    /// builder's layouts, so each of those passes reads them and runs after the pass that writes
+    /// them.
+    pub(crate) fn set_drawn_views(&mut self, views: DrawnViews) {
+        if views != self.drawn_views {
+            self.drawn_views = views;
+            self.declared = false;
+        }
     }
 
     /// The render graph.
@@ -2711,12 +2744,37 @@ impl FrameGraph {
         let one_sample = Target::color(self.view_target_format()).array().shown();
         self.fullscreen_views = 0;
         self.compute_views = 0;
+        self.material_views = 0;
+        // The views that draw the scene: a pass that reads one of them draws after the scene, so
+        // no scene pass reads its texture before it.
+        let scene_views = views
+            .iter()
+            .enumerate()
+            .skip(1)
+            .fold(0, |mask, (index, view)| {
+                let draws = !view.is_removed()
+                    && view.fullscreen_pass().is_none()
+                    && view.compute_pass().is_none();
+                mask | (u32::from(draws) << index)
+            });
         for (index, view) in views.iter().enumerate().skip(1) {
             let size = view_size(view);
             let fullscreen = view.fullscreen_pass().is_some() && !view.is_removed();
             let compute = view.compute_pass().is_some() && !view.is_removed();
             self.fullscreen_views |= u32::from(fullscreen) << index;
             self.compute_views |= u32::from(compute) << index;
+            // A material's vertex offset or surface function may sample the target of a compute
+            // pass, or of the fragment form that runs in its place on WebGL2. A pass that fills its
+            // texture before the scene draws has no order that a later pass can break. One that
+            // reads the scene, or the color that the scene draws, does not: a scene pass cannot run
+            // after it without a cycle.
+            let early = !view.is_removed()
+                && view.target().reads & scene_views == 0
+                && (view.compute_pass().is_some_and(|pass| !pass.after_scene)
+                    || view
+                        .fullscreen_pass()
+                        .is_some_and(|pass| !pass.reads_scene()));
+            self.material_views |= u32::from(early) << index;
             if view.canvas_rect().is_some() {
                 // The view draws into the camera's scene color, so it has no target to sample.
                 self.view_colors.push(None);
@@ -3238,6 +3296,7 @@ impl FrameGraph {
             .reads_so_far(SCENE_DEPTH)
             .writes(SCENE_DEPTH)
             .creates(PICK_IDS, ids);
+        let pass = self.reads_views(pass, self.drawn_views.pick & self.material_views);
         self.pick_pass = Some(self.add(pass, Role::Pick));
         let resolve = Pass::new(PICK_RESOLVE_PASS, PassKind::Fullscreen)
             .size(size)
@@ -3382,6 +3441,7 @@ impl FrameGraph {
             if self.skins() {
                 pass = pass.reads(SKINNED);
             }
+            pass = self.reads_views(pass, self.drawn_views.motion & self.material_views);
             self.add(pass, Role::Motion);
         }
         if self.motion_view_draws() {
@@ -3826,6 +3886,9 @@ impl FrameGraph {
             if self.skins() {
                 pass = pass.reads(SKINNED);
             }
+            // A caster whose material samples a compute pass's output draws the same movement as
+            // the material's surface, so that pass runs first.
+            pass = self.reads_views(pass, self.drawn_views.casters & self.material_views);
             let pass = self.add(pass, Role::Shadow(view));
             self.shadow_passes.push(pass);
         }
@@ -3854,6 +3917,7 @@ impl FrameGraph {
             if self.skins() {
                 pass = pass.reads(SKINNED);
             }
+            pass = self.reads_views(pass, self.drawn_views.casters & self.material_views);
             self.add(pass, Role::Shadow(view));
         }
     }
@@ -6167,6 +6231,52 @@ mod tests {
             .prepare(&mut list, (64, 48), RenderScale::FULL)
             .unwrap();
         assert_eq!(step_of(&frames, "Opaque1"), None);
+    }
+
+    #[test]
+    fn a_compute_pass_runs_before_each_pass_that_draws_a_material_reading_it() {
+        // A material's vertex offset may sample a compute pass's output, so every pass that draws
+        // the material reads the output and runs after the pass: a shadow cascade, the motion pass
+        // and the pick.
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        frames.bind_shadow_map(CascadeDepth::Unorm16);
+        frames.set_shadows(Some(ShadowPasses {
+            cascades: 1,
+            map_size: 8,
+            layers: 1,
+        }));
+        frames.sync(&[View::default()]);
+        frames.set_motion(true, None);
+        frames.request_pipelines(&mut PipelineCache::default(), 0);
+        frames.allow_motion(true, true);
+        frames.set_picking(true);
+        let mut list = DrawList::with_capacity(4096);
+        // Nothing ties the pass to the other passes while no material samples it.
+        frames.sync(&[View::default(), compute(true)]);
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        assert!(
+            step_of(&frames, "Opaque1").is_some(),
+            "a texture shows the pass"
+        );
+        assert!(step_of(&frames, "ShadowCascade0").is_some());
+        assert!(step_of(&frames, "Motion").is_some());
+        assert!(step_of(&frames, "Pick").is_some());
+        // Each pass's layout draws a material that samples the pass's target.
+        frames.set_drawn_views(DrawnViews {
+            casters: 1 << 1,
+            motion: 1 << 1,
+            pick: 1 << 1,
+        });
+        frames.sync(&[View::default(), compute(true)]);
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        let pass = step_of(&frames, "Opaque1").expect("the pass runs");
+        assert!(pass < step_of(&frames, "ShadowCascade0").unwrap());
+        assert!(pass < step_of(&frames, "Motion").unwrap());
+        assert!(pass < step_of(&frames, "Pick").unwrap());
     }
 
     /// The step of each named pass in the plan, or `None` for a pass that does not run.

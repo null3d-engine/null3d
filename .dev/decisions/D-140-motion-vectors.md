@@ -145,3 +145,28 @@ On 13 October 2026, the cost page stopped when it enabled motion on WebGPU and c
 The layout rebuilt while the motion pipelines loaded, but its tables uploaded only while the motion view could draw. Once the pipelines finished, no scene change asked for another upload. The first motion frame therefore read a table that had never been made.
 
 The builder now uploads those tables when it rebuilds the requested motion layout. It still waits for the pipelines before drawing motion. A mock-backend test covers motion requested at the start and enabled after ordinary frames. The WebGPU and compatibility mode pages of the cost check measure again after the fix.
+
+## Addendum: the last frame's call says who it is (M3-V3, 24 October 2026)
+
+A vertex offset that reads data a compute pass wrote for this frame and the frame before cannot
+tell the two calls apart from the values the engine gave before. Both calls saw the same uniform
+value and row value, and the texture was whichever image the pass last wrote.
+
+`FrameValues` gains `lastFrame`, a boolean that is false everywhere and true only for the motion
+build's second call, which runs with the frame before's time, step and index. A vertex offset that
+reads a texture holding both frames' data then takes the row for the call it makes:
+
+```wgsl
+var poses: texture_2d<f32>;
+
+fn vertexOffset(input: VertexInput) -> vec3f {
+    let row = select(0, 1, frame.lastFrame);
+    return vec3f(textureLoad(poses, vec2i(0, row), 0).r, 0.0, 0.0);
+}
+```
+
+The main, shadow caster and pick builds set nothing, so they read the frame's own row. The motion
+build still draws the difference of the two calls, as it did: nothing else about the pass changes.
+
+The `compute-vertex-offset` motion test proves it. Without the value both calls read the same row,
+the plane shows no motion, and the test fails on every tier.
