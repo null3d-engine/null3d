@@ -202,6 +202,11 @@ this record's look and answers four questions the record left to the build.
 - **A plant keeps at most 255 branches.** A vertex names its branch's wind record with eight bits.
   A species record whose counts would exceed that stops growing, and the built-in records stay well
   under it.
+- **A conifer's needle card stands for a spray of needles.** The first pictures showed a bare trunk
+  with a few specks. A card 0.05 m wide and 0.3 m tall is less than half a pixel wide at the
+  picture's framing. The card is 0.16 m wide and 0.9 m tall now, and the count stays at 18, so
+  the asset keeps its 498 KB. The needle atlas of M3-V5 draws the needles inside the card, and a
+  card too small for its spray could not carry them.
 - **The asset is one merged mesh for each part at each level, not a set of shared twig modules.**
   The shared-twig idea from the research would need one draw for each module. A scene's 256 batches
   cannot hold the tree variants beside the grass and the impostor cards. The merged parts keep the
