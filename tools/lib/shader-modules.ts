@@ -448,6 +448,32 @@ function compilerEntryFolder(root: string, fingerprint: string): string {
 	return markedFolder(folder, fingerprint);
 }
 
+/**
+ * The folder of the per-entry cache that this checkout's compiler reads and writes, without
+ * building the program. A checkout whose source stamp keeps no program writes that stamp's folder
+ * when it builds. A module set that came from the cache may have been built beside an earlier
+ * stamp's folder, so a folder that keeps a program and records its compiler answers in place of
+ * the source stamp, and the fullest one serves. The entries of that folder are still checked
+ * against each entry's own inputs, so a folder of other sources compiles its entries again.
+ */
+export function entryCacheFolder(root: string): string {
+	const own = join(entryCacheDir(), compilerStamp(root));
+	const kept = keptProgram(own);
+	if (existsSync(kept)) return compilerEntryFolder(root, programFingerprint(kept));
+	let chosen: string | undefined;
+	let most = -1;
+	for (const name of foldersIn(entryCacheDir())) {
+		const folder = join(entryCacheDir(), name);
+		if (compilerMark(folder) === undefined || !existsSync(keptProgram(folder))) continue;
+		const count = entryFiles(folder).length;
+		if (count > most) {
+			chosen = folder;
+			most = count;
+		}
+	}
+	return chosen ?? own;
+}
+
 /** The program of this compiler, and the entry folder that it reads and writes. */
 interface CompilerCache {
 	program: string;

@@ -141,7 +141,15 @@ rebuild everything in 50 to 70 minutes. A change that alters the program gives o
 build reads a folder that only that compiler wrote. The source stamp names a new folder, and it is
 the compiler part of CI's cache keys; when a folder of that name already holds another compiler's
 entries, the new compiler takes `<stamp>-<fingerprint>`. [D-248](decisions/D-248-shader-cache-compiler-program.md)
-gives the reasons and the measurements. On the Mac on 14 October 2026, all 54 entries from cold took 442 s. A
+gives the reasons and the measurements.
+
+CI's restore falls back, after the prefixes that name a stamp, to one that names none. A source
+change that leaves the program identical therefore also restores the entries of an earlier stamp.
+The action saves the folder that the build used, and the build job passes that folder to the shader
+tests. When a shard wrote new entries into an earlier folder, the build job compiles those few
+entries again; the unchanged set is still reused. The figures below are from before this rule.
+
+On the Mac on 14 October 2026, all 54 entries from cold took 442 s. A
 second run with nothing changed took 10.6 s and compiled none. A change to the one file that the two
 cull entries share took 10.4 s and compiled 2 entries. A change to `lib/math.wgsl` compiled the 31
 entries that import it, through `null3d::lighting` and `null3d::area_lights`, and took 356 s.
