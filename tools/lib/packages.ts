@@ -106,7 +106,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		shaders: false,
 		docs: false,
 		needs: [],
-		required: ['dist/shader-compiler.wasm', 'lib/client.d.ts'],
+		required: ['dist/shader-compiler.wasm', 'lib/client.d.ts', 'THIRD-PARTY-NOTICES.txt'],
 	},
 	controls: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
 	impostors: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
@@ -120,6 +120,9 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 	},
 	// The surface function lives in a .wgsl file, which the pack compiles into a module of its own.
 	terrain: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	// Its task module is built as the JavaScript that the job workers import, and its two shaders
+	// compile into modules of their own.
+	splats: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
 	cli: {
 		compile: false,
 		shaders: false,
@@ -128,6 +131,10 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		required: [
 			'dist/assets.wasm',
 			'src/assets/encode-worker.js',
+			'templates/empty/AGENTS.md',
+			'templates/empty/.claude/agent-hook.mjs',
+			'templates/empty/.claude/settings.json',
+			'templates/empty/src/sketch.ts',
 			'vendor/basis/basis_encoder.js',
 			'vendor/basis/basis_encoder.wasm',
 			'vendor/basis/package.json',

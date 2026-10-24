@@ -28,7 +28,7 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 	lines: 'with the first line batch',
 	decals: 'with the first mesh of a decal material (`materials.decal`)',
 	cluster_levels:
-		'at the first frame of a page that draws on the WebGPU path, which builds the pass that picks a tree of cluster patches, whether or not the scene holds one. WebGL2 never builds that pass, so it downloads none of it',
+		'with the first frame that draws a tree of cluster patches (`setMeshPatches`), which builds the pass that picks a tree of patches. A scene without a tree downloads none of it, and WebGL2 never builds that pass',
 	probe_grid: 'when the sketch first sets a light probe grid (`scene.setLightProbeGrid`)',
 	transmission: 'with the first material that lets light through (`transmission`)',
 	translucency:

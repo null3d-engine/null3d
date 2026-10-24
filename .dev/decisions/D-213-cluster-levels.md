@@ -95,9 +95,27 @@ figures go in this table when they are taken.
 
 - The WebGL2 multi-draw path and Firefox's whole-level fallback draw the whole triangle list. The
   tree's cut into whole levels, which the Consequences above promise with this path, is also not
-  built; `--lod` still makes a mesh's whole levels separately.
+  built; `--lod` still makes a mesh's whole levels separately. [D-234](D-234-what-webgl2-draws-for-a-cluster-tree.md)
+  decides what a WebGL2 page draws and what each route still needs.
 - The direct-draw path, which a WebGPU device takes when its start-up probe measures it faster,
   records no cluster pass, so a cluster mesh draws whole there too. The image tests force the
   indirect path with `?direct=off`, and so does the cost page, because the probe's choice moves
   with the machine and with it the picture.
 - The shadow maps draw a cluster mesh whole on both paths, as the concept page says.
+
+## Addendum, 23 October 2026: the pass's shader waits for a tree
+
+The cluster pass's shader moved out of the start into the `cluster_levels` file, which loads on
+first use (`69646f09a`). The path then built the pass's pipeline with the first recorded frame
+of every WebGPU page, whether or not its scene held a tree. A game that plays offline caches the
+start's files and the files of the features it names. It names no cluster feature, so the first
+frame asked for a file the cache did not hold, and the request failed on every start. The offline
+check of the fresh-project test found it.
+
+`GpuDrivenRenderer` now makes the pipeline with the first frame whose layouts hold a tree of cluster
+patches. It keeps the pipeline after that. The culling pipeline beside it does not change, and the
+direct-draw path builds neither of the two. A scene without a tree downloads no cluster shader. A
+scene that gains one builds the pipeline on that frame. The first-use page says so. The test
+`crates/null3d-render/tests/cluster_levels.rs` pins both halves: no tree makes no cluster
+pipeline, and the frame that gains a tree creates the pipeline and dispatches it. A later frame
+creates it no more.

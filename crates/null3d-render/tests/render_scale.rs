@@ -419,11 +419,14 @@ fn check_scaling_switch<B: FrameBuilder>(mut world: World<B>) {
     assert_eq!(render_areas(&commands), [None]);
 
     world.renderer.settings_mut().set_render_scaling(true);
+    // The frame that lets the scale drop makes the second step's pipeline, the final pass's only
+    // build with the upscale, and draws the whole canvas until it is built.
+    let commands = frame_at(&mut world, &mut device, 500);
+    assert_eq!(render_areas(&commands), [None, None]);
+    assert_eq!(common::count(&commands, Op::CreateRenderPipeline), 1);
     let commands = frame_at(&mut world, &mut device, 500);
     let corner = Some([0, 0, 320, 180]);
     assert_eq!(render_areas(&commands), [corner, corner, None]);
-    // The final pass's pipeline was made with the first frame, and both steps draw with its
-    // build, so they draw at once.
     assert_eq!(common::count(&commands, Op::CreateRenderPipeline), 0);
 
     world.renderer.settings_mut().set_render_scaling(false);

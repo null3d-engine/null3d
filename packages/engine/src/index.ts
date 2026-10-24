@@ -117,6 +117,9 @@ export type {
 	FeatureDraw,
 	FeatureDrawOptions,
 	FeatureDrawVertices,
+	FeatureInstances,
+	FeatureInstancesOptions,
+	FeatureRowOptions,
 } from './scene/feature-draws';
 export type { FeatureHandle, FeatureHostOptions } from './scene/feature-host';
 export { FeatureHost } from './scene/feature-host';
@@ -143,6 +146,7 @@ export type {
 export { defineFeature, FeatureRegistry } from './scene/features';
 export type { FogCurve, FogOptions, FogVolumeOptions } from './scene/fog';
 export type { Ray } from './scene/frame-cameras';
+export { registerGltfExtension } from './scene/gltf-extensions';
 export type { LightImagePixels } from './scene/light-images';
 export type { BakeProbesOptions, LightProbeGridOptions } from './scene/light-probes';
 export { bakeProbes, LightProbeGridData, ProbeBake } from './scene/light-probes';

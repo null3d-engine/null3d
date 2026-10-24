@@ -180,6 +180,7 @@ export const PERMUTATION_DEBUG_VIEW_HIGH = 2048;
 export const PERMUTATION_PREPASS = 4096;
 export const PERMUTATION_HALF = 8192;
 export const PERMUTATION_CASTER_OFFSET = 16384;
+export const PERMUTATION_UPSCALE = 16384;
 export const PERMUTATION_BLOOM = 32768;
 export const PERMUTATION_PICK = 32768;
 export const PERMUTATION_OUTLINE_VISIBLE = 65536;
@@ -356,7 +357,7 @@ export const SIZE_LINE_VERTEX_BYTES = 16;
 export const SIZE_SHADOW_UNIFORM_BYTES = 368;
 export const SIZE_SHADOW_TILES_UNIFORM_BYTES = 1936;
 export const SIZE_SHADOW_HERO_UNIFORM_BYTES = 80;
-export const SIZE_BACKGROUND_UNIFORM_BYTES = 144;
+export const SIZE_BACKGROUND_UNIFORM_BYTES = 160;
 
 /** Bytes of one block of texels of each format, by format code: one texel unless compressed. */
 export const FORMAT_BLOCK_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4, 16, 16, 16, 16, 8, 8, 16, 16, 4, 4, 16, 2, 16, 4, 2];

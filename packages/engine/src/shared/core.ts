@@ -173,6 +173,14 @@ export interface CoreGlue extends CoreErrors {
 	drawListAddress(parity: number): number;
 	drawListWords(frame: number): number;
 	/**
+	 * Fills the memory register with what each table and allocator holds, and returns the address
+	 * of three numbers per area: the bytes that it reserves, uses and has used at most. A
+	 * development build asks for a report while the stats overlay shows its card.
+	 */
+	updateMemoryRegister(): number;
+	/** The number of memory areas that `updateMemoryRegister` reports. */
+	memoryAreas(): number;
+	/**
 	 * Makes room for `points` points of debug lines, keeping those written since the last recorded
 	 * frame. The arrays can move, so their addresses must be read again.
 	 */
@@ -341,6 +349,13 @@ export interface CoreGlue extends CoreErrors {
 	 * vertices: it is split into parts, or joints or morph targets pose them.
 	 */
 	createLevelMesh(base: number, indices: number): number;
+	/**
+	 * Gives the live mesh `mesh` the `indices` triangles at `meshArrays`'s address in place of the
+	 * ones it draws, which the call frees. 0 when the mesh takes them. A mesh that is split into
+	 * parts, morphed, a level of its own or drawn as lines returns its fault code, and keeps the
+	 * triangles it had.
+	 */
+	replaceMeshIndices(mesh: number, indices: number): number;
 	/**
 	 * Gives a mesh the tree over its triangles that a model file stores, from the first `bytes`
 	 * bytes at `meshArrays`'s address. 1 when the mesh takes it, 0 when the tree does not fit the
@@ -674,6 +689,17 @@ export interface CoreGlue extends CoreErrors {
 	renderGraphMessage(): string;
 	/** The render graph of the passes as they are now, as Graphviz DOT text. */
 	renderGraphDot(): string;
+	/**
+	 * Turns the development probe of the two-step pass on. Its answers stay zero until it is on, so
+	 * nothing reads them unless the page asked.
+	 */
+	setDebugTwoStep(on: boolean): void;
+	/**
+	 * The two-step answers of the last recorded frame, as the address of five 32-bit words: whether
+	 * the frame wanted the two-step pass, declared it, had its second step built and drew it, then
+	 * the render scale in thousandths. Zero until `setDebugTwoStep(true)`.
+	 */
+	debugTwoStep(): number;
 	/**
 	 * Adds a row to the light table for the object `handle`; `kind` is one of the `LIGHT_KIND_*`
 	 * codes. Returns the light's id.
@@ -1090,6 +1116,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'resetGpu',
 	'drawListAddress',
 	'drawListWords',
+	'updateMemoryRegister',
+	'memoryAreas',
 	'reserveDebugLines',
 	'debugLineArrays',
 	'drawDebugLines',
@@ -1122,6 +1150,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'meshArrays',
 	'createMeshFromArrays',
 	'createLevelMesh',
+	'replaceMeshIndices',
 	'setMeshBvh',
 	'setMeshBlocker',
 	'setMeshPatches',
@@ -1183,6 +1212,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createPassTexture',
 	'renderGraphMessage',
 	'renderGraphDot',
+	'setDebugTwoStep',
+	'debugTwoStep',
 	'createLight',
 	'copyLight',
 	'destroyLight',

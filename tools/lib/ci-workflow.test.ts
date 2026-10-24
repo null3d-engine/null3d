@@ -11,6 +11,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { PRODUCTION_BUILD_PAGES, PRODUCTION_BUILD_TESTS } from '../../tests/lib/server.ts';
 
 interface Step {
+	id?: string;
 	name?: string;
 	run?: string;
 	uses?: string;
@@ -21,6 +22,7 @@ interface Step {
 
 interface Job {
 	needs?: string | string[];
+	outputs?: Record<string, string>;
 	if?: string;
 	env?: Record<string, string>;
 	strategy?: { matrix?: Record<string, unknown> & { include?: Record<string, unknown>[] } };
@@ -193,7 +195,7 @@ describe("CI's workflow", () => {
 			['browser', 'shard'],
 			['browser-alone', 'shard'],
 			['real-browsers', 'shard'],
-			['size-parts', 'part'],
+			['shader-entries', 'shard'],
 		] as const) {
 			const shards = matrixOf(name)[key] as number[];
 			expect(shards, name).toEqual(oneTo(shards.length));
@@ -370,6 +372,79 @@ describe("CI's workflow", () => {
 			expect(needsOf(job), name).toContain('load-pages');
 			expect(hands(job, 'load-pages', 'download'), name).toBe(true);
 		}
+	});
+
+	it('lets every size part read the size memo, which the job that judges the parts keeps', () => {
+		const cacheStep = (job: string, action: string) =>
+			(jobNamed(job).steps ?? []).find(
+				({ uses, with: given }) => uses === action && String(given?.path).endsWith('/size-memo'),
+			);
+		const restore = cacheStep('size-parts', 'actions/cache/restore@v4');
+		const save = cacheStep('wasm-checks', 'actions/cache/save@v4');
+		expect(restore?.with?.path).toBe(save?.with?.path);
+		// Any run's memo serves, so the parts take the newest under the prefix of the key that the
+		// judge saves under.
+		const prefix = String(restore?.with?.['restore-keys']);
+		expect(String(save?.with?.key).startsWith(prefix)).toBe(true);
+		expect(needsOf(jobNamed('wasm-checks'))).toContain('size-parts');
+		// The build job reads the same memo and picks the count of parts, which
+		// tools/lib/size-memo.ts numbers from 1, and the matrix takes it.
+		const build = jobNamed('build');
+		expect(cacheStep('build', 'actions/cache/restore@v4')?.with?.['restore-keys']).toBe(prefix);
+		const pick = (build.steps ?? []).find(({ id }) => id === 'size-parts');
+		expect(pick?.run).toContain('bun tools/lib/size-memo.ts --parts');
+		expect(build.outputs?.['size-parts']).toContain('steps.size-parts.outputs.parts');
+		expect(String(matrixOf('size-parts').part)).toContain(
+			'fromJSON(needs.build.outputs.size-parts)',
+		);
+		expect(needsOf(jobNamed('size-parts'))).toContain('build');
+	});
+
+	it('builds the city in the load pages job, which every job that downloads the city waits for', () => {
+		const cityMode = (job: Job) =>
+			(job.steps ?? []).find(({ uses }) => uses === './.github/actions/city')?.with?.mode;
+		const builders = Object.entries(jobs).filter(([, job]) => cityMode(job) === 'build');
+		// The benchmark pages bundle the city's files, so the job that builds them builds the city too.
+		expect(builders.map(([name]) => name)).toEqual(['load-pages']);
+		const readers = Object.entries(jobs).filter(([, job]) => cityMode(job) === 'download');
+		expect(readers.length).toBeGreaterThan(0);
+		for (const [name, job] of readers) expect(needsOf(job), name).toContain('load-pages');
+	});
+
+	it("keeps the build job's WebAssembly files in the cache, under the build script's own key", () => {
+		const steps = jobNamed('build').steps ?? [];
+		const key = steps.find(({ id }) => id === 'wasm-key');
+		expect(key?.run).toContain('bun tools/build-wasm.ts --cache-key');
+		const cacheOf = (action: string) =>
+			steps.find(
+				({ uses, with: given }) =>
+					uses === action && String(given?.path).endsWith('/wasm-artifacts'),
+			);
+		const restore = cacheOf('actions/cache/restore@v4');
+		const save = cacheOf('actions/cache/save@v4');
+		expect(String(restore?.with?.key)).toContain('steps.wasm-key.outputs.key');
+		expect(save?.with?.key).toBe(restore?.with?.key);
+		// The restore comes before the build that copies the files from it, and the save after.
+		const at = (step: Step | undefined) => steps.indexOf(step as Step);
+		const build = steps.findIndex(({ name }) =>
+			/WebAssembly files that the test pages need/.test(name ?? ''),
+		);
+		expect(at(restore)).toBeLessThan(build);
+		expect(at(save)).toBeGreaterThan(build);
+	});
+
+	it("gives a draft's full run, started by marking it ready, a concurrency group of its own", () => {
+		const group = String((workflow as { concurrency?: { group?: string } }).concurrency?.group);
+		// The pushes after it run in the pull request's own group, so they never cancel it.
+		expect(group).toContain("github.event.action == 'ready_for_review'");
+		expect(group).toContain("format('pr-{0}{1}'");
+		// A later full run waits for it, so it ends with a result.
+		const cancel = String(
+			(workflow as { concurrency?: { 'cancel-in-progress'?: string } }).concurrency?.[
+				'cancel-in-progress'
+			],
+		);
+		expect(cancel).toContain("github.event.action != 'ready_for_review'");
 	});
 
 	it("moves the build job's files and the load builds only through the archive action", () => {

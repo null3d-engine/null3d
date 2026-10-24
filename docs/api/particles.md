@@ -174,6 +174,7 @@ three.js has no particle system of its own. Projects build one from `THREE.Point
 
 ## Related pages
 
+- [The particle buffer](../concepts/particle-buffer.md): the engine table that holds a system's particles, for emitters that you write yourself.
 - [Sprites](sprites.md): quads that the sketch moves itself, one per row.
 - [Points](points.md): squares of one size.
 - [Materials](materials.md): blending and depth writes.

@@ -44,6 +44,10 @@ for (const { tier, query } of TIERS)
 		expect(result.tier).toBe(tier);
 		expect(result.failures).toEqual([]);
 		expect(warnings).toEqual([]);
+		// The page waits its own budget for the fold to settle, then asks once more. A null says the
+		// report never came, which a software GPU's slow build can cause: that names itself here
+		// rather than reading as a shape mismatch further down.
+		expect(result.failed, 'the join timing report arrived').not.toBeNull();
 		expect(result.failed).toEqual([]);
 		expect(result.builtWithBloom).not.toContain('effectFold');
 		if (result.backgroundCompiles) {

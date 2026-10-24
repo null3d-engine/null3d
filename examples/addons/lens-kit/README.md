@@ -3,20 +3,26 @@
 An example add-on that gives a scene one lens: a grade, a sharpening, a vignette and the camera's
 own marks. The grade, the sharpening and the vignette are the engine's own `post` settings, which
 the kit sets from one look; the kit adds no second way to do any of them. The film grain, the
-colour fringes, the anamorphic streak and the speed blur are one full-screen effect of the add-on's
+color fringes, the anamorphic streak and the speed blur are one full-screen effect of the add-on's
 own, each with a value and off at 0.
 
 ## Use
 
 ```ts
-import { createLensKit, nightGrade } from '../../addons/lens-kit/index';
+import { createLensKit } from '../../addons/lens-kit/index';
 
-const lens = await createLensKit(ctx, {
-	sharpen: 0.35,                                     // the core's sharpening
+const lens = createLensKit(ctx, {
+	sharpen: 0.35,                                      // the core's sharpening
 	vignette: { intensity: 0.55, size: 1.05, falloff: 2.2 },
-	grade: { data: nightGrade(), intensity: 0.85 },     // the core's grading table
-	aberration: 0.8,                                    // the effect below
+	grading: {                                          // the core's grading controls
+		lift: [-0.02, -0.02, -0.02],
+		gain: [1.05, 1.05, 1.05],
+		saturation: 1.08,
+		splitToning: { shadows: [0.35, 0.55, 1], highlights: [1, 0.86, 0.66], strength: 0.08 },
+	},
+	aberration: 0.8,                                     // the effect below
 	streak: 0.45,
+	bloomLevel: 2,                                       // the level of bloom's chain the streak reads
 	grain: 0.045,
 	speedBlur: 0.1,
 });
@@ -24,13 +30,17 @@ const lens = await createLensKit(ctx, {
 lens.set({ vignette: false });
 ```
 
-- The grade is a colour table that the add-on bakes from numbers at the setup and gives to the
-  core's grading table. Two ship with it: `nightGrade()` for a night city, and `neutralGrade()` for
-  a view that must show a material's own color. A different grade needs its own table.
-- The effect runs on linear HDR color before bloom and the tone curve, as every effect does. Each
-  of its four values is off at 0, and a look with all four at 0 adds no effect at all.
-- The aberration and the streak read the pixels around each one. At the whole canvas's render scale
-  they join one pass; below it, each effect draws a pass of its own
+- The grade is the core's grading controls, and a job worker bakes them into the table that the
+  final pass reads. The kit keeps no table of its own. A look that must show a material's own color
+  passes `grading: false`.
+- The effect runs on linear HDR color after the exposure and before the tone curve. Each of its
+  four values is off at 0, and a look with all four at 0 adds no effect at all.
+- The streak reads a level of bloom's chain with `effectBloom`, so the chain holds the light that
+  passed bloom's threshold, already blurred. The effect spreads that light sideways instead of
+  blurring the picture again. Bloom must be on, or the streak reads black.
+- The aberration and the speed blur read the pixels around each one. The streak reads bloom's level,
+  so the effect draws a pass of its own; at the whole canvas's render scale, effects that only read
+  their pixels join one pass
   ([The post-processing chain](../../../docs/concepts/post-processing.md#below-the-whole-canvass-render-scale)).
 - Grain changes at 24 steps a second, whatever the frame rate.
 

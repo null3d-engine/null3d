@@ -754,6 +754,12 @@ export const PROBE_SKETCH = 'tests/pages/sketches/probe-sketch.ts';
  * levels. The flat test turns box projection off, so the floor reflects the walls as if they lay
  * far away. The blend test splits the room into two probes that fade into each other. The probe
  * captures in the held frame, whose filter runs before the camera's passes.
+ *
+ * The capture test runs the engine live, because a held frame captures a probe once whatever the
+ * sketch calls. A glowing sphere on a dark floor moves twice: once with probe.capture() after it,
+ * and once without. The page reports the column of the floor's reflection after each move, so the
+ * test proves that a call captures what moved, and that a probe which captures once keeps its map
+ * until one comes.
  */
 function probeTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -766,6 +772,18 @@ function probeTests(): ImageTest[] {
 		test('probe-rough', '?rough'),
 		test('probe-flat', '?flat'),
 		test('probe-blend', '?two'),
+		{
+			name: 'probe-capture',
+			page: 'tests/pages/probe-capture.html',
+			size: [320, 180],
+			// ?target-fps=1 keeps the frame-budget governor from lowering the render scale while a
+			// slow GPU draws the scene, which would draw the settled frame upscaled.
+			switches: ['target-fps=1'],
+			expect: { beforeLeft: true, refreshed: true, stale: true },
+			// Every step waits for the floor's reflection to settle, which a software GPU's slow
+			// frames stretch out.
+			timeoutSeconds: 120,
+		},
 	];
 }
 
@@ -1211,12 +1229,18 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Fifty textures that load in waves in a live engine, a band of rows per frame under a small
 	// upload budget, while their array grows twice, to 64 layers. No frame may upload more than the
 	// budget, and the GPU memory count must match the array.
+	// The budget is half a texture, so the page must draw about 120 frames before every image is on
+	// the GPU. CI's software GPU drew them at about half a second each and published no result
+	// within 60 seconds in any thread mode, its trail still counting frames down to the last few
+	// images. The limit therefore allows about twice what CI's slowest mode needs. The test's worst
+	// case, a page that stalls in every mode, grows to 11 minutes of a shard.
 	{
 		name: 'texture-arrays',
 		page: 'tests/pages/texture-arrays.html',
 		size: [400, 240],
 		modes: ALL_MODES,
 		expect: { withinBudget: true, memoryCounted: true },
+		timeoutSeconds: 120,
 	},
 	// A screen that follows a 1024 x 1024 OffscreenCanvas in the sketch and refreshes a 256 x 256
 	// rectangle of it at most 30 times a second. A refresh uploads only the rectangle, so every
@@ -2351,6 +2375,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/custom-inputs-sketch.ts',
 		hold: 1,
 		size: [480, 270],
+		timeoutSeconds: 120,
 	},
 	// The README's dissolve: a surface function with uniforms and the mask alpha mode, at four
 	// stages of its progress.
@@ -2359,6 +2384,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/custom-dissolve-sketch.ts',
 		hold: 0,
 		size: [480, 270],
+		timeoutSeconds: 120,
 	},
 	// Custom materials with textures: two textures that a surface function samples, the same WGSL
 	// without them, which samples white, a vertex offset that reads a height in the vertex stage,
@@ -2558,6 +2584,31 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'feature-draw',
 		sketch: 'tests/pages/sketches/feature-draw-sketch.ts',
+		hold: 0,
+		modes: ALL_MODES,
+	},
+	// Gaussian splats from an SPZ file that the sketch makes: a knot of splats above a ground, with a
+	// bar in front of part of it, so the picture shows the splats hiding behind a mesh and fading where
+	// they meet the ground. The selection runs on a job worker before the held frame draws.
+	{
+		name: 'splats',
+		sketch: 'tests/pages/sketches/splats-sketch.ts',
+		hold: 0,
+		modes: ALL_MODES,
+	},
+	// The same cloud with the budget capped, so fewer splats draw: the worker keeps the most
+	// important prefix of each chunk, and the picture must differ from the whole cloud's.
+	{
+		name: 'splats-budget',
+		sketch: 'tests/pages/sketches/splats-sketch.ts?budget=9000',
+		hold: 0,
+		modes: ALL_MODES,
+	},
+	// The same add-on's glTF reader: a model that carries KHR_gaussian_splatting, which the add-on
+	// reads as its module loads. Its splats draw in the file's order inside each part.
+	{
+		name: 'splats-gltf',
+		sketch: 'tests/pages/sketches/splats-gltf-sketch.ts',
 		hold: 0,
 		modes: ALL_MODES,
 	},
@@ -2820,6 +2871,19 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(switches.length > 0 && { switches }),
 			...(demo.hdr === false && { expect: { hdr: false } }),
 			...(demo.timeoutSeconds !== undefined && { timeoutSeconds: demo.timeoutSeconds }),
+			// The screens draw their readings into a 2D canvas, and each browser rasterises that
+			// text its own way: the readings and the layout match everywhere, while the digits'
+			// edges differ. On 24 October 2026 Safari differed on 1.0 per cent of the pixels and
+			// Firefox on 1.8, against a device tolerance of half a per cent.
+			...(demo.name === 'canvas-screen' && {
+				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.025 },
+			}),
+			// The rain and the lens marks land on pixels that each browser's own GPU rounds its
+			// own way: every run that judged it found the same city, pose and traffic. Firefox
+			// differed on 0.9 per cent of the pixels on 24 October 2026.
+			...(demo.name === 'skyway' && {
+				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.012 },
+			}),
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
 		};
 	}),

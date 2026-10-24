@@ -13,6 +13,7 @@ use std::collections::TryReserveError;
 use crate::alloc::reserve_len;
 use crate::bitset::Bitset;
 use crate::error::{CoreError, Resource};
+use crate::memory::{MemoryUse, vec_bytes};
 
 /// Bits of a handle that hold the slot index.
 pub const SLOT_BITS: u32 = 20;
@@ -89,6 +90,20 @@ pub struct SlotAllocator {
 }
 
 impl SlotAllocator {
+    /// The bytes that the allocator's arrays hold.
+    pub(crate) fn memory_use(&self) -> MemoryUse {
+        let mut use_ = MemoryUse::default();
+        for table in [
+            vec_bytes(&self.generations),
+            vec_bytes(&self.destroyed_frames),
+            self.live.memory_use(),
+            vec_bytes(&self.free),
+        ] {
+            use_.add(table);
+        }
+        use_
+    }
+
     /// An allocator for slots 1 to `capacity`. Arrays indexed by slot need `capacity + 1` rows,
     /// because slot 0 is never used.
     ///

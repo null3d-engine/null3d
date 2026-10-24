@@ -503,7 +503,7 @@ fn inputs_that_cost_something_build_only_into_materials_that_read_them() {
     let plain = compile(STRIPES).expect("the surface function builds");
     assert!(!plain.object_ids);
     for variant in plain.variants.values() {
-        let wgsl = variant.wgsl.as_ref().map_or("", |w| w.source.as_str());
+        let wgsl = variant.wgsl.as_ref().map_or("", |w| &*w.source);
         assert!(!wgsl.contains("object_ranges") && !wgsl.contains("world_x"));
     }
 }

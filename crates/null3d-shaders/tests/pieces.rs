@@ -336,7 +336,7 @@ fn host_glsl(hosts: &BTreeMap<String, VariantOutput>, build: &str) -> String {
     hosts[build].glsl.as_ref().expect("a GLSL build")["main"]
         .fragment
         .source
-        .clone()
+        .to_string()
 }
 
 /// Reads and validates WGSL with naga, as a browser would refuse it.
@@ -555,7 +555,7 @@ fn an_effect_with_a_loop_joins_and_folds_without_the_hosts_functions() {
             // No item of the piece defines a function that the host's build defines already: a
             // function whose names naga changed in the piece's build stays the host's.
             let (items, source) = match (&piece.wgsl, &piece.glsl) {
-                (Some(wgsl), _) => (&wgsl.items, own.wgsl.as_ref().unwrap().source.clone()),
+                (Some(wgsl), _) => (&wgsl.items, own.wgsl.as_ref().unwrap().source.to_string()),
                 (_, Some(glsl)) => (&glsl.items, host_glsl(&hosts, build)),
                 _ => panic!("{name} {build}: a piece without a build"),
             };
