@@ -1320,6 +1320,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tiers: ['webgpu', 'webgl2'],
 		modes: ALL_MODES,
 	},
+	// A beach and a pond whose water meets a bed that rises to the surface, an island and two stones.
+	// The surface function reads the copy of the opaque scene's depth and fades the water over a band
+	// at the end of its gap to the geometry behind it, so each shoreline is soft rather than a hard
+	// polygon edge. Without the copy the water draws its deep color with no foam line. Every GPU tier
+	// must bind the copy the same way.
+	{
+		name: 'water-shores',
+		sketch: 'tests/pages/sketches/water-shores-sketch.ts',
+		hold: 0,
+		modes: ALL_MODES,
+	},
 	// A box that fixed steps move at 50 steps per second, and a camera that follows it from the late
 	// update, held at 1.5 seconds: the box stays at the center, and every mode runs the same steps.
 	{
