@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { wgslModules } from '../../../tools/lib/wgsl-modules';
 import { CompilerPool } from './compile-pool';
 import { LOAD_BUILDS, ShaderPack, UNPACK } from './pack';
+import { ShaderCache, shaderCacheOff } from './shader-cache';
+import type { ShaderCompiler } from './shader-compiler';
 import type { CompiledMaterial, CompiledWgsl, GlslProgram, ShaderVariant } from './shader-types';
 import { compileLiteral, compileWgslFile, findTaggedWgsl } from './wgsl';
 
@@ -138,7 +140,7 @@ const COMPILES = process.env.NULL3D_SHADER_COMPILER !== undefined;
 const COMPILE_ALL_MS = 600_000;
 
 /** A module's compiled shaders, as the plugin compiles them. Shaders that do not compile are left out. */
-async function compiledShaders(file: string, compiler: CompilerPool): Promise<CompiledWgsl[]> {
+async function compiledShaders(file: string, compiler: ShaderCompiler): Promise<CompiledWgsl[]> {
 	const code = readFileSync(file, 'utf8');
 	const compiled = file.endsWith('.wgsl')
 		? [await compileWgslFile(file, file, code, compiler)]
@@ -151,14 +153,18 @@ async function compiledShaders(file: string, compiler: CompilerPool): Promise<Co
 }
 
 describe.skipIf(!COMPILES)('ShaderPack with the compiler', () => {
-	// The test runs no dev server beside the compiles, so its pool takes every core.
-	const compiler = new CompilerPool(availableParallelism());
-	afterAll(() => compiler.close());
+	const root = join(import.meta.dir, '../../..');
+	// The test runs no dev server beside the compiles, so its pool takes every core. The compiles go
+	// through the plugin's cache in the repository's own cache folder, whose entries name their
+	// source and the compiler's version, so a run after a change to a few modules compiles only
+	// theirs. Turning the build cache off compiles every one.
+	const pool = new CompilerPool(availableParallelism());
+	const compiler = new ShaderCache(() => root, pool, { disabled: shaderCacheOff });
+	afterAll(() => pool.close());
 
 	it(
 		"gives back every byte of each compiled shader in the repository's modules",
 		async () => {
-			const root = join(import.meta.dir, '../../..');
 			const modules = await Promise.all(
 				wgslModules(root).map((file) => compiledShaders(join(root, file), compiler)),
 			);

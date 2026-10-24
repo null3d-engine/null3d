@@ -894,6 +894,17 @@ jobs:
         with:
           mode: download
           name: page-wasm
+      # The packing test's compiled shaders, kept between runs. An entry is named by its request and
+      # the compiler's version, so a kept entry never serves another source or another compiler, and
+      # a change to a few modules compiles only theirs: the whole set took 300 s in run 40077219842.
+      # The key starts empty when the compiler or the plugin changes, as the website's does below.
+      - uses: actions/cache@v4
+        if: steps.passed.outputs.cache-hit != 'true' && matrix.script == 'test:shader-compiler:pack'
+        with:
+          path: node_modules/.cache/null3d-shaders
+          key: shader-pack-compiles-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/vite-plugin/**') }}-${{ steps.modules.outputs.hash }}
+          restore-keys: |
+            shader-pack-compiles-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/vite-plugin/**') }}-
       - name: The Vite plugin's tests through the shader compiler
         if: steps.passed.outputs.cache-hit != 'true'
         run: bun run ${{ matrix.script }}
