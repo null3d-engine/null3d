@@ -7,6 +7,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'The governor undoes a step that does not pay: `governor.ts` with `LOWER_TRIAL_MS` and `LOWER_LOSS_PERCENT`, 6 new tests in `governor.test.ts` including a replay of the resize page, 57 of 57; D-237',
 	'M3-R21':
 		"The gate reads its software-renderer pictures from the commit's own CI browser jobs: `bench/ci-browser-jobs.ts`, 12 tests in `bench/lib/gate.test.ts`; D-238",
+	'M3-R3':
+		"The memory register: `crates/null3d-core/src/memory.rs`, the overlay's `Memory by system` rows in `packages/engine/src/debug/overlay-look.ts`, and D-233's Battle figures, which match D-130 to the byte",
 	'M3-A4':
 		"`bloomLevel` in `packages/engine/src/scene/effects.ts`; the lens kit's streak reads level 3 of bloom's chain, with the `lens-streak` picture on both paths; `docs/api/post.md`",
 	'M3-A6':
@@ -42,9 +44,10 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		"Namespaces for an add-on's shader library, error codes and quality keys: `packages/engine/src/scene/namespaces.ts`",
 	'M3-D9': '`packages/cli/src/check-addon.js`',
 	'M3-E1':
-		'A new kind of draw: `packages/engine/src/scene/features.ts`, `packages/engine/src/scene/scene.ts:4539`',
+		"Splats draw through `scene.addFeatureInstances` (`packages/engine/src/scene/feature-instances.ts`); the `splats`, `splats-budget` and `splats-gltf` pictures on both paths; the draw's size in `tools/lib/size-report.ts`",
 	'M3-E2': 'Add-on tasks on the job workers: `packages/engine/src/shared/tasks.ts`',
-	'M3-E3': 'glTF extension handlers: `packages/engine/src/scene/gltf.ts`, `assets.ts`',
+	'M3-E3':
+		"`registerGltfExtension` in `packages/engine/src/scene/gltf-extensions.ts`; the `splats-gltf` picture, and E1417's hint for `KHR_gaussian_splatting` in `gltf-extensions.test.ts`",
 	'M3-E4':
 		'Scene inputs on a custom material (`sceneInputs`): `packages/engine/src/scene/resources.ts`, `docs/api/materials.md:542`',
 	'M3-E6':
@@ -66,13 +69,17 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-L1':
 		'`crates/null3d-core/src/levels.rs:256` (`distance`, nearest point of the bounds); `crates/null3d-shaders/wgsl/cull.wgsl:363` (`level_of`); `crates/null3d-shaders/wgsl/lib/mesh.wgsl:679-709` (a dither phase per copy); `docs/concepts/lod.md` (fade, distance, small objects, bands)',
 	'M3-L2':
-		'`packages/cli/src/assets/levels.js` (leaf cards); a material per level, `setLevelBias` and skinned levels in `packages/engine/src/scene/scene.ts`; levels as index ranges over the base vertices (`docs/concepts/lod.md:71`)',
+		"`crates/null3d-render/tests/levels.rs` (40,000 copies of four levels take one copy each); levels draw the base mesh's indices over its shared vertices; `lod-material`, `lod-bias` and the skinned-level pictures; D-137's addenda",
+	'M3-F8':
+		"`probe.capture()` again on request, with the moved object's reflection settling: `crates/null3d-render/tests/probes.rs` and the `probe-capture` picture on every tier; `docs/api/scene.md`",
 	'M3-O1':
 		'The script-tag build: `bun run build:cdn` (`tools/build-cdn.ts`); `docs/getting-started/cdn.md` shows the import map and the plain module',
 	'M3-R1':
 		'One feature description: `packages/engine/src/scene/features.ts`, `docs/api/features.md`',
 	'M3-R6':
 		'D-226 records the timings on Chrome and Safari: at most 0.29 ms in Safari, nothing measurable in Chrome, so the pattern stays',
+	'M3-R10':
+		"A sky map redraws only past a visible step: `crates/null3d-render/tests/sky_maps.rs` counts the fills a day cycle records; `tests/image/sky-step.spec.ts` keeps every step within 8 levels of 255 on every tier; D-118's addendum records the fills a minute",
 	'M3-R16':
 		'The starter template and the agent hook it ships: `packages/cli/src/create.js`, `packages/cli/templates/empty/AGENTS.md`, `docs/getting-started/project-structure.md`',
 	'M3-R18':

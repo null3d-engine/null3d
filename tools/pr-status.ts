@@ -36,13 +36,10 @@ const INCOMPLETE = new Set([
 	'M3-A9',
 	'M3-B1',
 	'M3-D9',
-	'M3-E1',
 	'M3-E2',
-	'M3-E3',
 	'M3-E4',
 	'M3-E6',
 	'M3-L1',
-	'M3-L2',
 	'M3-L3',
 	'M3-L4',
 	'M3-R12',
@@ -53,11 +50,7 @@ const INCOMPLETE = new Set([
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
 	'M3-A9': 'the hero shadow draws, but D-219 still holds an empty cost placeholder',
-	'M3-E1':
-		'the hook exists and is unit-tested; its first user (the splats add-on) is not on the branch',
 	'M3-E2':
-		'the hook exists and is unit-tested; its first user is the splats add-on, which is not on the branch',
-	'M3-E3':
 		'the hook exists and is unit-tested; its first user is the splats add-on, which is not on the branch',
 	'M3-E4':
 		'the hook exists and is unit-tested; its first user is the splats add-on, which is not on the branch',
@@ -68,8 +61,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		'the command fails on an add-on that imports the engine internal entry, but no test or recorded run calls it on the foundation add-ons',
 	'M3-L1':
 		'every item is built with its pictures, but D-211 records Mac figures alone: the phone GPU time the fade item asks for, and the iPad and phone figures the section asks for, are missing',
-	'M3-L2':
-		'the render order and the instanced feature draw are built; its picture references are not drawn',
 	'M3-L3':
 		'the WebGPU path draws the patches, but D-213 records the WebGL2 multi-draw path, the whole-level fallback and the GPU time as not built',
 	'M3-L4': 'the impostor cards are done; staged loading, coarse first, is not',
