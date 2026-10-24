@@ -38,13 +38,11 @@ const INCOMPLETE = new Set([
 	'M3-B1',
 	'M3-D9',
 	'M3-E2',
-	'M3-E4',
 	'M3-E6',
 	'M3-E8',
 	'M3-E10',
 	'M3-L1',
 	'M3-L3',
-	'M3-L4',
 	'M3-R12',
 ]);
 
@@ -54,8 +52,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		'the hero tile and its cost figures are in: a still hero adds no pass, a moving one adds a depth pass of 0.028 to 0.037 ms, and WebGL2 reads the tile for 0.27 ms less than the cascades (D-219)',
 	'M3-E2':
 		"the task hook and the splats add-on's distance selection run on the job workers on both paths; the allocation check the task asks for is missing",
-	'M3-E4':
-		"the depth input is built and splats mix with meshes by depth; water's soft shores, the task's first user, are not on the branch",
 	'M3-E6':
 		"splats' budget follows the preset and reaches the overlay; water's reflection cadence, the other first user, is not on the branch",
 	'M3-E8':
@@ -69,7 +65,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		'every item is built with its pictures, but D-211 records Mac figures alone: the phone GPU time the fade item asks for, and the iPad and phone figures the section asks for, are missing',
 	'M3-L3':
 		'the WebGPU path draws the patches, but D-213 records the WebGL2 multi-draw path, the whole-level fallback and the GPU time as not built',
-	'M3-L4': 'the impostor cards are done; staged loading, coarse first, is not',
 	'M3-F3':
 		'dropped with the temporal resolve it waited on (D-206); the owner may change the ruling',
 	'M3-F10': 'dropped with the temporal resolve it needs (D-206); the owner may change the ruling',
