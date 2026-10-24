@@ -735,18 +735,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { part: 1, shard: 0/12 }
-          - { part: 2, shard: 1/12 }
-          - { part: 3, shard: 2/12 }
-          - { part: 4, shard: 3/12 }
-          - { part: 5, shard: 4/12 }
-          - { part: 6, shard: 5/12 }
-          - { part: 7, shard: 6/12 }
-          - { part: 8, shard: 7/12 }
-          - { part: 9, shard: 8/12 }
-          - { part: 10, shard: 9/12 }
-          - { part: 11, shard: 10/12 }
-          - { part: 12, shard: 11/12 }
+          - { part: 1, shard: 0/20 }
+          - { part: 2, shard: 1/20 }
+          - { part: 3, shard: 2/20 }
+          - { part: 4, shard: 3/20 }
+          - { part: 5, shard: 4/20 }
+          - { part: 6, shard: 5/20 }
+          - { part: 7, shard: 6/20 }
+          - { part: 8, shard: 7/20 }
+          - { part: 9, shard: 8/20 }
+          - { part: 10, shard: 9/20 }
+          - { part: 11, shard: 10/20 }
+          - { part: 12, shard: 11/20 }
+          - { part: 13, shard: 12/20 }
+          - { part: 14, shard: 13/20 }
+          - { part: 15, shard: 14/20 }
+          - { part: 16, shard: 15/20 }
+          - { part: 17, shard: 16/20 }
+          - { part: 18, shard: 17/20 }
+          - { part: 19, shard: 18/20 }
+          - { part: 20, shard: 19/20 }
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
@@ -836,9 +844,10 @@ jobs:
     # takes as long as the others together, so it runs in a part of its own. A part whose inputs
     # passed in an earlier run passes again, as the shader-compiler shards do. Its key names the
     # files that decide what the compiler and the shader modules hold, the plugin and the test
-    # helper that its tests import, and the repository's WGSL that the part compiles: every module
-    # of the test pages, the fixtures and the demos for the packing test, and the two files whose
-    # declarations the plugin's tests compare for the other part.
+    # helper that its tests import, and the repository's WGSL that the part compiles: the modules
+    # with WGSL of the test pages, the fixtures and the demos for the packing test, which
+    # tools/lib/wgsl-modules.ts lists, and the two files whose declarations the plugin's tests
+    # compare for the other part.
     name: shader-compiler-plugin (${{ matrix.script }})
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
@@ -854,9 +863,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with: *without-references
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      # The packing test compiles the `.wgsl` files and the scripts with tagged WGSL of the test
+      # pages, the fixtures and the demos, so its key holds those modules alone: a change to a page
+      # or a demo that holds no WGSL passes it again. The whole folders once made a key that changed
+      # with almost every push, and the part took 5.5 to 6.8 minutes each time.
+      - name: The hash of the modules that the packing test compiles
+        id: modules
+        if: matrix.script == 'test:shader-compiler:pack'
+        run: bun tools/lib/wgsl-modules.ts >> "$GITHUB_OUTPUT"
       - name: The key of this part's inputs
         id: inputs
-        run: echo "key=passed-v1-shader-compiler-plugin-${{ matrix.script }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}-${{ matrix.script == 'test:shader-compiler:pack' && hashFiles('tests/pages/**', 'tests/fixtures/**', 'examples/**') || hashFiles('tests/fixtures/typed-uniforms/**', 'tests/pages/sketches/shaders/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=passed-v2-shader-compiler-plugin-${{ matrix.script }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'tools/lib/wgsl-modules.ts', 'tools/lib/build-cache.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}-${{ matrix.script == 'test:shader-compiler:pack' && steps.modules.outputs.hash || hashFiles('tests/fixtures/typed-uniforms/**', 'tests/pages/sketches/shaders/**') }}" >> "$GITHUB_OUTPUT"
       - name: Find an earlier pass with the same inputs
         id: passed
         uses: actions/cache/restore@v4
@@ -864,12 +885,6 @@ jobs:
           path: target/passed
           key: ${{ steps.inputs.outputs.key }}
           lookup-only: true
-      - uses: oven-sh/setup-bun@v2
-        if: steps.passed.outputs.cache-hit != 'true'
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - if: steps.passed.outputs.cache-hit != 'true'
-        run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
         if: steps.passed.outputs.cache-hit != 'true'
         with:
