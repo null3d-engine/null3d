@@ -391,6 +391,10 @@ pub(super) struct Layout {
     object_ranges: ObjectRanges,
     ranges_pending: bool,
     pub(super) buckets: Vec<Bucket>,
+    /// The views whose pass targets the buckets' materials sample, as a mask of view places.
+    pub(super) material_views: u32,
+    /// The views whose pass targets the buckets' pick pipelines sample, as a mask of view places.
+    pub(super) pick_views: u32,
     /// The slots of the buckets that read copies, and of those that read indices, which each
     /// view's compacted instance buffer holds after the copies.
     pub(super) copied: u32,
@@ -698,6 +702,8 @@ impl Layout {
         self.waiting.clear();
         self.indirect_template.clear();
         self.bucket_records.clear();
+        self.material_views = 0;
+        self.pick_views = 0;
     }
 
     /// The shown scene objects that the sketch marks as occluders.
@@ -1076,6 +1082,8 @@ impl Layout {
         self.cluster_patches.clear();
         self.cluster_indices.clear();
         self.parallax = false;
+        self.material_views = 0;
+        self.pick_views = 0;
         let (mut copied, mut indexed) = (0, 0);
         for &(key, count) in key_counts.iter() {
             let (pipeline, group, _, mesh, material, bounds) = key;
@@ -1196,6 +1204,13 @@ impl Layout {
             };
             let base = if by_index { &mut indexed } else { &mut copied };
             self.parallax |= parallax;
+            // The pass targets that this bucket's material samples, so a pass that draws the
+            // bucket waits for the pass that writes them.
+            let sampled = settings.textures().group_pass_views(group);
+            self.material_views |= sampled;
+            if pick_maps {
+                self.pick_views |= sampled;
+            }
             // A bucket draws its material's surface function in the camera's opaque or skin pass,
             // and only a custom material's own reads the copy of the scene's depth. The shadow,
             // outline, motion and pick builds drop it.

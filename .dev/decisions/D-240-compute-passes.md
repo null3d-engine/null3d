@@ -182,3 +182,36 @@ same floats that the compute block's eight vectors hold.
 - **Size:** the pass costs nothing on a page that does not add one. The three bind group layouts
   wait for first use. The start's growth is the option checks and the call, and the size check
   reports it.
+
+## Addendum: every pass that draws a reader waits for the pass (M3-V3, 24 October 2026)
+
+M3-V3 needed a custom material's vertex offset to read a compute pass's output in every build that
+draws the material, the shadow caster, motion and pick builds among them. The graph ordered the
+pass before the camera's passes, because their opaque and prepass passes read the target of every
+view that a texture shows. The shadow, motion and pick passes read no view target at all, so the
+pass could run after them: a shadow then drew the frame before's data, and a pick or motion pass
+that ran first drew the target's initial zeros.
+
+**The rule.** Each of those three passes reads, and so runs after, every early pass's target that
+the materials it draws sample:
+
+- `DrawnViews` holds a mask of view places for each of the shadow, motion and pick passes. The
+  builders fill it from their layouts: the maps group of every bucket's draw, through
+  `TextureStore::group_pass_views`. A layout rebuilds only when the scene changes, so the frame
+  reads masks that the layout already worked out.
+- `FrameGraph::declare` keeps a mask of the views that fill their texture before the scene draws:
+  compute passes, and the fragment forms that run in their place on WebGL2. A pass at `'resolve'`
+  or `'post'` reads the scene color, and a pass whose textures show a camera's target reads that
+  target, so neither is left in: a scene pass cannot run after it without a cycle.
+- Each shadow cascade and tile, the motion pass and the pick pass reads the intersection of its
+  layout's mask and that mask.
+
+**Why this is right.** The edge follows the data, not the kind of pass: a material that samples a
+pass's texture is drawn with it in every pass, so every such pass waits. The masks are exact for
+the layouts the engine draws, so a material that samples no pass texture adds no edge, and the
+shadows of a scene without compute passes keep their order.
+
+**Tests.** A render graph test holds a compute pass and a shadow cascade whose caster samples it,
+and checks the cascade's step comes after the pass. The `compute-vertex-offset` image test draws a
+box that a vertex offset moves by the pass's output, in the main view and its shadow, on both
+paths, and the motion spec reads the plane's motion back from the debug view.

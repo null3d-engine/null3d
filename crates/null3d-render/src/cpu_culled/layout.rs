@@ -184,6 +184,10 @@ pub(super) struct Layout {
     object_ranges: ObjectRanges,
     ranges_pending: bool,
     pub(super) buckets: Vec<Bucket>,
+    /// The views whose pass targets the buckets' materials sample, as a mask of view places.
+    pub(super) material_views: u32,
+    /// The views whose pass targets the buckets' pick pipelines sample, as a mask of view places.
+    pub(super) pick_views: u32,
     /// Every bucket's draws, in bucket order. Buckets are sorted by pipeline and by the vertex page
     /// of their mesh's first part, so the draws of one pipeline and page sit together, apart from
     /// the later parts of meshes split over several pages. The outlined layout lists every
@@ -270,6 +274,8 @@ impl Layout {
         self.batches.clear();
         self.waiting.clear();
         self.room = CullRoom::default();
+        self.material_views = 0;
+        self.pick_views = 0;
     }
 
     /// The pipelines of the skinned objects that the layout leaves out, which must be built before
@@ -569,6 +575,8 @@ impl Layout {
         self.draws.clear();
         self.second_draws.clear();
         self.level_links.clear();
+        self.material_views = 0;
+        self.pick_views = 0;
         for &(key, _) in key_counts.iter() {
             let (pipeline, textures, _, mesh, material, group) = key;
             let mesh = levels
@@ -623,6 +631,17 @@ impl Layout {
                     shift,
                     moves,
                 });
+                // The pass targets that this key's material samples, so a pass that draws it waits
+                // for the pass that writes them.
+                if textures != 0 {
+                    self.material_views |= settings.textures().group_pass_views(textures);
+                }
+                if motion_textures != 0 {
+                    self.material_views |= settings.textures().group_pass_views(motion_textures);
+                }
+                if pick != 0 && pick_textures != 0 {
+                    self.pick_views |= settings.textures().group_pass_views(pick_textures);
+                }
                 for part in meshes.parts(slot, lines) {
                     let draw = Draw {
                         pipeline,
