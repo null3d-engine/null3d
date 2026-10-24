@@ -547,6 +547,6 @@ One coordinator session often runs several helper agents at once, each in its ow
 
   A third check, added after the same mistake three times in one night: no process has its working
   directory in the tree. A helper between commits looks idle by branch and tree, and a build started
-  from a folder keeps running after the folder goes, so `lsof +D <path>` is the only thing that says
-  whether work is in flight. On 25 October 2026 a CSS3D worktree was removed while its rebuild ran,
+  from a folder keeps running after the folder goes, so the process's own working directory is the only thing that says whether
+  work is in flight: `lsof -d cwd | grep <path>` lists them cheaply, where `lsof +D` walks the whole tree. On 25 October 2026 a CSS3D worktree was removed while its rebuild ran,
   which cost that helper its build rather than its commits, and only because it had pushed first.
