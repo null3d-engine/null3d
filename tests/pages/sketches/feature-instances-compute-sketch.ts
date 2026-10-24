@@ -14,17 +14,17 @@ const FILL = /* wgsl */ `
 
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) id: vec3u) {
-    const k = id.x;
+    let k = id.x;
     if (k >= 42u) {
         return;
     }
-    const columns = 7u;
-    const column = f32(k % columns);
-    const row = f32(k / columns);
-    const x = (column - 3.0) * 0.9;
-    const y = (row - 2.0) * 0.9;
-    const size = 0.14 + 0.02 * f32(k % 5u);
-    const at = k * 4u;
+    let columns = 7u;
+    let column = f32(k % columns);
+    let row = f32(k / columns);
+    let x = (column - 3.0) * 0.9;
+    let y = (row - 2.0) * 0.9;
+    let size = 0.14 + 0.02 * f32(k % 5u);
+    let at = k * 4u;
     instances[at] = vec4f(size, 0.0, 0.0, x);
     instances[at + 1u] = vec4f(0.0, size, 0.0, y);
     instances[at + 2u] = vec4f(0.0, 0.0, size, 0.0);
