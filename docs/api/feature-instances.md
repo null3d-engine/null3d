@@ -42,7 +42,7 @@ struct Varyings {
 
 @vertex
 fn vs(@location(0) position: vec3f, i: InstanceIn) -> Varyings {
-  const found = find_instance(i);
+  let found = find_instance(i);
   var out: Varyings;
   out.clip = clip_position(found, mesh_position(position) * 0.1);
   out.color = vec4f(1.0, 0.6, 0.2, 1.0);
