@@ -9,6 +9,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'The governor undoes a step that does not pay: `governor.ts` with `LOWER_TRIAL_MS` and `LOWER_LOSS_PERCENT`, 6 new tests in `governor.test.ts` including a replay of the resize page, 57 of 57; D-237',
 	'M3-R21':
 		"The gate reads its software-renderer pictures from the commit's own CI browser jobs: `bench/ci-browser-jobs.ts`, 12 tests in `bench/lib/gate.test.ts`; D-238",
+	'M3-R20':
+		'Two clauses were missing and are built: a page that draws under about two frames a second is now judged at its gap, and a software renderer stays off the two-step path after a step fails. `governor.ts` compares the longest busy frame with half the gap and closes the whole scale below a failed step, `shared/software.ts` holds the one name test for a CPU renderer; the trap page `tests/image/governor-trap.spec.ts` passes 10 of 10 on the Mac software renderer over every thread mode and both paths, and the stress test settles at scale 0.55 with no change of direction and holds 90% of 60 fps in 15 of 15 seconds on WebGL2. 64 of 64 governor tests pass, each new test failing without its fix; D-237',
 	'M3-R19':
 		"The two-step pass's second step read per pass on the cloud iPad at High with the governor on, three runs: D-236's addendum holds the table — the six earlier passes cost 0.7 to 3.4 ms each and the frame's last pass, which draws the second step, cost 20.5 to 34.9 ms; the run is recorded under `.dev/tested-devices/ipad-pro-13-safari/`. The earlier 0.5-scale pair could not be reproduced, and the record says so",
 	'M3-R17':
