@@ -1,11 +1,12 @@
 import { afterAll, describe, expect, it } from 'bun:test';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { availableParallelism, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { wgslModules } from '../../../tools/lib/wgsl-modules';
 import { CompilerPool } from './compile-pool';
 import { LOAD_BUILDS, ShaderPack, UNPACK } from './pack';
 import type { CompiledMaterial, CompiledWgsl, GlslProgram, ShaderVariant } from './shader-types';
-import { compileLiteral, compileWgslFile, findTaggedWgsl, WGSL_TAG } from './wgsl';
+import { compileLiteral, compileWgslFile, findTaggedWgsl } from './wgsl';
 
 /** Library text that every build shares, as the engine's standard material's builds do. */
 const LIBRARY = Array.from(
@@ -133,25 +134,6 @@ describe('ShaderPack', () => {
  */
 const COMPILES = process.env.NULL3D_SHADER_COMPILER !== undefined;
 
-/** The folders whose modules hold the repository's own WGSL: the test sketches and the demos. */
-const WGSL_FOLDERS = ['tests/pages', 'tests/fixtures', 'examples'];
-
-/** Every module of those folders with WGSL, as the plugin compiles it: scripts and `.wgsl` files. */
-function wgslModules(root: string): string[] {
-	const files: string[] = [];
-	for (const folder of WGSL_FOLDERS)
-		for (const file of readdirSync(join(root, folder), { recursive: true, encoding: 'utf8' })) {
-			if (file.includes('node_modules')) continue;
-			const path = join(root, folder, file);
-			if (
-				path.endsWith('.wgsl') ||
-				(/\.[cm]?[jt]sx?$/.test(path) && WGSL_TAG.test(readFileSync(path, 'utf8')))
-			)
-				files.push(path);
-		}
-	return files.sort();
-}
-
 /** The time that compiling every module of the repository may take on a CI runner. */
 const COMPILE_ALL_MS = 600_000;
 
@@ -178,7 +160,7 @@ describe.skipIf(!COMPILES)('ShaderPack with the compiler', () => {
 		async () => {
 			const root = join(import.meta.dir, '../../..');
 			const modules = await Promise.all(
-				wgslModules(root).map((file) => compiledShaders(file, compiler)),
+				wgslModules(root).map((file) => compiledShaders(join(root, file), compiler)),
 			);
 			let full = 0;
 			let packed = 0;
