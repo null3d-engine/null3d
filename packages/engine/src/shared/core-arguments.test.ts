@@ -25,6 +25,10 @@ const MAKERS = new Set([
 	'createClipLater',
 	'setReflectionProbe',
 	'setMaterialDisplacement',
+	// A sky layer is installed with its pipeline, built from the page's template, so the call
+	// allocates whether or not it takes fractions. It takes the sun's share and the layer's
+	// opacity, which are shares by nature.
+	'setSkyLayer',
 ]);
 
 /** Each call that the core exports, by its JavaScript name, with its Rust parameters. */
