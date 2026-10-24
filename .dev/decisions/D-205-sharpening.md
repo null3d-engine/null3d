@@ -2,8 +2,8 @@
 
 Status: decided by the M3-A10 task on 21 October 2026, for the owner's review. Built: the
 `post.set({ sharpen })` value, RCAS in `final.wgsl`, the two-step pass at the whole canvas's scale,
-the image tests and the cost page. The Mac's cost and the device costs are not recorded yet. Date:
-2026-10-21. Task: M3-A10.
+the image tests and the cost page. The Mac's cost is recorded below; the iPad's and the S24-class
+phone's costs are not recorded yet. Date: 2026-10-21. Task: M3-A10.
 
 Summary: A sharpening value from 0 to 1 sharpens display color with FSR 1's RCAS in the second step
 of the final pass. That step now draws at the whole canvas's render scale while the value is set. It
@@ -44,11 +44,30 @@ How the data was produced: the pass's builds and taps were read from `final.wgsl
 `frame_graph.rs`, and D-167 records the split's own figures.
 
 The cost of the sharpening, measured on the Mac, is in the table below. `bun run test:browser --
-sharpen-cost.spec.ts` with `NULL3D_SHARPEN_COST=1` drew a wall of 32 x 32 boxes at 1920 x 1080. It
-timed the frame with the sharpening off and on, in turns, three times each.
+sharpen-cost.spec.ts` with `NULL3D_SHARPEN_COST=1` drew a wall of 32 x 32 boxes. The canvas was
+1920 x 1080. It timed the frame with the sharpening off and on, in turns, three times each. The
+frame interval was 16.665 ms on every side, the rate of the headless window. The drawing thread's
+CPU time stayed between 0.09 and 0.12 ms.
 
 | Measure | Off | On | Device and browser |
 | --- | --- | --- | --- |
+| GPU time per frame, WebGPU, scale 1 | 0.852 ms | 1.245 ms | Apple M5 Max, Chrome 155, load 7.4 before and 6.6 after |
+| GPU time per frame, WebGPU, scale 0.5 | 0.852 ms | 0.852 ms | Apple M5 Max, Chrome 155, load 6.6 before and 7.0 after |
+| GPU time per frame, compatibility mode, scale 1 | 0.786 ms | 1.245 ms | Apple M5 Max, Chrome 155, load 7.0 before and 7.2 after |
+| GPU time per frame, compatibility mode, scale 0.5 | 0.852 ms | 0.852 ms | Apple M5 Max, Chrome 155, load 7.2 before and 9.1 after |
+| GPU time per frame, WebGL2, scale 1 | 1.550 ms | 1.932 ms | Apple M5 Max, Chrome 155, load 7.9 before and 7.4 after |
+| GPU time per frame, WebGL2, scale 0.5 | 1.289 ms | 1.289 ms | Apple M5 Max, Chrome 155, load 7.4 before and 6.7 after |
+
+So at the whole canvas's scale the sharpening adds 0.393 ms on WebGPU, 0.459 ms in compatibility
+mode and 0.382 ms on WebGL2. Each is the cost of one more full-screen pass at this size, plus the
+four taps that cross each pixel. That is the cost the rule counts, and no preset setting changes. At
+scale 0.5 the value adds nothing on any path, because the upscale sharpens there already.
+
+How the data was produced: a local Playwright run of the cost page through `heavy.sh` in the quiet
+window. The run took one test at a time on 24 October 2026. Each test waited until the 1-minute load
+fell under 8 and printed it before and after. The device column gives those readings. The load rose
+to 9.1 after the compatibility-mode half-scale test, when other work started. That test's two sides
+read the same figure.
 
 ## Decision
 
