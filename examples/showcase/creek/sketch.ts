@@ -191,7 +191,7 @@ export default defineSketch(async (ctx) => {
 	const stones = createStones(ctx, detail.rock, detail.texture, models.cave);
 	// The stream's middle line, sampled finely over the land and coarsely down the gorges.
 	const middle: [number, number][] = [];
-	for (let x = -GORGE.end; x <= GORGE.end; x += Math.abs(x) < 70 ? 1.5 : 8)
+	for (let x = -GORGE.end; x < GORGE.end; x += Math.abs(x) < 70 ? 1.5 : 8)
 		middle.push([x, streamZ(x)]);
 	middle.push([GORGE.end, streamZ(GORGE.end)]);
 	const water = createWater(ctx, {
