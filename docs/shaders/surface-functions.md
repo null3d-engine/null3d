@@ -254,19 +254,31 @@ A surface function reads the depth of the opaque scene behind its point. The eng
 ```wgsl
 struct Uniforms { shallow: vec3f, deep: vec3f, foam: vec3f }
 
+/// The distance in front of the camera of a depth value, as sceneDistance converts the copy's.
+fn distance_of(depth: f32) -> f32 {
+    let near = engine_frame.camera_range.x;
+    let far = engine_frame.camera_range.y;
+    if engine_frame.camera_position.w > 0.5 {
+        return near * far / (near + depth * (far - near));
+    }
+    return far - depth * (far - near);
+}
+
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     let uv = input.fragCoord.xy / frame.resolution;
-    let behind = sceneDistance(uv);
-    s.baseColor = mix(material.shallow, material.deep, smoothstep(1.0, 8.0, behind));
+    // The water's depth along the view ray: the gap to the surface behind the sheet.
+    let gap = max(sceneDistance(uv) - distance_of(input.fragCoord.z), 0.0);
+    s.baseColor = mix(material.shallow, material.deep, smoothstep(0.05, 1.5, gap));
     // Foam where an opaque surface nearly touches the sheet.
-    s.baseColor = mix(s.baseColor, material.foam, 1.0 - smoothstep(0.1, 0.6, behind));
-    s.alpha = mix(0.45, 0.9, smoothstep(1.0, 8.0, behind));
+    s.baseColor = mix(s.baseColor, material.foam, 1.0 - smoothstep(0.0, 0.12, gap));
+    s.alpha = smoothstep(0.0, 0.12, gap);
     return s;
 }
 ```
 
 - `input.fragCoord` counts pixels from the top left on both GPU paths, so `input.fragCoord.xy / frame.resolution` is the screen's place.
+- The water's depth is the gap between the sheet and the surface behind it, not the distance to that surface alone. A shore that fades its alpha over the last centimeters of the gap ends softly against the bank, instead of on the sheet's edge.
 - Read the helpers in the surface function, not in a vertex offset. The depth belongs to the pixels, and the vertex stage does not bind it.
 - A surface that draws before the copy exists reads 0, the far plane. That is a surface in the opaque pass, and any surface in a scene pass or a reflection pass.
 - The engine makes the copy while a material that declares the input draws, whatever the quality preset says.

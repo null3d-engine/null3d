@@ -717,14 +717,26 @@ A surface function can read the depth of the opaque scene behind it. This gives 
 
 ```ts
 const water = /* wgsl */ `
-struct Uniforms { shallow: vec3f, deep: vec3f }
+struct Uniforms { shallow: vec3f, deep: vec3f, foam: vec3f }
+
+/// The distance in front of the camera of a depth value, as sceneDistance converts the copy's.
+fn distance_of(depth: f32) -> f32 {
+    let near = engine_frame.camera_range.x;
+    let far = engine_frame.camera_range.y;
+    if engine_frame.camera_position.w > 0.5 {
+        return near * far / (near + depth * (far - near));
+    }
+    return far - depth * (far - near);
+}
 
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     let uv = input.fragCoord.xy / frame.resolution;
-    let behind = sceneDistance(uv);
-    s.baseColor = mix(material.shallow, material.deep, smoothstep(1.0, 8.0, behind));
-    s.alpha = mix(0.45, 0.9, smoothstep(1.0, 8.0, behind));
+    // The water's depth along the view ray: the gap to the surface behind the sheet.
+    let gap = max(sceneDistance(uv) - distance_of(input.fragCoord.z), 0.0);
+    s.baseColor = mix(material.shallow, material.deep, smoothstep(0.05, 1.5, gap));
+    s.baseColor = mix(s.baseColor, material.foam, 1.0 - smoothstep(0.0, 0.12, gap));
+    s.alpha = smoothstep(0.0, 0.12, gap);
     return s;
 }
 `;
@@ -733,12 +745,13 @@ const sheet = materials.shader({
     sceneInputs: ['sceneDepth'],
     alphaMode: 'blend',
     depthWrite: false,
-    uniforms: { shallow: '#8fe0d2', deep: '#0b4a63' },
+    uniforms: { shallow: '#8fe0d2', deep: '#0b4a63', foam: '#f2fbff' },
 });
 ```
 
 - `sceneDepth(uv)` gives the scene's depth with 1 at the camera's near plane and 0 at its far plane, and 0 where nothing drew.
 - `sceneDistance(uv)` gives the distance in front of the camera of that surface, in world units.
+- The water's depth is the gap between the sheet and the surface behind it. Convert the sheet's own depth, `input.fragCoord.z`, to a distance with `engine_frame.camera_range`, and subtract it from `sceneDistance(uv)`. A shore that fades over that gap ends softly against the bank instead of on the sheet's edge.
 - `input.fragCoord` counts pixels from the top left of the render target on both GPU paths, so `input.fragCoord.xy / frame.resolution` is the `uv` of the point.
 - The engine copies the opaque scene's depth after the opaque pass and before the transparent pass. A blended surface therefore reads the surfaces behind it.
 - A surface in the opaque pass reads 0, the far plane, because the copy comes later. A surface in a scene pass or a reflection pass reads 0 too, because its view makes no copy.
