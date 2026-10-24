@@ -129,10 +129,19 @@ an input changes, and one opt-out. `NULL3D_NO_CACHE=1`, or Vite's `--force`, ign
 [D-175](decisions/D-175-vite-plugin-shader-cache.md) gives the figures and the key.
 
 The engine's own shader build has a per-entry cache too. `bun run shaders`, and every command that
-runs it, passes `--cache ~/.cache/null3d/shader-cache/<stamp>` to `shader-build`, where the stamp
-hashes the compiler's sources. The build keeps each entry's compiled output under that folder. A
-change to one shader then compiles only that shader, and a change to a library module compiles only
-the entries that import it. On the Mac on 14 October 2026, all 54 entries from cold took 442 s. A
+runs it, passes `--cache ~/.cache/null3d/shader-cache/<folder>` to `shader-build`. The build keeps
+each entry's compiled output under that folder. A change to one shader then compiles only that
+shader, and a change to a library module compiles only the entries that import it.
+
+The folder is the one whose `compiler` file records the same fingerprint as the compiled
+`shader-build` program's bytes, and the fullest one when several match. A compiler source change
+that leaves the program identical, such as a comment or a test in a dependency crate, therefore
+reuses every entry: on 24 October 2026, 79 of 79 reused in 19 s where the same change used to
+rebuild everything in 50 to 70 minutes. A change that alters the program gives other bytes, and the
+build reads a folder that only that compiler wrote. The source stamp names a new folder, and it is
+the compiler part of CI's cache keys; when a folder of that name already holds another compiler's
+entries, the new compiler takes `<stamp>-<fingerprint>`. [D-248](decisions/D-248-shader-cache-compiler-program.md)
+gives the reasons and the measurements. On the Mac on 14 October 2026, all 54 entries from cold took 442 s. A
 second run with nothing changed took 10.6 s and compiled none. A change to the one file that the two
 cull entries share took 10.4 s and compiled 2 entries. A change to `lib/math.wgsl` compiled the 31
 entries that import it, through `null3d::lighting` and `null3d::area_lights`, and took 356 s.
@@ -162,8 +171,9 @@ A shard whose part the cache holds as a whole entry reads the part's builds from
 ([D-235](decisions/D-235-shader-entry-parts.md)). `--entries-out <folder>` copies the entries that the run stored into
 the folder, and none that the cache held before. Shard 0 also copies its program there, so the job
 that joins the entries does not compile it. Several machines can then each fill a share of the
-cache. A build that first copies their folders into `<entries-dir>/<stamp>`, the folder that
-`bun tools/shaders.ts --cache-keys` names, compiles none of their entries. One entry,
+cache. A build that first copies their folders into the folder that
+`bun tools/shaders.ts --cache-keys` names, `<entries-dir>/<stamp>`, which a run with an empty
+entries cache writes, compiles none of their entries. One entry,
 `standard_maps`, makes 77.8% of the builds. With whole entries, its shard took about three quarters
 of a whole build: 23.2 minutes in run 39799984654.
 
