@@ -170,7 +170,7 @@ async function gzip(bytes: Uint8Array): Promise<Blob> {
 }
 
 export default defineSketch(async (ctx) => {
-	const { scene, geometry, materials } = ctx;
+	const { scene, geometry, materials, page } = ctx;
 	scene.setBackground('#0a0d14');
 	const camera = scene.createPerspectiveCamera({
 		fov: 40,
@@ -200,5 +200,29 @@ export default defineSketch(async (ctx) => {
 	camera.getPosition(eye);
 	splats.update(eye);
 	await splats.settle();
-	return {};
+	// The selection tells a page how much of the cloud draws against the budget that the preset
+	// gives, so a device check can compare the two. A report waits for a packed selection, so a
+	// change of the budget never reports the count that the pack before it left.
+	let lastDrawn = -1;
+	/** The preset's budget, or the lower cap that the page asked for. */
+	const cap = (): number =>
+		BUDGET > 0
+			? Math.min(BUDGET, splats.feature.settings.drawn as number)
+			: (splats.feature.settings.drawn as number);
+	const report = (): void => {
+		lastDrawn = splats.drawn;
+		page.post('splats', {
+			total: splats.total,
+			drawn: lastDrawn,
+			chunks: splats.chunks,
+			budget: cap(),
+		});
+	};
+	report();
+	return {
+		onUpdate() {
+			splats.update(eye);
+			if (splats.drawn !== lastDrawn) report();
+		},
+	};
 });
