@@ -208,3 +208,19 @@ export function steadyPlaces(samples: readonly Sample[]): [string, Steady][] {
 	}
 	return steady.sort((a, b) => b[1].perFrame - a[1].perFrame || b[1].most - a[1].most);
 }
+
+/** A place's bytes per call in the sample where that figure was least, with that sample's calls. */
+export function perCall(
+	samples: readonly Sample[],
+	name: string,
+): { perCall: number; calls: number } | null {
+	let best: { perCall: number; calls: number } | null = null;
+	for (const { places, calls } of samples) {
+		if (!calls || calls < 1) continue;
+		const place = places.get(name);
+		const bytes = Math.max(0, (place?.bytes ?? 0) - (place?.burst ?? 0));
+		const figure = bytes / calls;
+		if (best === null || figure < best.perCall) best = { perCall: figure, calls };
+	}
+	return best;
+}

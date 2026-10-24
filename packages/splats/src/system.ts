@@ -22,7 +22,7 @@ import { chunkSplats, type SplatChunk } from './chunks';
 import { checkSplats, type SplatData, splatsError } from './format';
 // The module registers the glTF extension as the add-on loads.
 import './gltf';
-import { type SplatSelection, SplatSelector } from './select';
+import { SplatSelector } from './select';
 import splatShader from './splats.wgsl';
 import { VERSION } from './version';
 
@@ -205,9 +205,13 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 	let version = 0;
 	let selector: SplatSelector | undefined;
 	let selectorChunks = 0;
-	let last: SplatSelection | undefined;
-	let eye: [number, number, number] = [0, 0, 0];
-	let lastEye: [number, number, number] = [0, 0, 0];
+	// The counts and the total of the selection that fills the draw, which keeps its own copy so a
+	// later selection in the shared buffer can differ from it without allocating.
+	let lastCounts = new Float32Array(0);
+	let lastTotal = -1;
+	// The camera's position at the last ask, in a typed array, so a frame's ask allocates nothing.
+	const eye = new Float64Array(3);
+	const lastEye = new Float64Array(3);
 	let lastBudget = -1;
 	let dirty = true;
 	let inFlight = false;
@@ -228,14 +232,26 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 	/** The callers that wait for a settled selection, which the next one answers. */
 	const waiters: (() => void)[] = [];
 	const settleWaiters = (): void => {
-		if (inFlight || dirty) return;
+		if (inFlight || dirty || waiters.length === 0) return;
 		for (const resolve of waiters.splice(0)) resolve();
 	};
 
 	const budgetNow = (): number =>
 		Math.min(capacity, Math.floor(override ?? (feature.settings.drawn as number)));
 
-	const pack = (selection: SplatSelection): void => {
+	/** The prefix views of each chunk, which change only when its chosen count does. */
+	const prefixes: (
+		| {
+				count: number;
+				positions: Float32Array;
+				rotations: Float32Array;
+				scales: Float32Array;
+				colors: Float32Array;
+		  }
+		| undefined
+	)[] = [];
+
+	const pack = (counts: Float32Array): void => {
 		const { batch } = draw;
 		const { positions, rotations, scales, colors } = batch;
 		if (!colors)
@@ -244,12 +260,26 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 		for (let i = 0; i < chunks.length; i++) {
 			const chunk = chunks[i] as SplatChunk;
 			// A chunk that arrived after the worker chose takes its turn in the next selection.
-			const count = Math.min(selection.counts[i] ?? 0, chunk.count);
-			if (!(count > 0)) continue;
-			positions.set(chunk.positions.subarray(0, count * 3), at * 3);
-			rotations.set(chunk.rotations.subarray(0, count * 4), at * 4);
-			scales.set(chunk.scales.subarray(0, count * 3), at * 3);
-			colors.set(chunk.colors.subarray(0, count * 4), at * 4);
+			const count = Math.min(counts[i] as number, chunk.count);
+			if (!(count > 0)) {
+				prefixes[i] = undefined;
+				continue;
+			}
+			let prefix = prefixes[i];
+			if (!prefix || prefix.count !== count) {
+				prefix = {
+					count,
+					positions: chunk.positions.subarray(0, count * 3),
+					rotations: chunk.rotations.subarray(0, count * 4),
+					scales: chunk.scales.subarray(0, count * 3),
+					colors: chunk.colors.subarray(0, count * 4),
+				};
+				prefixes[i] = prefix;
+			}
+			positions.set(prefix.positions, at * 3);
+			rotations.set(prefix.rotations, at * 4);
+			scales.set(prefix.scales, at * 3);
+			colors.set(prefix.colors, at * 4);
 			at += count;
 		}
 		if (at > 0) batch.markDirty(0, at);
@@ -257,47 +287,62 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 		drawn = at;
 	};
 
+	/** The ask that waits for its answer, and the chunk version that it saw. */
+	let asking: SplatSelector | undefined;
+	let askedVersion = 0;
+
+	/** Takes the answer: fills the draw again when the counts or the total changed. */
+	const selected = (_output: boolean): void => {
+		inFlight = false;
+		const asked = asking;
+		asking = undefined;
+		if (stop || !asked) return;
+		const total = asked.total;
+		const changed = total !== lastTotal || differs(asked.counts, lastCounts);
+		if (changed) {
+			lastTotal = total;
+			// A chunk that arrived while the worker chose changed the list's length.
+			if (lastCounts.length !== asked.counts.length)
+				lastCounts = new Float32Array(asked.counts.length);
+			lastCounts.set(asked.counts);
+			pack(asked.counts);
+		}
+		// A chunk that arrived while the worker chose draws in the next selection.
+		dirty = version !== askedVersion;
+		settleWaiters();
+		// A caller that waits for a settled set keeps the selections coming.
+		if (waiters.length > 0) choose();
+	};
+
+	/** Gives up on the selection, and reports the first failure. */
+	const failed = (error: unknown): void => {
+		inFlight = false;
+		dirty = false;
+		asking = undefined;
+		if (reported === undefined) {
+			reported = error instanceof Error ? error : new Error(String(error));
+			console.error(`splats: the selection failed. ${reported.message}`);
+		}
+		settleWaiters();
+	};
+
 	const choose = (): void => {
 		if (stop || !selector || inFlight) return;
 		const budget = budgetNow();
 		const moved =
-			Math.abs(eye[0] - lastEye[0]) +
-				Math.abs(eye[1] - lastEye[1]) +
-				Math.abs(eye[2] - lastEye[2]) >
+			Math.abs((eye[0] as number) - (lastEye[0] as number)) +
+				Math.abs((eye[1] as number) - (lastEye[1] as number)) +
+				Math.abs((eye[2] as number) - (lastEye[2] as number)) >
 			0.25;
 		if (!dirty && !moved && budget === lastBudget) return;
 		inFlight = true;
-		const seen = version;
-		lastEye = [eye[0], eye[1], eye[2]];
+		askedVersion = version;
+		asking = selector;
+		lastEye[0] = eye[0] as number;
+		lastEye[1] = eye[1] as number;
+		lastEye[2] = eye[2] as number;
 		lastBudget = budget;
-		selector
-			.select(eye, budget)
-			.then((selection) => {
-				inFlight = false;
-				if (stop) return;
-				const changed =
-					last === undefined ||
-					selection.total !== last.total ||
-					selection.counts.some((count, i) => count !== (last as SplatSelection).counts[i]);
-				if (changed) {
-					last = selection;
-					pack(selection);
-				}
-				// A chunk that arrived while the worker chose draws in the next selection.
-				dirty = version !== seen;
-				settleWaiters();
-				// A caller that waits for a settled set keeps the selections coming.
-				if (waiters.length > 0) choose();
-			})
-			.catch((error: unknown) => {
-				inFlight = false;
-				dirty = false;
-				if (reported === undefined) {
-					reported = error instanceof Error ? error : new Error(String(error));
-					console.error(`splats: the selection failed. ${reported.message}`);
-				}
-				settleWaiters();
-			});
+		selector.select(eye, budget).then(selected, failed);
 	};
 
 	return {
@@ -323,10 +368,16 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 			});
 		},
 		update(next) {
-			eye = [next[0] ?? 0, next[1] ?? 0, next[2] ?? 0];
+			eye[0] = next[0] ?? 0;
+			eye[1] = next[1] ?? 0;
+			eye[2] = next[2] ?? 0;
 			if (chunks.length !== selectorChunks) {
 				selectorChunks = chunks.length;
 				selector = selectorChunks > 0 ? new SplatSelector(chunks) : undefined;
+				// A new selector has counts of its own, and the draw keeps the last set until the
+				// worker answers for this one.
+				lastCounts = new Float32Array(selectorChunks);
+				lastTotal = -1;
 				dirty = true;
 			}
 			choose();
@@ -337,6 +388,13 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 			draw.destroy();
 		},
 	};
+}
+
+/** True when two lists of chunk counts differ, in length or in any count. */
+function differs(a: Float32Array, b: Float32Array): boolean {
+	if (a.length !== b.length) return true;
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return true;
+	return false;
 }
 
 /** Downloads an SPZ file, and decodes it. */

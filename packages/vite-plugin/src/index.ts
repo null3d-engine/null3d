@@ -294,9 +294,40 @@ export function inlineLimit(
 	};
 }
 
-/** True for a sketch module: a script that calls `defineSketch`. */
-function isSketchModule(path: string): boolean {
-	return existsSync(path) && readFileSync(path, 'utf8').includes('defineSketch(');
+/**
+ * True for a module that a page passes by address for a worker to import, such as a sketch or an
+ * add-on's task: a script file whose imports the build must resolve. The address of a script reaches
+ * a worker as it is, so a build that copied a TypeScript file with its types would hand the worker a
+ * file it cannot parse. Built output under `dist/` ships as it is, as the engine's core does.
+ */
+function isImportedModule(path: string): boolean {
+	const file = path.split('?')[0] ?? path;
+	if (file.includes('/dist/')) return false;
+	return SCRIPT_FILE.test(file) && existsSync(file);
+}
+
+/**
+ * Empties the preload lists of the chunks that a worker imports. Vite's preload helper adds a link
+ * to the page's head for each file that a dynamic import needs, and it reads `document`, which a
+ * worker has not. A sketch module and a task module run in workers, with every chunk they import,
+ * so their lists go: an import still fetches its own file, as any worker's import does.
+ */
+export function emptyWorkerPreloads(bundle: Rollup.OutputBundle, seeds: readonly string[]): void {
+	const seen = new Set<string>();
+	const stack = [...seeds];
+	while (stack.length > 0) {
+		const file = stack.pop() as string;
+		if (seen.has(file)) continue;
+		seen.add(file);
+		const chunk = bundle[file];
+		if (chunk?.type !== 'chunk') continue;
+		stack.push(...chunk.imports, ...chunk.dynamicImports);
+	}
+	for (const file of seen) {
+		const chunk = bundle[file];
+		if (chunk?.type !== 'chunk' || !chunk.code.includes('__vite__mapDeps(')) continue;
+		chunk.code = chunk.code.replace(/__vite__mapDeps\(\s*\[[^\]]*\]\s*\)/g, '[]');
+	}
 }
 
 /**
@@ -394,6 +425,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	const packageOf = null3dPackages();
 	/** The optimized files that this build has written, so each texture goes in once. */
 	const emitted = new Map<string, string>();
+	/** The chunks emitted for the scripts that a worker imports, by their rollup reference. */
+	const workerChunks = new Set<string>();
 	/** Compiles WGSL on worker threads, so the dev server answers other requests meanwhile. */
 	const compiler = new CompilerPool();
 	/** Keeps each compiled shader in the project's cache, so a later build skips the compile. */
@@ -496,6 +529,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		},
 		buildStart() {
 			emitted.clear();
+			workerChunks.clear();
 			earlyCoreId = undefined;
 			earlyCoreSought = false;
 			if (!building) return;
@@ -661,13 +695,14 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 						const address = match[2] ?? '';
 						if (isGeneratedShaderFile(id, address)) continue;
 						const script = await this.resolve(address, id);
-						if (!script || !isSketchModule(script.id)) continue;
-						// The sketch worker imports the compiled module by this address.
+						if (!script || !isImportedModule(script.id)) continue;
+						// The worker imports the compiled module by this address, as a sketch or a task.
 						const ref = this.emitFile({
 							type: 'chunk',
 							id: script.id,
 							preserveSignature: 'strict',
 						});
+						workerChunks.add(ref);
 						out ??= new MagicString(code);
 						out.overwrite(
 							start,
@@ -730,6 +765,13 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		generateBundle: {
 			order: 'post',
 			handler(_options, bundle) {
+				// The scripts that a worker imports run there, where the page's preload helper has no
+				// document to read.
+				if (workerChunks.size > 0)
+					emptyWorkerPreloads(
+						bundle,
+						[...workerChunks].map((ref) => this.getFileName(ref)),
+					);
 				const tables = emitParagraphTables.call(this, bundle, root);
 				if (buildingPages) {
 					const files = offlineFiles(listedFiles(bundle, workerFiles, packageOf, root, tables));
