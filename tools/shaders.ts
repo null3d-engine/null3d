@@ -3,7 +3,9 @@
 //   bun tools/shaders.ts
 // `--cache-keys` builds nothing. It prints the two shared shader caches' folders and the keys that a
 // build of this checkout reads them by, as name=value lines, so CI keeps those folders under the
-// same keys. It also prints the Actions cache's key of the two folders, `key`, and the prefixes
+// same keys. `stamp` names the folder that a run with an empty entries cache writes; a build that
+// finds entries of a compiler with the same program bytes reads that compiler's folder instead.
+// It also prints the Actions cache's key of the two folders, `key`, and the prefixes
 // that a job falls back on, `branch-keys` and then `stamp-keys`. Each branch keeps its own
 // entries, so the next push to it restores what the last one built, and restores another
 // branch's entries of the same compiler when it has none. A pull request's run keeps them under
@@ -11,8 +13,9 @@
 // The branch and the runner's system come from the runner's GITHUB_REF_NAME and RUNNER_OS:
 //   bun tools/shaders.ts --cache-keys >> "$GITHUB_OUTPUT"
 // `--entries-shard i/n` compiles only shard i of n, counted from 0, of the manifest's entries, split
-// by estimated build cost, into the per-entry cache that a normal build reads, at
-// `<entries-dir>/<stamp>`. An entry that costs more than an even share goes to the shards in parts,
+// by estimated build cost, into the per-entry cache that a normal build reads, in the folder that
+// the shader build program's bytes choose. A run that starts with an empty cache, as each CI job
+// does, writes the folder that `stamp` names. An entry that costs more than an even share goes to the shards in parts,
 // which the cache keeps beside the entry's key and a later build joins. It writes no module. With `--entries-out <folder>`, it also copies the
 // entries that it stored there, and none that the cache held before, so each of several CI jobs can
 // upload its own new entries, and the job that builds the modules can put them all back into that
@@ -58,9 +61,9 @@ try {
 		console.log(`branch-keys=${prefix}${scope}`);
 		console.log(`stamp-keys=${prefix}`);
 	} else if (shard !== undefined) {
-		const stored = buildEntriesShard(root, shard, out);
+		const { stored, folder } = buildEntriesShard(root, shard, out);
 		console.log(
-			`Shard ${shard} stored ${stored.length} new shader entries in ${join(entryCacheDir(), compilerStamp(root))}${out === undefined ? '.' : `, and copied them to ${out}.`}`,
+			`Shard ${shard} stored ${stored.length} new shader entries in ${folder}${out === undefined ? '.' : `, and copied them to ${out}.`}`,
 		);
 	} else if (out !== undefined) {
 		throw new Error('--entries-out goes with --entries-shard');

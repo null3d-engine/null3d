@@ -53,6 +53,9 @@ function withScratchCaches(run: () => void, cargoStatus = 3, script = ''): void 
 		else process.env.NULL3D_BUILD_CACHE = before.cache;
 		if (before.path === undefined) delete process.env.PATH;
 		else process.env.PATH = before.path;
+		// A test that logs the folders its stub program read names the log this way, and no other
+		// test may inherit it.
+		delete process.env.ENTRY_LOG;
 		rmSync(folder, { recursive: true, force: true });
 	}
 }
@@ -284,30 +287,54 @@ describe('the shader modules', () => {
 });
 
 describe('a shard of the shader entries', () => {
-	// The stub cargo notes each build in the checkout's target folder, and builds a stand-in for the
-	// shader build, which stores one new entry in the folder it is given.
+	// The stub cargo notes each build in the checkout's target folder, and copies the checkout's
+	// `program-shape` as the shader build. A test gives that shape the program that it needs: the
+	// program stores one new entry in the folder it is given, and writes that folder to `ENTRY_LOG`
+	// when the test sets it.
 	const buildsProgram = `
 if [ "$1" = build ]; then
 	mkdir -p "$CARGO_TARGET_DIR/shader"
 	echo build >> "$CARGO_TARGET_DIR/cargo-builds"
-	cat > "$CARGO_TARGET_DIR/shader/shader-build" <<'EOF'
-#!/bin/sh
-while [ $# -gt 0 ]; do if [ "$1" = --cache ]; then mkdir -p "$2"; echo {} > "$2/lit.new.json"; fi; shift; done
-EOF
+	cp "$PWD/program-shape" "$CARGO_TARGET_DIR/shader/shader-build"
 	chmod 755 "$CARGO_TARGET_DIR/shader/shader-build"
 fi`;
+
+	const shape = `#!/bin/sh
+while [ $# -gt 0 ]; do
+	if [ "$1" = --cache ]; then
+		mkdir -p "$2"
+		if [ -n "$ENTRY_LOG" ]; then echo "$2" >> "$ENTRY_LOG"; fi
+		echo {} > "$2/lit.new.json"
+	fi
+	shift
+done`;
+
+	/** A repository whose stub program has the given text, and the log of the folders it read. */
+	function shardRepository(program = shape): { root: string; log: string } {
+		const root = repository();
+		writeFileSync(join(root, 'program-shape'), program);
+		const log = join(root, 'entry-folders');
+		process.env.ENTRY_LOG = log;
+		return { root, log };
+	}
 
 	it('copies the entries that it stored, and none that the cache held before', () => {
 		withScratchCaches(
 			() => {
-				const root = repository();
+				const { root } = shardRepository();
 				const folder = join(entryCacheDir(), compilerStamp(root));
 				mkdirSync(folder, { recursive: true });
 				writeFileSync(join(folder, 'pick.old.json'), '{}');
 				const out = join(root, 'target', 'shader-entries');
-				expect(buildEntriesShard(root, '1/2', out)).toEqual(['lit.new.json']);
+				expect(buildEntriesShard(root, '1/2', out).stored).toEqual(['lit.new.json']);
 				expect(readdirSync(out)).toEqual(['lit.new.json']);
-				expect(readdirSync(folder).sort()).toEqual(['lit.new.json', 'pick.old.json', 'program']);
+				// The folder records the compiler whose program wrote the entries it holds.
+				expect(readdirSync(folder).sort()).toEqual([
+					'compiler',
+					'lit.new.json',
+					'pick.old.json',
+					'program',
+				]);
 			},
 			0,
 			buildsProgram,
@@ -317,17 +344,77 @@ fi`;
 	it("keeps the program under its compiler's stamp, and the first shard hands it over", () => {
 		withScratchCaches(
 			() => {
-				const root = repository();
+				const { root } = shardRepository();
 				const out = join(root, 'target', 'shader-entries');
-				buildEntriesShard(root, '0/2', out);
+				const first = buildEntriesShard(root, '0/2', out);
+				expect(first.folder).toBe(join(entryCacheDir(), compilerStamp(root)));
 				expect(readdirSync(out).sort()).toEqual(['lit.new.json', 'program']);
 				expect(readdirSync(join(out, 'program'))).toEqual(['shader-build']);
 				// Another checkout of the same compiler runs the kept program, and cargo builds nothing.
 				const other = repository();
-				rmSync(join(entryCacheDir(), compilerStamp(root), 'lit.new.json'));
-				expect(buildEntriesShard(other, '1/2')).toEqual(['lit.new.json']);
+				rmSync(join(first.folder, 'lit.new.json'));
+				const second = buildEntriesShard(other, '1/2');
+				expect(second.stored).toEqual(['lit.new.json']);
+				expect(second.folder).toBe(first.folder);
 				expect(readFileSync(join(root, 'target', 'cargo-builds'), 'utf8')).toBe('build\n');
 				expect(existsSync(join(other, 'target', 'cargo-builds'))).toBe(false);
+			},
+			0,
+			buildsProgram,
+		);
+	});
+
+	it('keeps every entry when a compiler source changes but its program does not', () => {
+		withScratchCaches(
+			() => {
+				const { root, log } = shardRepository();
+				const first = buildEntriesShard(root, '0/1');
+				// A comment in a crate that the compiler depends on changes the stamp of its sources.
+				writeFileSync(join(root, 'crates/null3d-gpu/src/lib.rs'), '// a comment\n');
+				const second = buildEntriesShard(root, '0/1');
+				expect(second.folder).toBe(first.folder);
+				expect(readFileSync(log, 'utf8').trim().split('\n')).toEqual([first.folder, first.folder]);
+			},
+			0,
+			buildsProgram,
+		);
+	});
+
+	it('takes a folder of its own when another compiler holds the stamp', () => {
+		withScratchCaches(
+			() => {
+				const { root } = shardRepository();
+				// A folder of another compiler under this source stamp: its entries share the stamp
+				// in their keys, so this compiler must not write its entries beside them.
+				const named = join(entryCacheDir(), compilerStamp(root));
+				mkdirSync(named, { recursive: true });
+				writeFileSync(join(named, 'compiler'), 'another compiler\n');
+				writeFileSync(join(named, 'pick.old.json'), '{}');
+				const run = buildEntriesShard(root, '0/1');
+				expect(run.folder).not.toBe(named);
+				expect(run.folder.startsWith(`${named}-`)).toBe(true);
+				// The other compiler's folder keeps its marker and entry.
+				expect(readFileSync(join(named, 'compiler'), 'utf8').trim()).toBe('another compiler');
+				expect(existsSync(join(named, 'pick.old.json'))).toBe(true);
+			},
+			0,
+			buildsProgram,
+		);
+	});
+
+	it('never reads a folder whose recorded program has other bytes', () => {
+		withScratchCaches(
+			() => {
+				const { root } = shardRepository();
+				const first = buildEntriesShard(root, '0/1');
+				// A program that compiles differently is another compiler, so its entries are its own.
+				writeFileSync(join(root, 'crates/null3d-gpu/src/lib.rs'), 'pub const A: u32 = 1;\n');
+				writeFileSync(join(root, 'program-shape'), `${shape}\n# another output\n`);
+				const second = buildEntriesShard(root, '0/1');
+				expect(second.folder).not.toBe(first.folder);
+				expect(readFileSync(join(first.folder, 'compiler'), 'utf8').trim()).not.toBe(
+					readFileSync(join(second.folder, 'compiler'), 'utf8').trim(),
+				);
 			},
 			0,
 			buildsProgram,
