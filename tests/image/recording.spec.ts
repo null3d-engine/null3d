@@ -97,3 +97,28 @@ test('a recorded session replays to the same frames', async ({ page }) => {
 	expect(held?.replay?.frames).toBe(replayed.length);
 	expect(held?.replay?.stopped).toBe(false);
 });
+
+test('the device page records a session with a long frame', async ({ page }) => {
+	// The page drives its own keyboard and touch, holds a frame long enough to be a hitch, saves,
+	// and publishes the session. The device run uses the same page, so this checks it here.
+	await page.goto('recording-device.html?record&threads=off');
+	await page.waitForFunction(
+		() => (globalThis as { __null3dResult?: unknown }).__null3dResult !== undefined,
+		undefined,
+		{ timeout: 60_000 },
+	);
+	const result = await page.evaluate(
+		() =>
+			(globalThis as { __null3dResult?: Record<string, unknown> }).__null3dResult as {
+				ok: boolean;
+				error?: string;
+				frames: number;
+				longestStep: number;
+				recording: string;
+			},
+	);
+	expect(result.ok, result.error).toBe(true);
+	expect(result.frames).toBeGreaterThan(20);
+	expect(result.longestStep).toBeGreaterThanOrEqual(0.2);
+	expect(result.recording.length).toBeGreaterThan(100);
+});
