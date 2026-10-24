@@ -1246,6 +1246,14 @@ pub fn draw_list_words(frame: u32) -> u32 {
     value_with_engine(|e| Ok(e.renderer.list(frame).len() as u32))
 }
 
+/// The generation of the plan's texture list, which changes when a pass change makes the frame
+/// make some targets again. A frame's list recorded under an older generation names textures that
+/// a later plan replaced, so the thread that draws skips it.
+#[wasm_bindgen(js_name = planEpoch)]
+pub fn plan_epoch() -> u32 {
+    value_with_engine(|e| Ok(e.renderer.plan_epoch()))
+}
+
 // --- The memory register, which only development pages read ---
 //
 // Each table and allocator reports the bytes that it reserves, uses and has used at most. A report
@@ -4096,6 +4104,21 @@ pub fn set_auto_exposure(on: bool) -> u32 {
             compensation: value(place::AUTO_EXPOSURE_COMPENSATION),
         });
         e.renderer.settings_mut().set_auto_exposure(auto_exposure);
+        0
+    })
+}
+
+/// Turns temporal anti-aliasing on, a prototype, or off with a `feedback` of 0, from the next
+/// frame on. `feedback` is the history's share in thousandths, and `jitter` moves the camera by
+/// the sequence's sub-pixel offsets.
+#[wasm_bindgen(js_name = setTaa)]
+pub fn set_taa(feedback: u32, jitter: bool) -> u32 {
+    with_engine(|e| {
+        let taa = (feedback > 0).then(|| null3d_render::taa::Taa {
+            feedback: feedback.min(990) as f32 / 1000.0,
+            jitter,
+        });
+        e.renderer.settings_mut().set_taa(taa);
         0
     })
 }

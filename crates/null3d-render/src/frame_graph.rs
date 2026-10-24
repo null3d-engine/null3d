@@ -197,6 +197,7 @@ use crate::shadow_tiles;
 use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
 use crate::ssr::{self, LastView, SsrIds, SsrPass, TraceFrame};
 use crate::subsurface::{self, SubsurfaceFrame, SubsurfaceIds, SubsurfacePass, SubsurfaceSources};
+use crate::taa::{self, TaaFrame, TaaIds, TaaPass, TaaSources};
 use crate::transmission::{TransmissionCopy, TransmissionIds};
 use crate::view::{CanvasRect, Compute, Fullscreen, PassSource, View, ViewId, ViewNames};
 use crate::view_copy::{ViewCopies, ViewCopyIds};
@@ -236,6 +237,8 @@ pub(crate) struct GraphIds {
     pub(crate) dof: DofIds,
     pub(crate) exposure: ExposureIds,
     pub(crate) fog: FogVolumeIds,
+    /// Temporal anti-aliasing's objects (a prototype).
+    pub(crate) taa: TaaIds,
     /// The copies of views' images into their targets, which only WebGPU makes.
     pub(crate) view_copy: Option<ViewCopyIds>,
     /// The copy of the camera's opaque color that surfaces which let light through sample.
@@ -389,6 +392,12 @@ const FOG_SUM_PASS: &str = "FogSum";
 const FOG_SUMMED: &str = "fogSummed";
 const FOG_APPLY_PASS: &str = "FogApply";
 const FOG_COLOR: &str = "fogColor";
+/// The resolve's step and the copy into each of the two histories.
+const TAA_PASSES: [&str; taa::STEPS + 1] = ["TaaResolve", "TaaCopy0", "TaaCopy1"];
+/// The resolve's target, which the chain after it reads in place of the scene color.
+const TAA_COLOR: &str = "taaColor";
+/// The kept targets that hold the resolved color of the last frame of each parity.
+const TAA_HISTORIES: [&str; 2] = ["taaHistory0", "taaHistory1"];
 /// An effect slot that holds no effect.
 const NO_EFFECT: Effect = Effect {
     template: 0,
@@ -584,6 +593,8 @@ pub(crate) enum Role {
     FogSum,
     /// The volumetric fog's apply step, which the graph records itself.
     FogApply,
+    /// A step of temporal anti-aliasing, by its place. The graph records it itself.
+    Taa(u8),
     /// Copies a view's image into its target with its rows turned around, on WebGPU. The graph
     /// records it itself.
     ViewCopy(ViewId),
@@ -723,6 +734,7 @@ enum BuiltGroup {
     Transmission,
     Weighted,
     ParticleDepth,
+    Taa,
 }
 
 /// The render graph of a frame builder's passes, the textures its draw lists made for the compiled
@@ -944,6 +956,19 @@ pub(crate) struct FrameGraph {
     fog_declared: u32,
     /// The textures that the volumetric fog's steps read, found once for each compile of the graph.
     fog_textures: CompileCache<FogVolumeSources>,
+    /// Temporal anti-aliasing's steps and their GPU objects, once the sketch first turns it on.
+    taa_pass: Option<TaaPass>,
+    /// The GPU objects that temporal anti-aliasing's steps take.
+    taa_ids: TaaIds,
+    /// What temporal anti-aliasing resolves with in the frame, while the sketch turns it on.
+    taa: Option<TaaFrame>,
+    /// True once temporal anti-aliasing's pipelines draw: built, after the frame whose list
+    /// created them.
+    taa_built: bool,
+    /// True when the declared passes hold temporal anti-aliasing's steps.
+    taa_declared: bool,
+    /// The textures that its steps read, found once for each compile of the graph.
+    taa_textures: CompileCache<TaaSources>,
     /// Ambient occlusion's steps and their GPU objects, once ambient occlusion first draws.
     ao_pass: Option<AoPass>,
     /// The GPU objects that ambient occlusion's steps take.
@@ -1215,6 +1240,12 @@ impl FrameGraph {
             fog_built: false,
             fog_declared: 0,
             fog_textures: CompileCache::default(),
+            taa_pass: None,
+            taa_ids: ids.taa,
+            taa: None,
+            taa_built: false,
+            taa_declared: false,
+            taa_textures: CompileCache::default(),
             ao_pass: None,
             ao_ids: ids.ao,
             ao: None,
@@ -1331,6 +1362,8 @@ impl FrameGraph {
         }
         self.fog_pass = None;
         self.fog_built = false;
+        self.taa_pass = None;
+        self.taa_built = false;
         // The copy's target takes the scene color's format, which its pipeline draws into, and the
         // depth copy reads the depth's samples.
         self.transmission_built = false;
@@ -1719,6 +1752,11 @@ impl FrameGraph {
         } else {
             0
         };
+        let taa = if self.taa.is_some() {
+            TaaPass::UPLOAD_BYTES
+        } else {
+            0
+        };
         FinalPass::UPLOAD_BYTES
             + still
             + if self.two_step_declared {
@@ -1737,6 +1775,7 @@ impl FrameGraph {
             + fullscreen
             + compute
             + exposure
+            + taa
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
@@ -1981,10 +2020,19 @@ impl FrameGraph {
         self.still_pass.set_tone_curve(template);
     }
 
+    /// The generation of the plan's texture list, which changes when a pass change makes the frame
+    /// make some targets again. A draw list recorded under an older generation names textures that
+    /// the frame after replaced, so the thread that draws must not replay it.
+    pub(crate) fn plan_epoch(&self) -> u32 {
+        self.graph.plan().map_or(0, |plan| plan.memory_generation())
+    }
+
     /// The resource that holds the scene's lit color: the subsurface blur's copy while its passes
     /// are declared, or else the scene color. The volumetric fog's apply step reads it.
     fn lit_output(&self) -> &'static str {
-        if self.subsurface_declared {
+        if self.taa_declared {
+            TAA_COLOR
+        } else if self.subsurface_declared {
             SUBSURFACE_TARGETS[subsurface::STEPS - 1]
         } else {
             SCENE_COLOR
@@ -2008,6 +2056,32 @@ impl FrameGraph {
             0 => self.scene_output(),
             count => EFFECT_TARGETS[count - 1],
         }
+    }
+
+    /// Turns temporal anti-aliasing on with what the frame resolves with, or off with `None`, for
+    /// the next frames. The passes are declared again only when it starts or stops drawing. The
+    /// 8-bit path draws none.
+    pub(crate) fn set_taa(&mut self, taa: Option<TaaFrame>) {
+        let was = self.taa_draws();
+        self.taa = taa.filter(|_| self.scene_color.is_hdr());
+        if self.taa_draws() != was {
+            self.declared = false;
+        }
+    }
+
+    /// True while temporal anti-aliasing draws: on, on the HDR path, with its pipelines built, and
+    /// where the device draws the motion target at the scene's samples.
+    pub(crate) fn taa_draws(&self) -> bool {
+        self.taa.is_some() && self.taa_built && self.motion_supported()
+    }
+
+    /// Temporal anti-aliasing's steps, made for the scene depth's samples when first asked for.
+    /// WebGL2 has no multisampled textures: its backend gives the resolve a copy of one depth
+    /// sample.
+    fn taa_steps(&mut self) -> &mut TaaPass {
+        let samples = if self.gpu_culling { self.samples } else { 1 };
+        self.taa_pass
+            .get_or_insert_with(|| TaaPass::new(self.taa_ids, samples))
     }
 
     /// The resource that holds the scene's color before bloom and the final pass: depth of field's
@@ -2939,7 +3013,10 @@ impl FrameGraph {
             let pass = self.add(pass, Role::Transparent(id));
             self.transparent.push((index as u16, pass));
         }
-        self.motion_declared = self.motion_view_draws() && !views.is_empty();
+        // The motion target is drawn while the debug view shows it, and while the temporal resolve
+        // reads it.
+        let taa_wants_motion = self.taa_draws() && self.motion_supported();
+        self.motion_declared = (self.motion_view_draws() || taa_wants_motion) && !views.is_empty();
         if self.motion_declared {
             self.declare_motion(color.samples);
         }
@@ -2957,6 +3034,10 @@ impl FrameGraph {
         } else {
             0
         };
+        self.taa_declared = self.taa_draws() && self.motion_supported();
+        if self.taa_declared {
+            self.declare_taa();
+        }
         if self.fog_declared > 0 {
             self.declare_fog(self.fog_declared);
         }
@@ -3303,13 +3384,15 @@ impl FrameGraph {
             }
             self.add(pass, Role::Motion);
         }
-        let mut step = Pass::new(MOTION_VIEW_PASS, PassKind::Fullscreen)
-            .reads(SCENE_DEPTH)
-            .writes(SCENE_COLOR);
-        if self.motion_supported() {
-            step = step.reads(MOTION_TARGET);
+        if self.motion_view_draws() {
+            let mut step = Pass::new(MOTION_VIEW_PASS, PassKind::Fullscreen)
+                .reads(SCENE_DEPTH)
+                .writes(SCENE_COLOR);
+            if self.motion_supported() {
+                step = step.reads(MOTION_TARGET);
+            }
+            self.add(step, Role::MotionView);
         }
-        self.add(step, Role::MotionView);
     }
 
     /// Declares the custom effects' passes, one for each unit: each reads the color that the pass
@@ -3404,6 +3487,37 @@ impl FrameGraph {
             }
         }
         pass
+    }
+
+    /// Declares temporal anti-aliasing's steps: the resolve reads the lit color as the subsurface
+    /// blur leaves it, the scene's depth and the motion target, and both histories as the last
+    /// frames left them, and creates its target; a copy step for each history then copies that
+    /// target into it. Each frame records only the copy of its parity (see
+    /// [`FrameGraph::draws`]).
+    fn declare_taa(&mut self) {
+        let input = if self.subsurface_declared {
+            SUBSURFACE_TARGETS[subsurface::STEPS - 1]
+        } else {
+            SCENE_COLOR
+        };
+        for name in TAA_HISTORIES {
+            self.graph
+                .keep(name, Target::color(taa::FORMAT), Size::Full);
+        }
+        let resolve = Pass::new(TAA_PASSES[0], PassKind::Fullscreen)
+            .reads(input)
+            .reads(SCENE_DEPTH)
+            .reads(MOTION_TARGET)
+            .reads_so_far(TAA_HISTORIES[0])
+            .reads_so_far(TAA_HISTORIES[1])
+            .creates(TAA_COLOR, Target::color(taa::FORMAT));
+        self.add(resolve, Role::Taa(0));
+        for (index, name) in TAA_HISTORIES.into_iter().enumerate() {
+            let copy = Pass::new(TAA_PASSES[1 + index], PassKind::Fullscreen)
+                .reads(TAA_COLOR)
+                .writes(name);
+            self.add(copy, Role::Taa(1 + index as u8));
+        }
     }
 
     /// Declares depth of field's steps: the setup reads the custom effects' output and the scene
@@ -3791,6 +3905,7 @@ impl FrameGraph {
             BuiltGroup::Transmission => self.transmission_built,
             BuiltGroup::Weighted => self.weighted_built,
             BuiltGroup::ParticleDepth => self.particle_depth_built,
+            BuiltGroup::Taa => self.taa_built,
         }
     }
 
@@ -3805,6 +3920,7 @@ impl FrameGraph {
             BuiltGroup::Transmission => self.transmission_draws(),
             BuiltGroup::Weighted => self.weighted_draws(),
             BuiltGroup::ParticleDepth => self.particle_depth_draws(),
+            BuiltGroup::Taa => self.taa_draws(),
         }
     }
 
@@ -3830,6 +3946,7 @@ impl FrameGraph {
             BuiltGroup::Transmission => self.transmission_built = built,
             BuiltGroup::Weighted => self.weighted_built = built,
             BuiltGroup::ParticleDepth => self.particle_depth_built = built,
+            BuiltGroup::Taa => self.taa_built = built,
         }
         if self.built_draws(group) != drew {
             again(self);
@@ -3913,6 +4030,12 @@ impl FrameGraph {
             }
             None => false,
         };
+        let taa_built = self.taa.is_some() && {
+            let steps = self.taa_steps();
+            steps.request_pipelines(pipelines);
+            pipelines.all_built(steps.pipeline_ids(), pipelines_built)
+        };
+        self.note_built(BuiltGroup::Taa, taa_built, FrameGraph::declare_again);
         let fog_built = self.fog.is_some() && {
             let steps = self.fog_steps();
             steps.request_pipelines(pipelines);
@@ -4094,6 +4217,7 @@ impl FrameGraph {
         self.upload_fullscreen(list, arena)?;
         self.upload_compute(list, arena)?;
         self.upload_dof(list, arena)?;
+        self.upload_taa(list, arena)?;
         self.upload_accumulate(list, arena)?;
         let exposure = self.upload_exposure(list, arena)?;
         self.upload_fog(list, arena)?;
@@ -4399,7 +4523,7 @@ impl FrameGraph {
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<(), RecordError> {
-        if !self.motion_declared {
+        if !self.motion_view_draws() {
             return Ok(());
         }
         let motion = if self.motion_supported() {
@@ -4631,6 +4755,41 @@ impl FrameGraph {
         self.subsurface_textures = found;
         let (frame_size, made) = ((self.canvas, self.scale), self.textures_made);
         self.subsurface_steps()
+            .prepare(list, arena, frame_size, frame, sources, made)
+    }
+
+    /// Records temporal anti-aliasing's objects and block while its steps are declared, and binds
+    /// each step to the textures it reads, found by name once for each compile of the graph.
+    fn upload_taa(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        let Some(frame) = self.taa.filter(|_| self.taa_declared) else {
+            return Ok(());
+        };
+        let mut found = self.taa_textures;
+        let sources = found.get_or(self.graph.compiles(), || {
+            let id = |name: &str| {
+                self.sampled_id(name)
+                    .expect("each step of temporal anti-aliasing reads a planned texture")
+            };
+            let input = if self.subsurface_declared {
+                SUBSURFACE_TARGETS[subsurface::STEPS - 1]
+            } else {
+                SCENE_COLOR
+            };
+            TaaSources {
+                color: id(input),
+                depth: id(SCENE_DEPTH),
+                motion: id(MOTION_TARGET),
+                histories: TAA_HISTORIES.map(id),
+                resolved: id(TAA_COLOR),
+            }
+        });
+        self.taa_textures = found;
+        let (frame_size, made) = ((self.canvas, self.scale), self.textures_made);
+        self.taa_steps()
             .prepare(list, arena, frame_size, frame, sources, made)
     }
 
@@ -5175,6 +5334,12 @@ impl FrameGraph {
                             Role::FogBlock => self.fog_steps_ref().record(list, 1)?,
                             Role::FogSum => self.fog_steps_ref().record(list, 2)?,
                             Role::FogApply => self.fog_steps_ref().record(list, 3)?,
+                            Role::Taa(step) => self
+                                .taa_pass
+                                .as_ref()
+                                .expect("temporal anti-aliasing's steps run once they are declared")
+                                // The resolve is step 0; either history's copy is step 1.
+                                .record(list, usize::from(step).min(1))?,
                             Role::ViewCopy(view) => {
                                 if let Some(copies) = self.view_copies.as_ref() {
                                     copies.record(list, view.index())?;
@@ -5231,6 +5396,8 @@ impl FrameGraph {
                 .fog_pass
                 .as_ref()
                 .is_some_and(|fog| fog.parity() == usize::from(parity)),
+            // A frame draws only the copy into the history of its own parity.
+            (Role::Taa(step @ 1..), _) => self.taa.is_some_and(|f| f.parity + 1 == step),
             _ => true,
         }
     }
@@ -5456,6 +5623,9 @@ impl FrameGraph {
         }
         if let Some(fog) = self.fog_pass.as_mut() {
             fog.reset_gpu();
+        }
+        if let Some(taa) = self.taa_pass.as_mut() {
+            taa.reset_gpu();
         }
         if let Some(copies) = self.view_copies.as_mut() {
             copies.reset_gpu();
@@ -6157,6 +6327,11 @@ mod tests {
             buffer: 18,
             sampler: 16,
             first_group: 110,
+        },
+        taa: TaaIds {
+            buffer: 19,
+            sampler: 17,
+            first_group: 140,
         },
         view_copy: Some(ViewCopyIds { first_group: 60 }),
         transmission: TransmissionIds {
@@ -7319,6 +7494,73 @@ mod tests {
             .unwrap();
         assert_eq!(steps(&frames), without);
         assert_eq!(frames.graph().plan().unwrap().textures().len(), textures);
+    }
+
+    #[test]
+    fn temporal_anti_aliasing_resolves_before_the_effects_and_keeps_its_history() {
+        let canvas = (1280, 720);
+        for gpu_culling in [true, false] {
+            let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, gpu_culling, false);
+            frames.sync(&[View::default()]);
+            let mut list = DrawList::with_capacity(8192);
+            let mut pipelines = PipelineCache::default();
+            let effect = Effect {
+                template: 64,
+                depth: false,
+                bloom: None,
+                values: [0.0; effects::EFFECT_FLOATS],
+                maps: EffectMaps::NONE,
+            };
+            frames.set_effects(&[effect], &EffectJoins::default(), [0.0; 2], None);
+            let mut identity = [0.0; 16];
+            for k in 0..4 {
+                identity[k * 5] = 1.0;
+            }
+            frames.set_taa(Some(TaaFrame {
+                taa: taa::Taa::default(),
+                size: canvas,
+                projection: identity,
+                jitter: [0.0; 2],
+                reproject: identity,
+                reset: true,
+                parity: 1,
+            }));
+            frames.request_pipelines(&mut pipelines, 1);
+            assert!(!frames.taa_draws(), "it waits for its pipelines");
+            pipelines.create_new(&mut list, 2).unwrap();
+            frames.request_pipelines(&mut pipelines, 2);
+            assert!(frames.taa_draws());
+            frames.sync(&[View::default()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let names: Vec<String> = steps(&frames).into_iter().flatten().collect();
+            let place = |name: &str| names.iter().position(|n| n == name).unwrap();
+            assert!(place(TAA_PASSES[0]) < place(TAA_PASSES[1]), "{names:?}");
+            assert!(place(TAA_PASSES[0]) < place(TAA_PASSES[2]), "{names:?}");
+            assert!(place(TAA_PASSES[2]) < place("Final"), "{names:?}");
+            assert!(place(TAA_PASSES[0]) < place(EFFECT_PASSES[0]), "{names:?}");
+            assert_eq!(frames.scene_output(), TAA_COLOR);
+            let mut arena = UploadArena::default();
+            arena.reset(frames.upload_bound());
+            list.clear();
+            frames
+                .upload(&mut list, &mut arena, Output::default(), Grading::default())
+                .unwrap();
+            let layouts: Vec<u32> = operands(&list, Op::CreateBindGroup)
+                .iter()
+                .filter(|group| (140..142).contains(&group[0]))
+                .map(|group| group[1])
+                .collect();
+            let resolve = if gpu_culling {
+                bind_layout::TAA_MS
+            } else {
+                bind_layout::TAA
+            };
+            assert_eq!(layouts, [resolve, bind_layout::VIEW_COPY]);
+            // A frame of parity 1 draws only the copy into the second history.
+            assert!(!frames.draws(Role::Taa(1)) && frames.draws(Role::Taa(2)));
+        }
     }
 
     #[test]

@@ -819,6 +819,14 @@ pub mod layout {
     /// opacity reach it, so a layer obeys the settings the core sky obeys (see
     /// [`template::BACKGROUND_LAYER`](super::template::BACKGROUND_LAYER)).
     pub const BACKGROUND_LAYER: u32 = 53;
+    /// Group 0 of temporal anti-aliasing's resolve: its uniform block, the scene color, the scene's
+    /// depth, the motion target and the two histories at bindings 1 to 5, and the linear sampler
+    /// of the histories at 6. The scene color, the depth and the motion read with `textureLoad`;
+    /// the histories read with the sampler.
+    pub const TAA: u32 = 54;
+    /// [`TAA`] with a multisampled scene depth, whose samples the resolve reads. Only WebGPU has
+    /// it.
+    pub const TAA_MS: u32 = 55;
     /// The final pass with custom effects folded into it: [`FINAL`]'s bindings, then the effects'
     /// uniform buffer at binding 4 and the scene's depth, or a blank texture, at binding 5, as
     /// plain floats.
@@ -2047,6 +2055,17 @@ pub mod template {
     /// Cluster levels: one compute pipeline whose dispatch counts, scans or copies the patches of
     /// a view, which the dispatch's parameters pick. WebGPU only.
     pub const CLUSTER: u32 = 78;
+    /// Temporal anti-aliasing's resolve, a prototype (M3-A11): one triangle over a target of the
+    /// render size, which blends the scene's color into the history that it reads where each
+    /// pixel's surface lay in the frame before, from the motion target and the depth. Its group 0
+    /// is [`TAA`](super::layout::TAA), or [`TAA_MS`](super::layout::TAA_MS) from a multisampled
+    /// scene depth.
+    pub const TAA_RESOLVE: u32 = 80;
+    /// [`TAA_RESOLVE`] from a multisampled scene depth, whose samples it reads. WebGPU only.
+    pub const TAA_RESOLVE_MS: u32 = 81;
+    /// Temporal anti-aliasing's copy of the resolve's target into the history of the frame's
+    /// parity, one texel per pixel. It binds as the copy of a view's image does.
+    pub const TAA_COPY: u32 = 82;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -2054,7 +2073,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 78] = [
+    pub const NAMES: [(&str, u32); 81] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2132,6 +2151,9 @@ pub mod template {
         ("PICK_MAPS", PICK_MAPS),
         ("PICK_TEXTURE_MAPS", PICK_TEXTURE_MAPS),
         ("CLUSTER", CLUSTER),
+        ("TAA_RESOLVE", TAA_RESOLVE),
+        ("TAA_RESOLVE_MS", TAA_RESOLVE_MS),
+        ("TAA_COPY", TAA_COPY),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2235,6 +2257,9 @@ pub mod groups {
         (template::EXPOSURE_LUMINANCE, own!(layout::EFFECT)),
         (template::CULL, own!(layout::CULL)),
         (template::CLUSTER, own!(layout::CLUSTER_CULL)),
+        (template::TAA_RESOLVE, own!(layout::TAA)),
+        (template::TAA_RESOLVE_MS, own!(layout::TAA_MS)),
+        (template::TAA_COPY, own!(layout::VIEW_COPY)),
         (template::LIGHT_COUNT, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_PLACE, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_WRITE, own!(layout::LIGHT_CLUSTERS)),
@@ -2646,6 +2671,8 @@ pub fn typescript_constants() -> String {
                 ("WEIGHTED_DEPTH_MS", layout::WEIGHTED_DEPTH_MS),
                 ("TRANSMISSION_COPY_MS", layout::TRANSMISSION_COPY_MS),
                 ("CLUSTER_CULL", layout::CLUSTER_CULL),
+                ("TAA", layout::TAA),
+                ("TAA_MS", layout::TAA_MS),
                 ("SUBSURFACE_BLUR", layout::SUBSURFACE_BLUR),
                 ("SUBSURFACE_COMPOSITE", layout::SUBSURFACE_COMPOSITE),
                 ("SUBSURFACE_COMPOSITE_MS", layout::SUBSURFACE_COMPOSITE_MS),

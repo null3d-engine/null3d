@@ -71,6 +71,8 @@ import {
 	TEMPLATE_SUBSURFACE_BLUR,
 	TEMPLATE_SUBSURFACE_COMPOSITE,
 	TEMPLATE_SUBSURFACE_MAPS,
+	TEMPLATE_TAA_COPY,
+	TEMPLATE_TAA_RESOLVE,
 	TEMPLATE_TRANSMISSION_COPY,
 	TEMPLATE_WEIGHTED_COMPOSITE,
 	TEMPLATE_WEIGHTED_DEPTH,
@@ -340,6 +342,9 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_FOG_SUM] = { shader: shaders.fog_volume, pipeline: 'sum' };
 	templates[TEMPLATE_FOG_APPLY] = { shader: shaders.fog_volume, pipeline: 'apply' };
 	templates[TEMPLATE_TRANSMISSION_COPY] = { shader: shaders.transmission_copy, pipeline: 'main' };
+	// Temporal anti-aliasing's resolve reads the same one-sample copy of the depth.
+	templates[TEMPLATE_TAA_RESOLVE] = { shader: shaders.taa, pipeline: 'resolve' };
+	templates[TEMPLATE_TAA_COPY] = { shader: shaders.taa_copy, pipeline: 'main' };
 	templates[TEMPLATE_ACCUMULATE] = { shader: shaders.accumulate, pipeline: 'main' };
 	// The subsurface blur's down step reads the same one-sample copy of the depth.
 	templates[TEMPLATE_SUBSURFACE_BLUR] = { shader: shaders.subsurface_blur, pipeline: 'across' };
