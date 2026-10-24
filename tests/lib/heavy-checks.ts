@@ -32,6 +32,10 @@ export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	// Changed texture files through the WebAssembly transcoder: its heap grows on the hostile ones
 	// and does not shrink, so the checks hold every growth they have made.
 	{ file: 'packages/engine/src/scene/malformed-files.test.ts', ceilingMiB: 2560 },
+	// A page of the add-on check's fixture, built with the source maps that the allocation gate reads.
+	// It holds the engine's generated shaders, which the page resolves from source: measured on
+	// 24 October 2026, the build peaked at 10,520 MiB, and the maps carried no source text.
+	{ file: 'packages/cli/src/add-on-page-build.test.ts', ceilingMiB: 12288 },
 ];
 
 /**
