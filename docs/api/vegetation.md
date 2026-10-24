@@ -185,7 +185,7 @@ The built-in set holds thirteen species and six variants each. Grown in one call
 
 Growth is linear in the branch count and the card count. A species whose record raises `children` at several levels grows many more branches and costs more to generate. Keep a plant under 255 branches, and let a species with more rely on a coarser record instead.
 
-Reading Creek's 160 m valley into the ground maps and placing its eight species takes about 50 ms on an Apple M5 Max laptop, for about a thousand points. Ground cover is the most of it. A species at one meter of spacing offers tens of thousands of candidates.
+Reading Creek's 160 m valley into the ground maps and placing its eight species takes about 55 ms on an Apple M5 Max laptop, for about a thousand points. Ground cover is the most of it. A species at one meter of spacing offers tens of thousands of candidates.
 
 ## Compared with three.js
 
