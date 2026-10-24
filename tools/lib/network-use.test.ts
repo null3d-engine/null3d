@@ -32,7 +32,8 @@ describe('allowedHost', () => {
 describe('networkProblems', () => {
 	test('accepts a recorded call site and its example addresses', () => {
 		const root = fixture({
-			'packages/engine/src/page/engine.ts': 'fetch(url).catch(() => {});',
+			'packages/engine/src/page/engine.ts':
+				'fetch(one).catch(() => {}); fetch(two).catch(() => {});',
 			'packages/engine/src/errors/codes.ts': "const text = 'see https://example.com/a.png.';",
 		});
 		expect(networkProblems(root).problems).toEqual([]);
@@ -49,10 +50,10 @@ describe('networkProblems', () => {
 
 	test('refuses a second call site in a recorded file', () => {
 		const root = fixture({
-			'packages/engine/src/page/engine.ts': 'fetch(a); fetch(b);',
+			'packages/engine/src/page/engine.ts': 'fetch(a); fetch(b); fetch(c);',
 		});
 		expect(networkProblems(root).problems.join('\n')).toContain(
-			'has 2 fetch calls, and network-use.ts records 1',
+			'has 3 fetch calls, and network-use.ts records 2',
 		);
 	});
 
@@ -68,11 +69,11 @@ describe('networkProblems', () => {
 
 	test('refuses a call through the global object, or a script importer', () => {
 		const root = fixture({
-			'packages/engine/src/page/engine.ts': 'fetch(a); globalThis.fetch(b);',
+			'packages/engine/src/page/engine.ts': 'fetch(a); fetch(b); globalThis.fetch(c);',
 			'packages/terrain/src/index.ts': 'window.fetch(a); self.fetch(b); importScripts(url);',
 		});
 		const problems = networkProblems(root).problems.join('\n');
-		expect(problems).toContain('packages/engine/src/page/engine.ts: has 2 fetch calls');
+		expect(problems).toContain('packages/engine/src/page/engine.ts: has 3 fetch calls');
 		expect(problems).toContain('packages/terrain/src/index.ts: calls fetch');
 		expect(problems).toContain('packages/terrain/src/index.ts: uses importScripts');
 	});
