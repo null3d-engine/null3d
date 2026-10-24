@@ -30,6 +30,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-A5':
 		'`createVertexDraw` in `packages/engine/src/scene/scene.ts:4623-4702`; `examples/rain/sketch.ts`',
 	'M3-A7': '`limit_hdr` maps NaN to zero: `crates/null3d-shaders/wgsl/lib/color.wgsl:35-38`',
+	'M3-A9':
+		'The `hero` shadow option and `setHeroShadow`: `packages/engine/src/scene/scene.ts`, `docs/api/lights.md:234-245`; the cost spec `tests/image/hero-cost.spec.ts`, with the figures in D-219',
 	'M3-B6':
 		'`examples/addons/traffic-lanes/` (instanced vehicles moved in the vertex shader); `examples/instances/traffic.ts` and `examples/showcase/skyway/traffic.ts`',
 	'M3-D1': "`tools/lib/packages.ts` compiles each add-on's WGSL when it packs",
