@@ -1,8 +1,9 @@
 // Car paint: a metallic base under the engine's clear coat, with metal flakes, panel seams and an
-// optional carbon weave. The flakes tilt the base normal cell by cell, and fade to the smooth
-// normal as a cell shrinks below a pixel, so the paint sparkles up close without shimmering far
-// away. A seam is a groove whose share of a pixel keeps it as wide as a pixel, and the weave shapes
-// each tow's normal so that its highlight runs along the tow.
+// optional carbon weave. The flakes are the metal's own microfacets: the lobe counts how many of
+// them reflect the main light into the eye at each pixel, as Deliot and Belcour's glint model, so
+// the paint sparkles where the light is and smooths as a cell shrinks below a pixel. A seam is a
+// groove whose share of a pixel keeps it as wide as a pixel, and the weave shapes each tow's
+// normal so that its highlight runs along the tow.
 #import null3d::noise::{random2}
 #import null3d::math::{PI}
 
@@ -13,10 +14,12 @@ struct Uniforms {
     flakeCells: vec2f,
     // How many weave cells cross each texture coordinate.
     weaveCells: vec2f,
-    // How far a flake tilts the base normal, from 0 for none.
+    // How wide the flakes' normals spread from the surface normal, from 0 for none.
     flakeTilt: f32,
-    // How much the flakes' spread widens the roughness once a cell shrinks below a pixel.
-    flakeSpread: f32,
+    // The angular radius of the main light in radians, which sets how many flakes reflect it.
+    flakeAngle: f32,
+    // The most that one pixel's glint may exceed the smooth lobe, which bounds a firefly.
+    flakeMax: f32,
     // The seam groove: its half width in the texture coordinates, and how dark it draws.
     seamWidth: f32,
     seamShade: f32,
@@ -54,13 +57,6 @@ fn paint_frame(input: SurfaceInput, normal: vec3f) -> PaintFrame {
     return PaintFrame(unit, normalize(cross(normal, unit)));
 }
 
-/// A flake's tilt in the surface's frame, each part from -1 to 1. The cell hashes by its whole
-/// numbers, so the same cell keeps the same flake on every GPU.
-fn flake_tilt(cell: vec2f) -> vec2f {
-    let parts = vec2f(random2(cell), random2(cell + vec2f(37.1, 11.3)));
-    return parts * 2.0 - 1.0;
-}
-
 /// The weave at a point: the tow's cross-section as a slope along each texture coordinate, and how
 /// far the point lies on a tow rather than in the gap between them.
 struct Weave {
@@ -92,9 +88,11 @@ fn surface(input: SurfaceInput) -> Surface {
     let frame = paint_frame(input, normal);
 
     // The derivatives of a pattern come before any branch: a derivative belongs to uniform control
-    // flow, so a branch that a uniform value takes still may not hold one.
+    // flow, so a branch that a uniform value takes still may not hold one. The flakes' footprint in
+    // cells and their cell's random value give the lobe its count and its chance.
     let flake_q = input.uv * material.flakeCells;
-    let footprint = length(fwidth(flake_q));
+    let flake_step = vec2f(length(dpdx(flake_q)), length(dpdy(flake_q)));
+    let flake_seed = random2(floor(flake_q));
     // A seam family whose spacing is 0 draws no seam, and its distance stays far away. Both
     // families' distances run, so the pixel width below has no branch either.
     let spacing_x = max(material.seamSpacing.x, 1e-6);
@@ -108,15 +106,10 @@ fn surface(input: SurfaceInput) -> Surface {
     let seam = min(du, dv);
     let seam_pixel = fwidth(seam);
 
-    // The flakes: a cell tilts the base normal its own way. A cell that shrinks below a pixel fades
-    // to the smooth normal and widens the roughness, so the paint sparkles up close and matches a
-    // smooth metal far away instead of shimmering.
+    // The flakes' four values for the lobe: the footprint, the tilt and the block's random value.
+    // The lobe does the counting where it knows the light; the surface only says where they are.
     if material.flakeTilt > 0.0 {
-        let tilt = flake_tilt(floor(flake_q));
-        let fade = 1.0 - smoothstep(0.3, 1.0, footprint);
-        let bent = frame.tangent * tilt.x + frame.bitangent * tilt.y;
-        s.normal = normalize(normal + bent * (material.flakeTilt * fade));
-        s.roughness = mix(min(s.roughness + material.flakeSpread, 1.0), s.roughness, fade);
+        s.lobe = vec4f(flake_step, material.flakeTilt, flake_seed);
     }
 
     // The panel seams: narrow grooves at each multiple of the spacing. The groove's share of a
@@ -145,4 +138,57 @@ fn surface(input: SurfaceInput) -> Surface {
         s.roughness = mix(min(s.roughness + 0.3, 1.0), gloss, weave.cover);
     }
     return s;
+}
+
+/// The number of flakes that reflect the light, drawn from a Poisson distribution of `mean`. The
+/// binomial of many facets and a small chance is a Poisson one; the inverse of its sum samples it
+/// exactly while the count is small, and the normal form takes over where the count is large.
+fn flake_count(mean: f32, u1: f32, u2: f32) -> f32 {
+    if mean <= 0.0 {
+        return 0.0;
+    }
+    if mean > 16.0 {
+        let deviation = sqrt(-2.0 * log(max(u1, 1e-6))) * cos(2.0 * PI * u2);
+        return max(0.0, mean + sqrt(mean) * deviation);
+    }
+    var count = 0.0;
+    var term = exp(-mean);
+    var sum = term;
+    for (var step = 0; step < 24; step++) {
+        if u1 <= sum {
+            break;
+        }
+        count += 1.0;
+        term *= mean / count;
+        sum += term;
+    }
+    return count;
+}
+
+/// The flakes' glint: how many of the metal's facets reflect the main light into the eye at this
+/// pixel, from the binomial distribution of Deliot and Belcour's model. The base lobe's specular is
+/// replaced by the flakes' own light, so the paint sparkles where the light is and nowhere else.
+fn lobe(input: LobeInput) -> vec3f {
+    let tilt = input.values.z;
+    if tilt <= 0.0 {
+        return vec3f(0.0);
+    }
+    // A flake's normal lies within a cap around the surface normal, whose width the tilt sets.
+    let cap = atan(tilt * 1.4142136);
+    let cap_cos = cos(cap);
+    if dot(input.normal, input.half) < cap_cos {
+        // No flake faces the light here, so the smooth lobe is not the paint's alone.
+        return -input.specular;
+    }
+    let facets = max(input.values.x * input.values.y, 1.0);
+    let light_cos = max(dot(input.half, input.light), 1e-4);
+    let solid = 2.0 * PI * (1.0 - cos(max(material.flakeAngle, 1e-4)));
+    let density = 1.0 / (2.0 * PI * max(1.0 - cap_cos, 1e-6));
+    let chance = min(density * solid / (4.0 * light_cos), 1.0);
+    let expected = facets * chance;
+    let u1 = random2(vec2f(input.values.w * 65535.0, 0.0));
+    let u2 = random2(vec2f(input.values.w * 65535.0, 1.0));
+    let count = min(flake_count(expected, u1, u2), facets);
+    let factor = min(count / max(expected, 1e-8), material.flakeMax);
+    return input.specular * (factor - 1.0);
 }
