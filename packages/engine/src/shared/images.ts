@@ -128,6 +128,12 @@ export interface CustomShader {
 	 */
 	readonly sceneDepth?: boolean;
 	/**
+	 * True for a custom material whose WGSL sets or reads the surface's alpha, so its shadow
+	 * caster cuts the mask's holes in a fragment stage, as the masked casters of the engine's mesh
+	 * templates do.
+	 */
+	readonly alpha?: boolean;
+	/**
 	 * True for a custom shader whose builds load on first use, in sets that the sketch thread
 	 * sends: its variants hold the sets that arrived.
 	 */

@@ -51,11 +51,13 @@ enable draw_index;
 // The ROW_VALUES builds draw the rows of instance batches with row values (null3d::mesh): the row's
 // color multiplies the vertex color, so it tints the base color and the alpha as three.js's
 // instance colors do, and custom materials read the row's own values as `object.values` in both
-// stages. The CASTER builds, which only custom materials with a vertex offset have, draw a shadow
+// stages. The CASTER builds, which only custom materials have, draw a shadow
 // caster's depth: the vertex shader moves each vertex by the offset, then places it as the shadow
-// depth template places a caster's, flattened onto the near face of the light's box. Their
-// pipelines have no fragment stage on WebGPU, and on WebGL2 their fragment shader writes nothing
-// that the pass keeps. The PICK builds, which also only custom materials with a vertex offset have,
+// depth template places a caster's, flattened onto the near face of the light's box. A material
+// whose WGSL sets or reads the surface's alpha runs that alpha in a fragment stage, so its shadow
+// keeps the material's holes. Their other pipelines have no fragment stage on WebGPU, and on
+// WebGL2 their fragment shader writes nothing that the pass keeps. The PICK builds, which also only
+// custom materials with a vertex offset have,
 // draw such an object into GPU picking's id target: the vertex shader moves and places each vertex
 // as the shading builds do, and the fragment shader writes the instance's ids as the pick template
 // does (pick.wgsl). Without them, the pick template would test the scene's depth at the object's
@@ -65,8 +67,9 @@ enable draw_index;
 // moving object for the motion pass (decision record D-140, null3d::motion): the vertex shader
 // moves each vertex by the offset with this frame's built-in values, and again with the last
 // frame's time and `frame.lastFrame` set, places the second with the last frame's matrix, and the
-// fragment shader writes the difference on the screen. Like the casters, they ignore the
-// material's alpha.
+// fragment shader writes the difference on the screen. Like the casters, they test the material's
+// alpha only where its WGSL sets or reads the surface's alpha, and cut the mask's holes at the
+// cutoff.
 //
 // The LOD_FADE builds draw a level of detail inside the band where it hands over to the next
 // (null3d::mesh): the vertex shader passes on the instance's fade value, and the fragment shader
@@ -114,9 +117,10 @@ enable draw_index;
 // uniforms. When their WGSL declares textures, the build binds them in the maps' bind group and
 // adds `load_custom_texture_layers`, which CUSTOM_TEXTURES makes each stage call. Inputs that cost
 // something come only to WGSL that reads them: CUSTOM_UV1 reads the second texture coordinates,
+// CUSTOM_VERTEX_COLOR reads the mesh's vertex color, which a vertex offset takes as data,
 // OBJECT_IDS finds the instance's index and the object's id (null3d::mesh), and OBJECT_MATRICES
 // passes the world matrix's rows to the fragment shader, at the locations that only the MAPS and
-// ALPHA_HASH builds use otherwise, which custom materials never have. Their WGSL
+// ALPHA_HASH builds use otherwise, which moves the alpha hash's place elsewhere. Their WGSL
 // shares this file's names, so the template imports library items by name and keeps its own names
 // few. It never imports a module whole, which would reserve the module's name
 // in their WGSL too. Names that only the MAPS builds declare stay free for custom materials, which
@@ -810,6 +814,9 @@ struct VertexIn {
 #endif
 #ifdef VERTEX_COLOR
     @location(5) vertex_color: vec4f,
+#else ifdef CUSTOM_VERTEX_COLOR
+    /// The mesh's vertex color, which a vertex offset reads as wind data.
+    @location(5) vertex_color: vec4f,
 #endif
 #ifdef SKIN
     @location(6) joints: vec4u,
@@ -844,8 +851,14 @@ struct VertexOut {
     @location(6) bitangent: vec3f,
 #endif
 #ifdef ALPHA_HASH
-    /// The position in the mesh's own space, where the alpha hash finds its pattern.
+    /// The position in the mesh's own space, where the alpha hash finds its pattern. A custom
+    /// material's object matrices take the other slot, since no build carries both a mask by the
+    /// hash and a pick key.
+#ifdef OBJECT_MATRICES
+    @location(13) mesh_place: vec3f,
+#else
     @location(7) mesh_place: vec3f,
+#endif
 #endif
 #ifdef CUSTOM
     /// The object's origin, relative to the camera.
@@ -874,10 +887,14 @@ struct VertexOut {
 #endif
 #endif
 #ifdef LOD_FADE
-    /// The fade value of the instance's level of detail, and the phase of its dither. It shares
-    /// its slot with the object ids, as only custom materials read those, and they have no fading
-    /// builds.
+    /// The fade value of the instance's level of detail, and the phase of its dither. A custom
+    /// material's object ids take the other slot, since their builds that fade carry no object
+    /// ids, and the scale slot is free in a build that fades.
+#ifdef OBJECT_IDS
+    @location(9) @interpolate(flat, either) lod: vec2f,
+#else
     @location(12) @interpolate(flat, either) lod: vec2f,
+#endif
 #endif
 #ifdef OBJECT_MATRICES
     /// The rows of the object's world matrix that give x, y and z, relative to the camera.
@@ -909,6 +926,11 @@ struct VertexInput {
 #ifdef CUSTOM_UV1
     /// The vertex's second texture coordinates, or the first on a mesh without a second set.
     uv1: vec2f,
+#endif
+#ifdef CUSTOM_VERTEX_COLOR
+    /// The vertex's color, as the mesh stores it. It carries data that a vertex offset reads, such
+    /// as a branch index and a phase for wind.
+    colors: vec4f,
 #endif
 #ifdef OBJECT_IDS
     /// The instance's index in its batch: 0 for an object of the scene.
@@ -1305,6 +1327,31 @@ fn bent_normal(
 }
 #endif
 
+/// The surface input of a pixel whose point relative to the camera is `relative`, whose mesh
+/// normal is `normal`, and whose triangle faces the camera when `front` is true: the values that
+/// every build which reads a surface takes from the vertex stage. A build adds its texture
+/// coordinates, its vertex color, its ids and its pixel position.
+fn surface_place(relative: vec3f, normal: vec3f, front: bool) -> SurfaceInput {
+    var input: SurfaceInput;
+    input.relativePosition = relative;
+    // Toward the camera: from the point for a perspective camera, and one direction for an
+    // orthographic camera, whose view rays are parallel.
+    let eye = engine_frame.camera_position;
+    input.viewDirection = normalize(eye.xyz - relative * eye.w);
+    // A face's normal comes from how the position changes between pixels. The two GPU paths count
+    // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
+    // flat normals face it.
+    let face = normalize(cross(dpdx(relative), dpdy(relative)));
+    let face_normal = select(-face, face, dot(face, input.viewDirection) >= 0.0);
+    // Back faces draw only for double-sided materials, and light as front faces do.
+    let smooth_normal = normalize(normal) * select(-1.0, 1.0, front);
+    let flat_shading = (u32(material_row.strengths.z) & FLAT_SHADING) != 0u;
+    input.normal = select(smooth_normal, face_normal, flat_shading);
+    input.vertexColor = vec4f(1.0);
+    input.frontFacing = front;
+    return input;
+}
+
 /// The surface as the material's own values make it: its base color times the vertex color, its
 /// metalness, roughness and emissive light, and the normal of the input, with the material's
 /// texture maps in the builds that have them.
@@ -1403,6 +1450,9 @@ fn vertex_input(v: VertexIn, position: vec3f, normal: vec3f, ids: vec2u) -> Vert
 #ifdef CUSTOM_UV1
     input.uv1 = mesh_second_uv(v.uv1);
 #endif
+#ifdef CUSTOM_VERTEX_COLOR
+    input.colors = v.vertex_color;
+#endif
 #ifdef OBJECT_IDS
     input.instance = ids.x;
 #endif
@@ -1412,11 +1462,47 @@ fn vertex_input(v: VertexIn, position: vec3f, normal: vec3f, ids: vec2u) -> Vert
 
 #ifdef MOTION
 /// What a motion build's vertex shader passes on: this frame's clip position, where this frame's
-/// point would have shown in the last frame, and where the moved point showed in it.
+/// point would have shown in the last frame, and where the moved point showed in it. A masked
+/// build passes the surface's own values too, which its mask's test reads.
 struct MotionOut {
     @invariant @builtin(position) clip: vec4f,
     @location(0) still: vec4f,
     @location(1) last: vec4f,
+#ifdef ALPHA_MASK
+    @location(2) @interpolate(flat, either) material: u32,
+    /// The position relative to the camera.
+    @location(3) relative: vec3f,
+    @location(4) normal: vec3f,
+#ifdef CUSTOM_UV1
+    /// The first texture coordinates, then the second.
+    @location(5) uv: vec4f,
+#else
+    @location(5) uv: vec2f,
+#endif
+#ifdef VERTEX_COLOR
+    @location(6) vertex_color: vec4f,
+#endif
+#ifdef ROW_VALUES
+    @location(7) @interpolate(flat, either) row_color: vec4f,
+    @location(8) @interpolate(flat, either) row_values: vec4f,
+#endif
+#ifdef ALPHA_HASH
+    /// The position in the mesh's own space, where the alpha hash finds its pattern.
+    @location(9) mesh_place: vec3f,
+#endif
+    /// The object's origin, relative to the camera.
+    @location(10) @interpolate(flat, either) origin: vec3f,
+#ifdef OBJECT_IDS
+    /// The instance's index in its batch, then the object's id.
+    @location(11) @interpolate(flat, either) ids: vec2u,
+#endif
+#ifdef OBJECT_MATRICES
+    /// The rows of the object's world matrix that give x, y and z, relative to the camera.
+    @location(12) @interpolate(flat, either) world_x: vec4f,
+    @location(13) @interpolate(flat, either) world_y: vec4f,
+    @location(14) @interpolate(flat, either) world_z: vec4f,
+#endif
+#endif
 }
 
 @vertex
@@ -1460,11 +1546,101 @@ fn vs(v: VertexIn, i: InstanceIn, l: LastIn) -> MotionOut {
     out.clip = clip_of(found, now);
     out.still = motion_block.last_view_proj * vec4f(now, 1.0);
     out.last = motion_block.last_view_proj * vec4f(then, 1.0);
+#ifdef ALPHA_MASK
+    out.material = found.material;
+    out.relative = now;
+    out.normal = v.normal;
+#ifdef CUSTOM_UV1
+    out.uv = vec4f(mesh_uv(v.uv0), mesh_second_uv(v.uv1));
+#else
+    out.uv = mesh_uv(v.uv0);
+#endif
+#ifdef VERTEX_COLOR
+    out.vertex_color = v.vertex_color;
+#endif
+#ifdef ROW_VALUES
+    out.row_color = row.color;
+    out.row_values = row.values;
+#endif
+#ifdef ALPHA_HASH
+    out.mesh_place = position;
+#endif
+    out.origin = origin;
+#ifdef OBJECT_IDS
+    out.ids = ids;
+#endif
+#ifdef OBJECT_MATRICES
+    out.world_x = found.row_x;
+    out.world_y = found.row_y;
+    out.world_z = found.row_z;
+#endif
+#endif
     return out;
 }
 
 @fragment
-fn fs(in: MotionOut) -> @location(0) vec4f {
+fn fs(in: MotionOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
+#ifdef ALPHA_MASK
+    // A masked surface cuts the holes of its mask into its motion, at the cutoff, as its caster
+    // does.
+    material_row = material_of(in.material);
+    fill_builtins(in.origin);
+#ifdef ROW_VALUES
+    object.values = in.row_values;
+#endif
+#ifdef OBJECT_IDS
+    object.id = in.ids.y;
+#endif
+#ifdef OBJECT_MATRICES
+    object.worldMatrix = affine_matrix(in.world_x, in.world_y, in.world_z);
+    object.normalMatrix = affine_normal_matrix(in.world_x, in.world_y, in.world_z);
+#endif
+#ifdef CUSTOM_UNIFORMS
+    material = load_material_uniforms(in.material);
+#endif
+#ifdef CUSTOM_TEXTURES
+    load_custom_texture_layers(in.material);
+#endif
+#ifdef ALPHA_HASH
+    hash_place = in.mesh_place;
+#endif
+    var input = surface_place(in.relative, in.normal, front);
+#ifdef VERTEX_COLOR
+    input.vertexColor = in.vertex_color;
+#endif
+#ifdef ROW_VALUES
+    input.vertexColor *= in.row_color;
+#endif
+    input.worldPosition = in.relative + engine_frame.camera_world.xyz;
+#ifdef CUSTOM_UV1
+    input.uv = in.uv.xy;
+    input.uv1 = in.uv.zw;
+#else
+    input.uv = in.uv;
+#endif
+    var coord = in.clip.xyz;
+#ifdef WEBGL2
+    coord.y = engine_frame.target_size.y - coord.y;
+#endif
+    input.fragCoord = coord;
+#ifdef OBJECT_IDS
+    input.instance = in.ids.x;
+#endif
+#ifdef CUSTOM_SURFACE
+    let alpha = surface(input).alpha;
+#else
+    let alpha = defaultSurface(input).alpha;
+#endif
+#ifdef ALPHA_HASH
+    if alpha < alpha_hash_threshold(in.mesh_place) {
+        discard;
+    }
+#else
+    if alpha < material_row.emissive.w {
+        discard;
+    }
+#endif
+#endif
     return surface_motion(in.still, in.last);
 }
 #else
@@ -2132,7 +2308,66 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #ifdef CASTER
+#ifdef ALPHA_MASK
+    // A masked caster runs the surface's alpha, so its shadow keeps the material's holes. It tests
+    // the cutoff, since a shadow map holds one depth for each pixel.
+    material_row = material_of(in.material);
+    fill_builtins(in.origin);
+#ifdef ROW_VALUES
+    object.values = in.row_values;
+#endif
+#ifdef OBJECT_IDS
+    object.id = in.ids.y;
+#endif
+#ifdef CUSTOM_UNIFORMS
+    material = load_material_uniforms(in.material);
+#endif
+#ifdef CUSTOM_TEXTURES
+    load_custom_texture_layers(in.material);
+#endif
+#ifdef ALPHA_HASH
+    hash_place = in.mesh_place;
+#endif
+    var input = surface_place(in.relative, in.normal, front);
+#ifdef VERTEX_COLOR
+    input.vertexColor = in.vertex_color;
+#endif
+#ifdef ROW_VALUES
+    input.vertexColor *= in.row_color;
+#endif
+    input.worldPosition = in.relative + engine_frame.camera_world.xyz;
+#ifdef CUSTOM_UV1
+    input.uv = in.uv.xy;
+    input.uv1 = in.uv.zw;
+#else
+    input.uv = in.uv;
+#endif
+    var coord = in.clip.xyz;
+#ifdef WEBGL2
+    coord.y = engine_frame.target_size.y - coord.y;
+#endif
+    input.fragCoord = coord;
+#ifdef OBJECT_IDS
+    input.instance = in.ids.x;
+#endif
+#ifdef CUSTOM_SURFACE
+    var alpha = surface(input).alpha;
+#else
+    var alpha = defaultSurface(input).alpha;
+#endif
+#ifdef ALPHA_HASH
+    if alpha < alpha_hash_threshold(in.mesh_place) {
+        discard;
+    }
+#else
+    if alpha < material_row.emissive.w {
+        discard;
+    }
+#endif
     return vec4f(0.0);
+#else
+    return vec4f(0.0);
+#endif
 #else ifdef PICK
     return pick_color(in.key);
 #else
@@ -2186,22 +2421,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef CUSTOM_TEXTURES
     load_custom_texture_layers(in.material);
 #endif
-    var input: SurfaceInput;
-    input.relativePosition = in.relative;
-    // Toward the camera: from the point for a perspective camera, and one direction for an
-    // orthographic camera, whose view rays are parallel.
-    let eye = engine_frame.camera_position;
-    input.viewDirection = normalize(eye.xyz - in.relative * eye.w);
-    // A face's normal comes from how the position changes between pixels. The two GPU paths count
-    // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
-    // flat normals face it.
-    let face = normalize(cross(dpdx(in.relative), dpdy(in.relative)));
-    let face_normal = select(-face, face, dot(face, input.viewDirection) >= 0.0);
-    // Back faces draw only for double-sided materials, and light as front faces do.
-    let smooth_normal = normalize(in.normal) * select(-1.0, 1.0, front);
-    let flat_shading = (u32(material_row.strengths.z) & FLAT_SHADING) != 0u;
-    input.normal = select(smooth_normal, face_normal, flat_shading);
-    input.vertexColor = vec4f(1.0);
+    var input = surface_place(in.relative, in.normal, front);
 #ifdef VERTEX_COLOR
     input.vertexColor = in.vertex_color;
 #endif
@@ -2224,7 +2444,6 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     input.tangent = in.tangent;
     input.bitangent = in.bitangent;
 #endif
-    input.frontFacing = front;
 #ifdef CUSTOM
     // Pixel rows count upward on WebGL2, so its rows turn to count from the top, as on WebGPU.
     var coord = in.clip.xyz;

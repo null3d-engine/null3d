@@ -43,6 +43,7 @@ import {
 	MATERIAL_FEATURE_SHADOW_CATCHER,
 	MATERIAL_FEATURE_SINGLE_PASS,
 	MATERIAL_FEATURE_SUBSURFACE,
+	MATERIAL_FEATURE_SURFACE_ALPHA,
 	MATERIAL_FEATURE_TRANSLUCENCY,
 	MATERIAL_FEATURE_TRANSMISSION,
 	MATERIAL_FEATURE_VERTEX_COLORS,
@@ -1204,17 +1205,31 @@ describe('materials.shader', () => {
 		);
 	});
 
-	test('refuses the alpha hash and alpha to coverage, which custom materials do not take', () => {
-		const { shadings, materials } = fakeCore();
+	test('cuts its shape only where the WGSL sets or reads the surface alpha', () => {
+		const { features, shadings, materials } = fakeCore();
 		const wgsl = compiledMaterial();
 		const hashed = thrown(() => materials.shader({ wgsl, alphaMode: 'hash' }));
 		expect(hashed.code).toBe('E1217');
-		expect(hashed.message).toStartWith("E1217: materials.shader() got the alpha mode 'hash';");
+		expect(hashed.message).toStartWith(
+			"E1217: materials.shader() got the alpha mode 'hash', but its WGSL never sets or reads the surface's alpha",
+		);
 		const covered = thrown(() =>
 			materials.shader({ wgsl, alphaMode: 'mask', alphaToCoverage: true }),
 		);
-		expect(covered.message).toStartWith('E1217: materials.shader() got alphaToCoverage;');
+		expect(covered.message).toStartWith(
+			"E1217: materials.shader() got alphaToCoverage, but its WGSL never sets or reads the surface's alpha",
+		);
 		expect(shadings).toEqual([]);
+		// WGSL that names the alpha has the builds, which its caster and its motion cut by too.
+		const naming = { ...compiledMaterial(), alpha: true };
+		materials.shader({ wgsl: naming, alphaMode: 'hash' });
+		materials.shader({ wgsl: naming, alphaMode: 'mask', alphaToCoverage: true });
+		expect(features).toEqual([
+			MATERIAL_FEATURE_ALPHA_MASK | MATERIAL_FEATURE_ALPHA_HASH | MATERIAL_FEATURE_SURFACE_ALPHA,
+			MATERIAL_FEATURE_ALPHA_MASK |
+				MATERIAL_FEATURE_ALPHA_TO_COVERAGE |
+				MATERIAL_FEATURE_SURFACE_ALPHA,
+		]);
 	});
 
 	test('lets light through to the other side only where its WGSL names the diffuse transmission', () => {

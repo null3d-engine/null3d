@@ -279,15 +279,15 @@ pub mod feature {
     pub const MULTIPLY: u32 = 256;
     /// With [`ALPHA_MASK`], the alpha fades from nothing at the cutoff to full over about one
     /// pixel, as three.js's `alphaToCoverage` makes it, and MSAA turns it into the share of each
-    /// pixel's samples that the surface covers. Without MSAA it is a plain alpha test, and so it is
-    /// for custom materials, whose builds stay few.
+    /// pixel's samples that the surface covers. Without MSAA it is a plain alpha test. A custom
+    /// material takes it only where its WGSL names the surface's alpha, which has the builds.
     pub const ALPHA_TO_COVERAGE: u32 = 512;
     /// The scene's fog leaves the material's color as it is.
     pub const NO_FOG: u32 = 1024;
     /// With [`ALPHA_MASK`], each fragment draws when its alpha passes a threshold from a hash of
     /// its place on the mesh, as three.js's `alphaHash` does, so the alpha sets the share of the
-    /// surface that draws. It wins over [`ALPHA_TO_COVERAGE`]. Custom materials have no such
-    /// builds, and test their alpha against the cutoff.
+    /// surface that draws. It wins over [`ALPHA_TO_COVERAGE`]. A custom material takes it only
+    /// where its WGSL names the surface's alpha, which has the builds.
     pub const ALPHA_HASH: u32 = 2048;
     /// The surface draws only the shadows that fall on it, as three.js's `ShadowMaterial`: its own
     /// color where the main directional light's shadows fall, and nothing where the light reaches
@@ -366,6 +366,11 @@ pub mod feature {
     /// `KHR_materials_anisotropy` does: highlights spread across the direction instead of around,
     /// as brushed metal shows. It takes the builds of the layers above the base ([`COAT_SHEEN`]).
     pub const ANISOTROPY: u32 = 1 << 26;
+    /// A custom material's WGSL sets or reads the surface's alpha, so its builds cut the
+    /// material's own shape: by alpha to coverage or the alpha hash, and in a masked shadow caster
+    /// and a masked motion build. Only such a material has those builds, so the engine keeps a
+    /// material whose WGSL never names the alpha as small as before.
+    pub const SURFACE_ALPHA: u32 = 1 << 27;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED
         | VERTEX_COLORS
@@ -393,7 +398,8 @@ pub mod feature {
         | NO_TONE_MAP
         | SCENE_DEPTH
         | IRIDESCENCE
-        | ANISOTROPY;
+        | ANISOTROPY
+        | SURFACE_ALPHA;
 
     /// The features whose material lights layers above its base: a clear coat, a sheen,
     /// iridescence or anisotropy. Each takes the shader builds that [`COAT_SHEEN`] names, whose

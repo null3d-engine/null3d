@@ -1074,6 +1074,7 @@ pub fn typescript() -> String {
                 ("SCENE_DEPTH", feature::SCENE_DEPTH),
                 ("IRIDESCENCE", feature::IRIDESCENCE),
                 ("ANISOTROPY", feature::ANISOTROPY),
+                ("SURFACE_ALPHA", feature::SURFACE_ALPHA),
             ],
         ),
         // The debug views that `setDebugView` takes.

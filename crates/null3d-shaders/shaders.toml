@@ -133,22 +133,25 @@
 # of alpha to coverage write their coverage of the pixel's samples themselves, for a multisampled
 # WebGPU target without alpha, which cannot turn alpha into coverage. A bit builds only beside the
 # bits it needs, and ALPHA_COVERAGE and ALPHA_HASH never build together (drawlist.rs, NEEDS and
-# APART). Custom materials build none of the three.
+# APART). Custom materials build the three only where their WGSL sets or reads the surface's alpha:
+# such a material cuts the shape that its own surface function makes, by coverage, by the hash, and
+# in its shadow caster and its motion, whose fragment stages test that same alpha.
 # RECEIVE_SHADOWS reads the main directional light's shadow maps. TRANSMISSION lets light through
 # the surface from the copy of the camera's opaque color (null3d::refraction); it builds without a
 # mask or index-read instances, and loads on first use. Custom materials build this template, with
 # TRANSMISSION only where their WGSL sets the surface's transmission. ROW_VALUES draws the rows of
 # instance batches with row values: each row's color multiplies the vertex color, and custom
-# materials read each row's values. It builds without skins, morph targets, alpha to coverage, the
-# alpha hash, transmission and index-read instances, which batches with row values never draw
-# with, and loads on first use. TRANSLUCENCY lets light through a thin surface to its other side,
+# materials read each row's values. It builds without skins, morph targets, transmission and
+# index-read instances, which batches with row values never draw with, and loads on first use.
+# A mask in such a batch tests its alpha by the cutoff, by alpha to coverage or by the alpha hash.
+# TRANSLUCENCY lets light through a thin surface to its other side,
 # as glTF's diffuse transmission does (null3d::translucency); it builds without transmission and
 # index-read instances, and loads on first use. Custom materials build it only where their WGSL
 # names the surface's diffuse transmission or its color. LOD_FADE draws a level of detail inside
 # the band where it hands over to the next: each instance's fade value and a 4 × 4 ordered dither
 # keep the pixels of its side of the band, after the mask's own test by its cutoff or by coverage.
 # It builds without skins, morph targets, the alpha hash, transmission and index-read instances,
-# and loads on first use. Custom materials build none of its builds: their levels switch at once.
+# and loads on first use. Custom materials build it too, which their levels use.
 # WEIGHTED draws a surface of the weighted blending into the camera's weighted layer
 # (null3d::weighted), in any order with the other weighted surfaces. It builds without a mask, light
 # through the surface, index-read instances, a fading level of detail, a prepass or a caster, and

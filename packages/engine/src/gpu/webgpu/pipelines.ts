@@ -1640,6 +1640,9 @@ export class Pipelines {
 				...(shader.textures > 0 ? [LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS] : [LAYOUT_FRAME]),
 				...scene,
 			],
+			// A material whose WGSL sets the surface's alpha cuts its shadow's holes with a
+			// fragment stage, as the engine's own masked casters do.
+			depthFragment: shader.alpha === true,
 			...(shader.meshless === true
 				? { vertexBuffers: [] }
 				: {
@@ -1827,7 +1830,7 @@ export class Pipelines {
 						entryPoint: ownPrepass ? 'fs' : entryPoints?.fragment,
 						targets: colorTargets(colorFormat, template, permutation, stateFlags),
 					}
-				: t.depthFragment
+				: t.depthFragment && !ownPrepass
 					? { module, entryPoint: entryPoints?.fragment, targets: [] }
 					: undefined,
 			primitive: {

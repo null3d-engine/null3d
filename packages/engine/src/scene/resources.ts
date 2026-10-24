@@ -48,6 +48,7 @@ import {
 	MATERIAL_FEATURE_SHADOW_CATCHER,
 	MATERIAL_FEATURE_SINGLE_PASS,
 	MATERIAL_FEATURE_SUBSURFACE,
+	MATERIAL_FEATURE_SURFACE_ALPHA,
 	MATERIAL_FEATURE_TRANSLUCENCY,
 	MATERIAL_FEATURE_TRANSMISSION,
 	MATERIAL_FEATURE_VERTEX_COLORS,
@@ -1458,7 +1459,8 @@ export interface MaterialFeatures {
 	 * With the `mask` alpha mode, smooths the cut edges with MSAA, as three.js's
 	 * `alphaToCoverage` does: the alpha fades over about one pixel above `alphaCutoff`, and covers
 	 * that share of the pixel. Without MSAA the mask cuts as without it. False gives three.js's hard
-	 * cut edges of `alphaTest`. Custom materials do not take it. The default is true.
+	 * cut edges of `alphaTest`. A custom material takes it where its WGSL sets or reads the
+	 * surface's `alpha`, and throws E1217 otherwise. The default is true.
 	 */
 	alphaToCoverage?: boolean;
 	/**
@@ -1720,6 +1722,8 @@ interface CompiledMaterial extends CompiledWgsl {
 	readonly objectIds?: boolean;
 	/** True when the WGSL reads the copy of the scene's depth through `sceneDepth`. */
 	readonly sceneDepth?: boolean;
+	/** True when the WGSL sets or reads the surface's alpha. */
+	readonly alpha?: boolean;
 	readonly uniforms: readonly CompiledUniform[];
 	/** The textures that the WGSL declares, in the order of their map slots. */
 	readonly textures: readonly {
@@ -1742,6 +1746,7 @@ function customShader(compiled: CompiledMaterial): CustomShader {
 		textures: compiled.textures.length,
 		...(compiled.meshless === true && { meshless: true }),
 		...(compiled.sceneDepth === true && { sceneDepth: true }),
+		...(compiled.alpha === true && { alpha: true }),
 		...(compiled.builds && { builds: true }),
 	};
 }
@@ -3370,8 +3375,10 @@ export class Materials {
 	 * Vite plugin did not compile, and for a whole shader whose `@vertex` entry point takes no
 	 * `InstanceIn`. Throws E1216 for a uniform or a texture that the WGSL does not declare, for a
 	 * value of the wrong kind, and for a uniform named as a standard value, such as `color`. Throws
-	 * E1217 for the `hash` alpha mode and for `alphaToCoverage`, which custom materials do not take,
-	 * for `transmission` where the WGSL never sets the surface's `transmission`, and for
+	 * E1217 for the `hash` alpha mode and for `alphaToCoverage` where the WGSL never sets or reads
+	 * the surface's `alpha`: only WGSL that does has the builds that cut the material's shape, and
+	 * its shadow caster and motion build test that alpha. Throws E1217 for
+	 * `transmission` where the WGSL never sets the surface's `transmission`, and for
 	 * `diffuseTransmission` where it never names the surface's `diffuseTransmission` or
 	 * `diffuseTransmissionColor`: only WGSL that does has the builds that let light through.
 	 * When
@@ -3382,11 +3389,6 @@ export class Materials {
 		options: ShaderOptions<Wgsl>,
 	): Material<ShaderValues<Wgsl>> {
 		const call = 'materials.shader';
-		if (DEV && (options.alphaMode === 'hash' || options.alphaToCoverage === true))
-			throw new EngineError(
-				'E1217',
-				`${call}() got ${options.alphaMode === 'hash' ? "the alpha mode 'hash'" : 'alphaToCoverage'}; a custom material takes 'opaque', 'mask' or 'blend', and tests its alpha against alphaCutoff.`,
-			);
 		if (DEV && options.blending === 'weighted')
 			throw new EngineError(
 				'E1217',
@@ -3394,6 +3396,17 @@ export class Materials {
 			);
 		const compiled = this.compiledMaterial(options.wgsl, call);
 		const sceneDepth = compiled.sceneDepth === true;
+		// A custom material cuts its own shape only where its WGSL sets or reads the surface's
+		// alpha: only that WGSL has the builds of alpha to coverage, the alpha hash and the masked
+		// shadow, and the other materials keep their builds as few as before.
+		const alpha = compiled.alpha === true;
+		if (DEV && !alpha && (options.alphaMode === 'hash' || options.alphaToCoverage === true))
+			throw new EngineError(
+				'E1217',
+				`${call}() got ${
+					options.alphaMode === 'hash' ? "the alpha mode 'hash'" : 'alphaToCoverage'
+				}, but its WGSL never sets or reads the surface's alpha, so it has no builds that cut its shape. Set the alpha in fn surface, such as s.alpha = texel.a, and keep the mask.`,
+			);
 		if (DEV)
 			checkSceneInputs(options.sceneInputs ?? [], sceneDepth, compiled.textures.length, call);
 		if (DEV && options.transmission !== undefined && !lets(compiled))
@@ -3443,10 +3456,19 @@ export class Materials {
 		const diffuseTransmission = translucent ? options.diffuseTransmission : undefined;
 		const id = this.createId(
 			shading,
-			{ ...options, alphaToCoverage: false, diffuseTransmission, subsurfaceRadius: undefined },
+			{
+				...options,
+				// A production build draws such a material at its cutoff, as it has no builds of the
+				// hash or of alpha to coverage.
+				alphaMode: !alpha && options.alphaMode === 'hash' ? 'mask' : options.alphaMode,
+				alphaToCoverage: alpha ? options.alphaToCoverage : false,
+				diffuseTransmission,
+				subsurfaceRadius: undefined,
+			},
 			call,
 			layered,
-			sceneDepth ? MATERIAL_FEATURE_SCENE_DEPTH : 0,
+			(sceneDepth ? MATERIAL_FEATURE_SCENE_DEPTH : 0) |
+				(alpha ? MATERIAL_FEATURE_SURFACE_ALPHA : 0),
 		);
 		// The copy of the opaque depth draws with the particle depth shaders, so the file loads
 		// with the material, before its first frame.
