@@ -18,18 +18,15 @@ import { readPng } from '../../packages/cli/src/png.js';
 import { runCli } from '../lib/cli.ts';
 import { clearCandidate, compareWithReference, environmentNamed } from '../lib/images.ts';
 import { REPO_ROOT } from '../lib/server.ts';
-import { SCRIPT_RUNS, SCRIPT_STATES, SCRIPT_TIER } from './script-runs.ts';
+import { SCRIPT_RUNS, SCRIPT_STATES, SCRIPT_TEST, SCRIPT_TIER } from './script-runs.ts';
 
 const FIXTURE = join(REPO_ROOT, 'tests/fixtures/project');
 /** The fixture's three states, which its script names. */
 const FIXTURE_STATES = ['start', 'forward', 'parked'] as const;
 
-// Each test starts a dev server and a browser, and draws three frames, which takes longer than
+// Each part starts a dev server and a browser, and draws three frames, which takes longer than
 // Playwright's default minute on a busy machine.
 test.describe.configure({ timeout: 240_000 });
-
-/** The copy of the fixture that the tests run in, removed after them. */
-let project = '';
 
 /**
  * Copies the fixture project into a folder of its own under the repository's build folder. The copy
@@ -59,18 +56,18 @@ function projectCopy(): string {
 	return root;
 }
 
-test.beforeAll(() => {
-	project = projectCopy();
-});
+test.describe('the fixture project through three states', () => {
+	/** The copy of the fixture that the command runs in, removed after the test. */
+	let project = '';
+	/** The folder that the command writes its images into, removed after the test. */
+	let drawn = '';
+	let code: number | null = null;
+	let output = '';
 
-test.afterAll(() => {
-	rmSync(project, { recursive: true, force: true });
-});
-
-for (const state of FIXTURE_STATES)
-	test(`project-script-${state} on ${SCRIPT_TIER}`, async () => {
-		const out = test.info().outputPath('tour.png');
-		const { code, output } = await runCli(project, [
+	test.beforeAll(async () => {
+		project = projectCopy();
+		drawn = mkdtempSync(join(REPO_ROOT, 'target/cli-script-drawn-'));
+		const run = await runCli(project, [
 			'shot',
 			'--script',
 			'drive.script',
@@ -79,13 +76,23 @@ for (const state of FIXTURE_STATES)
 			'--size',
 			'320x180',
 			'--gpu',
-			'webgl2',
+			SCRIPT_TIER,
 			'--out',
-			out,
+			join(drawn, 'tour.png'),
 		]);
+		code = run.code;
+		output = run.output;
+	});
+
+	test.afterAll(() => {
+		rmSync(project, { recursive: true, force: true });
+		rmSync(drawn, { recursive: true, force: true });
+	});
+
+	test(`project-script on ${SCRIPT_TIER}`, () => {
 		expect(code, output).toBe(0);
 		// The script writes one image for each of its shot steps.
-		expect(readdirSync(test.info().outputPath()).sort()).toEqual([
+		expect(readdirSync(drawn).sort()).toEqual([
 			'tour-forward.json',
 			'tour-forward.png',
 			'tour-parked.json',
@@ -100,14 +107,17 @@ for (const state of FIXTURE_STATES)
 		expect(output).not.toContain('failed:');
 		// The states come from the script: each image differs from the ones before it. The demo's
 		// images below compare with references instead.
-		const images = FIXTURE_STATES.map((one) =>
-			readFileSync(test.info().outputPath(`tour-${one}.png`)),
-		);
+		const images = FIXTURE_STATES.map((state) => readFileSync(join(drawn, `tour-${state}.png`)));
 		expect(images[0]?.equals(images[1] as Buffer)).toBe(false);
 		expect(images[1]?.equals(images[2] as Buffer)).toBe(false);
 	});
+});
 
-test.describe('a script drives the input demo', () => {
+test.describe('the input demo through three states', () => {
+	// The demo loads a sky environment and draws three frames, and the software GPU that CI uses
+	// takes minutes over them.
+	test.describe.configure({ timeout: 600_000 });
+
 	/** The folder that the command writes its images into, removed after the tests. */
 	let drawn = '';
 	/** What the command printed, which each test checks its own state against. */
@@ -116,7 +126,6 @@ test.describe('a script drives the input demo', () => {
 
 	// One run draws all three states, and each test compares one of its images with its reference.
 	test.beforeAll(async () => {
-		mkdirSync(join(REPO_ROOT, 'target'), { recursive: true });
 		drawn = mkdtempSync(join(REPO_ROOT, 'target/cli-script-demo-'));
 		const run = await runCli(REPO_ROOT, [
 			'shot',
@@ -128,6 +137,8 @@ test.describe('a script drives the input demo', () => {
 			'640x360',
 			'--gpu',
 			SCRIPT_TIER,
+			'--timeout',
+			'120',
 			'--out',
 			join(drawn, 'demo.png'),
 		]);
@@ -140,11 +151,11 @@ test.describe('a script drives the input demo', () => {
 	});
 
 	for (const state of SCRIPT_STATES)
-		test(`script-demo-${state} on ${SCRIPT_TIER}`, async () => {
+		test(`${SCRIPT_TEST}-${state} on ${SCRIPT_TIER}`, async () => {
 			expect(code, output).toBe(0);
 			expect(output).toContain(`Drew ${state} at `);
 			expect(output).not.toContain('failed:');
-			const run = SCRIPT_RUNS.find((one) => one.test === `script-demo-${state}`);
+			const run = SCRIPT_RUNS.find((one) => one.test === `${SCRIPT_TEST}-${state}`);
 			expect(run).toBeDefined();
 			const place = { environment: environmentNamed(test.info().project.name) };
 			clearCandidate(run!, place);
