@@ -21,7 +21,6 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'Raycast and pick hits carry `uv`: `packages/engine/src/scene/queries.ts`, `docs/api/raycast.md`',
 	'M3-A10':
 		'The `sharpen` value runs the RCAS pass at render scale 1: `packages/engine/src/scene/post.ts`',
-	'M3-A11': "D-206 refuses the temporal resolve for 0.1.0, with the study's figures",
 	'M3-A2':
 		'`textures.fromCanvas` and `texture.refresh(rect)` in `packages/engine/src/scene/textures.ts`; `docs/api/textures.md`',
 	'M3-A5':
