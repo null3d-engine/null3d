@@ -569,12 +569,22 @@ and a hero car with two screens.
   that bloom already thresholded and blurred instead of blurring the picture again. D-173 ruling 5
   keeps it to the core's parts: it adds no second way to do any of them. The speed blur follows the
   camera's travel, so a held frame has none. Against the pictures without it, the lens moves 0.66%
-  of the pixels on WebGPU and 0.2% on SwiftShader, drawn before the streak read bloom's chain.
-- **The lens's cost.** The effect adds about 0.7 to 0.9 ms of GPU at every preset on WebGPU. On
-  WebGL2 it adds 0.7 ms at Low and 3.2 ms at Medium. These figures compare the scene with the lens
-  against the same scene without it at a load of 36. The core's sharpen, vignette and grade add
-  nothing to a frame, since they run in the final pass. A look that leaves all four of the effect's
-  values at 0 adds no effect at all.
+  of the pixels on WebGPU and 0.2% on SwiftShader, drawn before the streak read bloom's chain. The
+  picture tests in `tests/image/manifest.ts` draw each part alone, one look to a test:
+  `lens-grade`, `lens-vignette`, `lens-sharpen`, `lens-aberration`, `lens-streak`, `lens-grain`
+  and `lens-speed-blur`. The marks are custom effects, so their four tests keep the two HDR tiers;
+  the core's parts draw on all three. A later `set` that raises a mark builds the effect then. One
+  that lowers every mark to 0 drops it again. Before 24 October 2026, a kit made with every mark at
+  0 never drew a mark that a later call set.
+- **The lens's cost.** The add-on's README holds the look's cost per preset. The cost test times
+  the whole look against the same scene without it. It draws at 1920 x 1080 with a render scale of
+  1, and runs as `NULL3D_LENS_COST=1 bun run test:browser -- lens-cost.spec.ts`. Its figures are
+  owed: the run needs a quiet computer, and the fleet kept the Mac above the quiet threshold. On
+  the Skyway scene at a load of 36, the effect alone added about 0.7 to 0.9 ms of GPU at every
+  preset on WebGPU, and 0.7 ms at Low and 3.2 ms at Medium on WebGL2. The core's vignette and
+  grade add nothing to a frame, since they run in the final pass; the sharpening value adds the
+  first step's pass at the whole render scale. A look that leaves all four of the effect's values
+  at 0 adds no effect at all.
 - **On a phone**, WebGL2 runs Medium at most. Low should hold 60 frames a second on an S24-class
   phone. That preset draws 30,000 cars, about 900 towers, 180 lights, the rain and reflections at a
   quarter of the render size. Medium doubles the cars and raises the reflection scale. A mid-range
