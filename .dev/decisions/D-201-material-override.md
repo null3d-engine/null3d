@@ -34,7 +34,7 @@ How the data was produced: `cargo test -p null3d-render --test override_material
 
 The override is one engine material id in `SceneSettings`, read where the draw tables choose each object's material. It applies to the camera's views, scene passes, reflection passes and the subsurface view, as three.js applies it to every render of the scene. The shadow pass, the outline mask, the motion view and sprite, point, line and particle batches keep their own materials.
 
-The substitution happens when the tables are built. An override that never changes costs one read per object in a rebuild, and nothing in the frames between rebuilds. All the meshes then share the override's buckets, so the draw calls can only fall. A sprite, point or line material is refused with E1223, because its shader reads rows of its own batch.
+The substitution happens when the tables are built. An override that never changes costs one read per object in a rebuild, and nothing in the frames between rebuilds. All the meshes then share the override's buckets, so the draw calls can only fall. A sprite, point or line material is refused with E1224, because its shader reads rows of its own batch.
 
 The engine classifies a mesh by the override's pipeline, so an override that blends draws every mesh in the transparent pass and sorts it. three.js sorts by the original material and then draws with the override. The engine's order is the one that works for its bucket tables; the difference shows only for an override whose blending differs from the scene's.
 
