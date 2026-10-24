@@ -14,14 +14,14 @@ A page can draw a null3D scene with no build step: one HTML file that imports th
 
 ```mermaid
 flowchart LR
-    build["bun run build:cdn<br/>target/cdn"] --> cdn["Your CDN<br/>lib, dist, vendor"]
+    build["bun run build:cdn<br/>target/cdn"] --> cdn["Your CDN<br/>lib, dist, vendor, addons"]
     cdn -- "import" --> html["One HTML file<br/>createEngine and the sketch"]
     html -- "single-threaded, or threaded<br/>with the isolation headers" --> frame["The frame"]
 ```
 
 ## Make the CDN build
 
-The build holds the engine's JavaScript, its shaders, both WebAssembly builds and its vendor files. The npm package leaves the built shaders out, because they are large and a Vite build supplies them. A page with no build step therefore needs this folder.
+The build holds the engine's JavaScript, its shaders, both WebAssembly builds and its vendor files, with each foundation add-on under `addons/<name>/`. The npm package leaves the built shaders out, because they are large and a Vite build supplies them. A page with no build step therefore needs this folder.
 
 ```sh
 bun run build
@@ -138,9 +138,53 @@ Missing items give [E1422](../errors/E1422.md), [E1423](../errors/E1423.md) or [
 
 A page with no build step draws with the engine's own materials, geometry and shaders. Its limits:
 
-- Custom shader WGSL, from a `.wgsl` file or a tagged string, is compiled by the Vite plugin. A page with no build step cannot compile it.
+- Custom shader WGSL, from a `.wgsl` file or a tagged string, is compiled by the Vite plugin. A page with no build step cannot compile it. Custom shader files from an add-on are compiled when the add-on packs, as the add-on's own build shows.
 - A sketch in TypeScript, or one that imports other modules by a relative path, needs a bundler. Write the sketch in JavaScript at a `blob:` address or a URL of its own.
-- The add-on packages, such as the controls and the particles, are separate packages. A page loads them only from a build of its own.
+
+## Add-ons from the CDN
+
+Every foundation add-on sits in the build under `addons/<name>/`, in the layout of its own package. A page imports it by its full address, as it imports the engine, so a sketch in a worker reaches it too. The add-on's built code imports the engine from the same build, so the two never come from different versions.
+
+```html
+<script type="module">
+  const CDN = 'https://cdn.example.com/null3d/';
+  const sketch = `
+import { defineSketch } from "${CDN}lib/index.js";
+import { createTerrain, terrainTextures } from "${CDN}addons/terrain/lib/index.js";
+
+export default defineSketch((ctx) => {
+  const { scene, textures } = ctx;
+  scene.createAmbientLight({ intensity: 0.7 });
+  scene.createDirectionalLight({ direction: [0.4, -1, 0.3], intensity: 2.4 });
+  const camera = scene.createPerspectiveCamera({ position: [0, 180, 180], target: [0, 0, 0] });
+  scene.setActiveCamera(camera);
+  const layers = terrainTextures(textures, { size: 64 });
+  const terrain = createTerrain(ctx, {
+    size: 400,
+    height: (x, z) => 6 * Math.sin(x * 0.02) * Math.cos(z * 0.02),
+    layers: [{ map: layers.grass, tile: 8, roughness: 1 }],
+  });
+  const eye = [0, 0, 0];
+  return {
+    onUpdate() {
+      camera.getWorldPosition(eye);
+      terrain.update(eye);
+    },
+  };
+});
+`;
+
+  const { createEngine } = await import(`${CDN}lib/index.js`);
+  await createEngine({
+    canvas: document.querySelector('#scene'),
+    sketch: URL.createObjectURL(new Blob([sketch], { type: 'text/javascript' })),
+  });
+</script>
+```
+
+An import map can name an add-on for the page's own modules, but a worker reads no import map. Name the add-on by its full address in the sketch, as the example does.
+
+The build also writes `null3d-third-party-notices.txt`, with the license notices of the engine and of each add-on that ships other projects' code. Keep that file with the folder when you publish it, or show its text in your credits.
 
 ## Related pages
 
