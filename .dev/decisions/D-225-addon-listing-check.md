@@ -166,33 +166,43 @@ address that the startup tool serves a build under.
 
 **What the gate does.** For each preset it opens the page's production build with `?bench&preset=`,
 waits for the engine, attaches to the sketch and render workers, warms up for 20 s and 1,200 frames,
-and samples each worker's heap twice for 4 s. It names each function through the build's source maps.
+and samples each worker's heap twice for 4 s. It also samples the workers' call stacks for a second,
+to learn which of the add-on's functions ran. It names each function through the build's source maps.
 Then it sums the places whose source file is the add-on's own: in the add-on's folder, or in its copy
-under `node_modules`. It prints the page's own figure beside it. A page with no such place reports
-zero.
+under `node_modules`. It prints the page's own figure beside it. A page that runs the add-on and
+allocates nothing reports zero.
 
 **Why the build carries source maps.** A production build's frames name bundled chunks, so without
 maps the gate could not tell the add-on's code from the engine's. The check builds with
 `sourcemap: 'hidden'`, which writes the maps and adds no address to a built file, so the page loads
 nothing more. The cost gate measures the same build.
 
-**The verdict.** The gate prints figures and passes once it has measured them. It fails only when it
-cannot measure: no production build, no answer on the browser's debugging socket, no worker target,
-no frame while it sampled, or a worker whose profile held nothing. It never fails because a figure
-differs from one that an add-on publishes. The engine's own allocation check keeps its budgets,
-because it measures the engine. An add-on's page has no such budget, and needs none: the page's own
-sketch in `tests/fixtures/d9-addon` allocates a few bytes per frame by itself. That is the browser
-boxing a fraction that a setter takes, which the engine's own budgets record as an allowed cost. A
-budget on the add-on's figure would fail an honest add-on.
+**The verdict, and why it has no threshold.** The gate prints figures and passes once it has
+measured them. It fails only when it cannot measure. That covers no production build, no answer on
+the browser's debugging socket, and no worker target. It also covers a page that drew no frame while
+it sampled, a worker whose profile held nothing, and a page that ran none of the add-on's own code.
+The last of these is not a budget. It separates a working profiler from one that attached and
+watched other code. The heap profile alone cannot tell them apart, because it lists only the places
+that allocated.
+
+The gate has no per-add-on allocation budget, and must not gain one by accident. The add-on check has
+no basis for such a figure. The engine's own check measures the engine, whose frame code must
+allocate nothing, and it keeps its named budgets and its four bytes per frame allowance precisely
+because it has that basis. An honest add-on's page allocates a little by itself. A short probe of
+`tests/fixtures/d9-addon` read 8.9 bytes per frame in the fixture's own `onUpdate`, from the browser
+boxing a fraction that a setter takes. A gate that failed on any byte, or on a budget written from
+one run, would fail honest add-ons first. A listing that wants a budget for one add-on writes it from
+the figures this gate prints. The gate never fails because a figure differs from one that an add-on
+publishes.
 
 **The run.** `tests/fixtures/d9-addon` passed every gate, and the allocation gate printed:
 
 ```text
 PASS  allocation per preset: low 0 bytes, medium 0 bytes, high 0 bytes, ultra 0 bytes per frame in the add-on's own code, on Chrome 155.0.8059.85
-      low: 782 bytes per frame in the page's threads, 0 bytes of it in the add-on's own code
-      medium: 775 bytes per frame in the page's threads, 0 bytes of it in the add-on's own code
-      high: 789 bytes per frame in the page's threads, 0 bytes of it in the add-on's own code
-      ultra: 786 bytes per frame in the page's threads, 0 bytes of it in the add-on's own code
+      low: 774 bytes per frame in the page's threads, 0 bytes of it in the add-on's own code
+      medium: 778 bytes per frame in the page's threads, 0 bytes of it in the add-on's own code
+      high: 765 bytes per frame in the page's threads, 0 bytes of it in the add-on's own code
+      ultra: 800 bytes per frame in the page's threads, 0 bytes of it in the add-on's own code
 ```
 
 A first probe of the same page, with a warm-up of 8 s, read 8.9 bytes per frame in the fixture's
@@ -203,11 +213,11 @@ The budget of the engine's own check would have failed that first probe's figure
 page calls the add-on's step in every frame, and the step makes objects there. The gate printed:
 
 ```text
-PASS  allocation per preset: low 5.6 KB, medium 5.6 KB, high 5.8 KB, ultra 5.7 KB per frame in the add-on's own code, on Chrome 155.0.8059.85
-      low: 5.6 KB per frame in trail src/index.ts (sketch-worker)
-      medium: 5.6 KB per frame in trail src/index.ts (sketch-worker)
+PASS  allocation per preset: low 5.8 KB, medium 5.8 KB, high 5.8 KB, ultra 5.8 KB per frame in the add-on's own code, on Chrome 155.0.8059.85
+      low: 5.8 KB per frame in trail src/index.ts (sketch-worker)
+      medium: 5.8 KB per frame in trail src/index.ts (sketch-worker)
       high: 5.8 KB per frame in trail src/index.ts (sketch-worker)
-      ultra: 5.7 KB per frame in trail src/index.ts (sketch-worker)
+      ultra: 5.8 KB per frame in trail src/index.ts (sketch-worker)
 ```
 
 The place is the add-on's own step, in the sketch worker, and the page's other threads allocate the

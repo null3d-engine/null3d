@@ -80,7 +80,7 @@ Use `--skip-browser` on a machine that has no GPU or no browser. The shader buil
 
 The cost figures are measured, and the check prints them; it does not compare them with a number that the add-on claims. The page builds for production, so the figures match what a user gets.
 
-The allocation gate counts the bytes that the add-on's own code allocates in each frame, on each quality preset. It reads the heaps of the page's sketch worker and render worker, and names each function by its source file. A place counts as the add-on's own when its source file is in the add-on's folder, or in the add-on's copy under `node_modules`. The gate prints the page's figure beside it. A frame that allocates feeds the browser's garbage collector, so aim at zero.
+The allocation gate counts the bytes that the add-on's own code allocates in each frame, on each quality preset. It reads the heaps of the page's sketch worker and render worker, and names each function by its source file. A place counts as the add-on's own when its source file is in the add-on's folder, or in the add-on's copy under `node_modules`. The gate prints the page's figure beside it. A frame that allocates feeds the browser's garbage collector, so aim at zero. The gate fails only when it cannot measure the add-on's code, such as on a page that runs none of the add-on's files.
 
 ## Related pages
 
