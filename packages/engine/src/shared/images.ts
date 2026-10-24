@@ -92,9 +92,18 @@ export interface CustomShader {
 	 * which binds as the final pass does, or as its bloom build does. A group of joined effects
 	 * binds as an effect does, and the final pass with effects folded into it binds the effects'
 	 * buffer and the scene's depth too. A shader without a kind draws a custom material's meshes.
-	 * A compute shader fills a storage texture of a pass of its own.
+	 * A compute shader fills a storage texture of a pass of its own. A sky layer draws the box
+	 * around the camera that its template makes, with the background's frame group and its own
+	 * values.
 	 */
-	readonly kind?: 'effect' | 'final' | 'finalBloom' | 'effectGroup' | 'effectFold' | 'compute';
+	readonly kind?:
+		| 'effect'
+		| 'final'
+		| 'finalBloom'
+		| 'effectGroup'
+		| 'effectFold'
+		| 'compute'
+		| 'skyLayer';
 	/**
 	 * True for an effect whose WGSL reads a level of bloom's chain, so it draws in a pass of its
 	 * own and binds that level.

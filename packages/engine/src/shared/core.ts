@@ -1019,6 +1019,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setBackgroundSource(kind: number, texture: number): number;
 	/**
+	 * Draws the sky layer of render pipeline template `template` over the background, with the share
+	 * `sun` of the sun that it hides and its `opacity`, or removes the layer for 0.
+	 */
+	setSkyLayer(template: number, sun: number, opacity: number): number;
+	/**
 	 * The scene's fog: its curve (`FOG_CURVE_*`), or none. The call values give its linear color,
 	 * the density of exponential and exponential squared fog, the near and far distances of linear
 	 * fog, the height where the fog has that density, its height falloff, its sun glow and the
@@ -1371,6 +1376,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'hasLevels',
 	'backgroundValues',
 	'setBackgroundSource',
+	'setSkyLayer',
 	'setFog',
 	'setFogVolume',
 	'setFogSlices',

@@ -17,6 +17,7 @@ export declare class CompilerCalls {
 			| 'compile'
 			| 'compile_material'
 			| 'compile_effect'
+			| 'compile_sky_layer'
 			| 'build'
 			| 'prepare_modules'
 			| 'module',
