@@ -247,7 +247,7 @@ describe.skipIf(!ENABLED)('compileWgsl', () => {
 		);
 		expect([none.line, none.column]).toEqual([1, 1]);
 		expect(none.message).toStartWith(
-			'the WGSL has no entry point and no function of a custom material or effect.',
+			'the WGSL has no entry point and no function of a custom material, effect or sky layer.',
 		);
 		expect(none.message).toEndWith(' HINT');
 		const twice = SHADER.replace(
