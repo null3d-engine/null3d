@@ -240,7 +240,8 @@ export default defineSketch(({ debug, page, time }) => {
 | `completedFps` | Frames per second that the GPU finished. Below `presentedFps`, the GPU limits the frame rate |
 | `cpuMs` | CPU time per frame of the busiest thread, in milliseconds |
 | `threads` | Each engine thread's name, its CPU time per frame, and the time of each phase, as `engine.measure` names them |
-| `gpuMs` | GPU time per frame in milliseconds, from one frame in eleven, or null without timer queries |
+| `gpuMs` | GPU time per frame in milliseconds, from one frame in eleven, or null without timer queries. It is the latest pass end less the earliest pass begin, because a tile GPU overlaps the passes |
+| `gpuStepMs` | The step between the GPU's timestamps in milliseconds, when the browser rounds them, or null when they look exact. It is the greatest common divisor of the offsets that the timer reads back |
 | `drawCalls`, `uploadBytes` | Draw calls and bytes uploaded to the GPU, per frame |
 | `triangles`, `objects` | Triangles and objects drawn per frame, over every pass |
 | `wasmBytes` | The size of the engine's WebAssembly memory |
@@ -383,7 +384,11 @@ for (const part of stats.gpuPassMs ?? []) {
 
 ### GPU time
 
-`gpuMs` and `gpuPassMs` need GPU timer queries. Some WebGPU devices offer timestamp queries. On WebGL2, most desktop browsers offer `EXT_disjoint_timer_query_webgl2` and most phones do not; there `gpuMs` covers the frame as a whole, and `gpuPassMs` is empty. Without timer queries both are null. `gpuPassMs` splits `gpuMs` into the parts of the frame, in the order the GPU runs them:
+`gpuMs` and `gpuPassMs` need GPU timer queries. Some WebGPU devices offer timestamp queries. On WebGL2, most desktop browsers offer `EXT_disjoint_timer_query_webgl2` and most phones do not; there `gpuMs` covers the frame as a whole, and `gpuPassMs` is empty. Without timer queries both are null.
+
+`gpuMs` is the latest pass end less the earliest pass begin, not the sum of the passes' own times. A tile GPU overlaps the spans of its passes, so a sum counts the shared time more than once. A browser gives no period for its timestamps, so `gpuStepMs` finds the step between them as the greatest common divisor of the offsets that the timer reads back. It is null when they look exact. Start Chrome with `--enable-webgpu-developer-features --disable-dawn-features=timestamp_quantization` to turn off its timestamp rounding.
+
+`gpuPassMs` splits `gpuMs` into the parts of the frame, in the order the GPU runs them:
 
 | Part | What it is |
 | --- | --- |

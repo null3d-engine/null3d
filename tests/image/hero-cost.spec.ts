@@ -8,7 +8,7 @@
 // quiet computer, within a time limit, and prints the load beside its figures
 // (tests/lib/effect-cost.ts).
 import { expect, test } from '@playwright/test';
-import { browserOptions, WEBGPU_DEVELOPER_FEATURES } from '../../packages/cli/src/browser.js';
+import { browserOptions, GPU_TIMING_ARGS } from '../../packages/cli/src/browser.js';
 import {
 	type CostResult,
 	costTimeout,
@@ -24,7 +24,7 @@ import { pageResult } from '../lib/page-result.ts';
 test.use({
 	launchOptions: {
 		...browserOptions('chrome-real-gpu'),
-		args: [WEBGPU_DEVELOPER_FEATURES],
+		args: [...GPU_TIMING_ARGS],
 	},
 });
 
