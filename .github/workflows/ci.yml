@@ -96,7 +96,22 @@ jobs:
           for skill in skills/*/; do python3 "$RUNNER_TEMP/quick_validate.py" "$skill"; done
 
       - run: bun run check
+      # TypeScript keeps an incremental record of each project under target/typecheck, by the hash
+      # of each file's text, so the newest run's record serves any later commit: the check then
+      # reads again only the files that changed and the files they reach. On the Mac a check with
+      # the record of the same tree took 9 s, against 27 s without it; CI's check without it took
+      # 100 to 134 s. A record of another TypeScript version or other compiler options is ignored.
+      - uses: actions/cache/restore@v4
+        with:
+          path: target/typecheck
+          key: typecheck-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: typecheck-${{ runner.os }}-
       - run: bun run typecheck
+      - uses: actions/cache/save@v4
+        if: "!cancelled() && env.SAVE_CACHES == 'true' && hashFiles('target/typecheck/*.tsbuildinfo') != ''"
+        with:
+          path: target/typecheck
+          key: typecheck-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
       # The meshopt unit tests read the Khronos test file and build test files from the samples.
       - uses: ./.github/actions/samples
       - run: bun run test
