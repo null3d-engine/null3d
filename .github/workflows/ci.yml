@@ -156,6 +156,13 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        # The image tests' references are most of a checkout, and this job reads none of them. A
+        # sparse checkout leaves them out and fetches no file it leaves out.
+        with: &without-references
+          sparse-checkout: |
+            /*
+            !/tests/image/references/
+          sparse-checkout-cone-mode: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -204,6 +211,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
+        with: *without-references
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
       # The cache's own key leaves out the build profiles in the workspace's Cargo.toml, so a
@@ -276,6 +284,7 @@ jobs:
             limit: 25
     steps:
       - uses: actions/checkout@v5
+        with: *without-references
       # A shader part reads only the shader crates, the crate they depend on, the Cargo files, the
       # toolchain and nextest's settings. When an earlier run passed this part with the same files,
       # the part passes again without building anything: the key below hashes exactly those files,
@@ -345,6 +354,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -409,6 +419,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -447,6 +458,7 @@ jobs:
       shader-stamp: ${{ steps.entry-keys.outputs.stamp }}
     steps:
       - uses: actions/checkout@v5
+        with: *without-references
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
       # The cache saves only when its key finds no full match. The key names the native shader
@@ -617,6 +629,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -736,6 +749,7 @@ jobs:
       NULL3D_SHADER_SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@v5
+        with: *without-references
       # The key names the files that decide what the compiler produces and the scripts that run it:
       # the shader crates, the build tool that builds the compiler, the compiler's runner script and
       # the Vite plugin, whose code the runner calls, with the packages' install. Not the whole of
@@ -835,6 +849,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        with: *without-references
       - name: The key of this part's inputs
         id: inputs
         run: echo "key=passed-v1-shader-compiler-plugin-${{ matrix.script }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}-${{ matrix.script == 'test:shader-compiler:pack' && hashFiles('tests/pages/**', 'tests/fixtures/**', 'examples/**') || hashFiles('tests/fixtures/typed-uniforms/**', 'tests/pages/sketches/shaders/**') }}" >> "$GITHUB_OUTPUT"
@@ -888,6 +903,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -948,6 +964,13 @@ jobs:
       CITY_TESTS: '\bs6 on '
     steps:
       - uses: actions/checkout@v5
+        # The browser tests compare with the references of CI's software GPU alone, so the
+        # checkout leaves out the real GPU's.
+        with: &software-gpu-references
+          sparse-checkout: |
+            /*
+            !/tests/image/references/chrome-real-gpu/
+          sparse-checkout-cone-mode: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -992,6 +1015,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        with: *software-gpu-references
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -1043,6 +1067,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        with: *software-gpu-references
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -1090,6 +1115,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        with: *software-gpu-references
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -1140,6 +1166,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        with: *software-gpu-references
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -1174,6 +1201,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        with: *software-gpu-references
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -1256,6 +1284,7 @@ jobs:
       PARITY_TESTS: 'against three\.js'
     steps:
       - uses: actions/checkout@v5
+        with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -1311,6 +1340,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -1351,6 +1381,7 @@ jobs:
       HUSKY: "0"
     steps:
       - uses: actions/checkout@v5
+        with: *without-references
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -1414,6 +1445,13 @@ jobs:
       NULL3D_LOAD_PAGES: prebuilt
     steps:
       - uses: actions/checkout@v5
+        # Real browsers compare with the real GPU's references and their devices' own, never with
+        # the software GPU's, which the checkout leaves out.
+        with:
+          sparse-checkout: |
+            /*
+            !/tests/image/references/chromium-swiftshader/
+          sparse-checkout-cone-mode: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
