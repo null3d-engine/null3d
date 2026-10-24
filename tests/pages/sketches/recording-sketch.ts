@@ -19,7 +19,7 @@ export default defineSketch(({ scene, geometry, materials, input, time, page }) 
 		onUpdate(dt) {
 			page.post(
 				'frame',
-				`${time.frame}|${time.now.toFixed(6)}|${dt.toFixed(6)}|${input.isDown('KeyW') ? 1 : 0}|${first.toFixed(6)}`,
+				`${time.frame}|${time.now.toFixed(6)}|${dt.toFixed(6)}|${input.isDown('KeyW') ? 1 : 0}|${Math.round(input.pointer.x)}|${input.isDown('Mouse0') ? 1 : 0}|${first.toFixed(6)}`,
 			);
 			box.setRotationEuler(0, time.now + first, 0);
 			box.setPosition(0, input.isDown('KeyW') ? 0.5 : 0, 0);
