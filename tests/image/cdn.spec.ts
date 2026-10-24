@@ -5,7 +5,8 @@
 // isolation headers and single-threaded without them, and loads a meshopt glTF file and KTX2 files.
 // With an item of the policy or a header missing, the start fails with the code that names it.
 // One page loads the terrain add-on's packed library from there: the compiled shader module and the
-// files of its builds, which a browser reaches as modules over the CDN's origin.
+// files of its builds, which a browser reaches as modules over the CDN's origin. The add-on that
+// draws from the CDN build itself is `cdn-script-tag.spec.ts`, on every GPU path.
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { extname, join } from 'node:path';

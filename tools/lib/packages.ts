@@ -148,6 +148,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 			'templates/empty/AGENTS.md',
 			'templates/empty/.claude/agent-hook.mjs',
 			'templates/empty/.claude/settings.json',
+			'templates/empty/.codex/hooks.json',
 			'templates/empty/src/sketch.ts',
 			'vendor/basis/basis_encoder.js',
 			'vendor/basis/basis_encoder.wasm',
@@ -526,6 +527,16 @@ export function buildPackage(root: string, name: string): void {
  * package's time, so a long build shows where it is.
  */
 export function buildPackages(root: string, names: readonly string[]): void {
+	buildPackageLibraries(root, names);
+	for (const name of names) writePackageFiles(root, name);
+}
+
+/**
+ * Builds the libraries of the packages named, each one once, and prints each package's time: the
+ * packages that one needs build before it, and a package that several others need is not compiled
+ * again for each of them. Writes nothing else that a tarball holds.
+ */
+export function buildPackageLibraries(root: string, names: readonly string[]): void {
 	const built = new Set<string>();
 	const library = (name: string): void => {
 		if (built.has(name)) return;
@@ -535,10 +546,7 @@ export function buildPackages(root: string, names: readonly string[]): void {
 		built.add(name);
 		console.log(`  built ${name} in ${secondsSince(started)} s`);
 	};
-	for (const name of names) {
-		library(name);
-		writePackageFiles(root, name);
-	}
+	for (const name of names) library(name);
 }
 
 /** The fields of a package manifest that the checks read. */
