@@ -82,15 +82,16 @@ What the shape of the figures already shows:
 | Low | 1,024 | 4 | 1,024 | 20 MiB | 4 MiB |
 | Medium | 2,048 | 8 | 2,048 | 144 MiB | 16 MiB |
 | High | 2,048 | 16 | 2,048 | 272 MiB | 16 MiB |
-| Ultra | 4,096 | 24 | 4,096 | 1,600 MiB | 64 MiB |
+| Ultra | 4,096 | 23 | 4,096 | 1,536 MiB | 64 MiB |
 
 The "at most" column counts every light tile that `shadowTiles` allows, which no scene needs. The
 frame draws only the tiles that the visible spot and point lights fill, so the honest figures are
 lower. The demo names no spot or point light that casts, so its atlas is the hero's layer alone:
 4 MiB on Low, 16 MiB on Medium and High, and 64 MiB on Ultra. A hero scene with four light tiles,
 the usual handful of lamps that cast, takes 20 MiB on Low, 80 MiB on Medium, 80 MiB on High and
-320 MiB on Ultra. The 1.6 GiB headline needs 24 spot or point tiles on Ultra, which is the
-pathological case, not the typical one.
+320 MiB on Ultra. The 1.5 GiB headline needs 23 spot or point tiles on Ultra, which is the
+pathological case, not the typical one. The atlas keeps one of its 24 layers for the hero, so a
+scene with a hero gives up one light tile.
 
 The renderer refuses an atlas above 1 GiB. Past that size a phone is likely to lose its GPU context,
 so the engine turns the ask into an error first. It fails the frame with E1501 before the GPU is
