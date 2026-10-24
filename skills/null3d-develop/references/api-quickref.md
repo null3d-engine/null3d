@@ -68,6 +68,7 @@ await engine.firstFrame;                 // the GPU finished the first frame: re
 engine.postToSketch('difficulty', { level: 2 });            // an optional third argument lists transferables
 const off = engine.onSketchMessage((type, data) => { /* ... */ }); // the first handler also gets earlier messages
 off();                                   // every on... call returns a function that removes its handler
+const stopFrames = engine.registerVideo(video, { name: 'intro', maxSize: 512 }); // (0.3) the sketch follows it with textures.fromVideo('intro'); stopFrames() stops the frames
 engine.detach();                         // single-page apps: canvas off the page, engine paused, scene kept
 engine.attach(container);                // canvas back on the page; the engine resumes with no new start
 engine.setPaused(true);                  // the first step after resuming counts no time
@@ -428,6 +429,8 @@ textures.fromImageBitmap(await createImageBitmap(offscreenCanvas, { imageOrienta
 const context = canvas.getContext('2d', { willReadFrequently: true })!;
 const screen = textures.fromCanvas(canvas, { refreshHz: 30 });  // the canvas stands upright on a plane
 screen.refresh({ x, y, width, height });  // uploads only that rectangle; screen.refresh() reads all of it
+// A video element on the page (0.3): engine.registerVideo(video, { name, maxSize }) there, then
+const video = textures.fromVideo('intro', { mipmaps: false });  // the page sends each frame it presents
 tex.update(bitmap);        // a new size is fine; or tex.update(data) of the same size
 tex.width; tex.height; tex.bytes;   // size and GPU memory
 tex.droppedLevels;         // (0.2) largest mip levels the memory budget dropped, 0 to 3; width and height stay
@@ -440,6 +443,7 @@ textures.memoryBytes; textures.maxSize;  // GPU bytes of every texture; the larg
 - `scene.setBackground(tex)` shows a texture behind every object. The color set before it shows until its texels are on the GPU.
 - `textures.fromPass(pass)` (0.2) gives the texture of a scene or reflection pass from `render.addPass` (section 16).
 - `textures.fromCanvas(canvas, { refreshHz })` (0.2) follows an `OffscreenCanvas`. Give the rectangle of the refresh in the canvas's coordinates. A 256 x 256 rectangle is 256 KiB, so a 30 Hz screen stays within the upload budget. The rectangle must lie inside the canvas.
+- `textures.fromVideo(name)` (0.3) follows the video that `engine.registerVideo(video, { name })` registered on the page. The page scales each frame to `maxSize`, 512 texels by default, and sends one image per presented frame; a paused video costs nothing. Keep a frame within the upload budget: 512 x 288 is 576 KiB. A cross-origin video needs `crossOrigin = 'anonymous'` and CORS headers.
 - Cube maps come from `assets.loadCubemap` (0.2), section 11.
 
 Use KTX2 for large textures, above all on phones: a compressed texel takes a quarter or an eighth of the GPU memory of RGBA8. Encode mip levels into the file (`basisu -mipmap`), since the GPU cannot make them for compressed texels. UASTC keeps more detail, and ETC1S makes smaller files. The first KTX2 file downloads the transcoder, about 365 KB after Brotli. A page without KTX2 files downloads none of it. The engine keeps transcoded textures in the browser's Cache Storage (0.2), so a repeat visit skips the transcoder; nothing to set up (`api/assets`). A texture from a KTX2 file takes no `update`.
