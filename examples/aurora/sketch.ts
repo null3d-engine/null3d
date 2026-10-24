@@ -58,7 +58,7 @@ export default defineSketch(async (ctx) => {
 		material: ice,
 		rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
 	});
-	// A low ridge of snow along the far shore, and a second behind it, fading into the night.
+	// A low ridge of snow along the far shore, fading into the night.
 	math.seed(11);
 	const snow = paint('#9fb4cc', 0.9, true);
 	for (let k = 0; k < 24; k++) {
@@ -72,7 +72,7 @@ export default defineSketch(async (ctx) => {
 			rotation: [0, math.randFloat(0, Math.PI), 0, 1],
 		});
 	}
-	// Pines on the near shore, dark against the ice, each a trunk and two cones of needles.
+	// Pines on the near shore, dark against the ice, each two cones of needles.
 	const needles = paint('#0e2a24', 0.9, true);
 	const low = geometry.cone({ radius: 2.2, height: 7, radialSegments: 6 });
 	const high = geometry.cone({ radius: 1.5, height: 6, radialSegments: 6 });
