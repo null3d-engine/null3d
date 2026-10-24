@@ -36,12 +36,18 @@ How the data was produced: SHA-256 of the kept `program/shader-build` of each ca
 - The source stamp still names a new folder and still forms CI's cache keys, which a run reads before it builds the program. When a folder of that name already holds another compiler's entries, the new compiler takes `<stamp>-<fingerprint>`, because entries share a key when their folder names match.
 - An entry's key therefore stays the entry's source, its manifest table and the compiler's fingerprint. Nothing in the Rust cache changes: `--stamp` is the folder's name, and the folder holds one compiler's entries.
 
+## CI keys
+
+- **Field names.** `key`, `branch-keys`, `stamp-keys`, `stamp`, `inputs`, `modules-dir` and `entries-dir` keep their names and their meanings. `--cache-keys` gains `any-stamp-keys`, a cache prefix of the runner's system alone. `--entry-folder` prints `folder=<path>`, the entry folder that a build read or would write.
+- **Where entries live.** Each entry folder is still `<entries-dir>/<stamp>`, where the stamp is the source state that first wrote it, and its `compiler` file records the program's fingerprint. A run whose source stamp differs but whose program has the same bytes reads and writes that earlier stamp's folder. It does not create a folder of its own.
+- **Restores across stamps.** Only with `any-stamp-keys` in `restore-keys`, which `.github/actions/shaders` and the `shader-entries` job now add last. The first two prefixes still find an exact stamp first. A restore can then bring an earlier stamp's folder, and the tools reuse it. The action prunes to the folder that the build used, not to the current stamp's, and the build job passes that folder to the shader tests. The shard download still targets `<entries-dir>/<stamp>`; when a shard wrote new entries into an earlier folder, the build job compiles those few entries again, and the unchanged set is still reused.
+
 ## Consequences
 
 - `tools/lib/shader-modules.ts` gains the fingerprint, the marker and the folder choice. `buildEntriesShard` returns the folder that it filled as well as the files that it stored.
 - Cargo still compiles the program after any compiler source change, but that is seconds, and `sccache` usually shortens it further. It no longer decides whether the entries are valid.
 - A change to the generated WGSL of one entry still compiles that entry. A change to a library module still compiles the entries that import it.
-- CI needs no change. A run's jobs start with an empty entries folder unless the Actions cache matches. That cache's key includes the source stamp, so each run writes the folder that `--cache-keys` prints, as before.
+- CI gains the same reuse. The action's restore now ends with a key prefix that names no source stamp, so a stamp change restores the newest entries of any stamp. The build reads the folder whose recorded program matches that compiler. The action keeps and saves that folder rather than the current stamp's, and the build job names it for the shader tests.
 - A source change that changes the program's bytes still rebuilds every entry. That is the price of never reusing another compiler's output.
 - The module set is still keyed by the source stamp. So the same change copies a module set of 2.8 GB under the new input hash. It writes no module byte, because the set is identical. That copy, not the shader build, is most of the 150 s in the table.
 
