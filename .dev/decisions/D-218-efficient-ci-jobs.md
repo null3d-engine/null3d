@@ -86,3 +86,30 @@ The unpack in `.github/actions/archive` now judges tar's status first. When tar 
 
 A checkout's fetch stalled on two runs of 24 October 2026. On a Safari shard of run 40049563192 it waited for curl's own receive timeout, 23 s on the first try and 11 minutes on the next. In run 40056066922 a Firefox shard's checkout waited 35 minutes, until the job's limit cancelled it, and held the run's end at 47 minutes, where its other jobs ended by 24. CI's and the benchmark workflow's environments now set `GIT_HTTP_LOW_SPEED_LIMIT` to 1,000 bytes a second and `GIT_HTTP_LOW_SPEED_TIME` to 30 s, so git gives up on a transfer that stays that slow, and `actions/checkout` fetches again, as it does up to three times. A stall in the checkout's own fetch of the files that a sparse checkout reads fails the step within the same 30 s in place of hanging, since `actions/checkout` does not repeat that step. A test in `tools/lib/ci-workflow.test.ts` keeps both settings.
 
+## Update, 24 October 2026: three small entries make every module kind
+
+The determinism check and the module exports test built `lit`, `environment`, `pick` and
+`timer_mark`. `lit` made 7,776 of those 7,823 builds. The export test then took 336 s, and alone held
+`rust-tests` part 2 of 4 at 5.9 to 7.5 minutes. The determinism part took 6.1 minutes (runs
+40071296434, 40070413493 and 40069705714, with the shader crates optimized).
+
+`lit` was there for the device module, the combined loader table and the shared-paragraph table.
+The basic material's `unlit` entry makes the same three with 328 builds. It loads by device, and its
+feature bits fill 20 device modules in each WebGL2 kind of the device's bits. A paragraph that all
+20 modules hold, such as the instance texture's uniform or a shared mesh helper, passes the
+20-module floor, so the build writes a base-family paragraph table. Its feature sets of two or more
+features write the combined loader tables. `environment` still makes the whole-shader first-use
+module, and `timer_mark` keeps a shader in the main module. `pick` made a device module that `unlit`
+also makes.
+
+The checks build `unlit`, `environment` and `timer_mark`, 331 builds, 0.5% of the whole build and
+4.2% of the old input. On the Mac, with the shader crates optimized as CI builds them, the export
+test fell from 1,004.85 s to 12.48 s, and the determinism part from 2,347.88 s to 29.03 s. That is
+about 80 times faster, because a basic material build is cheaper than a standard material build.
+The Mac's absolute times are about three times CI's under the CPU lane's background priority, so
+the ratio is the figure that carries. CI's 336 s and 6.1 minutes become about 4 and 5 seconds, well
+inside the targets of 60 seconds and 2 minutes.
+
+The two checks keep their own copies of the list. A shared copy in the shader library would change
+the compiler's stamp, as the decision above records.
+

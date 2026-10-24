@@ -682,7 +682,7 @@ mod tests {
     /// The entries whose builds between them make one module of every kind that a build writes:
     /// the list that the shader crate's determinism check builds (`DETERMINISM_ENTRIES` in its
     /// build tests), which explains how each entry makes its kinds.
-    const EVERY_KIND_ENTRIES: &[&str] = &["lit", "environment", "pick", "timer_mark"];
+    const EVERY_KIND_ENTRIES: &[&str] = &["unlit", "environment", "timer_mark"];
 
     /// A kind of module, by the name that a failure gives it, and the test that its file names pass.
     type ModuleKind = (&'static str, fn(&str) -> bool);

@@ -20,7 +20,7 @@ threads-required = 2
 priority = 50
 
 # The module exports test builds the few entries that make one module of every kind, which takes
-# minutes, so it starts before the short tests.
+# longer than a short test, so it starts before them.
 [[profile.default.overrides]]
 filter = 'binary_id(null3d-shaders-wasm) & test(=tests::prepare_modules_lists_every_module_and_module_renders_one)'
 priority = 45
