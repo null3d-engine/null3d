@@ -34,7 +34,7 @@ export function createFacades(ctx: SketchContext): Facades {
 		// reads as dark stone and metal at night and its lit rooms carry the picture.
 		color: '#2a2f3a',
 		window: { width: 1.66, height: 1.63, spacing: 1.3, floorHeight: 3.7, frame: 0.12, sill: 1.4 },
-		room: { depth: 2.6, light: 2.6, litShare: 0.42, flicker: 0.45 },
+		room: { depth: 2.6, light: 2.2, litShare: 0.42, flicker: 0.45 },
 		power: { origin: [0, 0], speed: 2600, rise: 12, damping: 6 },
 		shops: { height: 7 },
 	});
