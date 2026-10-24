@@ -127,8 +127,9 @@ run('video-texture', async () => {
 	}) as typeof createImageBitmap;
 	// A browser may refuse to play a video, as its autoplay policy does. The engine then sends no
 	// frame and the texture draws with its material's colour alone, so the run reports it. Some
-	// browsers leave the play call's promise waiting with no answer even though the video plays, so
-	// the wait has a limit and the video's own state decides.
+	// browsers leave the play call's promise waiting with no answer, and Safari marks a video that
+	// plays from a canvas's stream as paused, so the wait has a limit and the frames decide: a frame
+	// that the page copies from the video is proof that the video plays.
 	try {
 		await Promise.race([
 			video.play(),
@@ -141,22 +142,14 @@ run('video-texture', async () => {
 			`the play call gave no answer: ${error instanceof Error ? error.message : String(error)}`,
 		);
 	}
-	let played = false;
-	const until = performance.now() + 3000;
-	while (performance.now() < until) {
-		if (!video.paused && video.readyState >= 2) {
-			played = true;
-			break;
-		}
-		await new Promise((resolve) => setTimeout(resolve, 100));
-	}
-	if (!played) progress('the browser did not play the video');
-	else progress(`video playing at ${video.videoWidth} x ${video.videoHeight}`);
 	// The canvas changes on every display frame while the video plays, so its stream sends frames
-	// that differ. The dot moves across the middle, where the test reads no colour.
+	// that differ. The dot moves across the middle, where the test reads no colour. The painting
+	// stops at the pause, not when the video reports itself paused: Safari marks a video that plays
+	// from a canvas's stream as paused.
 	let painting = 0;
+	let animating = true;
 	const animate = () => {
-		if (video.paused) return;
+		if (!animating) return;
 		paint(((performance.now() / 16) % 100) / 100);
 		painting = requestAnimationFrame(animate);
 	};
@@ -164,10 +157,14 @@ run('video-texture', async () => {
 	// A frame goes from the video to the sketch, and then to the GPU, in a frame or two.
 	await presented(video);
 	await new Promise((resolve) => setTimeout(resolve, 500));
+	const played = copies.length > 0;
+	if (!played) progress('no frame left the video, so the browser did not play it');
+	else progress(`video playing at ${video.videoWidth} x ${video.videoHeight}`);
 	const playing = await engine.measure(2);
 	progress('measured while playing');
 
 	video.pause();
+	animating = false;
 	cancelAnimationFrame(painting);
 	// The last frame before the pause finishes its upload before this window opens.
 	await new Promise((resolve) => setTimeout(resolve, 500));
