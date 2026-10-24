@@ -225,6 +225,11 @@ export interface TrafficLanes {
 	 * second.
 	 */
 	update(eye: Vec3Like, time: number): void;
+	/**
+	 * Removes the batches, their materials and the real lights, so a scene can build the lanes
+	 * again around another hull. Destroy the hull the scene gave after this call.
+	 */
+	dispose(): void;
 }
 
 /** The four headings, as the yaw that turns a vehicle's nose from +Z onto its lane. */
@@ -338,7 +343,7 @@ export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptio
 		// A row travels the whole lane from its origin, so its own sphere must cover the lane, or
 		// the engine culls it while it is still on the screen.
 		batch.setBoundingRadius(span);
-		return { yaw: lane.yaw, batch, active: rows.length, total: rows.length };
+		return { yaw: lane.yaw, batch, material, active: rows.length, total: rows.length };
 	});
 
 	// The real lights: a pool that each search moves to the nearest vehicles.
@@ -379,6 +384,13 @@ export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptio
 		setCount,
 		get count() {
 			return drawn;
+		},
+		dispose() {
+			for (const entry of batches) {
+				entry.batch.destroy();
+				entry.material.destroy();
+			}
+			for (const light of lights) light.destroy();
 		},
 		update(eye, time) {
 			if (realLights === 0 || time - searchedAt < LIGHT_SECONDS) return;
