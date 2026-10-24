@@ -2460,6 +2460,9 @@ impl CpuCulledRenderer {
             },
             // The CPU path draws every count that the page sets, so no count waits for a pass.
             |_| Ok(()),
+            // WebGL2 has no compute pass, so it converts no rows between the compute steps and the
+            // render steps: its adapter fills an instance batch on the CPU.
+            |_| Ok(()),
             |list| {
                 if motion_on {
                     motion_state.finish(list, input.parity(), skins)?;

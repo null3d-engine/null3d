@@ -185,3 +185,66 @@ are open, and the choice belongs to the owner:
 
 Until then the two instance pictures stay black on WebGPU, and the references stay missing. The
 engine must not accept a blank picture as a reference.
+
+## Addendum 24 October 2026: the rows are converted on the GPU
+
+The owner chose option 1: the engine converts the rows on the GPU. The conversion is one compute
+dispatch for each draw in each frame, so a camera that moves costs no upload of the page's rows.
+
+### The design
+
+- The draw's instance buffer that the page and the add-on's compute write holds **world** rows, as
+  the public contract says. The draw reads a second buffer of the same size, which the engine
+  owns and fills each frame with the camera-relative rows.
+- The conversion shader (`feature_rows.wgsl`) reads the camera's absolute world position from its
+  block, the draw's count word, and each live instance's three matrix rows. It writes each row's
+  `w` minus the camera's position on that axis, and copies the ids unchanged. The dispatch covers
+  the draw's capacity, and the shader returns above the count, so a large capacity with a small
+  live count converts only its live rows.
+- The conversion reads the world buffer and writes the second buffer, rather than changing the
+  world buffer in place. In place, each frame would subtract the camera again from rows that the
+  previous frame had already converted, unless the page re-uploaded its rows or the add-on's
+  compute rewrote every live row every frame. The second buffer makes the conversion a function of
+  the world rows alone, so both update paths serve it.
+- The bind group of a draw is `layout::FEATURE_ROWS` (59): the camera's block, the count word, the
+  world rows and the rows it writes. The pipeline is `template::FEATURE_ROWS` (83). The camera's
+  block is the conversion's own 16-byte uniform buffer, not the add-on compute block: the second
+  buffer needs a fourth binding, so the conversion cannot share the add-on's group, and the compute
+  block's 256-byte stride and 8 slots do not fit a scene's 64 draws.
+- The render graph gained `after_all_compute`, which records once when the plan leaves its compute
+  steps for the first render step. The frame converts the rows there, then copies each count word
+  into the indirect draws. The count copy moved from after each compute step to that one point,
+  which keeps both buffers final before the first reader and records each copy once per frame.
+- The camera is the main view's absolute world position, `CellPosition::absolute()` in 64-bit
+  floats, rounded once to 32 bits.
+
+### Cost
+
+- A frame that holds no feature-instance draw records no conversion: no buffer, no pipeline, no
+  bind group and no dispatch.
+- A frame that holds one pays one compute pass, one dispatch for each draw, one write of 16 bytes
+  when the camera moved, and a bind group for each draw when the draw is new or its capacity
+  changed.
+- Each draw keeps a second instance buffer of `capacity * 64` bytes. At the docs' 100,000-instance
+  example that is 6.4 MB, beside the world buffer's 6.4 MB. The option costs memory, not transfer.
+- The camera position upload happens only while the camera moves. A still camera pays the
+  dispatches alone.
+
+### Limits
+
+- The conversion uses the main view's camera. A shadow cascade or a tile reads the same
+  camera-relative rows with its own light's view projection, so a feature-instance draw that casts
+  shadows draws them from the main camera's rows. D-229's first version already draws such a draw
+  in the main view alone; a later version can convert for each view if the shadows are needed.
+- The add-on's compute pass must run before the first render step, as a pass of `band: 'before'`
+  does. A pass after the scene writes rows too late for the opaque pass to read them.
+
+### Tests
+
+- A render test asserts that the conversion dispatch follows the add-on's compute pass and precedes
+  the first render pass, and that a frame without a feature draw makes no conversion pipeline, group
+  or dispatch.
+- A render test asserts the draw reads the second buffer and that the group binds the camera's
+  block, the count word, the world rows and the rows it writes.
+- The image tests draw the two instance sketches on every tier and thread mode, and a test forces
+  the direct-draw path to prove that the routing to the indirect path draws the same frame.
