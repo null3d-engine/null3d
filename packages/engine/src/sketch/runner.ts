@@ -1343,8 +1343,9 @@ export class SketchRunner {
 				const count = program.counts[at] as number;
 				for (let k = start; k < start + count; k++) this.writeRecordedEvent(program, k, keyIndex);
 				// The last frame is the only one that the thread that draws draws, so it is the first
-				// to wait for the scene's images, as a held frame does.
-				const before = at === frames - 1 && glue.holdsFrameBefore() !== 0;
+				// to wait for the scene's images, as a held frame does. A pass that reads the frame
+				// before it, as screen-space reflections do, draws the frame before the last too.
+				const before = at === frames - 2 && glue.holdsFrameBefore() !== 0;
 				if (first === 0 && (before || at === frames - 1)) {
 					await this.context.scene.imagesSettled();
 					await this.context.scene.areaTablesSettled();
