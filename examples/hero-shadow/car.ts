@@ -2,7 +2,7 @@
 // shadows together. The body is the hero that the sun fits its own shadow tile to. A light names an
 // object that carries bounds, and a group carries none, so the body's sphere is widened to hold the
 // whole car, since the tile's box reaches from it.
-import type { Mesh, MeshOptions, SketchContext } from '@null3d/engine';
+import type { Group, Mesh, MeshOptions, SketchContext } from '@null3d/engine';
 
 /** Where each wheel stands, in the car's own space. */
 const WHEELS = [
@@ -12,11 +12,16 @@ const WHEELS = [
 	[0.86, -1.35],
 ] as const;
 
-/** Builds the car, and returns the body that the sun's hero shadow fits. */
-export function car(ctx: SketchContext): Mesh {
+/**
+ * Builds the car, and returns the body that the sun's hero shadow fits. A caller that gives
+ * `parent` moves the whole car by moving that group.
+ */
+export function car(
+	ctx: SketchContext,
+	parent: Group = ctx.scene.createGroup({ position: [0, 0, 0] }),
+): Mesh {
 	const { scene, geometry, materials } = ctx;
 	const paint = materials.standard({ color: '#c8452f', roughness: 0.35, metalness: 0.4 });
-	const parent = scene.createGroup({ position: [0, 0, 0] });
 	const on = (options: MeshOptions) =>
 		scene.createMesh({
 			...options,
