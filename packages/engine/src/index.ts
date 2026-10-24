@@ -216,6 +216,11 @@ export type {
 	RaycastOptions,
 } from './scene/queries';
 export type {
+	ComputeDispatch,
+	ComputeFallback,
+	ComputeFormat,
+	ComputePassOptions,
+	ComputeWorkgroup,
 	FullscreenPassOptions,
 	PassInput,
 	PassScale,

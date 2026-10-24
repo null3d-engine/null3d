@@ -159,6 +159,7 @@ use crate::ao::{self, AoIds};
 use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
+use crate::compute::ComputePassIds;
 use crate::data_texture::DataTexture;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
@@ -555,6 +556,13 @@ mod ids {
     pub const TARGETS: u32 = PICK_GROUP + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
+    /// The uniform buffer of the compute passes' blocks, in the gap after the cluster levels'
+    /// per-view buffers, which leaves the page buffers and the texture store's groups above them
+    /// their own numbers.
+    pub const COMPUTE: u32 = CLUSTER_BUFFERS + 5 * MAX_VIEW_IDS as u32;
+    /// The compute pipeline of each compute pass, from this id on, by its view's place. The
+    /// engine's own compute pipelines take the low numbers.
+    pub const COMPUTE_PIPELINES: u32 = 100;
     /// The comparison sampler of the shadow atlas.
     pub const SHADOW_SAMPLER: u32 = 1;
     /// The linear sampler of bloom's steps and of the final pass's bloom build.
@@ -712,8 +720,11 @@ mod ids {
         PARALLAX_FRAME_GROUPS + view.index() as u32
     }
 
-    /// The bind groups of materials' maps, after the parallax frame groups.
-    pub const TEXTURE_GROUPS: u32 = PARALLAX_FRAME_GROUPS + MAX_VIEW_IDS as u32;
+    /// Group 0 of each compute pass, from this id on, by its view's place, after the parallax
+    /// frame groups.
+    pub const COMPUTE_GROUPS: u32 = PARALLAX_FRAME_GROUPS + MAX_VIEW_IDS as u32;
+    /// The bind groups of materials' maps, after the compute passes' groups.
+    pub const TEXTURE_GROUPS: u32 = COMPUTE_GROUPS + MAX_VIEWS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -1033,6 +1044,11 @@ impl GpuDrivenRenderer {
                             first_group: ids::FULLSCREEN_GROUPS,
                             blank_color: ids::BLANK_PASS_COLOR,
                             blank_depth: ids::BLANK_PASS_DEPTH,
+                        },
+                        compute: ComputePassIds {
+                            buffer: ids::COMPUTE,
+                            first_group: ids::COMPUTE_GROUPS,
+                            first_pipeline: ids::COMPUTE_PIPELINES,
                         },
                         dof: DofIds {
                             buffer: ids::DOF,

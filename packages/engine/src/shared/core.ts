@@ -628,6 +628,38 @@ export interface CoreGlue extends CoreErrors {
 		source: number,
 	): number;
 	/**
+	 * Adds a compute pass named `pass`, which runs the compiled WGSL of compute pipeline template
+	 * `template` over the whole of a target named `target`: of `width` x `height` texels, or with
+	 * a width of 0, of `scale` of the render size each way. It writes the target as a storage
+	 * texture of `format`, a draw list format code, over a workgroup of `workgroup` invocations
+	 * packed one axis to a byte, and dispatches `counts` workgroups along each axis packed the same
+	 * way, or covers the target when every count is 0. It reads its uniforms at `effectValues` and
+	 * its textures at `effectTextures`, in one frame of every `every`. Returns the view's place
+	 * from 1, or 0 on failure, as `addPass` does.
+	 */
+	addComputePass(
+		pass: string,
+		target: string,
+		width: number,
+		height: number,
+		scale: number,
+		every: number,
+		template: number,
+		format: number,
+		workgroup: number,
+		counts: number,
+		afterScene: number,
+		countsBuffer: number,
+		instancesBuffer: number,
+		instancesBytes: number,
+	): number;
+	/**
+	 * Gives the compute pass of view place `place` the uniforms at `effectValues` and the textures
+	 * at `effectTextures`, from the next frame on. Returns 0, or the render graph's code for a
+	 * texture that closes a loop of passes.
+	 */
+	setComputeValues(place: number): number;
+	/**
 	 * Adds a view that draws the scene into a rectangle of the canvas, which the first four call
 	 * values name: its left and top, then its width and height, as fractions of the canvas. The
 	 * view's lens goes to it through `setPerspectiveCamera` or `setOrthographicCamera` with
@@ -1192,6 +1224,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'clearShadowCamera',
 	'addPass',
 	'addFullscreenPass',
+	'addComputePass',
+	'setComputeValues',
 	'addSceneView',
 	'setSceneViewRect',
 	'removeSceneView',

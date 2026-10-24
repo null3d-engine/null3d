@@ -171,6 +171,7 @@ use crate::accumulate::{self, AccumulateIds, AccumulatePass};
 use crate::ao::{self, Ao, AoIds, AoPass, Contact, StepSources};
 use crate::bloom::{self, Bloom, BloomIds, BloomPass, ChainFrame, LEVELS, STEPS};
 use crate::camera::Mat4;
+use crate::compute::{ComputePassIds, ComputePasses};
 use crate::dof::{self, DofFrame, DofIds, DofPass, DofSources};
 use crate::effects::{
     self, Effect, EffectBloom, EffectIds, EffectJoins, EffectMaps, EffectPass, MAX_EFFECTS, Unit,
@@ -197,7 +198,7 @@ use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
 use crate::ssr::{self, LastView, SsrIds, SsrPass, TraceFrame};
 use crate::subsurface::{self, SubsurfaceFrame, SubsurfaceIds, SubsurfacePass, SubsurfaceSources};
 use crate::transmission::{TransmissionCopy, TransmissionIds};
-use crate::view::{CanvasRect, Fullscreen, PassSource, View, ViewId, ViewNames};
+use crate::view::{CanvasRect, Compute, Fullscreen, PassSource, View, ViewId, ViewNames};
 use crate::view_copy::{ViewCopies, ViewCopyIds};
 use crate::weighted::{self, WeightedIds, WeightedLayer};
 
@@ -230,6 +231,8 @@ pub(crate) struct GraphIds {
     pub(crate) ao: AoIds,
     pub(crate) effects: EffectIds,
     pub(crate) fullscreen: FullscreenIds,
+    /// The GPU objects of the compute passes.
+    pub(crate) compute: ComputePassIds,
     pub(crate) dof: DofIds,
     pub(crate) exposure: ExposureIds,
     pub(crate) fog: FogVolumeIds,
@@ -587,6 +590,9 @@ pub(crate) enum Role {
     /// Draws a full-screen pass of the sketch's WGSL into its view's target, by its view. The
     /// graph records it itself.
     Fullscreen(ViewId),
+    /// Runs a compute pass of the sketch's WGSL into its view's target, by its view. The graph
+    /// records it itself.
+    Compute(ViewId),
     /// Copies the camera's opaque color into the first level of the target that surfaces which
     /// let light through sample. The graph records it, and the mip levels after its render pass.
     TransmissionCopy,
@@ -855,6 +861,11 @@ pub(crate) struct FrameGraph {
     /// The full-screen passes' GPU objects.
     fullscreen_ids: FullscreenIds,
     fullscreen: FullscreenPasses,
+    /// The compute passes' GPU objects.
+    compute_ids: ComputePassIds,
+    compute: ComputePasses,
+    /// The views that are compute passes, as a mask of their places.
+    compute_views: u32,
     /// The effects that run, in order: the first `effect_count` slots.
     effects: [Effect; MAX_EFFECTS],
     effect_count: usize,
@@ -1161,6 +1172,9 @@ impl FrameGraph {
                 view_target_format(scene_color),
                 gpu_culling && antialias.samples() > 1,
             ),
+            compute_ids: ids.compute,
+            compute: ComputePasses::new(ids.compute),
+            compute_views: 0,
             effects: [NO_EFFECT; MAX_EFFECTS],
             effect_count: 0,
             effect_depths: 0,
@@ -1293,6 +1307,7 @@ impl FrameGraph {
             view_target_format(scene_color),
             self.gpu_culling && self.samples > 1,
         );
+        self.compute = ComputePasses::new(self.compute_ids);
         self.effect_count = 0;
         self.effect_depths = 0;
         self.effect_blooms = [0; MAX_EFFECTS];
@@ -1684,6 +1699,11 @@ impl FrameGraph {
         } else {
             0
         };
+        let compute = if self.compute_views != 0 {
+            ComputePasses::UPLOAD_BYTES
+        } else {
+            0
+        };
         let exposure = if self.exposure.is_some() {
             ExposurePass::UPLOAD_BYTES
         } else {
@@ -1710,6 +1730,7 @@ impl FrameGraph {
             + motion
             + fog
             + fullscreen
+            + compute
             + exposure
     }
 
@@ -2214,9 +2235,10 @@ impl FrameGraph {
     }
 
     /// Declares the passes again when the views or their names changed in a way that changes the
-    /// passes: a view added or removed, a new target size, a texture that starts or stops showing
-    /// a target, or new reads. A view switched on or off switches its passes, and new layers go to
-    /// each view's opaque pass, depth prepass and occluders' pass, which change no plan.
+    /// passes: a view added or removed, a new target size, another kind of pass at the place, a
+    /// texture that starts or stops showing a target, or new reads. A view switched on or off
+    /// switches its passes, and new layers go to each view's opaque pass, depth prepass and
+    /// occluders' pass, which change no plan.
     pub(crate) fn sync_views(&mut self, views: &[View], names: &[ViewNames]) {
         let declares = |view: &View| {
             let target = view.target();
@@ -2227,6 +2249,8 @@ impl FrameGraph {
                 target.shown,
                 target.reads,
                 target.rect.is_some(),
+                view.fullscreen_pass().map(|pass| pass.template),
+                view.compute_pass().map(|pass| (pass.template, pass.format)),
             )
         };
         let same = self.declared
@@ -2509,8 +2533,8 @@ impl FrameGraph {
     /// for the camera's view, or a target that the plan gives no texture. Valid once the frame's
     /// [`FrameGraph::prepare`] made the plan's textures.
     pub(crate) fn view_target(&self, view: ViewId) -> Option<u32> {
-        let fullscreen = self.fullscreen_views & (1 << view.index()) != 0;
-        if self.view_copies.is_some() && !self.view_copy_built && !fullscreen {
+        let passes = (self.fullscreen_views | self.compute_views) & (1 << view.index()) != 0;
+        if self.view_copies.is_some() && !self.view_copy_built && !passes {
             // The target holds no image until the copies draw.
             return None;
         }
@@ -2607,16 +2631,30 @@ impl FrameGraph {
         // A full-screen pass draws its target whole, with one sample, on both paths.
         let one_sample = Target::color(self.view_target_format()).array().shown();
         self.fullscreen_views = 0;
+        self.compute_views = 0;
         for (index, view) in views.iter().enumerate().skip(1) {
             let size = view_size(view);
             let fullscreen = view.fullscreen_pass().is_some() && !view.is_removed();
+            let compute = view.compute_pass().is_some() && !view.is_removed();
             self.fullscreen_views |= u32::from(fullscreen) << index;
+            self.compute_views |= u32::from(compute) << index;
             if view.canvas_rect().is_some() {
                 // The view draws into the camera's scene color, so it has no target to sample.
                 self.view_colors.push(None);
                 continue;
             }
-            let shape = if fullscreen { one_sample } else { kept };
+            // A compute pass fills a storage texture of the format that it writes. It takes one
+            // sample, and shaders sample it as an array of one layer, as they sample any pass's
+            // target.
+            let shape = if compute {
+                Target::color(view.compute_pass().map_or(0, |pass| pass.format))
+                    .array()
+                    .shown()
+            } else if fullscreen {
+                one_sample
+            } else {
+                kept
+            };
             let target = self.graph.keep(named[index].color.clone(), shape, size);
             self.view_colors.push(Some(target));
         }
@@ -2635,7 +2673,7 @@ impl FrameGraph {
             self.add(clusters, Role::LightClusters);
             self.graph.import_buffer(OBJECTS);
             for (index, names) in named.iter().enumerate() {
-                if self.fullscreen_views & (1 << index) != 0 {
+                if (self.fullscreen_views | self.compute_views) & (1 << index) != 0 {
                     continue;
                 }
                 let pass = Pass::new(names.culling.clone(), PassKind::Compute)
@@ -2670,6 +2708,14 @@ impl FrameGraph {
             {
                 self.pyramid_depths.push(None);
                 self.declare_fullscreen(view, fullscreen, names, index);
+                continue;
+            }
+            if let Some(compute) = view
+                .compute_pass()
+                .filter(|_| self.compute_views & (1 << index) != 0)
+            {
+                self.pyramid_depths.push(None);
+                self.declare_compute(view, compute, names, index);
                 continue;
             }
             let canvas = view.canvas_rect().is_some() && !view.is_removed();
@@ -2812,7 +2858,9 @@ impl FrameGraph {
             self.add(copy, Role::ParticleDepthCopy);
         }
         for (index, view) in views.iter().enumerate() {
-            if self.fullscreen_views & (1 << index) != 0 || view.canvas_rect().is_some() {
+            if (self.fullscreen_views | self.compute_views) & (1 << index) != 0
+                || view.canvas_rect().is_some()
+            {
                 continue;
             }
             let names = &named[index];
@@ -2842,7 +2890,9 @@ impl FrameGraph {
         }
         if copies {
             for (index, view) in views.iter().enumerate().skip(1) {
-                if self.fullscreen_views & (1 << index) != 0 || view.canvas_rect().is_some() {
+                if (self.fullscreen_views | self.compute_views) & (1 << index) != 0
+                    || view.canvas_rect().is_some()
+                {
                     self.view_images.push(None);
                     continue;
                 }
@@ -2988,6 +3038,36 @@ impl FrameGraph {
             pass = pass.optional();
         }
         let pass = self.add(pass, Role::Fullscreen(ViewId::from_index(index)));
+        self.view_passes.push((index as u16, pass));
+    }
+
+    /// Declares a compute pass, which fills the target of its view as a storage texture: it reads
+    /// the textures of its own, and every pass that samples its target runs after it.
+    fn declare_compute(
+        &mut self,
+        view: &View,
+        compute: &Compute,
+        names: &ViewPassNames,
+        index: usize,
+    ) {
+        let mut pass = Pass::new(names.opaque.clone(), PassKind::Compute)
+            .size(view_size(view))
+            .writes(names.color.clone());
+        if compute.after_scene {
+            // A pass at the resolve or post point reads the scene color, so it runs after the
+            // camera's passes.
+            pass = pass.reads(SCENE_COLOR);
+        }
+        pass = self.reads_views(pass, compute.maps.views);
+        // A pass that fills an instance draw's buffers feeds the draw through buffers that the
+        // graph does not model, so nothing reads its view's target and it must still run. A pass
+        // that fills a texture runs while a pass reads that texture.
+        let pass = if compute.buffers.is_some() {
+            pass
+        } else {
+            optional_beyond_camera(pass, index)
+        };
+        let pass = self.add(pass, Role::Compute(ViewId::from_index(index)));
         self.view_passes.push((index as u16, pass));
     }
 
@@ -3997,6 +4077,7 @@ impl FrameGraph {
         self.upload_subsurface(list, arena)?;
         self.upload_effects(list, arena)?;
         self.upload_fullscreen(list, arena)?;
+        self.upload_compute(list, arena)?;
         self.upload_dof(list, arena)?;
         self.upload_accumulate(list, arena)?;
         let exposure = self.upload_exposure(list, arena)?;
@@ -4395,6 +4476,61 @@ impl FrameGraph {
             .any(|&(_, pass)| {
                 matches!(self.roles[pass.index()], Role::Fullscreen(_))
                     && plan.step_of(pass).is_some()
+            })
+    }
+
+    /// Records the compute passes' objects and the block of each pass that runs in the plan, and
+    /// binds each to its target.
+    fn upload_compute(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        if self.compute_views == 0 {
+            return Ok(());
+        }
+        let frame = (self.canvas, self.scale);
+        let (clock, inverse, made) = (
+            self.effect_clock,
+            self.inverse_projection,
+            self.textures_made,
+        );
+        for place in 1..self.declared_views.len() {
+            if self.compute_views & (1 << place) == 0 || !self.compute_runs(place) {
+                continue;
+            }
+            let view = self.declared_views[place];
+            let Some(pass) = view.compute_pass() else {
+                continue;
+            };
+            let Some(target) = self.view_target(ViewId::from_index(place)) else {
+                continue;
+            };
+            let drawn = view_size(&view).made(self.canvas, self.scale);
+            self.compute.prepare(
+                list,
+                arena,
+                (place, pass, target),
+                drawn,
+                frame,
+                clock,
+                inverse,
+                made,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// True when the compute pass of the view at `place` runs in the compiled plan.
+    fn compute_runs(&self, place: usize) -> bool {
+        let Some(plan) = self.graph.plan() else {
+            return false;
+        };
+        self.view_passes
+            .iter()
+            .filter(|&&(index, _)| usize::from(index) == place)
+            .any(|&(_, pass)| {
+                matches!(self.roles[pass.index()], Role::Compute(_)) && plan.step_of(pass).is_some()
             })
     }
 
@@ -4855,7 +4991,19 @@ impl FrameGraph {
                     list.push(Op::BeginComputePass, &[])?;
                     let begun = list.len();
                     for &pass in plan.passes(step) {
-                        record(list, self.roles[pass.index()])?;
+                        // A sketch's compute pass is the graph's to record. Every other compute
+                        // pass of the step belongs to the builder.
+                        match self.roles[pass.index()] {
+                            Role::Compute(view) => {
+                                let place = view.index();
+                                if let Some(pass) = self.declared_views[place].compute_pass() {
+                                    let drawn = view_size(&self.declared_views[place])
+                                        .made(self.canvas, self.scale);
+                                    self.compute.record(list, place, pass, drawn)?;
+                                }
+                            }
+                            role => record(list, role)?,
+                        }
                     }
                     if list.len() == begun {
                         list.truncate(start);
@@ -5264,6 +5412,7 @@ impl FrameGraph {
         }
         self.last_view = None;
         self.fullscreen.reset_gpu();
+        self.compute.reset_gpu();
         if let Some(effects) = self.effect_pass.as_mut() {
             effects.reset_gpu();
         }
@@ -5470,7 +5619,7 @@ fn create_texture(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::view::ViewTarget;
+    use crate::view::{ComputeBuffers, ViewTarget};
 
     /// A view other than the camera's whose target a texture shows, so the camera's passes read
     /// it and it runs.
@@ -5489,7 +5638,7 @@ mod tests {
         }
     }
     use null3d_gpu::drawlist::template::{self, CUSTOM_FIRST as CUSTOM};
-    use null3d_gpu::drawlist::{layout as bind_layout, permutation, resource_kind};
+    use null3d_gpu::drawlist::{layout as bind_layout, permutation, resource_kind, texture_usage};
 
     #[test]
     fn a_mirror_view_fills_its_texture_at_a_share_of_the_render_size_and_culls_once() {
@@ -5570,6 +5719,175 @@ mod tests {
                 ..ViewTarget::default()
             },
         )
+    }
+
+    /// A compute pass of template 80 that fills its target, which a texture shows when `shown`.
+    fn compute(shown: bool) -> View {
+        View::compute(
+            Compute {
+                template: 80,
+                workgroup: [8, 8, 1],
+                dispatch: None,
+                format: format::RGBA16_FLOAT,
+                after_scene: false,
+                values: [0.0; effects::EFFECT_FLOATS],
+                maps: EffectMaps::NONE,
+                buffers: None,
+            },
+            ViewTarget {
+                shown,
+                ..ViewTarget::default()
+            },
+        )
+    }
+
+    /// A compute pass of template 80 that fills the two buffers of an instance draw.
+    fn compute_buffers() -> View {
+        View::compute(
+            Compute {
+                template: 80,
+                workgroup: [64, 1, 1],
+                dispatch: Some([1, 1, 1]),
+                format: 0,
+                after_scene: false,
+                values: [0.0; effects::EFFECT_FLOATS],
+                maps: EffectMaps::NONE,
+                buffers: Some(ComputeBuffers {
+                    counts: 41,
+                    instances: 42,
+                    instances_bytes: 4096,
+                }),
+            },
+            ViewTarget {
+                shown: false,
+                ..ViewTarget::default()
+            },
+        )
+    }
+
+    #[test]
+    fn a_compute_pass_that_fills_buffers_runs_though_no_texture_reads_it() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        frames.sync(&[View::default(), compute_buffers()]);
+        let pass = frames
+            .graph()
+            .find_pass("Opaque1")
+            .expect("the pass is declared");
+        assert_eq!(frames.graph().pass_kind(pass), PassKind::Compute);
+        // Nothing reads the pass's view target, but the draw reads the buffers, which the graph
+        // does not model: the pass still runs.
+        assert!(!frames.graph().is_culled(pass));
+        let mut list = DrawList::with_capacity(256);
+        frames
+            .prepare(&mut list, (64, 48), RenderScale::FULL)
+            .unwrap();
+        let mut arena = UploadArena::default();
+        arena.reset(frames.upload_bound());
+        list.clear();
+        frames
+            .upload(&mut list, &mut arena, Output::default(), Grading::default())
+            .unwrap();
+        // Group 0 binds the pass's block, the draw's count word and its rows.
+        let group = operands(&list, Op::CreateBindGroup)
+            .into_iter()
+            .find(|group| group[1] == bind_layout::COMPUTE_INSTANCE_BUFFERS)
+            .expect("the pass takes the buffer layout");
+        assert_eq!(group[2], 3);
+        assert_eq!(group[4], resource_kind::BUFFER);
+        assert_eq!(group[9], resource_kind::BUFFER);
+        assert_eq!(group[10], 41);
+        assert_eq!(group[14], resource_kind::BUFFER);
+        assert_eq!(group[15], 42);
+        assert_eq!(group[17], 4096);
+        list.clear();
+        frames
+            .record(
+                &mut list,
+                |_| [0.0; 4],
+                |_| true,
+                |_: &mut DrawList, _: Role| Ok(()),
+                |_| Ok(()),
+                |_| Ok(()),
+            )
+            .unwrap();
+        assert_eq!(operands(&list, Op::BeginComputePass).len(), 1);
+        assert_eq!(operands(&list, Op::Dispatch).len(), 1);
+    }
+
+    #[test]
+    fn a_compute_pass_fills_a_storage_texture_that_the_camera_samples_in_the_same_frame() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        frames.sync(&[View::default(), compute(true)]);
+        let mut list = DrawList::with_capacity(256);
+        frames
+            .prepare(&mut list, (64, 48), RenderScale::FULL)
+            .unwrap();
+        let pass = frames
+            .graph()
+            .find_pass("Opaque1")
+            .expect("the pass is declared");
+        assert_eq!(frames.graph().pass_kind(pass), PassKind::Compute);
+        // The camera's opaque pass samples the target, so the compute pass runs before it.
+        let pass_step = step_of(&frames, "Opaque1").expect("a texture shows the pass");
+        assert!(pass_step < step_of(&frames, "Opaque").unwrap());
+        // The plan gives the target the storage usage that the shader writes through, and the
+        // sampling usage that materials read it with.
+        let target = frames
+            .view_target(ViewId::from_index(1))
+            .expect("the frame makes the target");
+        let created = operands(&list, Op::CreateTexture)
+            .into_iter()
+            .find(|texture| texture[0] == target)
+            .expect("the plan makes the target");
+        assert_ne!(created[5] & texture_usage::STORAGE_BINDING, 0);
+        assert_ne!(created[5] & texture_usage::TEXTURE_BINDING, 0);
+        assert_eq!(created[4], format::RGBA16_FLOAT);
+        // The frame creates the pass's pipeline and its group, and dispatches it over the target.
+        let mut arena = UploadArena::default();
+        arena.reset(frames.upload_bound());
+        list.clear();
+        frames
+            .upload(&mut list, &mut arena, Output::default(), Grading::default())
+            .unwrap();
+        let pipeline = IDS.compute.first_pipeline + 1;
+        assert!(
+            operands(&list, Op::CreateComputePipeline)
+                .iter()
+                .any(|made| made.as_slice() == [pipeline, 80, 0])
+        );
+        assert!(
+            operands(&list, Op::CreateBindGroup)
+                .iter()
+                .any(|group| group[0] == IDS.compute.first_group + 1
+                    && group[1] == bind_layout::COMPUTE_RGBA16_FLOAT
+                    && group[10] == target)
+        );
+        list.clear();
+        // The render steps ask for pipelines that this test never builds, so it records the
+        // compute step alone: skipping a role leaves a render step out, and a compute step has none.
+        frames
+            .record(
+                &mut list,
+                |_| [0.0; 4],
+                |_| true,
+                |_: &mut DrawList, _: Role| Ok(()),
+                |_| Ok(()),
+                |_| Ok(()),
+            )
+            .unwrap();
+        assert_eq!(operands(&list, Op::BeginComputePass).len(), 1);
+        assert_eq!(
+            operands(&list, Op::SetComputePipeline),
+            vec![vec![pipeline]]
+        );
+        // 64 x 48 texels over workgroups of 8 x 8, once along z.
+        assert_eq!(operands(&list, Op::Dispatch), vec![vec![8, 6, 1]]);
+        // A pass that nothing shows or reads costs nothing.
+        frames.sync(&[View::default(), compute(false)]);
+        frames
+            .prepare(&mut list, (64, 48), RenderScale::FULL)
+            .unwrap();
+        assert_eq!(step_of(&frames, "Opaque1"), None);
     }
 
     /// The step of each named pass in the plan, or `None` for a pass that does not run.
@@ -5776,6 +6094,11 @@ mod tests {
             blank_color: 905,
             blank_depth: 906,
         },
+        compute: ComputePassIds {
+            buffer: 23,
+            first_group: 300,
+            first_pipeline: 750,
+        },
         dof: DofIds {
             buffer: 13,
             sampler: 13,
@@ -5896,6 +6219,17 @@ mod tests {
         groups.push((
             "full-screen passes' groups".to_string(),
             IDS.fullscreen.first_group,
+            crate::view::MAX_VIEWS as u32,
+        ));
+        buffers.push(("compute passes' block".to_string(), IDS.compute.buffer, 1));
+        groups.push((
+            "compute passes' groups".to_string(),
+            IDS.compute.first_group,
+            crate::view::MAX_VIEWS as u32,
+        ));
+        pipelines.push((
+            "compute passes' pipelines".to_string(),
+            IDS.compute.first_pipeline,
             crate::view::MAX_VIEWS as u32,
         ));
         buffers.push(("depth of field's block".to_string(), IDS.dof.buffer, 1));

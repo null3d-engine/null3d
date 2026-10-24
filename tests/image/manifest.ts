@@ -2572,6 +2572,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		modes: ALL_MODES,
 	},
+	// The compute-side proof of an instance draw: the page fills nothing, and a compute shader
+	// writes 42 instance rows and the draw's count. The picture shows exactly those 42 quads, so
+	// the count and the rows that the GPU wrote are the ones drawn. WebGL2 has no compute pass.
+	{
+		name: 'feature-instances-compute',
+		sketch: 'tests/pages/sketches/feature-instances-compute-sketch.ts',
+		hold: 0,
+		tiers: ['webgpu', 'compat'],
+	},
+	// A compute pass's storage texture, which a material samples in the same frame: four colored
+	// quadrants. WebGPU runs the compute shader, and WebGL2 its fragment form, so the two paths
+	// must draw the same picture.
+	{
+		name: 'compute-pass',
+		sketch: 'tests/pages/sketches/compute-pass-sketch.ts',
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+	},
 	// 100,000 sprites of a dynamic batch in one draw: a field of them seen from above, and a row of
 	// sprites sized in pixels whose centers lie outside the view. It holds its first frame, and takes
 	// S1's limit: SwiftShader draws 100,000 rows on WebGPU in tens of seconds.

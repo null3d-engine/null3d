@@ -114,6 +114,7 @@ use crate::ao::{self, AoIds};
 use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
+use crate::compute::ComputePassIds;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
 use crate::dof::DofIds;
@@ -340,6 +341,10 @@ mod ids {
     pub const TARGETS: u32 = PICK_GROUP + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
+    /// The uniform buffer of the compute passes' blocks. WebGL2 runs no compute pass, so nothing
+    /// uses these, and the graph's ids stay a table of one shape on both builders.
+    pub const COMPUTE: u32 = TEXTURE_ARRAYS + 1;
+    pub const COMPUTE_PIPELINES: u32 = 100;
     /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
     pub const SHADOW_SAMPLER: u32 = 1;
     /// The linear sampler of bloom's steps and of the final pass's bloom build.
@@ -445,8 +450,11 @@ mod ids {
         MOTION_FRAME_GROUPS + parity as u32 * RING + streamed
     }
 
-    /// The bind groups of materials' maps, after the motion pass's.
-    pub const TEXTURE_GROUPS: u32 = MOTION_FRAME_GROUPS + 2 * RING;
+    /// Group 0 of each compute pass. WebGL2 runs no compute pass, so nothing uses this band, and
+    /// it keeps the builder's table the same shape as the other path's.
+    pub const COMPUTE_GROUPS: u32 = MOTION_FRAME_GROUPS + 2 * RING;
+    /// The bind groups of materials' maps, after the compute passes' groups.
+    pub const TEXTURE_GROUPS: u32 = COMPUTE_GROUPS + MAX_VIEWS as u32;
 }
 
 /// The group index of the decal pass's scene depth in the decal templates on WebGL2: after the
@@ -718,6 +726,11 @@ impl CpuCulledRenderer {
                             first_group: ids::FULLSCREEN_GROUPS,
                             blank_color: ids::BLANK_PASS_COLOR,
                             blank_depth: ids::BLANK_PASS_DEPTH,
+                        },
+                        compute: ComputePassIds {
+                            buffer: ids::COMPUTE,
+                            first_group: ids::COMPUTE_GROUPS,
+                            first_pipeline: ids::COMPUTE_PIPELINES,
                         },
                         dof: DofIds {
                             buffer: ids::DOF,
