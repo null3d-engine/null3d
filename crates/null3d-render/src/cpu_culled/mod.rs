@@ -146,6 +146,7 @@ use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame
 use crate::sorted::{SkinnedPipeline, SortedLayout, SortedRows};
 use crate::ssr::SsrIds;
 use crate::subsurface::SubsurfaceIds;
+use crate::taa::TaaIds;
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
 use crate::view::{MAX_VIEWS, ViewFrame, ViewId};
@@ -168,6 +169,7 @@ mod ids {
     use crate::effects::EffectPass;
     use crate::particles::ParticleIds;
     use crate::subsurface::STEPS as SUBSURFACE_STEPS;
+    use crate::taa::STEPS as TAA_STEPS;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
     use crate::weighted::WeightedIds;
 
@@ -227,8 +229,10 @@ mod ids {
     pub const ACCUMULATE: u32 = EXPOSURE + 1;
     /// The settings of the final pass's still build, which draws a still view's accumulated color.
     pub const STILL_SETTINGS: u32 = ACCUMULATE + 1;
+    /// The uniform buffer of temporal anti-aliasing's resolve.
+    pub const TAA: u32 = STILL_SETTINGS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = STILL_SETTINGS + 1;
+    pub const PAGES: u32 = TAA + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -368,7 +372,10 @@ mod ids {
     /// The color grading table's sampler that the final pass's still build owns.
     pub const STILL_LUT_SAMPLER: u32 = OUTPUT_LUT_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = STILL_LUT_SAMPLER + 1;
+    /// The linear sampler of temporal anti-aliasing's history.
+    pub const TAA_SAMPLER: u32 = STILL_LUT_SAMPLER + 1;
+    /// The samplers of materials' maps.
+    pub const SAMPLERS: u32 = TAA_SAMPLER + 1;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -445,8 +452,10 @@ mod ids {
         MOTION_FRAME_GROUPS + parity as u32 * RING + streamed
     }
 
-    /// The bind groups of materials' maps, after the motion pass's.
-    pub const TEXTURE_GROUPS: u32 = MOTION_FRAME_GROUPS + 2 * RING;
+    /// The bind groups of temporal anti-aliasing's resolve and copy.
+    pub const TAA_GROUPS: u32 = MOTION_FRAME_GROUPS + 2 * RING;
+    /// The bind groups of materials' maps, after temporal anti-aliasing's.
+    pub const TEXTURE_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
 }
 
 /// The group index of the decal pass's scene depth in the decal templates on WebGL2: after the
@@ -737,6 +746,11 @@ impl CpuCulledRenderer {
                             stored: ids::EXPOSURE_STORED,
                             first_group: ids::EXPOSURE_GROUPS,
                             compute: None,
+                        },
+                        taa: TaaIds {
+                            buffer: ids::TAA,
+                            sampler: ids::TAA_SAMPLER,
+                            first_group: ids::TAA_GROUPS,
                         },
                         view_copy: None,
                         transmission: TransmissionIds {
@@ -1683,6 +1697,12 @@ impl CpuCulledRenderer {
         ));
         self.settings.prepare_effect_maps();
         self.graph.set_exposure(self.settings.exposure_frame());
+        self.graph.set_taa(self.settings.taa_frame(
+            input.scene,
+            input.parity(),
+            input.canvas,
+            input.render_scale,
+        ));
         self.graph.set_effects(
             self.settings.effects(),
             self.settings.effect_joins(),
@@ -2928,6 +2948,10 @@ impl FrameBuilder for CpuCulledRenderer {
 
     fn list(&self, frame: u32) -> &DrawList {
         self.lists.list(frame)
+    }
+
+    fn plan_epoch(&self) -> u32 {
+        self.graph.plan_epoch()
     }
 
     fn check_graph(&mut self) -> Result<(), GraphError> {
