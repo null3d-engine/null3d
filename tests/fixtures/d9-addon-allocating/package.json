@@ -1,0 +1,10 @@
+{
+	"name": "d9-addon-allocating",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": {
+			"null3d-source": "./src/index.ts"
+		}
+	}
+}

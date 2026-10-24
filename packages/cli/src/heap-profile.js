@@ -1,41 +1,76 @@
-// Reads the heap profiles of the allocation check: the bytes that each place allocated per frame,
-// and the figure that the check judges when it samples more than once. Chrome's heap profiler
-// charges each object to the outermost optimized function on the stack, so a function that the
-// browser inlines charges its objects to its caller. When the browser installs code that it has just
-// optimized, it charges a burst of objects to whichever function runs first in the next task, and
-// the check sets such bursts aside. Everything here is pure.
-import { type CallFrame, placeName } from './devtools';
+// Reads the heap profiles of a page and its workers: the bytes that each place allocated, and the
+// figure that a check judges when it samples more than once. Chrome's heap profiler charges each
+// object to the outermost optimized function on the stack, so a function that the browser inlines
+// charges its objects to its caller. When the browser installs code that it has just optimized, it
+// charges a burst of objects to whichever function runs first in the next task, and a check sets
+// such bursts aside. Everything here is pure: it reads a profile and names nothing itself.
 
-/** A node of a heap sampling profile from Chrome's debugging protocol. */
-export interface ProfileNode {
-	callFrame: CallFrame;
-	id: number;
-	selfSize: number;
-	children: ProfileNode[];
-}
+/**
+ * A function in a profile: its name, the script it comes from, empty for a built-in one, and where
+ * in the script its parameters start, counted from 0.
+ *
+ * @typedef {object} CallFrame
+ * @property {string} functionName
+ * @property {string} url
+ * @property {number} [lineNumber]
+ * @property {number} [columnNumber]
+ */
 
-/** An object that the heap profiler sampled: its bytes, its node, and its turn in sampling order. */
-export interface ProfileSample {
-	size: number;
-	nodeId: number;
-	ordinal: number;
-}
+/**
+ * A node of a heap sampling profile from Chrome's debugging protocol.
+ *
+ * @typedef {object} ProfileNode
+ * @property {CallFrame} callFrame
+ * @property {number} id
+ * @property {number} selfSize
+ * @property {ProfileNode[]} children
+ */
 
-/** A heap sampling profile from Chrome's debugging protocol. */
-export interface HeapProfile {
-	head: ProfileNode;
-	samples: ProfileSample[];
-}
+/**
+ * An object that the heap profiler sampled: its bytes, its node, and its turn in sampling order.
+ *
+ * @typedef {object} ProfileSample
+ * @property {number} size
+ * @property {number} nodeId
+ * @property {number} ordinal
+ */
 
-/** One place's allocations in one sample. */
-export interface Place {
-	bytes: number;
-	/** The bytes of the place's burst, which the check sets aside. */
-	burst: number;
-	/** The callers of the call path that allocated most here. */
-	callers: string;
-	largest: number;
-}
+/**
+ * A heap sampling profile from Chrome's debugging protocol.
+ *
+ * @typedef {object} HeapProfile
+ * @property {ProfileNode} head
+ * @property {ProfileSample[]} samples
+ */
+
+/**
+ * One place's allocations in one sample: the bytes of the place, the bytes of its burst that a
+ * check sets aside, the callers of the call path that allocated most there, and the largest object.
+ *
+ * @typedef {object} Place
+ * @property {number} bytes
+ * @property {number} burst
+ * @property {string} callers
+ * @property {number} largest
+ */
+
+/**
+ * One sample of a worker: its places and the frames drawn while it ran.
+ *
+ * @typedef {object} Sample
+ * @property {Map<string, Place>} places
+ * @property {number} frames
+ * @property {number} [calls] The browser's calls into the worker during the sample, when counted.
+ */
+
+/**
+ * A place's bytes per frame across the samples.
+ *
+ * @typedef {object} Steady
+ * @property {number} perFrame The smaller of the samples' bytes per frame without the burst.
+ * @property {number} most The larger of the samples' bytes per frame, the burst included.
+ * @property {string} callers
+ */
 
 /** Callers shown for each place that allocates. */
 const CALLERS_SHOWN = 2;
@@ -50,12 +85,28 @@ const BURST_SHARE = 0.1;
  */
 const BURST_OBJECTS = 16;
 
-/** Bytes by the place that allocated them, a place being a function and its file. */
-export function byPlace(
-	node: ProfileNode,
-	out = new Map<string, Place>(),
-	callers: readonly string[] = [],
-): Map<string, Place> {
+/**
+ * A place in the code, by function and file. A named function with no file is one of the browser's
+ * built-in functions, such as a promise's then or a WebGL call.
+ *
+ * @param {CallFrame} frame
+ * @returns {string}
+ */
+export function placeName({ functionName, url }) {
+	const name = functionName || '(anonymous)';
+	if (!url) return name.startsWith('(') ? name : `${name} (built-in)`;
+	return `${name} ${url.split('/').slice(-2).join('/').replace(/\?.*$/, '')}`;
+}
+
+/**
+ * Bytes by the place that allocated them, a place being a function and its file.
+ *
+ * @param {ProfileNode} node
+ * @param {Map<string, Place>} [out]
+ * @param {readonly string[]} [callers]
+ * @returns {Map<string, Place>}
+ */
+export function byPlace(node, out = new Map(), callers = []) {
 	const name = placeName(node.callFrame);
 	if (node.selfSize > 0) {
 		const place = out.get(name) ?? { bytes: 0, burst: 0, callers: '', largest: 0 };
@@ -70,8 +121,14 @@ export function byPlace(
 	return out;
 }
 
-/** The place of each node of a profile, by node id. */
-function placesById(node: ProfileNode, out = new Map<number, string>()): Map<number, string> {
+/**
+ * The place of each node of a profile, by node id.
+ *
+ * @param {ProfileNode} node
+ * @param {Map<number, string>} [out]
+ * @returns {Map<number, string>}
+ */
+function placesById(node, out = new Map()) {
 	out.set(node.id, placeName(node.callFrame));
 	for (const child of node.children) placesById(child, out);
 	return out;
@@ -84,12 +141,17 @@ function placesById(node: ProfileNode, out = new Map<number, string>()): Map<num
  * optimized, the code and its tables make such a run in the first function of the next task, which
  * may be any callback, even an empty one. Only one run per place is set aside: code that the
  * browser throws away and compiles again, over and over, makes more, and they count.
+ *
+ * @param {HeapProfile} profile
+ * @returns {Map<string, number>}
  */
-export function burstBytes({ head, samples }: HeapProfile): Map<string, number> {
+export function burstBytes({ head, samples }) {
 	const places = placesById(head);
 	/** Each place's bytes, and the bytes of its largest short run. */
-	const totals = new Map<string, { bytes: number; burst: number }>();
-	let place: string | undefined;
+	/** @type {Map<string, { bytes: number, burst: number }>} */
+	const totals = new Map();
+	/** @type {string | undefined} */
+	let place;
 	let bytes = 0;
 	let count = 0;
 	const endRun = () => {
@@ -111,14 +173,20 @@ export function burstBytes({ head, samples }: HeapProfile): Map<string, number> 
 		count++;
 	}
 	endRun();
-	const out = new Map<string, number>();
+	/** @type {Map<string, number>} */
+	const out = new Map();
 	for (const [name, total] of totals)
 		if (total.burst > 0 && total.burst >= total.bytes * BURST_SHARE) out.set(name, total.burst);
 	return out;
 }
 
-/** Each place's allocations in a profile, with the bytes of its burst. */
-export function profilePlaces(profile: HeapProfile): Map<string, Place> {
+/**
+ * Each place's allocations in a profile, with the bytes of its burst.
+ *
+ * @param {HeapProfile} profile
+ * @returns {Map<string, Place>}
+ */
+export function profilePlaces(profile) {
 	const places = byPlace(profile.head);
 	for (const [name, burst] of burstBytes(profile)) {
 		const place = places.get(name);
@@ -127,26 +195,14 @@ export function profilePlaces(profile: HeapProfile): Map<string, Place> {
 	return places;
 }
 
-/** All the bytes of a profile. */
-export function totalSize(node: ProfileNode): number {
+/**
+ * All the bytes of a profile.
+ *
+ * @param {ProfileNode} node
+ * @returns {number}
+ */
+export function totalSize(node) {
 	return node.selfSize + node.children.reduce((sum, child) => sum + totalSize(child), 0);
-}
-
-/** One sample of a worker: its places and the frames drawn while it ran. */
-export interface Sample {
-	places: Map<string, Place>;
-	frames: number;
-	/** The browser's calls into the worker during the sample, when the worker counted them. */
-	calls?: number;
-}
-
-/** A place's bytes per frame across the samples. */
-export interface Steady {
-	/** The smaller of the samples' bytes per frame without the burst, which the check judges. */
-	perFrame: number;
-	/** The larger of the samples' bytes per frame, the burst included. */
-	most: number;
-	callers: string;
 }
 
 /**
@@ -154,8 +210,12 @@ export interface Steady {
  * instead. The browser counts an object in the function that makes it, or in its caller where it
  * inlines that function, so a callee's bytes move between the two places from run to run while
  * their sum holds; counted as one place, they read the same whichever way the inlining fell.
+ *
+ * @param {readonly Sample[]} samples
+ * @param {ReadonlyMap<string, string>} into
+ * @returns {Sample[]}
  */
-export function countIn(samples: readonly Sample[], into: ReadonlyMap<string, string>): Sample[] {
+export function countIn(samples, into) {
 	return samples.map((sample) => {
 		const places = new Map(sample.places);
 		for (const [from, to] of into) {
@@ -185,10 +245,14 @@ export function countIn(samples: readonly Sample[], into: ReadonlyMap<string, st
  * each sample. An event that happens once, such as a function that runs unoptimized for a moment,
  * shows in one sample only, so its place counts the other sample's figure. Places come largest
  * first.
+ *
+ * @param {readonly Sample[]} samples
+ * @returns {[string, Steady][]}
  */
-export function steadyPlaces(samples: readonly Sample[]): [string, Steady][] {
+export function steadyPlaces(samples) {
 	const names = new Set(samples.flatMap((sample) => [...sample.places.keys()]));
-	const steady: [string, Steady][] = [];
+	/** @type {[string, Steady][]} */
+	const steady = [];
 	for (const name of names) {
 		let perFrame = Number.POSITIVE_INFINITY;
 		let most = 0;
@@ -209,12 +273,15 @@ export function steadyPlaces(samples: readonly Sample[]): [string, Steady][] {
 	return steady.sort((a, b) => b[1].perFrame - a[1].perFrame || b[1].most - a[1].most);
 }
 
-/** A place's bytes per call in the sample where that figure was least, with that sample's calls. */
-export function perCall(
-	samples: readonly Sample[],
-	name: string,
-): { perCall: number; calls: number } | null {
-	let best: { perCall: number; calls: number } | null = null;
+/**
+ * A place's bytes per call in the sample where that figure was least, with that sample's calls.
+ * @param {readonly Sample[]} samples
+ * @param {string} name
+ * @returns {{ perCall: number, calls: number } | null}
+ */
+export function perCall(samples, name) {
+	/** @type {{ perCall: number, calls: number } | null} */
+	let best = null;
 	for (const { places, calls } of samples) {
 		if (!calls || calls < 1) continue;
 		const place = places.get(name);

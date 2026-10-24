@@ -3,14 +3,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Glob } from 'bun';
 import {
-	BUDGETS,
-	PAGE_SWITCHES,
-	placeBudget,
-	SKY_ENVIRONMENT_BUDGETS,
-	STATS_BUDGETS,
-	SWIFTSHADER_BUDGETS,
-} from '../allocation.ts';
-import {
 	burstBytes,
 	byPlace,
 	countIn,
@@ -20,7 +12,15 @@ import {
 	type Sample,
 	steadyPlaces,
 	totalSize,
-} from './allocation';
+} from '../../packages/cli/src/heap-profile.js';
+import {
+	BUDGETS,
+	PAGE_SWITCHES,
+	placeBudget,
+	SKY_ENVIRONMENT_BUDGETS,
+	STATS_BUDGETS,
+	SWIFTSHADER_BUDGETS,
+} from '../allocation.ts';
 
 let nextId = 1;
 function node(functionName: string, url: string, selfSize: number, children: ProfileNode[] = []) {
