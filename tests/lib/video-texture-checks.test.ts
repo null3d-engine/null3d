@@ -48,20 +48,27 @@ describe('the video texture page', () => {
 		]);
 	});
 
-	it('fails a frame that uploads over the budget, and a paused video that uploads', () => {
+	it('fails a frame that uploads over the budget, and a paused video that sends a frame', () => {
 		const frame = 2300 * 1024;
 		expect(
 			videoTextureProblems(
 				result({
 					budget: 128 * 1024,
 					playing: { mean: frame, p99: frame, frames: 120 },
-					paused: { mean: 64, p99: 64, frames: 120 },
+					paused: { mean: 1024 * 1024, p99: 1024 * 1024, frames: 120 },
 				}),
 			),
 		).toEqual([
 			'a frame uploaded 2300.0 KiB, over the 128.0 KiB that one frame may upload',
-			'the texture uploaded 64 bytes in a frame while its video was paused',
+			"the texture uploaded 1048576 bytes in a frame while its video was paused, past the 73600 bytes that the engine's own writes take in a frame",
 		]);
+	});
+
+	it("passes a paused window that holds the engine's own writes alone", () => {
+		// The engine writes a little every frame; the run's paused figure is that alone.
+		expect(
+			videoTextureProblems(result({ paused: { mean: 1008, p99: 1008, frames: 239 } })),
+		).toEqual([]);
 	});
 
 	it("fails a frame that keeps the video's size instead of the scaled one", () => {
