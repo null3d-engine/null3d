@@ -118,10 +118,21 @@ const SHARED_SKIN_BOUNDS: u32 = u32::MAX;
 
 /// The bounds part of a scene object's bucket key. The culling shader reads one local sphere per
 /// bucket, so each object with a sphere of its own draws from a bucket of its own, apart from the
-/// skinned objects that the vertex shaders skin, whose copies need no vertices of their own.
-fn bounds_of(scene: &SceneStorage, skinning: &Skinning, slot: usize) -> u32 {
+/// skinned objects that the vertex shaders skin, whose copies need no vertices of their own. An
+/// object that a feature-instance draw places always draws from a bucket of its own: the bucket
+/// names the add-on's rows and count word, and the frame draws the count that the page or the
+/// add-on's compute wrote. Such an object is unculled, because the add-on's own count is its cull,
+/// and a mesh made from arrays carries no bounds of its own.
+fn bounds_of(
+    scene: &SceneStorage,
+    skinning: &Skinning,
+    features: &crate::feature_instances::FeatureInstanceTable,
+    slot: usize,
+) -> u32 {
     let object_flags = scene.flags()[slot];
-    if object_flags & flags::UNCULLED != 0 {
+    if !features.is_empty() && features.id_of(slot as u32).is_some() {
+        OWN_BOUNDS + slot as u32
+    } else if object_flags & flags::UNCULLED != 0 {
         UNCULLED_BOUNDS
     } else if skinning.skins_in_vertex_shader(slot as u32) {
         SHARED_SKIN_BOUNDS
@@ -936,7 +947,7 @@ impl Layout {
             if left_out {
                 return None;
             }
-            let bounds = bounds_of(scene, skinning, slot);
+            let bounds = bounds_of(scene, skinning, settings.feature_instances(), slot);
             let mesh = scene.meshes()[slot];
             key_of(
                 settings.pipeline_of(mesh, material),
@@ -2309,74 +2320,75 @@ mod tests {
 
     #[test]
     fn a_feature_instance_draw_keeps_a_bucket_of_its_own_that_culling_never_counts() {
-        let mut settings = scene_settings(&RendererConfig {
-            max_materials: 4,
-            ..RendererConfig::default()
-        });
-        let box_mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
-        let mesh = settings.meshes_mut().add(&box_mesh).unwrap() + 1;
-        let material = settings.materials_mut().create(Shading::Lit, 0, [1.0; 4]);
-        let material = material.unwrap() + 1;
-        let mut scene = SceneStorage::with_capacity(8);
-        let object = scene.reserve().unwrap();
-        let mut commands = vec![
-            Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
-            Command::set_material(object, material),
-        ];
-        commands.push(Command::set_flags(
-            object,
-            flags::CUSTOM_BOUNDS,
-            flags::CUSTOM_BOUNDS,
-        ));
-        scene.apply_commands(&commands, 1).unwrap();
-        scene.set_local_radius(object, 2.0).unwrap();
-        scene.update_transforms(&JobSystem::new(0));
-        let slot = scene.resolve(object).unwrap();
-        let id = settings.feature_instances_mut().create(slot, 40).unwrap();
-        assert!(settings.feature_instances_mut().set_count(id, 6));
+        // The adapter marks its object unculled, because the add-on's own count is its cull, and a
+        // mesh made from arrays carries no bounds of its own. Each of these keys must still give
+        // the draw a bucket that names it, its buffers and its count.
+        for bounds in [flags::UNCULLED, flags::CUSTOM_BOUNDS, 0] {
+            let mut settings = scene_settings(&RendererConfig {
+                max_materials: 4,
+                ..RendererConfig::default()
+            });
+            let box_mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+            let mesh = settings.meshes_mut().add(&box_mesh).unwrap() + 1;
+            let material = settings.materials_mut().create(Shading::Lit, 0, [1.0; 4]);
+            let material = material.unwrap() + 1;
+            let mut scene = SceneStorage::with_capacity(8);
+            let object = scene.reserve().unwrap();
+            let mut commands = vec![
+                Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+                Command::set_material(object, material),
+            ];
+            commands.push(Command::set_flags(object, flags::BOUNDS, bounds));
+            scene.apply_commands(&commands, 1).unwrap();
+            scene.set_local_radius(object, 2.0).unwrap();
+            scene.update_transforms(&JobSystem::new(0));
+            let slot = scene.resolve(object).unwrap();
+            let id = settings.feature_instances_mut().create(slot, 40).unwrap();
+            assert!(settings.feature_instances_mut().set_count(id, 6));
 
-        let mut layout = Layout::default();
-        let batches = BatchTable::with_capacity(1);
-        let mut pipelines = PipelineCache::default();
-        let targets = PassTargets {
-            color_format: format::CANVAS,
-            depth_format: format::DEPTH32_FLOAT,
-            samples: 4,
-            permutation: 0,
-        };
-        layout
-            .rebuild(
-                &settings,
-                &mut pipelines,
-                targets,
-                &scene,
-                &batches,
-                scene.parity(),
-                u32::MAX,
-                CasterPasses::default(),
-                Prepass::Off,
-                &Skinning::default(),
-                &mut KeyCounts::new(),
-                targets,
-                false,
-            )
-            .unwrap();
-        // The object's entry draws nowhere, so the culling shader never counts its instances.
-        assert_eq!(layout.instance_buckets[slot as usize], HIDDEN);
-        let (first_draw, feature_capacity) = layout
-            .buckets
-            .iter()
-            .find(|bucket| bucket.feature == id)
-            .map(|bucket| (bucket.first_draw, bucket.feature_capacity))
-            .expect("the draw has a bucket");
-        assert_eq!(feature_capacity, 40);
-        let count_word = (first_draw * sizes::INDIRECT_WORDS + 1) as usize;
-        // The template that the frame's reset uploads keeps the page's count, which a shadow view
-        // draws.
-        assert_eq!(layout.indirect_template[count_word], 0);
-        layout.set_feature_counts(settings.feature_instances(), scene.world(1).radii());
-        assert_eq!(layout.feature_template_count(id), Some(6));
-        assert_eq!(layout.indirect_template[count_word], 6);
+            let mut layout = Layout::default();
+            let batches = BatchTable::with_capacity(1);
+            let mut pipelines = PipelineCache::default();
+            let targets = PassTargets {
+                color_format: format::CANVAS,
+                depth_format: format::DEPTH32_FLOAT,
+                samples: 4,
+                permutation: 0,
+            };
+            layout
+                .rebuild(
+                    &settings,
+                    &mut pipelines,
+                    targets,
+                    &scene,
+                    &batches,
+                    scene.parity(),
+                    u32::MAX,
+                    CasterPasses::default(),
+                    Prepass::Off,
+                    &Skinning::default(),
+                    &mut KeyCounts::new(),
+                    targets,
+                    false,
+                )
+                .unwrap();
+            // The object's entry draws nowhere, so the culling shader never counts its instances.
+            assert_eq!(layout.instance_buckets[slot as usize], HIDDEN);
+            let (first_draw, feature_capacity) = layout
+                .buckets
+                .iter()
+                .find(|bucket| bucket.feature == id)
+                .map(|bucket| (bucket.first_draw, bucket.feature_capacity))
+                .unwrap_or_else(|| panic!("the draw with the bounds {bounds} has a bucket"));
+            assert_eq!(feature_capacity, 40);
+            let count_word = (first_draw * sizes::INDIRECT_WORDS + 1) as usize;
+            // The template that the frame's reset uploads keeps the page's count, which a shadow
+            // view draws.
+            assert_eq!(layout.indirect_template[count_word], 0);
+            layout.set_feature_counts(settings.feature_instances(), scene.world(1).radii());
+            assert_eq!(layout.feature_template_count(id), Some(6));
+            assert_eq!(layout.indirect_template[count_word], 6);
+        }
     }
 
     #[test]
