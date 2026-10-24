@@ -68,6 +68,11 @@ zero processor time, do not kill it on the number alone: sample it with `sample 
 what it waits on, then tell the coordinator which lock it is. A build that is compiling shows
 processor time, and one in a lock shows none.
 
+A job waiting for a lock is not the fault: the holder is. Two of the night of 24 October's kills were
+waiters, killed because a sample showed them waiting, while the holder went on blocking the lane.
+Read the lock's own file for the holder's process and sample that one; kill the waiter and the lane
+gains nothing but a lost job.
+
 On a loaded machine, run every cargo command with `RUSTC_WRAPPER=''`. The shared compiler cache runs
 at background priority, so at a load of 80 or more its processors sit at zero and a build makes no
 progress, which looks exactly like a deadlock: on 24 October 2026 two helpers waited hours for a
