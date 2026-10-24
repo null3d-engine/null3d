@@ -16,8 +16,8 @@ struct Varyings {
 
 @vertex
 fn vs(@location(0) position: vec3f, i: InstanceIn) -> Varyings {
-    const found = find_instance(i);
-    const p = mesh_position(position);
+    let found = find_instance(i);
+    let p = mesh_position(position);
     var out: Varyings;
     out.clip = clip_position(found, p);
     out.relative = p;
@@ -27,13 +27,13 @@ fn vs(@location(0) position: vec3f, i: InstanceIn) -> Varyings {
 @fragment
 fn fs(in: Varyings) -> @location(0) vec4f {
     // A disc with a bright rim in each quad, so a missing or a repeated instance shows.
-    const away = length(in.relative.xy);
+    let away = length(in.relative.xy);
     if (away > 1.0) {
         discard;
     }
-    const rim = smoothstep(0.72, 0.95, away);
-    const tint = vec3f(0.35, 0.72, 0.95);
-    const color = mix(tint * 0.45, tint * 1.6, rim);
+    let rim = smoothstep(0.72, 0.95, away);
+    let tint = vec3f(0.35, 0.72, 0.95);
+    let color = mix(tint * 0.45, tint * 1.6, rim);
     return finish(color, in.clip.xy);
 }
 `;
@@ -66,6 +66,7 @@ export default defineSketch(async ({ scene }) => {
 		vertices: {
 			positions: new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]),
 			indices: new Uint16Array([0, 1, 2, 0, 2, 3]),
+			computeNormals: true,
 		},
 		capacity: live,
 		count: live,
