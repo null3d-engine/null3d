@@ -859,6 +859,8 @@ const TRANSLUCENCY_SKETCH = 'tests/pages/sketches/translucency-sketch.ts';
 const SUBSURFACE_SKETCH = 'tests/pages/sketches/subsurface-sketch.ts';
 /** The sketch of the clear coats and sheens. */
 const COAT_SHEEN_SKETCH = 'tests/pages/sketches/coat-sheen-sketch.ts';
+/** The sketch of the car paint, its flakes, its seams and its carbon weave. */
+const CAR_PAINT_SKETCH = 'tests/pages/sketches/car-paint-sketch.ts';
 /** The sketch of decals on a stone yard. */
 const DECALS_SKETCH = 'tests/pages/sketches/decals-sketch.ts';
 
@@ -2914,6 +2916,29 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		reference: 'coat-sheen',
 		timeoutSeconds: 60,
+	},
+	// Car paint: a metallic body with filtered flakes and panel seams, and the same body with each
+	// part left out or with a carbon weave whose tows stretch their highlight. The paint spec
+	// checks that each part changes the image. A software GPU builds a custom shader and the room
+	// slowly.
+	{ name: 'car-paint', sketch: CAR_PAINT_SKETCH, hold: 0, timeoutSeconds: 120 },
+	{
+		name: 'car-paint-no-flakes',
+		sketch: `${CAR_PAINT_SKETCH}?flakes=off`,
+		hold: 0,
+		timeoutSeconds: 120,
+	},
+	{
+		name: 'car-paint-no-seams',
+		sketch: `${CAR_PAINT_SKETCH}?seams=off`,
+		hold: 0,
+		timeoutSeconds: 120,
+	},
+	{
+		name: 'car-paint-weave',
+		sketch: `${CAR_PAINT_SKETCH}?weave=on`,
+		hold: 0,
+		timeoutSeconds: 120,
 	},
 	// Weighted blending: crossing panes of glass and overlapping puffs blend in any order in the
 	// camera's weighted layer, over a pane of normal blending.
