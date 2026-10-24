@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { extname, join } from 'node:path';
+import { basename, extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { brotliCompress, constants, gzip } from 'node:zlib';
 import type { Connect, Plugin } from 'vite';
@@ -533,6 +533,19 @@ export async function prepareLoads(serverUrl: string, needed: readonly string[])
 	throw new Error(`${serverUrl} cannot serve the loads (HTTP ${response.status}): ${problem}`);
 }
 
-// Run as a script, it makes every load build, as CI's job of them does before the real-browser
-// shards download them.
-if (import.meta.main) for (const load of LOAD_BUILDS) makeLoadBuild(load);
+/** A load build's name on the command line: its folder's name, such as bench-pages. */
+const loadName = (load: LoadBuild) => basename(load.dir);
+
+// Run as a script, it makes the load builds that its arguments name, or every one, as CI's jobs of
+// them do before the jobs that serve them download them:
+//   bun tests/lib/load-server.ts [bench-pages] [startup-pages]
+if (import.meta.main) {
+	const named = process.argv.slice(2);
+	const unknown = named.filter((name) => !LOAD_BUILDS.some((load) => loadName(load) === name));
+	if (unknown.length > 0)
+		throw new Error(
+			`no load build is named ${unknown.join(', ')}; the builds are ${LOAD_BUILDS.map(loadName).join(', ')}`,
+		);
+	for (const load of LOAD_BUILDS)
+		if (named.length === 0 || named.includes(loadName(load))) makeLoadBuild(load);
+}

@@ -9,6 +9,7 @@ import { inShaderSet, type ShaderSet, variantInShaderSet } from '../pages/lib/sh
 import {
 	braveShieldsOf,
 	deviceChecklist,
+	loadsPrebuilt,
 	parseArgs,
 	planItems,
 	QuietRecovery,
@@ -894,12 +895,13 @@ describe('the checks plan', () => {
 	});
 
 	/** The checks plan's shards in CI's Safari, as `--shard <i>/<count>` gives each. */
-	const shardsOf = (count: number) =>
+	const shardsOf = (count: number, extra: readonly string[] = []) =>
 		Array.from(
 			{ length: count },
 			(_, i) =>
-				planItems(parseArgs(['--shaders', 'sampled', '--shard', `${i + 1}/${count}`, 'Safari'])) ??
-				[],
+				planItems(
+					parseArgs(['--shaders', 'sampled', ...extra, '--shard', `${i + 1}/${count}`, 'Safari']),
+				) ?? [],
 		);
 	const sampled = checksPlan({ shaders: 'sampled' });
 	const secondsOf = (shard: { id: string }[]) =>
@@ -939,31 +941,55 @@ describe('the checks plan', () => {
 	// and about 2 more go to its setup, the dev server's start and the judging. .dev/devices.md says
 	// what to do when the pages need more. Safari compiles the sampled set of the shaders page, which
 	// this model counts.
-	it("keeps each of CI's shards at or under 10 minutes of pages in Safari and in Firefox", () => {
+	/** A job's own lines of CI's workflow, from its name to the next job's. */
+	const workflowJob = (name: string) => {
 		const workflow = readFileSync(
 			join(import.meta.dirname, '../../.github/workflows/ci.yml'),
 			'utf8',
 		);
-		// The real-browser job's own lines, from its name to the next job: other jobs have shard
-		// lists of their own.
-		const start = workflow.indexOf('\n  real-browsers:\n');
+		const start = workflow.indexOf(`\n  ${name}:\n`);
 		expect(start).toBeGreaterThan(0);
 		const end = workflow.slice(start + 1).search(/\n {2}[\w-]+:\n/);
-		const job = end < 0 ? workflow.slice(start) : workflow.slice(start, start + 1 + end);
+		return end < 0 ? workflow.slice(start) : workflow.slice(start, start + 1 + end);
+	};
+
+	it("keeps each of CI's shards at or under 10 minutes of pages in Safari and in Firefox", () => {
+		// The real-browser job's own lines: other jobs have shard lists of their own. Its shards
+		// leave out the pages of the prebuilt job.
+		const job = workflowJob('real-browsers');
 		expect(job).toContain("matrix.browser == 'Safari' && '--shaders sampled'");
+		expect(job).toMatch(/--prebuilt \$\{\{ env\.PREBUILT \}\}/);
+		expect(job).toMatch(/^\s+PREBUILT: none$/m);
 		const count = Number(/^\s+shards: \[(\d+)\]$/m.exec(job)?.[1]);
 		expect(count).toBeGreaterThan(0);
 		// The matrix must list every shard from 1 to the count, or a shard never runs.
 		const listed = /^\s+shard: \[([\d, ]+)\]$/m.exec(job)?.[1]?.split(',').map(Number);
 		expect(listed).toEqual(Array.from({ length: count }, (_, i) => i + 1));
-		const minutes = shardsOf(count).map((shard) => secondsOf(shard) / 60);
+		const minutes = shardsOf(count, ['--prebuilt', 'none']).map((shard) => secondsOf(shard) / 60);
 		expect(Math.max(...minutes)).toBeLessThanOrEqual(10);
 		// Firefox compiles every build of the shaders page, by its own measured times.
 		const firefox = Array.from(
 			{ length: count },
-			(_, i) => planItems(parseArgs(['--shard', `${i + 1}/${count}`, 'Firefox'])) ?? [],
+			(_, i) =>
+				planItems(parseArgs(['--prebuilt', 'none', '--shard', `${i + 1}/${count}`, 'Firefox'])) ??
+				[],
 		).map((shard) => shard.reduce((sum, item) => sum + expectedSeconds(item, 'Firefox'), 0) / 60);
 		expect(Math.max(...firefox)).toBeLessThanOrEqual(10);
+	});
+
+	it("runs every page that loads the load pages job's builds in CI's prebuilt shard, and no other", () => {
+		const job = workflowJob('real-browsers-prebuilt');
+		expect(job).toMatch(/^\s+PREBUILT: only$/m);
+		expect(job).toContain('needs: [build, load-pages, load-startup-pages, changes]');
+		const [prebuilt = []] = shardsOf(1, ['--prebuilt', 'only']);
+		expect(prebuilt[0]?.id).toBe('capabilities');
+		const others = new Set(shardsOf(1, ['--prebuilt', 'none'])[0]?.map(({ id }) => id));
+		const picked = new Set(prebuilt.map(({ id }) => id));
+		// Each item runs in one of the two jobs, and the capabilities page in both.
+		for (const { id } of sampled)
+			expect(others.has(id) !== picked.has(id) || id === 'capabilities', id).toBe(true);
+		expect(prebuilt.slice(1).every(loadsPrebuilt)).toBe(true);
+		expect(secondsOf(prebuilt) / 60).toBeLessThanOrEqual(10);
 	});
 
 	it('skips a WebGPU page on a browser without WebGPU only when allowed', () => {
