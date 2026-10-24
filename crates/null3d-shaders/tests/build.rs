@@ -1243,17 +1243,15 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
 }
 
 /// The entries that the determinism check builds twice, to check that a build is the same every
-/// time. Between them they make one module of every kind that the build writes: the main module,
-/// through `timer_mark`; the features module, through the first-use features that the device
-/// entries keep; a device module and a combined loader table, through the many builds of several
-/// features of `lit`, the standard material without maps; a shared-paragraph table, through the
-/// twenty or more feature sets those builds make; and a whole-shader first-use module, through
-/// `environment`. `lit` has the feature bits of the textured standard material, less its relief
-/// bits, at about a seventh of its builds. The textured material alone is most of the whole
-/// build, and two builds of it made this check the longest part of CI by far. The module exports
-/// test of `null3d-shaders-wasm` builds the same list, for the same reason, and keeps a copy of it,
-/// since one crate's tests cannot read another's.
-const DETERMINISM_ENTRIES: &[&str] = &["lit", "environment", "pick", "timer_mark"];
+/// time. Between them they make one module of every kind that the build writes: a device module, a
+/// combined loader table and a shared-paragraph table, through `unlit`, the basic material's
+/// builds, whose feature sets fill twenty device modules of one kind; a whole-shader first-use
+/// module, through `environment`; and the main module's shader, through `timer_mark`. The features
+/// module is written for every build. `unlit` makes 328 builds where `lit`, the standard material
+/// without maps, made 7,776 for the same kinds. The module exports test of `null3d-shaders-wasm`
+/// builds the same list, for the same reason, and keeps a copy of it, since one crate's tests
+/// cannot read another's.
+const DETERMINISM_ENTRIES: &[&str] = &["unlit", "environment", "timer_mark"];
 
 /// The one test that builds every shader of the repository. A full build takes minutes, and
 /// cargo-nextest runs each test in a process of its own, so a test cannot share another test's
