@@ -152,3 +152,31 @@ M3-A11, the temporal resolve's second look, refused the resolve on 21 October 20
 ## Addendum, 24 October 2026: GPU grass comes back for Creek
 
 The owner ruled that Creek's hills are the "vegetation-heavy ground" that the addendum of 21 October names as the trigger for GPU grass ([D-241](D-241-vegetation-foundation.md)). GPU grass therefore returns to M3, inside the vegetation foundation add-on rather than as a content pack of its own. WebGPU makes and culls the blades in a compute pass and draws them through H2. WebGL2 draws grass tiles that the CPU builds into instance batches. Ruling 20's other drops stand, and hair stays on the post-1.0 roadmap.
+
+## Addendum, 24 October 2026: what the three-compat add-on ships
+
+Ruling 23 gives `@null3d/three-compat` Reinhard, Cineon and `OutlinePass`'s glow, pulse and blurred
+edge. It ships as a foundation add-on (M3-F7) with this shape:
+
+- **Tone curves.** The add-on exports `reinhard` and `cineon` as compiled tone curves, which
+  `post.set({ toneMapping })` takes through the core's own setting. Both use three.js 0.186.1's
+  formulas from `tonemapping_pars_fragment.glsl.js`, and leave out the exposure that three.js
+  multiplies in, because the engine's color arrives exposed. ACES stays in the core.
+- **Tests.** `tests/image/tone-mapping.spec.ts` compares the bright scene's tile colors against
+  three.js's `ReinhardToneMapping` and `CineonToneMapping` at two exposures, on every GPU tier.
+  The maximum difference is the same 4 steps of 255 that the built-in curves use. A custom curve
+  moves compatibility mode to HDR color with FXAA, as the effects do, so the curves draw there
+  too. The forced 8-bit path keeps the built-in curve, so the curves have no 8-bit copy.
+- **Outline.** `createOutlinePass(ctx, options)` reads the core outline's mask, with the crisp line
+  at a width of 0. It runs five full-screen passes, three at half the render size and two at a
+  quarter, and one custom effect that adds the edges before bloom and the tone curve. Together they
+  shade about 0.88 of the canvas's pixels and read about nine texels for each screen pixel, plus two
+  in the effect. The settings are `OutlinePass`'s `edgeStrength`, `edgeThickness`, `edgeGlow` and
+  `pulsePeriod`, with `visibleEdgeColor` and `hiddenEdgeColor` as `color` and `hiddenColor`. The
+  pattern texture and `downSampleRatio` have no setting, and the mask reads at half size. Each blur
+  pass names the scene's color as its input: the graph places a full-screen pass with no input
+  before the camera's passes, so a chain after the mask needs that marker, or the graph reports a
+  cycle (E1504). `guides/custom-passes` records the rule for users.
+- **Why an add-on.** The add-on extends the outline only through the core feature's own settings and
+  the public passes and effects ([D-173](D-173-addon-hooks.md) ruling 11), so another developer
+  could build it. The engine's start code is unchanged.

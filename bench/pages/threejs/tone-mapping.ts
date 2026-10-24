@@ -8,13 +8,15 @@ import * as three from 'three';
 import {
 	ACESFilmicToneMapping,
 	AgXToneMapping,
+	CineonToneMapping,
 	LinearToneMapping,
 	NeutralToneMapping,
+	ReinhardToneMapping,
 	type ToneMapping,
 } from 'three';
 import {
+	type AnyToneMapping,
 	BACKGROUND,
-	type BrightToneMapping,
 	CAMERA,
 	exposureOf,
 	SIZE,
@@ -31,18 +33,20 @@ const SUN_DISTANCE = 10;
 const BACKDROP_Z = -20;
 const BACKDROP_SIZE = 200;
 
-/** three.js's tone mapping for each of null3D's. */
-const THREE_TONE_MAPPINGS: Readonly<Record<BrightToneMapping, ToneMapping>> = {
+/** three.js's tone mapping for each of null3D's, the add-on's two curves included. */
+const THREE_TONE_MAPPINGS: Readonly<Record<AnyToneMapping, ToneMapping>> = {
 	aces: ACESFilmicToneMapping,
 	agx: AgXToneMapping,
+	cineon: CineonToneMapping,
 	neutral: NeutralToneMapping,
 	none: LinearToneMapping,
+	reinhard: ReinhardToneMapping,
 };
 
 const params = new URLSearchParams(location.search);
 
 run('tone-mapping', async () => {
-	const tone = (params.get('tone') ?? 'aces') as BrightToneMapping;
+	const tone = (params.get('tone') ?? 'aces') as AnyToneMapping;
 	if (!Object.hasOwn(THREE_TONE_MAPPINGS, tone))
 		throw new Error(`?tone=${tone} is not a tone mapping`);
 	const exposure = exposureOf(Number(params.get('stops') ?? '0'));
