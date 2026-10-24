@@ -16,7 +16,7 @@ import {
 	type GlTimingReport,
 } from '../../../packages/engine/src/gpu/webgl2/call-timing';
 import { run, toBase64 } from '../../../tests/pages/lib/result';
-import { CANVAS, MEASURE_SECONDS, PARITY_CANVAS, WARMUP_SECONDS } from '../../scenes/spec';
+import { CANVAS, PARITY_CANVAS } from '../../scenes/spec';
 import { soakEngine } from '../lib/device-soak';
 import { fillWindow, fitToWindow, showPageName } from '../lib/fit';
 import type { GlTiming } from '../lib/gl-timing';
@@ -271,12 +271,8 @@ export function runNull3dPage(
 			await firstFrameOrFailure(engine);
 			const own = pageOptions.measure?.(engine, log);
 			if (own) return { ...report, ...(await own), userAgent: navigator.userAgent };
-			const measureSeconds = options.seconds ?? MEASURE_SECONDS;
-			const timed = await timedRun({
-				engine,
-				warmupSeconds: options.seconds ?? WARMUP_SECONDS,
-				measureSeconds,
-			});
+			const { warmupSeconds, measureSeconds } = options;
+			const timed = await timedRun({ engine, warmupSeconds, measureSeconds });
 			const glTiming = params.has('gl-timing') ? await requestGlTiming() : undefined;
 			const trace =
 				log &&
