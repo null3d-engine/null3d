@@ -314,6 +314,24 @@ describe('creating lights', () => {
 		expect(tableRow(sun).hero).toBe(0);
 	});
 
+	test("a hero's tile size comes from the option, the setter or the preset's default", () => {
+		const { scene, tableRow } = fakeCore();
+		const hero = scene.createGroup();
+		const sun = scene.createDirectionalLight({
+			castShadows: true,
+			shadow: { hero, heroTileSize: 4096 },
+		});
+		expect(tableRow(sun).values[C.LIGHT_VALUE_HERO_SIZE]).toBe(4096);
+		// setShadow gives the size alone, or alongside a new hero.
+		sun.setShadow({ heroTileSize: 2048 });
+		expect(tableRow(sun).values[C.LIGHT_VALUE_HERO_SIZE]).toBe(2048);
+		sun.setHeroShadow(hero, 1024);
+		expect(tableRow(sun).values[C.LIGHT_VALUE_HERO_SIZE]).toBe(1024);
+		// A light that names neither keeps the core's default, which the preset sets.
+		const plain = scene.createDirectionalLight({ castShadows: true });
+		expect(tableRow(plain).values[C.LIGHT_VALUE_HERO_SIZE]).toBeUndefined();
+	});
+
 	test('a hero that is not an object throws, and a destroyed one too', () => {
 		const { scene } = fakeCore();
 		const hero = scene.createGroup();
@@ -608,6 +626,10 @@ describe('development checks', () => {
 			`E1108: setShadow() got the shadow map size 1000 ${on}, which must be 256, 512, 1,024, 2,048 or 4,096.`,
 		);
 		expect(thrown(() => sun.setShadow({ mapSize: 8192 })).code).toBe('E1108');
+		expect(thrown(() => sun.setShadow({ heroTileSize: 1000 as 1024 })).message).toStartWith(
+			`E1108: setShadow() got the hero shadow tile size 1000 ${on}, which must be 1,024, 2,048 or 4,096.`,
+		);
+		expect(thrown(() => sun.setShadow({ heroTileSize: 8192 as 4096 })).code).toBe('E1108');
 		expect(thrown(() => sun.setShadow({ bias: -1 })).code).toBe('E1108');
 		expect(thrown(() => sun.setShadow({ normalBias: -0.1 })).code).toBe('E1108');
 		expect(thrown(() => sun.setShadow({ distance: 0 })).code).toBe('E1108');

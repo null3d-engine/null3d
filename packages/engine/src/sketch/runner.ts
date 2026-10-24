@@ -27,6 +27,7 @@ import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import {
 	ANTIALIAS_MSAA,
+	LIGHT_VALUE_HERO_SIZE,
 	LIGHT_VALUE_SHADOW_CASCADES,
 	LIGHT_VALUE_SHADOW_MAP_SIZE,
 	TEXTURE_OPTION_KEEP_COPIES,
@@ -498,17 +499,20 @@ export class SketchRunner {
 			pointLightShadows,
 			shadowCascades,
 			shadowMapSize,
+			heroTileSize,
 			morphTargets,
 		} = sketch.quality.settings;
 		glue.setShadowTiles(shadowTiles, shadowTileSize, pointLightShadows);
 		glue.setMorphTargets(morphTargets);
 		if (device.occlusionBuffer > 0) glue.setOcclusionBuffer(device.occlusionBuffer);
-		// Directional lights that name no cascades or map size take the preset's.
+		// Directional lights that name no cascades, map size or hero tile size take the preset's.
 		const values = this.core.callValues();
 		values[0] = shadowCascades;
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES);
 		values[0] = shadowMapSize;
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE);
+		values[0] = heroTileSize;
+		glue.setLightDefault(LIGHT_VALUE_HERO_SIZE);
 		if (sketch.jobWorkers > 0) {
 			// The page ends the job workers' loops through these words when the engine stops, and
 			// lets them run the browser's measurement of its memory through the yield word.

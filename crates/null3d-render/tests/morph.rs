@@ -80,6 +80,7 @@ fn cast_sun_shadows<B: FrameBuilder>(world: &mut World<B>) {
         contact: 0.0,
         layers: DEFAULT_LAYERS,
         hero: None,
+        hero_size: 0,
     }));
 }
 

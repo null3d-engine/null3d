@@ -180,12 +180,10 @@ fn the_hero_draws_its_own_tile<B: Tiles>(renderer: B) {
         panic!("four objects")
     };
     let (_, sun) = world.add_sun(2);
-    world
-        .light_table
-        .as_mut()
-        .unwrap()
-        .set_hero(sun, hero)
-        .unwrap();
+    let table = world.light_table.as_mut().unwrap();
+    table.set_hero(sun, hero).unwrap();
+    // The hero's tile takes its own size, which the preset sets in a page and the atlas holds.
+    table.set_value(sun, value::HERO_SIZE, 256.0).unwrap();
     let mut mock = MockBackend::default();
     world.frame = 0;
     let first = step(&mut world, &mut mock, true);
@@ -206,8 +204,7 @@ fn the_hero_draws_its_own_tile<B: Tiles>(renderer: B) {
         1 + 2,
         "the hero's tile and two cascades"
     );
-    // Receivers read the tile's layer plus one, and the object's own texel size. The hero's
-    // filter comes from the tiles' block, which this frame writes while no light has a tile.
+    // Receivers read the tile's layer plus one, and the object's own texel size.
     let kernel = world.renderer.tiles().uniform().kernel;
     assert_eq!(kernel, [256.0, 1.0 / 256.0, 3.0, 0.0]);
     let read = world.renderer.tiles().hero_uniform().params;
@@ -253,6 +250,72 @@ fn the_hero_draws_its_own_tile<B: Tiles>(renderer: B) {
     assert_eq!(world.renderer.tiles().drawn(), 0);
     assert_eq!(depth_passes(&off), 2);
     assert_eq!(world.renderer.tiles().hero_uniform().params[3], 0.0);
+}
+
+/// A hero tile finer than the preset's spot and point tiles sets the size of every atlas layer, on
+/// either builder, and a light keeps its layer while the hero changes the size.
+fn a_hero_tile_sizes_every_layer<B: Tiles>(renderer: B) {
+    let mut world = world(renderer, TWO_TILES);
+    let hero = world.objects[0];
+    let (_, sun) = world.add_sun(2);
+    world.add_spot([-3.0, 4.0, 0.0], 6.0);
+    world
+        .light_table
+        .as_mut()
+        .unwrap()
+        .set_hero(sun, hero)
+        .unwrap();
+    world
+        .light_table
+        .as_mut()
+        .unwrap()
+        .set_value(sun, value::HERO_SIZE, 512.0)
+        .unwrap();
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    step(&mut world, &mut mock, true);
+    // One spot tile and the hero's, both as large as the hero's tile asks: an array texture has
+    // one size for every layer.
+    assert_eq!(
+        world.renderer.tiles().shape(),
+        Some(AtlasShape {
+            layers: 2,
+            size: 512
+        })
+    );
+    assert_eq!(world.renderer.tiles().drawn(), 2);
+
+    // The hero's size falls back below the preset's tile size: the preset's size holds.
+    world
+        .light_table
+        .as_mut()
+        .unwrap()
+        .set_value(sun, value::HERO_SIZE, 256.0)
+        .unwrap();
+    step(&mut world, &mut mock, false);
+    assert_eq!(
+        world.renderer.tiles().shape(),
+        Some(AtlasShape {
+            layers: 2,
+            size: 256
+        })
+    );
+}
+
+#[test]
+fn webgpu_a_hero_tile_sizes_every_layer() {
+    a_hero_tile_sizes_every_layer(GpuDrivenRenderer::new(Default::default()));
+}
+
+#[test]
+fn webgl2_a_hero_tile_sizes_every_layer() {
+    for multi_draw in [true, false] {
+        let config = CpuCulledConfig {
+            multi_draw,
+            ..CpuCulledConfig::default()
+        };
+        a_hero_tile_sizes_every_layer(CpuCulledRenderer::new(config));
+    }
 }
 
 #[test]
