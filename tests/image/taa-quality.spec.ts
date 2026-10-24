@@ -1,6 +1,6 @@
 // The temporal resolve's figures against D-129's bar, and its cost on each GPU path and preset
-// (tests/pages/taa-quality.ts). It runs only with NULL3D_TAA_QUALITY set, on a computer with a GPU of
-// its own: NULL3D_TAA_QUALITY=1 bun run test:browser -- taa-quality.spec.ts --workers=1. The quality
+// (tests/pages/taa-quality.ts). It runs only with NULL3D_TAA_COST set, on a computer with a GPU of
+// its own: NULL3D_TAA_COST=1 bun run test:browser -- taa-quality.spec.ts --workers=1. The quality
 // runs draw 16 consecutive frames at 960 x 540 for each preset and camera, resolve off and on, and
 // compare them with the same frames drawn at 3840 x 2160 with MSAA 4x, which is 64 samples per pixel.
 // The cost runs play each scene at 1920 x 1080 with the resolve off and on in turns. Each result is
@@ -70,7 +70,7 @@ const fps = process.env.NULL3D_TAA_FPS ?? '4';
 for (const gpu of paths)
 	for (const scene of scenes)
 		test(`${scene} quality on ${gpu}`, async ({ page }) => {
-			test.skip(!process.env.NULL3D_TAA_QUALITY, 'set NULL3D_TAA_QUALITY to measure the bar');
+			test.skip(!process.env.NULL3D_TAA_COST, 'set NULL3D_TAA_COST to measure the bar');
 			test.setTimeout(1_800_000);
 			await page.goto(
 				`taa-quality.html?gpu=${gpu}&scene=${scene}&mode=quality&fps=${fps}&cameras=${cameras.join(',')}&presets=${presets.join(',')}${jitter}`,
@@ -93,7 +93,7 @@ for (const gpu of paths)
 	for (const scene of scenes)
 		for (const preset of presets)
 			test(`${scene} cost on ${gpu} at ${preset}`, async ({ page }) => {
-				test.skip(!process.env.NULL3D_TAA_QUALITY, 'set NULL3D_TAA_QUALITY to time the resolve');
+				test.skip(!process.env.NULL3D_TAA_COST, 'set NULL3D_TAA_COST to time the resolve');
 				test.setTimeout(costTimeout(300_000));
 				const loadBefore = await waitForQuiet();
 				await page.goto(

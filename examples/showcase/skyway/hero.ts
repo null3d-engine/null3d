@@ -3,14 +3,15 @@
 // lights and engine glow carry the eye down the street. In Manual the car holds where it was, and
 // the user may fly around it.
 //
-// Its paint is a clear coat over a deep blue, with amber running lights down its flanks. Two panels
-// on the rear deck carry screens that the sketch draws on OffscreenCanvas objects: speed on one,
-// altitude on the other. They refresh a dozen times a second, so a number and a bar move without
-// touching the frame's own work. Two spot lights at the nose light the rain ahead, and a lamp under
-// the belly spills the car's colour on the air below it.
+// Its paint is a clear coat over a deep blue, with amber running lights down its flanks. Three
+// panels on the rear deck carry screens from the screens add-on: the speed, the altitude and the
+// cockpit's navigation map. Each refreshes at its own rate, and only the part of its picture that
+// changed uploads, so a number, a bar and a moving dot cost no frame work. Two spot lights at the
+// nose light the rain ahead, and a lamp under the belly spills the car's colour on the air below it.
 import { math, type PerspectiveCamera, quat, type SketchContext, vec3 } from '@null3d/engine';
 import { createVehicleHull } from '../../addons/traffic-lanes/index';
 import { EFFECT_LAYER } from '../../lib/layers';
+import { createCockpit } from './cockpit';
 
 /** How far ahead of the camera the car flies, how far to its right, and how far below, in meters. */
 const [AHEAD, BESIDE, BELOW] = [26, 4.6, 5.2];
@@ -114,24 +115,10 @@ export function createHero(ctx: SketchContext, camera: PerspectiveCamera, start:
 		layers: EFFECT_LAYER,
 	});
 
-	// The two screens on the rear deck, turned up towards the chase camera.
-	const speedScreen = makeScreen(ctx, 'VELOCITY', 'km/h');
-	const flightScreen = makeScreen(ctx, 'FLIGHT 07', 'ALT');
+	// The deck's three panels, turned up towards the chase camera.
 	const tilt = quat.create();
 	quat.fromEuler(tilt, -0.42, Math.PI, 0, 'YXZ');
-	for (const [at, screen] of [
-		[-0.42, speedScreen],
-		[0.42, flightScreen],
-	] as const) {
-		scene.createMesh({
-			mesh: geometry.plane({ width: 0.62, height: 0.3 }),
-			material: materials.unlit({ map: screen.map, color: '#bfe9ff' }),
-			position: [at, 0.99, -1.28],
-			rotation: tilt,
-			parent: body,
-			layers: EFFECT_LAYER,
-		});
-	}
+	const cockpit = createCockpit(ctx, body, tilt);
 
 	// The nose lamps light the rain and the street ahead, and a lamp under the belly spills the
 	// car's own colour on the air below it.
@@ -169,7 +156,6 @@ export function createHero(ctx: SketchContext, camera: PerspectiveCamera, start:
 	let yaw = 0;
 	let roll = 0;
 	let speed = 0;
-	let paintedAt = Number.NEGATIVE_INFINITY;
 
 	/** Puts the car where the opening shot looks, so the first frame shows it in place. */
 	const opening = (): void => {
@@ -227,67 +213,8 @@ export function createHero(ctx: SketchContext, camera: PerspectiveCamera, start:
 			group.setPose(at, spin);
 			engine.set({ strength: 2.6 + Math.sin(t * 17) * 0.45 });
 			engineLight.setIntensity(130 + Math.sin(t * 17) * 26);
-			// The screens read out the flight, a dozen times a second.
-			if (t - paintedAt < 1 / 12) return;
-			paintedAt = t;
-			speedScreen.paint(speed * 3.6);
-			flightScreen.paint(at[1] as number);
-		},
-	};
-}
-
-/** A screen on the car's deck, drawn on a canvas and uploaded a few times a second. */
-interface Screen {
-	readonly map: ReturnType<SketchContext['textures']['fromCanvas']>;
-	/** Draws a new value, when its whole number changes. */
-	paint(value: number): void;
-}
-
-/** Makes one screen: a frame, a title, a large number and a bar under it. */
-function makeScreen(ctx: SketchContext, title: string, unit: string): Screen {
-	const canvas = new OffscreenCanvas(512, 256);
-	const context = canvas.getContext('2d', { willReadFrequently: true });
-	if (!context) throw new Error('the canvas has no 2D context');
-	const map = ctx.textures.fromCanvas(canvas, { refreshHz: 12 });
-	let shown = Number.NaN;
-
-	/** Paints the parts that never change. */
-	const frame = (): void => {
-		context.fillStyle = '#050b12';
-		context.fillRect(0, 0, 512, 256);
-		context.strokeStyle = '#1d4a63';
-		context.lineWidth = 4;
-		context.strokeRect(8, 8, 496, 240);
-		context.fillStyle = '#3fa8c8';
-		context.font = 'bold 26px sans-serif';
-		context.textAlign = 'left';
-		context.textBaseline = 'top';
-		context.fillText(title, 26, 24);
-		context.fillStyle = '#1b3a4a';
-		context.fillRect(26, 208, 460, 20);
-	};
-	frame();
-	map.refresh();
-
-	return {
-		map,
-		paint(value) {
-			const whole = Math.round(value);
-			if (whole === shown) return;
-			shown = whole;
-			frame();
-			context.fillStyle = '#c9f2ff';
-			context.font = 'bold 118px sans-serif';
-			context.textAlign = 'right';
-			context.textBaseline = 'top';
-			context.fillText(String(whole), 400, 62);
-			context.fillStyle = '#5fc8e8';
-			context.font = 'bold 32px sans-serif';
-			context.textAlign = 'left';
-			context.fillText(unit, 414, 132);
-			context.fillStyle = '#37c8e8';
-			context.fillRect(26, 208, Math.round(460 * Math.min(1, whole / 400)), 20);
-			map.refresh();
+			// The panels read out the flight at their own rates.
+			cockpit.update(t, speed * 3.6, at[1] as number);
 		},
 	};
 }

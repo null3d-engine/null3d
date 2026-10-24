@@ -1,13 +1,12 @@
-// Times procedural tree generation in a worker on the device, for M3-V1's budgets: each species at
-// each preset's detail, generated once for each of several seeds, with the median of the times.
-// The generator is a stand-in for the vegetation add-on's (see lib/tree-generator.ts), and the page
-// reports the triangles, the vertices and the bytes of each variant beside its time. It fails when
-// the worker reported an error or gave no time.
+// Times the vegetation add-on's generation in a worker on the device, for the budgets that M3-V1's
+// figures set: each built-in species at each preset's detail, generated once for each of several
+// seeds, with the median of the times. The page reports the triangles, the vertices and the bytes of
+// each variant beside its time. It fails when the worker reported an error or gave no time.
 // ?seeds= changes the seeds per run, and ?presets= picks presets, such as low,high.
 import type { QualityPreset } from '@null3d/engine';
+import { ALL_SPECIES } from '@null3d/vegetation';
 import { progress, run } from './lib/result';
 import type { GenerateReply, GenerateRequest } from './lib/tree-generation-worker';
-import { SPECIES } from './lib/tree-generator';
 
 const params = new URLSearchParams(location.search);
 
@@ -73,14 +72,14 @@ run('tree-generation', async () => {
 		{};
 	for (const preset of PRESETS) {
 		const total = { variants: 0, ms: 0, triangles: 0, bytes: 0 };
-		for (const species of SPECIES) {
-			const reply = await generate(species.name, preset);
+		for (const species of ALL_SPECIES) {
+			const reply = await generate(species.id, preset);
 			if (reply.error) throw new Error(`the tree worker failed: ${reply.error}`);
 			if (reply.timesMs.length === 0) throw new Error('the tree worker gave no time');
 			const times = reply.timesMs;
 			runs.push({
 				preset,
-				species: species.name,
+				species: species.id,
 				medianMs: median(times),
 				worstMs: Math.max(...times),
 				triangles: reply.triangles,
@@ -105,6 +104,6 @@ run('tree-generation', async () => {
 		totalMs,
 		runs,
 		totals,
-		species: SPECIES.map((species) => species.name),
+		species: ALL_SPECIES.map((species) => species.id),
 	};
 });

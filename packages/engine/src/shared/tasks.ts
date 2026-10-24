@@ -19,7 +19,7 @@ import { TaskFailure } from './task-failure';
 import { type JobTaskHost, jobTasks, taskTakers } from './task-host';
 import { moduleKey } from './task-modules';
 import { compileWasm, type WasmError } from './wasm';
-import { bootstrapFailure, spawnWorker } from './worker-start';
+import { bootstrapFailure, spawnWorker, watchWorkerError } from './worker-start';
 
 /**
  * How long the first task waits for the page's word on which job workers run, in ms. The word comes
@@ -272,11 +272,10 @@ class Runners {
 		);
 		this.worker = worker;
 		worker.onmessage = (event: MessageEvent<TaskAnswer>) => this.answer(event.data);
-		worker.onerror = (event) => {
-			event.preventDefault();
+		watchWorkerError(worker, (message) => {
 			worker.terminate();
-			this.fail(event.message || 'its script did not load', error);
-		};
+			this.fail(message || 'its script did not load', error);
+		});
 		return [
 			{
 				modules: new Set(),

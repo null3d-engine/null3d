@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -7,6 +8,7 @@ import {
 	artifactFiles,
 	artifactsKey,
 	type BuildJob,
+	baseTreeDamaged,
 	buildCodeHash,
 	buildLog,
 	cargoTargetBase,
@@ -434,6 +436,42 @@ describe('buildLog', () => {
 		expect(log.text()).toBe(
 			`${printed.map(([line]) => line.slice('[tools] '.length)).join('\n')}\n`,
 		);
+	});
+});
+
+describe('baseTreeDamaged', () => {
+	/** Runs git in the test tree, with an identity of its own and no hooks or signing. */
+	const git = (cwd: string, ...args: string[]) =>
+		execFileSync(
+			'git',
+			[
+				'-c',
+				'user.email=test@example.com',
+				'-c',
+				'user.name=test',
+				'-c',
+				'commit.gpgsign=false',
+				'-c',
+				'core.hooksPath=/dev/null',
+				...args,
+			],
+			{ cwd, stdio: 'ignore' },
+		);
+
+	it('is true for a tree that is gone or has lost a file, and false for a whole checkout', () => {
+		const tree = mkdtempSync(join(tmpdir(), 'null3d-base-tree-'));
+		try {
+			expect(baseTreeDamaged(tree)).toBe(true);
+			git(tree, 'init', '--quiet');
+			writeFileSync(join(tree, 'a.txt'), 'a\n');
+			git(tree, 'add', 'a.txt');
+			git(tree, 'commit', '--quiet', '-m', 'first');
+			expect(baseTreeDamaged(tree)).toBe(false);
+			rmSync(join(tree, 'a.txt'));
+			expect(baseTreeDamaged(tree)).toBe(true);
+		} finally {
+			rmSync(tree, { recursive: true, force: true });
+		}
 	});
 });
 

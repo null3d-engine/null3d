@@ -73,6 +73,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -143,6 +144,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -379,6 +381,7 @@ jobs:
       # The entries repeat much of their text, so one archive of them all packs far smaller than
       # the artifact's own zip, which compresses each file alone (D-235).
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         if: steps.whole.outputs.cache-hit != 'true'
         with:
           mode: upload
@@ -459,6 +462,7 @@ jobs:
       # folder that held it in its job: an earlier stamp's folder when the compiler's program has the
       # bytes that wrote it. A run whose caches held every entry has none to download.
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         continue-on-error: true
         with:
           mode: download
@@ -504,6 +508,7 @@ jobs:
       # Every later job downloads these files, about 2.8 GB, as one archive: as the artifact's own
       # zip they took 510 MB and 77 s to upload in run 39869813447, and about 122 MB this way.
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: upload
           name: page-wasm
@@ -617,6 +622,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -657,6 +663,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -775,6 +782,7 @@ jobs:
       - if: steps.passed.outputs.cache-hit != 'true'
         run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         if: steps.passed.outputs.cache-hit != 'true'
         with:
           mode: download
@@ -871,6 +879,7 @@ jobs:
           key: ${{ steps.inputs.outputs.key }}
           lookup-only: true
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         if: steps.passed.outputs.cache-hit != 'true'
         with:
           mode: download
@@ -925,6 +934,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -994,6 +1004,7 @@ jobs:
       - run: bun install --frozen-lockfile
       # The build job's files, at their places in the repository.
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -1038,6 +1049,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -1082,6 +1094,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -1141,6 +1154,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -1204,6 +1218,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -1255,6 +1270,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -1364,10 +1380,12 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: load-pages
@@ -1420,10 +1438,12 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: load-pages
@@ -1463,6 +1483,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -1473,6 +1494,7 @@ jobs:
       - name: The benchmark pages, built for production
         run: bun tests/lib/load-server.ts bench-pages
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: upload
           name: load-pages
@@ -1501,12 +1523,14 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
       - name: The startup pages, built for production
         run: bun tests/lib/load-server.ts startup-pages
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: upload
           name: load-startup-pages
@@ -1688,6 +1712,7 @@ jobs:
       - uses: ./.github/actions/bun-install
       # The engine's API reference names the shader features, which the shader modules hold.
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm

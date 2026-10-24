@@ -41,7 +41,9 @@ import {
 } from '../../packages/engine/src/gpu/webgl2/call-timing';
 import { featureCost } from './lib/feature-cost';
 import { requestJoinTiming } from './lib/join-timing';
+import { overlayMemory, waitForOverlay } from './lib/overlay-figures';
 import { run } from './lib/result';
+import type { SideMemory } from './lib/side-memory';
 
 /**
  * Each effect's sketch, which turns the effect on at the message of the effect's name, posts
@@ -63,6 +65,7 @@ const SKETCHES = {
 	vignette: './sketches/vignette-cost-sketch.ts',
 	sharpen: './sketches/sharpen-cost-sketch.ts',
 	lens: './sketches/lens-cost-sketch.ts',
+	compute: './sketches/compute-cost-sketch.ts',
 } as const;
 
 type Effect = keyof typeof SKETCHES;
@@ -169,6 +172,17 @@ run('effect-cost', async () => {
 		},
 		glSnapshot,
 	);
+	// The memory figures come from the overlay, which samples the GPUs' tables and the wasm file.
+	// It shows after the timing, so its sampling costs none of the frames above.
+	const wasmBytes = (await engine.measure(0.5)).memory.wasmBytes;
+	const memory: { off?: SideMemory; on?: SideMemory } = {};
+	for (const side of ['off', 'on'] as const) {
+		engine.postToSketch(side === 'on' ? effect : `${effect}-off`, null);
+		engine.stats(true);
+		const ready = await waitForOverlay('triangles');
+		memory[side] = { ready, ...overlayMemory(wasmBytes) };
+		engine.stats(false);
+	}
 	const joinBuilds = effect === 'effects' ? await requestJoinTiming() : undefined;
 	await engine.destroy();
 	return {
@@ -198,6 +212,7 @@ run('effect-cost', async () => {
 		devicePixelRatio,
 		off,
 		on,
+		memory,
 		// The line that the two-step probe printed, for the plan that asks for it, which keeps it in
 		// the run's result to read beside the other browsers' lines.
 		twoStep: (globalThis as { __null3dTwoStep?: string }).__null3dTwoStep ?? null,

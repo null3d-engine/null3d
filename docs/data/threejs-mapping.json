@@ -1973,13 +1973,24 @@
       "detect": "\\bImprovedNoise\\b|\\bgenerateHeight\\b|\\bgetHeightAt\\b"
     },
     {
+      "id": "vegetation",
+      "category": "Geometry",
+      "three": "A tree model per species loaded from a glTF file, or a procedural plant from an add-on such as Sapling or ez-tree",
+      "status": "changed",
+      "since": "0.3",
+      "target": "generatePlant(species, { seed, variant }) from @null3d/vegetation; geometry.fromArrays(part.arrays) for each part of a level; mesh.setLevels(lower) for the levels below the first",
+      "notes": "three.js has no plant system. A port replaces a model file or a private generator with a species record and a seed: the add-on grows the skeleton, the branches, the leaf cards and the lower levels at first use, in a job worker, so the page downloads no plant. A record holds numbers only, so a themed set is a list of records. The asset carries wind bytes in the vertex colors, a pivot record for each branch, the crown's bounds and the source that a far card bakes from; the leaf and bark materials that read them are not built yet, so a port draws the parts with materials of its own until they are. A generated plant keeps whole levels, never cluster levels.",
+      "docs": "api/vegetation",
+      "detect": "\\b(Tree|Foliage|Vegetation)(Generator|Factory)\\b|\\bSapling\\b|\\bez-tree\\b"
+    },
+    {
       "id": "css-renderers",
       "category": "Sprites, points, lines and labels",
       "three": "CSS2DRenderer / CSS3DRenderer (HTML labels)",
       "status": "changed",
       "since": "0.2",
       "target": "Sketch: ui.trackLabel(obj, 'hp-12', { offset: [0, 2, 0] }). Page: engine.labels.bind('hp-12', element). A plane of the scene: ui.trackLabel(obj, 'card', { transform: 'world' }), or 'billboard' with a rotation",
-      "notes": "The sketch places each label with the camera of each frame, and the page moves the element over it in the frame on screen; no messages per frame. The element's center sits where CSS2DRenderer puts a CSS2DObject's, and the offset turns and scales with the object, as a CSS2DObject's position does under its parent. Put the elements in a container that covers the canvas. Hidden labels get visibility: hidden, not display: none. No z-index by distance, and no center. For CSS3DRenderer, a label with transform 'world' takes a CSS3DObject's matrix and 'billboard' takes a CSS3DSprite's, with rotation2D as rotation: the page moves the element into a container inside its parent, which holds the camera's perspective, and turns the element with its world matrix, as CSS3DRenderer draws it. An element is sized in CSS pixels, which are the scene's units. The engine hides a plane whose anchor is behind the camera or outside the near and far planes, which CSS3DRenderer does not do, and it leaves the pointer to your CSS, so give an element pointer-events: auto for the clicks that CSS3DRenderer gives it. It writes a transform only when it changes, and a page holds its planes with maxLabels3d.",
+      "notes": "The sketch places each label with the camera of each frame, and the page moves the element over it in the frame on screen; no messages per frame. The element's center sits where CSS2DRenderer puts a CSS2DObject's, and the offset turns and scales with the object, as a CSS2DObject's position does under its parent. Put the elements in a container that covers the canvas. Hidden labels get visibility: hidden, not display: none. No z-index by distance, and no center. For CSS3DRenderer, a label with transform 'world' takes a CSS3DObject's matrix and 'billboard' takes a CSS3DSprite's, with rotation2D as rotation: the page moves the element into a container inside its parent, which holds the camera's perspective, and turns the element with its world matrix, as CSS3DRenderer draws it. An element is sized in CSS pixels, which are the scene's units. The engine hides a plane whose anchor is behind the camera or outside the near and far planes, which CSS3DRenderer does not do, and it leaves the pointer to your CSS, so give an element pointer-events: auto for the clicks that CSS3DRenderer gives it. It writes a transform only when it changes, and a page holds its planes with maxLabels3d. three.js's css3d_periodictable example ports directly: one object and one ui.trackLabel(object, id, { transform: 'world' }) for each cell, the cell's HTML in the element, and the example's camera; the port skill's architecture guide shows it.",
       "docs": "api/ui",
       "detect": "\\bCSS[23]D(Renderer|Object|Sprite)\\b"
     },
@@ -2001,7 +2012,7 @@
       "status": "changed",
       "since": "0.3",
       "target": "const splats = await createSplats(ctx, { url }) from @null3d/splats; assets.loadGltf for a KHR_gaussian_splatting model",
-      "notes": "Importing @null3d/splats registers the KHR_gaussian_splatting reader, so a glTF model of splats loads with assets.loadGltf. An SPZ file loads through createSplats, which cuts the cloud into detail levels, chooses the splats that draw within a budget that follows the quality preset and the GPU path, and lets the engine sort them by depth. Update them once in each frame with splats.update(eye), from the camera's getPosition. The first spherical-harmonic band gives each splat's color; higher bands are ignored. three.js's GaussianSplat and its loaders are add-ons, so each name maps to this one add-on.",
+      "notes": "Importing @null3d/splats registers the KHR_gaussian_splatting reader, so a glTF model of splats loads with assets.loadGltf. An SPZ file loads through createSplats, which cuts the cloud into detail levels, chooses the splats that draw within a budget that follows the quality preset and the GPU path, and lets the engine sort them by depth. A large cloud loads as a splat stream: createSplats reads an index of chunk files and downloads only the chunks that the view needs, so the cloud draws before its whole file arrives. three.js has no equivalent. Update them once in each frame with splats.update(eye), from the camera's getPosition. The first spherical-harmonic band gives each splat's color; higher bands are ignored. three.js's GaussianSplat and its loaders are add-ons, so each name maps to this one add-on.",
       "docs": "api/splats",
       "detect": "\\bGaussianSplat\\w*\\b|\\b(SPZ|SPLAT|KSPLAT)Loader\\b"
     },

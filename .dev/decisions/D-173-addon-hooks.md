@@ -218,6 +218,8 @@ This table replaces the hook list under "Data". Every hook is public, works on b
 | Namespaces | A shader library name, an error-code range and quality keys per add-on | Every outside add-on | Both | M4 |
 | Plugin interface version | An outside add-on declares the interface range it was built for, and the engine refuses a mismatch with an error that names both | Outside add-ons | Both | M4 |
 
+The two hooks' start code measures as follows, on 25 October 2026. H3 adds 4,199 bytes of TypeScript to the start module. Without comment lines it adds 2,182 bytes, which Brotli compresses alone to 536 bytes. With the comments it compresses to 1,157 bytes. The adapter's own code loads on first use, in `page-feature-draws.js` at 1,114 bytes after Brotli and `sketch-worker-feature-draws.js` at 1,117. H9 adds 3,309 bytes to the glTF extension handler. Without comment lines it adds 1,562 bytes, which Brotli compresses alone to 589 bytes. With the comments it compresses to 1,087 bytes. Compressing a part alone reads high, because it shares no dictionary with the rest of the bundle. Each figure therefore bounds the part's share of the start. Both hooks stay under the budget of about 1 to 2 KB, and `bun run build` names each module and its bytes.
+
 ## Options rejected
 
 - **Private hooks for the engine's own add-ons.** Faster to build. But another developer could never match those add-ons, and a marketplace would start uneven.
@@ -355,3 +357,34 @@ An add-on's compute pass writes one storage texture at a fixed binding of the pa
 ## Addendum, 24 October 2026: vegetation is the eleventh foundation
 
 The owner made vegetation a foundation add-on ([D-241](D-241-vegetation-foundation.md)). It passes ruling 4's test, because many kinds of project use plants and other developers' style packs build on it. It holds the species generator, the scatter, the grass, the leaf material, the wind and the hand-off to impostors. Themed species packs stay content for other developers, as the "vegetation styles" of the owner's answer of 14 October. Rule 13 in AGENTS.md lists it. H2's GPU-written draws gain a second user that needs the shadow views: the near grass, which casts shadows (M3-E9).
+
+## Addendum, 25 October 2026: what M3-E2's line covers
+
+M3-E2's plan line read "splat sorting runs on the job workers on WebGL2 through it". An audit read
+"splat sorting" as the per-splat depth sort, which left the task unmet. That sort is not the hook's,
+and the hook cannot honestly carry it.
+
+- An answer reaches the thread that queued the task between two frames, as the contract above says.
+  The transparent pass needs the rows' order inside the frame that draws them, so an order that a
+  task returns can only reach a later frame.
+- The engine's transparent pass culls and sorts every blended batch's rows back to front on the job
+  workers, inside the frame's own job chunks (`crates/null3d-core/src/depth_sort.rs`). The batch
+  takes rows, a count and dirty marks, and no order that a caller gives: the pass's sort replaces
+  any order in which the rows arrived ([D-54](D-54-addon-modules.md)).
+- So a second sort in the add-on would be discarded by the engine's sort. To keep it, the add-on
+  would also re-upload every row in the new order in every frame, and the engine would still sort
+  them again. That duplicates the one place that orders blended draws, which D-54 rejects.
+
+What runs through the hook is the add-on's selection. The task sorts the cloud's chunks by their
+distance to the camera, lowers their detail levels where the budget runs out, and answers each
+chunk's prefix; the sketch packs those rows between two frames. The engine's transparent pass then
+sorts the chosen rows back to front on its job workers, on both GPU paths, as it does for every
+blended draw. The allocation check covers the whole path
+([Benchmarks](../benchmarks.md#allocation-and-profiling)).
+
+The line, as M3-E2 should read: "the splats add-on's selection, which splats draw and each chunk's
+prefix, nearest first, runs on the job workers on WebGL2 through the hook, the engine's transparent
+pass sorts the chosen rows there, and the allocation check covers the path."
+
+H5's table row above says "Splat sorting" as the first user, and this addendum reads that as the
+add-on's selection. [Tasks on the job workers](../../docs/api/tasks.md) now says the same.

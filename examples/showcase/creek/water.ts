@@ -236,6 +236,12 @@ export function createWater(
 	quadsX: number,
 	obstacles: readonly Obstacle[],
 	reach: number,
+	// For the bisect of the Apple WebGPU stall: true draws the reflection in every frame, as a
+	// preset that reflects every frame does, so a stall that follows the pass's switching shows.
+	alwaysReflect = false,
+	// For the same bisect: the reflection target's share of the render size, when the address names
+	// one, so one preset can draw the pass at each size.
+	reflectScale?: 0.25 | 0.5 | 1,
 ): Water {
 	const { scene, geometry, materials, textures, render } = ctx;
 	const plane = { point: [0, WATER, 0] } as const;
@@ -244,6 +250,7 @@ export function createWater(
 		writes: 'creek',
 		plane,
 		layers: 1,
+		...(reflectScale !== undefined && { scale: reflectScale }),
 	});
 	const mirror = textures.fromPass(pass);
 	const material = materials.shader({
@@ -286,7 +293,7 @@ export function createWater(
 		},
 		update() {
 			frame = (frame + 1) % every;
-			render.setPassEnabled(pass, frame === 0);
+			render.setPassEnabled(pass, alwaysReflect || frame === 0);
 		},
 		setCaustics(next) {
 			light[0] = next[0];

@@ -7,6 +7,10 @@
 // the preset's budget, and the sketch packs the chosen splats into the batch. The engine then culls
 // and sorts the rows back to front in the transparent pass, which is what lets the splats mix with
 // each other and with the scene's opaque meshes.
+//
+// A file that a page downloads whole is cut as the bytes arrive. A splat stream names its chunks in
+// a small index, so the cloud starts at once and the loader fetches only the chunks that the
+// selection asks for, nearest first.
 import {
 	checkAddonVersion,
 	declareAddonNamespace,
@@ -22,8 +26,10 @@ import { chunkSplats, type SplatChunk } from './chunks';
 import { checkSplats, type SplatData, splatsError } from './format';
 // The module registers the glTF extension as the add-on loads.
 import './gltf';
+import { type PrefixView, packRows, type SplatRows } from './pack';
 import { SplatSelector } from './select';
 import splatShader from './splats.wgsl';
+import { parseStreamIndex, type SplatStream, SplatStreamLoader, startsStreamIndex } from './stream';
 import { VERSION } from './version';
 
 checkAddonVersion('@null3d/splats', VERSION);
@@ -48,15 +54,19 @@ const QUAD = {
 	indices: new Uint16Array([0, 1, 2, 0, 2, 3]),
 };
 
+/** How far the camera moves before a selection is made again, in meters. */
+const MOVE_EPSILON = 0.25;
+
 /**
- * Options of `createSplats`. Give the cloud itself, or the address of an SPZ file.
+ * Options of `createSplats`. Give the cloud itself, or the address of a splat file or a stream
+ * index.
  *
  * @category api/splats
  */
 export interface SplatsOptions {
 	/** The cloud to draw, decoded already, such as `decodeSpz` gives it. */
 	readonly data?: SplatData;
-	/** The address of an SPZ file to download and draw. */
+	/** The address of an SPZ file or of a splat stream index to download and draw. */
 	readonly url?: string | URL;
 	/**
 	 * The point that the splats' positions are relative to, which keeps them precise far from the
@@ -109,9 +119,21 @@ export interface Splats {
 	readonly total: number;
 	/** The number of splats that draw now. */
 	readonly drawn: number;
-	/** The number of chunks that the cut made. */
+	/** The number of chunks that the cloud has. */
 	readonly chunks: number;
-	/** Resolves when every chunk is ready. The cloud draws the chunks that are ready before it. */
+	/** The number of chunks whose data has loaded. */
+	readonly loaded: number;
+	/** The number of chunks that stayed unreachable. */
+	readonly failed: number;
+	/** The bytes of the whole cloud: the file's size, or the chunk sizes that a stream index gives. */
+	readonly bytes: number;
+	/** The bytes of the cloud that have downloaded. */
+	readonly loadedBytes: number;
+	/**
+	 * Resolves when the cloud can draw its first view. For a file, every chunk is ready. For a
+	 * stream, the chunks that the last `update` needs are loaded: call `update` once before
+	 * awaiting it to name the view.
+	 */
 	readonly ready: Promise<void>;
 	/**
 	 * Resolves once the splats that draw are chosen and packed, which a test or a still picture
@@ -126,12 +148,29 @@ export interface Splats {
 	destroy(): void;
 }
 
+/** One slot of the selection: a chunk's bounds, its count, and the data that has arrived. */
+interface ChunkSlot {
+	readonly center: readonly [number, number, number];
+	readonly radius: number;
+	readonly count: number;
+	data: SplatChunk | undefined;
+}
+
+/** What a page downloads: a cloud's whole file, or a stream's index. */
+type Source =
+	| { readonly data: SplatData; readonly bytes: number }
+	| { readonly stream: SplatStream; readonly bytes: number };
+
 /**
- * Draws a cloud of Gaussian splats in a sketch. The cloud comes from an SPZ file, or from the data
- * of another reader. A glTF model that carries `KHR_gaussian_splatting` loads through
- * `assets.loadGltf`, because the add-on's module registers the reader as it loads. A cloud draws
- * with detail levels, a budget that follows the quality preset and the GPU path, and a soft mix
- * with the scene's opaque meshes.
+ * Draws a cloud of Gaussian splats in a sketch. The cloud comes from an SPZ file, from a splat
+ * stream index, or from the data of another reader. A glTF model that carries
+ * `KHR_gaussian_splatting` loads through `assets.loadGltf`, because the add-on's module registers
+ * the reader as it loads. A cloud draws with detail levels, a budget that follows the quality
+ * preset and the GPU path, and a soft mix with the scene's opaque meshes.
+ *
+ * A splat stream starts drawing before its whole cloud has downloaded: give the address of its
+ * index, and the add-on fetches the chunks that the view needs as it needs them. Each chunk of the
+ * cloud is an SPZ file, and the index names them.
  *
  * Call `splats.update(eye)` once in each frame, with the camera's position from `getPosition`, and
  * free the cloud with `splats.destroy()`.
@@ -140,11 +179,28 @@ export interface Splats {
  */
 export async function createSplats(ctx: SketchContext, options: SplatsOptions): Promise<Splats> {
 	if (options.data === undefined && options.url === undefined)
-		throw splatsError(2110, 'give createSplats() the cloud as data, or the url of an SPZ file.');
-	const data = checkSplats(
-		options.data ?? (await decodeFile(options.url as string | URL)),
-		'the splat cloud',
-	);
+		throw splatsError(
+			2110,
+			'give createSplats() the cloud as data, or the url of an SPZ file or a splat stream index.',
+		);
+	const source: Source =
+		options.data !== undefined
+			? { data: checkSplats(options.data, 'the splat cloud'), bytes: 0 }
+			: await readSource(options.url as string | URL);
+	const data = 'data' in source ? source.data : undefined;
+	const stream = 'stream' in source ? source.stream : undefined;
+	const totalSplats = data ? data.count : (stream as SplatStream).count;
+	// The slots that the selection reads: a stream names all of them at once, and a file adds them
+	// as its cut makes them.
+	const slots: ChunkSlot[] = [];
+	if (stream)
+		for (const chunk of stream.chunks)
+			slots.push({
+				center: chunk.center,
+				radius: chunk.radius,
+				count: chunk.count,
+				data: undefined,
+			});
 	// The rows that the batch holds, which the preset and the GPU path decide once the host has
 	// resolved them: a phone then pays for the splats that it may draw, not for the Ultra count.
 	let capacity = 1;
@@ -175,7 +231,7 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 		1,
 		Math.min(
 			Math.floor(options.capacity ?? (feature.settings.drawn as number)),
-			Math.max(data.count, 1),
+			Math.max(totalSplats, 1),
 		),
 	);
 	const draw = await ctx.scene.addFeatureInstances(description, {
@@ -201,14 +257,15 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 	// first selection fills them.
 	draw.setCount(0);
 
-	const chunks: SplatChunk[] = [];
 	let version = 0;
 	let selector: SplatSelector | undefined;
 	let selectorChunks = 0;
 	// The counts and the total of the selection that fills the draw, which keeps its own copy so a
 	// later selection in the shared buffer can differ from it without allocating.
-	let lastCounts = new Float32Array(0);
+	let lastCounts = new Float32Array(stream ? slots.length : 0);
 	let lastTotal = -1;
+	/** The chunk version that the rows hold, so a chunk that arrives repacks them once. */
+	let packedVersion = -1;
 	// The camera's position at the last ask, in a typed array, so a frame's ask allocates nothing.
 	const eye = new Float64Array(3);
 	const lastEye = new Float64Array(3);
@@ -218,16 +275,108 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 	let stop = false;
 	let override: number | undefined;
 	let drawn = 0;
+	let loadedChunks = 0;
 	let reported: Error | undefined;
 
-	const ready = chunkSplats(data, {
-		yieldTo: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
-		onChunk: (chunk) => {
-			chunks.push(chunk);
-			version++;
-			dirty = true;
-		},
-	}).then(() => undefined);
+	/** The prefix views of each slot, which change only when its chosen count does. */
+	const prefixes: (PrefixView | undefined)[] = [];
+	/** The batch rows of a pack, which point at the batch's own views of the current memory. */
+	const rows: SplatRows = {
+		positions: new Float32Array(0),
+		rotations: new Float32Array(0),
+		scales: new Float32Array(0),
+		colors: new Float32Array(0),
+		markDirty: (start, count) => draw.batch.markDirty(start, count),
+		setActiveCount: (count) => draw.batch.setActiveCount(count),
+	};
+
+	const pack = (counts: Float32Array): void => {
+		const views = draw.batch;
+		if (!views.colors)
+			throw splatsError(2111, 'the splats batch has no row colors, which its draw needs.');
+		rows.positions = views.positions;
+		rows.rotations = views.rotations;
+		rows.scales = views.scales;
+		rows.colors = views.colors;
+		drawn = packRows(rows, slots, counts, prefixes);
+		packedVersion = version;
+	};
+
+	/** The ask that waits for its answer, and the chunk version that it saw. */
+	let asking: SplatSelector | undefined;
+	let askedVersion = 0;
+
+	/** The chunks that the stream should fetch, nearest first, in buffers that a selection reuses. */
+	const wanted: number[] = [];
+	const wantedDistance: number[] = [];
+
+	/**
+	 * Asks the loader for the chunks that the selection wants and that have not arrived, nearest
+	 * first. A chunk behind the camera still counts: the budget decides what the view needs, and
+	 * the distance decides what it needs first.
+	 */
+	const askForChunks = (loader: SplatStreamLoader, counts: Float32Array): void => {
+		wanted.length = 0;
+		wantedDistance.length = 0;
+		const eyeX = eye[0] as number;
+		const eyeY = eye[1] as number;
+		const eyeZ = eye[2] as number;
+		for (let i = 0; i < slots.length; i++) {
+			const slot = slots[i] as ChunkSlot;
+			if (slot.data || !(i < counts.length && (counts[i] as number) > 0)) continue;
+			const dx = (slot.center[0] as number) - eyeX;
+			const dy = (slot.center[1] as number) - eyeY;
+			const dz = (slot.center[2] as number) - eyeZ;
+			const distance = Math.max(Math.sqrt(dx * dx + dy * dy + dz * dz) - slot.radius, 0);
+			// Keep the list nearest first, so the closest chunk's splats arrive first.
+			let at = wanted.length;
+			while (at > 0 && (wantedDistance[at - 1] as number) > distance) {
+				wanted[at] = wanted[at - 1] as number;
+				wantedDistance[at] = wantedDistance[at - 1] as number;
+				at--;
+			}
+			wanted[at] = i;
+			wantedDistance[at] = distance;
+		}
+		loader.load(wanted);
+	};
+
+	let loader: SplatStreamLoader | undefined;
+	let settledOnce = false;
+	let readyResolved = false;
+	let resolveReady: () => void = () => undefined;
+	const streamReady = new Promise<void>((resolve) => {
+		resolveReady = resolve;
+	});
+	const maybeReady = (): void => {
+		if (readyResolved) return;
+		if (!settledOnce || (loader && !loader.idle)) return;
+		readyResolved = true;
+		resolveReady();
+	};
+
+	/** Starts the loader's requests, and resolves the stream's readiness once they settle. */
+	const loadFor = (counts: Float32Array): void => {
+		if (loader) askForChunks(loader, counts);
+		maybeReady();
+	};
+
+	/** True when the camera has moved far enough that the last selection no longer fits it. */
+	const movedSinceLastSelection = (): boolean =>
+		Math.abs((eye[0] as number) - (lastEye[0] as number)) +
+			Math.abs((eye[1] as number) - (lastEye[1] as number)) +
+			Math.abs((eye[2] as number) - (lastEye[2] as number)) >
+		MOVE_EPSILON;
+
+	/**
+	 * Packs a chunk that arrived with the last selection's counts, unless the camera has moved: a
+	 * chunk that the view no longer wants takes no row, and the next selection places the rest.
+	 */
+	const packArrived = (): void => {
+		if (lastTotal < 0 || lastCounts.length !== slots.length) return;
+		if (inFlight || movedSinceLastSelection()) return;
+		pack(lastCounts);
+	};
 
 	/** The callers that wait for a settled selection, which the next one answers. */
 	const waiters: (() => void)[] = [];
@@ -239,58 +388,6 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 	const budgetNow = (): number =>
 		Math.min(capacity, Math.floor(override ?? (feature.settings.drawn as number)));
 
-	/** The prefix views of each chunk, which change only when its chosen count does. */
-	const prefixes: (
-		| {
-				count: number;
-				positions: Float32Array;
-				rotations: Float32Array;
-				scales: Float32Array;
-				colors: Float32Array;
-		  }
-		| undefined
-	)[] = [];
-
-	const pack = (counts: Float32Array): void => {
-		const { batch } = draw;
-		const { positions, rotations, scales, colors } = batch;
-		if (!colors)
-			throw splatsError(2111, 'the splats batch has no row colors, which its draw needs.');
-		let at = 0;
-		for (let i = 0; i < chunks.length; i++) {
-			const chunk = chunks[i] as SplatChunk;
-			// A chunk that arrived after the worker chose takes its turn in the next selection.
-			const count = Math.min(counts[i] as number, chunk.count);
-			if (!(count > 0)) {
-				prefixes[i] = undefined;
-				continue;
-			}
-			let prefix = prefixes[i];
-			if (!prefix || prefix.count !== count) {
-				prefix = {
-					count,
-					positions: chunk.positions.subarray(0, count * 3),
-					rotations: chunk.rotations.subarray(0, count * 4),
-					scales: chunk.scales.subarray(0, count * 3),
-					colors: chunk.colors.subarray(0, count * 4),
-				};
-				prefixes[i] = prefix;
-			}
-			positions.set(prefix.positions, at * 3);
-			rotations.set(prefix.rotations, at * 4);
-			scales.set(prefix.scales, at * 3);
-			colors.set(prefix.colors, at * 4);
-			at += count;
-		}
-		if (at > 0) batch.markDirty(0, at);
-		batch.setActiveCount(at);
-		drawn = at;
-	};
-
-	/** The ask that waits for its answer, and the chunk version that it saw. */
-	let asking: SplatSelector | undefined;
-	let askedVersion = 0;
-
 	/** Takes the answer: fills the draw again when the counts or the total changed. */
 	const selected = (_output: boolean): void => {
 		inFlight = false;
@@ -298,7 +395,8 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 		asking = undefined;
 		if (stop || !asked) return;
 		const total = asked.total;
-		const changed = total !== lastTotal || differs(asked.counts, lastCounts);
+		const changed =
+			total !== lastTotal || version !== packedVersion || differs(asked.counts, lastCounts);
 		if (changed) {
 			lastTotal = total;
 			// A chunk that arrived while the worker chose changed the list's length.
@@ -307,8 +405,11 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 			lastCounts.set(asked.counts);
 			pack(asked.counts);
 		}
-		// A chunk that arrived while the worker chose draws in the next selection.
-		dirty = version !== askedVersion;
+		settledOnce = true;
+		// A new file chunk joins the selector, so the next selection includes it. A stream's
+		// chunks are all known from its index, and an arrival repacks the rows on its own.
+		dirty = stream ? false : version !== askedVersion;
+		if (stream) loadFor(asked.counts);
 		settleWaiters();
 		// A caller that waits for a settled set keeps the selections coming.
 		if (waiters.length > 0) choose();
@@ -323,17 +424,15 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 			reported = error instanceof Error ? error : new Error(String(error));
 			console.error(`splats: the selection failed. ${reported.message}`);
 		}
+		settledOnce = true;
+		maybeReady();
 		settleWaiters();
 	};
 
 	const choose = (): void => {
 		if (stop || !selector || inFlight) return;
 		const budget = budgetNow();
-		const moved =
-			Math.abs((eye[0] as number) - (lastEye[0] as number)) +
-				Math.abs((eye[1] as number) - (lastEye[1] as number)) +
-				Math.abs((eye[2] as number) - (lastEye[2] as number)) >
-			0.25;
+		const moved = movedSinceLastSelection();
 		if (!dirty && !moved && budget === lastBudget) return;
 		inFlight = true;
 		askedVersion = version;
@@ -345,16 +444,83 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 		selector.select(eye, budget).then(selected, failed);
 	};
 
+	/** Makes the selector read every chunk that the cloud has, when the list's length changed. */
+	const syncSelector = (): void => {
+		if (slots.length === selectorChunks) return;
+		selectorChunks = slots.length;
+		selector = selectorChunks > 0 ? new SplatSelector(slots) : undefined;
+		// A new selector has counts of its own, and the draw keeps the last set until the worker
+		// answers for this one.
+		lastCounts = new Float32Array(selectorChunks);
+		lastTotal = -1;
+		dirty = true;
+	};
+
+	let ready: Promise<void>;
+	if (stream) {
+		loader = new SplatStreamLoader(stream, {
+			decode: decodeChunk,
+			onChunk: (index, chunk) => {
+				const slot = slots[index] as ChunkSlot;
+				slot.data = chunk;
+				loadedChunks++;
+				version++;
+				packArrived();
+			},
+			onFailed: (index, error) => {
+				console.error(
+					`splats: chunk ${index} of the splat stream did not load, so that part of the cloud stays empty. ${error.message}`,
+				);
+				maybeReady();
+			},
+			onIdle: maybeReady,
+		});
+		ready = streamReady;
+		syncSelector();
+		// A sketch usually names its view in the same turn as this call returns, so the first
+		// selection waits a turn: it then asks for that view's chunks instead of the origin's. A
+		// sketch that never calls update still gets a selection, and its ready resolves.
+		setTimeout(() => {
+			if (!stop && !settledOnce) choose();
+		}, 0);
+	} else {
+		const cut = chunkSplats(data as SplatData, {
+			yieldTo: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+			onChunk: (chunk) => {
+				slots.push({
+					center: chunk.center,
+					radius: chunk.radius,
+					count: chunk.count,
+					data: chunk,
+				});
+				loadedChunks++;
+				version++;
+				dirty = true;
+			},
+		}).then(() => undefined);
+		ready = cut;
+	}
+
 	return {
 		feature,
 		draw: draw as SplatsDraw,
-		total: data.count,
+		total: totalSplats,
 		ready,
 		get drawn() {
 			return drawn;
 		},
 		get chunks() {
-			return chunks.length;
+			return slots.length;
+		},
+		get loaded() {
+			return loadedChunks;
+		},
+		get failed() {
+			return loader?.failed ?? 0;
+		},
+		bytes: source.bytes,
+		get loadedBytes() {
+			return loader ? loader.receivedBytes : source.bytes;
 		},
 		setBudget(count) {
 			override = Math.max(0, Math.floor(count));
@@ -371,23 +537,22 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 			eye[0] = next[0] ?? 0;
 			eye[1] = next[1] ?? 0;
 			eye[2] = next[2] ?? 0;
-			if (chunks.length !== selectorChunks) {
-				selectorChunks = chunks.length;
-				selector = selectorChunks > 0 ? new SplatSelector(chunks) : undefined;
-				// A new selector has counts of its own, and the draw keeps the last set until the
-				// worker answers for this one.
-				lastCounts = new Float32Array(selectorChunks);
-				lastTotal = -1;
-				dirty = true;
-			}
+			syncSelector();
 			choose();
 		},
 		destroy() {
 			stop = true;
+			loader?.abort();
 			host.destroy();
 			draw.destroy();
 		},
 	};
+}
+
+/** Reads one chunk file of a stream, which is an SPZ file. */
+async function decodeChunk(bytes: Uint8Array): Promise<SplatData> {
+	const { decodeSpz } = await import('./spz');
+	return decodeSpz(bytes);
 }
 
 /** True when two lists of chunk counts differ, in length or in any count. */
@@ -397,8 +562,11 @@ function differs(a: Float32Array, b: Float32Array): boolean {
 	return false;
 }
 
-/** Downloads an SPZ file, and decodes it. */
-async function decodeFile(url: string | URL): Promise<SplatData> {
+/**
+ * Downloads a cloud. A stream index is a small JSON file, so it arrives at once. Any other file is
+ * an SPZ file, which the reader decodes whole.
+ */
+async function readSource(url: string | URL): Promise<Source> {
 	const address =
 		url instanceof URL
 			? url
@@ -410,9 +578,14 @@ async function decodeFile(url: string | URL): Promise<SplatData> {
 	if (!response.ok)
 		throw splatsError(
 			2109,
-			`the splat file ${address} answered ${response.status}. Give the address of an SPZ file that the page may read.`,
+			`the splat file ${address} answered ${response.status}. Give the address of an SPZ file or a splat stream index that the page may read.`,
 		);
-	const file = new Uint8Array(await response.arrayBuffer());
+	const bytes = new Uint8Array(await response.arrayBuffer());
+	if (startsStreamIndex(bytes)) {
+		const text = new TextDecoder().decode(bytes);
+		const stream = parseStreamIndex(text, address, `the splat stream ${address}`);
+		return { stream, bytes: stream.bytes };
+	}
 	const { decodeSpz } = await import('./spz');
-	return decodeSpz(file);
+	return { data: await decodeSpz(bytes), bytes: bytes.byteLength };
 }

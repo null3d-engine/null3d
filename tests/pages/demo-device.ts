@@ -4,7 +4,10 @@
 // mode the engine ran, the frame interval, CPU time per frame, GPU time per pass, triangles,
 // memory, and the bytes that the page downloaded. It fails when the measure drew no frame.
 // ?demo= names the demo, ?seconds= the measured time, and the engine's own ?gpu= and ?preset=
-// switches choose the path and the preset.
+// switches choose the path and the preset. ?measure=off skips the measure and reads the overlay
+// alone, which bisects a stall inside the measure from one in the scene's own draws. ?off= turns
+// off the demo's shared effect switches after the first frame, such as ?off=shadows,bloom.
+import { createEngine } from '@null3d/engine';
 import { DEMOS } from '../../examples/demos';
 import { startDemo } from '../../examples/lib/run';
 import { progress, run } from './lib/result';
@@ -25,6 +28,40 @@ const OVERLAY_WAIT_MS = 30_000;
  * report why.
  */
 const FIRST_FRAME_LIMIT_MS = 600_000;
+
+/** False skips `engine.measure`, so the page reads the overlay's window alone. */
+const MEASURE = params.get('measure') !== 'off';
+/**
+ * False starts the engine without CPU copies of its textures, which a phone or tablet keeps by
+ * default. ?keep-copies=off separates that mobile path from the rest of the frame.
+ */
+const KEEP_COPIES = params.get('keep-copies') !== 'off';
+/** False shows no overlay, so a run counts the page's own frames instead of the engine's window. */
+const OVERLAY = params.get('overlay') !== 'off';
+/** The seconds that a run without an overlay draws for, counted by the page's own frame callbacks. */
+const DRAW_SECONDS = Number(params.get('draw') ?? 12);
+/** Frames that the page's own frame callbacks counted, for a run with no overlay. */
+const pageFrames = { count: 0 };
+requestAnimationFrame(function countFrame() {
+	pageFrames.count++;
+	requestAnimationFrame(countFrame);
+});
+/** The shared effect switches that the page turns off after the first frame. */
+const OFF = (params.get('off') ?? '').split(',').filter(Boolean);
+/** The HUD group that carries each shared effect switch, which the page posts to turn it off. */
+const SWITCH_GROUP: Readonly<Record<string, string>> = {
+	sky: 'atmosphere',
+	fog: 'atmosphere',
+	shafts: 'atmosphere',
+	fireflies: 'atmosphere',
+	shadows: 'lighting',
+	ao: 'lighting',
+	environment: 'lighting',
+	bloom: 'post',
+	dof: 'post',
+	exposure: 'post',
+	vignette: 'post',
+};
 
 /**
  * A figure that the overlay shows, read through its shadow root, or null when the overlay hides the
@@ -117,8 +154,18 @@ run('demo-device', async () => {
 	);
 	// A showcase scene loads its models and builds its shaders in its setup, so the start itself can
 	// hold a slow phone for minutes. The wait ends, so a page that cannot start reports why.
+	const started = KEEP_COPIES
+		? startDemo({ canvas, demo, stats: false })
+		: createEngine({
+				canvas,
+				sketch: demo.sketch,
+				largeWorld: demo.largeWorld,
+				hdr: demo.hdr,
+				stats: false,
+				keepTextureCopies: false,
+			});
 	const engine = await Promise.race([
-		startDemo({ canvas, demo, stats: false }),
+		started,
 		new Promise<never>((_, reject) =>
 			setTimeout(
 				() => reject(new Error(`the demo did not start within ${FIRST_FRAME_LIMIT_MS / 1000} s`)),
@@ -140,64 +187,104 @@ run('demo-device', async () => {
 		);
 	const bytesBeforeFirstFrame = downloadedBytes();
 	note('the first frame drew');
-	const metrics = await engine.measure(SECONDS);
-	note(`the measure drew ${metrics.frames} frames`);
+	// A bisect turns shared switches off before the measure, so a pass that hangs is absent from the
+	// frames that follow.
+	for (const id of OFF) {
+		const group = SWITCH_GROUP[id];
+		if (!group) throw new Error(`?off= names no shared switch: ${id}`);
+		engine.postToSketch(group, id);
+		note(`turned off ${id}`);
+	}
+	const metrics = MEASURE ? await engine.measure(SECONDS) : undefined;
+	if (metrics) note(`the measure drew ${metrics.frames} frames`);
+	else note(`the measure is off; waiting for the overlay`);
 	const bytesTotal = downloadedBytes();
 	// The overlay samples the figures that only it shows: triangles and the GPU's memory. It comes
 	// after the measure, so its sampling costs none of the frames that the figures above time.
-	engine.stats(true);
-	const overlayReady = await waitForOverlay('triangles');
-	note(`the overlay ${overlayReady ? 'showed' : 'did not show'} its counts`);
-	const heading = overlayFigure('heading');
-	const triangles = overlayCount(overlayFigure('triangles'));
-	const objects = overlayCount(overlayFigure('objects'));
-	const draws = overlayCount(overlayFigure('draws'));
+	let overlayReady = false;
+	if (OVERLAY) {
+		engine.stats(true);
+		overlayReady = await waitForOverlay('triangles');
+		note(`the overlay ${overlayReady ? 'showed' : 'did not show'} its counts`);
+	} else {
+		// A run with no overlay draws for a while and counts the page's own frames, so a stall in the
+		// scene's draws shows apart from one in the timing that the overlay and the measure turn on.
+		const startedAt = performance.now();
+		pageFrames.count = 0;
+		await new Promise((resolve) => setTimeout(resolve, DRAW_SECONDS * 1000));
+		note(
+			`the page drew ${pageFrames.count} frames in ${((performance.now() - startedAt) / 1000).toFixed(1)} s without an overlay`,
+		);
+	}
+	const heading = OVERLAY ? overlayFigure('heading') : null;
+	const triangles = OVERLAY ? overlayCount(overlayFigure('triangles')) : null;
+	const objects = OVERLAY ? overlayCount(overlayFigure('objects')) : null;
+	const draws = OVERLAY ? overlayCount(overlayFigure('draws')) : null;
 	const memory = {
 		// The overlay writes each figure in mebibytes, rounded to 0.1.
-		engineBytes: overlayMiB(overlayFigure('engine-memory')),
-		gpuTextureBytes: overlayMiB(overlayFigure('gpu-textures')),
-		gpuBufferBytes: overlayMiB(overlayFigure('gpu-buffers')),
-		jsHeapBytes: overlayMiB(overlayFigure('js-heap')),
-		totalBytes: overlayMiB(overlayFigure('memory')),
-		wasmBytes: metrics.memory.wasmBytes,
+		engineBytes: OVERLAY ? overlayMiB(overlayFigure('engine-memory')) : null,
+		gpuTextureBytes: OVERLAY ? overlayMiB(overlayFigure('gpu-textures')) : null,
+		gpuBufferBytes: OVERLAY ? overlayMiB(overlayFigure('gpu-buffers')) : null,
+		jsHeapBytes: OVERLAY ? overlayMiB(overlayFigure('js-heap')) : null,
+		totalBytes: OVERLAY ? overlayMiB(overlayFigure('memory')) : null,
+		wasmBytes: metrics?.memory.wasmBytes ?? null,
 	};
 	const { tier } = engine.capabilities;
 	const mode = { ...engine.mode };
-	engine.stats(false);
+	if (OVERLAY) engine.stats(false);
 	await engine.destroy();
-	if (!(metrics.presentedFps > 0))
+	// The overlay's own frame rate, for a page that measures nothing.
+	const overlayFps = OVERLAY
+		? Number(/([\d.]+)\s*fps/.exec(overlayFigure('fps') ?? '')?.[1] ?? 0)
+		: pageFrames.count / DRAW_SECONDS;
+	// A frame that the engine drew without its GPU still counts, so a run that lost its device must
+	// fail: its figures describe a scene that the GPU never drew, as the tablet's compatibility run
+	// of 24 October 2026 did.
+	if (failures.length > 0) throw new Error(`the engine failed: ${failures.join('; ')}`);
+	if (metrics && !(metrics.presentedFps > 0))
 		throw new Error(
 			`the measure drew no frame in ${metrics.seconds.toFixed(1)} s, and the first frame finished at ${metrics.load.firstFrameDoneMs} ms`,
+		);
+	if (!metrics && !(overlayFps > 0))
+		throw new Error(
+			OVERLAY
+				? `the overlay showed no frame rate after ${OVERLAY_WAIT_MS / 1000} s`
+				: `the page counted no frame in ${DRAW_SECONDS} s`,
 		);
 	return {
 		tier,
 		mode,
 		demo: demo.name,
 		heading,
-		seconds: metrics.seconds,
-		frames: metrics.frames,
-		presentedFps: metrics.presentedFps,
-		updatedFps: metrics.updatedFps,
-		refreshHz: metrics.refreshHz,
-		intervalMs: metrics.intervalMs,
-		cpuMs: metrics.cpuMs,
-		cpuMsAllThreads: metrics.cpuMsAllThreads,
-		gpuMs: metrics.gpuMs,
-		gpuStepMs: metrics.gpuStepMs,
-		gpuPassMs: metrics.gpuPassMs,
-		drawCalls: metrics.drawCalls,
-		uploadBytes: metrics.uploadBytes,
-		visibleEntries: metrics.visibleEntries,
+		measured: metrics !== undefined,
+		overlay: OVERLAY,
+		keepCopies: KEEP_COPIES,
+		pageFrames: pageFrames.count,
+		off: OFF,
+		seconds: metrics?.seconds ?? null,
+		frames: metrics?.frames ?? null,
+		presentedFps: metrics?.presentedFps ?? overlayFps,
+		updatedFps: metrics?.updatedFps ?? null,
+		refreshHz: metrics?.refreshHz ?? null,
+		intervalMs: metrics?.intervalMs ?? null,
+		cpuMs: metrics?.cpuMs ?? null,
+		cpuMsAllThreads: metrics?.cpuMsAllThreads ?? null,
+		gpuMs: metrics?.gpuMs ?? null,
+		gpuStepMs: metrics?.gpuStepMs ?? null,
+		gpuPassMs: metrics?.gpuPassMs ?? null,
+		drawCalls: metrics?.drawCalls ?? null,
+		uploadBytes: metrics?.uploadBytes ?? null,
+		visibleEntries: metrics?.visibleEntries ?? null,
 		overlayReady,
 		triangles,
 		objects,
 		draws,
 		memory,
-		firstFrameMs: metrics.load.firstFrameMs,
-		firstFrameDoneMs: metrics.load.firstFrameDoneMs,
-		engineStartMs: metrics.load.engineStartMs,
-		warmUpMs: metrics.load.warmUpMs,
-		firstFramePipelines: metrics.load.firstFramePipelines,
+		firstFrameMs: metrics?.load.firstFrameMs ?? null,
+		firstFrameDoneMs: metrics?.load.firstFrameDoneMs ?? null,
+		engineStartMs: metrics?.load.engineStartMs ?? null,
+		warmUpMs: metrics?.load.warmUpMs ?? null,
+		firstFramePipelines: metrics?.load.firstFramePipelines ?? null,
 		bytesBeforeFirstFrame,
 		bytesTotal,
 		failures,

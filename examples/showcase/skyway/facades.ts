@@ -1,109 +1,16 @@
-// The towers of Skyway: one instanced batch of boxes, and one material that draws every window on
-// them. Each face carries a grid of windows in world units, so one window is the same size on every
-// building, and the grid never stretches with a building's scale. A lit window looks into a small
-// room, mirrored in parallax as the camera passes: a lamp panel, a floor, a ceiling and a block of
-// furniture. Far away, where a window is smaller than a pixel, the pattern fades to the average
-// light of the face instead of shimmering. Street level is a band of shop fronts.
+// The towers of Skyway: one instanced batch of boxes, and the facades add-on's material that draws
+// every window on them. Each face carries a grid of windows in world units, so one window is the
+// same size on every building, and the grid never stretches with a building's scale. A lit window
+// looks into a small room, in parallax as the camera passes: a lamp's pool, a floor, a ceiling and
+// a block of furniture, with blinds and a curtain in some rooms. Far away, where a window is
+// smaller than a pixel, the pattern fades to the wall's average light instead of shimmering, and
+// street level is a band of shop fronts.
 //
 // Every window waits for the city's power-on wave, which runs out from the middle in the first
-// second, so the skyline lights up as the scene starts.
+// second and lights each window on a damped spring, so the skyline comes on as the scene starts.
 import type { QualityPreset, SketchContext } from '@null3d/engine';
+import { createFacade } from '../../addons/facades/index';
 import { cityBuildings } from './layout';
-
-/** The share of windows that are lit. */
-const LIT_SHARE = 0.42;
-/** How long the power-on wave takes to cross the city, in seconds. */
-const WAVE = 0.25;
-
-const wgsl = /* wgsl */ `
-#import null3d::noise::{random2}
-
-struct Uniforms { litShare: f32, wave: f32, power: f32 }
-
-fn surface(input: SurfaceInput) -> Surface {
-    var s = defaultSurface(input);
-    let n = normalize(input.normal);
-    let seed = object.values.x;
-    let place = object.position;
-    // One horizontal coordinate across the face, which keeps the window size on every face.
-    let along = select(input.worldPosition.z, input.worldPosition.x, abs(n.x) > abs(n.z));
-    let height = input.worldPosition.y;
-    // The window grid and how many pixels one cell covers. A derivative call must stand in the
-    // uniform control flow of the entry point, so it comes before the branches below.
-    let cell = vec2f(along / 3.2, (height - 1.4) / 3.7);
-    let covered = fwidth(cell);
-    // The city's power-on wave: a building lights when the wave reaches it.
-    let reach = length(place.xz);
-    let wave = smoothstep(0.0, 1.0, (frame.time - reach / 2600.0) * (1.0 / max(material.wave, 0.001)));
-
-    // The roof: a dark deck with a grain of its own, and none of the windows below.
-    if (abs(n.y) > 0.5) {
-        // A roof is a dark deck that keeps the city's own glow, so it never reads as a hole.
-        s.baseColor = vec3f(0.03, 0.032, 0.038) * (0.7 + 0.6 * seed);
-        s.metalness = 0.15;
-        s.roughness = 0.82;
-        s.emissive = vec3f(0.008, 0.008, 0.011) * (0.25 + 0.75 * material.power);
-        return s;
-    }
-
-    // Street level: shop fronts, bright behind glass, in colours picked per shop.
-    if (height < 7.0) {
-        let shopCell = vec2f(along / 11.0, seed * 9.0);
-        let f = fract(vec2f(along / 11.0, height / 7.0));
-        let glass = step(0.05, f.x) * step(f.x, 0.95) * step(0.12, f.y);
-        let pick = random2(shopCell);
-        let hue = 0.5 + 0.5 * cos(6.28318 * (pick + vec3f(0.0, 0.33, 0.67)));
-        let on = step(0.2, pick) * wave * material.power;
-        s.baseColor = mix(vec3f(0.035, 0.038, 0.045), vec3f(0.008, 0.01, 0.016), glass);
-        s.metalness = mix(0.05, 0.85, glass);
-        s.roughness = mix(0.7, 0.1, glass);
-        s.emissive = hue * glass * on * (1.2 + 1.4 * f.y);
-        return s;
-    }
-
-    let id = floor(cell);
-    let f = fract(cell);
-    let far = smoothstep(0.35, 0.8, max(covered.x, covered.y));
-    let inside = step(0.24, f.x) * step(f.x, 0.76) * step(0.28, f.y) * step(f.y, 0.72);
-    let pick = random2(vec2f(id.x * 1.37 + seed * 71.3, id.y * 2.11 + seed * 23.9));
-    let lit = step(pick, material.litShare) * wave * material.power;
-    // Each room is as bright as its own household: some windows read dim, some bright.
-    let level = 0.32 + 0.85 * random2(id * 1.7 + vec2f(seed * 11.0));
-    let warm = mix(vec3f(0.62, 0.78, 1.0), vec3f(1.0, 0.72, 0.45), step(0.55, random2(id + vec2f(seed * 3.7))));
-
-    // The room behind a lit window, in the window's own coordinates, shifted by the view.
-    let win = clamp((f - vec2f(0.24, 0.28)) / vec2f(0.52, 0.44), vec2f(0.0), vec2f(1.0));
-    let d = -input.viewDirection;
-    let right = normalize(cross(vec3f(0.0, 1.0, 0.0), n));
-    let up = cross(n, right);
-    let u = win.x * 2.0 - 1.0 - dot(d, right) * 1.25;
-    let v = win.y * 2.0 - 1.0 - dot(d, up) * 1.25;
-    var room = vec3f(0.34, 0.26, 0.19);
-    room *= 0.55 + 0.45 * smoothstep(-1.0, 0.9, v);
-    room = mix(room, vec3f(0.1, 0.085, 0.075), step(v, -0.5));
-    room = mix(room, vec3f(0.2, 0.19, 0.18), step(0.68, v));
-    let panel = step(abs(u), 0.3) * step(0.24, v) * step(v, 0.6);
-    let block = step(abs(u + 0.12), 0.42) * step(v, -0.18) * step(-0.5, v);
-    room = mix(room, vec3f(0.055, 0.05, 0.048), block);
-    var roomLight = room * (0.9 + 7.0 * panel) * level;
-    let blinds = step(0.58, fract(v * 6.0)) * step(0.6, random2(vec2f(seed * 17.0, id.y)));
-    roomLight *= mix(1.0, 0.5, blinds);
-
-    // The wall between the windows, and the dark glass of a window that is out.
-    s.baseColor = mix(vec3f(0.026, 0.03, 0.04), vec3f(0.006, 0.009, 0.015), inside);
-    s.metalness = mix(0.05, 0.9, inside);
-    s.roughness = mix(0.8, 0.08, inside);
-    s.emissive = roomLight * warm * lit * inside;
-
-    // Far away the grid is smaller than a pixel: show the face's average light instead.
-    let average = warm * material.litShare * 0.32 * material.power;
-    s.emissive = mix(s.emissive, average * wave, far);
-    s.baseColor = mix(s.baseColor, vec3f(0.03, 0.033, 0.04), far);
-    s.metalness = mix(s.metalness, 0.3, far);
-    s.roughness = mix(s.roughness, 0.55, far);
-    return s;
-}
-`;
 
 /** The city's towers. */
 export interface Facades {
@@ -120,16 +27,19 @@ export function createFacades(ctx: SketchContext): Facades {
 	// changes how many rows draw.
 	const buildings = cityBuildings();
 	buildings.sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z) || b.height - a.height);
-	const material = materials.shader({
-		wgsl,
-		uniforms: { litShare: LIT_SHARE, wave: WAVE, power: 1 },
+	// A bay holds a window of a fixed size in world units, with the frame around it and the pier
+	// between two windows, so one window is the same size on every tower.
+	const facades = createFacade(ctx, {
+		// The wall finish takes the finish's own colour times this dark, cool tint, so a tower
+		// reads as dark stone and metal at night and its lit rooms carry the picture.
 		color: '#2a2f3a',
-		roughness: 0.8,
-		metalness: 0.05,
-		contactShadows: false,
+		window: { width: 1.66, height: 1.63, spacing: 1.3, floorHeight: 3.7, frame: 0.12, sill: 1.4 },
+		room: { depth: 2.6, light: 2.2, litShare: 0.42, flicker: 0.45 },
+		power: { origin: [0, 0], speed: 2600, rise: 12, damping: 6 },
+		shops: { height: 7 },
 	});
 	const batch = scene.createInstances(geometry.box(), buildings.length, {
-		material,
+		material: facades.material,
 		values: true,
 	});
 	for (let k = 0; k < buildings.length; k++) {
@@ -189,6 +99,9 @@ fn surface(input: SurfaceInput) -> Surface {
 	mastBatch.markDirty(0, masts.length);
 	beaconBatch.markDirty(0, masts.length);
 
+	// The city lights up as the scene starts: the wave runs out from its middle.
+	facades.start(0);
+
 	return {
 		fit(_preset) {
 			// Every tower draws at every preset. A row here is a box of twelve triangles, and the
@@ -199,7 +112,7 @@ fn surface(input: SurfaceInput) -> Surface {
 			beaconBatch.setActiveCount(masts.length);
 		},
 		power(share) {
-			material.setUniform('power', share);
+			facades.setPower(share);
 		},
 	};
 }
