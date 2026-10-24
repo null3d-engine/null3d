@@ -36,6 +36,12 @@ Some null3D packages ship code from other projects, as the original file or as a
 | three.js geometry, curves, paths and shapes | MIT | `lib/index.js` |
 | earcut, the polygon triangulation | ISC | `lib/index.js` |
 
+`@null3d/three-compat` ships these parts:
+
+| Part | License | Where |
+| --- | --- | --- |
+| three.js: the Reinhard and Cineon tone curves, and OutlinePass's edge, blur, pulse and overlay | MIT | `lib/index.js` |
+
 `@null3d/controls`, `@null3d/impostors`, `@null3d/particles`, `@null3d/splats` and `@null3d/terrain` ship only their own code.
 
 ## The tools

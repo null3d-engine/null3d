@@ -460,9 +460,11 @@ The engine runs the scene pass, then the full-screen pass, then the camera's pas
 
 A pass that reads only textures runs before the passes that read its texture, within the frame. A pass that reads the scene color, the outline mask or the depth runs after the camera's passes: the scene must be drawn first. An effect that reads its texture still sees the image of the same frame. A material that shows its texture shows the image of the frame before, as a security monitor that shows the screen would.
 
+A pass that names no input image is placed before the camera's passes. A chain of passes that starts from the scene color or the outline mask names that image as the input of each pass in the chain, or the graph reports a cycle (E1504). The pass that names the image reads its own texture through the `textures` option as usual. A pass may name the scene color without reading it.
+
 ### A soft outline glow
 
-three.js's `OutlinePass` draws a soft glow around outlined objects. null3D's outline draws a crisp line ([Outlines](../api/post.md#outlines)), and a full-screen pass and an effect draw the glow:
+three.js's `OutlinePass` draws a soft glow around outlined objects. null3D's outline draws a crisp line ([Outlines](../api/post.md#outlines)), and a full-screen pass and an effect draw the glow. `@null3d/three-compat`'s `createOutlinePass` builds this shape, with three.js's glow, pulse and blur settings ([three.js compatibility](../api/three-compat.md)); the recipe below shows what it does.
 
 ```ts
 const glowFromMask = /* wgsl */ `

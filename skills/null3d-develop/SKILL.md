@@ -135,7 +135,7 @@ Check this table before you write a generator, control, effect or loader of your
 | Text in the scene, sharp at any distance | the MSDF text add-on | none yet | not built yet; use HTML labels with `ui.trackLabel` |
 | Water with waves, foam and a surface seen from below | `@null3d/water` | none yet | not built yet; recipe 20 builds one with a custom material |
 | Trees, shrubs, grass and wind over plants | the vegetation add-on | none yet | not built yet; generate simple plants above the public API |
-| three.js look modes for a port, such as Cineon tone curves | `@null3d/three-compat` | none yet | not built yet; use the closest core setting |
+| three.js look modes for a port: Reinhard and Cineon tone curves, and a soft outline with a glow and a pulse | `@null3d/three-compat` | `api/three-compat` | built |
 
 Drawing:
 

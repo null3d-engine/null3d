@@ -33,7 +33,7 @@ export default defineSketch(({ post }) => {
 - `'aces'` serves ports of three.js scenes that set `ACESFilmicToneMapping`. It shifts the hues of bright colors, so new scenes use AgX.
 - `'none'` scales the color by the exposure and clips it at white, as three.js's `LinearToneMapping` does.
 - three.js uses no tone mapping by default. A port of a three.js scene without tone mapping sets `toneMapping: 'none'`.
-- A custom tone curve is WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`, compiled by the null3D Vite plugin. [Custom effects](#custom-effects) shows one.
+- A custom tone curve is WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`, compiled by the null3D Vite plugin. [Custom effects](#custom-effects) shows one. `@null3d/three-compat` gives `ReinhardToneMapping` and `CineonToneMapping` as the `reinhard` and `cineon` curves ([three.js compatibility](three-compat.md)).
 - The settings apply to the whole scene, the background included, from the next frame on. A setting that a call leaves out keeps its value.
 
 ## Lights in real units
@@ -299,6 +299,7 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 - A setting that a call leaves out keeps its value, also while outlines are off. `post.set` allocates nothing. So a sketch can change the outline's color or width every frame.
 - Turning outlines on or off, and `setOutlined`, rebuild the engine's draw tables, as a new material does. Do it in response to a click, not in every frame.
 - A full-screen pass reads the outline's mask with `input: 'outlineMask'`, for a soft glow such as `OutlinePass` draws ([Custom passes](../guides/custom-passes.md#a-soft-outline-glow)). `width: 0` draws the mask without the line.
+- `@null3d/three-compat`'s `createOutlinePass` draws `OutlinePass`'s soft edge, glow and pulse from this mask, through five full-screen passes and an effect ([three.js compatibility](three-compat.md)).
 
 [The post-processing chain](../concepts/post-processing.md#outlines) explains how outlines draw and what they cost.
 

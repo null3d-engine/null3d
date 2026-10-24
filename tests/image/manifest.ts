@@ -55,7 +55,12 @@ import {
 	type Tier,
 	tiersOf,
 } from '../lib/images.ts';
-import { STOPS, TONE_MAPPINGS, toneMappingTest } from '../pages/lib/bright-scene.ts';
+import {
+	ADDON_TONE_MAPPINGS,
+	STOPS,
+	TONE_MAPPINGS,
+	toneMappingTest,
+} from '../pages/lib/bright-scene.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 import { MOTION_HOLD } from '../pages/lib/motion-vectors.ts';
 
@@ -102,10 +107,12 @@ const EIGHT_BIT_TOLERANCE = { maxDiffRatio: 0.03 };
 /**
  * The bright scene under each tone mapping, at an exposure of 1 and of 0.5. The 8-bit path, whose
  * shaders tone map themselves, must draw the HDR path's image at an exposure of 1. AgX's punchy
- * look, which three.js lacks, joins the curves that three.js shares here.
+ * look, which three.js lacks, joins the curves that three.js shares here. The two curves of
+ * `@null3d/three-compat` draw on every tier, as the effects do: compatibility mode moves to HDR
+ * color with FXAA for a custom curve.
  */
 function toneMappingTests(): ImageTest[] {
-	return [...TONE_MAPPINGS, 'agx-punchy'].flatMap((tone): ImageTest[] => [
+	const builtIn = [...TONE_MAPPINGS, 'agx-punchy'].flatMap((tone): ImageTest[] => [
 		...STOPS.map(
 			(stops): ImageTest => ({
 				name: toneMappingTest(tone, stops),
@@ -125,6 +132,14 @@ function toneMappingTests(): ImageTest[] {
 			deviceTolerance: EIGHT_BIT_TOLERANCE,
 		},
 	]);
+	const curves = ADDON_TONE_MAPPINGS.flatMap((tone): ImageTest[] =>
+		STOPS.map((stops) => ({
+			name: toneMappingTest(tone, stops),
+			sketch: `${BRIGHT_SKETCH}?tone=${tone}&stops=${stops}`,
+			hold: 0,
+		})),
+	);
+	return [...builtIn, ...curves];
 }
 
 /**
@@ -641,7 +656,9 @@ const OUTLINE_SKETCH = 'tests/pages/sketches/outline-sketch.ts';
  * in the open. At half the render scale, the mask draws into the corner of its target, and the
  * line keeps its width on the canvas. Compatibility mode keeps the 8-bit path with MSAA. The
  * page's switch that turns HDR off puts the other tiers on that path too. The parity test compares
- * both outlines with the same line drawn from the mask of three.js's OutlinePass.
+ * both outlines with the same line drawn from the mask of three.js's OutlinePass. The two
+ * compatibility tests draw the soft outline of `@null3d/three-compat`: one with its glow, and one
+ * with its pulse held half a period in, where the edge shows the pulse's dimmest point.
  */
 function outlineTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -660,6 +677,8 @@ function outlineTests(): ImageTest[] {
 			switches: ['hdr=off'],
 			expect: { hdr: false },
 		},
+		{ ...test('outline-compat-glow', '?compat=glow'), hold: 0.1 },
+		{ ...test('outline-compat-pulse', '?compat=pulse'), hold: 0.5 },
 	];
 }
 
