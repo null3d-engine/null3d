@@ -89,7 +89,7 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-R13': 'the fallbacks exist; no test names the three checks the task asks for',
 	'M3-R17': 'the develop skill has neither section the task asks for',
 	'M3-A11':
-		'under reinvestigation under rule 39: D-206 refused it for a black captured frame that its own record narrowed to one hypothesis, and the fix is in progress on a branch',
+		'measured on both paths at every preset; the resolve does not beat the presets, so TAA does not ship (D-206)',
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
 };
 

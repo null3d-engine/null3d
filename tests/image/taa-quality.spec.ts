@@ -65,6 +65,7 @@ const scenes = (process.env.NULL3D_TAA_SCENES ?? 'thin,grass').split(',');
 const paths = (process.env.NULL3D_TAA_PATHS ?? 'webgpu,webgl2').split(',');
 const cameras = (process.env.NULL3D_TAA_CAMERAS ?? 'still,slow,brisk').split(',');
 const jitter = process.env.NULL3D_TAA_JITTER === '0' ? '&jitter=0' : '';
+const fps = process.env.NULL3D_TAA_FPS ?? '4';
 
 for (const gpu of paths)
 	for (const scene of scenes)
@@ -72,7 +73,7 @@ for (const gpu of paths)
 			test.skip(!process.env.NULL3D_TAA_QUALITY, 'set NULL3D_TAA_QUALITY to measure the bar');
 			test.setTimeout(1_800_000);
 			await page.goto(
-				`taa-quality.html?gpu=${gpu}&scene=${scene}&mode=quality&fps=4&cameras=${cameras.join(',')}&presets=${presets.join(',')}${jitter}`,
+				`taa-quality.html?gpu=${gpu}&scene=${scene}&mode=quality&fps=${fps}&cameras=${cameras.join(',')}&presets=${presets.join(',')}${jitter}`,
 			);
 			const result = await pageResult<QualityResult>(page, 1_700_000);
 			expect(result.error).toBeUndefined();
@@ -85,7 +86,7 @@ for (const gpu of paths)
 			);
 			console.log([`TAAD ${scene} on ${gpu}, ${result.cases.length} cases`, ...lines].join('\n'));
 			save(`${scene}-${gpu}-quality`, result);
-			expect(result.cases).toHaveLength(presets.length * 3 * 2);
+			expect(result.cases).toHaveLength(presets.length * cameras.length * 2);
 		});
 
 for (const gpu of paths)
