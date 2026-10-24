@@ -218,6 +218,8 @@ This table replaces the hook list under "Data". Every hook is public, works on b
 | Namespaces | A shader library name, an error-code range and quality keys per add-on | Every outside add-on | Both | M4 |
 | Plugin interface version | An outside add-on declares the interface range it was built for, and the engine refuses a mismatch with an error that names both | Outside add-ons | Both | M4 |
 
+The two hooks' start code measures as follows, on 25 October 2026. H3 adds 4,199 bytes of TypeScript to the start module. Without comment lines it adds 2,182 bytes, which Brotli compresses alone to 536 bytes. With the comments it compresses to 1,157 bytes. The adapter's own code loads on first use, in `page-feature-draws.js` at 1,114 bytes after Brotli and `sketch-worker-feature-draws.js` at 1,117. H9 adds 3,309 bytes to the glTF extension handler. Without comment lines it adds 1,562 bytes, which Brotli compresses alone to 589 bytes. With the comments it compresses to 1,087 bytes. Compressing a part alone reads high, because it shares no dictionary with the rest of the bundle. Each figure therefore bounds the part's share of the start. Both hooks stay under the budget of about 1 to 2 KB, and `bun run build` names each module and its bytes.
+
 ## Options rejected
 
 - **Private hooks for the engine's own add-ons.** Faster to build. But another developer could never match those add-ons, and a marketplace would start uneven.

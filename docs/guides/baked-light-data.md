@@ -1,14 +1,14 @@
 ---
 id: guides/baked-light-data
 title: Baked light data
-status: experimental
+status: stable
 since: "0.3"
 summary: "One file format for probe grids and light maps baked outside the engine: the JSON members, base64 payloads, the loading calls, the engine's own bake, and the faults that the loader names."
 ---
 
 # Baked light data
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The loader is experimental, so it can still change between versions. A light map's direction is read but not drawn yet.
+> Roadmap step 0.3, first released in null3D 0.1.0. The format is stable: version 1 holds the members that this page lists, and a reader ignores members that it does not know. A change that an earlier reader would misread takes a new version number. A light map's direction is read from the file, and no material draws it yet.
 
 ```mermaid
 flowchart LR
@@ -30,7 +30,7 @@ A file is JSON. Three members come first:
 | `version` | The whole number `1`. A reader refuses any other version |
 | `kind` | `probe-grid` or `light-map` |
 
-The rest of the file depends on its kind. A reader ignores members that it does not know, so version 1 can gain members before the format is frozen, and a file written with them still reads in an engine that predates them. A file that names a different version is refused: the number changes only when a reader that predates the file would read it wrongly.
+The rest of the file depends on its kind. A reader ignores members that it does not know. A bake tool may write members that an earlier engine leaves out, and the file still reads. The `version` number changes only when a reader that predates the file would read it wrongly. This engine refuses any version that it does not know.
 
 The large values are base64. Decode them as bytes, not as text.
 
