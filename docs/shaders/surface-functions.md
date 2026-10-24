@@ -62,7 +62,7 @@ The engine fills a `SurfaceInput` for each pixel. Positions and directions are i
 
 `fragCoord` counts from the top left on every GPU path, in the pixels of `frame.resolution`. GLSL's `gl_FragCoord` counts from the bottom left, so a port that reads `gl_FragCoord.y` reads `frame.resolution.y - input.fragCoord.y`.
 
-The plugin gives a material the inputs that cost something only where its WGSL reads them: `uv1`, `instance`, and the object's matrices and id. [Built-in shader inputs](builtins.md#what-the-inputs-cost) lists their costs.
+The plugin gives a material the inputs that cost something only where its WGSL reads them: `uv1`, `instance`, the vertex color that a vertex offset reads, and the object's matrices and id. [Built-in shader inputs](builtins.md#what-the-inputs-cost) lists their costs.
 
 ## The surface
 
@@ -437,6 +437,7 @@ The engine calls the function once for each vertex, with a `VertexInput`:
 | `normal` | `vec3f` | The vertex's unit normal, in the mesh's own space |
 | `uv` | `vec2f` | The vertex's first texture coordinates |
 | `uv1` | `vec2f` | The vertex's second texture coordinates, or its first on a mesh with one set |
+| `colors` | `vec4f` | The mesh's vertex color. A vertex offset usually reads it as data, such as a branch index and a phase for wind |
 | `instance` | `u32` | The instance's row in its batch, from 0. It is 0 for an object of the scene |
 
 The row lets a vertex offset lay out a batch by itself, with no values from the sketch. This one lines up a batch's rows in a ring of 64, each lifted by a wave:
@@ -453,6 +454,30 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 - The engine keeps the mesh's normals, so a moved surface lights as the unmoved one did. Give the material `flatShading: true` to light each face by its moved position, or bend `s.normal` in a surface function.
 - Culling tests the mesh's bounding sphere. Vertices that move out of it can make the object vanish at the edge of the view. Give the object a sphere that holds them with `setBounds(center, radius)`, at setup, as [Objects and transforms](../api/objects.md) describes.
 - Shadows follow the moved vertices. The material's shadow casters run the vertex offset too, with the same `frame`, `object` and `material` values, so a swaying surface casts a swaying shadow. Such casters draw again in every frame that a shadow map draws, as moving objects do.
+- A vertex offset reads the mesh's vertex color in `colors`, when the material takes vertex colors. A batch's rows carry more numbers in `object.values` ([Instances and batching](../concepts/instances.md#per-row-values)).
+
+## Cut-out shapes
+
+A masked material takes its shape from the surface's `alpha`. Set it from a texture, a pattern or the shape of the card, and give the material `alphaMode: 'mask'`:
+
+```wgsl
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    // Keep the round middle of a square card, so it reads as a leaf.
+    let across = input.uv.x - 0.5;
+    let up = input.uv.y - 0.5;
+    s.alpha = step(length(vec2f(across, up)), 0.5);
+    return s;
+}
+```
+
+`alphaToCoverage` smooths the cut edges over about a pixel, as it does for a standard material. `alphaMode: 'hash'` draws a share of the points that the alpha sets. Only WGSL that sets or reads the surface's `alpha` has these builds. A material whose WGSL never names the alpha throws E1217 for both. Such a material runs its surface function three times: as it shades, as it casts a shadow, and as it writes its motion.
+
+- Its shadow caster tests the surface's alpha against `alphaCutoff`. Its shadow keeps the mask's holes, and it moves with the vertex offset. The patterns of an alpha texture, such as leaves, show in the shadow.
+- Its motion build tests the same alpha at the same cutoff, so the motion pass cuts the same holes.
+- A masked surface that tests its alpha by the hash casts a hashed shadow, and its motion keeps the same pattern.
+
+A custom material's levels of detail fade, and so do the edges of its distance bands, as [Levels of detail](../concepts/lod.md#fading-between-levels) describes. A mask tested by the alpha hash switches its levels at once.
 
 ## Built-in values
 
@@ -477,7 +502,7 @@ fn surface(input: SurfaceInput) -> Surface {
 
 Your WGSL shares one file with the engine's standard material, so a few rules apply besides the [WGSL rules for portable shaders](wgsl-rules.md):
 
-- Do not declare a name that the engine declares. The build stops at your line when a name clashes. The engine's names are `SurfaceInput`, `Surface`, `VertexInput`, `LobeInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `custom_texture_layers`, `load_custom_texture_layers`, `VertexIn`, `VertexOut`, `vs`, `fs`, `FLAT_SHADING`, `sceneDepth`, `sceneDistance`, `scene_depth_copy` and `scene_depth_texel`. They also include the library items that the standard material imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_exposed`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`. WGSL that reads `instance` or `object.id` also meets `object_ids`, and WGSL that reads the object's matrices meets `affine_matrix` and `affine_normal_matrix`. The names `surface`, `vertexOffset` and `lobe` are yours to declare.
+- Do not declare a name that the engine declares. The build stops at your line when a name clashes. The engine's names are `SurfaceInput`, `Surface`, `VertexInput`, `surface_place`, `LobeInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `custom_texture_layers`, `load_custom_texture_layers`, `VertexIn`, `VertexOut`, `vs`, `fs`, `FLAT_SHADING`, `sceneDepth`, `sceneDistance`, `scene_depth_copy` and `scene_depth_texel`. They also include the library items that the standard material imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_exposed`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`. WGSL that reads `instance` or `object.id` also meets `object_ids`, and WGSL that reads the object's matrices meets `affine_matrix` and `affine_normal_matrix`. The names `surface`, `vertexOffset` and `lobe` are yours to declare.
 - Import library items by name, as in `#import null3d::noise::{fbm3}`. An import of a whole module reserves the module's name. After `#import null3d::color`, no name in the file can be `color`.
 - The WGSL cannot hold directives such as `enable`.
 - Do not declare a name that ends in `Sampler` after a texture's name, such as `detailSampler` beside `detail`. The engine declares it.

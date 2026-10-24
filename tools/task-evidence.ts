@@ -88,4 +88,6 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		"The develop skill's evaluation: all ten cases with and without the skill, and the twenty trigger queries, recorded in `.dev/skill-evaluations.md`; the skill met 55 of 60 expectations against the baseline's 51, and the trigger queries chose the right skill 20 of 20",
 	'M3-R18':
 		"Shipped code contacts no server of its own: `docs/getting-started/network-use.md`, the guard `tools/lib/network-use.ts` and its 13 passing tests, and each package's `THIRD-PARTY-NOTICES.txt` with `docs/getting-started/third-party-notices.md`; when a call was added to `packages/terrain/src/index.ts`, the repository check named the call and its host, so one test failed and not the list. D-227 and its addenda record the audit and the controls package's three.js notice",
+	'M3-V2':
+		"Custom materials build alpha to coverage, the alpha hash, a masked shadow caster and a masked motion only where their WGSL names the surface alpha: `crates/null3d-shaders/src/material.rs`, `feature::SURFACE_ALPHA` in `crates/null3d-render/src/materials.rs`, and the `custom-cutout` and `custom-cutout-motion` pictures, whose motion `tests/image/custom-cutout.spec.ts` decodes; D-241's addendum has the chosen gate and the figures",
 };

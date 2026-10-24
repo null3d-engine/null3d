@@ -86,3 +86,14 @@ Option A for the data path and the API, with the `ROW_VALUES` and `CASTER` build
 - Code: the core's world output carries row values. The render crate gains `SceneSettings::batch_pipeline_of` and `sways`, a new `caster_of` branch and a shared `data_texture` module. Each builder has its row values textures.
 - Docs: [Instances and batching](../../docs/concepts/instances.md), [Materials](../../docs/api/materials.md), [Built-in shader inputs](../../docs/shaders/builtins.md), [Surface functions](../../docs/shaders/surface-functions.md) and the three.js mapping of `InstancedMesh.setColorAt` and instanced attributes.
 - Skills: the develop skill's instances and shaders references; the port skill's mapping.
+
+## Addendum: rows keep the mask's own test (24 October 2026)
+
+The vegetation add-on draws its trees and grass in instance batches, so a batch's rows must take
+alpha to coverage. M3-V2 removed `ROW_VALUES` from the pairs that `permutation::APART` keeps apart
+from `ALPHA_COVERAGE` and `ALPHA_HASH`, and the frame builder no longer exempts a batch's rows from
+the mask's own test. A batch's rows now test a mask as the same material's mesh does: by the cutoff,
+by coverage or by the hash. The builds still stay apart from skins, morph targets, transmission and
+index-read instances, and each of them loads on first use with the row-values feature or the mask's
+feature. [D-241](D-241-vegetation-foundation.md#addendum-how-custom-materials-cut-their-shape-24-october-2026-m3-v2)
+holds the figures.

@@ -915,6 +915,7 @@ their first use, as the cluster levels' shader trim already asks, so a page that
 downloads neither. Until then this is the second rise in two days, and M3-T1's target of 160 KB
 stays far away.
 
+<<<<<<< HEAD
 ## The start's budget rises to 188 KB, 24 October 2026
 
 The half-float helpers that several of the start's own modules read became a file of their own, which

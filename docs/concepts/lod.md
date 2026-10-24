@@ -142,6 +142,8 @@ mesh.setLevels([{ mesh: low, distance: 80, fade: false }]);
 
 The fragments that the dither drops cost a tile GPU, such as a phone's or an Apple GPU's, its hidden-surface removal. So only the objects inside a band draw with the dither. The shader builds of the bands download with the first mesh whose levels fade. These builds follow the level, whatever the `lodFade` quality setting, because a hand-set level pops without them.
 
+[Custom materials](../shaders/surface-functions.md) fade too, through their own builds, which download with the material's first use. Three kinds switch at once: a material that tests its mask by the [alpha hash](../api/materials.md#alpha-modes), a skinned material, and one that lets light through.
+
 ## Small objects
 
 An object far away can cover less than a pixel. Its levels then save vertex work, but the object still draws a fragment or two that no one sees. The engine hides it: the mesh's last level holds no geometry. Only a mesh with levels has that last level, so a mesh without levels draws at every distance.

@@ -108,6 +108,7 @@ The values above that a material does not read cost it nothing. A few inputs cos
 | Input | Its cost, only where the WGSL reads it |
 | --- | --- |
 | `uv1` | One more vertex attribute, the mesh's second texture coordinates |
+| `VertexInput.colors` | One more vertex attribute, the mesh's vertex color, for a vertex offset that reads it as data |
 | `instance`, `object.id` | A search per vertex in a small table of the scene's batches, which the engine keeps while a material reads them |
 | `object.worldMatrix`, `object.normalMatrix` | Three more values from the vertex stage to the fragment stage, in materials whose surface function runs |
 

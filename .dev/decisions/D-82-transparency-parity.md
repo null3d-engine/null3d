@@ -200,3 +200,13 @@ A run of the transparent pass is a set of neighbors in the sorted order that sha
 - The docs pages `api/materials` and `concepts/materials`, the three.js mapping entries `side: DoubleSide`, `alphaToCoverage`, `alphaHash` and `forceSinglePass`, and both skills' material references describe the options.
 - The image tests `alpha-coverage`, `alpha-coverage-no-msaa`, `alpha-hash`, `transparency-solids`, `alpha-mask-shadows`, `alpha-coverage-shadows` and `alpha-hash-shadows`, with three.js twins for four of them.
 - The shadows page no longer says that masked materials cast their whole shape.
+
+## Addendum: custom materials take the three bits too (24 October 2026)
+
+M3-V2 gave custom materials the cut-out features, for the vegetation add-on's leaf cards. A custom
+material whose WGSL sets or reads the surface's `alpha` now builds alpha to coverage, the alpha
+hash, their sample mask, and a shadow caster and a motion build that test that alpha. A material
+whose WGSL never names the alpha keeps the builds it had, and `materials.shader` throws E1217 for
+`alphaToCoverage` and for the `hash` mode there, as this record says. The builds load with the
+material's first use. [D-241](D-241-vegetation-foundation.md#addendum-how-custom-materials-cut-their-shape-24-october-2026-m3-v2)
+holds the choices and the figures.

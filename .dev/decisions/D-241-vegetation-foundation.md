@@ -217,3 +217,68 @@ this record's look and answers four questions the record left to the build.
 The built-in set holds thirteen species and six variants each. It grows on the calling thread or in
 one of the engine's job workers, with the same asset either way. Every choice comes from the
 integer hash that the shaders' `pcg` also computes.
+
+## Addendum: how custom materials cut their shape (24 October 2026, M3-V2)
+
+M3-V2 built ruling 4's cut-out features. The owner's focus of 16 October 2026 holds the build time
+and the shader files' sizes. So the work keeps a custom material's builds as few as it can. These
+are the choices the task left open, and the reasons for them.
+
+- **The alpha in the WGSL gates the builds.** The compiler of custom materials looks for `.alpha` in
+  a material's tokens. Only such a material builds alpha to coverage, the alpha hash, their sample
+  mask, and a shadow caster and motion build that run the surface's alpha. A material whose WGSL
+  never names the alpha keeps the builds it had, plus the fading level of detail's. The engine refuses `alphaToCoverage` and the `hash` mode for such a material with E1217,
+  and a production build falls back to the cutoff. This mirrors the rule for `transmission`, whose
+  builds only WGSL that sets it has.
+- **The caster and the motion test the cutoff.** A shadow map holds one depth for each pixel, and
+  the motion target holds one value. Neither can hold a share of them. A masked custom material's
+  caster and motion therefore test the surface's alpha against the material's cutoff, and against
+  the alpha hash where the material tests it. Alpha to coverage keeps its fade in the camera's view
+  alone.
+- **A feature marks the material for the renderer.** `feature::SURFACE_ALPHA` is set from the
+  compiled WGSL, and the frame builders read it before they choose a custom caster or a custom
+  motion build. A material without it casts its mesh's whole shape, as it did before.
+- **WebGPU runs the caster's fragment stage.** The custom template takes `depthFragment` for a
+  material that names the alpha. The engine's masked caster templates do the same. Its prepass
+  keeps no fragment stage, since a prepass that drops pixels is no prepass. WebGL2 needed no change: its
+  depth pass always compiled the template's fragment shader.
+- **Row values keep the mask's own test.** `ROW_VALUES` is no longer kept apart from
+  `ALPHA_COVERAGE` or `ALPHA_HASH` in `APART`. The frame builder also stops exempting a batch's
+  rows from the mask's own test. So a batch's rows test a mask by the cutoff, by coverage or by the hash,
+  for every material. A tree drawn in a batch now takes alpha to coverage, which the vegetation
+  add-on needs.
+- **`VertexInput.colors` costs one attribute.** A vertex offset reads the mesh's vertex color, which
+  the compiler grants only to WGSL that names it. The material then needs a mesh with colors, and
+  nothing else pays for it. The field is `colors`, so it does not read as the surface input's
+  `vertexColor`, whose value the row color multiplies.
+
+The cost of the work, measured on this branch:
+
+- **The engine's start and feature files.** M3-V2 adds no build to the start's shader modules: the
+  caster and motion code sits behind bits that only custom materials take. `surface_place` builds
+  the surface input's code for a custom material's shading, caster and motion builds, under the
+  custom def alone, so an engine lit build carries none of it. The figures are in "Measured" below.
+- **A custom material's builds.** A material that names the alpha gains the builds of coverage, the
+  hash and the sample mask, each of which picks up the template's other bits, and the masking of
+  its caster and motion. The Vite plugin's build time and the page's module grow for such a
+  material, and not for one that never cuts its shape. The task's figures follow.
+
+### Measured
+
+The figures come from this branch, on the Mac. The Vite plugin's build time is the time its shader
+compiler takes for one custom material, measured through `compileWgsl`, 5 runs after a warm-up, on a
+machine whose load average was about 20 for the "before" figures:
+
+| Material | Before | After |
+| --- | --- | --- |
+| a surface function that never names the alpha | 4,071 ms, 144 builds | 6,531 ms, 240 builds |
+| a leaf: vertex offset, surface with alpha (and the vertex color after) | 4,999 ms, 177 builds | 18,178 ms, 625 builds |
+
+The build counts do not depend on the machine's load. The "after" times came from a load average
+about four times higher, and the same protocol run against the unchanged checkout under that load
+took 6,116 ms and 4,920 ms, so the rows are not comparable across loads. Two things raise a
+material's builds. The fading level of detail's builds double every material's shading builds,
+because they load with the material's first use. Alpha to coverage, the alpha hash and their
+sample mask then multiply the builds of a material that names the alpha, and its caster and motion
+gain the mask's test. The engine's own start and feature files are unaffected, and the size check
+holds: SHADER_SIZES_PLACEHOLDER.

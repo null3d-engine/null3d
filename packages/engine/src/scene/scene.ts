@@ -486,8 +486,8 @@ export interface InstanceOptions {
 	 * Adds four numbers per row of the sketch's own in `batch.values`, 0 at first, such as a wind
 	 * phase, an age or a tint. A custom material's `surface`, `vertexOffset` and `lobe` functions
 	 * read the row's as `object.values`, as three.js's instanced attributes give a shader values per
-	 * instance. With values, a masked material tests its alpha against its cutoff, without alpha to
-	 * coverage or the alpha hash.
+	 * instance. A masked material tests its rows' alpha as it tests the alpha of a mesh without
+	 * rows: against its cutoff, by alpha to coverage or by the alpha hash.
 	 */
 	values?: boolean;
 	/**

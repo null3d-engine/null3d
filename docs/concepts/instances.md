@@ -255,7 +255,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 A batch that casts shadows casts them with its material's vertex offset, so the shadows of the grass sway with the grass. The shadows of such a material draw again in every frame, as the shadows of moving objects do.
 
-Rows with colors or values draw with shader builds of their own, which a page downloads with its first such batch. The rows show from the frame after the builds arrive. With colors or values, a masked material tests its alpha against its cutoff, with neither alpha to coverage nor the alpha hash.
+Rows with colors or values draw with shader builds of their own, which a page downloads with its first such batch. The rows show from the frame after the builds arrive. A masked batch tests its alpha as the same material does without rows: against its cutoff, by alpha to coverage, or by the alpha hash.
 
 ### A row's place and its batch's id
 
