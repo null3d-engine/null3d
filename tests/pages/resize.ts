@@ -4,6 +4,8 @@
 // window: the canvas's CSS size, and the size of its drawing buffer as the engine's capture reads
 // it. A test resizes the window and asks again. `setMaxPixelRatio(ratio)` on the window has the
 // sketch change its cap through `ctx.quality`, and resolves once the sketch has heard of the change.
+// The page keeps the whole render scale and the governor off, as the benchmark scenes do: no render
+// scale changes the drawing buffer's size, which is what the page checks.
 // `maxDrawingSize(gpu)` gives the largest drawing buffer of the GPU path that the ?gpu= switch
 // names, from the browser's limits: on WebGPU the texture size of a device requested as the engine
 // requests it, and on WebGL2 the smallest of the texture, renderbuffer and viewport limits. `maxCanvasSize` holds the engine's own figure for its GPU path, and
@@ -51,6 +53,16 @@ run('resize', async () => {
 		window.engineFailure ??= error.message;
 	});
 	await engine.firstFrame;
+	/** Has the sketch change its settings, and resolves once it has heard of the change. */
+	const setSettings = (settings: Record<string, unknown>) =>
+		new Promise<void>((resolve) => {
+			heardChange = resolve;
+			engine.postToSketch('set', settings);
+		});
+	// On a software GPU the governor's first step below the whole scale made each frame several
+	// times slower, since the two-step upscale then draws as well, and too few frames came for it to
+	// step back up, so a resize could take the test's whole wait.
+	await setSettings({ minRenderScale: 1, governor: false });
 	window.maxCanvasSize = engine.capabilities.maxCanvasSize;
 	window.canvasSize = async () => {
 		const { width, height } = await engine.captureFrame();
@@ -79,10 +91,6 @@ run('resize', async () => {
 		device.destroy();
 		return size;
 	};
-	window.setMaxPixelRatio = (ratio) =>
-		new Promise((resolve) => {
-			heardChange = resolve;
-			engine.postToSketch('set', { maxPixelRatio: ratio });
-		});
+	window.setMaxPixelRatio = (ratio) => setSettings({ maxPixelRatio: ratio });
 	return { mode: engine.mode, tier: engine.capabilities.tier };
 });
