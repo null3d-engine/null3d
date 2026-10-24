@@ -43,6 +43,16 @@ Still owed: a capture of the frame on the device. BrowserStack does not offer on
 
 Workaround: none. The measurements of 24 October 2026 report Creek on WebGL2 on Apple devices, and they name the WebGPU rows that this fault kept from running.
 
+What the bisect could not reach, 24 October 2026. The texture budget is not the mechanism: Creek at
+Low held 120.6 MiB of GPU textures on the iPad against Low's 256 MiB, so Low never fills its budget
+and never drops a mip level. The budget setting correlates with the preset only because every quality
+setting does, and the one cut-correlated setting with a plausible mechanism, the 1024 and 2048 texel
+shadow map, is already excluded by pass 8. What remains in the engine is a short list of settings
+that change with the preset and have no named mechanism.
+
+The next step is therefore a capture of the frame on a device, not another cloud session: WebKit's
+WebGPU inspector needs a Mac running Safari's Develop menu over a cable.
+
 ## Safari 27.0: `atomicCompareExchangeWeak` does not compile
 
 Status: fixed in WebKit on 13 September 2026 (commit 4f56cc248e8a, 321006@main, inside bug 323873), not yet in a Safari release. No bug names the fault. Not reported by null3D: a draft waits for the owner. Found 8 October 2026.
