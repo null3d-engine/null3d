@@ -936,3 +936,49 @@ fn a_surface_function_that_reads_the_depth_binds_its_copy_alone_in_the_shading_b
     assert!(shaded > 0);
     assert!(!compile(STRIPES).expect("the material builds").scene_depth);
 }
+
+/// A material whose own lobe adds part of the base specular for the main light, from the four
+/// values that its surface function passes.
+const SPARKLE: &str = "fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.lobe = vec4f(0.5, 0.25, 2.0, 0.75);
+    return s;
+}
+
+fn lobe(input: LobeInput) -> vec3f {
+    return input.specular * input.values.z;
+}
+";
+
+#[test]
+fn a_lobe_function_builds_into_every_variant_with_the_surface_values() {
+    let built = compile(SPARKLE).expect("the material with a lobe builds");
+    assert_eq!(built.functions, ["surface", "lobe"]);
+    let mut builds = 0;
+    for (name, variant) in &built.variants {
+        // The custom WGSL joins the template before its variants are built, so the lobe's body is
+        // in the caster, motion and pick builds too, and each must compile with it.
+        if let Some(wgsl) = &variant.wgsl {
+            assert!(wgsl.source.contains("fn lobe("), "{name}");
+            builds += 1;
+        }
+    }
+    assert!(builds > 0);
+}
+
+#[test]
+fn a_lobe_with_another_signature_is_refused_at_its_name() {
+    let problem = only_problem("fn lobe(input: SurfaceInput) -> vec3f { return vec3f(0.0); }");
+    assert!(
+        problem
+            .message
+            .contains("`lobe` does not have the signature that the engine calls"),
+        "{problem}"
+    );
+    assert!(
+        problem
+            .message
+            .contains("Declare it as `fn lobe(input: LobeInput) -> vec3f`."),
+        "{problem}"
+    );
+}

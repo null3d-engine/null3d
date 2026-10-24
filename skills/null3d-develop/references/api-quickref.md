@@ -384,7 +384,7 @@ const decal = materials.decal({ map: color, normalMap: normals, metalnessRoughne
   edgeFade: 0.2 });                              // fades near both ends of the box along z
 scene.createMesh({ mesh: geometry.box(), material: decal, position, rotation, scale: [2, 2, 0.5] });
 
-const stripes = materials.shader({ ...standardOptions, wgsl, uniforms });  // any standard option but the maps; wgsl: a tagged /* wgsl */ literal or .wgsl import with fn surface, fn vertexOffset or both, or a full shader
+const stripes = materials.shader({ ...standardOptions, wgsl, uniforms });  // any standard option but the maps; wgsl: a tagged /* wgsl */ literal or .wgsl import with fn surface, fn vertexOffset, fn lobe or some of them, or a full shader
 stripes.set({ speed: 2, roughness: 0.3 });  // uniforms of struct Uniforms and standard values alike
 const worn = materials.shader({ wgsl, textures: { detail, wear } });  // (0.2) each `var detail: texture_2d<f32>;` of the WGSL, sampled with detailSampler
 worn.destroy();   // (0.2) objects that still use it draw nothing; its place frees once none does

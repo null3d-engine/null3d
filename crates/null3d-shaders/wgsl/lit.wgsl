@@ -988,6 +988,9 @@ struct Surface {
     /// Light from the mirror direction, such as a reflection pass's color, in `rgb`, and how much
     /// of it takes the place of the environment's reflection, from 0 to 1, in `a`.
     reflection: vec4f,
+    /// Four values for the material's own lobe function, which the engine passes to `fn lobe`.
+    /// `defaultSurface` leaves them zero, and a material that declares no lobe reads none.
+    lobe: vec4f,
     /// How much of the light behind the surface passes through it, from 0 to 1, in place of that
     /// share of its diffuse light, where the material lets light through.
     transmission: f32,
@@ -1054,6 +1057,32 @@ struct Surface {
     anisotropyBitangent: vec3f,
 #endif
 }
+
+#ifdef CUSTOM_LOBE
+/// What a custom material's own lobe function knows of the main directional light. The surface
+/// function passes its own four values through `Surface.lobe`, and the engine adds the lobe's
+/// return to the base lobe's specular.
+struct LobeInput {
+    /// The surface's unit normal in world space.
+    normal: vec3f,
+    /// The unit direction from the surface toward the camera.
+    view: vec3f,
+    /// The unit direction from the surface toward the main light.
+    light: vec3f,
+    /// The unit half vector between the main light and the camera.
+    half: vec3f,
+    /// The surface's perceptual roughness, after the engine's filter.
+    roughness: f32,
+    /// The specular reflectance at normal incidence.
+    f0: vec3f,
+    /// The specular radiance that the base lobe reflects from the main light, before the layers.
+    specular: vec3f,
+    /// The main light's irradiance on the surface: the cosine, the color and the shadow.
+    irradiance: vec3f,
+    /// The four values that the surface function wrote to `Surface.lobe`.
+    values: vec4f,
+}
+#endif
 
 #ifdef MAPS
 /// The surface with the material's texture maps: each map that has an image multiplies or
@@ -1292,6 +1321,7 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
     s.irradiance = vec3f(0.0);
 #ifdef CUSTOM
     s.reflection = vec4f(0.0);
+    s.lobe = vec4f(0.0);
 #endif
 #ifdef TRANSMISSION
     s.transmission = transmission_row.values.x;
@@ -1646,9 +1676,10 @@ fn has_surrounding() -> bool {
 /// surface toward the camera, and `dfg` holds the split-sum terms at the surface's roughness and
 /// view angle. `reflection` holds light from the mirror direction and its share, from screen-space
 /// reflections and a custom material's planar reflection, which takes the place of that share of
-/// the reflection probes' and the environment's reflection, with or without either. In the
-/// TRANSLUCENCY builds the lights also gather the light that reaches the surface's back, and the
-/// ambient, hemisphere and environment light from behind goes to `back_indirect`.
+/// the reflection probes' and the environment's reflection, with or without either. `lobe_values`
+/// holds the material's own values for its lobe function, which the engine calls for the main
+/// light. In the TRANSLUCENCY builds the lights also gather the light that reaches the surface's
+/// back, and the ambient, hemisphere and environment light from behind goes to `back_indirect`.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
@@ -1660,6 +1691,7 @@ fn light_surface(
     occlusion: f32,
     contact: f32,
     reflection: vec4f,
+    lobe_values: vec4f,
 ) -> vec3f {
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
     let to_sun = -engine_frame.sun_direction.xyz;
@@ -1692,7 +1724,22 @@ fn light_surface(
     // The layers gather their light first, and the sheen keeps part of it from the base.
     sun_color *= layered_light(normal, to_view, to_sun, sun_color);
 #endif
-    let sun = direct_light(m, normal, to_view, to_sun, sun_color, compensation);
+    var sun = direct_light(m, normal, to_view, to_sun, sun_color, compensation);
+#ifdef CUSTOM_LOBE
+    // The material's own lobe adds its specular beside the base lobe's for the main light. It
+    // knows the light, the view and the half vector, which a surface function cannot see.
+    sun.specular += lobe(LobeInput(
+        normal,
+        to_view,
+        to_sun,
+        normalize(to_sun + to_view),
+        m.roughness,
+        m.specular_blended,
+        sun.specular,
+        saturate(dot(normal, to_sun)) * sun_color,
+        lobe_values,
+    ));
+#endif
 #ifdef TRANSLUCENCY
     gather_back_light(normal, to_sun, sun_color);
     back_indirect = ambient_light(-normal) * occlusion;
@@ -1929,6 +1976,12 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let toward_sun = dot(seen_face, engine_frame.sun_direction.xyz) < 0.0;
     let takes_contact = (u32(material_row.strengths.z) & NO_CONTACT_SHADOWS_FLAG) == 0u;
     let contact = select(1.0, screen.values.w, toward_sun && takes_contact);
+#ifdef CUSTOM
+    // The material's own values for its lobe, or zeros where it has none.
+    let lobe_values = s.lobe;
+#else
+    let lobe_values = vec4f(0.0);
+#endif
     let reflected = light_surface(
         pbr,
         input.relativePosition,
@@ -1940,6 +1993,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         s.occlusion * screen_occlusion(screen.values),
         contact,
         reflection,
+        lobe_values,
     );
 #ifdef TRANSMISSION
     // three.js's getIBLVolumeRefraction: the light from behind, through the diffuse color and less
