@@ -406,6 +406,25 @@ export interface CoreGlue extends CoreErrors {
 	 * band. With `count` 0 the mesh loses its levels. 0 for success.
 	 */
 	setMeshLevels(base: number, count: number, fades: number): number;
+	/**
+	 * Watches the levels that the views pick for the mesh `base`, from the frame that the renderer
+	 * began last on, in place of a watch that the mesh had. The loader of a model with staged levels
+	 * waits on the watch before it downloads the next stage.
+	 */
+	watchStageLevels(base: number): number;
+	/**
+	 * The levels of the mesh `base` that a view picked since its watch began, one bit each, bit 0
+	 * for the mesh itself. 0 for a mesh that no loader watches.
+	 */
+	stageLevelPicks(base: number): number;
+	/** The frames that drew the mesh `base` since its watch began, 0 for a mesh that no watch has. */
+	stageFrames(base: number): number;
+	/**
+	 * Stops watching the levels that the views pick for the mesh `base`, so the frames that follow
+	 * pay nothing while no loader waits on it. The loader watches the mesh again when its camera
+	 * could want another stage.
+	 */
+	unwatchStageLevels(base: number): number;
 	/** The GPU bytes of every mesh: the mesh pages' buffers and the texture of morph deltas. */
 	meshMemoryBytes(): number;
 	/**
@@ -1006,6 +1025,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setBackgroundSource(kind: number, texture: number): number;
 	/**
+	 * Draws the sky layer of render pipeline template `template` over the background, with the share
+	 * `sun` of the sun that it hides and its `opacity`, or removes the layer for 0.
+	 */
+	setSkyLayer(template: number, sun: number, opacity: number): number;
+	/**
 	 * The scene's fog: its curve (`FOG_CURVE_*`), or none. The call values give its linear color,
 	 * the density of exponential and exponential squared fog, the near and far distances of linear
 	 * fog, the height where the fog has that density, its height falloff, its sun glow and the
@@ -1229,6 +1253,10 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'updateVertices',
 	'destroyMeshes',
 	'setMeshLevels',
+	'watchStageLevels',
+	'stageLevelPicks',
+	'stageFrames',
+	'unwatchStageLevels',
 	'meshMemoryBytes',
 	'createMaterial',
 	'setMaterialValue',
@@ -1355,6 +1383,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'hasLevels',
 	'backgroundValues',
 	'setBackgroundSource',
+	'setSkyLayer',
 	'setFog',
 	'setFogVolume',
 	'setFogSlices',

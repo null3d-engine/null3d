@@ -45,7 +45,7 @@ export const ERROR_FIXES = {
 	E1214:
 		'Give fixedRate the fixed steps per second, a number above 0 such as 60 or 120. Give maxFixedSteps a whole number of 1 or more, such as 8.',
 	E1215:
-		'Add the null3D Vite plugin to vite.config.ts. Write the WGSL in a template literal right after a /* wgsl */ comment, or import it from a .wgsl file. Declare fn surface(input: SurfaceInput) -> Surface in it, with no @vertex or @fragment entry point. For a full shader, give the @vertex entry point an InstanceIn from null3d::mesh. For a draw that makes its own vertices, give it @builtin(vertex_index) and @builtin(instance_index) and no mesh attribute. Give post.addEffect() WGSL that declares fn effect(input: EffectInput) -> vec4f, and post.set({ toneMapping }) WGSL that declares fn toneCurve(color: vec3f) -> vec3f.',
+		'Add the null3D Vite plugin to vite.config.ts. Write the WGSL in a template literal right after a /* wgsl */ comment, or import it from a .wgsl file. Declare fn surface(input: SurfaceInput) -> Surface in it, with no @vertex or @fragment entry point. For a full shader, give the @vertex entry point an InstanceIn from null3d::mesh. For a draw that makes its own vertices, give it @builtin(vertex_index) and @builtin(instance_index) and no mesh attribute. Give post.addEffect() WGSL that declares fn effect(input: EffectInput) -> vec4f, post.set({ toneMapping }) WGSL that declares fn toneCurve(color: vec3f) -> vec3f, and scene.setSkyLayer() WGSL that declares fn skyLayer(input: SkyLayerInput) -> SkyLayer.',
 	E1216:
 		'Use the names of the fields of struct Uniforms in the WGSL. Give an f32 a number, and an i32 or a u32 a whole number. Give a vec2f, vec3f or vec4f an array of 2, 3 or 4 numbers. A vec3f also takes a color. Rename a field that has the name of a standard value, such as color. Give a slot that the WGSL declares as a texture_2d<f32> a texture of one layer, and a slot that it declares as a texture_2d_array<f32> a texture of several layers, from textures.fromData with a depth or a KTX2 file of layers. Give post.setEffectUniform() an effect that post.addEffect() returned.',
 	E1217:
@@ -125,7 +125,7 @@ export const ERROR_FIXES = {
 	E1423:
 		"Have the server of the engine's files send Access-Control-Allow-Origin with the page's origin or *, on every file: the scripts, the workers and the .wasm files. If it does, check that the file exists at the address that the message names.",
 	E1424:
-		'Deploy every file that the build wrote, the material-*.js files among them, from one build, and serve them as JavaScript at the paths that the build gave them. A strict Content-Security-Policy must allow them in its script-src. On the dev server, reload the page. After a failure during play, destroy the engine and start a new one.',
+		'Deploy every file that the build wrote, the material-*.js, effect-*.js and curve-*.js files among them, from one build, and serve them as JavaScript at the paths that the build gave them. A strict Content-Security-Policy must allow them in its script-src. On the dev server, reload the page. After a failure during play, destroy the engine and start a new one.',
 	E1425:
 		"Call engine.requestPointerLock() inside a click or key handler on the page, as browsers lock the pointer only right after the user acts. A page in an iframe needs allow-pointer-lock in the iframe's sandbox attribute. Browsers on phones have no pointer lock, so give touch screens other controls. Pressing Esc ends the lock, and Chrome then refuses a new lock for about a second.",
 	E1430:

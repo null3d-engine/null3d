@@ -19,7 +19,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 
 1. Write down the original chain in order, with each pass's parameters.
 2. Delete `EffectComposer`, `RenderPass`, `OutputPass`, `GammaCorrectionShader` and `composer.render()`.
-3. Match tone mapping and exposure first: `post.set({ toneMapping, exposure })` (0.1). `ACESFilmicToneMapping`, `AgXToneMapping` and `NeutralToneMapping` become `'aces'`, `'agx'` and `'neutral'`, with the same formulas. `LinearToneMapping` and `NoToneMapping` both become `'none'`; `NoToneMapping` ignores `toneMappingExposure`, so keep `exposure` at 1 for it. Copy `toneMappingExposure` to `exposure` unchanged: null3D applies it to each light, which gives the same image. `ReinhardToneMapping`, `CineonToneMapping` and `CustomToneMapping` become a custom tone curve (0.2, section 7).
+3. Match tone mapping and exposure first: `post.set({ toneMapping, exposure })` (0.1). `ACESFilmicToneMapping`, `AgXToneMapping` and `NeutralToneMapping` become `'aces'`, `'agx'` and `'neutral'`, with the same formulas. `LinearToneMapping` and `NoToneMapping` both become `'none'`; `NoToneMapping` ignores `toneMappingExposure`, so keep `exposure` at 1 for it. Copy `toneMappingExposure` to `exposure` unchanged: null3D applies it to each light, which gives the same image. `ReinhardToneMapping` and `CineonToneMapping` become the `reinhard` and `cineon` curves of `@null3d/three-compat` (0.3, section 7), and `CustomToneMapping` becomes a custom tone curve (0.2, section 7).
 4. Add effects one at a time with `post.set` (0.2), and compare parity images after each.
 5. Port each custom `ShaderPass` last, as a custom effect with `post.addEffect` (0.2, section 6).
 
@@ -39,7 +39,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `SharpenNode`, the `sharpen()` node (`sharpness`, `denoise`) | `sharpen: 2^-sharpness` (0.2) | The same RCAS in the final pass, so no render target and no pass of its own. three.js's default of 0.2 is `sharpen: 0.87`, where 1 is the most and 0 is off. Noise damping is always on, which three.js has only with `denoise: true` |
 | `TAARenderPass`, `SSAARenderPass` | Delete; keep MSAA | A view that holds still blends jittered frames into a sharper picture by itself, then stops drawing, so `sampleLevel` has no setting. Views with bloom, outlines or automatic exposure keep MSAA alone. TAA of a moving view comes after 1.0 |
 | `TRAANode`, `TAAUNode` | MSAA, which the presets from Medium use | null3D has no temporal anti-aliasing or temporal upscaler. Keep MSAA on, which `TAAUNode` turned off; the render scale gives the speed on phones |
-| `OutlinePass` (`visibleEdgeColor`, `hiddenEdgeColor`, `edgeThickness`, `selectedObjects`) | `outline: { color, hiddenColor, width }` and `mesh.setOutlined(true)` (0.2) | A crisp line, with no blur. `visibleEdgeColor` becomes `color` and `hiddenEdgeColor` becomes `hiddenColor`. `OutlinePass` draws its edge at half size, so `width` is about 2 × `edgeThickness`. three.js draws a dark brown hidden line by default; keep it with `hiddenColor: [0.1, 0.04, 0.02]`, as null3D draws none by default. `edgeStrength` has no setting, as the line is opaque. `edgeGlow` above 0, `pulsePeriod` and the pattern texture have no setting: list the soft look as a visible difference. To pulse the line, change its color or width every frame. Select a model with `setOutlined` on its copy from `scene.instantiate`. One style covers every outlined mesh |
+| `OutlinePass` (`visibleEdgeColor`, `hiddenEdgeColor`, `edgeStrength`, `edgeThickness`, `edgeGlow`, `pulsePeriod`, `selectedObjects`) | `createOutlinePass(ctx, { color, hiddenColor, strength, thickness, glow, pulsePeriod })` from `@null3d/three-compat` (0.3), or `outline: { color, hiddenColor, width }` and `mesh.setOutlined(true)` (0.2) for the crisp line | The add-on draws the soft edge, the glow and the pulse: `visibleEdgeColor` and `hiddenEdgeColor` become `color` and `hiddenColor`, and `edgeStrength`, `edgeThickness`, `edgeGlow` and `pulsePeriod` keep their values as `strength`, `thickness`, `glow` and `pulsePeriod`. It turns the crisp line off. The pattern texture has no setting, and `downSampleRatio` is fixed at 2. For the crisp line, `width` is about 2 × `edgeThickness`, and `hiddenColor: [0.1, 0.04, 0.02]` keeps three.js's dark brown hidden line. Select a model with `setOutlined` on its copy from `scene.instantiate`. One style covers every outlined mesh in either form |
 | `LUTPass` with `LUTCubeLoader` or `LUT3dlLoader` | `lut: await assets.loadLut(url)`, `lutIntensity` (0.2) | `intensity` becomes `lutIntensity`. The table grades after the tone mapping, as after `OutputPass`. `LUTImageLoader` strips: export a `.cube` file. A `Data3DTexture` that code fills becomes `lut: await assets.lutFromData({ size, data })`, floats from 0 to 1 in the same order (divide 8-bit values by 255) |
 | No three.js twin (`LiftGammaGain`, `SplitToning` or another color tool's look) | `grading: { whiteBalance, lift, gamma, gain, saturation, splitToning }` (0.3) | A job worker bakes the values into a table of its own, which the final pass applies before a `lut`. Take the numbers from the grade the port must match, or load its `.cube` file as a `lut` instead |
 | `ShaderPass(VignetteShader)` (`offset`, `darkness`) | `vignette: { size: offset, intensity: darkness }` (0.2) under ACES; under AgX, `vignette: { size: offset, intensity: Math.min(darkness, 1), falloff: 3 }` | null3D darkens HDR color before the tone curve, so bright corners darken instead of turning gray. Under ACES the default `falloff` of 2 gives a close match. With `darkness` below 1, three.js also lifts dark corners toward a gray: list that as a visible difference |
@@ -153,29 +153,35 @@ post.setEffectUniform(darken, 'amount', 0.8);   // pass.uniforms.amount.value = 
 
 This example is symmetric, so the uv flip does not matter here. It keeps the alpha: `input.color` holds color multiplied by its coverage, which alpha holds.
 
-Some chains render into render targets of their own, such as a blur at half size that a later pass adds back. Each such step becomes a full-screen pass: `render.addPass({ kind: 'fullscreen', wgsl, writes, scale: 0.5, input: 'sceneColor', textures })`. It runs an effect's WGSL into a texture of its own. Its `input.uv` belongs to its own texture, and `effectInputSize()` gives the input image's size. The effect that composites reads the pass's texture through `textures`. `OutlinePass`'s soft glow ports this way. A pass with `input: 'outlineMask'` blurs the mask, and `post.set({ outline: { width: 0 } })` drops the crisp line (engine docs `guides/custom-passes`, a soft outline glow).
+Some chains render into render targets of their own, such as a blur at half size that a later pass adds back. Each such step becomes a full-screen pass: `render.addPass({ kind: 'fullscreen', wgsl, writes, scale: 0.5, input: 'sceneColor', textures })`. It runs an effect's WGSL into a texture of its own. Its `input.uv` belongs to its own texture, and `effectInputSize()` gives the input image's size. The effect that composites reads the pass's texture through `textures`. `OutlinePass`'s soft glow ports this way, and `@null3d/three-compat`'s `createOutlinePass` builds it with the `OutlinePass` settings (0.3, section 2). A pass with `input: 'outlineMask'` blurs the mask, and `post.set({ outline: { width: 0 } })` drops the crisp line (engine docs `guides/custom-passes`, a soft outline glow). A chain of passes after the scene color or the mask names that image as the `input` of every pass in the chain. A pass with no input runs before the camera's passes, so a chain that starts from the mask then reports a cycle (E1504).
 
 ## 7. Tone curves (0.2)
 
 `post.set({ toneMapping: wgsl })` takes a custom tone curve: WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`. It gets the exposed linear color after bloom. The engine clamps the result to 0 to 1, then encodes sRGB, dithers and grades. A tone curve takes no uniforms, so write settings as constants. `post.set({ toneMapping: 'aces' })` returns to a built-in curve.
 
-three.js's curves multiply by `toneMappingExposure` first. Leave that out, and copy the exposure to `exposure`, as null3D's color arrives exposed:
+`@null3d/three-compat` gives three.js's two curves as `reinhard` and `cineon` (0.3), so a port of `ReinhardToneMapping` or `CineonToneMapping` needs no WGSL:
 
 ```ts
-// ReinhardToneMapping
-const reinhard = /* wgsl */ `
+import { cineon, reinhard } from '@null3d/three-compat';
+
+post.set({ toneMapping: reinhard, exposure: 1.5 });   // toneMappingExposure = 1.5
+```
+
+A custom curve still needs its WGSL. three.js's curves multiply by `toneMappingExposure` first. Leave that out, and copy the exposure to `exposure`, as null3D's color arrives exposed. The add-on's two curves show the shape:
+
+```ts
+// The formula of ReinhardToneMapping.
+const reinhardWgsl = /* wgsl */ `
   fn toneCurve(color: vec3f) -> vec3f {
     return color / (vec3f(1.0) + color);
   }`;
 
-// CineonToneMapping
-const cineon = /* wgsl */ `
+// The formula of CineonToneMapping.
+const cineonWgsl = /* wgsl */ `
   fn toneCurve(color: vec3f) -> vec3f {
     let c = max(vec3f(0.0), color - vec3f(0.004));
     return pow((c * (6.2 * c + vec3f(0.5))) / (c * (6.2 * c + vec3f(1.7)) + vec3f(0.06)), vec3f(2.2));
   }`;
-
-post.set({ toneMapping: reinhard, exposure: 1.5 });   // toneMappingExposure = 1.5
 ```
 
 For `CustomToneMapping`, copy the body of the app's patched `CustomToneMapping` GLSL function into `toneCurve`, translated to WGSL.

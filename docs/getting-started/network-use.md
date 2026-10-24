@@ -23,6 +23,9 @@ The engine downloads its own files from the address where the page serves them. 
 | A feature's shader module | On the first use of that feature |
 | The KTX2, meshopt and Draco decoders | On the first file that needs one |
 | The area light tables | On the first rectangle or tube light |
+| A feature's first-use code module, such as a decoder's wrapper or a pass's setup | On the first use of that feature |
+
+The table names what the engine ships. A feature may have both a shader module and a code module, and each loads at its own first use; a page that never uses the feature downloads neither.
 
 The engine builds each address with `new URL(..., import.meta.url)`. The bundler then ships that file beside the engine's code.
 
@@ -57,7 +60,9 @@ Set `NULL3D_ENGINE_SHADERS` to a folder that holds the engine's generated shader
 
 ## The command-line tool
 
-`bunx @null3d/cli` contacts no server. It serves the page from a server on the same machine, and it drives a browser on that machine. When Playwright's browser is missing, the tool prints the command that installs it. You run that command yourself.
+`bunx @null3d/cli` contacts no server of its own. It serves the page from a server on the same machine, and it drives a browser on that machine. When Playwright's browser is missing, the tool prints the command that installs it. You run that command yourself.
+
+A command that builds the page also runs the build's one download, the engine's generated shader modules, as the section above says. Set `NULL3D_ENGINE_SHADERS` on that command to keep the tool's whole run off every network.
 
 ## Check the claim
 

@@ -442,39 +442,33 @@ shotButton.onclick = async () => {
 
 The thread that draws reads the frame back and encodes it, so the canvas needs no `preserveDrawingBuffer`. After `destroy()` the call fails with E1414. For tests, use `bunx @null3d/cli shot` or hold-mode tests instead (`references/testing-and-debugging.md`). Docs: `api/engine`.
 
-## 14. Video on a surface, with frames from the page
+## 14. Video on a surface (0.3)
 
-Video textures (`engine.registerVideo` with `textures.fromVideo`) come in 0.3. Until then, the page can send frames as `ImageBitmap` objects, which transfer to the sketch without a copy. The sketch's half shows them with an unlit material's map:
+A video element lives on the page. `engine.registerVideo` follows it there, and `textures.fromVideo` in the sketch shows it. The page sends one `ImageBitmap` per frame that the video presents, scaled to `maxSize`. The engine closes the image once it is on the GPU:
 
 ```ts
 // page.ts
 const video = Object.assign(document.createElement('video'), { src: '/intro.mp4', muted: true, loop: true, playsInline: true });
-await video.play();
-const sendFrame = async () => {
-  // flipY: textures take their first row at the bottom, as three.js flips them
-  const bitmap = await createImageBitmap(video, { resizeWidth: 640, resizeHeight: 360, imageOrientation: 'flipY' });
-  engine.postToSketch('video-frame', bitmap, [bitmap]);   // transfer, do not copy
-  video.requestVideoFrameCallback(sendFrame);           // or requestAnimationFrame where this is missing
-};
-video.requestVideoFrameCallback(sendFrame);
+// In the page but out of sight: an element that display: none hides may give no frame.
+Object.assign(video.style, { position: 'absolute', left: '-10000px', width: '1px', height: '1px' });
+document.body.append(video);
+engine.registerVideo(video, { name: 'intro', maxSize: 512 });   // 512 x 288: 576 KiB a frame
+await video.play();                                             // muted, so no click is needed
 ```
 
 ```ts
 // sketch.ts
 import { defineSketch } from '@null3d/engine';
 
-export default defineSketch(({ scene, geometry, materials, textures, page }) => {
+export default defineSketch(({ scene, geometry, materials, textures }) => {
   scene.setActiveCamera(scene.createPerspectiveCamera({ fov: 50, position: [0, 0, 1.6], target: [0, 0, 0] }));
-  // One dark texel until the first frame arrives. Create the material at setup, so no pipeline compiles during play.
-  const screen = textures.fromData({ width: 1, height: 1, format: 'rgba8unorm', colorSpace: 'srgb', data: new Uint8Array([24, 24, 24, 255]) });
+  // The first frame gives the texture its size. Create it at setup, so no pipeline compiles during play.
+  const screen = textures.fromVideo('intro', { mipmaps: false });
   scene.createMesh({ mesh: geometry.plane({ width: 16 / 9, height: 1 }), material: materials.unlit({ map: screen }) });
-  page.onMessage((type, bitmap) => {
-    if (type === 'video-frame') screen.update(bitmap as ImageBitmap);   // a new size is fine
-  });
 });
 ```
 
-Each frame costs one decode-and-resize on the page and one upload in the render worker, so keep frames small. Docs: `guides/video-textures`, `api/textures`.
+Keep a frame within the preset's upload budget, 2 MiB on Low: a frame larger than that drops the frames that come during its upload. A video with sound needs a click before it plays. `texture.destroy()` or the function that `registerVideo` returns stops the frames. A cross-origin video needs `video.crossOrigin = 'anonymous'` and the server's CORS headers. Docs: `guides/video-textures`, `api/textures`.
 
 ## 15. A screen drawn on a canvas (0.2)
 
@@ -654,7 +648,7 @@ export default defineSketch(({ scene, geometry, materials, textures, render }) =
 });
 ```
 
-The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint and foam: read the depth behind the sheet with `sceneInputs: ['sceneDepth']` and `sceneDistance(uv)` (0.3), or the height-field water recipe in `guides/custom-passes`. For a camera that dips under the water, see "Water that the camera can go under" in `references/shaders.md` section 7. Docs: `api/render`, `shaders/surface-functions`.
+The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint, foam and soft shores: read the depth behind the sheet with `sceneInputs: ['sceneDepth']` (0.3). The water's depth is the gap between the sheet and the surface behind it: convert `input.fragCoord.z` with `engine_frame.camera_range` and subtract it from `sceneDistance(uv)`. Fade the alpha over the end of that gap and the shore ends softly. Or use the height-field water recipe in `guides/custom-passes`. A sheet that reads the depth declares no textures, so it takes no mirror. For a camera that dips under the water, see "Water that the camera can go under" in `references/shaders.md` section 7. Docs: `api/render`, `shaders/surface-functions`.
 
 ## 21. Fire, smoke and sparks with particles
 

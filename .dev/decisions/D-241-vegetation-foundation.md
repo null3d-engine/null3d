@@ -117,3 +117,71 @@ The design for the vegetation family raised eight questions that this record doe
 - **Which demos move.** All nine move to the add-on, one at a time after Creek meets the quality bar. A demo whose style the generator cannot match gets a recorded exception, never a second generator.
 - **A themed species pack.** One small example comes after the other demos move, if time allows. It is not on Creek's critical path.
 - **Wind in Creek.** The owner asked again on 24 October 2026 that the Creek showcase shows wind on its plants: the trees sway, the grass and shrubs move, and the floating leaves ride the same wind field. A still valley does not meet the bar. Per-vertex wind is the default and M3-V10's figures decide whether a preset switches to branch poses.
+
+
+## Addendum: the four devices' figures, and the budgets they set
+
+M3-V1 measured Creek and the forest demo on 24 October 2026. It ran on four cloud devices: the
+iPhone 17, the iPad Pro 13 2025, the Galaxy S24 and the Galaxy Tab A9 Plus. Each page fixed its GPU path and its preset.
+It also set the quality governor's target at 1 frame a second, so the render scale stayed at 1. The
+figures are in [tested devices](../tested-devices.md#vegetation-on-four-cloud-devices-24-october-2026).
+Three rules shape them.
+
+- WebGL2 and compatibility mode cap the preset at Medium ([the chooser](../../packages/engine/src/quality/chooser.ts)).
+  So High and Ultra ran on core WebGPU only.
+- Creek at Low on WebGPU stalls an Apple device's page after its first frame
+  ([Driver bug reports](../driver-bugs.md)). Creek therefore has WebGL2 figures on the iPhone and
+  the iPad, and no WebGPU figure there.
+- The Galaxy Tab A9 Plus reports no compatibility mode. Its compatibility pages were skipped.
+
+**Frame time.** The figures below are the frame interval in milliseconds. They are the ceiling that
+every later vegetation task must keep the demo within, at the same device, path and preset.
+
+| Demo and preset | iPhone 17 | iPad Pro 13 | Galaxy S24 | Tab A9 Plus |
+| --- | --- | --- | --- | --- |
+| Creek Low, WebGL2 | 15.7 | 30.8 | 33.3 (30 Hz display) | 1,268.5 |
+| Creek Medium, WebGL2 | 43.9 | 90.8 | 33.3 (30 Hz display) | no frame in 5.5 s |
+| Forest Low, WebGPU | 15.6 | 15.6 | no WebGPU | no WebGPU |
+| Forest Low, compatibility | 15.6 | 15.6 | no WebGPU | no compatibility mode |
+| Forest Low, WebGL2 | 15.5 | 15.5 | 33.3 (30 Hz display) | 385.2 |
+| Forest Medium, WebGPU | 62.1 | 54.8 | no WebGPU | no WebGPU |
+| Forest Medium, WebGL2 | 60.6 | 46.6 | 33.3 (30 Hz display) | 1,820.8 |
+| Forest High, WebGPU | 62.5 | 67.1 | no WebGPU | no WebGPU |
+| Forest Ultra, WebGPU | 99.0 | 71.1 | no WebGPU | no WebGPU |
+
+**GPU time per pass.** Only the WebGPU path times its passes. Forest Low spends 6.6 to 6.9 ms of
+GPU time on the iPad and the iPhone. That is 7 render passes, and the first is a copy. Forest
+Medium spends 45.4 ms on the iPad, High 58.3 ms and Ultra 63.2 ms. The last render pass takes most
+of it at High and Ultra, because it draws the far cards. WebGL2 on a phone offers no timer, so its
+rows give the CPU time of the busiest thread instead.
+
+**Triangles.** Forest Low draws 3.5 to 13.8 million triangles, depending on the path. Medium draws
+23 to 111 million, High 61.6 to 297.1 million, and Ultra 29.0 to 107.5 million. Each preset picks
+its own levels, so High draws more than Ultra on both Apple devices.
+
+**Memory.** Creek at Low takes 60.8 MiB of GPU textures on the iPhone and 120.6 MiB on the iPad. At
+Medium it takes 163.9 and 537.5 MiB. Forest Low on WebGPU takes 30.9 to 57.4 MiB of textures and
+34.4 MiB of buffers, and its WebAssembly memory grows to 328.8 MiB. At Ultra it reaches 864 MiB.
+
+**Tree generation.** A worker built a stand-in parametric tree in the style of Weber and Penn. It ran at
+each preset's detail, for four species and six seeds each. The set of 24 variants took 14 to 22 ms
+on the iPhone and the iPad. It took 31 to 45 ms on the S24, and 44 to 84 ms on the tablet. The arrays take
+7.0 MB at Low and 22.7 MB at Ultra, and the triangles run from 123,876 to 474,096. The slowest
+single variant was an oak at Ultra on the tablet: 5.42 ms for 27,090 triangles. This is a stand-in;
+M3-V4's generator replaces it, and its figures set the shape of the budget.
+
+**The budgets that M3-V4 to M3-V11 take.**
+
+- **Frame time:** the dressed Creek and forest must stay within the frame interval of the same
+  preset, device and path in the table above. A preset that falls to a lower one at the same page
+  fails.
+- **The add-on's own GPU time at Low:** at most 5 ms on the Apple devices. The forest's whole
+  WebGPU draw takes 6.6 to 6.9 ms of a 16.7 ms frame there. At Medium, 12 ms. These leave room for the
+  scene beside the plants.
+- **Generation:** the whole tree variant set at any preset must build in under 200 ms on the
+  slowest measured device. On the iPhone and the iPad it must build in under 60 ms. A set of 54 variants, for the
+  add-on's nine species, is about twice the measured 24, so the tablet's Ultra figure leaves that
+  headroom.
+- **Memory:** the variant arrays may take the measured 7.0 to 22.7 MB. The GPU textures must stay
+  within the measured figures for the same demo and preset, which the add-on shares with the scene.
+  Creek's 3.1 MB of Blender models leave, and the arrays replace them.

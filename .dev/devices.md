@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost` and `object-growth`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost`, `object-growth`, `cluster-cost`, `two-step`, `demos`, `skyway`, `vegetation` and `tree-generation`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is grey while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-grey when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -287,6 +287,15 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 - `tests/pages/sky-refresh.html` moves the sun and captures frames until the sketch's frame count stops. Each result note gives the frames from the move until both spheres show the new sky's light. It is 6 on the Mac. The plan runs it on the same three paths, with the drawing held to 20 frames a second.
 - Run it on a cloud phone and iPad: `bun run devices:cloud --only bsgalaxys24-chrome,bsipad10-safari --plan sky`.
 
+## The demos plan
+
+- The `demos` plan plays the Skyway and Night town showcases live on each GPU path, with the quality governor on. Its page starts a demo as a person plays it, waits for the first frame, and measures the frames.
+- It reports the preset and thread mode that the engine ran. It gives the frame rate, the display's rate and the frame intervals' median and 95th and 99th percentiles. It also reports the first-frame time, and the bytes that the page downloaded before the first frame and in total.
+- Each demo runs twice on each path, once at the preset that the engine chooses and once at High. A showcase's target names the chosen preset, so the chosen reading answers it. The High reading shows what the preset above costs on the device.
+- `--only` picks some of the plan's pages, such as `demo-night-town-webgl2-chosen`.
+- It fails when the measure drew no frame. The plan times frames, so the runner page measures the display's refresh rate before each page.
+- The `warm-up-time` plan also loads Skyway, for its pipeline wait and its first-frame time with fresh shaders.
+
 ## The splats plan
 
 - The `splats` plan runs the Gaussian splats add-on's streaming check on each GPU path, for M3-F2. It draws a cloud of 400,000 splats, which the add-on cuts into chunks that the draw takes as they arrive. The preset's budget decides how many of them draw.
@@ -295,6 +304,41 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 - The plan times frames, so the runner page measures the display's refresh rate before each page. It marks the run's figures unreliable below 55 Hz.
 - Read the preset, the frame rate and the budget together. The budget's count differs by GPU path, and the governor can lower the render scale under load.
 - Run it one session at a time on a cloud phone and the cloud iPad: `bun run devices:cloud --only bsgalaxys24-chrome --plan splats` and `bun run devices:cloud --only bsipadpro13-safari --plan splats`. The Galaxy S24 has no WebGPU, so the command lets it lack that path and the engine picks WebGL2.
+
+## The vegetation plans
+
+- The `vegetation` plan times Creek and the forest demo at every preset on each GPU path, for the
+  vegetation add-on's budgets ([D-241](decisions/D-241-vegetation-foundation.md)). Each page fixes
+  its path and its preset with `?gpu=` and `?preset=`, so the start-up check cannot lower either.
+- The page starts the demo live and waits for its first frame. It then measures five seconds.
+  `engine.measure()` gives the frame interval and the CPU time per frame of each thread and phase.
+  It gives the GPU time with its parts, the engine's memory and the JavaScript heap.
+- The triangles, the objects and the GPU's texture and buffer bytes come from the stats overlay.
+  The page shows the overlay after the measure. The overlay samples one frame in eleven, so its
+  sampling costs none of the measured frames. It writes those figures rounded: a count to 1,000 or
+  to 10,000, and a byte figure to 0.1 MiB.
+- The paths are core WebGPU, compatibility mode and WebGL2, so a device that offers compatibility
+  mode only gives its WebGPU figure there. The capabilities page comes first, so a device that
+  lacks a path skips those pages.
+- The page has 24 items: 2 demos, 4 presets and 3 paths. Split it by demo with `--shard 1/2` for
+  Creek and `--shard 2/2` for the forest when a session may not hold them all.
+- WebGL2 and compatibility mode cap the preset at Medium ([the chooser](../packages/engine/src/quality/chooser.ts)).
+  A run measures Low and Medium on those paths, and every preset on core WebGPU.
+- Each page sets `?target-fps=1`, so the quality governor holds the whole render scale and each
+  preset's own cost shows. Without it, the governor lowers the scale under a heavy scene and the
+  figures mix the preset with the scale it chose.
+- Creek at Low on WebGPU stalls an Apple device's page after its first frame. Those pages are left
+  out of runs on the iPhone and the iPad ([Driver bug reports](driver-bugs.md)).
+- The `tree-generation` plan times a stand-in tree generator in a worker. It generates each species
+  at each preset's detail, six seeds each. It gives the median time, the triangles, the vertices and
+  the bytes of each variant. It draws nothing, so it needs no GPU path. The generator is the page's
+  stand-in in the style of Weber and Penn. The vegetation add-on's own generator replaces it
+  (M3-V4).
+- Run both on the cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet:
+  `bun run devices:cloud --only bsiphone17-safari,bsipadpro13-safari,bsgalaxys24-chrome,bsgalaxytaba9plus-chrome --plan vegetation`,
+  and the same with `--plan tree-generation`.
+- The `splats` plan also runs each GPU path at a quarter of the cloud's splat count, at the same
+  pixel count. A pair of rows then shows whether the cost follows the count or the screen's fill.
 
 ## The reflection plan
 
@@ -556,7 +600,7 @@ Each item of M2's exit gate that needs a phone or a tablet runs with one command
 1. Download BrowserStackLocal for macOS from BrowserStack. Check its signature with `codesign -dv --verbose=2 BrowserStackLocal`. It must print `Authority=Developer ID Application: Browserstack Inc (YQ5FZQ855D)`.
 2. Keep the access key in `~/.browserstack`, with `chmod 600`. Never paste the key into a chat, a log or a commit. Start the tunnel with `./BrowserStackLocal --key "$(cat ~/.browserstack)"`.
 3. Serve HTTPS from a checkout of main: `NULL3D_PORT=3000 NULL3D_HTTPS=1 bun run dev`. HTTPS then answers on port 3001.
-4. The certificate must name `bs-local.com`. `bun run dev-cert` makes one that does.
+4. The certificate must name `bs-local.com`. `bun run dev-cert` makes one that does. The certificate lives in the checkout's `target/dev-cert`, which git does not keep, so a worktree has none of its own: run `bun run dev-cert` there, or copy `cert.pem` and `key.pem` from the main checkout's `target/dev-cert`. Without it the cloud run stops at `error: the server did not answer at https://localhost:<port>/tests/pages/index.html`, and the dev server names the missing folder.
 5. In BrowserStack Live, pick the device and the browser. Turn on Self-Signed Certificate in the session's toolbar, so the device accepts the certificate. It does not work together with network throttling, so leave throttling off.
 6. On the device, open `https://bs-local.com:3001/tests/pages/runner.html?listen&runner=<name>`. Type `bs-local.com` on every device. BrowserStack changes `localhost` to `bs-local.com` by itself in most browsers, but not in Chrome on iOS.
 7. Start the run on the Mac with the same port and name: `NULL3D_PORT=3000 bun tests/real-browsers.ts --plan smoke --lan bsgalaxys25-samsung`.

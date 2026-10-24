@@ -484,8 +484,8 @@ describe('budgetProblems', () => {
 		);
 
 	it("passes a start and a later part at their budgets, with the owner's Brotli figures", () => {
-		// The owner raised the start's Brotli budget by a kilobyte so the milestone's work fits.
-		expect(START_BUDGET.brotli).toBe(187 * 1024);
+		// The owner raised the start's Brotli budget so the milestone's work fits.
+		expect(START_BUDGET.brotli).toBe(188 * 1024);
 		expect(LATER_BUDGET.brotli).toBe(17 * 1024);
 		expect(budgetProblems(sizes(START_BUDGET, LATER_BUDGET), downloads, later)).toEqual([]);
 	});

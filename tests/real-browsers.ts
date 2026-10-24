@@ -76,10 +76,15 @@
 //                       move to the new light on each GPU path, or reflection, which times S1 with
 //                       a reflection pass at a quarter and at half the render size against none,
 //                       or alpha-mask-cost, which times masked lit quads against opaque ones with
-//                       MSAA and without on each GPU path, or splats, which draws a large splat
+//                       MSAA and without on each GPU path, or demos, which plays the Skyway and
+//                       Night town showcases at the chosen preset and at High on each GPU path,
+//                       and reports their frame rate, display rate and first-frame time, or
+//                       splats, which draws a large splat
 //                       cloud on each GPU path and reports how much of it draws against the
 //                       preset's budget, with the frame rate, the first-frame time and the bytes
-//                       the page downloaded
+//                       the page downloaded, or vegetation, which times Creek and the forest demo
+//                       at every preset on each GPU path with the triangles and the memory, or
+//                       tree-generation, which times procedural tree generation in a worker
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages
@@ -1113,6 +1118,9 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'alpha-mask-cost',
 	'cluster-cost',
 	'splats',
+	'demos',
+	'vegetation',
+	'tree-generation',
 ]);
 
 /**

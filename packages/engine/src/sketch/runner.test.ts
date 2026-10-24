@@ -253,6 +253,7 @@ async function start(
 			jobWorkers: jobs.most,
 			device: {
 				webgl2: true,
+				softwareRenderer: false,
 				storageBindingBytes: 0,
 				capabilities: 0,
 				maxTextureSize: 4096,

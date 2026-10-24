@@ -22,11 +22,14 @@ permissions:
 # time limit does; ci-passed says which of the two stopped it. A draft's full run, which marking it
 # ready for review starts, has a group of its own, so the draft can go back to draft at once and the
 # pushes after it do not cancel the run: it reads the pull request's caches, which a run started by
-# hand on its branch cannot. A later full run waits for the one in progress instead of cancelling
-# it, so every full run that starts ends with a result, and GitHub keeps only the newest one waiting.
+# hand on its branch cannot. A later run of a pull request or by hand waits for the one in progress
+# instead of cancelling it, so every such run that starts ends with a result, and GitHub keeps only
+# the newest one waiting: an older waiting run goes before it starts any job. A pull request's
+# landings come in bursts, and cancelling started runs threw away most of their work (D-244). Only a
+# cancel by hand, as when a full run is started, ends a pull request's run early.
 concurrency:
   group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}{1}', github.event.pull_request.number, github.event.action == 'ready_for_review' && '-full' || '') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'main') || github.run_id }}
-  cancel-in-progress: ${{ (github.event_name == 'pull_request' && github.event.action != 'ready_for_review') || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
 env:
   # Bun before 1.4.3 closes Playwright's pipe to Chrome at random, which hangs browser steps
@@ -38,6 +41,11 @@ env:
   # minutes until the job's limit cancelled it and held the whole run.
   GIT_HTTP_LOW_SPEED_LIMIT: "1000"
   GIT_HTTP_LOW_SPEED_TIME: "30"
+  # The browser tests that the browser-heavy job runs one at a time and the browser job's shards
+  # leave out, by title: the demos' and the environments' image tests, the moving-shadow presets and
+  # the coat and sheen check. Two of them side by side on a runner's four cores each took 2 to 4
+  # times as long as alone: the coat and sheen check took 96 s alone and 234 s in full run 40080490543.
+  HEAVY_TESTS: '\bdemo-[a-z0-9-]+ on |\benvironment-[a-z0-9-]+ on |shadow follows it at [a-z]+ with its own setting|coat-sheen: turned off they draw as none'
   # Anthropic's skill validator, pinned to one commit of anthropics/skills.
   SKILL_VALIDATOR_URL: https://raw.githubusercontent.com/anthropics/skills/1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563/skills/skill-creator/scripts/quick_validate.py
   # Every run saves its caches, and every run restores its own branch's first, then main's. A pull
@@ -841,14 +849,16 @@ jobs:
     # compiler, its WGSL in a project, its declarations, its compiler pool, and the packing of every
     # compiled shader of the repository's test pages and demos. They read the compiler and the shader
     # modules that the build job made, and build no Rust, so they need no toolchain. The packing test
-    # takes as long as the others together, so it runs in a part of its own. A part whose inputs
+    # runs in 4 parts of its own, each with a quarter of the modules, a pass and a cache of its own:
+    # after a change to the shader crates, one part compiled every module for 7.5 minutes in run
+    # 40085184470, the end of that run, while the others had ended by 5.9. A part whose inputs
     # passed in an earlier run passes again, as the shader-compiler shards do. Its key names the
     # files that decide what the compiler and the shader modules hold, the plugin and the test
     # helper that its tests import, and the repository's WGSL that the part compiles: the modules
     # with WGSL of the test pages, the fixtures and the demos for the packing test, which
     # tools/lib/wgsl-modules.ts lists, and the two files whose declarations the plugin's tests
     # compare for the other part.
-    name: shader-compiler-plugin (${{ matrix.script }})
+    name: shader-compiler-plugin (${{ matrix.script }}${{ matrix.share && format(' {0}', matrix.share) || '' }})
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -856,7 +866,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        script: [test:shader-compiler:plugin, test:shader-compiler:pack]
+        include:
+          - script: test:shader-compiler:plugin
+          - { script: test:shader-compiler:pack, share: 1/4 }
+          - { script: test:shader-compiler:pack, share: 2/4 }
+          - { script: test:shader-compiler:pack, share: 3/4 }
+          - { script: test:shader-compiler:pack, share: 4/4 }
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
@@ -871,13 +886,13 @@ jobs:
       # pages, the fixtures and the demos, so its key holds those modules alone: a change to a page
       # or a demo that holds no WGSL passes it again. The whole folders once made a key that changed
       # with almost every push, and the part took 5.5 to 6.8 minutes each time.
-      - name: The hash of the modules that the packing test compiles
+      - name: The hash of the modules that this part of the packing test compiles
         id: modules
         if: matrix.script == 'test:shader-compiler:pack'
-        run: bun tools/lib/wgsl-modules.ts >> "$GITHUB_OUTPUT"
+        run: bun tools/lib/wgsl-modules.ts ${{ matrix.share }} >> "$GITHUB_OUTPUT"
       - name: The key of this part's inputs
         id: inputs
-        run: echo "key=passed-v2-shader-compiler-plugin-${{ matrix.script }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'tools/lib/wgsl-modules.ts', 'tools/lib/build-cache.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}-${{ matrix.script == 'test:shader-compiler:pack' && steps.modules.outputs.hash || hashFiles('tests/fixtures/typed-uniforms/**', 'tests/pages/sketches/shaders/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=passed-v2-shader-compiler-plugin-${{ matrix.script }}${{ matrix.share && format('-{0}', matrix.share) || '' }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'tools/lib/wgsl-modules.ts', 'tools/lib/build-cache.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}-${{ matrix.script == 'test:shader-compiler:pack' && steps.modules.outputs.hash || hashFiles('tests/fixtures/typed-uniforms/**', 'tests/pages/sketches/shaders/**') }}" >> "$GITHUB_OUTPUT"
       - name: Find an earlier pass with the same inputs
         id: passed
         uses: actions/cache/restore@v4
@@ -890,8 +905,21 @@ jobs:
         with:
           mode: download
           name: page-wasm
+      # The packing test's compiled shaders, kept between runs. An entry is named by its request and
+      # the compiler's version, so a kept entry never serves another source or another compiler, and
+      # a change to a few modules compiles only theirs: the whole set took 300 s in run 40077219842.
+      # The key starts empty when the compiler or the plugin changes, as the website's does below.
+      - uses: actions/cache@v4
+        if: steps.passed.outputs.cache-hit != 'true' && matrix.script == 'test:shader-compiler:pack'
+        with:
+          path: node_modules/.cache/null3d-shaders
+          key: shader-pack-compiles-${{ matrix.share }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/vite-plugin/**') }}-${{ steps.modules.outputs.hash }}
+          restore-keys: |
+            shader-pack-compiles-${{ matrix.share }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/vite-plugin/**') }}-
       - name: The Vite plugin's tests through the shader compiler
         if: steps.passed.outputs.cache-hit != 'true'
+        env:
+          NULL3D_PACK_SHARE: ${{ matrix.share }}
         run: bun run ${{ matrix.script }}
       - name: Record this part's pass of these inputs
         if: steps.passed.outputs.cache-hit != 'true'
@@ -959,13 +987,13 @@ jobs:
     # them by count, in its order of the tests, and the weights below give each shard its share, so
     # that the shards take about the same time. `bun run test:browser-weights` works out the
     # weights, and .dev/image-tests.md says when to retune them and when to add a shard. The tests
-    # that run alone and S6's image tests have jobs of their own below.
+    # that run alone, the heavy tests and S6's image tests have jobs of their own below.
     name: browser (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: [build, changes]
     # Every run but a draft's or a docs-only pull request's, as the bench and real-browsers jobs.
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    # A shard's tests take about 7 minutes, with the median times that the weights come from, and
+    # A shard's tests take about 6.5 minutes, with the median times that the weights come from, and
     # its setup about 1. A shard that meets a slow machine runs its tests up to twice as slowly as
     # the median, so the limit leaves room for that rather than for a hang. In run 39306888159 a
     # shard modelled at 11 minutes ran 71 of its 74 tests in 19.6.
@@ -973,7 +1001,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       # Its tests read no production build, so the run builds none (tests/playwright.config.ts).
@@ -1004,8 +1032,8 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "85:55:12:136:32:125:139:94:239:235:172:99:92:56:75:36:25:34:40:34:18:22:54:148:32:41:125:88:95:73:58:84:62:64:64:63:73"
-        run: bun run test:browser --grep-invert "@alone|$CITY_TESTS" --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+          PWTEST_SHARD_WEIGHTS: "84:56:31:128:128:134:113:180:195:192:163:96:58:71:33:20:109:134:18:125:88:93:47:76:93:64:65:68:68:64"
+        run: bun run test:browser --grep-invert "@alone|$CITY_TESTS|$HEAVY_TESTS" --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
       - uses: actions/upload-artifact@v4
@@ -1054,6 +1082,52 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
 
+  browser-heavy:
+    # The heavy browser tests that HEAVY_TESTS names, one at a time on each machine. Side by side, two
+    # of them each ran 3 to 4 times as long as alone, so the pair took longer than the two one after
+    # the other: in test run 40075672720, demo-forest on WebGPU took 58 s alone and 180 s beside
+    # another demo, and the shards of the demo tests took 5.0 and 4.6 minutes with one worker against
+    # 7.9 and 6.9 with two. The weights split them by their measured times, as the browser job's do,
+    # from at least two runs: one runner took the moving-shadow presets in 17 to 36 s each, and
+    # others in 90 to 96, so the weights of one run put all six in one shard (12.1 minutes in full
+    # run 40080490543).
+    name: browser (heavy tests, ${{ matrix.shard }} of ${{ strategy.job-total }})
+    needs: [build, changes]
+    if: needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
+      NULL3D_PRODUCTION_PAGES: skip
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+        with: *software-gpu-references
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: ./.github/actions/archive
+        with:
+          mode: download
+          name: page-wasm
+      - uses: ./.github/actions/playwright-chromium
+      - uses: ./.github/actions/samples
+      - name: The heavy browser tests, one at a time, on SwiftShader, WebGPU and WebGL2
+        env:
+          # One weight for each shard of the matrix, in its order.
+          PWTEST_SHARD_WEIGHTS: "2:17:9:24:18:29:28:30:13:15:5:3"
+        run: bun run test:browser --grep "$HEAVY_TESTS" --grep-invert "@alone" --workers=1 --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-heavy-test-results-${{ matrix.shard }}
+          path: test-results/
+          if-no-files-found: ignore
   browser-production:
     # The production build projects' tests, which serve the production build of the test pages: the
     # engine and its errors after bundling, the start under a strict Content-Security-Policy and from
@@ -1720,6 +1794,7 @@ jobs:
       - load-startup-pages
       - browser
       - browser-alone
+      - browser-heavy
       - browser-production
       - browser-city
       - showcase
@@ -1761,7 +1836,7 @@ jobs:
               "wasm-checks": "code",
               "shader-compiler": "code", "shader-compiler-plugin": "code", "packages": "code",
               "heavy-checks": "code", "browser-caches": "code",
-              "load-pages": "full", "load-startup-pages": "full", "browser": "full", "browser-alone": "full", "browser-production": "full",
+              "load-pages": "full", "load-startup-pages": "full", "browser": "full", "browser-alone": "full", "browser-heavy": "full", "browser-production": "full",
               "browser-city": "full", "showcase": "full", "bench": "full", "real-browsers": "full", "real-browsers-prebuilt": "full",
               "allocation": "allocation", "skill-sketches": "sketches"
             } as $gate | length > 0 and all(to_entries[]; .value.result == "success"

@@ -187,13 +187,24 @@ async function attachPage(
 		flatten: true,
 	});
 	const workers: AttachedWorker[] = [];
+	// A page may start its workers itself, or one of them may start the rest, so every worker
+	// counts as a parent of the workers that it starts.
 	devtools.on('Target.attachedToTarget', (params, parent) => {
 		const { sessionId: worker, targetInfo } = params as {
 			sessionId: string;
 			targetInfo: TargetInfo;
 		};
-		if (parent === sessionId && targetInfo.type === 'worker')
-			workers.push({ sessionId: worker, url: targetInfo.url });
+		if (targetInfo.type !== 'worker') return;
+		if (parent !== sessionId && !workers.some((known) => known.sessionId === parent)) return;
+		if (workers.some((known) => known.sessionId === worker)) return;
+		workers.push({ sessionId: worker, url: targetInfo.url });
+		devtools
+			.send(
+				'Target.setAutoAttach',
+				{ autoAttach: true, waitForDebuggerOnStart: false, flatten: true },
+				worker,
+			)
+			.catch(() => {});
 	});
 	await devtools.send(
 		'Target.setAutoAttach',
