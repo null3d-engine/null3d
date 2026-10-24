@@ -215,6 +215,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 	});
 	passes++;
 	const mirror = textures.fromPass(pass);
+	const ownFoam = foam === undefined;
 	const foamMap = foam?.texture ?? noFoam(ctx);
 	const material = materials.shader({
 		color: '#ffffff',
@@ -301,6 +302,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			for (const mesh of meshes) mesh.destroy();
 			render.removePass(pass);
 			material.destroy();
+			if (ownFoam) foamMap.destroy();
 		},
 	};
 }
