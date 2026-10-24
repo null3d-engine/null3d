@@ -1354,7 +1354,9 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 			`the ${options.plan} plan crashes the tab on purpose, and after a crash soon after another, Safari on a tablet stops reloading the runner page; run it on --lan devices with --attended, while someone can reopen the page`,
 		);
 	if (!shard) return repeatItems(items, rounds);
-	const part = shardItems(items, shard, itemsTogether, expectedSeconds);
+	const part = shardItems(items, shard, itemsTogether, (item) =>
+		expectedSeconds(item, options.apps[0]),
+	);
 	if (part.length === 0)
 		throw new Error(
 			`shard ${shard.index} of ${shard.count} has no items: the ${options.plan} plan has too few items for ${shard.count} shards`,
