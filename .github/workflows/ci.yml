@@ -1004,7 +1004,7 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "85:56:27:132:20:125:163:231:191:242:128:97:72:79:32:25:38:57:15:18:16:50:158:30:4:39:125:88:93:47:66:84:68:82:78:84:6"
+          PWTEST_SHARD_WEIGHTS: "85:55:12:136:32:125:139:94:239:235:172:99:92:56:75:36:25:34:40:34:18:22:54:148:32:41:125:88:95:73:58:84:62:64:64:63:73"
         run: bun run test:browser --grep-invert "@alone|$CITY_TESTS" --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
