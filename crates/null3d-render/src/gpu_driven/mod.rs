@@ -1318,18 +1318,27 @@ impl GpuDrivenRenderer {
             scattering,
             moving,
             copy_offsets,
+            settings,
             ..
         } = self;
         let scene = input.scene;
         let batches = input.batches;
-        for (layout, drawn_by) in [
-            (layout, &views[..]),
+        for (drawn, drawn_by) in [
+            (&mut *layout, &views[..]),
             (casters, std::slice::from_ref(&shadow)),
             (outlined, std::slice::from_ref(&plain)),
             (scattering, std::slice::from_ref(&plain)),
             (moving, std::slice::from_ref(&plain)),
         ] {
-            layout.fit_copies(scene, batches, drawn_by, parity, copy_offsets)?;
+            drawn.fit_copies(scene, batches, drawn_by, parity, copy_offsets)?;
+        }
+        // The staged levels' watches read the levels that the camera's layout put copies in.
+        if settings.watches_stages() {
+            layout.note_stage_picks(
+                settings.stage_watches_mut(),
+                u64::from(input.frame),
+                !views.is_empty(),
+            );
         }
         self.copy_views = views;
         Ok(())

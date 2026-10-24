@@ -17,7 +17,7 @@ use std::collections::TryReserveError;
 use null3d_core::clusters::{
     CLUSTER_ROWS, CLUSTER_SHIFT, ClusterScratch, NO_ROW, RowCells, RowClusters, cluster_room,
 };
-use null3d_core::culling::{CULL_CHUNK, NO_BUCKET, batch_ranges};
+use null3d_core::culling::{BucketedCull, CULL_CHUNK, NO_BUCKET, batch_ranges};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::levels::{LevelLink, NO_LINK};
@@ -34,7 +34,9 @@ use crate::frame::{
     FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, bucket_of,
     collect_bucket_keys, put_u32,
 };
-use crate::levels::{BucketKey, expand_level_keys, is_fade_key, key_level, level_key, links_of};
+use crate::levels::{
+    BucketKey, StageWatches, expand_level_keys, is_fade_key, key_level, level_key, links_of,
+};
 use crate::object_ranges::{ObjectRanges, STREAMED_KEY};
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
@@ -89,6 +91,9 @@ const CASTER_MATERIAL: u32 = 1;
 pub(super) struct Bucket {
     /// The engine material id.
     pub(super) material: u32,
+    /// The mesh field of its bucket key: the mesh's engine id, or a level key. The staged levels'
+    /// watches read it to tell which mesh and level a bucket draws.
+    pub(super) mesh_key: u32,
     pub(super) group: u32,
     /// Instances per index list entry, as a shift: 0 for rows, [`CLUSTER_SHIFT`] for clusters.
     pub(super) shift: u32,
@@ -198,6 +203,9 @@ pub(super) struct Layout {
     /// Each bucket's level of detail: its level's error, the bucket of rows of the next coarser
     /// level and its fade bucket, or none for a bucket without levels.
     pub(super) level_links: Vec<LevelLink>,
+    /// Every bucket that a level's rows draw in, or that a distance band's fade draws in, in bucket
+    /// order: the buckets whose entries the staged levels' watches read.
+    pub(super) level_buckets: Vec<u32>,
     /// Each scene slot's bucket, with 0 for the slots that draw in the transparent pass: the rows
     /// whose matrices the resident texture needs.
     pub(super) drawn_slots: Vec<u32>,
@@ -230,6 +238,7 @@ impl Layout {
             vec_bytes(&self.second_draws),
             vec_bytes(&self.scene_buckets),
             vec_bytes(&self.level_links),
+            vec_bytes(&self.level_buckets),
             vec_bytes(&self.drawn_slots),
             vec_bytes(&self.waiting),
         ] {
@@ -267,6 +276,7 @@ impl Layout {
         self.draws.clear();
         self.scene_buckets.clear();
         self.level_links.clear();
+        self.level_buckets.clear();
         self.batches.clear();
         self.waiting.clear();
         self.room = CullRoom::default();
@@ -280,6 +290,43 @@ impl Layout {
 
     pub(super) fn batch(&self, target: u32) -> Option<&BatchSlot> {
         self.batches.iter().find(|slot| slot.id.raw() == target)
+    }
+
+    /// Notes the levels that a view's culling placed entries in, for the staged levels that a
+    /// loader waits on: a level whose bucket lists an entry was picked. A mesh that the layout
+    /// draws at no level restarts its warm-up, so a page that loads a model before it draws it
+    /// keeps its stages. `None` for a view that did not cull this frame resets every warm-up. Costs
+    /// nothing while no loader waits.
+    pub(super) fn note_stage_picks(
+        &self,
+        cull: Option<&BucketedCull>,
+        watches: &mut StageWatches,
+        frame: u64,
+    ) {
+        if watches.is_empty() {
+            return;
+        }
+        let Some(cull) = cull else {
+            watches.hold(frame, |_| false);
+            return;
+        };
+        watches.hold(frame, |mesh| self.draws_mesh(mesh));
+        let starts = cull.bucket_starts();
+        for &bucket in &self.level_buckets {
+            let at = bucket as usize;
+            if starts.get(at + 1).copied().unwrap_or(0) > starts.get(at).copied().unwrap_or(0) {
+                let (mesh, level) = key_level(self.buckets[at].mesh_key);
+                watches.picked(mesh, level);
+            }
+        }
+    }
+
+    /// True when a bucket of the layout draws `mesh` at some level: a source of the mesh exists in
+    /// the scene, whatever the view shows.
+    fn draws_mesh(&self, mesh: u32) -> bool {
+        self.level_buckets
+            .iter()
+            .any(|&bucket| key_level(self.buckets[bucket as usize].mesh_key).0 == mesh)
     }
 
     /// Assigns every source to a data texture and a bucket, from the frame's world state, with
@@ -569,6 +616,7 @@ impl Layout {
         self.draws.clear();
         self.second_draws.clear();
         self.level_links.clear();
+        self.level_buckets.clear();
         for &(key, _) in key_counts.iter() {
             let (pipeline, textures, _, mesh, material, group) = key;
             let mesh = levels
@@ -619,6 +667,7 @@ impl Layout {
                 let bucket = self.buckets.len() as u32;
                 self.buckets.push(Bucket {
                     material,
+                    mesh_key: key.3,
                     group,
                     shift,
                     moves,
@@ -649,6 +698,18 @@ impl Layout {
             }
         }
         self.draws.extend_from_slice(&self.second_draws);
+        // The buckets whose entries belong to a level, or to a distance band's fade: each is a
+        // level's own bucket or a bucket that a level's link names.
+        for (bucket, link) in self.level_links.iter().enumerate() {
+            for target in [link.next, link.fade] {
+                if target != NO_LINK {
+                    self.level_buckets.push(bucket as u32);
+                    self.level_buckets.push(target);
+                }
+            }
+        }
+        self.level_buckets.sort_unstable();
+        self.level_buckets.dedup();
         // A key's bucket of rows; its bucket of clusters is the next one.
         let counts = &*key_counts;
         let bucket_of =

@@ -9,6 +9,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'The governor undoes a step that does not pay: `governor.ts` with `LOWER_TRIAL_MS` and `LOWER_LOSS_PERCENT`, 6 new tests in `governor.test.ts` including a replay of the resize page, 57 of 57; D-237',
 	'M3-R21':
 		"The gate reads its software-renderer pictures from the commit's own CI browser jobs: `bench/ci-browser-jobs.ts`, 12 tests in `bench/lib/gate.test.ts`; D-238",
+	'M3-R19':
+		"The two-step pass's second step read per pass on the cloud iPad at High with the governor on, three runs: D-236's addendum holds the table — the six earlier passes cost 0.7 to 3.4 ms each and the frame's last pass, which draws the second step, cost 20.5 to 34.9 ms; the run is recorded under `.dev/tested-devices/ipad-pro-13-safari/`. The earlier 0.5-scale pair could not be reproduced, and the record says so",
 	'M3-R17':
 		"The develop skill's intake section and its `Search before you hand-roll` table over all eleven foundation add-ons, mirrored in the starter template's AGENTS.md, with three evaluation cases; 22 of 22 skill checks pass",
 	'M3-R3':
@@ -54,6 +56,10 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		"Splats draw through `scene.addFeatureInstances` (`packages/engine/src/scene/feature-instances.ts`); the `splats`, `splats-budget` and `splats-gltf` pictures on both paths; the draw's size in `tools/lib/size-report.ts`",
 	'M3-E3':
 		"`registerGltfExtension` in `packages/engine/src/scene/gltf-extensions.ts`; the `splats-gltf` picture, and E1417's hint for `KHR_gaussian_splatting` in `gltf-extensions.test.ts`",
+	'M3-E4':
+		"Water's soft shores read the scene depth on every path: the `water-shores` picture on WebGPU, compatibility mode and WebGL2, in both reference sets, shows the pale band and foam where the water meets the sand and the island's base; without the depth copy the sheet draws its deep colour everywhere. D-202's addendum names M3-E4a for the case of depth beside textures",
+	'M3-L4':
+		'Staged loading, coarse first: `StageWatches` in `crates/null3d-render/src/levels.rs` holds each stage until a view has picked the level the mesh draws over a 120-frame warm-up, and drops it and every finer stage when none is picked; `tests/image/staged-levels.spec.ts` passes 6 of 6, and its `?far` test shows a stage that never draws is never downloaded; D-228',
 	'M3-F2':
 		"Streaming within budget on a cloud phone and an iPad: `tests/pages/splats-stream.ts` and the `splats` plan in `tests/lib/plans.ts`, with the runs in `.dev/tested-devices/` — the Galaxy S24 held 37,500 of Low's 50,000 and the iPad Pro 13 drew 100,000 on WebGPU and 50,000 on WebGL2, every draw inside the budget",
 	'M3-E5':

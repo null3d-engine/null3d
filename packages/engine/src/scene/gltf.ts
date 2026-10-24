@@ -617,10 +617,50 @@ function startStages(
 }
 
 /**
+ * The frames that the engine draws before a level that it never picked gives up its stage. A
+ * camera that starts far away has time to show the level that the file draws: about two seconds at
+ * 60 frames a second. A page that comes close waits at most that long for its finest stage.
+ */
+const STAGE_WARMUP_FRAMES = 120;
+
+/** How long the loader waits between checks of the levels that the engine picked. */
+const STAGE_POLL_MS = 100;
+
+/**
+ * True once a view has picked the levels that the node's meshes draw now, or false when the warm-up
+ * passes with no pick: a level that never draws cannot hand over to a finer one, so the stage and
+ * its finer ones would buy nothing. A frame that draws no source of a mesh restarts that mesh's
+ * warm-up, so a page that loads a model before it instantiates it keeps its stages.
+ */
+async function stageDraws(
+	context: GltfContext,
+	prefab: Prefab,
+	meshes: readonly MeshGeometry[],
+): Promise<boolean> {
+	const { glue } = context.core;
+	const ids = meshes.filter((mesh) => mesh.live).map((mesh) => mesh.id);
+	if (ids.length === 0) return false;
+	for (const id of ids) glue.watchStageLevels(id);
+	for (;;) {
+		if (!prefab.live) return false;
+		let frames = 0;
+		for (const id of ids) {
+			// Bit 0 is the level that the mesh draws now: the pending stage would replace it.
+			if ((glue.stageLevelPicks(id) & 1) !== 0) return true;
+			frames = Math.max(frames, glue.stageFrames(id));
+		}
+		if (frames >= STAGE_WARMUP_FRAMES) return false;
+		await new Promise((resolve) => setTimeout(resolve, STAGE_POLL_MS));
+	}
+}
+
+/**
  * Downloads one node's staged levels, coarsest first, and gives the node's meshes each level as it
  * arrives: the level that the mesh drew becomes a level of the mesh, and the arriving one takes its
- * place, so the objects that already draw the mesh refine without a new object. A mesh that cannot
- * take another triangle list keeps the level it has, and its stages stop.
+ * place, so the objects that already draw the mesh refine without a new object. The first stage
+ * always arrives, and each later one waits until the level loaded now has drawn. A level that never
+ * draws takes its stage, and every finer one, out of the download. A mesh that cannot take another
+ * triangle list keeps the level it has, and its stages stop.
  */
 async function loadStages(
 	context: GltfContext,
@@ -637,8 +677,11 @@ async function loadStages(
 	// is the one that the file or the stage before it gave.
 	let drawn = node.error;
 	let loaded = 1;
-	for (const stage of node.stages) {
+	for (const [index, stage] of node.stages.entries()) {
 		if (loaded >= maxLevels) return;
+		// The stage after the file's own level always arrives: it is what the file draws until it
+		// does. Each finer stage waits for the level loaded now to be picked.
+		if (index > 0 && !(await stageDraws(context, prefab, node.meshes))) return;
 		const blob = await context.download(new URL(stage.url, address), call);
 		const bytes = await blob.arrayBuffer();
 		if (!prefab.live) return;
@@ -651,6 +694,7 @@ async function loadStages(
 			return;
 		}
 		loaded += 1;
+		let taken = false;
 		for (const [k, mesh] of node.meshes.entries()) {
 			const current = indices[k];
 			const list = lists[k] as Uint32Array;
@@ -672,7 +716,10 @@ async function loadStages(
 				return;
 			}
 			indices[k] = list;
+			taken = true;
 		}
+		// No mesh of the node took the list, so no finer stage would either.
+		if (!taken) return;
 		drawn = stage.error;
 	}
 }
