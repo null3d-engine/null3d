@@ -221,7 +221,8 @@ const leaves = plantMaterial(ctx, {
 ```
 
 - **Bark** comes from stretched cells warped by noise, with cracks between them and fibres up the trunk. It tiles around and along a branch.
-- **Leaves** come from outlines with veins written into a height field, which the surface map's normal follows. Its blue channel holds the leaf's coverage, and its alpha its thickness.
+- **Leaves** come from outlines cut with teeth or lobes, and veins written into a height field, which the surface map's normal follows. Its blue channel holds the leaf's coverage, and its alpha its thickness.
+- **A leaf cell holds more than one leaf.** The leaves differ in outline, colour and veins, and a few have a piece bitten out of an edge. A crown therefore does not read as one leaf shape tiled over and over.
 - **The leaf block holds eight cells**: four leaf clusters, a needle spray, a frond, a blade and a broad leaf. `leafCellFor` picks one from a species record.
 - **The colour map multiplies the species' colour.** It holds the veins, the shade of each leaf and the lift of its ridges, so two species that share a cell still differ.
 - **The engine makes each texture's mip levels.** A masked material fades its cut edges with alpha to coverage, so a leaf card that shrinks keeps the share of the picture that its leaves cover, and a crown far away stays as dense as it is up close.
