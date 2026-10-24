@@ -2703,6 +2703,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		tiers: ['webgpu', 'webgl2'],
 	},
+	// A custom material's vertex offset that reads the texture of a compute pass, in the main view
+	// and in its shadow: the pass steps from its old value to its held one at the hold time, so a
+	// pass that ran after the shadow pass leaves the shadow a metre behind the box. WebGL2 runs the
+	// pass's fragment form, which writes the same texture.
+	{
+		name: 'compute-vertex-offset',
+		sketch: 'tests/pages/sketches/compute-vertex-offset-sketch.ts',
+		hold: 0.5,
+		tiers: ['webgpu', 'webgl2'],
+	},
 	// Gaussian splats from an SPZ file that the sketch makes: a knot of splats above a ground, with a
 	// bar in front of part of it, so the picture shows the splats hiding behind a mesh and fading where
 	// they meet the ground. The selection runs on a job worker before the held frame draws.
