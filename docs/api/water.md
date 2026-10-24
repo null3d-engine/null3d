@@ -102,7 +102,7 @@ the water reaches, the depth of the bed at a point, and the current there.
 | `reflectionEvery` | A frame count from 1 for each preset | 2 on Low and Medium, 1 on High and Ultra | The frames between two draws of the reflection |
 | `layers` | A 32-bit mask | The camera's layers | The layers that the reflection draws. Leave out what lies on or under the water |
 | `reflectionScale` | `1`, `0.5` or `0.25` | 1 | The reflection's size as a share of the render size each way |
-| `mesh` | `{ step, across, cell }` | 2, 8 and 2 | The meters between two cross sections along a river, the sections across it, and a lake's grid cell |
+| `mesh` | `{ step, across, cell }` | 2, 16 and 2 | The meters between two cross sections along a river, the sections across it, and a lake's grid cell |
 | `material` | The standard material values | None | The surface's material, such as its volume's tint and its thickness |
 
 ## The water object

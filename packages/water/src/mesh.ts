@@ -6,8 +6,8 @@ import type { RiverShape, WaterBody, WaterShape } from './shape';
 
 /** The most meters between two cross sections of a river's mesh. */
 const STEP = 2;
-/** The cross sections that a river's mesh takes across its width. */
-const ACROSS = 8;
+/** The cross sections that a river's mesh takes across its width, fine enough for the short waves. */
+const ACROSS = 16;
 /** The meters between two lines of a lake's mesh grid. */
 const CELL = 2;
 /** How far past a river's half width its mesh reaches, as a factor, which covers the shore band. */
@@ -21,7 +21,7 @@ const REACH = 1.36;
 export interface MeshDetail {
 	/** The most meters between two cross sections along a river. It is 2 by default. */
 	step?: number;
-	/** The sections across a river's width. It is 8 by default. */
+	/** The sections across a river's width. It is 16 by default. */
 	across?: number;
 	/** The meters between two lines of a lake's grid. It is 2 by default. */
 	cell?: number;
