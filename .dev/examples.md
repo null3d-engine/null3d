@@ -466,7 +466,7 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 
 - **No line limit:** a showcase scene is not a feature demo, so the 150-line limit does not apply. It lives in `examples/showcase/<name>/`, and its code link points to the folder.
 - **Shared code:** the showcase scenes share a stage (`examples/lib/stage.ts`: moods and times of day) and generators of detail (`examples/lib/procedural.ts`: textures made in code, terrain and rocks).
-- **Models:** terrain, stones, grass and water are made in code. Trees, plants and other organic hero models are built by script in Blender, and live in the sample-assets repository. A showcase scene's `assets` field says so.
+- **Models:** terrain, stones, grass and water are made in code. Trees and plants come from the vegetation add-on once it exists, generated at first use ([D-241](decisions/D-241-vegetation-foundation.md)). Until then they, and other organic hero models, are built by script in Blender, and live in the sample-assets repository. A showcase scene's `assets` field says so.
 - **Interaction:** a showcase scene takes the user's input while it runs. Its camera is the cinematic route above, and `c` hands the camera to the user, who then flies with the keys, the mouse or a touch drag, without a run from the scripted pose.
 - **The look:** each scene must look very beautiful, with shaders, effects, particles and complex geometry ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
 - **Engine features first:** each scene waits for the engine features it needs. The owner moved them before 1.0, in [D-117](decisions/D-117-showcase-features-before-1-0.md), [D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md) and [D-142](decisions/D-142-more-techniques-before-1-0.md). The table below lists them.
@@ -673,6 +673,8 @@ Creek is a small stream in a grassy valley (M2-EX8). The first phase, on 10 Octo
 | Moods (`examples/lib/stage.ts`) | Afternoon, golden hour, blue hour and night from `timeOfDay`, lit by the sky's environment, and a studio lit by the built-in room. A mood can thicken the fog into a haze: golden hour and blue hour do |
 
 **The water code is temporary.** M3-F5's water add-on, `@null3d/water`, takes the Creek's river with its view from under the water. Once it exists, the Creek draws its water through the add-on, and `water.ts` and `underwater.ts` are deleted, so the scene keeps no water code of its own (owner, 20 October 2026, [D-173](decisions/D-173-addon-hooks.md)).
+
+**The plant code and models are temporary.** The vegetation add-on of M3-V4 to M3-V9 grows Creek's trees, ferns, hostas, shrubs, flowers and grass at first use. It places them over the whole valley by ecological rules and moves them all in one wind field. Once it exists, Creek draws its plants through it (M3-V11). Its Blender plant models, their script and their files of about 3.1 MB are deleted. So is the scene's own plant code: `grass.ts`, `models.ts` and the plant parts of `flora.ts`. The floating leaves and the fireflies stay (owner, 24 October 2026, [D-241](decisions/D-241-vegetation-foundation.md)).
 
 The choices, and why:
 

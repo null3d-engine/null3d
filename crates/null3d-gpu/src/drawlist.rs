@@ -823,10 +823,10 @@ pub mod layout {
     /// depth, the motion target and the two histories at bindings 1 to 5, and the linear sampler
     /// of the histories at 6. The scene color, the depth and the motion read with `textureLoad`;
     /// the histories read with the sampler.
-    pub const TAA: u32 = 54;
+    pub const TAA: u32 = 57;
     /// [`TAA`] with a multisampled scene depth, whose samples the resolve reads. Only WebGPU has
     /// it.
-    pub const TAA_MS: u32 = 55;
+    pub const TAA_MS: u32 = 58;
     /// The final pass with custom effects folded into it: [`FINAL`]'s bindings, then the effects'
     /// uniform buffer at binding 4 and the scene's depth, or a blank texture, at binding 5, as
     /// plain floats.
@@ -2517,6 +2517,67 @@ pub fn decode(words: &[u32]) -> impl Iterator<Item = Result<Command<'_>, DecodeE
     })
 }
 
+/// The bind group layouts that the generated table lists, by name. Each id names one layout: two
+/// layouts at one id make the render worker refuse to start.
+const GENERATED_LAYOUTS: &[(&str, u32)] = &[
+    ("FRAME", layout::FRAME),
+    ("CULL", layout::CULL),
+    ("DRAWS", layout::DRAWS),
+    ("INSTANCES", layout::INSTANCES),
+    ("FINAL", layout::FINAL),
+    ("TEXTURES", layout::TEXTURES),
+    ("MATERIAL_MAPS", layout::MATERIAL_MAPS),
+    ("MATERIAL_MAPS_PARALLAX", layout::MATERIAL_MAPS_PARALLAX),
+    ("FRAME_PARALLAX", layout::FRAME_PARALLAX),
+    ("DEPTH", layout::DEPTH),
+    ("LIGHT_CLUSTERS", layout::LIGHT_CLUSTERS),
+    ("BLOOM", layout::BLOOM),
+    ("FINAL_BLOOM", layout::FINAL_BLOOM),
+    ("JOINTS", layout::JOINTS),
+    ("SKIN", layout::SKIN),
+    ("COMPUTE_RGBA16_FLOAT", layout::COMPUTE_RGBA16_FLOAT),
+    ("COMPUTE_R32_FLOAT", layout::COMPUTE_R32_FLOAT),
+    ("COMPUTE_RGBA8_UNORM", layout::COMPUTE_RGBA8_UNORM),
+    ("COMPUTE_INSTANCE_BUFFERS", layout::COMPUTE_INSTANCE_BUFFERS),
+    ("DEPTH_PYRAMID", layout::DEPTH_PYRAMID),
+    ("AO_DEPTH", layout::AO_DEPTH),
+    ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
+    ("AO", layout::AO),
+    ("BACKGROUND", layout::BACKGROUND),
+    ("INSTANCE_INDEX", layout::INSTANCE_INDEX),
+    ("EFFECT", layout::EFFECT),
+    ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
+    ("EFFECT_BLOOM", layout::EFFECT_BLOOM),
+    ("EFFECT_BLOOM_DEPTH_MS", layout::EFFECT_BLOOM_DEPTH_MS),
+    ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
+    ("FINAL_EFFECTS_DEPTH_MS", layout::FINAL_EFFECTS_DEPTH_MS),
+    ("VIEW_COPY", layout::VIEW_COPY),
+    ("ACCUMULATE", layout::ACCUMULATE),
+    ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
+    ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
+    ("MOTION_FRAME", layout::MOTION_FRAME),
+    ("SSR_REDUCE", layout::SSR_REDUCE),
+    ("SSR_TRACE", layout::SSR_TRACE),
+    ("WEIGHTED_COMPOSITE", layout::WEIGHTED_COMPOSITE),
+    ("WEIGHTED_DEPTH_MS", layout::WEIGHTED_DEPTH_MS),
+    ("TRANSMISSION_COPY_MS", layout::TRANSMISSION_COPY_MS),
+    ("CLUSTER_CULL", layout::CLUSTER_CULL),
+    ("TAA", layout::TAA),
+    ("TAA_MS", layout::TAA_MS),
+    ("SUBSURFACE_BLUR", layout::SUBSURFACE_BLUR),
+    ("SUBSURFACE_COMPOSITE", layout::SUBSURFACE_COMPOSITE),
+    ("SUBSURFACE_COMPOSITE_MS", layout::SUBSURFACE_COMPOSITE_MS),
+    ("DECAL_DEPTH", layout::DECAL_DEPTH),
+    ("DECAL_DEPTH_MS", layout::DECAL_DEPTH_MS),
+    ("DECAL_FRAME", layout::DECAL_FRAME),
+    ("MATERIAL_SCENE", layout::MATERIAL_SCENE),
+    ("PARTICLE", layout::PARTICLE),
+    ("PARTICLE_SCENE_DEPTH", layout::PARTICLE_SCENE_DEPTH),
+    ("PARTICLE_DEPTH_MS", layout::PARTICLE_DEPTH_MS),
+    ("ATMOSPHERE", layout::ATMOSPHERE),
+    ("EXPOSURE", layout::EXPOSURE),
+];
+
 /// The TypeScript constants for the replay loop, generated from the definitions above.
 pub fn typescript_constants() -> String {
     let mut out = String::from(
@@ -2626,67 +2687,7 @@ pub fn typescript_constants() -> String {
                 ("SAMPLER", resource_kind::SAMPLER),
             ],
         ),
-        (
-            "LAYOUT",
-            &[
-                ("FRAME", layout::FRAME),
-                ("CULL", layout::CULL),
-                ("DRAWS", layout::DRAWS),
-                ("INSTANCES", layout::INSTANCES),
-                ("FINAL", layout::FINAL),
-                ("TEXTURES", layout::TEXTURES),
-                ("MATERIAL_MAPS", layout::MATERIAL_MAPS),
-                ("MATERIAL_MAPS_PARALLAX", layout::MATERIAL_MAPS_PARALLAX),
-                ("FRAME_PARALLAX", layout::FRAME_PARALLAX),
-                ("DEPTH", layout::DEPTH),
-                ("LIGHT_CLUSTERS", layout::LIGHT_CLUSTERS),
-                ("BLOOM", layout::BLOOM),
-                ("FINAL_BLOOM", layout::FINAL_BLOOM),
-                ("JOINTS", layout::JOINTS),
-                ("SKIN", layout::SKIN),
-                ("COMPUTE_RGBA16_FLOAT", layout::COMPUTE_RGBA16_FLOAT),
-                ("COMPUTE_R32_FLOAT", layout::COMPUTE_R32_FLOAT),
-                ("COMPUTE_RGBA8_UNORM", layout::COMPUTE_RGBA8_UNORM),
-                ("COMPUTE_INSTANCE_BUFFERS", layout::COMPUTE_INSTANCE_BUFFERS),
-                ("DEPTH_PYRAMID", layout::DEPTH_PYRAMID),
-                ("AO_DEPTH", layout::AO_DEPTH),
-                ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
-                ("AO", layout::AO),
-                ("BACKGROUND", layout::BACKGROUND),
-                ("INSTANCE_INDEX", layout::INSTANCE_INDEX),
-                ("EFFECT", layout::EFFECT),
-                ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
-                ("EFFECT_BLOOM", layout::EFFECT_BLOOM),
-                ("EFFECT_BLOOM_DEPTH_MS", layout::EFFECT_BLOOM_DEPTH_MS),
-                ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
-                ("FINAL_EFFECTS_DEPTH_MS", layout::FINAL_EFFECTS_DEPTH_MS),
-                ("VIEW_COPY", layout::VIEW_COPY),
-                ("ACCUMULATE", layout::ACCUMULATE),
-                ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
-                ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
-                ("MOTION_FRAME", layout::MOTION_FRAME),
-                ("SSR_REDUCE", layout::SSR_REDUCE),
-                ("SSR_TRACE", layout::SSR_TRACE),
-                ("WEIGHTED_COMPOSITE", layout::WEIGHTED_COMPOSITE),
-                ("WEIGHTED_DEPTH_MS", layout::WEIGHTED_DEPTH_MS),
-                ("TRANSMISSION_COPY_MS", layout::TRANSMISSION_COPY_MS),
-                ("CLUSTER_CULL", layout::CLUSTER_CULL),
-                ("TAA", layout::TAA),
-                ("TAA_MS", layout::TAA_MS),
-                ("SUBSURFACE_BLUR", layout::SUBSURFACE_BLUR),
-                ("SUBSURFACE_COMPOSITE", layout::SUBSURFACE_COMPOSITE),
-                ("SUBSURFACE_COMPOSITE_MS", layout::SUBSURFACE_COMPOSITE_MS),
-                ("DECAL_DEPTH", layout::DECAL_DEPTH),
-                ("DECAL_DEPTH_MS", layout::DECAL_DEPTH_MS),
-                ("DECAL_FRAME", layout::DECAL_FRAME),
-                ("MATERIAL_SCENE", layout::MATERIAL_SCENE),
-                ("PARTICLE", layout::PARTICLE),
-                ("PARTICLE_SCENE_DEPTH", layout::PARTICLE_SCENE_DEPTH),
-                ("PARTICLE_DEPTH_MS", layout::PARTICLE_DEPTH_MS),
-                ("ATMOSPHERE", layout::ATMOSPHERE),
-                ("EXPOSURE", layout::EXPOSURE),
-            ],
-        ),
+        ("LAYOUT", GENERATED_LAYOUTS),
         ("PERMUTATION", &permutation::NAMES),
         (
             "VERTEX",
@@ -3369,6 +3370,18 @@ mod tests {
         assert_eq!(commands[3].operands[9..11], [0, 24]);
         assert_eq!(f32::from_bits(commands[7].operands[5]), 1.0);
         assert_eq!(commands[6].operands[5..10], [5, 0, 0, 40, 1]);
+    }
+
+    /// The generated table names each bind group layout once: two layouts at one id make the
+    /// render worker refuse to start with E1405 when the pipelines are made.
+    #[test]
+    fn generated_layout_ids_are_unique() {
+        let mut ids = std::collections::BTreeMap::new();
+        for &(name, id) in GENERATED_LAYOUTS {
+            if let Some(first) = ids.insert(id, name) {
+                panic!("{name} and {first} both take layout {id}");
+            }
+        }
     }
 
     /// Keeps the generated TypeScript constants equal to the Rust definitions.
