@@ -198,16 +198,40 @@ describe('the WebGPU pipeline layouts', () => {
 		expect(stageCounts(entries, STAGES.fragment).sampledTextures).toBe(16);
 	});
 
+	it('give a depth-reading material with maps a maps group with one slot fewer', () => {
+		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
+		const id = G.TEMPLATE_CUSTOM_FIRST + 7;
+		pipelines.defineCustom(id, {
+			...custom(undefined, G.SIZE_MAP_SLOTS - 1, 0),
+			sceneDepth: true,
+		});
+		const layout = layoutOf(renderDescriptor(pipelines, id, 0));
+		const groups = [...layout.bindGroupLayouts] as unknown as GPUBindGroupLayoutDescriptor[];
+		expect(groups.map((group) => group.label)).toEqual([
+			'frame',
+			'material maps with scene depth',
+			'material scene depth',
+		]);
+		const maps = groups[1];
+		const bindings = [...(maps?.entries ?? [])].map((entry) => entry.binding);
+		// The shader numbers its own textures from the first binding and their samplers from the
+		// slot count, so the group keeps those numbers and leaves the last slot's pair out.
+		expect(bindings).toEqual([0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14]);
+		const entries = groups.flatMap((group) => [...group.entries]);
+		expect(stageCounts(entries, STAGES.fragment).sampledTextures).toBe(16);
+	});
+
 	it('keep custom materials and effects with textures within the default limits', () => {
 		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
 		const meshBits = G.PERMUTATION_SKIN | G.PERMUTATION_INSTANCE_INDEX | G.PERMUTATION_CASTER;
 		const shaders = [
 			custom(undefined, 0, meshBits),
 			custom(undefined, G.SIZE_MAP_SLOTS, meshBits),
-			// A material that reads the scene's depth takes the group after the frame's, and
-			// `materials.shader` refuses one that also declares textures, so its fragment stage
-			// stays within the default limit.
+			// A material that reads the scene's depth takes the group after the frame's and a maps'
+			// group with one slot fewer, which `materials.shader` matches by refusing an eighth
+			// texture, so its fragment stage stays within the default limit.
 			{ ...custom(undefined, 0, meshBits), sceneDepth: true },
+			{ ...custom(undefined, G.SIZE_MAP_SLOTS - 1, meshBits), sceneDepth: true },
 			custom('effect', G.SIZE_MAP_SLOTS, G.PERMUTATION_DEPTH_MULTISAMPLED),
 			custom('effectGroup', 0, G.PERMUTATION_DEPTH_MULTISAMPLED),
 			custom('effectFold', 0, G.PERMUTATION_DEPTH_MULTISAMPLED),

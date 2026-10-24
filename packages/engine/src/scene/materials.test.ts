@@ -1168,18 +1168,29 @@ describe('materials.shader', () => {
 		expect(unused.message).toStartWith(
 			"E1217: materials.shader() got the scene input 'sceneDepth', but its WGSL never calls sceneDepth or sceneDistance.",
 		);
-		// The depth group and the maps' group would pass WebGPU's sampled textures in the
-		// fragment stage together.
+		// A material that reads the depth keeps seven of the maps' eight slots, so the copy fits
+		// the fragment stage beside them.
+		const two = [
+			{ name: 'foam', offset: 0 },
+			{ name: 'mirror', offset: 1 },
+		];
+		materials.shader({
+			wgsl: { ...compiledMaterial([], two), sceneDepth: true },
+			sceneInputs: ['sceneDepth'],
+			textures: { foam: layered(1), mirror: layered(2) },
+		});
+		const eight = Array.from({ length: 8 }, (_, slot) => ({ name: `map${slot}`, offset: slot }));
 		const textured = thrown(() =>
 			materials.shader({
-				wgsl: { ...compiledMaterial([], [{ name: 'detail', offset: 0 }]), sceneDepth: true },
+				wgsl: { ...compiledMaterial([], eight), sceneDepth: true },
 				sceneInputs: ['sceneDepth'],
-				textures: { detail: texture(1) },
+				textures: Object.fromEntries(eight.map(({ name }) => [name, layered(1)])),
 			}),
 		);
 		expect(textured.message).toStartWith(
-			"E1217: materials.shader() got WGSL that reads the scene's depth and declares textures of its own.",
+			"E1217: materials.shader() got WGSL that reads the scene's depth and declares 8 textures.",
 		);
+		expect(textured.message).toContain('Drop 1 of the textures');
 	});
 
 	test('refuses the scene inputs that a custom material does not read yet', () => {
