@@ -80,8 +80,8 @@ The base darkens in the groove and the coat's normal bends into it, so a highlig
 seam.
 
 The **weave** is a 2 x 2 twill of rounded tows. A tow's normal slopes across it and stays level
-along it, so the highlight runs along the tow and the two directions of the twill shine their own
-way. The gaps between the tows draw darker and rougher.
+along it. The highlight therefore runs along the tow, and the two directions of the twill shine
+their own way. The gaps between the tows draw darker and rougher.
 
 ## Cost
 
