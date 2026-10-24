@@ -59,6 +59,8 @@ const NOTES: Readonly<Record<string, string>> = {
 		'the WebGPU path draws the patches, but D-213 records the WebGL2 multi-draw path, the whole-level fallback and the GPU time as not built',
 	'M3-R22':
 		"the shader cache now reuses every entry when a compiler change leaves the compiled program identical: 0 compiled and 79 reused in 19 s, where the same change cost an hour, and a real shader change compiles exactly one. The task's own done-when is the two checks' times in CI, which are still unmeasured",
+	'M3-E9':
+		"the engine half is built and CI has compared its pictures: the count word reaches the main view's indirect entry after the last compute dispatch, an unculled draw reads the add-on's rows and draws that count, and the compute picture fills no row on the CPU. What the task still wants: a first user, since the splats cannot take the hook and V8's blade path is the one in sight; GPU counts in the shadow views, which today take the page's count; and the allocation check and the no-draw-before-ready test from its design note",
 	'M3-F3':
 		'dropped with the temporal resolve it waited on (D-206); the owner may change the ruling',
 	'M3-F10': 'dropped with the temporal resolve it needs (D-206); the owner may change the ruling',
