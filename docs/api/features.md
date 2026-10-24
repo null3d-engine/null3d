@@ -252,12 +252,14 @@ Adapters turn a checked description into work in the frame. Three exist:
 - **Instance draws:** [`scene.addComputeInstances(description, options)`](feature-instances.md) draws a capacity of instances from the add-on's own buffer. The count comes from the GPU on WebGPU, and from the page on WebGL2. The adapter places the main view alone, at the opaque point.
 - **Compute passes:** [`render.addPass({ kind: 'compute', description, ... })`](render.md#compute-passes) runs the add-on's compute shader over a storage texture, which materials, effects and passes sample in the same frame. The adapter places the main view alone, binds no scene resource, and publishes the description's one output. A WebGL2 page runs the pass's fragment form, or the call throws.
 
+A sky layer is not a frame feature: [`scene.setSkyLayer`](scene.md#sky-layers) draws it as the background's own work, and its function reads the core sky's values (D-242).
+
 The other hooks still need their own payload, and they arrive with the add-on that uses them first:
 
 | Hook | What the description does not yet give it |
 | --- | --- |
 | Material lobes, baked-data formats and glTF extension handlers | They are not frame features, so each needs its own hook. |
-| Scene inputs, sky layers, presets and stats | Each needs its own declaration: a depth input behind a material, the background's CPU light, or a GPU timing scope. |
+| Scene inputs, presets and stats | Each needs its own declaration: a depth input behind a material, or a GPU timing scope. |
 
 ## Checks
 

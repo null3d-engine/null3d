@@ -235,6 +235,46 @@ The first background of each kind downloads its shaders, `'background'`, `'sky'`
 
 Development builds throw E1203 for a number that is not finite, and E1108 for a number out of its range. They throw E1213 for `blur` on a background that is not an environment, and for `rotation` on a texture or the sky. Every build throws E1101 for a background that was destroyed. [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) says how each background draws, and what it costs.
 
+### Sky layers
+
+`scene.setSkyLayer({ wgsl })` draws an add-on's own layer over the sky: the top of the sky, a second layer of clouds, an aurora or a space backdrop. The layer's WGSL declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer` and the null3D Vite plugin builds it into the engine's sky-layer template, which owns the box around the camera, the bindings, the depth state and the blend. The layer draws right after the background, in the pixels that no object covers, on WebGPU, WebGL2 and in compatibility mode.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+import curtain from './curtain.wgsl';
+
+export default defineSketch(({ scene }) => {
+  scene.setBackground({ sky: { cloudCoverage: 0.1 } });
+  const layer = scene.setSkyLayer({ wgsl: curtain, sun: 0.2 });
+  return {
+    onUpdate(time) {
+      layer.set({ opacity: 0.8 + 0.2 * Math.sin(time.now) });
+    },
+  };
+});
+```
+
+| Option | Takes | Default | What it sets |
+| --- | --- | --- | --- |
+| `wgsl` | Compiled WGSL that declares `fn skyLayer` | | The layer's function, from a `.wgsl` file or a tagged template literal |
+| `opacity` | 0 to 1 | 1 | How much of the layer's color draws, which multiplies its coverage |
+| `sun` | 0 to 1 | 0 | The share of the sun that the layer hides. The core sky dims its disc and glow by the rest |
+
+The layer's function reads one input and returns one value:
+
+| Field | What it holds |
+| --- | --- |
+| `SkyLayerInput.direction` | The fragment's view ray in the world, from the camera |
+| `SkyLayerInput.clouds` | The core sky's cloud coverage, density, elevation and scale, as the four numbers |
+| `SkyLayerInput.time` | The sketch time in seconds |
+| `SkyLayerInput.sun` | The share of the sun that the layer hides, from 0 to 1 |
+| `SkyLayer.color` | The layer's linear color, which the pass tone maps with the scene's exposure |
+| `SkyLayer.coverage` | How much of the pixel the layer covers, from 0 to 1. 0 draws nothing there |
+
+A layer declares no uniforms, textures or bindings of its own: the engine binds the frame and the layer's values, and the add-on's numbers are constants in its WGSL. It draws in the camera's view, in scene passes and in reflections, and it draws nothing where the background draws nothing, as in a debug view. A second call replaces the layer, `set` changes its values, and `scene.clearSkyLayer()` removes it and gives the core sky its full sun back.
+
+The scene's environment map and its diffuse light come from the core sky alone, so a layer adds no light to the scene. Give a scene that a layer should light a light of its own. The aurora example add-on in `examples/addons/aurora/` draws one.
+
 ## Multiple views
 
 `scene.createView({ camera, rect })` draws the scene again from another camera, into a rectangle of the canvas, after the camera's view and in the same frame. Use it for a split screen or a picture in picture. `rect` is `[x, y, width, height]` as fractions of the canvas's width and height from its top-left corner, so `[0.5, 0, 0.5, 1]` is the right half.
