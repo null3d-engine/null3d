@@ -9,6 +9,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'The governor undoes a step that does not pay: `governor.ts` with `LOWER_TRIAL_MS` and `LOWER_LOSS_PERCENT`, 6 new tests in `governor.test.ts` including a replay of the resize page, 57 of 57; D-237',
 	'M3-R21':
 		"The gate reads its software-renderer pictures from the commit's own CI browser jobs: `bench/ci-browser-jobs.ts`, 12 tests in `bench/lib/gate.test.ts`; D-238",
+	'M3-E2':
+		"The task hook and the splats add-on's distance selection run on the job workers on both GPU paths, and `bun run bench:allocation --splats` judges what they allocate per frame: 653.5 bytes on the sketch worker and 163.8 on the render worker on the Mac's WebGL2, 1,119.1 and 91.9 on the software renderer, with every per-frame place inside its budget. The check found two production-build faults that are fixed: a TypeScript task module reached the worker as raw source, and Vite's preload helper read `document` in a sketch worker, both with build tests in the plugin",
 	'M3-V3':
 		"A vertex offset reads a compute pass's output in every pass that draws its material: `DrawnViews` masks in `frame_graph.rs` order the compute step before the shadow, motion and pick passes that sample it, and `frame.lastFrame` in `builtins.wgsl` lets the motion build's second call read the frame before's row. `a_compute_pass_runs_before_each_pass_that_draws_a_material_reading_it` holds the three ordering edges; the `compute-vertex-offset` picture draws the box and its shadow on WebGPU and WebGL2 with four references; the motion test reads 2 pixels a frame on the plane and 0 on the wall on all three tiers; D-240's and D-140's addenda",
 	'M3-R20':

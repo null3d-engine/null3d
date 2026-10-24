@@ -35,14 +35,14 @@ const PARTIAL: Readonly<Record<string, string>> = {
 const ON_BRANCH = new Set(['M3-E9', 'M3-R14']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
-const INCOMPLETE = new Set(['M3-B1', 'M3-E2', 'M3-E6', 'M3-E8', 'M3-L1', 'M3-L3', 'M3-R12']);
+const INCOMPLETE = new Set(['M3-B1', 'M3-E6', 'M3-E8', 'M3-L1', 'M3-L3', 'M3-R12']);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
 	'M3-A9':
 		'the hero tile and its cost figures are in: a still hero adds no pass, a moving one adds a depth pass of 0.028 to 0.037 ms, and WebGL2 reads the tile for 0.27 ms less than the cascades (D-219)',
 	'M3-E2':
-		"the task hook and the splats add-on's distance selection run on the job workers on both paths; the allocation check the task asks for is missing",
+		"the task hook and the splats add-on's distance selection run on the job workers on both paths, and the allocation check judges them: 653.5 bytes a frame on the sketch worker and 163.8 on the render worker on the Mac, 1,119.1 and 91.9 on the software renderer, with every per-frame place inside its budget. The check found two production-build faults, both fixed: a task module reached the worker as raw source, and Vite's preload helper read `document` in the sketch worker",
 	'M3-E6':
 		"splats' budget follows the preset and reaches the overlay; water's reflection cadence, the other first user, is not on the branch",
 	'M3-E8':
