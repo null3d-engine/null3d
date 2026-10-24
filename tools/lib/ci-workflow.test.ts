@@ -9,6 +9,7 @@ import { describe, expect, it } from 'bun:test';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { PRODUCTION_BUILD_PAGES, PRODUCTION_BUILD_TESTS } from '../../tests/lib/server.ts';
+import { HEARTBEAT_SECONDS } from '../../tests/pages/lib/runner-rules.ts';
 
 interface Step {
 	id?: string;
@@ -455,6 +456,17 @@ describe("CI's workflow", () => {
 
 	it('gives each download of the real-browser jobs a limit of its own and one more try', () => {
 		for (const name of ['real-browsers', 'real-browsers-prebuilt']) downloadsRetry(name);
+	});
+
+	it('caps how long a real-browser runner page may send nothing, at several heartbeats', () => {
+		for (const name of ['real-browsers', 'real-browsers-prebuilt']) {
+			const runs = (jobNamed(name).steps ?? []).filter(({ run }) =>
+				run?.includes('bun tests/real-browsers.ts'),
+			);
+			expect(runs, name).toHaveLength(1);
+			const cap = Number(runs[0]?.run?.match(/--quiet-cap (\d+)/)?.[1]);
+			expect(cap, name).toBeGreaterThanOrEqual(4 * HEARTBEAT_SECONDS);
+		}
 	});
 
 	function downloadsRetry(name: string): void {
