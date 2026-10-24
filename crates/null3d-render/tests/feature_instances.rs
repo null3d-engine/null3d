@@ -8,7 +8,7 @@ use common::World;
 use null3d_core::scene::{Command, flags};
 use null3d_gpu::drawlist::{Op, buffer_usage as usage_flags};
 use null3d_gpu::mock::MockBackend;
-use null3d_render::feature_instances::INSTANCE_BYTES;
+use null3d_render::feature_instances::{INSTANCE_BYTES, INSTANCE_FLOATS};
 use null3d_render::frame::FrameBuilder;
 use null3d_render::gpu_driven::{feature_buffer_ids, view_indirect_buffer};
 use null3d_render::view::ViewId;
@@ -108,6 +108,37 @@ fn the_count_reaches_the_draw_after_the_compute_step() {
     // The last copy follows the last compute dispatch: a count that a compute pass writes is
     // final before the pass that reads it.
     assert!(last_copy > dispatch);
+}
+
+#[test]
+fn the_page_rows_reach_the_add_ons_buffer() {
+    let mut world = World::new();
+    let handle = world.objects[0];
+    world.scene.set_local_radius(handle, 1.0).unwrap();
+    world
+        .scene
+        .apply_commands(
+            &[Command::set_flags(
+                handle,
+                flags::CUSTOM_BOUNDS,
+                flags::CUSTOM_BOUNDS,
+            )],
+            1,
+        )
+        .unwrap();
+    let slot = world.scene.resolve(handle).unwrap();
+    let table = world.renderer.settings_mut().feature_instances_mut();
+    let id = table.create(slot, 8).unwrap();
+    let values = vec![0.5f32; 2 * INSTANCE_FLOATS as usize];
+    assert!(table.set_rows(id, &values, 0, 2));
+    let (instances, _) = feature_buffer_ids(id);
+    world.record(true);
+    let commands = world.commands();
+    // The rows that the page wrote reach the add-on's instance buffer at its start.
+    assert!(commands.iter().any(|(op, o)| *op == Op::WriteBuffer
+        && o[0] == instances
+        && o[1] == 0
+        && o[3] == 2 * INSTANCE_BYTES));
 }
 
 #[test]

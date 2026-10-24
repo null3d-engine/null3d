@@ -3976,6 +3976,8 @@ pub fn set_vertex_draw_counts(id: u32, vertices: u32, instances: u32) -> u32 {
 #[wasm_bindgen(js_name = createFeatureInstances)]
 pub fn create_feature_instances(slot: u32, capacity: u32) -> u32 {
     value_with_engine(|e| {
+        // The draw gets a bucket of its own, so the layout is rebuilt for the frame after it.
+        e.structure_changed = true;
         e.renderer
             .settings_mut()
             .feature_instances_mut()
@@ -3988,6 +3990,8 @@ pub fn create_feature_instances(slot: u32, capacity: u32) -> u32 {
 #[wasm_bindgen(js_name = destroyFeatureInstances)]
 pub fn destroy_feature_instances(id: u32) -> u32 {
     with_engine(|e| {
+        // The draw's bucket goes with it, so the layout is rebuilt for the frame after.
+        e.structure_changed = true;
         e.renderer
             .settings_mut()
             .feature_instances_mut()

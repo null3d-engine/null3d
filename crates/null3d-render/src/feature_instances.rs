@@ -41,6 +41,8 @@ struct FeatureInstance {
     count: u32,
     /// The per-instance rows that the page wrote, or empty before its first write.
     rows: Vec<f32>,
+    /// The number of rows from the start that the page has written.
+    written: u32,
     /// The first row and the row count that the next frame uploads, or `None` when no row waits.
     changed: Option<(u32, u32)>,
 }
@@ -73,6 +75,7 @@ impl FeatureInstanceTable {
             capacity,
             count: 0,
             rows: Vec::new(),
+            written: 0,
             changed: None,
         });
         let id = index as u32 + 1;
@@ -131,6 +134,7 @@ impl FeatureInstanceTable {
         let from = start as usize * INSTANCE_FLOATS as usize;
         let take = (end - start as usize) * INSTANCE_FLOATS as usize;
         draw.rows[from..from + take].copy_from_slice(&values[..take]);
+        draw.written = draw.written.max(end as u32);
         draw.changed = Some((start, (end - start as usize) as u32));
         true
     }
@@ -144,6 +148,17 @@ impl FeatureInstanceTable {
     /// it uploads nothing.
     pub fn take_changed(&mut self, id: u32) -> Option<(u32, u32)> {
         self.get_mut(id).and_then(|draw| draw.changed.take())
+    }
+
+    /// Marks every row that the page wrote for upload, so a buffer that the device made again
+    /// gets them back.
+    pub fn mark_all_changed(&mut self, id: u32) {
+        let Some(draw) = self.get_mut(id) else {
+            return;
+        };
+        if draw.written > 0 {
+            draw.changed = Some((0, draw.written));
+        }
     }
 
     /// The number of places the table holds, used or not.
@@ -218,6 +233,21 @@ mod tests {
         assert!(table.set_count(id, 40));
         assert_eq!(table.record(id), Some((1, 10, 10)));
         assert!(!table.set_count(99, 1));
+    }
+
+    #[test]
+    fn a_made_buffer_uploads_the_rows_the_page_wrote() {
+        let mut table = FeatureInstanceTable::default();
+        let id = table.create(1, 8).unwrap();
+        let values = vec![1.0; 3 * INSTANCE_FLOATS as usize];
+        assert!(table.set_rows(id, &values, 0, 3));
+        // The frame's first upload takes the change, and the frame after uploads nothing.
+        assert_eq!(table.take_changed(id), Some((0, 3)));
+        assert_eq!(table.take_changed(id), None);
+        // A buffer that the device made again takes the rows that the page wrote, once more.
+        table.mark_all_changed(id);
+        assert_eq!(table.take_changed(id), Some((0, 3)));
+        assert_eq!(table.take_changed(id), None);
     }
 
     #[test]
