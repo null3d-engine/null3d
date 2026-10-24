@@ -394,6 +394,7 @@ jobs:
           restore-keys: |
             ${{ steps.keys.outputs.branch-keys }}
             ${{ steps.keys.outputs.stamp-keys }}
+            ${{ steps.keys.outputs.any-stamp-keys }}
       - name: Install the pinned Rust toolchain
         if: steps.whole.outputs.cache-hit != 'true'
         run: rustup toolchain install
@@ -467,7 +468,9 @@ jobs:
       shader-key: ${{ steps.entry-keys.outputs.key }}
       shader-modules-dir: ${{ steps.entry-keys.outputs.modules-dir }}
       shader-entries-dir: ${{ steps.entry-keys.outputs.entries-dir }}
-      shader-stamp: ${{ steps.entry-keys.outputs.stamp }}
+      # The entry folder that the shader build used, which is an earlier stamp's folder when this
+      # compiler's program has the same bytes as the compiler that wrote that folder's entries.
+      shader-entries-folder: ${{ steps.entry-folder.outputs.folder }}
     steps:
       - uses: actions/checkout@v5
         with: *without-references
@@ -511,6 +514,9 @@ jobs:
         uses: ./.github/actions/shaders
         with:
           run: bun tools/build-wasm.ts --pages-only
+      - id: entry-folder
+        name: Name the entry folder that the shader build used
+        run: bun tools/shaders.ts --entry-folder | tee -a "$GITHUB_OUTPUT"
       - uses: actions/cache/save@v4
         if: steps.wasm.outputs.cache-hit != 'true' && env.SAVE_CACHES == 'true'
         with:
@@ -822,13 +828,13 @@ jobs:
       - name: The shader compiler gives the native shader build's results
         if: steps.passed.outputs.cache-hit != 'true' && matrix.part == 1
         env:
-          NULL3D_SHADER_ENTRIES: ${{ needs.build.outputs.shader-entries-dir }}/${{ needs.build.outputs.shader-stamp }}
+          NULL3D_SHADER_ENTRIES: ${{ needs.build.outputs.shader-entries-folder }}
         run: bun run test:shader-compiler:build
       - name: The shader compiler gives the native shader build's results, for this shard's entries
         if: steps.passed.outputs.cache-hit != 'true' && matrix.part != 1
         env:
           NULL3D_SHADER_COMPILER: "1"
-          NULL3D_SHADER_ENTRIES: ${{ needs.build.outputs.shader-entries-dir }}/${{ needs.build.outputs.shader-stamp }}
+          NULL3D_SHADER_ENTRIES: ${{ needs.build.outputs.shader-entries-folder }}
         run: cargo test -p null3d-shaders --test build -- --exact the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule
       - name: Record this shard's pass of these inputs
         if: steps.passed.outputs.cache-hit != 'true'

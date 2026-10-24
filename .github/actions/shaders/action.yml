@@ -6,9 +6,11 @@ description: >-
   stamp and input hash that the tools read their caches by, from `bun tools/shaders.ts
   --cache-keys`. A run whose inputs match restores the whole module set and compiles nothing. A run
   with the same compiler restores that stamp's entries, and compiles only the entries whose own
-  key no longer matches. A new compiler restores nothing. The tools check every entry's key
-  themselves, so a restored entry is never used for other inputs. Only the current stamp's entries
-  and the current module set are saved, so the cache does not grow with old ones. A failed or
+  key no longer matches. A change of the compiler's sources restores the newest entries of any
+  stamp, and the build reuses every entry whose compiler program has the same bytes; a program
+  with other bytes reads a folder of its own. The tools check every entry's key and dependencies
+  themselves, so a restored entry is never used for other inputs. Only the entry folder that the
+  build used and the current module set are saved, so the cache does not grow with old ones. A failed or
   cancelled build still saves the entries it finished, under a key of its own for the run and the
   job, since each entry is written whole. The cache saves only when the workflow's SAVE_CACHES is true.
   Each run records in its job summary how long the command took, how many entries the shader build
@@ -40,6 +42,7 @@ runs:
         restore-keys: |
           ${{ steps.keys.outputs.branch-keys }}
           ${{ steps.keys.outputs.stamp-keys }}
+          ${{ steps.keys.outputs.any-stamp-keys }}
     - id: build
       shell: bash
       # The command may be several lines; the group keeps their output for the record below.
@@ -47,6 +50,14 @@ runs:
         {
         ${{ inputs.run }}
         } 2>&1 | tee "$RUNNER_TEMP/shader-build.log"
+    - id: folder
+      if: always() && steps.keys.outcome == 'success'
+      shell: bash
+      # The folder that the build read and wrote. It is an earlier stamp's folder when this
+      # compiler's program has the same bytes as the one that wrote its entries.
+      run: |
+        folder=$(bun tools/shaders.ts --entry-folder | sed -n 's/^folder=//p')
+        echo "folder=${folder:-${{ steps.keys.outputs.entries-dir }}/${{ steps.keys.outputs.stamp }}}" >> "$GITHUB_OUTPUT"
     - name: Record the shader build
       if: always() && steps.keys.outcome == 'success'
       shell: bash
@@ -54,7 +65,7 @@ runs:
         STARTED: ${{ steps.keys.outputs.started }}
         OUTCOME: ${{ steps.build.outcome }}
         RESTORED: ${{ steps.restore.outputs.cache-matched-key }}
-        ENTRIES: ${{ steps.keys.outputs.entries-dir }}/${{ steps.keys.outputs.stamp }}
+        ENTRIES: ${{ steps.folder.outputs.folder }}
         MODULES: ${{ steps.keys.outputs.modules-dir }}/${{ steps.keys.outputs.inputs }}
       run: |
         count() { find "$1" -maxdepth 1 -type f 2>/dev/null | wc -l; }
@@ -75,7 +86,7 @@ runs:
           echo "- Entry cache: $(count "$ENTRIES") entries, $(size "$ENTRIES")"
           echo "- Module set: $(count "$MODULES") modules, $(size "$MODULES")"
         } | tee -a "$GITHUB_STEP_SUMMARY"
-    - name: Keep only this build's module set and compiler stamp
+    - name: Keep only this build's module set and entry folder
       if: always() && (env.SAVE_CACHES == 'true' || github.ref_name != 'main') && steps.keys.outcome == 'success' && steps.restore.outputs.cache-hit != 'true'
       shell: bash
       env:
@@ -83,10 +94,14 @@ runs:
         ENTRIES: ${{ steps.keys.outputs.entries-dir }}
         INPUTS: ${{ steps.keys.outputs.inputs }}
         STAMP: ${{ steps.keys.outputs.stamp }}
+        FOLDER: ${{ steps.folder.outputs.folder }}
       run: |
+        # Keep the folder that the build used, which is an earlier stamp's when its compiler program
+        # has the same bytes.
+        keep=$(basename "${FOLDER:-$ENTRIES/$STAMP}")
         mkdir -p "$MODULES" "$ENTRIES"
         find "$MODULES" -mindepth 1 -maxdepth 1 ! -name "$INPUTS" -exec rm -rf {} +
-        find "$ENTRIES" -mindepth 1 -maxdepth 1 ! -name "$STAMP" -exec rm -rf {} +
+        find "$ENTRIES" -mindepth 1 -maxdepth 1 ! -name "$keep" -exec rm -rf {} +
         du -sh "$MODULES" "$ENTRIES"
     # A workflow whose SAVE_CACHES is true saves the module set and the entries together. A branch
     # run of a workflow that saves only on main still saves its entries alone: they are the
