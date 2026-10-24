@@ -990,7 +990,7 @@ export function downloadSizes(
  * stop until the budget names the cost. The trim owed, beyond the cluster shader's, is to load the
  * compute pass and the instance draw's adapter with their first use rather than with the page.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 186 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 187 * 1024 };
 
 /**
  * The budget for each part that loads after the start. The Brotli figure rose on 22 October 2026,

@@ -137,6 +137,9 @@ pub struct TaaFrame {
     /// This frame's sub-pixel jitter in clip space, which the resolve takes off the pixel's own
     /// place before it reprojects.
     pub jitter: [f32; 2],
+    /// The last frame's sub-pixel jitter in clip space. The history's pixels hold the surfaces
+    /// that the last frame's offset put there, so the resolve moves its sample by that offset.
+    pub last_jitter: [f32; 2],
     /// From this frame's clip space to the last frame's: see [`reprojection`].
     pub reproject: Mat4,
     /// True when the history holds nothing of use, as in the first frames after the resolve turns
@@ -158,6 +161,8 @@ struct Block {
     depth: [f32; 4],
     /// This frame's jitter in clip space.
     jitter: [f32; 4],
+    /// The last frame's jitter in clip space, which moves the history's sample.
+    last_jitter: [f32; 4],
     /// x: the share of the history that a pixel keeps. y: 1 while the histories hold no frame. z:
     /// 1 for a perspective camera. w: unused.
     settings: [f32; 4],
@@ -369,6 +374,7 @@ impl TaaPass {
             ],
             depth: [-m[15], m[14], m[11], -m[10]],
             jitter: [frame.jitter[0], frame.jitter[1], 0.0, 0.0],
+            last_jitter: [frame.last_jitter[0], frame.last_jitter[1], 0.0, 0.0],
             settings: [
                 frame.taa.feedback.clamp(0.0, 0.99),
                 if frame.reset { 1.0 } else { 0.0 },

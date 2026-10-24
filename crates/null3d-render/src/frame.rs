@@ -1890,6 +1890,7 @@ impl SceneSettings {
         let size = view.draw_size(canvas, scale);
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
         let camera = view.transform(scene, parity, aspect)?;
+        let last_jitter = self.taa_jitter;
         self.taa_jitter = if settings.jitter {
             taa::jitter(self.clock[2].to_bits())
         } else {
@@ -1916,6 +1917,15 @@ impl SceneSettings {
                 2.0 * self.taa_jitter[0] / size.0.max(1) as f32,
                 2.0 * self.taa_jitter[1] / size.1.max(1) as f32,
             ],
+            // A reset reads no history, so there is no place to move the sample from.
+            last_jitter: if reset {
+                [0.0; 2]
+            } else {
+                [
+                    2.0 * last_jitter[0] / size.0.max(1) as f32,
+                    2.0 * last_jitter[1] / size.1.max(1) as f32,
+                ]
+            },
             reproject: previous
                 .and_then(|last| taa::reprojection(&camera.view_proj, at, &last))
                 .unwrap_or(identity),
