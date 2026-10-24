@@ -939,7 +939,7 @@ describe('the checks plan', () => {
 	// and about 2 more go to its setup, the dev server's start and the judging. .dev/devices.md says
 	// what to do when the pages need more. Safari compiles the sampled set of the shaders page, which
 	// this model counts.
-	it("keeps each of CI's shards at or under 10 minutes of pages in Safari", () => {
+	it("keeps each of CI's shards at or under 10 minutes of pages in Safari and in Firefox", () => {
 		const workflow = readFileSync(
 			join(import.meta.dirname, '../../.github/workflows/ci.yml'),
 			'utf8',
@@ -958,6 +958,12 @@ describe('the checks plan', () => {
 		expect(listed).toEqual(Array.from({ length: count }, (_, i) => i + 1));
 		const minutes = shardsOf(count).map((shard) => secondsOf(shard) / 60);
 		expect(Math.max(...minutes)).toBeLessThanOrEqual(10);
+		// Firefox compiles every build of the shaders page, by its own measured times.
+		const firefox = Array.from(
+			{ length: count },
+			(_, i) => planItems(parseArgs(['--shard', `${i + 1}/${count}`, 'Firefox'])) ?? [],
+		).map((shard) => shard.reduce((sum, item) => sum + expectedSeconds(item, 'Firefox'), 0) / 60);
+		expect(Math.max(...firefox)).toBeLessThanOrEqual(10);
 	});
 
 	it('skips a WebGPU page on a browser without WebGPU only when allowed', () => {

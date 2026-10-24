@@ -130,6 +130,7 @@ import {
 	objectGrowthProblems,
 } from './object-growth.ts';
 import { type OcclusionS6Check, occlusionS6Plan, saveOcclusionS6Images } from './occlusion-s6.ts';
+import { fallbackSeconds, measuredSeconds } from './page-times.ts';
 import {
 	HEAVY_SPHERES,
 	heavyCheckProblems,
@@ -2178,11 +2179,10 @@ export function itemsTogether(item: PlanItem<Check>): string[] {
 }
 
 /**
- * About how long the slow pages of the checks plan take in Safari on CI's Mac, the slowest browser
- * that CI runs the plan in. The shaders page's parts grew with the shader set. In run 39291513923
- * (19 October 2026) a shard's parts took 122 and 143 seconds, each compiled first in its shard. A
- * shard holds three or four parts, so each one compiles first or second, and counts at that time.
- * The WebGPU pages of the same names skip there.
+ * About how long the slow pages of the checks plan take in Safari on CI's Mac, for pages that the
+ * measured table (`page-times.ts`) does not hold yet. The shaders page's parts grew with the shader
+ * set. In run 39291513923 (19 October 2026) a shard's parts took 122 and 143 seconds, each compiled
+ * first in its shard. The WebGPU pages of the same names skip there.
  */
 const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
 	[/^shaders-/, 120],
@@ -2191,16 +2191,23 @@ const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
 	[/restarts/, 20],
 ];
 
-/**
- * The mean time of every other page of the plan there, the skipped pages among them. In run
- * 39291513923 the shards held about 80 other pages each and took 8 to 16 minutes, about twice what
- * a mean of 1.5 seconds gave.
- */
+/** The mean time of every other page, for a browser that the measured table does not hold. */
 const PAGE_SECONDS = 2.5;
 
-/** About how long a page takes in Safari on CI's Mac, by which the shards split a plan. */
-export function expectedSeconds({ id }: { id: string }): number {
-	return SLOW_PAGE_SECONDS.find(([pattern]) => pattern.test(id))?.[1] ?? PAGE_SECONDS;
+/**
+ * About how long a page takes in `browser` on CI, by which the shards split a plan: its measured
+ * time when it is a slow page there, else the rules above for a page new to the table, else the
+ * time of the browser's other pages. In run 40046196327 the rules alone modelled Safari's shards
+ * at 2.0 to 9.4 minutes, where their pages took up to 12.6, and every Firefox shard at about 17,
+ * where they took 6.1 to 11.4. With the measured table, the split models both at about 9.
+ */
+export function expectedSeconds({ id }: { id: string }, browser = 'Safari'): number {
+	return (
+		measuredSeconds(id, browser) ??
+		SLOW_PAGE_SECONDS.find(([pattern]) => pattern.test(id))?.[1] ??
+		fallbackSeconds(browser) ??
+		PAGE_SECONDS
+	);
 }
 
 /**
