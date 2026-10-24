@@ -135,6 +135,12 @@ export const SHOTS: readonly Shot[] = [
 ];
 
 const params = new URL(import.meta.url).searchParams;
+/** True draws the water's reflection in every frame, for the bisect of the Apple WebGPU stall. */
+const ALWAYS_REFLECT = params.get('reflect') === 'always';
+/** The reflection target's share of the render size that the address names, for the same bisect. */
+const REFLECT_SCALE = Number(params.get('reflection-scale')) || undefined;
+/** The parts of the scene that the address leaves out, for the bisect of the Apple WebGPU stall. */
+const WITHOUT = new Set((params.get('without') ?? '').split(',').filter(Boolean));
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, quality, page, time } = ctx;
@@ -188,16 +194,27 @@ export default defineSketch(async (ctx) => {
 	page.post('loading', 'Loading the trees, plants and cave');
 	const models = await loadModels(ctx);
 	const stones = createStones(ctx, detail.rock, detail.texture, models.cave);
-	const water = createWater(ctx, detail.water, stones.obstacles, GORGE.end);
+	const water = WITHOUT.has('water')
+		? undefined
+		: createWater(
+				ctx,
+				detail.water,
+				stones.obstacles,
+				GORGE.end,
+				ALWAYS_REFLECT,
+				REFLECT_SCALE as 0.25 | 0.5 | 1 | undefined,
+			);
 	const underwater = createUnderwater(ctx, camera, WATER);
 	const flora = await createFlora(ctx, models);
 	const air = await createAir(ctx, flora.crowns);
 	const shafts = createShafts(ctx, camera);
-	const grass = createGrass(ctx, (x, z) => stones.clear(x, z) || flora.clear(x, z));
+	const grass = WITHOUT.has('grass')
+		? undefined
+		: createGrass(ctx, (x, z) => stones.clear(x, z) || flora.clear(x, z));
 	const fit = () => {
-		grass.fit(quality.preset);
+		grass?.fit(quality.preset);
 		stones.fit(quality.preset);
-		water.fit(quality.preset);
+		water?.fit(quality.preset);
 	};
 	fit();
 
@@ -246,7 +263,7 @@ export default defineSketch(async (ctx) => {
 		const a = CAUSTICS[look.from];
 		const b = CAUSTICS[look.to];
 		for (let c = 0; c < 3; c++) caustics[c] = math.lerp(a[c] as number, b[c] as number, look.share);
-		water.setCaustics(caustics);
+		water?.setCaustics(caustics);
 		light();
 	};
 	const choose = (mood: Mood) => {
@@ -353,7 +370,7 @@ export default defineSketch(async (ctx) => {
 			if (lens) post.set(lens);
 			flora.update(t);
 			air.update(t);
-			water.update();
+			water?.update();
 		},
 		onLateUpdate() {
 			shafts.update();

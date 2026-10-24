@@ -12,15 +12,15 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-A6':
 		'`setDrawRange` in `packages/engine/src/scene/scene.ts`; the `lod-range`, `lod-range-batch` and `lod-hide` pictures on every tier; D-211',
 	'M3-A3':
-		'A custom material declares `texture_2d_array<f32>` and picks the layer in each texture function: `packages/vite-plugin/src/shader-types.ts`, the docs `packages/engine/docs/guides/custom-shaders.md` and `custom-passes.md`; D-239',
+		'A custom material declares `texture_2d_array<f32>` and picks the layer in each texture function: `packages/vite-plugin/src/shader-types.ts`, the docs `docs/guides/custom-shaders.md` and `custom-passes.md`; D-239',
 	'M3-A5':
-		'`createVertexDraw` in `packages/engine/src/scene/scene.ts:4623-4702`; `examples/rain/sketch.ts`',
+		'`createVertexDraw` in `packages/engine/src/scene/scene.ts:4848`; `examples/rain/sketch.ts`',
 	'M3-A7': '`limit_hdr` maps NaN to zero: `crates/null3d-shaders/wgsl/lib/color.wgsl:35-38`',
 	'M3-D2':
 		'Version check in each foundation add-on (`packages/engine/src/shared/version.ts`); `packages/cli/src/upgrade.js`',
 	'M3-D3': "E1417's message names the add-on: `packages/engine/src/errors/codes.ts:417`",
 	'M3-D4': "The particle buffer's record layout and limits: `docs/concepts/particle-buffer.md`",
-	'M3-D5': '`examples/addons/README.md` and two add-ons in that layout',
+	'M3-D5': '`examples/addons/README.md` and the four add-ons in that layout',
 	'M3-D6': 'The plugin interface version check: `packages/engine/src/shared/version.ts`',
 	'M3-D9':
 		"`bunx @null3d/cli check-addon` runs the engine's gates on one add-on: `packages/cli/src/check-addon.js`, which refuses `tests/fixtures/d9-addon-internal` for importing `@null3d/engine/internal`; D-225 records the run over every foundation add-on and the fixture's page and cost gates",
@@ -35,7 +35,7 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-E3':
 		"`registerGltfExtension` in `packages/engine/src/scene/gltf-extensions.ts`; the `splats-gltf` picture, and E1417's hint for `KHR_gaussian_splatting` in `gltf-extensions.test.ts`",
 	'M3-E4':
-		"Water's soft shores read the scene depth on every path: the `water-shores` picture on WebGPU, compatibility mode and WebGL2, in both reference sets, shows the pale band and foam where the water meets the sand and the island's base; without the depth copy the sheet draws its deep colour everywhere. D-202's addendum names M3-E4a for the case of depth beside textures",
+		"Water's soft shores read the scene depth on every path: the `water-shores` picture on WebGPU, compatibility mode and WebGL2, in both reference sets, shows the pale band and foam where the water meets the sand and the island's base; without the depth copy the sheet draws its deep colour everywhere. That page is a test sheet; the first user on the branch is the splats add-on's depth mixing. D-202's addendum names M3-E4a for the case of depth beside textures",
 	'M3-E5':
 		'One file format for baked probe grids and light maps: `packages/engine/src/scene/baked-light.ts`, `assets.loadLightProbeGrid`, `assets.loadLightMap` and `assets.lightProbeGridFile`, with every fault named as E1434; the guide `docs/guides/baked-light-data.md`, a round-trip test and two fixtures; D-243',
 	'M3-G4':
@@ -45,9 +45,11 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'Spot-light cookies, `light.map`: `packages/engine/src/scene/scene.ts`, `docs/api/lights.md`',
 	'M3-K5': '`scene.overrideMaterial`: `packages/engine/src/scene/scene.ts`, `docs/api/scene.md`',
 	'M3-F8':
-		"`probe.capture()` again on request, with the moved object's reflection settling: `crates/null3d-render/tests/probes.rs` and the `probe-capture` picture on every tier; `docs/api/scene.md`",
+		"`probe.capture()` again on request, with the moved object's reflection settling: `crates/null3d-render/tests/probes.rs` and the `probe-capture` picture on every tier; `docs/api/scene.md`. The compatibility-mode picture failed three full runs on a reference drawn from a slow run; the page now pins the frame-budget governor (d3dda9e72), and CI has yet to confirm it",
 	'M3-R6':
 		'D-226 records the timings on Chrome and Safari: at most 0.29 ms in Safari, nothing measurable in Chrome, so the pattern stays',
 	'M3-R10':
 		"A sky map redraws only past a visible step: `crates/null3d-render/tests/sky_maps.rs` counts the fills a day cycle records; `tests/image/sky-step.spec.ts` keeps every step within 8 levels of 255 on every tier; D-118's addendum records the fills a minute",
+	'M3-R18':
+		"Shipped code contacts no server of its own: `docs/getting-started/network-use.md`, the guard `tools/lib/network-use.ts` and its 13 passing tests, and each package's `THIRD-PARTY-NOTICES.txt` with `docs/getting-started/third-party-notices.md`; when a call was added to `packages/terrain/src/index.ts`, the repository check named the call and its host, so one test failed and not the list. D-227 and its addenda record the audit and the controls package's three.js notice",
 };

@@ -68,7 +68,6 @@ const INCOMPLETE = new Set([
 	'M3-O1',
 	'M3-R16',
 	'M3-R17',
-	'M3-R18',
 	'M3-G1',
 	'M3-G2',
 	'M3-G3',
@@ -98,7 +97,7 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-B1':
 		'the pictures hold every lens mark now, and the streak and grain ones were tightened after they proved nothing at the default threshold: each mark moves about 2.8 per cent of the pixels against a half per cent limit. The cost per preset is still owed — it needs a machine idle enough for a quiet timing run, and the fleet has not given one since this morning',
 	'M3-D9':
-		'the command and its refusal are tested, and the two gate faults its first runs found are fixed: the size gate held compiled shader-build files to the code budget, and the fixture sketch never moved so no frame drew. D-225 records the run over the six add-ons that had a package, and both fixtures. The seventh, three-compat, is the first add-on the command has failed: its entry is 181.9 KB raw against a 64 KB budget, most likely the compiled shader builds that belong in a first-use file',
+		'the command and its refusal are tested, and the two gate faults its first runs found are fixed: the size gate held compiled shader-build files to the code budget, and the fixture sketch never moved so no frame drew. D-225 records the run over every foundation add-on that has a package, and both fixtures, including three-compat, whose entry the size fix brought from 181.9 KB to 27.8 KB',
 	'M3-L1':
 		'every item is built with its pictures, but D-211 records Mac figures alone: the phone GPU time the fade item asks for, and the iPad and phone figures the section asks for, are missing',
 	'M3-L3':
@@ -156,8 +155,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
 	'M3-R16': 'no test creates a project and runs it with the hook on',
 	'M3-R17': 'no skill evaluation ran as the plan defines one',
-	'M3-R18':
-		'the controls add-on follows three.js step for step but ships no notice, and the notices page says it ships only its own code',
 	'M3-G1': "the Khronos sample's texture-transform pointers are not animated",
 	'M3-G2': 'no Khronos iridescence sample is tested',
 	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',

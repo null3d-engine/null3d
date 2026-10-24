@@ -942,3 +942,16 @@ records.
 The owner closed the task as superseded on 24 October 2026. The line stands at 188 KB, and the raises
 are recorded above. Two trims still pay the line back: the cluster levels' shader and the compute pass's
 option checks. Both stay named here as work rather than as a milestone task.
+
+## The start's budget rises to 190 KB, 24 October 2026
+
+The timed script that hold mode performs (M3-R14, D-250) put its steps, and the scene property
+reads and writes that they use, into the sketch runner, and one writer of input records now serves
+both the page's own input and a script. A production page build reached 193,396 bytes after Brotli
+in pipelined WebGL2 mode, 884 bytes over the 188 KB line, against a base that had 407 bytes of room
+left. `js/page-sketch-runner.js` grew 1,275 bytes and `js/page-control.js` grew 81.
+
+The budget rises to 190 KB, or 194,560 bytes, leaving 1,164 bytes of room. The owner's rule of
+22 October allows the start's budget to rise as needed without asking. A trim that pays for the
+script means loading its performer on hold mode's first use, which is work of its own rather than a
+few names to cut; the trims owed above still stand as the next work that touches the start's size.

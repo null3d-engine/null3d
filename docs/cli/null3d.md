@@ -58,6 +58,7 @@ bunx @null3d/cli shot --out shot.png --time 1.5 --size 1280x720 --gpu webgl2
 | --- | --- | --- |
 | `--out <file.png>` | The image to write. The JSON file beside it takes its name, such as `shot.json` | `shot.png` |
 | `--time <seconds>` | The sketch time of the frame, from 0 to 600 | The `hold` option of `createEngine`, or 0 |
+| `--script <file>` | A [timed script](#timed-scripts) that drives the page. Each of its shot steps writes its own image, such as `shot-start.png` | No script: one frame at `--time` |
 | `--size <width>x<height>` | The browser window's size in CSS pixels. Each CSS pixel is one pixel of the image | `1280x720` |
 | `--gpu <tier>` | Forces a GPU tier: `webgpu`, `compat` or `webgl2` | The engine picks the tier |
 | `--page <path>` | The page to open, from the dev server's root, with any query of its own | `/` |
@@ -106,6 +107,69 @@ When no frame is drawn, `shot` says why, saves the JSON file and exits with 1. I
 
 A page must start the engine as it loads. A page that waits for a click never starts the hold, so `shot` gives up after `--timeout` seconds.
 
+## Timed scripts
+
+A timed script drives your page through states and draws an image of each one. It holds keys, moves the pointer, and writes properties at exact sketch times. `shot --script` draws the images, and a `test` entry that gives `script` compares them with references.
+
+A script is a text file with one step on each line. Each line starts with the sketch time in seconds. Lines that start with `#` and empty lines are left out.
+
+```text
+# The first state is the page as it starts.
+0 shot start
+# The forward key moves the ship for a while.
+0.2 key KeyW down
+2 key KeyW up
+2 shot forward
+# A press puts a marker where the pointer is, and the ship goes.
+2.2 pointer move 200 90
+2.3 pointer down 200 90
+2.4 pointer up
+2.6 set ship.visible=false
+3 dump ship.position
+3 shot parked
+```
+
+| Step | What it does |
+| --- | --- |
+| `key <code> down`, `key <code> up` | Presses or releases a key, by its `KeyboardEvent.code` name, such as `KeyW`, `Space` or `ArrowLeft` |
+| `pointer move <x> <y>` | Moves the main pointer, in CSS pixels from the canvas's top-left corner |
+| `pointer down [<x> <y>]`, `pointer up [<x> <y>]` | Presses or releases the main button. Without a place, the pointer stays where it is |
+| `pointer wheel <dx> <dy>` | Scrolls the wheel |
+| `set <object>.<property>=<value>` | Writes a property: one to four numbers, joined by commas or spaces, and `true` or `false` for a flag |
+| `dump <object>.<property>`, `dump <object>` | Records a value, or every property of an object, at the step's time |
+| `shot <name>` | Draws an image at the step's time. The name becomes part of the file's name |
+
+The times never fall back. The command names the line that is wrong for a line that is no step, or a time that falls back. It also refuses two shot steps with one name, or at one time.
+
+### Objects in a script
+
+A step names an object by the name that the scene gave it. `#camera` names the active camera. The last dot separates the object from the property. An object's name may have dots of its own: `Cube.001.position` writes the position of the object named `Cube.001`.
+
+A property is one that `animateProperty` takes. Every object has `position` (three numbers), `rotation` (four numbers, as a quaternion), `scale` (three numbers) and `visible` (a flag). A camera adds `fov`, `near`, `far` and, for an orthographic camera, `height`. A light adds `intensity`, `color` (three numbers from 0 to 1), `range`, `decay`, `angle` and `penumbra`.
+
+`dump` reads `position`, `rotation`, `scale` and `visible` for every object, a camera's `fov`, `near`, `far` and `height`, and a light's `color`.
+
+A name that finds no object fails the command and lists the names that are close:
+
+```text
+Step at 1.2 s, set "cr".position, failed: the scene has no object named "cr". Names that are close: "car".
+```
+
+### What shot draws with a script
+
+Each shot step writes its own image and JSON file. `--out tour.png` with the three steps above writes `tour-start.png`, `tour-forward.png` and `tour-parked.png`, each with a JSON file beside it. The command prints each image, each dump and each failed step once:
+
+```text
+Drew start at 0 s, frame 1, on webgl2: 1280 x 720 pixels.
+Saved tour-start.png, and the frame's facts and what the page logged in tour-start.json.
+Drew forward at 2 s, ...
+Dump at 3 s: "ship" position is [0,1,0].
+```
+
+Every image is a hold from time 0 that performs the script up to its step. So an image shows the state at its step, and no step after it. A dump after the last shot still runs, and its line prints. `--time` cannot be given with `--script`.
+
+The engine reads the script only in hold mode. A page that you run with Vite never performs one, and its input stays the user's.
+
 ## test
 
 ```mermaid
@@ -148,7 +212,8 @@ bunx @null3d/cli test --update-references
   "tests": [
     { "name": "start", "sketch": "sketch.ts", "hold": 1.5 },
     { "name": "harbor-at-night", "sketch": "sketch.ts?view=harbor", "hold": 4, "size": "640x360", "tiers": ["webgpu", "webgl2"] },
-    { "name": "home-page", "page": "/", "hold": 1.5 }
+    { "name": "home-page", "page": "/", "hold": 1.5 },
+    { "name": "drive", "sketch": "sketch.ts", "script": "tests/drive.script" }
   ]
 }
 ```
@@ -158,11 +223,14 @@ bunx @null3d/cli test --update-references
 | `name` | The test's name in lowercase words joined by dashes. It names the test's image files | Required |
 | `sketch` | A sketch module to draw, from your project's folder. A query after the path reaches the sketch ([Testing your sketch](../guides/testing.md#frames-that-stay-the-same-on-every-run)) | Give `sketch` or `page` |
 | `page` | A page of your project to open instead, from the dev server's root | Give `sketch` or `page` |
-| `hold` | The sketch time to hold at, in seconds, from 0 to 600 | Required |
+| `hold` | The sketch time to hold at, in seconds, from 0 to 600 | Give `hold` or `script` |
+| `script` | A [timed script](#timed-scripts), from your project's folder. Each of its shot steps draws an image, under the name `<name>-<shot>` | Give `hold` or `script` |
 | `size` | The image's width and height in pixels, such as `640x360` | `320x180` |
 | `tiers` | The GPU tiers to draw on: `webgpu`, `compat` and `webgl2` | All three |
 
 A sketch test draws your sketch module on a page that `test` serves itself. The canvas has the test's size, and the engine has its default options. A page test opens your page in a window of the test's size, as `shot` does. Use a page test when your page passes options to `createEngine` that change the image. When `null3d.json` has a mistake, `test` names each wrong setting and runs no image tests.
+
+A test that gives `script` draws each of the script's shot steps. Each step is its own result, named `<name>-<shot>`: the example above keeps `drive-start.png`, `drive-forward.png` and `drive-parked.png`, with a reference for each. A dump step prints its line, and a step that fails fails the test. Every state is a hold from time 0, so the script's states are the same on every machine.
 
 ### References and results
 
