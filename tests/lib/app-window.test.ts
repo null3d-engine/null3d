@@ -22,7 +22,7 @@ import {
 	RUNNER_TITLE,
 	SMALL_SIZE,
 } from './app-window.ts';
-import { COST_VARIABLES, timesFrames } from './priority-setup.ts';
+import { COST_VARIABLE, timesFrames } from './priority-setup.ts';
 
 /** A laptop display of 1512 by 982 points, with a 33-point menu bar and a 43-point Dock. */
 const laptop = { height: 982, x: 0, y: 43 };
@@ -228,19 +228,29 @@ try { await ${call}; console.log('WENT ON'); } catch (e) { console.log(e.message
 	it('judges which Playwright runs time frames', () => {
 		expect(timesFrames({})).toBe(true);
 		expect(timesFrames({ CI: '1' })).toBe(false);
-		for (const name of COST_VARIABLES) expect(timesFrames({ CI: '1', [name]: '1' })).toBe(true);
+		// Any variable named as a cost switch turns timing on, also one that no spec reads yet.
+		expect(timesFrames({ CI: '1', NULL3D_SCREEN_COST: '1' })).toBe(true);
+		expect(timesFrames({ CI: '1', NULL3D_A_NEW_EFFECT_COST: '1' })).toBe(true);
+		expect(timesFrames({ CI: '1', NULL3D_SCREEN_COST: '' })).toBe(false);
+		expect(timesFrames({ CI: '1', NULL3D_PORT: '5173', NULL3D_SCREEN_PRESETS: 'high' })).toBe(
+			false,
+		);
 	});
 
-	it('knows the variable of every spec that times an effect', () => {
+	it('names the switch of every spec that runs only when asked as a cost switch', () => {
+		// A spec that waits for a variable times frames on the computer's own GPU, so the guard must
+		// know its switch by name: three such specs landed with switches that a list did not hold.
 		const folder = new URL('../image/', import.meta.url);
-		const used = readdirSync(folder)
+		const switches = readdirSync(folder)
 			.filter((file) => file.endsWith('.spec.ts'))
 			.flatMap((file) => [
-				...readFileSync(new URL(file, folder), 'utf8').matchAll(/NULL3D_\w+_COST\b/g),
+				...readFileSync(new URL(file, folder), 'utf8').matchAll(
+					/test\.skip\(\s*!process\.env\.(NULL3D_\w+)/g,
+				),
 			])
-			.map(([name]) => name);
-		expect(used.length).toBeGreaterThan(0);
-		expect([...new Set(used)].sort()).toEqual([...COST_VARIABLES].sort());
+			.map(([, name]) => name ?? '');
+		expect(switches.length).toBeGreaterThan(0);
+		expect(switches.filter((name) => !COST_VARIABLE.test(name))).toEqual([]);
 	});
 
 	it("refuses background priority only for the runner's timed plans in this machine's browser apps", () => {
