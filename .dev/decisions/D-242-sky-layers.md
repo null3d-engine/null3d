@@ -145,7 +145,7 @@ after.
 
 | Measure | Cost |
 | --- | --- |
-| A layer's build, at the page's build | One more build of `environment.wgsl` with the layer, beside the box's build: 110 to 190 ms of the build, measured with the debug compiler that the tests run. The page carries the result as its own shader text: 40 KB of WGSL, 9 KB after Brotli, for the aurora's layer beside 11 KB and 3 KB for the box. The start's download does not change: none of it is an engine file that a first use fetches |
+| A layer's build, at the page's build | One more build of `environment.wgsl` with the layer, beside the box's build: 110 to 190 ms of the build, measured with the debug compiler that the tests run. The page carries the result as its own shader text: 40 KB of WGSL, 9 KB after Brotli, for the aurora's layer beside 11 KB and 3 KB for the box. The start's download does not change: none of it is an engine file that a first use fetches. The environment shader that a first sky environment fetches grows by 4 KB of WGSL for the capture and the layer's composite, about 1 KB after Brotli |
 | A map fill with a layer | Nine texels of a projection over a 32-texel face of the chain: a few thousand cube samples, on the GPU, once a fill |
 | The read back | 256 bytes copied and mapped asynchronously, once a fill, a stage or two before the copy publishes the levels |
 | A frame | Nothing, and no frame waits: the projection and the read belong to the fill, the read is a map promise on WebGPU and a fence polled with a zero timeout on WebGL2, and a fill that cannot start while another runs starts on a later frame |
