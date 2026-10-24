@@ -1931,7 +1931,9 @@ impl CpuCulledRenderer {
             .culling
             .frame(ViewId::CAMERA)
             .map_or(0.0, |frame| frame.uniform.camera_world[1]);
-        if self.settings.cloud_steps() > 0 && self.settings.draws_sky() {
+        // The field is made whenever the tier draws: a sky map can refresh from the scene's sky
+        // while another background draws, and its steps bind the field.
+        if self.settings.cloud_steps() > 0 {
             cloud_noise::prepare(
                 list,
                 arena,

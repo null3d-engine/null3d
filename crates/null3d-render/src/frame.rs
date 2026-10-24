@@ -2525,17 +2525,6 @@ impl SceneSettings {
         self.cloud_steps
     }
 
-    /// True while the background is one of the skies, which take the volumetric cloud tier.
-    pub fn draws_sky(&self) -> bool {
-        matches!(
-            self.background.as_ref().map(|b| b.source),
-            Some(
-                crate::background::BackgroundSource::Sky(_)
-                    | crate::background::BackgroundSource::Atmosphere(_)
-            )
-        )
-    }
-
     /// The physical sky's settings while the scene's background is one, whichever sky draws.
     fn atmosphere(&self) -> Option<&Atmosphere> {
         match &self.background {

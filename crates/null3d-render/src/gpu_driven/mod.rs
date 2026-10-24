@@ -2024,7 +2024,9 @@ impl GpuDrivenRenderer {
             Some(Some(frame)) => frame.uniform.camera_world[1],
             _ => 0.0,
         };
-        let clouds = self.settings.cloud_steps() > 0 && self.settings.draws_sky();
+        // The field is made whenever the tier draws: a sky map can refresh from the scene's sky
+        // while another background draws, and its steps bind the field.
+        let clouds = self.settings.cloud_steps() > 0;
         if clouds {
             cloud_noise::prepare(
                 list,
