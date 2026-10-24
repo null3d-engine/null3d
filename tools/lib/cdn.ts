@@ -42,7 +42,11 @@ export const CDN_OUT = 'target/cdn';
 /** The address of the engine's entry point inside the build, relative to its folder. */
 export const CDN_ENTRY = 'lib/index.js';
 
-/** The add-ons that the build carries, each under `addons/<name>/`. */
+/**
+ * The add-ons that the build carries, each under `addons/<name>/`: every public package that builds
+ * on the engine. A unit test fails when a package of the workspace is missing here, as vegetation
+ * was until 25 October 2026, when the owner ruled that the build carries it.
+ */
 export const CDN_ADDONS: readonly string[] = [
 	'controls',
 	'geometry',
@@ -51,6 +55,7 @@ export const CDN_ADDONS: readonly string[] = [
 	'splats',
 	'terrain',
 	'three-compat',
+	'vegetation',
 ];
 
 /** The engine files that an add-on's code imports by package name, and their place in the build. */
