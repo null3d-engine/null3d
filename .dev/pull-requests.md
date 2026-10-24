@@ -544,3 +544,9 @@ One coordinator session often runs several helper agents at once, each in its ow
   Two checks before removing one. No session is working in it, and a helper that declined a shutdown is
   still working whatever its branch says. And nothing in it is worth keeping outside git: a run's results,
   a bench figure, a note.
+
+  A third check, added after the same mistake three times in one night: no process has its working
+  directory in the tree. A helper between commits looks idle by branch and tree, and a build started
+  from a folder keeps running after the folder goes, so `lsof +D <path>` is the only thing that says
+  whether work is in flight. On 25 October 2026 a CSS3D worktree was removed while its rebuild ran,
+  which cost that helper its build rather than its commits, and only because it had pushed first.
