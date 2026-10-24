@@ -171,7 +171,7 @@ describe('plan', () => {
 			['DIRECT', 'bun tools/decisions.ts --check'],
 			[
 				'DIRECT',
-				'bun test tools/lib/release.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts tools/lib/ci-workflow.test.ts',
+				'bun test tools/lib/release.test.ts tools/lib/cdn.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts tools/lib/ci-workflow.test.ts',
 			],
 		]);
 	});
@@ -184,7 +184,7 @@ describe('plan', () => {
 			['DIRECT', 'bun tools/decisions.ts --check'],
 			[
 				'DIRECT',
-				'bun test tools/lib/release.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts tools/lib/ci-workflow.test.ts',
+				'bun test tools/lib/release.test.ts tools/lib/cdn.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts tools/lib/ci-workflow.test.ts',
 			],
 			['CPU_ONLY', 'cargo check --workspace'],
 			['CPU_ONLY', 'cargo nextest run --no-fail-fast --profile ci -p null3d-render'],

@@ -971,13 +971,14 @@ first-call budget; the trims owed above still stand as the next work that touche
 ## The start's budget rises to 192 KB, 25 October 2026
 
 The 194,848 bytes above came from a local build measured against a stale base, and CI contradicts
-it: CI measured the same commit's pipelined WebGL2 start at 196,106 bytes, 522 over the 191 KB line
-(run 40127501793, on 130f70795, which changes no engine file after the recording landed). Low
+it. CI measured the same commit's pipelined WebGL2 start at 196,106 bytes, 522 over the 191 KB line.
+That was run 40127501793, on 130f70795, which changes no engine file after the recording landed. Low
 latency measured 192,288 and drawing on the main thread 192,953. The time of a GPU frame as the span
-of its passes (ac99af391) had also grown `js/page-frame-stats.js` and the stats overlay: the run
+of its passes (ac99af391) had also grown `js/page-frame-stats.js` and the stats overlay. The run
 before it measured 194,483, and the one after it 194,677.
 
 The budget rises to 192 KB, or 196,608 bytes, leaving 502 bytes of room. A figure in this record
-comes from CI's `wasm-checks` job from now on, not from a local build. This is the last raise without
-a trim: the start went from 186 KB to 192 KB in two days, each step reasonable on its own, and the
-coordinator has started a task to win back real bytes. The next crossing waits for that trim.
+comes from CI's `wasm-checks` job from now on, not from a local build. The start went from 186 KB to
+192 KB in two days, each step reasonable on its own. The owner ruled on 25 October 2026 to keep
+raising the line as needed for now, as the rule of 22 October allows. A trim that wins back real
+bytes runs beside the raises, and no crossing waits for it.
