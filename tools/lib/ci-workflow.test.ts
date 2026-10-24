@@ -321,12 +321,13 @@ describe("CI's workflow", () => {
 	it('runs each production build test file in one part, which builds every page that it loads', () => {
 		const words = (text: unknown) => String(text).split(/\s+/).filter(Boolean);
 		const parts = combinations(jobNamed('browser-production'));
-		const files = parts.flatMap(({ tests }) => words(tests));
+		// A part runs `later` after `tests`, once the package that those files load has packed.
+		const files = parts.flatMap(({ tests, later }) => [...words(tests), ...words(later)]);
 		expect(files.toSorted()).toEqual([...PRODUCTION_BUILD_TESTS].sort());
-		for (const { pages, tests } of parts) {
+		for (const { pages, tests, later } of parts) {
 			const built = words(pages);
 			for (const page of built) expect(PRODUCTION_BUILD_PAGES as readonly string[]).toContain(page);
-			for (const file of words(tests)) {
+			for (const file of [...words(tests), ...words(later)]) {
 				const text = readFileSync(join(ROOT, 'tests/image', file), 'utf8');
 				for (const page of PRODUCTION_BUILD_PAGES.filter((p) => text.includes(`${p}.html`)))
 					expect(built, `${file} loads ${page}.html`).toContain(page);
