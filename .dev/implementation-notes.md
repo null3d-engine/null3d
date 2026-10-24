@@ -802,6 +802,15 @@ The pick template (`pick.wgsl`) tests the scene's depth for equality. It has SKI
 - So two invocations that write different components of one `vec4` race, on any GPU, and one write can be lost. Give each invocation whole vectors of its own, or use atomics.
 - The vertex shaders that read instance data by index (D-23) first wrote four 32-bit indices into each 16-byte entry, one per invocation. SwiftShader drew every image right, and Apple's GPUs lost writes. One index per entry ended it.
 
+## The splats add-on's chunk cut
+
+- `chunkSplats` cuts a cloud on a grid over its bounds. So a splat's cell follows its position and the cloud's bounds alone, and one cloud always cuts the same way.
+- Each axis takes as many cells as the cube root of the cloud's splat count divided by the target chunk load. A bigger cloud then makes more, smaller chunks, which is what lets a camera stream a cloud larger than its budget.
+- An axis's cells are equal widths across the bounds, and the highest index takes the maximum itself.
+- Before 25 October 2026 the width multiplied by one cell fewer than the count. The last cell was a zero-width plane at the maximum, so almost every splat fell into the first cell. A cloud of 100,000 splats made 4 chunks, one of them 99,997 splats, and a cloud of 400,000 made 11, one of 56,557. Neither could stream.
+- With the widths fixed, those clouds make 8 chunks of about 12,500 splats and 27 chunks whose largest holds 36,936. A cloud that fills only part of its bounds makes fewer, larger chunks, because a cell holds the splats that fall in it.
+- `chunks.test.ts` checks the cut of a lattice cloud against the target load. It also checks the same cut made twice, and the same chunks when the cloud lists its splats in another order.
+
 ## Failures on the GPU
 
 - A derivative call (`dpdx`, `dpdy`, `fwidth`, or `textureSample` without a level) must run in uniform control flow. In October 2026 the shadow catcher branched in the lit fragment on the material's row, a `var<private>`; WebGPU then rejected every lit build with `'dpdy' must only be called from uniform control flow`, naming the branch. The lit fragment deliberately reads each derivative before a run-time branch on the material, and its per-material map branches sample with explicit gradients (`textureSampleGrad`). The shadow-catcher branch now sits after the specular anti-aliasing kernel, with the alpha hash's threshold and alpha to coverage's width hoisted above it ([D-163](decisions/D-163-shadow-catcher-material.md)).

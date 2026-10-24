@@ -8,7 +8,10 @@
 // budget a set of independent pieces to leave out when a scene has more splats than draw.
 import type { SplatData } from './format';
 
-/** The splats that a chunk holds, at about. The cut keeps chunks within 4 times this. */
+/**
+ * The splats that a chunk aims to hold. A cloud that fills only part of its bounds gives fewer,
+ * larger chunks, because its cells hold the splats that fall in them.
+ */
 const CHUNK_SPLATS = 25_000;
 
 /** The grid cells that one axis may have, so a scene far out never makes tiny cells. */
@@ -85,16 +88,18 @@ export async function chunkSplats(
 	const { yieldTo, onChunk } = options;
 	const bounds = boundsOf(data);
 	const cellSplats = Math.min(count, options.splatsPerChunk ?? CHUNK_SPLATS);
-	// Enough cells on a side that a cell holds about one chunk's load.
+	// Enough cells on a side that the cells of the bounds hold about one chunk's load each. The
+	// cube root follows the cloud's size and that load, so a bigger cloud makes smaller chunks
+	// rather than one chunk of the whole.
 	const perAxis = Math.max(
 		1,
 		Math.min(MOST_CELLS_PER_AXIS, Math.ceil((count / cellSplats) ** (1 / 3))),
 	);
 	const cells = perAxis ** 3;
 	const extent = [0, 1, 2].map((k) => (bounds.max[k] as number) - (bounds.min[k] as number));
-	const scale = [0, 1, 2].map(
-		(k) => ((perAxis - 1) / Math.max(extent[k] as number, 1e-9)) as number,
-	);
+	// Each axis is cut into `perAxis` equal widths across the bounds, so a splat's cell follows its
+	// place in the cloud and nothing else.
+	const scale = [0, 1, 2].map((k) => (perAxis / Math.max(extent[k] as number, 1e-9)) as number);
 	const cellOf = (i: number): number => {
 		const position = data.positions;
 		const x = Math.min(
