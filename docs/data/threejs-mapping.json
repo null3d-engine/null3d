@@ -473,7 +473,7 @@
       "status": "direct",
       "since": "0.3",
       "target": "scene.overrideMaterial = material, and null for each object's own material",
-      "notes": "Draws every mesh and instance batch of the main pass with the material, each keeping its mesh, place and instances, as three.js does. Sprites, points, lines and particle systems keep their own materials, and the shadow maps keep each object's material, so a masked caster still cuts its shadow. A sprite, point or line material throws E1223. The change rebuilds the engine's draw tables in the next frame, and adds no draw call or pipeline after that.",
+      "notes": "Draws every mesh and instance batch of the main pass with the material, each keeping its mesh, place and instances, as three.js does. Sprites, points, lines and particle systems keep their own materials, and the shadow maps keep each object's material, so a masked caster still cuts its shadow. A sprite, point or line material throws E1224. The change rebuilds the engine's draw tables in the next frame, and adds no draw call or pipeline after that.",
       "docs": "api/scene",
       "detect": "\\.overrideMaterial\\s*="
     },
