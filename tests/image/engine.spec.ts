@@ -14,6 +14,7 @@ import {
 	engineProblems,
 	THREADED_MODES,
 } from '../lib/engine-checks.ts';
+import { gltfDownloads, recordRequests } from '../lib/gltf-loader-files.ts';
 import { pageResult } from '../lib/page-result.ts';
 import { restoreWaitAsync, withoutWaitAsync } from '../lib/without-wait-async.ts';
 
@@ -371,6 +372,24 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				requests.filter((path) => FIRST_CALL_PATTERNS.some((file) => file.test(path))),
 			).toEqual([]);
 		});
+
+// The engine test page, whose start the startup benchmark times, loads no glTF file.
+for (const mode of ENGINE_MODES)
+	test(`a page without glTF files downloads no part of the glTF loader, ${mode.name}`, async ({
+		page,
+	}) => {
+		const requests = recordRequests(page);
+		await page.goto(`engine.html?gpu=webgl2&seconds=1&${mode.query}`);
+		const result = await pageResult<{ error?: string }>(page, 30_000);
+		expect(result.error).toBeUndefined();
+		expect(gltfDownloads(requests)).toEqual({
+			loader: 0,
+			worker: 0,
+			meshopt: 0,
+			draco: 0,
+			dracoWasm: 0,
+		});
+	});
 
 /**
  * Sketches of the image tests that use one feature whose shader builds load on first use. Every

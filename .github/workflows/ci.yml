@@ -1040,7 +1040,8 @@ jobs:
     # takes about half a minute and 10 GB of memory, so the pages build one at a time, and only in
     # this job: every other browser job leaves them out. The job runs in two parts, each of which
     # builds only the pages that its test files load, so no page builds twice. The first holds the
-    # test files of the engine test page, which hold most of the test time. The tests that run alone
+    # test files of the engine test page, which hold most of the test time, and the second the glTF
+    # tests, whose check of the engine test page lives with that page's tests. The tests that run alone
     # run after the others, one at a time, on the same build; the second part has none. The test files
     # come before --project, which takes every name that follows it.
     name: browser (the production build, ${{ matrix.part }})
@@ -1053,13 +1054,13 @@ jobs:
       matrix:
         include:
           - id: engine
-            part: the engine, KTX2 and glTF pages
-            pages: engine ktx2-files texture-cache gltf-files
-            tests: engine.spec.ts content-security-policy.spec.ts cdn.spec.ts ktx2.spec.ts gltf.spec.ts
+            part: the engine and KTX2 pages
+            pages: engine ktx2-files texture-cache
+            tests: engine.spec.ts content-security-policy.spec.ts cdn.spec.ts ktx2.spec.ts
           - id: others
-            part: the errors, sketch shaders and stats pages
-            pages: errors sketch-shaders stats
-            tests: errors.spec.ts sketch-shaders.spec.ts stats.spec.ts
+            part: the errors, sketch shaders, stats and glTF pages
+            pages: errors sketch-shaders stats gltf-files
+            tests: errors.spec.ts sketch-shaders.spec.ts stats.spec.ts gltf.spec.ts
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
