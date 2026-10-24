@@ -856,14 +856,16 @@ jobs:
     # compiler, its WGSL in a project, its declarations, its compiler pool, and the packing of every
     # compiled shader of the repository's test pages and demos. They read the compiler and the shader
     # modules that the build job made, and build no Rust, so they need no toolchain. The packing test
-    # takes as long as the others together, so it runs in a part of its own. A part whose inputs
+    # runs in 4 parts of its own, each with a quarter of the modules, a pass and a cache of its own:
+    # after a change to the shader crates, one part compiled every module for 7.5 minutes in run
+    # 40085184470, the end of that run, while the others had ended by 5.9. A part whose inputs
     # passed in an earlier run passes again, as the shader-compiler shards do. Its key names the
     # files that decide what the compiler and the shader modules hold, the plugin and the test
     # helper that its tests import, and the repository's WGSL that the part compiles: the modules
     # with WGSL of the test pages, the fixtures and the demos for the packing test, which
     # tools/lib/wgsl-modules.ts lists, and the two files whose declarations the plugin's tests
     # compare for the other part.
-    name: shader-compiler-plugin (${{ matrix.script }})
+    name: shader-compiler-plugin (${{ matrix.script }}${{ matrix.share && format(' {0}', matrix.share) || '' }})
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -871,7 +873,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        script: [test:shader-compiler:plugin, test:shader-compiler:pack]
+        include:
+          - script: test:shader-compiler:plugin
+          - { script: test:shader-compiler:pack, share: 1/4 }
+          - { script: test:shader-compiler:pack, share: 2/4 }
+          - { script: test:shader-compiler:pack, share: 3/4 }
+          - { script: test:shader-compiler:pack, share: 4/4 }
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
@@ -886,13 +893,13 @@ jobs:
       # pages, the fixtures and the demos, so its key holds those modules alone: a change to a page
       # or a demo that holds no WGSL passes it again. The whole folders once made a key that changed
       # with almost every push, and the part took 5.5 to 6.8 minutes each time.
-      - name: The hash of the modules that the packing test compiles
+      - name: The hash of the modules that this part of the packing test compiles
         id: modules
         if: matrix.script == 'test:shader-compiler:pack'
-        run: bun tools/lib/wgsl-modules.ts >> "$GITHUB_OUTPUT"
+        run: bun tools/lib/wgsl-modules.ts ${{ matrix.share }} >> "$GITHUB_OUTPUT"
       - name: The key of this part's inputs
         id: inputs
-        run: echo "key=passed-v2-shader-compiler-plugin-${{ matrix.script }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'tools/lib/wgsl-modules.ts', 'tools/lib/build-cache.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}-${{ matrix.script == 'test:shader-compiler:pack' && steps.modules.outputs.hash || hashFiles('tests/fixtures/typed-uniforms/**', 'tests/pages/sketches/shaders/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=passed-v2-shader-compiler-plugin-${{ matrix.script }}${{ matrix.share && format('-{0}', matrix.share) || '' }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'tools/lib/wgsl-modules.ts', 'tools/lib/build-cache.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}-${{ matrix.script == 'test:shader-compiler:pack' && steps.modules.outputs.hash || hashFiles('tests/fixtures/typed-uniforms/**', 'tests/pages/sketches/shaders/**') }}" >> "$GITHUB_OUTPUT"
       - name: Find an earlier pass with the same inputs
         id: passed
         uses: actions/cache/restore@v4
@@ -913,11 +920,13 @@ jobs:
         if: steps.passed.outputs.cache-hit != 'true' && matrix.script == 'test:shader-compiler:pack'
         with:
           path: node_modules/.cache/null3d-shaders
-          key: shader-pack-compiles-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/vite-plugin/**') }}-${{ steps.modules.outputs.hash }}
+          key: shader-pack-compiles-${{ matrix.share }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/vite-plugin/**') }}-${{ steps.modules.outputs.hash }}
           restore-keys: |
-            shader-pack-compiles-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/vite-plugin/**') }}-
+            shader-pack-compiles-${{ matrix.share }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/vite-plugin/**') }}-
       - name: The Vite plugin's tests through the shader compiler
         if: steps.passed.outputs.cache-hit != 'true'
+        env:
+          NULL3D_PACK_SHARE: ${{ matrix.share }}
         run: bun run ${{ matrix.script }}
       - name: Record this part's pass of these inputs
         if: steps.passed.outputs.cache-hit != 'true'

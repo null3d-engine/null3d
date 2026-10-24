@@ -283,6 +283,24 @@ describe("CI's workflow", () => {
 		expect(shards).toEqual(Array.from({ length: count }, (_, i) => `${i}/${count}`));
 	});
 
+	it('runs each share of the packing test once, with a pass and a cache of its own', () => {
+		const shares = (matrixOf('shader-compiler-plugin').include ?? [])
+			.filter(({ script }) => script === 'test:shader-compiler:pack')
+			.map(({ share }) => String(share).split('/').map(Number));
+		const count = shares[0]?.[1] ?? 0;
+		expect(count).toBeGreaterThan(1);
+		expect(shares.map(([part]) => part)).toEqual(oneTo(count));
+		expect(shares.every(([, total]) => total === count)).toBe(true);
+		const steps = jobNamed('shader-compiler-plugin').steps ?? [];
+		const pass = steps.find(({ name }) => name === "The key of this part's inputs")?.run ?? '';
+		const cache = steps.find(
+			({ with: given }) => given?.path === 'node_modules/.cache/null3d-shaders',
+		);
+		expect(pass).toContain('matrix.share');
+		expect(String(cache?.with?.key)).toContain('matrix.share');
+		expect(String(cache?.with?.['restore-keys'])).toContain('matrix.share');
+	});
+
 	it('runs each shard of each sharded Rust test part once', () => {
 		const shards = new Map<string, string[]>();
 		for (const part of matrixOf('rust-tests').include ?? []) {
