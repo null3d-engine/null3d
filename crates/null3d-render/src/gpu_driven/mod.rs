@@ -1358,6 +1358,12 @@ impl GpuDrivenRenderer {
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<bool, RecordError> {
+        // A draw whose count the GPU writes needs the indirect path: the direct path reads every
+        // count on the CPU and creates no indirect buffer for the frame's count copy. The first
+        // frame picks the builder's path, so a scene that holds such a draw takes the indirect one.
+        if !self.created && !self.settings.feature_instances().is_empty() {
+            self.config.direct_draws = false;
+        }
         let parity = input.parity();
         let shadow = self.settings.shadow_frame(input);
         let camera = self.settings.view_frame(
