@@ -133,6 +133,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/particles', title: 'Particles (@null3d/particles)', since: '0.2', summary: 'createParticles: emitters, bursts and sub-emitters; closed-form GPU motion; soft particles; flipbooks made in code.' },
 	{ id: 'api/impostors', title: 'Impostors (@null3d/impostors)', since: '0.2', summary: 'createImpostors: far objects as camera-facing cards that show the stored view nearest the camera; mergeFarGeometry: one mesh per far grid cell.' },
 	{ id: 'api/terrain', title: 'Terrain (@null3d/terrain)', since: '0.2', summary: 'createTerrain: a height field drawn as a camera-centered quadtree of blocks, a splat-mapped surface, and heightAt and normalAt for placing objects.' },
+	{ id: 'api/vegetation', title: 'Vegetation (@null3d/vegetation)', since: '0.3', summary: 'Trees, conifers, shrubs, ferns, hostas and grass grown from a species record and a seed, with detail levels and wind data.' },
 	{ id: 'api/splats', title: 'Gaussian splats (@null3d/splats)', since: '0.3', summary: 'createSplats: SPZ files and KHR_gaussian_splatting models drawn as Gaussian splats, with detail levels, a budget that follows the preset and the GPU path, and a soft mix with meshes.' },
 	{ id: 'api/ui', title: 'UI overlays and labels', since: '0.2', summary: 'ui.trackLabel in the sketch; engine.labels.bind on the page.' },
 	{ id: 'api/page', title: 'Messages between sketch and page', since: '0.1', summary: 'page.post and page.onMessage in the sketch; engine.postToSketch and engine.onSketchMessage on the page.' },
