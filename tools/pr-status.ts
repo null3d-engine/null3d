@@ -183,7 +183,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-F5':
 		'the water add-on, its records and its demos are on the branch, but twelve of its reference pictures are not drawn, so the picture-reference check fails; its evidence line waits on those pictures',
 	'M3-V5':
-		"the atlases draw and the crowns keep their coverage at three distances, but the task's line asks the owner to judge them at least as good as Creek's painted textures, and its author reports the generated leaves are not there yet; the paint time per device is owed too",
+		"every vegetation picture passes in both reference sets on both GPUs and the crowns keep their coverage at three distances, and the leaf cells now hold a spray of lobed, veined, damaged leaves instead of one smooth shape. Its author's verdict is that the atlas is at least as good as Creek's as a texture, and that the crown is still paler and flatter because the material lights it with one uniform light while Creek's texture carries painted shadowing, which belongs to M3-V7. The task's line asks the owner to judge the two side by side, and the paint time per device is owed too",
 	'M3-V1':
 		'Creek has no WebGPU figure on any device, and no vegetation task after it has its own budget per preset',
 	'M3-V3': 'the Mac, iPad and phone GPU time and memory are not recorded',
