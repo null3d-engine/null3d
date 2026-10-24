@@ -19,36 +19,12 @@
 // encoded colors, as those objects do, so a layer that covers fully draws the same on both paths
 // and one that covers partly differs by the encode's rounding.
 #import null3d::globals::Frame
+#import null3d::sky_layer::{SkyLayer, SkyLayerInput, SkyLayerValues}
 #import null3d::tonemap
 #import null3d::backdrop::box_corner
 
-/// What the layer's shader reads: the direction of the fragment's view ray, the core sky's cloud
-/// settings, the sketch time in seconds, and how much of the sun the layer hides, from 0 for none
-/// to 1 for all of it.
-struct SkyLayerInput {
-    direction: vec3f,
-    clouds: vec4f,
-    time: f32,
-    sun: f32,
-}
-
-/// What the add-on's shader writes. The template's `skyLayer` call is the one function that an
-/// add-on gives: linear color in the pass's own format, and coverage from 0 to 1.
-struct SkyLayer {
-    color: vec3f,
-    coverage: f32,
-}
-
-struct Layer {
-    /// The core sky's cloud coverage, cloud density, cloud elevation and cloud scale.
-    clouds: vec4f,
-    /// The share of the sun that the layer hides, then the layer's own opacity, then two spare
-    /// values.
-    view: vec4f,
-}
-
 @group(0) @binding(0) var<uniform> frame: Frame;
-@group(1) @binding(0) var<uniform> layer: Layer;
+@group(1) @binding(0) var<uniform> layer: SkyLayerValues;
 
 struct LayerOut {
     @builtin(position) clip: vec4f,

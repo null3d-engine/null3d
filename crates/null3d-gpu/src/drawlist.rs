@@ -200,6 +200,13 @@ pub enum Op {
     /// The stages before the copy write nothing that a frame reads, so a map can refresh over
     /// several frames while frames draw with the old one. Each stage reads only what earlier
     /// stages wrote, in this list or in an earlier one.
+    ///
+    /// A map of a scene with a sky layer draws the sky with the layer's own build of the generator's
+    /// shader, which the words after the settings name: the template of that build, then the core
+    /// sky's cloud coverage, density, elevation and scale that the layer obeys, the share of the sun
+    /// that it hides, its opacity and its clock. The last stage names the buffer of the ring that
+    /// the map's light capture lands in, and a `ReadBuffer` after it brings the nine coefficients of
+    /// the map's diffuse light into engine memory.
     SkyMapStep = 55,
     /// [probes texture id, chain texture id, layer, image id, then the six faces' texture ids]:
     /// makes one reflection probe's map from what its six capture views drew (decision record
