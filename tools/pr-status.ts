@@ -58,7 +58,8 @@ const NOTES: Readonly<Record<string, string>> = {
 		"the compute pass and its WebGL2 fragment form are built and tested; the first-user outcome waits on M3-F9's ocean, because the splats add-on cannot take the hook",
 	'M3-E10':
 		"the sky layer's template, ids and sizes are in place but unregistered; the example add-on that draws a sky layer, the task's first user, does not exist",
-	'M3-B1': 'the lens kit has no picture test and no cost per preset',
+	'M3-B1':
+		'the pictures hold every lens mark now, and the streak and grain ones were tightened after they proved nothing at the default threshold: each mark moves about 2.8 per cent of the pixels against a half per cent limit. The cost per preset is still owed — it needs a machine idle enough for a quiet timing run, and the fleet has not given one since this morning',
 	'M3-D9':
 		'the command and its refusal of an add-on that imports the engine internal entry are tested; no recorded run holds it over every foundation add-on',
 	'M3-L1':
