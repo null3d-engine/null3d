@@ -518,9 +518,10 @@ and a hero car with two screens.
   for them, the reflections' depth prepass among them. `createVehicleHull` therefore takes a detail
   as its third argument. The light hull shares each vertex between the faces that meet at it, which
   draws the same triangles from 24 vertices and shades the body as one smooth shell instead of
-  faceted panels. Skyway draws the light hull. At Low, at the pixel size of a cloud phone's screen,
-  that took the frame from 3.79 to 3.06 ms of GPU time on WebGPU and from 7.09 to 5.38 ms on WebGL2,
-  and the traffic's own share from 1.33 to 0.64 ms and from 2.81 to 1.11 ms
+  faceted panels. Skyway draws the light hull at Low, the preset a phone runs, and the full one at
+  Medium and above. At Low, at the pixel size of a cloud phone's screen, that took the frame from
+  3.79 to 3.06 ms of GPU time on WebGPU and from 7.09 to 5.38 ms on WebGL2, and the traffic's own
+  share from 1.33 to 0.64 ms and from 2.81 to 1.11 ms
   ([D-246](decisions/D-246-skyway-vehicle-vertices.md)).
 - **A moved row needs a larger bounding sphere.** The engine culls each row by its mesh's bounding
   sphere. A vertex offset carries a car up to the lane's length from its row's origin. Each batch
@@ -596,10 +597,10 @@ and a hero car with two screens.
   settings stop at Medium, but the demo's counts follow the preset that the page asked for. So
   `preset=high` there draws 75,000 cars at Medium settings.
 
-  These rows draw the full hull. The light hull that the demo draws now was measured on the same Mac
-  at a canvas of 618 x 1372 device pixels, the size that a cloud phone's screen gives the demo at
-  Low, with the same switches and the governor on: at Low it took the WebGPU frame from 3.79 to
-  3.06 ms and the WebGL2 frame from 7.09 to 5.38 ms ([D-246](decisions/D-246-skyway-vehicle-vertices.md)).
+  These rows draw the full hull, which the demo keeps at Medium and above. At Low it draws the light
+  hull, measured on the same Mac at a canvas of 618 x 1372 device pixels, the size that a cloud
+  phone's screen gives the demo: that took the WebGPU frame from 3.79 to 3.06 ms and the WebGL2
+  frame from 7.09 to 5.38 ms ([D-246](decisions/D-246-skyway-vehicle-vertices.md)).
 - **The lens.** The picture's grade, its sharpening, its vignette and the camera's own marks come
   from the lens-kit example add-on (`examples/addons/lens-kit/`). The grade, the sharpening and the
   vignette are the core's own settings, which the kit sets from one look: the grade is the core's
