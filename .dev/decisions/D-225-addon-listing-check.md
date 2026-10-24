@@ -134,3 +134,35 @@ shader builds of its two tone curves and its outline passes. That is the shape t
 [D-56](D-56-first-use-shader-files.md) moved out of code for the engine: shader text belongs in a
 file that loads on the feature's first use, under the shader budget, not inside the add-on's entry.
 The gate did its job: three-compat shipped over budget because nothing had measured it.
+
+## Fixed, 24 October 2026: three-compat's first-use builds
+
+The failure above measured the add-on's entry, and the entry held the compiled builds of its
+shaders. Through the plugin's own packing, the five `.wgsl` files of the entry make 184.5 KB, and
+the entry itself was 181.9 KB. The two tone curves are 125.6 KB of that (69%), and the three
+outline effects 59.0 KB (32%). The add-on's own code is the remaining few KB.
+
+The fix takes the shape that [D-56](D-56-first-use-shader-files.md) gave the engine's own shaders.
+A custom effect's and a custom tone curve's builds load on first use, in a set for each GPU path,
+as a custom material's already did. The plugin keeps none of their builds in the module. It writes
+each set to a file of its own, named `effect-<path>-0-<hash>.js` or `curve-<path>-0-<hash>.js`.
+The engine imports a shader's set when the sketch first uses it, and waits for it as it waits for a
+custom material's. A caller that imports only the tone curves downloads only their code. It then
+downloads the curve's builds for its GPU path when it first sets one. A caller that never imports
+the add-on downloads nothing. The outline's builds load when `createOutlinePass` first uses them.
+
+The gate's budget did not change. Its list of compiled-shader-build files now names the effect and
+tone-curve sets that the plugin writes, beside the material sets, because all three are the same
+kind of file: shader data that a page loads on first use.
+
+The rebuilt add-on passes every size gate. Its 12 files include:
+
+| File | Raw | Gzip | Brotli |
+| --- | --- | --- | --- |
+| `addon.js` | 27.8 KB | 4.3 KB | 3.7 KB |
+| largest curve set | 31.5 KB | 5.7 KB | 4.9 KB |
+| largest effect set | 9.2 KB | 2.7 KB | 2.4 KB |
+
+The checks that hold a set file to the shader budget and the plugin's virtual-module names now
+cover the effect and tone-curve kinds. [E1424](../../docs/errors/E1424.md) names all three kinds of
+build file.

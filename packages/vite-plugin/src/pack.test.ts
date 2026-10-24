@@ -112,7 +112,7 @@ describe('ShaderPack', () => {
 		const shader = material(2);
 		const set = new ShaderPack();
 		const records = [{}, { standard_skin: variant(7) }];
-		const code = `export default ${pack.value(shader, undefined, 1)};\n${pack.unpacker()}\nfunction ${LOAD_BUILDS}(target, set) {\n\treturn import('./set.mjs').then((module) => ({ default: target + ' ' + set === 'wgsl 64' ? module.default : [] }));\n}\n`;
+		const code = `export default ${pack.value(shader, undefined, 1, 'material')};\n${pack.unpacker()}\nfunction ${LOAD_BUILDS}(kind, target, set) {\n\treturn import('./set.mjs').then((module) => ({ default: kind + ' ' + target + ' ' + set === 'material wgsl 64' ? module.default : [] }));\n}\n`;
 		const setCode = `export default ${set.value(records)};\n${set.unpacker()}`;
 		const loaded = (await run(code, { 'set.mjs': setCode })) as CompiledMaterial;
 		const { builds, ...rest } = loaded;
