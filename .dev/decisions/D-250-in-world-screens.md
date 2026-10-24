@@ -1,7 +1,8 @@
 # D-250: In-world screens draw as panels by distance
 
-Status: decided. Date: 24 October 2026. Task: M3-B3. The measured cost of the LCD look is owed: the
-cost run waits for a quiet Mac, and the machine was loaded when the branch was written.
+Status: decided. Date: 24 October 2026. Task: M3-B3. The measured cost of the LCD look is owed: a
+timing run on 25 October 2026 waited the whole ten-minute quiet limit while other jobs held the Mac
+at a load of 37 to 57, so no figure is recorded here yet.
 
 Summary: An example add-on draws a display on an `OffscreenCanvas` as one canvas-backed texture with
 its own refresh rate, changed-rectangle uploads and a click mapped back to the canvas. Its LCD
