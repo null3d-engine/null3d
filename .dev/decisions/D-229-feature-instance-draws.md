@@ -127,3 +127,61 @@ page's count.
 - The compute pass's `buffers` option takes the draw's two handles in binding order, as the fixed
   storage-buffer bindings of its group; the storage buffer's layout is E8's surface to extend, not
   a second surface.
+
+## Addendum 24 October 2026: a bucket that names the draw
+
+The picture tests drew nothing on WebGPU core and in compatibility mode. That held for both the
+page-filled count and the compute-written count. The same material and shader drew in an ordinary
+mesh. The cause was the bucket key. A bucket's key carries the bounds that `Layout::rebuild` gives
+its object. The layout found a bucket's feature draw through the one object that its own bounds
+name. The adapter marks its object unculled, because the add-on's own count is its cull. That flag
+gives bounds that several objects share. So the bucket held no object. It named no feature draw,
+and it bound the view's compacted instances instead of the add-on's buffer. It never received a
+count either: the frame skipped it in every count copy, and its indirect entry kept the reset's
+zero.
+
+A feature draw's object now takes bounds of its own whatever its flags say. Its bucket then names
+the draw and its buffers. Its scene entry stays `HIDDEN` for culling, so the GPU culls none of it.
+The unit test for this case set `CUSTOM_BOUNDS`, which the adapter never sets. It now sets the
+flag that the adapter sets. It also covers an object with no bounds flags at all.
+
+The fix found a second gap, on the direct-draw path that the start-up probe picks on Apple's GPUs
+([D-174](D-174-apple-gpu-direct-draws.md)). That path counts every draw on the CPU. It makes no
+indirect buffer, so the frame's count copy had nowhere to write. A scene that holds a
+feature-instance draw now takes the indirect path for the whole session. The first frame picks the
+path before it creates any path state. An add-on that creates such a draw after the first frame is
+not supported on that path. The frame then names a buffer that does not exist, and it stops. The
+sketch's setup creates its draw before the first frame, so the shipped sketches take the indirect
+path.
+
+## Open fault: the space of the instance rows
+
+The pictures stay empty on WebGPU for a third reason. That reason needs a decision before the API's
+contract freezes. The vertex shaders read an instance matrix in **camera-relative** space. This is
+the engine's instance format. The frame that culls a scene adds the camera-to-cell offset to each
+object's world matrix. `relative_position` then needs no further subtraction. A page writes the
+rows that `setInstances` takes as **world** matrices, as the API page says. Nothing converts them
+on the WebGPU path. The rows go straight into the add-on's buffer that the vertex shader reads.
+The measured result is exact. A page row at the world origin reads as a position on the camera's
+own plane. Its clip `w` is zero, and the triangle draws nothing. Rows that carry `-camera` in their
+translation draw the expected picture on WebGPU: 4002 bright pixels against none. The same rows
+drawn through the WebGL2 batch put the shape elsewhere, because that path places rows in world
+space.
+
+The WebGL2 path hides the fault. Its adapter splits each row into an instance batch, whose
+positions the engine treats as world. So a page's world rows draw there and nowhere else.
+
+Letting the add-on write camera-relative rows is not enough on its own. The add-on's compute pass
+block carries no camera. A page's camera also moves after it has written its rows. Two ways out
+are open, and the choice belongs to the owner:
+
+1. Convert on the GPU. A small engine pass adds the frame's camera offset to the rows in place,
+   once for each feature draw in each frame. One contract serves both paths, and no CPU work
+   repeats. It costs a compute shader and a dispatch for each such draw.
+2. Convert as the rows reach the buffer. The engine adds the camera offset to a page's rows when
+   it uploads them. It also gives the add-on's compute pass the camera offset in its block, so the
+   compute writes camera-relative rows. That repeats an upload of the drawn rows in every frame
+   where the camera moves.
+
+Until then the two instance pictures stay black on WebGPU, and the references stay missing. The
+engine must not accept a blank picture as a reference.

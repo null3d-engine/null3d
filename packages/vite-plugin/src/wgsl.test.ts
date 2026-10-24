@@ -247,7 +247,7 @@ describe.skipIf(!ENABLED)('compileWgsl', () => {
 		);
 		expect([none.line, none.column]).toEqual([1, 1]);
 		expect(none.message).toStartWith(
-			'the WGSL has no entry point and no function of a custom material or effect.',
+			'the WGSL has no entry point and no function of a custom material, effect or sky layer.',
 		);
 		expect(none.message).toEndWith(' HINT');
 		const twice = SHADER.replace(
@@ -313,6 +313,28 @@ fn effect(input: EffectInput) -> vec4f {
 		const bad = 'fn effect(input: EffectInput) -> vec4f {\n    return input.color * missing;\n}\n';
 		const problem = failure(await compileWgsl('src/bad.wgsl', bad, HINT));
 		expect([problem.file, problem.line]).toEqual(['src/bad.wgsl', 2]);
+	});
+
+	it('builds a sky layer into every variant of the sky-layer template', async () => {
+		const wgsl =
+			'fn skyLayer(input: SkyLayerInput) -> SkyLayer {\n    return SkyLayer(vec3f(input.clouds.x), 1.0);\n}\n';
+		const result = await compileWgsl('src/aurora.wgsl', wgsl, HINT);
+		if (!result.ok) throw new Error(JSON.stringify(result.problems));
+		expect(result.shader.kind).toBe('skyLayer');
+		if (result.shader.kind !== 'skyLayer') throw new Error('not a sky layer');
+		expect(Object.keys(result.shader.variants).sort()).toEqual([
+			'webgl2',
+			'webgl2_tone_map',
+			'webgpu',
+			'webgpu_tone_map',
+		]);
+		expect(result.shader.variants.webgpu?.wgsl?.source).toContain('skyLayer');
+		// A layer with uniforms is refused: its values come from the template's own block.
+		const bad =
+			'struct Uniforms { tint: vec3f }\nfn skyLayer(input: SkyLayerInput) -> SkyLayer {\n    return SkyLayer(vec3f(0.0), 0.0);\n}\n';
+		const problem = failure(await compileWgsl('src/bad.wgsl', bad, HINT));
+		expect([problem.file, problem.line]).toEqual(['src/bad.wgsl', 1]);
+		expect(problem.message).toContain('takes no `struct Uniforms`');
 	});
 
 	it('builds a surface function into every variant of the standard material', async () => {

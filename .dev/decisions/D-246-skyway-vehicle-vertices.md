@@ -1,4 +1,4 @@
-# D-244: Skyway's frame goes on the vehicles' vertices
+# D-246: Skyway's frame goes on the vehicles' vertices
 
 Status: decided on 24 October 2026 for the Skyway showcase (M3-C1) and the traffic-lanes example
 add-on. Date: 2026-10-24. Task: M3-C1 follow-up.

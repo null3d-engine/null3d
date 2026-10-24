@@ -3,12 +3,12 @@ id: api/textures
 title: Textures
 status: experimental
 since: "0.1"
-summary: "loadTexture options; KTX2 files; fromData; fromImageBitmap; fromCanvas; fromPass."
+summary: "loadTexture options; KTX2 files; fromData; fromImageBitmap; fromCanvas; fromVideo; fromPass."
 ---
 
 # Textures
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Step 0.2 adds `textures.fromPass` and `textures.fromCanvas`. Materials cannot sample a cube map yet, so coding agents must not try. A cube map can be a background: [Assets](assets.md) loads one with `assets.loadCubemap`.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Step 0.2 adds `textures.fromPass` and `textures.fromCanvas`, and step 0.3 adds `textures.fromVideo`. Materials cannot sample a cube map yet, so coding agents must not try. A cube map can be a background: [Assets](assets.md) loads one with `assets.loadCubemap`.
 
 ```mermaid
 flowchart LR
@@ -17,14 +17,16 @@ flowchart LR
     ktx2["A KTX2 file"] -->|"assets.loadTexture:<br/>transcoded in a worker to<br/>the device's compressed format"| texture
     data["Texel data<br/>(typed array)"] -->|"textures.fromData"| texture
     canvas["An OffscreenCanvas<br/>drawn in the sketch"] -->|"textures.fromCanvas,<br/>then texture.refresh<br/>for each change"| texture
+    video["A video element<br/>on the page"] -->|"engine.registerVideo,<br/>then textures.fromVideo<br/>for the video's name"| texture
     texture -->|"uploads a band of rows per frame,<br/>within the frame's upload budget"| layer["A layer of a texture array<br/>on the GPU, with mip levels"]
 ```
 
-A texture is an image or a block of data on the GPU, which materials sample. The scene can also show a texture behind every object ([Scene](scene.md#the-camera-and-the-background)). A sketch makes textures in four ways:
+A texture is an image or a block of data on the GPU, which materials sample. The scene can also show a texture behind every object ([Scene](scene.md#the-camera-and-the-background)). A sketch makes textures in five ways:
 
 - `assets.loadTexture(url, options)` downloads an image file or a KTX2 file and decodes it into a texture. [Assets](assets.md) covers the loading calls.
 - `textures.fromImageBitmap(bitmap, options)` makes a texture from an image that is decoded already.
 - `textures.fromCanvas(canvas, options)` makes a texture that follows an `OffscreenCanvas`, such as a score board or a map that the sketch draws. `texture.refresh(rect)` then sends the pixels that changed.
+- `textures.fromVideo(name, options)` makes a texture that follows a video on the page, which `engine.registerVideo` registered under that name. Each frame that the video presents gives the texture new texels.
 - `textures.fromData({ width, height, depth, format, data })` makes a texture from numbers, four per texel.
 
 ```ts
@@ -150,6 +152,29 @@ return {
 
 The screen shows the canvas with the sampling of any image. Give it mip levels of its own only where it shrinks on screen, since the GPU makes them again after each refresh.
 
+## Videos
+
+A video element lives on the page, because no worker thread has a DOM. Register it there with `engine.registerVideo(video, { name })`, and follow it in the sketch with `textures.fromVideo(name)`. The page sends the sketch the image of each frame that the video presents, and the texture uploads the newest one in its turn, within the frame's upload budget.
+
+```ts
+// page.ts
+engine.registerVideo(video, { name: 'intro', maxSize: 512 });
+```
+
+```ts
+// sketch.ts
+const screen = textures.fromVideo('intro');
+```
+
+- The first frame gives the texture its size. Until a frame is on the GPU, materials draw as without the map.
+- The image stands upright on a plane, with v = 0 at its bottom row, as an image that `textures.fromImageBitmap` takes does.
+- A paused video presents no frame, so the page sends none and the texture costs nothing. The sketch's call sends the frame that the video shows then, so a video that is paused at the call still shows.
+- A frame that comes while the one before it still uploads is dropped, so a frame larger than the budget shows fewer frames a second rather than an upload that never finishes. Keep a frame within the upload budget: the page scales it down to `maxSize`, 512 texels by default.
+- `texture.destroy()` stops the page's frames. So does the function that `engine.registerVideo` returns.
+- The texture has mip levels, as an image's do, and the GPU makes them again after each frame. Give it `mipmaps: false` where it never shrinks on screen, to save that work each frame.
+
+The video element's own settings, such as its file format and its cross-origin rules, belong to the page: [Video textures](../guides/video-textures.md) covers them.
+
 ## Data
 
 `textures.fromData` takes four numbers per texel, in rows from the bottom up. It stores them in one of two formats:
@@ -185,7 +210,7 @@ const screen = materials.unlit({ map: textures.fromPass(map) });
 - An image may have another size, and the texture then takes that size. Images fill textures of one layer in `rgba8unorm`.
 - Data must fit the texture's size and format.
 
-Until the new texels are on the GPU, materials draw with their colors alone. The scene shows its background color in place of a background texture. For a texture that changes often, such as frames of a video, keep the images small. Or follow a canvas and refresh only the rectangle that changed. Each image update decodes and uploads a whole image.
+Until the new texels are on the GPU, materials draw with their colors alone. The scene shows its background color in place of a background texture. For a texture that changes often, follow the source that changes: a canvas with `textures.fromCanvas`, whose refresh uploads only the rectangle that changed, or a video with `textures.fromVideo`, whose page sends one frame at a time. Each image update uploads a whole image.
 
 `texture.destroy()` frees the texture's GPU memory. Materials that map it draw with their colors alone, and the scene shows its background color in place of a background texture. Later calls on the texture throw [E1101](../errors/E1101.md).
 

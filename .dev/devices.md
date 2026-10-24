@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `skyway`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost` and `object-growth`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `demos`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost` and `object-growth`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is grey while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-grey when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -287,11 +287,12 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 - `tests/pages/sky-refresh.html` moves the sun and captures frames until the sketch's frame count stops. Each result note gives the frames from the move until both spheres show the new sky's light. It is 6 on the Mac. The plan runs it on the same three paths, with the drawing held to 20 frames a second.
 - Run it on a cloud phone and iPad: `bun run devices:cloud --only bsgalaxys24-chrome,bsipad10-safari --plan sky`.
 
-## The skyway plan
+## The demos plan
 
-- The `skyway` plan plays the Skyway showcase live on each GPU path, with the quality governor on. Its page starts the demo as a person plays it, waits for the first frame, and measures the frames.
+- The `demos` plan plays the Skyway and Night town showcases live on each GPU path, with the quality governor on. Its page starts a demo as a person plays it, waits for the first frame, and measures the frames.
 - It reports the preset and thread mode that the engine ran. It gives the frame rate, the display's rate and the frame intervals' median and 95th and 99th percentiles. It also reports the first-frame time, and the bytes that the page downloaded before the first frame and in total.
-- Each path runs twice, once at the preset that the engine chooses and once at High. The showcase's target names the chosen preset, so the chosen reading answers it. The High reading shows what the preset above costs on the device.
+- Each demo runs twice on each path, once at the preset that the engine chooses and once at High. A showcase's target names the chosen preset, so the chosen reading answers it. The High reading shows what the preset above costs on the device.
+- `--only` picks some of the plan's pages, such as `demo-night-town-webgl2-chosen`.
 - It fails when the measure drew no frame. The plan times frames, so the runner page measures the display's refresh rate before each page.
 - The `warm-up-time` plan also loads Skyway, for its pipeline wait and its first-frame time with fresh shaders.
 

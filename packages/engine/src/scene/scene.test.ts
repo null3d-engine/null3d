@@ -80,6 +80,8 @@ function fakeCore(largeWorld = false) {
 		[C.RING_FIELD_READ_INDEX]: AT.read,
 	};
 	const backgrounds: (number | number[])[] = [];
+	/** The sky layer calls: the shader's template, the share of the sun it hides and its opacity. */
+	const skyLayers: number[][] = [];
 	const overrides: number[] = [];
 	/** The calls that make and change views: the rectangle's numbers, by call. */
 	const viewCalls = { added: [] as number[][], rects: [] as number[][], removed: [] as number[] };
@@ -124,6 +126,10 @@ function fakeCore(largeWorld = false) {
 			failure = { code: 1101, details: [texture & SLOT_MASK, FRAME] };
 			return failure.code;
 		},
+		setSkyLayer: (template: number, sun: number, opacity: number) => {
+			skyLayers.push([template, sun, opacity]);
+			return 0;
+		},
 		setOverrideMaterial: (material: number) => overrides.push(material) && 0,
 		lastErrorCode: () => failure.code,
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
@@ -160,6 +166,8 @@ function fakeCore(largeWorld = false) {
 		 * handle (0 for none).
 		 */
 		backgrounds,
+		/** The sky layer calls: each shader's template, the sun it hides and its opacity. */
+		skyLayers,
 		/** The block of the background's values. */
 		backgroundValues: () => [...f32(AT.background, C.BACKGROUND_VALUE_COUNT)],
 		/** The calls that make and change views. */
@@ -558,6 +566,64 @@ describe('scene.createView', () => {
 		expect(
 			thrown(() => scene.createView({ camera: {} as never, rect: [0, 0, 1, 1] })).message,
 		).toStartWith('E1213: createView() got no camera');
+	});
+});
+
+describe('scene.setSkyLayer', () => {
+	/** Compiled WGSL of a sky layer, as the plugin gives it. */
+	const layer = {
+		kind: 'skyLayer',
+		variants: {},
+	} as unknown as Parameters<Scene['setSkyLayer']>[0]['wgsl'];
+
+	test('a layer takes its values, a later call changes them, and a clear removes it', () => {
+		const { scene, skyLayers } = fakeCore();
+		const installed = scene.setSkyLayer({ wgsl: layer, sun: 0.25 });
+		const first = skyLayers[0] as number[];
+		expect(first[0]).toBeGreaterThanOrEqual(C.SHADING_CUSTOM_FIRST);
+		expect(first.slice(1)).toEqual([0.25, 1]);
+		installed.set({ opacity: 0.5 });
+		expect((skyLayers[1] as number[]).slice(1)).toEqual([0.25, 0.5]);
+		installed.set({ sun: 0.75 });
+		expect((skyLayers[2] as number[]).slice(1)).toEqual([0.75, 0.5]);
+		scene.clearSkyLayer();
+		expect(skyLayers[3]).toEqual([0, 0, 1]);
+		// A second clear sends nothing: no layer is installed.
+		scene.clearSkyLayer();
+		expect(skyLayers).toHaveLength(4);
+	});
+
+	test('a second install replaces the layer with a template of its own', () => {
+		const { scene, skyLayers } = fakeCore();
+		scene.setSkyLayer({ wgsl: layer });
+		const other = { kind: 'skyLayer', variants: {} } as unknown as typeof layer;
+		scene.setSkyLayer({ wgsl: other });
+		expect((skyLayers[1] as number[])[0]).toBe(((skyLayers[0] as number[])[0] as number) + 1);
+		expect((skyLayers[1] as number[]).slice(1)).toEqual([0, 1]);
+	});
+
+	test('WGSL that the plugin did not compile as a sky layer throws E1215', () => {
+		const { scene } = fakeCore();
+		expect(
+			thrown(() => scene.setSkyLayer({ wgsl: 'fn skyLayer() {}' as never })).message,
+		).toStartWith('E1215: setSkyLayer() got WGSL as text');
+		expect(
+			thrown(() => scene.setSkyLayer({ wgsl: { kind: 'effect' } as never })).message,
+		).toStartWith('E1215: setSkyLayer() got "effect", which is not a sky layer');
+	});
+
+	test('a value outside 0 to 1 throws E1108', () => {
+		const { scene } = fakeCore();
+		expect(thrown(() => scene.setSkyLayer({ wgsl: layer, opacity: 1.5 })).message).toStartWith(
+			'E1108: setSkyLayer() got 1.5 for opacity; it takes 0 to 1',
+		);
+		const installed = scene.setSkyLayer({ wgsl: layer });
+		expect(thrown(() => installed.set({ sun: -0.2 })).message).toStartWith(
+			'E1108: SkyLayer.set() got -0.2 for sun; it takes 0 to 1',
+		);
+		expect(thrown(() => scene.setSkyLayer(undefined as never)).message).toStartWith(
+			'E1213: setSkyLayer() got undefined',
+		);
 	});
 });
 
