@@ -82,6 +82,13 @@ commit whose pre-commit was compiling through the cache. With the wrapper empty 
 normal priority and the same check finishes in minutes. A commit stalls the same way as a build, so
 a pre-commit that hangs is this fault and not a failing check.
 
+A cache server can also wedge on its own, with no load to blame. On 25 October 2026 a build waited
+sixty-six minutes while every `rustc` of its tree sat at zero CPU: the server answered on its port,
+had run for nine days, and compiled nothing. Sample the whole tree rather than one process; when
+every compile is idle and the server's own CPU time does not move, stop the server and start a fresh
+one, and the queued compiles finish. The heavy lane now leaves the wrapper out unless a job asks for
+it with `NULL3D_SCCACHE=1`, because a stalled cache costs more than a shared crate saves.
+
 A build compiles the Rust crates for two WebAssembly variants and the build tools, writes the shader
 modules for every feature, and then builds the test page for the size report. It is the longest step
 in a landing, so keep the count down. Every build cache lives under one root, `null3d` under
