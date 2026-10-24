@@ -168,6 +168,7 @@ import {
 import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
 import {
+	countIn,
 	type HeapProfile,
 	type ProfileNode,
 	profilePlaces,
@@ -239,10 +240,9 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  * - the render worker's WebGPU objects: the command encoder, the passes, the command buffer, and
  *   the canvas texture and its view. Each render pass adds its encoder, about 17 bytes. S4's two
  *   shadow passes and nine more uploads per frame put its replay 46 to 48 bytes above S1's. The
- *   canvas hands out a new texture each frame, so the view of it must be made each frame too. The
- *   backend's `colorView` makes it, and the browser counts it there, about 34 bytes on S1. Where
- *   the browser does not inline `targetView` into it, as on SwiftShader's short warm-up, it counts
- *   the view in `targetView` instead;
+ *   canvas hands out a new texture each frame, so the view of it must be made each frame too, about
+ *   34 bytes on S1. The backend's `colorView` and `targetView` make them, and the check counts both
+ *   in the replay that calls them (`COUNTED_IN_CALLER`), whose budget holds them;
  * - the completion tracker's object for each frame: the queue's promise and its reaction on WebGPU,
  *   which the browser counts in the renderer's `drawFrame` where it inlines the tracker, or the fence
  *   on WebGL2. After a few minutes the browser compiles the render loop's `draw` with `drawFrame`
@@ -278,10 +278,9 @@ export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> =
 		'onPointer sketch/input.ts': 16,
 	},
 	'render-worker': {
-		'replay webgpu/backend.ts': 320,
+		// The passes' objects, and the canvas texture and its view at 48.
+		'replay webgpu/backend.ts': 368,
 		'commandEncoder webgpu/backend.ts': 32,
-		'colorView webgpu/backend.ts': 48,
-		'targetView webgpu/backend.ts': 48,
 		'draw render/loop.ts': 64,
 		'drawFrame render/webgpu-renderers.ts': 192,
 		'drawFrame render/webgl2-renderers.ts': 192,
@@ -466,6 +465,19 @@ export function placeBudget(
 
 /** The place of the WebGPU replay, which makes the browser's objects of each pass. */
 const REPLAY = 'replay webgpu/backend.ts';
+
+/**
+ * Functions whose objects the check counts in their caller's place. The browser counts an object in
+ * the function that makes it, or in the caller where it inlines that function, and the canvas
+ * texture and its view moved between `colorView` and the replay from run to run while their sum
+ * held: in five runs of 24 October 2026 on SwiftShader, `colorView` read 7.3 to 52.8 bytes per frame
+ * and the replay 76.8 to 100.8, their sum 101.5 to 129.6. With samples of 420 frames, `colorView`
+ * read 30.5. Counted in the replay, the two read the same whichever way the inlining fell.
+ */
+const COUNTED_IN_CALLER: ReadonlyMap<string, string> = new Map([
+	['colorView webgpu/backend.ts', REPLAY],
+	['targetView webgpu/backend.ts', REPLAY],
+]);
 
 /** Budgets of places by worker, in bytes per frame. */
 type WorkerBudgets = Partial<Record<(typeof WORKERS)[number], Record<string, number>>>;
@@ -963,7 +975,9 @@ async function main(): Promise<void> {
 			// Each worker allocates in every frame, the sketch worker's frame wait and the replay's
 			// browser objects at least. A worker whose samples hold nothing was not sampled at all.
 			if (!bytes.get(worker)) unsampled.push(worker);
-			for (const [name, { perFrame, most, callers }] of steadyPlaces(workerSamples)) {
+			for (const [name, { perFrame, most, callers }] of steadyPlaces(
+				countIn(workerSamples, COUNTED_IN_CALLER),
+			)) {
 				const extra =
 					(name === REPLAY ? replayPasses * PASS_REPLAY_BYTES : 0) +
 					switchBudgets.reduce(
