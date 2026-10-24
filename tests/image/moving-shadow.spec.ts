@@ -63,12 +63,17 @@ const presetRunMs = (testInfo: TestInfo) =>
 const presetReads = (testInfo: TestInfo) =>
 	testInfo.project.name === 'chromium-swiftshader' ? SWIFTSHADER_PRESET_READS : PRESET_READS;
 
+/**
+ * The offsets that a page of the shadow state reports, each a frame's offset. `timeoutMs` is the
+ * page's wait: CI's software GPU drew the far cascade's two pages in 1.2 minutes in one run, and
+ * cut one of them at 60 seconds in another, so each page gets twice the whole earlier figure.
+ */
 async function offsets(
 	page: Page,
 	gpu: string,
 	far: number,
 	switches = '',
-	timeoutMs = 60_000,
+	timeoutMs = 120_000,
 ): Promise<number[]> {
 	await page.goto(`moving-shadow.html?gpu=${gpu}&far=${far}${switches}`);
 	const result = await pageResult<Result>(page, timeoutMs);
@@ -85,7 +90,9 @@ const median = (values: number[]) =>
 
 for (const gpu of ['webgpu', 'webgl2'] as const)
 	test(`a moving caster's shadow follows it in a far cascade on ${gpu}`, async ({ page }) => {
-		test.setTimeout(120_000);
+		// Two pages, each of which may take the wait above: the default limit of a test is shorter
+		// than both of them together.
+		test.setTimeout(270_000);
 		const everyFrame = await offsets(page, gpu, 1);
 		const expected = median(everyFrame);
 

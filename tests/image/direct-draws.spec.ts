@@ -60,6 +60,10 @@ async function held(page: Page, direct: 'on' | 'off'): Promise<HeldFrame> {
 }
 
 test('the direct and indirect draw paths draw the same frame', async ({ page }) => {
+	// The test draws two held frames, and each may take its own wait of 120 seconds on a software
+	// GPU: the default minute of a test cuts the first of them short, so a slow page fails as a
+	// timeout instead of as a difference.
+	test.setTimeout(300_000);
 	const direct = await held(page, 'on');
 	const indirect = await held(page, 'off');
 	expect([direct.ok, indirect.ok]).toEqual([true, true]);

@@ -31,7 +31,6 @@ export interface GateStep {
 	what: string;
 	/** The program and its arguments. */
 	command: readonly string[];
-	env?: Readonly<Record<string, string>>;
 	/** A timing run, which needs the Mac to itself. */
 	timed: boolean;
 	/** Reads the figure and judges it. */
@@ -150,14 +149,40 @@ export const GATE_WORKFLOWS: readonly { name: string; events?: readonly string[]
 ];
 
 /** One workflow run of a commit, as `gh run list --json` gives it. */
-interface WorkflowRun {
+export interface WorkflowRun {
+	databaseId: number;
 	workflowName: string;
 	event: string;
 	status: string;
 	conclusion: string;
 }
 
-/** Judges the newest counted run of each gate workflow on the commit. */
+/** One job of a workflow run, as `gh run view --json jobs` gives it. */
+export interface WorkflowJob {
+	name: string;
+	status: string;
+	conclusion: string;
+}
+
+/**
+ * The newest run of a workflow whose event counts, or none. gh lists the newest run first, and a
+ * workflow with no events counts a run of any event.
+ */
+export function countedRun(
+	runs: readonly WorkflowRun[],
+	{ name, events }: { name: string; events?: readonly string[] },
+): WorkflowRun | null {
+	const counted = runs.find(
+		(run) => run.workflowName === name && (!events || events.includes(run.event)),
+	);
+	return counted ?? null;
+}
+
+/**
+ * Judges the newest counted run of each gate workflow on the commit.
+ *
+ * The run's state is its conclusion, or its status while it still runs.
+ */
 export function workflowResult(output: string): StepResult {
 	let runs: WorkflowRun[];
 	try {
@@ -165,16 +190,74 @@ export function workflowResult(output: string): StepResult {
 	} catch {
 		return { figure: 'no workflow runs in the output', verdict: 'fail' };
 	}
-	// gh lists the newest run first.
-	const states = GATE_WORKFLOWS.map(({ name, events }) => {
-		const run = runs.find((r) => r.workflowName === name && (!events || events.includes(r.event)));
+	const states = GATE_WORKFLOWS.map((workflow) => {
+		const run = countedRun(runs, workflow);
 		const state = !run ? 'no run' : run.status === 'completed' ? run.conclusion : run.status;
-		return { name, state };
+		return { name: workflow.name, state };
 	});
 	return {
 		figure: states.map(({ name, state }) => `${name}: ${state}`).join(', '),
 		verdict: states.every(({ state }) => state === 'success') ? 'pass' : 'fail',
 	};
+}
+
+/** The output of `bench/ci-browser-jobs.ts`: the counted CI run of a commit, and its jobs. */
+interface BrowserJobs {
+	run: WorkflowRun | null;
+	jobs: WorkflowJob[];
+}
+
+/** The prefix of the browser job's shard jobs, which split the manifest by count. */
+const SHARD_PREFIX = 'browser (shard';
+
+/** The browser job that draws S6's pictures, which load the city. */
+const CITY_JOB = 'browser (the city)';
+
+/** Whether a job draws part of the image test manifest on Linux SwiftShader. */
+function drawsManifest({ name }: WorkflowJob): boolean {
+	return name.startsWith(SHARD_PREFIX) || name === CITY_JOB;
+}
+
+/**
+ * Judges the image test manifest as the commit's CI browser jobs drew it on Linux SwiftShader. Every
+ * shard job and the city job must have passed, and a run that skipped them, or that has not made
+ * them yet, proves nothing.
+ */
+export function browserPictures(output: string): StepResult {
+	let parsed: BrowserJobs | null;
+	try {
+		parsed = JSON.parse(output.slice(output.indexOf('{'))) as BrowserJobs | null;
+	} catch {
+		return { figure: 'no CI jobs in the output', verdict: 'fail' };
+	}
+	const run = parsed?.run ?? null;
+	if (!run)
+		return {
+			figure: 'no CI run of the commit from a push or a run started by hand',
+			verdict: 'fail',
+		};
+	const where = `CI run ${run.databaseId} (${run.event})`;
+	const jobs = (parsed?.jobs ?? []).filter(drawsManifest);
+	const shards = jobs.filter((job) => job.name.startsWith(SHARD_PREFIX));
+	const missing = shards.length === 0 ? ['browser shard job'] : [];
+	if (!jobs.some((job) => job.name === CITY_JOB)) missing.push('city job');
+	if (missing.length > 0)
+		return {
+			figure: `${where} ran no ${missing.join(' and no ')} for the manifest: ${run.conclusion || run.status}`,
+			verdict: 'fail',
+		};
+	const notPassed = jobs.filter(
+		(job) => job.status !== 'completed' || job.conclusion !== 'success',
+	);
+	if (notPassed.length > 0)
+		return {
+			figure: `${where}: ${notPassed.length} of ${jobs.length} manifest jobs did not pass: ${notPassed
+				.map((job) => `${job.name} ${job.status === 'completed' ? job.conclusion : job.status}`)
+				.join(', ')}`,
+			verdict: 'fail',
+		};
+	const draws = `${shards.length} browser shard${shards.length === 1 ? '' : 's'} and the city job`;
+	return { figure: `${where}: ${draws} passed`, verdict: 'pass' };
 }
 
 /** The repository whose workflows judge the gate commit. */
@@ -220,6 +303,17 @@ export function gateSteps({ commit, quick }: GateOptions): GateStep[] {
 				out.exitCode === 0 ? workflowResult(out.output) : { figure: 'gh failed', verdict: 'fail' },
 		},
 		{
+			// The build comes first because every step after it loads the engine core: a core left
+			// over from other sources is refused at the first page, and each such step then measures
+			// nothing. It is also the budget step, so its figures are the ones the gate records.
+			id: 'budgets',
+			item: '4',
+			what: "Each core WebAssembly build within 600 KB after Brotli, and the engine's JavaScript per thread mode within its budget",
+			command: ['bun', 'run', 'build'],
+			timed: false,
+			read: (out) => ({ figure: budgetLines(out.output), verdict: byExit(out) }),
+		},
+		{
 			id: 'images-gpu',
 			item: '1',
 			what: "The image test manifest in Chrome on the Mac's GPU, on all three tiers",
@@ -230,11 +324,13 @@ export function gateSteps({ commit, quick }: GateOptions): GateStep[] {
 		{
 			id: 'images-swiftshader',
 			item: '1',
-			what: "The image test manifest in CI's SwiftShader setup, on all three tiers",
-			command: ['bun', 'run', 'test:images'],
-			env: { CI: '1' },
+			what: "The image test manifest as the commit's CI browser jobs drew it on Linux SwiftShader: every browser shard job and the city job passed in its CI run from a push or a run started by hand",
+			command: ['bun', 'bench/ci-browser-jobs.ts', commit],
 			timed: false,
-			read: (out) => ({ figure: playwrightCounts(out.output), verdict: byExit(out) }),
+			read: (out) =>
+				out.exitCode === 0
+					? browserPictures(out.output)
+					: { figure: 'gh failed, see the log', verdict: 'fail' },
 		},
 		{
 			id: 'parity',
@@ -243,14 +339,6 @@ export function gateSteps({ commit, quick }: GateOptions): GateStep[] {
 			command: ['bun', 'run', 'parity', '--', '--tier', 'webgpu,webgl2'],
 			timed: false,
 			read: (out) => ({ figure: parityCount(out.output), verdict: byExit(out) }),
-		},
-		{
-			id: 'budgets',
-			item: '4',
-			what: "Each core WebAssembly build within 600 KB after Brotli, and the engine's JavaScript per thread mode within its budget",
-			command: ['bun', 'run', 'build'],
-			timed: false,
-			read: (out) => ({ figure: budgetLines(out.output), verdict: byExit(out) }),
 		},
 		...(
 			[
@@ -388,10 +476,9 @@ export interface GateRecord {
 	steps: StepRecord[];
 }
 
-/** The command as one line of shell, with its environment. */
-export function commandText(step: Pick<GateStep, 'command' | 'env'>): string {
-	const env = Object.entries(step.env ?? {}).map(([name, value]) => `${name}=${value} `);
-	return `${env.join('')}${step.command.join(' ')}`;
+/** The command as one line of shell. */
+export function commandText(step: Pick<GateStep, 'command'>): string {
+	return step.command.join(' ');
 }
 
 /** The record as Markdown: the commit, then a row for each step. */

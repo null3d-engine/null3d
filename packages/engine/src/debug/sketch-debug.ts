@@ -9,6 +9,7 @@ import type { Vec3Like } from '../math/types';
 import type { QualityPreset } from '../quality/presets';
 import type { ColorInput } from '../scene/color';
 import type { Camera, DirectionalLight, Object3D } from '../scene/scene';
+import { MEMORY_AREA_COUNT, MEMORY_AREA_VALUES } from '../shared/memory-area';
 import { sampleFrames } from '../shared/metrics';
 import type { Tier } from '../shared/tier';
 import type { Debug, DebugGridOptions, DebugLightOptions, DebugView } from './debug';
@@ -52,6 +53,7 @@ function noFigures(tier: Tier, preset: QualityPreset): FrameStats {
 		meshBytes: 0,
 		gpuTextureBytes: 0,
 		gpuBufferBytes: 0,
+		memoryAreas: new Array<number>(MEMORY_AREA_COUNT * MEMORY_AREA_VALUES).fill(0),
 	};
 }
 

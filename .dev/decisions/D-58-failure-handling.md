@@ -85,3 +85,35 @@ The fix holds for the runner's pages on the cloud iPhone 16: the 12 engine pages
 - The engine package's page, worker, runner and render code changed; the error table gained E1304, E1305, E1419 and E1420. `api/engine`, `api/sketch` and `guides/debugging` describe the paths.
 - An idle worker per kept canvas is the cost of reuse. The `canvas-kept-restarts-*` and `frame-destroyed-restarts-*` device checks start engines on kept canvases and in frames removed after the stop, as the runner page runs every page. On 5 October 2026, without them, iPhones refused the engine's memory after about 10 pages of every checks run.
 - The built-in room, which a frame's list makes in slices at its first use, comes back through the same recovery after a GPU loss. Its texture store fills the room again on the new device.
+
+## Addendum, 24 October 2026: a capture during the replacement device
+
+`simulateGpuLoss()` is a test facility: it posts a message to the thread that draws and returns at
+once (`packages/engine/src/page/engine.ts:2345`). That thread calls `simulateLoss()`, which on the
+WebGPU path is `device.destroy()` (`packages/engine/src/render/webgpu-renderers.ts:130`, and
+`:286`). A capture issued before the engine holds its replacement device reads back from the one
+that is gone, and fails.
+
+The message says which loss it was, because it carries WebGPU's reason:
+
+- `the GPU device was lost during the readback (destroyed: Device was destroyed.)` for a
+  `destroy()` call, such as the simulated loss, or a page that ends while a readback is in flight.
+- `the GPU device was lost during the readback (unknown: the GPU process stopped)` for a device
+  the browser took away. `unknown` is what a reclaim reports.
+
+`packages/engine/src/gpu/readback.ts:152` writes both. So the word after the bracket tells a loss the page asked for from one it did not.
+A failure that reads `destroyed` under memory pressure would be a different fault.
+
+The map loss test met this on 23 October 2026 in CI run 39990527400 (shard 5 of 31), on the
+webgpu tier. It called `simulateGpuLoss()` and captured on the next line, and the capture's
+readback met the destroyed device. The test page now waits for a frame before it captures, which is how it knows
+the replacement is there.
+
+**Open for the owner:** should `captureFrame()` wait for a live device rather than fail? A user's page
+can meet the same message in two ways. One page drives its own loss through the test facility. The
+other has a readback in flight when the browser reclaims the device. Today the
+capture fails and the page must retry. The alternative is to hold the capture until the engine's
+recovery has a device again, as `FrameReplay.builtTaken()` holds a frame until its pipelines are
+built. The cost is a capture that waits while a recovery runs, where a caller today gets an error it
+can see and act on. Nothing changed in the engine tonight, and this note is what the owner decides
+from.

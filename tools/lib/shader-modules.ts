@@ -12,7 +12,7 @@
 // source, its manifest table and the library modules it imports. A change to one shader compiles
 // only that shader, and a change to a library module compiles only the entries that import it. The
 // cache is shared by every checkout and reused across a change of any WGSL file.
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { copyInPlace } from './atomic-files';
 import {
@@ -66,6 +66,8 @@ interface ModuleRecord {
 	modules: string;
 	/** The module files of the set, so a run that must not build can name the files it lacks. */
 	names?: readonly string[];
+	/** The hash of each module file's name, size and time of change, as `moduleStats` gives it. */
+	stats?: string;
 }
 
 /**
@@ -242,10 +244,38 @@ function readRecord(root: string): ModuleRecord | null {
 	}
 }
 
-/** True when the modules on disk are the ones the last build wrote from these inputs. */
+/**
+ * A hash of each module file's name, size and time of change, to the second, which a copy that keeps
+ * times, such as CI's archive, keeps too. Reading it takes a listing and a stat of each file, where
+ * `moduleHash` reads every byte of the set, gigabytes of it.
+ */
+function moduleStats(root: string): string {
+	const folder = join(root, MODULE_DIR);
+	const names = existsSync(folder) ? readdirSync(folder).filter(isShaderModule).sort() : [];
+	return hashOf(
+		names
+			.map((name) => {
+				const stat = statSync(join(folder, name));
+				return `${name}\t${stat.size}\t${Math.floor(stat.mtimeMs / 1000)}`;
+			})
+			.join('\n'),
+	);
+}
+
+/**
+ * True when the modules on disk are the ones the last build wrote from these inputs. When every
+ * module file has the size and time of change that the record keeps, the set is the one the record
+ * hashed, and no byte is read. Otherwise the bytes decide, and a set whose bytes still match keeps
+ * its files' new sizes and times in the record, so the next check reads none.
+ */
 function isFresh(root: string, inputs: string): boolean {
 	const record = readRecord(root);
-	return record?.inputs === inputs && record.modules === moduleHash(root);
+	if (record?.inputs !== inputs) return false;
+	const stats = moduleStats(root);
+	if (record.stats === stats) return true;
+	if (record.modules !== moduleHash(root)) return false;
+	writeRecord(root, record);
+	return true;
 }
 
 /**
@@ -292,7 +322,7 @@ function staleSetMessage(root: string): string {
  * in the checkout, because two shader builds from two checkouts at once leave each of them at about
  * zero processor time and neither finishes.
  */
-function withLock(root: string, work: () => void): void {
+function withLock(work: () => void): void {
 	const release = acquireLock(join(cacheRoot(), 'shader-modules.lock'));
 	try {
 		work();
@@ -365,8 +395,9 @@ function entryFiles(folder: string): string[] {
 /**
  * Compiles shard `shard` of the manifest's entries, written `i/n` with `i` from 0, into the
  * per-entry cache, under the same folder and compiler stamp that a normal build reads, and writes
- * no module. The split keeps each entry whole, so a later build finds the entry under the key it
- * looks for, and compiles none of the entries that the shards stored. The entries that the cache
+ * no module. The split cuts an entry that costs more than an even share into parts, which the cache
+ * keeps beside the entry's key, so a later build joins a complete set of them into the entry, and
+ * compiles none of the entries that the shards stored. The entries that the cache
  * already held are reused, not compiled. When `out` names a folder, the entries that this run
  * stored are copied there, and none that the cache held before, so a CI job can upload only its
  * new entries. Returns their file names.
@@ -394,8 +425,10 @@ function moduleNames(root: string): string[] {
 }
 
 /** Writes the record of a build, in place. */
+/** Writes the record of the modules on disk, with their files' sizes and times as they are now. */
 function writeRecord(root: string, record: ModuleRecord): void {
-	writeFileAtomic(join(root, RECORD), `${JSON.stringify(record, null, '\t')}\n`);
+	const kept = { ...record, stats: moduleStats(root) };
+	writeFileAtomic(join(root, RECORD), `${JSON.stringify(kept, null, '\t')}\n`);
 }
 
 /**
@@ -474,8 +507,13 @@ export function ensureShaderModules(root: string): boolean {
 	const inputs = inputHash(root);
 	if (isFresh(root, inputs)) return false;
 	if (freshShadersRequired()) throw new Error(staleSetMessage(root));
+	// A set that the shared cache holds needs no build, so it is copied without the lock, which
+	// keeps two builds from running at once: a checkout whose set is cached never waits for
+	// another checkout's build. Each module takes its place whole, and a set that lacks its record
+	// is a miss, so a copy beside a build that stores the same set reads the whole set or nothing.
+	if (restoreFromCache(root, inputs)) return false;
 	let built = false;
-	withLock(root, () => {
+	withLock(() => {
 		// Another process may have built them, or another checkout may hold them, while this one waited.
 		if (isFresh(root, inputs)) return;
 		if (restoreFromCache(root, inputs)) return;

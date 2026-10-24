@@ -6,20 +6,25 @@
 //   bun run test:browser-weights --run <id>      take the times from that CI run; give it more than once
 //                                                for the median of several
 //   bun run test:browser-weights --shards <n>    find weights for that many shards
+//   bun run test:browser-weights --target <min>  fill each shard to about that many minutes, with as
+//                                                many shards as that takes
 // It needs the GitHub CLI. `.dev/image-tests.md` says when to retune the weights.
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ALONE_PROJECT_SUFFIX, ALONE_TAG } from '../tests/lib/alone.ts';
 import { PRODUCTION_PAGES_SWITCH } from '../tests/lib/server.ts';
+import { gh, ghAsync } from './lib/gh.ts';
+import { SHARD_TOTAL_ENV } from './lib/shard-groups-reporter.ts';
 import {
 	bestWeights,
-	groupTests,
+	fillWeights,
 	medianTimes,
+	parseTestGroups,
 	parseTestList,
 	parseTestTimes,
-	runsInParallel,
 	shardSeconds,
 	splitByWeights,
+	timedGroups,
 } from './lib/shard-weights.ts';
 
 /** The workflow whose browser job the weights are for. */
@@ -58,17 +63,6 @@ function run(
 	return result.stdout.toString();
 }
 
-async function runAsync(command: string[]): Promise<string> {
-	const child = Bun.spawn(command, { cwd: root, stdout: 'pipe', stderr: 'pipe' });
-	const [out, err, code] = await Promise.all([
-		new Response(child.stdout).text(),
-		new Response(child.stderr).text(),
-		child.exited,
-	]);
-	if (code !== 0) throw new Error(`${command.join(' ')} failed:\n${err}`);
-	return out;
-}
-
 const minutes = (seconds: number) => (seconds / 60).toFixed(1);
 const report = (seconds: number[]) =>
 	`${seconds.map(minutes).join(' ')} minutes, slowest ${minutes(Math.max(...seconds))}`;
@@ -78,22 +72,36 @@ const current = WEIGHTS_LINE.exec(workflow)?.[1];
 if (!current) throw new Error(`${WORKFLOW} has no PWTEST_SHARD_WEIGHTS`);
 const cityPattern = CITY_LINE.exec(workflow)?.[1];
 if (!cityPattern) throw new Error(`${WORKFLOW} has no CITY_TESTS`);
-const cityTests = new RegExp(cityPattern);
 const currentWeights = current.split(':').map(Number);
 const shards = Number(option('--shards') ?? currentWeights.length);
 
-/** A job of a CI run, as `gh run view --json jobs` gives it. */
+/** A job of a CI run, as the jobs listing of its newest attempt gives it. */
 interface Job {
 	databaseId: number;
 	name: string;
 	conclusion: string;
 }
 
-/** The browser jobs of a CI run that ran. A skipped job is listed too, with no log. */
+/**
+ * The browser jobs of a CI run's newest attempt that ran. A skipped job is listed too, with no log.
+ * The listing reads 50 jobs a page: GitHub answered every request of 100 a page with HTTP 502 for a
+ * run of 137 jobs, where pages of 50 came back.
+ */
 function browserJobs(runId: string): Job[] {
-	return (
-		JSON.parse(run(['gh', 'run', 'view', runId, '--json', 'jobs'])) as { jobs: Job[] }
-	).jobs.filter((job) => job.name.startsWith('browser (') && job.conclusion !== 'skipped');
+	return gh(
+		[
+			'api',
+			'--paginate',
+			`repos/{owner}/{repo}/actions/runs/${runId}/jobs?per_page=50&filter=latest`,
+			'--jq',
+			'.jobs[] | {databaseId: .id, name, conclusion} | tojson',
+		],
+		root,
+	)
+		.split('\n')
+		.filter(Boolean)
+		.map((line) => JSON.parse(line) as Job)
+		.filter((job) => job.name.startsWith('browser (') && job.conclusion !== 'skipped');
 }
 
 /**
@@ -110,23 +118,25 @@ function chooseRuns(): { id: string; jobs: Job[] }[] {
 			return { id, jobs };
 		});
 	const count = Number(option('--runs') ?? DEFAULT_RUNS);
-	const listed = run([
-		'gh',
-		'run',
-		'list',
-		'--workflow',
-		'ci.yml',
-		'--branch',
-		'main',
-		'--status',
-		'success',
-		'--limit',
-		String(SEARCH_RUNS),
-		'--json',
-		'databaseId',
-		'--jq',
-		'.[].databaseId',
-	])
+	const listed = gh(
+		[
+			'run',
+			'list',
+			'--workflow',
+			'ci.yml',
+			'--branch',
+			'main',
+			'--status',
+			'success',
+			'--limit',
+			String(SEARCH_RUNS),
+			'--json',
+			'databaseId',
+			'--jq',
+			'.[].databaseId',
+		],
+		root,
+	)
 		.split('\n')
 		.filter(Boolean);
 	const chosen: { id: string; jobs: Job[] }[] = [];
@@ -146,12 +156,14 @@ function chooseRuns(): { id: string; jobs: Job[] }[] {
 async function runTimes(jobs: readonly Job[]): Promise<Map<string, number>> {
 	const logs = await Promise.all(
 		jobs.map((job) =>
-			runAsync([
-				'gh',
-				'api',
-				'--allow-escape-sequences',
-				`repos/{owner}/{repo}/actions/jobs/${job.databaseId}/logs`,
-			]),
+			ghAsync(
+				[
+					'api',
+					'--allow-escape-sequences',
+					`repos/{owner}/{repo}/actions/jobs/${job.databaseId}/logs`,
+				],
+				root,
+			),
 		),
 	);
 	return parseTestTimes(logs.join('\n'));
@@ -165,32 +177,34 @@ console.log(
 	`CI runs ${runIds.join(', ')}: the median time of each of ${times.size} tests in their browser jobs.`,
 );
 
-// One list of every project that the shards run, as they run it, without the production build,
-// which a job of its own runs: the alone projects hold the tests that run alone, and the others
-// hold the shards' tests in the order that the shards split them.
-const listed = parseTestList(
-	run(['bunx', 'playwright', 'test', '--list'], {
-		cwd: join(root, 'tests'),
-		env: { CI: '1', [PRODUCTION_PAGES_SWITCH]: 'skip' },
-	}),
-);
-const testDir = join(root, 'tests/image');
-const parallelFiles = new Set(
-	readdirSync(testDir).filter(
-		(file) =>
-			file.endsWith('.spec.ts') && runsInParallel(readFileSync(join(testDir, file), 'utf8')),
+// The tests that the shards run, in the groups and the order in which Playwright splits them, as
+// CI selects them: without the production build, which a job of its own runs, the tests that run
+// alone and S6's, which have jobs of their own.
+const listEnv = { CI: '1', [PRODUCTION_PAGES_SWITCH]: 'skip', [SHARD_TOTAL_ENV]: String(shards) };
+const shardedGroups = parseTestGroups(
+	run(
+		[
+			'bunx',
+			'playwright',
+			'test',
+			'--list',
+			'--reporter',
+			join(root, 'tools/lib/shard-groups-reporter.ts'),
+			'--grep-invert',
+			`${ALONE_TAG}|${cityPattern}`,
+		],
+		{ cwd: join(root, 'tests'), env: listEnv },
 	),
 );
-const alone = listed.filter((test) => test.project.endsWith(ALONE_PROJECT_SUFFIX));
-const sharded = listed.filter(
-	(test) => !test.project.endsWith(ALONE_PROJECT_SUFFIX) && !cityTests.test(test.title),
-);
+const alone = parseTestList(
+	run(['bunx', 'playwright', 'test', '--list'], { cwd: join(root, 'tests'), env: listEnv }),
+).filter((test) => test.project.endsWith(ALONE_PROJECT_SUFFIX));
 
-const { groups, missing } = groupTests(sharded, times, parallelFiles);
+const { groups, missing } = timedGroups(shardedGroups, times);
 console.log(
-	`Shards: ${sharded.length} tests in ${groups.length} groups, ${WORKERS} workers each; ${missing} tests have no time in the runs and take their file's mean.`,
+	`Shards: ${shardedGroups.flat().length} tests in ${groups.length} groups, ${WORKERS} workers each; ${missing} tests have no time in the runs and take their file's mean.`,
 );
-const runGroups = eachRun.map((one) => groupTests(sharded, one, parallelFiles).groups);
+const runGroups = eachRun.map((one) => timedGroups(shardedGroups, one).groups);
 /** Prints the modelled shard times of the weights, with the median times and with each run's. */
 function show(label: string, weights: number[]): void {
 	const modelled = splitByWeights(groups, weights).map((part) => shardSeconds(part, WORKERS));
@@ -202,8 +216,16 @@ function show(label: string, weights: number[]): void {
 }
 if (currentWeights.length === shards) show('Weights now ', currentWeights);
 show('Best weights', bestWeights([groups, ...runGroups], shards, WORKERS));
+const target = option('--target');
+if (target !== undefined) {
+	const filled = fillWeights([groups, ...runGroups], WORKERS, Number(target) * 60);
+	show(`Weights to ${target} minutes, ${filled.length} shards`, filled);
+}
 
-const aloneGroups = groupTests(alone, times, new Set()).groups;
+const aloneGroups = timedGroups(
+	alone.map((test) => [test]),
+	times,
+).groups;
 console.log(
 	`Tests that run alone (${ALONE_TAG}): ${alone.length} tests, ${minutes(shardSeconds(aloneGroups, 1))} minutes one after another.`,
 );
