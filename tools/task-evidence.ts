@@ -14,7 +14,7 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-A3':
 		'A custom material declares `texture_2d_array<f32>` and picks the layer in each texture function: `packages/vite-plugin/src/shader-types.ts`, the docs `docs/guides/custom-shaders.md` and `custom-passes.md`; D-239',
 	'M3-A5':
-		'`createVertexDraw` in `packages/engine/src/scene/scene.ts:4623-4702`; `examples/rain/sketch.ts`',
+		'`createVertexDraw` in `packages/engine/src/scene/scene.ts:4848`; `examples/rain/sketch.ts`',
 	'M3-A7': '`limit_hdr` maps NaN to zero: `crates/null3d-shaders/wgsl/lib/color.wgsl:35-38`',
 	'M3-D2':
 		'Version check in each foundation add-on (`packages/engine/src/shared/version.ts`); `packages/cli/src/upgrade.js`',
@@ -35,7 +35,7 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-E3':
 		"`registerGltfExtension` in `packages/engine/src/scene/gltf-extensions.ts`; the `splats-gltf` picture, and E1417's hint for `KHR_gaussian_splatting` in `gltf-extensions.test.ts`",
 	'M3-E4':
-		"Water's soft shores read the scene depth on every path: the `water-shores` picture on WebGPU, compatibility mode and WebGL2, in both reference sets, shows the pale band and foam where the water meets the sand and the island's base; without the depth copy the sheet draws its deep colour everywhere. D-202's addendum names M3-E4a for the case of depth beside textures",
+		"Water's soft shores read the scene depth on every path: the `water-shores` picture on WebGPU, compatibility mode and WebGL2, in both reference sets, shows the pale band and foam where the water meets the sand and the island's base; without the depth copy the sheet draws its deep colour everywhere. That page is a test sheet; the first user on the branch is the splats add-on's depth mixing. D-202's addendum names M3-E4a for the case of depth beside textures",
 	'M3-E5':
 		'One file format for baked probe grids and light maps: `packages/engine/src/scene/baked-light.ts`, `assets.loadLightProbeGrid`, `assets.loadLightMap` and `assets.lightProbeGridFile`, with every fault named as E1434; the guide `docs/guides/baked-light-data.md`, a round-trip test and two fixtures; D-243',
 	'M3-G4':
