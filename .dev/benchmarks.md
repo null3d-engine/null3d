@@ -430,6 +430,13 @@ A run folder holds every page's full result, with frames and images, and stays o
 - Run it on the Mac in a quiet lane: `NULL3D_CLUSTER_COST=1 bun run test:browser -- cluster-cost.spec.ts`. `NULL3D_CLUSTER_PRESETS` narrows the presets, as a list.
 - The frame's GPU time falls as the camera draws back, which is the saving that coarser patches make: by about a quarter on the phone and on the tablet's compatibility mode, and by a tenth on the tablet's core WebGPU path, where the fill of its many pixels weighs more. [D-231](decisions/D-231-cluster-levels-cost.md) gives each device's figures.
 
+## Full-resolution sharpening
+
+- The `sharpen` page is the effect cost page with `effect=sharpen`: a wall of 32 by 32 boxes in two colors, so edges fill the view at every pixel. The off side draws the one-pass final pass, and the on side the two steps that the sharpening draws at the whole canvas's scale. At a render scale of 0.5 both sides draw the two steps, so that pair is the control: the value adds nothing there ([D-205](decisions/D-205-sharpening.md)).
+- Run it on a phone or a tablet with the plan: `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys24-chrome --plan sharpen`. The plan is timed, so the runner measures the display's refresh rate before each page.
+- Run it on the Mac in a quiet window: `NULL3D_SHARPEN_COST=1 bun run test:browser -- sharpen-cost.spec.ts`.
+- The value adds 0.393 ms at the whole canvas's scale on the Mac's WebGPU path, 0.948 ms on an iPad Pro 13 and 1.376 ms on a Galaxy S25. At half scale it adds nothing on any device. WebGL2 has no GPU timer on the iPad or on the phones, so those rows give the frame interval alone. [D-205](decisions/D-205-sharpening.md) gives each device's figures.
+
 ## Double-sided see-through objects
 
 - The page switch `?sides=two` draws every box of S2 see-through and double-sided. The transparent pass then draws each run's back faces, then its front faces ([D-82](decisions/D-82-transparency-parity.md)). `?sides=one` draws the same boxes with `forceSinglePass`, in one draw. The difference between the two is the cost of the second draw.
