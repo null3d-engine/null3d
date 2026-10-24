@@ -110,3 +110,10 @@ measured every preset.
 The allocation gate is not built. Porting the engine's profiler harness into the command-line tool is most of a task of its own. It also measures a page that an outside add-on may not ship.
 
 The coordinator moved it to M3-D9a on 23 October 2026, with the profiler port named, so it stays tracked work rather than a silent deferral. M3-D9a decides between a port of the harness and a public form of its sampling.
+
+## Addendum, 24 October 2026: the three-compat add-on
+
+[M3-F7](../../.dev/decisions/D-179-technique-rulings-2026-10-15.md) landed `@null3d/three-compat` as a
+foundation that holds a package, after the run above. The foundations that no package holds are now
+physics, MSDF text, water and vegetation. The command has not yet run over three-compat, so this
+record owes a seventh row.
