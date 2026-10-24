@@ -39,6 +39,22 @@ const ON_BRANCH = new Set(['M3-E9', 'M3-R14', 'M3-V2']);
 // its section's rule. A tick states that the task is done, so a task that audit found short of its
 // own line is not ticked here until the gap closes, whatever code it already has.
 const INCOMPLETE = new Set([
+	'M3-B2',
+	'M3-B3',
+	'M3-B5',
+	'M3-E7',
+	'M3-V4',
+	'M3-D7',
+	'M3-D9',
+	'M3-F2',
+	'M3-G4',
+	'M3-K4',
+	'M3-R16',
+	'M3-R17',
+	'M3-R20',
+	'M3-E2',
+	'M3-E4',
+	'M3-K3',
 	'M3-B1',
 	'M3-E6',
 	'M3-E4a',
@@ -119,7 +135,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-A11':
 		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
 	'M3-E10':
-		'a sky layer draws into neither the environment map nor the CPU sky light, and D-242 drops both without a ruling',
+		'the owner has ruled that a sky layer reaches both the environment map and the CPU sky light, and a helper is building both; D-242 still records the narrowing until its addendum lands',
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
@@ -133,6 +149,35 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
 	'M3-R21':
 		'the picture step reads the heavy-test jobs now, but the task is done only when the gate and CI give the same verdict on the screens and skyway pictures, and that comparison is being taken against a run of the current tip',
+	'M3-B2':
+		"the task's finish line needs the material's cost per GPU path and preset, and its own record says that cost is owed: the machine stayed above a load of 100 while the add-on was built",
+	'M3-B3':
+		"the Showroom tablet the task names is M3-C2's work, which is not built, and the screen demo's software-GPU pictures fail CI",
+	'M3-B5':
+		"the flakes draw nothing: no pixel in the six references is brighter than the picture without them, and the paint's own flakes test fails on all three paths in CI",
+	'M3-E7':
+		"its finish line needs the car paint's glints to use the lobes, and the glints draw nothing",
+	'M3-V4':
+		'no device has timed the new generator, so the device figures are of the stand-in it replaced; no Mac, iPad or S24 GPU or memory figure exists, no check-addon run is recorded, and the software-GPU species pictures fail in CI',
+	'M3-D7':
+		'no test add-on or material reaches E1209: the browser test uses an internal entry, and it fails in CI because the software GPU accepts the program it builds',
+	'M3-D9':
+		'no record shows the listing check passing on vegetation, and its one run skipped the shader and size checks',
+	'M3-F2':
+		'a 100,000-splat cloud becomes one chunk and cannot stream, and the streaming test fails in CI',
+	'M3-G4':
+		"a material with clear coat, sheen, iridescence or anisotropy cannot take the transmission or thickness maps on any path, and D-52's rule that a gap is a bug makes that a bug",
+	'M3-K4': "one of three.js r186's seven CSS3D examples is ported, and only its first layout",
+	'M3-R16': 'no project made from the template is installed, built and used with the hook on',
+	'M3-R17':
+		"the evaluation's own record says it does not reach the gate, and the skill text it evaluates differs from the pinned version",
+	'M3-R20': 'the record gives 1.25 to 2.42 seconds against a finish line that asks for under one',
+	'M3-E2':
+		'its finish line was rewritten to match the build without an owner ruling, and that ruling is still open',
+	'M3-E4':
+		"whether the approved hook table stands against hard rule 8 is the owner's to decide, and the tick waits on that",
+	'M3-K3':
+		"whether 128 by 128 pixels-only cookies stand under the better-look rule is the owner's to decide, and the tick waits on that",
 	'M3-E4a':
 		'the material change is on the branch with the water work, but the task asks for a material that declares the scene depth beside two textures on WebGPU, compatibility and WebGL2, and for the cost of a material that reads neither; its helper is finishing that proof',
 	'M3-F5':
