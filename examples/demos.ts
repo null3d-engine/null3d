@@ -204,6 +204,17 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'aurora',
+		group: 'Light, materials and effects',
+		sketch: new URL('./aurora/sketch.ts', import.meta.url),
+		title: 'Aurora',
+		scene: 'A frozen lake at night',
+		summary:
+			"Curtains of green and violet light over a still night, drawn by the aurora example add-on through the sky-layer hook: one WGSL function over the core sky, under the moon and the stars, with the sky's thin clouds hiding it where they thicken. The ice holds the light and the pines stand dark against it.",
+		hold: 1.5,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'canvas-screen',
 		group: 'Light, materials and effects',
 		sketch: new URL('./canvas-screen/sketch.ts', import.meta.url),
