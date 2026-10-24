@@ -38,6 +38,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		"Water's soft shores read the scene depth on every path: the `water-shores` picture on WebGPU, compatibility mode and WebGL2, in both reference sets, shows the pale band and foam where the water meets the sand and the island's base; without the depth copy the sheet draws its deep colour everywhere. D-202's addendum names M3-E4a for the case of depth beside textures",
 	'M3-E5':
 		'One file format for baked probe grids and light maps: `packages/engine/src/scene/baked-light.ts`, `assets.loadLightProbeGrid`, `assets.loadLightMap` and `assets.lightProbeGridFile`, with every fault named as E1434; the guide `docs/guides/baked-light-data.md`, a round-trip test and two fixtures; D-243',
+	'M3-B6':
+		'Instanced lanes that move in the vertex shader: `examples/addons/traffic-lanes/`, drawn by the instances demo at 30,000 and 100,000 vehicles and by Skyway. The real lights now go to the nearest cars, not a fixed share of the rows: `lights.test.ts` compares the search with a full one at both counts and checks that the nearest car has a light',
 	'M3-G4':
 		"`transmissionMap` and `thicknessMap`: `packages/engine/src/scene/resources.ts`, the shaders' thickness reads",
 	'M3-K1': '`scene.createView({ camera, rect })`: `packages/engine/src/scene/scene.ts`',

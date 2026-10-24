@@ -19,6 +19,7 @@ import {
 	type Vec3Like,
 	vec3,
 } from '@null3d/engine';
+import { type LightPool, laneGroups, moveLights } from './lights';
 import vehicleShader from './vehicle.wgsl';
 
 /** The size of a vehicle that `createVehicleHull` builds. */
@@ -243,8 +244,6 @@ const HEADINGS = [
 /** How far from the camera a real light may sit, in meters, and how often the pool searches. */
 const LIGHT_RANGE = 150;
 const LIGHT_SECONDS = 0.25;
-/** The rows the real-light search looks at at most, so its cost does not follow the count. */
-const LIGHT_CANDIDATES = 4096;
 
 /** Builds the traffic of a plan of lanes. */
 export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptions): TrafficLanes {
@@ -343,7 +342,19 @@ export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptio
 		// A row travels the whole lane from its origin, so its own sphere must cover the lane, or
 		// the engine culls it while it is still on the screen.
 		batch.setBoundingRadius(span);
-		return { yaw: lane.yaw, batch, material, active: rows.length, total: rows.length };
+		// The rows of one lane share their line across the way. The real-light search skips a lane
+		// whose line is out of range before it reads a row, so its cost follows the lanes near the
+		// camera, not the count.
+		const groups = laneGroups(positions, rows.length, lane.alongX);
+		return {
+			yaw: lane.yaw,
+			alongX: lane.alongX,
+			batch,
+			material,
+			active: rows.length,
+			total: rows.length,
+			groups,
+		};
 	});
 
 	// The real lights: a pool that each search moves to the nearest vehicles.
@@ -358,7 +369,7 @@ export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptio
 	);
 	const bestDistance = new Float32Array(realLights).fill(Number.POSITIVE_INFINITY);
 	const bestPlace = new Float32Array(realLights * 3);
-	const place = [0, 0, 0];
+	const pool: LightPool = { distance: bestDistance, place: bestPlace };
 	const eyeAt = vec3.create();
 	let searchedAt = Number.NEGATIVE_INFINITY;
 	let drawn = 0;
@@ -395,49 +406,8 @@ export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptio
 		update(eye, time) {
 			if (realLights === 0 || time - searchedAt < LIGHT_SECONDS) return;
 			searchedAt = time;
-			bestDistance.fill(Number.POSITIVE_INFINITY);
 			vec3.set(eyeAt, eye[0] as number, eye[1] as number, eye[2] as number);
-			const total = batches.reduce((sum, entry) => sum + entry.active, 0);
-			// Look at a share of the rows, so the search costs the same at every count.
-			const stride = Math.max(1, Math.floor(total / LIGHT_CANDIDATES));
-			let seen = 0;
-			for (const entry of batches) {
-				const along = [Math.sin(entry.yaw), Math.cos(entry.yaw)] as const;
-				// The views are read here, not kept: the engine's memory may have grown since the
-				// setup, which makes every earlier view stale.
-				const positions = entry.batch.positions;
-				const values = entry.batch.values as Float32Array;
-				for (let k = 0; k < entry.active; k++, seen++) {
-					if (seen % stride !== 0) continue;
-					const lane = values[k * 4 + 2] as number;
-					const travelled = (values[k * 4] as number) + time * (values[k * 4 + 1] as number);
-					const at = travelled - lane * Math.floor(travelled / lane);
-					place[0] = (positions[k * 3] as number) + along[0] * at;
-					place[1] = positions[k * 3 + 1] as number;
-					place[2] = (positions[k * 3 + 2] as number) + along[1] * at;
-					const distance = Math.hypot(
-						(place[0] as number) - (eyeAt[0] as number),
-						(place[1] as number) - (eyeAt[1] as number),
-						(place[2] as number) - (eyeAt[2] as number),
-					);
-					if (distance > LIGHT_RANGE) continue;
-					// The farthest light that this one beats takes its place.
-					let worst = -1;
-					let worstDistance = distance;
-					for (let slot = 0; slot < realLights; slot++) {
-						const held = bestDistance[slot] as number;
-						if (held > worstDistance) {
-							worst = slot;
-							worstDistance = held;
-						}
-					}
-					if (worst < 0) continue;
-					bestDistance[worst] = distance;
-					bestPlace[worst * 3] = place[0] as number;
-					bestPlace[worst * 3 + 1] = place[1] as number;
-					bestPlace[worst * 3 + 2] = place[2] as number;
-				}
-			}
+			moveLights(batches, eyeAt, time, LIGHT_RANGE, pool);
 			for (let slot = 0; slot < realLights; slot++) {
 				const light = lights[slot] as (typeof lights)[number];
 				if ((bestDistance[slot] as number) === Number.POSITIVE_INFINITY) {
