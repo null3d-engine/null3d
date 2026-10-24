@@ -735,18 +735,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { part: 1, shard: 0/12 }
-          - { part: 2, shard: 1/12 }
-          - { part: 3, shard: 2/12 }
-          - { part: 4, shard: 3/12 }
-          - { part: 5, shard: 4/12 }
-          - { part: 6, shard: 5/12 }
-          - { part: 7, shard: 6/12 }
-          - { part: 8, shard: 7/12 }
-          - { part: 9, shard: 8/12 }
-          - { part: 10, shard: 9/12 }
-          - { part: 11, shard: 10/12 }
-          - { part: 12, shard: 11/12 }
+          - { part: 1, shard: 0/20 }
+          - { part: 2, shard: 1/20 }
+          - { part: 3, shard: 2/20 }
+          - { part: 4, shard: 3/20 }
+          - { part: 5, shard: 4/20 }
+          - { part: 6, shard: 5/20 }
+          - { part: 7, shard: 6/20 }
+          - { part: 8, shard: 7/20 }
+          - { part: 9, shard: 8/20 }
+          - { part: 10, shard: 9/20 }
+          - { part: 11, shard: 10/20 }
+          - { part: 12, shard: 11/20 }
+          - { part: 13, shard: 12/20 }
+          - { part: 14, shard: 13/20 }
+          - { part: 15, shard: 14/20 }
+          - { part: 16, shard: 15/20 }
+          - { part: 17, shard: 16/20 }
+          - { part: 18, shard: 17/20 }
+          - { part: 19, shard: 18/20 }
+          - { part: 20, shard: 19/20 }
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
