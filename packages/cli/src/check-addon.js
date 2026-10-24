@@ -69,10 +69,12 @@ export const ADDON_FILE_BUDGET = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 17 *
 export const ADDON_SHADER_BUDGET = { raw: 1792 * 1024, gzip: 320 * 1024, brotli: 52 * 1024 };
 
 /**
- * A built file that holds compiled shader builds: the plugin names each set after its GPU path and
- * permutation bits, and the build adds a hash to the name.
+ * A built file that holds compiled shader builds: the plugin names each set after its kind, its
+ * GPU path and permutation bits, and the build adds a hash to the name. A material's set names the
+ * bits that pick it; an effect's and a tone curve's take one set for each GPU path alone.
  */
-const SHADER_BUILDS_FILE = /^material-(?:wgsl|glsl)-\d+-[0-9a-f]+(?:-[A-Za-z0-9_-]+)?\.js$/;
+const SHADER_BUILDS_FILE =
+	/^(?:material|effect|curve)-(?:wgsl|glsl)-\d+-[0-9a-f]+(?:-[A-Za-z0-9_-]+)?\.js$/;
 
 /** The columns that a size report shows. */
 const COLUMNS = /** @type {const} */ (['raw', 'gzip', 'brotli']);

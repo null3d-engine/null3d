@@ -381,7 +381,7 @@ export function compileShaders(root: string, dir: string): void {
 		const builds = new ModuleBuilds();
 		const pack = new ShaderPack();
 		const value = builds.value(pack, compiled.shader);
-		const sets = buildSets(builds.materials);
+		const sets = buildSets(builds.sources);
 		const name = path.slice('src/'.length);
 		const base = posix.basename(name);
 		const to = join(dir, LIB_DIR, `${name}.js`);

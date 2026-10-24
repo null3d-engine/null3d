@@ -375,13 +375,19 @@ describe('the add-on budgets', () => {
 
 	it('take the shader budget for every set of builds that the plugin emits', () => {
 		const prefix = '\0virtual:null3d/builds/';
-		for (const target of ['wgsl', 'glsl'])
+		for (const target of ['wgsl', 'glsl']) {
 			for (const bits of [0, 1, 2, 3, 64, 65, 66, 67]) {
 				const id = `${prefix}material-${target}-${bits}-0123456789abcdef`;
 				expect(MATERIAL_BUILDS_ADDRESS.test(id)).toBe(true);
 				// The build writes the set to a file named after the module, with a hash of its own.
 				expect(budgetOf(`${id.slice(prefix.length)}-AbC123xy.js`)).toBe(ADDON_SHADER_BUDGET);
 			}
+			for (const kind of ['effect', 'curve']) {
+				const id = `${prefix}${kind}-${target}-0-0123456789abcdef`;
+				expect(MATERIAL_BUILDS_ADDRESS.test(id)).toBe(true);
+				expect(budgetOf(`${id.slice(prefix.length)}-AbC123xy.js`)).toBe(ADDON_SHADER_BUDGET);
+			}
+		}
 	});
 
 	it('keep the code budget for a file that holds no builds', () => {

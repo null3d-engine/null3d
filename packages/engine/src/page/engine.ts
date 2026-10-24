@@ -593,7 +593,7 @@ export interface Engine {
 	onSketchMessage(handler: (name: string, data: unknown) => void): () => void;
 	/**
 	 * Receives a failure after the engine started: the browser took the GPU away and the engine could
-	 * not carry on with a new device (E1302), or an engine thread failed (E1404). A custom material's
+	 * not carry on with a new device (E1302), or an engine thread failed (E1404). A custom shader's
 	 * builds that a pipeline needs and that did not download fail the thread that draws with E1424.
 	 * After E1404 or E1424 the engine draws no new frames: destroy it and start a new one. On WebGPU,
 	 * the GPU can also run out of memory (E1304) or reject the engine's work (E1305), and the engine

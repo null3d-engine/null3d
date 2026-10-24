@@ -348,7 +348,7 @@ describe("custom materials' builds that load on first use", () => {
 		expect(table.buildsReady(template, skinned, 'wgsl')).toBe(false);
 		table.addBuilds(template, PERMUTATION_SKIN, 'the network failed');
 		expect(() => table.buildsReady(template, skinned, 'wgsl')).toThrow(
-			'E1424: the builds of a custom material did not load: the network failed.',
+			'E1424: the builds of a custom shader did not load: the network failed.',
 		);
 	});
 
