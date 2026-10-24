@@ -103,6 +103,7 @@ pub mod morph;
 pub mod motion;
 pub mod object_ranges;
 pub mod occlusion;
+pub mod offset_alloc;
 pub mod outline;
 pub mod output;
 pub mod parallel_record;
