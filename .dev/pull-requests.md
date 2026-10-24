@@ -68,6 +68,13 @@ zero processor time, do not kill it on the number alone: sample it with `sample 
 what it waits on, then tell the coordinator which lock it is. A build that is compiling shows
 processor time, and one in a lock shows none.
 
+On a loaded machine, run every cargo command with `RUSTC_WRAPPER=''`. The shared compiler cache runs
+at background priority, so at a load of 80 or more its processors sit at zero and a build makes no
+progress, which looks exactly like a deadlock: on 24 October 2026 two helpers waited hours for a
+commit whose pre-commit was compiling through the cache. With the wrapper empty the compiler runs at
+normal priority and the same check finishes in minutes. A commit stalls the same way as a build, so
+a pre-commit that hangs is this fault and not a failing check.
+
 A build compiles the Rust crates for two WebAssembly variants and the build tools, writes the shader
 modules for every feature, and then builds the test page for the size report. It is the longest step
 in a landing, so keep the count down. Every build cache lives under one root, `null3d` under
