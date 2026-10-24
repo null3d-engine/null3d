@@ -1,4 +1,4 @@
-# D-228: A timed script that hold mode performs
+# D-250: A timed script that hold mode performs
 
 Status: decided by the helper of M3-R14 on 23 October 2026, for the owner's review. Date:
 2026-10-23. Task: M3-R14. Built: the engine performs a script in hold mode, the `shot` command
