@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// The agent hook of a null3D project. Claude Code runs it before a Bash command and before a file
-// edit, with the call as JSON on stdin. It exits 2 to refuse the call, and prints the reason on
-// stderr. It exits 0 to allow the call, and when it cannot read the call, so its own fault never
-// stops work.
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+// The agent hook of a null3D project. Claude Code and Codex run it before a shell command and
+// before a file edit, with the call as JSON on stdin: Claude Code names the tools Bash, Edit, Write
+// and MultiEdit, and Codex names them Bash and apply_patch, whose call holds the patch text. It
+// exits 2 to refuse the call, and prints the reason on stderr. It exits 0 to allow the call, and
+// when it cannot read the call, so its own fault never stops work.
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 /** The words that end one shell command and start the next. */
 const SEPARATORS = /&&|\|\||[;|\n]/;
@@ -248,6 +249,48 @@ export function refusedSource(file, source, { declarations = '' } = {}) {
 	return refusedAllocation(file, text);
 }
 
+/** The header of a file that a patch adds or updates, and the path after it. */
+const PATCH_FILE = /^\*\*\* (?:Add|Update) File: (.+?)\s*$/;
+/** The header that moves a patched file to a new path. */
+const PATCH_MOVE = /^\*\*\* Move to: (.+?)\s*$/;
+
+/**
+ * The rule that a Codex patch breaks, or null when it breaks none. A patch carries each file's new
+ * lines after a header, so the rules read those lines as the edit that they write.
+ *
+ * @param {string} patch The patch text of the call.
+ * @param {{ declarations?: string }} [context] The exports of the installed engine.
+ * @returns {string | null}
+ */
+export function refusedPatch(patch, { declarations = '' } = {}) {
+	/** @type {string | null} */
+	let file = null;
+	/** @type {string[]} */
+	let lines = [];
+	const check = () =>
+		file === null ? null : refusedSource(file, lines.join('\n'), { declarations });
+	for (const line of patch.split('\n')) {
+		const header = PATCH_FILE.exec(line);
+		if (header) {
+			const refused = check();
+			if (refused) return refused;
+			file = header[1] ?? null;
+			lines = [];
+			continue;
+		}
+		if (line.startsWith('*** ')) {
+			const refused = check();
+			if (refused) return refused;
+			const move = PATCH_MOVE.exec(line);
+			file = move ? (move[1] ?? null) : null;
+			lines = [];
+			continue;
+		}
+		if (file !== null && line.startsWith('+')) lines.push(line.slice(1));
+	}
+	return check();
+}
+
 /**
  * The text of every declaration file that the engine in `root` installs, or an empty string when
  * the project has no installed engine.
@@ -309,6 +352,12 @@ async function main() {
 	let refused = null;
 	if (event === 'bash' || tool === 'Bash') {
 		refused = refusedCommand(String(args.command ?? ''));
+	} else if (tool === 'apply_patch') {
+		// Codex writes a file edit as a patch, with every file of it in the call's one command.
+		const root = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
+		refused = refusedPatch(String(args.command ?? args.patch ?? ''), {
+			declarations: engineDeclarations(root),
+		});
 	} else if (event === 'edit' || /^(?:Edit|Write|MultiEdit)$/.test(tool)) {
 		const root = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
 		refused = refusedSource(
@@ -324,6 +373,17 @@ async function main() {
 	return 0;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+/** The real path of a file, so a path through a link names the file that it reaches. */
+function realPath(file) {
+	try {
+		return realpathSync(file);
+	} catch {
+		return resolve(file);
+	}
+}
+
+// The hook runs only when a host starts this file, and not when a test imports it. Both paths
+// resolve to their real names, because a temporary folder or a home folder can be a link.
+if (process.argv[1] && realPath(process.argv[1]) === realPath(fileURLToPath(import.meta.url))) {
 	process.exitCode = await main();
 }

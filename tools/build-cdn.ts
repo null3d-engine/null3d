@@ -1,6 +1,7 @@
 // Writes the CDN build: the engine's files that a page loads from another origin with no bundler,
-// in the layout of the engine package. A page imports `lib/index.js` from the CDN, as
-// docs/getting-started/cdn.md shows. Run from the repository root, after `bun run build`:
+// in the layout of the engine package, with the foundation add-ons under `addons/`. A page imports
+// `lib/index.js` from the CDN, as docs/getting-started/cdn.md shows. Run from the repository root,
+// after `bun run build`:
 //   bun tools/build-cdn.ts [--out <folder>]
 import { join, resolve } from 'node:path';
 import { buildCdn, CDN_ENTRY, CDN_OUT, shownSize } from './lib/cdn';

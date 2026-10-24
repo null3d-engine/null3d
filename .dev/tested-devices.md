@@ -110,6 +110,38 @@ Ten pages passed, and none was skipped.
 The forest's GPU time at High and Ultra goes into the last render pass, which draws the far cards.
 Its triangle count is higher at High than at Ultra, because each preset picks its own levels.
 
+#### GPU time per pass
+
+Only the WebGPU paths time their passes. Each row gives the whole frame's GPU time and the median of
+each render pass that the engine times. A pass after the last one it times is counted in that last
+pass's figure. The copies before the first pass take under 0.2 ms in every row.
+
+iPhone 17, WebGPU:
+
+| Row | Whole | R1 | R2 | R3 | R4 | R5 | R6 | R7 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Forest Low | 6.6 | 0.7 | 5.2 | 3.4 | 2.9 | 2.8 | 2.3 | 2.4 |
+| Forest Medium | 53.7 | 0.3 | 12.9 | 50.8 | 3.8 | 3.8 | 3.5 | 3.8 |
+| Forest High | 54.5 | 0.3 | 8.7 | 13.3 | 6.4 | 6.6 | 6.9 | 43.5 |
+| Forest Ultra | 87.5 | 0.5 | 1.6 | 19.7 | 24.2 | 8.6 | 9.3 | 62.5 |
+| Forest Low, compatibility | 6.4 | 0.7 | 5.3 | 3.3 | 2.9 | 2.9 | 2.8 | 3.2 |
+| Forest Medium, compatibility | 25.9 | 0.3 | 12.8 | 23.2 | 0.9 | 0.8 | 0.8 | 1.4 |
+
+iPad Pro 13, WebGPU:
+
+| Row | Whole | R1 | R2 | R3 | R4 | R5 | R6 | R7 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Forest Low | 6.9 | 0.4 | 5.7 | 4.5 | 4.4 | 4.4 | 4.4 | 4.9 |
+| Forest Medium | 45.4 | 0.1 | 9.1 | 43.1 | 6.4 | 6.4 | 6.2 | 6.8 |
+| Forest High | 58.3 | 0.1 | 2.7 | 11.9 | 6.2 | 6.5 | 7.1 | 49.0 |
+| Forest Ultra | 63.2 | 0.3 | 1.1 | 11.7 | 13.9 | 6.7 | 7.2 | 49.2 |
+| Forest Low, compatibility | 6.9 | 0.4 | 5.8 | 4.5 | 4.4 | 4.4 | 4.4 | 5.0 |
+| Forest Medium, compatibility | 23.9 | 0.1 | 9.1 | 21.4 | 2.1 | 2.0 | 1.9 | 3.0 |
+
+The passes of one frame add up to more than the whole. The engine times one frame in eleven, and a
+pass that follows the last timed one is counted there. Read the columns side by side within a row,
+not as parts of a sum.
+
 ### Galaxy S24 (SM-S921B), Chrome 152, Android 16
 
 | Demo and preset | Path | FPS | Frame ms | CPU ms | GPU ms | Triangles | Draws | Textures MiB | Buffers MiB | wasm MiB |
@@ -132,27 +164,36 @@ Four pages passed, and none was skipped. The display ran at 30 Hz, so every fram
 | Forest Medium | WebGL2 | 0.5 | 1,820.8 | 105.5 | n/a | 38,690,000 | 47 | 210.2 | 11.8 | 86.3 |
 
 The run: [20261024-111020-vegetation](tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261024-111020-vegetation.md).
-Four pages passed, three were skipped, and one failed. The device offers no compatibility mode, so
-its compatibility pages were skipped. Creek at Medium failed: its first frame took 42 s, and then
-the measure drew no frame in 5.5 s. The tablet is the slowest measured device: it draws Creek at
-Low under one frame a second, and the forest at Medium under one frame a second.
+**One row is void.** Creek at Low in compatibility mode lost the GPU on its first frame with E1302,
+`vkQueueSubmit failed with VK_ERROR_DEVICE_LOST`. The page forced a mode that the device does not
+offer, and no adapter was left to start another.
+
+Three pages passed, three were skipped, and one failed. The device offers no compatibility adapter,
+so the plan skipped its compatibility pages, and it skipped them only after that first one had run.
+The page then reported 3 frames in 5.5 s, so the runner counted a pass with no triangles and no
+texture bytes. Its figures are in no table here and must not be read. The device's own fault is in
+[Driver bug reports](driver-bugs.md).
+
+Creek at Medium failed: its first frame took 42 s, and then the measure drew no frame in 5.5 s. The
+tablet is the slowest measured device. It draws Creek at Low under one frame a second, and the
+forest at Medium under one frame a second.
 
 ### Tree generation, all four devices
 
 The page generated the stand-in parametric tree of `tests/pages/lib/tree-generator.ts` in a worker:
-oak, beech, birch and pine at each preset's detail, six seeds each. Each figure is the median of
-the six generations inside the worker.
+oak, beech, birch and pine at each preset's detail, six seeds each.
 
 | Device | Low | Medium | High | Ultra |
 | --- | --- | --- | --- | --- |
-| iPhone 17 | 22 ms | 14 ms | 17 ms | 15 ms |
-| iPad Pro 13 | 16 ms | 15 ms | 16 ms | 14 ms |
-| Galaxy S24 | 40 ms | 31 ms | 31 ms | 45 ms |
-| Galaxy Tab A9 Plus | 54 ms | 44 ms | 57 ms | 84 ms |
+| iPhone 17 | 22.7 ms | 14.3 ms | 17.8 ms | 14.8 ms |
+| iPad Pro 13 | 16.8 ms | 14.6 ms | 19.5 ms | 14.3 ms |
+| Galaxy S24 | 44.1 ms | 34.5 ms | 33.2 ms | 47.3 ms |
+| Galaxy Tab A9 Plus | 56.4 ms | 49.4 ms | 59.3 ms | 93.5 ms |
 
-Each row is a set of 24 variants: four species, six each. The furthest triangle counts are 123,876
-at Low and 474,096 at Ultra, and the arrays take 7.0 MB and 22.7 MB. The slowest single variant on
-the tablet was an oak at Ultra: 5.42 ms for 27,090 triangles. The tablet's runs:
+Each figure is the page's own total for that preset: the 24 timed generations of four species and
+six seeds. Each of those generations is timed inside the worker. The furthest triangle counts are
+123,876 at Low and 474,096 at Ultra, and the arrays take 7.0 MB and 22.7 MB. The slowest single
+variant on the tablet was an oak at Ultra: 5.42 ms for 27,090 triangles. The tablet's runs:
 [20261024-111904-tree-generation](tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261024-111904-tree-generation.md).
 The other three are in their folders: the iPhone and the iPad at 20261024-084032, and the S24 at
 20261024-084231.

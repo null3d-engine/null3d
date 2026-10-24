@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import {
 	existsSync,
 	mkdirSync,
@@ -75,6 +76,7 @@ describe('createProject', () => {
 			'.gitignore',
 			'.claude/settings.json',
 			'.claude/agent-hook.mjs',
+			'.codex/hooks.json',
 		]) {
 			expect(existsSync(join(target, file))).toBe(true);
 		}
@@ -118,6 +120,76 @@ describe('createProject', () => {
 		]);
 		expect(hooks[0].hooks[0].command).toContain('.claude/agent-hook.mjs" bash');
 		expect(hooks[1].hooks[0].command).toContain('.claude/agent-hook.mjs" edit');
+	});
+
+	it('turns the hook on for Codex too', () => {
+		const root = tempRoot();
+		const target = createProject({ dir: join(root, 'my-game'), version: '0.1.0' });
+		const config = JSON.parse(readFileSync(join(target, '.codex/hooks.json'), 'utf8'));
+		const hooks = config.hooks.PreToolUse;
+
+		expect(hooks.map((hook: { matcher: string }) => hook.matcher)).toEqual([
+			'Bash',
+			'Edit|Write|apply_patch',
+		]);
+		// Codex runs the same hook script as Claude Code, so the rules live in one place.
+		expect(hooks[0].hooks[0].command).toContain('.claude/agent-hook.mjs" bash');
+		expect(hooks[1].hooks[0].command).toContain('.claude/agent-hook.mjs" edit');
+	});
+
+	it('runs its hooks in the project that it makes', () => {
+		const root = tempRoot();
+		const target = createProject({ dir: join(root, 'my-game'), version: '0.1.0' });
+		const claude = JSON.parse(readFileSync(join(target, '.claude/settings.json'), 'utf8'));
+		const codex = JSON.parse(readFileSync(join(target, '.codex/hooks.json'), 'utf8'));
+		interface HookConfig {
+			hooks: {
+				PreToolUse: { matcher: string; hooks: { command: string }[] }[];
+			};
+		}
+		const command = (config: HookConfig, matcher: string) =>
+			config.hooks.PreToolUse.find((group) => group.matcher === matcher)?.hooks[0]?.command ?? '';
+		// The commands that each host runs, as each host configures them in this project.
+		const bashCommands = [command(claude, 'Bash'), command(codex, 'Bash')];
+		const editCommands = [
+			command(claude, 'Edit|Write|MultiEdit'),
+			command(codex, 'Edit|Write|apply_patch'),
+		];
+		const run = (value: string, call: unknown) =>
+			spawnSync('sh', ['-c', value], {
+				cwd: target,
+				input: JSON.stringify(call),
+				encoding: 'utf8',
+				env: { ...process.env, CLAUDE_PROJECT_DIR: target },
+			});
+		for (const value of bashCommands) {
+			// The project's own build command passes, and a forbidden command is refused.
+			const allowed = run(value, { tool_name: 'Bash', tool_input: { command: 'bun run build' } });
+			expect(allowed.stderr).toBe('');
+			expect(allowed.status).toBe(0);
+			const refused = run(value, { tool_name: 'Bash', tool_input: { command: 'sleep 5' } });
+			expect(refused.status).toBe(2);
+			expect(refused.stderr).toContain('do not wait with sleep');
+		}
+		// The project's own sketch passes the edit rule, and an edit that reaches the DOM is refused.
+		const sketch = readFileSync(join(target, 'src/sketch.ts'), 'utf8');
+		for (const value of editCommands) {
+			const allowed = run(value, {
+				tool_name: 'Write',
+				tool_input: { file_path: 'src/sketch.ts', content: sketch },
+			});
+			expect(allowed.stderr).toBe('');
+			expect(allowed.status).toBe(0);
+			const refused = run(value, {
+				tool_name: 'Write',
+				tool_input: {
+					file_path: 'src/sketch.ts',
+					content: 'const canvas = document.querySelector("canvas");\n',
+				},
+			});
+			expect(refused.status).toBe(2);
+			expect(refused.stderr).toContain('has no DOM');
+		}
 	});
 
 	it('makes a name that npm accepts from the folder', () => {
