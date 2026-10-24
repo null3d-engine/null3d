@@ -53,6 +53,7 @@ const INCOMPLETE = new Set([
 	'M3-A8',
 	'M3-A9',
 	'M3-A10',
+	'M3-V6',
 	'M3-A11',
 	'M3-R1',
 	'M3-O1',
@@ -133,6 +134,8 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
 	'M3-R21':
 		'the picture step does not read the heavy-test jobs, so the screens and skyway pictures are not gated; the fix is on a helper branch',
+	'M3-V6':
+		"the scatter is built and its determinism proof is byte-identical point lists across tile orders and sizes, but the task's second half — the placement time for Creek's valley on a real device — is owed to a quiet machine",
 	'M3-V1':
 		'Creek has no WebGPU figure on any device, and no vegetation task after it has its own budget per preset',
 	'M3-V3': 'the Mac, iPad and phone GPU time and memory are not recorded',
