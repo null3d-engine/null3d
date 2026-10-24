@@ -9,6 +9,10 @@ export interface Side {
 	gpuMs: number | null;
 	intervalMs: number | null;
 	cpuMs: number | null;
+	/** Draw calls per frame, where the page reports them. */
+	draws?: number | null;
+	/** Each part of the frame's GPU time, where the device times its passes. */
+	passes?: { name: string; ms: number | null }[];
 	threads: Record<string, number | null>;
 }
 
@@ -38,8 +42,10 @@ export const loadNow = () => (loadavg()[0] as number).toFixed(1);
 /**
  * Waits until the computer's 1-minute load is under `QUIET_LOAD`, and returns the load. A load that
  * stays high fails the test after a time limit, so a quiet window is never held by a wait.
+ * `NULL3D_COST_TRIAL` skips the wait, for an untimed trial that only checks that the pages run.
  */
 export async function waitForQuiet(): Promise<string> {
+	if (process.env.NULL3D_COST_TRIAL) return loadNow();
 	const waitUntil = Date.now() + LOAD_WAIT_MS;
 	while ((loadavg()[0] as number) >= QUIET_LOAD) {
 		if (Date.now() > waitUntil)
