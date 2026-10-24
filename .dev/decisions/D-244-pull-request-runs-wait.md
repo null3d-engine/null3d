@@ -2,7 +2,8 @@
 
 Status: decided on 24 October 2026, landed in ci/pr-debounce (03008ecce). The update below, landed
 in ci/pr-runs-finish the same day, replaces it: a newer push no longer cancels a started run, and
-the wait goes. Date: 2026-10-24. Task: none.
+the wait goes. [D-248](D-248-milestone-push-runs.md) then moved the milestone's quick checks from its
+pull request's runs to its branch's pushes, under the same rule. Date: 2026-10-24. Task: none.
 
 Summary: On a push to a pull request, the `changes` job first sleeps 180 seconds. Every other
 job of the run waits for it. A newer push in that time cancels the run at the cost of that one

@@ -1,7 +1,7 @@
 // Checks the CI workflow's job graph, its shard lists and the reuse of its work. A typo in the
 // graph or the lists breaks CI without failing any job: a job missing from ci-passed's needs never
-// gates main, a job that skips on an answer ci-passed does not expect fails every docs-only run,
-// and a shard missing from a matrix never runs its tests. A fault in the reuse costs time on every
+// gates main, a job that skips where ci-passed does not expect it fails every quick run, and a
+// shard missing from a matrix never runs its tests. A fault in the reuse costs time on every
 // run, or reuses a pass that no longer holds, and fails nothing: a job that builds what the build
 // job made, a test of the whole shader set in two jobs, and a pass key that misses a script that
 // its part starts ([Efficient jobs](../../.dev/pull-requests.md#efficient-jobs)).
@@ -34,6 +34,8 @@ interface Job {
 
 const ROOT = join(import.meta.dirname, '../..');
 const workflow = Bun.YAML.parse(readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')) as {
+	on: Record<string, { branches?: string[] } | null>;
+	concurrency: { group: string; 'cancel-in-progress': string };
 	jobs: Record<string, Job>;
 };
 const jobs = workflow.jobs;
@@ -43,6 +45,8 @@ const scripts = (
 	}
 ).scripts;
 
+/** The condition of the full run's jobs, which a push to a milestone branch skips. */
+const FULL_RUN = "github.event_name != 'push' || github.ref == 'refs/heads/main'";
 const needsOf = (job: Job | undefined): string[] =>
 	job?.needs === undefined ? [] : Array.isArray(job.needs) ? job.needs : [job.needs];
 const oneTo = (count: number) => Array.from({ length: count }, (_, i) => i + 1);
@@ -179,18 +183,22 @@ describe("CI's workflow", () => {
 		expect(gated).toEqual(others);
 	});
 
-	it("lets a job skip only on the changes job's answer that ci-passed allows", () => {
+	it("lets only the full run's jobs skip, and only in a quick run", () => {
 		const step = jobNamed('ci-passed').steps?.find(({ name }) => name === 'Every job passed');
-		const gate = Object.fromEntries(
-			[...(step?.run ?? '').matchAll(/"([\w-]+)": "(\w+)"/g)].map(([, job, answer]) => [
-				job,
-				answer,
-			]),
+		const list = /\[([^\]]*)\] as \$full/.exec(step?.run ?? '')?.[1] ?? '';
+		const skippable = [...list.matchAll(/"([\w-]+)"/g)].map(([, job]) => job).sort();
+		const full = needsOf(jobs['ci-passed'])
+			.filter((name) => jobNamed(name).if === FULL_RUN)
+			.sort();
+		expect(skippable).toEqual(full);
+		expect(full.length).toBeGreaterThan(0);
+		// Every other job that ci-passed waits for runs in every run.
+		for (const name of needsOf(jobs['ci-passed']))
+			if (!full.includes(name)) expect(jobNamed(name).if, name).toBeUndefined();
+		// The quick run that ci-passed reads is a run that the full-run condition leaves out.
+		expect(step?.env?.QUICK).toBe(
+			"${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}",
 		);
-		for (const name of needsOf(jobs['ci-passed'])) {
-			const answer = /needs\.changes\.outputs\.(\w+) == 'true'/.exec(jobNamed(name).if ?? '')?.[1];
-			expect(gate[name], name).toBe(answer);
-		}
 	});
 
 	it('runs every shard of each numbered matrix once', () => {
@@ -376,7 +384,7 @@ describe("CI's workflow", () => {
 
 	it('fills the browser and sample caches in a job that no other job waits for', () => {
 		const filler = jobNamed('browser-caches');
-		expect(needsOf(filler)).toEqual(['changes']);
+		expect(needsOf(filler)).toEqual([]);
 		for (const action of ['./.github/actions/playwright-chromium', './.github/actions/samples']) {
 			const fill = (filler.steps ?? []).find(({ uses }) => uses === action);
 			expect(fill?.with?.['cache-only'], action).toBe('true');
@@ -556,23 +564,23 @@ describe("CI's workflow", () => {
 		expect(at(save)).toBeGreaterThan(build);
 	});
 
-	it("gives a draft's full run, started by marking it ready, a concurrency group of its own", () => {
-		const group = String((workflow as { concurrency?: { group?: string } }).concurrency?.group);
-		// The pushes after it run in the pull request's own group, so they never cancel it.
-		expect(group).toContain("github.event.action == 'ready_for_review'");
-		expect(group).toContain("format('pr-{0}{1}'");
+	it("runs a milestone branch's pushes in the branch's caches, and no pull request event", () => {
+		// A pull request's runs keep caches that the full runs started by hand on its branch cannot
+		// read, so each kind did again the work that the other had saved.
+		expect(Object.keys(workflow.on).sort()).toEqual(['push', 'workflow_dispatch']);
+		expect(workflow.on.push?.branches).toEqual(['main', 'm[0-9]+-start']);
+		// Each pushed branch has one group, and a run started by hand a group of its own, so a push
+		// never cancels or replaces a full run.
+		expect(workflow.concurrency.group).toBe(
+			"ci-${{ github.event_name == 'push' && github.ref_name || github.run_id }}",
+		);
 	});
 
 	it('cancels a run in progress only on a push to main, so every other run that starts ends', () => {
-		// Cancelling a started pull request run threw its work away: its landings come in bursts,
-		// and a later run waits instead, while GitHub drops an older waiting run before it starts.
-		const cancel = String(
-			(workflow as { concurrency?: { 'cancel-in-progress'?: string } }).concurrency?.[
-				'cancel-in-progress'
-			],
-		);
-		expect(cancel).toMatch(
-			/^\$\{\{ github\.event_name == 'push' && github\.ref == 'refs\/heads\/main' \}\}$/,
+		// Cancelling a milestone branch's started run threw its work away: its landings come in
+		// bursts, and a later run waits instead, while GitHub drops an older waiting run before it starts.
+		expect(workflow.concurrency['cancel-in-progress']).toBe(
+			"${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}",
 		);
 	});
 
@@ -624,7 +632,6 @@ describe("CI's workflow", () => {
 		// The references are most of a checkout. These jobs read every set, as the reference check
 		// does, or check out history, which a sparse checkout would leave without its files.
 		const whole = new Set([
-			'changes',
 			'commits',
 			'docs-and-tools',
 			'generated-branch',
@@ -638,7 +645,7 @@ describe("CI's workflow", () => {
 			const sparse = String(checkout.with?.['sparse-checkout'] ?? '');
 			expect(sparse, name).toContain(`!/${references}/`);
 			// The browser tests read the software GPU's set, and real browsers the real GPU's.
-			if (name.startsWith('browser') || name === 'showcase' || name === 'skill-sketches')
+			if (name.startsWith('browser') || name === 'showcase')
 				expect(sparse, name).not.toContain(`!/${references}/chromium-swiftshader/`);
 			if (name === 'real-browsers')
 				expect(sparse, name).not.toContain(`!/${references}/chrome-real-gpu/`);

@@ -3,15 +3,12 @@ name: CI
 # Work lands on main by direct push (D-157 in .dev/decisions), and each push to main runs every
 # job, as .dev/pull-requests.md lists them. A run started by hand runs every job too:
 # gh workflow run ci.yml --ref main
-# The pull request event stays from the earlier flow (D-99), which no longer runs:
-# a draft ran only the quick checks, and a docs-only pull request only the build, the docs, style,
-# skills and unit checks. The changes job decides what each run tests.
+# A push to a milestone branch, such as m3-start, runs only the quick checks. Its runs and the full
+# runs started by hand on the branch share the branch's caches, so neither does again the work that
+# the other saved: a pull request's runs kept caches of their own (D-248).
 on:
   push:
-    branches: [main]
-  # A draft that becomes ready for review starts its full run.
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main, 'm[0-9]+-start']
   workflow_dispatch:
 
 permissions:
@@ -19,16 +16,14 @@ permissions:
 
 # A newer push to main cancels main's run still in progress, so CI's machines test only the newest
 # code (the owner's choice, D-157). A cancelled job then reads "cancelled", as a job that hits its
-# time limit does; ci-passed says which of the two stopped it. A draft's full run, which marking it
-# ready for review starts, has a group of its own, so the draft can go back to draft at once and the
-# pushes after it do not cancel the run: it reads the pull request's caches, which a run started by
-# hand on its branch cannot. A later run of a pull request or by hand waits for the one in progress
-# instead of cancelling it, so every such run that starts ends with a result, and GitHub keeps only
-# the newest one waiting: an older waiting run goes before it starts any job. A pull request's
-# landings come in bursts, and cancelling started runs threw away most of their work (D-244). Only a
-# cancel by hand, as when a full run is started, ends a pull request's run early.
+# time limit does; ci-passed says which of the two stopped it. A later push to a milestone branch
+# waits for the branch's run in progress instead of cancelling it, so every such run that starts
+# ends with a result, and GitHub keeps only the newest one waiting: an older waiting run goes before
+# it starts any job. The branch's landings come in bursts, and cancelling started runs threw away
+# most of their work (D-244). A run started by hand has a group of its own, so pushes never cancel
+# or replace it. Only a cancel by hand, as when a full run is started, ends a branch's run early.
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}{1}', github.event.pull_request.number, github.event.action == 'ready_for_review' && '-full' || '') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'main') || github.run_id }}
+  group: ci-${{ github.event_name == 'push' && github.ref_name || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
 env:
@@ -48,64 +43,18 @@ env:
   HEAVY_TESTS: '\bdemo-[a-z0-9-]+ on |\benvironment-[a-z0-9-]+ on |shadow follows it at [a-z]+ with its own setting|coat-sheen: turned off they draw as none'
   # Anthropic's skill validator, pinned to one commit of anthropics/skills.
   SKILL_VALIDATOR_URL: https://raw.githubusercontent.com/anthropics/skills/1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563/skills/skill-creator/scripts/quick_validate.py
-  # Every run saves its caches, and every run restores its own branch's first, then main's. A pull
-  # request's cache serves only that pull request, so its next push reuses what this one built. The
-  # repository's cache limit leaves room for those beside main's, which an older, smaller limit did
-  # not ([CI's jobs](.dev/pull-requests.md#cis-jobs)).
+  # Every run saves its caches, and every run restores its own branch's first, then main's. A
+  # milestone branch's caches serve its pushes and the full runs started on it, so each run reuses
+  # what the one before built. The repository's cache limit leaves room for those beside main's,
+  # which an older, smaller limit did not ([CI's jobs](.dev/pull-requests.md#cis-jobs)).
   SAVE_CACHES: true
-  # The commit that main pointed to before this push, empty on other events. The size check compares
-  # with it, and the commit check reads the commits after it: after a merge and a push, the commit
-  # before (HEAD^) is the branch's own, not main's.
-  PUSH_BEFORE: ${{ github.event.before }}
+  # The commit that main pointed to before this push, empty on other branches and events. The size
+  # check compares a push to main with it, and the commit check reads the commits after it: after a
+  # merge and a push, the commit before (HEAD^) is the branch's own, not main's. Every other run
+  # compares with its merge base with main, as the milestone's pull request did.
+  PUSH_BEFORE: ${{ github.ref == 'refs/heads/main' && github.event.before || '' }}
 
 jobs:
-  changes:
-    # What a run tests, from the files that a pull request changes. Every other event tests
-    # everything. The merge commit's first parent is main, so the diff holds the pull request's
-    # changes alone, and a rename counts as both its old and its new path.
-    # - code: false when every file is a docs file: a Markdown file, or a file in .dev/, docs/ or
-    #   skills/. Only the docs-and-tools job reads those, apart from the sketches below. The other
-    #   quick checks and every browser, benchmark and macOS job then skip.
-    # - full: the browser, load page, benchmark page and real-browser jobs run. A draft skips them too.
-    # - allocation: the allocation job runs, in a full run that changes the code whose per-frame
-    #   allocation it checks, or the check itself: the engine's render, GPU, sketch, scene and shared
-    #   code, the add-ons, the core's crates, and the benchmark pages and the check's tools.
-    # - sketches: a docs-only pull request that is no draft changes the skills' or the cookbook's
-    #   Markdown, whose complete sketches the browser tests draw. The skill-sketches job draws them.
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      code: ${{ steps.paths.outputs.code }}
-      full: ${{ steps.paths.outputs.full }}
-      allocation: ${{ steps.paths.outputs.allocation }}
-      sketches: ${{ steps.paths.outputs.sketches }}
-    steps:
-      - uses: actions/checkout@v5
-        if: github.event_name == 'pull_request'
-        with:
-          fetch-depth: 2
-      - name: Find what the pull request changes
-        id: paths
-        env:
-          EVENT: ${{ github.event_name }}
-          DRAFT: ${{ github.event.pull_request.draft }}
-          DOCS: ^(\.dev/|docs/|skills/)|\.md$
-          SKETCHES: ^(skills|docs/cookbook)/.*\.md$
-          ALLOCATION: ^(packages/engine/src/(render|gpu|sketch|scene|shared)/|packages/(particles|terrain|impostors)/src/|crates/null3d-(core|render|wasm)/src/|bench/allocation\.ts$|bench/lib/(allocation|devtools|serve|source-names)\.ts$|bench/pages/null3d/|\.github/workflows/ci\.yml$)
-        run: |
-          code=true full=true allocation=true sketches=false
-          if [ "$EVENT" = pull_request ]; then
-            files=$(git diff --name-only --no-renames HEAD^1 HEAD)
-            echo "$files"
-            if [ -n "$files" ] && ! grep -qvE "$DOCS" <<< "$files"; then code=false; fi
-            if [ "$code" = false ] || [ "$DRAFT" = true ]; then full=false; fi
-            if [ "$full" = false ] || ! grep -qE "$ALLOCATION" <<< "$files"; then allocation=false; fi
-            if [ "$code" = false ] && [ "$DRAFT" != true ] && grep -qE "$SKETCHES" <<< "$files"; then
-              sketches=true
-            fi
-          fi
-          printf 'code=%s\nfull=%s\nallocation=%s\nsketches=%s\n' "$code" "$full" "$allocation" "$sketches" | tee -a "$GITHUB_OUTPUT"
-
   docs-and-tools:
     # The type check and the unit tests read the shader modules, which the build job makes.
     needs: build
@@ -158,8 +107,7 @@ jobs:
     # builds. The unit job
     # shares one process, so its script ignores these files and this job runs them beside it, each
     # under its own memory ceiling ([Test memory](.dev/tests.md)).
-    needs: [changes, build]
-    if: needs.changes.outputs.code == 'true'
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -187,15 +135,15 @@ jobs:
       - run: bun run test:heavy
 
   commits:
-    # The commit messages and their trailers, which the commit hooks check locally: on a push, every
-    # commit after main's commit before the push; on a pull request, every commit of its branch. A
-    # push that starts a branch, or replaces its history, has no commit before, and checks nothing.
+    # The commit messages and their trailers, which the commit hooks check locally: on a push to
+    # main, every commit after main's commit before the push; on any other run, every commit after
+    # the merge base with main. A newer push can drop a milestone branch's waiting run, so each run
+    # checks the whole branch rather than only its own push. A push that starts main, or replaces its
+    # history, has no commit before, and checks nothing.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
       HUSKY: "0"
-      FROM: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-      TO: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -206,19 +154,22 @@ jobs:
       - uses: ./.github/actions/bun-install
       - name: Commit messages and trailers
         run: |
-          if [ -z "$FROM" ] || [ "$FROM" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$FROM^{commit}"; then
+          from=${PUSH_BEFORE:-$(git merge-base origin/main HEAD)}
+          if [ "$from" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$from^{commit}"; then
             echo "No commit before this push to compare with, so no commit is checked."
             exit 0
           fi
-          git log --oneline --no-merges "$FROM..$TO"
-          bunx commitlint --from "$FROM" --to "$TO"
-          bun tools/hooks/check-trailers.ts "$FROM..$TO"
+          if [ -z "$(git rev-list -n 1 --no-merges "$from..HEAD")" ]; then
+            echo "No commit after $from, so no commit is checked."
+            exit 0
+          fi
+          git log --oneline --no-merges "$from..HEAD"
+          bunx commitlint --from "$from" --to HEAD
+          bun tools/hooks/check-trailers.ts "$from..HEAD"
 
   rust-lint:
     # Formatting and Clippy. Clippy only checks the code and the tests compile it in full, so the
     # two share almost no build output and run as jobs of their own.
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -256,8 +207,6 @@ jobs:
     env:
       # Unset for the parts that do not shard; each sharded test reads it only when it parses.
       NULL3D_SHADER_SHARD: ${{ matrix.shard || '' }}
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # Every CI job should take at most 15 minutes. Each part's limit sits in the matrix.
     timeout-minutes: ${{ matrix.limit }}
@@ -423,8 +372,6 @@ jobs:
     # not each download the same files from the package mirror at once. When a cache holds the
     # current version, its step only looks the key up. The mirror sometimes stalls for minutes, so
     # no job waits for this one, and a fill that fails leaves each job to install for itself.
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -543,8 +490,6 @@ jobs:
     # run on main keeps its own commit's sizes (wasm-checks below). So the sizes stay in the Actions
     # cache by commit, and a run that finds them builds nothing. Otherwise this job builds the base
     # beside the build job, and the size check waits for both.
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # A shader build that compiles every shader takes longer than 35 minutes on one core. The limit
     # comes down when the shader build runs on every core.
@@ -628,8 +573,7 @@ jobs:
     # kept the memo. The build job runs one part when that memo was measured from these shader
     # modules, and four otherwise.
     name: size-parts (${{ matrix.part }} of ${{ strategy.job-total }})
-    needs: [build, changes]
-    if: needs.changes.outputs.code == 'true'
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -671,8 +615,7 @@ jobs:
     # size-parts jobs, against the base's sizes from the size-base job. The build job builds the
     # same files with the same flags, so the check builds no WebAssembly. A run on main then keeps
     # its commit's sizes, as the base of the runs that build on it.
-    needs: [build, size-base, size-parts, changes]
-    if: needs.changes.outputs.code == 'true'
+    needs: [build, size-base, size-parts]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -715,12 +658,12 @@ jobs:
           key: size-memo-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
       # The check writes the sizes before it judges them, so main keeps them also after a failure.
       - name: Keep the sizes of this commit of main
-        if: "!cancelled() && github.event_name == 'push' && hashFiles('target/size-report.json') != ''"
+        if: "!cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('target/size-report.json') != ''"
         run: |
           mkdir -p target/.size-base
           cp target/size-report.json "target/.size-base/$GITHUB_SHA.json"
       - uses: actions/cache/save@v4
-        if: "!cancelled() && github.event_name == 'push' && hashFiles('target/size-report.json') != ''"
+        if: "!cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('target/size-report.json') != ''"
         with:
           path: target/.size-base/${{ github.sha }}.json
           key: size-base-${{ github.sha }}
@@ -735,8 +678,7 @@ jobs:
     # own below, so no shard runs them after its share. A shard whose inputs passed in an earlier run
     # passes again without building, as the shader parts of rust-tests do.
     name: shader-compiler (${{ matrix.part }} of ${{ strategy.job-total }})
-    needs: [build, changes]
-    if: needs.changes.outputs.code == 'true'
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -859,8 +801,7 @@ jobs:
     # tools/lib/wgsl-modules.ts lists, and the two files whose declarations the plugin's tests
     # compare for the other part.
     name: shader-compiler-plugin (${{ matrix.script }}${{ matrix.share && format(' {0}', matrix.share) || '' }})
-    needs: [build, changes]
-    if: needs.changes.outputs.code == 'true'
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -941,8 +882,7 @@ jobs:
     # the command-line tool's test command type checks the project and draws its sketch on every
     # GPU tier, and Vite builds it for production. Then the project builds a page of its own layout
     # around a copy of examples/, as the website does, and two demos must start from that build.
-    needs: [build, changes]
-    if: needs.changes.outputs.code == 'true'
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -989,9 +929,10 @@ jobs:
     # weights, and .dev/image-tests.md says when to retune them and when to add a shard. The tests
     # that run alone, the heavy tests and S6's image tests have jobs of their own below.
     name: browser (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
-    needs: [build, changes]
-    # Every run but a draft's or a docs-only pull request's, as the bench and real-browsers jobs.
-    if: needs.changes.outputs.full == 'true'
+    needs: build
+    # Every run but a push to a milestone branch, which runs only the quick checks. The other jobs
+    # of the full run take the same condition.
+    if: &full-run "github.event_name != 'push' || github.ref == 'refs/heads/main'"
     runs-on: ubuntu-latest
     # A shard's tests take about 6.5 minutes, with the median times that the weights come from, and
     # its setup about 1. A shard that meets a slow machine runs its tests up to twice as slowly as
@@ -1048,8 +989,8 @@ jobs:
     # them can upset (tests/lib/alone.ts). Each runs one at a time on a machine of its own shard, and
     # the shards split them by count. The showcase HUD test has a job of its own below.
     name: browser (tests that run alone, ${{ matrix.shard }} of ${{ strategy.job-total }})
-    needs: [build, changes]
-    if: needs.changes.outputs.full == 'true'
+    needs: build
+    if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -1092,8 +1033,8 @@ jobs:
     # others in 90 to 96, so the weights of one run put all six in one shard (12.1 minutes in full
     # run 40080490543).
     name: browser (heavy tests, ${{ matrix.shard }} of ${{ strategy.job-total }})
-    needs: [build, changes]
-    if: needs.changes.outputs.full == 'true'
+    needs: build
+    if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -1140,8 +1081,8 @@ jobs:
     # run after the others, one at a time, on the same build; the second part has none. The test files
     # come before --project, which takes every name that follows it.
     name: browser (the production build, ${{ matrix.part }})
-    needs: [build, changes]
-    if: needs.changes.outputs.full == 'true'
+    needs: build
+    if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -1218,8 +1159,8 @@ jobs:
     # S6's image tests, the browser tests that load the city's files, which the browser job's shards
     # leave out, so that only this job waits for the load pages job, which builds those files.
     name: browser (the city)
-    needs: [build, load-pages, changes]
-    if: needs.changes.outputs.full == 'true'
+    needs: [build, load-pages]
+    if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -1261,8 +1202,8 @@ jobs:
     # the fog were one test of 20.9 minutes: its page held still after 204 s, the sky took 492 s
     # more and the fog 535 s, so they became two tests.
     name: browser (the showcase HUD, ${{ matrix.part }})
-    needs: [build, changes]
-    if: needs.changes.outputs.full == 'true'
+    needs: build
+    if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 35
     strategy:
@@ -1299,42 +1240,6 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
 
-  skill-sketches:
-    # The complete sketches in the skills' and the cookbook's Markdown, drawn on every GPU tier, for
-    # a docs-only pull request that changes that Markdown. Every full run draws them in the browser
-    # job's shards instead.
-    name: browser (skill sketches)
-    needs: [build, changes]
-    if: needs.changes.outputs.sketches == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      NULL3D_REQUIRE_FRESH_SHADERS: "1"
-      NULL3D_PRODUCTION_PAGES: skip
-      HUSKY: "0"
-    steps:
-      - uses: actions/checkout@v5
-        with: *software-gpu-references
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-      - uses: ./.github/actions/archive
-        with:
-          mode: download
-          name: page-wasm
-      - uses: ./.github/actions/playwright-chromium
-      # The cookbook's recipes load sample files.
-      - uses: ./.github/actions/samples
-      - name: The skill sketches on SwiftShader, WebGPU and WebGL2
-        run: bun run test:browser skill-sketches.spec.ts
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: browser-test-results-skill-sketches
-          path: test-results/
-          if-no-files-found: ignore
-
   bench:
     # The benchmark pages' tests on SwiftShader, in shards of about equal measured time.
     # Playwright's own --shard splits the test list into equal counts in file order, and these
@@ -1366,8 +1271,8 @@ jobs:
     # figures.
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     # Every build of the pages holds S6's, so every shard needs the city's files.
-    needs: [build, load-pages, changes]
-    if: needs.changes.outputs.full == 'true'
+    needs: [build, load-pages]
+    if: *full-run
     runs-on: ubuntu-latest
     # The shards run close to their measured times, and a slow software-renderer runner stretches
     # them further, so the limit stays above the measurement by more than that variation.
@@ -1465,8 +1370,8 @@ jobs:
     # browser optimizes after fewer calls, so the warm-up is 1,200 frames and the job takes about 4
     # minutes.
     name: allocation (${{ matrix.gpu }})
-    needs: [build, load-pages, changes]
-    if: needs.changes.outputs.allocation == 'true'
+    needs: [build, load-pages]
+    if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -1514,8 +1419,8 @@ jobs:
     # 39944103955. The startup pages build in the job below, at the same time, since only the
     # prebuilt real-browser shards serve them.
     name: load pages
-    needs: [build, changes]
-    if: needs.changes.outputs.full == 'true'
+    needs: build
+    if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -1552,8 +1457,8 @@ jobs:
     # about 10 GB of memory at its peak, so the two run on machines of their own, and each job that
     # serves one waits only for its own.
     name: load startup pages
-    needs: [build, changes]
-    if: needs.changes.outputs.full == 'true'
+    needs: build
+    if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -1591,13 +1496,13 @@ jobs:
     # it, and Firefox compiles every build (D-147).
     # .dev/devices.md says what to do then. To add a shard, add it to the shard list and raise the
     # count beside it.
-    # A draft pull request skips them, so that unfinished work holds no macOS machine (D-99).
+    # A push to a milestone branch skips them, as every job of the full run.
     # The few pages that load what the load pages job makes, a production build or S6's city
     # files, run in the real-browsers-prebuilt job below, so these shards wait only for the build
     # job, about 3 minutes sooner.
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.shards }})
-    needs: [build, changes]
-    if: needs.changes.outputs.full == 'true'
+    needs: build
+    if: *full-run
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
     # Each shard should take at most about 12 minutes, setup included. In run 39291513923 Safari's
     # runner page went quiet for 90 to 235 s on some shards, and a new runner page then ran the rest,
@@ -1672,8 +1577,8 @@ jobs:
     # the engine test page, through the load routes, and S6's pages, with the city's files. They
     # take about a minute of each browser's plan, so one shard in each browser runs them.
     name: real-browsers (${{ matrix.browser }}, the prebuilt pages)
-    needs: [build, load-pages, load-startup-pages, changes]
-    if: needs.changes.outputs.full == 'true'
+    needs: [build, load-pages, load-startup-pages]
+    if: *full-run
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
     timeout-minutes: 20
     strategy:
@@ -1768,14 +1673,10 @@ jobs:
   ci-passed:
     # The one check of this workflow that main's rules require, so that the jobs above can split into
     # shards and change their names with no change to the rules. It runs after every other job, also
-    # after a failure or a cancel, and fails unless each job passed. A job may skip only when the
-    # changes job passed and its answer that gates the job is false: a docs-only pull request skips
-    # every job but the build and docs-and-tools, a draft skips the full run's jobs, the allocation
-    # job skips a pull request that changes nothing it checks, and the skill sketches job skips
-    # every run but a docs-only one that changes them.
+    # after a failure or a cancel, and fails unless each job passed. Only a push to a milestone
+    # branch may skip jobs, and only the full run's jobs, which take the full-run condition.
     if: always()
     needs:
-      - changes
       - commits
       - shader-entries
       - docs-and-tools
@@ -1798,7 +1699,6 @@ jobs:
       - browser-production
       - browser-city
       - showcase
-      - skill-sketches
       - bench
       - allocation
       - real-browsers
@@ -1825,20 +1725,18 @@ jobs:
               echo "::warning title=Cancelled::$name was cancelled, by a newer push to main or by hand"
             fi
           done
-      # Each job that may skip, and the changes job's answer that gates it, as in the job's condition.
+      # The full run's jobs, which may skip in a quick run alone, as their condition says.
       - name: Every job passed
         env:
           NEEDS: ${{ toJSON(needs) }}
+          QUICK: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}
         run: |
-          jq -r '"changes: \(.changes.outputs)", (to_entries[] | "\(.key): \(.value.result)")' <<< "$NEEDS"
-          jq -e '.changes.outputs as $run | {
-              "rust-lint": "code", "rust-tests": "code", "size-base": "code", "size-parts": "code",
-              "wasm-checks": "code",
-              "shader-compiler": "code", "shader-compiler-plugin": "code", "packages": "code",
-              "heavy-checks": "code", "browser-caches": "code",
-              "load-pages": "full", "load-startup-pages": "full", "browser": "full", "browser-alone": "full", "browser-heavy": "full", "browser-production": "full",
-              "browser-city": "full", "showcase": "full", "bench": "full", "real-browsers": "full", "real-browsers-prebuilt": "full",
-              "allocation": "allocation", "skill-sketches": "sketches"
-            } as $gate | length > 0 and all(to_entries[]; .value.result == "success"
-              or (.value.result == "skipped" and $run[$gate[.key] // ""] == "false"))' \
+          echo "quick checks only: $QUICK"
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
+          jq -e --argjson quick "$QUICK" '[
+              "load-pages", "load-startup-pages", "browser", "browser-alone", "browser-heavy",
+              "browser-production", "browser-city", "showcase", "bench", "allocation",
+              "real-browsers", "real-browsers-prebuilt"
+            ] as $full | length > 0 and all(to_entries[]; .value.result == "success"
+              or (.value.result == "skipped" and $quick and (.key | IN($full[]))))' \
             <<< "$NEEDS" > /dev/null
