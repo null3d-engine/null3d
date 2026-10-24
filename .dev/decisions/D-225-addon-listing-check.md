@@ -311,6 +311,10 @@ page then fetches the same file at the same relative address that the bundle wou
 The set stays one copy in the machine's cache, and the build folder holds links to it. The option
 that turns this on is `linkedShaders`, which the page gates of `check-addon` set.
 
+**What the page build is.** It no longer bundles the engine's shader files. It links the files that
+the shader build wrote beside the scripts that name them, and each name carries the set's stamp.
+A reader who looks for the old path finds no shader bytes in the bundle, and that is the design.
+
 **The figures.** Measured on the fixture's page in a checkout on 25 October 2026, with
 `/usr/bin/time -l`:
 
@@ -319,8 +323,8 @@ that turns this on is `linkedShaders`, which the page gates of `check-addon` set
 | the page build before the change | 10,520 MiB here, and 12,930 to 13,120 MiB on CI | minutes |
 | the page build after the change | 790 MiB | 8 s |
 
-The check's ceiling falls from 14,336 MiB to 1,536 MiB. Runs of the changed build measured 720 to
-792 MiB.
+The check's ceiling stays at 14,336 MiB until the page gates pass with the changed build, and then
+falls to 1,536 MiB. Runs of the changed build measured 720 to 818 MiB.
 
 **What it keeps.** The page is built from the project's own sources with the same Vite config, and
 the same page runs in the same gates. The `page` gate still starts it from another origin under the
@@ -334,11 +338,11 @@ Run with `bun packages/cli/bin/null3d.js`, they pass: the add-on built with WGSL
 and its file within budget. The wrongly packed fixture still failed the public-API gate and the
 shader-build gate, with the same lines that name it, and exited 1.
 
-**The one difference in an address.** A shader file keeps the name that the shader build gave it, so
-its address loses the content-hash suffix that Vite added. The file's bytes, its folder, its origin
-and the way a script names it stay as they were. The suffix exists only because Vite reads the file
-to hash it, which is the cost that this change removes. A check of the build holds a script's shader
-address and the file that sits beside it.
+**The addresses keep a hash.** A shader file's name carries the stamp of the shader set: a hash of
+each file's name, size and time of change. The stamp costs a listing and a stat of each file, never
+a read of its bytes. The name changes whenever any file of the set changes, so a page or a CDN may
+keep it for a long time, and a copy of an older set can never answer for a newer one. The file's
+bytes, its folder, its origin and the way a script names it stay as they were.
 
 **A fault that this change found, and did not fix.** `bunx @null3d/cli check-addon` runs the
 command under Node, as the command's `node` line asks. In a checkout the plugin sits there as
