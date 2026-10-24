@@ -3,7 +3,7 @@ name: CI
 # Work lands on main by direct push (D-157 in .dev/decisions), and each push to main runs every
 # job, as .dev/pull-requests.md lists them. A run started by hand runs every job too:
 # gh workflow run ci.yml --ref main
-# The pull request and merge queue events stay from the earlier flow (D-99), which no longer runs:
+# The pull request event stays from the earlier flow (D-99), which no longer runs:
 # a draft ran only the quick checks, and a docs-only pull request only the build, the docs, style,
 # skills and unit checks. The changes job decides what each run tests.
 on:
@@ -12,8 +12,6 @@ on:
   # A draft that becomes ready for review starts its full run.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  # Only while main's rules still send pull requests through the merge queue (D-99).
-  merge_group:
   workflow_dispatch:
 
 permissions:
