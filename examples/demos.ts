@@ -218,10 +218,11 @@ export const DEMOS: readonly Demo[] = [
 		name: 'canvas-screen',
 		group: 'Light, materials and effects',
 		sketch: new URL('./canvas-screen/sketch.ts', import.meta.url),
+		code: 'canvas-screen/',
 		title: 'Screens drawn on a canvas',
 		scene: 'Reactor control room',
 		summary:
-			'Three wall screens that a sketch paints on OffscreenCanvas objects, each a texture that refreshes only the rectangle that changed. The reactor, shield and coolant readings rise and fall, with their bars and lights, under a breathing lamp.',
+			'Wall screens and a console panel that a sketch paints on OffscreenCanvas objects, each with its own refresh rate and uploading only the rectangle that changed. The LCD look shows sub-pixels, a scan band and dead texels up close, a click turns a panel down or up with a boot glitch, and the reactor, shield and coolant readings rise and fall under a breathing lamp.',
 		hold: 1,
 		timeoutSeconds: 60,
 	},
@@ -233,7 +234,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Clear coat and sheen',
 		scene: 'Rainy showroom',
 		summary:
-			'A car built in code, its candy red paint with glinting metal flakes and door seams under a mirror-smooth clear coat, and carbon fibre trim whose tows shine along their length, on a varnished plinth. Rain falls on wet cobbles whose puddles are a clear coat with rain rings, and velvet glows at its edges with sheen.',
+			"A car built in code, its candy red paint with glinting metal flakes and door seams under a mirror-smooth clear coat, and carbon fibre trim whose tows shine along their length, on a varnished plinth. Rain falls on wet cobbles whose puddles are a clear coat with rain rings, and velvet glows at its edges with sheen. A tablet beside the plinth shows the car's fit on a screen that a tap cycles.",
 		hold: 1,
 		timeoutSeconds: 120,
 	},
@@ -622,7 +623,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Picking and labels',
 		scene: 'Gallery plinth',
 		summary:
-			'Six polished pieces turn on pedestals on a plinth in a dark gallery under spotlights, each with an HTML label that follows it. The pointer lights up the piece under it, and a click outlines it and marks the point that the ray hit. A plan on the wall beside them marks each click where it lands.',
+			'Six polished pieces turn on pedestals on a plinth in a dark gallery under spotlights, each with an HTML label that follows it. The pointer lights up the piece under it, and a click outlines it and marks the point that the ray hit. A display on the wall beside them marks each click on its canvas where it lands, and uploads only the rectangles that changed.',
 		hold: 2,
 		timeoutSeconds: 60,
 	},
