@@ -246,17 +246,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with: *without-references
-      # A shader part reads only the shader crates, the crate they depend on, the Cargo files, the
-      # toolchain and nextest's settings. When an earlier run passed this part with the same files,
-      # the part passes again without building anything: the key below hashes exactly those files,
-      # and names the part's share, which a new shard count changes.
+      # When an earlier run passed a part with the same files, the part passes again without
+      # building anything: the key below hashes exactly the files that the part reads, and names the
+      # part's share, which a new shard or partition count changes. A shader part reads only the
+      # shader crates, the crate they depend on, the Cargo files, the toolchain and nextest's
+      # settings. The other parts run every workspace test, which reads every crate and, outside
+      # them, the generated engine modules that two crates check, a test fixture, a test page's
+      # table, the engine's error codes, an add-on's shader, the test environments and the
+      # compiler's runner script. Nine landings in ten change none of those files. A file outside
+      # the crates that the crates' code names belongs in this list, and
+      # tools/lib/ci-workflow.test.ts fails on one that the list leaves out.
       - name: The key of this part's inputs
         id: inputs
-        if: matrix.shard
-        run: echo "key=passed-v2-${{ matrix.id }}-${{ matrix.shard }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=passed-v2-${{ matrix.id }}-${{ matrix.shard || matrix.partition }}-${{ matrix.shard && hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml') || hashFiles('crates/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml', '.github/actions/optimized-shader-crates/**', 'packages/engine/src/generated/gpu.ts', 'packages/engine/src/generated/core.ts', 'packages/engine/src/errors/codes.ts', 'tests/fixtures/light-clusters.bin', 'tests/pages/lib/dfg-table.ts', 'tests/pages/assets/environments/**', 'examples/addons/aurora/aurora.wgsl', 'tools/shader-compiler.ts') }}" >> "$GITHUB_OUTPUT"
       - name: Find an earlier pass with the same inputs
         id: passed
-        if: matrix.shard
         uses: actions/cache/restore@v4
         with:
           path: target/passed
@@ -279,14 +283,14 @@ jobs:
       - if: steps.passed.outputs.cache-hit != 'true'
         run: cargo nextest run --no-fail-fast ${{ matrix.tests }} ${{ matrix.partition && format('--partition {0}', matrix.partition) || '' }}
       # nextest runs no documentation tests. One job splits the tests, so the doc tests run in it.
-      - if: matrix.id == 'ci-1'
+      - if: matrix.id == 'ci-1' && steps.passed.outputs.cache-hit != 'true'
         run: cargo test --workspace --doc --no-fail-fast
       - name: Record this part's pass of these inputs
-        if: matrix.shard && steps.passed.outputs.cache-hit != 'true'
+        if: steps.passed.outputs.cache-hit != 'true'
         run: |
           mkdir -p target/passed
           echo "$GITHUB_SHA" > target/passed/commit
-      - if: matrix.shard && steps.passed.outputs.cache-hit != 'true'
+      - if: steps.passed.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: target/passed
