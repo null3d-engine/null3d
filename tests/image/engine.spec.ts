@@ -17,6 +17,8 @@ import {
 import { pageResult } from '../lib/page-result.ts';
 import { restoreWaitAsync, withoutWaitAsync } from '../lib/without-wait-async.ts';
 
+test.describe.configure({ mode: 'parallel' });
+
 /**
  * Serves every response to the page without the headers that make it cross-origin isolated, as a
  * host that cannot set them does.
