@@ -248,3 +248,25 @@ calls fitted no function, and the driver refused the whole shader with "'fx74470
 : no matching overloaded function found". The engine then drew each effect in a pass of its own, so
 the images still matched and the fault stayed hidden. D-167's addendum records the fix, the check
 that refuses such a call, and its evidence. The joins now run at every render scale.
+
+## Addendum, 25 October 2026: an effect that reads bloom's chain bound the wrong source
+
+An effect that calls `effectBloom` moves bloom's chain before the effects. The chain then reads the
+scene's color rather than the effects' output, as [Post-processing](../../docs/concepts/post-processing.md)
+states. The passes declared that source since M3-A4 (d8234c106), whose test checked the order of
+the steps but not the texture that the first step binds. The first step's bound texture was still
+the last effect's target, which the code chose when no effect read the chain. So the declaration and
+the binding disagreed. The chain sampled a target that the effect pass writes later in the same
+frame, or the previous frame's copy of it.
+
+Two faults came from it. A held frame draws once, so it sampled the effect's target before anything
+wrote it. That target held its clear color, so bloom thresholded black and drew no glow at all. Every
+lens kit picture with a mark showed that, while the pictures of the core's own looks kept their glow.
+A live frame sampled the frame before, so the glow lagged the picture. The streak's own glow also fed
+back into the chain that made it.
+
+The fix gives the choice one place, `FrameGraph::bloom_source`, which the declaration and the
+binding both call. The test `a_lone_effect_that_reads_bloom_keeps_the_whole_chain_and_the_glow`
+checks that the first step binds the scene's color and not the effect's target. The marks of the
+lens kit, `demo-post-effects` and `demo-skyway` draw differently, and their references were redrawn
+in both sets.

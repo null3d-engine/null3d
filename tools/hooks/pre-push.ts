@@ -1,5 +1,7 @@
-// Pre-push guard for pushes to main (D-157's addendum of 15 October 2026). A push to any other
-// branch only saves work, so it runs nothing. A push to main first checks the commits it adds:
+// Pre-push guard for pushes to main (D-157's addendum of 15 October 2026). A push to the milestone
+// branch is refused unless the coordinator's landing session sets NULL3D_MILESTONE_LANDING=1: a
+// helper saves its work on its own branch, and the coordinator lands it. Any other branch only
+// saves work, so the hook runs nothing for it. A push to main first checks the commits it adds:
 //   1. their messages and trailers, with commitlint and check-trailers.ts over main's commit before
 //      the push up to the push, as CI's `commits` job does, and their merges, with check-merges.ts,
 //      which refuses a merge that carries new work;
@@ -29,6 +31,13 @@ import { keptCommits } from './check-trailers';
 
 /** The trailer that skips the check, with the reason for the emergency. */
 export const SKIP_TRAILER = 'Push-Check-Skipped';
+/** The milestone branch, which only the coordinator's landing session pushes. */
+export const MILESTONE_REF = 'refs/heads/m3-start';
+/**
+ * The variable that names the coordinator's landing session. A helper leaves it unset, so its push
+ * to the milestone branch is refused. The landing session sets it for its own push.
+ */
+export const LANDING_VARIABLE = 'NULL3D_MILESTONE_LANDING';
 /** The test that builds every shader, which CI runs in a job of its own. */
 const WHOLE_SHADER_BUILD =
 	'the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule';
@@ -59,6 +68,22 @@ export function parsePush(text: string): PushedRef[] {
 /** The push to main among the pushed refs, unless it deletes main. */
 export function pushToMain(refs: readonly PushedRef[]): PushedRef | undefined {
 	return refs.find((ref) => ref.remoteRef === 'refs/heads/main' && !NO_COMMIT.test(ref.localSha));
+}
+
+/** The push to the milestone branch among the pushed refs, including a push that deletes it. */
+export function pushToMilestone(refs: readonly PushedRef[]): PushedRef | undefined {
+	return refs.find((ref) => ref.remoteRef === MILESTONE_REF);
+}
+
+/**
+ * The message that refuses a push to the milestone branch from a session that is not the
+ * coordinator's landing, or undefined when the push may go ahead. A helper saves its work on its
+ * own branch and the coordinator lands it, so a helper's push here would put unfinished work on the
+ * branch that every other helper and CI read.
+ */
+export function milestoneRefusal(refs: readonly PushedRef[], landing: boolean): string | undefined {
+	if (landing || !pushToMilestone(refs)) return undefined;
+	return `pre-push: this push writes ${MILESTONE_REF}, and only the coordinator's landing session pushes the milestone branch. Push your own branch and let the coordinator land it. If you are that session, set ${LANDING_VARIABLE}=1 for the push.`;
 }
 
 /** The reason that a `Push-Check-Skipped:` trailer gives on any of the messages, if one does. */
@@ -229,7 +254,13 @@ export function baseOf(push: PushedRef): string | undefined {
 }
 
 function main(): void {
-	const push = pushToMain(parsePush(readFileSync(0, 'utf8')));
+	const refs = parsePush(readFileSync(0, 'utf8'));
+	const refusedMilestone = milestoneRefusal(refs, process.env[LANDING_VARIABLE] === '1');
+	if (refusedMilestone) {
+		console.error(refusedMilestone);
+		process.exit(1);
+	}
+	const push = pushToMain(refs);
 	if (!push) return;
 	const base = baseOf(push);
 	if (!base) {

@@ -52,7 +52,8 @@ scene.
    page thread.
 7. Run `bunx @null3d/cli test` before you report the work as done.
 
-Claude Code checks rules 2 to 6 before each command and each edit, through the hook in
-`.claude/settings.json`. Codex and other agents read this file and follow the same rules. The hook
-is optional: delete its entries in `.claude/settings.json`, or the hook file, to remove these
-checks.
+Claude Code checks rules 2 to 6 before each command and each edit, through the hook that
+`.claude/settings.json` names. Codex checks the same rules through `.codex/hooks.json`, which runs
+the same hook script on Codex's tool calls. Codex asks you to trust a project's hooks before it
+runs them. Other agents read this file and follow the same rules. The hook is optional: delete
+those files, or their hook entries, to remove the checks.

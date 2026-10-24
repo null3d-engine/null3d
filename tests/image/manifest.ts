@@ -860,6 +860,9 @@ const TRANSLUCENCY_SKETCH = 'tests/pages/sketches/translucency-sketch.ts';
 const SUBSURFACE_SKETCH = 'tests/pages/sketches/subsurface-sketch.ts';
 /** The sketch of the clear coats and sheens. */
 const COAT_SHEEN_SKETCH = 'tests/pages/sketches/coat-sheen-sketch.ts';
+/** The sketch of the facades add-on: a wall of rooms, far away, and through the power-on wave. */
+const FACADES_SKETCH = 'tests/pages/sketches/facades-sketch.ts';
+
 /** The sketch of the car paint, its flakes, its seams and its carbon weave. */
 const CAR_PAINT_SKETCH = 'tests/pages/sketches/car-paint-sketch.ts';
 /** The sketch of decals on a stone yard. */
@@ -2630,6 +2633,28 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/terrain-sketch.ts',
 		hold: 1,
 	},
+	// Each built-in vegetation species: three of its variants, grown from the species record and a
+	// fixed seed, in a row on flat ground. The cards carry no atlas yet, so the picture shows the
+	// crown's shape, its branches and where its cards sit.
+	...[
+		'broadleaf',
+		'conifer',
+		'shrub',
+		'fern',
+		'meadow-grass',
+		'oak',
+		'beech',
+		'birch',
+		'willow',
+		'alder',
+		'hosta',
+		'sedge',
+		'rush',
+	].map((species) => ({
+		name: `vegetation-${species}`,
+		sketch: `tests/pages/sketches/vegetation-sketch.ts?species=${species}`,
+		hold: 1,
+	})),
 	// Impostors of the impostors add-on: cards far from the world's origin, each blending the three
 	// atlas views nearest its direction to the eye and lit by the sun from the normal the surface
 	// atlas stores, and a merged row of a plain, a turned and a mirrored panel, which draws only
@@ -2933,6 +2958,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// checks that each part changes the image. A software GPU builds a custom shader and the room
 	// slowly.
 	{ name: 'car-paint', sketch: CAR_PAINT_SKETCH, hold: 0, timeoutSeconds: 120 },
+	// The facades add-on: a wall of lit rooms seen close and in parallax, the same wall from far
+	// enough that the far fallback takes over, and a held frame partway through the power-on wave.
+	// The facades spec checks that the rooms' furniture, the blinds and the wave each change the
+	// image. A software GPU builds a custom shader and the wall pages slowly.
+	{ name: 'facades', sketch: FACADES_SKETCH, hold: 1, timeoutSeconds: 120 },
+	{ name: 'facades-far', sketch: `${FACADES_SKETCH}?far`, hold: 1, timeoutSeconds: 120 },
+	{ name: 'facades-wave', sketch: `${FACADES_SKETCH}?wave`, hold: 0.35, timeoutSeconds: 120 },
+	{ name: 'facades-close', sketch: `${FACADES_SKETCH}?close`, hold: 1, timeoutSeconds: 120 },
 	{
 		name: 'car-paint-no-flakes',
 		sketch: `${CAR_PAINT_SKETCH}?flakes=off`,

@@ -215,3 +215,44 @@ shadows of a scene without compute passes keep their order.
 and checks the cascade's step comes after the pass. The `compute-vertex-offset` image test draws a
 box that a vertex offset moves by the pass's output, in the main view and its shadow, on both
 paths, and the motion spec reads the plane's motion back from the debug view.
+
+## Addendum: the compute path's cost and memory (25 October 2026)
+
+M3-V3's section asks for the GPU time and the memory of the compute path on the Mac, an iPad and a
+phone-class device. None was recorded when the task first landed.
+
+**How it is measured.** The effect cost page, `tests/pages/effect-cost.ts`, gains a `compute` case.
+Its sketch, `tests/pages/sketches/compute-cost-sketch.ts`, draws a field of quads whose vertex
+offset reads a 512 by 512 texture that a compute pass writes in the same frame, so the pass and the
+vertex reads belong to the feature. The page times the scene with the pass off and on in turns: off
+shows the same quads with the standard material and runs no pass, and on shows the material whose
+offset reads the pass. Both sides fix the render scale with the governor off. After the timing, the
+page shows the engine's stats overlay and reads the memory of each side from it: the GPU textures,
+the GPU buffers, the engine's tables and the wasm file. The spec `tests/image/compute-cost.spec.ts`
+runs the page on each GPU path and scale when `NULL3D_COMPUTE_COST` is set, and the device plan
+`compute` runs it on a device.
+
+**The figures.** The memory figures are structural: the overlay reads the GPU textures' and buffers'
+bytes, the engine's tables and the wasm, and the machine's load changes none of them. They come
+from the Mac's run of the page at render scale 1, at the preset that the engine chose for each path,
+with a 1920 by 1080 canvas. The on side holds the pass and the quads that read it; the off side
+holds the same quads with the standard material. The pass's target stays allocated on both sides, so
+the useful figure is the on side's total.
+
+| GPU path | Textures | Buffers | wasm | Total |
+| --- | --- | --- | --- | --- |
+| WebGPU | 75.4 MiB | 2.2 MiB | 6.8 MiB | 92.4 MiB |
+| compatibility mode | 67.5 MiB | 2.2 MiB | 6.6 MiB | 85.5 MiB |
+| WebGL2 | 115.4 MiB | 0.6 MiB | 7.6 MiB | 133.4 MiB |
+
+The GPU time is owed. The cost harness measures only while the machine's 1-minute load is under 8,
+and the Mac's load stayed between 100 and 200 through the night, so every attempt refused to record
+a figure. Take it in a quiet window with
+`NULL3D_COMPUTE_COST=1 bun run test:browser -- compute-cost.spec.ts`, which prints each path's GPU
+time with the pass off and on, and the load beside it.
+
+The iPad and the S24 run the same page through the `compute` device plan:
+`bun run devices:cloud --only bsipadpro13-safari --plan compute`, and the same with
+`--only bsgalaxys24-chrome`. Each runs six pages: the three GPU paths at scales 1 and 0.5.
+
+

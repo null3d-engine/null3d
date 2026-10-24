@@ -12,6 +12,7 @@ import { interact } from '../lib/interact';
 import { createCar } from './car';
 import { createRain } from './rain';
 import { cobbles, drapes } from './surfaces';
+import { createTablet } from './tablet';
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, render, post, time, engine } = ctx;
@@ -90,6 +91,7 @@ export default defineSketch(async (ctx) => {
 		receiveShadows: true,
 	});
 	createCar(ctx, scene.createGroup({ parent: plinth, position: [0, 0.17, 0] }));
+	const tablet = createTablet(ctx);
 
 	// Velvet: a crimson curtain behind, and a teal seat beside the plinth.
 	scene.createMesh({
@@ -127,6 +129,7 @@ export default defineSketch(async (ctx) => {
 			// The lamp glides toward the pointed point, a little above the floor.
 			const [x, , z] = view.point;
 			lamp.setPosition(math.lerp(2, x, view.steering), 1.4, math.lerp(2, z, view.steering));
+			tablet.update();
 		},
 	};
 });

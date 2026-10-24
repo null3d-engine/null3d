@@ -27,6 +27,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 21. Fire, smoke and sparks with particles
 22. Terrain from a height field
 23. Outdoor land with an edge the camera never sees
+24. Trees, shrubs and grass from a species record
 
 ## 1. Start a new project
 
@@ -490,6 +491,8 @@ board.refresh({ x: 32, y: 32, width: 448, height: 96 });                  // upl
 
 The rectangle counts from the canvas's top-left corner. `fromCanvas` puts the canvas's last row at the bottom of a plane, so the canvas stands upright. `refreshHz` caps the canvas reads. A call that comes sooner reads nothing. The next read covers both rectangles. A 256 x 256 rectangle is 256 KiB, well within the upload budget at 30 Hz. Ask for the 2D context with `willReadFrequently: true`. Docs: `api/textures#canvases`, `cookbook/index`.
 
+The screens example add-on in `examples/addons/screens` wraps this pattern: `createScreen` draws its first picture in the setup, adds a refresh rate per screen, an LCD look by distance, a boot glitch, and `screen.pointOf(event)` for a click on the canvas. A screen's mesh is a plane with texture coordinates, so a click on it lands on a canvas pixel without plane maths. Docs: `guides/screens`.
+
 ## 16. Custom full-screen effect (0.2)
 
 ```ts
@@ -798,3 +801,49 @@ const controls = createOrbitControls(ctx, camera, {
 - Give far scenery `receiveShadows: false`. The automatic shadow distance measures to the far side of each receiver's bounds, so a far mountain that receives shadows makes the near shadows coarse.
 
 Docs: `concepts/lighting` (Where the land ends) has the ground clamp and the haze sheets in code, `api/controls`, `concepts/shadows`.
+
+## 24. Trees, shrubs and grass from a species record
+
+```ts
+import { defineSketch } from '@null3d/engine';
+import { ALL_SPECIES, generateVariantSet } from '@null3d/vegetation';
+
+export default defineSketch((ctx) => {
+  const { scene, geometry, materials } = ctx;
+  const camera = scene.createPerspectiveCamera({ fov: 50, near: 0.1, far: 500, position: [18, 8, 26] });
+  camera.lookAt(0, 5, 0);
+  scene.setActiveCamera(camera);
+  scene.createDirectionalLight({ direction: [-0.4, -1, -0.3], intensity: 3, castShadows: true });
+  scene.createAmbientLight({ intensity: 0.45 });
+
+  // One material for each part kind: bark on the wood, a double-sided material on the cards.
+  const bark = materials.standard({ color: '#4a3a2a', roughness: 0.9 });
+  const leaves = materials.standard({ color: '#3f5a2a', roughness: 0.75, doubleSided: true });
+
+  let x = 0;
+  for (const species of ALL_SPECIES.slice(0, 5)) {
+    for (const asset of generateVariantSet(species, { seed: 7 })) {
+      for (const part of asset.levels[0]?.parts ?? []) {
+        const mesh = geometry.fromArrays(part.arrays);
+        scene.createMesh({
+          mesh,
+          material: part.name === 'wood' ? bark : leaves,
+          position: [x, 0, 0],
+          castShadows: true,
+        });
+        // The lower levels hold the same plant with fewer rings and cards, so the engine picks
+        // one by distance without the crown changing shape.
+        const lower = asset.levels.slice(1).flatMap((level) => {
+          const match = level.parts.find((candidate) => candidate.name === part.name);
+          return match ? [{ mesh: geometry.fromArrays(match.arrays), error: level.error }] : [];
+        });
+        if (lower.length > 0) mesh.setLevels(lower);
+      }
+      x += (asset.crown.max[0] - asset.crown.min[0]) * 1.6;
+    }
+  }
+  return {};
+});
+```
+
+Call `generatePlantInTask` in place of `generateVariantSet` when a scene grows many plants: it runs in a job worker, so the first frames do not wait. A species record is plain data, so a themed set is a list of records and needs no code. The package draws no texture and no material of its own yet, so give its parts materials of your own. Docs: `api/vegetation`.

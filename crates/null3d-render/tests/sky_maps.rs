@@ -392,21 +392,38 @@ fn day_frames(count: usize, degrees: f32, clouds: bool) -> usize {
 
 #[test]
 fn a_day_cycle_draws_the_sky_map_only_for_the_frames_its_sun_steps() {
-    // Ten seconds of a ten-minute day, which turns 0.01 degrees a frame: the map draws for a step
-    // of half a degree, about two frames in five. The same ten seconds before the threshold drew
-    // in every frame that the sun moved.
-    let drawn = day_frames(600, 0.01, true);
-    assert!(
-        (200..=240).contains(&drawn),
-        "a ten-minute day drew {drawn} of 600 frames"
-    );
-
-    // A day of a minute turns 0.1 degrees a frame, so a step comes every five frames and the map
-    // draws in every frame, as it did before the threshold.
-    let drawn = day_frames(600, 0.1, false);
-    assert!(drawn >= 590, "a one-minute day drew {drawn} of 600 frames");
-
-    // A still sun draws only for the clouds' own step: once in these ten seconds.
-    let drawn = day_frames(600, 0.0, true);
-    assert!(drawn <= 40, "drifting clouds drew {drawn} of 600 frames");
+    // Half a minute at 60 frames a second, which a day cycle draws the map over for each sun
+    // speed below. A fill takes 20 frames, one stage a frame, so a minute holds twice the fills
+    // that a half minute drew.
+    const FRAMES: usize = 1_800;
+    // Each case gives the sun's turn in degrees a frame, whether the clouds drift, and the frames
+    // that may draw a stage. A ten-minute day turns a hundredth of a degree a frame, so its steps
+    // hold the map at about two frames in five, and the same frames passed before the rule drew
+    // every one of them. A day that a fill cannot keep up with draws in every frame.
+    let cases: [(&str, f32, bool, std::ops::RangeInclusive<usize>); 5] = [
+        ("Still sun, clouds drifting", 0.0, true, 80..=160),
+        ("An hour a day", 360.0 / 3_600.0 / 60.0, true, 80..=160),
+        ("A ten-minute day", 0.01, true, 600..=720),
+        (
+            "The showcase's 80-second day",
+            360.0 / 80.0 / 60.0,
+            false,
+            1_770..=FRAMES,
+        ),
+        ("A day a minute", 0.1, false, 1_770..=FRAMES),
+    ];
+    let mut report = String::new();
+    for (name, degrees, clouds, expected) in cases {
+        let drawn = day_frames(FRAMES, degrees, clouds);
+        // The fills a minute follow from the half minute counted: one fill every 20 frames.
+        report.push_str(&format!(
+            "{name}: {drawn} of {FRAMES} frames drew a stage, {} fills a minute\n",
+            drawn / 10
+        ));
+        assert!(
+            expected.contains(&drawn),
+            "{name} drew {drawn} of {FRAMES} frames, outside {expected:?}"
+        );
+    }
+    println!("sky map fills, at 60 frames a second:\n{report}");
 }

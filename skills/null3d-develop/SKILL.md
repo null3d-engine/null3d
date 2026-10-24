@@ -134,7 +134,7 @@ Check this table before you write a generator, control, effect or loader of your
 | Rigid bodies, joints and character movement | the physics add-on | `guides/physics` | not built yet; run Rapier or cannon-es in the sketch worker |
 | Text in the scene, sharp at any distance | the MSDF text add-on | none yet | not built yet; use HTML labels with `ui.trackLabel` |
 | Water with waves, foam and a surface seen from below | `@null3d/water` | none yet | not built yet; recipe 20 builds one with a custom material |
-| Trees, shrubs, grass and wind over plants | the vegetation add-on | none yet | not built yet; generate simple plants above the public API |
+| Trees, shrubs, ferns, hostas and grass, with detail levels and wind data | `@null3d/vegetation` | `api/vegetation` | built (generator; materials and textures not built yet) |
 | three.js look modes for a port: Reinhard and Cineon tone curves, and a soft outline with a glow and a pulse | `@null3d/three-compat` | `api/three-compat` | built |
 
 Drawing:
@@ -225,7 +225,7 @@ const rings = materials.shader({
 rings.set({ roughness: 0.2 }); // the standard values, which defaultSurface reads
 ```
 
-`references/shaders.md` has the full contract: every field of `SurfaceInput` and `Surface`, uniforms (`struct Uniforms` in the WGSL, read from `material`), the names to avoid, and the WGSL rules. Vertex offsets (`fn vertexOffset` in the same WGSL) and the built-in values (`frame.time`, `camera.position`, `object.position`) are built too. So are full shaders (`guides/custom-shaders`), and textures (0.2): `var name: texture_2d<f32>;` in the WGSL and the `textures` option.
+`references/shaders.md` has the full contract: every field of `SurfaceInput` and `Surface`, uniforms (`struct Uniforms` in the WGSL, read from `material`), the names to avoid, and the WGSL rules. Vertex offsets (`fn vertexOffset` in the same WGSL), a lobe that adds specular for the main light (`fn lobe(input: LobeInput) -> vec3f`), and the built-in values (`frame.time`, `camera.position`, `object.position`) are built too. So are full shaders (`guides/custom-shaders`), and textures (0.2): `var name: texture_2d<f32>;` in the WGSL and the `textures` option.
 
 ## 8. When something goes wrong
 

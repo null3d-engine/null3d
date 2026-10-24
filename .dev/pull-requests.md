@@ -56,7 +56,7 @@ Never commit a generated file, unless [D-105](decisions/D-105-generated-files-ou
 
 Every command that reads the shader modules builds them first: the build, the type check, the unit tests, the dev server and the browser tests. The docs generator reads the engine's types, which import the shader modules. Without them, the engine's API reference leaves out the shader features, and `bun tools/generate.ts` says so. Run it again after `bun run shaders` or `bun run build`.
 
-After you clone, run `bun install`. After a branch switch or a pull, the hooks write the generated files again. When a hook did not run, as in a worktree before its first `bun install`, run `bun install`.
+After you clone, run `bun install`. After a branch switch or a pull, the hooks write the generated files again. When a hook did not run, as in a worktree before its first `bun install`, run `bun install`. A branch that adds a workspace package needs it before its type check can pass, and until then the pre-commit hook refuses every commit without naming the package: four commits on the night of 24 October appeared to fail for their own content and were only missing the install.
 
 ### Builds
 
@@ -67,6 +67,20 @@ times in an evening, once with seven stalled processes across five worktrees. Wh
 zero processor time, do not kill it on the number alone: sample it with `sample <pid> 1` and read
 what it waits on, then tell the coordinator which lock it is. A build that is compiling shows
 processor time, and one in a lock shows none.
+
+A job waiting for a lock is not the fault: the holder is. The holder may itself be a wrapper
+waiting on a busy child, so sample the child before deciding. A parent at zero per cent with a child
+at several hundred is a build doing its work. Two of the night of 24 October's kills were
+waiters, killed because a sample showed them waiting, while the holder went on blocking the lane.
+Read the lock's own file for the holder's process and sample that one; kill the waiter and the lane
+gains nothing but a lost job.
+
+On a loaded machine, run every cargo command with `RUSTC_WRAPPER=''`. The shared compiler cache runs
+at background priority, so at a load of 80 or more its processors sit at zero and a build makes no
+progress, which looks exactly like a deadlock: on 24 October 2026 two helpers waited hours for a
+commit whose pre-commit was compiling through the cache. With the wrapper empty the compiler runs at
+normal priority and the same check finishes in minutes. A commit stalls the same way as a build, so
+a pre-commit that hangs is this fault and not a failing check.
 
 A build compiles the Rust crates for two WebAssembly variants and the build tools, writes the shader
 modules for every feature, and then builds the test page for the size report. It is the longest step
@@ -280,6 +294,8 @@ A branch lands on main by direct push ([D-157](decisions/D-157-direct-pushes-to-
 4. Run the local checks: `bun run check`, `bun run typecheck`, the unit tests, `cargo nextest run` for each crate that changed, the docs, style and skills checks, and the browser and image tests of the parts that the branch changes. An image change needs both reference sets. Run `bun run build:check-size`, and [the GPU check](#the-gpu-check) when the branch changes how the GPU draws. A change that adds an engine module or a first-use file needs that size run every time: the picture and unit checks do not build the pages, so a module that the size report does not name stops every production build, and every helper's worktree with it. That happened on 24 October 2026 with the baked light files. Check the trailers with `bun tools/hooks/check-trailers.ts origin/main..HEAD`.
 5. Push with `git push origin HEAD:main`. When git refuses the push because main moved, merge `origin/main` again, rerun the checks that the new commits touch, and push again.
 
+- A helper never pushes the milestone branch. The pre-push hook refuses a push to `m3-start` unless the coordinator's landing session sets `NULL3D_MILESTONE_LANDING=1`. Push your branch to its own ref and let the coordinator land it. A helper's push reached the milestone branch on 25 October 2026. Unfinished work on that branch then reaches every other helper and CI.
+
 - A new push to main cancels main's running CI run, by the owner's choice: only the newest main matters.
 - Never wait for main's CI before a push: not for a running run, and not for a red one. When a finished run on main fails because of your push, fix it at once. Others keep pushing meanwhile.
 - When a job on main fails, read its log, and find whether a push caused the failure. `gh run view <run> --log-failed` prints the failed steps. A test that fails only under load, or a run that GitHub cancelled when a runner shut down, says nothing about the code. Run the failed jobs again with `gh run rerun <run> --failed`. Otherwise fix the cause and push. Record the cause in `.dev/` either way.
@@ -412,6 +428,7 @@ The faults that the reviews of 22 October 2026 found, first in run 39744891020, 
 - The shaders test's parts took about 25 s each on SwiftShader, and the browser's GPU process kept 12 to 15 cores busy for each. ANGLE built a whole Vulkan pipeline for every program it linked, to warm a cache that the test never draws from, and SwiftShader compiled each pipeline to machine code. The test checks only what ANGLE's compiler and linker report, so its browser now leaves the warm-up out: part 1 took 3.4 s on one core ([Image tests](image-tests.md)).
 - Each of the four `size-parts` jobs compressed a quarter of the engine test page's 6,046 files, 718 MB, at the highest gzip and Brotli levels. In run 39900270572 that took 154 to 302 s in each part, 17 runner-minutes on every run. Most of the files held the same bytes as in the run before, and their sizes depend only on their bytes. The size memo keeps the sizes by the hash of the bytes, so a part compresses only the files that changed. With the memo, four parts then each built the page to compress nothing, so the build job runs one part when the memo was measured from the same shader modules ([Download size](benchmarks.md#download-size)).
 - A pass key that held all of `tools/lib` rebuilt every shard after a change to the size report (fixed in e970ab6a1). A key that left out the compiler's runner script, and the WGSL that the packing test compiles, reused a pass after a change to them.
+- The build job's upload of its files stalled for 19 minutes in run 40114017712 on 24 October 2026, with GitHub's job API failing, until a cancel by hand. Its job's limit is 90 minutes, and every push to the milestone branch queued behind the run. Every transfer through `.github/actions/archive` takes at most about 30 s, so each such step now stops after 5 minutes, or 6 where a second try follows, and `tools/lib/ci-workflow.test.ts` fails on one without a limit.
 - The `shader-compiler` key held the whole Vite plugin and the packages' lock, though the shards' runner script imports three of the plugin's files and no package. Of the 39 landings that changed that key on 23 and 24 October 2026, 12 changed only the plugin's other files and tests, or the lock. Each such run rebuilt all 20 shards, about 80 job-minutes. The key now names the three files.
 - The four parts of `rust-tests` that run every workspace test had no pass key, and each run spent about 16 job-minutes on them. In the 24 hours to 24 October 2026, 172 of 192 landings changed no file that they read. Their key names every crate and the eight files outside the crates that the crates' code names, and `tools/lib/ci-workflow.test.ts` fails on a file outside the crates that the key leaves out.
 
@@ -466,7 +483,7 @@ People and agents often work in several copies of the repository at once, such a
 - Never let two copies share one Rust build folder. Cargo judges the engine's own crates fresh by their files' times. So one copy's build can reuse crates that another copy compiled from other sources. On 14 and 15 October 2026 this gave branches a stale shader compiler and another branch's GPU constants. The owner ruled on 15 October that each copy builds Rust into a folder of its own. The copies share only the compiled dependencies, through a compiler cache. [Builds](#builds) says how.
 - The dev server skips the repository's own `.claude`, `.dev` and `.internal` folders, anchored to the folder it runs in (`tools/lib/watch-ignored.ts`). A dev server in a worktree under `.claude/worktrees` therefore sees its own edits. Until October 2026 the patterns matched a `.claude` folder anywhere in the path, so such a server served old files after every edit until it restarted. Pictures taken against it showed the code from its start. A unit test now checks that a worktree's own files are watched.
 - Agent tools can lock a worktree. `git worktree list` shows "locked", and `git worktree list --porcelain` gives the reason, which can name a process id. When that process no longer runs, the lock is stale, and `git worktree unlock <path>` clears it.
-- The size check builds main in a worktree of its own, `target/.size-base/tree`, inside each copy that runs it ([Benchmarks](benchmarks.md#download-size)). `git worktree list` therefore shows one under each such copy. The check locks that worktree, with a reason that `git worktree list` shows, and reuses it. `git worktree remove`, even with `--force`, and `git worktree prune` leave a locked worktree. Never remove one by other means: a check may be building in it. On 24 October 2026 a sweep of worktrees whose commit had landed removed one while its page build ran. The check then failed with ENOENT on a file that the build had just written. After you delete a copy's folder, run `git worktree unlock` on its base worktree's path, then `git worktree prune`.
+- The size check builds main in a worktree of its own, `target/.size-base/tree`, inside each copy that runs it ([Benchmarks](benchmarks.md#download-size)). `git worktree list` therefore shows one under each such copy. The check locks that worktree, with a reason that `git worktree list` shows, and reuses it. `git worktree remove`, even with `--force`, and `git worktree prune` leave a locked worktree. Never remove one by other means: a check may be building in it. On 24 October 2026 a sweep of worktrees whose commit had landed removed one while its page build ran. The check then failed with ENOENT on a file that the build had just written. A removal that the lock cannot stop, such as `rm -rf` of a copy's `target` folder, no longer fails the check. When the build fails, the check looks at the worktree. A tree that is gone, or whose checkout is damaged, is made again and built once more. After you delete a copy's folder, run `git worktree unlock` on its base worktree's path, then `git worktree prune`.
 - Until 16 October 2026 the hooks lived in `.husky/_`, which `bun install` wrote and git ignored. A worktree with no install had none, so its commits and pushes ran no check and said nothing. That day a commit made that way carried a commit type that commitlint rejects, and the `commits` job failed on run 38892912324. The hooks now come from the tracked `.githooks/` folder, so every worktree has them. The install only points git's hooks path at it ([D-182](decisions/D-182-git-hooks-from-a-tracked-folder.md)). A brand-new clone is unguarded until that install. Git calls no hook when no hooks path is set, so the `commits` job covers that state.
 
 ## Coordinating helper agents
@@ -529,3 +546,9 @@ One coordinator session often runs several helper agents at once, each in its ow
   Two checks before removing one. No session is working in it, and a helper that declined a shutdown is
   still working whatever its branch says. And nothing in it is worth keeping outside git: a run's results,
   a bench figure, a note.
+
+  A third check, added after the same mistake three times in one night: no process has its working
+  directory in the tree. A helper between commits looks idle by branch and tree, and a build started
+  from a folder keeps running after the folder goes, so the process's own working directory is the only thing that says whether
+  work is in flight: `lsof -d cwd | grep <path>` lists them cheaply, where `lsof +D` walks the whole tree. On 25 October 2026 a CSS3D worktree was removed while its rebuild ran,
+  which cost that helper its build rather than its commits, and only because it had pushed first.

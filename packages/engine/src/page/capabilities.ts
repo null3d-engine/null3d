@@ -6,7 +6,7 @@ import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import { TEXTURE_USAGE_TRANSIENT_ATTACHMENT } from '../generated/gpu';
 import type { DeviceHints } from '../quality/chooser';
-import { spawnWorker } from '../shared/worker-start';
+import { spawnWorker, watchWorkerError } from '../shared/worker-start';
 import type { ProbeMessage, WorkerProbe } from '../workers/probe-worker';
 
 /** Limits the engine reads, from its portable WebGPU budget. */
@@ -518,11 +518,12 @@ function probeWorkerOnce(timeoutMs: number): Promise<WorkerProbe | WorkerProbeFa
 				timeoutMs,
 			);
 		};
-		worker.onerror = (event) =>
+		watchWorkerError(worker, (message) =>
 			finish({
 				failure: 'failed-to-start',
-				error: event.message || 'the probe worker failed to start',
-			});
+				error: message || 'the probe worker failed to start',
+			}),
+		);
 	});
 }
 

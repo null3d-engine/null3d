@@ -42,6 +42,8 @@ try {
 
 Before `core`, `memory-wait` comes when the browser has refused the engine's memory for 10 seconds. A browser can hold memory that an earlier engine used for a while after it stops, and Safari at times held it for 40 seconds. The engine keeps trying for about 45 seconds in all, then fails with E1109. Show the user that the start takes longer than usual.
 
+A worker's script, or a file that the script imports, can fail to load now and then. The engine starts one more copy of such a worker before it reports the failure. It calls `onWorkerRetry` with the worker's role and the address of its script, and warns in the console. When the second copy fails too, the start rejects with [E1405](../errors/E1405.md), whose message names the worker and its script.
+
 An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` stops the engine's threads and rejects with the signal's reason.
 
 `createEngine` rejects with an `EngineError` when the engine cannot start:
@@ -102,6 +104,7 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `onProgress` | None | Reports each stage of the start |
 | `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |
 | `onSketchError` | None | Receives each distinct error that the sketch's frame code throws while the engine runs: [The running engine](#the-running-engine) |
+| `onWorkerRetry` | None | Called when the engine starts a second copy of a worker whose script did not load: [The start](#the-start) |
 | `signal` | None | Cancels the start |
 | `hold` | None | Holds the sketch at a time for image tests: [Testing your sketch](../guides/testing.md). The `?hold=` switch wins over it. |
 | `preload` | None | Features whose shaders load before the first frame, such as `['skinning', 'bloom']`, for a game that must fetch nothing while it plays. Each feature's shaders otherwise download the first time the sketch uses it: [Loading screens](../guides/loading-screens.md). A name that the engine does not know throws [E1421](../errors/E1421.md). |
