@@ -46,6 +46,10 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-K5': '`scene.overrideMaterial`: `packages/engine/src/scene/scene.ts`, `docs/api/scene.md`',
 	'M3-F8':
 		"`probe.capture()` again on request, with the moved object's reflection settling: `crates/null3d-render/tests/probes.rs` and the `probe-capture` picture on every tier; `docs/api/scene.md`. The compatibility-mode picture had failed three full runs against a reference drawn on a slow run; the page now pins the frame-budget governor (d3dda9e72), and the full run on 57a0a08ed passed that picture on every tier",
+	'M3-E2':
+		"The hook carries the add-on's selection, nearest first, and the engine's transparent pass sorts the chosen rows: `tests/image/addon-tasks.spec.ts` proves a task runs on a job worker, the `--splats` switch proves the whole path, and `.dev/benchmarks.md`'s `--splats` bullet records the bytes a frame on the Mac's WebGL2 (653.5 on the sketch worker, 163.8 on the render worker) and on the software renderer (1,119.1 and 91.9), each inside its budget; D-173's addendum rules why the per-splat sort is the engine's",
+	'M3-R20':
+		"A frame the GPU still holds after its completion record is lost counts as a held frame, so a software GPU's step below the whole scale is judged and undone: 67 governor tests, three of them failing without their part of the fix, and the trap page passing 10 of 10 on the software renderer in five thread modes on both paths; D-237 records the CI figures, the cause and what the line means",
 	'M3-R6':
 		'D-226 records the timings on Chrome and Safari: at most 0.29 ms in Safari, nothing measurable in Chrome, so the pattern stays',
 	'M3-R10':
