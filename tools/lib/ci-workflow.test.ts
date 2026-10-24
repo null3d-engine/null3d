@@ -223,6 +223,10 @@ describe("CI's workflow", () => {
 		expect(count).toBeGreaterThan(0);
 		expect(parity.map(([index]) => index)).toEqual(oneTo(count));
 		expect(parity.every(([, total]) => total === count)).toBe(true);
+		// Playwright refuses a list of weights of another length than the shard count.
+		const weights = String(jobNamed('bench').env?.PWTEST_SHARD_WEIGHTS ?? '').split(':');
+		expect(weights.map(Number).every((weight) => weight > 0)).toBe(true);
+		expect(weights).toHaveLength(count);
 	});
 
 	it("leaves out of the benchmark pages' remaining shard every test that another shard runs", () => {

@@ -1251,9 +1251,9 @@ jobs:
     # Playwright's own --shard splits the test list into equal counts in file order, and these
     # tests differ too much in length for that: it gave one shard 221 tests and over 13 minutes,
     # and the other 4 tests and 3 minutes. Shard 1 runs the tests that BENCH_SHARD_1 names, shard 2
-    # every test that no other shard runs, shard 3 S5's visual tests, shard 4 S2's and S4's, and the
-    # parity shards the tests against three.js, so each test runs in exactly one
-    # shard.
+    # every test that no other shard runs, shards 3 and 4 S5's visual tests, one GPU path each,
+    # shard 5 S2's and S4's, and the parity shards the tests against three.js, by the weights
+    # below, so each test runs in exactly one shard.
     # S4's and S5's pages run in order in one worker each, and both sit in shard 1: beside the
     # parity tests' setup, S4 on WebGL2 twice measured no frame on SwiftShader. The engine's limit
     # of frames in flight failed open then (.dev/implementation-notes.md).
@@ -1263,7 +1263,7 @@ jobs:
     # After D-236 S1's scenes took 2.8 minutes and the other pages 2.3, each in a job of its own,
     # while the visual tests took 9.8, one after another on one worker: S5's two took 5.9 minutes
     # of the 8.9 (run 40046196327, 24 October 2026). So S1 runs with the other pages in shard 2,
-    # and the visual tests split by scene, S5's in shard 3 and the others in shard 4.
+    # and the visual tests split by scene, S5's in shards 3 and 4 and the others in shard 5.
     # The visual tests of the shadows read many frames on SwiftShader, and a page benchmark beside one
     # starts late: in run 39869813447, S2's pages took 50 s to their first frame beside them, against
     # 4 to 5 s on a Mac at both of that run's commits, and the other scenes' pages, away from them,
@@ -1288,16 +1288,18 @@ jobs:
           - shard: 1
             tests: --grep "$BENCH_SHARD_1"
           - shard: 2
-            tests: --grep-invert "$BENCH_SHARD_1|$BENCH_VISUAL_S5|$BENCH_VISUAL_OTHERS|$PARITY_TESTS"
+            tests: --grep-invert "$BENCH_SHARD_1|$BENCH_VISUAL_S5_WEBGPU|$BENCH_VISUAL_S5_WEBGL2|$BENCH_VISUAL_OTHERS|$PARITY_TESTS"
           - shard: 3
-            tests: --grep "$BENCH_VISUAL_S5"
+            tests: --grep "$BENCH_VISUAL_S5_WEBGPU"
           - shard: 4
-            tests: --grep "$BENCH_VISUAL_OTHERS"
+            tests: --grep "$BENCH_VISUAL_S5_WEBGL2"
           - shard: 5
-            tests: parity.spec.ts --shard=1/3
+            tests: --grep "$BENCH_VISUAL_OTHERS"
           - shard: 6
-            tests: parity.spec.ts --shard=2/3
+            tests: parity.spec.ts --shard=1/3
           - shard: 7
+            tests: parity.spec.ts --shard=2/3
+          - shard: 8
             tests: parity.spec.ts --shard=3/3
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
@@ -1305,13 +1307,21 @@ jobs:
       NULL3D_LOAD_PAGES: prebuilt
       HUSKY: "0"
       BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3)\b'
-      # The visual tests of the shadows, which read many frames: S5's two, the longest, and the
-      # others. A visual test of another scene falls to shard 2, beside the page tests, until a
-      # pattern here names it.
-      BENCH_VISUAL_S5: 'visual\.spec\.ts.*\bs5\b'
+      # The visual tests of the shadows, which read many frames: S5's two, the longest, each in a
+      # shard of its own, since they ran one after another on one worker for 3.4 and 2.5 minutes in
+      # run 40053442909, and the others. A visual test of another scene falls to shard 2, beside the
+      # page tests, until a pattern here names it.
+      BENCH_VISUAL_S5_WEBGPU: 'visual\.spec\.ts.*\bs5\b.*\bon webgpu\b'
+      BENCH_VISUAL_S5_WEBGL2: 'visual\.spec\.ts.*\bs5\b.*\bon webgl2\b'
       BENCH_VISUAL_OTHERS: 'visual\.spec\.ts.*\b(s2|s4)\b'
       # The parity tests, by the title of each scene's group in bench/tests/parity.spec.ts.
       PARITY_TESTS: 'against three\.js'
+      # One weight for each parity shard, in order: the count of parity tests that each takes, in
+      # Playwright's order, so the shards take about the same time. By count alone, in run
+      # 40053442909 the first shard's tests took 4.3 minutes, with the room environment's, and the
+      # others 2.7 each; these weights give each about 3.3 by that run's times. Only the parity
+      # shards pass --shard, so no other shard reads them.
+      PWTEST_SHARD_WEIGHTS: "48:111:90"
     steps:
       - uses: actions/checkout@v5
         with: *without-references
