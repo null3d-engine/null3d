@@ -177,7 +177,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-E4':
 		"whether the approved hook table stands against hard rule 8 is the owner's to decide, and the tick waits on that",
 	'M3-K3':
-		"whether 128 by 128 pixels-only cookies stand under the better-look rule is the owner's to decide, and the tick waits on that",
+		'the task asks for image tests on every path, and there are none: no cookie picture is in the manifest and no cookie page among the sketches. Whether the 128 by 128 pixels-only cookie looks good enough is a second question, which the better-look rule raises',
 	'M3-E4a':
 		'the material change is on the branch with the water work, but the task asks for a material that declares the scene depth beside two textures on WebGPU, compatibility and WebGL2, and for the cost of a material that reads neither; its helper is finishing that proof',
 	'M3-F5':
