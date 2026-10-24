@@ -1973,6 +1973,17 @@
       "detect": "\\bImprovedNoise\\b|\\bgenerateHeight\\b|\\bgetHeightAt\\b"
     },
     {
+      "id": "vegetation",
+      "category": "Geometry",
+      "three": "A tree model per species loaded from a glTF file, or a procedural plant from an add-on such as Sapling or ez-tree",
+      "status": "changed",
+      "since": "0.3",
+      "target": "generatePlant(species, { seed, variant }) from @null3d/vegetation; geometry.fromArrays(part.arrays) for each part of a level; mesh.setLevels(lower) for the levels below the first",
+      "notes": "three.js has no plant system. A port replaces a model file or a private generator with a species record and a seed: the add-on grows the skeleton, the branches, the leaf cards and the lower levels at first use, in a job worker, so the page downloads no plant. A record holds numbers only, so a themed set is a list of records. The asset carries wind bytes in the vertex colors, a pivot record for each branch, the crown's bounds and the source that a far card bakes from; the leaf and bark materials that read them are not built yet, so a port draws the parts with materials of its own until they are. A generated plant keeps whole levels, never cluster levels.",
+      "docs": "api/vegetation",
+      "detect": "\\b(Tree|Foliage|Vegetation)(Generator|Factory)\\b|\\bSapling\\b|\\bez-tree\\b"
+    },
+    {
       "id": "css-renderers",
       "category": "Sprites, points, lines and labels",
       "three": "CSS2DRenderer / CSS3DRenderer (HTML labels)",
