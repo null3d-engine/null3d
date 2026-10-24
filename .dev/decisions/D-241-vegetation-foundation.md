@@ -259,8 +259,23 @@ last, and returns flat arrays of nine floats for each point.
 **Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds 955 points. They
 are 104 canopy trees, 174 saplings, 651 ground plants and 26 dead wood. The checksum of that placement is
 916344353. The device page compares it on every device and both GPU paths. On the Mac the scatter
-takes about 10 ms in Chrome and the ground maps about 45 ms. The per-device rows that M3-V6 asks for
-are owed; the `vegetation-scatter` plan measures them.
+takes about 10 ms in Chrome and the ground maps about 45 ms.
+
+On 25 October 2026 the `vegetation-scatter` plan ran on two cloud phones, each page reporting the
+middle of three timed placements.
+
+| Device | Plants | Checksum | Placement | Ground maps | Display |
+| --- | --- | --- | --- | --- | --- |
+| Galaxy S24, Chrome, WebGL2 page | 955 | 916344353 | 9.0 ms | 85.9 ms | 30 Hz |
+| Galaxy S24, Chrome, WebGPU page | 955 | 916344353 | 11.7 ms | 60.0 ms | 30 Hz |
+| Galaxy S25, Chrome, WebGL2 page | 955 | 916344353 | 9.8 ms | 51.3 ms | 30 Hz |
+| Galaxy S25, Chrome, WebGPU page | 955 | 916344353 | 5.9 ms | 50.9 ms | 30 Hz |
+
+The placement runs on the CPU and starts no engine, so both pages of a device run the same work.
+The S24 has no WebGPU adapter, so its second page named a path that it did not start. Both displays
+ran at 30 Hz, and the cloud reported each phone hot, so read the times as upper bounds. The run
+files are [the S24's](../tested-devices/galaxy-s24-sm-s921b-chrome/20261024-202948-vegetation-scatter.md)
+and [the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261024-203522-vegetation-scatter.md).
 
 **Options rejected.**
 
