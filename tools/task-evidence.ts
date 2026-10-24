@@ -54,6 +54,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'D-226 records the timings on Chrome and Safari: at most 0.29 ms in Safari, nothing measurable in Chrome, so the pattern stays',
 	'M3-R10':
 		"A sky map redraws only past a visible step: `crates/null3d-render/tests/sky_maps.rs` counts the fills a day cycle records; `tests/image/sky-step.spec.ts` keeps every step within 8 levels of 255 on every tier; D-118's addendum records the fills a minute",
+	'M3-K2':
+		"`TransformControls` and `DragControls` in `packages/controls/`: `transform-controls.ts`, `gizmo-drag.ts` and `drag-controls.ts`; `gizmo-drag.test.ts` compares a move and a scale with three.js's own results; `tests/image/gizmos.spec.ts` drags the move, turn and scale gizmos with the mouse and with a finger through Chrome's input",
 	'M3-D1':
 		"`tools/lib/packages.ts` compiles each add-on's WGSL when it packs, so no tarball ships a raw `.wgsl`; `bun run build:cdn` carries each foundation add-on under `addons/<name>/` with its engine import made relative, and writes the packages' notices at the build's root; `tests/image/cdn-script-tag.spec.ts` draws a terrain from that build on WebGPU, compatibility mode and WebGL2, threaded, and single-threaded on WebGL2, and all four passed on the Mac on 25 October 2026; D-54's addendum records the layout",
 	'M3-R16':
