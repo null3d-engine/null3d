@@ -23,6 +23,10 @@ const LEVELS: u32 = 4;
 const STAGES: u32 = 9;
 const SKY_STAGES: u32 = 20;
 
+/// The stage at which a map captures a layer's light: two stages before the copy, as a page places
+/// it, so that the read lands before the levels that the copy publishes.
+const CAPTURE: u32 = STAGES - 3;
+
 /// The stages that a frame records, each with its texture, its generator and its sun's position.
 fn stages(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32, [f32; 3])> {
     commands
@@ -69,7 +73,7 @@ fn check_sky_maps<B: FrameBuilder>(
         .create_cube(SIZE, LEVELS, format::RGB9E5_UFLOAT)
         .unwrap();
     let generator = textures.set_generated(cube).unwrap();
-    settings.sky_maps_mut().add(cube, STAGES);
+    settings.sky_maps_mut().add(cube, STAGES, CAPTURE);
     settings.set_environment(Some(Environment {
         texture: cube,
         intensity: 1.0,
@@ -222,7 +226,7 @@ fn filled_map(
         .create_cube(SIZE, LEVELS, format::RGB9E5_UFLOAT)
         .unwrap();
     let generator = settings.textures_mut().set_generated(cube).unwrap();
-    settings.sky_maps_mut().add(cube, count);
+    settings.sky_maps_mut().add(cube, count, CAPTURE);
     let taken = world.frame - 1;
     mock.provide_generator(generator);
     world
@@ -565,21 +569,24 @@ fn a_sky_layer_fills_the_map_with_itself_and_captures_its_light() {
         "the first stage captures nothing"
     );
 
-    // The stages run to the last, which copies the map's levels in and finds its light in them: it
-    // names a buffer of the ring, and the read of that buffer into engine memory follows it.
+    // The fill runs a stage a frame. The stage that the page named captures the map's own light: it
+    // names a buffer of the ring, and the read of that buffer into engine memory follows it. The
+    // capture comes before the copy, so the light is ready by the frame the levels publish.
     for stage in 1..STAGES {
         let commands = step(&mut world, &mut mock);
         let stages = stage_words(&commands);
         assert_eq!(stages.len(), 1, "stage {stage}");
         assert_eq!(stages[0][2], stage);
         assert_eq!(stages[0][LAYER_WORD], template::CUSTOM_FIRST + 1);
-        if stage < STAGES - 1 {
-            assert_eq!(stages[0][LIGHT_BUFFER_WORD], 0);
-            assert!(commands.iter().all(|(op, _)| *op != Op::ReadBuffer));
+        if stage != CAPTURE {
+            assert_eq!(
+                stages[0][LIGHT_BUFFER_WORD], 0,
+                "stage {stage} captures nothing"
+            );
             continue;
         }
         let capture = stages[0][LIGHT_BUFFER_WORD];
-        assert_ne!(capture, 0, "the last stage captures the light");
+        assert_ne!(capture, 0, "the capture stage takes a buffer of the ring");
         let read = commands
             .iter()
             .find(|(op, _)| *op == Op::ReadBuffer)
@@ -668,4 +675,29 @@ fn a_moving_sky_layer_fills_the_map_at_its_refresh() {
         1,
         "the layer's step refills"
     );
+
+    // A layer that asks to be captured faster than a fill takes gets another fill as soon as the
+    // last one ends: the engine never holds a moving layer back to the map's pace.
+    settle_with_layer(&mut world, &mut mock);
+    world.renderer.settings_mut().set_sky_layer(
+        Some(layer(
+            template::CUSTOM_FIRST,
+            template::CUSTOM_FIRST + 1,
+            0.016,
+        )),
+        7,
+    );
+    // The layer's values changed, so a fill starts at once; then every frame that follows a fill
+    // starts the next, because the clock has moved a frame's worth.
+    let mut fills = 0;
+    let mut clock = 0.6;
+    for _ in 0..(STAGES as usize * 2) {
+        clock += 1.0 / 60.0;
+        set_clock(&mut world, clock);
+        fills += stage_number(&step(&mut world, &mut mock))
+            .iter()
+            .filter(|stage| **stage == 0)
+            .count();
+    }
+    assert_eq!(fills, 2, "the map fills again as soon as each fill ends");
 }
