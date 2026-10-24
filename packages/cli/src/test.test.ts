@@ -61,7 +61,8 @@ describe('parseTestArgs', () => {
 });
 
 describe('parseTestConfig', () => {
-	const exists = (file: string) => ['sketch.ts', 'src/boat.ts'].includes(file);
+	const exists = (file: string) =>
+		['sketch.ts', 'src/boat.ts', 'tests/drive.script'].includes(file);
 
 	it('reads each test, with the default size and every tier', () => {
 		const text = JSON.stringify({
@@ -75,6 +76,7 @@ describe('parseTestConfig', () => {
 					tiers: ['webgl2'],
 				},
 				{ name: 'home', page: '/index.html', hold: 2 },
+				{ name: 'drive', sketch: 'sketch.ts', script: 'tests/drive.script', tiers: ['webgl2'] },
 			],
 		});
 		expect(parseTestConfig(text, exists)).toEqual({
@@ -100,6 +102,13 @@ describe('parseTestConfig', () => {
 					size: [320, 180],
 					tiers: ['webgpu', 'compat', 'webgl2'],
 				},
+				{
+					name: 'drive',
+					sketch: 'sketch.ts',
+					script: 'tests/drive.script',
+					size: [320, 180],
+					tiers: ['webgl2'],
+				},
 			],
 			problems: [],
 		});
@@ -115,11 +124,14 @@ describe('parseTestConfig', () => {
 				{ name: 'page', page: 'index.html', hold: 1, tiers: [] },
 				{ name: 'page', page: '/', hold: 1 },
 				{ name: 'page', page: '/', hold: 1 },
+				{ name: 'both-times', sketch: 'sketch.ts', hold: 1, script: 'tests/drive.script' },
+				{ name: 'no-time', sketch: 'sketch.ts' },
+				{ name: 'gone-script', sketch: 'sketch.ts', script: 'gone.script' },
 				'start',
 			],
 		});
 		expect(parseTestConfig(text, exists).problems).toEqual([
-			'the test Start Screen: "time" is not a setting of a test. A test takes name, sketch, page, hold, size, tiers',
+			'the test Start Screen: "time" is not a setting of a test. A test takes name, sketch, page, hold, script, size, tiers',
 			'the test Start Screen: "name" takes lowercase words joined by dashes, such as "harbor-at-night", not "Start Screen"',
 			'the test both: give either "sketch", a sketch module to draw, or "page", a page to open',
 			'the test missing: the sketch gone.ts does not exist',
@@ -131,7 +143,10 @@ describe('parseTestConfig', () => {
 			'the test page: "page" takes a path on the dev server that starts with /, such as "/", not "index.html"',
 			'the test page: "tiers" lists each of webgpu, compat, webgl2 at most once, and at least one, not []',
 			'two tests are named page',
-			'test 8: each test is an object, such as { "name": "start", "sketch": "sketch.ts", "hold": 1.5 }',
+			'the test both-times: give either "hold", the sketch time in seconds, or "script", a timed script whose shot steps draw the images',
+			'the test no-time: give either "hold", the sketch time in seconds, or "script", a timed script whose shot steps draw the images',
+			'the test gone-script: the script gone.script does not exist',
+			'test 11: each test is an object, such as { "name": "start", "sketch": "sketch.ts", "hold": 1.5 }',
 		]);
 	});
 

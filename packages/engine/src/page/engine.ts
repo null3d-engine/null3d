@@ -76,7 +76,14 @@ import {
 import { CheckStore, checkConditions } from './check-store';
 import { watchDisplay } from './display';
 import type { FrameMetrics } from './frame-stats';
-import { holdFailure, holdSeconds, publishHold } from './hold';
+import {
+	type HoldScript,
+	type HoldScriptResult,
+	holdFailure,
+	holdSeconds,
+	publishHold,
+	holdScript as readHoldScript,
+} from './hold';
 import { captureInput } from './input';
 import { lostIsolationWarning, pageIsolation } from './isolation-check';
 import { type EngineLabels, labelCapacity, labelCapacity3d, PageLabels } from './labels';
@@ -818,6 +825,8 @@ interface WorkerEvents {
 	labelSlot: LabelSlotSender;
 	/** The sketch thread asked for this many job workers, as its parallel work grew. */
 	jobsWanted(count: number): void;
+	/** What a timed script's steps gave, after the sketch thread performed them in a hold. */
+	holdScript?(result: HoldScriptResult | undefined): void;
 }
 
 /**
@@ -914,6 +923,9 @@ export class EngineWorker {
 						return;
 					case 'jobs-wanted':
 						events.jobsWanted(reply.count);
+						return;
+					case 'hold-script':
+						events.holdScript?.(reply.result);
 						return;
 					case 'lost':
 						forgetWorkerProbe();
@@ -1360,6 +1372,9 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	try {
 		checkPreload(options.preload);
 		const hold = holdSeconds(options.hold, switches.hold);
+		// A test tool may set a timed script before the page loads. Only hold mode performs it, so a
+		// live engine ignores one left on the page.
+		const holdScript = hold === undefined ? undefined : readHoldScript();
 		if (holding) publishHold(undefined);
 		if (place.sketchThread === 'main')
 			await takeWhenFree(
@@ -1389,7 +1404,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 				'E1419',
 				`createEngine() got a canvas that no engine can draw on again: ${canvas.dead}.`,
 			);
-		return await startEngine(options, switches, hold, place, canvas, holder, release);
+		return await startEngine(options, switches, hold, holdScript, place, canvas, holder, release);
 	} catch (error) {
 		release();
 		// A coded error's fix arrives in a file of its own, and a failed start reports it whole.
@@ -1440,6 +1455,7 @@ async function startEngine(
 	options: EngineOptions,
 	switches: Switches,
 	hold: number | undefined,
+	holdScript: HoldScript | undefined,
 	{ threaded, sketchThread }: Placement,
 	canvasHold: CanvasHold,
 	holder: Holder,
@@ -1584,6 +1600,8 @@ async function startEngine(
 	let tier!: Tier;
 	let mode!: EngineMode;
 	let engineThreads!: [string, number[]][];
+	/** What a timed script's steps gave in the sketch worker, which the held result publishes. */
+	let scriptResult: HoldScriptResult | undefined;
 	const events: WorkerEvents = {
 		sketchMessage: onSketchMessage,
 		sketchError: onSketchError,
@@ -1601,6 +1619,9 @@ async function startEngine(
 		stats: (show) => statsSwitch.show(show),
 		labelSlot: (id, table, slot, generation) => pageLabels?.setSlot(id, table, slot, generation),
 		jobsWanted: (count) => growJobs?.(count),
+		holdScript: (result) => {
+			scriptResult = result;
+		},
 	};
 	/** Starts job workers up to a count, once the core is ready to hand them. */
 	let growJobs: ((count: number) => void) | undefined;
@@ -2277,6 +2298,7 @@ async function startEngine(
 					reportSketchError: (message) => events.sketchError(new Error(message)),
 				},
 				hold,
+				holdScript,
 			);
 			// In hold mode the sketch module loads only now, after the runner seeded the random
 			// numbers. The renderer starts before the setup, so a warm-up in the setup has a renderer
@@ -2300,6 +2322,7 @@ async function startEngine(
 							);
 				});
 			await abortable(setup, start.signal);
+			scriptResult = localRunner?.holdScriptResult;
 			if (render) {
 				await abortable(render.ready(), start.signal);
 				if (hold === undefined)
@@ -2322,6 +2345,7 @@ async function startEngine(
 				jobWorkers,
 				capabilities,
 				hold,
+				holdScript,
 				quality,
 				maxTargetFps: maxTarget,
 				threads: engineThreads,
@@ -2536,6 +2560,7 @@ async function startEngine(
 			directDraws: device.directDraws,
 			...held,
 			stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
+			...(scriptResult !== undefined && { script: scriptResult }),
 		});
 		return engine;
 	} catch (e) {

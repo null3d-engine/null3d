@@ -204,6 +204,12 @@ export interface ImageRun {
 	reference: { test: string; tier: Tier; devices: readonly string[] };
 	/** Another test of the same scene whose reference is the same picture as this run's. */
 	samePicture?: string;
+	/**
+	 * The command that makes this run's reference, for a run that the image page does not draw, such
+	 * as one that the command-line tool makes. `{ci}` becomes `CI=1 ` where the place draws on
+	 * SwiftShader. Without it, the command is the image tests' own.
+	 */
+	make?: string;
 	tolerance: Tolerance;
 	/** The tolerance against SwiftShader's references, where it differs from `tolerance`. */
 	swiftShaderTolerance?: Tolerance;
@@ -459,6 +465,7 @@ function makeCommand(run: ImageRun, place: Place): string {
 	if ('device' in place)
 		return `run the checks plan on ${place.device} (.dev/devices.md), then ${accept}`;
 	const ci = place.environment === REAL_GPU ? '' : 'CI=1 ';
+	if (run.make) return run.make.replace('{ci}', ci);
 	return `${ci}bun run test:images -g "${test} on ${tier}", then ${accept}`;
 }
 
