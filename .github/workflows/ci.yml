@@ -269,13 +269,13 @@ jobs:
       # shader crates, the crate they depend on, the Cargo files, the toolchain and nextest's
       # settings. The other parts run every workspace test, which reads every crate and, outside
       # them, the generated engine modules that two crates check, a test fixture, a test page's
-      # table, the engine's error codes, an add-on's shader, the test environments and the
+      # table, the engine's error codes, two add-ons' shaders, the test environments and the
       # compiler's runner script. Nine landings in ten change none of those files. A file outside
       # the crates that the crates' code names belongs in this list, and
       # tools/lib/ci-workflow.test.ts fails on one that the list leaves out.
       - name: The key of this part's inputs
         id: inputs
-        run: echo "key=passed-v2-${{ matrix.id }}-${{ matrix.shard || matrix.partition }}-${{ matrix.shard && hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml') || hashFiles('crates/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml', '.github/actions/optimized-shader-crates/**', 'packages/engine/src/generated/gpu.ts', 'packages/engine/src/generated/core.ts', 'packages/engine/src/errors/codes.ts', 'tests/fixtures/light-clusters.bin', 'tests/pages/lib/dfg-table.ts', 'tests/pages/assets/environments/**', 'examples/addons/aurora/aurora.wgsl', 'tools/shader-compiler.ts') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=passed-v2-${{ matrix.id }}-${{ matrix.shard || matrix.partition }}-${{ matrix.shard && hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml') || hashFiles('crates/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml', '.github/actions/optimized-shader-crates/**', 'packages/engine/src/generated/gpu.ts', 'packages/engine/src/generated/core.ts', 'packages/engine/src/errors/codes.ts', 'tests/fixtures/light-clusters.bin', 'tests/pages/lib/dfg-table.ts', 'tests/pages/assets/environments/**', 'examples/addons/aurora/aurora.wgsl', 'examples/addons/car-paint/paint.wgsl', 'tools/shader-compiler.ts') }}" >> "$GITHUB_OUTPUT"
       - name: Find an earlier pass with the same inputs
         id: passed
         uses: actions/cache/restore@v4
