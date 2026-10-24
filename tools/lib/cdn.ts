@@ -91,7 +91,9 @@ export interface CdnBuild {
 export function cdnSourcesHash(root: string): string {
 	const hash = createHash('sha256');
 	const addFile = (path: string) => {
-		const stat = statSync(join(root, path));
+		const file = join(root, path);
+		if (!existsSync(file)) return;
+		const stat = statSync(file);
 		hash.update(`${path}\0${stat.size}\0${stat.mtimeMs}\n`);
 	};
 	const addFolder = (folder: string) => {
