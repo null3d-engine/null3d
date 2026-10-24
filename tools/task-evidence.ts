@@ -58,6 +58,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		"Splats draw through `scene.addFeatureInstances` (`packages/engine/src/scene/feature-instances.ts`); the `splats`, `splats-budget` and `splats-gltf` pictures on both paths; the draw's size in `tools/lib/size-report.ts`",
 	'M3-F6':
 		"Video textures: `engine.registerVideo` and `textures.fromVideo`, held by `tests/pages/video-texture.ts`, which passes on both GPU paths in Chrome on the Mac, on the software renderer, and in Safari 26.6.2 and Firefox 158 — a 512 by 288 frame uploads 577 KiB against the Low preset\'s 2 MiB budget, upright, within two steps of a data texture; the page\'s video support loads at its first call; the guide `guides/video-textures` and the mapping entry",
+	'M3-R4':
+		"The offset allocator, measured against today's placement and not adopted: D-247 holds the comparison — the new allocator places in 8.46 microseconds and moves nothing where today's placement moves 1,727.7 MiB in 40.94 ms across 384 operations, but it retains 21.08 MB against 16.86 MB at the peak. The workload page is `tests/pages/mesh-churn-cost.ts`, and the record explains that a single removal costs about 0.24 ms",
 	'M3-B5':
 		'The car-paint add-on in `examples/addons/car-paint/`: `createCarPaint` with flakes that tilt the base normal cell by cell and fade as a cell drops below a pixel, `fwidth`-width seams and a 2 x 2 twill weave, used by the coat-and-sheen demo. The four pictures `car-paint`, `car-paint-no-flakes`, `car-paint-no-seams` and `car-paint-weave` hold each part on every tier in both sets, and `car-paint.spec.ts` measures their contribution; the GPU cost per preset is owed',
 	'M3-F7':
