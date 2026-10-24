@@ -41,6 +41,8 @@ const ON_BRANCH = new Set(['M3-E9', 'M3-R14', 'M3-V2']);
 const INCOMPLETE = new Set([
 	'M3-B1',
 	'M3-E6',
+	'M3-E4a',
+	'M3-F5',
 	'M3-E8',
 	'M3-L1',
 	'M3-L3',
@@ -134,6 +136,10 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
 	'M3-R21':
 		'the picture step reads the heavy-test jobs now, but the task is done only when the gate and CI give the same verdict on the screens and skyway pictures, and that comparison is being taken against a run of the current tip',
+	'M3-E4a':
+		'the material change is on the branch with the water work, but the task asks for a material that declares the scene depth beside two textures on WebGPU, compatibility and WebGL2, and for the cost of a material that reads neither; its helper is finishing that proof',
+	'M3-F5':
+		'the water add-on, its records and its demos are on the branch, but twelve of its reference pictures are not drawn, so the picture-reference check fails; its evidence line waits on those pictures',
 	'M3-V5':
 		"the atlases draw and the crowns keep their coverage at three distances, but the task's line asks the owner to judge them at least as good as Creek's painted textures, and its author reports the generated leaves are not there yet; the paint time per device is owed too",
 	'M3-V1':
