@@ -196,23 +196,28 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       # CI's shader caches serve this build too. An older commit, without the action, builds every
-      # shader.
+      # shader. The build stops before its size report, as CI's build job does: the report compressed
+      # every shader module, 11 of the job's 15 minutes in run 40064495637, and no shard reads it. An
+      # older commit, whose build script has no such mode, builds with its report.
       - if: hashFiles('.github/actions/shaders/action.yml') != ''
         uses: ./.github/actions/shaders
         with:
-          run: bun run build
+          run: |
+            if grep -q -- "'--pages-only'" tools/build-wasm.ts; then bun tools/build-wasm.ts --pages-only; else bun run build; fi
       - if: hashFiles('.github/actions/shaders/action.yml') == ''
-        run: bun run build
+        run: |
+          if grep -q -- "'--pages-only'" tools/build-wasm.ts; then bun tools/build-wasm.ts --pages-only; else bun run build; fi
       # The engine's WebAssembly files, the shader compiler and the shader modules with the record
-      # of their inputs. An older commit may keep its shader modules in git, or lack the record.
+      # of their inputs. An older commit may keep its shader modules in git, or lack the record. zstd
+      # packs on every core, where gzip took about a minute on one.
       - name: Pack the build
-        run: tar -czf "$RUNNER_TEMP/build.tgz" $(ls -d packages/*/dist packages/engine/src/generated target/shader-modules.json 2>/dev/null)
+        run: tar -cf - $(ls -d packages/*/dist packages/engine/src/generated target/shader-modules.json 2>/dev/null) | zstd -T0 -3 -q -o "$RUNNER_TEMP/build.tar.zst"
       # A rerun of a failed shard downloads these files again, so they stay as long as GitHub lets
       # a run's jobs run again.
       - uses: actions/upload-artifact@v4
         with:
           name: bench-build-${{ matrix.build }}
-          path: ${{ runner.temp }}/build.tgz
+          path: ${{ runner.temp }}/build.tar.zst
           if-no-files-found: error
           overwrite: true
           retention-days: 30
@@ -265,13 +270,14 @@ jobs:
       # another pin downloads that pin's files once.
       - name: Set up the baseline and the new build
         run: |
+          set -o pipefail
           git fetch --quiet --no-tags origin "$BASELINE" "$NEW"
           for build in baseline new; do
             commit="$BASELINE"
             if [ "$build" = new ]; then commit="$NEW"; fi
             dir="$RUNNER_TEMP/$build"
             git worktree add --detach "$dir" "$commit"
-            (cd "$dir" && bun install --frozen-lockfile && tar -xzf "$RUNNER_TEMP/builds/bench-build-$build/build.tgz")
+            (cd "$dir" && bun install --frozen-lockfile && zstd -dc "$RUNNER_TEMP/builds/bench-build-$build/build.tar.zst" | tar -xf -)
             if [ -f "$dir/tools/samples/lock.json" ]; then (cd "$dir" && bun run samples:fetch); fi
           done
 
