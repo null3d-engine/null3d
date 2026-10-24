@@ -32,7 +32,9 @@ const LINES = Array.from({ length: BLOCKS + 1 }, (_, k) => streetLine(k));
 /** Builds the traffic of the sky lanes. */
 export function createTraffic(ctx: SketchContext): TrafficLanes {
 	return createTrafficLanes(ctx, {
-		mesh: createVehicleHull(ctx, { halfWidth: 0.96, height: 1.1, halfLength: 2.0 }),
+		// The light hull keeps the silhouette and the lights and takes a third of the vertex work,
+		// which every car pays for in every pass that draws the lanes.
+		mesh: createVehicleHull(ctx, { halfWidth: 0.96, height: 1.1, halfLength: 2.0 }, 'light'),
 		plan: {
 			lines: LINES,
 			from: -LANE_SPAN / 2,

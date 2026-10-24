@@ -504,6 +504,15 @@ and a hero car with two screens.
   A preset draws fewer cars by lowering the active row count. The rows were shuffled once, so a
   thinner preset thins every lane alike. The traffic-lanes example add-on owns this
   (`examples/addons/traffic-lanes/`), and Skyway uses it.
+- **A hull's vertices are what a lane pays for.** Every face of the vehicle hull carries its own
+  four vertices, so a car is 72 vertices for 36 triangles, and each pass that draws the lanes pays
+  for them, the reflections' depth prepass among them. `createVehicleHull` therefore takes a detail
+  as its third argument. The light hull shares each vertex between the faces that meet at it, which
+  draws the same triangles from 24 vertices and shades the body as one smooth shell instead of
+  faceted panels. Skyway draws the light hull. At Low, at the pixel size of a cloud phone's screen,
+  that took the frame from 3.79 to 3.06 ms of GPU time on WebGPU and from 7.09 to 5.38 ms on WebGL2,
+  and the traffic's own share from 1.33 to 0.64 ms and from 2.81 to 1.11 ms
+  ([D-244](decisions/D-244-skyway-vehicle-vertices.md)).
 - **A moved row needs a larger bounding sphere.** The engine culls each row by its mesh's bounding
   sphere. A vertex offset carries a car up to the lane's length from its row's origin. Each batch
   therefore gives its rows a radius that covers the lane, with `batch.setBoundingRadius(span)`
@@ -577,6 +586,11 @@ and a hero car with two screens.
   changes the vertices alone. The scene's updates threw no error at any preset. On WebGL2 the
   settings stop at Medium, but the demo's counts follow the preset that the page asked for. So
   `preset=high` there draws 75,000 cars at Medium settings.
+
+  These rows draw the full hull. The light hull that the demo draws now was measured on the same Mac
+  at a canvas of 618 x 1372 device pixels, the size that a cloud phone's screen gives the demo at
+  Low, with the same switches and the governor on: at Low it took the WebGPU frame from 3.79 to
+  3.06 ms and the WebGL2 frame from 7.09 to 5.38 ms ([D-244](decisions/D-244-skyway-vehicle-vertices.md)).
 - **The lens.** The picture's grade, its sharpening, its vignette and the camera's own marks come
   from the lens-kit example add-on (`examples/addons/lens-kit/`). The grade, the sharpening and the
   vignette are the core's own settings, which the kit sets from one look: the grade is the core's
@@ -603,12 +617,18 @@ and a hero car with two screens.
   grade add nothing to a frame, since they run in the final pass; the sharpening value adds the
   first step's pass at the whole render scale. A look that leaves all four of the effect's values
   at 0 adds no effect at all.
-- **On a phone**, WebGL2 runs Medium at most. Low should hold 60 frames a second on an S24-class
-  phone. That preset draws 30,000 cars, about 900 towers, 180 lights, the rain and reflections at a
-  quarter of the render size. Medium doubles the cars and raises the reflection scale. A mid-range
-  phone may therefore fall under 60. The cloud iPad Pro 13 in Safari and the Galaxy S25 in Chrome
-  drew the demo's held frame on all three paths. Neither run timed the frame rate, so the 60 frames
-  a second target has no device figure yet.
+- **On a phone**, WebGL2 runs Medium at most. That preset draws 30,000 cars, about 900 towers, 180
+  lights, the rain and reflections at a quarter of the render size. Medium doubles the cars and
+  raises the reflection scale. The cloud Galaxy S24 of 24 October 2026 measured two windows in a
+  row on the changed demo, at Low. The first 5 s after its first frame presented 7.2 frames a
+  second, with a 95th percentile of 408 ms and a 99th of 2,227 ms; the next 5 s presented 29.4,
+  with a 95th percentile of 33.4 ms and a 99th of 66.7 ms, which holds the device's 30 Hz display.
+  At the High preset, which WebGL2 caps at Medium and 50,000 cars, the two windows presented 20.9
+  and 28.0. So the stalls are the demo's first seconds, not its steady play: the engine built no
+  pipeline, skipped no draw and rebuilt no table in either window, and both windows carry upload
+  spikes of about 1.2 MB, so neither explains the first window. Night town's first window had no
+  such stall. A cold phone's first seconds therefore need their own measurement before the 60 frames
+  a second target has a device figure.
 
 ### Engine features for the showcase
 
