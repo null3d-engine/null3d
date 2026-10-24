@@ -96,6 +96,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					pageUrl: message.pageUrl,
 					maxTargetFps: message.maxTargetFps,
 					threads: message.threads,
+					twoStepProbe: message.twoStepProbe,
 					showStats: (show) => replyToPage({ type: 'stats', show }),
 					wantJobs,
 					sendLabelSlot: (id, table, slot, generation) =>

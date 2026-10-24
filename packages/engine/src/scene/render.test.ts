@@ -2,6 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import { coreFailure } from '../errors/core-failure';
 import type { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
+import { FORMAT_R32_FLOAT, FORMAT_RGBA16_FLOAT } from '../generated/gpu';
+import { defineFeature } from './features';
 import type { CoreMemory } from './memory';
 import { Render } from './render';
 import type { Camera, Scene } from './scene';
@@ -27,7 +29,7 @@ function camera(layers = 1) {
  * A render namespace whose core gives each scene pass the next view place, fails with the graph's
  * error when a pass reads a name that no pass writes, and records the calls.
  */
-function setup() {
+function setup(webgl2 = false) {
 	const calls: unknown[][] = [];
 	const preloads: string[][] = [];
 	let error: [number, string] = [0, ''];
@@ -52,6 +54,14 @@ function setup() {
 		addFullscreenPass(...args: unknown[]) {
 			calls.push(['fullscreen', ...args, [...values], [...textures]]);
 			return next++;
+		},
+		addComputePass(...args: unknown[]) {
+			calls.push(['compute', ...args, [...values], [...textures]]);
+			return next++;
+		},
+		setComputeValues(place: number) {
+			calls.push(['compute-values', place, [...values], [...textures]]);
+			return 0;
 		},
 		setPassValues(place: number) {
 			calls.push(['values', place, [...values], [...textures]]);
@@ -92,7 +102,7 @@ function setup() {
 	const sent: number[] = [];
 	const templates = new ShaderTemplates((template) => sent.push(template));
 	return {
-		render: new Render(core, scene, shaders, templates, 4096),
+		render: new Render(core, scene, shaders, templates, 4096, webgl2),
 		sent,
 		scene: scene as unknown as Scene,
 		calls,
@@ -109,6 +119,47 @@ function thrown(run: () => unknown): EngineError {
 		return error as EngineError;
 	}
 	throw new Error('the call did not throw');
+}
+
+/** A compiled compute shader: a whole module with a `@compute` entry point. */
+function computeWgsl(source = '@compute @workgroup_size(8, 8) fn main() {}') {
+	return {
+		kind: 'shader',
+		webgpu: { permutation: 0, wgsl: { source, pipelines: {} }, glsl: null },
+		webgl2: null,
+	};
+}
+
+/** Options of a compute pass whose description publishes the texture `field`. */
+function computePass(extra: Record<string, unknown> = {}): never {
+	const description = defineFeature({
+		name: 'ocean',
+		frame: 'background',
+		kind: 'compute',
+		outputs: { field: { default: 'black' } },
+	});
+	return { kind: 'compute', description, wgsl: computeWgsl(), ...extra } as never;
+}
+
+/** Options of a compute pass that fills the two buffers of an instance draw. */
+function computeBuffers(extra: Record<string, unknown> = {}): never {
+	const description = defineFeature({
+		name: 'quad-fill',
+		frame: 'opaque',
+		kind: 'compute',
+		band: 'before',
+	});
+	return {
+		kind: 'compute',
+		description,
+		wgsl: computeWgsl(),
+		buffers: [
+			{ buffer: 41, bytes: 4 },
+			{ buffer: 42, bytes: 4096 },
+		],
+		dispatch: [1, 1, 1],
+		...extra,
+	} as never;
 }
 
 describe('render passes', () => {
@@ -498,8 +549,163 @@ describe('render passes', () => {
 		expect(add({ uniforms: { radius: 1 } }).code).toBe('E1216');
 	});
 
+	it('adds a compute pass that covers its target, and changes its values', () => {
+		const { render, calls } = setup();
+		const pass = render.addPass(computePass({ values: [0.5, 2] }));
+		const call = calls[0] as unknown[];
+		expect(call.slice(0, 11)).toEqual([
+			'compute',
+			'field',
+			'field',
+			0,
+			0,
+			1,
+			1,
+			expect.any(Number),
+			FORMAT_RGBA16_FLOAT,
+			// 8 along x, 8 along y, one along z.
+			8 | (8 << 8) | (1 << 16),
+			// No counts: the pass covers its target.
+			0,
+		]);
+		// The three buffer operands follow the counts; a texture pass names none of them.
+		expect(call.slice(11, 14)).toEqual([0, 0, 0]);
+		const [values, handles] = call.slice(15) as [number[], number[]];
+		expect(values.slice(0, 2)).toEqual([0.5, 2]);
+		expect([...handles].every((handle) => handle === 0)).toBe(true);
+		render.setPassUniforms(pass, [1, 3]);
+		const update = calls[1] as [string, number, number[]];
+		expect([update[0], update[1], update[2].slice(0, 2)]).toEqual(['compute-values', 1, [1, 3]]);
+		expect(thrown(() => render.setPassUniform(pass, 'time', 1)).code).toBe('E1220');
+	});
+
+	it('dispatches the workgroup counts that a compute pass gives', () => {
+		const { render, calls } = setup();
+		render.addPass(computePass({ dispatch: [4, 2, 1], format: 'r32float', scale: 0.5 }));
+		const call = calls[0] as unknown[];
+		expect([call[5], call[8], call[10]]).toEqual([0.5, FORMAT_R32_FLOAT, 4 | (2 << 8) | 65536]);
+	});
+
+	it('refuses a compute pass whose description or options it cannot place', () => {
+		const { render } = setup();
+		const add = (options: object) => thrown(() => render.addPass(options as never));
+		const description = (extra: object = {}) =>
+			defineFeature({
+				name: 'ocean',
+				frame: 'background',
+				kind: 'compute',
+				outputs: { field: { default: 'black' } },
+				...extra,
+			} as never);
+		expect(add(computePass({ description: description({ outputs: undefined }) })).code).toBe(
+			'E1223',
+		);
+		expect(
+			add(computePass({ description: description({ outputs: { f: { default: 'white' } } }) })).code,
+		).toBe('E1223');
+		expect(
+			add(
+				computePass({
+					description: description({ views: ['scenePass'] }),
+				}),
+			).code,
+		).toBe('E1223');
+		expect(add(computePass({ workgroupSize: [4, 4, 1] })).code).toBe('E1220');
+		expect(add(computePass({ workgroupSize: [64, 64, 1] })).code).toBe('E1220');
+		expect(add(computePass({ wgsl: 'fn main() {}' })).code).toBe('E1215');
+		expect(add(computePass({ format: 'rgba32float' as never })).code).toBe('E1220');
+	});
+
+	it('runs a compute pass of a WebGL2 page as its fragment form, or refuses it', () => {
+		const { render, calls } = setup(true);
+		expect(thrown(() => render.addPass(computePass())).code).toBe('E1220');
+		const fallback = {
+			kind: 'effect',
+			uniforms: [],
+			depth: false,
+			joins: true,
+			textures: [],
+			variants: {},
+			pieces: { group: {}, fold: {} },
+		};
+		const pass = render.addPass(computePass({ fallback: { wgsl: fallback } }));
+		const call = calls[0] as [string, ...unknown[]];
+		expect(call[0]).toBe('fullscreen');
+		expect([call[1], call[2], call[3], call[4]]).toEqual(['field', 'field', 0, 0]);
+		render.setPassUniforms(pass, [7]);
+		expect((calls[1] as unknown[])[0]).toBe('values');
+	});
+
 	it("dumps the core's graph", () => {
 		const { render } = setup();
 		expect(render.dumpGraph()).toBe('digraph "render graph" {}');
+	});
+
+	it("adds a compute pass that fills an instance draw's two buffers", () => {
+		const { render, calls } = setup();
+		render.addPass(computeBuffers());
+		const call = calls[0] as unknown[];
+		// No texture: the pass keeps a 1 by 1 view target of its own, which nothing samples.
+		expect(call.slice(0, 10)).toEqual([
+			'compute',
+			'quad-fill',
+			'quad-fill target',
+			1,
+			1,
+			1,
+			1,
+			expect.any(Number),
+			0,
+			8 | (8 << 8) | (1 << 16),
+		]);
+		expect(call.slice(10, 14)).toEqual([1 | (1 << 8) | 65536, 0, 41, 42]);
+		expect(call[14]).toBe(4096);
+	});
+
+	it('refuses a buffers pass that cannot place its target or its handles', () => {
+		const { render } = setup();
+		const add = (options: object) => thrown(() => render.addPass(options as never));
+		const description = (extra: object = {}) =>
+			defineFeature({ name: 'quad-fill', frame: 'opaque', kind: 'compute', ...extra } as never);
+		expect(
+			add(
+				computeBuffers({
+					description: description({ outputs: { field: { default: 'black' } } }),
+				}),
+			).code,
+		).toBe('E1223');
+		expect(add(computeBuffers({ description: description({ views: ['scenePass'] }) })).code).toBe(
+			'E1223',
+		);
+		expect(add(computeBuffers({ dispatch: undefined })).code).toBe('E1220');
+		expect(add(computeBuffers({ dispatch: 'writes' })).code).toBe('E1220');
+		expect(add(computeBuffers({ format: 'r32float' })).code).toBe('E1220');
+		expect(add(computeBuffers({ size: [8, 8] })).code).toBe('E1220');
+		expect(add(computeBuffers({ fallback: { wgsl: computeWgsl() } })).code).toBe('E1220');
+		expect(
+			add(
+				computeBuffers({
+					buffers: [
+						{ buffer: 0, bytes: 0 },
+						{ buffer: 42, bytes: 4096 },
+					],
+				}),
+			).code,
+		).toBe('E1220');
+		expect(
+			add(
+				computeBuffers({
+					buffers: [
+						{ buffer: 41, bytes: 4 },
+						{ buffer: 41, bytes: 4 },
+					],
+				}),
+			).code,
+		).toBe('E1220');
+	});
+
+	it('refuses a buffers pass on a WebGL2 page', () => {
+		const { render } = setup(true);
+		expect(thrown(() => render.addPass(computeBuffers())).code).toBe('E1220');
 	});
 });

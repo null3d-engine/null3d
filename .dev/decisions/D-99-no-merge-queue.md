@@ -61,7 +61,7 @@ Rules:
 - That retry failed at once in pull request run 37689924511 on 8 October. Ubuntu's Azure mirror answered nothing, so the first install reached its 5 minutes. The time limit stopped Playwright's installer, but not the apt process that the installer had started. That process kept apt's lock, and the retry stopped with "Could not get lock /var/lib/apt/lists/lock". The retry now stops the leftover apt process first. It waits up to 30 seconds for apt's locks, and it finishes any half-done install with `dpkg --configure -a`.
 - Main's runs share one concurrency group, `ci-main`, with `cancel-in-progress`. The Release workflow and the exit gate already accept a run started by hand, which covers a commit whose own run was cancelled. The weights tool reads only runs that passed, so cancelled runs drop out of it.
 - More macOS time: each full run takes 2 macOS jobs. With 5 at once, two full runs and the hourly benchmark run fill them.
-- The workflow keeps its `merge_group` trigger only while main's rules still use the queue. Nothing reads the queue's runs any more.
+- The workflow kept its `merge_group` trigger only while main's rules still used the queue. Nothing read the queue's runs any more. On 24 October 2026 main's one ruleset held only the rule that CI must pass, so the trigger left both workflows, with the size check's base for a merge group.
 
 ## Addendum, 2026-10-12: main's benchmark run once a day, with S5 and S6
 

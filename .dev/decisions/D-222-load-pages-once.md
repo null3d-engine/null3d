@@ -25,7 +25,7 @@ How the data was produced: the shard's job log, and the run record that it uploa
 ## Decision
 
 - `bun tests/lib/load-server.ts` makes every load build, and prints each build's time.
-- The `load-pages` job runs it once, after the build and city jobs, and hands both folders on through `.github/actions/archive` with `link` set, which stores each content once (see the update below).
+- The `load-pages` job runs it once, after the build job, and hands both folders on through `.github/actions/archive` with `link` set, which stores each content once (see the update below).
 - Each `real-browsers` shard downloads them and sets `NULL3D_LOAD_PAGES=prebuilt`: the runner then builds none, and stops with the command to run when a build that its plan loads is missing.
 - The `bench` shards and the `allocation` jobs download them too, with the same switch. The benchmark pages' server, `serveBenchPages`, and the benchmark tests' Playwright server then serve the build as it is.
 
@@ -42,6 +42,14 @@ How the data was produced: the zip's central directory, read from the artifact's
 
 - `bun tools/link-duplicates.ts` makes each set of files with equal contents one file with several names. `tar` then stores each content once, and `zstd` compresses the archive on every core. The upload stores it as it is, at level 0.
 - Each job that serves the builds downloads the archive and unpacks it, through the same action.
+
+## Update, 24 October 2026: the two builds stay in turn
+
+The `load-pages` job builds the benchmark pages and then the startup pages: 59 s and 75 s in run 40049563192. Test run 40053641808 built both at the same time on one runner. The benchmark pages took 61 s and the startup pages 126 s, so the job would save about 8 s. Each build alone held 13 to 14 GB at its peak, and the two together left 1.4 GB of the runner's 16 GB free. So the builds stay one after the other.
+
+## Update, 24 October 2026: each build on a machine of its own
+
+The update above kept the two builds in one job, on one machine. Since then, the real-browser shards stopped waiting for the job: only 8 of each browser's pages load what it makes, and the `real-browsers-prebuilt` job runs those. So each build's own readers differ. The `bench` shards and the `allocation` jobs serve only the benchmark pages and load S6's city files. The prebuilt shards serve only the startup pages. The builds now run in two jobs, on two machines, at the same time. The `load-pages` job builds the benchmark pages and the city, and the `load-startup-pages` job builds the startup pages. Each job that serves a build waits only for the job that makes it. So the benchmark and allocation jobs no longer wait for the startup build, 67 s in run 40056066922. Each archive still holds each of its contents once. No job downloads both, so no download grows.
 
 ## Consequences
 

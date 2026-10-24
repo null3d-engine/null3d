@@ -36,7 +36,7 @@ Some null3D packages ship code from other projects, as the original file or as a
 | three.js geometry, curves, paths and shapes | MIT | `lib/index.js` |
 | earcut, the polygon triangulation | ISC | `lib/index.js` |
 
-`@null3d/controls`, `@null3d/impostors`, `@null3d/particles` and `@null3d/terrain` ship only their own code.
+`@null3d/controls`, `@null3d/impostors`, `@null3d/particles`, `@null3d/splats` and `@null3d/terrain` ship only their own code.
 
 ## The tools
 

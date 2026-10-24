@@ -9,6 +9,7 @@ import { inShaderSet, type ShaderSet, variantInShaderSet } from '../pages/lib/sh
 import {
 	braveShieldsOf,
 	deviceChecklist,
+	loadsPrebuilt,
 	parseArgs,
 	planItems,
 	QuietRecovery,
@@ -184,6 +185,47 @@ describe('waitForRunners', () => {
 			clearInterval(beats);
 			expect(quiet).toEqual([]);
 			expect(finished).toEqual(['slow-ipad']);
+		}));
+
+	it("reports a runner's longest silence that its runner page ended by writing again", () =>
+		withRun(['a'], async (plan) => {
+			// The wait reads the files twice a second, so the writes lie further apart than that.
+			writeRunnerFile(plan.run, 'mac-safari', 'device', {});
+			setTimeout(() => writeRunnerFile(plan.run, 'mac-safari', HEARTBEAT_NAME, {}), 1100);
+			setTimeout(() => {
+				writeRunnerFile(plan.run, 'mac-safari', 'a', { ok: true });
+				writeRunnerFile(plan.run, 'mac-safari', 'done', {});
+			}, 1700);
+			const silences: [string, number, string | undefined][] = [];
+			await waitForRunners(plan, ['mac-safari'], {
+				quietMs: () => 5000,
+				onSilence: (runner, ms, at) => silences.push([runner, ms, at]),
+			});
+			expect(silences).toHaveLength(1);
+			const [[runner, ms, at] = ['', 0, undefined]] = silences;
+			expect(runner).toBe('mac-safari');
+			expect(ms).toBeGreaterThanOrEqual(1000);
+			expect(ms).toBeLessThan(1500);
+			expect(at).toBe('a');
+		}));
+
+	it('leaves out of the longest silence the stop that a new runner page ended', () =>
+		withRun(['a'], async (plan) => {
+			writeRunnerFile(plan.run, 'mac-safari', 'device', {});
+			const silences: number[] = [];
+			await waitForRunners(plan, ['mac-safari'], {
+				quietMs: () => 50,
+				onQuiet: (runner) => {
+					setTimeout(() => {
+						writeRunnerFile(plan.run, runner, 'a', { ok: true });
+						writeRunnerFile(plan.run, runner, 'done', {});
+					}, 300);
+					return true;
+				},
+				onSilence: (_, ms) => silences.push(ms),
+			});
+			expect(silences).toHaveLength(1);
+			expect(silences[0]).toBeLessThan(250);
 		}));
 
 	it('gives the whole plan the most time that each page may get', () => {
@@ -894,12 +936,13 @@ describe('the checks plan', () => {
 	});
 
 	/** The checks plan's shards in CI's Safari, as `--shard <i>/<count>` gives each. */
-	const shardsOf = (count: number) =>
+	const shardsOf = (count: number, extra: readonly string[] = []) =>
 		Array.from(
 			{ length: count },
 			(_, i) =>
-				planItems(parseArgs(['--shaders', 'sampled', '--shard', `${i + 1}/${count}`, 'Safari'])) ??
-				[],
+				planItems(
+					parseArgs(['--shaders', 'sampled', ...extra, '--shard', `${i + 1}/${count}`, 'Safari']),
+				) ?? [],
 		);
 	const sampled = checksPlan({ shaders: 'sampled' });
 	const secondsOf = (shard: { id: string }[]) =>
@@ -939,25 +982,55 @@ describe('the checks plan', () => {
 	// and about 2 more go to its setup, the dev server's start and the judging. .dev/devices.md says
 	// what to do when the pages need more. Safari compiles the sampled set of the shaders page, which
 	// this model counts.
-	it("keeps each of CI's shards at or under 10 minutes of pages in Safari", () => {
+	/** A job's own lines of CI's workflow, from its name to the next job's. */
+	const workflowJob = (name: string) => {
 		const workflow = readFileSync(
 			join(import.meta.dirname, '../../.github/workflows/ci.yml'),
 			'utf8',
 		);
-		// The real-browser job's own lines, from its name to the next job: other jobs have shard
-		// lists of their own.
-		const start = workflow.indexOf('\n  real-browsers:\n');
+		const start = workflow.indexOf(`\n  ${name}:\n`);
 		expect(start).toBeGreaterThan(0);
 		const end = workflow.slice(start + 1).search(/\n {2}[\w-]+:\n/);
-		const job = end < 0 ? workflow.slice(start) : workflow.slice(start, start + 1 + end);
+		return end < 0 ? workflow.slice(start) : workflow.slice(start, start + 1 + end);
+	};
+
+	it("keeps each of CI's shards at or under 10 minutes of pages in Safari and in Firefox", () => {
+		// The real-browser job's own lines: other jobs have shard lists of their own. Its shards
+		// leave out the pages of the prebuilt job.
+		const job = workflowJob('real-browsers');
 		expect(job).toContain("matrix.browser == 'Safari' && '--shaders sampled'");
+		expect(job).toMatch(/--prebuilt \$\{\{ env\.PREBUILT \}\}/);
+		expect(job).toMatch(/^\s+PREBUILT: none$/m);
 		const count = Number(/^\s+shards: \[(\d+)\]$/m.exec(job)?.[1]);
 		expect(count).toBeGreaterThan(0);
 		// The matrix must list every shard from 1 to the count, or a shard never runs.
 		const listed = /^\s+shard: \[([\d, ]+)\]$/m.exec(job)?.[1]?.split(',').map(Number);
 		expect(listed).toEqual(Array.from({ length: count }, (_, i) => i + 1));
-		const minutes = shardsOf(count).map((shard) => secondsOf(shard) / 60);
+		const minutes = shardsOf(count, ['--prebuilt', 'none']).map((shard) => secondsOf(shard) / 60);
 		expect(Math.max(...minutes)).toBeLessThanOrEqual(10);
+		// Firefox compiles every build of the shaders page, by its own measured times.
+		const firefox = Array.from(
+			{ length: count },
+			(_, i) =>
+				planItems(parseArgs(['--prebuilt', 'none', '--shard', `${i + 1}/${count}`, 'Firefox'])) ??
+				[],
+		).map((shard) => shard.reduce((sum, item) => sum + expectedSeconds(item, 'Firefox'), 0) / 60);
+		expect(Math.max(...firefox)).toBeLessThanOrEqual(10);
+	});
+
+	it("runs every page that loads the load pages job's builds in CI's prebuilt shard, and no other", () => {
+		const job = workflowJob('real-browsers-prebuilt');
+		expect(job).toMatch(/^\s+PREBUILT: only$/m);
+		expect(job).toContain('needs: [build, load-pages, load-startup-pages, changes]');
+		const [prebuilt = []] = shardsOf(1, ['--prebuilt', 'only']);
+		expect(prebuilt[0]?.id).toBe('capabilities');
+		const others = new Set(shardsOf(1, ['--prebuilt', 'none'])[0]?.map(({ id }) => id));
+		const picked = new Set(prebuilt.map(({ id }) => id));
+		// Each item runs in one of the two jobs, and the capabilities page in both.
+		for (const { id } of sampled)
+			expect(others.has(id) !== picked.has(id) || id === 'capabilities', id).toBe(true);
+		expect(prebuilt.slice(1).every(loadsPrebuilt)).toBe(true);
+		expect(secondsOf(prebuilt) / 60).toBeLessThanOrEqual(10);
 	});
 
 	it('skips a WebGPU page on a browser without WebGPU only when allowed', () => {

@@ -13,11 +13,13 @@
 //! `NULL3D_NO_SHADER_CACHE=1`, compiles every entry again.
 //!
 //! `--entries-shard i/n` compiles only shard `i` of `n`, counted from 0, of the manifest's
-//! entries, split by estimated build cost into whole entries (`ShardPlan::by_entry`), into the
-//! cache, and writes no module. An entry keeps its key in a shard: the key reads only the entry's
-//! own source, its manifest table and the compiler's stamp, and the narrowed inputs keep the
-//! library modules whole. So several machines can each fill the cache with one shard, and a later
-//! build that finds every entry in the cache compiles none.
+//! entries, split by estimated build cost (`ShardPlan::by_build`), into the cache, and writes no
+//! module. An entry that costs more than an even share goes to the shards in parts, and the cache
+//! keeps each part beside the whole entry's key. An entry keeps its key in a shard: the key reads
+//! only the entry's own source, its manifest table and the compiler's stamp, and the narrowed
+//! inputs keep the library modules whole. So several machines can each fill the cache with one
+//! shard, and a later build that finds every entry, or every part of it, in the cache compiles
+//! none.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -104,7 +106,7 @@ fn main() -> ExitCode {
 /// Compiles the entries of one shard into the cache, and writes no module.
 fn build_entries_shard(root: &std::path::Path, cache: &Cache, shard: Shard) -> ExitCode {
     let outcome = Inputs::read(root).and_then(|inputs| {
-        let plan = ShardPlan::by_entry(&inputs, shard.count)?;
+        let plan = ShardPlan::by_build(&inputs, shard.count)?;
         print!("This run fills the cache with shard {shard} of the shader entries.\n{plan}");
         let progress = Progress::new();
         null3d_shaders::build_with_cache_reporting(
@@ -198,6 +200,25 @@ fn report(stats: &CacheStats) {
         "The shader build compiled {} entries and reused {}.",
         stats.compiled, stats.reused
     );
+    report_peak_memory();
+}
+
+/// Prints the most memory the build held at once, where the system reports it, so that a CI log
+/// shows how close the build came to its machine's limit before a build runs out (D-235).
+fn report_peak_memory() {
+    #[cfg(target_os = "linux")]
+    if let Some(kib) = std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|status| {
+            status.lines().find_map(|line| {
+                let kib = line.strip_prefix("VmHWM:")?.trim().strip_suffix("kB")?;
+                kib.trim().parse::<u64>().ok()
+            })
+        })
+    {
+        let gigabytes = kib as f64 * 1024.0 / 1e9;
+        println!("The shader build held at most {gigabytes:.1} GB of memory at once.");
+    }
 }
 
 fn usage(problem: &str) -> ExitCode {

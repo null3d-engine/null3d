@@ -7,6 +7,8 @@ description: >-
   the paths, which are relative to root, and uploads the file as it is. With link set, the files of
   equal contents below the paths first become one file with several names, so the archive holds
   each content once, as the load builds need. "download" takes the file and unpacks it into root.
+  With pattern set, "download" takes every archive whose artifact name matches, and unpacks each
+  into root, so several jobs' shares of one folder join there.
 
 inputs:
   mode:
@@ -24,6 +26,11 @@ inputs:
   link:
     description: '"true" links the files of equal contents before an upload packs them.'
     default: "false"
+  pattern:
+    description: >-
+      With "download", a pattern of artifact names in place of name: every archive that matches is
+      unpacked into root. A pattern that matches none unpacks nothing.
+    default: ""
 
 runs:
   using: composite
@@ -53,9 +60,16 @@ runs:
         if-no-files-found: error
         retention-days: 1
     - uses: actions/download-artifact@v4
-      if: inputs.mode == 'download'
+      if: inputs.mode == 'download' && inputs.pattern == ''
       with:
         name: ${{ inputs.name }}
+        path: ${{ runner.temp }}/${{ inputs.name }}
+    # Each archive is named for its artifact, so the matches share one folder without a clash.
+    - uses: actions/download-artifact@v4
+      if: inputs.mode == 'download' && inputs.pattern != ''
+      with:
+        pattern: ${{ inputs.pattern }}
+        merge-multiple: true
         path: ${{ runner.temp }}/${{ inputs.name }}
     - name: Unpack ${{ inputs.name }}
       if: inputs.mode == 'download'
@@ -63,8 +77,23 @@ runs:
       env:
         ROOT: ${{ inputs.root }}
         FOLDER: ${{ runner.temp }}/${{ inputs.name }}
-        ARCHIVE: ${{ runner.temp }}/${{ inputs.name }}/${{ inputs.name }}.tar.zst
+      # A tar that stops reading at the archive's end marker can close the pipe while zstd still
+      # writes the padding behind it. zstd then fails on the broken pipe, with its message or with
+      # the pipe's signal, although tar has unpacked every file, so that one failure, after tar
+      # passed, shows as a warning. Any other failure of either fails the step.
       run: |
         mkdir -p "$ROOT"
-        zstd -dc "$ARCHIVE" | tar -xf - -C "$ROOT"
-        rm -r "$FOLDER"
+        shopt -s nullglob
+        set +o pipefail
+        errors="$RUNNER_TEMP/zstd-errors"
+        for archive in "$FOLDER"/*.tar.zst; do
+          zstd -dc "$archive" 2>"$errors" | tar -xf - -C "$ROOT"
+          status=("${PIPESTATUS[@]}")
+          cat "$errors" >&2
+          if [ "${status[1]}" != 0 ]; then exit "${status[1]}"; fi
+          if [ "${status[0]}" != 0 ]; then
+            [ "${status[0]}" = 141 ] || grep -q "Broken pipe" "$errors" || exit "${status[0]}"
+            echo "::warning::zstd met a closed pipe after tar unpacked all of $(basename "$archive")"
+          fi
+        done
+        rm -rf "$FOLDER" "$errors"

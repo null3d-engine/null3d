@@ -67,12 +67,10 @@ export type BaseChoice =
  * main pointed to before the push, which CI passes as `PUSH_BEFORE`: work lands by a merge of main
  * into a branch and a push (D-157), so the commit before (HEAD^) is the branch's own, and the push's
  * growth and trailers are those of every commit after main's old tip. A push with no such commit,
- * such as a branch's first, compares with the commit before. A merge queue run
- * compares with the commit that its group builds on, which holds the pull requests ahead of it in
- * the queue: the queue squashes each pull request into one commit on top of that commit, so it is
- * the commit before too. Otherwise the base is HEAD's merge base with main, or with the branch that
- * a pull request targets. CI builds a pull request as GitHub's merge of it into that branch, so
- * there the merge base is the branch's commit that the pull request was merged into.
+ * such as a branch's first, compares with the commit before. Otherwise the base is HEAD's merge
+ * base with main, or with the branch that a pull request targets. CI builds a pull request as
+ * GitHub's merge of it into that branch, so there the merge base is the branch's commit that the
+ * pull request was merged into.
  */
 export function chooseBase(
 	ref: string | undefined,
@@ -85,11 +83,6 @@ export function chooseBase(
 			return { ref: before, why: "main's commit before this push" };
 		return { ref: 'HEAD^', why: 'the commit before on the branch, as the push names none' };
 	}
-	if (env.GITHUB_EVENT_NAME === 'merge_group')
-		return {
-			ref: 'HEAD^',
-			why: 'the commit that the merge group builds on, with the pull requests ahead of it',
-		};
 	const branch = env.GITHUB_BASE_REF || 'main';
 	return { branch, why: `the merge base with origin/${branch}` };
 }

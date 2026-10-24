@@ -103,11 +103,39 @@ Each rule comes with its reason, because the reason covers cases the rule does n
 7. Keep the DOM on the page, and keep messages rare: send events, not per-frame state. Labels that follow objects use `ui.trackLabel` (0.2), which needs no messages. (`guides/ui-overlays`)
 8. Use layer masks to limit work. A camera with a mask draws fewer objects, and a raycast (0.2) with a mask tests fewer. (`concepts/render-layers`)
 9. Respect the quality preset. Do not force a heavier preset on phones. When frames run long, the engine's governor lowers the render scale, then the shadow settings, by itself. Keep your own values per preset, such as particle counts or AI update rates, in one table keyed by `quality.preset`. Never check the device type yourself, and listen to `quality.onChange` to apply the values. (`concepts/quality-presets`)
-10. Ship optimized assets: KTX2 textures, which stay compressed on the GPU, and glTF models with integer vertices (0.2). Encode KTX2 files with `basisu`. From 0.2, `bunx @null3d/cli assets optimize <in> <out>` makes both, or a `?optimized` import of a `.glb` through the Vite plugin. It compresses models with meshopt, which the engine decodes on load, gives each mesh that encloses space a checked blocker for WebGL2's occlusion culling, stores raycast trees for mesh parts of at least `--bvh` triangles (20,000 by default), and bakes each normal map's detail into the roughness mip levels so distant bumpy surfaces do not flicker on the same texture coordinates. It records the shader features each model needs, which the engine loads with the model before building only the pipelines it draws with. Large PNG files and float meshes cost download time and GPU memory. The KTX2 transcoder and the meshopt decoder load with the first file that needs them, in the engine's own workers: set no decoder path and copy no worker file. (`api/textures`, `guides/assets-pipeline`, `concepts/assets`)
+10. Ship optimized assets: KTX2 textures, which stay compressed on the GPU, and glTF models with integer vertices (0.2). `bunx @null3d/cli assets optimize <in> <out>` makes both, or a `?optimized` import of a `.glb` through the Vite plugin. It compresses models with meshopt, adds blockers for WebGL2's occlusion culling, stores raycast trees for large mesh parts, and bakes normal map detail into the roughness mips so distant bumpy surfaces do not flicker. It records the shader features each model needs, so the engine builds only the pipelines it draws with. Large PNG files and float meshes cost download time and GPU memory. The KTX2 transcoder and the meshopt decoder load with the first file that needs them: set no decoder path and copy no worker file. (`api/textures`, `guides/assets-pipeline`, `concepts/assets`)
 11. Keep custom WGSL portable. Use only the three language features every browser shares, and write flat interpolation as `@interpolate(flat, either)`. The build rejects other features, `enable` lines and `f16`, but it cannot check the portable limits or `textureSample` in branches. Test those on each GPU path. (`shaders/wgsl-rules`)
 12. Never branch on GPU names or user agents; read `engine.capabilities` on the page. Several browsers hide GPU names, and a name does not tell you what the engine enabled.
 
-## 5. Choosing the right tool
+## 5. When the engine may not have the feature
+
+A request may need a capability that null3D has not built. Settle its state before you design the scene.
+
+1. Search first: the docs page (section 1), `references/api-quickref.md`, then the add-on table in section 6. A core call or an add-on may answer the need.
+2. Read the page's status. `stable` or `experimental` means the call exists. `planned`, or "not built yet" in the note, means it does not exist in this version. Tell the user, name the step that adds it, and use the page's workaround. Do not call it, and do not invent an option in its place.
+3. If nothing covers the need, build it above the public API: a custom material, vertex offset, post effect or render pass. Keep that code in the project, and add no property or call that imitates engine API, because it breaks on the next update.
+4. Never write a second version of a feature in the add-on table. A hand-rolled copy gets no fixes, and it drifts from the add-on that users install.
+5. Say in your summary what the engine lacks, what you used instead, and what a later version changes. A silent workaround reads as the real feature.
+
+## 6. Choosing the right tool
+
+### Search before you hand-roll
+
+Check this table before you write a generator, control, effect or loader of your own. Each foundation add-on is the one place that feature lives: one package, both GPU paths, and fixes with the engine.
+
+| Need | Use | Docs | Status |
+| --- | --- | --- | --- |
+| Orbit, map, fly or first-person cameras, and drag, rotate or scale handles | `@null3d/controls` | `api/controls` | built |
+| Torus knots, polyhedra, lathes, extrusions and tubes | `@null3d/geometry` | `api/geometry` | built |
+| Far objects as camera-facing cards, or one mesh per far grid cell | `@null3d/impostors` | `api/impostors` | built |
+| Fire, smoke, sparks, rain and other particle effects | `@null3d/particles` | `api/particles` | built |
+| Gaussian splats from a scan or a training run, as SPZ or `KHR_gaussian_splatting` files | `@null3d/splats` | `api/splats` | built |
+| Hills, valleys and other ground from a height field | `@null3d/terrain` | `api/terrain` | built |
+| Rigid bodies, joints and character movement | the physics add-on | `guides/physics` | not built yet; run Rapier or cannon-es in the sketch worker |
+| Text in the scene, sharp at any distance | the MSDF text add-on | none yet | not built yet; use HTML labels with `ui.trackLabel` |
+| Water with waves, foam and a surface seen from below | `@null3d/water` | none yet | not built yet; recipe 20 builds one with a custom material |
+| Trees, shrubs, grass and wind over plants | the vegetation add-on | none yet | not built yet; generate simple plants above the public API |
+| three.js look modes for a port, such as Cineon tone curves | `@null3d/three-compat` | none yet | not built yet; use the closest core setting |
 
 Drawing:
 
@@ -120,8 +148,6 @@ Drawing:
 | Less detail far away | `mesh.setLevels([{ mesh, error }])`, or levels from `bunx @null3d/cli assets optimize --lod`, which `assets.loadGltf` reads (0.2) | `concepts/lod` |
 | A large static mesh, detailed near and coarse far | `bunx @null3d/cli assets optimize --clusters`, which stores a tree of patches that the engine draws on WebGPU, in one draw for a mesh that draws once | `concepts/lod` |
 | Camera-facing quads that the sketch moves itself | `scene.createSprites` (0.2) | `api/sprites` |
-| Fire, smoke, sparks, rain, leaves and other particle effects | `createParticles` from `@null3d/particles` (0.2) | `api/particles` |
-| Hills, valleys and other ground from a height field | `createTerrain` from `@null3d/terrain` (0.2) | `api/terrain` |
 | Point clouds | `scene.createPoints` (0.2) | `api/points` |
 | Lines with pixel or world widths | `scene.createLines` (0.2) | `api/lines` |
 | Shapes for debugging only | `debug.line`, `debug.box`, `debug.axes` | `api/debug` |
@@ -143,9 +169,6 @@ Interaction:
 
 | Need | Use | Docs |
 | --- | --- | --- |
-| Orbit or map camera | `createOrbitControls` or `createMapControls` from `@null3d/controls` | `api/controls` |
-| Fly or first-person camera | `createFlyControls` or `createFirstPersonControls` (0.2) | `api/controls` |
-| Move, turn or scale an object with handles | `createTransformControls(ctx, camera)` and `attach(object)`, or `createDragControls(ctx, camera, objects)` to drag any of a list | `api/controls` |
 | Click or hover on objects | `obj.on('click', fn)` and `'pointerenter'` or `'pointerleave'`, or `camera.screenToRay` with `scene.raycast` (all 0.2) | `api/input`, `api/raycast` |
 | Keys, pointer, touch, gamepad | `input.isDown`, `input.wasPressed`, `input.value`, `input.pointer`, `input.touches`, `input.actions.define` | `api/input` |
 | HTML UI and settings panels | On the page, sending messages to the sketch | `guides/ui-overlays` |
@@ -171,6 +194,7 @@ Effects:
 | A custom full-screen effect, or a tone curve of your own | `post.addEffect({ wgsl, uniforms, order })`, or `post.set({ toneMapping: wgsl })` (0.2) | `guides/custom-passes` |
 | Render to a texture: a minimap, a camera's screen | `render.addPass({ kind: 'scene', camera, writes, size })` and `textures.fromPass(pass)` (0.2) | `api/render`, `guides/custom-passes` |
 | Water, mirrors and polished floors that reflect the scene | `render.addPass({ kind: 'reflection', writes, plane: { point } })`, and a custom material that sets `s.reflection` (0.2) | `api/render`, `shaders/surface-functions`, `guides/custom-passes` |
+| Water waves, noise fields or any texture that a compute shader makes each frame | `render.addPass({ kind: 'compute', description, wgsl, format, values, fallback })` and `textures.fromPass(pass)`; WebGPU only, with the fallback fragment form on WebGL2 (0.3) | `api/render`, `api/features` |
 | Glass, gems and clear water that show what lies behind them, bent and blurred | `materials.standard({ transmission: 1, thickness, ior, roughness })`, or a custom material that sets `s.transmission` (0.2) | `api/materials`, `shaders/surface-functions` |
 | Leaves and paper lit from behind | `materials.standard({ diffuseTransmission })` (0.2) | `api/materials` |
 | Skin and wax whose light spreads under the surface | `materials.standard({ subsurfaceRadius })` (0.2), on High and Ultra | `api/materials` |
@@ -182,7 +206,7 @@ Effects:
 | Light from the sky, or a time of day | `scene.setEnvironment(await assets.skyEnvironment())` (0.2); `timeOfDay(hours)` values for the sky, the sun, the fog and the exposure (0.2) | `concepts/lighting` |
 | Reflections of a room or a street on floors and metal | `scene.createReflectionProbe({ box: { min, max }, position })` (0.2), one per room; `refresh: 'always'` for moving things | `api/scene` |
 
-## 6. Custom shaders in brief
+## 7. Custom shaders in brief
 
 Prefer surface functions. You describe the surface; the engine adds lighting, shadows, fog and instancing, on both backends. The material's WGSL goes in one `wgsl` option, tagged so the Vite plugin compiles it, and the material takes every `materials.standard` option.
 
@@ -202,11 +226,11 @@ rings.set({ roughness: 0.2 }); // the standard values, which defaultSurface read
 
 `references/shaders.md` has the full contract: every field of `SurfaceInput` and `Surface`, uniforms (`struct Uniforms` in the WGSL, read from `material`), the names to avoid, and the WGSL rules. Vertex offsets (`fn vertexOffset` in the same WGSL) and the built-in values (`frame.time`, `camera.position`, `object.position`) are built too. So are full shaders (`guides/custom-shaders`), and textures (0.2): `var name: texture_2d<f32>;` in the WGSL and the `textures` option.
 
-## 7. When something goes wrong
+## 8. When something goes wrong
 
 Most faults come from a page that is not cross-origin isolated, an object changed without a setter, the wrong texture color space, allocations in per-frame code, or a pipeline built during play. `references/testing-and-debugging.md` section 8 pairs every symptom with its cause and fix. Section 7 there lists the error codes, and section 9 is the release checklist. An `EngineError` names its fix in its message, then the docs page `errors/<code>`.
 
-## 8. References in this skill
+## 9. References in this skill
 
 Read these when the task needs them:
 
@@ -217,7 +241,7 @@ Read these when the task needs them:
 - `references/testing-and-debugging.md`: `bunx @null3d/cli test`, image tests, testing on devices, the MCP server tools (0.3, not built yet), error codes and a full troubleshooting table.
 - `references/content-pages.md`: product and marketing pages with a 3D scene: the fallback page, a load deadline, pausing, scroll-driven cameras, caching and crashes.
 
-## 9. Before you finish
+## 10. Before you finish
 
 - The code uses only APIs whose docs status is `stable` or `experimental` in the installed engine.
 - The code uses no part that a page's note says is not built yet.

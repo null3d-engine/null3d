@@ -114,6 +114,7 @@ use crate::ao::{self, AoIds};
 use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
+use crate::compute::ComputePassIds;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
 use crate::dof::DofIds;
@@ -146,6 +147,7 @@ use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame
 use crate::sorted::{SkinnedPipeline, SortedLayout, SortedRows};
 use crate::ssr::SsrIds;
 use crate::subsurface::SubsurfaceIds;
+use crate::taa::TaaIds;
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
 use crate::view::{MAX_VIEWS, ViewFrame, ViewId};
@@ -168,6 +170,7 @@ mod ids {
     use crate::effects::EffectPass;
     use crate::particles::ParticleIds;
     use crate::subsurface::STEPS as SUBSURFACE_STEPS;
+    use crate::taa::STEPS as TAA_STEPS;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
     use crate::weighted::WeightedIds;
 
@@ -227,8 +230,10 @@ mod ids {
     pub const ACCUMULATE: u32 = EXPOSURE + 1;
     /// The settings of the final pass's still build, which draws a still view's accumulated color.
     pub const STILL_SETTINGS: u32 = ACCUMULATE + 1;
+    /// The uniform buffer of temporal anti-aliasing's resolve.
+    pub const TAA: u32 = STILL_SETTINGS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = STILL_SETTINGS + 1;
+    pub const PAGES: u32 = TAA + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -340,6 +345,10 @@ mod ids {
     pub const TARGETS: u32 = PICK_GROUP + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
+    /// The uniform buffer of the compute passes' blocks. WebGL2 runs no compute pass, so nothing
+    /// uses these, and the graph's ids stay a table of one shape on both builders.
+    pub const COMPUTE: u32 = TEXTURE_ARRAYS + 1;
+    pub const COMPUTE_PIPELINES: u32 = 100;
     /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
     pub const SHADOW_SAMPLER: u32 = 1;
     /// The linear sampler of bloom's steps and of the final pass's bloom build.
@@ -368,7 +377,10 @@ mod ids {
     /// The color grading table's sampler that the final pass's still build owns.
     pub const STILL_LUT_SAMPLER: u32 = OUTPUT_LUT_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = STILL_LUT_SAMPLER + 1;
+    /// The linear sampler of temporal anti-aliasing's history.
+    pub const TAA_SAMPLER: u32 = STILL_LUT_SAMPLER + 1;
+    /// The samplers of materials' maps.
+    pub const SAMPLERS: u32 = TAA_SAMPLER + 1;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -445,8 +457,13 @@ mod ids {
         MOTION_FRAME_GROUPS + parity as u32 * RING + streamed
     }
 
-    /// The bind groups of materials' maps, after the motion pass's.
-    pub const TEXTURE_GROUPS: u32 = MOTION_FRAME_GROUPS + 2 * RING;
+    /// Group 0 of each compute pass. WebGL2 runs no compute pass, so nothing uses this band, and
+    /// it keeps the builder's table the same shape as the other path's.
+    pub const COMPUTE_GROUPS: u32 = MOTION_FRAME_GROUPS + 2 * RING;
+    /// The bind groups of temporal anti-aliasing's resolve and copy, after the compute passes'.
+    pub const TAA_GROUPS: u32 = COMPUTE_GROUPS + MAX_VIEWS as u32;
+    /// The bind groups of materials' maps, after temporal anti-aliasing's.
+    pub const TEXTURE_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
 }
 
 /// The group index of the decal pass's scene depth in the decal templates on WebGL2: after the
@@ -719,6 +736,11 @@ impl CpuCulledRenderer {
                             blank_color: ids::BLANK_PASS_COLOR,
                             blank_depth: ids::BLANK_PASS_DEPTH,
                         },
+                        compute: ComputePassIds {
+                            buffer: ids::COMPUTE,
+                            first_group: ids::COMPUTE_GROUPS,
+                            first_pipeline: ids::COMPUTE_PIPELINES,
+                        },
                         dof: DofIds {
                             buffer: ids::DOF,
                             sampler: ids::DOF_SAMPLER,
@@ -737,6 +759,11 @@ impl CpuCulledRenderer {
                             stored: ids::EXPOSURE_STORED,
                             first_group: ids::EXPOSURE_GROUPS,
                             compute: None,
+                        },
+                        taa: TaaIds {
+                            buffer: ids::TAA,
+                            sampler: ids::TAA_SAMPLER,
+                            first_group: ids::TAA_GROUPS,
                         },
                         view_copy: None,
                         transmission: TransmissionIds {
@@ -1683,6 +1710,12 @@ impl CpuCulledRenderer {
         ));
         self.settings.prepare_effect_maps();
         self.graph.set_exposure(self.settings.exposure_frame());
+        self.graph.set_taa(self.settings.taa_frame(
+            input.scene,
+            input.parity(),
+            input.canvas,
+            input.render_scale,
+        ));
         self.graph.set_effects(
             self.settings.effects(),
             self.settings.effect_joins(),
@@ -2425,6 +2458,8 @@ impl CpuCulledRenderer {
                 }
                 _ => Ok(()),
             },
+            // The CPU path draws every count that the page sets, so no count waits for a pass.
+            |_| Ok(()),
             |list| {
                 if motion_on {
                     motion_state.finish(list, input.parity(), skins)?;
@@ -2541,6 +2576,27 @@ fn upload_views(
 }
 
 impl FrameBuilder for CpuCulledRenderer {
+    fn account(&self, register: &mut null3d_core::memory::MemoryRegister) {
+        let mut layouts = null3d_core::memory::MemoryUse::default();
+        for layout in [&self.layout, &self.outlined, &self.scattering] {
+            layout.account(&mut layouts);
+        }
+        register.add(null3d_core::memory::area::LAYOUTS, layouts);
+        let mut casters = null3d_core::memory::MemoryUse::default();
+        self.casters.account(&mut casters);
+        register.add(null3d_core::memory::area::CASTERS, casters);
+        let size = std::mem::size_of::<(crate::frame::BucketKey, u32)>() as u64;
+        register.add(
+            null3d_core::memory::area::BUCKET_KEYS,
+            null3d_core::memory::MemoryUse::new(
+                self.key_counts.capacity() as u64 * size,
+                self.key_counts.len() as u64 * size,
+            ),
+        );
+        register.add(null3d_core::memory::area::CELLS, self.cells.memory_use());
+        self.lists.account(register);
+    }
+
     fn settings(&self) -> &SceneSettings {
         &self.settings
     }
@@ -2909,6 +2965,10 @@ impl FrameBuilder for CpuCulledRenderer {
         self.lists.list(frame)
     }
 
+    fn plan_epoch(&self) -> u32 {
+        self.graph.plan_epoch()
+    }
+
     fn check_graph(&mut self) -> Result<(), GraphError> {
         self.settings.prepare_effect_maps();
         self.settings.mark_shown_views();
@@ -2922,6 +2982,10 @@ impl FrameBuilder for CpuCulledRenderer {
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.dot()
+    }
+
+    fn two_step_report(&self) -> [u32; 5] {
+        self.graph.two_step_report()
     }
 
     fn reads_last_frame(&self) -> bool {

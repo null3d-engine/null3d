@@ -13,7 +13,7 @@
 //! engine's error table.
 
 use std::cell::{Cell, UnsafeCell};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use null3d_core::animation::{
@@ -33,6 +33,7 @@ use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, LoopExit, WorkerId
 use null3d_core::levels::Switch;
 use null3d_core::lights::{LightTable, kind as light_kind, value as light_value};
 use null3d_core::lines::{LineLook, LineMode};
+use null3d_core::memory::{AREA_COUNT as MEMORY_AREA_COUNT, MemoryRegister};
 use null3d_core::morph::MorphWeights;
 use null3d_core::occlusion::BlockerMesh;
 use null3d_core::scene::{CommandRing, SceneStorage, flags};
@@ -86,7 +87,8 @@ use null3d_render::ssr::Ssr;
 use null3d_render::subsurface;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::{
-    CanvasRect, Fullscreen, MAX_VIEWS, PassSource, View, ViewId, ViewNames, ViewTarget,
+    CanvasRect, Compute, ComputeBuffers, Fullscreen, MAX_VIEWS, PassSource, View, ViewId,
+    ViewNames, ViewTarget,
 };
 use wasm_bindgen::prelude::*;
 
@@ -199,6 +201,10 @@ struct Engine {
     lights: LightTable,
     snapshot: FrameSnapshot,
     renderer: Box<dyn FrameBuilder>,
+    /// What each table and allocator holds, for the stats overlay's development figures.
+    memory: MemoryRegister,
+    /// The register's figures as the page reads them: each area's reserved, used and peak bytes.
+    memory_values: Box<[f64]>,
     structure_changed: bool,
     /// True when the last recorded frame rebuilt its draw tables.
     rebuilt: bool,
@@ -581,6 +587,8 @@ pub fn init_engine(
         batches: BatchTable::with_capacity(max_batches),
         lights: LightTable::new(),
         snapshot: FrameSnapshot::with_capacity(UPLOAD_RANGES),
+        memory: MemoryRegister::new(),
+        memory_values: vec![0.0; MEMORY_AREA_COUNT * 3].into_boxed_slice(),
         renderer: if webgl2 {
             Box::new(CpuCulledRenderer::new(CpuCulledConfig {
                 canvas,
@@ -1238,6 +1246,44 @@ pub fn draw_list_words(frame: u32) -> u32 {
     value_with_engine(|e| Ok(e.renderer.list(frame).len() as u32))
 }
 
+/// The generation of the plan's texture list, which changes when a pass change makes the frame
+/// make some targets again. A frame's list recorded under an older generation names textures that
+/// a later plan replaced, so the thread that draws skips it.
+#[wasm_bindgen(js_name = planEpoch)]
+pub fn plan_epoch() -> u32 {
+    value_with_engine(|e| Ok(e.renderer.plan_epoch()))
+}
+
+// --- The memory register, which only development pages read ---
+//
+// Each table and allocator reports the bytes that it reserves, uses and has used at most. A report
+// runs only when the page asks for one, so a page that shows no development figures pays nothing.
+// The figures go into three numbers per area, in the order of `null3d_core::memory::area`, which
+// the page names (`packages/engine/src/shared/memory-area.ts`).
+
+/// Fills the register with what each table and allocator holds, and returns the address of three
+/// numbers per area: the bytes that it reserves, uses and has used at most.
+#[wasm_bindgen(js_name = updateMemoryRegister)]
+pub fn update_memory_register() -> u32 {
+    value_with_engine(|e| {
+        e.memory.begin();
+        e.scene.account(&mut e.memory);
+        e.batches.account(&mut e.memory);
+        e.renderer.account(&mut e.memory);
+        if let Some(animations) = &e.animations {
+            animations.account(&mut e.memory);
+        }
+        e.memory.report(&mut e.memory_values);
+        Ok(address(&e.memory_values[..]))
+    })
+}
+
+/// The number of memory areas that `updateMemoryRegister` reports.
+#[wasm_bindgen(js_name = memoryAreas)]
+pub fn memory_areas() -> u32 {
+    MEMORY_AREA_COUNT as u32
+}
+
 // --- Debug lines, which only development builds of the engine draw ---
 //
 // TypeScript writes each frame's points into the arrays whose addresses `debugLineArrays` gives,
@@ -1533,6 +1579,18 @@ pub fn batch_arrays(batch: u32, field: u32) -> u32 {
             batch_field::RANGES => address(batch.row_ranges()),
             _ => 0,
         })
+    })
+}
+
+/// Keeps every row of a batch whatever a view's frustum says, or culls its rows again.
+#[wasm_bindgen(js_name = setBatchUnculled)]
+pub fn set_batch_unculled(batch: u32, unculled: bool) -> u32 {
+    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
+        Ok(batch) => {
+            batch.set_unculled(unculled);
+            0
+        }
+        Err(error) => core_failure(error),
     })
 }
 
@@ -1836,6 +1894,40 @@ pub fn create_level_mesh(base: u32, indices: u32) -> u32 {
             .map_err(mesh_failure);
         drop(staging);
         added
+    })
+}
+
+/// Gives the live mesh `mesh` the `indices` triangles that TypeScript wrote into the staging words,
+/// which the call frees, in place of the triangles it drew. A staged level that arrives after its
+/// base replaces the base's triangles this way, so the objects that draw the base draw the finer
+/// geometry at once. The indices name the mesh's own vertices. Fails with the problem for a mesh
+/// that cannot take them: one that is split into parts, morphed, a level of its own, or drawn as
+/// lines. Returns 0 when the mesh takes the list.
+#[wasm_bindgen(js_name = replaceMeshIndices)]
+pub fn replace_mesh_indices(mesh: u32, indices: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let words = indices as usize;
+        if staging.len() < words {
+            return Err(fail(codes::BAD_ARRAYS, [0, 0]));
+        }
+        // SAFETY: the words are initialized and aligned, and every bit pattern is an index.
+        let list = unsafe { std::slice::from_raw_parts(staging.as_ptr(), words) };
+        let replaced = e
+            .renderer
+            .settings_mut()
+            .meshes_mut()
+            .replace_indices(mesh.checked_sub(1).unwrap_or(u32::MAX), list);
+        drop(staging);
+        match replaced {
+            Ok(()) => {
+                // The mesh's raycast tree held the old triangles.
+                e.queries.mesh_changed(mesh);
+                e.structure_changed = true;
+                Ok(0)
+            }
+            Err(error) => Ok(mesh_failure(error)),
+        }
     })
 }
 
@@ -3039,6 +3131,103 @@ pub fn add_fullscreen_pass(
     )
 }
 
+/// Adds a compute pass, through a pass that the render graph names `pass`, which runs the compiled
+/// WGSL of compute pipeline template `template` over the whole of a target that it names `target`:
+/// of `width` x `height` texels, or with a width of 0, of `scale` of the render size each way, 1,
+/// 0.5 or 0.25. It writes the target as a storage texture of `format`, a draw list format code,
+/// over a workgroup of `workgroup` invocations, packed one axis to a byte, and dispatches `counts`
+/// workgroups along each axis, packed the same way, or covers the target when every count is 0. It
+/// reads its uniforms at `effectValues`
+/// and its textures at `effectTextures`, in one frame of every `every`. With `afterScene` it
+/// records after the camera's passes, which it reads the scene color of. Returns the view's place,
+/// from 1, or 0 as `addPass` does.
+#[wasm_bindgen(js_name = addComputePass)]
+#[allow(clippy::too_many_arguments)]
+pub fn add_compute_pass(
+    pass: &str,
+    target_name: &str,
+    width: u32,
+    height: u32,
+    scale: f32,
+    every: u32,
+    template: u32,
+    format: u32,
+    workgroup: u32,
+    counts: u32,
+    after_scene: u32,
+    counts_buffer: u32,
+    instances_buffer: u32,
+    instances_bytes: u32,
+) -> u32 {
+    let target = ViewTarget {
+        size: (width > 0).then_some((width, height.max(1))),
+        halvings: halvings_of(scale),
+        every: every.max(1),
+        ..ViewTarget::default()
+    };
+    // The numbers arrive packed, one axis to a byte: the workgroup's three axes, and the three
+    // workgroup counts, which all read 0 when the pass covers its target.
+    let axis = |packed: u32, k: usize| (packed >> (8 * k)) & 0xff;
+    let workgroup = [axis(workgroup, 0), axis(workgroup, 1), axis(workgroup, 2)].map(|n| n.max(1));
+    let raw = [axis(counts, 0), axis(counts, 1), axis(counts, 2)];
+    let dispatch = (raw != [0, 0, 0]).then(|| raw.map(|n| n.max(1)));
+    add_view_of(
+        |e| {
+            let content = Compute {
+                template,
+                workgroup,
+                dispatch,
+                format,
+                after_scene: after_scene != 0,
+                values: *e.effect_values,
+                maps: effect_maps(e),
+                // A pass that writes an instance draw names its count word and its rows; a pass
+                // that writes a texture names neither.
+                buffers: (counts_buffer != 0).then_some(ComputeBuffers {
+                    counts: counts_buffer,
+                    instances: instances_buffer,
+                    instances_bytes,
+                }),
+            };
+            View::compute(content, target)
+        },
+        pass,
+        target_name,
+        "",
+    )
+}
+
+/// Gives the compute pass of view place `place`, from 1, the uniforms at `effectValues` and the
+/// textures at `effectTextures`, from the next frame on. A texture that shows the pass's own
+/// target, or closes a loop of passes, fails with the render graph's error, and the pass keeps
+/// what it had.
+#[wasm_bindgen(js_name = setComputeValues)]
+pub fn set_compute_values(place: u32) -> u32 {
+    with_engine(|e| {
+        let view = ViewId::from_place(place as usize);
+        let textures = e.effect_textures.map(Handle::from_raw);
+        let values = *e.effect_values;
+        let settings = e.renderer.settings_mut();
+        let Some(kept) = settings
+            .views()
+            .get(view.index())
+            .and_then(View::compute_pass)
+            .copied()
+        else {
+            return 0;
+        };
+        settings.set_compute_values(view, &values, &textures);
+        if let Err(error) = e.renderer.check_graph() {
+            let code = graph_failure(e, error);
+            let settings = e.renderer.settings_mut();
+            settings.set_compute_values(view, &kept.values, &kept.maps.textures);
+            let _ = e.renderer.check_graph();
+            return code;
+        }
+        0
+    })
+}
+
 /// Gives the full-screen pass of view place `place`, from 1, the uniforms at `effectValues` and
 /// the textures at `effectTextures`, from the next frame on. A texture that shows the pass's own
 /// target, or closes a loop of passes, fails with the render graph's error, and the pass keeps
@@ -3295,6 +3484,39 @@ pub fn render_graph_dot() -> String {
     // SAFETY: as in `with_engine`.
     let engine = unsafe { (*ENGINE.0.get()).as_mut() };
     engine.map_or_else(String::new, |e| e.renderer.graph_dot())
+}
+
+/// True while the development probe of the two-step pass is on, which `setDebugTwoStep` sets.
+static TWO_STEP_PROBE: AtomicBool = AtomicBool::new(false);
+
+/// The two-step answers of the last recorded frame. They are atomics because the page reads them
+/// while the sketch thread records frames: whether the frame wanted the two-step pass, declared it,
+/// had its second step built and drew it, then the render scale in thousandths.
+static TWO_STEP_VALUES: [AtomicU32; 5] = [const { AtomicU32::new(0) }; 5];
+
+/// Turns the development probe of the two-step pass on or off. Its answers stay zero until it is on,
+/// so a page that never asks for them prints nothing.
+#[wasm_bindgen(js_name = setDebugTwoStep)]
+pub fn set_debug_two_step(on: bool) {
+    TWO_STEP_PROBE.store(on, Ordering::Relaxed);
+}
+
+/// The two-step answers of the last recorded frame, as the address of five 32-bit words in engine
+/// memory: whether the frame wanted the two-step pass, declared it, had its second step built and
+/// drew it, then the render scale in thousandths. The address is zero, with no answers to read,
+/// until `setDebugTwoStep(true)`.
+#[wasm_bindgen(js_name = debugTwoStep)]
+pub fn debug_two_step() -> u32 {
+    if !TWO_STEP_PROBE.load(Ordering::Relaxed) {
+        return 0;
+    }
+    // SAFETY: as in `with_engine`.
+    let engine = unsafe { (*ENGINE.0.get()).as_ref() };
+    let report = engine.map_or([0; 5], |e| e.renderer.two_step_report());
+    for (word, value) in TWO_STEP_VALUES.iter().zip(report) {
+        word.store(value, Ordering::Relaxed);
+    }
+    TWO_STEP_VALUES.as_ptr() as usize as u32
 }
 
 /// Fits the main directional light's cascades to the camera's view again, after a camera with the
@@ -3756,6 +3978,76 @@ pub fn set_vertex_draw_counts(id: u32, vertices: u32, instances: u32) -> u32 {
     })
 }
 
+/// Makes a draw of at most `capacity` instances for the object in scene slot `slot`, whose
+/// instance count the GPU writes, and returns its id: 0 when the scene holds the most such draws
+/// already.
+#[wasm_bindgen(js_name = createFeatureInstances)]
+pub fn create_feature_instances(slot: u32, capacity: u32) -> u32 {
+    value_with_engine(|e| {
+        // The draw gets a bucket of its own, so the layout is rebuilt for the frame after it.
+        e.structure_changed = true;
+        e.renderer
+            .settings_mut()
+            .feature_instances_mut()
+            .create(slot, capacity)
+            .map_err(|_| out_of_memory(0))
+    })
+}
+
+/// Forgets a draw whose instance count the GPU writes. Its object draws nothing from then on.
+#[wasm_bindgen(js_name = destroyFeatureInstances)]
+pub fn destroy_feature_instances(id: u32) -> u32 {
+    with_engine(|e| {
+        // The draw's bucket goes with it, so the layout is rebuilt for the frame after.
+        e.structure_changed = true;
+        e.renderer
+            .settings_mut()
+            .feature_instances_mut()
+            .destroy(id);
+        0
+    })
+}
+
+/// Sets the count that a shadow view draws and that a page without compute sets for a draw whose
+/// instance count the GPU writes.
+#[wasm_bindgen(js_name = setFeatureInstanceCount)]
+pub fn set_feature_instance_count(id: u32, count: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .feature_instances_mut()
+            .set_count(id, count);
+        0
+    })
+}
+
+/// The id of the per-instance buffer that a draw whose instance count the GPU writes reads.
+#[wasm_bindgen(js_name = featureInstanceBuffer)]
+pub fn feature_instance_buffer(id: u32) -> u32 {
+    null3d_render::gpu_driven::feature_buffer_ids(id).0
+}
+
+/// The id of the count word that a draw whose instance count the GPU writes takes.
+#[wasm_bindgen(js_name = featureInstanceCountBuffer)]
+pub fn feature_instance_count_buffer(id: u32) -> u32 {
+    null3d_render::gpu_driven::feature_buffer_ids(id).1
+}
+
+/// Writes `count` per-instance rows from `values` at row `start`, as the engine's instance
+/// buffers hold them: three world-matrix rows, then the ids. Returns 0, or 1 for a draw that the
+/// values do not fit.
+#[wasm_bindgen(js_name = setFeatureInstanceRows)]
+pub fn set_feature_instance_rows(id: u32, start: u32, count: u32, values: &[f32]) -> u32 {
+    with_engine(|e| {
+        u32::from(
+            !e.renderer
+                .settings_mut()
+                .feature_instances_mut()
+                .set_rows(id, values, start, count),
+        )
+    })
+}
+
 /// Lets particle systems with a soft fade fade near the surfaces behind them, which copies the
 /// camera's opaque depth while one draws, or draws them with hard edges: the quality preset's soft
 /// particles.
@@ -3812,6 +4104,21 @@ pub fn set_auto_exposure(on: bool) -> u32 {
             compensation: value(place::AUTO_EXPOSURE_COMPENSATION),
         });
         e.renderer.settings_mut().set_auto_exposure(auto_exposure);
+        0
+    })
+}
+
+/// Turns temporal anti-aliasing on, a prototype, or off with a `feedback` of 0, from the next
+/// frame on. `feedback` is the history's share in thousandths, and `jitter` moves the camera by
+/// the sequence's sub-pixel offsets.
+#[wasm_bindgen(js_name = setTaa)]
+pub fn set_taa(feedback: u32, jitter: bool) -> u32 {
+    with_engine(|e| {
+        let taa = (feedback > 0).then(|| null3d_render::taa::Taa {
+            feedback: feedback.min(990) as f32 / 1000.0,
+            jitter,
+        });
+        e.renderer.settings_mut().set_taa(taa);
         0
     })
 }
@@ -4217,6 +4524,7 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
             intensity,
             blur,
             rotation,
+            sun_visibility: 1.0,
         }));
         0
     })
@@ -4285,9 +4593,11 @@ pub fn set_physical_sky(on: bool) -> u32 {
 
 // Makes cube texture `texture`, which a generator fills, a sky map: an environment map of the
 // scene's sky, which fills in the first frame after the generator ran and refreshes over the next
-// frames, one of its `stages` stages a frame, whenever the sky changes. Before the scene's first
-// sky background, the maps show the sky of the background's values, which TypeScript writes
-// first. Fails for a texture that is not live.
+// frames, one of its `stages` stages a frame, whenever the sky moves past a step that shows: half
+// a degree of its sun, a fiftieth of a color value, or a tenth of a cell of its clouds. A sky that
+// comes to rest fills once more, exactly. Before the scene's first sky background, the maps show
+// the sky of the background's values, which TypeScript writes first. Fails for a texture that is
+// not live.
 /// Makes a generated cube texture a map of the scene's sky.
 #[wasm_bindgen(js_name = addSkyMap)]
 pub fn add_sky_map(texture: u32, stages: u32) -> u32 {

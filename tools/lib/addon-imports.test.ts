@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
-import { addonImportProblems, importProblem } from './addon-imports.ts';
+import { join } from 'node:path';
+import { addonImportProblems, exampleImportProblem, importProblem } from './addon-imports.ts';
 import { fixture } from './fixture.ts';
 
 const ENGINE = '/repo/packages/engine';
+const EXAMPLES = '/repo/examples';
 
 describe('importProblem', () => {
 	test('allows the public entry points and other packages', () => {
@@ -41,8 +43,33 @@ describe('importProblem', () => {
 	});
 });
 
+describe('exampleImportProblem', () => {
+	test('refuses an import from a package into the examples', () => {
+		expect(
+			exampleImportProblem(
+				'/repo/packages/terrain/src/index.ts',
+				'../../../examples/addons/traffic-lanes/index.ts',
+				EXAMPLES,
+			),
+		).toContain('which no package may depend on');
+	});
+
+	test('allows another package and a file outside the examples', () => {
+		for (const specifier of [
+			'@null3d/engine',
+			'@null3d/controls',
+			'../../geometry/src/index.ts',
+			'./local.ts',
+		]) {
+			expect(
+				exampleImportProblem('/repo/packages/terrain/src/index.ts', specifier, EXAMPLES),
+			).toBeUndefined();
+		}
+	});
+});
+
 describe('addonImportProblems', () => {
-	test('reads add-on sources and the examples, and skips tests, tools and the engine', () => {
+	test('reads every package and the examples, and skips tests, declarations and installed packages', () => {
 		const root = fixture({
 			'packages/engine/src/internal.ts': "import '@null3d/engine/internal';",
 			'packages/cli/src/run.ts': "import '@null3d/engine/internal';",
@@ -50,18 +77,30 @@ describe('addonImportProblems', () => {
 			'packages/particles/src/index.ts':
 				"export const load = () => import('@null3d/engine/internal');",
 			'packages/particles/src/index.test.ts': "import '../../engine/src/internal.ts';",
+			'packages/particles/src/types.d.ts': "import '@null3d/engine/internal';",
+			'packages/terrain/src/copy.ts':
+				"import { lanes } from '../../../examples/addons/traffic-lanes/index.ts';",
 			'examples/demo/sketch.ts': "import { x } from '../../packages/engine/src/internal.ts';",
 			'examples/demo/node_modules/dep/index.js': "import '@null3d/engine/internal';",
 		});
 		try {
 			const { problems, files } = addonImportProblems(root);
-			expect(files).toBe(3);
+			expect(files).toBe(6);
 			expect(problems).toEqual([
 				'packages/particles/src/index.ts: imports @null3d/engine/internal, which is not a public entry point',
+				'packages/terrain/src/copy.ts: imports the examples (../../../examples/addons/traffic-lanes/index.ts), which no package may depend on',
 				"examples/demo/sketch.ts: imports the engine's source (../../packages/engine/src/internal.ts)",
 			]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('the repository', () => {
+	test('every add-on and example reaches the engine only through its public entry points', () => {
+		const { problems, files } = addonImportProblems(join(import.meta.dir, '../..'));
+		expect(problems).toEqual([]);
+		expect(files).toBeGreaterThan(0);
 	});
 });

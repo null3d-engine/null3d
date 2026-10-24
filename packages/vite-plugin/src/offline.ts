@@ -191,13 +191,7 @@ function namedFiles(files: readonly ListedFile[]): Map<string, Set<string>> {
 		const base = posix.basename(fileName);
 		byBase.set(base, [...(byBase.get(base) ?? []), fileName]);
 	}
-	const pattern = new RegExp(
-		[...byBase.keys()]
-			.sort((a, b) => b.length - a.length)
-			.map((base) => base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-			.join('|'),
-		'g',
-	);
+	const find = baseNamesIn([...byBase.keys()]);
 	const named = new Map<string, Set<string>>();
 	for (const file of files) {
 		if (file.text === undefined) {
@@ -205,11 +199,66 @@ function namedFiles(files: readonly ListedFile[]): Map<string, Set<string>> {
 			continue;
 		}
 		const found = new Set(file.loads);
-		for (const [base] of file.text.matchAll(pattern))
+		for (const base of find(file.text))
 			for (const name of byBase.get(base) ?? []) if (name !== file.fileName) found.add(name);
 		named.set(file.fileName, found);
 	}
 	return named;
+}
+
+/** A pattern that matches `text` as it stands. */
+const literal = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** A base name with an extension, from its last dot on. */
+const WITH_EXTENSION = /\.[^.]+$/;
+
+/** How many of a base name's last characters index it. */
+const TAIL = 16;
+
+/**
+ * Finds in a text each of `bases`, the base names of a build's files, wherever it stands: inside a
+ * longer name too, as one pattern of every base name finds it. Such a pattern grows with the
+ * build's files, and a build holds thousands of shader modules, so in Node it took a quarter of a
+ * build of the demos. So, when every name has an extension, the search looks only for the names'
+ * extensions. At each, it reads the characters that end there, finds the names with that ending,
+ * and checks each of them in place. That finds each name the pattern finds, and a name that
+ * overlaps another as well.
+ */
+export function baseNamesIn(bases: readonly string[]): (text: string) => string[] {
+	if (bases.length === 0) return () => [];
+	if (!bases.every((base) => WITH_EXTENSION.test(base))) {
+		const longestFirst = [...bases].sort((a, b) => b.length - a.length);
+		const pattern = new RegExp(longestFirst.map(literal).join('|'), 'g');
+		return (text) => [...text.matchAll(pattern)].map(([base]) => base);
+	}
+	const byTail = new Map<string, string[]>();
+	const tails = new Set<number>();
+	for (const base of new Set(bases)) {
+		const length = Math.min(base.length, TAIL);
+		const tail = base.slice(-length);
+		tails.add(length);
+		byTail.set(tail, [...(byTail.get(tail) ?? []), base]);
+	}
+	const extensions = [...new Set(bases.map((base) => base.slice(base.lastIndexOf('.'))))].sort(
+		(a, b) => b.length - a.length,
+	);
+	const ends = new RegExp(extensions.map(literal).join('|'), 'g');
+	return (text) => {
+		const found: string[] = [];
+		// An extension may begin another, as .js begins .json, so each one that the match begins
+		// ends a name of its own.
+		for (const match of text.matchAll(ends))
+			for (const extension of extensions) {
+				if (!match[0].startsWith(extension)) continue;
+				const end = match.index + extension.length;
+				for (const length of tails) {
+					if (length > end) continue;
+					for (const base of byTail.get(text.slice(end - length, end)) ?? [])
+						if (base.length <= end && text.startsWith(base, end - base.length)) found.push(base);
+				}
+			}
+		return found;
+	};
 }
 
 /** What a worker build's file holds, which the main bundle's copy of the file lacks. */
@@ -240,7 +289,7 @@ export function missingWorkerAssets(
 	const pattern = new RegExp(
 		`${names
 			.sort((a, b) => b.length - a.length)
-			.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+			.map(literal)
 			.join('|')}`,
 		'g',
 	);

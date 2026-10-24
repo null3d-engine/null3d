@@ -148,3 +148,7 @@ Ruling 20's other drops stand: GPU grass and hair stay out of the plan, and the 
 ## Addendum, 21 October 2026: M3-A11 refuses the temporal resolve
 
 M3-A11, the temporal resolve's second look, refused the resolve on 21 October 2026 ([D-200](D-206-temporal-resolve.md)). Ruling 24 therefore drops TAA. Ruling 15 drops the many lights' shipping, because their noise has no temporal cleanup. Ruling 16 drops the temporal upscaler. The resolve's prototype did not pass the engine's capture and live-toggle paths, and its WebGL2 cost was too high. The three.js mapping says that TAA, `TRAANode`, `TAAUNode` and `TemporalReprojectNode` have no equivalent.
+
+## Addendum, 24 October 2026: GPU grass comes back for Creek
+
+The owner ruled that Creek's hills are the "vegetation-heavy ground" that the addendum of 21 October names as the trigger for GPU grass ([D-241](D-241-vegetation-foundation.md)). GPU grass therefore returns to M3, inside the vegetation foundation add-on rather than as a content pack of its own. WebGPU makes and culls the blades in a compute pass and draws them through H2. WebGL2 draws grass tiles that the CPU builds into instance batches. Ruling 20's other drops stand, and hair stays on the post-1.0 roadmap.

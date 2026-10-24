@@ -173,20 +173,45 @@ const metal = materials.shader({ wgsl: worn, color: '#b0b4b8', textures: { detai
 ```
 
 - Sample a texture with the WGSL texture functions: `textureSample`, `textureSampleLevel`, `textureSampleBias`, `textureSampleGrad`, `textureGather` and `textureLoad`. `textureDimensions` and `textureNumLevels` work too. Pass the texture straight to the function. The engine keeps each texture as a layer of a texture array, so it adds the layer to each such call. A texture cannot go to a function of your own, so sample it where you need it.
+- `textureGather` draws on WebGPU alone: WebGL2's shader language has no gather, so a material that uses it fails to link there. Read the four texels with `textureLoad` where a material draws on both paths.
+- A texture array declares `var name: texture_2d_array<f32>;` instead, and the surface function picks the layer. Give the slot a texture of several layers, and each texture function takes the layer after the coordinates: `textureSampleLevel(facades, facadesSampler, uv, layer, 0.0)`. The layer is the texture's own, from 0 to its depth less 1, so one array serves every facade or window in a set and the shader chooses one for each pixel. `textureNumLayers(name)` gives the number of layers. A texture array takes one map slot and one number of the uniforms, as a 2D texture does.
 - A vertex offset samples textures too, with `textureSampleLevel` or `textureLoad`, as WGSL allows in a vertex shader. A height map then moves each vertex.
 - Each texture's sampler takes the `wrap` and `filter` options of the texture. The `colorSpace` option says whether sampling turns sRGB colors into linear ones, as for the maps of a standard material.
 - Until a texture's image is on the GPU, sampling it gives white: `vec4f(1.0)`. So does a texture that the WGSL declares and the `textures` option does not give. Multiply by a texture, and the material draws with its own values until the image arrives.
 - A material samples up to 6 textures. Each texture takes one of the 32 numbers of the uniforms, so a material with 2 textures has 30 numbers for its uniforms. On WebGL2 the engine's lighting takes 7 of a fragment shader's 16 texture units. A lit material with all 6 textures thus leaves 3 units free. When the maps and a material's textures together would pass a stage's 16 units, the engine refuses the material with E1209, before the device fails to link its shader.
 - The textures are fixed when the material is created. Make a second material for another set of textures.
-- A texture is 2D, with one layer: an image, a KTX2 file or data with a depth of 1. Data textures of `rgba16float` sample with filtering too.
+- A texture is 2D, with one layer: an image, a KTX2 file or data with a depth of 1. A texture array comes from `textures.fromData` with a `depth`, or from a KTX2 file that holds layers, and its layers all have the texture's size. Data textures of `rgba16float` sample with filtering too.
 - In TypeScript, the `textures` option takes only the names that the WGSL declares. A wrong name fails the type check.
 
-`materials.shader` throws E1216 for a texture name that the WGSL does not declare, and for a value that is not a texture of one layer. The build stops at these problems:
+A facade material samples one texture array of six window images, and picks the window for each pixel:
+
+```ts
+// sketch.ts
+const facade = /* wgsl */ `
+var facades: texture_2d_array<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let layer = clamp(i32(input.uv.x * 6.0), 0, 5);
+    let window = textureSampleLevel(facades, facadesSampler, input.uv, layer, 0.0).rgb;
+    s.baseColor *= window;
+    s.emissive = window * 0.4;
+    return s;
+}
+`;
+
+// In the setup:
+const facades = textures.fromData({ width: 64, height: 64, depth: 6, data: windowImages, colorSpace: 'srgb' });
+const wall = materials.shader({ wgsl: facade, textures: { facades } });
+```
+
+`materials.shader` throws E1216 for a texture name that the WGSL does not declare, for a value that is not a texture, and for a texture of several layers in a slot that a `texture_2d<f32>` declaration takes. The build stops at these problems:
 
 - A texture of another type, or a texture with `@group` or `@binding`.
 - A sampler that the WGSL declares itself.
 - A seventh texture.
 - A texture that does not go straight to a texture function.
+- `textureNumLayers` of a texture that the WGSL declares as a 2D texture.
 
 Full shaders take no textures in this version.
 

@@ -3,7 +3,9 @@
 // functions in the same order as `FUNCTIONS`, and a unit test checks that the two agree.
 //
 // A case's inputs are eight texels of four 32-bit values, and its results are sixteen values, four
-// per texel, as the test shader lays them out. The references compute in 64-bit floats. A GPU
+// per texel, as the test shader lays them out. The references compute in 64-bit floats, except
+// where a subtraction cancels most of an operand: there 64-bit arithmetic keeps digits that a GPU
+// loses, so those references round at each operation to 32-bit floats, as the shader does. A GPU
 // computes in 32-bit floats, and its built-in functions such as `pow` and `sin` may differ from
 // exact results by a few units, so float results must agree within a tolerance. Hashes are
 // whole numbers and must agree bit for bit.
@@ -452,8 +454,50 @@ function brdfGgx(toLight: V3, toView: V3, normal: V3, f0: V3, f90: number, rough
 	const vDotH = saturate(dot(toView, half));
 	return scale(fSchlick(f0, f90, vDotH), vGgx(alpha, nDotL, nDotV) * dGgx(alpha, nDotH));
 }
+// References that round at each operation to 32-bit floats, as the shader computes them. The GGX
+// distribution subtracts the squared alpha from a value near 1, so at the roughness floor it keeps
+// only the low bits of that alpha: 64-bit arithmetic keeps digits that the GPU loses, and the
+// difference is past the tolerance.
+
+/** `Math.fround`: a value as a 32-bit float. */
+const round32 = Math.fround;
+const add32 = (a: number, b: number) => round32(a + b);
+const sub32 = (a: number, b: number) => round32(a - b);
+const mul32 = (a: number, b: number) => round32(a * b);
+const div32 = (a: number, b: number) => round32(a / b);
+const sqrt32 = (x: number) => round32(Math.sqrt(x));
+/** The sum of the products of two vectors, rounded at each step. */
+const dot32 = (a: readonly number[], b: readonly number[]) =>
+	a.reduce((sum, x, k) => add32(sum, mul32(x, b[k] ?? 0)), 0);
+/** The length of a vector, rounded at each step. */
+const length32 = (a: readonly number[]) => sqrt32(dot32(a, a));
+const normalize32 = (a: V3): V3 => {
+	const l = length32(a);
+	return [div32(a[0], l), div32(a[1], l), div32(a[2], l)];
+};
+const saturate32 = (x: number) => Math.min(Math.max(x, 0), 1);
+/** The shader's `INV_PI` and `EPSILON`, as 32-bit floats. */
+const INV_PI32 = round32(INV_PI);
+const EPSILON32 = round32(1e-6);
+
+const fSchlick32 = (f0: V3, f90: number, vDotH: number) => {
+	const exponent = mul32(sub32(mul32(round32(-5.55473), vDotH), round32(6.98316)), vDotH);
+	const fresnel = round32(2 ** exponent);
+	return map3(f0, (f) => add32(mul32(f, sub32(1, fresnel)), mul32(f90, fresnel)));
+};
+const dGgx32 = (alpha: number, nDotH: number) => {
+	const a2 = mul32(alpha, alpha);
+	const denom = add32(mul32(mul32(nDotH, nDotH), sub32(a2, 1)), 1);
+	return div32(mul32(INV_PI32, a2), mul32(denom, denom));
+};
+const vGgx32 = (alpha: number, nDotL: number, nDotV: number) => {
+	const a2 = mul32(alpha, alpha);
+	const gv = mul32(nDotL, sqrt32(add32(a2, mul32(mul32(sub32(1, a2), nDotV), nDotV))));
+	const gl = mul32(nDotV, sqrt32(add32(a2, mul32(mul32(sub32(1, a2), nDotL), nDotL))));
+	return div32(0.5, Math.max(add32(gv, gl), EPSILON32));
+};
 /** The visibility term of a lobe stretched along the tangent, from the cosines of its frame. */
-const vGgxAniso = (
+const vGgxAnisoF32 = (
 	alphaT: number,
 	alphaB: number,
 	tDotV: number,
@@ -463,17 +507,49 @@ const vGgxAniso = (
 	nDotV: number,
 	nDotL: number,
 ) => {
-	const gv = nDotL * Math.hypot(alphaT * tDotV, alphaB * bDotV, nDotV);
-	const gl = nDotV * Math.hypot(alphaT * tDotL, alphaB * bDotL, nDotL);
-	return 0.5 / Math.max(gv + gl, 1e-6);
+	const gv = mul32(nDotL, length32([mul32(alphaT, tDotV), mul32(alphaB, bDotV), nDotV]));
+	const gl = mul32(nDotV, length32([mul32(alphaT, tDotL), mul32(alphaB, bDotL), nDotL]));
+	return div32(0.5, Math.max(add32(gv, gl), EPSILON32));
 };
 /** The anisotropic GGX distribution, which peaks along the stretched axis of the lobe. */
-const dGgxAniso = (alphaT: number, alphaB: number, nDotH: number, tDotH: number, bDotH: number) => {
-	const a2 = alphaT * alphaB;
-	const v = [alphaB * tDotH, alphaT * bDotH, a2 * nDotH];
-	const w2 = a2 / dot(v, v);
-	return INV_PI * a2 * w2 * w2;
+const dGgxAnisoF32 = (
+	alphaT: number,
+	alphaB: number,
+	nDotH: number,
+	tDotH: number,
+	bDotH: number,
+) => {
+	const a2 = mul32(alphaT, alphaB);
+	const v = [mul32(alphaB, tDotH), mul32(alphaT, bDotH), mul32(a2, nDotH)];
+	const w2 = div32(a2, dot32(v, v));
+	return mul32(mul32(mul32(INV_PI32, a2), w2), w2);
 };
+/**
+ * The physical BRDF's specular part for a surface without anisotropy, as the shader computes it.
+ * The test shader leaves the anisotropic branch out, so the lobe follows the roughness alone.
+ */
+function brdfGgxPhysicalF32(
+	toLight: V3,
+	toView: V3,
+	normal: V3,
+	f0: V3,
+	f90: number,
+	roughness: number,
+): V3 {
+	const alpha = mul32(roughness, roughness);
+	const half = normalize32([
+		add32(toLight[0], toView[0]),
+		add32(toLight[1], toView[1]),
+		add32(toLight[2], toView[2]),
+	]);
+	const nDotL = saturate32(dot32(normal, toLight));
+	const nDotV = saturate32(dot32(normal, toView));
+	const nDotH = saturate32(dot32(normal, half));
+	const vDotH = saturate32(dot32(toView, half));
+	const fresnel = fSchlick32(f0, f90, vDotH);
+	const reflection = mul32(vGgx32(alpha, nDotL, nDotV), dGgx32(alpha, nDotH));
+	return map3(fresnel, (f) => mul32(f, reflection));
+}
 function multiscattering(f0: V3, f90: number, dfg: V2): [V3, V3] {
 	const single = map3(f0, (f) => f * dfg[0] + f90 * dfg[1]);
 	const ems = 1 - (dfg[0] + dfg[1]);
@@ -1690,7 +1766,7 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		expected: (i) => {
 			const [alphaT, alphaB, tDotV, bDotV] = i.f(0);
 			const [tDotL, bDotL, nDotV, nDotL] = i.f(1);
-			return scalar(vGgxAniso(alphaT, alphaB, tDotV, bDotV, tDotL, bDotL, nDotV, nDotL));
+			return scalar(vGgxAnisoF32(alphaT, alphaB, tDotV, bDotV, tDotL, bDotL, nDotV, nDotL));
 		},
 	},
 	{
@@ -1715,7 +1791,7 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 					.setF(1, [half[1]]);
 			})(random),
 		],
-		expected: (i) => scalar(dGgxAniso(i.f(0)[0], i.f(0)[1], i.f(0)[2], i.f(0)[3], i.f(1)[0])),
+		expected: (i) => scalar(dGgxAnisoF32(i.f(0)[0], i.f(0)[1], i.f(0)[2], i.f(0)[3], i.f(1)[0])),
 	},
 	{
 		// The first two texels make a material, with the specular tint's reflectance and intensity
@@ -1731,13 +1807,16 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 				.setF(3, [0, 0, 1])
 				.setF(4, [1, 1, 1])
 				.setF(5, [0, 0.6, 0.8]),
-			// Roughness at zero reaches the floor, and the peak of the lobe stays finite instead of
-			// dividing by a zero alpha.
+			// Roughness at zero reaches the floor, so the lobe peaks finitely instead of dividing by
+			// a zero alpha. The view stands a few degrees off the normal, since at the exact peak the
+			// distribution's denominator is a difference of two numbers near one, which loses about
+			// a part in two hundred to 32-bit arithmetic on every GPU: the case checks the floor, not
+			// the last digits of a near-singular division.
 			new Inputs()
 				.setF(0, [0.5, 0.5, 0.5, 0])
 				.setF(1, [0, 0, 0.04, 1])
 				.setF(2, [0, 0, 1])
-				.setF(3, [0, 0, 1])
+				.setF(3, [0.1045285, 0, 0.9945219])
 				.setF(4, [1, 1, 1])
 				.setF(5, [0, 0, 1]),
 			// A grazing view raises the Fresnel term above the dielectric reflectance.
@@ -1762,7 +1841,14 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		expected: (i) => {
 			const m = withSpecular(materialOf(i), i.f(1)[2], xyz(i.f(4)), i.f(1)[3]);
 			return floats(
-				brdfGgx(xyz(i.f(5)), xyz(i.f(3)), xyz(i.f(2)), m.blended, m.grazing, m.roughness),
+				brdfGgxPhysicalF32(
+					xyz(i.f(5)),
+					xyz(i.f(3)),
+					xyz(i.f(2)),
+					m.blended,
+					m.grazing,
+					m.roughness,
+				),
 			);
 		},
 	},

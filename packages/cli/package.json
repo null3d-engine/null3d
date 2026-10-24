@@ -34,6 +34,7 @@
 		"bin",
 		"src",
 		"!src/**/*.test.ts",
+		"templates",
 		"vendor",
 		"dist/assets.wasm",
 		"LICENSE-MIT",

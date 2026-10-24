@@ -66,6 +66,25 @@ describe('networkProblems', () => {
 		expect(problems).toContain('uses WebSocket');
 	});
 
+	test('refuses a call through the global object, or a script importer', () => {
+		const root = fixture({
+			'packages/engine/src/page/engine.ts': 'fetch(a); globalThis.fetch(b);',
+			'packages/terrain/src/index.ts': 'window.fetch(a); self.fetch(b); importScripts(url);',
+		});
+		const problems = networkProblems(root).problems.join('\n');
+		expect(problems).toContain('packages/engine/src/page/engine.ts: has 2 fetch calls');
+		expect(problems).toContain('packages/terrain/src/index.ts: calls fetch');
+		expect(problems).toContain('packages/terrain/src/index.ts: uses importScripts');
+	});
+
+	test('refuses a socket address that the record does not name', () => {
+		const root = fixture({
+			'packages/engine/src/page/engine.ts':
+				"fetch(url); const hub = 'wss://push.example.net/live';",
+		});
+		expect(networkProblems(root).problems.join('\n')).toContain('names wss://push.example.net');
+	});
+
 	test('refuses an address whose host the record does not name', () => {
 		const root = fixture({
 			'packages/engine/src/page/engine.ts':

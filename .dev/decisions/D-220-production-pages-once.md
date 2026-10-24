@@ -52,6 +52,12 @@ In full run 39813231961, the one job took 18 minutes: 314 s for the build, 611 s
 - Three parts would take each part under 9 minutes. But the glTF and KTX2 tests load the engine test page too, so two parts would each build it. The two-part split does each piece of work once ([D-218](D-218-efficient-ci-jobs.md)).
 - The production server waits for its port, not the engine test page, since one part builds no engine test page. A part's run names its test files before `--project`, which takes every name that follows it, and its run of the tests that run alone passes with no tests, since the second part has none.
 
+## Update, 24 October 2026: the glTF tests in the second part
+
+- In run 40056066922 the first part took 11.7 minutes and the second 5.5. The first part's tests took 580 s of test time on its 2 workers. Of that, the engine tests took 304 s, the glTF tests 179 s and the KTX2 tests 68 s. Its four page builds took 205 s.
+- Of the glTF tests, only one check loads the engine test page: a page without glTF files downloads no part of the loader. That check is about the engine test page. So it moved to `engine.spec.ts`, beside the check that such a page downloads no first-use file. The loader's file patterns moved to `tests/lib/gltf-loader-files.ts`, which both files read.
+- `gltf.spec.ts` then loads only `gltf-files.html`, so the glTF tests and their page moved to the second part, and still no page builds twice. The first part keeps the engine, KTX2 and texture cache pages. The KTX2 tests stay there, since the policy and CDN tests load the KTX2 page too.
+
 ## Consequences
 
 - `tests/playwright.config.ts` reads the switch, whose name `tests/lib/server.ts` holds. `tools/shard-weights.ts` lists the tests with the switch at `skip`, as the shards run them.

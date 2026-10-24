@@ -270,6 +270,61 @@ pub struct View {
     probe_face: Option<u8>,
     /// What a full-screen pass draws, or `None` for a view of a scene.
     fullscreen: Option<Fullscreen>,
+    /// What a compute pass runs, or `None` for another view.
+    compute: Option<Compute>,
+}
+
+/// What a compute pass runs in place of a scene: the sketch's WGSL, as a compute pipeline, which
+/// fills its whole target as a storage texture. Materials, effects and other passes sample that
+/// target in the same frame, and the render graph orders the pass before them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Compute {
+    /// The compute pipeline template of the WGSL.
+    pub template: u32,
+    /// The invocations along each axis of a workgroup, as the shader declares them.
+    pub workgroup: [u32; 3],
+    /// The workgroup counts along each axis, or `None` to cover the target: its size divided by
+    /// the workgroup size, rounding up.
+    pub dispatch: Option<[u32; 3]>,
+    /// The format of the storage texture that the pass writes, or 0 for a pass that writes the
+    /// two buffers of an instance draw.
+    pub format: u32,
+    /// True when the pass records after the camera's passes: it reads the scene color, which
+    /// orders it there.
+    pub after_scene: bool,
+    /// Its uniforms.
+    pub values: [f32; EFFECT_FLOATS],
+    /// The textures that it samples.
+    pub maps: EffectMaps,
+    /// The instance draw's two buffers that the pass writes, or `None` for a storage texture.
+    pub buffers: Option<ComputeBuffers>,
+}
+
+/// The two buffers of an instance draw that a compute pass writes: the draw's count word and its
+/// per-instance rows, which the draw reads in the same frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ComputeBuffers {
+    /// The buffer of the draw's count word, one 32-bit word.
+    pub counts: u32,
+    /// The buffer of the draw's per-instance rows.
+    pub instances: u32,
+    /// The instance buffer's size in bytes.
+    pub instances_bytes: u32,
+}
+
+impl Compute {
+    /// The workgroup counts that fill a target of `size` texels: the explicit counts, or the size
+    /// divided by the workgroup size, rounding up, once along z.
+    pub fn workgroups(&self, size: (u32, u32)) -> [u32; 3] {
+        match self.dispatch {
+            Some(counts) => counts,
+            None => [
+                size.0.div_ceil(self.workgroup[0].max(1)),
+                size.1.div_ceil(self.workgroup[1].max(1)),
+                1,
+            ],
+        }
+    }
 }
 
 /// What a full-screen pass draws in place of a scene: the sketch's WGSL, built as a custom
@@ -331,6 +386,7 @@ impl Default for View {
             mirror: None,
             probe_face: None,
             fullscreen: None,
+            compute: None,
         }
     }
 }
@@ -418,6 +474,19 @@ impl View {
         }
     }
 
+    /// A compute pass, which fills the whole of `target` as a storage texture: of its own size, or
+    /// of the render size halved as many times as it says.
+    pub fn compute(compute: Compute, target: ViewTarget) -> Self {
+        Self {
+            compute: Some(compute),
+            target: ViewTarget {
+                whole: true,
+                ..target
+            },
+            ..Self::default()
+        }
+    }
+
     /// The face that a capture view of reflection probes draws, or `None` for another view.
     pub fn captured_face(&self) -> Option<u8> {
         self.probe_face
@@ -430,6 +499,15 @@ impl View {
 
     pub(crate) fn fullscreen_pass_mut(&mut self) -> Option<&mut Fullscreen> {
         self.fullscreen.as_mut()
+    }
+
+    /// What a compute pass runs, or `None` for another view.
+    pub fn compute_pass(&self) -> Option<&Compute> {
+        self.compute.as_ref()
+    }
+
+    pub(crate) fn compute_pass_mut(&mut self) -> Option<&mut Compute> {
+        self.compute.as_mut()
     }
 
     /// The plane that a mirror view mirrors the camera's view across, or `None` for another view.
@@ -714,5 +792,25 @@ mod tests {
             "a view that mirrors nothing keeps its size"
         );
         assert_eq!(plain.layers(), DEFAULT_LAYERS);
+    }
+
+    #[test]
+    fn a_compute_pass_covers_its_target_or_dispatches_the_counts_it_gives() {
+        let mut pass = Compute {
+            template: 0,
+            workgroup: [8, 4, 1],
+            dispatch: None,
+            format: 0,
+            after_scene: false,
+            values: [0.0; EFFECT_FLOATS],
+            maps: EffectMaps::NONE,
+            buffers: None,
+        };
+        // The counts round up, so the last workgroup of a row or column writes past the target's
+        // edge, which the shader tests against its own size.
+        assert_eq!(pass.workgroups((64, 48)), [8, 12, 1]);
+        assert_eq!(pass.workgroups((65, 1)), [9, 1, 1]);
+        pass.dispatch = Some([2, 3, 1]);
+        assert_eq!(pass.workgroups((64, 48)), [2, 3, 1]);
     }
 }
