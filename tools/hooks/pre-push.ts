@@ -139,12 +139,14 @@ export function changedCrates(
 
 /**
  * The unit tests that read every package, spec or crate of the repository, so a merge that adds one
- * can break them: the release guide's package table, the record of shipped network calls, the
- * timing specs' switch names, and CI's workflow against the scripts and files that its jobs read.
+ * can break them: the release guide's package table, the CDN build's add-ons, the record of shipped
+ * network calls, the timing specs' switch names, and CI's workflow against the scripts and files
+ * that its jobs read.
  * Each file takes a few seconds at most.
  */
 export const GUARD_TESTS = [
 	'tools/lib/release.test.ts',
+	'tools/lib/cdn.test.ts',
 	'tools/lib/network-use.test.ts',
 	'tests/lib/priority-setup.test.ts',
 	'tools/lib/ci-workflow.test.ts',
