@@ -38,4 +38,4 @@ Three.js's `TransformControls` gives the same protection with picker meshes that
 - `docs/api/controls.md` describes the gizmos and the drag controls, `docs/api/objects.md` the two getters, and the mapping's `gizmos` entry points at `api/controls`.
 - The examples gain the `gizmos` demo, which the image test manifest draws in hold mode.
 - `packages/controls/src/gizmo-drag.test.ts` compares a move and a scale with three.js's `TransformControls`, and works a turn's expected angle from the plane that both engines share.
-- `tests/image/gizmos.spec.ts` drives the handles with the mouse and with a finger through Chrome's input.
+- `tests/image/gizmos.spec.ts` drives the handles with the mouse and with a finger through Chrome's input, for a move, a turn and a scale. The finger's code does not depend on the mode, so the three tests share its path and each shows its own mode's arithmetic.

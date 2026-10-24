@@ -4,9 +4,13 @@ import {
 	baseOf,
 	changedCrates,
 	keepaliveSeconds,
+	LANDING_VARIABLE,
+	MILESTONE_REF,
+	milestoneRefusal,
 	parsePush,
 	plan,
 	pushToMain,
+	pushToMilestone,
 	SKIP_TRAILER,
 	skipReason,
 	sshHost,
@@ -34,6 +38,35 @@ describe('pushToMain', () => {
 		expect(pushToMain(parsePush(line('refs/heads/work')))).toBeUndefined();
 		expect(pushToMain(parsePush(line(MAIN, ZERO)))).toBeUndefined();
 		expect(pushToMain(parsePush(''))).toBeUndefined();
+	});
+});
+
+describe('the milestone branch', () => {
+	const line = (remoteRef: string, localSha = 'a1', remoteSha = 'b2') =>
+		`refs/heads/work ${localSha} ${remoteRef} ${remoteSha}`;
+
+	it('finds the push to m3-start, including one that deletes it', () => {
+		const refs = parsePush(`${line('refs/heads/work')}\n${line(MILESTONE_REF)}\n`);
+		expect(pushToMilestone(refs)?.remoteRef).toBe(MILESTONE_REF);
+		expect(pushToMilestone(parsePush(line(MILESTONE_REF, ZERO)))).toBeDefined();
+		expect(pushToMilestone(parsePush(line('refs/heads/work')))).toBeUndefined();
+	});
+
+	it('refuses a helper its push to m3-start, and names the variable for the landing', () => {
+		const message = milestoneRefusal(parsePush(line(MILESTONE_REF)), false);
+		expect(message).toContain(MILESTONE_REF);
+		expect(message).toContain(LANDING_VARIABLE);
+		expect(message).toContain('only the coordinator');
+	});
+
+	it('allows the same push when the coordinator sets the landing variable', () => {
+		expect(milestoneRefusal(parsePush(line(MILESTONE_REF)), true)).toBeUndefined();
+	});
+
+	it('leaves a push to another branch alone', () => {
+		const refs = parsePush(line('refs/heads/fix/platform-claim-gaps'));
+		expect(milestoneRefusal(refs, false)).toBeUndefined();
+		expect(milestoneRefusal(parsePush(''), false)).toBeUndefined();
 	});
 });
 

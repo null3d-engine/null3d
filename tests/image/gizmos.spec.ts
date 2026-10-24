@@ -234,4 +234,59 @@ test.describe('touch', () => {
 			0.05,
 		);
 	});
+
+	test('a finger turns the block as the mouse does', async ({ page }) => {
+		await open(page);
+		await setMode(page, 'rotate');
+		const at = await handles(page);
+		expect(at.takes.Y).toBe('rotate Y');
+		const before = await pose(page);
+		const from = at.points.Y as number[];
+		const cdp = await page.context().newCDPSession(page);
+		const finger = { x: from[0] as number, y: from[1] as number, id: 1 };
+		await touch(cdp, 'touchStart', [finger]);
+		expect((await until(page, (state) => state.dragging)).axis).toBe('Y');
+		for (let step = 1; step <= 4; step++) {
+			finger.x += 15;
+			finger.y += 12;
+			await touch(cdp, 'touchMove', [finger]);
+			await nextFrame(page, (await pose(page)).time);
+		}
+		const after = await pose(page);
+		await touch(cdp, 'touchEnd', []);
+		await until(page, (state) => !state.dragging);
+		const turned = Math.max(
+			...after.rotation.map((value, k) => Math.abs(value - (before.rotation[k] as number))),
+		);
+		expect(turned).toBeGreaterThan(0.05);
+		for (let k = 0; k < 3; k++)
+			expect(Math.abs((after.position[k] as number) - (before.position[k] as number))).toBeLessThan(
+				1e-4,
+			);
+	});
+
+	test('a finger scales the block as the mouse does', async ({ page }) => {
+		await open(page);
+		await setMode(page, 'scale');
+		const at = await handles(page);
+		expect(at.takes.X).toBe('scale X');
+		const before = await pose(page);
+		const from = at.points.X as number[];
+		const cdp = await page.context().newCDPSession(page);
+		const finger = { x: from[0] as number, y: from[1] as number, id: 1 };
+		await touch(cdp, 'touchStart', [finger]);
+		expect((await until(page, (state) => state.dragging)).axis).toBe('X');
+		for (let step = 1; step <= 4; step++) {
+			finger.x += 18;
+			finger.y -= 3;
+			await touch(cdp, 'touchMove', [finger]);
+			await nextFrame(page, (await pose(page)).time);
+		}
+		const after = await pose(page);
+		await touch(cdp, 'touchEnd', []);
+		await until(page, (state) => !state.dragging);
+		expect(after.scale[0] as number).toBeGreaterThan((before.scale[0] as number) * 1.1);
+		expect(Math.abs((after.scale[1] as number) - (before.scale[1] as number))).toBeLessThan(0.01);
+		expect(Math.abs((after.scale[2] as number) - (before.scale[2] as number))).toBeLessThan(0.01);
+	});
 });
