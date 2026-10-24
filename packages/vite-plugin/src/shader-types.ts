@@ -109,6 +109,9 @@ export interface CompiledTexture<Name extends string = string> {
 	/** The float of the material's row of custom values, or of the effect's uniforms, that holds
 	 * the texture's layer. */
 	readonly offset: number;
+	/** True for a declaration of a texture array, `var name: texture_2d_array<f32>;`, whose
+	 * layers the WGSL picks. */
+	readonly array?: boolean;
 }
 
 /**
@@ -136,7 +139,8 @@ export interface CompiledMaterial<
 	readonly uniforms: readonly {
 		readonly [Name in keyof Uniforms & string]: CompiledUniform<Name, Uniforms[Name]>;
 	}[keyof Uniforms & string][];
-	/** The textures that the WGSL declares as `var name: texture_2d<f32>;`, in order. */
+	/** The textures that the WGSL declares as `var name: texture_2d<f32>;` or
+	 * `var name: texture_2d_array<f32>;`, in order. */
 	readonly textures: readonly CompiledTexture<Textures>[];
 	/**
 	 * The standard material's variants with the WGSL's functions, or a full shader's, by name. A
@@ -229,7 +233,8 @@ export interface CompiledEffect<
 	/** True when the effect reads its input image at its own pixel alone and declares no
 	 * textures, so it joins the effect before it. */
 	readonly joins: boolean;
-	/** The textures that the WGSL declares as `var name: texture_2d<f32>;`, in order. */
+	/** The textures that the WGSL declares as `var name: texture_2d<f32>;` or
+	 * `var name: texture_2d_array<f32>;`, in order. */
 	readonly textures: readonly CompiledTexture<Textures>[];
 	/** The effect template's variants with the WGSL, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;

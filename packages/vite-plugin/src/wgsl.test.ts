@@ -393,6 +393,21 @@ fn effect(input: EffectInput) -> vec4f {
 		expect(material(await compileWgsl('src/stripes.wgsl', SURFACE, HINT)).uniforms).toEqual([]);
 	});
 
+	// A source that the compiler has not built before builds every variant, which takes longer than
+	// the default timeout on a busy machine.
+	it('lists a texture array, whose layer the shader picks', async () => {
+		const facades = `var facades: texture_2d_array<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor *= textureSampleLevel(facades, facadesSampler, input.uv, 2, 0.0).rgb;
+    return s;
+}
+`;
+		const built = material(await compileWgsl('src/facades.wgsl', facades, HINT));
+		expect(built.textures).toEqual([{ name: 'facades', offset: 31, array: true }]);
+	}, 60_000);
+
 	it('builds a vertex offset alone as a custom material', async () => {
 		const wave =
 			'fn vertexOffset(input: VertexInput) -> vec3f {\n    return input.normal * sin(input.uv.x);\n}\n';

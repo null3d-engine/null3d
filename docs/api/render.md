@@ -208,7 +208,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render, pos
 | `size` | The texture's size in pixels, as `[width, height]`. | Give `size` or `scale` |
 | `scale` | The texture's size as a share of the render size each way: `1`, `0.5` or `0.25`. The texture shrinks and grows with the render scale. | 1, without `size` |
 | `input` | The image that the pass reads: `'sceneColor'`, the scene's color as the camera's passes leave it, before custom effects and bloom, or `'outlineMask'`, the [outline](post.md#outlines)'s mask. | None: transparent black |
-| `textures` | The texture of each `var name: texture_2d<f32>;` that the WGSL declares, by name: textures from files or data, or other passes' textures from `textures.fromPass`. | None: white |
+| `textures` | The texture of each `var name: texture_2d<f32>;` that the WGSL declares, by name, or a texture of several layers for a `var name: texture_2d_array<f32>;` declaration: textures from files or data, or other passes' textures from `textures.fromPass`. | None: white |
 | `uniforms` | The first value of each field of the WGSL's `struct Uniforms`, by name. | 0 for each field |
 | `every` | The pass draws in one frame of every `every`, and the texture keeps its last image between. | 1: every frame |
 | `name` | The pass's name in `render.dumpGraph()` and errors. | `writes` |
