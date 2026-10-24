@@ -1468,19 +1468,99 @@ export function twoStepPlan(): PlanItem<Check>[] {
 /**
  * The splats add-on's streaming on each GPU path: a cloud cut into chunks that the draw takes as
  * they arrive, whose count the preset's budget caps. The page reports the splats that draw against
- * the budget, the frame rate, the first-frame time and the bytes that the page downloaded. The
- * capabilities page comes first, so a device without WebGPU skips that page.
+ * the budget, the frame rate, the first-frame time and the bytes that the page downloaded. Each path
+ * runs the whole cloud and a quarter of it at the same pixel count, so the two show whether the
+ * cost follows the count or the screen's fill. The capabilities page comes first, so a device
+ * without WebGPU skips that page.
  */
 export function splatsPlan(): PlanItem<Check>[] {
 	return [
 		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
-		...(['webgpu', 'webgl2'] as const).map((tier) =>
+		...(['webgpu', 'webgl2'] as const).flatMap((tier) => [
 			pageItem(
 				`splats-stream-${tier}`,
 				'splats-stream',
 				{ kind: 'probe', tier },
 				{ switches: [`gpu=${tier}`, 'splats=400000', 'seconds=3'], timeoutSeconds: 180 },
 			),
+			pageItem(
+				`splats-quarter-${tier}`,
+				'splats-stream',
+				{ kind: 'probe', tier },
+				{ switches: [`gpu=${tier}`, 'splats=100000', 'seconds=3'], timeoutSeconds: 180 },
+			),
+		]),
+	];
+}
+
+/** The demos that the vegetation plan times on each device. */
+const VEGETATION_DEMOS = ['creek', 'forest'] as const;
+/**
+ * The GPU paths of the vegetation plan's pages, with the tier that each draws on. A device that
+ * offers compatibility mode only runs that path in place of the core WebGPU one.
+ */
+const VEGETATION_PATHS = [
+	['webgpu', 'webgpu'],
+	['compat', 'webgpu'],
+	['webgl2', 'webgl2'],
+] as const;
+/** The presets that each demo runs at, in the order that the plan runs them. */
+const VEGETATION_PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
+/**
+ * How long one page of the vegetation plan may take: a showcase scene loads its models through the
+ * cloud's tunnel, builds its detail at the preset, draws its first frame, measures the frames, and
+ * then waits for the overlay's figures.
+ */
+const VEGETATION_TIMEOUT_SECONDS = 900;
+
+/**
+ * Creek and the forest demo at every preset on each GPU path, for M3-V1's vegetation budgets: the
+ * frame interval, CPU time per frame, GPU time per pass, the triangles drawn and the memory at a
+ * fixed preset. Each page fixes its path and its preset, so the start-up check cannot lower either.
+ * The whole dress of both demos ships at one preset, so the figures compare across presets, and a
+ * page that a device cannot run is skipped by the capabilities page's report.
+ */
+export function vegetationPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+	];
+	for (const demo of VEGETATION_DEMOS)
+		for (const preset of VEGETATION_PRESETS)
+			for (const [path, tier] of VEGETATION_PATHS)
+				items.push(
+					pageItem(
+						`vegetation-${demo}-${preset}-${path}`,
+						'demo-device',
+						{ kind: 'probe', tier },
+						{
+							switches: [
+								`gpu=${path}`,
+								`demo=${demo}`,
+								`preset=${preset}`,
+								// The governor's target stays at a rate that no frame misses, so it holds the
+								// whole render scale and each preset's own cost shows.
+								'target-fps=1',
+								'seconds=5',
+							],
+							timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
+						},
+					),
+				);
+	return items;
+}
+
+/**
+ * Procedural tree generation in a worker, for M3-V1's budgets: each species at each preset's
+ * detail, generated for several seeds, with the triangles, the vertices and the bytes of each
+ * variant. It draws nothing and asks for no GPU path, so every device runs it.
+ */
+export function treeGenerationPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(
+			'tree-generation',
+			'tree-generation',
+			{ kind: 'probe', tier: 'webgl2' },
+			{ switches: ['seeds=6'], timeoutSeconds: 120 },
 		),
 	];
 }
@@ -2055,6 +2135,8 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	sky: skyPlan,
 	demos: demosPlan,
 	splats: splatsPlan,
+	vegetation: vegetationPlan,
+	'tree-generation': treeGenerationPlan,
 	reflection: reflectionPlan,
 	occlusion: occlusionPlan,
 	'gpu-occlusion': gpuOcclusionPlan,
