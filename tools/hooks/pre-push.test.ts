@@ -162,8 +162,19 @@ describe('guardSteps', () => {
 });
 
 describe('landingSteps', () => {
-	const lanes = (files: string[]) =>
-		landingSteps(files, CRATES, true).map((step) => [step.lane, step.command.join(' ')]);
+	const lanes = (files: string[], withCrateTests = true) =>
+		landingSteps(files, CRATES, true, withCrateTests).map((step) => [
+			step.lane,
+			step.command.join(' '),
+		]);
+
+	it('runs only the guards unless the crate tests are asked for', () => {
+		const guards = guardSteps().map((step) => [step.lane, step.command.join(' ')]);
+		expect(lanes(['crates/null3d-render/src/textures.rs'], false)).toEqual(guards);
+		expect(landingSteps(['crates/null3d-render/src/textures.rs'], CRATES, true)).toEqual(
+			guardSteps(),
+		);
+	});
 
 	it('runs only the guards for a landing that changes no Rust', () => {
 		const guards = guardSteps().map((step) => [step.lane, step.command.join(' ')]);

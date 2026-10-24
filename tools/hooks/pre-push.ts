@@ -4,8 +4,9 @@
 // the guards that read the whole repository, which a merge can break with no conflict: the decision
 // records' numbers, and the unit tests that hold the release guide, the shipped network calls and
 // the timing specs' switches to every package and spec in the tree. They take seconds, where the
-// unit suite takes minutes, and without them each such fault showed only a CI run later. A landing
-// that changes Rust also runs the tests of the crates it changes, in the queue's CPU lane. Any other
+// unit suite takes minutes, and without them each such fault showed only a CI run later. With
+// NULL3D_LANDING_CRATE_TESTS=1, a landing that changes Rust also runs the tests of the crates it
+// changes, in the queue's CPU lane, which can wait long on a loaded machine. Any other
 // branch only saves work, so the hook runs nothing for it. A push to main runs those guards too,
 // and first checks the commits it adds:
 //   1. their messages and trailers, with commitlint and check-trailers.ts over main's commit before
@@ -231,19 +232,25 @@ export function crateTests(
 	};
 }
 
+/** The variable that asks a landing's push to test the crates it changes as well. */
+export const LANDING_CRATE_TESTS = 'NULL3D_LANDING_CRATE_TESTS';
+
 /**
  * The steps of a landing on the milestone branch that changes `files`: the guards over the tree,
- * then, when the landing changes Rust, the tests of the crates it changes, in the queue's CPU lane.
- * A landing that changes no Rust pays nothing more than the guards. The whole workspace is neither
- * checked nor tested, as main's push does: a landing's merge can still break a crate it changed, as
- * a depth-reading material's textures broke a render test on 25 October 2026, which only CI found.
+ * and, when `crateTests` asks for them and the landing changes Rust, the tests of the crates it
+ * changes, in the queue's CPU lane. The guards take seconds. The crate tests are opt-in: on a loaded
+ * machine the CPU lane's slots stay busy for an hour, and on 25 October 2026 a landing's push waited
+ * there 27 minutes without starting cargo, until its timeout killed the push and left the hook
+ * waiting. CI's Rust tests still catch a crate's fault, one run after the landing.
  */
 export function landingSteps(
 	files: readonly string[],
 	crates: ReadonlyMap<string, string>,
 	nextest: boolean,
+	withCrateTests = false,
 ): Step[] {
-	const tests = touchesRust([...files]) ? crateTests(files, crates, nextest) : undefined;
+	const tests =
+		withCrateTests && touchesRust([...files]) ? crateTests(files, crates, nextest) : undefined;
 	return tests ? [...guardSteps(), tests] : guardSteps();
 }
 
@@ -339,7 +346,13 @@ function main(): void {
 		const files = NO_COMMIT.test(landing.remoteSha)
 			? []
 			: git('diff', '--name-only', landing.remoteSha, landing.localSha).split('\n').filter(Boolean);
-		const steps = landingSteps(files, workspaceCrates(), touchesRust(files) && hasNextest());
+		const withCrateTests = process.env[LANDING_CRATE_TESTS] === '1';
+		const steps = landingSteps(
+			files,
+			workspaceCrates(),
+			withCrateTests && touchesRust(files) && hasNextest(),
+			withCrateTests,
+		);
 		console.log('pre-push: checking the landing on the milestone branch');
 		runSteps(steps, 'the milestone branch', jobQueue());
 		return;
