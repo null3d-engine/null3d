@@ -15,6 +15,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		"`bloomLevel` in `packages/engine/src/scene/effects.ts`; the lens kit's streak reads level 3 of bloom's chain, with the `lens-streak` picture on both paths; `docs/api/post.md`",
 	'M3-A6':
 		'`setDrawRange` in `packages/engine/src/scene/scene.ts`; the `lod-range`, `lod-range-batch` and `lod-hide` pictures on every tier; D-211',
+	'M3-A3':
+		'A custom material declares `texture_2d_array<f32>` and picks the layer in each texture function: `packages/vite-plugin/src/shader-types.ts`, the docs `packages/engine/docs/guides/custom-shaders.md` and `custom-passes.md`; D-239',
 	'M3-A8':
 		'Grading controls in `packages/engine/src/scene/post.ts`; the Skyway pictures exercise them',
 	'M3-G2':
