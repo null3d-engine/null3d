@@ -59,7 +59,7 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-E7':
 		'`fn lobe(input: LobeInput) -> vec3f` in `crates/null3d-shaders/src/material.rs` and `crates/null3d-shaders/wgsl/lit.wgsl`, called for the main light; `crates/null3d-shaders/tests/material.rs` builds a lobe on both paths and refuses a wrong signature; the car paint uses it; D-252',
 	'M3-B5':
-		"`examples/addons/car-paint/` makes the flakes with Deliot and Belcour's glint model: `paint.wgsl` counts the facets in the pixel footprint that reflect the main light, through the lobe hook; `crates/null3d-shaders/tests/material.rs` builds the shipped WGSL on both paths; the `car-paint` pictures on every tier in both sets; D-255",
+		"`examples/addons/car-paint/` makes the flakes with Deliot and Belcour's glint model: `paint.wgsl` counts the facets in the pixel footprint that reflect the main light, from each flake cell's own random value and drawn from the Poisson form of the binomial, through the lobe hook. Three pictures moved 1.77 to 2.34 per cent of their pixels on every tier in both sets, and the demo stayed inside tolerance; the first draw was rejected for blocky patches and is recorded with the fix. `crates/null3d-shaders/tests/material.rs` builds the shipped WGSL on both paths; D-255",
 	'M3-G4':
 		"`transmissionMap` and `thicknessMap`: `packages/engine/src/scene/resources.ts`, the shaders' thickness reads",
 	'M3-K1': '`scene.createView({ camera, rect })`: `packages/engine/src/scene/scene.ts`',

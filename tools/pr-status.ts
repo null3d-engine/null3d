@@ -46,7 +46,6 @@ const INCOMPLETE = new Set([
 	'M3-L3',
 	'M3-R12',
 	'M3-R22',
-	'M3-E7',
 	'M3-L2',
 	'M3-L4',
 	'M3-A1',
@@ -55,7 +54,6 @@ const INCOMPLETE = new Set([
 	'M3-A9',
 	'M3-A10',
 	'M3-A11',
-	'M3-B5',
 	'M3-R1',
 	'M3-O1',
 	'M3-G1',
@@ -119,8 +117,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-A10': 'no GPU cost was taken on an iPad or a phone-class device',
 	'M3-A11':
 		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
-	'M3-B5':
-		"the flakes are one random tilt per cell rather than the plan's glints, and no cost per preset is recorded",
 	'M3-B6': 'the real-light option lights a fixed share of the cars, not the nearest ones',
 	'M3-E10':
 		'a sky layer draws into neither the environment map nor the CPU sky light, and D-242 drops both without a ruling',
@@ -137,8 +133,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
 	'M3-R21':
 		'the picture step does not read the heavy-test jobs, so the screens and skyway pictures are not gated; the fix is on a helper branch',
-	'M3-E7':
-		"the lobe hook is landed and its wrong signature is refused, but the task's proof is car paint's glints, which are on a branch with their pictures still owed",
 	'M3-V1':
 		'Creek has no WebGPU figure on any device, and no vegetation task after it has its own budget per preset',
 	'M3-V3': 'the Mac, iPad and phone GPU time and memory are not recorded',
