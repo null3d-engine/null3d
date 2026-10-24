@@ -44,6 +44,13 @@ export interface VideoTextureResult {
 /** How far one channel of the video's half may sit from the same channel of the data's half. */
 export const VIDEO_TOLERANCE = 24;
 
+/**
+ * The most bytes a frame may write to the GPU while its video is paused. The engine writes a little
+ * of its own every frame, such as the values that a draw reads, and a paused video adds nothing:
+ * this bound holds those writes and is far below one frame of a video.
+ */
+const PAUSED_ALLOWANCE = 16 * 1024;
+
 /** The largest difference of one channel between two colours. */
 function channelGap(a: readonly number[], b: readonly number[]): number {
 	let gap = 0;
@@ -67,8 +74,11 @@ export function videoTextureProblems(result: VideoTextureResult): string[] {
 		problems.push(
 			`a frame uploaded ${kib(playing.p99)}, over the ${kib(budget)} that one frame may upload`,
 		);
-	if (paused.p99 > 0)
-		problems.push(`the texture uploaded ${paused.p99} bytes in a frame while its video was paused`);
+	const pausedLimit = Math.max(PAUSED_ALLOWANCE, Math.round(playing.p99 / 32));
+	if (paused.p99 > pausedLimit)
+		problems.push(
+			`the texture uploaded ${paused.p99} bytes in a frame while its video was paused, past the ${pausedLimit} bytes that the engine's own writes take in a frame`,
+		);
 	if (playing.p99 > 0 && width > 0 && height > 0) {
 		const widest = Math.max(frame.width, frame.height);
 		const shape = frame.width / Math.max(1, frame.height);
