@@ -65,8 +65,13 @@ The test that this hypothesis names, before a capture, is cheap. Run the Low pag
 which caps the rate that the drawing thread holds. If a capped frame rate runs, the fault
 follows the pace of presentation. If it still wedges, pace is out.
 
-The next step is therefore that test and then a capture of the frame on a device, not another
-bisect in the cloud. WebKit's WebGPU inspector needs a Mac running Safari's Develop menu over a
+That test has now run, and pace is out. The Low page with `?fps=15` on the iPad's WebGPU drew its
+first frame, never fired its own 12 second timer, and reloaded 29 seconds later; a second attempt did
+the same at 19 seconds. Neither attempt reached the page's own step that reports a drawn frame. So
+capping the rate does not lift the wedge, and the fault does not follow how fast the drawing thread
+presents.
+
+The next step is therefore a capture of the frame on a device, not another bisect in the cloud. WebKit's WebGPU inspector needs a Mac running Safari's Develop menu over a
 cable.
 
 ## Safari 27.0: `atomicCompareExchangeWeak` does not compile
