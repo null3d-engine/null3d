@@ -6,6 +6,37 @@ Read the `null3d-develop` skill before you change the scene. If the project has
 `.claude/skills/null3d-develop/SKILL.md`, read that file first. If it does not, read the engine docs
 in `node_modules/@null3d/engine/docs/`. They match the installed version.
 
+## Before you build a feature
+
+A request may need a capability that null3D has not built. Settle its state before you design the
+scene.
+
+1. Read the docs page for the feature. Its status says whether the call exists. A `planned` page or
+   a part marked "not built yet" is not in this version: tell the user, and use the workaround the
+   page gives. Never invent an option in its place.
+2. Check the foundation add-ons below before you write a generator, control, effect or loader of
+   your own. Each is the one place that feature lives, and it gets fixes with the engine. Do not
+   write a second version of one.
+3. If nothing covers the need, build it above the public API: a custom material, a vertex offset, a
+   post effect or a render pass. Keep that code in the project, and add no property or call that
+   imitates engine API, because it breaks on the next update.
+4. Say in your summary what the engine lacks, what you used instead, and what a later version
+   changes.
+
+| Need | Package | Status |
+| --- | --- | --- |
+| Orbit, map, fly and first-person cameras, and drag, rotate or scale handles | `@null3d/controls` | built |
+| Torus knots, polyhedra, lathes, extrusions and tubes | `@null3d/geometry` | built |
+| Far objects as camera-facing cards, or one mesh per far grid cell | `@null3d/impostors` | built |
+| Fire, smoke, sparks, rain and other particle effects | `@null3d/particles` | built |
+| Gaussian splats from a scan or a training run | `@null3d/splats` | built |
+| Ground from a height field | `@null3d/terrain` | built |
+| Rigid bodies, joints and character movement | the physics add-on | not built yet; run Rapier or cannon-es in the sketch worker |
+| Text in the scene | the MSDF text add-on | not built yet; use HTML labels |
+| Water with waves and foam | `@null3d/water` | not built yet; use a custom material and a reflection pass |
+| Trees, shrubs, grass and wind | the vegetation add-on | not built yet |
+| three.js look modes for a port | `@null3d/three-compat` | not built yet; use the closest core setting |
+
 ## Rules
 
 1. Read the docs page before you call an API. A page whose status is `planned` describes an API
