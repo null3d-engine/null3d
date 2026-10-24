@@ -6,7 +6,7 @@
 mod common;
 
 use common::World;
-use null3d_gpu::drawlist::{Op, format};
+use null3d_gpu::drawlist::{Op, format, template};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::background::{Background, BackgroundSource, Sky};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
@@ -29,7 +29,7 @@ fn stages(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32, [f32; 3])> {
         .iter()
         .filter(|(op, _)| *op == Op::SkyMapStep)
         .map(|(_, o)| {
-            assert_eq!(o.len(), 20, "a stage takes 20 words");
+            assert_eq!(o.len(), 29, "a stage takes 29 words");
             assert_eq!(o[3], 0, "the analytic sky names no panorama");
             let sun = [4, 5, 6].map(|k| f32::from_bits(o[k]));
             (o[0], o[1], o[2], sun)
@@ -426,4 +426,246 @@ fn a_day_cycle_draws_the_sky_map_only_for_the_frames_its_sun_steps() {
         );
     }
     println!("sky map fills, at 60 frames a second:\n{report}");
+}
+
+/// The words of each stage that a frame recorded.
+fn stage_words(commands: &[(Op, Vec<u32>)]) -> Vec<Vec<u32>> {
+    commands
+        .iter()
+        .filter(|(op, _)| *op == Op::SkyMapStep)
+        .map(|(_, o)| o.clone())
+        .collect()
+}
+
+/// The stages that `count` frames record between them.
+fn stages_in(world: &mut World, mock: &mut MockBackend, count: usize) -> usize {
+    (0..count).map(|_| stages(&step(world, mock)).len()).sum()
+}
+
+/// Steps a frame, and finishes the reads that it left in flight, as the thread that draws does when
+/// it raises their slots a frame or two later.
+fn step(world: &mut World, mock: &mut MockBackend) -> Vec<(Op, Vec<u32>)> {
+    let commands = world.step(mock, false);
+    mock.finish_reads();
+    commands
+}
+
+/// The stages of each recorded frame, by the stage that each command names.
+fn stage_number(commands: &[(Op, Vec<u32>)]) -> Vec<u32> {
+    commands
+        .iter()
+        .filter(|(op, _)| *op == Op::SkyMapStep)
+        .map(|(_, o)| o[2])
+        .collect()
+}
+
+/// Runs frames until the map starts no fill for longer than a layer's grace, which spends the
+/// fills that a layer whose light never lands makes. Without a GPU, no capture lands, so every test
+/// of a layer's values spends them first.
+fn settle_with_layer(world: &mut World, mock: &mut MockBackend) {
+    let mut quiet = 0;
+    let mut frames = 0;
+    while quiet <= LAYER_GRACE as usize && frames < 200 {
+        let stages = stage_number(&step(world, mock));
+        quiet = if stages.is_empty() { quiet + 1 } else { 0 };
+        frames += 1;
+    }
+}
+
+/// The fills that a map makes for a layer whose light never lands, and the quiet frames between
+/// them, as `SkyMaps` counts them.
+const LAYER_RETRIES: u8 = 3;
+const LAYER_GRACE: u8 = 4;
+
+/// The words of a stage's command that name the layer's build of the map's shader, the first of its
+/// values, and the buffer that a light capture lands in, as `SkyMaps` lays them out.
+const LAYER_WORD: usize = 20;
+const LAYER_VALUES: usize = 21;
+const LIGHT_BUFFER_WORD: usize = 28;
+
+/// The layer's four cloud values, the share of the sun that it hides, its opacity and its clock,
+/// from the words of a stage's command.
+fn layer_values(words: &[u32]) -> [f32; 7] {
+    std::array::from_fn(|k| f32::from_bits(words[LAYER_VALUES + k]))
+}
+
+/// A layer over the test's sky, with the templates that its compiled WGSL would take.
+fn layer(template: u32, map: u32, refresh: f32) -> null3d_render::background::SkyLayer {
+    null3d_render::background::SkyLayer {
+        template,
+        map,
+        opacity: 0.75,
+        sun: 0.25,
+        refresh,
+    }
+}
+
+/// The sky of the test with its clock at `time`.
+fn sky_at(time: f32) -> Background {
+    let mut background = sky(sun_at(45.0));
+    if let BackgroundSource::Sky(ref mut values) = background.source {
+        values.time = time;
+    }
+    background
+}
+
+/// Sets the frame's clock, which a layer over the sky moves with.
+fn set_clock(world: &mut World, time: f32) {
+    let frame = world.frame;
+    world
+        .renderer
+        .settings_mut()
+        .set_clock(time, 1.0 / 60.0, frame);
+}
+
+#[test]
+fn a_sky_layer_fills_the_map_with_itself_and_captures_its_light() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    filled_map(&mut world, &mut mock, sky(sun_at(45.0)), STAGES);
+    // A steady sky with no layer records no stage.
+    assert_eq!(stages_in(&mut world, &mut mock, 2), 0);
+
+    // The layer arrives: the map fills again from its first stage, drawing the sky with the layer's
+    // own build of the map's shader, and with the core sky's clouds and the layer's values.
+    world.renderer.settings_mut().set_sky_layer(
+        Some(layer(
+            template::CUSTOM_FIRST,
+            template::CUSTOM_FIRST + 1,
+            0.0,
+        )),
+        7,
+    );
+    let commands = step(&mut world, &mut mock);
+    let stages = stage_words(&commands);
+    assert_eq!(stages.len(), 1, "the fill starts one stage");
+    let words = &stages[0];
+    assert_eq!(words[2], 0);
+    assert_eq!(words[LAYER_WORD], template::CUSTOM_FIRST + 1);
+    let shown = Sky {
+        sun_position: sun_at(45.0),
+        cloud_coverage: 0.0,
+        ..Sky::default()
+    };
+    assert_eq!(
+        layer_values(words),
+        [
+            shown.cloud_coverage,
+            shown.cloud_density,
+            shown.cloud_elevation,
+            shown.cloud_scale,
+            0.25,
+            0.75,
+            0.0,
+        ],
+        "the sky's clouds, the sun's share, the opacity and the clock"
+    );
+    assert_eq!(
+        words[LIGHT_BUFFER_WORD], 0,
+        "the first stage captures nothing"
+    );
+
+    // The stages run to the last, which copies the map's levels in and finds its light in them: it
+    // names a buffer of the ring, and the read of that buffer into engine memory follows it.
+    for stage in 1..STAGES {
+        let commands = step(&mut world, &mut mock);
+        let stages = stage_words(&commands);
+        assert_eq!(stages.len(), 1, "stage {stage}");
+        assert_eq!(stages[0][2], stage);
+        assert_eq!(stages[0][LAYER_WORD], template::CUSTOM_FIRST + 1);
+        if stage < STAGES - 1 {
+            assert_eq!(stages[0][LIGHT_BUFFER_WORD], 0);
+            assert!(commands.iter().all(|(op, _)| *op != Op::ReadBuffer));
+            continue;
+        }
+        let capture = stages[0][LIGHT_BUFFER_WORD];
+        assert_ne!(capture, 0, "the last stage captures the light");
+        let read = commands
+            .iter()
+            .find(|(op, _)| *op == Op::ReadBuffer)
+            .map(|(_, o)| o.clone())
+            .expect("the capture reads its buffer back");
+        assert_eq!(read[0], capture, "the read names the capture's buffer");
+        assert_eq!(read[1..3], [0, 256], "the row of a light capture");
+        assert_ne!(read[3], 0, "the coefficients land in engine memory");
+        assert_eq!(read[4], 7, "at the slot that the page gave");
+    }
+
+    // Without a GPU the map's light never lands, so the map fills again for it, a grace of frames
+    // apart, up to three times, and then holds the levels that it has.
+    let mut retries = 0;
+    let mut quiet = 0;
+    while quiet <= (LAYER_GRACE as usize + STAGES as usize) && retries <= LAYER_RETRIES as usize {
+        let stages = stage_number(&step(&mut world, &mut mock));
+        retries += stages.iter().filter(|stage| **stage == 0).count();
+        quiet = if stages.is_empty() { quiet + 1 } else { 0 };
+    }
+    assert!(
+        (1..=LAYER_RETRIES as usize).contains(&retries),
+        "the map retried {retries} times"
+    );
+    assert_eq!(stages_in(&mut world, &mut mock, 8), 0, "and then holds");
+
+    // A layer that stands still and keeps its values owes no stage, however the sky is set again.
+    world
+        .renderer
+        .settings_mut()
+        .set_background_source(Some(sky_at(0.0)));
+    world.renderer.settings_mut().set_sky_layer(
+        Some(layer(
+            template::CUSTOM_FIRST,
+            template::CUSTOM_FIRST + 1,
+            0.0,
+        )),
+        7,
+    );
+    assert_eq!(stages_in(&mut world, &mut mock, STAGES as usize), 0);
+
+    // Removing the layer fills the map again, and its stages draw the sky without it.
+    world.renderer.settings_mut().set_sky_layer(None, 7);
+    let commands = step(&mut world, &mut mock);
+    let stages = stage_words(&commands);
+    assert_eq!(stages.len(), 1);
+    assert_eq!(stages[0][LAYER_WORD], 0, "the map draws no layer");
+    assert_eq!(
+        stages_in(&mut world, &mut mock, STAGES as usize - 1),
+        STAGES as usize - 1
+    );
+}
+
+#[test]
+fn a_moving_sky_layer_fills_the_map_at_its_refresh() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    filled_map(&mut world, &mut mock, sky(sun_at(45.0)), STAGES);
+    world.renderer.settings_mut().set_sky_layer(
+        Some(layer(
+            template::CUSTOM_FIRST,
+            template::CUSTOM_FIRST + 1,
+            0.5,
+        )),
+        7,
+    );
+    // The install fills the map, a stage a frame, and then the fills that a layer's light which
+    // never lands makes, which a GPU would stop.
+    assert_eq!(
+        stages_in(&mut world, &mut mock, STAGES as usize),
+        STAGES as usize
+    );
+    settle_with_layer(&mut world, &mut mock);
+
+    // A clock that stands still holds the map.
+    assert_eq!(stages_in(&mut world, &mut mock, 4), 0);
+
+    // The clock moves by less than the layer asks: the map keeps its levels.
+    set_clock(&mut world, 0.3);
+    assert_eq!(stages_in(&mut world, &mut mock, 4), 0);
+
+    // The clock moves past the layer's refresh: the map fills again.
+    set_clock(&mut world, 0.6);
+    assert_eq!(
+        stages_in(&mut world, &mut mock, 1),
+        1,
+        "the layer's step refills"
+    );
 }

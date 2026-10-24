@@ -428,11 +428,12 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. 
 
 The galaxy's sketch time is the loop that turns every star and writes its row. It grows with the count, so Low draws 30,000 stars. No phone or tablet has run the five demos yet.
 
-## The aurora demo (M3-E10, 24 October 2026)
+## The aurora demo (M3-E10, 24 October 2026, widened 25 October)
 
 `aurora: A frozen lake at night` shows the sky-layer hook: the aurora example add-on draws one WGSL function over the core sky, under the moon and the stars, in the camera's view, in scene passes and in reflections.
 
-- The layer lights nothing: the sky's environment map and its diffuse light come from the core sky alone, and the demo adds one dim ambient light in the aurora's color so the ice and the snow read under it. A sketch that a layer must light gives it a light of its own, as this one does.
+- The layer reaches both places that a sky is seen. Its WGSL is built into the shader that fills the sky's environment map, so the ice mirrors the curtains, and the map's own texels give the scene its diffuse light, so the ice and the snow read green from above. The demo needs no ambient light of its own for the aurora, and has none.
+- The aurora drifts, so the demo asks the map to capture it twice a second with `refresh: 0.5`. The map's light follows each capture within a couple of frames, which the demo's slow clouds hide.
 - The layer reads the core sky's cloud coverage and density, so the demo keeps the physical sky's thin clouds: they hide the aurora where they thicken, as they hide the stars.
 - The curtains are flat in the sky and have no parallax. The camera stays at eye height over the ice, so the layer reads as a sky and not as a wall.
 - The image test holds the demo at 1.5 seconds, where the aurora's swell has moved the layer by less than a step.

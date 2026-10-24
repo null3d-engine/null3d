@@ -4569,17 +4569,28 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
 }
 
 /// Draws layer `template` over the background from the next frame on, with its share of the sun
-/// that it hides and its opacity, or removes the layer for `template` 0. The TypeScript API checks
-/// the values.
+/// that it hides, its opacity, and the seconds `refresh` between the captures that the sky's
+/// environment map makes of it. `map` is the same WGSL built into the shader that fills that map's
+/// cube faces, so its reflections and the light taken from it hold the layer too. Removes the layer
+/// for `template` 0. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setSkyLayer)]
-pub fn set_sky_layer(template: u32, sun: f32, opacity: f32) -> u32 {
+pub fn set_sky_layer(
+    template: u32,
+    map: u32,
+    sun: f32,
+    opacity: f32,
+    refresh: f32,
+    slot: u32,
+) -> u32 {
     with_engine(|e| {
         let layer = (template != 0).then_some(SkyLayer {
             template,
+            map,
             opacity: opacity.clamp(0.0, 1.0),
             sun: sun.clamp(0.0, 1.0),
+            refresh: refresh.max(0.0),
         });
-        e.renderer.settings_mut().set_sky_layer(layer);
+        e.renderer.settings_mut().set_sky_layer(layer, slot);
         0
     })
 }

@@ -10,9 +10,11 @@ import { DEV } from '../../shared/dev';
 import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
+import { LAYER_WORD, LIGHT_BUFFER_WORD } from '../environment-steps';
 import { floatOfBits } from '../float-bits';
 import { GpuMemory, textureBytes } from '../memory';
 import type { ReadSink } from '../readback';
+import { variantFor } from '../variants';
 import { BufferReads } from './buffer-reads';
 import type { CulledCounts } from './culled-counts';
 import type { CubeGenerator } from './environment';
@@ -545,7 +547,27 @@ export class WebGPUBackend {
 			const panorama = words[a + 3] as number;
 			const source = panorama === 0 ? undefined : this.need(this.textures, panorama, 'texture');
 			const encoder = this.commandEncoder();
-			code.skyStage(this.device, encoder, texture, words, floats, a, this.gpuMemory, source);
+			// The page's sky layer, once its shader is here: the map's texels then hold the layer
+			// that the background shows, and so do the reflections and the light taken from them.
+			const template = words[a + LAYER_WORD] as number;
+			const layer =
+				template === 0
+					? undefined
+					: variantFor(this.images.shaders.get(template)?.variants ?? {}, 0, 'wgsl');
+			const capture = words[a + LIGHT_BUFFER_WORD] as number;
+			const readback = capture === 0 ? undefined : this.need(this.buffers, capture, 'buffer');
+			code.skyStage(
+				this.device,
+				encoder,
+				texture,
+				words,
+				floats,
+				a,
+				this.gpuMemory,
+				source,
+				layer,
+				readback,
+			);
 		} else code.run(this.device, texture, this.images.generator(id)[0]);
 	}
 

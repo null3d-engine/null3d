@@ -67,6 +67,61 @@ fn a_layer_builds_for_both_paths_with_its_own_function() {
     assert!(fragment.contains("skyLayer"), "{fragment}");
 }
 
+/// The layer builds into the shader that fills a sky map's cube faces too, so that reflections and
+/// the light taken from the map show the layer that the background shows.
+#[test]
+fn a_layer_builds_into_the_sky_maps_cube_faces() {
+    let built = compile(AURORA).expect("the layer builds");
+    let names: Vec<&str> = built.map.keys().map(String::as_str).collect();
+    assert_eq!(names, ["webgl2", "webgpu"]);
+    let wgsl = &built.map["webgpu"].wgsl.as_ref().unwrap().source;
+    assert!(
+        wgsl.contains("fn skyLayer(input: SkyLayerInput) -> SkyLayer {"),
+        "{wgsl}"
+    );
+    // The map's sky composites the add-on's function in both of its sources: the analytic sky and
+    // the panorama that the physical sky draws.
+    assert!(
+        wgsl.matches("sky_layer_over(").count() >= 3,
+        "the map's draws call the layer: {wgsl}"
+    );
+    assert!(
+        !wgsl.contains("return SkyLayer(vec3f(0.0), 0.0);"),
+        "the template's stub is left out of the build"
+    );
+    let glsl = built.map["webgl2"].glsl.as_ref().unwrap();
+    assert!(
+        glsl["sky"].fragment.source.contains("skyLayer"),
+        "{}",
+        glsl["sky"].fragment.source
+    );
+    assert!(
+        glsl["panorama"].fragment.source.contains("skyLayer"),
+        "{}",
+        glsl["panorama"].fragment.source
+    );
+}
+
+#[test]
+fn the_environment_shader_builds_a_second_time_for_a_layer() {
+    let plain = compile(
+        "fn skyLayer(input: SkyLayerInput) -> SkyLayer {
+    return SkyLayer(vec3f(0.0), 0.0);
+}
+",
+    )
+    .expect("an empty layer builds");
+    let wgsl = &plain.map["webgpu"].wgsl.as_ref().unwrap().source;
+    assert!(
+        !wgsl.contains("#ifdef SKY_LAYER") && !wgsl.contains("#endif"),
+        "the build is preprocessed: {wgsl}"
+    );
+    assert!(
+        wgsl.contains("layer.view.y"),
+        "the layer's values reached the map"
+    );
+}
+
 #[test]
 fn the_example_add_ons_layer_builds() {
     let path =

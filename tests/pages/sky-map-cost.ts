@@ -126,7 +126,17 @@ async function timeWebGPU(): Promise<Timed> {
 	const stage = async (k: number, sky: Float32Array) => {
 		const start = performance.now();
 		const encoder = device.createCommandEncoder();
-		generator.skyStage(device, encoder, target, ...command(k, sky), 0, memory, undefined);
+		generator.skyStage(
+			device,
+			encoder,
+			target,
+			...command(k, sky),
+			0,
+			memory,
+			undefined,
+			undefined,
+			undefined,
+		);
 		device.queue.submit([encoder.finish()]);
 		await device.queue.onSubmittedWorkDone();
 		return performance.now() - start;
@@ -135,7 +145,17 @@ async function timeWebGPU(): Promise<Timed> {
 	let start = performance.now();
 	const encoder = device.createCommandEncoder();
 	for (let k = 0; k < STAGES; k++)
-		generator.skyStage(device, encoder, target, ...command(k, sky), 0, memory, undefined);
+		generator.skyStage(
+			device,
+			encoder,
+			target,
+			...command(k, sky),
+			0,
+			memory,
+			undefined,
+			undefined,
+			undefined,
+		);
 	device.queue.submit([encoder.finish()]);
 	await device.queue.onSubmittedWorkDone();
 	const fill = performance.now() - start;
@@ -153,7 +173,17 @@ async function timeWebGPU(): Promise<Timed> {
 	const exact = cube();
 	const fineEncoder = device.createCommandEncoder();
 	for (let k = 0; k < STAGES; k++)
-		fine.skyStage(device, fineEncoder, exact, ...command(k, last), 0, memory, undefined);
+		fine.skyStage(
+			device,
+			fineEncoder,
+			exact,
+			...command(k, last),
+			0,
+			memory,
+			undefined,
+			undefined,
+			undefined,
+		);
 	device.queue.submit([fineEncoder.finish()]);
 	const referenceLevels = await readLevels(device, exact);
 	generator.release(target, memory);
@@ -247,7 +277,18 @@ async function timeWebGL2(): Promise<Timed> {
 		}
 		const start = performance.now();
 		for (let k = first; k <= last; k++)
-			generator.skyStage(host, target, SIZE, LEVELS, ...command(k, sky), 0, memory, null);
+			generator.skyStage(
+				host,
+				target,
+				SIZE,
+				LEVELS,
+				...command(k, sky),
+				0,
+				memory,
+				null,
+				undefined,
+				undefined,
+			);
 		if (last === STAGES - 1) read();
 		if (timer) gl.endQuery(timer.TIME_ELAPSED_EXT);
 		const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);

@@ -1026,9 +1026,19 @@ export interface CoreGlue extends CoreErrors {
 	setBackgroundSource(kind: number, texture: number): number;
 	/**
 	 * Draws the sky layer of render pipeline template `template` over the background, with the share
-	 * `sun` of the sun that it hides and its `opacity`, or removes the layer for 0.
+	 * `sun` of the sun that it hides, its `opacity`, and `refresh` seconds between the sky map's
+	 * captures of it. `map` is the same WGSL built into the shader that fills the sky map's cube
+	 * faces, and `slot` the control slot that a map's light capture raises once its coefficients
+	 * are in engine memory. Removes the layer for template 0.
 	 */
-	setSkyLayer(template: number, sun: number, opacity: number): number;
+	setSkyLayer(
+		template: number,
+		map: number,
+		sun: number,
+		opacity: number,
+		refresh: number,
+		slot: number,
+	): number;
 	/**
 	 * The scene's fog: its curve (`FOG_CURVE_*`), or none. The call values give its linear color,
 	 * the density of exponential and exponential squared fog, the near and far distances of linear
