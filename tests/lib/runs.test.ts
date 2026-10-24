@@ -51,6 +51,7 @@ const NO_WEBGPU = { webgpu: true, webgl2: false };
 import { RUNS_DIR } from './report-collector.ts';
 import {
 	batchTimeoutMs,
+	cappedQuietLimitMs,
 	currentItem,
 	handovers,
 	type ItemResult,
@@ -227,6 +228,16 @@ describe('waitForRunners', () => {
 			expect(silences).toHaveLength(1);
 			expect(silences[0]).toBeLessThan(250);
 		}));
+
+	it('caps the quiet time of every page but one that sets its own', () => {
+		const capped = cappedQuietLimitMs(90);
+		expect(capped(item('long', 600))).toBe(90_000);
+		// A page whose own limit is shorter keeps it.
+		expect(capped(item('short', 10))).toBe((10 + 30) * 1000);
+		// A page that ends its tab waits its own quiet time for the tab to come back.
+		const ends = { ...item('ends', 600), quietSeconds: 400 };
+		expect(capped(ends)).toBe((400 + 30) * 1000);
+	});
 
 	it('gives the whole plan the most time that each page may get', () => {
 		const plan = { run: 'r', createdAt: '', items: [item('a', 220), item('b', 30)] };
