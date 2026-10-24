@@ -30,7 +30,7 @@ A file is JSON. Three members come first:
 | `version` | The whole number `1`. A reader refuses any other version |
 | `kind` | `probe-grid` or `light-map` |
 
-The rest of the file depends on its kind. A reader ignores members that it does not know, so a later version adds members without breaking a reader that predates them.
+The rest of the file depends on its kind. A reader ignores members that it does not know, so version 1 can gain members before the format is frozen, and a file written with them still reads in an engine that predates them. A file that names a different version is refused: the number changes only when a reader that predates the file would read it wrongly.
 
 The large values are base64. Decode them as bytes, not as text.
 
