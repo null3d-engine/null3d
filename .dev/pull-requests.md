@@ -340,6 +340,7 @@ hook and CI read only the commits that the push adds.
 Two branches that change the same code files land one after another. The smaller or readier one lands first, and the other merges main again and runs its checks before it pushes.
 
 - Run `bun run build:check-size` with current main merged. On 6 October 2026 a change failed its size check for two files that had grown 2.0% against a newer main.
+- Run an add-on check in a checkout with `bun packages/cli/bin/null3d.js check-addon <folder>`, not `bunx @null3d/cli check-addon`. `bunx` starts the command under Node, and a checkout's Vite plugin exists only as TypeScript source there, so the `shaders` and `sizes` gates skip. A skipped gate reads as a pass in the summary, so test those two gates with the `bun` form.
 - Two branches that add text at one place of a file clash when the second one merges main. Resolve the clash by keeping both sides. The record of [tested devices](tested-devices.md) had many of these clashes, so each run there is now a file of its own ([D-97](decisions/D-97-tested-devices-per-file.md)).
 - Main's run after the push is the last check of the combined code. The size check of a run on main compares with the commit before.
 
