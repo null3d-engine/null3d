@@ -72,6 +72,8 @@ caches, but changes the pull request's state for each full run.
   The landing session starts it once that quick run ends, or cancels the quick run first.
 - The pull request's caches went unused. The repository then held 36.7 GB of caches against its
   30 GB limit, and GitHub drops the least recently used first. So the pull request's 10.9 GB would
-  have outlived older caches that the branch's runs still read, and they were deleted that evening.
+  have outlived older caches that the branch's runs still read. They were deleted that evening,
+  with 2.2 GB of deleted and merged branches' caches: 1,099 caches in all. The repository went from
+  1,778 caches and 36.7 GB to 682 caches and 21.3 GB, under its limit.
 - `.dev/pull-requests.md` lists what CI runs where, and `.dev/devices.md` when the real-browser jobs
   run.
