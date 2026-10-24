@@ -1,9 +1,16 @@
 // One vegetation species' variants, in hold mode: each variant is grown from the add-on's species
-// record and a fixed seed, then drawn with a plain bark material and a plain leaf material. The
-// cards carry no leaf atlas yet, so the crown's shape, its branches and its card placement are what
-// the picture shows. The camera and the seed are fixed, so every GPU path draws the same frame.
+// record and a fixed seed, then drawn with the bark and leaf materials that sample the atlases the
+// GPU paints at first use. The camera and the seed are fixed, so every GPU path draws the same
+// frame.
 import { defineSketch } from '@null3d/engine';
-import { ALL_SPECIES, builtInSpecies, generateVariantSet } from '@null3d/vegetation';
+import {
+	ALL_SPECIES,
+	bakePlantAtlases,
+	builtInSpecies,
+	generateVariantSet,
+	leafCellFor,
+	plantMaterial,
+} from '@null3d/vegetation';
 
 const params = new URL(import.meta.url).searchParams;
 const SPECIES = builtInSpecies(params.get('species') ?? 'broadleaf') ?? ALL_SPECIES[0];
@@ -32,16 +39,17 @@ export default defineSketch((ctx) => {
 	const across = spacing * (VARIANTS - 1);
 	const rowWidth = across + widest;
 
-	const bark = ctx.materials.standard({
+	const atlases = bakePlantAtlases(ctx);
+	const bark = plantMaterial(ctx, {
+		atlases,
+		part: 'wood',
 		color: SPECIES.color.bark as [number, number, number],
-		roughness: 0.9,
-		metalness: 0,
 	});
-	const leaves = ctx.materials.standard({
+	const leaves = plantMaterial(ctx, {
+		atlases,
+		part: 'leaves',
+		cell: leafCellFor(SPECIES),
 		color: SPECIES.color.leaf as [number, number, number],
-		roughness: 0.75,
-		metalness: 0,
-		doubleSided: true,
 	});
 
 	const ground = ctx.materials.standard({ color: '#4a5137', roughness: 1, metalness: 0 });

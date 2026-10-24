@@ -31,6 +31,20 @@ export type {
 	PlantStats,
 	WindData,
 } from './asset';
+export type {
+	AtlasMap,
+	LeafCell,
+	PlantAtlas,
+	PlantAtlases,
+	PlantMaterialOptions,
+	PlantMaterialPart,
+} from './atlas';
+export {
+	bakePlantAtlases,
+	LEAF_CELLS_BY_KIND,
+	leafCellFor,
+	plantMaterial,
+} from './atlas';
 export type { PartArrays } from './builder';
 export {
 	ALL_SPECIES,

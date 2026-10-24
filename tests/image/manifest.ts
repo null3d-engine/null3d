@@ -2634,8 +2634,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 1,
 	},
 	// Each built-in vegetation species: three of its variants, grown from the species record and a
-	// fixed seed, in a row on flat ground. The cards carry no atlas yet, so the picture shows the
-	// crown's shape, its branches and where its cards sit.
+	// fixed seed, in a row on flat ground, drawn with the bark and leaf atlases that the GPU paints
+	// at first use.
 	...[
 		'broadleaf',
 		'conifer',
@@ -2655,6 +2655,39 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: `tests/pages/sketches/vegetation-sketch.ts?species=${species}`,
 		hold: 1,
 	})),
+	// The four maps that the GPU paints for the two atlases, each with its mip levels beside it,
+	// and below them a trunk and a leaf card drawn through the materials that sample them.
+	{
+		name: 'vegetation-atlas',
+		sketch: 'tests/pages/sketches/vegetation-atlas-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+	},
+	// One oak crown at three distances from one camera: the leaf cards keep the share of the picture
+	// that they cover as they shrink, since every level of the atlas is painted with its own filter.
+	// Creek's painted oak beside the generated one: the file that the showcase loads, with an
+	// artist's bark and leaf textures, and the same species grown by the add-on and drawn from the
+	// atlases that the GPU paints at first use. The picture is the judge of the two side by side.
+	{
+		name: 'vegetation-versus-creek',
+		sketch: 'tests/pages/sketches/vegetation-versus-creek-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+		// Creek's model files are large, and the software GPU takes its time with their textures.
+		timeoutSeconds: 180,
+	},
+	{
+		name: 'vegetation-leaf-cards',
+		sketch: 'tests/pages/sketches/leaf-card-coverage-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+	},
+	{
+		name: 'vegetation-coverage',
+		sketch: 'tests/pages/sketches/vegetation-coverage-sketch.ts',
+		hold: 1,
+		size: [640, 360],
+	},
 	// Impostors of the impostors add-on: cards far from the world's origin, each blending the three
 	// atlas views nearest its direction to the eye and lit by the sun from the normal the surface
 	// atlas stores, and a merged row of a plain, a turned and a mirrored panel, which draws only

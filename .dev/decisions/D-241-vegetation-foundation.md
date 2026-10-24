@@ -271,3 +271,42 @@ are owed; the `vegetation-scatter` plan measures them.
   that a candidate grows fades each species into its neighbor's ground.
 - **Occupancy resolved per tile.** A tile that arrived later would have seen another tile's plants
   and refused its own, so the result would follow the streaming order.
+## Addendum: the bark and leaf atlases, and why the browser paints them
+
+M3-V5 built the atlases that give a plant its bark and its leaves. `bakePlantAtlases` paints four
+textures from integer hashes in the browser, the first time a page asks for them, and `plantMaterial`
+draws a trunk or a crown from them. The plan asked for the atlas to be painted on the GPU and kept,
+and the second half of that is what decided the first.
+
+**What the atlases hold.** The bark block is 256 texels square and tiles around and along a branch:
+stretched Voronoi plates, warped by fractal noise, with cracks between them and fibres up the trunk.
+The leaf block is 512 by 256 texels, in eight cells of 128: four leaf clusters, a needle spray, a
+frond, a blade and a broad leaf. A leaf comes from an outline with veins written into a height field,
+and the gradient of that field gives the normal map. Each atlas has a colour map, in sRGB, whose
+values multiply the species' own colour, and a linear surface map: the normal in red and green, the
+leaf's coverage or the bark's roughness in blue, and the leaf's thickness in alpha.
+
+**A pass texture keeps no image once its pass stops drawing.** A full-screen pass that paints the
+atlas once and then waits, through `every` or through `render.setPassEnabled(pass, false)`, leaves
+the materials that sample its texture with nothing: every picture came out black. The engine's
+documentation promises that a pass keeps its last image, and the render graph keeps the same
+resource, so it is the image that is lost rather than the binding. Painting the atlas in every frame
+that a plant draws is the only way a pass texture would hold it, and that is far too slow: on
+CI's software GPU the vegetation pages then took more than sixty seconds and timed out.
+
+**A pass texture keeps no alpha either.** A fragment shader's alpha does not reach a material that
+samples the pass's texture: a leaf's cut-out drew as a filled square. Even the per-frame route would
+have needed the coverage moved into a colour channel.
+
+**So the browser paints, and the engine keeps.** The pixels come from the same integer hashes that
+the shaders would use, so every device paints the same atlas and no file is downloaded. The engine
+makes each texture's mip levels, whose average alpha is the leaf's coverage, and a masked material
+fades its cut edges with alpha to coverage. That keeps a shrinking card's coverage without a
+pyramid of levels painted by hand. A test holds the property: three leaf cards of one square of the
+atlas, at 12, 24 and 48 metres from one camera, cover the same share of their own boxes.
+`tests/image/leaf-card-coverage.spec.ts` runs it on all three GPU paths, and the
+`vegetation-coverage` picture shows the same for three crowns at three distances.
+
+**Owed.** The paint's time on each device, which the device record keeps, and the owner's judgement
+of the generated leaves beside Creek's painted textures, which the `vegetation-versus-creek` picture
+shows side by side.
