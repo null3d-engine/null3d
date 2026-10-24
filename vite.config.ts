@@ -4,6 +4,7 @@ import null3d from './packages/vite-plugin/src/index.ts';
 import { loadServer } from './tests/lib/load-server.ts';
 import { reportCollector } from './tests/lib/report-collector.ts';
 import { checkoutServer, HTTP_PORT, HTTPS_PORT } from './tests/lib/server.ts';
+import { splatStreamServer } from './tests/lib/splat-stream.ts';
 import { tunnelServer } from './tests/lib/tunnel-server.ts';
 import { coreSourcesServer } from './tools/lib/core-sources.ts';
 import { sampleEnvironmentsServer } from './tools/lib/sample-environments.ts';
@@ -79,6 +80,7 @@ const config: UserConfig = {
 		sampleTexturesServer(import.meta.dirname),
 		coreSourcesServer(import.meta.dirname),
 		cityServer(import.meta.dirname),
+		splatStreamServer(),
 		checkoutServer(import.meta.dirname),
 		indexRedirect,
 	],

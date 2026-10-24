@@ -6,6 +6,9 @@ import { runTask, type Task } from '@null3d/engine';
 import type { SplatChunk } from './chunks';
 import { BUDGET, CHUNK_COUNT, EYE, HEADER, STRIDE, TOTAL } from './select-task';
 
+/** What the selection needs of a chunk: its bounds and its count, before its data arrives. */
+export type ChunkBounds = Pick<SplatChunk, 'center' | 'radius' | 'count'>;
+
 /** The task that chooses the splats. Its module runs on its own in each job worker. */
 export const SELECT_TASK: Task = {
 	name: 'splats-select',
@@ -21,7 +24,7 @@ export class SplatSelector {
 	readonly counts: Float32Array;
 
 	/** Makes the buffer of `chunks`, which stays the same while they do. */
-	constructor(chunks: readonly SplatChunk[]) {
+	constructor(chunks: readonly ChunkBounds[]) {
 		const floats = HEADER + chunks.length * STRIDE + chunks.length;
 		const buffer =
 			typeof SharedArrayBuffer === 'undefined'
