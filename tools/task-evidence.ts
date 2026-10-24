@@ -1,63 +1,27 @@
 // What proves each completed task on the milestone branch: the test or picture that a reader
 // can open. The pull request marks a task done only when its commit is on the branch and this
 // file names the evidence, so a tick always means the work is here and something checks it.
-// The entries come from read-only audits of the branch on 23 October 2026.
+// The entries come from read-only audits of the branch on 23 October 2026. The audit of 24
+// October 2026 removed the entries of the tasks that fell short of their own "Done when"; each
+// returns when its gap closes, and the removed lines stay in git history meanwhile.
 export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-R13':
 		'Three checks, each with a test seen to fail without it: the `ktx2-etc2` picture stands in for an ETC2-only device and failed with E1412 when the format was mislabelled; the shared replay skips a pending compute pass for an add-on shader too, in `packages/engine/src/gpu/webgpu/backend.test.ts`; the skinning pass checks the device limit, from b3187c44b',
-	'M3-R2':
-		'The governor undoes a step that does not pay: `governor.ts` with `LOWER_TRIAL_MS` and `LOWER_LOSS_PERCENT`, 6 new tests in `governor.test.ts` including a replay of the resize page, 57 of 57; D-237',
-	'M3-R21':
-		"The gate reads its software-renderer pictures from the commit's own CI browser jobs: `bench/ci-browser-jobs.ts`, 12 tests in `bench/lib/gate.test.ts`; D-238",
-	'M3-E2':
-		"The task hook and the splats add-on's distance selection run on the job workers on both GPU paths, and `bun run bench:allocation --splats` judges what they allocate per frame: 653.5 bytes on the sketch worker and 163.8 on the render worker on the Mac's WebGL2, 1,119.1 and 91.9 on the software renderer, with every per-frame place inside its budget. The check found two production-build faults that are fixed: a TypeScript task module reached the worker as raw source, and Vite's preload helper read `document` in a sketch worker, both with build tests in the plugin",
-	'M3-V3':
-		"A vertex offset reads a compute pass's output in every pass that draws its material: `DrawnViews` masks in `frame_graph.rs` order the compute step before the shadow, motion and pick passes that sample it, and `frame.lastFrame` in `builtins.wgsl` lets the motion build's second call read the frame before's row. `a_compute_pass_runs_before_each_pass_that_draws_a_material_reading_it` holds the three ordering edges; the `compute-vertex-offset` picture draws the box and its shadow on WebGPU and WebGL2 with four references; the motion test reads 2 pixels a frame on the plane and 0 on the wall on all three tiers; D-240's and D-140's addenda",
-	'M3-R20':
-		'Two clauses were missing and are built: a page that draws under about two frames a second is now judged at its gap, and a software renderer stays off the two-step path after a step fails. `governor.ts` compares the longest busy frame with half the gap and closes the whole scale below a failed step, `shared/software.ts` holds the one name test for a CPU renderer; the trap page `tests/image/governor-trap.spec.ts` passes 10 of 10 on the Mac software renderer over every thread mode and both paths, and the stress test settles at scale 0.55 with no change of direction and holds 90% of 60 fps in 15 of 15 seconds on WebGL2. 64 of 64 governor tests pass, each new test failing without its fix; D-237',
-	'M3-R19':
-		"The two-step pass's second step read per pass on the cloud iPad at High with the governor on, three runs: D-236's addendum holds the table — the six earlier passes cost 0.7 to 3.4 ms each and the frame's last pass, which draws the second step, cost 20.5 to 34.9 ms; the run is recorded under `.dev/tested-devices/ipad-pro-13-safari/`. The earlier 0.5-scale pair could not be reproduced, and the record says so",
-	'M3-R17':
-		"The develop skill's intake section and its `Search before you hand-roll` table over all eleven foundation add-ons, mirrored in the starter template's AGENTS.md, with three evaluation cases; 22 of 22 skill checks pass",
-	'M3-R3':
-		"The memory register: `crates/null3d-core/src/memory.rs`, the overlay's `Memory by system` rows in `packages/engine/src/debug/overlay-look.ts`, and D-233's Battle figures, which match D-130 to the byte",
 	'M3-A4':
 		"`bloomLevel` in `packages/engine/src/scene/effects.ts`; the lens kit's streak reads level 3 of bloom's chain, with the `lens-streak` picture on both paths; `docs/api/post.md`",
 	'M3-A6':
 		'`setDrawRange` in `packages/engine/src/scene/scene.ts`; the `lod-range`, `lod-range-batch` and `lod-hide` pictures on every tier; D-211',
 	'M3-A3':
 		'A custom material declares `texture_2d_array<f32>` and picks the layer in each texture function: `packages/vite-plugin/src/shader-types.ts`, the docs `packages/engine/docs/guides/custom-shaders.md` and `custom-passes.md`; D-239',
-	'M3-A8':
-		'Grading controls in `packages/engine/src/scene/post.ts`; the Skyway pictures exercise them',
-	'M3-G2':
-		'`KHR_materials_iridescence` in `packages/engine/src/scene/gltf-parse.ts`; `iridescence.wgsl`, with pictures',
-	'M3-G3':
-		'`KHR_materials_anisotropy` in `packages/engine/src/scene/gltf-parse.ts`; `MATERIAL_PARAM_ANISOTROPY`, with pictures',
-	'M3-A1':
-		'Raycast and pick hits carry `uv`: `packages/engine/src/scene/queries.ts`, `docs/api/raycast.md`',
-	'M3-A10':
-		"The `sharpen` value runs the RCAS pass at render scale 1: `packages/engine/src/scene/post.ts`; D-205's cost table, measured 24 October 2026: it adds 0.393 ms on WebGPU, 0.459 in compatibility mode and 0.382 on WebGL2 at full scale, and nothing at half scale",
-	'M3-A11':
-		'D-206 records the measurement: the resolve fails shimmer, smear, sharpness and error against the presets at every tier on both paths, so it does not ship; `tests/image/taa-quality.spec.ts` repeats the figures',
-	'M3-A2':
-		"`textures.fromCanvas` and `texture.refresh(rect)` in `packages/engine/src/scene/textures.ts`; `tests/image/canvas-texture.spec.ts` holds a 1024² canvas's 256² refresh inside the upload budget on both paths; D-204",
 	'M3-A5':
 		'`createVertexDraw` in `packages/engine/src/scene/scene.ts:4623-4702`; `examples/rain/sketch.ts`',
 	'M3-A7': '`limit_hdr` maps NaN to zero: `crates/null3d-shaders/wgsl/lib/color.wgsl:35-38`',
-	'M3-A9':
-		'The `hero` shadow option and `setHeroShadow`: `packages/engine/src/scene/scene.ts`, `docs/api/lights.md:234-245`; the cost spec `tests/image/hero-cost.spec.ts`, with the figures in D-219',
-	'M3-B6':
-		'`examples/addons/traffic-lanes/` (instanced vehicles moved in the vertex shader); `examples/instances/traffic.ts` and `examples/showcase/skyway/traffic.ts`',
-	'M3-D1': "`tools/lib/packages.ts` compiles each add-on's WGSL when it packs",
 	'M3-D2':
 		'Version check in each foundation add-on (`packages/engine/src/shared/version.ts`); `packages/cli/src/upgrade.js`',
 	'M3-D3': "E1417's message names the add-on: `packages/engine/src/errors/codes.ts:417`",
 	'M3-D4': "The particle buffer's record layout and limits: `docs/concepts/particle-buffer.md`",
 	'M3-D5': '`examples/addons/README.md` and two add-ons in that layout',
 	'M3-D6': 'The plugin interface version check: `packages/engine/src/shared/version.ts`',
-	'M3-D7': 'The WebGL2 texture-unit allocator: `packages/engine/src/gpu/webgl2/`',
-	'M3-D8':
-		"Namespaces for an add-on's shader library, error codes and quality keys: `packages/engine/src/scene/namespaces.ts`",
 	'M3-D9':
 		"`bunx @null3d/cli check-addon` runs the engine's gates on one add-on: `packages/cli/src/check-addon.js`, which refuses `tests/fixtures/d9-addon-internal` for importing `@null3d/engine/internal`; D-225 records the run over every foundation add-on and the fixture's page and cost gates",
 	'M3-D9a':
@@ -66,54 +30,24 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		"Splats draw through `scene.addFeatureInstances` (`packages/engine/src/scene/feature-instances.ts`); the `splats`, `splats-budget` and `splats-gltf` pictures on both paths; the draw's size in `tools/lib/size-report.ts`",
 	'M3-F6':
 		"Video textures: `engine.registerVideo` and `textures.fromVideo`, held by `tests/pages/video-texture.ts`, which passes on both GPU paths in Chrome on the Mac, on the software renderer, and in Safari 26.6.2 and Firefox 158 — a 512 by 288 frame uploads 577 KiB against the Low preset's 2 MiB budget, upright, within two steps of a data texture; the page's video support loads at its first call; the guide `guides/video-textures` and the mapping entry",
-	'M3-V1':
-		"Four real devices measured, one session each: `.dev/tested-devices.md` with its nine run files holds Creek's and the forest demo's frames, GPU time per pass, triangles and memory at fixed presets and paths, tree generation timed in a worker, and the splats at a quarter count on the iPad; D-241's addendum turns them into the budgets the later vegetation tasks take. The Creek-on-WebGPU stall on an Apple device is in `.dev/driver-bugs.md`",
-	'M3-R4':
-		"The offset allocator, measured against today's placement and not adopted: D-247 holds the comparison — the new allocator places in 8.46 microseconds and moves nothing where today's placement moves 1,727.7 MiB in 40.94 ms across 384 operations, but it retains 21.08 MB against 16.86 MB at the peak. The workload page is `tests/pages/mesh-churn-cost.ts`, and the record explains that a single removal costs about 0.24 ms",
-	'M3-B5':
-		'The car-paint add-on in `examples/addons/car-paint/`: `createCarPaint` with flakes that tilt the base normal cell by cell and fade as a cell drops below a pixel, `fwidth`-width seams and a 2 x 2 twill weave, used by the coat-and-sheen demo. The four pictures `car-paint`, `car-paint-no-flakes`, `car-paint-no-seams` and `car-paint-weave` hold each part on every tier in both sets, and `car-paint.spec.ts` measures their contribution; the GPU cost per preset is owed',
 	'M3-F7':
 		"The three-compat add-on in `packages/three-compat/`: Reinhard and Cineon as named tone curves through the core's tone-curve setting, and the outline pass's glow, pulse and blurred edge, with `tone-reinhard` and the outline pictures on every tier and strict comparisons against three.js's formulas",
-	'M3-E10':
-		"The sky-layer template and the compiler that joins an add-on's `skyLayer` to it: `crates/null3d-shaders/tests/sky_layer.rs`, `crates/null3d-render/tests/background.rs` (`a_sky_layer_draws_after_the_background_*`); `scene.setSkyLayer` in `packages/engine/src/scene/background.ts`, with `packages/engine/src/scene/scene.test.ts`; the aurora example add-on in `examples/addons/aurora/`; D-242. The demo and its six picture references land as their own change once the frames are drawn",
 	'M3-E3':
 		"`registerGltfExtension` in `packages/engine/src/scene/gltf-extensions.ts`; the `splats-gltf` picture, and E1417's hint for `KHR_gaussian_splatting` in `gltf-extensions.test.ts`",
 	'M3-E4':
 		"Water's soft shores read the scene depth on every path: the `water-shores` picture on WebGPU, compatibility mode and WebGL2, in both reference sets, shows the pale band and foam where the water meets the sand and the island's base; without the depth copy the sheet draws its deep colour everywhere. D-202's addendum names M3-E4a for the case of depth beside textures",
-	'M3-L4':
-		'Staged loading, coarse first: `StageWatches` in `crates/null3d-render/src/levels.rs` holds each stage until a view has picked the level the mesh draws over a 120-frame warm-up, and sets it and every finer stage aside when none is picked; a look every 1500 ms brings them back when the camera comes close, through `unwatchStageLevels`; `tests/image/staged-levels.spec.ts` passes 8 of 8, its `?far` test shows a level that never draws is never downloaded, and its `?near` test shows a stage set aside arrives once the camera comes close; D-228',
-	'M3-F2':
-		"Streaming within budget on a cloud phone and an iPad: `tests/pages/splats-stream.ts` and the `splats` plan in `tests/lib/plans.ts`, with the runs in `.dev/tested-devices/` — the Galaxy S24 held 37,500 of Low's 50,000 and the iPad Pro 13 drew 100,000 on WebGPU and 50,000 on WebGL2, every draw inside the budget",
 	'M3-E5':
 		'One file format for baked probe grids and light maps: `packages/engine/src/scene/baked-light.ts`, `assets.loadLightProbeGrid`, `assets.loadLightMap` and `assets.lightProbeGridFile`, with every fault named as E1434; the guide `docs/guides/baked-light-data.md`, a round-trip test and two fixtures; D-243',
-	'M3-G1':
-		'`KHR_animation_pointer`: `packages/engine/src/scene/gltf-animation.ts`, `property-animation.ts`',
 	'M3-G4':
 		"`transmissionMap` and `thicknessMap`: `packages/engine/src/scene/resources.ts`, the shaders' thickness reads",
 	'M3-K1': '`scene.createView({ camera, rect })`: `packages/engine/src/scene/scene.ts`',
-	'M3-K2':
-		'`TransformControls` and `DragControls`: `packages/controls/src/transform-controls.ts`, `packages/controls/src/drag-controls.ts`',
 	'M3-K3':
 		'Spot-light cookies, `light.map`: `packages/engine/src/scene/scene.ts`, `docs/api/lights.md`',
-	'M3-K4':
-		'CSS3D labels: `packages/engine/src/sketch/ui.ts`, `packages/engine/src/page/label-loop.ts`, `packages/engine/src/shared/labels.ts`',
 	'M3-K5': '`scene.overrideMaterial`: `packages/engine/src/scene/scene.ts`, `docs/api/scene.md`',
-	'M3-K6':
-		'`toneMapped = false`: `packages/engine/src/scene/resources.ts`, `docs/api/materials.md`',
-	'M3-L2':
-		"`crates/null3d-render/tests/levels.rs` (40,000 copies of four levels take one copy each); levels draw the base mesh's indices over its shared vertices; `lod-material`, `lod-bias` and the skinned-level pictures; D-137's addenda",
 	'M3-F8':
 		"`probe.capture()` again on request, with the moved object's reflection settling: `crates/null3d-render/tests/probes.rs` and the `probe-capture` picture on every tier; `docs/api/scene.md`",
-	'M3-O1':
-		'The script-tag build: `bun run build:cdn` (`tools/build-cdn.ts`); `docs/getting-started/cdn.md` shows the import map and the plain module',
-	'M3-R1':
-		'One feature description: `packages/engine/src/scene/features.ts`, `docs/api/features.md`',
 	'M3-R6':
 		'D-226 records the timings on Chrome and Safari: at most 0.29 ms in Safari, nothing measurable in Chrome, so the pattern stays',
 	'M3-R10':
 		"A sky map redraws only past a visible step: `crates/null3d-render/tests/sky_maps.rs` counts the fills a day cycle records; `tests/image/sky-step.spec.ts` keeps every step within 8 levels of 255 on every tier; D-118's addendum records the fills a minute",
-	'M3-R16':
-		'The starter template and the agent hook it ships: `packages/cli/src/create.js`, `packages/cli/templates/empty/AGENTS.md`, `docs/getting-started/project-structure.md`',
-	'M3-R18':
-		"What ships contacts no server of its own: `docs/getting-started/network-use.md`, the guard `tools/lib/network-use.ts` and `docs/getting-started/third-party-notices.md`. The guard's 13 tests were seen failing on an added `globalThis.fetch`, and D-227's addendum records the audit",
 };
