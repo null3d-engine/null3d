@@ -3826,6 +3826,18 @@ pub fn stage_level_picks(mesh: u32) -> u32 {
     value_with_engine(|e| Ok(e.renderer.settings().stage_level_picks(mesh)))
 }
 
+/// Stops watching the levels that the views pick for the mesh `mesh`, so the frames that follow pay
+/// nothing while no loader waits on it. The loader of a model with staged levels releases a watch
+/// that it has no more use for, and watches the mesh again when the camera could want its next
+/// stage. 0 for success.
+#[wasm_bindgen(js_name = unwatchStageLevels)]
+pub fn unwatch_stage_levels(mesh: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().unwatch_stage_levels(mesh);
+        0
+    })
+}
+
 /// The frames that drew the mesh `mesh` since its watch began: 0 for a mesh that no loader
 /// watches.
 #[wasm_bindgen(js_name = stageFrames)]

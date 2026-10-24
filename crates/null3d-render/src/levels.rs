@@ -638,9 +638,14 @@ mod tests {
 ///
 /// A level whose neighbour above was never picked cannot be picked either, because switch distances
 /// grow from level to level. So a loader holds a stage until the level above it has been picked after
-/// a warm-up of frames, and drops the stage, and every finer one, when the warm-up passes with no
+/// a warm-up of frames, and gives the stage up, and every finer one, when the warm-up passes with no
 /// pick. The device's name never enters the decision: only the frames that the renderer drew and the
 /// levels it picked.
+///
+/// Giving a stage up is not final: a loader releases a watch that it has no more use for, so the
+/// frames that follow pay nothing, and watches the mesh again when it looks for the pick that would
+/// bring the stage back. A camera that starts far away and comes close later still gets the level it
+/// then needs, and a level that never draws is never downloaded.
 #[derive(Debug, Default)]
 pub struct StageWatches {
     /// One watch per mesh, in the order that the watches began.
@@ -695,6 +700,12 @@ impl StageWatches {
     /// Stops watching the meshes that `live` refuses: a removed mesh's watch would count nothing.
     pub fn forget(&mut self, live: impl Fn(u32) -> bool) {
         self.watches.retain(|watch| live(watch.mesh));
+    }
+
+    /// Stops watching `mesh`. A loader that has taken what it can from a stage releases its watch,
+    /// so the frames that follow pay nothing; a later watch starts the count again.
+    pub fn release(&mut self, mesh: u32) {
+        self.watches.retain(|watch| watch.mesh != mesh);
     }
 
     /// True while no mesh waits for a stage, so a frame with no loader pays nothing.
@@ -791,6 +802,27 @@ mod stage_watch_tests {
         // A removed mesh's watch goes.
         watches.forget(|mesh| mesh != 1);
         assert_eq!(watches.frames(1, 95), 0);
+    }
+
+    #[test]
+    fn a_released_watch_stops_counting_and_a_new_one_counts_again() {
+        let levels = levels();
+        let mut watches = StageWatches::default();
+        watches.watch(1, 10);
+        watches.note(&levels, |key| u32::from(key_level(key).1 == 1));
+        assert_eq!(watches.picks(1), 0b010);
+        // Released, the mesh costs a frame nothing, and its counts read as a mesh with no watch.
+        watches.release(1);
+        assert!(watches.is_empty());
+        assert_eq!(watches.picks(1), 0);
+        assert_eq!(watches.frames(1, 300), 0);
+        watches.note(&levels, |key| u32::from(key_level(key).1 == 1));
+        assert_eq!(watches.picks(1), 0);
+        // A later watch starts its own count, which a pick the views make now fills.
+        watches.watch(1, 200);
+        assert_eq!(watches.frames(1, 260), 60);
+        watches.picked(1, 0);
+        assert_eq!(watches.picks(1), 1);
     }
 
     #[test]

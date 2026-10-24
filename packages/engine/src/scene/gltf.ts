@@ -617,40 +617,78 @@ function startStages(
 }
 
 /**
- * The frames that the engine draws before a level that it never picked gives up its stage. A
- * camera that starts far away has time to show the level that the file draws: about two seconds at
- * 60 frames a second. A page that comes close waits at most that long for its finest stage.
+ * The frames that the engine draws before a level that it never picked gives up its stage for now.
+ * A camera that starts far away has time to show the level that the file draws: about two seconds
+ * at 60 frames a second. A page that comes close waits at most that long for its finest stage.
  */
 const STAGE_WARMUP_FRAMES = 120;
 
-/** How long the loader waits between checks of the levels that the engine picked. */
-const STAGE_POLL_MS = 100;
+/**
+ * The frames that the loader watches a stage it gave up for the camera coming close. A view that
+ * picks the level the mesh draws shows that pick within the window, and the stage comes back.
+ */
+const STAGE_RETRY_FRAMES = 20;
 
 /**
- * True once a view has picked the levels that the node's meshes draw now, or false when the warm-up
- * passes with no pick: a level that never draws cannot hand over to a finer one, so the stage and
- * its finer ones would buy nothing. A frame that draws no source of a mesh restarts that mesh's
- * warm-up, so a page that loads a model before it instantiates it keeps its stages.
+ * How long the loader waits between checks of the levels that the engine picked, and how long it
+ * waits, with no watch running, before it looks again at a stage that it gave up. While it waits it
+ * holds no watch, so a frame pays one check and nothing else.
  */
-async function stageDraws(
+const STAGE_POLL_MS = 100;
+const STAGE_RETRY_PAUSE_MS = 1500;
+
+/**
+ * True once a view has picked the levels that the node's meshes draw now, or false when `frames`
+ * pass with no pick: a level that never draws cannot hand over to a finer one, so the stage would
+ * buy nothing yet. A frame that draws no source of a mesh restarts that mesh's warm-up, so a page
+ * that loads a model before it instantiates it keeps its stages. The watch that the check makes is
+ * released before either answer, so the frames after it pay nothing.
+ */
+async function stagePicked(
 	context: GltfContext,
 	prefab: Prefab,
 	meshes: readonly MeshGeometry[],
+	frames: number,
 ): Promise<boolean> {
 	const { glue } = context.core;
 	const ids = meshes.filter((mesh) => mesh.live).map((mesh) => mesh.id);
 	if (ids.length === 0) return false;
 	for (const id of ids) glue.watchStageLevels(id);
-	for (;;) {
-		if (!prefab.live) return false;
-		let frames = 0;
-		for (const id of ids) {
-			// Bit 0 is the level that the mesh draws now: the pending stage would replace it.
-			if ((glue.stageLevelPicks(id) & 1) !== 0) return true;
-			frames = Math.max(frames, glue.stageFrames(id));
+	try {
+		for (;;) {
+			if (!prefab.live) return false;
+			let drawn = 0;
+			for (const id of ids) {
+				// Bit 0 is the level that the mesh draws now: the pending stage would replace it.
+				if ((glue.stageLevelPicks(id) & 1) !== 0) return true;
+				drawn = Math.max(drawn, glue.stageFrames(id));
+			}
+			if (drawn >= frames) return false;
+			await new Promise((resolve) => setTimeout(resolve, STAGE_POLL_MS));
 		}
-		if (frames >= STAGE_WARMUP_FRAMES) return false;
-		await new Promise((resolve) => setTimeout(resolve, STAGE_POLL_MS));
+	} finally {
+		for (const id of ids) glue.unwatchStageLevels(id);
+	}
+}
+
+/**
+ * True once a view picks the level that the node's meshes draw now, so the stage on hold would
+ * replace a level on screen: false only when the model or its meshes have gone. A stage that the
+ * warm-up passes without a pick is not gone for good: the loader stops watching it and looks again
+ * after a pause, so a camera that starts far away and comes close later still gets the level it
+ * then needs.
+ */
+async function stageWanted(
+	context: GltfContext,
+	prefab: Prefab,
+	meshes: readonly MeshGeometry[],
+): Promise<boolean> {
+	if (await stagePicked(context, prefab, meshes, STAGE_WARMUP_FRAMES)) return true;
+	for (;;) {
+		if (!prefab.live || !meshes.some((mesh) => mesh.live)) return false;
+		await new Promise((resolve) => setTimeout(resolve, STAGE_RETRY_PAUSE_MS));
+		if (!prefab.live || !meshes.some((mesh) => mesh.live)) return false;
+		if (await stagePicked(context, prefab, meshes, STAGE_RETRY_FRAMES)) return true;
 	}
 }
 
@@ -659,8 +697,8 @@ async function stageDraws(
  * arrives: the level that the mesh drew becomes a level of the mesh, and the arriving one takes its
  * place, so the objects that already draw the mesh refine without a new object. The first stage
  * always arrives, and each later one waits until the level loaded now has drawn. A level that never
- * draws takes its stage, and every finer one, out of the download. A mesh that cannot take another
- * triangle list keeps the level it has, and its stages stop.
+ * draws holds its stage back while it can, and a camera that later asks for it brings it back. A
+ * mesh that cannot take another triangle list keeps the level it has, and its stages stop.
  */
 async function loadStages(
 	context: GltfContext,
@@ -680,8 +718,9 @@ async function loadStages(
 	for (const [index, stage] of node.stages.entries()) {
 		if (loaded >= maxLevels) return;
 		// The stage after the file's own level always arrives: it is what the file draws until it
-		// does. Each finer stage waits for the level loaded now to be picked.
-		if (index > 0 && !(await stageDraws(context, prefab, node.meshes))) return;
+		// does. Each finer stage waits for the level loaded now to be picked, and a stage that the
+		// camera ignores waits again rather than dropping out of the chain.
+		if (index > 0 && !(await stageWanted(context, prefab, node.meshes))) return;
 		const blob = await context.download(new URL(stage.url, address), call);
 		const bytes = await blob.arrayBuffer();
 		if (!prefab.live) return;
