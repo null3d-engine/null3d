@@ -7,6 +7,8 @@
 export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-R13':
 		'Three checks, each with a test seen to fail without it: the `ktx2-etc2` picture stands in for an ETC2-only device and failed with E1412 when the format was mislabelled; the shared replay skips a pending compute pass for an add-on shader too, in `packages/engine/src/gpu/webgpu/backend.test.ts`; the skinning pass checks the device limit, from b3187c44b',
+	'M3-B3':
+		"In-world screens drawn on a canvas: one canvas-backed texture per screen, a refresh rate per screen, changed-rectangle uploads, the LCD look by distance, and clicks mapped back to canvas pixels: `examples/addons/screens/`, with 11 unit tests of the coordinate mapping; the control room draws panels at four rates, the picking demo's wall plan is a screen, the showroom has a tablet, and Skyway's hero car carries two deck panels and a navigation panel in `examples/showcase/skyway/cockpit.ts`; 18 image tests across the demos and 6 for Skyway, in both reference sets; D-253",
 	'M3-A4':
 		"`bloomLevel` in `packages/engine/src/scene/effects.ts`; the lens kit's streak reads level 3 of bloom's chain, and the `lens-streak` picture on both paths shows the glow and the sideways streak; `demo-post-effects` reads the same level; `FrameGraph::bloom_source` binds the chain to the scene's colour, which `a_lone_effect_that_reads_bloom_keeps_the_whole_chain_and_the_glow` checks; `docs/api/post.md`",
 	'M3-A6':
