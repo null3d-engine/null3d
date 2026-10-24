@@ -94,6 +94,8 @@ interface Runner {
 	readonly modules: Set<string>;
 	/** Its tasks that have not answered. */
 	running: number;
+	/** The request that the runner sends, which each call refills rather than making another. */
+	request?: TaskRequest;
 }
 
 /** A task that waits for its answer. */
@@ -103,9 +105,22 @@ interface Waiting {
 	runner: Runner;
 }
 
+/** The task's compiled modules, which a task without WebAssembly matches. */
+const NO_MODULES: readonly WebAssembly.Module[] = [];
+/** The modules that a runner lacks, for a task without WebAssembly. */
+const NO_NEW_MODULES: readonly [string, WebAssembly.Module][] = [];
+/** A waiting record's settle function before a task fills it. */
+const NO_SETTLE = (): void => {};
+
+/** The tasks that this thread has run, which the allocation check reads to judge one call. */
+let taskCalls = 0;
+(globalThis as { __null3dTaskCalls?: () => number }).__null3dTaskCalls = () => taskCalls;
+
 /** The workers that run this thread's tasks, and the tasks that wait for them. */
 class Runners {
 	private readonly waiting = new Map<number, Waiting>();
+	/** The records of answered tasks, which a later task fills again instead of making one. */
+	private readonly free: Waiting[] = [];
 	private next = 0;
 	/** The job workers that take tasks, or the task worker once it has started. */
 	private runners: Runner[] | undefined;
@@ -125,25 +140,46 @@ class Runners {
 		transfer: Transferable[],
 		error: WasmError,
 	): Promise<unknown> {
-		const modules = await Promise.all((task.wasm ?? []).map((file) => compileOnce(file, error)));
+		const files = task.wasm;
+		const modules =
+			files && files.length > 0
+				? await Promise.all(files.map((file) => compileOnce(file, error)))
+				: NO_MODULES;
 		if (this.ended) throw new TaskFailure('stopped', 'the engine stopped');
-		await this.starting();
+		const starting = this.starting();
+		if (starting) await starting;
 		if (this.ended) throw new TaskFailure('stopped', 'the engine stopped');
 		const runner = this.leastBusy(error);
 		const id = ++this.next;
-		const request: TaskRequest = { id, task: task.name, input };
+		let request = runner.request;
+		if (!request) {
+			request = { id: 0, task: '', input: undefined };
+			runner.request = request;
+		}
+		request.id = id;
+		request.task = task.name;
+		request.input = input;
 		const script = task.script?.href;
-		if (script) request.script = script;
-		const newModules = (task.wasm ?? []).flatMap((file, k) =>
-			runner.modules.has(moduleKey(script, file.name))
-				? []
-				: [[moduleKey(script, file.name), modules[k]] as [string, WebAssembly.Module]],
-		);
-		if (newModules.length > 0) request.modules = newModules;
+		request.script = script;
+		const newModules =
+			files && files.length > 0
+				? files.flatMap((file, k) =>
+						runner.modules.has(moduleKey(script, file.name))
+							? []
+							: [[moduleKey(script, file.name), modules[k]] as [string, WebAssembly.Module]],
+					)
+				: NO_NEW_MODULES;
+		request.modules =
+			newModules.length > 0 ? (newModules as [string, WebAssembly.Module][]) : undefined;
 		for (const [key] of newModules) runner.modules.add(key);
 		runner.running++;
+		taskCalls++;
+		const waiting = this.free.pop() ?? { resolve: NO_SETTLE, reject: NO_SETTLE, runner };
 		return new Promise((resolve, reject) => {
-			this.waiting.set(id, { resolve, reject, runner });
+			waiting.resolve = resolve;
+			waiting.reject = reject;
+			waiting.runner = runner;
+			this.waiting.set(id, waiting);
 			runner.send(request, transfer);
 		});
 	}
@@ -152,18 +188,24 @@ class Runners {
 	 * Settles which job workers this thread's tasks go to, before the first task picks one: it asks
 	 * the page for the first job workers, which start as the thread asks for them, and waits for the
 	 * page's word on which of them run. Waiting keeps a task from going to a job worker that did not
-	 * start, which would never answer. Nothing waits once the thread's runners are settled.
+	 * start, which would never answer. Nothing waits once the thread's runners are settled, and then
+	 * this answers nothing, so a call in every frame allocates no promise for it.
 	 */
-	private async starting(): Promise<void> {
+	private starting(): Promise<void> | undefined {
 		// A later engine on this thread brings job workers of its own.
 		const host = jobTasks();
 		if (host !== this.host) {
 			this.host = host;
 			this.runners = undefined;
 		}
-		if (this.runners || !host) return;
+		if (this.runners || !host) return undefined;
 		host.want(2);
-		if (host.running) return;
+		if (host.running) return undefined;
+		return this.announce(host);
+	}
+
+	/** Waits for the page's word on which job workers run. */
+	private async announce(host: JobTaskHost): Promise<void> {
 		const deadline = performance.now() + ANNOUNCE_WAIT_MS;
 		while (host.running === undefined && !this.ended && performance.now() < deadline)
 			await new Promise((resolve) => setTimeout(resolve, ANNOUNCE_POLL_MS));
@@ -252,6 +294,10 @@ class Runners {
 		if ('failed' in answer)
 			waiting.reject(new TaskFailure(answer.failed.stage, answer.failed.message));
 		else waiting.resolve(answer.output);
+		// The record goes back for a later task, so a call makes no record of its own.
+		waiting.resolve = NO_SETTLE;
+		waiting.reject = NO_SETTLE;
+		this.free.push(waiting);
 	}
 
 	/**
