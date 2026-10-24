@@ -840,7 +840,8 @@ function probeTests(): ImageTest[] {
 			page: 'tests/pages/probe-capture.html',
 			size: [320, 180],
 			// ?target-fps=1 keeps the frame-budget governor from lowering the render scale while a
-			// slow GPU draws the scene, which would draw the settled frame upscaled.
+			// slow GPU draws the scene, which would draw the settled frame upscaled. A frame that
+			// takes over a second still misses that target, so the sketch pins the governor as well.
 			switches: ['target-fps=1'],
 			expect: { beforeLeft: true, refreshed: true, stale: true },
 			// Every step waits for the floor's reflection to settle, which a software GPU's slow

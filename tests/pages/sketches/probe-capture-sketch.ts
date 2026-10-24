@@ -17,7 +17,12 @@ interface Move {
 	capture: boolean;
 }
 
-export default defineSketch(({ scene, materials, geometry, page }) => {
+export default defineSketch(async ({ scene, materials, geometry, page, quality }) => {
+	// The page captures its own frames, so the picture must not move between them. A software GPU
+	// can spend over a second on a frame, which is slower than the page's frame-rate target and so
+	// lets the frame-budget governor lower the render scale; the frames then differ along every
+	// edge. A capture keeps the settings as set instead (D-237).
+	await quality.set({ governor: false });
 	scene.setBackground('#000000');
 	// The camera draws the room alone. The sphere stands on a layer of its own, which the probe
 	// captures and the camera leaves out, so the only image of the sphere on the screen is its
