@@ -28,7 +28,7 @@
 		"build:check-size": "bun tools/build-wasm.ts --check-size",
 		"build:cdn": "bun tools/build-cdn.ts",
 		"shaders": "bun tools/shaders.ts",
-		"check": "biome check . && bun tests/check-references.ts && bun tools/check-memory-views.ts && bun tools/check-address-reads.ts && bun tools/check-addon-imports.ts",
+		"check": "biome check . && bun tests/check-references.ts && bun tools/check-memory-views.ts && bun tools/check-address-reads.ts && bun tools/check-addon-imports.ts && bun tools/check-addon-layout.ts",
 		"limits": "bun tools/limits.ts",
 		"pr-status": "bun tools/pr-status.ts",
 		"check:fix": "biome check --write .",
