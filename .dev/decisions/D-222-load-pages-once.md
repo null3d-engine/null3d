@@ -47,6 +47,10 @@ How the data was produced: the zip's central directory, read from the artifact's
 
 The `load-pages` job builds the benchmark pages and then the startup pages: 59 s and 75 s in run 40049563192. Test run 40053641808 built both at the same time on one runner. The benchmark pages took 61 s and the startup pages 126 s, so the job would save about 8 s. Each build alone held 13 to 14 GB at its peak, and the two together left 1.4 GB of the runner's 16 GB free. So the builds stay one after the other.
 
+## Update, 24 October 2026: each build on a machine of its own
+
+The update above kept the two builds in one job, on one machine. Since then, the real-browser shards stopped waiting for the job: only 8 of each browser's pages load what it makes, and the `real-browsers-prebuilt` job runs those. So each build's own readers differ. The `bench` shards and the `allocation` jobs serve only the benchmark pages and load S6's city files. The prebuilt shards serve only the startup pages. The builds now run in two jobs, on two machines, at the same time. The `load-pages` job builds the benchmark pages and the city, and the `load-startup-pages` job builds the startup pages. Each job that serves a build waits only for the job that makes it. So the benchmark and allocation jobs no longer wait for the startup build, 67 s in run 40056066922. Each archive still holds each of its contents once. No job downloads both, so no download grows.
+
 ## Consequences
 
 - `tests/lib/load-server.ts` holds the switch and the script. `tests/real-browsers.ts` and `bench/lib/serve.ts` make their builds through it, and `bench/playwright.config.ts` reads the switch.
