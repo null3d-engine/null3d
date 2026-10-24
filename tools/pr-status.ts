@@ -25,7 +25,8 @@ const BASE = 'origin/main';
 const PARTIAL: Readonly<Record<string, string>> = {
 	'M3-C1':
 		'the scene, its lanes, rain and the hero car are in; the moods, the instances demo and the device figures remain',
-	'M3-T1': 'the measured fence is in; the trim is on its branch',
+	'M3-T1':
+		"the measured fence is in and the trim landed and was then reverted with a record: moving the fog write, the picks and the events out of the start cost more bytes than it saved, so the start stays at about 190 KB against this task's 160 KB target. That target predates the owner's decision to raise the start's budget to 187 KB, so the task needs the owner's word on whether it still means anything",
 	'M3-B4':
 		'the rain streaks, the storm over any hour and the lamp-following city lights are in the Skyway demo; the wet-surface helper, the windshield drops and the particles link remain',
 };
