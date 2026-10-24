@@ -453,6 +453,11 @@ the plane maps back to the canvas's own coordinates. The design and its measured
 - The security camera's monitor keeps its own small LCD look in `monitor.ts`, because its picture
   comes from a render pass rather than a canvas. Its look could move onto the add-on's material if
   the add-on took any texture, and that is a later change.
+- Against the old pictures, the Mac's GPU drew 4.063% to 4.104% of the pixels differently for
+  `demo-canvas-screen`, 0.222% to 0.410% for `demo-picking` and 0.332% to 0.354% for
+  `demo-coat-and-sheen`. SwiftShader drew 4.092% to 4.137%, 0.215% to 0.415% and 0.325% to 0.351%.
+  The limit is 0.1%, and the two sets moved together, so no `Mac-References:` trailer applies. The
+  figures and the commands to redraw the pictures are in [Image tests](image-tests.md#references).
 
 ## The automatic exposure demo (M2-EX31, 11 October 2026)
 
