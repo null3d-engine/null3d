@@ -109,6 +109,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/cameras', title: 'Cameras', since: '0.1', summary: 'Perspective and orthographic cameras; screenToRay; worldToScreen; layers.' },
 	{ id: 'api/lights', title: 'Lights', since: '0.1', summary: 'Directional, point, spot, hemisphere and ambient lights; shadow options.' },
 	{ id: 'api/geometry', title: 'Geometry', since: '0.1', summary: 'Generators with three.js parameters; extra shapes in @null3d/geometry; meshes from arrays; vertices that change; vertex formats; large meshes.' },
+	{ id: 'api/three-compat', title: 'three.js compatibility (@null3d/three-compat)', since: '0.3', summary: "Reinhard and Cineon tone curves for post.set, and an outline with three.js OutlinePass's glow, pulse and blurred edge." },
 	{ id: 'api/materials', title: 'Materials', since: '0.1', summary: 'standard, unlit, shader, shadowCatcher; every option.' },
 	{ id: 'api/textures', title: 'Textures', since: '0.1', summary: 'loadTexture options; fromData; fromImageBitmap; fromPass; cube maps.' },
 	{ id: 'api/assets', title: 'Assets', since: '0.1', summary: 'loadTexture, loadImageBitmap, loadJson, loadBinary, preload, onProgress; glTF models and environments.' },
