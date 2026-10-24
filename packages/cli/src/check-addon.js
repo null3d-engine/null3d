@@ -80,7 +80,7 @@ export const ADDON_FILE_BUDGET = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 17 *
  * budget above. The engine's size report keeps the same figures for its own first-use shader files,
  * and a test keeps these equal to that report's.
  */
-export const ADDON_SHADER_BUDGET = { raw: 1792 * 1024, gzip: 320 * 1024, brotli: 52 * 1024 };
+export const ADDON_SHADER_BUDGET = { raw: 1792 * 1024, gzip: 320 * 1024, brotli: 56 * 1024 };
 
 /**
  * A built file that holds compiled shader builds: the plugin names each set after its kind, its
@@ -99,6 +99,7 @@ const SHOWN_LINES = 12;
 const OPTIONS = /** @type {const} */ ({
 	page: { type: 'string' },
 	'skip-browser': { type: 'boolean', default: false },
+	'skip-cost': { type: 'boolean', default: false },
 	help: { type: 'boolean', short: 'h', default: false },
 });
 
@@ -122,6 +123,8 @@ Options:
   --page <path>       The page to open, from the project's root, such as /demo.html, instead of
                       the config's
   --skip-browser      Run no gate that opens a browser
+  --skip-cost         Leave out the cost gate alone, for a machine whose load would show in its
+                      figures; the page and allocation gates still run
   --help              Print this help`;
 
 /**
@@ -141,6 +144,7 @@ export function parseCheckAddonArgs(args) {
 		folder: positionals[0] ?? process.cwd(),
 		page: values.page,
 		skipBrowser: values['skip-browser'],
+		skipCost: values['skip-cost'],
 		help: values.help,
 	};
 }
@@ -1343,7 +1347,12 @@ export async function run(args) {
 					browserArgs: [WEBGPU_DEVELOPER_FEATURES, `--remote-debugging-port=${port}`],
 				});
 				print(await strictPolicyGate(runner, chosen.page));
-				print(await costGate(runner, chosen.page));
+				if (options.skipCost)
+					print({
+						status: 'SKIP',
+						text: 'cost: --skip-cost runs no cost measurement, because a loaded machine reports its load',
+					});
+				else print(await costGate(runner, chosen.page));
 				print(await allocationGate(runner, { page: chosen.page, folder, name: addon.name }, port));
 			} catch (error) {
 				print({

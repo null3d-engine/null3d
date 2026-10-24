@@ -1367,6 +1367,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		modes: ALL_MODES,
 	},
+	// The same shoreline, with the water's own textures beside the depth: a sheet of ripple rings and
+	// a field of foam flecks. A material that reads the copy of the opaque scene's depth takes a maps'
+	// group with one slot fewer, so both the copy and the textures fit the fragment stage. Every GPU
+	// tier must bind all three groups, so a tier that drops one shows a different shore.
+	{
+		name: 'depth-textures',
+		sketch: 'tests/pages/sketches/depth-textures-sketch.ts',
+		hold: 0,
+		modes: ALL_MODES,
+	},
 	// A box that fixed steps move at 50 steps per second, and a camera that follows it from the late
 	// update, held at 1.5 seconds: the box stays at the center, and every mode runs the same steps.
 	{

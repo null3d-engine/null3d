@@ -750,6 +750,13 @@ pub mod layout {
     /// builds of parallax occlusion mapping. The fragment stage then reads every sampled texture
     /// that WebGPU's default limits give it, so only materials with parallax take it.
     pub const MATERIAL_MAPS_PARALLAX: u32 = 34;
+    /// [`MATERIAL_MAPS`] for a custom material that reads the scene's depth: the first seven map
+    /// slots, their samplers at the bindings after every slot, and no displacement map, which only
+    /// a standard material reads. The last slot's two bindings are left out, so the depth copy that
+    /// the material's own group carries keeps the fragment stage within WebGPU's default count of
+    /// sampled textures. Only WebGPU has it: WebGL2 gives a program a unit only for a texture that
+    /// it reads.
+    pub const MATERIAL_MAPS_SCENE: u32 = 61;
     /// [`FRAME`] for the builds of parallax occlusion mapping: the same groups without the copy of
     /// the opaque color. A parallax material reads the displacement map in the fragment stage as
     /// well as the vertex stage, so its maps' group holds one more sampled texture than any other
@@ -2542,6 +2549,7 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("TEXTURES", layout::TEXTURES),
     ("MATERIAL_MAPS", layout::MATERIAL_MAPS),
     ("MATERIAL_MAPS_PARALLAX", layout::MATERIAL_MAPS_PARALLAX),
+    ("MATERIAL_MAPS_SCENE", layout::MATERIAL_MAPS_SCENE),
     ("FRAME_PARALLAX", layout::FRAME_PARALLAX),
     ("DEPTH", layout::DEPTH),
     ("LIGHT_CLUSTERS", layout::LIGHT_CLUSTERS),

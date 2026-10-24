@@ -121,6 +121,7 @@ export const LAYOUT_FINAL = 4;
 export const LAYOUT_TEXTURES = 5;
 export const LAYOUT_MATERIAL_MAPS = 6;
 export const LAYOUT_MATERIAL_MAPS_PARALLAX = 34;
+export const LAYOUT_MATERIAL_MAPS_SCENE = 61;
 export const LAYOUT_FRAME_PARALLAX = 48;
 export const LAYOUT_DEPTH = 7;
 export const LAYOUT_LIGHT_CLUSTERS = 8;

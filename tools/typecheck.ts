@@ -32,6 +32,8 @@ export const PROJECTS = [
 	'packages/vegetation/tsconfig.test.json',
 	'packages/three-compat',
 	'packages/three-compat/tsconfig.test.json',
+	'packages/water',
+	'packages/water/tsconfig.test.json',
 	'packages/cli',
 	'tests/pages',
 	'tests/fixtures/project',
