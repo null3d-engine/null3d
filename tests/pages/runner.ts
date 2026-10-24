@@ -360,6 +360,9 @@ async function openInFrame(
 ): Promise<Result> {
 	const frame = document.createElement('iframe');
 	frame.className = 'page';
+	// A page that plays media needs the frame's permission: browsers block a video in a frame that
+	// lacks it, and Safari can then leave the play's promise waiting with no answer.
+	frame.allow = 'autoplay';
 	frame.src = path;
 	stage.append(frame);
 	const start = performance.now();

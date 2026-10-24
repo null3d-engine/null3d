@@ -126,13 +126,21 @@ run('video-texture', async () => {
 		});
 	}) as typeof createImageBitmap;
 	// A browser may refuse to play a video, as its autoplay policy does. The engine then sends no
-	// frame and the texture draws with its material's colour alone, so the run reports it.
+	// frame and the texture draws with its material's colour alone, so the run reports it. A browser
+	// that blocks the play can leave its promise waiting with no answer, so the wait has a limit.
 	let played = true;
 	try {
-		await video.play();
+		await Promise.race([
+			video.play(),
+			new Promise((_resolve, reject) =>
+				setTimeout(() => reject(new Error('the browser gave no answer within 3 s')), 3000),
+			),
+		]);
 	} catch (error) {
 		played = false;
-		progress(`the browser refused to play the video: ${String(error)}`);
+		progress(
+			`the browser refused to play the video: ${error instanceof Error ? error.message : String(error)}`,
+		);
 	}
 	progress(`video playing at ${video.videoWidth} x ${video.videoHeight}`);
 	// The canvas changes on every display frame while the video plays, so its stream sends frames
@@ -143,7 +151,7 @@ run('video-texture', async () => {
 		paint(((performance.now() / 16) % 100) / 100);
 		painting = requestAnimationFrame(animate);
 	};
-	if (played) painting = requestAnimationFrame(animate);
+	painting = requestAnimationFrame(animate);
 	// A frame goes from the video to the sketch, and then to the GPU, in a frame or two.
 	await presented(video);
 	await new Promise((resolve) => setTimeout(resolve, 500));
