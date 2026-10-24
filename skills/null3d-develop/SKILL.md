@@ -23,7 +23,7 @@ The engine docs are the source of truth. This skill describes null3D 0.1.0 and m
 3. Each page starts with front matter. `status: stable` or `status: experimental` means the API exists (experimental APIs may still change). `status: planned` means it does not exist in this version. The note under an experimental page's title can name parts that are not built yet: treat those parts as planned too. Do not call a planned API; tell the user, and use the workaround the page gives.
 4. If the docs and this skill disagree, follow the docs and mention the difference in your summary, so the skill can be fixed.
 
-Doc IDs appear in backticks throughout, for example `concepts/architecture`. A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today.
+Doc IDs appear in backticks throughout, for example `concepts/architecture`. A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3.
 
 ## 2. The model
 
@@ -36,12 +36,12 @@ HTML, CSS, UI, audio   -->   input, onUpdate, scene changes -->  GPU uploads and
 creates the engine           shared typed arrays                 never runs your code
 ```
 
-- `page.ts` runs on the main thread. It creates the engine and owns the DOM, HTML UI and Web Audio. `sketch.ts` runs in the sketch worker: scene setup and per-frame logic. The sketch worker has no `document` and no `window`. `createEngine({ sketchThread: 'main' })` runs the sketch on the main thread instead, where it can reach the DOM. Use it only for DOM-heavy apps and for debugging, because the sketch's frames then share the main thread with the page. The two sides talk with `engine.postToSketch` and `page.onMessage`, and with `page.post` and `engine.onSketchMessage`. (`concepts/architecture`, `api/page`)
+- `page.ts` owns the DOM, HTML UI and Web Audio. `sketch.ts` has no `document` and no `window`. `createEngine({ sketchThread: 'main' })` runs the sketch on the main thread instead, where it can reach the DOM. Use it only for DOM-heavy apps and for debugging, because the sketch's frames then share the main thread with the page. The two sides talk with `engine.postToSketch` and `page.onMessage`, and with `page.post` and `engine.onSketchMessage`. (`concepts/architecture`, `api/page`)
 - Scene objects are small wrappers around 30-bit integer handles. Change them with setters such as `setPosition`; never assign properties like `mesh.position.x = 1`. (`concepts/handles`, `api/objects`)
 - For many objects, write typed arrays directly: instance batches and dynamic objects. This is where null3D gets its speed. (`concepts/instances`)
 - Objects are static by default: they cost nothing per frame until a setter changes them. Objects created with `dynamic: true` are recomputed every frame and may be written through arrays. (`concepts/static-dynamic`)
 - The engine renders every frame by itself. Sketch code has no render call and no `requestAnimationFrame`; per-frame logic goes in `onUpdate(dt)`.
-- The same code runs on WebGPU and WebGL2. When a feature is optional, check `engine.capabilities` on the page, which sends the sketch what it needs; never check browser or GPU names. (`concepts/backends`)
+- The same code runs on WebGPU and WebGL2. The page's `engine.capabilities` reports optional features to the sketch; never check browser or GPU names. (`concepts/backends`)
 
 A complete minimal project:
 
@@ -112,7 +112,7 @@ Each rule comes with its reason, because the reason covers cases the rule does n
 A request may need a capability that null3D has not built. Settle its state before you design the scene.
 
 1. Search first: the docs page (section 1), `references/api-quickref.md`, then the add-on table in section 6. A core call or an add-on may answer the need.
-2. Read the page's status. `stable` or `experimental` means the call exists. `planned`, or "not built yet" in the note, means it does not exist in this version. Tell the user, name the step that adds it, and use the page's workaround. Do not call it, and do not invent an option in its place.
+2. A page whose status is `planned`, or whose note says "not built yet", describes a call this version lacks. Tell the user, name the step that adds it, and use the page's workaround. Do not call it, and do not invent an option in its place.
 3. If nothing covers the need, build it above the public API: a custom material, vertex offset, post effect or render pass. Keep that code in the project, and add no property or call that imitates engine API, because it breaks on the next update.
 4. Never write a second version of a feature in the add-on table. A hand-rolled copy gets no fixes, and it drifts from the add-on that users install.
 5. Say in your summary what the engine lacks, what you used instead, and what a later version changes. A silent workaround reads as the real feature.
@@ -163,7 +163,7 @@ Materials:
 | A custom look that still gets lights, shadows and fog | `materials.shader({ wgsl })` with `fn surface` in the WGSL | `shaders/surface-functions` |
 | A fully custom effect, such as a hologram | `materials.shader({ wgsl })` with a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one | `guides/custom-shaders` |
 
-Lighting and shadows: surfaces take one directional light, the ambient and hemisphere lights (0.2), and clustered point and spot lights. One shadowed directional light covers most outdoor scenes, and its layers choose the casters. Hemisphere light is the cheap fill. Point and spot lights cost little without shadows. Rectangle and tube lights (0.2) show their true shape in highlights, at several times a point light's cost. Contact shadows ground small objects on High and Ultra (0.2). An environment gives standard materials reflections and soft diffuse light (0.2). Set it up before play, because the GPU filters the whole map in one frame. The sky lights outdoor scenes, and `timeOfDay` matches the sun, sky, fog and exposure. The physical atmosphere hazes distant land blue (0.2). Indoors, give each room or section its own reflection probe (0.2). (`api/lights`, `concepts/lighting`, `concepts/shadows`; every option and default is in `references/api-quickref.md` section 7.)
+Lighting and shadows: surfaces take one directional light, the ambient and hemisphere lights (0.2), and clustered point and spot lights. One shadowed directional light covers most outdoor scenes, and its layers choose the casters. Hemisphere light is the cheap fill. Point and spot lights cost little without shadows. Rectangle and tube lights (0.2) show their true shape in highlights, at several times a point light's cost. Contact shadows ground small objects on High and Ultra (0.2). An environment gives standard materials reflections and soft diffuse light (0.2). Set it up before play, because the GPU filters the whole map in one frame. The sky lights outdoor scenes. The physical atmosphere hazes distant land blue (0.2). Indoors, give each room or section its own reflection probe (0.2). (`api/lights`, `concepts/lighting`, `concepts/shadows`; every option and default is in `references/api-quickref.md` section 7.)
 
 Interaction:
 
@@ -240,7 +240,7 @@ Read these when the task needs them:
 - `references/performance.md`: budgets, how to measure, symptom-to-fix tables and phone rules.
 - `references/shaders.md`: the surface-function contract, built-in values, uniforms and textures, portable WGSL rules, custom post effects and custom passes.
 - `references/testing-and-debugging.md`: `bunx @null3d/cli test`, image tests, testing on devices, the MCP server tools (0.3, not built yet), error codes and a full troubleshooting table.
-- `references/content-pages.md`: product and marketing pages with a 3D scene: the fallback page, a load deadline, pausing, scroll-driven cameras, caching and crashes.
+- `references/content-pages.md`: product and marketing pages with a 3D scene: scroll-driven cameras, caching and crashes.
 
 ## 10. Before you finish
 
