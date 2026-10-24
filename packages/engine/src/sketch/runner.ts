@@ -44,7 +44,8 @@ import type {
 	HoldScriptStep,
 } from '../page/hold';
 import { type CoreDevice, cellTableWarning } from '../page/limits';
-import { FULL_SCALE, Governor, GovernorLoop, thousandths } from '../quality/governor';
+import { FULL_SCALE, thousandths } from '../quality/budget';
+import { Governor, GovernorLoop } from '../quality/governor';
 import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
 import type { Assets, GltfExtensionHandler, ProgressHandler } from '../scene/assets';
 import { FrameCameras } from '../scene/frame-cameras';

@@ -6,16 +6,20 @@ import { HELD_PERCENT, TARGET_CAP_HZ } from '../shared/stats';
 import {
 	BUDGET_STEP,
 	BUDGET_STEPS,
-	BUDGET_US,
 	budgetScale,
 	budgetSteps,
+	FULL_SCALE,
+	SCALE_STEP,
+	thousandths,
+} from './budget';
+import {
+	BUDGET_US,
 	CLOCK_LIMIT_MS,
 	DROP_AFTER_MS,
 	FAILED_RAISE_MS,
 	FEWEST_CONTACT_STEPS,
 	FLOOR_AFTER_MS,
 	FRAME_US,
-	FULL_SCALE,
 	farIntervalSteps,
 	GAP_MS,
 	Governor,
@@ -28,10 +32,8 @@ import {
 	LOWEST_AO_SCALE,
 	LOWEST_SSR_SCALE,
 	RAISE_AFTER_MS,
-	SCALE_STEP,
 	SETTLE_MS,
 	SMALLEST_BLOOM_SIZE,
-	thousandths,
 	WINDOW_END,
 	WINDOW_MS,
 } from './governor';
