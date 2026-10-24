@@ -13,6 +13,9 @@
 //! - `compile_effect()` builds a custom effect's or a custom tone curve's WGSL, an
 //!   [`EffectSource`], into every variant of the engine's effect template or of its final pass.
 //!   The output is an [`EffectOutput`](null3d_shaders::EffectOutput).
+//! - `compile_sky_layer()` builds a sky layer's WGSL, a [`SkyLayerSource`], into every variant of
+//!   the engine's sky-layer template. The output is a
+//!   [`SkyLayerOutput`](null3d_shaders::SkyLayerOutput).
 //! - `build()` builds a whole manifest, as the native `shader-build` command does. The request is
 //!   the manifest and every file, the library modules too, as [`Inputs`], and the output is an
 //!   [`Output`](null3d_shaders::Output). It writes the first piece of that answer.
@@ -25,7 +28,8 @@
 //!   in the folder of the generated modules and its text.
 //! - `response()` and `response_length()` give the last call's response, which is one piece of a
 //!   manifest build's answer: `{"ok": true, "output": ...}` or `{"ok": false, "problems": [...]}`.
-//!   A response of `compile`, `compile_material` or `compile_effect` also holds `"warnings": [...]`
+//!   A response of `compile`, `compile_material`, `compile_effect` or `compile_sky_layer` also
+//!   holds `"warnings": [...]`
 //!   when the shader calls a built-in function that a target browser cannot compile.
 //! - `stopped()` and `stopped_length()` give the module's account of a call it stopped for want of
 //!   memory, or an empty text when the last call was given everything it asked for. The caller
@@ -56,7 +60,8 @@ use std::sync::Once;
 
 use null3d_shaders::{
     BuildError, Compiler, EffectSource, Inputs, MaterialSource, MaterialTemplate, ModuleSet,
-    Output, PostTemplates, Problem, Response, ShaderSource, VariantOutput,
+    Output, PostTemplates, Problem, Response, ShaderSource, SkyLayerSource, SkyLayerTemplates,
+    VariantOutput,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -81,6 +86,8 @@ thread_local! {
     /// The templates of custom effects and tone curves, read on the first call of
     /// `compile_effect`.
     static POST_TEMPLATES: RefCell<Option<PostTemplates>> = const { RefCell::new(None) };
+    /// The template of sky layers, read on the first call of `compile_sky_layer`.
+    static SKY_LAYER_TEMPLATES: RefCell<Option<SkyLayerTemplates>> = const { RefCell::new(None) };
     /// The answer of the last `build`, which `build_next` hands over a piece at a time.
     static STREAM: RefCell<Option<Answer>> = const { RefCell::new(None) };
     /// The build that `prepare_modules` made, which `module` renders one module at a time.
@@ -146,6 +153,23 @@ pub extern "C" fn compile_effect() {
                 None => PostTemplates::load(&inputs())?,
             };
             let result = with_compiler(|compiler| compiler.compile_effect(&templates, &effect));
+            *slot = Some(templates);
+            result
+        })
+    });
+}
+
+/// Builds the sky layer in the request into the engine's sky-layer template.
+#[unsafe(no_mangle)]
+pub extern "C" fn compile_sky_layer() {
+    respond(|request| {
+        let layer: SkyLayerSource = parse(request)?;
+        SKY_LAYER_TEMPLATES.with_borrow_mut(|slot| {
+            let templates = match slot.take() {
+                Some(templates) => templates,
+                None => SkyLayerTemplates::load(&inputs())?,
+            };
+            let result = with_compiler(|compiler| compiler.compile_sky_layer(&templates, &layer));
             *slot = Some(templates);
             result
         })

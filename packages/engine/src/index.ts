@@ -103,6 +103,9 @@ export type {
 	BackgroundSource,
 	Cubemap,
 	SkyBackground,
+	SkyLayer,
+	SkyLayerOptions,
+	SkyLayerValues,
 	SkyOptions,
 } from './scene/background';
 export type { LightMapData, LightMapEncoding } from './scene/baked-light';

@@ -1,15 +1,12 @@
-#define_import_path null3d::background_layer
-
-// A sky layer that an add-on draws over the core sky: a box around the camera at the far plane,
-// recorded right after the background in the camera's opaque pass (see the renderer's `background`
-// module), before the first opaque object. It runs on every GPU path and in every thread mode,
-// because it is the background's own pass and not a new one.
+// The template of a sky layer that an add-on draws over the core sky: a box around the camera at the
+// far plane, recorded right after the background in the camera's opaque pass (see the renderer's
+// `background` module), before the first opaque object. It runs on every GPU path and in every
+// thread mode, because it is the background's own pass and not a new one.
 //
-// The file sits under lib/ while it has no entry of its own in shaders.toml: the build compiles
-// every entry shader alone, and this one calls the add-on's `skyLayer`, which only the shader
-// compiler's stitching supplies, as it supplies `effect` to the custom effect template. Its entry
-// table follows the manifest marker that makes the build prove it with a stub, the way
-// `custom_effects` proves the effect template.
+// The manifest marks this shader with `sky_layers`, so the build proves it with the stub at the end
+// of this file and writes no module of it, as `custom_effects` proves the effect template. The
+// shader compiler adds an add-on's WGSL after the file's last line and builds every variant with the
+// shader def SKY_LAYER, so that the add-on's function replaces the stub.
 //
 // The add-on writes one function, `skyLayer`, which returns the layer's linear color and its
 // coverage. The template owns everything else: the vertex stage, the frame's bindings, the depth
@@ -17,9 +14,10 @@
 // the same coverage, density, elevation and scale that the core's flat clouds obey, and the sun's
 // visibility reaches it so the layer can dim the disc that the core sky draws.
 //
-// The pass blends straight alpha over the sky. On the 8-bit path the blend mixes encoded colors, as
-// the engine's transparent objects do, so a layer that covers fully draws the same on both paths and
-// one that covers partly differs by the encode's rounding.
+// The pass blends the layer over the sky as the engine's transparent objects blend, with the color
+// premultiplied by the coverage, which the fragment writes. On the 8-bit path the blend mixes
+// encoded colors, as those objects do, so a layer that covers fully draws the same on both paths
+// and one that covers partly differs by the encode's rounding.
 #import null3d::globals::Frame
 #import null3d::tonemap
 #import null3d::backdrop::box_corner
@@ -80,5 +78,13 @@ fn fs(in: LayerOut) -> @location(0) vec4f {
         frame.target_size.xy,
         frame.vignette,
     );
-    return vec4f(finished.rgb, coverage);
+    return vec4f(finished.rgb * coverage, coverage);
 }
+
+#ifndef SKY_LAYER
+/// What the build compiles the template with where no layer's WGSL joins it: a layer that draws
+/// nothing. The add-on's function takes this one's place in every build of a layer.
+fn skyLayer(input: SkyLayerInput) -> SkyLayer {
+    return SkyLayer(vec3f(0.0), 0.0);
+}
+#endif

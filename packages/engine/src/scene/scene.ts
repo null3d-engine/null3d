@@ -43,6 +43,9 @@ import {
 	isAtmosphereBackground,
 	isSkyBackground,
 	SceneBackground,
+	SceneSkyLayer,
+	type SkyLayer,
+	type SkyLayerOptions,
 } from './background';
 import { type ColorInput, linearColor, writeLinearColor } from './color';
 import { Environment, type EnvironmentOptions, SceneEnvironment } from './environment';
@@ -143,6 +146,7 @@ import {
 	type ShaderOptions,
 } from './resources';
 import { quaternionLookAt } from './rotation';
+import { ShaderTemplates } from './shader-templates';
 import type {
 	PointBatch,
 	PointChecks,
@@ -3488,6 +3492,8 @@ export class Scene implements ViewHolder {
 	private sceneProbeGrid: SceneLightProbeGrid | undefined;
 	/** The background's values in the core, made on the first `setBackground`. */
 	private sceneBackground: SceneBackground | undefined;
+	/** The add-on's layer over the background, made on the first `setSkyLayer`. */
+	private skyLayer: SceneSkyLayer | undefined;
 	/** True while the fog is volumetric. */
 	private fogVolume = false;
 	/** Pointer events on objects, made on the first `on`. */
@@ -5157,6 +5163,37 @@ export class Scene implements ViewHolder {
 		writeLinearColor(this.core.callValues(), background, 'setBackground');
 		this.core.glue.setBackground();
 		this.sceneBackground.clear();
+	}
+
+	/**
+	 * Draws an add-on's sky layer over the background, under every object: the top of a sky, such
+	 * as an aurora, a second layer of clouds or a space backdrop. The layer's WGSL, compiled by the
+	 * null3D Vite plugin, declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer`. The engine
+	 * gives it the fragment's direction in the world, the core sky's cloud coverage, density,
+	 * elevation and scale, the sketch time and the share of the sun that the layer hides, and it
+	 * blends what the layer returns over the sky by the layer's coverage and opacity. A layer that
+	 * hides part of the sun also dims the disc and glow that the core sky draws, through `sun`. The
+	 * layer draws in the main view, in scene passes and in reflections, and draws nothing where the
+	 * background draws nothing, as in a debug view. A second call replaces the layer.
+	 *
+	 * Throws E1215 for WGSL that the plugin did not compile as a sky layer, E1203 for a number that
+	 * is not finite, and E1108 for a number out of its range.
+	 */
+	setSkyLayer(options: SkyLayerOptions): SkyLayer {
+		this.skyLayer ??= new SceneSkyLayer(
+			this.core,
+			this.makers?.materials.shaderTemplates ?? new ShaderTemplates(),
+		);
+		this.skyLayer.install(options, 'setSkyLayer');
+		return this.skyLayer;
+	}
+
+	/**
+	 * Removes the sky layer that `setSkyLayer` installed, from the next frame on, and gives the
+	 * core sky its full sun back. A call with no layer installed does nothing.
+	 */
+	clearSkyLayer(): void {
+		this.skyLayer?.clear();
 	}
 
 	/**

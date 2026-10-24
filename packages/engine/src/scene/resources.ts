@@ -1609,9 +1609,10 @@ export interface ShadowCatcherOptions extends ShadowCatcherValues {
 export interface CompiledWgsl {
 	/**
 	 * `'material'` for the functions of a custom material, `'effect'` for a custom effect,
-	 * `'toneCurve'` for a custom tone curve, and `'shader'` for a whole shader.
+	 * `'toneCurve'` for a custom tone curve, `'skyLayer'` for a sky layer, and `'shader'` for a
+	 * whole shader.
 	 */
-	readonly kind: 'material' | 'effect' | 'toneCurve' | 'shader';
+	readonly kind: 'material' | 'effect' | 'toneCurve' | 'skyLayer' | 'shader';
 	/**
 	 * True for a draw shader: a custom material's `@vertex` entry point takes the vertex and
 	 * instance indices and no mesh attribute, and `scene.createVertexDraw` draws it from a vertex
@@ -3207,6 +3208,11 @@ export class Materials {
 		/** @internal Asks the thread that draws for the shader files of features early. */
 		readonly shaders: ShaderPreloads = new ShaderPreloads(),
 	) {}
+
+	/** @internal The templates of compiled WGSL, which each shader a page writes goes to once. */
+	get shaderTemplates(): ShaderTemplates {
+		return this.templates;
+	}
 
 	/**
 	 * @internal Creates a material that shades as the engine core's shading code says, with the
