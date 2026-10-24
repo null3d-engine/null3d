@@ -20,8 +20,7 @@ instead. The surface function cannot see a light, so the model needs the materia
 ## Rule
 
 - The surface function places the flakes. It passes four values to the lobe: the pixel's footprint
-  in flake cells, the flake tilt, and a random value that stays the same over each footprint-sized
-  block of cells.
+  in flake cells, the flake tilt, and a random value for the flake's own cell.
 - The lobe computes, for the main light, the number of facets in the footprint that reflect it into
   the eye. The facets inside the footprint are `N`; each reflects with the probability `p` that its
   normal lies in the light's specular region. The count `b` follows the binomial law of `N` trials.
@@ -29,10 +28,12 @@ instead. The surface function cannot see a light, so the model needs the materia
   is `N p`, so the mean highlight is the base lobe's, and the variation is the sparkle.
 - Where no facet can reflect (`p = 0`), the lobe returns `-specular`. The smooth highlight is then
   gone, because the paint is the flakes, not a smooth mirror.
-- The binomial's normal form draws `b` from a Gaussian sample: `b = N p + sqrt(N p (1 - p)) z`,
-  clamped to `0` to `N`. `z` comes from two hashes of the block's random value, which Box and
-  Muller turn into a Gaussian. The normal form is an approximation for small counts, and the
-  add-on states it.
+- The binomial of many facets and a small chance is a Poisson law. The add-on samples it exactly
+  from the inverse of its sum while the expected count is 16 or less, and with the normal form
+  above that: `b = 0,1,2...` with the mean `N p`. The count is clamped to `0` to `N`. The normal
+  form alone drew a positive count about half the time where the chance was small, which drew a
+  block of white glints; the Poisson form is why the sparkle is sparse. Two hashes of the cell's
+  random value feed the sample.
 - A count above `max` times the smooth lobe is clamped, to bound a single bright flake.
 
 ## The facets
@@ -57,10 +58,11 @@ instead. The surface function cannot see a light, so the model needs the materia
 
 ## Cost
 
-- The surface function computes two derivatives of the flake coordinates, one block coordinate and
-  one hash for each pixel.
-- The lobe computes the cap, the density, the light's solid angle, two hashes and a Gaussian sample
-  for each pixel of the main light. The terms are a few dozen floating-point operations.
+- The surface function computes two derivatives of the flake coordinates and one hash for each
+  pixel.
+- The lobe computes the cap, the density, the light's solid angle, two hashes and either a short
+  Poisson sum or a Gaussian sample for each pixel of the main light. The terms are a few dozen
+  floating-point operations.
 - The plan estimates 0.3 to 1 ms on a full screen. The paint's own cost per preset is owed, and the
   command is `NULL3D_PAINT_COST=1 bun run test:browser -- car-paint-cost.spec.ts`, in a quiet
   window on a computer with a GPU of its own.

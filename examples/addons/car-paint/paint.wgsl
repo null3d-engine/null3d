@@ -89,12 +89,10 @@ fn surface(input: SurfaceInput) -> Surface {
 
     // The derivatives of a pattern come before any branch: a derivative belongs to uniform control
     // flow, so a branch that a uniform value takes still may not hold one. The flakes' footprint in
-    // cells and the block of cells that the pixel covers give the lobe its count and its random
-    // value.
+    // cells and their cell's random value give the lobe its count and its chance.
     let flake_q = input.uv * material.flakeCells;
     let flake_step = vec2f(length(dpdx(flake_q)), length(dpdy(flake_q)));
-    let flake_block = floor(flake_q / max(flake_step, vec2f(1.0)));
-    let flake_seed = random2(flake_block);
+    let flake_seed = random2(floor(flake_q));
     // A seam family whose spacing is 0 draws no seam, and its distance stays far away. Both
     // families' distances run, so the pixel width below has no branch either.
     let spacing_x = max(material.seamSpacing.x, 1e-6);
@@ -142,6 +140,31 @@ fn surface(input: SurfaceInput) -> Surface {
     return s;
 }
 
+/// The number of flakes that reflect the light, drawn from a Poisson distribution of `mean`. The
+/// binomial of many facets and a small chance is a Poisson one; the inverse of its sum samples it
+/// exactly while the count is small, and the normal form takes over where the count is large.
+fn flake_count(mean: f32, u1: f32, u2: f32) -> f32 {
+    if mean <= 0.0 {
+        return 0.0;
+    }
+    if mean > 16.0 {
+        let deviation = sqrt(-2.0 * log(max(u1, 1e-6))) * cos(2.0 * PI * u2);
+        return max(0.0, mean + sqrt(mean) * deviation);
+    }
+    var count = 0.0;
+    var term = exp(-mean);
+    var sum = term;
+    for (var step = 0; step < 24; step++) {
+        if u1 <= sum {
+            break;
+        }
+        count += 1.0;
+        term *= mean / count;
+        sum += term;
+    }
+    return count;
+}
+
 /// The flakes' glint: how many of the metal's facets reflect the main light into the eye at this
 /// pixel, from the binomial distribution of Deliot and Belcour's model. The base lobe's specular is
 /// replaced by the flakes' own light, so the paint sparkles where the light is and nowhere else.
@@ -165,8 +188,7 @@ fn lobe(input: LobeInput) -> vec3f {
     let expected = facets * chance;
     let u1 = random2(vec2f(input.values.w * 65535.0, 0.0));
     let u2 = random2(vec2f(input.values.w * 65535.0, 1.0));
-    let deviation = sqrt(-2.0 * log(max(u1, 1e-6))) * cos(2.0 * PI * u2);
-    let count = clamp(expected + sqrt(expected * (1.0 - chance)) * deviation, 0.0, facets);
+    let count = min(flake_count(expected, u1, u2), facets);
     let factor = min(count / max(expected, 1e-8), material.flakeMax);
     return input.specular * (factor - 1.0);
 }
