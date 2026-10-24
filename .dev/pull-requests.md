@@ -403,6 +403,7 @@ The faults that the reviews of 22 October 2026 found, first in run 39744891020, 
 - Each of the four `size-parts` jobs compressed a quarter of the engine test page's 6,046 files, 718 MB, at the highest gzip and Brotli levels. In run 39900270572 that took 154 to 302 s in each part, 17 runner-minutes on every run. Most of the files held the same bytes as in the run before, and their sizes depend only on their bytes. The size memo keeps the sizes by the hash of the bytes, so a part compresses only the files that changed. With the memo, four parts then each built the page to compress nothing, so the build job runs one part when the memo was measured from the same shader modules ([Download size](benchmarks.md#download-size)).
 - A pass key that held all of `tools/lib` rebuilt every shard after a change to the size report (fixed in e970ab6a1). A key that left out the compiler's runner script, and the WGSL that the packing test compiles, reused a pass after a change to them.
 - The `shader-compiler` key held the whole Vite plugin and the packages' lock, though the shards' runner script imports three of the plugin's files and no package. Of the 39 landings that changed that key on 23 and 24 October 2026, 12 changed only the plugin's other files and tests, or the lock. Each such run rebuilt all 20 shards, about 80 job-minutes. The key now names the three files.
+- The four parts of `rust-tests` that run every workspace test had no pass key, and each run spent about 16 job-minutes on them. In the 24 hours to 24 October 2026, 172 of 192 landings changed no file that they read. Their key names every crate and the eight files outside the crates that the crates' code names, and `tools/lib/ci-workflow.test.ts` fails on a file outside the crates that the key leaves out.
 
 The ways to reuse work:
 
@@ -411,7 +412,7 @@ The ways to reuse work:
 | The WebAssembly files, the shader compiler and the shader modules | The `build` job's archive, `page-wasm`, through `.github/actions/archive`. A job that downloads it sets `NULL3D_REQUIRE_FRESH_SHADERS`, so a stale set fails the job instead of a slow build of it again. The build job keeps the WebAssembly files and the tools' modules in the Actions cache, under `bun tools/build-wasm.ts --cache-key`, so a run that changed no Rust source, flag or tool runs no cargo |
 | Rust builds | `Swatinem/rust-cache`, keyed by the workspace's `Cargo.toml` |
 | Shader entries and module sets | `.github/actions/shaders` and the `shader-entries` jobs ([Builds](#builds)) |
-| A test that reads the whole shader set | A pass marker in the Actions cache, under a key of the files that the part reads |
+| A test that reads the whole shader set, and the workspace's Rust tests | A pass marker in the Actions cache, under a key of the files that the part reads |
 | The size check's base | The `size-base` cache, by commit |
 | The size check's compressed sizes | The size memo, by the hash of each file's bytes: each `size-parts` job restores the newest, and `wasm-checks` keeps the parts' entries when a part compressed a file ([Download size](benchmarks.md#download-size)) |
 | The city's files | The `load-pages` job's artifacts, built there or taken from the city cache |

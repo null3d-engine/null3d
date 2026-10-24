@@ -628,6 +628,40 @@ describe("CI's workflow", () => {
 				);
 		}
 	});
+	it("names in the Rust tests' key every file outside the crates that the crates' code names", () => {
+		// A path such as "../../packages/engine/src/errors/codes.ts" counts from the file that names
+		// it, as include_str! reads it, or from its crate, as a path joined to the crate's folder does.
+		const step = jobNamed('rust-tests').steps?.find(
+			({ name }) => name === "The key of this part's inputs",
+		);
+		const workspace = /\|\| hashFiles\(([^)]*)\)/.exec(step?.run ?? '')?.[1] ?? '';
+		const patterns = [...workspace.matchAll(/'([^']+)'/g)].map(([, glob]) =>
+			globPattern(glob ?? ''),
+		);
+		expect(patterns.length).toBeGreaterThan(0);
+		const named = new Set<string>();
+		for (const file of filesBelow('crates').filter((path) => path.endsWith('.rs'))) {
+			const crate = file.split('/').slice(0, 2).join('/');
+			const text = readFileSync(join(ROOT, file), 'utf8');
+			for (const [, path = ''] of text.matchAll(/"\/?((?:\.\.\/)+[\w@.\/-]+)"/g))
+				for (const base of [dirname(file), crate]) {
+					const target = relative(ROOT, resolve(ROOT, base, path));
+					if (
+						target !== '' &&
+						!target.startsWith('..') &&
+						!target.startsWith('crates/') &&
+						existsSync(join(ROOT, target))
+					)
+						named.add(target);
+				}
+		}
+		expect(named.size).toBeGreaterThan(0);
+		const missing = [...named].filter(
+			(file) => !patterns.some((pattern) => pattern.test(file) || pattern.test(`${file}/x`)),
+		);
+		expect(missing).toEqual([]);
+	});
+
 	it('leaves the image references that a job does not read out of its checkout', () => {
 		// The references are most of a checkout. These jobs read every set, as the reference check
 		// does, or check out history, which a sparse checkout would leave without its files.
