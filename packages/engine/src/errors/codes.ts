@@ -516,6 +516,14 @@ const DOCS = {
 			'E1433: @acme/splats was built for plugin interface 1 to 2, and this page has plugin interface 3 (null3D 0.3.0).',
 		since: '0.3',
 	},
+	E1434: {
+		title: 'Baked light file not read',
+		cause:
+			"assets.loadLightProbeGrid() or assets.loadLightMap() downloaded a file that is not a baked light file that this engine reads. The file may not be JSON, or its format marker may be missing. Its version may not be the one that this engine reads, or its kind may not be the one that the call takes. A probe grid may have counts or spacing that a grid cannot take. Its coefficients may not hold 12 floats for each probe in the counts' product. A light map may have a width or height that a texture cannot take, or an encoding other than rgb8 or rgba16float. Its radiance or its direction may not hold the bytes that its size needs, which a cut-short file shows. The message names the fault.",
+		example:
+			'E1434: assets.loadLightProbeGrid() could not read https://example.com/light/grid.json: its version is 2, and this engine reads version 1.',
+		since: '0.3',
+	},
 	E1501: {
 		title: 'Render space full',
 		cause:

@@ -475,6 +475,9 @@ const room = await assets.builtinEnvironment('room');          // (0.2) three.js
 const skyLight = await assets.skyEnvironment();                 // (0.2) the light of setBackground({ sky }); follows the sun, drawing again each half degree it turns, then once more when it stops
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2) square faces in three.js's order, for scene.setBackground
 const lut = await assets.loadLut('/grade.cube');                // (0.2) .cube or .3dl; lut.size, lut.title, lut.destroy()
+const baked = await assets.loadLightProbeGrid('/light/grid.json');  // (0.3) a grid baked elsewhere, ready for scene.setLightProbeGrid
+const map = await assets.loadLightMap('/light/wall.json');      // (0.3) { texture, direction? }; texture goes to materials.standard({ lightMap })
+const file = await assets.lightProbeGridFile(grid);              // (0.3) the same file format, from a grid that bakeProbes made
 const made = await assets.lutFromData({ size: 17, data });      // (0.2) 3 or 4 floats (0-1) per texel, red fastest as in .cube; domainMin, domainMax, title
 ship.destroy();   // (0.2) frees its meshes, materials, textures, skeleton and clips; destroy its copies first, else E1111
 ```

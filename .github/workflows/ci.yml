@@ -1265,11 +1265,13 @@ jobs:
     # The benchmark pages' tests on SwiftShader, in shards of about equal measured time.
     # Playwright's own --shard splits the test list into equal counts in file order, and these
     # tests differ too much in length for that: it gave one shard 221 tests and over 13 minutes,
-    # and the other 4 tests and 3 minutes. Shard 1 runs the tests that BENCH_SHARD_1 names, shard 2
-    # every test that no other shard runs, shard 3 S3's page tests, shards 4 and 5 S5's visual
-    # tests, one GPU path each, shard 6 S2's and S4's, and the parity shards the tests against
+    # and the other 4 tests and 3 minutes. Shards 1 and 2 run S4's and S5's page tests, shard 3
+    # every test that no other shard runs, shard 4 S3's page tests, shards 5 and 6 S5's visual
+    # tests, one GPU path each, shard 7 S2's and S4's, and the parity shards the tests against
     # three.js, by the weights below, so each test runs in exactly one shard.
-    # S4's and S5's pages run in order in one worker each, and both sit in shard 1: beside the
+    # S4's and S5's pages run in order in one worker each, and each scene has a shard of its own.
+    # Side by side, each slowed the other's tests 1.5 to 4 times on the runner's 4 cores: in test
+    # run 40074539496, S4 took 3.0 minutes alone, S5 4.7, and both in one shard 6.1. Beside the
     # parity tests' setup, S4 on WebGL2 twice measured no frame on SwiftShader. The engine's limit
     # of frames in flight failed open then (.dev/implementation-notes.md).
     # In run 39854225392 (23 October 2026), shard 1 also held S1's three scenes and took 22.9
@@ -1301,32 +1303,35 @@ jobs:
       matrix:
         include:
           - shard: 1
-            tests: --grep "$BENCH_SHARD_1"
+            tests: --grep "$BENCH_SHARD_S4"
           - shard: 2
-            tests: --grep-invert "$BENCH_SHARD_1|$BENCH_SHARD_S3|$BENCH_VISUAL_S5_WEBGPU|$BENCH_VISUAL_S5_WEBGL2|$BENCH_VISUAL_OTHERS|$PARITY_TESTS"
+            tests: --grep "$BENCH_SHARD_S5"
           - shard: 3
-            tests: --grep "$BENCH_SHARD_S3"
+            tests: --grep-invert "$BENCH_SHARD_S4|$BENCH_SHARD_S5|$BENCH_SHARD_S3|$BENCH_VISUAL_S5_WEBGPU|$BENCH_VISUAL_S5_WEBGL2|$BENCH_VISUAL_OTHERS|$PARITY_TESTS"
           - shard: 4
-            tests: --grep "$BENCH_VISUAL_S5_WEBGPU"
+            tests: --grep "$BENCH_SHARD_S3"
           - shard: 5
-            tests: --grep "$BENCH_VISUAL_S5_WEBGL2"
+            tests: --grep "$BENCH_VISUAL_S5_WEBGPU"
           - shard: 6
-            tests: --grep "$BENCH_VISUAL_OTHERS"
+            tests: --grep "$BENCH_VISUAL_S5_WEBGL2"
           - shard: 7
-            tests: parity.spec.ts --shard=1/3
+            tests: --grep "$BENCH_VISUAL_OTHERS"
           - shard: 8
-            tests: parity.spec.ts --shard=2/3
+            tests: parity.spec.ts --shard=1/3
           - shard: 9
+            tests: parity.spec.ts --shard=2/3
+          - shard: 10
             tests: parity.spec.ts --shard=3/3
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       # The load pages job built the benchmark pages that these pages serve.
       NULL3D_LOAD_PAGES: prebuilt
       HUSKY: "0"
-      # S4's and S5's page tests each run in order in one worker, about 5 minutes a scene on
-      # SwiftShader, so S3's, which run in parallel, take a shard of their own: beside them, shard 1
-      # took 8.6 minutes in test run 40067873951.
-      BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4)\b'
+      # S4's and S5's page tests each run in order in one worker, each scene in a shard of its own.
+      # S3's, which run in parallel, take a shard of their own too: beside S4 and S5, a shard took
+      # 8.6 minutes in test run 40067873951.
+      BENCH_SHARD_S4: 'pages\.spec\.ts.*\bs4\b'
+      BENCH_SHARD_S5: 'pages\.spec\.ts.*\bs5\b'
       BENCH_SHARD_S3: 'pages\.spec\.ts.*\bs3\b'
       # The visual tests of the shadows, which read many frames: S5's two, the longest, each in a
       # shard of its own, since they ran one after another on one worker for 3.4 and 2.5 minutes in
@@ -1570,9 +1575,12 @@ jobs:
         timeout-minutes: 6
         with: *page-wasm
       - uses: ./.github/actions/samples
+      # A runner page that sends nothing for 90 s counts as stopped, and a new one takes over. A
+      # healthy runner page went at most 36 s without writing in CI, and a stop otherwise waited out
+      # the page's whole time limit, up to 235 s on a shaders page.
       - &real-browser-run
         name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of ${{ matrix.shards }}
-        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu ${{ matrix.browser == 'Safari' && '--shaders sampled' || '' }} --prebuilt ${{ env.PREBUILT }} --shard ${{ matrix.shard }}/${{ matrix.shards }} ${{ matrix.browser }}
+        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu ${{ matrix.browser == 'Safari' && '--shaders sampled' || '' }} --prebuilt ${{ env.PREBUILT }} --quiet-cap 90 --shard ${{ matrix.shard }}/${{ matrix.shards }} ${{ matrix.browser }}
       # Every shard keeps its runs, whose page times set the shards' model of each page's time, and a
       # failed shard's candidates beside them.
       - &real-browser-runs

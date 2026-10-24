@@ -10,9 +10,11 @@ import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import { reasonOf } from '../errors/message';
 import { Cubemap, writeSkyDefaults } from './background';
+import type { BakedLight, LightMapData } from './baked-light';
 import { type BuiltinEnvironmentName, Environment } from './environment';
 import { FILE_LIMITS, imageSize, imageTooLarge } from './file-limits';
 import { GltfExtensions } from './gltf-extensions';
+import type { LightProbeGridData, LightProbeGridOptions } from './light-probes';
 import { Lut, type LutData } from './lut';
 import type { CoreMemory } from './memory';
 import type { Prefab } from './prefab';
@@ -599,6 +601,88 @@ export class Assets {
 	}
 
 	/**
+	 * Downloads a probe grid that a tool outside the engine baked, in the [baked light
+	 * file](../../guides/baked-light-data.md) format, and makes the texture and the placement that
+	 * `scene.setLightProbeGrid` takes. The grid's coefficients are the four RGB values of L1
+	 * spherical harmonics per probe, in the shader's order. The first grid loads the reader, about
+	 * 2 KB after Brotli. Throws E1411 or E1413 as `loadTexture` does, E1434 when the file is not a
+	 * probe grid that this engine reads, and E1406 when the reader does not load.
+	 */
+	async loadLightProbeGrid(url: string | URL): Promise<LightProbeGridOptions> {
+		const call = 'assets.loadLightProbeGrid';
+		const address = this.resolve(url);
+		const text = await (await this.file(address, call)).text();
+		const file = await bakedLightFile(text, address, call);
+		if (file.kind !== 'probe-grid') wrongKind(address, call, file.kind, 'probe-grid');
+		const { grid } = file;
+		return {
+			texture: grid.toTexture(this.textures),
+			origin: grid.origin,
+			spacing: grid.spacing,
+			counts: grid.counts,
+		};
+	}
+
+	/**
+	 * Downloads a light map that a tool outside the engine baked, in the [baked light
+	 * file](../../guides/baked-light-data.md) format. It gives the radiance as a texture for a
+	 * material's `lightMap`, and, for a directional light map, the light's direction at each texel.
+	 * The first light map loads the reader, about 2 KB after Brotli. Throws E1411 or E1413 as
+	 * `loadTexture` does, E1434 when the file is not a light map that this engine reads, and E1406
+	 * when the reader does not load.
+	 */
+	async loadLightMap(url: string | URL): Promise<LightMapData> {
+		const call = 'assets.loadLightMap';
+		const address = this.resolve(url);
+		const text = await (await this.file(address, call)).text();
+		const file = await bakedLightFile(text, address, call);
+		if (file.kind !== 'light-map') wrongKind(address, call, file.kind, 'light-map');
+		const { width, height, encoding, radiance, direction } = file;
+		let texture: Texture;
+		if (encoding === 'rgb8') {
+			// A texture holds four channels, so the radiance's three bytes gain an opaque alpha.
+			const data = new Uint8Array(width * height * 4);
+			for (let at = 0, from = 0; at < data.length; at += 4, from += 3) {
+				data[at] = radiance[from] as number;
+				data[at + 1] = radiance[from + 1] as number;
+				data[at + 2] = radiance[from + 2] as number;
+				data[at + 3] = 255;
+			}
+			texture = this.textures.fromData({ width, height, colorSpace: 'srgb', data });
+		} else {
+			const halves = new Uint16Array(radiance.buffer, radiance.byteOffset, radiance.byteLength / 2);
+			texture = this.textures.fromData({
+				width,
+				height,
+				format: 'rgba16float',
+				colorSpace: 'linear',
+				data: halves,
+			});
+		}
+		return { width, height, texture, direction };
+	}
+
+	/**
+	 * Makes the file of a probe grid that `bakeProbes` made, in the [baked light
+	 * file](../../guides/baked-light-data.md) format, as bytes to save or send. The file holds the
+	 * same values that `loadLightProbeGrid` reads, so a bake in the browser and a bake in another
+	 * tool give one format. The first call loads the writer, about 2 KB after Brotli. Throws E1108
+	 * when the grid's coefficients do not hold 12 numbers for each probe in its counts, and E1406
+	 * when the writer does not load.
+	 */
+	async lightProbeGridFile(grid: LightProbeGridData): Promise<Uint8Array> {
+		const call = 'assets.lightProbeGridFile';
+		const files = await bakedLightReader(`${call}()`);
+		let text: string;
+		try {
+			text = files.writeBakedProbeGrid(grid);
+		} catch (error) {
+			throw new EngineError('E1108', `${call}() got ${reasonOf(error)}.`);
+		}
+		return new TextEncoder().encode(text);
+	}
+
+	/**
 	 * Downloads a JSON file and parses it. Throws E1411 or E1413 as `loadTexture` does, and E1412
 	 * when the file is not valid JSON.
 	 */
@@ -842,6 +926,36 @@ async function lutMakers(what: string): Promise<typeof import('./lut-files')> {
 			`the color grading table code did not download for ${what}: ${reasonOf(error)}.`,
 		);
 	}
+}
+
+/** The baked light file reader, which loads on the first call that reads one. */
+async function bakedLightReader(what: string): Promise<typeof import('./baked-light')> {
+	try {
+		return await import('./baked-light');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the baked light file reader did not download for ${what}: ${reasonOf(error)}.`,
+		);
+	}
+}
+
+/** Reads a downloaded file as a baked light file, or throws E1434 that names the fault. */
+async function bakedLightFile(text: string, address: URL, call: string): Promise<BakedLight> {
+	const files = await bakedLightReader(`${call}() of ${address}`);
+	try {
+		return files.readBakedLight(text);
+	} catch (error) {
+		throw new EngineError('E1434', `${call}() could not read ${address}: ${reasonOf(error)}.`);
+	}
+}
+
+/** Throws E1434 for a file of the other kind, which names both kinds. */
+function wrongKind(address: URL, call: string, found: string, wanted: string): never {
+	throw new EngineError(
+		'E1434',
+		`${call}() could not read ${address}: its kind is "${found}", and this call reads a "${wanted}" file.`,
+	);
 }
 
 /**
