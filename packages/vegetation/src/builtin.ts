@@ -132,9 +132,9 @@ export const BUILTIN_SPECIES: readonly Species[] = [
 		crown: { shape: 'conical', start: 0.08, spread: 0.4, pull: 0.05 },
 		leaf: {
 			kind: 'needle',
-			cards: 18,
-			width: 0.16,
-			height: 0.9,
+			cards: 24,
+			width: 0.35,
+			height: 0.7,
 			perCard: 30,
 			up: 0.4,
 			out: 1.1,
