@@ -133,8 +133,8 @@ export const BUILTIN_SPECIES: readonly Species[] = [
 		leaf: {
 			kind: 'needle',
 			cards: 18,
-			width: 0.05,
-			height: 0.3,
+			width: 0.16,
+			height: 0.9,
 			perCard: 30,
 			up: 0.4,
 			out: 1.1,
