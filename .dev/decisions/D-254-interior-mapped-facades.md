@@ -1,4 +1,4 @@
-# D-250: Interior-mapped facades in one add-on, with codes in an atlas
+# D-254: Interior-mapped facades in one add-on, with codes in an atlas
 
 Status: decided in the M3-B2 branch on 25 October 2026. Date: 2026-10-25. Task: M3-B2.
 
@@ -43,10 +43,26 @@ would have copied them again.
 - A wave written on the CPU for each window in each frame. The shader already knows the time and
   the distance.
 
+## The faults found
+
+- **WebGPU drew no facade.** The shader sampled its pages with explicit derivatives, and a branch
+  stood before them. The branch tested a material's value, which WebGPU's uniformity analysis does
+  not accept as uniform control flow for a derivative call. WebGL2 and SwiftShader compiled it, so
+  two paths drew while the main one refused the whole shader. Every derivative call now stands
+  before the first branch, as the engine's shader rules ask. The add-on's image tests draw on all
+  three tiers, so the fault now fails a test on the path that rejects it.
+- **A wall lit as one piece.** The power-on wave measured each object's origin. A wall drawn as one
+  mesh lights as one piece, whatever its width. It now measures the pixel's own place on the
+  ground, which serves a batch of buildings and a single wall alike.
+- **A distant skyline washed beige.** The far fallback mixed the rooms' average light at its
+  close-up strength. It now keeps a third of that. A city of lit windows then reads as a glow.
+
 ## The figures
 
 The two wall pages hold 256 KB each, about 342 KB with their mip levels. The code page holds 1 KB.
-The cost of the material against a plain wall, per GPU path and preset, is in the add-on's README.
+The cost of the material against a plain wall, per GPU path and preset, is owed. Its command is in
+the add-on's README. The test waits for a load of 8. The machine stayed between 120 and 150 through
+the night the add-on was built. A figure taken then would measure the load, not the material.
 
 ## The limits
 

@@ -535,7 +535,7 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 
 Night town now draws its window panes through the facades example add-on
 (`examples/addons/facades/`), as Skyway does, in the add-on's pane form
-([D-250](decisions/D-250-interior-mapped-facades.md)).
+([D-254](decisions/D-254-interior-mapped-facades.md)).
 
 - Each pane looks into a room behind its glass: a lamp's pool, a floor, a ceiling, a block of
   furniture, blinds and a curtain in some. The eye's ray meets the room's box, so the room moves in
@@ -586,7 +586,7 @@ and a hero car with two screens.
   a lamp's pool, a floor, a ceiling, a block of furniture, blinds that some rooms draw down and a
   curtain in some. Where a window covers less than a pixel, the face fades to its average light.
   The grid then never shimmers. The facades example add-on owns this
-  (`examples/addons/facades/`), and Skyway uses it ([D-250](decisions/D-250-interior-mapped-facades.md)).
+  (`examples/addons/facades/`), and Skyway uses it ([D-254](decisions/D-254-interior-mapped-facades.md)).
   The wall pages and the window codes are made in code when the scene starts, so the add-on ships
   no image. Street level is a band of lit shop fronts, also from the add-on.
 - **The power-on wave** lights the city from the middle out over the first second, from the frame
