@@ -20,6 +20,7 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 | --- | --- |
 | `bunx vite` | Dev server; the null3D Vite plugin adds the cross-origin isolation headers and compiles WGSL. Editing only WGSL updates the running page without a reload (0.2) |
 | `bunx @null3d/cli shot --out shot.png [--time 2.0] [--size 1280x720] [--gpu webgl2] [--page /other.html]` | Draws one held frame of the page headless and saves it, plus `shot.json` with the frame's time, number and GPU tier and the page's errors and warnings. When no frame is drawn, it says why and exits with 1 |
+| `bunx @null3d/cli shot --script drive.script --out tour.png` | Drives the page through the timed script's states, and draws each `shot` step: `tour-start.png`, `tour-<state>.png`, and a JSON file beside each. Key, pointer and property steps land at their sketch times. A failing step fails the command |
 | `bunx @null3d/cli test` | Type checks with the project's TypeScript, runs its `lint` script, and draws each image test in `null3d.json` headless on each of its tiers, against its reference. Prints one line per result with the image files, and exits with 1 when one fails |
 | `bunx @null3d/cli test --gpu webgpu,webgl2` | Draws the image tests on these GPU tiers only |
 | `bunx @null3d/cli test --update-references` | Keeps each new or changed image as its reference; check the images before committing them |
@@ -81,10 +82,11 @@ List the image tests that `bunx @null3d/cli test` runs in `null3d.json` in the p
 
 ## 3. Behavior tests
 
-The engine has no runner yet for sketch logic with scripted input. Until it does, test logic in two ways:
+Test logic in three ways:
 
+- Drive the sketch with a timed script: `bunx @null3d/cli shot --script` and a `test` entry that gives `script` put keys, pointer events and property writes at exact sketch times, and each `shot` step draws that state (`cli/null3d`, "Timed scripts"). This is the way to draw a state that input causes.
 - Keep game rules in plain modules that take numbers and arrays and import nothing from the engine, and test them with `bun test`. The sketch calls them from `onUpdate` or `onFixedUpdate`.
-- Put a scene into a state for an image test through the sketch module's address, such as `sketch.ts?score=90`, and check the held frame. Hold mode gives the sketch no input.
+- Put a scene into a state for an image test through the sketch module's address, such as `sketch.ts?score=90`, and check the held frame. A hold without a script gives the sketch no input.
 
 ## 4. Testing on real devices
 

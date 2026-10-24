@@ -1550,6 +1550,37 @@ export function vegetationPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * One page for the bisect of the Creek stall on Apple WebGPU: Creek at Low on core WebGPU, with the
+ * page's own switches naming what to measure and which shared effects to turn off. The time limit is
+ * short, so a page that stalls ends its session instead of holding it for the full limit.
+ */
+export function webgpuStallPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...(['low', 'medium', 'high'] as const).map((preset) =>
+			pageItem(
+				`creek-webgpu-stall-${preset}`,
+				'demo-device',
+				{ kind: 'probe', tier: 'webgpu' },
+				{
+					switches: [`gpu=webgpu`, 'demo=creek', `preset=${preset}`, 'target-fps=1', 'seconds=5'],
+					timeoutSeconds: 240,
+				},
+			),
+		),
+		pageItem(
+			'creek-compat-stall-low',
+			'demo-device',
+			{ kind: 'probe', tier: 'webgpu' },
+			{
+				switches: ['gpu=compat', 'demo=creek', 'preset=low', 'target-fps=1', 'seconds=5'],
+				timeoutSeconds: 240,
+			},
+		),
+	];
+}
+
+/**
  * Procedural tree generation in a worker, for M3-V1's budgets: each species at each preset's
  * detail, generated for several seeds, with the triangles, the vertices and the bytes of each
  * variant. It draws nothing and asks for no GPU path, so every device runs it.
@@ -2137,6 +2168,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
 	'tree-generation': treeGenerationPlan,
+	'webgpu-stall': webgpuStallPlan,
 	reflection: reflectionPlan,
 	occlusion: occlusionPlan,
 	'gpu-occlusion': gpuOcclusionPlan,
