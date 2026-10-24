@@ -1949,6 +1949,10 @@ pub mod template {
     /// do, with their base color map where it has an image. Its group 0 is
     /// [`super::layout::MOTION_FRAME`], and group 1 the map's.
     pub const MOTION: u32 = 73;
+    /// The tone mask of instanced meshes: the parts of the objects whose material keeps its color
+    /// as the display shows it, in blue, where the scene's depth leaves them. The final pass reads
+    /// it to skip the tone curve for those pixels. It binds as the depth template does.
+    pub const TONE_MASK: u32 = 79;
     /// One level of screen-space reflections' depth pyramid: one triangle over the level's drawn
     /// corner, each texel the nearest depth of the 2 x 2 texels of the level below it.
     pub const SSR_REDUCE: u32 = 49;
@@ -2079,7 +2083,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 82] = [
+    pub const NAMES: [(&str, u32); 83] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2098,6 +2102,7 @@ pub mod template {
         ("LIGHT_WRITE", LIGHT_WRITE),
         ("SKIN", SKIN),
         ("OUTLINE_MASK", OUTLINE_MASK),
+        ("TONE_MASK", TONE_MASK),
         ("SPRITE", SPRITE),
         ("SPRITE_MAP", SPRITE_MAP),
         ("OCCLUSION_EARLY", OCCLUSION_EARLY),
@@ -2273,6 +2278,7 @@ pub mod groups {
         (template::LIGHT_WRITE, own!(layout::LIGHT_CLUSTERS)),
         (template::SKIN, own!(layout::SKIN)),
         (template::OUTLINE_MASK, MESH),
+        (template::TONE_MASK, MESH),
         (template::SPRITE, MESH),
         (template::SPRITE_MAP, MESH),
         (template::OCCLUSION_EARLY, own!(layout::CULL)),

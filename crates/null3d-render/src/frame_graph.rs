@@ -410,8 +410,13 @@ const NO_EFFECT: Effect = Effect {
 /// indirect draws.
 const OUTLINE_CULLING: &str = "OutlineCulling";
 const OUTLINE_VISIBLE: &str = "outlineVisible";
-/// The outline mask, which the mask pass creates and the final pass reads.
+/// The outline mask, which the mask pass creates and the final pass reads. The tone mask marks its
+/// blue channel.
 const OUTLINE_MASK: &str = "outlineMask";
+/// The tone view's culling pass on WebGPU, and the buffer of its compacted instances and indirect
+/// draws.
+const TONE_CULLING: &str = "ToneCulling";
+const TONE_VISIBLE: &str = "toneVisible";
 /// The subsurface view's culling pass on WebGPU, and the buffer of its compacted instances and
 /// indirect draws.
 const SUBSURFACE_CULLING: &str = "SubsurfaceCulling";
@@ -580,7 +585,8 @@ pub(crate) enum Role {
     Resolve,
     /// A step of bloom's chain, by its place in the chain. The graph records it itself.
     Bloom(u8),
-    /// Draws the outlined objects into the outline mask, from the outline view.
+    /// Draws the outlined objects into the outline mask, from the outline view, and the objects
+    /// whose material keeps its display color into its blue channel, from the tone view.
     OutlineMask,
     /// Draws the objects whose material has a scatter radius into the skin pass's target, from the
     /// subsurface view.
@@ -820,6 +826,9 @@ pub(crate) struct FrameGraph {
     outline: Option<Outline>,
     /// True while some object is outlined.
     outlined: bool,
+    /// True while some material keeps its display color, so the HDR path's final pass needs the
+    /// mask of the pixels that skip the tone curve.
+    tone: bool,
     /// The outline's culling pass on WebGPU and its mask pass, once declared.
     outline_passes: Vec<PassId>,
     /// True while a pick waits for a frame: the next declared graph holds the pick's passes.
@@ -1184,6 +1193,7 @@ impl FrameGraph {
             sharpen: None,
             outline: None,
             outlined: false,
+            tone: false,
             outline_passes: Vec::new(),
             picking_wanted: false,
             pick_declared: false,
@@ -1821,7 +1831,7 @@ impl FrameGraph {
             || self.grades
             || self.sharpen.is_some()
             || self.fullscreen_reads_color
-            || self.outline_draws()
+            || self.mask_draws()
             || self.transmission_declared
             || self.particle_depth_declared
     }
@@ -1898,10 +1908,10 @@ impl FrameGraph {
     }
 
     /// Switches on the pass that takes the scene color to the canvas, and off the others, with
-    /// bloom's passes while bloom draws and the outline's while it draws.
+    /// bloom's passes while bloom draws and the mask's while it draws.
     fn enable_outputs(&mut self) {
         let blooms = self.bloom_draws();
-        let outlines = self.outline_draws();
+        let masks = self.mask_draws();
         let two_step = self.two_step_declared;
         if let Some(Outputs {
             resolve,
@@ -1912,11 +1922,11 @@ impl FrameGraph {
             let final_runs = self.final_runs();
             self.graph.set_enabled(resolve, !final_runs);
             for (bloom, passes) in finals.into_iter().enumerate() {
-                for (outline, pass) in passes.into_iter().enumerate() {
+                for (mask, pass) in passes.into_iter().enumerate() {
                     if let Some(pass) = pass {
                         // At the whole canvas's scale the final pass draws as it does without the
                         // two-step pass. Below it the same pass draws the second step.
-                        let on = final_runs && blooms == (bloom == 1) && outlines == (outline == 1);
+                        let on = final_runs && blooms == (bloom == 1) && masks == (mask == 1);
                         self.graph.set_enabled(pass, on);
                     }
                 }
@@ -1933,30 +1943,66 @@ impl FrameGraph {
             self.graph.set_enabled(pass, blooms);
         }
         for &pass in &self.outline_passes {
-            self.graph.set_enabled(pass, outlines);
+            self.graph.set_enabled(pass, masks);
         }
     }
 
     /// Turns outlines on with their settings, or off with `None`, for the next frames, while
-    /// `outlined` says that some object is outlined. The graph compiles again only when outlines
-    /// start or stop drawing.
+    /// `outlined` says that some object is outlined. The graph compiles again only when the mask
+    /// starts or stops drawing.
     pub(crate) fn set_outline(&mut self, outline: Option<Outline>, outlined: bool) {
-        let was = self.outline_draws();
+        let was = self.mask_draws();
         self.outline = outline;
         self.outlined = outlined;
-        if self.outline_draws() != was {
+        if self.mask_draws() != was {
             self.enable_outputs();
         }
-        // A full-screen pass reads the mask only while it is drawn, so the passes are declared
-        // again when that changes.
-        if self.fullscreen_views != 0 && self.outline_draws() != self.fullscreen_outline {
-            self.declared = false;
+        // A full-screen pass reads the mask only while it is drawn, and the two-step pass's first
+        // step reads its tone marks, so the passes are declared again when that changes. The
+        // change comes from a sketch's material or outline setting, not from a frame loop, so the
+        // declarations may be made again here.
+        if (self.fullscreen_views != 0 || self.two_step_declared)
+            && self.mask_draws() != self.fullscreen_outline
+        {
+            self.redeclare();
         }
     }
 
     /// True while outlines draw: the sketch turned them on, and some object is outlined.
     pub(crate) fn outline_draws(&self) -> bool {
         self.outline.is_some() && self.outlined
+    }
+
+    /// Says whether some material keeps its color as the display shows it, so the HDR path's final
+    /// pass must read the tone mask. The mask costs nothing on the 8-bit path, which applies the
+    /// flag in each material's shader.
+    pub(crate) fn set_tone_mask(&mut self, tone: bool) {
+        let was = self.mask_draws();
+        self.tone = tone;
+        if self.mask_draws() != was {
+            self.enable_outputs();
+        }
+        if (self.fullscreen_views != 0 || self.two_step_declared)
+            && self.mask_draws() != self.fullscreen_outline
+        {
+            self.redeclare();
+        }
+    }
+
+    /// True while the tone mask draws: some material keeps its display color, and the path draws
+    /// HDR color.
+    pub(crate) fn tone_mask_draws(&self) -> bool {
+        self.tone && self.scene_color.is_hdr()
+    }
+
+    /// True while the mask the final pass reads draws, for outlines or for the tone of a material.
+    pub(crate) fn mask_draws(&self) -> bool {
+        self.outline_draws() || self.tone_mask_draws()
+    }
+
+    /// True when the scene color holds HDR color, so the final pass applies the tone curve.
+    pub(crate) fn hdr_color(&self) -> bool {
+        self.scene_color.is_hdr()
     }
 
     /// Turns bloom on with its settings, or off with `None`, for the next frames, with the chain's
@@ -2801,7 +2847,7 @@ impl FrameGraph {
             let target = self.graph.keep(named[index].color.clone(), shape, size);
             self.view_colors.push(Some(target));
         }
-        self.fullscreen_outline = self.outline_draws();
+        self.fullscreen_outline = self.mask_draws();
         self.fullscreen_reads_color = views.iter().enumerate().any(|(index, view)| {
             self.fullscreen_views & (1 << index) != 0
                 && view
@@ -3350,8 +3396,8 @@ impl FrameGraph {
         self.sampled_id(PICK_IDS)
     }
 
-    /// Declares the outline's passes: on WebGPU the outline view's culling pass, then the mask
-    /// pass, which draws into a mask of the scene's `samples` with the scene's depth.
+    /// Declares the mask's passes: on WebGPU the outline view's and the tone view's culling passes,
+    /// then the mask pass, which draws into a mask of the scene's `samples` with the scene's depth.
     fn declare_outline(&mut self, samples: u32) {
         let mask = Target::color(outline::MASK_FORMAT).samples(samples);
         let mut pass = Pass::new("OutlineMask", PassKind::Scene)
@@ -3364,6 +3410,12 @@ impl FrameGraph {
             let culling = self.add(culling, Role::Cull(ViewId::OUTLINE));
             self.outline_passes.push(culling);
             pass = pass.reads(OUTLINE_VISIBLE);
+            let culling = Pass::new(TONE_CULLING, PassKind::Compute)
+                .reads(OBJECTS)
+                .creates_buffer(TONE_VISIBLE);
+            let culling = self.add(culling, Role::Cull(ViewId::TONE));
+            self.outline_passes.push(culling);
+            pass = pass.reads(TONE_VISIBLE);
         }
         if self.skins() {
             pass = pass.reads(SKINNED);
@@ -3733,6 +3785,11 @@ impl FrameGraph {
         .optional()
         .size(Size::Full)
         .reads(self.color_output());
+        // The first step applies the tone curve, so it reads the mask that says which surfaces
+        // skip it, while the mask draws.
+        if self.mask_draws() {
+            pass = pass.reads(OUTLINE_MASK);
+        }
         if bloom {
             pass = pass.reads(BLOOM_LEVELS[0]).writes(OUTPUT_COLOR);
         } else {
@@ -3795,6 +3852,7 @@ impl FrameGraph {
             && self.sharpen.is_none()
             && !self.bloom_draws()
             && !self.outline_draws()
+            && !self.tone_mask_draws()
             && self.folded.is_none()
             && self.exposure.is_none()
             && self.fog_declared == 0
@@ -4322,15 +4380,22 @@ impl FrameGraph {
         } else {
             None
         };
-        let outline = match (self.outline, self.outline_draws()) {
-            (Some(outline), true) => Some(OutlineInputs {
+        let outline = if self.mask_draws() {
+            Some(OutlineInputs {
                 mask: self
                     .sampled_id(OUTLINE_MASK)
-                    .expect("the final pass reads the outline mask while outlines draw"),
-                outline,
-            }),
-            _ => None,
+                    .expect("the final pass reads the mask while it draws"),
+                // With no outline the settings draw nothing, since the mask holds no coverage in
+                // its red and green channels.
+                outline: self.outline.unwrap_or_default(),
+            })
+        } else {
+            None
         };
+        let tone_mask = self.tone_mask_draws().then(|| {
+            self.sampled_id(OUTLINE_MASK)
+                .expect("the final pass reads the mask while the tone mask draws")
+        });
         let fold = match self.folded {
             Some(first) => Some(FoldInputs {
                 buffer: self.effect_ids.buffer,
@@ -4356,6 +4421,7 @@ impl FrameGraph {
                 ..grading
             },
             outline,
+            tone_mask,
             fold,
             exposure,
         };
@@ -4371,6 +4437,7 @@ impl FrameGraph {
                 color: self.accumulate_textures()[1],
                 bloom: None,
                 outline: None,
+                tone_mask: None,
                 fold: None,
                 ..inputs
             };
@@ -4392,7 +4459,14 @@ impl FrameGraph {
                 grade: None,
                 sharpen: None,
             },
+            // The first step skips the tone curve where the mask marks a surface that keeps its
+            // display color. The outline's line itself is painted in the second step. The step
+            // reads the mask only once the declared graph holds that read.
             outline: None,
+            tone_mask: (self.tone_mask_draws() && self.fullscreen_outline).then(|| {
+                self.sampled_id(OUTLINE_MASK)
+                    .expect("the first step reads the mask while the tone mask draws")
+            }),
             fold: None,
             ..inputs
         };
@@ -6834,6 +6908,7 @@ mod tests {
             "Transparent1",
             "Copy1",
             "OutlineCulling",
+            "ToneCulling",
             "OutlineMask",
             "Resolve",
             "Final",
@@ -6856,6 +6931,7 @@ mod tests {
                 Role::Transparent(ViewId::from_index(1)),
                 Role::ViewCopy(ViewId::from_index(1)),
                 Role::Cull(ViewId::OUTLINE),
+                Role::Cull(ViewId::TONE),
                 Role::OutlineMask,
                 Role::Resolve,
                 Role::Final,
@@ -8358,6 +8434,70 @@ mod tests {
             assert_eq!(steps(&frames), without);
             assert_eq!(frames.graph().plan().unwrap().textures().len(), textures);
         }
+    }
+
+    #[test]
+    fn the_tone_mask_runs_only_on_the_hdr_path_while_a_material_keeps_its_display_color() {
+        for (scene_color, gpu_culling) in [(format::RGBA16_FLOAT, true), (format::CANVAS, false)] {
+            let mut frames = frame_graph(scene_color, Antialias::Msaa, gpu_culling, true);
+            frames.sync(&[View::default()]);
+            let mut list = DrawList::with_capacity(4096);
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            let without = steps(&frames);
+
+            frames.set_tone_mask(true);
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            let names = steps(&frames);
+            if scene_color == format::CANVAS {
+                assert_eq!(
+                    names, without,
+                    "the 8-bit path applies the flag in the material's shader"
+                );
+                continue;
+            }
+            let tail: Vec<&str> = names[names.len() - 2..]
+                .iter()
+                .map(|step| step[0].as_str())
+                .collect();
+            assert_eq!(
+                tail,
+                ["OutlineMask", "FinalOutline"],
+                "the final pass reads the mask that the tone view draws"
+            );
+            assert!(frames.tone_mask_draws());
+
+            frames.set_tone_mask(false);
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            assert_eq!(steps(&frames), without);
+            assert!(!frames.tone_mask_draws());
+        }
+
+        // The two-step pass's first step applies the tone curve, so it reads the mask. A change of
+        // the mask declares the passes again, and the plan that names the read always runs with
+        // the pass that writes it.
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, true);
+        frames.sync(&[View::default()]);
+        frames.set_scaling(true);
+        let mut list = DrawList::with_capacity(4096);
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        frames.set_tone_mask(true);
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        assert!(frames.tone_mask_draws());
+        frames.set_tone_mask(false);
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        assert!(!frames.tone_mask_draws());
     }
 
     #[test]

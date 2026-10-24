@@ -84,6 +84,10 @@ const VIGNETTE: u32 = 2u;
 const LUT: u32 = 4u;
 /// The settings flag that grades the display color with the built-in grading table.
 const GRADE: u32 = 256u;
+/// The settings flag that skips the tone curve where the mask marks a surface that keeps its color
+/// as the display shows it.
+const UNMAPPED: u32 = 512u;
+
 /// The settings flag that draws the outline's line.
 const OUTLINE: u32 = 8u;
 /// The settings flag that multiplies the HDR color by the automatic exposure's texel.
@@ -172,6 +176,16 @@ fn level_uv(size: vec2u, halvings: u32, uv: vec2f, render: vec2f) -> vec2f {
 fn mask_at(uv: vec2f, render: vec2f) -> vec2f {
     let at = level_uv(textureDimensions(outline_mask), 0u, uv, render);
     return textureSampleLevel(outline_mask, lut_sampler, at, 0.0).rg;
+}
+
+/// The share of the pixel at `uv` on the drawn corner whose surface keeps its color as the display
+/// shows it, from the mask's blue channel. It reads nothing while the flag is clear.
+fn unmapped_at(uv: vec2f, render: vec2f) -> f32 {
+    if (settings.output.flags & UNMAPPED) == 0u {
+        return 0.0;
+    }
+    let at = level_uv(textureDimensions(outline_mask), 0u, uv, render);
+    return textureSampleLevel(outline_mask, lut_sampler, at, 0.0).b;
 }
 
 /// Canvas color `color`, multiplied by its coverage, with the outline's line painted over it at
@@ -549,9 +563,10 @@ fn pixel_color(position: vec2f) -> vec4f {
 }
 #endif
 
-/// Scene color `texel` as the canvas shows it before the dither: tone mapped and encoded, and
-/// multiplied by its coverage. Display color stays as it is.
-fn display(texel: vec4f) -> vec4f {
+/// Scene color `texel` at `uv` on the drawn corner as the canvas shows it before the dither: tone
+/// mapped and encoded, and multiplied by its coverage. Display color stays as it is, and so does
+/// the color of a surface that the tone mask marks, which skips the curve.
+fn display(texel: vec4f, uv: vec2f, render: vec2f) -> vec4f {
     if (settings.output.flags & DISPLAY_COLOR) != 0u {
         return texel;
     }
@@ -560,16 +575,20 @@ fn display(texel: vec4f) -> vec4f {
     if coverage <= 0.0 {
         return vec4f(0.0);
     }
+    let exposed = texel.rgb / coverage;
 #ifdef CUSTOM_TONE_CURVE
-    let mapped = saturate(toneCurve(texel.rgb / coverage));
+    let mapped = saturate(toneCurve(exposed));
 #else
 #ifdef EFFECT_CHAIN
-    let mapped = tone_curve_hook(texel.rgb / coverage);
+    let mapped = tone_curve_hook(exposed);
 #else
-    let mapped = null3d::tonemap::tone_map(texel.rgb / coverage, settings.output);
+    let mapped = null3d::tonemap::tone_map(exposed, settings.output);
 #endif
 #endif
-    let encoded = saturate(linear_to_srgb(mapped));
+    // The mask's fraction mixes a surface that keeps its display color with one that takes the
+    // curve, which keeps the edges of a marked surface anti-aliased.
+    let shown = mix(mapped, saturate(exposed), unmapped_at(uv, render));
+    let encoded = saturate(linear_to_srgb(shown));
     return vec4f(encoded * coverage, coverage);
 }
 
@@ -623,7 +642,7 @@ fn corner_display(place: vec2f, render: vec2f, size: vec2f, light: vec4f, shade:
 #else
     let texel_color = with_glow(scene_texel(texel), light);
 #endif
-    return display(shaded(texel_color, shade));
+    return display(shaded(texel_color, shade), place / render, render);
 }
 
 /// GSR 1's window over a tap's distance, after Qualcomm's fast Lanczos 2.
@@ -733,12 +752,20 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
         // inside: this step drew that corner only.
         let corner_first = vec2i(origin);
         let corner_last = vec2i(origin + render - 1.0);
-        color = display(shaded(
-            with_glow(pixel_color(position.xy, corner_first, corner_last), light),
-            shade,
-        ));
+        color = display(
+            shaded(
+                with_glow(pixel_color(position.xy, corner_first, corner_last), light),
+                shade,
+            ),
+            uv,
+            render,
+        );
 #else
-        color = display(shaded(with_glow(pixel_color(position.xy), light), shade));
+        color = display(
+            shaded(with_glow(pixel_color(position.xy), light), shade),
+            uv,
+            render,
+        );
 #endif
     }
 #ifdef UPSCALE

@@ -57,7 +57,7 @@ const engine = await createEngine({
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
   transparent: false,    // true for a see-through canvas, with premultiplied alpha
-  hdr: true,             // false draws the 8-bit path, where toneMapped: false keeps a material's exact color
+  hdr: true,             // false draws the 8-bit path; both paths honour toneMapped: false, apart from a blended surface on the HDR path
   sketchThread: 'worker',  // or 'main': sketch code on the page's thread, for DOM-heavy apps and debugging
   largeWorld: false,     // (0.2) true for planet-scale scenes: setters keep positions exact far out
   preload: ['skinning', 'bloom'],  // (0.2) features whose shaders load before the first frame, for games that fetch nothing in play (E1421 for an unknown name)
@@ -357,7 +357,7 @@ const paint = materials.standard({
   depthWrite: true, depthTest: true,           // fixed at creation
   depthBias: { constant: 0, slopeScale: 0 },   // three.js's polygonOffset, for decals
   wireframe: false,                            // (0.2) each triangle's edges as lines, any material
-  toneMapped: true,                            // false keeps the display color; works on the 8-bit path, which hdr: false takes
+  toneMapped: true,                            // false keeps the display color on both paths; a blended surface keeps the curve on the HDR path
 });
 const glow = materials.unlit({ color: '#ffcc00' });      // ignores lights, like three.js's MeshBasicMaterial
 paint.set({ roughness: 0.4 });  // changes only the options you pass; set() is for setup, several values at once

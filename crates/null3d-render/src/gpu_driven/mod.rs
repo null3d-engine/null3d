@@ -440,8 +440,11 @@ mod ids {
     /// culling reads.
     pub const SUBSURFACE_BUCKETS: u32 = PROBE_LISTS + 1;
     pub const SUBSURFACE_RECORDS: u32 = SUBSURFACE_BUCKETS + 1;
+    /// The tone view's bucket table and bucket records, which its culling reads.
+    pub const TONE_BUCKETS: u32 = SUBSURFACE_RECORDS + 1;
+    pub const TONE_RECORDS: u32 = TONE_BUCKETS + 1;
     /// The uniform buffer of the subsurface blur's steps.
-    pub const SUBSURFACE: u32 = SUBSURFACE_RECORDS + 1;
+    pub const SUBSURFACE: u32 = TONE_RECORDS + 1;
     /// The uniform buffer of the physical sky's values.
     pub const PHYSICAL_SKY: u32 = SUBSURFACE + 1;
     /// The uniform buffer of the full-screen passes' blocks.
@@ -900,6 +903,13 @@ pub struct GpuDrivenRenderer {
     layouts_scattered: bool,
     /// True once the subsurface view's GPU objects exist.
     subsurface_made: bool,
+    /// The layout of the objects whose material keeps its display color, which the tone view
+    /// draws.
+    tone: Layout,
+    /// True when the layouts were built while some material keeps its display color.
+    layouts_toned: bool,
+    /// True once the tone view's GPU objects exist.
+    tone_made: bool,
     /// True when the scene's layout was built with the depth prepass's pipelines.
     layout_prepass: bool,
     /// The views whose depth prepass has its bind group.
@@ -1170,6 +1180,9 @@ impl GpuDrivenRenderer {
             scattering: Layout::new(Drawn::Subsurface, config.index_instances),
             layouts_scattered: false,
             subsurface_made: false,
+            tone: Layout::new(Drawn::Tone, config.index_instances),
+            layouts_toned: false,
+            tone_made: false,
             layout_prepass: false,
             prepass_views: 0,
             cells: CellCulling::new(config.cell_culling, config.direct_draws),
@@ -1351,6 +1364,7 @@ impl GpuDrivenRenderer {
             outlined,
             scattering,
             moving,
+            tone,
             copy_offsets,
             settings,
             ..
@@ -1363,6 +1377,7 @@ impl GpuDrivenRenderer {
             (outlined, std::slice::from_ref(&plain)),
             (scattering, std::slice::from_ref(&plain)),
             (moving, std::slice::from_ref(&plain)),
+            (tone, std::slice::from_ref(&plain)),
         ] {
             drawn.fit_copies(scene, batches, drawn_by, parity, copy_offsets)?;
         }
@@ -1387,6 +1402,7 @@ impl GpuDrivenRenderer {
             &self.outlined,
             &self.scattering,
             &self.moving,
+            &self.tone,
         ]
         .iter()
         .any(|layout| !layout.cluster_patches.is_empty())
@@ -1447,6 +1463,8 @@ impl GpuDrivenRenderer {
         let shadows = passes.any();
         let outlines = self.settings.outline().is_some();
         let scatters = self.settings.holds_scattering();
+        // The tone mask only matters on the path whose final pass applies the tone curve.
+        let tones = self.settings.any_keeps_display_color() && self.graph.hdr_color();
         let motion = self.settings.motion_wanted();
 
         // Ambient occlusion and the sun's contact shadows read the depth prepass's depth, so
@@ -1492,6 +1510,7 @@ impl GpuDrivenRenderer {
             || passes != self.layouts_shadowed
             || outlines != self.layouts_outlined
             || scatters != self.layouts_scattered
+            || tones != self.layouts_toned
             || motion != self.layouts_moving
             || self.graph.depth_prepass() != self.layout_prepass
             || self.redraws_wanted() != self.redraws_built
@@ -1644,6 +1663,27 @@ impl GpuDrivenRenderer {
                 self.scattering.clear();
             }
             self.layouts_scattered = scatters;
+            // The tone layout holds buckets only while some material keeps its display color.
+            if tones {
+                self.tone.rebuild(
+                    &self.settings,
+                    &mut self.pipelines,
+                    self.graph.outline_targets(),
+                    input.scene,
+                    input.batches,
+                    parity,
+                    limit,
+                    passes,
+                    Prepass::Off,
+                    &self.skinning,
+                    &mut self.key_counts,
+                    self.graph.pick_targets(),
+                    false,
+                )?;
+            } else {
+                self.tone.clear();
+            }
+            self.layouts_toned = tones;
             // The motion layout holds buckets only while a pass reads the motion.
             if motion {
                 self.moving.rebuild(
@@ -1671,12 +1711,14 @@ impl GpuDrivenRenderer {
             // all the same. Blended objects can be outlined too.
             let (layout, casters, outlined) = (&self.layout, &self.casters, &self.outlined);
             let scattering = &self.scattering;
+            let tone = &self.tone;
             self.cells
                 .classify(input.scene, &|slot| {
                     layout.draws(slot)
                         || (shadows && casters.draws(slot))
                         || (outlines && outlined.draws(slot))
                         || (scatters && scattering.draws(slot))
+                        || (tones && tone.draws(slot))
                 })
                 .map_err(|_| RecordError::OutOfMemory {
                     bytes: (input.scene.capacity() + 1).saturating_mul(16),
@@ -1750,6 +1792,8 @@ impl GpuDrivenRenderer {
         self.graph.set_sharpen(self.settings.sharpen());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
+        self.graph
+            .set_tone_mask(!self.tone.buckets.is_empty() && self.graph.hdr_color());
         self.graph.set_still_enabled(self.settings.still_enabled());
         self.graph.set_still(self.settings.still());
         self.graph.set_subsurface(
@@ -1939,7 +1983,8 @@ impl GpuDrivenRenderer {
             let made = (0..self.cascades_made).map(ViewId::cascade);
             let tiles = (0..self.tiles_made).map(ViewId::tile);
             let outline = self.outline_made.then_some(ViewId::OUTLINE);
-            for view in made.chain(tiles).chain(outline) {
+            let tone = self.tone_made.then_some(ViewId::TONE);
+            for view in made.chain(tiles).chain(outline).chain(tone) {
                 shadow::bind_depth(list, ids::frame_group(view), view)?;
             }
         }
@@ -1965,6 +2010,15 @@ impl GpuDrivenRenderer {
             shadow::create_view(list, ViewId::OUTLINE)?;
             self.culling.add_view(list, ViewId::OUTLINE)?;
             self.outline_made = true;
+        }
+        // The tone mask shares the outline mask's pass and target, so its view needs only its
+        // culling buffers and the depth that the mask tests.
+        let tone_drawn = self.graph.tone_mask_draws();
+        let new_tone = tone_drawn && !self.tone_made;
+        if new_tone {
+            shadow::create_view(list, ViewId::TONE)?;
+            self.culling.add_view(list, ViewId::TONE)?;
+            self.tone_made = true;
         }
         // The skin pass draws through the camera view's frame group, so its view needs only its
         // culling buffers.
@@ -2142,6 +2196,9 @@ impl GpuDrivenRenderer {
             if scatters {
                 self.scattering.apply(list, arena, binding_bytes)?;
             }
+            if tones {
+                self.tone.apply(list, arena, binding_bytes)?;
+            }
             (shared, casters)
         } else {
             let features = self.settings.feature_instances();
@@ -2157,6 +2214,10 @@ impl GpuDrivenRenderer {
             }
             if scatters {
                 self.scattering
+                    .update_membership(list, arena, input, features, parity)?;
+            }
+            if tones {
+                self.tone
                     .update_membership(list, arena, input, features, parity)?;
             }
             (false, false)
@@ -2186,6 +2247,9 @@ impl GpuDrivenRenderer {
         }
         if scatters {
             self.scattering.upload_records(list, arena)?;
+        }
+        if tones {
+            self.tone.upload_records(list, arena)?;
         }
         // A feature-instance draw's buffers exist before any bundle names them, and their contents
         // reach them here, after the frame's arena is set aside.
@@ -2329,6 +2393,24 @@ impl GpuDrivenRenderer {
                 let (outlined, meshes) = (&self.outlined, &self.meshes);
                 let kind = Bundle::Outline;
                 opaque::record_bundle(list, view, outlined, meshes, targets, kind, 0, &|_| false)?;
+            }
+        }
+        if tone_drawn && (upload_everything || buffers_remade || new_tone) {
+            let view = ViewId::TONE;
+            // The tone layout's tables are new whenever the layouts are.
+            let recreated = shared_recreated || upload_everything;
+            if self.config.direct_draws {
+                self.culling
+                    .apply_direct(list, view, &self.tone, binding_bytes)?;
+            } else {
+                self.culling
+                    .apply(list, view, &self.tone, recreated, binding_bytes, false)?;
+            }
+            if !self.config.direct_draws {
+                let targets = self.graph.outline_targets();
+                let (tone, meshes) = (&self.tone, &self.meshes);
+                let kind = Bundle::Tone;
+                opaque::record_bundle(list, view, tone, meshes, targets, kind, 0, &|_| false)?;
             }
         }
         if skin_drawn && (upload_everything || buffers_remade || groups_remade || new_skin) {
@@ -2576,6 +2658,43 @@ impl GpuDrivenRenderer {
                 )?;
             }
         }
+        if let (true, Some(frame)) = (tone_drawn, self.frames[ViewId::CAMERA.index()]) {
+            let view = ViewId::TONE;
+            // The mask places each vertex as the scene passes do, so its view reads the camera's
+            // frame in a uniform buffer of its own.
+            opaque::upload(list, arena, view, &frame)?;
+            let (layout, tone, cells) = (&self.layout, &self.tone, &self.cells);
+            let detail = self.settings.level_view(view, input.canvas);
+            if self.config.direct_draws {
+                self.direct.record(
+                    list,
+                    arena,
+                    input.jobs,
+                    view,
+                    &frame,
+                    input.scene,
+                    input.batches,
+                    cells,
+                    layout,
+                    tone,
+                    detail,
+                    parity,
+                )?;
+            } else {
+                self.culling.upload(
+                    list,
+                    arena,
+                    view,
+                    &frame,
+                    layout,
+                    tone,
+                    input.scene,
+                    cells,
+                    None,
+                    &detail,
+                )?;
+            }
+        }
         if let (true, Some(frame), Some(motion_frame)) = (
             motion_on,
             self.frames[ViewId::CAMERA.index()],
@@ -2804,6 +2923,7 @@ impl GpuDrivenRenderer {
         let occluding =
             occlusion && self.layout.occluders() > 0 && self.pyramids.built(input.pipelines_built);
         let (outlined, scattering) = (&self.outlined, &self.scattering);
+        let tone = &self.tone;
         let moving = &self.moving;
         let motion_draws = motion_on && self.motion.draws();
         let (frames, cascade_frames, tiles) = (&self.frames, &self.cascade_frames, &self.tiles);
@@ -2814,6 +2934,7 @@ impl GpuDrivenRenderer {
             (_, Some(tile)) => tiles.frame(tile).is_some(),
             _ if view == ViewId::OUTLINE => outline_drawn && frames[0].is_some(),
             _ if view == ViewId::SUBSURFACE => skin_drawn && frames[0].is_some(),
+            _ if view == ViewId::TONE => tone_drawn && frames[0].is_some(),
             _ if view == ViewId::MOTION => motion_draws && frames[0].is_some(),
 
             _ => frames[view.index()].is_some(),
@@ -2821,6 +2942,7 @@ impl GpuDrivenRenderer {
         let layout_of = |view: ViewId| match view {
             ViewId::OUTLINE => outlined,
             ViewId::SUBSURFACE => scattering,
+            ViewId::TONE => tone,
             ViewId::MOTION => moving,
 
             view if view.is_camera() => layout,
@@ -2932,12 +3054,22 @@ impl GpuDrivenRenderer {
                     culling.record(list, view, layout, Phase::Late)?;
                     clusters.record(list, view, layout)
                 }
-                Role::OutlineMask if drawn(ViewId::OUTLINE) => {
-                    if direct_draws {
-                        record_direct_view(list, ViewId::OUTLINE, Bundle::Outline)
-                    } else {
-                        opaque::record(list, ViewId::OUTLINE, Bundle::Outline)
+                Role::OutlineMask if drawn(ViewId::OUTLINE) || drawn(ViewId::TONE) => {
+                    if drawn(ViewId::OUTLINE) {
+                        if direct_draws {
+                            record_direct_view(list, ViewId::OUTLINE, Bundle::Outline)?;
+                        } else {
+                            opaque::record(list, ViewId::OUTLINE, Bundle::Outline)?;
+                        }
                     }
+                    if drawn(ViewId::TONE) {
+                        if direct_draws {
+                            record_direct_view(list, ViewId::TONE, Bundle::Tone)?;
+                        } else {
+                            opaque::record(list, ViewId::TONE, Bundle::Tone)?;
+                        }
+                    }
+                    Ok(())
                 }
                 Role::SkinLight if drawn(ViewId::SUBSURFACE) => {
                     if direct_draws {
@@ -3572,6 +3704,8 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.outline_made = false;
         self.scattering.forget_gpu();
         self.subsurface_made = false;
+        self.tone.forget_gpu();
+        self.tone_made = false;
         self.moving.forget_gpu();
         self.motion_made = false;
         self.motion.forget_gpu();

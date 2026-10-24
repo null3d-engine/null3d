@@ -49,3 +49,17 @@ Built: the flag's image test and demo are drawn. `createEngine({ hdr: false })` 
 - The demo `examples/tone-mapped` draws seven bright colors twice, on the 8-bit path that its start asks for. The top row keeps each color as the display shows it, and the bottom row takes the curve.
 - On the Mac's GPU on 21 October 2026, the 8-bit path drew the flagged panel at (255, 204, 102), the material's own sRGB color, and the mapped panel at (198, 158, 79): 57 steps apart in red. The HDR path drew both panels at (198, 158, 79). WebGL2 drew HDR color on that machine, so the spec checks the 8-bit promise on compatibility mode, and the HDR promise on WebGPU and WebGL2. The spec passed on all three tiers.
 - The test `tone-mapped-8-bit` draws the same scene with the switch that turns HDR color off, on WebGPU and WebGL2. The WebGL2 build of the material shaders is not the build that compatibility mode runs, so both must keep the flagged panel's color. On SwiftShader on 22 October 2026, those two copies drew (255, 204, 102) and (198, 158, 79), as compatibility mode did.
+
+## Addendum, 25 October 2026: the HDR path's mask
+
+The HDR path now honours the flag. The tone view draws the objects whose material keeps its display color into the blue channel of the outline mask. It reuses the outline mask's target, its pass and its final-pass builds, so no new target, bind group or shader variant was added for it.
+
+- The material table counts the live materials that keep their display color, as it counts the ones with a scatter radius. The first such material builds the tone view's layout, and the last one leaves it empty, so a page with no such material pays nothing.
+- The tone view culls only those objects, with the camera's frustum and layers. It draws each once, with the depth test and the same small bias toward the camera that the outline mask's visible draw uses. Only the parts that nothing hides mark a pixel.
+- Blended surfaces are left out. A blended pixel mixes two surfaces, so a one-bit mask cannot say which one owns it, and such a material keeps the curve on the HDR path. The docs record that limit. A material that blends and needs the exact color draws on the 8-bit path.
+- The final pass reads the mask's blue channel through `unmapped_at` and mixes the curve's result with the exposed color. The blend keeps an anti-aliased edge of a marked surface smooth. The pass reads the mask only while `OutputUniform::UNMAPPED` is set, so a page with no such material spends one skipped branch per pixel.
+- `tests/image/tone-mapped.spec.ts` now checks the promise on both paths: the flagged panel shows the material's own sRGB color, and the two panels stand apart. The HDR references of `tone-mapped` moved in both sets.
+
+The mask marks opaque surfaces only. An alpha-masked or alpha-hashed surface writes depth and is marked; a blended or transmitting one is not.
+
+`tests/gpu_driven.rs` checks that the engine makes the tone mask's pipeline, that the mask pass draws the material's bucket with it, and that the tone view receives the camera's frame uniform. The last check caught a fault of this branch: the view culled its objects but drew them with an empty frame, so no fragment reached the mask.

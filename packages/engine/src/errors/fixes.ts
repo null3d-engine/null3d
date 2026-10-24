@@ -39,7 +39,7 @@ export const ERROR_FIXES = {
 	E1208:
 		"Give options from the texture's docs page, such as wrap: 'repeat', filter: 'nearest' or anisotropy: 8. Give fromDatafour numbers per texel: a Uint8Array for rgba8unorm, and a Uint16Array of half floats or a Float32Array for rgba16float. Resize images larger than textures.maxSize, and decode a closed image again. Encode a KTX2 file flipped instead of passing flipY: true, and load it again instead of updating its texture.",
 	E1209:
-		"Give the material fewer textures. WebGL2 gives each shader stage 16 texture units, and the engine's lit shader reads most of them, so a custom material's own textures must fit in what is left. Use the standard material's own maps where they draw the effect.",
+		"Give the material fewer textures. WebGL2 gives each shader stage at least 16 texture units, as many as the device reports, and the engine's lit shader reads most of them, so a custom material's own textures must fit in what is left. Use the standard material's own maps where they draw the effect.",
 	E1213:
 		"Pass only the settings that the call has, each with a value that it takes. The call's docs page lists them.",
 	E1214:
@@ -65,7 +65,7 @@ export const ERROR_FIXES = {
 	E1224:
 		'Give scene.overrideMaterial a material that draws meshes, from materials.standard(), materials.unlit(), materials.shader() or materials.decal(), or null to draw each mesh with its own material.',
 	E1225:
-		"Give each add-on a namespace of its own: one name at declareAddonNamespace(), claimed once where the add-on's module loads. Let its shader library default to that name, keep its error codes inside 2000 to 9999, and give its quality keys names that the engine's table lacks. Give each feature, output and lighting slot a name that no other add-on registers. Two add-ons that share a name cannot load together.",
+		"Give each add-on a namespace of its own: one name at declareAddonNamespace(), claimed once where the add-on's module loads, with the package that owns it. Let its shader library default to that name, keep its error codes inside 2000 to 9999, and give its quality keys names that the engine's table lacks. Give each feature, output and lighting slot a name that no other add-on registers. Two add-ons that share a name cannot load together.",
 	E1301:
 		'Remove a ?gpu= switch or createEngine gpu option that forces a path this browser lacks. Update the browser, or turn on hardware acceleration in its settings.',
 	E1302:

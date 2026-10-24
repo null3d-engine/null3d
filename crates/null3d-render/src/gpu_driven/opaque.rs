@@ -233,6 +233,9 @@ pub(super) enum Bundle {
     /// The outline view's objects into the outline mask: every bucket with the pipeline that marks
     /// every part, then every bucket again with the pipeline that marks the parts nothing hides.
     Outline,
+    /// The tone view's objects into the blue channel of the outline mask: each bucket with the
+    /// mask pipeline, which tests the scene's depth.
+    Tone,
     /// The casters' depth into a tile of the shadow atlas, each bucket with its pipeline for the
     /// tiles, whose depth format may differ from the cascades'.
     Tile,
@@ -247,7 +250,9 @@ pub(super) enum Bundle {
 impl Bundle {
     fn id(self, view: ViewId) -> u32 {
         match self {
-            Self::Opaque | Self::Outline | Self::Tile | Self::Subsurface => ids::bundle(view),
+            Self::Opaque | Self::Outline | Self::Tone | Self::Tile | Self::Subsurface => {
+                ids::bundle(view)
+            }
             Self::Prepass => ids::prepass_bundle(view),
             Self::Motion(parity) => ids::motion_bundle(parity),
         }
@@ -322,6 +327,7 @@ pub(super) fn record_bundle(
             draws.record(list, |b| b.pipeline, |_| false, |_| 0)?;
             draws.record(list, |b| b.prepass, |_| false, |_| 0)?;
         }
+        Bundle::Tone => draws.record(list, |b| b.pipeline, |_| false, |_| 0)?,
     }
     list.push(Op::EndBundle, &[])?;
     Ok(())
@@ -382,6 +388,7 @@ pub(super) fn record_direct(
             draws.record(list, |b| b.pipeline, |_| false, |_| 0)?;
             draws.record(list, |b| b.prepass, |_| false, |_| 0)?;
         }
+        Bundle::Tone => draws.record(list, |b| b.pipeline, |_| false, |_| 0)?,
     }
     Ok(())
 }

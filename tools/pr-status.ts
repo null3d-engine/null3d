@@ -58,14 +58,11 @@ const INCOMPLETE = new Set([
 	'M3-B5',
 	'M3-B6',
 	'M3-E10',
-	'M3-D7',
-	'M3-D8',
 	'M3-R1',
 	'M3-O1',
 	'M3-G1',
 	'M3-G2',
 	'M3-G3',
-	'M3-K6',
 	'M3-R2',
 	'M3-R3',
 	'M3-R4',
@@ -131,17 +128,12 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-B6': 'the real-light option lights a fixed share of the cars, not the nearest ones',
 	'M3-E10':
 		'a sky layer draws into neither the environment map nor the CPU sky light, and D-242 drops both without a ruling',
-	'M3-D7':
-		'the link check runs before the texture-unit count, so an over-budget material gives a plain link error rather than the E1209 the docs promise',
-	'M3-D8': 'two add-ons that declare one name with the same fields share a namespace silently',
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
 	'M3-G1': "the Khronos sample's texture-transform pointers are not animated",
 	'M3-G2': 'no Khronos iridescence sample is tested',
 	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',
-	'M3-K6':
-		'on the HDR path, the default on most devices, a material with tone mapping off still goes through the tone curve',
 	'M3-R2': 'the stress test has not run on an iPad or a phone-class device since the change',
 	'M3-R3': 'no 5% match is shown for the upload arenas or the shadow casters',
 	'M3-R4': 'D-247 does not compare frame time, and the Mac GPU figure is owed',

@@ -48,6 +48,7 @@ use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 use crate::shadows::CasterPasses;
 use crate::subsurface::skin_key;
+use crate::tone_mask::tone_key;
 
 /// Words of one bucket record in the culling shader: base, material, radius, first draw, draw
 /// count, the centre of the local sphere that culls the bucket's sources, and the first joint of
@@ -87,6 +88,9 @@ pub(super) enum Drawn {
     /// The objects whose material has a scatter radius, as the subsurface view draws them into the
     /// skin pass's target.
     Subsurface,
+    /// The objects whose material keeps its color as the display shows it, as the tone view draws
+    /// them into the mask that the final pass reads.
+    Tone,
     /// The opaque objects and instance rows, as the motion view draws the motion of those that
     /// move into the motion target.
     Motion,
@@ -94,9 +98,9 @@ pub(super) enum Drawn {
 
 impl Drawn {
     /// True for the passes that draw the scene's surfaces, where the scene's material override
-    /// applies: the camera's views and the subsurface view.
+    /// applies: the camera's views, the subsurface view and the tone view.
     fn overrides(self) -> bool {
-        matches!(self, Drawn::Scene | Drawn::Subsurface)
+        matches!(self, Drawn::Scene | Drawn::Subsurface | Drawn::Tone)
     }
 }
 
@@ -618,6 +622,7 @@ impl Layout {
             Drawn::Casters => (ids::CASTER_BUCKETS, ids::CASTER_RECORDS),
             Drawn::Outlined => (ids::OUTLINE_BUCKETS, ids::OUTLINE_RECORDS),
             Drawn::Subsurface => (ids::SUBSURFACE_BUCKETS, ids::SUBSURFACE_RECORDS),
+            Drawn::Tone => (ids::TONE_BUCKETS, ids::TONE_RECORDS),
             Drawn::Motion => (ids::MOTION_BUCKETS, ids::MOTION_RECORDS),
         }
     }
@@ -893,11 +898,19 @@ impl Layout {
                 return None;
             }
             let page = meshes.parts(meshes.mesh(mesh - 1)?, false).first()?.page;
-            // Casters and outlined objects draw with no material, through the depth template's
-            // bindings, apart from masked casters, which test their material's alpha.
+            // Casters, outlined objects and toned objects draw with no material, through the depth
+            // template's bindings, apart from masked casters, which test their material's alpha.
             let depth_key = match drawn {
                 Drawn::Casters => Some(settings.caster_of(pipeline, material)),
                 Drawn::Outlined => Some((mask_keys(pipeline).0, 0)),
+                Drawn::Tone => {
+                    // A blended surface lets the scene behind it show, so the mask cannot say
+                    // which surface owns a pixel. Such a material keeps the curve on the HDR path.
+                    if pipeline.sorts() {
+                        return None;
+                    }
+                    Some((tone_key(pipeline), 0))
+                }
                 Drawn::Scene | Drawn::Subsurface => None,
                 Drawn::Motion => Some(settings.motion_of(pipeline, material)?),
             };
@@ -907,6 +920,7 @@ impl Layout {
                     && key.permutation & permutation::ALPHA_MASK == 0;
                 let material = if key.template == template::SHADOW_DEPTH
                     || drawn == Drawn::Outlined
+                    || drawn == Drawn::Tone
                     || unmasked_motion
                 {
                     CASTER_MATERIAL
@@ -948,6 +962,7 @@ impl Layout {
                 Drawn::Casters => !shadows.any() || object & flags::CAST_SHADOWS == 0,
                 Drawn::Outlined => object & flags::OUTLINED == 0,
                 Drawn::Subsurface => !settings.scatters(material),
+                Drawn::Tone => !settings.keeps_display_color(material),
                 Drawn::Motion => false,
             };
             if left_out {
@@ -991,7 +1006,7 @@ impl Layout {
                     };
                     key_of(pipeline, batch.mesh(), material, bounds, bits, None)
                 }
-                Drawn::Outlined | Drawn::Subsurface => None,
+                Drawn::Outlined | Drawn::Subsurface | Drawn::Tone => None,
             }
         };
 
@@ -1082,7 +1097,7 @@ impl Layout {
                     Drawn::Casters => shadows.pipelines(pipelines, pipeline),
                     Drawn::Motion => (pipelines.id(pipeline.in_pass(targets)), 0),
                     Drawn::Scene => pipelines.opaque(pipeline, targets, prepass),
-                    Drawn::Subsurface => (pipelines.id(pipeline.in_pass(targets)), 0),
+                    Drawn::Subsurface | Drawn::Tone => (pipelines.id(pipeline.in_pass(targets)), 0),
                 };
                 self.waiting
                     .extend([pipeline, second].into_iter().filter(|&id| id != 0));
@@ -1214,7 +1229,9 @@ impl Layout {
                     let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
                     (pipeline, prepass, own)
                 }
-                Drawn::Subsurface => (pipelines.id(pipeline.in_pass(targets)), 0, false),
+                Drawn::Subsurface | Drawn::Tone => {
+                    (pipelines.id(pipeline.in_pass(targets)), 0, false)
+                }
             };
             let base = if by_index { &mut indexed } else { &mut copied };
             self.parallax |= parallax;

@@ -219,7 +219,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render, pos
 - `render.setPassUniform(pass, name, value)` changes a uniform from the next frame on. It allocates nothing. The textures are fixed when the pass is added.
 - A pass runs only while something shows or reads its texture: a material, a custom effect, another pass's `textures`, or a scene pass's `reads`.
 - A pass with an `input`, or whose WGSL reads the depth, runs after the camera's passes. A custom effect that reads its texture sees the pass's image of the same frame. A material that shows it shows the image of the frame before.
-- With `input: 'outlineMask'`, red holds the outlined objects' coverage and green the parts that nothing hides. The mask draws only while outlines are on and an object is outlined. `width: 0` draws the mask without the engine's line.
+- With `input: 'outlineMask'`, red holds the outlined objects' coverage and green the parts that nothing hides. Blue marks the surfaces that keep their display color, which the HDR path's final pass reads, so read red and green alone. The mask draws while outlines are on and an object is outlined, or while a material with `toneMapped: false` draws on the HDR path. `width: 0` draws the mask without the engine's line.
 - The pass texture holds high dynamic range color where the device draws it, as a scene pass's texture does. On devices that draw 8-bit color, values above 1 clip, and the `'sceneColor'` input holds display color, after the tone curve.
 
 ## Compute passes

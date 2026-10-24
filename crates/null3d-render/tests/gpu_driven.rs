@@ -5,7 +5,7 @@ mod common;
 
 use std::collections::HashMap;
 
-use common::{BATCH_ROWS, SCENE_CAPACITY, World, count, far_out};
+use common::{BATCH_ROWS, SCENE_CAPACITY, World, base_sphere, count, far_out};
 use null3d_core::handle::Handle;
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{POINT_CONE, VisibleLight, kind};
@@ -1405,5 +1405,71 @@ fn the_direct_path_uploads_each_bucket_s_visible_copies() {
     for (offset, size) in writes {
         assert_eq!(offset % sizes::INSTANCE_STRIDE, 0, "{offset}");
         assert_eq!(size % sizes::INSTANCE_STRIDE, 0, "{size}");
+    }
+}
+
+#[test]
+fn a_material_that_keeps_its_display_color_draws_the_tone_mask() {
+    use null3d_gpu::drawlist::template;
+    use null3d_render::frame::CanvasOutput;
+    use null3d_render::materials::{Shading, feature};
+    use null3d_render::output::{Antialias, SceneColor};
+
+    // The HDR path, whose final pass reads the mask. The 8-bit path applies the flag in the
+    // material's own shader and draws no mask.
+    let config = RendererConfig {
+        canvas: CanvasOutput {
+            scene_color: SceneColor::from_format(format::RGBA16_FLOAT),
+            antialias: Antialias::None,
+            transparent: false,
+        },
+        ..RendererConfig::default()
+    };
+    for direct_draws in [false, true] {
+        let config = RendererConfig {
+            direct_draws,
+            ..config
+        };
+        let mut world = World::build_sized(GpuDrivenRenderer::new(config), 64);
+        world.add_object_with(
+            &base_sphere(0.5, [8, 6]),
+            Shading::Unlit,
+            feature::NO_TONE_MAP,
+        );
+        let mut mock = MockBackend::default();
+        let mut made = Vec::new();
+        let mut drew = false;
+        let mut uploaded = false;
+        // The tone view's frame uniform: a view's four buffers start at the builder's seventh id.
+        let frame = 7 + 4 * ViewId::TONE.index() as u32;
+        for _ in 0..4 {
+            let commands = world.step(&mut mock, true);
+            made = commands
+                .iter()
+                .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[1] == template::TONE_MASK)
+                .map(|(_, o)| o[0])
+                .collect();
+            drew = commands
+                .iter()
+                .any(|(op, o)| *op == Op::SetPipeline && made.contains(&o[0]));
+            uploaded = commands
+                .iter()
+                .any(|(op, o)| *op == Op::WriteBuffer && o[0] == frame);
+            if drew {
+                break;
+            }
+        }
+        assert!(
+            !made.is_empty(),
+            "the engine makes the tone mask's pipeline for the material's bucket, direct draws {direct_draws}"
+        );
+        assert!(
+            drew,
+            "the mask pass draws the material's bucket with the tone mask's pipeline, direct draws {direct_draws}"
+        );
+        assert!(
+            uploaded,
+            "the tone view reads the camera's frame, so its vertices reach the scene's places, direct draws {direct_draws}"
+        );
     }
 }
