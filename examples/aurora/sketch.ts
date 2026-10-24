@@ -29,8 +29,8 @@ export default defineSketch(async (ctx) => {
 	const dayOptions: TimeOfDayOptions = { heading: HEADING, model: 'physical' };
 	const sky = {
 		// Thin, slow clouds: the aurora shows through them, and they hide it where they thicken.
-		cloudCoverage: 0.12,
-		cloudDensity: 0.35,
+		cloudCoverage: 0.06,
+		cloudDensity: 0.25,
 		cloudElevation: 0.7,
 		aerialPerspective: 1.5,
 		sunPosition: day.atmosphere.sunPosition,
@@ -61,14 +61,14 @@ export default defineSketch(async (ctx) => {
 	// A low ridge of snow along the far shore, fading into the night.
 	math.seed(11);
 	const snow = paint('#9fb4cc', 0.9, true);
-	for (let k = 0; k < 24; k++) {
-		const x = math.randFloat(-900, 900);
-		const z = math.randFloat(-460, -300);
-		const height = math.randFloat(30, 120);
+	for (let k = 0; k < 34; k++) {
+		const x = math.randFloat(-320, 320);
+		const z = math.randFloat(-190, -120);
+		const height = math.randFloat(14, 46);
 		scene.createMesh({
-			mesh: geometry.cone({ radius: height * 1.4, height, radialSegments: 7 }),
+			mesh: geometry.cone({ radius: height * 1.7, height, radialSegments: 6 }),
 			material: snow,
-			position: [x, height * 0.5 - 6, z],
+			position: [x, height * 0.5 - 3, z],
 			rotation: [0, math.randFloat(0, Math.PI), 0, 1],
 		});
 	}
@@ -76,9 +76,9 @@ export default defineSketch(async (ctx) => {
 	const needles = paint('#0e2a24', 0.9, true);
 	const low = geometry.cone({ radius: 2.2, height: 7, radialSegments: 6 });
 	const high = geometry.cone({ radius: 1.5, height: 6, radialSegments: 6 });
-	for (let k = 0; k < 14; k++) {
-		const at = [math.randFloat(-120, 120), 0, math.randFloat(-70, -30)] as const;
-		const scale = math.randFloat(0.7, 1.5);
+	for (let k = 0; k < 16; k++) {
+		const at = [math.randFloat(-70, 70), 0, math.randFloat(-42, -18)] as const;
+		const scale = math.randFloat(0.8, 1.6);
 		scene.createMesh({ mesh: low, material: needles, position: at, scale: [scale, scale, scale] });
 		scene.createMesh({
 			mesh: high,
@@ -91,8 +91,8 @@ export default defineSketch(async (ctx) => {
 	const aurora = createAurora(ctx, { opacity: 1, sun: 0.2 });
 	// A dim, wide light under the aurora, as its light falls on the ice and the snow.
 	const glow = scene.createAmbientLight();
-	glow.setColor([0.06, 0.2, 0.12]);
-	glow.setIntensity(0.5);
+	glow.setColor([0.08, 0.24, 0.16]);
+	glow.setIntensity(1.1);
 
 	return {
 		onUpdate() {
