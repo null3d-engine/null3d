@@ -714,14 +714,17 @@ jobs:
         with: *without-references
       # The key names the files that decide what the compiler produces and the scripts that run it:
       # the shader crates, the build tool that builds the compiler, the compiler's runner script and
-      # the Vite plugin, whose code the runner calls, with the packages' install. Not the whole of
-      # tools/lib: that folder holds the size report, the limits report and the cache's own rules,
-      # and a change to any of them used to purge this pass and rebuild every shard cold (22 October
-      # 2026). A script that a shard starts, or that such a script imports, belongs in this list, and
+      # the three files of the Vite plugin that the runner imports, which import no package. Not the
+      # whole of tools/lib: that folder holds the size report, the limits report and the cache's own
+      # rules, and a change to any of them used to purge this pass and rebuild every shard cold (22
+      # October 2026). Not the whole plugin or the packages' lock either: from 23 to 24 October 2026,
+      # 12 of the 39 landings that changed the wider key changed only the plugin's other files and
+      # tests or the lock, and each such run rebuilt all the shards, about 80 job-minutes. A script
+      # that a shard starts, or that such a script imports, belongs in this list, and
       # tools/lib/ci-workflow.test.ts fails on one that the list leaves out.
       - name: The key of this shard's inputs
         id: inputs
-        run: echo "key=passed-v4-shader-compiler-${{ matrix.shard }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shader-compiler.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=passed-v4-shader-compiler-${{ matrix.shard }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shader-compiler.ts', 'packages/vite-plugin/src/compiler-calls.js', 'packages/vite-plugin/src/shader-compiler.ts', 'packages/vite-plugin/src/shader-types.ts', 'package.json') }}" >> "$GITHUB_OUTPUT"
       - name: Find an earlier pass with the same inputs
         id: passed
         uses: actions/cache/restore@v4
