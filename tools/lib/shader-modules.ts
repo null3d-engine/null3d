@@ -12,9 +12,15 @@
 // source, its manifest table and the library modules it imports. A change to one shader compiles
 // only that shader, and a change to a library module compiles only the entries that import it. The
 // cache is shared by every checkout and reused across a change of any WGSL file.
+//
+// The folders of that cache are told apart by the bytes of the compiled shader build program, not by
+// a hash of the compiler's sources. A source change that leaves the program identical, such as a
+// comment or a crate test, cannot change any generated shader, so every entry is reused; a change
+// that alters the program reads a folder of its own, so no entry is read with a new meaning. Each
+// entry keeps its own key and its dependencies' hashes, so those checks still decide one entry.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { copyInPlace } from './atomic-files';
 import {
 	acquireLock,
@@ -56,10 +62,10 @@ export const modulesCacheDir = (): string =>
 	cacheDir('shader-modules', process.env.NULL3D_SHADER_CACHE);
 /**
  * The folder of the per-entry shader cache, shared by every checkout on the machine, read from the
- * environment on each call. It holds each entry's compiled output under a folder named by the
- * compiler's stamp, so a change to one shader compiles only that shader and a change to a library
- * module compiles only the entries that import it. It is the `shader-cache` folder under the build
- * cache's one root.
+ * environment on each call. It holds each entry's compiled output under a folder that names the
+ * program which wrote it, so a change to one shader compiles only that shader and a change to a
+ * library module compiles only the entries that import it. It is the `shader-cache` folder under
+ * the build cache's one root.
  */
 export const entryCacheDir = (): string => cacheDir('shader-cache');
 interface ModuleRecord {
@@ -190,7 +196,13 @@ export function compilerFiles(root: string): string[] {
 	);
 }
 
-/** The stamp of the compiler: a hash of every file that changes how it compiles, for every entry. */
+/**
+ * The stamp of the compiler's sources: a hash of every file that may change how it compiles. It
+ * names the folder that a compiler whose program bytes are new writes, and it is the compiler part
+ * of CI's cache keys, which a run reads before it builds the program. The entry folder itself is
+ * chosen by the program's bytes, so a source change that leaves the program identical reuses the
+ * entries of an earlier stamp.
+ */
 export function compilerStamp(root: string): string {
 	return hashFiles(root, compilerFiles(root));
 }
@@ -344,14 +356,6 @@ export function announceColdBuild(entries: string): void {
 	);
 }
 
-/**
- * The folder of this checkout's compiler in the per-entry cache. A stamp from another compiler
- * changes the folder, so no entry is read with a new meaning.
- */
-function entryFolder(root: string, stamp = compilerStamp(root)): string {
-	return join(entryCacheDir(), stamp);
-}
-
 /** The program that writes the modules, as cargo names it on this system. */
 const PROGRAM = process.platform === 'win32' ? 'shader-build.exe' : 'shader-build';
 
@@ -361,6 +365,108 @@ const PROGRAM_FOLDER = 'program';
 /** Where the per-entry cache folder `entries` keeps the program of its compiler. */
 function keptProgram(entries: string): string {
 	return join(entries, PROGRAM_FOLDER, PROGRAM);
+}
+
+/** The file of an entry folder that names the compiler whose program wrote its entries. */
+const COMPILER_MARK = 'compiler';
+
+/** The names of the folders directly inside `folder`, in order: none when it does not exist. */
+function foldersIn(folder: string): string[] {
+	try {
+		return readdirSync(folder, { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => entry.name)
+			.sort();
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * The identity of a compiler: a hash of the bytes of the program that runs it. Two programs with
+ * the same bytes compile every shader the same way, so the entries that one wrote serve the other.
+ * A change to a compiler source that cannot alter the generated WGSL leaves the bytes as they were,
+ * and a change that does alter its output gives other bytes.
+ */
+function programFingerprint(program: string): string {
+	return hashOf(readFileSync(program));
+}
+
+/**
+ * The compiler's fingerprint that `folder` records, or undefined when it records none and keeps no
+ * program. A folder that an earlier build made records none, so its kept program decides, and the
+ * answer is written beside the entries; that is how the folders of an earlier build join the rule.
+ */
+function compilerMark(folder: string): string | undefined {
+	try {
+		const marked = readFileSync(join(folder, COMPILER_MARK), 'utf8').trim();
+		if (marked !== '') return marked;
+	} catch {
+		// A folder that records none is read from the program it keeps.
+	}
+	const kept = keptProgram(folder);
+	if (!existsSync(kept)) return undefined;
+	const fingerprint = programFingerprint(kept);
+	writeFileAtomic(join(folder, COMPILER_MARK), `${fingerprint}\n`);
+	return fingerprint;
+}
+
+/** Writes `fingerprint` as the compiler of `folder`, and returns the folder. */
+function markedFolder(folder: string, fingerprint: string): string {
+	writeFileAtomic(join(folder, COMPILER_MARK), `${fingerprint}\n`);
+	return folder;
+}
+
+/**
+ * The folder of the per-entry cache that the compiler with `fingerprint` reads and writes. A folder
+ * whose recorded fingerprint matches holds entries that this compiler wrote, so it can be read; the
+ * match that holds the most entries serves, so a source change that leaves the program identical
+ * reuses the entries of an earlier source and many checkouts share one set. The source stamp names
+ * a new folder, unless another compiler already holds that folder: entries share a key when their
+ * folder names match, so this compiler then takes a name of its own.
+ */
+function compilerEntryFolder(root: string, fingerprint: string): string {
+	let chosen: string | undefined;
+	let most = -1;
+	for (const name of foldersIn(entryCacheDir())) {
+		const folder = join(entryCacheDir(), name);
+		if (compilerMark(folder) !== fingerprint) continue;
+		const count = entryFiles(folder).length;
+		if (count > most) {
+			chosen = folder;
+			most = count;
+		}
+	}
+	if (chosen !== undefined) return markedFolder(chosen, fingerprint);
+	const stamp = compilerStamp(root);
+	const named = join(entryCacheDir(), stamp);
+	const taken = compilerMark(named);
+	const folder =
+		taken === undefined || taken === fingerprint
+			? named
+			: join(entryCacheDir(), `${stamp}-${fingerprint}`);
+	return markedFolder(folder, fingerprint);
+}
+
+/** The program of this compiler, and the entry folder that it reads and writes. */
+interface CompilerCache {
+	program: string;
+	entries: string;
+}
+
+/**
+ * The program of this checkout's compiler and the entry folder that it reads and writes. The
+ * program is kept under the source stamp, which covers every compiler source, so a kept program is
+ * the one that cargo would build. Its bytes then choose the entry folder, so a source change that
+ * leaves them the same reuses the entries of an earlier source.
+ */
+function compilerCache(root: string): CompilerCache {
+	const program = shaderProgram(root, join(entryCacheDir(), compilerStamp(root)));
+	const entries = compilerEntryFolder(root, programFingerprint(program));
+	// A folder that this compiler inherits from an earlier source keeps its own program, so a shard
+	// hands over the program of the folder whose entries it fills, as it does for a new folder.
+	if (!existsSync(keptProgram(entries))) copyInPlace(program, keptProgram(entries));
+	return { program, entries };
 }
 
 /**
@@ -392,20 +498,22 @@ function shaderProgram(root: string, entries?: string): string {
 
 /**
  * Runs the shader build with `extra` arguments, with its output on standard error so that callers
- * keep a clean output.
+ * keep a clean output. It reads and writes the entry folder that `cache` names, or the one that
+ * this compiler's program chooses.
  */
-function runShaderBuild(root: string, extra: readonly string[] = []): void {
+function runShaderBuild(root: string, extra: readonly string[] = [], cache?: CompilerCache): void {
 	const buildArgs = ['--root', root, ...extra];
-	let entries: string | undefined;
+	let used: CompilerCache | undefined;
 	if (shaderCacheOff()) {
 		buildArgs.push('--no-cache');
 	} else {
-		const stamp = compilerStamp(root);
-		entries = entryFolder(root, stamp);
-		buildArgs.push('--cache', entries, '--stamp', stamp);
-		announceColdBuild(entries);
+		used = cache ?? compilerCache(root);
+		// The folder's name is the stamp: entries of one compiler share one folder, and the stamp in
+		// each entry's key keeps two versions of one entry apart.
+		buildArgs.push('--cache', used.entries, '--stamp', basename(used.entries));
+		announceColdBuild(used.entries);
 	}
-	const program = shaderProgram(root, entries);
+	const program = used?.program ?? shaderProgram(root);
 	const { status, error } = spawnSync(program, buildArgs, { cwd: root, stdio: ['ignore', 2, 2] });
 	if (error) throw new Error(`could not run the shader build ${program} (${error.message})`);
 	if (status !== 0) throw new Error('the shader build failed; its output is above');
@@ -425,16 +533,23 @@ function entryFiles(folder: string): string[] {
  * already held are reused, not compiled. When `out` names a folder, the entries that this run
  * stored are copied there, and none that the cache held before, so a CI job can upload only its
  * new entries. The first shard also copies the program of its compiler there. Returns the entries'
- * file names.
+ * file names and the folder that holds them.
  */
-export function buildEntriesShard(root: string, shard: string, out?: string): string[] {
+export function buildEntriesShard(
+	root: string,
+	shard: string,
+	out?: string,
+): { stored: string[]; folder: string } {
 	if (shaderCacheOff())
 		throw new Error(
 			'--entries-shard fills the per-entry shader cache, so it cannot run while NULL3D_NO_CACHE, NULL3D_NO_BUILD_CACHE or NULL3D_NO_SHADER_CACHE turns the caches off',
 		);
-	const folder = entryFolder(root);
+	// The folder is chosen before the run, because the entries that the run stored are the ones
+	// that it did not hold before.
+	const cache = compilerCache(root);
+	const folder = cache.entries;
 	const before = new Set(entryFiles(folder));
-	runShaderBuild(root, ['--entries-shard', shard]);
+	runShaderBuild(root, ['--entries-shard', shard], cache);
 	const stored = entryFiles(folder).filter((name) => !before.has(name));
 	if (out !== undefined) {
 		mkdirSync(out, { recursive: true });
@@ -443,7 +558,7 @@ export function buildEntriesShard(root: string, shard: string, out?: string): st
 		// without compiling it again.
 		if (shard.startsWith('0/')) copyInPlace(keptProgram(folder), keptProgram(out));
 	}
-	return stored;
+	return { stored, folder };
 }
 
 /** The names of the shader modules on disk, in order. */
