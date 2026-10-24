@@ -22,7 +22,11 @@ import { REPO_ROOT } from './lib/server.ts';
 const USAGE = 'usage: bun run images:review [--accept [<tests>]] [--from <folder> | --ci <run>]';
 
 /** The CI artifacts that hold images for review: the browser test shards' and the Safari and Firefox jobs'. */
-const CI_ARTIFACTS = ['browser-test-results-*', 'real-browser-runs-*'];
+const CI_ARTIFACTS = [
+	'browser-test-results-*',
+	'browser-heavy-test-results-*',
+	'real-browser-runs-*',
+];
 
 export interface ReviewOptions {
 	/** Accept the images: undefined to only show them, all of them for [], or those of the tests named. */
