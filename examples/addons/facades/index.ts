@@ -94,6 +94,11 @@ export interface FacadeLook {
 	power?: FacadeWave;
 	/** Bright shop fronts along the street level, or `false` for wall alone. The default is `false`. */
 	shops?: FacadeShops | false;
+	/**
+	 * Draw the sun's contact shadows where the material meets the ground. A wall's face stands off
+	 * the ground, so the default is `false`.
+	 */
+	contactShadows?: boolean;
 }
 
 /** A facade material, and the controls that its scene drives. */
@@ -240,6 +245,7 @@ function build(
 			blinds: room.blinds ? 1 : 0,
 		},
 		color: look.color ?? '#ffffff',
+		contactShadows: look.contactShadows ?? false,
 	});
 	return {
 		material,
