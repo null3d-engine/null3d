@@ -1101,11 +1101,16 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
  * fill with over a hundred builds: the largest file went from 1,332,440 to 1,752,865 bytes
  * uncompressed and from 39,341 to 49,501 bytes after Brotli. A separate permutation value would
  * have doubled the lit builds instead, past the build budget.
+ *
+ * The Brotli figure rose to 56 KB on 24 October 2026 for the water add-on (D-14's addendum of that
+ * date). Its surface function rides every build of the standard material, and the largest set is
+ * 1,204.5 KB uncompressed and 53.3 KB after Brotli, so the add-on's own gate would have failed on a
+ * feature that works as the engine's own materials do.
  */
 export const FIRST_USE_SHADER_BUDGET: Budget = {
 	raw: 1_792 * 1024,
 	gzip: 320 * 1024,
-	brotli: 52 * 1024,
+	brotli: 56 * 1024,
 };
 
 /**

@@ -133,7 +133,7 @@ Check this table before you write a generator, control, effect or loader of your
 | Hills, valleys and other ground from a height field | `@null3d/terrain` | `api/terrain` | built |
 | Rigid bodies, joints and character movement | the physics add-on | `guides/physics` | not built yet; run Rapier or cannon-es in the sketch worker |
 | Text in the scene, sharp at any distance | the MSDF text add-on | none yet | not built yet; use HTML labels with `ui.trackLabel` |
-| Water with waves, foam and a surface seen from below | `@null3d/water` | none yet | not built yet; recipe 20 builds one with a custom material |
+| A river or a lake, with waves, foam, soft shores and a surface seen from below | `@null3d/water` | `api/water` | built |
 | Trees, shrubs, ferns, hostas and grass, with detail levels, wind data and ecological placement | `@null3d/vegetation` | `api/vegetation` | built (generator and scatter; materials and textures not built yet) |
 | three.js look modes for a port: Reinhard and Cineon tone curves, and a soft outline with a glow and a pulse | `@null3d/three-compat` | `api/three-compat` | built |
 

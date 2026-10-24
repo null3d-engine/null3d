@@ -48,7 +48,7 @@ Some null3D packages ship code from other projects, as the original file or as a
 | --- | --- | --- |
 | three.js: the math and option names of its orbit, map, fly, first-person, pointer-lock, drag and transform controls | MIT | `lib/index.js` |
 
-`@null3d/impostors`, `@null3d/particles`, `@null3d/splats` and `@null3d/terrain` ship only their own code.
+`@null3d/impostors`, `@null3d/particles`, `@null3d/splats`, `@null3d/terrain` and `@null3d/water` ship only their own code.
 
 ## The tools
 
