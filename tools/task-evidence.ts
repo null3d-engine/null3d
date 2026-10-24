@@ -32,6 +32,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		"Video textures: `engine.registerVideo` and `textures.fromVideo`, held by `tests/pages/video-texture.ts`, which passes on both GPU paths in Chrome on the Mac, on the software renderer, and in Safari 26.6.2 and Firefox 158 — a 512 by 288 frame uploads 577 KiB against the Low preset's 2 MiB budget, upright, within two steps of a data texture; the page's video support loads at its first call; the guide `guides/video-textures` and the mapping entry",
 	'M3-F7':
 		"The three-compat add-on in `packages/three-compat/`: Reinhard and Cineon as named tone curves through the core's tone-curve setting, and the outline pass's glow, pulse and blurred edge, with `tone-reinhard` and the outline pictures on every tier and strict comparisons against three.js's formulas",
+	'M3-F2':
+		"Splat streaming: `createSplats` reads a stream index and downloads only the chunks that the view needs, in `packages/splats/src/stream.ts`; `tests/image/splats-stream.spec.ts` checks that a capped view downloads a part of the cloud; the 24 October device runs loaded 34% of the cloud on the Galaxy S24 and 61% on the iPad's WebGL2 path; the version 4 SPZ reader has its own test in `packages/splats/src/spz.test.ts`",
 	'M3-E3':
 		"`registerGltfExtension` in `packages/engine/src/scene/gltf-extensions.ts`; the `splats-gltf` picture, and E1417's hint for `KHR_gaussian_splatting` in `gltf-extensions.test.ts`",
 	'M3-E4':
