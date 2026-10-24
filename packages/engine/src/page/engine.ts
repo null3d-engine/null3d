@@ -112,7 +112,9 @@ import {
 	type SketchThread,
 	type Switches,
 } from './switches';
-import { PageVideos, type VideoOptions } from './videos';
+// The video support loads at the first call that needs it, so a page that shows no video downloads
+// none of its code.
+import type { PageVideos, VideoOptions } from './videos';
 
 /**
  * Options for `createEngine`.
@@ -540,6 +542,16 @@ let warnedFallback = false;
 
 /** True once an engine on the page has warned that a service worker's page lost its isolation. */
 let warnedIsolation = false;
+
+/**
+ * The page's video calls. The video support's code loads at the first call, and the calls that come
+ * before it lands run in their order once it does.
+ */
+interface PageVideoCalls {
+	register(video: HTMLVideoElement, options: VideoOptions): () => void;
+	follow(name: string, follow: boolean): void;
+	dispose(): void;
+}
 
 /**
  * A running engine, as `createEngine` returns it.
@@ -1530,8 +1542,7 @@ async function startEngine(
 		}
 		if (name === VIDEO_FOLLOW) {
 			const message = data as VideoFollowMessage | null;
-			if (typeof message?.name === 'string')
-				pageVideos?.follow(message.name, message.follow === true);
+			if (typeof message?.name === 'string') videos?.follow(message.name, message.follow === true);
 			return;
 		}
 		if (earlyMessages) {
@@ -1595,8 +1606,8 @@ async function startEngine(
 	let growJobs: ((count: number) => void) | undefined;
 	/** The page's labels, once the page knows which thread draws. */
 	let pageLabels: PageLabels | undefined;
-	/** The page's videos, once the engine has a thread that the frames go to. */
-	let pageVideos: PageVideos | undefined;
+	/** The page's video calls, which load the video support's code at their first call. */
+	let videos: PageVideoCalls | undefined;
 
 	const jobWorkers = threaded
 		? jobWorkerCount(switches.jobs, navigator.hardwareConcurrency ?? 1)
@@ -1726,9 +1737,48 @@ async function startEngine(
 		else threads?.sketch?.send({ type: 'post', name, data }, transfer);
 	};
 	// The sketch asks for a video's frames from its setup, before the page registers the video, so
-	// the videos exist before that.
-	const videos = new PageVideos(sendToSketch);
-	pageVideos = videos;
+	// the calls wait for the code and then run in the order that the page and the sketch made them.
+	let videoSupport: PageVideos | undefined;
+	let videoSupportLoading: Promise<void> | undefined;
+	let videoSupportStopped = false;
+	const videoCalls: (() => void)[] = [];
+	const loadVideoSupport = (): void => {
+		if (videoSupport || videoSupportStopped) return;
+		videoSupportLoading ??= import('./videos').then(({ PageVideos }) => {
+			if (videoSupportStopped) return;
+			videoSupport = new PageVideos(sendToSketch);
+			for (const call of videoCalls.splice(0)) call();
+		});
+	};
+	videos = {
+		register(video, options) {
+			let stop: (() => void) | undefined;
+			let stopped = false;
+			const call = () => {
+				if (!stopped) stop = videoSupport?.register(video, options);
+			};
+			if (videoSupport) call();
+			else videoCalls.push(call);
+			loadVideoSupport();
+			return () => {
+				stopped = true;
+				stop?.();
+			};
+		},
+		follow(name, follow) {
+			const call = () => {
+				videoSupport?.follow(name, follow);
+			};
+			if (videoSupport) call();
+			else videoCalls.push(call);
+			loadVideoSupport();
+		},
+		dispose() {
+			videoSupportStopped = true;
+			videoCalls.length = 0;
+			videoSupport?.dispose();
+		},
+	};
 	/**
 	 * The page's core, when the page runs the sketch. The page keeps the single-threaded build's core
 	 * for the next engine it starts. The threaded build's core lives in the engine's own shared
@@ -1798,7 +1848,7 @@ async function startEngine(
 				notifySlot(slots, slot, threads?.sketch?.handle);
 			await localDrawing?.stop();
 			localRunner?.dispose();
-			pageVideos?.dispose();
+			videos?.dispose();
 			input?.listen(false);
 			// A stopped engine reads no input, so it gives the pointer back.
 			if (globalThis.document?.pointerLockElement === options.canvas) document.exitPointerLock();
@@ -2358,7 +2408,8 @@ async function startEngine(
 			firstFrame,
 			labels,
 			postToSketch: sendToSketch,
-			registerVideo: (video, videoOptions) => videos.register(video, videoOptions),
+			registerVideo: (video, videoOptions) =>
+				(videos as PageVideoCalls).register(video, videoOptions),
 			onSketchMessage(handler) {
 				messageHandlers.add(handler);
 				const early = earlyMessages;
