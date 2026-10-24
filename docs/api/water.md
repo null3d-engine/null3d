@@ -22,7 +22,7 @@ flowchart LR
     camera["A camera under the surface"] --> under["createUnderwater"]
 ```
 
-`@null3d/water` draws the water in a scene. A river follows a line, and a lake fills an outline, and both come from one description. The surface has long waves that the current carries downstream, finer ripples in its normal, caustics on the bed, foam around what breaks the surface, and a shore that fades where the bed rises to meet it. A reflection pass mirrors the banks and the sky, and redraws as often as the quality preset affords. The same surface draws from below, and `createUnderwater` gives the view from under the water its color, its bend and its caustics.
+`@null3d/water` draws the water in a scene. A river follows a line, and a lake fills an outline, and both come from one description. The surface has long waves that the current carries downstream, and finer ripples in its normal. It draws caustics on the bed, foam around what breaks the surface, and a shore that fades where the bed rises to meet it. A reflection pass mirrors the banks and the sky, and redraws as often as the quality preset affords. The same surface draws from below, and `createUnderwater` gives the view from under the water its color, its bend and its caustics.
 
 The package is built on the engine's public API. Its surface and underwater shaders ship compiled, so your build does not compile them, and the package needs no extra setup for them.
 
@@ -125,7 +125,8 @@ swimmer floats and drifts with the water under it.
 
 `createUnderwater(ctx, camera, water, options)` adds an effect while the camera is near or under the
 water's surface, and removes it when the camera rises. The effect reads each pixel's line of sight
-from the camera's near plane, so a camera half under the water splits the picture at the waterline.
+from the camera's near plane. A camera half under the water then splits the picture at the
+waterline.
 It bends the light with the current's slow wobble, plays caustics over the bed, and swallows the
 light with distance into the water's own color.
 
