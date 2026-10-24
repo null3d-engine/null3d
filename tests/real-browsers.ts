@@ -1121,6 +1121,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'demos',
 	'vegetation',
 	'tree-generation',
+	'webgpu-stall',
 ]);
 
 /**
