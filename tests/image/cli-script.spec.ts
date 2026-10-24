@@ -49,6 +49,11 @@ function projectCopy(): string {
 		join(root, 'vite.config.ts'),
 		viteConfig.replaceAll("from '../../../", `from '${REPO_ROOT}/`),
 	);
+	// The fixture's TypeScript config extends the repository's base config by a path from the
+	// fixture, which the copy no longer is. Vite reads it to transform the page's TypeScript.
+	const tsconfig = JSON.parse(readFileSync(join(FIXTURE, 'tsconfig.json'), 'utf8'));
+	tsconfig.extends = join(FIXTURE, tsconfig.extends);
+	writeFileSync(join(root, 'tsconfig.json'), JSON.stringify(tsconfig));
 	return root;
 }
 
