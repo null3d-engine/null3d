@@ -232,6 +232,27 @@ the GPU buffers, the engine's tables and the wasm file. The spec `tests/image/co
 runs the page on each GPU path and scale when `NULL3D_COMPUTE_COST` is set, and the device plan
 `compute` runs it on a device.
 
-**The figures.** Each device class's row is recorded here when its run finishes: the GPU time with
-the pass off and on, and the GPU textures, GPU buffers and wasm of each side.
+**The figures.** The memory figures are structural: the overlay reads the GPU textures' and buffers'
+bytes, the engine's tables and the wasm, and the machine's load changes none of them. They come
+from the Mac's run of the page at render scale 1, at the preset that the engine chose for each path,
+with a 1920 by 1080 canvas. The on side holds the pass and the quads that read it; the off side
+holds the same quads with the standard material. The pass's target stays allocated on both sides, so
+the useful figure is the on side's total.
+
+| GPU path | Textures | Buffers | wasm | Total |
+| --- | --- | --- | --- | --- |
+| WebGPU | 75.4 MiB | 2.2 MiB | 6.8 MiB | 92.4 MiB |
+| compatibility mode | 67.5 MiB | 2.2 MiB | 6.6 MiB | 85.5 MiB |
+| WebGL2 | 115.4 MiB | 0.6 MiB | 7.6 MiB | 133.4 MiB |
+
+The GPU time is owed. The cost harness measures only while the machine's 1-minute load is under 8,
+and the Mac's load stayed between 100 and 200 through the night, so every attempt refused to record
+a figure. Take it in a quiet window with
+`NULL3D_COMPUTE_COST=1 bun run test:browser -- compute-cost.spec.ts`, which prints each path's GPU
+time with the pass off and on, and the load beside it.
+
+The iPad and the S24 run the same page through the `compute` device plan:
+`bun run devices:cloud --only bsipadpro13-safari --plan compute`, and the same with
+`--only bsgalaxys24-chrome`. Each runs six pages: the three GPU paths at scales 1 and 0.5.
+
 
