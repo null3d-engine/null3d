@@ -10,7 +10,7 @@ summary: "runTask: an add-on's code and WebAssembly on the job workers; shared m
 
 > Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
-An add-on can move heavy work off the thread that runs the sketch, and onto the engine's job workers. `runTask` runs a task there while the frames continue. An add-on that sorts many instances in each frame uses this hook, and so does one for Gaussian splats.
+An add-on can move heavy work off the thread that runs the sketch, and onto the engine's job workers. `runTask` runs a task there while the frames continue. An add-on that chooses what to draw, or in what order, from many objects uses this hook: the Gaussian splats add-on chooses each chunk's prefix there, nearest first. The engine's transparent pass then sorts the chosen rows on the job workers, as it does for every blended draw, so an add-on does not sort its drawn rows through a task.
 
 A task is an object with three parts: a name, the address of the module that runs, and the WebAssembly files that the module uses. The module exports `run`, and the worker calls it for each task. The answer travels back to the thread that called `runTask`.
 

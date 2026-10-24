@@ -38,6 +38,8 @@ How the data was produced: a patch to the resize page made the quality sketch po
 ## Proposal
 
 1. A gap counts as a pause only when no frame was drawing during it. A frame that the GPU or the thread that draws held for half a second or more counts as a frame of that length. It fills the windows it spans, so one 3 s frame makes a whole second of windows that missed. The completed frames' busy time, which the metrics rings hold already, should tell the two cases apart. After a pause, the frame that ends the gap was quick; after a slow frame, it was not. The code must show that this holds in every thread mode, since the wait can fall before the submit as well as after it.
+
+   A frame that the GPU still holds has no busy time. No completion is recorded until the GPU finishes the frame. A frame held far longer than the recent ones is given up without one. So a frame presented since the last call, with no completion after it, was drawing through the whole gap. The engine's own first frames leave no completion record, so the absence says nothing until one has come. CI's software renderer showed that case. The completion of its first slow frame was given up, so the busy time alone read the gap as a pause. A resume of the page also explains a gap, and is no frame of the page's. The page's visibility listener counts resumes, and the governor treats the first gap after one as a pause.
 2. A step down is on trial, as a step up is. When the governor judges again after the settle time, it compares the mean frame time of the new setting's first second with that of the second that caused the step. If the new frames came a tenth slower or more (`LOWER_LOSS_PERCENT`), it takes the step back at once. A step that changes nothing stays: a step that saves little shows no gain within one second's noise, and the walk down passes through such steps. The level below then closes: no step down into it until a wait has passed. The wait starts at 10 s (`FLOOR_AFTER_MS`) and doubles with each failed step into it, up to the longest wait of a step up. A step that held is kept, and its level's wait starts again from the shortest.
 
    During a trial the page draws at the new setting for the settle time and one second of frames, about two seconds at the target rate, before the governor judges it. On a page whose frames take seconds, the trial lasts as long as those first frames. If the step made the frames slower, the user sees that slower setting for the trial's length, and the governor then takes the step back.
@@ -60,6 +62,10 @@ Rule 1 lands only if the completed frames' busy time tells a slow frame from a p
   - A gap of 3.3 s with an idle GPU still starts the windows again, so a pause stays a pause.
   - A single held frame under a second takes no step, since the fast windows of that second save it.
   - A step down is taken back at the first held frame after it, before the trial's time runs out.
+  - The same, with a 900 ms first frame: the return comes within that second, before the trial's bound.
+  - A frame that the thread that draws presented, with no completion after it, is judged as a held frame.
+  - A gap after the page shows again starts the windows, whatever the rings hold.
+  - No held-frame step comes before the engine's first completion record.
   - A software device keeps the whole scale after a step below it failed, however long the slow frames last.
   - A software device steps below the whole scale while the steps pay.
   - A step down whose next second is slower is undone, and its level closes. The wait doubles on a second failure.
@@ -69,6 +75,14 @@ Rule 1 lands only if the completed frames' busy time tells a slow frame from a p
 - The trap page (`tests/pages/governor-trap.ts`, `tests/image/governor-trap.spec.ts`): a light scene whose canvas the page tunes until its whole scale draws over the target rate. It runs in every thread mode, on both GPU paths of a software renderer. The governor must step below the whole scale once, judge the slow frames after it, and return to the whole scale without another step down.
 
   All ten runs passed on the Mac's software renderer, in 5.7 minutes. The canvas tuned to 2560 by 1440 pixels. There the whole scale drew 4.5 to 9.9 frames a second, or 101 to 223 ms a frame. The governor stepped about 3 s after it came on. The first frame after the step took 1.25 to 2.42 s, so each trial read a held frame rather than a judged second. The frame counts agree: the return came two or three sketch frames after the step. No run stepped below 0.95, and none changed the scale again in the 16 s that followed.
+
+  CI's software renderer told the rest. Its trap runs at `40098254435` drew the whole scale at about 300 ms a frame and the new setting at about 1.44 s. The return came 5.75 to 5.77 s after the step, four frames later. That is the trial's 4 s bound, not the held frame: the completion of the first slow frame had been given up, so the busy time saw a pause. With the absence signal above, the first slow frame is judged, and the return comes one frame after the step.
+
+### What "within a second" means
+
+The line is the one second that the trial judges, not a second of the clock on a page whose frames take longer. The governor judges a second of the new setting's frames (`DROP_AFTER_MS`) after the settle time. The return comes at the first frame it can judge. Its wall time is that frame's length: 1.25 to 2.42 s on the Mac's software renderer, where the frame took that long, and about 1.4 s on CI's.
+
+No earlier return would change what the user sees: the next frame cannot begin before the slow one ends. A verdict before the frame ends would be a guess, and it would undo steps that pay. Where the first frame after the step fits in a second, the return comes within that second: a unit test with a 900 ms first frame checks it.
 - The governor's stress test (`tests/pages/governor.ts`): the render scale may change direction no more than twice in the last seconds of its hold. A setting that holds must not swing back and forth.
 
   The first version of the check counted every change of the render scale. The hold walks the scale down one step after another, so a governor that behaved read as flapping, and the check failed it. A monotone walk is not a flap: only a change of direction is. The record keeps the correction. A check that calls a settled walk a fault would push the next reader to weaken a governor that works.
@@ -77,6 +91,6 @@ Rule 1 lands only if the completed frames' busy time tells a slow frame from a p
 
 ## Consequences
 
-- Rule 1 changes `GovernorLoop.frame`, which measures the longest busy time of the frames that finished in a gap. It also changes `Governor.gap`, which judges a held frame as the windows it spans. A held frame after a step down fails the trial at once, before any further step. Seven new unit tests in `governor.test.ts` check the rules, beside the six of the trial.
+- Rule 1 changes `GovernorLoop.frame`, which measures the longest busy time of the frames that finished in a gap, and reads a frame presented with no completion after it as a held frame. It also changes `Governor.gap`, which judges a held frame as the windows it spans, and takes a resume of the page for a pause. `SketchRunner` passes the page's resume count to the loop. A held frame after a step down fails the trial at once, before any further step. Ten new unit tests in `governor.test.ts` check the rules, beside the six of the trial.
 - Rule 3 adds `Governor.setSoftware` and the whole scale's closure in `Governor.lower` and `Governor.undoLower`, the name test in `shared/software.ts`, and the device flag that `page/limits.ts` and `sketch/runner.ts` carry to the governor. The draw-path probe reads the same name test, so one place decides what a software renderer is.
 - `.dev/implementation-notes.md` describes the gap rule in its governor paragraph, so that paragraph changed too.

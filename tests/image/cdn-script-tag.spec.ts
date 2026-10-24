@@ -1,9 +1,10 @@
 // A page that is a single HTML file, with no bundler: it imports the engine's built files from
 // another origin, as a CDN serves them, and draws a scene. The build under target/cdn holds what
 // tools/build-cdn.ts writes: the engine package's built JavaScript, its shader modules, both
-// WebAssembly builds and the vendor files. The page runs in both thread modes that the build
-// supports: single-threaded without the isolation headers, as a page on a site that cannot send
-// them, and threaded with them.
+// WebAssembly builds and the vendor files, with the add-ons beside the engine. The page runs in
+// both thread modes that the build supports: single-threaded without the isolation headers, as a
+// page on a site that cannot send them, and threaded with them. A second page draws with the
+// terrain add-on from the same build, on each GPU path that the browser offers.
 
 import { readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
@@ -11,12 +12,15 @@ import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { ISOLATION_HEADERS } from '../../packages/vite-plugin/src/index.ts';
 import { buildCdn } from '../../tools/lib/cdn.ts';
+import { GPU_PATH_NAMES, type GpuPath } from '../lib/gpu-paths.ts';
 import { REPO_ROOT } from '../lib/server.ts';
 
 /** Where the CDN build is written, and the folder whose files the CDN origin serves. */
 const BUILD = join(REPO_ROOT, 'target/cdn');
 /** The page's file, which the page's origin serves as it is. */
 const PAGE_FILE = join(REPO_ROOT, 'tests/pages/cdn-try.html');
+/** The page that draws with the terrain add-on's built code from the CDN. */
+const ADDON_PAGE_FILE = join(REPO_ROOT, 'tests/pages/cdn-addon.html');
 
 /** The policy that a page of inline scripts needs, with the engine's files on the CDN. */
 function policy(cdn: string): string {
@@ -70,7 +74,9 @@ test.beforeAll(async () => {
 				response.setHeader('content-security-policy', policy(cdnOrigin));
 				for (const [name, value] of Object.entries(headersOf(url.searchParams.get('threaded'))))
 					response.setHeader(name, value);
-				response.end(readFileSync(PAGE_FILE));
+				response.end(
+					readFileSync(url.pathname === '/cdn-addon.html' ? ADDON_PAGE_FILE : PAGE_FILE),
+				);
 				return;
 			}
 			const body = readFileSync(join(BUILD, decodeURIComponent(url.pathname)));
@@ -143,3 +149,82 @@ for (const [name, threaded, mapped, build] of [
 		expect(green).toBeGreaterThan(blue);
 		expect(alpha).toBeGreaterThan(200);
 	});
+
+/** What the add-on's page reports after it draws. */
+interface CdnAddonResult {
+	error?: string;
+	build: 'single' | 'threaded';
+	threaded: boolean;
+	tier: 'webgpu' | 'webgpu-compat' | 'webgl2';
+	width: number;
+	height: number;
+	/** The share of sampled pixels where the green channel is the largest. */
+	covered: number;
+	/** The frame's mean red, green and blue. */
+	mean: [number, number, number];
+}
+
+/** The tier that each forced GPU path starts. */
+const TIER_OF: Readonly<Record<GpuPath, CdnAddonResult['tier']>> = {
+	webgpu: 'webgpu',
+	compat: 'webgpu-compat',
+	webgl2: 'webgl2',
+};
+
+/** Opens the add-on's page on one GPU path, and returns what it reports. */
+async function openAddon(page: Page, tier: GpuPath, threaded: boolean): Promise<CdnAddonResult> {
+	const errors: string[] = [];
+	page.on('pageerror', (error) => errors.push(error.message));
+	const query = new URLSearchParams({ cdn: `${cdnOrigin}/`, gpu: tier });
+	if (threaded) query.set('threaded', '1');
+	await page.goto(`${pageOrigin}/cdn-addon.html?${query}`);
+	await page.waitForFunction(
+		() => 'cdnAddon' in globalThis || 'cdnAddonError' in globalThis,
+		undefined,
+		{ timeout: 180_000 },
+	);
+	const reported = (await page.evaluate(() => {
+		const page = globalThis as unknown as { cdnAddon?: CdnAddonResult; cdnAddonError?: string };
+		return page.cdnAddon ?? { error: page.cdnAddonError };
+	})) as CdnAddonResult;
+	const failure = errors.length > 0 ? errors.join('; ') : reported.error;
+	return failure === undefined ? reported : { ...reported, error: failure };
+}
+
+/** The checks that the add-on's frame answers on every path and thread mode. */
+function expectGround(result: CdnAddonResult): void {
+	expect(result.width * result.height).toBeGreaterThan(0);
+	// The ground fills the lower part of the frame, where its green layers show. A frame without the
+	// add-on shows the blue background alone, whose mean has blue above green.
+	expect(result.covered).toBeGreaterThan(0.3);
+	const [red, green, blue] = result.mean;
+	expect(green).toBeGreaterThan(blue * 1.5);
+	expect(green).toBeGreaterThan(red * 1.2);
+}
+
+for (const tier of ['webgl2', 'compat', 'webgpu'] as const)
+	test(`a page draws with an add-on from the CDN, in ${GPU_PATH_NAMES[tier]}`, async ({ page }) => {
+		test.setTimeout(6 * 60_000);
+		const result = await openAddon(page, tier, true);
+		// A browser without the path starts no engine, and names the path that it asked for.
+		test.skip(/E1301/.test(result.error ?? ''), `this browser has no ${GPU_PATH_NAMES[tier]}`);
+		console.log(`cdn-addon ${tier}: ${JSON.stringify(result)}`);
+		expect(result.error).toBeUndefined();
+		expect(result.tier).toBe(TIER_OF[tier]);
+		expect(result.build).toBe('threaded');
+		expect(result.threaded).toBe(true);
+		expectGround(result);
+	});
+
+test('a page draws with an add-on from the CDN, single-threaded with no isolation headers', async ({
+	page,
+}) => {
+	test.setTimeout(6 * 60_000);
+	const result = await openAddon(page, 'webgl2', false);
+	console.log(`cdn-addon single-threaded: ${JSON.stringify(result)}`);
+	expect(result.error).toBeUndefined();
+	expect(result.tier).toBe('webgl2');
+	expect(result.build).toBe('single');
+	expect(result.threaded).toBe(false);
+	expectGround(result);
+});

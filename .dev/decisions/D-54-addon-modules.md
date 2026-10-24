@@ -365,3 +365,46 @@ test scene whose cards cover the screen many times over must not tune the engine
 
 The runs are the two 24 October 2026 records for [the cloud iPad](../tested-devices/ipad-pro-13-safari/20261024-074806-splats.md)
 and [the Galaxy S24](../tested-devices/galaxy-s24-sm-s921b-chrome/20261024-074630-splats.md).
+
+## Addendum, 25 October 2026: the add-ons in the CDN build
+
+The 22 October build carried the engine alone. A page with no bundler could not use an add-on. Its
+guide said a page loads an add-on only from a build of its own. Rule 7 above asks that an add-on
+work from a CDN. D-173's platform task asks for a test that loads one add-on from the CDN build.
+
+### The fault in the layout
+
+An add-on's built code imports the engine by its package name, `@null3d/engine`. A page's import
+map resolves that name for the page's own modules. It does not reach a worker, and an add-on's code
+runs in the sketch worker and the job workers. A copy of the package beside the engine would
+therefore start on the page and fail on the first worker.
+
+### The build now
+
+`bun run build:cdn` builds each foundation add-on with the same pack-time compile that the npm
+packages take, so its WGSL is compiled and no `.wgsl` file ships. It copies the add-on to
+`addons/<name>/` in the layout of the add-on's package. It rewrites each JavaScript file's engine
+imports to a relative address that reaches the engine in the same build, such as
+`../../../lib/index.js`. Both the page and every worker then resolve the same engine module from
+the same version of the build.
+
+The build writes `null3d-third-party-notices.txt` at its root, with the engine's notices first and
+each add-on's after it. A host publishes the folder, which is a redistribution, so the notices
+travel with it.
+
+### What proves it
+
+`tests/image/cdn-script-tag.spec.ts` serves the build from another origin and draws a terrain from
+it. The terrain's shader comes from the pack-time compile, and the add-on's code imports the engine
+beside it. The page renders on each GPU path that the browser offers, in both thread modes. The
+four tests are WebGPU, compatibility mode and WebGL2 threaded, and WebGL2 single-threaded without
+the isolation headers. On the Mac on 25 October 2026 all four passed. Every path drew the same
+frame mean, which shows that each path showed the same ground.
+
+### Options rejected
+
+- **Leave the add-ons out.** The page cannot load them, and the add-on rule above stays unmet.
+- **Give the page's import map the add-on's engine import.** A worker reads no import map, so the
+  add-on fails as soon as the sketch runs in a worker.
+- **Ship a second copy of the engine beside each add-on.** A page would load two engine modules and
+  could mix versions.

@@ -7,23 +7,28 @@
 // build from the release asset (D-54). A page with no build step has no plugin, so this build
 // writes the modules into `lib/generated` itself, from the shader set that this machine's build
 // wrote. That is the one thing the package lacks and the reason this build exists.
+//
+// The build also carries each add-on under `addons/<name>/`, in the layout of its own package, so
+// a page with no build step loads an add-on the same way it loads the engine. An add-on's built
+// code imports the engine by its package name, which no page and no worker resolves without a
+// bundler, so the copy imports the engine beside it by a relative address instead.
 
 import { createHash } from 'node:crypto';
 import {
+	copyFileSync,
 	cpSync,
 	existsSync,
 	mkdirSync,
-	readdirSync,
 	readFileSync,
 	rmSync,
 	statSync,
 	writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
-import { CORE_FILES } from '../../packages/vite-plugin/src/index.ts';
+import { join, posix } from 'node:path';
+import { CORE_FILES, NOTICES_FILE } from '../../packages/vite-plugin/src/index.ts';
 import { refuseStaleCore } from './core-sources.ts';
 import { walkFiles } from './files.ts';
-import { buildPackageLibrary } from './packages.ts';
+import { buildPackageLibraries } from './packages.ts';
 
 /** The engine package that the build copies. */
 const ENGINE = 'packages/engine';
@@ -36,6 +41,23 @@ export const CDN_OUT = 'target/cdn';
 
 /** The address of the engine's entry point inside the build, relative to its folder. */
 export const CDN_ENTRY = 'lib/index.js';
+
+/** The add-ons that the build carries, each under `addons/<name>/`. */
+export const CDN_ADDONS: readonly string[] = [
+	'controls',
+	'geometry',
+	'impostors',
+	'particles',
+	'splats',
+	'terrain',
+	'three-compat',
+];
+
+/** The engine files that an add-on's code imports by package name, and their place in the build. */
+const ENGINE_ENTRIES: Readonly<Record<string, string>> = {
+	'@null3d/engine': CDN_ENTRY,
+	'@null3d/engine/stats': 'lib/stats.js',
+};
 
 /**
  * The file beside the build folder that names the engine files it was made from, so a run whose
@@ -61,21 +83,31 @@ export interface CdnBuild {
 }
 
 /**
- * A hash of the files that the build copies and of the engine's source files, so a second run in
- * the same checkout writes nothing. Sizes and times are enough: the compile rewrites every file
+ * A hash of the files that the build copies and of the sources that it compiles, so a second run
+ * in the same checkout writes nothing. Sizes and times are enough: the compile rewrites every file
  * whose source changed.
  */
 export function cdnSourcesHash(root: string): string {
 	const hash = createHash('sha256');
-	const add = (folder: string, relative: string) => {
-		for (const path of walkFiles(join(root, folder), relative)) {
-			const stat = statSync(join(root, folder, path));
-			hash.update(`${folder}/${path}\0${stat.size}\0${stat.mtimeMs}\n`);
-		}
+	const addFile = (path: string) => {
+		const file = join(root, path);
+		if (!existsSync(file)) return;
+		const stat = statSync(file);
+		hash.update(`${path}\0${stat.size}\0${stat.mtimeMs}\n`);
 	};
-	add(ENGINE, 'src');
-	add(ENGINE, 'dist/wasm');
-	add(ENGINE, 'vendor');
+	const addFolder = (folder: string) => {
+		for (const path of walkFiles(root, folder)) addFile(path);
+	};
+	addFolder(`${ENGINE}/src`);
+	addFolder(`${ENGINE}/dist/wasm`);
+	addFolder(`${ENGINE}/vendor`);
+	addFile(`${ENGINE}/THIRD-PARTY-NOTICES.txt`);
+	for (const name of CDN_ADDONS) {
+		addFolder(`packages/${name}/src`);
+		addFile(`packages/${name}/package.json`);
+		const notices = `packages/${name}/THIRD-PARTY-NOTICES.txt`;
+		if (existsSync(join(root, notices))) addFile(notices);
+	}
 	return hash.digest('hex');
 }
 
@@ -104,20 +136,62 @@ export function missingCdnSources(root: string): string[] {
 }
 
 /** Every file under `dir`, relative to it, with its size. */
-function filesUnder(dir: string, relative = ''): CdnFile[] {
-	const out: CdnFile[] = [];
-	for (const entry of readdirSync(join(dir, relative), { withFileTypes: true })) {
-		const path = relative === '' ? entry.name : `${relative}/${entry.name}`;
-		if (entry.isDirectory()) out.push(...filesUnder(dir, path));
-		else out.push({ path, bytes: statSync(join(dir, path)).size });
+function filesUnder(dir: string): CdnFile[] {
+	return walkFiles(dir, '').map((path) => ({ path, bytes: statSync(join(dir, path)).size }));
+}
+
+/**
+ * The text of a built add-on file with its engine imports made relative, so a page and its workers
+ * read the engine from the build. A page's import map does not reach a worker, and an add-on's
+ * code runs in the sketch and job workers, so its package name would not resolve there.
+ */
+export function engineImportsMadeRelative(text: string, fileInBuild: string): string {
+	return text.replace(
+		/(['"])(@null3d\/engine(?:\/[^'"]*)?)\1/g,
+		(match: string, quote: string, name: string) => {
+			const target = ENGINE_ENTRIES[name];
+			if (target === undefined) return match;
+			return `${quote}${posix.relative(posix.dirname(fileInBuild), target)}${quote}`;
+		},
+	);
+}
+
+/** Copies an add-on's built package into the build, with the engine beside it. */
+function copyAddon(root: string, out: string, name: string): void {
+	const from = join(root, 'packages', name);
+	const to = join(out, 'addons', name);
+	cpSync(join(from, 'lib'), join(to, 'lib'), { recursive: true });
+	for (const path of walkFiles(to, ''))
+		if (path.endsWith('.js')) {
+			const file = join(to, path);
+			const before = readFileSync(file, 'utf8');
+			const after = engineImportsMadeRelative(before, `addons/${name}/${path}`);
+			if (after !== before) writeFileSync(file, after);
+		}
+	for (const file of ['LICENSE-MIT', 'LICENSE-APACHE', 'THIRD-PARTY-NOTICES.txt']) {
+		const source = existsSync(join(from, file)) ? join(from, file) : join(root, file);
+		if (existsSync(source)) copyFileSync(source, join(to, file));
 	}
-	return out;
+}
+
+/**
+ * Writes the notices of every package in the build beside it, the engine's first and the add-ons'
+ * after it, as a production build writes them. A host that publishes the build redistributes the
+ * code, and each license asks the notice to travel with it.
+ */
+function writeNotices(root: string, out: string): void {
+	const texts = ['engine', ...CDN_ADDONS]
+		.map((name) => join(root, 'packages', name, 'THIRD-PARTY-NOTICES.txt'))
+		.filter((file) => existsSync(file))
+		.map((file) => readFileSync(file, 'utf8').trimEnd());
+	if (texts.length > 0) writeFileSync(join(out, NOTICES_FILE), `${texts.join('\n\n')}\n`);
 }
 
 /**
  * Writes the CDN build into `out`: the engine package's built JavaScript and declarations, both
- * WebAssembly builds, the vendor files and the generated shader modules. Fails when this checkout
- * lacks a file that a page loads, with the step that writes it.
+ * WebAssembly builds, the vendor files and the generated shader modules; the add-ons beside the
+ * engine; and the notices of every package in it. Fails when this checkout lacks a file that a
+ * page loads, with the step that writes it.
  */
 export function buildCdn(root: string, out: string): CdnBuild {
 	refuseStaleCore(root);
@@ -127,7 +201,7 @@ export function buildCdn(root: string, out: string): CdnBuild {
 		const bytes = files.reduce((total, file) => total + file.bytes, 0);
 		return { out, files, bytes, reused: true };
 	}
-	buildPackageLibrary(root, 'engine');
+	buildPackageLibraries(root, ['engine', ...CDN_ADDONS]);
 	const missing = missingCdnSources(root);
 	if (missing.length > 0)
 		throw new Error(
@@ -138,6 +212,8 @@ export function buildCdn(root: string, out: string): CdnBuild {
 	mkdirSync(out, { recursive: true });
 	for (const folder of CDN_FOLDERS)
 		cpSync(join(engine, folder), join(out, folder), { recursive: true });
+	for (const name of CDN_ADDONS) copyAddon(root, out, name);
+	writeNotices(root, out);
 	writeFileSync(stampPath(out), `${JSON.stringify({ sources })}\n`);
 	const files = filesUnder(out);
 	const bytes = files.reduce((total, file) => total + file.bytes, 0);
