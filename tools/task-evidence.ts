@@ -8,9 +8,9 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-R21':
 		"The gate reads its software-renderer pictures from the commit's own CI browser jobs: `bench/ci-browser-jobs.ts`, 12 tests in `bench/lib/gate.test.ts`; D-238",
 	'M3-A4':
-		'`bloomLevel` in `packages/engine/src/scene/effects.ts`; documented in `docs/api/post.md`',
+		"`bloomLevel` in `packages/engine/src/scene/effects.ts`; the lens kit's streak reads level 3 of bloom's chain, with the `lens-streak` picture on both paths; `docs/api/post.md`",
 	'M3-A6':
-		'`setDrawRange` in `packages/engine/src/scene/scene.ts`; the ranges texture bound by the replay page',
+		'`setDrawRange` in `packages/engine/src/scene/scene.ts`; the `lod-range`, `lod-range-batch` and `lod-hide` pictures on every tier; D-211',
 	'M3-A8':
 		'Grading controls in `packages/engine/src/scene/post.ts`; the Skyway pictures exercise them',
 	'M3-G2':
@@ -20,9 +20,9 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-A1':
 		'Raycast and pick hits carry `uv`: `packages/engine/src/scene/queries.ts`, `docs/api/raycast.md`',
 	'M3-A10':
-		'The `sharpen` value runs the RCAS pass at render scale 1: `packages/engine/src/scene/post.ts`',
+		"The `sharpen` value runs the RCAS pass at render scale 1: `packages/engine/src/scene/post.ts`; D-205's cost table, measured 24 October 2026: it adds 0.393 ms on WebGPU, 0.459 in compatibility mode and 0.382 on WebGL2 at full scale, and nothing at half scale",
 	'M3-A2':
-		'`textures.fromCanvas` and `texture.refresh(rect)` in `packages/engine/src/scene/textures.ts`; `docs/api/textures.md`',
+		"`textures.fromCanvas` and `texture.refresh(rect)` in `packages/engine/src/scene/textures.ts`; `tests/image/canvas-texture.spec.ts` holds a 1024² canvas's 256² refresh inside the upload budget on both paths; D-204",
 	'M3-A5':
 		'`createVertexDraw` in `packages/engine/src/scene/scene.ts:4623-4702`; `examples/rain/sketch.ts`',
 	'M3-A7': '`limit_hdr` maps NaN to zero: `crates/null3d-shaders/wgsl/lib/color.wgsl:35-38`',

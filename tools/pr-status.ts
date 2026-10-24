@@ -17,7 +17,7 @@ import { TASK_EVIDENCE } from './task-evidence.ts';
 
 /** The milestone pull request, its title, and the plan that lists its tasks. */
 const PR = '549';
-const TITLE = 'feat: the 0.2 release work for level of detail, effects and add-ons';
+const TITLE = 'feat: the 0.2 release work for level of detail, effects, add-ons and vegetation';
 const PLAN = '.internal/plan/m3-breakdown.md';
 const BASE = 'origin/main';
 
@@ -33,11 +33,7 @@ const ON_BRANCH = new Set(['M3-A3', 'M3-B4', 'M3-E9', 'M3-R14']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
 const INCOMPLETE = new Set([
-	'M3-A2',
-	'M3-A4',
-	'M3-A6',
 	'M3-A9',
-	'M3-A10',
 	'M3-B1',
 	'M3-D9',
 	'M3-E1',
@@ -56,10 +52,6 @@ const INCOMPLETE = new Set([
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
-	'M3-A2': 'the canvas texture draws, but its picture test is red',
-	'M3-A4': "the bloom levels are readable, but the lens kit's streak does not read them",
-	'M3-A6':
-		'the band is tested on the CPU-culled path only; the GPU-driven path binds the ranges texture without one',
 	'M3-A9': 'the hero shadow draws, but D-219 still holds an empty cost placeholder',
 	'M3-E1':
 		'the hook exists and is unit-tested; its first user (the splats add-on) is not on the branch',
@@ -71,7 +63,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		'the hook exists and is unit-tested; its first user is the splats add-on, which is not on the branch',
 	'M3-E6':
 		'the hook exists and is unit-tested; its first users are the splats and water add-ons, which are not on the branch',
-	'M3-A10': 'the sharpening draws, but its evidence does not close the task',
 	'M3-B1': 'the lens kit has no picture test and no cost per preset',
 	'M3-D9':
 		'the command fails on an add-on that imports the engine internal entry, but no test or recorded run calls it on the foundation add-ons',
@@ -102,6 +93,7 @@ const GROUPS: readonly (readonly [string, string])[] = [
 	['glTF and API', 'GK'],
 	['Shipping', 'OT'],
 	["The study's tasks", 'R'],
+	['Vegetation', 'V'],
 	['Demos', 'X'],
 ];
 
