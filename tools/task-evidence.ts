@@ -12,7 +12,7 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-A6':
 		'`setDrawRange` in `packages/engine/src/scene/scene.ts`; the `lod-range`, `lod-range-batch` and `lod-hide` pictures on every tier; D-211',
 	'M3-A3':
-		'A custom material declares `texture_2d_array<f32>` and picks the layer in each texture function: `packages/vite-plugin/src/shader-types.ts`, the docs `packages/engine/docs/guides/custom-shaders.md` and `custom-passes.md`; D-239',
+		'A custom material declares `texture_2d_array<f32>` and picks the layer in each texture function: `packages/vite-plugin/src/shader-types.ts`, the docs `docs/guides/custom-shaders.md` and `custom-passes.md`; D-239',
 	'M3-A5':
 		'`createVertexDraw` in `packages/engine/src/scene/scene.ts:4623-4702`; `examples/rain/sketch.ts`',
 	'M3-A7': '`limit_hdr` maps NaN to zero: `crates/null3d-shaders/wgsl/lib/color.wgsl:35-38`',
@@ -20,7 +20,7 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'Version check in each foundation add-on (`packages/engine/src/shared/version.ts`); `packages/cli/src/upgrade.js`',
 	'M3-D3': "E1417's message names the add-on: `packages/engine/src/errors/codes.ts:417`",
 	'M3-D4': "The particle buffer's record layout and limits: `docs/concepts/particle-buffer.md`",
-	'M3-D5': '`examples/addons/README.md` and two add-ons in that layout',
+	'M3-D5': '`examples/addons/README.md` and the four add-ons in that layout',
 	'M3-D6': 'The plugin interface version check: `packages/engine/src/shared/version.ts`',
 	'M3-D9':
 		"`bunx @null3d/cli check-addon` runs the engine's gates on one add-on: `packages/cli/src/check-addon.js`, which refuses `tests/fixtures/d9-addon-internal` for importing `@null3d/engine/internal`; D-225 records the run over every foundation add-on and the fixture's page and cost gates",
@@ -45,7 +45,7 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'Spot-light cookies, `light.map`: `packages/engine/src/scene/scene.ts`, `docs/api/lights.md`',
 	'M3-K5': '`scene.overrideMaterial`: `packages/engine/src/scene/scene.ts`, `docs/api/scene.md`',
 	'M3-F8':
-		"`probe.capture()` again on request, with the moved object's reflection settling: `crates/null3d-render/tests/probes.rs` and the `probe-capture` picture on every tier; `docs/api/scene.md`",
+		"`probe.capture()` again on request, with the moved object's reflection settling: `crates/null3d-render/tests/probes.rs` and the `probe-capture` picture on every tier; `docs/api/scene.md`. The compatibility-mode picture failed three full runs on a reference drawn from a slow run; the page now pins the frame-budget governor (d3dda9e72), and CI has yet to confirm it",
 	'M3-R6':
 		'D-226 records the timings on Chrome and Safari: at most 0.29 ms in Safari, nothing measurable in Chrome, so the pattern stays',
 	'M3-R10':
