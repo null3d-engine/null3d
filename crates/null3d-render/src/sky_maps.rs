@@ -350,6 +350,9 @@ struct SkyMap {
     texture: Handle,
     /// Its stages, the copy included.
     stages: u32,
+    /// The stage at which the map captures its light, which the page places a stage or two before
+    /// the copy so that the read lands before the levels that frame publishes.
+    capture: u32,
     /// The sky and the layer of the levels that frames draw with, and its diffuse light, once the
     /// map is full.
     shown: Option<(MapSky, Option<SkyLayer>, Sh)>,
@@ -557,11 +560,13 @@ impl SkyMaps {
 
     /// Makes cube texture `texture` a sky map of `stages` stages, at least 1, which fills in the
     /// first frame after its generator made it ready. A texture that is a sky map already stays one.
-    pub fn add(&mut self, texture: Handle, stages: u32) {
+    pub fn add(&mut self, texture: Handle, stages: u32, capture: u32) {
         if self.maps.iter().all(|map| map.texture != texture) {
+            let stages = stages.max(1);
             self.maps.push(SkyMap {
                 texture,
-                stages: stages.max(1),
+                stages,
+                capture: capture.min(stages - 1),
                 shown: None,
                 fill: None,
                 light: self.lights.len(),
@@ -733,10 +738,13 @@ impl SkyMaps {
             let copy = map.stages - 1;
             let last = if map.shown.is_none() { copy } else { first };
             // A layer's light is the map's own texels, summed on the GPU once the fill has drawn
-            // every face of the chain and read back over the next frames.
+            // every face of the chain and read back over the next frames. The capture runs a stage
+            // or two before the copy, so that the light this frame takes for the map is ready by
+            // the frame whose levels publish: no frame draws a map that the core sky's light alone
+            // explains.
             let captured = layer.is_some_and(|layer| layer.map != 0);
             for stage in first..=last {
-                let capture = match captured && stage == copy {
+                let capture = match captured && stage == map.capture {
                     true => Some(&mut *light),
                     false => None,
                 };

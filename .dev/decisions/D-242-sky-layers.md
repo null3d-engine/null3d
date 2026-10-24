@@ -116,8 +116,10 @@ layer; the layer's values arrive in the stage's command, as the core sky's cloud
 The engine cannot tell how fast a layer moves, because its animation lives inside its WGSL. So the
 layer declares `refresh`, the seconds between the map's captures of it, defaulting to one second;
 0 marks a layer that stands still, whose map then fills only when the sky or the layer's values
-change. A fill costs what a map's refresh always cost, spread over the frames, so a layer's look
-costs by how often it changes and never by the frame rate.
+change. A fill spreads over some twenty frames, a stage a frame, so a layer's look costs a rate:
+one fill each `refresh` seconds, 20 stage draws a second at the default. A page that asks for a
+faster capture gets one fill after another with no idle stage, which is the most the map can do,
+and nothing is added to a frame.
 
 ### How the layer reaches the CPU sky light
 
@@ -132,20 +134,23 @@ takes them as the map's diffuse light, in place of the CPU model's.
 
 Because the coefficients come from the texels the reflections read, the two places hold one sky by
 construction: no second implementation of the layer exists, the add-on writes nothing for it, and a
-layer of any shape lights the scene. Until the first capture lands, which is a frame or two after
-the map's levels, the map keeps the CPU model's own coefficients, so no frame loses its light and
-no frame flashes dark.
+layer of any shape lights the scene. The capture runs a stage or two before the fill's copy, so the
+read lands first and no frame draws the map's levels beside the core sky's light alone; until a
+new layer's first capture lands the map keeps the CPU model's own coefficients, so no frame loses
+its light and none flashes dark before the layer arrives. The picture test checks that order on
+every GPU tier: the light reaches the scene with the map's levels or a frame before them, never
+after.
 
 ### The cost
 
 | Measure | Cost |
 | --- | --- |
-| A layer's build | One more build of `environment.wgsl` with the layer, at the page's build, beside the box's build |
+| A layer's build, at the page's build | One more build of `environment.wgsl` with the layer, beside the box's build: 110 to 190 ms of the build, measured with the debug compiler that the tests run. The page carries the result as its own shader text: 40 KB of WGSL, 9 KB after Brotli, for the aurora's layer beside 11 KB and 3 KB for the box. The start's download does not change: none of it is an engine file that a first use fetches |
 | A map fill with a layer | Nine texels of a projection over a 32-texel face of the chain: a few thousand cube samples, on the GPU, once a fill |
-| The read back | 256 bytes copied and mapped asynchronously, once a fill, a frame or two before the light follows |
-| A frame | Nothing: the projection and the read belong to the fill |
-| A still layer | One fill, when the layer or the sky changes |
-| A moving layer | One fill each `refresh` seconds |
+| The read back | 256 bytes copied and mapped asynchronously, once a fill, a stage or two before the copy publishes the levels |
+| A frame | Nothing, and no frame waits: the projection and the read belong to the fill, the read is a map promise on WebGPU and a fence polled with a zero timeout on WebGL2, and a fill that cannot start while another runs starts on a later frame |
+| A still layer, `refresh` 0 | One fill when the layer is installed, replaced or changed, and when the sky moves past a step |
+| A moving layer | A rate: one fill each `refresh` seconds, so 20 stage draws a second at the default of 1 s, and a stage draw a frame while a fill runs. A page that asks for faster gets one fill after another with no idle stage, which is the most the map can do. The rate is the page's to choose: the engine does not slow it to the frame rate or hold it back |
 
 The GPU projection mirrors the CPU's basis and solid angle in WGSL, as the engine's sky model is
 already mirrored between `null3d::atmosphere` and `sky_light.rs`. The two grids are the same, so a

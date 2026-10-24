@@ -1053,12 +1053,13 @@ export class Textures {
 	addSkyMap(
 		texture: Texture,
 		stages: number,
+		capture: number,
 		call: string,
 		defaults: (values: Float32Array) => void,
 	): void {
 		const { core } = this;
 		defaults(core.f32(core.glue.backgroundValues(), BACKGROUND_VALUE_COUNT));
-		core.check(core.glue.addSkyMap(texture.handle, stages), call, 'a texture', true);
+		core.check(core.glue.addSkyMap(texture.handle, stages, capture), call, 'a texture', true);
 	}
 
 	/**

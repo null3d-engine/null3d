@@ -4663,9 +4663,11 @@ pub fn set_physical_sky(on: bool) -> u32 {
 // comes to rest fills once more, exactly. Before the scene's first sky background, the maps show
 // the sky of the background's values, which TypeScript writes first. Fails for a texture that is
 // not live.
-/// Makes a generated cube texture a map of the scene's sky.
+/// Makes a generated cube texture a map of the scene's sky. `capture` is the stage at which the map
+/// captures the light that a sky layer over it gives, which the page places a stage or two before
+/// the last, so that the read lands before the levels that the last stage publishes.
 #[wasm_bindgen(js_name = addSkyMap)]
-pub fn add_sky_map(texture: u32, stages: u32) -> u32 {
+pub fn add_sky_map(texture: u32, stages: u32, capture: u32) -> u32 {
     with_engine(|e| {
         let sky = sky_of(&e.background_values[..]);
         let settings = e.renderer.settings_mut();
@@ -4680,7 +4682,7 @@ pub fn add_sky_map(texture: u32, stages: u32) -> u32 {
         if maps.sky().is_none() {
             maps.set_sky(MapSky::analytic(sky));
         }
-        maps.add(texture, stages);
+        maps.add(texture, stages, capture);
         0
     })
 }
