@@ -51,6 +51,27 @@ pub(crate) const fn layout_of(target: u32, buffers: bool) -> u32 {
     }
 }
 
+/// The bit of a compute pipeline's format code that says the pass samples textures at group 1.
+/// The GPU side reads the bit and gives the pipeline the materials' maps layout as well as its
+/// target's layout.
+pub(crate) const PIPELINE_MAPS_BIT: u32 = 1 << 8;
+
+/// The format code that a compute pass's pipeline names for its bind group layouts: 0 for a pass
+/// that fills an instance draw's two buffers, and its target's format otherwise. A pass that keeps
+/// the default format writes rgba16float, which a code of 0 would also name, so the default is
+/// written out. A pass that samples textures sets the maps bit, since its pipeline takes the maps
+/// layout at group 1 and a pass without maps binds nothing there.
+pub(crate) const fn pipeline_format(format: u32, buffers: bool, maps: bool) -> u32 {
+    let base = if buffers {
+        0
+    } else if format == 0 {
+        format::RGBA16_FLOAT
+    } else {
+        format
+    };
+    if maps { base | PIPELINE_MAPS_BIT } else { base }
+}
+
 /// What a compute pass's group 0 binds: the target's texture, the layout of its group 0 and the
 /// target's size in texels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -121,7 +142,11 @@ impl ComputePasses {
         if self.pipelines[place] != Some(pass.template) {
             list.push(
                 Op::CreateComputePipeline,
-                &[ids.first_pipeline + place as u32, pass.template, 0],
+                &[
+                    ids.first_pipeline + place as u32,
+                    pass.template,
+                    pipeline_format(pass.format, pass.buffers.is_some(), pass.maps.any()),
+                ],
             )?;
             self.pipelines[place] = Some(pass.template);
         }
@@ -271,6 +296,38 @@ mod tests {
         assert_eq!(
             layout_of(format::RGBA16_FLOAT, true),
             bind_layout::COMPUTE_INSTANCE_BUFFERS
+        );
+    }
+
+    #[test]
+    fn a_texture_pass_pipeline_names_its_format() {
+        // The GPU side reads a format code of 0 as the instance buffers' layout, so a pass that
+        // writes a texture names its format, and the default rgba16float as well.
+        assert_eq!(pipeline_format(0, false, false), format::RGBA16_FLOAT);
+        assert_eq!(
+            pipeline_format(format::R32_FLOAT, false, false),
+            format::R32_FLOAT
+        );
+        assert_eq!(
+            pipeline_format(format::RGBA8_UNORM, false, false),
+            format::RGBA8_UNORM
+        );
+        assert_eq!(pipeline_format(0, true, false), 0);
+        assert_eq!(pipeline_format(format::RGBA16_FLOAT, true, false), 0);
+    }
+
+    #[test]
+    fn a_pass_that_samples_textures_sets_the_maps_bit() {
+        // A pass that samples textures takes the maps layout at group 1, and one without maps
+        // binds nothing there, so its pipeline takes group 0 alone.
+        assert_eq!(
+            pipeline_format(format::RGBA16_FLOAT, false, true),
+            format::RGBA16_FLOAT | PIPELINE_MAPS_BIT
+        );
+        assert_eq!(
+            pipeline_format(0, true, true),
+            PIPELINE_MAPS_BIT,
+            "a pass that fills buffers and samples textures still takes the buffer layout"
         );
     }
 }

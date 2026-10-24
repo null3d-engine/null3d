@@ -2650,11 +2650,17 @@ impl FrameGraph {
             }
             // A compute pass fills a storage texture of the format that it writes. It takes one
             // sample, and shaders sample it as an array of one layer, as they sample any pass's
-            // target.
+            // target. A pass that fills an instance draw's buffers has no texture, and its 1 by 1
+            // target needs a valid format all the same.
             let shape = if compute {
-                Target::color(view.compute_pass().map_or(0, |pass| pass.format))
-                    .array()
-                    .shown()
+                let code = view.compute_pass().map_or(0, |pass| pass.format);
+                Target::color(if code == 0 {
+                    format::RGBA16_FLOAT
+                } else {
+                    code
+                })
+                .array()
+                .shown()
             } else if fullscreen {
                 one_sample
             } else {
@@ -5875,10 +5881,12 @@ mod tests {
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
             .unwrap();
         let pipeline = IDS.compute.first_pipeline + 1;
+        // A texture pass names its target's format: a code of 0 would take the instance buffers'
+        // layout on the GPU side.
         assert!(
             operands(&list, Op::CreateComputePipeline)
                 .iter()
-                .any(|made| made.as_slice() == [pipeline, 80, 0])
+                .any(|made| made.as_slice() == [pipeline, 80, format::RGBA16_FLOAT])
         );
         assert!(
             operands(&list, Op::CreateBindGroup)

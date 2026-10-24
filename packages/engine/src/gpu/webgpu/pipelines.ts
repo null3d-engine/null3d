@@ -273,11 +273,20 @@ export interface ComputeTemplate {
 }
 
 /**
+ * The bit of a compute pass's format code that says the pass samples textures at group 1. The core
+ * sets it when the pass has textures, and clears it otherwise, since a pipeline layout with a
+ * group that nothing binds fails its dispatch.
+ */
+export const COMPUTE_MAPS_BIT = 1 << 8;
+
+/**
  * The bind group layout of an add-on compute pass's group 0 for the target's format code: its
  * block of uniforms, then the storage texture that it fills. A format code of 0 names a pass that
- * fills an instance draw's two buffers instead, with no texture.
+ * fills an instance draw's two buffers instead, with no texture. The maps bit says the pass also
+ * samples textures at group 1.
  */
-export function layoutOfComputeFormat(format: number): number {
+export function layoutOfComputeFormat(code: number): number {
+	const format = code & ~COMPUTE_MAPS_BIT;
 	if (format === 0) return LAYOUT_COMPUTE_INSTANCE_BUFFERS;
 	if (format === FORMAT_R32_FLOAT) return LAYOUT_COMPUTE_R32_FLOAT;
 	if (format === FORMAT_RGBA8_UNORM) return LAYOUT_COMPUTE_RGBA8_UNORM;
@@ -1609,18 +1618,18 @@ export class Pipelines {
 	}
 
 	/**
-	 * The pipeline layout of an add-on compute pass whose target has the format code `format`:
-	 * group 0 binds the pass's block and its storage texture, and group 1 the textures that it
-	 * samples, as an effect's own textures bind.
+	 * The pipeline layout of an add-on compute pass whose code names its target's format: group 0
+	 * binds the pass's block and its storage texture, and when the pass samples textures, group 1
+	 * binds them as an effect's own textures bind.
 	 */
-	private computePipelineLayout(format: number): GPUPipelineLayout {
-		const layout = layoutOfComputeFormat(format);
-		let made = this.computeLayouts.get(layout);
+	private computePipelineLayout(code: number): GPUPipelineLayout {
+		const layout = layoutOfComputeFormat(code);
+		let made = this.computeLayouts.get(code);
 		if (!made) {
-			made = this.device.createPipelineLayout({
-				bindGroupLayouts: [this.layout(layout), this.layout(LAYOUT_MATERIAL_MAPS)],
-			});
-			this.computeLayouts.set(layout, made);
+			const groups = [this.layout(layout)];
+			if ((code & COMPUTE_MAPS_BIT) !== 0) groups.push(this.layout(LAYOUT_MATERIAL_MAPS));
+			made = this.device.createPipelineLayout({ bindGroupLayouts: groups });
+			this.computeLayouts.set(code, made);
 		}
 		return made;
 	}

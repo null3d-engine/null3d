@@ -3,7 +3,7 @@ import * as G from '../../generated/gpu';
 import { type DeviceShaders, everyShader, type ShaderVariants } from '../../generated/shaders';
 import type { CustomShader } from '../../shared/images';
 import { engineTemplates } from '../webgl2/programs';
-import { Pipelines } from './pipelines';
+import { COMPUTE_MAPS_BIT, Pipelines } from './pipelines';
 
 const scope = globalThis as Record<string, unknown>;
 const GLOBALS = { GPUShaderStage: { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 } };
@@ -259,6 +259,27 @@ describe('the WebGPU pipeline layouts', () => {
 		expect(pipelines.has(id)).toBe(true);
 		const descriptor = pipelines.compute(id, G.FORMAT_RGBA16_FLOAT);
 		expect(descriptor.compute?.entryPoint).toBe('main');
+		const groups = [...layoutOf(descriptor).bindGroupLayouts] as unknown as {
+			label: string;
+		}[];
+		// The pass samples no textures, so its pipeline takes group 0 alone: a group that nothing
+		// binds fails its dispatch.
+		expect(groups.map((group) => group.label)).toEqual(['compute rgba16float']);
+		expect(faults(layoutOf(descriptor), 0)).toEqual([]);
+	});
+
+	it('give an add-on compute pass with maps the maps layout at group 1', () => {
+		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
+		const id = G.TEMPLATE_CUSTOM_FIRST + 3;
+		const source = '@compute @workgroup_size(8, 8) fn main() {}';
+		const shader = {
+			kind: 'compute',
+			variants: { main: { permutation: 0, wgsl: { source, pipelines: {} }, glsl: null } },
+			locations: [],
+			textures: 1,
+		} as unknown as CustomShader;
+		pipelines.defineCustom(id, shader);
+		const descriptor = pipelines.compute(id, G.FORMAT_RGBA16_FLOAT | COMPUTE_MAPS_BIT);
 		const groups = [...layoutOf(descriptor).bindGroupLayouts] as unknown as {
 			label: string;
 		}[];
