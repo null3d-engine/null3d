@@ -56,6 +56,10 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		"Splats draw through `scene.addFeatureInstances` (`packages/engine/src/scene/feature-instances.ts`); the `splats`, `splats-budget` and `splats-gltf` pictures on both paths; the draw's size in `tools/lib/size-report.ts`",
 	'M3-F6':
 		"Video textures: `engine.registerVideo` and `textures.fromVideo`, held by `tests/pages/video-texture.ts`, which passes on both GPU paths in Chrome on the Mac, on the software renderer, and in Safari 26.6.2 and Firefox 158 — a 512 by 288 frame uploads 577 KiB against the Low preset\'s 2 MiB budget, upright, within two steps of a data texture; the page\'s video support loads at its first call; the guide `guides/video-textures` and the mapping entry",
+	'M3-B5':
+		'The car-paint add-on in `examples/addons/car-paint/`: `createCarPaint` with flakes that tilt the base normal cell by cell and fade as a cell drops below a pixel, `fwidth`-width seams and a 2 x 2 twill weave, used by the coat-and-sheen demo. The four pictures `car-paint`, `car-paint-no-flakes`, `car-paint-no-seams` and `car-paint-weave` hold each part on every tier in both sets, and `car-paint.spec.ts` measures their contribution; the GPU cost per preset is owed',
+	'M3-F7':
+		"The three-compat add-on in `packages/three-compat/`: Reinhard and Cineon as named tone curves through the core's tone-curve setting, and the outline pass's glow, pulse and blurred edge, with `tone-reinhard` and the outline pictures on every tier and strict comparisons against three.js's formulas",
 	'M3-E10':
 		"The sky-layer template and the compiler that joins an add-on's `skyLayer` to it: `crates/null3d-shaders/tests/sky_layer.rs`, `crates/null3d-render/tests/background.rs` (`a_sky_layer_draws_after_the_background_*`); `scene.setSkyLayer` in `packages/engine/src/scene/background.ts`, with `packages/engine/src/scene/scene.test.ts`; the aurora example add-on in `examples/addons/aurora/`; D-242. The demo and its six picture references land as their own change once the frames are drawn",
 	'M3-E3':
