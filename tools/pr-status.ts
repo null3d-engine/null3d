@@ -63,7 +63,6 @@ const INCOMPLETE = new Set([
 	'M3-K2',
 	'M3-K4',
 	'M3-R1',
-	'M3-E2',
 	'M3-F2',
 	'M3-O1',
 	'M3-R16',
@@ -76,7 +75,6 @@ const INCOMPLETE = new Set([
 	'M3-R3',
 	'M3-R4',
 	'M3-R19',
-	'M3-R20',
 	'M3-R21',
 	'M3-V1',
 	'M3-V3',
@@ -86,8 +84,6 @@ const INCOMPLETE = new Set([
 const NOTES: Readonly<Record<string, string>> = {
 	'M3-A9':
 		'the hero tile and its cost figures are in: a still hero adds no pass, a moving one adds a depth pass of 0.028 to 0.037 ms, and WebGL2 reads the tile for 0.27 ms less than the cascades (D-219)',
-	'M3-E2':
-		"the task hook and the splats add-on's distance selection run on the job workers on both paths, and the allocation check judges them: 653.5 bytes a frame on the sketch worker and 163.8 on the render worker on the Mac, 1,119.1 and 91.9 on the software renderer, with every per-frame place inside its budget. The check found two production-build faults, both fixed: a task module reached the worker as raw source, and Vite's preload helper read `document` in the sketch worker",
 	'M3-E6':
 		"splats' budget follows the preset and reaches the overlay; water's reflection cadence, the other first user, is not on the branch",
 	'M3-E8':
@@ -148,8 +144,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-K4': 'no three.js CSS3D example is ported or tested',
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
-	'M3-E2':
-		"only the chunk-budget ordering goes through the task hook; the per-splat sort is the engine's own transparent sort",
 	'M3-F2':
 		"streaming is not built, and the budget's meaning is open for the owner after the iPad drew 1.07 frames a second",
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
@@ -165,7 +159,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-R4': 'D-247 does not compare frame time, and the Mac GPU figure is owed',
 	'M3-R19':
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
-	'M3-R20': 'no test or record shows the governor returning within a second',
 	'M3-R21':
 		'the picture step does not read the heavy-test jobs, so the screens and skyway pictures are not gated; the fix is on a helper branch',
 	'M3-V1':
