@@ -68,7 +68,6 @@ const INCOMPLETE = new Set([
 	'M3-O1',
 	'M3-R16',
 	'M3-R17',
-	'M3-R18',
 	'M3-G1',
 	'M3-G2',
 	'M3-G3',
@@ -156,8 +155,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
 	'M3-R16': 'no test creates a project and runs it with the hook on',
 	'M3-R17': 'no skill evaluation ran as the plan defines one',
-	'M3-R18':
-		'the controls add-on follows three.js step for step but ships no notice, and the notices page says it ships only its own code',
 	'M3-G1': "the Khronos sample's texture-transform pointers are not animated",
 	'M3-G2': 'no Khronos iridescence sample is tested',
 	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',
