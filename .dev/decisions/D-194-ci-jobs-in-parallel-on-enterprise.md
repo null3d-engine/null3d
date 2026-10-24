@@ -2,7 +2,7 @@
 
 Status: decided. Date: 19 and 20 October 2026. [D-218](D-218-efficient-ci-jobs.md) changed its shader test layout on 22 October 2026. Task: none.
 
-Summary: The organization moved to GitHub Enterprise, which runs 180 jobs at once where the free plan ran 20. CI split its slow jobs into many short ones. A warm run took 43 minutes and a cold one 131. Most of that was waiting for machines and building every shader on one machine, several times over.
+Summary: The organization moved to GitHub Enterprise, which runs 500 jobs at once, 50 of them on macOS, where the free plan ran 20. The hosted runners page showed 180 at first; the owner confirmed 500 on 24 October 2026. CI split its slow jobs into many short ones. A warm run took 43 minutes and a cold one 131. Most of that was waiting for machines and building every shader on one machine, several times over.
 
 ## Question
 

@@ -33,7 +33,10 @@ function filesNamed(folder: string, name: string): string[] {
 		.filter((file) => file.endsWith(`/${name}`) && statSync(file).isFile());
 }
 
-/** Each browser's page times in each run, by the artifacts' names, such as real-browser-runs-Safari-3. */
+/**
+ * Each browser's page times in each run, by the artifacts' names, such as real-browser-runs-Safari-3
+ * and real-browser-runs-Safari-prebuilt.
+ */
 const times: { browser: string; pages: { id: string; seconds: number }[] }[] = [];
 const work = mkdtempSync(join(tmpdir(), 'real-browser-times-'));
 try {
@@ -44,7 +47,7 @@ try {
 		const artifacts = listing.artifacts.filter(({ name }) => name.startsWith('real-browser-runs-'));
 		if (artifacts.length === 0) throw new Error(`CI run ${id} kept no real-browser runs`);
 		for (const artifact of artifacts) {
-			const browser = /^real-browser-runs-(\w+)-\d+$/.exec(artifact.name)?.[1];
+			const browser = /^real-browser-runs-(\w+)-(?:\d+|prebuilt)$/.exec(artifact.name)?.[1];
 			if (!browser) continue;
 			const folder = join(work, String(artifact.id));
 			const zip = `${folder}.zip`;
