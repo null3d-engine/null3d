@@ -16,6 +16,8 @@ interface Step {
 	run?: string;
 	uses?: string;
 	'continue-on-error'?: boolean;
+	'timeout-minutes'?: number;
+	if?: string;
 	with?: Record<string, unknown>;
 	env?: Record<string, string>;
 }
@@ -422,6 +424,28 @@ describe("CI's workflow", () => {
 				dropped.some((pattern) => pattern.test(file)),
 		);
 		expect(missing).toEqual([]);
+	});
+
+	it('gives each download of the real-browser job a limit of its own and one more try', () => {
+		const steps = jobNamed('real-browsers').steps ?? [];
+		const downloads = steps.filter(
+			({ uses, with: given }) =>
+				(uses === './.github/actions/archive' || uses === './.github/actions/city') &&
+				given?.mode === 'download',
+		);
+		const firsts = downloads.filter((step) => step.id !== undefined);
+		expect(firsts.length).toBeGreaterThan(0);
+		for (const first of firsts) {
+			expect(first['timeout-minutes'], first.id).toBeGreaterThan(0);
+			expect(first['continue-on-error'], first.id).toBe(true);
+			const retry = steps[steps.indexOf(first) + 1];
+			expect(retry?.if, first.id).toBe(`steps.${first.id}.outcome == 'failure'`);
+			expect(retry?.uses, first.id).toBe(first.uses);
+			expect(retry?.with, first.id).toEqual(first.with);
+			expect(retry?.['timeout-minutes'], first.id).toBeGreaterThan(0);
+		}
+		// Every download is a first try or the retry of one.
+		expect(downloads).toHaveLength(2 * firsts.length);
 	});
 
 	it('builds the city in the load pages job, which every job that downloads the city waits for', () => {
