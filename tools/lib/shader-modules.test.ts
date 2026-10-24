@@ -20,6 +20,7 @@ import {
 	crateFolders,
 	ensureShaderModules,
 	entryCacheDir,
+	entryCacheFolder,
 	folderIsComplete,
 	inputHash,
 	isShaderModule,
@@ -374,6 +375,22 @@ done`;
 				const second = buildEntriesShard(root, '0/1');
 				expect(second.folder).toBe(first.folder);
 				expect(readFileSync(log, 'utf8').trim().split('\n')).toEqual([first.folder, first.folder]);
+			},
+			0,
+			buildsProgram,
+		);
+	});
+
+	it('names the folder a build used, also when the module set came from the cache', () => {
+		withScratchCaches(
+			() => {
+				const { root } = shardRepository();
+				const first = buildEntriesShard(root, '0/1');
+				expect(entryCacheFolder(root)).toBe(first.folder);
+				// A source change leaves no kept program of its own. The restored folder still names
+				// the compiler, and its entries are checked against their own inputs.
+				writeFileSync(join(root, 'crates/null3d-gpu/src/lib.rs'), '// a comment\n');
+				expect(entryCacheFolder(root)).toBe(first.folder);
 			},
 			0,
 			buildsProgram,
