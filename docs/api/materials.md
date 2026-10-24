@@ -707,7 +707,9 @@ const leaf = await assets.loadTexture('/textures/leaf-mask.png', { colorSpace: '
 const leaves = materials.shader({ wgsl: masked, alphaMode: 'mask', textures: { mask: leaf } });
 ```
 
-A texture samples as white until its image is on the GPU. [Textures](../shaders/surface-functions.md#textures) on the Surface functions page gives the rules.
+The WGSL can also declare a texture array, `var name: texture_2d_array<f32>;`, and pick its layer in the shader, so one array serves a set of facade or window images. The `textures` option then gives a texture of several layers, such as one that `textures.fromData({ width, height, depth: 6, data })` makes. [Textures](../shaders/surface-functions.md#textures) on the Surface functions page gives the rules.
+
+A texture samples as white until its image is on the GPU.
 
 ### The scene behind a surface
 
