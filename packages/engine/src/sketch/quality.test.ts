@@ -334,6 +334,7 @@ describe('SketchQuality.setPreset', () => {
 			'aoScale',
 			'contactShadowSteps',
 			'subsurfaceSamples',
+			'cloudSteps',
 			'softwareOcclusion',
 			'governor',
 		];
