@@ -1,10 +1,10 @@
 # Water for null3D
 
-`@null3d/water` draws the water in a null3D scene: a river that follows a line, or a lake that fills
-an outline, from one description. The surface has waves and ripples that the current carries,
-caustics on the bed, foam around what breaks the surface, a shore that fades against the bank, and a
-mirror of the banks and the sky that redraws as often as the quality preset affords. A camera that
-dips under the surface keeps it, and a second effect tints, bends and lights the view from below.
+`@null3d/water` draws the water in a null3D scene. One shape describes a river that follows a line,
+or a lake that fills an outline. The surface has waves and ripples that the current carries, and
+caustics on the bed. It foams around what breaks the surface, and its shore fades against the bank.
+It mirrors the banks and the sky, as often as the quality preset affords. A camera that dips under
+the surface keeps it, and a second effect tints, bends and lights the view from below.
 
 ## Use
 
@@ -52,35 +52,35 @@ export default defineSketch((ctx) => {
 });
 ```
 
-The mesh, the material and the reflection come from the shapes. `update` draws the reflection in
-its turn, so call it once in each frame. `surfaceHeight` and `currentAt` give the water at a point,
-for a boat or a leaf that floats on it, and `waterBody(shape)` resolves a shape on its own.
+The mesh, the material and the reflection come from the shapes. Call `update` once in each frame,
+so it draws the reflection in its turn. For a boat or a leaf that floats on the water, read
+`surfaceHeight` and `currentAt` at its point. A shape resolves on its own with `waterBody(shape)`.
 
 ## The two bodies
 
 A river takes the points along its middle, from its source to its mouth, its half width and its
-depth. Its current runs along the middle line at `speed`. A lake takes the points around its shore,
-the depth of its deepest point, and how far from the shore the bed reaches that depth. Its water is
-still. The bed under a point comes from the description, and the surface reads the scene's own depth
-where the bed is drawn, so a shore ends against the real bank.
+depth. Its current runs along the middle line at `speed`. A lake takes the points around its shore.
+It takes the depth of its deepest point, and how far from the shore the bed reaches that depth. Its
+water is still. The bed under a point comes from the description. The surface reads the scene's own
+depth where the bed is drawn, so a shore ends against the real bank.
 
 A depth may be one number, one for each point of a middle line, or a function of the point. A river
-may also take the depth as a function of the distance along it, and a lake as a function of the
-distance from its shore.
+may also take it as a function of the distance along the river. A lake may take it as a function of
+the distance from its shore.
 
 ## Costs and limits
 
 - The surface is a custom material that declares `sceneInputs: ['sceneDepth']` and two textures, the
   mirror and the foam map. The engine's depth input gives the water its depth behind each pixel. The
-  engine refuses the pair when the build has no room for both, so a page needs an engine that takes a
-  depth-reading material with textures.
+  engine refuses the pair when the build has no room for both. So a page needs an engine that takes
+  a depth-reading material with textures.
 - The reflection pass draws the scene a second time. Its cadence is every other frame on Low and
   Medium, and every frame on High and Ultra; `reflectionEvery` gives a cadence of the caller's own.
   The pass follows the preset as it changes.
-- The surface lets light through with transmission, so the engine copies the scene's colors in the
-  frame that the water draws. It draws both faces, so it shows from under the water.
-- The water costs no memory until a scene creates it: the add-on's code and its two shaders load
+- The surface lets light through with transmission. The engine therefore copies the scene's colors
+  in the frame that the water draws. The surface draws both faces, so it shows from under the water.
+- The water costs no memory until a scene creates it. The add-on's code and its two shaders load
   only when a sketch imports it.
 
-`@null3d/water` owns all water. A scene makes water with it rather than with a hand-written custom
-material, so there is one way to make water and one set of settings for it.
+`@null3d/water` owns all water. A scene makes water with it, not with a hand-written custom
+material. So there is one way to make water, with one set of settings.
