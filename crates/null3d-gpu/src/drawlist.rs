@@ -724,7 +724,7 @@ pub mod layout {
     /// camera-relative rows that the engine's vertex shaders read: its block of uniforms, which
     /// holds the camera's world position, then the draw's count word, its world rows and the rows
     /// that it writes.
-    pub const FEATURE_ROWS: u32 = 59;
+    pub const FEATURE_ROWS: u32 = 60;
     /// Group 0 of the cluster levels' compute pipeline: the dispatch's parameters at a dynamic
     /// offset, then the scene's patches and mesh records, its tree indices, the view's compacted
     /// instances, and the view's counts, offsets, index list and indirect draws.
