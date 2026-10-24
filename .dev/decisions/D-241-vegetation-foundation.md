@@ -103,3 +103,16 @@ No source gives phone figures for either method on the web. So M3-V10 builds bra
 - `.dev/examples.md` records the planned move of Creek's plants and the change to the showcase rule on plant models.
 - M3 gains tasks M3-V1 to M3-V12. M3-E9's GPU-written draws must also work in the shadow views, because near grass casts shadows. The impostors' bake helper comes into M3 for the far trees, which are baked at first use.
 - No engine code changes with this record.
+
+## Addendum: the eight choices the design left open
+
+The design for the vegetation family raised eight questions that this record does not settle. The owner answered them on 24 October 2026, all as the design recommended. This addendum records them, so the tasks can start without asking again.
+
+- **The package.** `@null3d/vegetation` holds the built-in species set, as well as the generator, the scatter, the grass, the materials and the impostor hand-off. The species set is the smallest thing that makes the package useful on its own.
+- **Where the leaf-card level rule lives.** The generator builds its own levels from its skeleton, and one shared test holds the rule. The command-line tool's thinner is not importable by an add-on, and a generator that knows its skeleton keeps the crown full.
+- **Repeat visits.** A page bakes its atlases and impostors and keeps them for that visit only. It keeps them across visits only if the bake measures over about a second on the slowest device.
+- **How far Creek's dress goes.** The whole 160-metre valley, not the stream strip alone. Distance falloff, wider blades far off and impostors soften the edge.
+- **Variety.** Six variants for each species and one impostor for each species. Ten variants would exceed the batch and memory limits.
+- **The trees' wind method.** Per-vertex wind ships first, and M3-V10's figures decide whether a preset switches. The vertex format stays the same for both methods, so a later switch costs one redraw of the references.
+- **Which demos move.** All nine move to the add-on, one at a time after Creek meets the quality bar. A demo whose style the generator cannot match gets a recorded exception, never a second generator.
+- **A themed species pack.** One small example comes after the other demos move, if time allows. It is not on Creek's critical path.
