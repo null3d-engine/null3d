@@ -547,8 +547,11 @@ Night town now draws its window panes through the facades example add-on
   Each pane's light rises on a damped spring once the wave reaches it.
 - The panes draw the add-on's timber finish for their frames, so the wall finish that the pages
   carry and the pane's frame agree. The house walls keep the scene's own timber texture.
-- The picture changed: the reference of the `demo-night-town` image test is owed in both sets, as
-  the add-on draws the panes now.
+- The picture changed, so the `demo-night-town` image test needs new references in both sets. The
+  candidate differs from the old reference in 0.575% of its pixels.
+- The add-on's own cost, per GPU path and preset, is owed. The cost test needs a quiet computer,
+  and the fleet kept the Mac above the quiet threshold through the night it was built. The add-on's
+  README gives the command.
 
 ### Skyway (M3-C1, 22 October 2026)
 
