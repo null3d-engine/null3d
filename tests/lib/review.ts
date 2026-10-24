@@ -2,7 +2,15 @@
 // from its reference, as a candidate with its facts, and with the reference and the diff where one
 // exists. This module lists the candidates for the terminal, shows them on a page, and turns the
 // ones a person accepts into references.
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import {
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { percent } from '../../bench/lib/parity.ts';
 import { CANDIDATE_FILES, type CandidateFacts, TIERS, type Tier } from './images.ts';
@@ -156,24 +164,81 @@ export interface Accepted {
 	refused: string[];
 }
 
+/** The software GPU's set, whose references come only from CI's own drawing. */
+const CI_DRAWN = 'chromium-swiftshader';
+
+/** The file that records each software-GPU reference drawn outside CI on purpose, from the root. */
+export const LOCAL_REFERENCES = 'tests/image/local-references.json';
+
+/** A software-GPU reference drawn outside CI on purpose: its test, tier, day and the reason. */
+export interface LocalReference {
+	test: string;
+	tier: Tier;
+	date: string;
+	reason: string;
+}
+
+/** How a review accepts candidates that a software GPU drew. */
+export interface AcceptOptions {
+	/** The CI run whose images the review fetched, which drew every candidate in its folder. */
+	ciRun?: string;
+	/** Why software-GPU references are taken from this machine's drawing on purpose. */
+	localReason?: string;
+	/** The record of local software-GPU references; the repository's file by default. */
+	record?: string;
+	/** The day that a local reference records, in the form 2026-10-25. */
+	today?: string;
+}
+
+function readRecord(path: string): Record<string, LocalReference> {
+	try {
+		return JSON.parse(readFileSync(path, 'utf8')) as Record<string, LocalReference>;
+	} catch {
+		return {};
+	}
+}
+
+function writeRecord(path: string, record: Record<string, LocalReference>): void {
+	const sorted = Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b)));
+	writeFileSync(path, `${JSON.stringify(sorted, null, '\t')}\n`);
+}
+
 /**
  * Makes candidates into references in `referenceDir`: every candidate that can become one, or only
  * those of the tests named. A reference that two candidates would both write is left alone, as the
  * two images disagree. An accepted candidate's files go away.
+ *
+ * A software-GPU reference comes only from CI's own drawing: a candidate whose facts name the CI run
+ * that drew it, or one in a CI run's images that the review fetched. CI's Linux machines draw some
+ * pictures otherwise than the Mac's SwiftShader, so a local drawing is refused, unless `localReason`
+ * says why it is taken on purpose; the record then keeps that reason beside the reference, and a
+ * later drawing from CI removes it.
  */
 export function acceptCandidates(
 	candidates: readonly Candidate[],
 	referenceDir: string,
 	tests?: readonly string[],
+	{ ciRun, localReason, record = join(REPO_ROOT, LOCAL_REFERENCES), today }: AcceptOptions = {},
 ): Accepted {
 	const chosen = candidates.filter((c) => !tests || tests.includes(c.test));
 	const refused = chosen
 		.filter((c) => c.fixed)
 		.map((c) => `${titleOf(c)}: it cannot become the reference: ${c.fixed}`);
+	const needsCi = (c: Candidate) => c.reference.startsWith(`${CI_DRAWN}/`);
+	const drawnByCi = (c: Candidate) => Boolean(c.ciRun ?? ciRun);
+	const local = chosen.filter((c) => !c.fixed && needsCi(c) && !drawnByCi(c));
+	if (!localReason)
+		for (const c of local)
+			refused.push(
+				`${titleOf(c)}: ${c.reference} was drawn on this machine, not by CI, and a SwiftShader reference comes from CI's own drawing. Run the test in a CI run, on a branch with \`gh workflow run ci.yml --ref <branch>\`, then take its image with \`bun run images:review --ci <run> --accept ${c.test}\`. To keep this drawing on purpose, accept it with \`--local-reason "<why>"\`, which records the reason in ${LOCAL_REFERENCES}.`,
+			);
+	const kept = localReason ? chosen : chosen.filter((c) => !local.includes(c));
+	const notes = readRecord(record);
+	const noted = JSON.stringify(notes);
 	for (const test of tests ?? [])
 		if (!chosen.some((c) => c.test === test)) refused.push(`${test}: no candidate to accept`);
 	const byReference = new Map<string, Candidate[]>();
-	for (const candidate of chosen.filter((c) => !c.fixed))
+	for (const candidate of kept.filter((c) => !c.fixed))
 		byReference.set(candidate.reference, [
 			...(byReference.get(candidate.reference) ?? []),
 			candidate,
@@ -193,6 +258,16 @@ export function acceptCandidates(
 		for (const ending of Object.values(CANDIDATE_FILES))
 			rmSync(`${candidate.base}${ending}`, { force: true });
 		written.push(shown(target));
+		if (!needsCi(candidate)) continue;
+		if (drawnByCi(candidate)) delete notes[reference];
+		else
+			notes[reference] = {
+				test: candidate.test,
+				tier: candidate.tier,
+				date: today ?? new Date().toISOString().slice(0, 10),
+				reason: localReason ?? '',
+			};
 	}
+	if (JSON.stringify(notes) !== noted) writeRecord(record, notes);
 	return { written, refused };
 }
