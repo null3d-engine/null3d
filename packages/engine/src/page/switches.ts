@@ -253,6 +253,13 @@ export interface Switches {
 	 */
 	hold: string | undefined;
 	/**
+	 * The address of the recording that ?replay= names, which the engine runs frame by frame, or
+	 * undefined without the switch. A relative address resolves against the page's.
+	 */
+	replay: string | undefined;
+	/** True when ?record asks the page to record the session's frames and input for a bug report. */
+	record: boolean;
+	/**
 	 * True while ?still-camera lets a still view accumulate its frames, which is the default, and
 	 * false with ?still-camera=off. The image tests and hold mode draw the frame the sketch drew
 	 * once, without the accumulation. A sketch may take `?still` itself, as the crowd benchmark
@@ -386,6 +393,8 @@ export function parseSwitches(search: string): Switches {
 		memoryMiB: within(whole(params.get('memory')), MEMORY_MIB.min, MEMORY_MIB.max),
 		preset: oneOf(params.get('preset'), QUALITY_PRESETS),
 		hold: params.get('hold') ?? undefined,
+		replay: params.get('replay') ?? undefined,
+		record: params.has('record'),
 		still: params.get('still-camera') !== 'off',
 		bench: params.has('bench'),
 		stats: statsSwitch(params.get('stats')),

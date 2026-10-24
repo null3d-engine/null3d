@@ -2,12 +2,13 @@
 // browser, and saves it as a PNG file. Beside the image it saves a JSON file with the frame's facts
 // and what the page and the dev server logged. It prints a short summary for agents, and fails when
 // the engine drew no frame.
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { parseSize, readOptions, readSeconds, sizeRule, UsageError } from './args.js';
 import { heldImage, TIERS } from './page.js';
 import { writePng } from './png.js';
-import { holdPage, startRunner } from './runner.js';
+import { RECORDING_PATH, recordingPlugin } from './recording-page.js';
+import { holdPage, replayPage, startRunner } from './runner.js';
 import {
 	readScript,
 	scriptProgram,
@@ -19,7 +20,7 @@ import {
 import { counted, listed, shownPath } from './text.js';
 
 /** @import { Environment } from './browser.js' */
-/** @import { HeldStats, HoldScriptResult, Tier } from './page.js' */
+/** @import { HeldStats, HoldScriptResult, ReplayResult, Tier } from './page.js' */
 /** @import { RgbaImage } from './png.js' */
 /** @import { HeldPage } from './runner.js' */
 /** @import { ScriptStep, ShotStep } from './script.js' */
@@ -32,6 +33,7 @@ const OPTIONS = /** @type {const} */ ({
 	page: { type: 'string', default: '/' },
 	timeout: { type: 'string', default: '60' },
 	script: { type: 'string' },
+	replay: { type: 'string' },
 	help: { type: 'boolean', short: 'h', default: false },
 });
 
@@ -54,6 +56,9 @@ Options:
   --script <file>           A timed script that drives the page and draws each of its shot steps.
                             Its steps are key, pointer, set, shot and dump, one per line, each with
                             the sketch time in seconds at which it happens
+  --replay <file>           A recording that the page replays, and the last frame draws. The
+                            recording holds each frame's step and the input that the sketch read,
+                            so it draws the same frames that its session drew
 
 It draws with Google Chrome on this computer's GPU. When the CI variable is set, it draws with
 Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU.`;
@@ -67,6 +72,7 @@ Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU
  * @property {string} page The page to open, from the server's root.
  * @property {number} timeoutMs How long the page may take to draw the frame.
  * @property {readonly ScriptStep[]} [steps] The steps of the timed script that drives the page.
+ * @property {{ bytes: Uint8Array, file: string }} [recording] The recording that the page replays.
  * @property {boolean} help True to print the help instead.
  */
 
@@ -99,13 +105,29 @@ export function readPage(page) {
  */
 export function parseShotArgs(args) {
 	const values = readOptions(args, OPTIONS);
-	const { out, size, page, timeout, script, help } = values;
+	const { out, size, page, timeout, script, replay, help } = values;
 	if (!/\.png$/i.test(out)) throw new UsageError(`--out must name a .png file, not "${out}"`);
 	const gpu = /** @type {Tier | undefined} */ (values.gpu);
 	if (gpu !== undefined && !TIERS.includes(gpu))
 		throw new UsageError(`--gpu takes ${TIERS.join(', ')}, not "${gpu}"`);
 	readPage(page);
+	if (script !== undefined && replay !== undefined)
+		throw new UsageError('--script and --replay cannot both be given: a replay drives the page');
 	const steps = script === undefined ? undefined : readScript(script);
+	let recording;
+	if (replay !== undefined) {
+		try {
+			recording = { bytes: readFileSync(replay), file: replay };
+		} catch (error) {
+			throw new UsageError(
+				`cannot read the recording ${replay}: ${error instanceof Error ? error.message : error}`,
+			);
+		}
+	}
+	if (recording !== undefined && values.time !== undefined)
+		throw new UsageError(
+			'--time and --replay cannot both be given: a replay draws the last frame of its recording',
+		);
 	if (steps !== undefined && values.time !== undefined)
 		throw new UsageError(
 			'--time and --script cannot both be given: each shot of a script sets its own time',
@@ -122,6 +144,7 @@ export function parseShotArgs(args) {
 		page,
 		timeoutMs: readSeconds('--timeout', timeout, { above: true }) * 1000,
 		...(steps !== undefined && { steps }),
+		...(recording !== undefined && { recording }),
 		help,
 	};
 }
@@ -149,6 +172,8 @@ export function parseShotArgs(args) {
  * @property {string[]} warnings What the page logged as warnings.
  * @property {HoldScriptResult} [script] What the timed script's dump steps read, and the steps that
  *   failed. Only a run that a script drives has it.
+ * @property {ReplayResult} [replay] What a replay gave: its frames, its final time and its sketch.
+ *   Only a run that a recording drives has it.
  */
 
 /**
@@ -175,7 +200,7 @@ export function shotReport(
 				warnings,
 			},
 		};
-	const { time, frame, tier, width, height, stats, script } = result;
+	const { time, frame, tier, width, height, stats, script, replay } = result;
 	return {
 		report: {
 			ok: true,
@@ -188,6 +213,7 @@ export function shotReport(
 			image,
 			...(stats && { stats }),
 			...(script && { script }),
+			...(replay && { replay }),
 			ms,
 			errors,
 			warnings,
@@ -230,6 +256,10 @@ export function shotSummary(report, { page, size, png, json }) {
 			lines.push(
 				`It made ${counted(stats.drawCalls.median, 'draw call')}, uploaded ${byteSize(stats.uploadBytes.median)} and built ${counted(stats.pipelines, 'pipeline')}.`,
 			);
+		if (report.replay)
+			lines.push(
+				`Replayed ${counted(report.replay.frames, 'frame')} from ${report.replay.sketch} to ${report.replay.seconds} s${report.replay.stopped ? ', where the recording stopped at its limit' : ''}.`,
+			);
 		lines.push(`Saved ${png}, and the frame's facts and what the page logged in ${json}.`);
 	} else {
 		lines.push(`Drew no frame of ${page}: ${report.error}`);
@@ -265,9 +295,10 @@ export async function run(args) {
 		return 0;
 	}
 	const base = resolve(options.out);
-	return options.steps === undefined
+	if (options.steps !== undefined) return scriptShots(options, base, options.steps);
+	return options.recording === undefined
 		? oneShot(options, base)
-		: scriptShots(options, base, options.steps);
+		: replayShot(options, base, options.recording);
 }
 
 /**
@@ -286,6 +317,35 @@ export const shotFileName = (base, step) => base.replace(/\.png$/i, `-${step.nam
  * @param {string} png The image file, from the current folder.
  */
 async function oneShot(options, png) {
+	return drawShot(options, png, {
+		visit: (runner) => holdPage(runner, { ...options, path: options.page }),
+	});
+}
+
+/**
+ * Draws the last frame of a recording, which the page replays from its first frame, and prints the
+ * frame and what the replay gave.
+ *
+ * @param {ShotOptions} options
+ * @param {string} png The image file, from the current folder.
+ * @param {{ bytes: Uint8Array, file: string }} recording
+ */
+async function replayShot(options, png, recording) {
+	return drawShot(options, png, {
+		plugins: [recordingPlugin(recording.bytes)],
+		visit: (runner) => replayPage(runner, { ...options, path: options.page }),
+	});
+}
+
+/**
+ * Draws one frame through a page that `visit` opens, and prints its summary. One page visit draws
+ * one frame, so a command that draws several opens the page once for each.
+ *
+ * @param {ShotOptions} options
+ * @param {string} png The image file, from the current folder.
+ * @param {{ plugins?: readonly import('vite').PluginOption[], visit: (runner: import('./runner.js').Runner) => Promise<HeldPage> }} run
+ */
+async function drawShot(options, png, { plugins = [], visit }) {
 	const json = png.replace(/\.png$/i, '.json');
 	// An image from an earlier run must never pass for this run's.
 	rmSync(png, { force: true });
@@ -293,8 +353,8 @@ async function oneShot(options, png) {
 	let report;
 	let runner;
 	try {
-		runner = await startRunner();
-		const held = await holdPage(runner, { ...options, path: options.page });
+		runner = await startRunner({ plugins: [...plugins] });
+		const held = await visit(runner);
 		const facts = {
 			environment: runner.environment,
 			browser: runner.browserName,

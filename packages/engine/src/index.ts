@@ -377,6 +377,7 @@ export type {
 	WgslUniforms,
 } from './scene/wgsl-uniforms';
 export type { PhaseName } from './shared/metrics';
+export type { ReplayResult } from './shared/recording';
 export { runTask } from './shared/run-task';
 export type { Percentiles } from './shared/stats';
 export { TaskFailure } from './shared/task-failure';

@@ -209,6 +209,12 @@ export type Check =
 	| { kind: 'uploads'; tier: Tier }
 	/** The mip levels page: each way of making mip levels on WebGL2, read back level by level. */
 	| { kind: 'mip-levels' }
+	/**
+	 * The recording page: a device records its own session, with the keyboard, a touch and a long
+	 * frame, and publishes the recording with the frame lines that the sketch saw. A test on the
+	 * computer replays the file and compares the lines.
+	 */
+	| { kind: 'record' }
 	/** The video texture page: a video on the page shown on a surface, within the upload budget. */
 	| { kind: 'video-texture'; tier: Tier }
 	/** The environment generator page: the built-in room made on the GPU, read back level by level. */
@@ -2158,7 +2164,23 @@ export function shimmerPlan(): PlanItem<Check>[] {
 	);
 }
 
+/**
+ * The recording page on a device: it records a session with the keyboard, a touch and one long
+ * frame, and publishes the file with the frame lines. The computer's replay of the file is a test
+ * of its own, `tests/image/recording-replay.spec.ts`, which reads the run's result.
+ */
+export const recordPlan = (): PlanItem<Check>[] => [
+	{
+		id: 'record-phone',
+		// One thread, so the long frame that the page holds is a frame of the session's own timeline.
+		path: '/tests/pages/recording-device.html?record&threads=off',
+		timeoutSeconds: 180,
+		check: { kind: 'record' },
+	},
+];
+
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
+	record: recordPlan,
 	checks: checksPlan,
 	smoke: smokePlan,
 	parity: parityPlan,
@@ -2943,6 +2965,22 @@ export function judge(
 				: ['the engine started without shared memory, so the load tested no maximum'];
 		case 'room':
 			return typeof result.room === 'number' ? [] : ['the page did not count its room'];
+		case 'record': {
+			const log = result.log as unknown;
+			const frames = result.frames as unknown;
+			const recording = result.recording as unknown;
+			const problems: string[] = [];
+			if (!Array.isArray(log)) problems.push('the page published no frame lines');
+			else if (typeof frames !== 'number' || log.length !== frames)
+				problems.push(
+					`the page published ${log.length} frame lines for its ${String(frames)} frames`,
+				);
+			if (typeof frames !== 'number' || frames < 20)
+				problems.push(`the session ran ${String(frames)} frames, too few to compare`);
+			if (typeof recording !== 'string' || recording.length < 100)
+				problems.push('the page published no recording');
+			return problems;
+		}
 		case 'mip-levels': {
 			const mips = result as unknown as MipLevelsResult;
 			context?.note?.(mipLevelsNote(mips));

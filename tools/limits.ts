@@ -39,14 +39,17 @@ function baseRef(): string {
 	}
 }
 
-/** The picture references, which a test without both sets of files fails without a browser. */
+/**
+ * The picture references, which a test without both sets of files fails without a browser. A run
+ * that the command-line tool draws has its own list, so both lists count.
+ */
 function referenceRow(): Row {
 	// The command-line tool draws a script's pictures from its own spec rather than the image page,
 	// so its runs are not in the manifest the page draws; its references still belong to a test.
 	const { files, problems } = referenceProblemsOnDisk([...IMAGE_RUNS, ...SCRIPT_RUNS]);
 	return {
 		limit: 'picture references',
-		owner: 'tests/image/manifest.ts',
+		owner: 'tests/image/manifest.ts and tests/image/script-runs.ts',
 		state: problems.length === 0 ? 'within' : 'past',
 		detail:
 			problems.length === 0

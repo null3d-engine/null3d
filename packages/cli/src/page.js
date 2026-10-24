@@ -77,12 +77,22 @@ export const HOLD_SCRIPT_GLOBAL = '__null3dHoldScript';
  */
 
 /**
+ * What a replay gave, as the engine publishes it with the held frame.
+ *
+ * @typedef {object} ReplayResult
+ * @property {number} frames The frames that ran.
+ * @property {number} seconds The sketch time at the end.
+ * @property {string} sketch The sketch that the recording was made with.
+ * @property {boolean} stopped True when the recording stopped at its limit.
+ */
+
+/**
  * Hold mode's result as a tool reads it: the engine's own, with the pixels as base64. The held
  * frame's figures take the form of the engine's frame summary, whose per-frame figures summarize
  * the one held frame.
  *
  * @typedef {HeldReport | HoldFailure} HoldReport
- * @typedef {{ ok: true, time: number, frame: number, tier: string, width: number, height: number, pixels: string, stats?: HeldStats, script?: HoldScriptResult }} HeldReport
+ * @typedef {{ ok: true, time: number, frame: number, tier: string, width: number, height: number, pixels: string, stats?: HeldStats, script?: HoldScriptResult, replay?: ReplayResult }} HeldReport
  * @typedef {{ ok: false, code: string | null, error: string }} HoldFailure
  * @typedef {{ drawCalls: { median: number }, uploadBytes: { median: number }, pipelines: number } & Record<string, unknown>} HeldStats
  */
