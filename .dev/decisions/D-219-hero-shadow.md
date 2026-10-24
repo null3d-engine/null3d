@@ -84,16 +84,19 @@ What the shape of the figures already shows:
 | High | 2,048 | 16 | 2,048 | 272 MiB | 16 MiB |
 | Ultra | 4,096 | 24 | 4,096 | 1,600 MiB | 64 MiB |
 
-The light tiles are those that `shadowTiles` allows, and the frame draws only those that the visible
-spot and point lights fill, so a scene with fewer such lights takes less. The demo names no spot or
-point light that casts, so its atlas is the hero's layer alone. The largest case, Ultra with 24
-spot or point tiles, takes 1.6 GiB: Ultra is a desktop preset, and a scene there with a hero and
-that many shadow tiles is the one to watch.
+The "at most" column counts every light tile that `shadowTiles` allows, which no scene needs. The
+frame draws only the tiles that the visible spot and point lights fill, so the honest figures are
+lower. The demo names no spot or point light that casts, so its atlas is the hero's layer alone:
+4 MiB on Low, 16 MiB on Medium and High, and 64 MiB on Ultra. A hero scene with four light tiles,
+the usual handful of lamps that cast, takes 20 MiB on Low, 80 MiB on Medium, 80 MiB on High and
+320 MiB on Ultra. The 1.6 GiB headline needs 24 spot or point tiles on Ultra, which is the
+pathological case, not the typical one.
 
-The renderer refuses an atlas above 1 GiB. It fails the frame with E1501 before the GPU is asked,
-and the message gives the megabytes the atlas would take and the two settings that fix it: a smaller
-`heroTileSize` or fewer `shadowTiles`. The canvas keeps the last whole frame. A device that still
-runs out of room for it reports E1304 on WebGPU, and the drawing goes on.
+The renderer refuses an atlas above 1 GiB. Past that size a phone is likely to lose its GPU context,
+so the engine turns the ask into an error first. It fails the frame with E1501 before the GPU is
+asked, and the message gives the megabytes the atlas would take and the two settings that fix it: a
+smaller `heroTileSize` or fewer `shadowTiles`. The canvas keeps the last whole frame. A device that
+still runs out of room for it reports E1304 on WebGPU, and the drawing goes on.
 
 ## Consequences
 
