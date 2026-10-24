@@ -54,7 +54,6 @@ const INCOMPLETE = new Set([
 	'M3-A2',
 	'M3-A8',
 	'M3-A9',
-	'M3-A10',
 	'M3-V5',
 	'M3-A11',
 	'M3-R1',
@@ -117,7 +116,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the shipped design is a display-color table with no tone curve, which replaced the HDR input D-199 has the owner approving',
 	'M3-A9':
 		"the 4x shadow detail holds only for an object up to 1.8 m on High, and the costs were taken at loads of 13.6 to 26.3 against the spec's own limit of 8",
-	'M3-A10': 'no GPU cost was taken on an iPad or a phone-class device',
 	'M3-A11':
 		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
 	'M3-B6': 'the real-light option lights a fixed share of the cars, not the nearest ones',

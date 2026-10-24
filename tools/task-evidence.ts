@@ -7,6 +7,8 @@
 export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-R13':
 		'Three checks, each with a test seen to fail without it: the `ktx2-etc2` picture stands in for an ETC2-only device and failed with E1412 when the format was mislabelled; the shared replay skips a pending compute pass for an add-on shader too, in `packages/engine/src/gpu/webgpu/backend.test.ts`; the skinning pass checks the device limit, from b3187c44b',
+	'M3-A10':
+		"Full-resolution sharpening with its cost taken on a tablet and a phone: the `sharpen` picture in both reference sets holds the effect to an edge that moves about 10 steps, so a picture that lost it fails, and the effect cost page times it on and off at two render scales; D-205 gives the figures — 0.393 ms added on the Mac's WebGPU path, 0.948 ms on an iPad Pro 13 and 1.376 ms on a Galaxy S25, nothing at half scale on any of them, and the WebGL2 rows giving the frame interval because those devices have no GPU timer; the run records are `.dev/tested-devices/ipad-pro-13-safari/20261024-201742-sharpen.md` and the S25 and S24 records of the same date",
 	'M3-B3':
 		"In-world screens drawn on a canvas: one canvas-backed texture per screen, a refresh rate per screen, changed-rectangle uploads, the LCD look by distance, and clicks mapped back to canvas pixels: `examples/addons/screens/`, with 11 unit tests of the coordinate mapping; the control room draws panels at four rates, the picking demo's wall plan is a screen, the showroom has a tablet, and Skyway's hero car carries two deck panels and a navigation panel in `examples/showcase/skyway/cockpit.ts`; 18 image tests across the demos and 6 for Skyway, in both reference sets; D-253",
 	'M3-V4':
