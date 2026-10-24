@@ -74,6 +74,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		"The hook carries the add-on's selection, nearest first, and the engine's transparent pass sorts the chosen rows: `tests/image/addon-tasks.spec.ts` proves a task runs on a job worker, the `--splats` switch proves the whole path, and `.dev/benchmarks.md`'s `--splats` bullet records the bytes a frame on the Mac's WebGL2 (653.5 on the sketch worker, 163.8 on the render worker) and on the software renderer (1,119.1 and 91.9), each inside its budget; D-173's addendum rules why the per-splat sort is the engine's",
 	'M3-R20':
 		"A frame the GPU still holds after its completion record is lost counts as a held frame, so a software GPU's step below the whole scale is judged and undone: 67 governor tests, three of them failing without their part of the fix, and the trap page passing 10 of 10 on the software renderer in five thread modes on both paths; D-237 records the CI figures, the cause and what the line means",
+	'M3-R5':
+		"A frame's GPU time is the span of its passes, not their sum: `packages/engine/src/gpu/webgpu/gpu-timer.ts` takes the latest pass end less the earliest pass begin, and the timestamp step is the greatest common divisor of the offsets that the frame read back, from `packages/engine/src/shared/gpu-clock.ts`. `measure` and the stats overlay report both, `GPU_TIMING_ARGS` starts timing runs with Dawn's quantization off, and `.dev/benchmarks.md#how-the-gpu-time-is-measured` states the method; unit tests hold the step, the frame figures and the recorded per-frame step",
 	'M3-R6':
 		'D-226 records the timings on Chrome and Safari: at most 0.29 ms in Safari, nothing measurable in Chrome, so the pattern stays',
 	'M3-R10':

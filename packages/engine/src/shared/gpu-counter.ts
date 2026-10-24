@@ -6,3 +6,5 @@
 export const Passes = 0;
 /** Bit k is set when the frame's pass k is a render pass, and clear when it is a compute pass. */
 export const RenderPasses = 1;
+/** The step between the frame's timestamps in nanoseconds: the divisor of their offsets, or 0. */
+export const Tick = 2;
