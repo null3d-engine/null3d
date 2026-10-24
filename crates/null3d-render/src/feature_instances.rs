@@ -150,6 +150,17 @@ impl FeatureInstanceTable {
         self.get_mut(id).and_then(|draw| draw.changed.take())
     }
 
+    /// Bytes that the next frame uploads: the live draws' rows that the page wrote since the frame
+    /// before.
+    pub fn pending_bytes(&self) -> usize {
+        self.draws
+            .iter()
+            .flatten()
+            .filter_map(|draw| draw.changed)
+            .map(|(_, rows)| rows as usize * INSTANCE_BYTES as usize)
+            .sum()
+    }
+
     /// Marks every row that the page wrote for upload, so a buffer that the device made again
     /// gets them back.
     pub fn mark_all_changed(&mut self, id: u32) {

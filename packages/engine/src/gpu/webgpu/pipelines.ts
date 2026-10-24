@@ -32,6 +32,7 @@ import {
 	LAYOUT_EFFECT_BLOOM_DEPTH_MS,
 	LAYOUT_EFFECT_DEPTH_MS,
 	LAYOUT_EXPOSURE,
+	LAYOUT_FEATURE_ROWS,
 	LAYOUT_FINAL,
 	LAYOUT_FINAL_BLOOM,
 	LAYOUT_FINAL_EFFECTS,
@@ -118,6 +119,7 @@ import {
 	TEMPLATE_EXPOSURE_ADAPT_HISTOGRAM,
 	TEMPLATE_EXPOSURE_HISTOGRAM,
 	TEMPLATE_EXPOSURE_LUMINANCE,
+	TEMPLATE_FEATURE_ROWS,
 	TEMPLATE_FINAL,
 	TEMPLATE_FINAL_BLOOM,
 	TEMPLATE_FOG_APPLY,
@@ -617,6 +619,13 @@ export class Pipelines {
 	private readonly pyramid: ShaderVariants;
 	private readonly pyramidLayout: GPUPipelineLayout;
 	/**
+	 * The conversion of a feature-instance draw's world rows to camera-relative rows, which the
+	 * engine dispatches once for each draw in a frame that holds one (D-229).
+	 */
+	private readonly featureRows: ShaderVariants;
+	/** The conversion's pipeline layout, made at its first pipeline. */
+	private featureRowsLayout: GPUPipelineLayout | undefined;
+	/**
 	 * The cluster pass's builds, which arrive with the cluster levels feature's shader file. It is
 	 * read by name so that a build whose generated modules are older than the manifest still type
 	 * checks, and the pipeline reports the shader as missing instead.
@@ -927,6 +936,20 @@ export class Pipelines {
 				{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
 				{ binding: 1, visibility: compute, buffer: { type: 'storage' } },
 				{ binding: 2, visibility: compute, buffer: { type: 'storage' } },
+			],
+			true,
+		);
+		// Group 0 of the conversion of a feature-instance draw's world rows: its block of
+		// uniforms, which holds the camera's world position, the draw's count word and world rows,
+		// which it reads, and the camera-relative rows that it writes.
+		this.defineLayout(
+			LAYOUT_FEATURE_ROWS,
+			'feature rows',
+			[
+				{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
+				{ binding: 1, visibility: compute, buffer: { type: 'read-only-storage' } },
+				{ binding: 2, visibility: compute, buffer: { type: 'read-only-storage' } },
+				{ binding: 3, visibility: compute, buffer: { type: 'storage' } },
 			],
 			true,
 		);
@@ -1492,6 +1515,7 @@ export class Pipelines {
 		this.pyramidLayout = device.createPipelineLayout({
 			bindGroupLayouts: [this.layout(LAYOUT_DEPTH_PYRAMID)],
 		});
+		this.featureRows = shaders.feature_rows;
 		this.cluster = (shaders as unknown as Record<string, ShaderVariants | undefined>).cluster_cull;
 		this.clusterLayout = device.createPipelineLayout({
 			bindGroupLayouts: [this.layout(LAYOUT_CLUSTER_CULL)],
@@ -1875,6 +1899,7 @@ export class Pipelines {
 		if (custom) return custom.shader;
 		if (template === TEMPLATE_SKIN) return this.skin;
 		if (template === TEMPLATE_DEPTH_PYRAMID) return this.pyramid;
+		if (template === TEMPLATE_FEATURE_ROWS) return this.featureRows;
 		if (template === TEMPLATE_CLUSTER) return this.cluster;
 		if (template === TEMPLATE_CULL && permutation & PERMUTATION_MOTION) return this.cullMotion;
 		if (EXPOSURE_ENTRY_POINTS[template] !== undefined) return this.exposureHistogram;
@@ -1955,6 +1980,18 @@ export class Pipelines {
 				label: 'depth pyramid',
 				layout: this.pyramidLayout,
 				compute: { module: this.module('depth pyramid', shader), entryPoint: 'main' },
+			};
+		}
+		if (template === TEMPLATE_FEATURE_ROWS) {
+			const shader = variantFor(this.featureRows, 0, 'wgsl')?.wgsl;
+			if (!shader) throw new Error("the device's shader modules have no feature rows shader");
+			this.featureRowsLayout ??= this.device.createPipelineLayout({
+				bindGroupLayouts: [this.layout(LAYOUT_FEATURE_ROWS)],
+			});
+			return {
+				label: 'feature rows',
+				layout: this.featureRowsLayout,
+				compute: { module: this.module('feature rows', shader), entryPoint: 'main' },
 			};
 		}
 		const exposureEntry = EXPOSURE_ENTRY_POINTS[template];

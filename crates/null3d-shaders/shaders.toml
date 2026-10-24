@@ -1103,6 +1103,15 @@ file = "pyramid.wgsl"
 by_device = true
 variants.webgpu = { targets = ["wgsl"] }
 
+# The conversion of a feature-instance draw's world rows to the camera-relative rows that the
+# engine's vertex shaders read: one dispatch for each draw in each frame, whose count bounds the
+# instances it converts (D-229). Its compute entry point is `main`. WebGPU only: on WebGL2 the
+# adapter fills an instance batch on the CPU.
+[shaders.feature_rows]
+file = "feature_rows.wgsl"
+by_device = true
+variants.webgpu = { targets = ["wgsl"] }
+
 # A WebGPU page downloads occlusion culling's phases and its depth pyramid when the engine runs
 # GPU occlusion culling and the scene first marks an occluder. Until their pipelines are built,
 # each camera view culls once, against the frustum alone.
