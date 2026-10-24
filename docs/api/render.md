@@ -333,6 +333,7 @@ Each row is four `vec4f`: the three rows of an instance's world matrix, with its
 ### Reading the texture in the same frame
 
 - `textures.fromPass(pass)` gives the texture to a material's map, a custom effect's `textures`, or another pass's `textures`. The material shows the pass's image of the same frame when the pass runs before the camera's passes, as `frame: 'background'` or `'opaque'` does. A custom effect that reads it also sees the same frame.
+- A custom material's vertex offset that reads the texture orders the pass before every pass that draws the material: the camera's passes, the shadow views, the motion pass and a pick. A tree and its shadow therefore move with the same data. A pass at `'resolve'` or `'post'` draws after the scene, so no shadow or motion pass reads it.
 - The feature description's frame point sets one ordering rule. At `'resolve'` or `'post'`, the pass reads the scene color, so it runs after the camera's passes. At `'background'`, `'opaque'` or `'transparent'`, the passes that sample its texture order it.
 - `render.setPassUniforms(pass, values)` changes the values from the next frame on. The array's first number takes `u0`'s first component. It allocates nothing, so a sketch can change the values every frame.
 - A pass runs only while something shows or reads its texture. A pass that nothing reads costs nothing. Switch it with `render.setPassEnabled(pass, false)` while your feature's `ready` says it draws nothing, and set its values from the feature's settings.

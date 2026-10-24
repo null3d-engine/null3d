@@ -64,8 +64,9 @@ enable draw_index;
 // The MOTION builds, which only custom materials with a vertex offset have, draw the motion of a
 // moving object for the motion pass (decision record D-140, null3d::motion): the vertex shader
 // moves each vertex by the offset with this frame's built-in values, and again with the last
-// frame's time, places the second with the last frame's matrix, and the fragment shader writes the
-// difference on the screen. Like the casters, they ignore the material's alpha.
+// frame's time and `frame.lastFrame` set, places the second with the last frame's matrix, and the
+// fragment shader writes the difference on the screen. Like the casters, they ignore the
+// material's alpha.
 //
 // The LOD_FADE builds draw a level of detail inside the band where it hands over to the next
 // (null3d::mesh): the vertex shader passes on the instance's fade value, and the fragment shader
@@ -1416,6 +1417,9 @@ fn vs(v: VertexIn, i: InstanceIn, l: LastIn) -> MotionOut {
     frame.time = motion_block.last_clock.x;
     frame.deltaTime = motion_block.last_clock.y;
     frame.index = bitcast<u32>(motion_block.last_clock.z);
+    // The second call moves the vertex as the frame before did, so a vertex offset that reads
+    // data a pass wrote for both frames takes that frame's part.
+    frame.lastFrame = true;
 #ifdef WEBGL2
     let last = last_transform(found);
 #else

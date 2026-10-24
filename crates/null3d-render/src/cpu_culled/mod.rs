@@ -128,7 +128,7 @@ use crate::frame::{
     RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, drawn_rows, joined_rows,
     settled,
 };
-use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
+use crate::frame_graph::{DrawnViews, FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
 use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{LightGrid, LightGrids, LightLimits};
@@ -1789,6 +1789,9 @@ impl CpuCulledRenderer {
         self.settings.prepare_probe_capture(input.frame);
         self.settings.pace_views(input.canvas, input.render_scale);
         self.settings.mark_shown_views();
+        // The shadow, motion and pick passes draw their layouts' materials, so each reads the pass
+        // targets those materials sample: a compute pass finds its place before them.
+        self.sync_drawn_views();
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.set_debug_lines(!input.lines.is_empty());
@@ -2575,6 +2578,18 @@ fn upload_views(
     Ok(())
 }
 
+impl CpuCulledRenderer {
+    /// Tells the graph which pass targets the shadow, motion and pick passes' materials sample,
+    /// so each of those passes reads them and runs after the pass that writes them.
+    fn sync_drawn_views(&mut self) {
+        self.graph.set_drawn_views(DrawnViews {
+            casters: self.casters.material_views,
+            motion: self.layout.material_views,
+            pick: self.layout.pick_views,
+        });
+    }
+}
+
 impl FrameBuilder for CpuCulledRenderer {
     fn account(&self, register: &mut null3d_core::memory::MemoryRegister) {
         let mut layouts = null3d_core::memory::MemoryUse::default();
@@ -2979,6 +2994,7 @@ impl FrameBuilder for CpuCulledRenderer {
     fn graph_dot(&mut self) -> String {
         self.settings.prepare_effect_maps();
         self.settings.mark_shown_views();
+        self.sync_drawn_views();
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.dot()
