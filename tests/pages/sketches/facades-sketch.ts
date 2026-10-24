@@ -47,7 +47,7 @@ export default defineSketch((ctx) => {
 			furniture: params.get('furniture') !== 'off',
 			blinds: params.get('blinds') !== 'off',
 		},
-		power: { origin: [0, 0], speed: wave ? 9 : 2200, rise: 10, damping: 5 },
+		power: { origin: [0, 0], speed: wave ? 2 : 2200, rise: 10, damping: 5 },
 	};
 	// A wave that a held frame catches crosses the wall slowly; a still wall is already lit.
 	const material = createFacade(ctx, look);
