@@ -150,7 +150,7 @@ export interface WorkflowRun {
 /**
  * The workflows that must pass on the gate commit, each with the runs that count. Main's own CI run
  * after the merge runs every job, and so does a run started by hand (D-99). A push to a milestone
- * branch runs only the quick checks (D-248), and a run of a pull request tested other code:
+ * branch runs only the quick checks (D-249), and a run of a pull request tested other code:
  * GitHub's merge of it into an older main. Any run of the benchmarks counts.
  */
 export const GATE_WORKFLOWS: readonly {
