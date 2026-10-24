@@ -1190,15 +1190,40 @@ function resolveBase(choice: BaseChoice): Base {
 	return { sha, subject: git(['log', '-1', '--format=%s', sha]), why: choice.why };
 }
 
+/**
+ * Why the base worktree is locked. `git worktree list` shows it, and `git worktree remove` and
+ * `git worktree prune` refuse a locked worktree, so a tidy-up of the clone's worktrees leaves it.
+ * On 24 October 2026 a sweep of worktrees whose commit had landed removed a base worktree while its
+ * page build ran, and the check failed with ENOENT on a file that the build had just written.
+ */
+const BASE_TREE_LOCK =
+	'the size check of tools/build-wasm.ts builds its base commit here, and reuses this worktree';
+
 /** Puts the base worktree at the commit, and makes it when it is missing or broken. True when new. */
 function checkoutBaseTree(tree: string, sha: string): boolean {
 	if (existsSync(join(tree, '.git'))) {
 		const args = ['checkout', '--force', '--quiet', '--detach', sha];
-		if (spawnSync('git', args, { cwd: tree }).status === 0) return false;
+		if (spawnSync('git', args, { cwd: tree }).status === 0) {
+			// A worktree from before the lock gets it now; a locked one refuses a second lock.
+			spawnSync('git', ['worktree', 'lock', '--reason', BASE_TREE_LOCK, tree], { cwd: root });
+			return false;
+		}
 	}
 	rmSync(tree, { recursive: true, force: true });
-	// --force also takes over the path when git still lists a worktree there that was deleted.
-	git(['worktree', 'add', '--force', '--detach', tree, sha]);
+	// --force twice also takes over the path when git still lists a worktree there that was deleted,
+	// locked or not.
+	git([
+		'worktree',
+		'add',
+		'--force',
+		'--force',
+		'--lock',
+		'--reason',
+		BASE_TREE_LOCK,
+		'--detach',
+		tree,
+		sha,
+	]);
 	return true;
 }
 
