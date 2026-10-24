@@ -1,0 +1,105 @@
+# D-241: A vegetation foundation add-on, with GPU grass, generated plants and wind on custom materials
+
+Status: decided by the owner on 24 October 2026. Not built yet: planned as M3-V1 to M3-V12. Open: which wind method trees use by default, per vertex or by branch poses, which M3-V10 measures for the owner's ruling. Date: 2026-10-24.
+
+Summary: Vegetation becomes the eleventh foundation add-on. It grows trees, shrubs, ferns, flowers and grass from a few numbers per species at first use, and places them by ecological rules. It draws grass on the GPU, moves every plant in one wind field and hands far trees to impostors. Creek is its first user and drops its Blender plant models, about 3.1 MB. Wind stays in custom materials' vertex offsets. Custom materials gain the standard material's alpha to coverage, alpha hash, level and band fades and cut-out shadows.
+
+## Question
+
+Creek dresses about 5% of its valley, with three tree kinds in fixed counts, and only its grass moves. The owner asked for complex, varied trees, shrubs and grass over the whole landscape, in Creek and in every other plant demo. Where does that work live, does GPU grass come back, and do Creek's Blender plants stay? How does wind reach masked leaf cards without losing their edges, fades and shadows?
+
+## Rule
+
+- Each feature lives in one place, and add-ons reach the engine only through public entry points (AGENTS.md rules 11 and 12, [D-173](D-173-addon-hooks.md)).
+- A later add-on is a foundation when other add-ons or many kinds of project build on it (D-173 ruling 4).
+- Built-in assets are generated in the browser at first use, and both GPU paths draw the same scene, or the docs state the fallback.
+
+## Data
+
+A research session on 24 October 2026 read the literature, shipped games, other engines and null3D's own code.
+
+**Creek and the other demos.**
+
+- Creek has 17 trees (oaks, beeches and birches) and about 200 ferns, hostas, shrubs and flower clumps. A Blender script builds them into about 3.1 MB of files, in the same counts on every preset.
+- Its grass is 3,000 to 27,000 tufts of 13 blades in a strip about 44 m long, about 5% of the 160 m land.
+- Only the grass and the water move.
+- On an M5 Max at Medium, WebGL2 draws 7.1 to 7.6 million triangles a frame. Every tuft draws at full detail at every distance ([examples.md, Creek](../examples.md#creek)).
+- About a dozen demos write their own plants: at least five pine or fir generators, three grass versions and three leaf meshes. The only shared plant code is `examples/lib/pines.ts`.
+
+**Why custom materials lose their cut-out features.** Custom materials build into the standard material's lit template (`crates/null3d-shaders/shaders.toml`, `[shaders.lit]`), but they leave out several of its builds:
+
+- The template has `ALPHA_COVERAGE`, `SAMPLE_MASK`, `ALPHA_HASH` and `LOD_FADE` builds, and custom materials build none of them. Their levels and distance bands switch at once, and `materials.shader` refuses `alphaToCoverage` and the `'hash'` mode with E1217.
+- A custom material's shadow caster builds (`caster_variant` in `crates/null3d-shaders/src/material.rs`) have no fragment stage, so a masked custom material casts its whole shape. Its motion builds cut no holes either ([D-140](D-140-motion-vectors.md)).
+- `ROW_VALUES` is kept apart from `ALPHA_COVERAGE` and `ALPHA_HASH` (`APART` in `crates/null3d-gpu/src/drawlist.rs`). A batch with row colors or values therefore tests a plain cutoff, for the standard material too.
+- A vertex offset's `VertexInput` holds the position, the normal, two sets of texture coordinates and the row, but not the vertex color.
+
+**Other engines and shipped games.**
+
+- **Horizon Zero Dawn** placed more than 100,000 objects of more than 500 types by rules on the GPU. This took about 250 µs a frame on a PS4.
+- **What the best games share:** Horizon, Ghost of Tsushima and Far Cry 5 use a few good species and rule-based placement. Their plants thin with distance, light passes through their leaves, and everything moves in the wind.
+- **Unreal 5.7 and 5.8** drive Nanite Foliage's wind with bones, at about 100,000 bones in about 0.1 ms. Epic's reason is tight cluster bounds and the fixed-function rasterizer, which world-position offset loses under Nanite.
+- **Unreal's cached shadows:** Epic's virtual shadow map docs say that cached pages redraw every frame under geometry that moves. Skeletal animation and world-position offset both cause it.
+
+## Decision
+
+The owner ruled on 24 October 2026:
+
+1. **An official foundation add-on.** Vegetation is the eleventh foundation, its own npm package. Its working name is `@null3d/vegetation`, to confirm in M3-V4. It passes ruling 4's test: many kinds of project use plants, and other developers' style packs build on it.
+   - **What it holds:** the species generator, the texture baker, the scatter and the grass. It also holds the leaf material, the wind, the hand-off to far-tree impostors and a small built-in set of species. Each species is a short record of numbers.
+   - **What other developers make:** themed species packs, such as tropical, autumn or stylised plants. They are content, the "vegetation styles" that D-173 left to other developers on 14 October.
+   - **Reuse:** it reuses the terrain and impostors foundations and copies neither.
+2. **GPU grass returns.** Creek's hills are the "vegetation-heavy ground" that [D-179](D-179-technique-rulings-2026-10-15.md)'s addendum of 21 October names as the trigger. GPU grass is built in M3, inside the vegetation add-on, not as a separate content pack.
+   - **WebGPU:** a compute pass makes and culls the blades, and H2 draws them in the main view and the shadow views.
+   - **WebGL2:** the CPU builds grass tiles of instance batches, which the engine culls in groups of 64 rows, with distance bands.
+3. **Generated plants replace Creek's Blender models.** Creek's trees, ferns, hostas, shrubs and flowers come from the add-on's generator at first use. The Blender script, its manifest entries and its files go. The other plant demos move to the add-on after Creek.
+4. **Wind on custom materials, which keep their cut-out features.** Wind stays a custom material's vertex offset, as [D-117](D-117-showcase-features-before-1-0.md) has it. Custom materials gain:
+   - alpha to coverage and the alpha hash;
+   - fades between levels and at the edges of distance bands;
+   - a masked shadow caster that runs the material's alpha;
+   - motion builds that cut the material's holes.
+
+   Batches with row values may also take alpha to coverage and the hash. `VertexInput` gains the vertex color for wind data. The coverage and hash builds go only to WGSL that sets or reads the surface's alpha, as transmission's builds do. This holds build time and size. The task measures build time and shader file size before and after.
+
+## Wind by bones
+
+The owner asked on 24 October 2026 what wind driven by bones would take in null3D, and whether it is better.
+
+**What it is.** Each tree has a skeleton of branches. A pass computes each branch's pose once per frame, and each vertex follows its branch.
+
+**What null3D needs.** The core needs no skinning of instance batches. The add-on runs an H1 compute pass ([D-240](D-240-compute-passes.md)), with its fragment form on WebGL2. The pass writes each near tree's branch poses into a texture, for this frame and the last. The leaf and bark materials' vertex offsets then read their branch's pose with `textureLoad`. Three engine changes make this sound (M3-V3):
+
+- A vertex offset reads a compute pass's output in every build that runs it: the main, shadow caster, motion and pick builds.
+- The render graph orders such a pass before every pass that draws the material, the shadow views included. No shadow then shows the last frame's pose.
+- The motion builds' call for the last frame can tell that it is that call, so it reads the last frame's poses. Today D-140 counts uniforms and row values as unchanged since the last frame.
+
+**What it gains.**
+
+- **Less vertex work:** the sway is computed once per branch, not once per vertex in each pass that draws the tree. Those passes are the main view, the motion pass (which runs the offset twice), each shadow cascade and the reflections.
+- **Branches that react:** branches can hold state, so they spring back after a gust and give way to a character.
+
+**What it does not gain.**
+
+- Shadows of moving trees still redraw every frame, as Epic's docs say for Unreal.
+- Unreal's main reasons, cluster bounds and its rasterizer, do not apply to null3D's renderer.
+- Leaf flutter, grass and small plants stay per vertex in either design.
+
+No source gives phone figures for either method on the web. So M3-V10 builds branch poses beside the per-vertex wind of M3-V7 and measures both on the Mac, the iPad and an S24-class phone. The owner then picks the trees' default from the figures.
+
+## Options rejected
+
+- **Creek-only vegetation.** It is the fastest path to a better Creek. But it would make a sixth pine generator, a fourth grass and a fourth leaf mesh, where rule 11 asks for one place.
+- **An example add-on that is never published.** Its interface could change freely. But versions before 1.0 allow that anyway, and other developers are meant to build plant packs on it.
+- **A vertex-offset hook on the standard material.**
+  - It would be a second API for what custom materials' vertex offsets already do.
+  - Leaves need custom shading anyway: crown-bent normals, crown occlusion and a tint per leaf.
+  - The row-value exclusion would still take alpha to coverage away from batched trees.
+- **Skinning of instance batches in the core.** Each row of a batch would get its own joint palette, through the skin, caster, motion, fade and row-value builds of both paths. It is a large core change for what an H1 pass and a vertex offset give.
+- **One sine sway for each tree.** It loops visibly, and viewers judge wind by its frequencies and amplitudes.
+
+## Consequences
+
+- AGENTS.md rule 13 lists vegetation among the foundation add-ons.
+- [D-173](D-173-addon-hooks.md) and [D-179](D-179-technique-rulings-2026-10-15.md) gain addenda that point here. D-117's rule that wind is a recipe on vertex offsets still holds. The recipe now lives in one place, the vegetation add-on.
+- `.dev/examples.md` records the planned move of Creek's plants and the change to the showcase rule on plant models.
+- M3 gains tasks M3-V1 to M3-V12. M3-E9's GPU-written draws must also work in the shadow views, because near grass casts shadows. The impostors' bake helper comes into M3 for the far trees, which are baked at first use.
+- No engine code changes with this record.
