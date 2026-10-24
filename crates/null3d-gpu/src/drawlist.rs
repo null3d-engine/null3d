@@ -823,10 +823,10 @@ pub mod layout {
     /// depth, the motion target and the two histories at bindings 1 to 5, and the linear sampler
     /// of the histories at 6. The scene color, the depth and the motion read with `textureLoad`;
     /// the histories read with the sampler.
-    pub const TAA: u32 = 54;
+    pub const TAA: u32 = 57;
     /// [`TAA`] with a multisampled scene depth, whose samples the resolve reads. Only WebGPU has
     /// it.
-    pub const TAA_MS: u32 = 55;
+    pub const TAA_MS: u32 = 58;
     /// The final pass with custom effects folded into it: [`FINAL`]'s bindings, then the effects'
     /// uniform buffer at binding 4 and the scene's depth, or a blank texture, at binding 5, as
     /// plain floats.
