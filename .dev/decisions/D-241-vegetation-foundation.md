@@ -236,11 +236,11 @@ last, and returns flat arrays of nine floats for each point.
   tint and lichen all come from the integer hash, and the rotation is stored as a share of a whole
   turn rather than an angle in radians. A point list therefore matches bit for bit on every device,
   with no tolerance to argue about. A strict comparison across devices needed this: `Math.sin` and
-  `Math.atan2` are allowed to differ in their last bit between engines, and a position built from
-  them would not compare equal.
-- **The tiles cannot change the result.** A candidate's cell is indexed over the whole square, not
-  over the tile, and the build walks the cells of the tiles added in one row-by-row order. The first
-  plant to claim a place keeps it. Both the order that the tiles arrive in and the tile size
+  `Math.atan2` are allowed to differ in their last bit between engines. A position built from them
+  would not compare equal.
+- **The tiles cannot change the result.** A candidate's cell is indexed over the whole square. It
+  is not indexed over a tile. The build walks the cells of the tiles added in one row-by-row order.
+  The first plant to claim a place keeps it. Both the order that the tiles arrive in and the tile size
   therefore leave the points identical, and the test checks all three. The first version walked the
   tiles one after another, which placed each tile band's rows before the next tile band's, so a
   larger tile won other shared places.
@@ -252,14 +252,15 @@ last, and returns flat arrays of nine floats for each point.
   law, so one channel holds most of it and the maximum left the rest of the ground at 0.06. The
   percentile gives the channels 1 and the slopes near 0, which is what a species' curve can use.
 - **The curves were fitted to Creek's measured ground.** The first set was written from the general
-  shape of a valley and placed 57 plants in Creek, with nothing in the ground layer at all: the
-  bounds were narrower than the ground's own bands. The built-in rules now follow the measured
+  shape of a valley. It placed 57 plants in Creek, with nothing at all in the ground layer, because
+  its bounds were narrower than the ground's own bands. The built-in rules now follow the measured
   percentiles of each input over the valley. A scene on other terrain moves the numbers that differ.
 
-**Figures.** Creek's 160 m valley, placed with its eight species at seed 7: 951 points, in 51 ms on
-an Apple M5 Max laptop. The layers hold 104 canopy trees, 178 saplings, 645 ground plants and 24
-dead wood. The checksum of that placement is 232657082, which the device page compares on every
-device and both GPU paths.
+**Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds 955 points. They
+are 104 canopy trees, 174 saplings, 651 ground plants and 26 dead wood. The checksum of that placement is
+916344353. The device page compares it on every device and both GPU paths. On the Mac the scatter
+takes about 10 ms in Chrome and the ground maps about 45 ms. The per-device rows that M3-V6 asks for
+are owed; the `vegetation-scatter` plan measures them.
 
 **Options rejected.**
 
