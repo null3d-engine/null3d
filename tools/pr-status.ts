@@ -34,11 +34,15 @@ const ON_BRANCH = new Set(['M3-A3', 'M3-B4', 'M3-E9', 'M3-R14']);
 /** A task that a commit names, but that the audit of the branch found unfinished. */
 const INCOMPLETE = new Set([
 	'M3-A9',
+	'M3-A11',
 	'M3-B1',
 	'M3-D9',
 	'M3-E2',
 	'M3-E4',
 	'M3-E6',
+	'M3-E8',
+	'M3-E10',
+	'M3-F2',
 	'M3-L1',
 	'M3-L3',
 	'M3-L4',
@@ -49,16 +53,25 @@ const INCOMPLETE = new Set([
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
-	'M3-A9': 'the hero shadow draws, but D-219 still holds an empty cost placeholder',
+	'M3-A9':
+		"the hero shadow and its tile are in; D-219's cost table is still empty, and the measured figures sit on the unlanded `m3-a9-hero-cost` branch",
+	'M3-A11':
+		"D-206 fixes the capture and the engine paths and rules the resolve unshipped for 0.1.0; D-129's shimmer, smear and sharpness figures are still unmeasured, so the ruling can still change",
 	'M3-E2':
-		'the hook exists and is unit-tested; its first user is the splats add-on, which is not on the branch',
+		"the task hook and the splats add-on's distance selection run on the job workers on both paths; the allocation check the task asks for is missing",
 	'M3-E4':
-		'the hook exists and is unit-tested; its first user is the splats add-on, which is not on the branch',
+		"the depth input is built and splats mix with meshes by depth; water's soft shores, the task's first user, are not on the branch",
 	'M3-E6':
-		'the hook exists and is unit-tested; its first users are the splats and water add-ons, which are not on the branch',
+		"splats' budget follows the preset and reaches the overlay; water's reflection cadence, the other first user, is not on the branch",
+	'M3-E8':
+		"the compute pass and its WebGL2 fragment form are built and tested; the first-user outcome waits on M3-F9's ocean, because the splats add-on cannot take the hook",
+	'M3-E10':
+		"the sky layer's template, ids and sizes are in place but unregistered; the example add-on that draws a sky layer, the task's first user, does not exist",
+	'M3-F2':
+		'the add-on, both file kinds, depth mixing and the pictures on both paths are in; its streaming within budget on the iPad and an S24-class phone is not recorded',
 	'M3-B1': 'the lens kit has no picture test and no cost per preset',
 	'M3-D9':
-		'the command fails on an add-on that imports the engine internal entry, but no test or recorded run calls it on the foundation add-ons',
+		'the command and its refusal of an add-on that imports the engine internal entry are tested; no recorded run holds it over every foundation add-on',
 	'M3-L1':
 		'every item is built with its pictures, but D-211 records Mac figures alone: the phone GPU time the fade item asks for, and the iPad and phone figures the section asks for, are missing',
 	'M3-L3':
@@ -70,8 +83,6 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-R12': 'the build compiles only the listed permutations; the time and size are not recorded',
 	'M3-R13': 'the fallbacks exist; no test names the three checks the task asks for',
 	'M3-R17': 'the develop skill has neither section the task asks for',
-	'M3-A11':
-		'under reinvestigation under rule 39: D-206 refused it for a black captured frame that its own record narrowed to one hypothesis, and the fix is in progress on a branch',
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
 };
 

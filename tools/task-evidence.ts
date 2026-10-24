@@ -28,8 +28,6 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-A5':
 		'`createVertexDraw` in `packages/engine/src/scene/scene.ts:4623-4702`; `examples/rain/sketch.ts`',
 	'M3-A7': '`limit_hdr` maps NaN to zero: `crates/null3d-shaders/wgsl/lib/color.wgsl:35-38`',
-	'M3-A9':
-		'The `hero` shadow option and `setHeroShadow`: `packages/engine/src/scene/scene.ts`, `docs/api/lights.md:234-245`',
 	'M3-B6':
 		'`examples/addons/traffic-lanes/` (instanced vehicles moved in the vertex shader); `examples/instances/traffic.ts` and `examples/showcase/skyway/traffic.ts`',
 	'M3-D1': "`tools/lib/packages.ts` compiles each add-on's WGSL when it packs",
@@ -42,16 +40,10 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-D7': 'The WebGL2 texture-unit allocator: `packages/engine/src/gpu/webgl2/`',
 	'M3-D8':
 		"Namespaces for an add-on's shader library, error codes and quality keys: `packages/engine/src/scene/namespaces.ts`",
-	'M3-D9': '`packages/cli/src/check-addon.js`',
 	'M3-E1':
 		"Splats draw through `scene.addFeatureInstances` (`packages/engine/src/scene/feature-instances.ts`); the `splats`, `splats-budget` and `splats-gltf` pictures on both paths; the draw's size in `tools/lib/size-report.ts`",
-	'M3-E2': 'Add-on tasks on the job workers: `packages/engine/src/shared/tasks.ts`',
 	'M3-E3':
 		"`registerGltfExtension` in `packages/engine/src/scene/gltf-extensions.ts`; the `splats-gltf` picture, and E1417's hint for `KHR_gaussian_splatting` in `gltf-extensions.test.ts`",
-	'M3-E4':
-		'Scene inputs on a custom material (`sceneInputs`): `packages/engine/src/scene/resources.ts`, `docs/api/materials.md:542`',
-	'M3-E6':
-		'A feature declares its preset settings and figures: `packages/engine/src/scene/features.ts`; `docs/concepts/quality-presets.md:293-295`',
 	'M3-G1':
 		'`KHR_animation_pointer`: `packages/engine/src/scene/gltf-animation.ts`, `property-animation.ts`',
 	'M3-G4':
@@ -66,8 +58,6 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-K5': '`scene.overrideMaterial`: `packages/engine/src/scene/scene.ts`, `docs/api/scene.md`',
 	'M3-K6':
 		'`toneMapped = false`: `packages/engine/src/scene/resources.ts`, `docs/api/materials.md`',
-	'M3-L1':
-		'`crates/null3d-core/src/levels.rs:256` (`distance`, nearest point of the bounds); `crates/null3d-shaders/wgsl/cull.wgsl:363` (`level_of`); `crates/null3d-shaders/wgsl/lib/mesh.wgsl:679-709` (a dither phase per copy); `docs/concepts/lod.md` (fade, distance, small objects, bands)',
 	'M3-L2':
 		"`crates/null3d-render/tests/levels.rs` (40,000 copies of four levels take one copy each); levels draw the base mesh's indices over its shared vertices; `lod-material`, `lod-bias` and the skinned-level pictures; D-137's addenda",
 	'M3-F8':
