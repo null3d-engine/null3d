@@ -173,6 +173,14 @@ export interface CoreGlue extends CoreErrors {
 	drawListAddress(parity: number): number;
 	drawListWords(frame: number): number;
 	/**
+	 * Fills the memory register with what each table and allocator holds, and returns the address
+	 * of three numbers per area: the bytes that it reserves, uses and has used at most. A
+	 * development build asks for a report while the stats overlay shows its card.
+	 */
+	updateMemoryRegister(): number;
+	/** The number of memory areas that `updateMemoryRegister` reports. */
+	memoryAreas(): number;
+	/**
 	 * Makes room for `points` points of debug lines, keeping those written since the last recorded
 	 * frame. The arrays can move, so their addresses must be read again.
 	 */
@@ -248,6 +256,8 @@ export interface CoreGlue extends CoreErrors {
 	setBatchOrigin(batch: number): number;
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
+	/** Keeps every row of a batch whatever a view's frustum says, or culls its rows again. */
+	setBatchUnculled(batch: number, unculled: boolean): number;
 	/** Gives every row of a batch a bounding sphere of `radius` meters around its own origin. */
 	/** Sets a batch's own bounding radius, which the next frame reads from the call values. */
 	setBatchBounds(batch: number): number;
@@ -341,6 +351,13 @@ export interface CoreGlue extends CoreErrors {
 	 * vertices: it is split into parts, or joints or morph targets pose them.
 	 */
 	createLevelMesh(base: number, indices: number): number;
+	/**
+	 * Gives the live mesh `mesh` the `indices` triangles at `meshArrays`'s address in place of the
+	 * ones it draws, which the call frees. 0 when the mesh takes them. A mesh that is split into
+	 * parts, morphed, a level of its own or drawn as lines returns its fault code, and keeps the
+	 * triangles it had.
+	 */
+	replaceMeshIndices(mesh: number, indices: number): number;
 	/**
 	 * Gives a mesh the tree over its triangles that a model file stores, from the first `bytes`
 	 * bytes at `meshArrays`'s address. 1 when the mesh takes it, 0 when the tree does not fit the
@@ -626,6 +643,38 @@ export interface CoreGlue extends CoreErrors {
 		source: number,
 	): number;
 	/**
+	 * Adds a compute pass named `pass`, which runs the compiled WGSL of compute pipeline template
+	 * `template` over the whole of a target named `target`: of `width` x `height` texels, or with
+	 * a width of 0, of `scale` of the render size each way. It writes the target as a storage
+	 * texture of `format`, a draw list format code, over a workgroup of `workgroup` invocations
+	 * packed one axis to a byte, and dispatches `counts` workgroups along each axis packed the same
+	 * way, or covers the target when every count is 0. It reads its uniforms at `effectValues` and
+	 * its textures at `effectTextures`, in one frame of every `every`. Returns the view's place
+	 * from 1, or 0 on failure, as `addPass` does.
+	 */
+	addComputePass(
+		pass: string,
+		target: string,
+		width: number,
+		height: number,
+		scale: number,
+		every: number,
+		template: number,
+		format: number,
+		workgroup: number,
+		counts: number,
+		afterScene: number,
+		countsBuffer: number,
+		instancesBuffer: number,
+		instancesBytes: number,
+	): number;
+	/**
+	 * Gives the compute pass of view place `place` the uniforms at `effectValues` and the textures
+	 * at `effectTextures`, from the next frame on. Returns 0, or the render graph's code for a
+	 * texture that closes a loop of passes.
+	 */
+	setComputeValues(place: number): number;
+	/**
 	 * Adds a view that draws the scene into a rectangle of the canvas, which the first four call
 	 * values name: its left and top, then its width and height, as fractions of the canvas. The
 	 * view's lens goes to it through `setPerspectiveCamera` or `setOrthographicCamera` with
@@ -674,6 +723,17 @@ export interface CoreGlue extends CoreErrors {
 	renderGraphMessage(): string;
 	/** The render graph of the passes as they are now, as Graphviz DOT text. */
 	renderGraphDot(): string;
+	/**
+	 * Turns the development probe of the two-step pass on. Its answers stay zero until it is on, so
+	 * nothing reads them unless the page asked.
+	 */
+	setDebugTwoStep(on: boolean): void;
+	/**
+	 * The two-step answers of the last recorded frame, as the address of five 32-bit words: whether
+	 * the frame wanted the two-step pass, declared it, had its second step built and drew it, then
+	 * the render scale in thousandths. Zero until `setDebugTwoStep(true)`.
+	 */
+	debugTwoStep(): number;
 	/**
 	 * Adds a row to the light table for the object `handle`; `kind` is one of the `LIGHT_KIND_*`
 	 * codes. Returns the light's id.
@@ -744,8 +804,19 @@ export interface CoreGlue extends CoreErrors {
 	setSsrQuality(thousandths: number, steps: number): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
+	/**
+	 * The generation of the plan's texture list, which changes when a pass change makes the frame
+	 * make some targets again. A frame's list recorded under an older generation names textures
+	 * that a later plan replaced, so the thread that draws skips it.
+	 */
+	planEpoch(): number;
 	/** The taps of each step of the subsurface blur, from the next frame on: 0 draws none. */
 	setSubsurfaceTaps(taps: number): number;
+	/**
+	 * Temporal anti-aliasing, a prototype: the history's share in thousandths, 0 for off, and
+	 * whether the camera takes its sub-pixel offsets.
+	 */
+	setTaa(feedback: number, jitter: boolean): number;
 	/** Turns automatic exposure on with the post-processing values' settings, or off. */
 	setAutoExposure(on: boolean): number;
 	/** The meter of automatic exposure, from the next frame on: 0 the downsample, 1 the histogram. */
@@ -776,6 +847,29 @@ export interface CoreGlue extends CoreErrors {
 	destroyVertexDraw(id: number): number;
 	/** Sets the vertices of one shape and the number of its copies of such a draw. */
 	setVertexDrawCounts(id: number, vertices: number, instances: number): number;
+	/**
+	 * Makes a draw of at most `capacity` instances for the object in scene slot `slot`, whose
+	 * instance count the GPU writes, and returns its id, or 0 when the scene holds the most such
+	 * draws already.
+	 */
+	createFeatureInstances(slot: number, capacity: number): number;
+	/** Forgets a draw whose instance count the GPU writes. */
+	destroyFeatureInstances(id: number): number;
+	/** The id of the per-instance buffer that such a draw reads. */
+	featureInstanceBuffer(id: number): number;
+	/** The id of the count word that such a draw takes. */
+	featureInstanceCountBuffer(id: number): number;
+	/**
+	 * Sets the count that a shadow view draws and that a page without compute sets for a draw
+	 * whose instance count the GPU writes.
+	 */
+	setFeatureInstanceCount(id: number, count: number): number;
+	/**
+	 * Writes `count` per-instance rows from `values` at row `start`, as the engine's instance
+	 * buffers hold them: three world-matrix rows, then the ids. Returns 0, or 1 for values that a
+	 * draw does not take.
+	 */
+	setFeatureInstanceRows(id: number, start: number, count: number, values: Float32Array): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/** Lets materials with parallax draw it, or draws them with their displacement alone. */
@@ -1090,6 +1184,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'resetGpu',
 	'drawListAddress',
 	'drawListWords',
+	'updateMemoryRegister',
+	'memoryAreas',
 	'reserveDebugLines',
 	'debugLineArrays',
 	'drawDebugLines',
@@ -1101,6 +1197,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'destroyBatch',
 	'batchArrays',
 	'setBatchActiveCount',
+	'setBatchUnculled',
 	'setBatchBounds',
 	'setBatchDrawRange',
 	'reserveBatchRanges',
@@ -1122,6 +1219,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'meshArrays',
 	'createMeshFromArrays',
 	'createLevelMesh',
+	'replaceMeshIndices',
 	'setMeshBvh',
 	'setMeshBlocker',
 	'setMeshPatches',
@@ -1166,6 +1264,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'clearShadowCamera',
 	'addPass',
 	'addFullscreenPass',
+	'addComputePass',
+	'setComputeValues',
 	'addSceneView',
 	'setSceneViewRect',
 	'removeSceneView',
@@ -1183,6 +1283,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createPassTexture',
 	'renderGraphMessage',
 	'renderGraphDot',
+	'setDebugTwoStep',
+	'debugTwoStep',
 	'createLight',
 	'copyLight',
 	'destroyLight',
@@ -1202,7 +1304,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setContactSteps',
 	'setDof',
 	'setDofTaps',
+	'planEpoch',
 	'setSubsurfaceTaps',
+	'setTaa',
 	'setSsr',
 	'readsLastFrame',
 	'setSsrQuality',
@@ -1218,6 +1322,12 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createVertexDraw',
 	'destroyVertexDraw',
 	'setVertexDrawCounts',
+	'createFeatureInstances',
+	'destroyFeatureInstances',
+	'featureInstanceBuffer',
+	'featureInstanceCountBuffer',
+	'setFeatureInstanceCount',
+	'setFeatureInstanceRows',
 	'setSoftwareOcclusion',
 	'setParallax',
 	'setOcclusionBuffer',

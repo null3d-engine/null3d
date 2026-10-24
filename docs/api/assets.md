@@ -60,6 +60,8 @@ export default defineSketch(async ({ scene, assets }) => {
 });
 ```
 
+A model that the tool wrote with `--stages` holds its coarsest level, and downloads each finer level from a file of its own. `loadGltf` returns once the coarse level is ready, and the copies that you make then refine as the finer levels arrive. `maxLevels` stops the downloads after that many levels, the file's own counted first: set 1 to draw the coarse level alone and download no stage. [Levels of detail](../concepts/lod.md#levels-from-the-asset-tool) explains the files.
+
 A worker parses the file outside the sketch's frames, and decodes the images that the file holds there. The first `loadGltf` call downloads the loader and its worker, about 15 KB after Brotli, so a page without glTF files downloads neither. The files that a `.gltf` file names download through `assets`, so `preload` and `onProgress` cover them too. The engine copies the vertex data into its own memory, and keeps no other copy of it.
 
 The `assets` API itself loads with its first call too, so a page that loads no file downloads none of it. Every call answers once that code has arrived. Two calls answer with a function of their own, `onProgress` and `registerGltfExtension`, so they answer at once and register the handler when it arrives.
@@ -128,6 +130,13 @@ remove(); // the handler reads no more files
 ```
 
 `registerGltfExtension(handler)` returns a function that unregisters the handler. Two handlers cannot read one extension. The call throws [E1213](../errors/E1213.md) for that case, for a handler that names no extension, and for a handler without a `load` function.
+
+An add-on registers its own handler as its module loads, with the engine's `registerGltfExtension`,
+which serves every sketch of the thread. A page that imports the add-on then loads the add-on's
+files with no other call, and a file that requires the extension names the package to import instead
+of failing with E1417. `@null3d/splats` reads `KHR_gaussian_splatting` this way. A handler that a
+sketch registers with `assets.registerGltfExtension` for the same extension reads its files in the
+add-on's place.
 
 The loader calls `load` once for each primitive that carries one of the handler's extensions. It gets `data`, which describes the primitive, and `context`, which holds the engine's makers:
 
@@ -226,7 +235,7 @@ export default defineSketch(async ({ scene, assets }) => {
 - The OpenEXR reader reads single-part files of scanlines with R, G and B channels, as half floats, floats or whole numbers. It reads every compression but DWAA and DWAB: none, RLE, ZIPS, ZIP, PIZ, PXR24, B44 and B44A. Tiled, deep and multi-part files fail with E1412, as do Radiance files stored from the bottom row up.
 - `builtinEnvironment` resolves once the code and the shaders that make the room are ready. The GPU then makes the whole map in the next frame, before that frame draws. So the first frame with the room already has its light. That frame takes longer by the map's GPU time: about 20 ms on a MacBook Pro, and 50 to 110 ms on recent phones. Ask for the room while the scene loads. During play, the call makes one long frame.
 - `skyEnvironment` loads the same code and shaders as the room, and resolves once they are ready. The next frame makes the whole map, in about 10 ms on a MacBook Pro. Until the scene's first sky background, the map shows the sky's defaults.
-- The sky's map follows the sky. After `setBackground({ sky })` changes it, the map refreshes in 20 stages, one a frame. The scene draws with the old map until the last stage. Each stage takes about 1 ms of GPU time on a MacBook Pro. The map leaves out the sun's disc, whose light the scene's directional light gives. [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) gives the detail.
+- The sky's map follows the sky. After a change that shows, the map refreshes in 20 stages, one a frame. A sun that turns less than half a degree leaves the map as it is, and so does a color value that drifts by less than 2%. Slowly drifting clouds wait too, and their changes add up. One last refresh captures the sky exactly once it stops changing. The scene draws with the old map until the last stage. Each stage takes about 1 ms of GPU time on a MacBook Pro. The map leaves out the sun's disc, whose light the scene's directional light gives. [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) gives the detail.
 - `environment.destroy()` frees the cube map's GPU memory. The scene then draws without it.
 - Other KTX2 files, such as `loadTexture`'s, fail with E1412. So do supercompressed files.
 - The tool's file needs no reading or filtering at load, so prefer it for maps that ship with a game. HDR files suit maps that change, such as files that users upload. The tool's file is not always the smaller download. After Brotli, Venice Sunset's 2K Radiance file takes 3.8 MB and its map 1.4 MB. A 1K OpenEXR file and its map take about 1.3 MB each.

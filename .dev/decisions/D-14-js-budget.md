@@ -896,3 +896,21 @@ a material's shader does: a page that never draws a cluster tree then downloads 
 WebGL2, which never builds the pass, keeps its start. [D-213](D-213-cluster-levels.md) holds the
 drawing method and its numbers.
 
+
+## The start's budget rises to 186 KB for compute passes, 23 October 2026
+
+E8's compute pass and E9's instance draw, whose count a compute shader writes, put their Rust and
+their adapter code into every start. A production page build then measured 189,064 bytes after
+Brotli in pipelined WebGL2 mode, which is 648 over the 184 KB budget that this morning's rise set.
+The check stopped the build before any picture ran, as it is meant to.
+
+The budget rises to 186 KB, or 190,464 bytes, leaving 1,400 bytes of room. The owner's rule of
+22 October allows the start's budget to rise as needed without asking. The previous section asked
+for a trim rather than another rise; this change raises instead, because the growth is the feature's
+own Rust and the option checks that must run when a sketch adds a compute pass, and a trim large
+enough to pay for them means loading code that the call must have before it returns.
+
+The trim now owed is to load the compute pass's option checks and the instance draw's adapter with
+their first use, as the cluster levels' shader trim already asks, so a page that adds neither
+downloads neither. Until then this is the second rise in two days, and M3-T1's target of 160 KB
+stays far away.

@@ -14,8 +14,11 @@ import {
 	engineProblems,
 	THREADED_MODES,
 } from '../lib/engine-checks.ts';
+import { gltfDownloads, recordRequests } from '../lib/gltf-loader-files.ts';
 import { pageResult } from '../lib/page-result.ts';
 import { restoreWaitAsync, withoutWaitAsync } from '../lib/without-wait-async.ts';
+
+test.describe.configure({ mode: 'parallel' });
 
 /**
  * Serves every response to the page without the headers that make it cross-origin isolated, as a
@@ -370,6 +373,24 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			).toEqual([]);
 		});
 
+// The engine test page, whose start the startup benchmark times, loads no glTF file.
+for (const mode of ENGINE_MODES)
+	test(`a page without glTF files downloads no part of the glTF loader, ${mode.name}`, async ({
+		page,
+	}) => {
+		const requests = recordRequests(page);
+		await page.goto(`engine.html?gpu=webgl2&seconds=1&${mode.query}`);
+		const result = await pageResult<{ error?: string }>(page, 30_000);
+		expect(result.error).toBeUndefined();
+		expect(gltfDownloads(requests)).toEqual({
+			loader: 0,
+			worker: 0,
+			meshopt: 0,
+			draco: 0,
+			dracoWasm: 0,
+		});
+	});
+
 /**
  * Sketches of the image tests that use one feature whose shader builds load on first use. Every
  * other feature draws in the first-use sketch, whose `?feature=` names it.
@@ -410,8 +431,9 @@ const FIRST_USE_LIVE: ReadonlySet<ShaderFeature> = new Set(['picking']);
 /**
  * The feature whose shader file a feature downloads on each GPU path, where it is another's, and
  * null where the path has no file for it: WebGPU morphs in the skinning pass, only WebGPU reads
- * index-only instance data and culls by occlusion on the GPU, and only WebGPU copies a view's
- * image, where WebGL2 draws the view into its target directly.
+ * index-only instance data and culls by occlusion on the GPU, only WebGPU copies a view's
+ * image, where WebGL2 draws the view into its target directly, and only WebGPU builds the pass
+ * that picks a mesh's cluster patches, where WebGL2 draws the mesh whole.
  */
 const FEATURE_FILE_OWNERS: Partial<
 	Record<ShaderFeature, Partial<Record<'webgpu' | 'webgl2', ShaderFeature | null>>>
@@ -420,6 +442,7 @@ const FEATURE_FILE_OWNERS: Partial<
 	instance_index: { webgl2: null },
 	occlusion: { webgl2: null },
 	views: { webgl2: null },
+	cluster_levels: { webgl2: null },
 };
 
 /**

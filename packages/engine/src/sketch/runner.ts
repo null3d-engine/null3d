@@ -71,6 +71,8 @@ import {
 	type PreloadSender,
 	type ShaderSender,
 } from '../shared/images';
+import { MEMORY_AREA_COUNT } from '../shared/memory-area';
+import { MemoryViews } from '../shared/memory-views';
 import { Counter, FrameRecorder, MemoryFigure, Phase, Role } from '../shared/metrics';
 import { VIDEO_FRAME, type VideoFrameMessage } from '../shared/videos';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
@@ -114,6 +116,11 @@ export interface SketchCore {
 	onAskBuilds(handler: BuildsAsker): void;
 	/** Asks the thread that draws to load the shader files of features that the sketch will use. */
 	sendPreload: PreloadSender;
+	/**
+	 * True when the page asked for the development probe of the two-step pass, whose answers it
+	 * reads from the control block after each frame.
+	 */
+	twoStepProbe: boolean;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
 	pageUrl: string;
 	/**
@@ -295,11 +302,15 @@ export class SketchRunner {
 	private gpuEpoch = 0;
 	/** True while the page lets a still view accumulate its frames, as the frame loop last read it. */
 	private stillEnabled = true;
+	/** True once the development probe of the two-step pass asked the core for its answers. */
+	private twoStepAsked = false;
 	/**
 	 * Frames left before the next publish of the memory figures, while a reader samples them. It is
 	 * 0 while nobody samples, so the first frame that samples publishes them.
 	 */
 	private memoryWait = 0;
+	/** True once the first report checked that the core's areas are the ones the page names. */
+	private areasChecked = false;
 	private readonly record: FrameRecorder;
 	/** One recorder per job worker, for the busy time the core reports for it each frame. */
 	private readonly jobRecords: FrameRecorder[];
@@ -580,7 +591,14 @@ export class SketchRunner {
 			device.joinEffects,
 			new GradeTable(textures),
 		);
-		this.render = new Render(this.core, scene, materials.shaders, templates, textures.maxSize);
+		this.render = new Render(
+			this.core,
+			scene,
+			materials.shaders,
+			templates,
+			textures.maxSize,
+			device.webgl2,
+		);
 		// A pass's target has the scene color's format: 8-bit color only on the 8-bit path.
 		textures.passFormat = device.sceneColor === FORMAT_CANVAS ? 'rgba8unorm' : 'rgba16float';
 		this.ui = new Ui(
@@ -826,6 +844,24 @@ export class SketchRunner {
 	}
 
 	/** The render scale of the frame being drawn, in thousandths. */
+	/**
+	 * Writes the two-step pass's answers for the frame that just recorded into the control block,
+	 * where the page's probe reads them: whether the frame wanted the pass, declared it, had its
+	 * second step built and drew it, and the render scale in thousandths.
+	 */
+	private reportTwoStep(): void {
+		const { glue, memory, control } = this.sketch;
+		if (!this.twoStepAsked) {
+			this.twoStepAsked = true;
+			glue.setDebugTwoStep(true);
+		}
+		const at = glue.debugTwoStep();
+		if (at === 0) return;
+		const answers = new MemoryViews(memory).view(Int32Array, at, 5);
+		for (let k = 0; k < 5; k++)
+			Atomics.store(control.slots, Slot.TwoStepWanted + k, answers[k] as number);
+	}
+
 	private renderScale(): number {
 		return this.governorLoop ? this.governor.scale : this.heldScale;
 	}
@@ -875,6 +911,22 @@ export class SketchRunner {
 		record.publishMemory(MemoryFigure.TextureBudgetBytes, textures.budgetBytes);
 		record.publishMemory(MemoryFigure.DroppedLevels, textures.droppedLevels);
 		record.publishMemory(MemoryFigure.MeshBytes, this.context.geometry.memoryBytes);
+		if (!DEV) return;
+		const glue = this.sketch.glue;
+		const at = glue.updateMemoryRegister();
+		if (!this.areasChecked) {
+			this.areasChecked = true;
+			// The page names the areas, so a core that reports others would mislabel them.
+			if (glue.memoryAreas() !== MEMORY_AREA_COUNT)
+				console.error(
+					`the core reports ${glue.memoryAreas()} memory areas, not ${MEMORY_AREA_COUNT}`,
+				);
+		}
+		if (at !== 0)
+			record.publishMemoryRegister(
+				this.core.heap(Float64Array),
+				at / Float64Array.BYTES_PER_ELEMENT,
+			);
 	}
 
 	/**
@@ -1363,6 +1415,7 @@ export class SketchRunner {
 		}
 		if (glue.recordFrame(frame, width, height, scale, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
+		if (this.sketch.twoStepProbe) this.reportTwoStep();
 		Atomics.store(slots, Slot.RenderScale, scale);
 		// Input names frames in the engine's count, so each frame of the setup and of the preset
 		// check keeps its own camera: a click can come while any of them is on screen.
@@ -1396,6 +1449,11 @@ export class SketchRunner {
 		Atomics.store(slots, Slot.DrawListWords0 + parity, glue.drawListWords(frame));
 		Atomics.store(slots, Slot.FrameRest0 + parity, glue.frameRests() ? 1 : 0);
 		Atomics.store(slots, Slot.FrameEpoch0 + (frame & 1), epoch);
+		// The frame may have made the plan's targets again, which leaves the other parity's list
+		// naming textures that the new plan replaced.
+		const planEpoch = glue.planEpoch();
+		Atomics.store(slots, Slot.PlanEpoch, planEpoch);
+		Atomics.store(slots, Slot.FramePlan0 + parity, planEpoch);
 		// The first frame that records after a restart, whether the sketch asked for it between
 		// frames or in this frame's own code, has the new settings, so the thread that draws holds it
 		// until its pipelines are built.

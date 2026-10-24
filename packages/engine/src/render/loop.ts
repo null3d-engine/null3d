@@ -383,8 +383,15 @@ export class Presenter {
 
 	/** True when a frame's draw list was recorded for a GPU device that the browser took away. */
 	private stale(frame: number): boolean {
-		const recordedFor = Atomics.load(this.slots, Slot.FrameEpoch0 + (frame & 1));
-		return recordedFor !== Atomics.load(this.slots, Slot.GpuEpoch);
+		const parity = frame & 1;
+		const recordedFor = Atomics.load(this.slots, Slot.FrameEpoch0 + parity);
+		if (recordedFor !== Atomics.load(this.slots, Slot.GpuEpoch)) return true;
+		// The plan may have made its targets again since this parity's list was recorded, so that
+		// list names textures that the frame after replaced.
+		return (
+			Atomics.load(this.slots, Slot.FramePlan0 + parity) !==
+			Atomics.load(this.slots, Slot.PlanEpoch)
+		);
 	}
 
 	/**

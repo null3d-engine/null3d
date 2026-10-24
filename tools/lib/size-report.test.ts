@@ -27,6 +27,7 @@ import {
 	type SizeEntry,
 	type SizePart,
 	START_BUDGET,
+	sizeMemo,
 	sizePartFile,
 } from './size-report';
 
@@ -132,6 +133,52 @@ describe('a measuring split into parts', () => {
 		expect(sizePartFile({ index: 2, count: 6 })).toBe('part-2-of-6.json');
 		expect(isSizePartFile('part-2-of-6.json')).toBe(true);
 		expect(isSizePartFile('size-report.json')).toBe(false);
+	});
+});
+
+describe('the size memo', () => {
+	const bytes = (length: number, step: number) =>
+		Buffer.from(Array.from({ length }, (_, i) => (i * step) % 251));
+	const file = (name: string, content: Buffer): ReportFile => ({
+		name,
+		built: name,
+		weight: content.length,
+		read: () => content,
+	});
+	const a = bytes(5_000, 3);
+	const b = bytes(7_000, 5);
+
+	it('compresses the files that it lacks, and gives the sizes that a measuring without it gives', async () => {
+		const files = [file('a.js', a), file('b.js', b)];
+		const memo = sizeMemo();
+		expect([...(await measureFiles(files, undefined, memo))]).toEqual([
+			...(await measureFiles(files)),
+		]);
+		expect(memo.compressed).toBe(2);
+		expect(memo.met.size).toBe(2);
+	});
+
+	it('takes the sizes of known bytes from the memo, under any name, without compressing them', async () => {
+		const first = sizeMemo();
+		await measureFiles([file('a.js', a), file('b.js', b)], undefined, first);
+		// Sizes that no compressor gives, so a size that the memo did not serve shows.
+		const known = Object.fromEntries(
+			[...first.met].map(([hash, size]) => [hash, { ...size, brotli: size.brotli + 1 }]),
+		);
+		const second = sizeMemo(known);
+		const sizes = await measureFiles([file('renamed-a.js', a), file('b.js', b)], undefined, second);
+		expect(second.compressed).toBe(0);
+		expect(sizes.get('renamed-a.js')?.brotli).toBe(measure(a).brotli + 1);
+		expect(second.met.size).toBe(2);
+	});
+
+	it('compresses equal bytes once, and keeps only the entries of the files that it met', async () => {
+		const stale = '0'.repeat(64);
+		const memo = sizeMemo({ [stale]: measure(b) });
+		await measureFiles([file('a.js', a), file('copy-of-a.js', Buffer.from(a))], undefined, memo);
+		expect(memo.compressed).toBe(1);
+		expect([...memo.met.keys()]).not.toContain(stale);
+		expect(memo.met.size).toBe(1);
 	});
 });
 
@@ -437,7 +484,7 @@ describe('budgetProblems', () => {
 		);
 
 	it("passes a start and a later part at their budgets, with the owner's Brotli figures", () => {
-		expect(START_BUDGET.brotli).toBe(184 * 1024);
+		expect(START_BUDGET.brotli).toBe(186 * 1024);
 		expect(LATER_BUDGET.brotli).toBe(17 * 1024);
 		expect(budgetProblems(sizes(START_BUDGET, LATER_BUDGET), downloads, later)).toEqual([]);
 	});

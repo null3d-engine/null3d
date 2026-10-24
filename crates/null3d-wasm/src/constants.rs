@@ -16,6 +16,7 @@ use null3d_gpu::caps::{CUBE_TEXTURE_SIZE, Capabilities};
 use null3d_gpu::drawlist::{address, filter, format, sizes, upload_flags};
 use null3d_render::arrays::ArrayName;
 use null3d_render::cpu_culled::{CpuCulledConfig, MAX_SOURCE_BITS};
+use null3d_render::feature_instances;
 use null3d_render::frame::{NO_MATERIAL, NO_MESH};
 use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
@@ -999,6 +1000,17 @@ pub fn typescript() -> String {
                 ("FRAME_FLOATS", particles::FRAME_FLOATS as u32),
                 ("MAX_SYSTEMS", particles::MAX_SYSTEMS as u32),
                 ("MAX_RECORDS", particles::MAX_RECORDS),
+            ],
+        ),
+        // The most that a draw whose instance count the GPU writes holds.
+        (
+            "FEATURE_INSTANCE",
+            &[
+                ("MAX_DRAWS", feature_instances::MAX_FEATURE_INSTANCES),
+                ("MAX_CAPACITY", feature_instances::MAX_CAPACITY),
+                ("INSTANCE_FLOATS", feature_instances::INSTANCE_FLOATS),
+                ("INSTANCE_BYTES", feature_instances::INSTANCE_BYTES),
+                ("COUNT_BYTES", feature_instances::COUNT_BYTES),
             ],
         ),
         // The most that a draw which makes its own vertices holds.

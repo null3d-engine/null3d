@@ -22,13 +22,14 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 		'when `post.set` turns automatic exposure on. The camera keeps its own exposure until the meter is built',
 	fog_volume:
 		'when `scene.setFog` turns the volumetric fog on. The fog keeps its sun glow until the fog is built',
+	taa: 'when `post.set` turns the temporal resolve on, a prototype for measuring only (D-206)',
 	sprites: 'with the first sprite batch',
 	picking: 'with the first `scene.pick()` call, which waits for the shaders',
 	particles: 'with the first particle system (`@null3d/particles`)',
 	lines: 'with the first line batch',
 	decals: 'with the first mesh of a decal material (`materials.decal`)',
 	cluster_levels:
-		'at the first frame of a page that draws on the WebGPU path, which builds the pass that picks a tree of cluster patches, whether or not the scene holds one. WebGL2 never builds that pass, so it downloads none of it',
+		'with the first frame that draws a tree of cluster patches (`setMeshPatches`), which builds the pass that picks a tree of patches. A scene without a tree downloads none of it, and WebGL2 never builds that pass',
 	probe_grid: 'when the sketch first sets a light probe grid (`scene.setLightProbeGrid`)',
 	transmission: 'with the first material that lets light through (`transmission`)',
 	translucency:

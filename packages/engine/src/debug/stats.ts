@@ -6,8 +6,10 @@
 // object property is a new heap object in some browsers.
 
 import type { QualityPreset } from '../quality/presets';
+import { MEMORY_AREA_COUNT, MEMORY_AREA_VALUES } from '../shared/memory-area';
 import {
 	Counter,
+	memoryAreaFigures,
 	memoryFigures,
 	PHASE_NAMES,
 	type PhaseName,
@@ -131,6 +133,12 @@ export interface FrameStats {
 	 * readbacks of the GPU's timings. 0 until the thread that draws first publishes it.
 	 */
 	readonly gpuBufferBytes: number;
+	/**
+	 * The memory register's figures at the window's end: three numbers per area, in the order of
+	 * `MEMORY_AREA_NAMES`, the bytes that each reserves, uses and has used at most. All zero in a
+	 * production build, or where no page asked for a report.
+	 */
+	readonly memoryAreas: readonly number[];
 }
 
 /** Presented time that a window of frame figures covers, at least. */
@@ -245,6 +253,12 @@ export class FrameStatsWindow {
 	private readonly gpu: RingSums;
 	/** The memory figures that the engine's threads publish. */
 	private readonly memory: Float64Array;
+	/** The memory register's figures as of the last window's end. */
+	private readonly areas: number[] = new Array<number>(MEMORY_AREA_COUNT * MEMORY_AREA_VALUES).fill(
+		0,
+	);
+	/** The register's figures in the metrics buffer. */
+	private readonly publishedAreas: Float64Array;
 	/** The roles of each thread, in the order of `stats.threads`. */
 	private readonly roles: readonly (readonly number[])[];
 
@@ -263,6 +277,7 @@ export class FrameStatsWindow {
 		this.values[GPU_MS] = -1;
 		this.gpu = new RingSums(buffer, Role.Gpu);
 		this.memory = memoryFigures(buffer);
+		this.publishedAreas = memoryAreaFigures(buffer);
 		const ring = (role: number): RingSums => {
 			let sums = this.rings[role];
 			if (!sums) {
@@ -290,6 +305,7 @@ export class FrameStatsWindow {
 		});
 		stats.tier = sources.tier;
 		stats.preset = sources.preset();
+		stats.memoryAreas = this.areas;
 		this.published = stats;
 		this.stats = stats;
 	}
@@ -315,6 +331,8 @@ export class FrameStatsWindow {
 		values[RENDER_SCALE] = this.sources.renderScaleThousandths() / 1000;
 		values[WASM_BYTES] = this.sources.wasmBytes();
 		values.set(this.memory, MEMORY);
+		const { areas, publishedAreas } = this;
+		for (let k = 0; k < areas.length; k++) areas[k] = publishedAreas[k] as number;
 		const gpu = this.gpu.sums;
 		if ((gpu[SUM_RECORDS] as number) > 0) {
 			values[GPU_MS] = mean(gpu, SUM_BUSY_MS);

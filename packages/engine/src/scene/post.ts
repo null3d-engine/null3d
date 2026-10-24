@@ -78,6 +78,7 @@ const SETTINGS = [
 	'ssr',
 	'autoExposure',
 	'sharpen',
+	'taa',
 ] as const;
 const BLOOM_SETTINGS = ['intensity', 'threshold', 'knee', 'blend', 'weights'] as const;
 /** Each way of blending bloom's glow, by its code in the core. */
@@ -527,6 +528,19 @@ export interface PostSettings {
 	 * See the post-processing concepts page.
 	 */
 	sharpen?: number | false;
+	/**
+	 * @internal A prototype of temporal anti-aliasing (M3-A11), for measuring only: `true` or
+	 * settings turn it on, `false` off.
+	 */
+	taa?: TaaPrototypeSettings | boolean;
+}
+
+/** @internal The prototype's settings of temporal anti-aliasing. */
+export interface TaaPrototypeSettings {
+	/** The history's share of each pixel, from 0 to 0.99. 0.9 by default. */
+	feedback?: number;
+	/** False keeps the camera still, so the resolve only blends frames. True by default. */
+	jitter?: boolean;
 }
 
 /**
@@ -572,6 +586,7 @@ export class Post implements ViewHolder {
 	private warnedNoExposure = false;
 	/** True while the sketch sharpens the picture. */
 	private sharpen = false;
+	private taa = false;
 	/** The custom tone curve that maps the scene's color, while the sketch sets one. */
 	private toneCurve: ToneCurve | undefined;
 	/** True when an effect or a tone curve came since the last frame, with pipelines to build. */
@@ -688,6 +703,7 @@ export class Post implements ViewHolder {
 			sharpen,
 		} = settings;
 		const { core } = this;
+		if (settings.taa !== undefined) this.setTaa(settings.taa);
 		const { glue } = core;
 		const values = this.block();
 		const sketchExposure = exposure ?? this.exposure;
@@ -898,6 +914,20 @@ export class Post implements ViewHolder {
 		this.core.check(this.core.glue.setAutoExposure(this.autoExposure), 'post.set', undefined, true);
 	}
 
+	/** Turns the prototype of temporal anti-aliasing on or off. */
+	private setTaa(taa: TaaPrototypeSettings | boolean): void {
+		this.taa = taa !== false;
+		const settings = typeof taa === 'object' ? taa : {};
+		const feedback = this.taa ? Math.round(Math.min(settings.feedback ?? 0.9, 0.99) * 1000) : 0;
+		if (this.taa && this.hdrEffects) this.shaders.need('taa');
+		this.core.check(
+			this.core.glue.setTaa(Math.max(feedback, this.taa ? 1 : 0), settings.jitter !== false),
+			'post.set',
+			undefined,
+			true,
+		);
+	}
+
 	/** Turns ambient occlusion on with the settings that `ao` gives, or off with `false`. */
 	private setAo(ao: AoSettings | false, values: Float32Array): void {
 		this.ao = ao !== false;
@@ -972,6 +1002,7 @@ export class Post implements ViewHolder {
 		return (
 			this.bloom ||
 			this.dof ||
+			this.taa ||
 			this.autoExposure ||
 			this.toneCurve !== undefined ||
 			this.effects.any

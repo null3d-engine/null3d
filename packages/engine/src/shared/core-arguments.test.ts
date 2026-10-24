@@ -20,6 +20,7 @@ const MAKERS = new Set([
 	'createMaterial',
 	'addPass',
 	'addFullscreenPass',
+	'addComputePass',
 	'createClip',
 	'createClipLater',
 	'setReflectionProbe',

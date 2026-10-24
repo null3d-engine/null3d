@@ -503,7 +503,7 @@ fn inputs_that_cost_something_build_only_into_materials_that_read_them() {
     let plain = compile(STRIPES).expect("the surface function builds");
     assert!(!plain.object_ids);
     for variant in plain.variants.values() {
-        let wgsl = variant.wgsl.as_ref().map_or("", |w| w.source.as_str());
+        let wgsl = variant.wgsl.as_ref().map_or("", |w| &*w.source);
         assert!(!wgsl.contains("object_ranges") && !wgsl.contains("world_x"));
     }
 }
@@ -640,6 +640,57 @@ fn textures_build_into_every_variant_and_read_their_layers_in_both_stages() {
         skin.contains("@group(2) @binding(0)\nvar joint_matrices"),
         "{skin}"
     );
+}
+
+#[test]
+fn a_texture_array_builds_with_the_layer_that_the_shader_picks() {
+    let source = "struct Uniforms { layer: i32 }
+
+var facades: texture_2d_array<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor *= textureSampleLevel(facades, facadesSampler, input.uv, material.layer, 0.0).rgb;
+    return s;
+}
+";
+    let built = compile(source).expect("the texture array builds");
+    let textures: Vec<(&str, bool)> = built
+        .textures
+        .iter()
+        .map(|t| (t.name.as_str(), t.array))
+        .collect();
+    assert_eq!(textures, [("facades", true)]);
+    let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
+    assert!(
+        wgsl.contains("@group(1) @binding(0)\nvar facades: texture_2d_array<f32>;"),
+        "{wgsl}"
+    );
+    // The texture function keeps the layer that the shader names, and the engine's layer only
+    // waits for the image: a call of a declared texture array gains no layer of its own.
+    let call = wgsl
+        .split("textureSampleLevel(facades, facadesSampler,")
+        .nth(1)
+        .expect("the shader's call survives the build");
+    let arguments = &call[..call.find(')').expect("the call ends")];
+    assert_eq!(
+        arguments.matches(',').count(),
+        2,
+        "the call takes the coordinates and the shader's own layer, and no layer of the engine: {arguments}"
+    );
+    assert!(
+        wgsl.contains("material.layer"),
+        "the layer that the shader names comes from its uniform: {wgsl}"
+    );
+    assert!(wgsl.contains("custom_texture_layers[0]"), "{wgsl}");
+    // WebGL2 samples the same array and layer through its own texture unit.
+    let program = &built.variants["webgl2_draw_index"]
+        .glsl
+        .as_ref()
+        .expect("GLSL")["main"];
+    assert!(program.fragment.source.contains("sampler2DArray"));
+    assert!(program.fragment.source.contains("textureLod("));
+    assert!(program.fragment.source.contains("custom_texture_layers[0]"));
 }
 
 #[test]

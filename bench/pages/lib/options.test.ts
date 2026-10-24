@@ -1,17 +1,18 @@
 import { describe, expect, test } from 'bun:test';
-import { HOLD_TIME } from '../../scenes/spec';
+import { HOLD_TIME, MEASURE_SECONDS, WARMUP_SECONDS } from '../../scenes/spec';
 import { readChoice, readRunOptions } from './options';
 
 describe('readRunOptions', () => {
 	const read = (query: string) => readRunOptions(new URLSearchParams(query));
 
-	test('reads hold, demo, keep, the count, the seconds, the soak, the shadow cascades, the far cascade interval, the governor, the anti-aliasing mode and the pixel ratio', () => {
+	test('reads hold, demo, keep, the count, the warm-up and measured seconds, the soak, the shadow cascades, the far cascade interval, the governor, the anti-aliasing mode and the pixel ratio', () => {
 		expect(read('')).toEqual({
 			hold: null,
 			demo: false,
 			keep: false,
 			count: null,
-			seconds: null,
+			warmupSeconds: WARMUP_SECONDS,
+			measureSeconds: MEASURE_SECONDS,
 			soak: null,
 			shadows: null,
 			far: null,
@@ -28,7 +29,8 @@ describe('readRunOptions', () => {
 			demo: false,
 			keep: false,
 			count: 1000,
-			seconds: 2.5,
+			warmupSeconds: 2.5,
+			measureSeconds: 2.5,
 			soak: null,
 			shadows: 3,
 			far: 1,
@@ -50,6 +52,11 @@ describe('readRunOptions', () => {
 		expect(read('?antialias=fxaa&maxPixelRatio=1.5')).toMatchObject({
 			antialias: 'fxaa',
 			maxPixelRatio: 1.5,
+		});
+		expect(read('?seconds=8&measure=40')).toMatchObject({ warmupSeconds: 8, measureSeconds: 40 });
+		expect(read('?measure=40')).toMatchObject({
+			warmupSeconds: WARMUP_SECONDS,
+			measureSeconds: 40,
 		});
 		expect(read('?soak=30').soak).toBe(30);
 		expect(read('?hold=3.25').hold).toBe(3.25);
@@ -75,6 +82,8 @@ describe('readRunOptions', () => {
 			'n=',
 			'seconds=0',
 			'seconds=x',
+			'measure=0',
+			'measure=',
 			'soak=0',
 			'soak=2.5',
 			'hold=-1',

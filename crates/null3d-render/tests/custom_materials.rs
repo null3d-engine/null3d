@@ -122,6 +122,43 @@ fn custom_materials_draw_with_their_textures_on_webgl2() {
     )));
 }
 
+/// A custom material whose one texture is a texture array of several layers: the shader picks the
+/// layer, so the material reads the array's first layer, and its whole array draws.
+fn check_texture_array<B: FrameBuilder>(mut world: World<B>) {
+    let settings = world.renderer.settings_mut();
+    let mut desc = map_desc(SIZE);
+    desc.depth = 6;
+    let array = settings.textures_mut().create(desc).unwrap();
+    let (texels, _) = settings.textures_mut().set_data(array, SIZE, SIZE).unwrap();
+    texels.fill(u32::MAX);
+    let table = settings.materials_mut();
+    let material = table.create(custom(1), 0, [1.0; 4]).unwrap();
+    table
+        .set_map(material, MapSlot::BaseColor, array, false)
+        .unwrap();
+    add_object(&mut world, material + 1);
+    let mut mock = MockBackend::default();
+    world.step(&mut mock, false);
+    world.step(&mut mock, false);
+    assert_eq!(
+        layers(&world, material, 1),
+        [0.0],
+        "the shader picks a layer of the texture's own array"
+    );
+}
+
+#[test]
+fn custom_materials_sample_texture_arrays_on_webgpu() {
+    check_texture_array(World::new());
+}
+
+#[test]
+fn custom_materials_sample_texture_arrays_on_webgl2() {
+    check_texture_array(World::build(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    )));
+}
+
 /// The pipelines of the custom template that a list creates, and the ones it destroys.
 fn custom_pipelines(commands: &[(Op, Vec<u32>)]) -> (Vec<u32>, Vec<u32>) {
     let created = commands

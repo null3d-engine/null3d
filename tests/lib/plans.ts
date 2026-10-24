@@ -130,6 +130,7 @@ import {
 	objectGrowthProblems,
 } from './object-growth.ts';
 import { type OcclusionS6Check, occlusionS6Plan, saveOcclusionS6Images } from './occlusion-s6.ts';
+import { fallbackSeconds, measuredSeconds } from './page-times.ts';
 import {
 	HEAVY_SPHERES,
 	heavyCheckProblems,
@@ -252,6 +253,13 @@ export type Check =
 	| { kind: 'grass'; tier: Tier }
 	/** The alpha-mask cost page: masked lit quads opaque and masked in turns, with and without MSAA. */
 	| { kind: 'alpha-mask'; tier: Tier; antialias: 'msaa' | 'none' }
+	/** The cluster cost page: a tree of cluster patches timed at three distances. */
+	| { kind: 'cluster'; tier: Tier }
+	/**
+	 * A development page that only reports what it found, such as the two-step probe: its result
+	 * holds the figures, and nothing judges them.
+	 */
+	| { kind: 'probe'; tier: Tier }
 	/** The sky map cost page: each stage of a sky map's refresh, timed on one GPU path. */
 	| { kind: 'sky-map'; tier: Tier }
 	/** The sky refresh page: the frames from a sun move until the sky's light follows it. */
@@ -1406,6 +1414,56 @@ export function alphaMaskPlan(): PlanItem<Check>[] {
 	return items;
 }
 
+/**
+ * What a tree of cluster patches costs: the heightfield of the cluster-cost page, timed at three
+ * camera distances on one GPU path, so the figures show both the saving that coarse patches make
+ * and the cost of the pass that picks them. D-213 records the results.
+ */
+export function clusterCostPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const [path, tier] of ALPHA_MASK_PATHS)
+		items.push(
+			pageItem(
+				`cluster-${path}`,
+				'cluster-cost',
+				{ kind: 'cluster', tier },
+				{
+					// The patch pass belongs to the path that culls on the GPU, so the switches
+					// keep the start-up probe from choosing the direct path, which draws the whole
+					// mesh and would time another drawing.
+					switches: [`gpu=${path}`, 'preset=high', 'direct=off'],
+					timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+				},
+			),
+		);
+	return items;
+}
+
+/**
+ * The two-step probe: the sharpening's sketch with `?two-step=report`, a development page that logs
+ * the two-step pass's answers once its frame is on screen, with the browser and the WebGL2 path's
+ * compile state. One page holds the frame the image test draws, as the manifest runs it, and one
+ * plays it live, as an effect cost page does. A run names the browsers to compare, and their lines
+ * read side by side. It times nothing.
+ */
+export function twoStepPlan(): PlanItem<Check>[] {
+	const sketch = encodeURIComponent('/tests/pages/sketches/sharpen-sketch.ts?sharpen=1');
+	return [
+		{
+			id: 'two-step-held',
+			path: `/tests/pages/image.html?gpu=webgl2&hold=0&preset=high&size=320x180&two-step=report&sketch=${sketch}`,
+			timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+			check: { kind: 'probe', tier: 'webgl2' },
+		},
+		{
+			id: 'two-step-live',
+			path: '/tests/pages/effect-cost.html?gpu=webgl2&scale=1&effect=sharpen&strength=1&two-step=report',
+			timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+			check: { kind: 'probe', tier: 'webgl2' },
+		},
+	];
+}
+
 /** The GPU paths of the sky plan's pages, with the tier each draws on. */
 const SKY_PATHS = [
 	['webgpu', 'webgpu'],
@@ -1931,6 +1989,8 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'environment-load': environmentLoadPlan,
 	grass: grassPlan,
 	'alpha-mask-cost': alphaMaskPlan,
+	'cluster-cost': clusterCostPlan,
+	'two-step': twoStepPlan,
 	sky: skyPlan,
 	reflection: reflectionPlan,
 	occlusion: occlusionPlan,
@@ -2136,11 +2196,10 @@ export function itemsTogether(item: PlanItem<Check>): string[] {
 }
 
 /**
- * About how long the slow pages of the checks plan take in Safari on CI's Mac, the slowest browser
- * that CI runs the plan in. The shaders page's parts grew with the shader set. In run 39291513923
- * (19 October 2026) a shard's parts took 122 and 143 seconds, each compiled first in its shard. A
- * shard holds three or four parts, so each one compiles first or second, and counts at that time.
- * The WebGPU pages of the same names skip there.
+ * About how long the slow pages of the checks plan take in Safari on CI's Mac, for pages that the
+ * measured table (`page-times.ts`) does not hold yet. The shaders page's parts grew with the shader
+ * set. In run 39291513923 (19 October 2026) a shard's parts took 122 and 143 seconds, each compiled
+ * first in its shard. The WebGPU pages of the same names skip there.
  */
 const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
 	[/^shaders-/, 120],
@@ -2149,16 +2208,23 @@ const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
 	[/restarts/, 20],
 ];
 
-/**
- * The mean time of every other page of the plan there, the skipped pages among them. In run
- * 39291513923 the shards held about 80 other pages each and took 8 to 16 minutes, about twice what
- * a mean of 1.5 seconds gave.
- */
+/** The mean time of every other page, for a browser that the measured table does not hold. */
 const PAGE_SECONDS = 2.5;
 
-/** About how long a page takes in Safari on CI's Mac, by which the shards split a plan. */
-export function expectedSeconds({ id }: { id: string }): number {
-	return SLOW_PAGE_SECONDS.find(([pattern]) => pattern.test(id))?.[1] ?? PAGE_SECONDS;
+/**
+ * About how long a page takes in `browser` on CI, by which the shards split a plan: its measured
+ * time when it is a slow page there, else the rules above for a page new to the table, else the
+ * time of the browser's other pages. In run 40046196327 the rules alone modelled Safari's shards
+ * at 2.0 to 9.4 minutes, where their pages took up to 12.6, and every Firefox shard at about 17,
+ * where they took 6.1 to 11.4. With the measured table, the split models both at about 9.
+ */
+export function expectedSeconds({ id }: { id: string }, browser = 'Safari'): number {
+	return (
+		measuredSeconds(id, browser) ??
+		SLOW_PAGE_SECONDS.find(([pattern]) => pattern.test(id))?.[1] ??
+		fallbackSeconds(browser) ??
+		PAGE_SECONDS
+	);
 }
 
 /**
@@ -2776,6 +2842,9 @@ export function judge(
 		}
 		case 'skinning':
 			return skinningProblems(result as ItemResult & SkinningResult);
+		case 'probe':
+			// The page reports what it found, and the run's result holds it.
+			return [];
 		case 'effect':
 		case 'environment':
 		case 'grass':
@@ -2792,6 +2861,21 @@ export function judge(
 			return [
 				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
 				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${feature} on`]),
+			];
+		}
+		case 'cluster': {
+			// The page times the same tree at three distances, so a run that measured no frame at
+			// one of them tells nothing about how the cost falls as the camera draws back.
+			const cost = result as ItemResult & {
+				failures?: string[];
+				sides?: { distance: number; intervalMs?: number }[];
+			};
+			return [
+				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
+				...((cost.sides ?? []).length > 0 ? [] : ['the page measured no distance']),
+				...(cost.sides ?? [])
+					.filter((side) => !side.intervalMs)
+					.map((side) => `the page measured no frame at ${side.distance} m`),
 			];
 		}
 		case 'gpu-occlusion': {

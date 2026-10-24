@@ -13,6 +13,7 @@
 //! read none uploads nothing.
 
 use null3d_core::handle::{Handle, SLOT_BITS};
+use null3d_core::memory::{MemoryUse, vec_bytes};
 use null3d_gpu::drawlist::sizes;
 
 /// The bit of a key that marks a row of WebGL2's streamed data texture.
@@ -46,6 +47,14 @@ pub struct ObjectRanges {
 }
 
 impl ObjectRanges {
+    /// The bytes that the table and its scratch hold.
+    pub fn memory_use(&self) -> MemoryUse {
+        let mut use_ = MemoryUse::default();
+        use_.add(vec_bytes(&self.ranges));
+        use_.add(vec_bytes(&self.words));
+        use_
+    }
+
     /// Builds the table for a scene with `scene_rows` rows and the batches whose first keys and
     /// handles `batches` gives, in any order. The scratch space grows only with the scene.
     pub fn build(&mut self, scene_rows: u32, batches: impl IntoIterator<Item = (u32, Handle)>) {

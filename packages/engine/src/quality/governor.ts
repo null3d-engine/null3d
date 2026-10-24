@@ -30,17 +30,20 @@
 // a while, and a step down from its setting in that time doubles the wait before the next step up
 // into that setting. Each setting keeps its own wait, so the settings settle below the point where
 // the frames fall behind instead of swinging across it, while steps up into other settings stay
-// quick. A shadow step happens only where the scene has a light that casts shadows, and only where
-// the step changes what the frame draws: the far cascades need a directional light with two
-// cascades or more, and the filter any light that casts shadows. The far cascades' step also needs
-// far cascades that draw in every frame while moving casters touch them: where they keep their
-// turns instead, a longer interval would leave moving shadows further behind their casters. A bloom step happens only while
-// the sketch has bloom on, above the smallest base: it halves the base, and the chain drops its
-// narrowest level, so the glow keeps its size. The ambient occlusion step happens only while it
-// draws at half the render size: it draws at a quarter. The contact shadows' step happens only while
-// the main directional light casts shadows and their march takes more than the fewest steps: it
-// takes the fewest. The volumetric fog's step happens only while it draws: each frame draws half its
-// grid's slices, into the same textures.
+// quick. A step down is on trial too: when the first second judged after it came clearly slower
+// than the second that caused it, or no second could be judged in the time a trial lasts, the
+// governor takes the step back and keeps that setting closed for a wait that doubles with each
+// failure. A step that changes nothing stays. A shadow step happens only where the scene has a
+// light that casts shadows, and only where the step changes what the frame draws: the far cascades
+// need a directional light with two cascades or more, and the filter any light that casts shadows.
+// The far cascades' step also needs far cascades that draw in every frame while moving casters
+// touch them: where they keep their turns instead, a longer interval would leave moving shadows
+// further behind their casters. A bloom step happens only while the sketch has bloom on, above the
+// smallest base: it halves the base, and the chain drops its narrowest level, so the glow keeps its
+// size. The ambient occlusion step happens only while it draws at half the render size: it draws at
+// a quarter. The contact shadows' step happens only while the main directional light casts shadows
+// and their march takes more than the fewest steps: it takes the fewest. The volumetric fog's step
+// happens only while it draws: each frame draws half its grid's slices, into the same textures.
 //
 // The frame loop calls it once per frame, and it allocates nothing. The governor judges only a few
 // times a second, so the browser may never optimize it. Unoptimized code makes a number object for
@@ -161,6 +164,23 @@ export const SETTLE_MS = 1000;
  * later.
  */
 export const FAILED_RAISE_MS = 30_000;
+/**
+ * A step down is on trial too. When the first second judged after it came this percentage of the
+ * frame time of the second that caused it or more, the step made the frames slower, and the
+ * governor takes it back. A step that changes nothing stays: a step that saves little shows no gain
+ * within one second's noise, and the walk down passes through such steps. On CI's software GPU the
+ * step below the whole render scale turned on the two-step upscale, and the frames came about seven
+ * times slower (D-237).
+ */
+export const LOWER_LOSS_PERCENT = 110;
+/**
+ * How long a step down may last without a judged second, in ms, before it counts as failed. The
+ * second that caused the step was judged, so frames that leave no second to judge came slower. A
+ * gap of `GAP_MS` between frames starts the windows again, so frames that slow never fill one.
+ */
+export const LOWER_TRIAL_MS = SETTLE_MS + 3 * DROP_AFTER_MS;
+/** The shortest wait before a step down into a level whose step failed, in ms. */
+export const FLOOR_AFTER_MS = 10_000;
 /** How long after the first frame the governor takes no step, in ms. */
 export const GRACE_MS = 2000;
 /** A gap between frames this long, as after a pause, starts the windows again, in ms. */
@@ -215,7 +235,13 @@ const ROOM_EXCESS_US = 3;
 const RECENT_WINDOWS = 4;
 /** The slot in `recent` that the next window takes. */
 const RECENT_SLOT = 5;
-const STATE_SIZE = 6;
+/** The time of the step down that is still on trial, or -1. */
+const LOWERED_AT = 6;
+/** The mean frame time of the second that caused that step, in µs. */
+const LOWERED_FRAME_US = 7;
+/** The mean frame time of the second that the last window completed, in µs, or -1 before one. */
+const SECOND_US = 8;
+const STATE_SIZE = 9;
 
 /**
  * The governor's levels: 0 at the highest scale with the settings as set, and one more for each
@@ -297,6 +323,10 @@ export class Governor {
 	private readonly raisedAt = new Int32Array(LEVELS);
 	/** By level: how long the frames keep room before a step up into it, in ms. */
 	private readonly raiseAfter = new Int32Array(LEVELS);
+	/** By level: the time until which no step down goes into it, in whole ms, or -1. */
+	private readonly floorUntil = new Int32Array(LEVELS);
+	/** By level: how long a failed step down into it keeps it closed, in ms. */
+	private readonly floorAfter = new Int32Array(LEVELS);
 	/** The settings that the shadow steps start from. */
 	private intervalSetting = 1;
 	private filterSetting: number = LIGHTEST_FILTER;
@@ -458,6 +488,7 @@ export class Governor {
 	setOn(on: boolean): void {
 		this.on = on;
 		if (on) return;
+		this.state[LOWERED_AT] = -1;
 		this.scale = this.high;
 		this.budgetLevel = 0;
 		this.steps = 0;
@@ -494,6 +525,19 @@ export class Governor {
 		state[ROOM_SINCE] = -1;
 		state[JUDGE_FROM] = Math.max(from, state[JUDGE_FROM] as number);
 		state[RECENT_WINDOWS] = 0;
+		state[SECOND_US] = -1;
+	}
+
+	/**
+	 * A gap of `GAP_MS` or more between frames at `now`, a time in whole ms: the windows start
+	 * again. A step down still on trial that has had no judged second for `LOWER_TRIAL_MS` fails
+	 * here, since its frames came too slowly to fill a window. A pause in play during the trial
+	 * fails it too; the floor's first wait is short, so the governor tries the step again soon.
+	 */
+	gap(now: number): void {
+		const lowered = this.state[LOWERED_AT] as number;
+		if (this.on && lowered >= 0 && now - lowered > LOWER_TRIAL_MS) this.undoLower(now);
+		this.restart(now);
 	}
 
 	/**
@@ -502,11 +546,14 @@ export class Governor {
 	 * longer ago than any span that the rules compare.
 	 */
 	moveOrigin(by: number): void {
-		const { state, raisedAt } = this;
+		const { state, raisedAt, floorUntil } = this;
 		state[ROOM_SINCE] = earlier(state[ROOM_SINCE] as number, by);
 		state[JUDGE_FROM] = earlier(state[JUDGE_FROM] as number, by);
-		for (let level = 0; level < LEVELS; level++)
+		state[LOWERED_AT] = earlier(state[LOWERED_AT] as number, by);
+		for (let level = 0; level < LEVELS; level++) {
 			raisedAt[level] = earlier(raisedAt[level] as number, by);
+			floorUntil[level] = earlier(floorUntil[level] as number, by);
+		}
 	}
 
 	/** Judges the window in `window`, and takes one step when the rules say so. */
@@ -517,7 +564,12 @@ export class Governor {
 		const budget = window[BUDGET_US] as number;
 		const frame = window[FRAME_US] as number;
 		const delay = window[GPU_DELAY_US] as number;
-		if (this.missed(frame, delay, budget)) {
+		const missed = this.missed(frame, delay, budget);
+		if (this.lowerFailed(now)) {
+			this.undoLower(now);
+			return;
+		}
+		if (missed) {
 			this.lower(now);
 			return;
 		}
@@ -569,6 +621,7 @@ export class Governor {
 			fastest = Math.min(fastest, time);
 			leastDelay = Math.min(leastDelay, recent[DROP_WINDOWS + k] as number);
 		}
+		state[SECOND_US] = Math.round(frames / DROP_WINDOWS);
 		// The rate holds the target while it is at least the held share of it, so the mean frame
 		// time misses it once it is longer than the budget over that share.
 		const slow =
@@ -590,13 +643,15 @@ export class Governor {
 	 * ambient occlusion, contact shadow and far-character interval steps. When it
 	 * leaves a level whose step up is still on trial, the next step up into that level waits twice
 	 * as long as that one did. Otherwise the level held, and the frames got heavier, so its wait
-	 * starts again from its shortest.
+	 * starts again from its shortest. A level that a failed step down closed takes no step until its
+	 * wait has passed. The step goes on trial (`lowerFailed`).
 	 */
 	private lower(now: number): void {
 		const left = this.level();
-		const { budgetLevel } = this;
+		const { budgetLevel, state } = this;
 		let moved = true;
-		if (
+		if ((this.floorUntil[Math.min(LEVELS - 1, left + 1)] as number) > now) moved = false;
+		else if (
 			budgetLevel < this.budgetSteps &&
 			(budgetLevel <= this.scaleSteps() || this.scale <= this.low)
 		)
@@ -612,8 +667,46 @@ export class Governor {
 					? Math.min(LONGEST_RAISE_AFTER_MS, (raiseAfter[left] as number) * 2)
 					: RAISE_AFTER_MS;
 			raisedAt[left] = -1;
+			state[LOWERED_AT] = now;
+			state[LOWERED_FRAME_US] = state[SECOND_US] as number;
 		}
 		this.settle(moved, now);
+	}
+
+	/**
+	 * Ends the trial of the last step down once a second has been judged since it, and tells
+	 * whether the step failed: its frames came `LOWER_LOSS_PERCENT` of the frames before it or
+	 * slower, or no second was judged within `LOWER_TRIAL_MS`. A step that held is kept, and the
+	 * level it went to opens again at the shortest wait.
+	 */
+	private lowerFailed(now: number): boolean {
+		const { state } = this;
+		const lowered = state[LOWERED_AT] as number;
+		if (lowered < 0) return false;
+		const second = state[SECOND_US] as number;
+		if (second < 0) return now - lowered > LOWER_TRIAL_MS;
+		state[LOWERED_AT] = -1;
+		if (second * 100 >= (state[LOWERED_FRAME_US] as number) * LOWER_LOSS_PERCENT) return true;
+		const level = this.level();
+		this.floorUntil[level] = -1;
+		this.floorAfter[level] = FLOOR_AFTER_MS;
+		return false;
+	}
+
+	/**
+	 * Takes back the step down on trial, and keeps the governor from stepping into its level again
+	 * until a wait has passed. The wait doubles with each failed step into that level, up to the
+	 * longest wait of a step up.
+	 */
+	private undoLower(now: number): void {
+		const level = this.level();
+		const { floorUntil, floorAfter } = this;
+		const wait = floorAfter[level] as number;
+		floorUntil[level] = now + wait;
+		floorAfter[level] = Math.min(LONGEST_RAISE_AFTER_MS, wait * 2);
+		this.state[LOWERED_AT] = -1;
+		this.stepUp();
+		this.settle(true, now);
 	}
 
 	/**
@@ -622,13 +715,18 @@ export class Governor {
 	 * the budgets in turn, so the budgets' last step comes back last.
 	 */
 	private raise(now: number): void {
-		let moved = true;
+		const moved = this.stepUp();
+		if (moved) this.raisedAt[this.level()] = now;
+		this.settle(moved, now);
+	}
+
+	/** Moves one step up, and tells whether there was one to take. */
+	private stepUp(): boolean {
 		if (this.steps > 0) this.moveSteps(-1);
 		else if (this.budgetLevel > this.scaleSteps()) this.budgetLevel--;
 		else if (this.scale < this.high) this.scale = Math.min(this.high, this.scale + SCALE_STEP);
-		else moved = false;
-		if (moved) this.raisedAt[this.level()] = now;
-		this.settle(moved, now);
+		else return false;
+		return true;
 	}
 
 	/** The level that the frames draw at: the scale's steps, the budgets' and the steps past the scale. */
@@ -647,6 +745,9 @@ export class Governor {
 	private forgetTrials(): void {
 		this.raisedAt.fill(-1);
 		this.raiseAfter.fill(RAISE_AFTER_MS);
+		this.floorUntil.fill(-1);
+		this.floorAfter.fill(FLOOR_AFTER_MS);
+		this.state[LOWERED_AT] = -1;
 	}
 
 	/**
@@ -848,9 +949,11 @@ export class GovernorLoop {
 		completed.add();
 		const last = times[1] as number;
 		times[1] = now;
-		if (last < 0 || now - last >= GAP_MS) {
-			// The first frame, or the first after a pause: the windows start again from here.
-			governor.restart(this.clock(now) + (last < 0 ? GRACE_MS : 0));
+		if (last < 0) governor.restart(this.clock(now) + GRACE_MS);
+		else if (now - last >= GAP_MS) {
+			// The first frame after a pause, or after a frame that took as long: the windows start
+			// again from here.
+			governor.gap(this.clock(now));
 		} else {
 			if (now - (times[0] as number) < WINDOW_MS) return;
 			const casters = this.scene.shadowCasters();

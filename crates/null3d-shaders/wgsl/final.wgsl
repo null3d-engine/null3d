@@ -21,6 +21,11 @@
 // whole canvas's scale a sketch that sharpens draws the two steps, so one output transform runs
 // for each pixel and the sharpening reads display color.
 //
+// Only the UPSCALE build holds the upscale and the sharpening, and only the second step draws it.
+// Every other build reads the texel under each pixel. A software GPU, such
+// as CI's, pays in every frame for the code of a loop that no pixel enters: S1 drew four to six
+// times faster on it without the two loops (decision record D-236).
+//
 // The scene color holds color multiplied by its coverage. Where it is only partly covered, as over
 // a transparent canvas's background, the pass maps the color that covers it and keeps the coverage
 // as the canvas's premultiplied alpha. WebGL2 keeps GL's row order, bottom row first, in the scene
@@ -736,9 +741,13 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
         color = display(shaded(with_glow(pixel_color(position.xy), light), shade));
 #endif
     }
+#ifdef UPSCALE
     // At the whole canvas's scale the second step sharpens the display color that the first step
-    // drew. Below it the upscale sharpens its own taps, so the value adds nothing there.
-    if whole && (settings.output.flags & SHARPEN) != 0u {
+    // drew. Below it the upscale sharpens its own taps, so the value adds nothing there. The call
+    // sits in a loop of no rounds while the sketch asks for no sharpening: a software GPU runs both
+    // sides of a branch, so a plain test would still read the four texels that the sharpening needs.
+    let sharpen_rounds = select(0u, 1u, whole && (settings.output.flags & SHARPEN) != 0u);
+    for (var sharp_round = 0u; sharp_round < sharpen_rounds; sharp_round++) {
         color = sharpened(color, first, render, size, light, shade, settings.sharpen.x);
     }
     // The upscale runs in a loop of no rounds at the whole canvas's scale, so a software GPU, such
@@ -808,5 +817,6 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
             color = bilinear;
         }
     }
+#endif
     return finish(outlined(color, uv, size, render), position.xy);
 }

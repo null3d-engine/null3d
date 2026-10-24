@@ -92,7 +92,7 @@ Declare uniforms as `struct Uniforms`, and read them as `uniforms.name`. The rul
 
 ### Textures
 
-An effect can read textures, as a custom material does. Declare each as `var name: texture_2d<f32>;`, and give it with the `textures` option: a texture from a file or from data, or a pass's texture from `textures.fromPass`. The engine declares its sampler as `nameSampler`.
+An effect can read textures, as a custom material does. Declare each as `var name: texture_2d<f32>;`, or as `var name: texture_2d_array<f32>;` for a texture array whose layers the WGSL picks, and give it with the `textures` option: a texture from a file or from data, or a pass's texture from `textures.fromPass`. The engine declares its sampler as `nameSampler`.
 
 ```ts
 const vignetteFromImage = /* wgsl */ `
@@ -496,6 +496,66 @@ post.addEffect({ wgsl: addGlow, textures: { glow: textures.fromPass(glow) } });
 - `width: 0` draws the outline mask without the crisp line. The mask's red channel holds each outlined object's coverage, and its green channel the parts that nothing hides, for a glow that differs behind walls.
 - The pass blurs at half size, which shades a quarter of the pixels and blurs further for the same reads.
 - The effect adds the glow before the tone curve and bloom, on HDR color, so a bright glow also blooms.
+
+## Compute passes
+
+A compute pass runs a compute shader over a texture of its own, on WebGPU. Use one when the work suits a GPU's parallel threads better than a pixel: a wave simulation that combines each pixel with its neighbors, a table that the shader fills in a loop, or a field that several materials read. [Render graph API](../api/render.md#compute-passes) lists its options and the bindings that its shader declares.
+
+```ts
+const ripples = /* wgsl */ `
+struct ComputeBlock {
+    size: vec4f,
+    clock: vec4f,
+    inverseProjection: mat4x4f,
+    u0: vec4f,
+    u1: vec4f,
+    u2: vec4f,
+    u3: vec4f,
+    u4: vec4f,
+    u5: vec4f,
+    u6: vec4f,
+    u7: vec4f,
+    drawn: vec4f,
+    bloom: vec4f,
+}
+
+@group(0) @binding(0) var<uniform> block: ComputeBlock;
+@group(0) @binding(1) var field: texture_storage_2d_array<rgba16float, write>;
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+    let size = vec2u(block.drawn.xy);
+    if (id.x >= size.x || id.y >= size.y) { return; }
+    let p = vec2f(id.xy) / vec2f(size) - 0.5;
+    let ring = smoothstep(0.02, 0.0, abs(length(p) - 0.3));
+    textureStore(field, vec2i(id.xy), 0, vec4f(ring, ring * 0.6, 0.0, 1.0));
+}
+`;
+
+const ripplesEverywhere = /* wgsl */ `
+fn effect(input: EffectInput) -> vec4f {
+    // The pass texture holds its first row at the bottom, and input.uv counts from the top left.
+    let p = vec2f(input.uv.x, 1.0 - input.uv.y) - 0.5;
+    let ring = smoothstep(0.02, 0.0, abs(length(p) - 0.3));
+    return vec4f(ring, ring * 0.6, 0.0, 1.0);
+}
+`;
+
+const field = render.addPass({
+  kind: 'compute',
+  description: defineFeature({ name: 'ripples', frame: 'background', kind: 'compute', outputs: { ripples: { default: 'black' } } }),
+  wgsl: ripples,
+  fallback: { wgsl: ripplesEverywhere },
+});
+const water = materials.unlit({ map: textures.fromPass(field) });
+```
+
+- Materials, effects and passes sample the pass's texture in the same frame. The graph orders the pass before them.
+- A compute shader declares the bindings itself. Group 0 holds the pass's block at binding 0 and its storage texture at binding 1. Group 1 holds the textures of the `textures` option, in that order.
+- The storage texture is read as an array of one layer, so the shader writes layer 0.
+- WebGL2 has no compute shaders. Give the pass a `fallback` that does the same work for each pixel, or leave it out and let the call throw on WebGL2.
+- Change the values with `render.setPassUniforms(pass, values)`.
+- The texture holds zeros until the pass runs. A reader shows nothing before that.
 
 ## Errors
 

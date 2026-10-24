@@ -375,8 +375,12 @@ file = "final.wgsl"
 by_device = true
 custom_tone_curves = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["FXAA", "HALF", "BLOOM"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["FXAA", "HALF", "BLOOM"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["UPSCALE", "FXAA", "HALF", "BLOOM"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["UPSCALE", "FXAA", "HALF", "BLOOM"], targets = ["glsl"] }
+# Only the UPSCALE builds hold the upscale and the sharpening, which the two-step pass's second step
+# draws; every other build reads the texel under each pixel. They stay in the start files: there
+# they add about what the other builds lose, while a file of their own would cost a page that drops
+# below the whole scale a download of its own (decision record D-236).
 
 # The template of custom effects: one triangle over the effect's target, which calls the effect's
 # function for each pixel. It builds for WebGPU, where DEPTH_MULTISAMPLED reads a multisampled
@@ -402,14 +406,15 @@ variants.webgl2 = { defs = ["WEBGL2", "EFFECT_HOST"], targets = ["glsl"] }
 
 # The final pass that hosts folded custom effects and a folded custom tone curve, from the final
 # pass's file. The engine folds only without FXAA, bloom and the HALF builds, so it has no
-# permutations.
+# permutations. It keeps the upscale and the sharpening (UPSCALE) in every build, as the final pass
+# held them before they took a build of their own.
 [shaders.final_effects]
 file = "final.wgsl"
 by_device = true
 effect_fold_host = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["EFFECT_CHAIN", "EFFECT_HOST"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "EFFECT_CHAIN", "EFFECT_HOST"], targets = ["glsl"] }
+variants.webgpu = { defs = ["EFFECT_CHAIN", "EFFECT_HOST", "UPSCALE"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "EFFECT_CHAIN", "EFFECT_HOST", "UPSCALE"], targets = ["glsl"] }
 
 # A page downloads both hosts the first time effects join or fold.
 [first_use.effect_groups]
@@ -665,6 +670,37 @@ file = "view_copy.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+
+# Temporal anti-aliasing's resolve, a prototype (see taa.wgsl): blends the scene's color into a
+# history that it reads where each pixel's surface lay in the last frame, limited to the colors of
+# its neighbors. The WebGL2 variant reads a copy of one depth sample that its backend keeps.
+[shaders.taa]
+file = "taa.wgsl"
+by_device = true
+pipelines.resolve = { vertex = "vs", fragment = "resolve" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# The resolve from a multisampled depth target, whose samples it reads. Only WebGPU reads
+# multisampled textures.
+[shaders.taa_ms]
+file = "taa.wgsl"
+by_device = true
+pipelines.resolve = { vertex = "vs", fragment = "resolve" }
+variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
+
+# The copy of the resolve's target into the history of the frame's parity, one texel per pixel.
+[shaders.taa_copy]
+file = "taa_copy.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# A page downloads temporal anti-aliasing's steps when the sketch first turns it on. The frames
+# draw without it until the steps' pipelines are built.
+[first_use.taa]
+shaders = ["taa", "taa_ms", "taa_copy"]
 
 # A page downloads the copy when the sketch first adds a scene pass. The pass's texture samples as
 # no texture until the copy's pipeline is built.

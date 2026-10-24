@@ -206,10 +206,12 @@ const worn = materials.shader({
 });
 ```
 
-- Pass a texture straight to a texture function. These take one: `textureSample`, `textureSampleLevel`, `textureSampleBias`, `textureSampleGrad`, `textureGather`, `textureLoad`, `textureDimensions`, `textureNumLevels`. The engine stores textures as layers of texture arrays and adds the layer to each call. So the build rejects a texture passed to a function of your own. `textureSampleBaseClampToEdge` does not work; use `textureSampleLevel` at level 0.
+- Pass a texture straight to a texture function. These take one: `textureSample`, `textureSampleLevel`, `textureSampleBias`, `textureSampleGrad`, `textureGather`, `textureLoad`, `textureDimensions`, `textureNumLevels`, `textureNumLayers`. The engine stores textures as layers of texture arrays and adds the layer to each call. So the build rejects a texture passed to a function of your own. `textureSampleBaseClampToEdge` does not work; use `textureSampleLevel` at level 0.
+- `textureGather` draws on WebGPU only: WebGL2's shader language has no gather, so a material that uses it fails to link there. Read four texels with `textureLoad` where a material must draw on both paths.
 - A vertex offset reads textures with `textureSampleLevel` or `textureLoad`, for height maps.
 - Until its image is on the GPU, a texture samples as white, and so does a declared texture that the option leaves out. Multiply by textures, so the material looks right while they load.
-- Up to 6 textures; each takes one of the uniforms' 32 numbers. Textures are fixed at creation. A texture has one layer.
+- Up to 6 textures; each takes one of the uniforms' 32 numbers. Textures are fixed at creation. A texture has one layer, unless its declaration is a texture array.
+- Texture arrays (0.3): declare `var name: texture_2d_array<f32>;` and pass a texture of several layers, such as `textures.fromData({ width, height, depth: 6, data })` or a KTX2 file of layers. The shader picks the layer after the coordinates: `textureSampleLevel(name, nameSampler, uv, layer, 0.0)`. The layers are the texture's own, from 0 to its depth less 1, so one array serves a set of facade or window images and each pixel picks one. `textureNumLayers(name)` gives the layer count. One array takes one slot and one uniform number, as a 2D texture does.
 - TypeScript checks the option's names against the WGSL's declarations; a wrong name or a value that is not a texture throws E1216 when it runs. Full shaders take no textures.
 
 ## 5. Vertex offsets and full shaders

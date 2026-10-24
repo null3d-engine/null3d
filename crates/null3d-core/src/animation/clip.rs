@@ -24,6 +24,7 @@ use std::simd::prelude::*;
 use super::pose::{arc_weight, normalized};
 use super::resample::QUANTIZED_ONE;
 use super::{AnimationError, POSE_FIELDS, Pose, field, filled};
+use crate::memory::{MemoryUse, buffer_bytes};
 
 /// Values per rotation group per frame: four components of four lanes.
 pub(crate) const ROTATION_KEY: usize = 16;
@@ -88,6 +89,23 @@ pub(crate) struct ClipParts {
 }
 
 impl Clip {
+    /// The bytes that the clip's keys and tables hold.
+    pub(crate) fn memory_use(&self) -> MemoryUse {
+        let mut use_ = self.base.memory_use();
+        for bytes in [
+            buffer_bytes(&self.channels),
+            MemoryUse::new(self.rotations.bytes() as u64, self.rotations.bytes() as u64),
+            MemoryUse::new(
+                self.translations.bytes() as u64,
+                self.translations.bytes() as u64,
+            ),
+            MemoryUse::new(self.scales.bytes() as u64, self.scales.bytes() as u64),
+        ] {
+            use_.add(bytes);
+        }
+        use_
+    }
+
     /// Puts a clip together from its parts.
     pub(crate) fn from_parts(parts: ClipParts) -> Clip {
         let ClipParts {

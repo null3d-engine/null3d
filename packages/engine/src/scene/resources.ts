@@ -130,6 +130,7 @@ import {
 	meshFromArrays,
 	meshFromLevel,
 	morphTargetCount,
+	replaceMeshIndices,
 	updateVertices,
 	type VertexLayout,
 } from './mesh-arrays';
@@ -447,6 +448,17 @@ export class MeshGeometry {
 		this.core.u32(at + 12 * count, count).set(materials);
 		this.core.check(this.core.glue.setMeshLevels(id, count, fades), call, 'a mesh', true);
 		this.lowerLevels = levels.map((level) => ({ ...level }));
+	}
+
+	/**
+	 * @internal Gives the mesh the triangles `indices` in place of the ones it draws, which name its
+	 * own vertices. A staged level uses it to make its base the finer level as it arrives, so the
+	 * objects that draw the base draw the new geometry at once. Returns false when the mesh cannot
+	 * take another triangle list. It changes nothing else about the mesh: its vertices, bounds and
+	 * levels stay.
+	 */
+	replaceTriangles(indices: Uint16Array | Uint32Array | readonly number[]): boolean {
+		return replaceMeshIndices(this.core, this.id, indices, 'mesh.replaceTriangles');
 	}
 }
 
@@ -1655,12 +1667,14 @@ export interface ShaderOptions<Wgsl extends string | CompiledWgsl = string | Com
 			: UniformValues<Wgsl>
 	>;
 	/**
-	 * The texture of each `var name: texture_2d<f32>;` that the WGSL declares, by name. The WGSL
-	 * samples it as `textureSample(name, nameSampler, uv)`, with the sampler of the texture's
-	 * `wrap` and `filter` options. A texture samples as white until its image is on the GPU, and a
-	 * declared texture without one stays white. The textures are fixed when the material is
-	 * created. When TypeScript can see the WGSL, a name that it does not declare fails the type
-	 * check.
+	 * The texture of each `var name: texture_2d<f32>;` or `var name: texture_2d_array<f32>;` that
+	 * the WGSL declares, by name. The WGSL samples a 2D texture as
+	 * `textureSample(name, nameSampler, uv)`, with the sampler of the texture's `wrap` and `filter`
+	 * options, and a texture array as `textureSample(name, nameSampler, uv, layer)`, where it picks
+	 * the layer of a texture of several layers. A texture samples as white until its image is on
+	 * the GPU, and a declared texture without one stays white. The textures are fixed when the
+	 * material is created. When TypeScript can see the WGSL, a name that it does not declare fails
+	 * the type check.
 	 */
 	textures?: NoInfer<TextureValues<Wgsl>>;
 	/**
@@ -1705,7 +1719,11 @@ interface CompiledMaterial extends CompiledWgsl {
 	readonly sceneDepth?: boolean;
 	readonly uniforms: readonly CompiledUniform[];
 	/** The textures that the WGSL declares, in the order of their map slots. */
-	readonly textures: readonly { readonly name: string }[];
+	readonly textures: readonly {
+		readonly name: string;
+		/** True for a declaration of a texture array, whose layers the WGSL picks. */
+		readonly array?: boolean;
+	}[];
 	/** On the dev server, the key of the WGSL's hot updates. */
 	readonly hot?: string;
 }
@@ -2897,11 +2915,14 @@ function writeUniforms(
 
 /**
  * The texture of each slot that a custom material's or effect's WGSL declares, from its `textures`
- * option, with none where the option gives none. Throws E1216 for a name that the WGSL does not
- * declare, and for a value that is not a texture of one layer.
+ * option, with none where the option gives none. A slot that the WGSL declares as
+ * `texture_2d_array<f32>` takes a texture of one or more layers, whose layers the WGSL picks; a
+ * slot that it declares as `texture_2d<f32>` takes a texture of one layer. Throws E1216 for a name
+ * that the WGSL does not declare, and for a value that is not a texture of the layers that the
+ * slot takes.
  */
 export function textureSlots(
-	declared: readonly { readonly name: string }[],
+	declared: readonly { readonly name: string; readonly array?: boolean }[],
 	given: Readonly<Record<string, unknown>>,
 	call: string,
 ): (Texture | undefined)[] {
@@ -2917,10 +2938,18 @@ export function textureSlots(
 				`${call}() got the texture ${name}, which the WGSL does not declare. Its textures: ${names}.`,
 			);
 		}
-		if (!(value instanceof Texture) || value.depth !== 1)
+		const array = declared[slot]?.array === true;
+		if (!(value instanceof Texture))
 			throw new EngineError(
 				'E1216',
-				`${call}() got ${value instanceof Texture ? `a texture of ${value.depth} layers` : String(value)} for the texture ${name}; it takes a texture of one layer, from textures or assets.`,
+				array
+					? `${call}() got ${String(value)} for the texture array ${name}; it takes a texture of several layers, from textures or assets.`
+					: `${call}() got ${String(value)} for the texture ${name}; it takes a texture of one layer, from textures or assets.`,
+			);
+		if (!array && value.depth !== 1)
+			throw new EngineError(
+				'E1216',
+				`${call}() got a texture of ${value.depth} layers for the texture ${name}; a texture declared \`var ${name}: texture_2d<f32>;\` takes one layer. Declare \`var ${name}: texture_2d_array<f32>;\`, and pick the layer in the shader.`,
 			);
 		slots[slot] = value;
 	}
@@ -3326,7 +3355,8 @@ export class Materials {
 	 * A custom material: the standard material with a surface function in WGSL, which changes how
 	 * each pixel of the surface looks before the engine lights it, or a full shader of your own. It
 	 * takes every option of `materials.standard` but the texture maps, the first values of the
-	 * uniforms that its WGSL declares, and the textures that its WGSL samples. `set` changes the
+	 * uniforms that its WGSL declares, and the textures that its WGSL samples, a texture of
+	 * several layers among them for a declaration of a texture array. `set` changes the
 	 * standard values and the uniforms. Meshes need texture coordinates to draw with a surface
 	 * function, and the attributes that a full shader reads. Throws E1215 for WGSL that the null3D
 	 * Vite plugin did not compile, and for a whole shader whose `@vertex` entry point takes no

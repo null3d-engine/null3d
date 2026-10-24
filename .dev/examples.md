@@ -177,7 +177,7 @@ The rules that the reworked demos follow, and why:
 - While the pointer steers, each drone eases toward the pointed point at a rate of its own. The rate falls from 6 to 1.2 a second as its lag grows. So a sudden move of the lamp sends a ripple through the flock. Each drone keeps its steering weight and its point in arrays, the only state of the demo. With no input both stay exactly 0, so the scripted path and the held frames do not change.
 - The instances demo writes each row's place across the field once, in the setup, since only the heights change. In each frame it works out the part of the height that depends only on the column once per column, not once per row.
 - The owner found the first instances demo too dark. It now takes golden hour from `timeOfDay`, and the sky's own light from `assets.skyEnvironment()`, with the helper's ambient light and a third more exposure. Its columns are less metallic, so the sky and the sun light them. The helper's fog color is the horizon toward the sun. Across the view, the sky's rim is a dim rose, so the demo's fog takes an amber between the two. The clouds stay still. The engine makes the sky's light again after each change of the sky, one step a frame. So drifting clouds would cost a step in every frame.
-- The instances demo takes its count of columns from a table by preset. `quality.onChange` sets the batch's active count again when the preset changes. The setup places the rows ring by ring from the middle out. So the first rows of any count fill a square in the middle of the field. Low draws 10,201 rows, the old demo's count, and the other presets draw all 100,489. The Mac held the full field at 120 fps on both GPU paths. No phone has run it yet.
+- The instances demo takes its count of columns from a table by preset. `quality.onChange` sets the batch's active count again when the preset changes. The setup places the rows ring by ring from the middle out. So the first rows of any count fill a square in the middle of the field. Low draws 10,201 rows, the old demo's count, and the other presets draw all 100,489. The Mac held the full field at 120 fps on both GPU paths. The cloud iPad Pro 13 in Safari and the Galaxy S25 in Chrome drew its held frame on all three paths. Neither run timed the frame rate.
 - The demos' interaction test (`tests/image/demo-interaction.spec.ts`) opens the math and instances demos on the Low preset. It checks the camera and the steering, not the look. On SwiftShader on the Mac, the full look took the instances test from 11.4 s to 25 to 30 s. The math test took 17 s. In CI, main's instances test already took 44.6 s of its 60 s, about four times its time on the Mac. On Low, the two tests took 7 to 10 s and 12 s on the Mac. With a quarter of the field on Low, the instances test took 14 s. That is too close to the limit in CI.
 - The three demos make the room environment, which takes time on a software GPU. On SwiftShader on the Mac their held frames took 6 to 15 s, four tests at once. So their image tests take 60 s, as the other demos with the room environment do, since CI's machines are slower.
 - The instances demo's lanes moved to the traffic-lanes add-on on 22 October 2026 (M3-B6). The demo draws 30,000 cars at Low and 100,000 at Ultra, where it drew 720 on the CPU. The add-on moves them in the vertex shader. It gives each heading's batch a lane-length bound,
@@ -466,7 +466,7 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 
 - **No line limit:** a showcase scene is not a feature demo, so the 150-line limit does not apply. It lives in `examples/showcase/<name>/`, and its code link points to the folder.
 - **Shared code:** the showcase scenes share a stage (`examples/lib/stage.ts`: moods and times of day) and generators of detail (`examples/lib/procedural.ts`: textures made in code, terrain and rocks).
-- **Models:** terrain, stones, grass and water are made in code. Trees, plants and other organic hero models are built by script in Blender, and live in the sample-assets repository. A showcase scene's `assets` field says so.
+- **Models:** terrain, stones, grass and water are made in code. Trees and plants come from the vegetation add-on once it exists, generated at first use ([D-241](decisions/D-241-vegetation-foundation.md)). Until then they, and other organic hero models, are built by script in Blender, and live in the sample-assets repository. A showcase scene's `assets` field says so.
 - **Interaction:** a showcase scene takes the user's input while it runs. Its camera is the cinematic route above, and `c` hands the camera to the user, who then flies with the keys, the mouse or a touch drag, without a run from the scripted pose.
 - **The look:** each scene must look very beautiful, with shaders, effects, particles and complex geometry ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
 - **Engine features first:** each scene waits for the engine features it needs. The owner moved them before 1.0, in [D-117](decisions/D-117-showcase-features-before-1-0.md), [D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md) and [D-142](decisions/D-142-more-techniques-before-1-0.md). The table below lists them.
@@ -532,22 +532,39 @@ and a hero car with two screens.
 - **Post starts on.** Bloom, the vignette and ambient occlusion start on, where the other showcase
   scenes start them off (D-171). A night city of neon and lit windows reads flat without the glow
   of its lights. The owner has not reviewed the look yet.
-- **Time of day.** The scene takes its sky, sun, fog and exposure from the shared stage, which
-  eases between looks and writes them every frame (`examples/lib/stage.ts`). Dusk and Night are the
-  stage's own moods. Storm is the scene's variation on the night: full cloud, a dimmed moon, fog
-  2.4 times as dense and rain 1.8 times as heavy. The stage writes the scene's lit fog with every
-  mood, through its `volumetric` option. It gained three scales for a scene whose own lights carry
-  it: the exposure, the environment light and the brightness of the sky. Skyway sets them to 4.5,
-  2.2 and 2.6, and lowers the cloud cover to 0.45. The HUD keeps Camera, Time of day, Atmosphere
-  (Fog, Rain), Lighting (AO, Environment), Post, Traffic and Quality.
-- **The moods were drawn and looked at.** The image test draws Night. Dusk warms the towers and
-  lifts the sky. Storm fills the sky with cloud, dims the moon, thickens the fog and drives the
-  rain. The physical sky is darker than the analytic night the scene drew before. The
-  references therefore moved in both sets by about 20% of their pixels.
-- **Figures.** A run in Chrome on the Mac measured these, with the shared stage, the traffic-lanes
-  add-on and its six real lights, and the lens kit in the scene. The Mac has an Apple M5 Max and a
-  120 Hz display. The frame-budget governor was on, and the window was parked past the screen's
-  edge. The machine carried a shared build load of about 18 at the time:
+- **Time of day.** The scene takes its full time of day from the shared stage, as the other
+  showcases do. It offers the same hour dial, with Auto and Studio, over the whole day. The physical
+  sky draws the real sun by day and the moon at night, and Auto moves them across the sky. The scene
+  sets the stage's three scales for a scene lit by its own lamps. The exposure is 4.5, the
+  environment light 2.2 and the sky's brightness 2.6. It lowers the cloud cover to 0.45. The scales
+  hold through the whole day, because the physical model's own exposure already falls by day and
+  rises at night. Scaling them again by the hour made midday darker than dawn. The stage writes the
+  scene's lit fog with every hour, through its `volumetric` option.
+- **The city's lights follow the hour.** The stage reports the share of a town's own lights that
+  the sun allows (`stage.lamps`). The scene gives it to the facades' windows and shop fronts, the
+  street lamps and their heads, the searchlights and the signs. Every lamp's light and every
+  searchlight fades with the share. A sign keeps nearly half its light by day, as a lit sign does.
+  At Night the share is 1 exactly, so the held frame's picture is the one the scene had.
+- **Storm is weather, not an hour.** The Atmosphere group's Storm button calls the stage's
+  `setWeather`. That gives full cloud and fog 2.4 times as dense. The sky and the light fall to a
+  third and to a half, and the rain is 1.8 times as heavy. The weather clears when the button turns
+  off. It works at any hour, so a storm at dawn is a storm under a dawn sky. A held frame has no
+  buttons, so its address takes `?storm` as well as the hour.
+- **The HUD** keeps Camera, Time of day, Atmosphere (Fog, Rain, Storm), Lighting (AO, Environment),
+  Post, Traffic and Quality. The scene's own controls reach the shared router through its `own` and
+  `extra` options. The lens kit owns the vignette and the scene's lens owns the depth of field. The
+  Traffic group stands before Quality.
+- **The hours were drawn and looked at.** The image test draws Night, whose reference did not move.
+  At night the light share is 1 and every scale is the value it always had. Dawn, Midday, Golden,
+  Dusk and Storm were drawn and reviewed. Midday reads as an overcast city that the fog still
+  layers. Golden warms the towers and the sky, and Storm drives the rain through a city of visible
+  lamps. The light power uniform moved SwiftShader's WebGL2 picture by 0.10 per cent, at the bright
+  edges of signs and lamps. That reference was drawn again. The Mac's picture still matches its own
+  reference.
+- **Figures.** A run in Chrome on the Mac measured these. It used the shared stage, the
+  traffic-lanes add-on and its six real lights, and the lens kit in the scene. The Mac has an Apple
+  M5 Max and a 120 Hz display. The frame-budget governor was on, and the window was parked past the
+  screen's edge. The machine carried a shared build load of about 18 at the time:
 
   | Preset | WebGPU | WebGL2 |
   | --- | --- | --- |
@@ -562,20 +579,35 @@ and a hero car with two screens.
   `preset=high` there draws 75,000 cars at Medium settings.
 - **The lens.** The picture's grade, its sharpening, its vignette and the camera's own marks come
   from the lens-kit example add-on (`examples/addons/lens-kit/`). The grade, the sharpening and the
-  vignette are the core's own settings, which the kit sets from one look. Its one effect draws the
-  color fringes, the anamorphic streak, the grain and the speed blur, each off at 0. D-173 ruling 5
+  vignette are the core's own settings, which the kit sets from one look: the grade is the core's
+  grading controls, which a job worker bakes into its table, so the kit keeps no table of its own.
+  Its one effect draws the color fringes, the anamorphic streak, the grain and the speed blur, each
+  off at 0. The streak reads level 2 of bloom's chain with `effectBloom`, so it spreads the light
+  that bloom already thresholded and blurred instead of blurring the picture again. D-173 ruling 5
   keeps it to the core's parts: it adds no second way to do any of them. The speed blur follows the
   camera's travel, so a held frame has none. Against the pictures without it, the lens moves 0.66%
-  of the pixels on WebGPU and 0.2% on SwiftShader.
-- **The lens's cost.** The effect adds about 0.7 to 0.9 ms of GPU at every preset on WebGPU. On
-  WebGL2 it adds 0.7 ms at Low and 3.2 ms at Medium. These figures compare the scene with the lens
-  against the same scene without it at a load of 36. The core's sharpen, vignette and grade add
-  nothing to a frame, since they run in the final pass. A look that leaves all four of the effect's
-  values at 0 adds no effect at all.
+  of the pixels on WebGPU and 0.2% on SwiftShader, drawn before the streak read bloom's chain. The
+  picture tests in `tests/image/manifest.ts` draw each part alone, one look to a test:
+  `lens-grade`, `lens-vignette`, `lens-sharpen`, `lens-aberration`, `lens-streak`, `lens-grain`
+  and `lens-speed-blur`. The marks are custom effects, so their four tests keep the two HDR tiers;
+  the core's parts draw on all three. A later `set` that raises a mark builds the effect then. One
+  that lowers every mark to 0 drops it again. Before 24 October 2026, a kit made with every mark at
+  0 never drew a mark that a later call set.
+- **The lens's cost.** The add-on's README holds the look's cost per preset. The cost test times
+  the whole look against the same scene without it. It draws at 1920 x 1080 with a render scale of
+  1, and runs as `NULL3D_LENS_COST=1 bun run test:browser -- lens-cost.spec.ts`. Its figures are
+  owed: the run needs a quiet computer, and the fleet kept the Mac above the quiet threshold. On
+  the Skyway scene at a load of 36, the effect alone added about 0.7 to 0.9 ms of GPU at every
+  preset on WebGPU, and 0.7 ms at Low and 3.2 ms at Medium on WebGL2. The core's vignette and
+  grade add nothing to a frame, since they run in the final pass; the sharpening value adds the
+  first step's pass at the whole render scale. A look that leaves all four of the effect's values
+  at 0 adds no effect at all.
 - **On a phone**, WebGL2 runs Medium at most. Low should hold 60 frames a second on an S24-class
   phone. That preset draws 30,000 cars, about 900 towers, 180 lights, the rain and reflections at a
   quarter of the render size. Medium doubles the cars and raises the reflection scale. A mid-range
-  phone may therefore fall under 60. No phone has run it yet.
+  phone may therefore fall under 60. The cloud iPad Pro 13 in Safari and the Galaxy S25 in Chrome
+  drew the demo's held frame on all three paths. Neither run timed the frame rate, so the 60 frames
+  a second target has no device figure yet.
 
 ### Engine features for the showcase
 
@@ -641,6 +673,8 @@ Creek is a small stream in a grassy valley (M2-EX8). The first phase, on 10 Octo
 | Moods (`examples/lib/stage.ts`) | Afternoon, golden hour, blue hour and night from `timeOfDay`, lit by the sky's environment, and a studio lit by the built-in room. A mood can thicken the fog into a haze: golden hour and blue hour do |
 
 **The water code is temporary.** M3-F5's water add-on, `@null3d/water`, takes the Creek's river with its view from under the water. Once it exists, the Creek draws its water through the add-on, and `water.ts` and `underwater.ts` are deleted, so the scene keeps no water code of its own (owner, 20 October 2026, [D-173](decisions/D-173-addon-hooks.md)).
+
+**The plant code and models are temporary.** The vegetation add-on of M3-V4 to M3-V9 grows Creek's trees, ferns, hostas, shrubs, flowers and grass at first use. It places them over the whole valley by ecological rules and moves them all in one wind field. Once it exists, Creek draws its plants through it (M3-V11). Its Blender plant models, their script and their files of about 3.1 MB are deleted. So is the scene's own plant code: `grass.ts`, `models.ts` and the plant parts of `flora.ts`. The floating leaves and the fireflies stay (owner, 24 October 2026, [D-241](decisions/D-241-vegetation-foundation.md)).
 
 The choices, and why:
 

@@ -85,6 +85,8 @@ export type SketchWorkerInit = CoreHandoff & {
 	quality: QualityStart;
 	/** The highest target frame rate, as the sketch runner's options give it. */
 	maxTargetFps: number;
+	/** True when the page asked for the development probe of the two-step pass. */
+	twoStepProbe: boolean;
 	/** The port that texture images go through to the thread that draws, when that is another. */
 	imagePort?: MessagePort;
 	/** One port to each job worker, by index, for the on-demand loader's tasks. */

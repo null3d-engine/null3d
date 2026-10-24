@@ -14,6 +14,7 @@ use super::{AnimationError, Clip, NO_PARENT, POSE_FIELDS, Skeleton, field, fille
 use crate::error::{CoreError, Resource};
 use crate::jobs::{JobSystem, WorkerId};
 use crate::math::{Affine, Affine64, invert64, mul};
+use crate::memory::{MemoryRegister, MemoryUse, area, buffer_bytes, vec_bytes};
 use crate::shared::SharedMut;
 use crate::world::MATRIX_FLOATS;
 
@@ -413,7 +414,98 @@ pub struct Animations {
     last_steps: Box<[f32]>,
 }
 
+impl SampleSlots {
+    /// The bytes that the slots' arrays hold.
+    fn memory_use(&self) -> MemoryUse {
+        let mut use_ = MemoryUse::default();
+        for array in [
+            buffer_bytes(&self.clip),
+            buffer_bytes(&self.time),
+            buffer_bytes(&self.weight),
+            buffer_bytes(&self.source),
+        ] {
+            use_.add(array);
+        }
+        use_
+    }
+}
+
+impl Mask {
+    /// The bytes that the mask's weights hold.
+    fn memory_use(&self) -> MemoryUse {
+        buffer_bytes(&self.weights)
+    }
+}
+
+impl ClipEvents {
+    /// The bytes that the clip's events hold.
+    fn memory_use(&self) -> MemoryUse {
+        let mut use_ = buffer_bytes(&self.times);
+        use_.add(buffer_bytes(&self.ids));
+        use_
+    }
+}
+
 impl Animations {
+    /// Adds the bytes that the animation table's arrays hold to the memory register.
+    pub fn account(&self, register: &mut MemoryRegister) {
+        let mut use_ = MemoryUse::default();
+        for array in [
+            vec_bytes(&self.clip_skeletons),
+            vec_bytes(&self.clip_sources),
+            vec_bytes(&self.additive_clips),
+            vec_bytes(&self.free_skeletons),
+            vec_bytes(&self.free_clips),
+            vec_bytes(&self.free_masks),
+            vec_bytes(&self.free_instances),
+            vec_bytes(&self.free_joints),
+            buffer_bytes(&self.instance_skeletons),
+            buffer_bytes(&self.first_joints),
+            self.slots.memory_use(),
+            buffer_bytes(&self.actions),
+            buffer_bytes(&self.update_intervals),
+            buffer_bytes(&self.time_scales),
+            buffer_bytes(&self.layer_weights),
+            buffer_bytes(&self.layer_masks),
+            buffer_bytes(&self.blend_values),
+            buffer_bytes(&self.matrices[0]),
+            buffer_bytes(&self.matrices[1]),
+            buffer_bytes(&self.pose_steps),
+            buffer_bytes(&self.sampled_steps),
+            buffer_bytes(&self.skipped_time),
+            buffer_bytes(&self.events),
+            buffer_bytes(&self.event_totals),
+            buffer_bytes(&self.ones),
+            buffer_bytes(&self.scratch),
+            buffer_bytes(&self.objects),
+            buffer_bytes(&self.overrides),
+            buffer_bytes(&self.look_targets),
+            buffer_bytes(&self.look_local),
+            buffer_bytes(&self.transition_of),
+            buffer_bytes(&self.pool_pose),
+            buffer_bytes(&self.pool_vel),
+            buffer_bytes(&self.pool_cover),
+            buffer_bytes(&self.pool_time),
+            buffer_bytes(&self.pool_len),
+            buffer_bytes(&self.last_steps),
+        ] {
+            use_.add(array);
+        }
+        for skeleton in &self.skeletons {
+            use_.add(skeleton.memory_use());
+        }
+        for clip in &self.clips {
+            use_.add(clip.memory_use());
+        }
+        for events in &self.clip_events {
+            use_.add(events.memory_use());
+        }
+        for mask in &self.masks {
+            use_.add(mask.memory_use());
+        }
+        register.add(area::ANIMATION, use_);
+    }
+
     /// A table for up to `instances` animated instances with `joints` joints between them, whose
     /// frame step runs on `jobs`. The capacities fix the arrays that other threads view until the
     /// table grows.
@@ -2012,6 +2104,25 @@ mod tests {
         assert!(
             animations.pool_pose.len() * 50 < 1024 * MAX_LAYERS * stride,
             "the pool is a small share of one pose per slot and layer"
+        );
+    }
+
+    /// The register counts the animation table, and its joint matrices grow with the instances.
+    #[test]
+    fn the_register_counts_the_animation_table() {
+        let jobs = JobSystem::new(0);
+        let small = Animations::new(&jobs, 4, 8).unwrap();
+        let large = Animations::new(&jobs, 128, 8).unwrap();
+        let bytes = |animations: &Animations| {
+            let mut register = MemoryRegister::new();
+            register.begin();
+            animations.account(&mut register);
+            register.area(area::ANIMATION).reserved
+        };
+        assert!(bytes(&small) > 0);
+        assert!(
+            bytes(&large) > bytes(&small),
+            "more instances take more room"
         );
     }
 

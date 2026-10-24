@@ -708,6 +708,18 @@ pub mod layout {
     /// view's parameters, the scene's tables, its compacted instances and indirect draws, then its
     /// depth pyramid or a placeholder, the cell offsets texture and the skin firsts texture.
     pub const CULL: u32 = 1;
+    /// Group 0 of an add-on's compute pipeline: its block of uniforms, then the storage texture
+    /// that it fills, as 16-bit floats. The storage texture's format is part of the layout, so a
+    /// pass of another format takes the layout of that format.
+    pub const COMPUTE_RGBA16_FLOAT: u32 = 53;
+    /// [`COMPUTE_RGBA16_FLOAT`] for a target of 32-bit floats.
+    pub const COMPUTE_R32_FLOAT: u32 = 54;
+    /// [`COMPUTE_RGBA16_FLOAT`] for a target of 8-bit color.
+    pub const COMPUTE_RGBA8_UNORM: u32 = 55;
+    /// Group 0 of an add-on's compute pipeline that writes the two buffers of an instance draw: its
+    /// block of uniforms, then the draw's count word and its per-instance rows, which the shader
+    /// reads and writes as storage. A pass of this layout has no storage texture.
+    pub const COMPUTE_INSTANCE_BUFFERS: u32 = 56;
     /// Group 0 of the cluster levels' compute pipeline: the dispatch's parameters at a dynamic
     /// offset, then the scene's patches and mesh records, its tree indices, the view's compacted
     /// instances, and the view's counts, offsets, index list and indirect draws.
@@ -802,6 +814,19 @@ pub mod layout {
     /// [`EFFECT_BLOOM`] with a multisampled scene depth, whose sample 0 the effect reads. Only
     /// WebGPU has it.
     pub const EFFECT_BLOOM_DEPTH_MS: u32 = 51;
+    /// Group 1 of a sky layer's draw, an add-on's layer over the core sky: its uniform block alone.
+    /// The core sky's cloud settings, the share of the sun that the layer hides and the layer's own
+    /// opacity reach it, so a layer obeys the settings the core sky obeys (see
+    /// [`template::BACKGROUND_LAYER`](super::template::BACKGROUND_LAYER)).
+    pub const BACKGROUND_LAYER: u32 = 53;
+    /// Group 0 of temporal anti-aliasing's resolve: its uniform block, the scene color, the scene's
+    /// depth, the motion target and the two histories at bindings 1 to 5, and the linear sampler
+    /// of the histories at 6. The scene color, the depth and the motion read with `textureLoad`;
+    /// the histories read with the sampler.
+    pub const TAA: u32 = 57;
+    /// [`TAA`] with a multisampled scene depth, whose samples the resolve reads. Only WebGPU has
+    /// it.
+    pub const TAA_MS: u32 = 58;
     /// The final pass with custom effects folded into it: [`FINAL`]'s bindings, then the effects'
     /// uniform buffer at binding 4 and the scene's depth, or a blank texture, at binding 5, as
     /// plain floats.
@@ -950,6 +975,12 @@ pub mod permutation {
     /// faces keep their depth, as the faces of a double-sided caster must: they hold its own lit
     /// side.
     pub const CASTER_OFFSET: u32 = 16384;
+    /// The final pass's build that scales the drawn corner up to the canvas and sharpens it, which
+    /// the second step of the two-step pass draws. The other builds read the one texel under each
+    /// pixel and hold none of that code: a software GPU pays for code in every frame, even in a
+    /// loop of no rounds. It shares [`CASTER_OFFSET`]'s value: only the final pass lists it, and
+    /// only the shadow casters' and the depth templates list the caster offset.
+    pub const UPSCALE: u32 = CASTER_OFFSET;
     /// The final pass adds bloom's levels to the scene color before the output transform.
     pub const BLOOM: u32 = 32768;
     /// A custom material's template draws an object into GPU picking's id target: the vertex
@@ -1031,7 +1062,7 @@ pub mod permutation {
     pub const WEIGHTED: u32 = 1 << 31;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 34] = [
+    pub const NAMES: [(&str, u32); 35] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -1048,6 +1079,7 @@ pub mod permutation {
         ("PREPASS", PREPASS),
         ("HALF", HALF),
         ("CASTER_OFFSET", CASTER_OFFSET),
+        ("UPSCALE", UPSCALE),
         ("BLOOM", BLOOM),
         ("PICK", PICK),
         ("OUTLINE_VISIBLE", OUTLINE_VISIBLE),
@@ -1070,7 +1102,11 @@ pub mod permutation {
 
     /// Pairs of names that share one value, because no template lists both: the shader build
     /// refuses a template that lists two names of one value, and any other shared value.
-    pub const SHARED: [(&str, &str); 2] = [("FXAA", "AREA_LIGHTS"), ("BLOOM", "PICK")];
+    pub const SHARED: [(&str, &str); 3] = [
+        ("FXAA", "AREA_LIGHTS"),
+        ("CASTER_OFFSET", "UPSCALE"),
+        ("BLOOM", "PICK"),
+    ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
     /// the draw index where WebGL2 has multi-draw, tone mapping in the shader where the device
@@ -1113,8 +1149,9 @@ pub mod permutation {
     /// The layers shade, so casters never have them, and only the test switch reads instances by
     /// index, which no layered build needs. A weighted surface blends, so it tests no mask, lets
     /// no light through and never fades, and it draws in the sorted pass's rows, which never read
-    /// instances by index.
-    pub const APART: [(u32, u32); 54] = [
+    /// instances by index. The final pass's upscale draws only in the two-step pass's second step,
+    /// with neither FXAA nor bloom.
+    pub const APART: [(u32, u32); 56] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -1169,6 +1206,8 @@ pub mod permutation {
         (WEIGHTED, OUTLINE_VISIBLE),
         (WEIGHTED, LOD_FADE),
         (LOD_FADE, DISPLACEMENT),
+        (UPSCALE, FXAA),
+        (UPSCALE, BLOOM),
     ];
 
     /// True when a permutation word holds every bit that each of its bits needs ([`NEEDS`]), and
@@ -1732,9 +1771,12 @@ pub mod sizes {
     /// one binding of the frame's group (D-146).
     pub const SHADOW_SETTINGS_BYTES: u32 =
         SHADOW_UNIFORM_BYTES + SHADOW_TILES_UNIFORM_BYTES + SHADOW_HERO_UNIFORM_BYTES;
-    /// Bytes of the background's uniform block: nine vectors, which the cube map, the sky and a
-    /// plain color read (see `null3d_render::background`).
-    pub const BACKGROUND_UNIFORM_BYTES: u32 = 144;
+    /// Bytes of the background's uniform block: ten vectors, which the cube map, the sky, a plain
+    /// color and a sky layer's sun visibility read (see `null3d_render::background`).
+    pub const BACKGROUND_UNIFORM_BYTES: u32 = 160;
+    /// Bytes of a sky layer's uniform block: two vectors, the core sky's cloud settings and the
+    /// layer's own view values (see `null3d_render::background`).
+    pub const BACKGROUND_LAYER_UNIFORM_BYTES: u32 = 32;
 }
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
@@ -1852,6 +1894,11 @@ pub mod template {
     /// three.js's analytic sky behind every object, drawn as [`BACKGROUND_CUBE`] is, from the
     /// values of the background's uniform block alone.
     pub const BACKGROUND_SKY: u32 = 36;
+    /// A sky layer that an add-on draws over the core sky, right after the background's own draw:
+    /// [`BACKGROUND_CUBE`]'s box around the camera at the far plane, whose fragments call the
+    /// layer's own `skyLayer` function. The bind group of index 0 is the frame's, and that of index
+    /// 1 the layer's, of layout [`BACKGROUND_LAYER`](super::layout::BACKGROUND_LAYER).
+    pub const BACKGROUND_LAYER: u32 = 79;
     /// The depth of a masked shadow caster: [`SHADOW_DEPTH`]'s vertices, with each fragment of the
     /// caster's material tested as its shading tests it, by the material's opacity and vertex
     /// alpha, so masked surfaces cut holes in their shadows. It binds as the depth template does.
@@ -2008,6 +2055,17 @@ pub mod template {
     /// Cluster levels: one compute pipeline whose dispatch counts, scans or copies the patches of
     /// a view, which the dispatch's parameters pick. WebGPU only.
     pub const CLUSTER: u32 = 78;
+    /// Temporal anti-aliasing's resolve, a prototype (M3-A11): one triangle over a target of the
+    /// render size, which blends the scene's color into the history that it reads where each
+    /// pixel's surface lay in the frame before, from the motion target and the depth. Its group 0
+    /// is [`TAA`](super::layout::TAA), or [`TAA_MS`](super::layout::TAA_MS) from a multisampled
+    /// scene depth.
+    pub const TAA_RESOLVE: u32 = 80;
+    /// [`TAA_RESOLVE`] from a multisampled scene depth, whose samples it reads. WebGPU only.
+    pub const TAA_RESOLVE_MS: u32 = 81;
+    /// Temporal anti-aliasing's copy of the resolve's target into the history of the frame's
+    /// parity, one texel per pixel. It binds as the copy of a view's image does.
+    pub const TAA_COPY: u32 = 82;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -2015,7 +2073,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 78] = [
+    pub const NAMES: [(&str, u32); 81] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2093,6 +2151,9 @@ pub mod template {
         ("PICK_MAPS", PICK_MAPS),
         ("PICK_TEXTURE_MAPS", PICK_TEXTURE_MAPS),
         ("CLUSTER", CLUSTER),
+        ("TAA_RESOLVE", TAA_RESOLVE),
+        ("TAA_RESOLVE_MS", TAA_RESOLVE_MS),
+        ("TAA_COPY", TAA_COPY),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2196,6 +2257,9 @@ pub mod groups {
         (template::EXPOSURE_LUMINANCE, own!(layout::EFFECT)),
         (template::CULL, own!(layout::CULL)),
         (template::CLUSTER, own!(layout::CLUSTER_CULL)),
+        (template::TAA_RESOLVE, own!(layout::TAA)),
+        (template::TAA_RESOLVE_MS, own!(layout::TAA_MS)),
+        (template::TAA_COPY, own!(layout::VIEW_COPY)),
         (template::LIGHT_COUNT, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_PLACE, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_WRITE, own!(layout::LIGHT_CLUSTERS)),
@@ -2364,6 +2428,14 @@ impl DrawList {
         &self.words
     }
 
+    /// The bytes that the recorded words reserve and use.
+    pub fn memory_use(&self) -> (usize, usize) {
+        (
+            self.words.capacity() * size_of::<u32>(),
+            self.words.len() * size_of::<u32>(),
+        )
+    }
+
     /// Address of the first word, for the replay loop's view on engine memory.
     pub fn as_ptr(&self) -> *const u32 {
         self.words.as_ptr()
@@ -2444,6 +2516,67 @@ pub fn decode(words: &[u32]) -> impl Iterator<Item = Result<Command<'_>, DecodeE
         })
     })
 }
+
+/// The bind group layouts that the generated table lists, by name. Each id names one layout: two
+/// layouts at one id make the render worker refuse to start.
+const GENERATED_LAYOUTS: &[(&str, u32)] = &[
+    ("FRAME", layout::FRAME),
+    ("CULL", layout::CULL),
+    ("DRAWS", layout::DRAWS),
+    ("INSTANCES", layout::INSTANCES),
+    ("FINAL", layout::FINAL),
+    ("TEXTURES", layout::TEXTURES),
+    ("MATERIAL_MAPS", layout::MATERIAL_MAPS),
+    ("MATERIAL_MAPS_PARALLAX", layout::MATERIAL_MAPS_PARALLAX),
+    ("FRAME_PARALLAX", layout::FRAME_PARALLAX),
+    ("DEPTH", layout::DEPTH),
+    ("LIGHT_CLUSTERS", layout::LIGHT_CLUSTERS),
+    ("BLOOM", layout::BLOOM),
+    ("FINAL_BLOOM", layout::FINAL_BLOOM),
+    ("JOINTS", layout::JOINTS),
+    ("SKIN", layout::SKIN),
+    ("COMPUTE_RGBA16_FLOAT", layout::COMPUTE_RGBA16_FLOAT),
+    ("COMPUTE_R32_FLOAT", layout::COMPUTE_R32_FLOAT),
+    ("COMPUTE_RGBA8_UNORM", layout::COMPUTE_RGBA8_UNORM),
+    ("COMPUTE_INSTANCE_BUFFERS", layout::COMPUTE_INSTANCE_BUFFERS),
+    ("DEPTH_PYRAMID", layout::DEPTH_PYRAMID),
+    ("AO_DEPTH", layout::AO_DEPTH),
+    ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
+    ("AO", layout::AO),
+    ("BACKGROUND", layout::BACKGROUND),
+    ("INSTANCE_INDEX", layout::INSTANCE_INDEX),
+    ("EFFECT", layout::EFFECT),
+    ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
+    ("EFFECT_BLOOM", layout::EFFECT_BLOOM),
+    ("EFFECT_BLOOM_DEPTH_MS", layout::EFFECT_BLOOM_DEPTH_MS),
+    ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
+    ("FINAL_EFFECTS_DEPTH_MS", layout::FINAL_EFFECTS_DEPTH_MS),
+    ("VIEW_COPY", layout::VIEW_COPY),
+    ("ACCUMULATE", layout::ACCUMULATE),
+    ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
+    ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
+    ("MOTION_FRAME", layout::MOTION_FRAME),
+    ("SSR_REDUCE", layout::SSR_REDUCE),
+    ("SSR_TRACE", layout::SSR_TRACE),
+    ("WEIGHTED_COMPOSITE", layout::WEIGHTED_COMPOSITE),
+    ("WEIGHTED_DEPTH_MS", layout::WEIGHTED_DEPTH_MS),
+    ("TRANSMISSION_COPY_MS", layout::TRANSMISSION_COPY_MS),
+    ("CLUSTER_CULL", layout::CLUSTER_CULL),
+    ("TAA", layout::TAA),
+    ("TAA_MS", layout::TAA_MS),
+    ("SUBSURFACE_BLUR", layout::SUBSURFACE_BLUR),
+    ("SUBSURFACE_COMPOSITE", layout::SUBSURFACE_COMPOSITE),
+    ("SUBSURFACE_COMPOSITE_MS", layout::SUBSURFACE_COMPOSITE_MS),
+    ("DECAL_DEPTH", layout::DECAL_DEPTH),
+    ("DECAL_DEPTH_MS", layout::DECAL_DEPTH_MS),
+    ("DECAL_FRAME", layout::DECAL_FRAME),
+    ("MATERIAL_SCENE", layout::MATERIAL_SCENE),
+    ("PARTICLE", layout::PARTICLE),
+    ("PARTICLE_SCENE_DEPTH", layout::PARTICLE_SCENE_DEPTH),
+    ("PARTICLE_DEPTH_MS", layout::PARTICLE_DEPTH_MS),
+    ("ATMOSPHERE", layout::ATMOSPHERE),
+    ("EXPOSURE", layout::EXPOSURE),
+];
 
 /// The TypeScript constants for the replay loop, generated from the definitions above.
 pub fn typescript_constants() -> String {
@@ -2554,61 +2687,7 @@ pub fn typescript_constants() -> String {
                 ("SAMPLER", resource_kind::SAMPLER),
             ],
         ),
-        (
-            "LAYOUT",
-            &[
-                ("FRAME", layout::FRAME),
-                ("CULL", layout::CULL),
-                ("DRAWS", layout::DRAWS),
-                ("INSTANCES", layout::INSTANCES),
-                ("FINAL", layout::FINAL),
-                ("TEXTURES", layout::TEXTURES),
-                ("MATERIAL_MAPS", layout::MATERIAL_MAPS),
-                ("MATERIAL_MAPS_PARALLAX", layout::MATERIAL_MAPS_PARALLAX),
-                ("FRAME_PARALLAX", layout::FRAME_PARALLAX),
-                ("DEPTH", layout::DEPTH),
-                ("LIGHT_CLUSTERS", layout::LIGHT_CLUSTERS),
-                ("BLOOM", layout::BLOOM),
-                ("FINAL_BLOOM", layout::FINAL_BLOOM),
-                ("JOINTS", layout::JOINTS),
-                ("SKIN", layout::SKIN),
-                ("DEPTH_PYRAMID", layout::DEPTH_PYRAMID),
-                ("AO_DEPTH", layout::AO_DEPTH),
-                ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
-                ("AO", layout::AO),
-                ("BACKGROUND", layout::BACKGROUND),
-                ("INSTANCE_INDEX", layout::INSTANCE_INDEX),
-                ("EFFECT", layout::EFFECT),
-                ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
-                ("EFFECT_BLOOM", layout::EFFECT_BLOOM),
-                ("EFFECT_BLOOM_DEPTH_MS", layout::EFFECT_BLOOM_DEPTH_MS),
-                ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
-                ("FINAL_EFFECTS_DEPTH_MS", layout::FINAL_EFFECTS_DEPTH_MS),
-                ("VIEW_COPY", layout::VIEW_COPY),
-                ("ACCUMULATE", layout::ACCUMULATE),
-                ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
-                ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
-                ("MOTION_FRAME", layout::MOTION_FRAME),
-                ("SSR_REDUCE", layout::SSR_REDUCE),
-                ("SSR_TRACE", layout::SSR_TRACE),
-                ("WEIGHTED_COMPOSITE", layout::WEIGHTED_COMPOSITE),
-                ("WEIGHTED_DEPTH_MS", layout::WEIGHTED_DEPTH_MS),
-                ("TRANSMISSION_COPY_MS", layout::TRANSMISSION_COPY_MS),
-                ("CLUSTER_CULL", layout::CLUSTER_CULL),
-                ("SUBSURFACE_BLUR", layout::SUBSURFACE_BLUR),
-                ("SUBSURFACE_COMPOSITE", layout::SUBSURFACE_COMPOSITE),
-                ("SUBSURFACE_COMPOSITE_MS", layout::SUBSURFACE_COMPOSITE_MS),
-                ("DECAL_DEPTH", layout::DECAL_DEPTH),
-                ("DECAL_DEPTH_MS", layout::DECAL_DEPTH_MS),
-                ("DECAL_FRAME", layout::DECAL_FRAME),
-                ("MATERIAL_SCENE", layout::MATERIAL_SCENE),
-                ("PARTICLE", layout::PARTICLE),
-                ("PARTICLE_SCENE_DEPTH", layout::PARTICLE_SCENE_DEPTH),
-                ("PARTICLE_DEPTH_MS", layout::PARTICLE_DEPTH_MS),
-                ("ATMOSPHERE", layout::ATMOSPHERE),
-                ("EXPOSURE", layout::EXPOSURE),
-            ],
-        ),
+        ("LAYOUT", GENERATED_LAYOUTS),
         ("PERMUTATION", &permutation::NAMES),
         (
             "VERTEX",
@@ -3291,6 +3370,18 @@ mod tests {
         assert_eq!(commands[3].operands[9..11], [0, 24]);
         assert_eq!(f32::from_bits(commands[7].operands[5]), 1.0);
         assert_eq!(commands[6].operands[5..10], [5, 0, 0, 40, 1]);
+    }
+
+    /// The generated table names each bind group layout once: two layouts at one id make the
+    /// render worker refuse to start with E1405 when the pipelines are made.
+    #[test]
+    fn generated_layout_ids_are_unique() {
+        let mut ids = std::collections::BTreeMap::new();
+        for &(name, id) in GENERATED_LAYOUTS {
+            if let Some(first) = ids.insert(id, name) {
+                panic!("{name} and {first} both take layout {id}");
+            }
+        }
     }
 
     /// Keeps the generated TypeScript constants equal to the Rust definitions.

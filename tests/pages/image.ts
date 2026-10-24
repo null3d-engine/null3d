@@ -65,5 +65,8 @@ run('image', async () => {
 		width: frame.width,
 		height: frame.height,
 		pixels: toBase64(frame.pixels),
+		// The line that the two-step probe printed for the held frame, for the plan that asks for it,
+		// which keeps it in the run's result to read beside the other browsers' lines.
+		twoStep: (globalThis as { __null3dTwoStep?: string }).__null3dTwoStep ?? null,
 	};
 });

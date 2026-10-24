@@ -12,7 +12,8 @@
 // source, its manifest table and the library modules it imports. A change to one shader compiles
 // only that shader, and a change to a library module compiles only the entries that import it. The
 // cache is shared by every checkout and reused across a change of any WGSL file.
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { copyInPlace } from './atomic-files';
 import {
@@ -66,6 +67,8 @@ interface ModuleRecord {
 	modules: string;
 	/** The module files of the set, so a run that must not build can name the files it lacks. */
 	names?: readonly string[];
+	/** The hash of each module file's name, size and time of change, as `moduleStats` gives it. */
+	stats?: string;
 }
 
 /**
@@ -242,10 +245,38 @@ function readRecord(root: string): ModuleRecord | null {
 	}
 }
 
-/** True when the modules on disk are the ones the last build wrote from these inputs. */
+/**
+ * A hash of each module file's name, size and time of change, to the second, which a copy that keeps
+ * times, such as CI's archive, keeps too. Reading it takes a listing and a stat of each file, where
+ * `moduleHash` reads every byte of the set, gigabytes of it.
+ */
+function moduleStats(root: string): string {
+	const folder = join(root, MODULE_DIR);
+	const names = existsSync(folder) ? readdirSync(folder).filter(isShaderModule).sort() : [];
+	return hashOf(
+		names
+			.map((name) => {
+				const stat = statSync(join(folder, name));
+				return `${name}\t${stat.size}\t${Math.floor(stat.mtimeMs / 1000)}`;
+			})
+			.join('\n'),
+	);
+}
+
+/**
+ * True when the modules on disk are the ones the last build wrote from these inputs. When every
+ * module file has the size and time of change that the record keeps, the set is the one the record
+ * hashed, and no byte is read. Otherwise the bytes decide, and a set whose bytes still match keeps
+ * its files' new sizes and times in the record, so the next check reads none.
+ */
 function isFresh(root: string, inputs: string): boolean {
 	const record = readRecord(root);
-	return record?.inputs === inputs && record.modules === moduleHash(root);
+	if (record?.inputs !== inputs) return false;
+	const stats = moduleStats(root);
+	if (record.stats === stats) return true;
+	if (record.modules !== moduleHash(root)) return false;
+	writeRecord(root, record);
+	return true;
 }
 
 /**
@@ -292,7 +323,7 @@ function staleSetMessage(root: string): string {
  * in the checkout, because two shader builds from two checkouts at once leave each of them at about
  * zero processor time and neither finishes.
  */
-function withLock(root: string, work: () => void): void {
+function withLock(work: () => void): void {
 	const release = acquireLock(join(cacheRoot(), 'shader-modules.lock'));
 	try {
 		work();
@@ -307,7 +338,7 @@ function withLock(root: string, work: () => void): void {
  * build of a checkout; a build that reuses most entries is quick and says nothing.
  */
 export function announceColdBuild(entries: string): void {
-	if (existsSync(entries) && readdirSync(entries).length > 0) return;
+	if (entryFiles(entries).length > 0) return;
 	console.error(
 		`The shader modules are not built in this checkout yet. The first build compiles every shader and can take a few minutes; it shows how far it has got. Later builds use the cache in ${entryCacheDir()}, and a change to one shader rebuilds only that shader.`,
 	);
@@ -321,39 +352,62 @@ function entryFolder(root: string, stamp = compilerStamp(root)): string {
 	return join(entryCacheDir(), stamp);
 }
 
+/** The program that writes the modules, as cargo names it on this system. */
+const PROGRAM = process.platform === 'win32' ? 'shader-build.exe' : 'shader-build';
+
+/** The folder of a compiler's per-entry cache that keeps the program of that compiler. */
+const PROGRAM_FOLDER = 'program';
+
+/** Where the per-entry cache folder `entries` keeps the program of its compiler. */
+function keptProgram(entries: string): string {
+	return join(entries, PROGRAM_FOLDER, PROGRAM);
+}
+
 /**
- * Runs the shader build with `extra` arguments, with its output on standard error so that callers
- * keep a clean output. The shader profile builds the crate's own parsing and validation code
- * optimized, which the development profile leaves unoptimized.
+ * The program that writes the modules. With the per-entry cache on, the program that the
+ * compiler's folder of that cache keeps serves, and a program that cargo builds goes there. The
+ * compiler's stamp covers every source of the program, so a kept program is the one that cargo
+ * would build, and every checkout and CI job of the same compiler skips the compile. The shader
+ * profile builds the crate's own parsing and validation code optimized, which the development
+ * profile leaves unoptimized.
  */
-function runShaderBuild(root: string, extra: readonly string[] = []): void {
-	const args = [
-		'run',
-		'--quiet',
-		'--profile',
-		'shader',
-		'-p',
-		'null3d-shaders',
-		'--bin',
-		'shader-build',
-		'--',
-	];
-	const buildArgs = ['--root', root, ...extra];
-	if (shaderCacheOff()) {
-		buildArgs.push('--no-cache');
-	} else {
-		const stamp = compilerStamp(root);
-		buildArgs.push('--cache', entryFolder(root, stamp), '--stamp', stamp);
-		announceColdBuild(entryFolder(root, stamp));
-	}
+function shaderProgram(root: string, entries?: string): string {
+	const kept = entries === undefined ? undefined : keptProgram(entries);
+	if (kept !== undefined && existsSync(kept)) return kept;
 	// runCargo names the checkout's own target folder, so this build never writes another's.
-	const { status, error } = runCargo(root, [...args, ...buildArgs], {
-		stdio: ['ignore', 2, 2],
-	});
+	const { status, error } = runCargo(
+		root,
+		['build', '--quiet', '--profile', 'shader', '-p', 'null3d-shaders', '--bin', 'shader-build'],
+		{ stdio: ['ignore', 2, 2] },
+	);
 	if (error)
 		throw new Error(
 			`could not run cargo (${error.message}). The shader modules are not in git, and building them needs the Rust toolchain that rust-toolchain.toml names.`,
 		);
+	if (status !== 0) throw new Error('the shader build did not compile; its output is above');
+	const built = join(root, 'target', 'shader', PROGRAM);
+	if (kept !== undefined) copyInPlace(built, kept);
+	return built;
+}
+
+/**
+ * Runs the shader build with `extra` arguments, with its output on standard error so that callers
+ * keep a clean output.
+ */
+function runShaderBuild(root: string, extra: readonly string[] = []): void {
+	const buildArgs = ['--root', root, ...extra];
+	let entries: string | undefined;
+	if (shaderCacheOff()) {
+		buildArgs.push('--no-cache');
+	} else {
+		const stamp = compilerStamp(root);
+		entries = entryFolder(root, stamp);
+		buildArgs.push('--cache', entries, '--stamp', stamp);
+		announceColdBuild(entries);
+	}
+	const program = shaderProgram(root, entries);
+	const { status, error } = spawnSync(program, buildArgs, { cwd: root, stdio: ['ignore', 2, 2] });
+	if (error) throw new Error(`could not run the shader build ${program} (${error.message})`);
 	if (status !== 0) throw new Error('the shader build failed; its output is above');
 }
 
@@ -365,11 +419,13 @@ function entryFiles(folder: string): string[] {
 /**
  * Compiles shard `shard` of the manifest's entries, written `i/n` with `i` from 0, into the
  * per-entry cache, under the same folder and compiler stamp that a normal build reads, and writes
- * no module. The split keeps each entry whole, so a later build finds the entry under the key it
- * looks for, and compiles none of the entries that the shards stored. The entries that the cache
+ * no module. The split cuts an entry that costs more than an even share into parts, which the cache
+ * keeps beside the entry's key, so a later build joins a complete set of them into the entry, and
+ * compiles none of the entries that the shards stored. The entries that the cache
  * already held are reused, not compiled. When `out` names a folder, the entries that this run
  * stored are copied there, and none that the cache held before, so a CI job can upload only its
- * new entries. Returns their file names.
+ * new entries. The first shard also copies the program of its compiler there. Returns the entries'
+ * file names.
  */
 export function buildEntriesShard(root: string, shard: string, out?: string): string[] {
 	if (shaderCacheOff())
@@ -383,6 +439,9 @@ export function buildEntriesShard(root: string, shard: string, out?: string): st
 	if (out !== undefined) {
 		mkdirSync(out, { recursive: true });
 		for (const name of stored) copyInPlace(join(folder, name), join(out, name));
+		// The first shard also hands over the program, so the job that joins the entries runs it
+		// without compiling it again.
+		if (shard.startsWith('0/')) copyInPlace(keptProgram(folder), keptProgram(out));
 	}
 	return stored;
 }
@@ -394,8 +453,10 @@ function moduleNames(root: string): string[] {
 }
 
 /** Writes the record of a build, in place. */
+/** Writes the record of the modules on disk, with their files' sizes and times as they are now. */
 function writeRecord(root: string, record: ModuleRecord): void {
-	writeFileAtomic(join(root, RECORD), `${JSON.stringify(record, null, '\t')}\n`);
+	const kept = { ...record, stats: moduleStats(root) };
+	writeFileAtomic(join(root, RECORD), `${JSON.stringify(kept, null, '\t')}\n`);
 }
 
 /**
@@ -474,8 +535,13 @@ export function ensureShaderModules(root: string): boolean {
 	const inputs = inputHash(root);
 	if (isFresh(root, inputs)) return false;
 	if (freshShadersRequired()) throw new Error(staleSetMessage(root));
+	// A set that the shared cache holds needs no build, so it is copied without the lock, which
+	// keeps two builds from running at once: a checkout whose set is cached never waits for
+	// another checkout's build. Each module takes its place whole, and a set that lacks its record
+	// is a miss, so a copy beside a build that stores the same set reads the whole set or nothing.
+	if (restoreFromCache(root, inputs)) return false;
 	let built = false;
-	withLock(root, () => {
+	withLock(() => {
 		// Another process may have built them, or another checkout may hold them, while this one waited.
 		if (isFresh(root, inputs)) return;
 		if (restoreFromCache(root, inputs)) return;

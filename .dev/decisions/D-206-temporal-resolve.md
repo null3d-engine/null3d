@@ -1,8 +1,8 @@
 # D-206: The temporal resolve's second look, and the techniques that waited on it
 
-Status: decided on 21 October 2026 by task M3-A11 from its own measurements. [D-179](D-179-technique-rulings-2026-10-15.md) leaves TAA to this task, and leaves the many-lights prototype (M3-F3) and the temporal upscaler (M3-F10) to the same answer. The owner may change the ruling. Date: 2026-10-21. Task: M3-A11.
+Status: decided on 21 October 2026 by task M3-A11 from its own measurements, and amended on 24 October 2026. The two faults that refused the resolve are fixed, and the engine's own paths pass on both GPU paths with MSAA and one sample. The quality bar of D-129 was then measured on both paths at each preset, and the resolve did not beat the presets, so it does not ship. [D-179](D-179-technique-rulings-2026-10-15.md) leaves TAA to this task, and leaves the many-lights prototype (M3-F3) and the temporal upscaler (M3-F10) to the same answer. The owner may change the ruling. Date: 2026-10-21, amended 2026-10-24. Task: M3-A11, then the capture fix, then the quality measurement.
 
-Summary: The temporal resolve does not ship for 0.1.0. Its prototype draws the scene live on WebGPU, but a captured frame is black, which breaks the image tests, hold mode and the command-line screenshot. A live toggle on WebGPU also destroys a motion or depth target while a submit still uses it. Its cost in the Creek is 0.3 to 1.3 ms on WebGPU and 2.8 to 9.1 ms on WebGL2 at 1080p. The quality figures of D-129 could not be measured, because the captured frames were black. TAA is dropped, not deferred, and with it the shipping of many lights and the temporal upscaler.
+Summary: The temporal resolve does not ship for 0.1.0. Its two engine-path faults are fixed: a captured frame holds the live image, and the setting turns off and on while the engine runs. The quality bar of D-129 is now measured on both GPU paths at every preset. The resolve adds temporal noise to still thin lines, smears grass that moves by itself, and draws softer and farther from a 64-sample reference than the presets. It costs about 1 ms on WebGPU in light scenes, and 9.1 ms in the Creek on WebGL2. TAA is dropped, not deferred, and with it the shipping of many lights and the temporal upscaler.
 
 ## Question
 
@@ -93,3 +93,137 @@ What it did not show, and why the answer is no:
 - **Three.js mapping:** the anti-aliasing rows say that TAA is not planned and that `TRAANode`, `TAAUNode` and `TemporalReprojectNode` have no equivalent. The generated porting guide and the porting skill follow.
 - **D-129** carries an addendum that points here. **D-179's** rulings 15, 16 and 24 are settled.
 - **A later attempt** starts from three faults before it measures anything: the captured frame, the live toggle on WebGPU, and the quality bar against the material that D-129 defined.
+
+## Addendum, 24 October 2026: the captured frame and the live toggle are fixed
+
+The two faults of this record are fixed, and the engine's own paths pass. The quality bar of D-129 is still unmeasured, and the cost figures stand, so the resolve is reopened for measurement, not yet shipped.
+
+### The cause
+
+The sketch thread records each frame's draw list in one of two slots, by the frame's parity, and the thread that draws replays that slot. A setting that changes the render graph changes the plan's texture list, so the plan makes some targets again. One parity's slot then still holds a list recorded under the older plan while the other parity already holds the newer one. The older list was replayed after the newer plan had made its targets again, so its passes read targets that the plan had cleared or reused. In a capture that is the scene color's clear color and alpha; in the live toggle it was a target, such as the motion target or the scene depth, that the plan had just destroyed in flight.
+
+### The fix
+
+The engine now publishes the plan's texture generation beside each parity's list (`planEpoch`). The frame loop and a capture replay a list only while its generation equals the plan's newest. A list from an older generation is taken without drawing, as the engine already does for a list from an older GPU device, and the canvas keeps its last image until the sketch records that parity again. The engine no longer submits any list recorded for a plan it has replaced.
+
+### The proof
+
+The prototype's code was not kept, as this record's "no" landed the record alone. The fix task rebuilt it from the resolve shader kept with the task and this record's description, on the engine of 24 October 2026. It then ran five browser tests in Chrome on the Mac's GPU:
+
+| Test | Path | Samples | Result |
+| --- | --- | --- | --- |
+| Captured frame holds the live canvas | WebGPU | MSAA | pass: mean distance 0.00 levels |
+| Captured frame holds the live canvas | WebGPU | one sample | pass: mean distance 0.00 levels |
+| Captured frame holds the live canvas | WebGL2 | MSAA | pass: mean distance 0.00 levels |
+| Captured frame holds the live canvas | WebGL2 | one sample | pass: mean distance 0.00 levels |
+| Captured frame holds the live canvas, resolve off | WebGPU | MSAA | pass |
+
+Each test compares the pixels that `captureFrame` read with a screenshot of the live canvas, requires neither to be black, and requires the mean distance of the two to stay under 16 levels of 255. The four resolve-on tests also turn the setting off and on again six times while the engine runs, and each reports no failure: no E1305. The captured frames are pixel-identical to the live canvas.
+
+With the guard removed, the rebuilt prototype still captured correctly on this base, so a later engine change may already hide the original timing. The guard is what makes the result hold by construction, and a unit test (`waits for a list that the plan that draws now recorded, after its targets were made again`) keeps it.
+
+### What stands
+
+- **Cost:** the figures above stand. On WebGL2 at Medium the resolve still costs 9.1 ms, far above what a phone can pay.
+- **Quality:** the shimmer, smear and sharpness figures of D-129 are still unmeasured. The engine paths no longer block them.
+- **The decision:** TAA, the many lights and the temporal upscaler remain unshipped until the quality bar passes and the owner rules. This addendum reverses the refusal's engine-path clause only.
+
+## Addendum, 24 October 2026: the quality bar is measured, and the resolve does not ship
+
+The engine-path clause passes. This addendum measures the rest of the rule: shimmer, smear, sharpness and error against a 64-sample reference, with the camera still and moving, on both GPU paths at each preset. The resolve does not beat what the presets draw today, so it does not ship.
+
+### How the figures were made
+
+The method is D-129's. Two scenes were drawn:
+
+- **Thin geometry:** a near picket fence of 3 cm pickets, a far fence of 2 cm pickets that are narrower than a pixel, three 1 cm wires, and a line mesh one pixel wide. Two boxes move by themselves when the camera does not.
+- **Grass:** 6,000 tufts of curved blades on a bank, with rocks. Each blade bends in its vertex shader from the sketch's frame number.
+
+Each run drew 16 consecutive frames at 960 x 540, frames 12 to 27, at four frames a second so each capture finishes before the next frame. The camera held still, orbited at 0.1 radians per second, or orbited at 0.3. The reference was the same 16 frames at 3840 x 2160 with MSAA 4x, which is 64 samples per pixel, shrunk by averaging 4 x 4 blocks in linear light. Each preset drew its own reference, so its shadow and texture quality could not count as error. Every motion came from the frame number, not the clock, so every run drew the same pictures. Each sequence's record shows the frames consecutive, and a skipped frame failed the run.
+
+The figures are in 8-bit levels of the luma of the displayed color, over the 15 steps between the 16 frames. Shimmer is the change beyond the reference's. Smear is true change that the frames lack. Error is the mean distance from the reference. Sharpness is the frames' mean gradient over the reference's, where 1 is as sharp. Still is the frame-to-frame change where nothing but the resolve moves. The resolve ran on top of each preset's own anti-aliasing: FXAA at Low, and MSAA 4x from Medium up. WebGL2 caps its preset at Medium, so its High and Ultra rows drew at Medium.
+
+Cost ran at 1920 x 1080, render scale 1, at each preset, with the resolve off and on in turns: three rounds of 2 seconds each side, and the medians of GPU time per frame. The Mac had no other heavy job while a figure was taken, and the loads of 4.8 to 8.5 are on each run's line.
+
+### The thin scene, WebGPU
+
+Shimmer / smear / sharpness / error with the camera on its slow orbit, and the still camera's change. The left value is the preset alone, and the right value is with the resolve:
+
+| Preset | Slow orbit, preset | Slow orbit, resolve | Still change |
+| --- | --- | --- | --- |
+| Low | 1.690 / 0.707 / 1.581 / 3.189 | 3.021 / 0.796 / 1.518 / 3.837 | 0.000 to 4.142 |
+| Medium | 0.689 / 0.294 / 1.360 / 1.758 | 1.989 / 0.832 / 1.241 / 3.053 | 0.000 to 2.663 |
+| High | 0.736 / 0.309 / 1.364 / 1.892 | 2.044 / 0.844 / 1.245 / 3.176 | 0.000 to 2.704 |
+| Ultra | 0.775 / 0.312 / 1.374 / 1.934 | 2.055 / 0.869 / 1.225 / 3.259 | 0.000 to 2.720 |
+
+The brisk orbit tells the same story. At High, the preset's 1.156 / 0.359 / 1.365 / 1.886 became 2.315 / 1.280 / 1.252 / 3.161. The resolve is worse on every measure at every tier.
+
+### The grass bank, WebGPU
+
+| Preset | Slow orbit, preset | Slow orbit, resolve | Still change |
+| --- | --- | --- | --- |
+| Low | 0.844 / 0.331 / 1.270 / 1.285 | 0.865 / 0.524 / 1.052 / 1.873 | 0.232 to 1.420 |
+| Medium | 0.481 / 0.208 / 1.192 / 0.815 | 0.625 / 0.601 / 0.931 / 1.704 | 0.198 to 1.076 |
+| High | 0.947 / 0.397 / 1.138 / 1.614 | 0.843 / 0.700 / 0.858 / 2.232 | 0.402 to 1.477 |
+| Ultra | 1.149 / 0.484 / 1.117 / 2.035 | 0.950 / 0.850 / 0.812 / 2.668 | 0.507 to 1.694 |
+
+The resolve cuts shimmer only at High and Ultra with the camera moving: 11% at High and 17% at Ultra. At Low and Medium it adds shimmer. It smears 58% to 189% more, draws 17% to 27% softer, and sits farther from the reference in every case. With a still camera it adds 0.9 to 1.2 levels of change where the grass's own wind is the only motion.
+
+### WebGL2
+
+The path caps at Medium, so these rows cover both tiers:
+
+| Scene | Preset | Slow orbit, preset | Slow orbit, resolve | Still change |
+| --- | --- | --- | --- | --- |
+| Thin | Low | 1.693 / 0.708 / 1.583 / 3.194 | 3.114 / 0.712 / 1.527 / 3.752 | 0.000 to 4.087 |
+| Thin | Medium | 0.715 / 0.306 / 1.357 / 1.856 | 2.351 / 0.653 / 1.360 / 3.253 | 0.000 to 2.989 |
+| Grass | Low | 0.842 / 0.331 / 1.292 / 1.270 | 0.906 / 0.487 / 1.123 / 1.861 | 0.231 to 1.465 |
+| Grass | Medium | 0.784 / 0.319 / 1.195 / 1.277 | 0.782 / 0.600 / 0.946 / 1.931 | 0.324 to 1.337 |
+
+The path's order matches WebGPU's.
+
+### Cost
+
+The GPU time per frame that the resolve adds, in milliseconds, in each scene at 1920 x 1080:
+
+| Scene | Preset | WebGPU | WebGL2 |
+| --- | --- | --- | --- |
+| Thin | Low | 0.98 | 0.84 |
+| Thin | Medium | 1.18 | 1.27 |
+| Thin | High | 1.18 | 1.25, drawn at Medium |
+| Thin | Ultra | 1.18 | 0.33, drawn at Medium |
+| Grass | Low | 0.98 | 0.77 |
+| Grass | Medium | 1.18 | 0.41 |
+| Grass | High | 1.25 | 0.74, drawn at Medium |
+| Grass | Ultra | 1.18 | 0.80, drawn at Medium |
+
+These scenes are light, and their WebGL2 figures vary with the passes that write depth. The Creek's 9.1 ms at Medium stands, and it is the figure that a phone cannot pay. On WebGPU the cost is about 1 ms, which a shipping feature could pay.
+
+### What failed, and by how much
+
+- **Shimmer:** the resolve adds it on the thin scene at every tier and camera. With a still camera the presets change nothing, and the resolve changes 2.66 to 4.14 levels each frame. On the slow orbit it adds 1.8 to 2.9 times the presets' shimmer. On the grass it cuts 11% to 17% at High and Ultra with a moving camera, and adds shimmer at Low and Medium. D-129's bar wanted the large cuts that motion vectors were to bring.
+- **Smear:** it rises in every moving case. The thin scene's High row goes from 0.309 to 0.844 on the slow orbit, and the grass's Medium row from 0.208 to 0.601. The grass's wind is a vertex-shader offset, and the per-object motion target does not carry it, so the resolve reads the wrong history where the blades bend. The thin scene's own moving boxes are covered by the motion target, but the geometry's sub-pixel detail still smears.
+- **Sharpness:** 0.81 to 1.25 of the reference against the presets' 1.11 to 1.64. The grass loses 15% to 25% of its sharpness.
+- **Error:** worse in every one of the 24 thin cases and every grass case. At High on the grass's slow orbit it is 2.23 against 1.61, and on the thin scene 3.18 against 1.89.
+- **Still scenes:** the crawl that D-129 refused is still there. On the thin scene the presets draw exactly the same image every frame, and the resolve changes it by 2.7 levels at High.
+
+### Faults found and fixed while measuring
+
+- **The history was sampled in the wrong place.** Each frame's projection moves by a part of a pixel, and the history's pixels hold the surfaces that the last frame's offset put there. The resolve took this frame's offset off the pixel and did not add the last frame's. It read the history a fraction of a pixel from its surface, in a new direction each frame. The frame now carries the last frame's offset and moves its sample by it. The fix cut the thin scene's still change at High from 2.88 to 2.70 levels, but did not remove the crawl.
+- **The motion target does not carry a custom material's vertex wind.** D-206's first description said the grass's wind was among the motion vectors. It is not: the motion pass draws the mesh's rest positions, instances, skin and morph, and not the material's vertex offset. The grass's smear is the result. A later attempt needs the motion pass to run the same vertex offset for this frame and the last, or a wind that moves instances instead.
+- **The engine paths still pass.** The capture proof (`tests/image/taa-capture.spec.ts`) passes on both paths with MSAA and one sample, and the setting turns off and on while the engine runs.
+
+### Decision
+
+1. **The temporal resolve does not ship.** It loses on shimmer, smear, sharpness and error against what the presets draw today, at every tier on both paths. The presets keep FXAA on Low and MSAA 4x from Medium up, and the preset table is unchanged.
+2. **TAA is dropped, not deferred.** The mapping says that null3D has no temporal anti-aliasing and that no version plans it. The three.js rows follow.
+3. **M3-F3 and M3-F10 stay dropped.** The many-lights prototype and the temporal upscaler wait on a resolve that does not ship.
+4. **The prototype stays behind the internal setting.** It is off on every preset, so it costs nothing while off. The measurement page and the capture proof stay with it, so a later attempt can repeat the figures.
+5. **The capture and plan-generation fixes stay.** They serve every feature that records draw lists, not only the resolve.
+
+### What a later attempt needs
+
+1. Motion for vertex-shader wind, either in the motion pass or by moving wind to instance transforms.
+2. A rejection that does not drop the history at sub-pixel edges, so still thin lines settle. The neighborhood clamp alone holds them better, but the depth rejection that replaces it is what crawls.
+3. A sharper resolve: the grass loses a fifth of its sharpness, and the preset's MSAA is already sharp.
+4. Figures from phones, where the WebGL2 cost is the worry.

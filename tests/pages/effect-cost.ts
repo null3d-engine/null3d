@@ -1,7 +1,7 @@
 // Measures what an effect costs on this device: ?effect=bloom (the default), ?effect=ao,
 // ?effect=dof, ?effect=subsurface, ?effect=exposure, ?effect=fog, ?effect=contact (the sun's contact
 // shadows, with ?steps= steps per march, 8 by default), ?effect=sky, ?effect=effects, ?effect=tone,
-// ?effect=vignette, ?effect=sharpen or ?effect=motion names it. The effects effect adds ?count=
+// ?effect=vignette, ?effect=sharpen, ?effect=lens or ?effect=motion names it. The effects effect adds ?count=
 // custom effects, 4 by default, to bloom's scene. Motion measures the motion vectors with their
 // debug view, so it runs in development builds only. ?effect=area measures ?count= area lights over the light scenes' floor,
 // 4 by default: rectangle lights, or ?kind=point or ?kind=tube lights, and ?image gives the rectangle
@@ -62,6 +62,7 @@ const SKETCHES = {
 	sky: './sketches/sky-cost-sketch.ts',
 	vignette: './sketches/vignette-cost-sketch.ts',
 	sharpen: './sketches/sharpen-cost-sketch.ts',
+	lens: './sketches/lens-cost-sketch.ts',
 } as const;
 
 type Effect = keyof typeof SKETCHES;
@@ -114,9 +115,12 @@ run('effect-cost', async () => {
 	await engine.firstFrame;
 	const settled = () =>
 		new Promise<void>((resolve) => {
-			const off = engine.onSketchMessage((name) => {
+			// A message that the sketch sent before this handler waited is handed over as this call
+			// registers it, so the stop call must already exist when the handler first runs.
+			let stop: () => void = () => {};
+			stop = engine.onSketchMessage((name) => {
 				if (name !== 'settled') return;
-				off();
+				stop();
 				resolve();
 			});
 		});
@@ -194,6 +198,9 @@ run('effect-cost', async () => {
 		devicePixelRatio,
 		off,
 		on,
+		// The line that the two-step probe printed, for the plan that asks for it, which keeps it in
+		// the run's result to read beside the other browsers' lines.
+		twoStep: (globalThis as { __null3dTwoStep?: string }).__null3dTwoStep ?? null,
 		...(glTiming && {
 			glTiming: {
 				frames: glFrames,
