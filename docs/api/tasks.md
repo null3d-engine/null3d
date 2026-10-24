@@ -19,7 +19,7 @@ import { runTask, type Task } from '@null3d/engine';
 
 export const SORT_TASK: Task = {
   name: 'splat-sort',
-  script: new URL('./sort-task.js', import.meta.url),
+  script: new URL('./sort-task.ts', import.meta.url),
   wasm: [
     { name: 'splat', url: new URL('./splat.wasm', import.meta.url), what: 'the splat sorter' },
   ],
@@ -44,6 +44,8 @@ export function run(input, wasm) {
 ```
 
 The engine imports the module once in each worker that runs the task, so the module keeps its state between tasks. Each WebAssembly file compiles once per page, and the engine sends the compiled module to the workers.
+
+The build bundles the module that the task names, so it may be TypeScript with its imports. A worker imports it as it does any module, and raw TypeScript would not parse there. The engine's Vite plugin emits the module as its own chunk for that reason.
 
 Throw a `TaskLoadError` when the module's code or WebAssembly cannot start. The engine then reports the failure at the load stage, whatever the task's input was.
 

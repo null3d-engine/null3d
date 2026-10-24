@@ -3,8 +3,9 @@
 // the few places that allocate because the browser does each have a budget below. It opens the
 // null3d S1 page in Chrome, lets the browser optimize the frame code, attaches the heap profiler to
 // both workers through Chrome's debugging protocol, and samples allocations twice, a few seconds
-// each. It prints the bytes per frame of every place that allocated, and judges each place by the
-// sample where it allocated least, so an event that happens once fails no place. In each sample it
+// each. It prints the bytes per frame of every place that allocated, or the bytes per call of the
+// places whose worker counts calls, and judges each place by the sample where it allocated least,
+// so an event that happens once fails no place. In each sample it
 // sets aside one burst of objects per place: the browser makes one when it installs code that it
 // has just optimized, in whichever callback runs first, even an empty one. From the page's
 // start to the end of the samples, it moves the mouse over the canvas and presses a key and the
@@ -81,7 +82,9 @@
 // uniform every frame, and keeps the pass on with `render.setPassEnabled` in every frame.
 // `--terrain` puts the terrain add-on's ground under S1, whose quadtree
 // follows the orbiting camera in every frame. `--impostors` puts a field of the impostors add-on's
-// cards around S1, which pick their views from the camera in every frame. `--inertial` makes the
+// cards around S1, which pick their views from the camera in every frame. `--splats` puts a cloud
+// of the splats add-on's Gaussians above S1, whose chunks a job worker selects for the camera's
+// position in every frame, through the engine's public task hook. `--inertial` makes the
 // animated characters that play one clip switch clips by inertial transitions, with 64 characters
 // unless `--animated` names a count. `--calls` makes, every frame, the
 // calls whose docs promise no allocation and that no other switch makes: a raycast, a mesh's vertex
@@ -155,6 +158,7 @@
 //   bun run bench:allocation --atmosphere --gpu webgl2
 //   bun run bench:allocation --terrain --gpu webgl2
 //   bun run bench:allocation --impostors --gpu webgl2
+//   bun run bench:allocation --splats --gpu webgl2
 //   bun run bench:allocation --inertial --gpu webgl2
 //   bun run bench:allocation --time-of-day
 //   bun run bench:allocation --calls --gpu webgl2
@@ -165,17 +169,18 @@ import {
 	launchChromium,
 	SWIFTSHADER_ARGS,
 } from '../packages/cli/src/browser.js';
-import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
-import { DEBUG_PORT } from '../tests/lib/server.ts';
+import { HeapSampler } from '../packages/cli/src/devtools.js';
 import {
 	countIn,
-	type HeapProfile,
 	type ProfileNode,
+	perCall,
 	profilePlaces,
 	type Sample,
 	steadyPlaces,
 	totalSize,
-} from './lib/allocation';
+} from '../packages/cli/src/heap-profile.js';
+import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
+import { DEBUG_PORT } from '../tests/lib/server.ts';
 import { attachWorkers, DevTools, evaluate, pagesAt, sleep, within } from './lib/devtools';
 import { pagePath } from './lib/parity';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
@@ -447,6 +452,42 @@ const OTHER_BUDGET = 4;
 const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 24 };
 
 /**
+ * Places on the sketch worker that allocate at each task call rather than at each frame, and the
+ * bytes each may allocate per call. A task's input and answer cross to a job worker and back as
+ * messages, and its promise settles between frames, so the engine's loader makes the browser's
+ * message and promise objects at each call, in `shared/tasks.ts`. The add-on's own code makes one
+ * promise for its `then`, which is `choose` here. A slow GPU steps fewer frames per task call, as on
+ * SwiftShader, so judging per frame would weigh one call many times; the check counts the thread's
+ * tasks (`__null3dTaskCalls`) and judges these places per call. The frame step itself carries the
+ * ask on SwiftShader, which keeps its sketch in the browser's middle tier: the profiler then charges
+ * a call's promise objects to the inlined frame step, `pose`, where the Mac charges them to the
+ * loader's places. So `pose` is judged per call here too. The figures come from the Mac's WebGL2 run
+ * and SwiftShader runs on 24 October 2026 with `--splats` and the task asked about once a frame,
+ * with room above them. The add-on's frame step makes no array and no number object.
+ */
+const TASK_CALL_BUDGETS: Readonly<Record<string, number>> = {
+	'pose null3d/s1-sketch.ts': 128,
+	'run shared/tasks.ts': 560,
+	'n.onmessage shared/tasks.ts': 240,
+	'Promise (built-in)': 160,
+	'delete (built-in)': 130,
+	'leastBusy shared/tasks.ts': 100,
+	'choose src/system.ts': 64,
+	'select src/select.ts': 64,
+	'runTask shared/run-task.ts': 64,
+	'(anonymous) shared/tasks.ts': 48,
+	'(JS)': 48,
+	'(V8 API)': 32,
+	'values (built-in)': 16,
+	'next (built-in)': 16,
+};
+
+/** The budget of `place` per call in `worker`, or undefined where the worker judges it per frame. */
+function callBudgetFor(worker: string, place: string): number | undefined {
+	return worker === 'render-worker' ? CALL_BUDGETS[place] : TASK_CALL_BUDGETS[place];
+}
+
+/**
  * The budget of `place` in `worker` for a run: the tables' figure, SwiftShader's own where it has
  * one, plus what the run's switches and scene add. A run on SwiftShader judges a place by the
  * SwiftShader figure when the table names one.
@@ -540,6 +581,8 @@ interface PageSwitch {
 	flag: string;
 	/** What the flag adds to the page's address. */
 	query: string;
+	/** What the flag adds to the page's address on SwiftShader, where a smaller scene runs. */
+	swiftShaderQuery?: string;
 	/** The render passes and compute passes that it adds to each WebGPU frame, if any. */
 	passes?: number;
 	/** What it allocates on top of `BUDGETS` beyond its passes, by place. */
@@ -570,6 +613,9 @@ interface PageSwitch {
  *   the copy of the opaque colors, with the passes of the copy's mip levels;
  * - `--particles`: the pass that copies the opaque depth for the soft particles;
  * - `--decals`: the decal pass;
+ * - `--splats`: the pass that copies the opaque depth, which the splats' soft mix with meshes reads.
+ *   On SwiftShader the switch names a smaller cloud, 12,000 splats of which 4,800 draw, because
+ *   the software renderer draws the blended cards slowly. The selection's code is the same.
  * - `--passes`: the full-screen pass and the effect's pass;
  * - `--prepass`: the depth prepass.
  */
@@ -631,6 +677,7 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 	{ flag: '--passes', query: '&passes', passes: 2 },
 	{ flag: '--terrain', query: '&terrain' },
 	{ flag: '--impostors', query: '&impostors' },
+	{ flag: '--splats', query: '&splats', swiftShaderQuery: '&splats=12000', passes: 1 },
 	{ flag: '--inertial', query: '&inertial' },
 	{ flag: '--calls', query: '&calls', budgets: CALLS_BUDGETS },
 	{ flag: '--time-of-day', query: '&timeOfDay', budgets: DAY_BUDGETS },
@@ -810,7 +857,7 @@ async function main(): Promise<void> {
 		// `?keep` runs the scene as a timed run draws it until the page closes, with no measurement of
 		// the page's own, so no timer of the page's runs and the engine never stops before the samples
 		// end. A demo would add the playable controls and the stats overlay of S5 and S6.
-		const query = `keep&n=${n}${counts}${chosen.map((choice) => choice.query).join('')}${swiftShader ? `&frames&maxPixelRatio=${SWIFTSHADER_PIXEL_RATIO}` : ''}`;
+		const query = `keep&n=${n}${counts}${chosen.map((choice) => (swiftShader ? (choice.swiftShaderQuery ?? choice.query) : choice.query)).join('')}${swiftShader ? `&frames&maxPixelRatio=${SWIFTSHADER_PIXEL_RATIO}` : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts
@@ -859,6 +906,20 @@ async function main(): Promise<void> {
 				'globalThis.__null3dBrowserCalls?.() ?? null',
 			).catch(() => null);
 		};
+		/**
+		 * The sketch worker's count of the tasks that it has run so far, or null where the engine
+		 * gives none. The check judges a task's own places per call, so a frame that runs many tasks,
+		 * as on SwiftShader, does not weigh them many times.
+		 */
+		const tasksSoFar = async (): Promise<number | null> => {
+			const session = sessions.get('sketch-worker');
+			if (!session) return null;
+			return evaluate<number | null>(
+				devtools,
+				session,
+				'globalThis.__null3dTaskCalls?.() ?? null',
+			).catch(() => null);
+		};
 		const devtools = await DevTools.connect(DEBUG_PORT);
 		const [target] = await pagesAt(devtools, url);
 		if (!target) throw new Error(`no page target for ${url}`);
@@ -881,59 +942,36 @@ async function main(): Promise<void> {
 		console.log(
 			`Warmed up: ${await framesSoFar()} frames in ${((performance.now() - warmupStart) / 1000).toFixed(0)} s`,
 		);
-		for (const [name, sessionId] of sessions)
-			await within(
-				devtools.send('HeapProfiler.enable', {}, sessionId),
-				STEP_MS,
-				`enabling the heap profiler in the ${name}`,
-			);
+		const sampler = new HeapSampler(devtools, sessions);
+		await sampler.enable();
 		const stepsBefore = driven.steps;
 		const samples = new Map<string, Sample[]>();
 		const bytes = new Map<string, number>();
 		let frames = 0;
 		for (let k = 0; k < SAMPLES; k++) {
-			for (const [name, sessionId] of sessions) {
-				// The profiler keeps the samples of objects that garbage collection frees, which
-				// per-frame garbage is; by default it reports only objects still alive when sampling
-				// stops.
-				await within(
-					devtools.send(
-						'HeapProfiler.startSampling',
-						{
-							samplingInterval: SAMPLING_INTERVAL,
-							includeObjectsCollectedByMajorGC: true,
-							includeObjectsCollectedByMinorGC: true,
-						},
-						sessionId,
-					),
-					STEP_MS,
-					`starting sample ${k + 1} in the ${name}`,
-				);
-			}
+			await sampler.start(SAMPLING_INTERVAL);
 			const startFrames = await framesSoFar();
 			const startCalls = await callsSoFar();
+			const startTasks = await tasksSoFar();
 			await sleep(seconds * 1000);
-			const profiles = new Map<string, HeapProfile>();
-			for (const [name, sessionId] of sessions) {
-				const { profile } = await within(
-					devtools.send<{ profile: HeapProfile }>('HeapProfiler.stopSampling', {}, sessionId),
-					STEP_MS,
-					`stopping sample ${k + 1} in the ${name}`,
-				);
+			const profiles = await sampler.stop();
+			for (const profile of profiles.values())
 				if (server.names) nameNodes(profile.head, server.names);
-				profiles.set(name, profile);
-			}
 			const sampleFrames = (await framesSoFar()) - startFrames;
 			const endCalls = await callsSoFar();
+			const endTasks = await tasksSoFar();
 			frames += sampleFrames;
 			const calls = startCalls === null || endCalls === null ? undefined : endCalls - startCalls;
+			const tasks = startTasks === null || endTasks === null ? undefined : endTasks - startTasks;
 			for (const [name, profile] of profiles) {
+				// Each worker counts the calls that its own places are judged by.
+				const counted = name === 'sketch-worker' ? tasks : calls;
 				samples.set(name, [
 					...(samples.get(name) ?? []),
 					{
 						places: profilePlaces(profile),
 						frames: sampleFrames,
-						...(calls !== undefined && { calls }),
+						...(counted !== undefined && { calls: counted }),
 					},
 				]);
 				bytes.set(name, (bytes.get(name) ?? 0) + totalSize(profile.head));
@@ -952,7 +990,7 @@ async function main(): Promise<void> {
 			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${chosen.map(({ flag }) => ` ${flag}`).join('')}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames, ${inputSteps} input steps`,
 		);
 		console.log(
-			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',
+			'Bytes per frame, or per call where the worker counts calls, in the sample where each place allocated least, its budget, and the most:',
 		);
 		// The passes that the switches add to each WebGPU frame, with the contact shadows' passes when
 		// the rows cast the sun's shadows and ambient occlusion does not run the same steps already.
@@ -985,8 +1023,17 @@ async function main(): Promise<void> {
 						0,
 					) +
 					(sceneBudgets[name] ?? 0);
-				// Only the render worker counts the browser's calls, so only its places are judged so.
-				const callBudget = worker === 'render-worker' ? CALL_BUDGETS[name] : undefined;
+				// The render worker's browser calls and the sketch worker's tasks judge their own places.
+				const callBudget = callBudgetFor(worker, name);
+				if (callBudget !== undefined && worker === 'sketch-worker') {
+					const measured = perCall(workerSamples, name);
+					const figure = measured?.perCall ?? 0;
+					if (figure > callBudget) over.push(`${worker}: ${name}`);
+					console.log(
+						`  ${figure.toFixed(1).padStart(6)} of ${String(callBudget).padStart(3)} per call, ${String(measured?.calls ?? 0).padStart(4)} calls  ${name}${callers ? ` < ${callers}` : ''}`,
+					);
+					continue;
+				}
 				if (callBudget !== undefined && callsPerFrame !== null) {
 					const perCall = perFrame / callsPerFrame;
 					if (perCall > callBudget) over.push(`${worker}: ${name}`);

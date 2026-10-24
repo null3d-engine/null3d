@@ -9,6 +9,10 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'The governor undoes a step that does not pay: `governor.ts` with `LOWER_TRIAL_MS` and `LOWER_LOSS_PERCENT`, 6 new tests in `governor.test.ts` including a replay of the resize page, 57 of 57; D-237',
 	'M3-R21':
 		"The gate reads its software-renderer pictures from the commit's own CI browser jobs: `bench/ci-browser-jobs.ts`, 12 tests in `bench/lib/gate.test.ts`; D-238",
+	'M3-E2':
+		"The task hook and the splats add-on's distance selection run on the job workers on both GPU paths, and `bun run bench:allocation --splats` judges what they allocate per frame: 653.5 bytes on the sketch worker and 163.8 on the render worker on the Mac's WebGL2, 1,119.1 and 91.9 on the software renderer, with every per-frame place inside its budget. The check found two production-build faults that are fixed: a TypeScript task module reached the worker as raw source, and Vite's preload helper read `document` in a sketch worker, both with build tests in the plugin",
+	'M3-V3':
+		"A vertex offset reads a compute pass's output in every pass that draws its material: `DrawnViews` masks in `frame_graph.rs` order the compute step before the shadow, motion and pick passes that sample it, and `frame.lastFrame` in `builtins.wgsl` lets the motion build's second call read the frame before's row. `a_compute_pass_runs_before_each_pass_that_draws_a_material_reading_it` holds the three ordering edges; the `compute-vertex-offset` picture draws the box and its shadow on WebGPU and WebGL2 with four references; the motion test reads 2 pixels a frame on the plane and 0 on the wall on all three tiers; D-240's and D-140's addenda",
 	'M3-R20':
 		'Two clauses were missing and are built: a page that draws under about two frames a second is now judged at its gap, and a software renderer stays off the two-step path after a step fails. `governor.ts` compares the longest busy frame with half the gap and closes the whole scale below a failed step, `shared/software.ts` holds the one name test for a CPU renderer; the trap page `tests/image/governor-trap.spec.ts` passes 10 of 10 on the Mac software renderer over every thread mode and both paths, and the stress test settles at scale 0.55 with no change of direction and holds 90% of 60 fps in 15 of 15 seconds on WebGL2. 64 of 64 governor tests pass, each new test failing without its fix; D-237',
 	'M3-R19':
@@ -56,6 +60,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		"Namespaces for an add-on's shader library, error codes and quality keys: `packages/engine/src/scene/namespaces.ts`",
 	'M3-D9':
 		"`bunx @null3d/cli check-addon` runs the engine's gates on one add-on: `packages/cli/src/check-addon.js`, which refuses `tests/fixtures/d9-addon-internal` for importing `@null3d/engine/internal`; D-225 records the run over every foundation add-on and the fixture's page and cost gates",
+	'M3-D9a':
+		"The allocation gate of `check-addon`: the engine's profiler now lives once in `packages/cli/src/heap-profile.js`, `devtools.js` and `source-names.js`, and the benchmarks import it; the gate reports the add-on's own bytes per frame on each preset, and fails when the page runs none of the add-on's code; D-225's addendum records the figures that the two fixtures gave on 24 October 2026",
 	'M3-E1':
 		"Splats draw through `scene.addFeatureInstances` (`packages/engine/src/scene/feature-instances.ts`); the `splats`, `splats-budget` and `splats-gltf` pictures on both paths; the draw's size in `tools/lib/size-report.ts`",
 	'M3-F6':

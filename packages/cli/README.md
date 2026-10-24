@@ -10,7 +10,7 @@ null3D is in early development. This version has seven commands:
 - `shot` draws one frame of your project's page in a headless browser and saves it as a PNG file.
 - `test` type checks your project and runs its lint script. Then it compares the image tests that `null3d.json` lists with their reference images.
 - `bench` measures the engine on a production build of your page: CPU time per frame by thread, GPU time and frame rates, over fresh runs.
-- `check-addon` runs the engine's gates on an add-on package: its public imports, the plugin interface it declares, its shaders on both GPU paths, the size of the files it loads after the start, and, with a page, its start from another origin under the strict policy and its cost per quality preset.
+- `check-addon` runs the engine's gates on an add-on package: its public imports, the plugin interface it declares, its shaders on both GPU paths, the size of the files it loads after the start, and, with a page, its start from another origin under the strict policy, its cost per quality preset, and the bytes per frame that its own code allocates.
 - `assets` prepares models and textures. `optimize` quantizes glTF meshes and encodes KTX2 textures. `convert` turns FBX, OBJ, STL and PLY files into glTF. `pack-orm` and `normal-from-bump` make material maps, and `env` makes environment maps from HDR images.
 - `upgrade` moves every null3D package in your `package.json` to one version, so that an add-on and the engine never mix two versions.
 
