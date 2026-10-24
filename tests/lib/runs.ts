@@ -472,6 +472,16 @@ const LOAD_SECONDS = 30;
 export const quietLimitMs = (item: PlanItem) =>
 	((item.quietSeconds ?? item.timeoutSeconds) + LOAD_SECONDS) * 1000;
 
+/**
+ * The quiet limit of each page, at most `capSeconds`, for runner pages that write their heartbeat
+ * on time, as a browser in front does: a stop then shows within the cap instead of the page's whole
+ * time limit. A page that sets a quiet time of its own, as one that ends its tab does, keeps it.
+ */
+export const cappedQuietLimitMs = (capSeconds: number) => (item: PlanItem) =>
+	item.quietSeconds === undefined
+		? Math.min(quietLimitMs(item), capSeconds * 1000)
+		: quietLimitMs(item);
+
 /** A plan item and its place in the plan. */
 export interface PlanPlace<Check = unknown> {
 	index: number;

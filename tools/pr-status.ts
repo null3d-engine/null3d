@@ -26,10 +26,12 @@ const PARTIAL: Readonly<Record<string, string>> = {
 	'M3-C1':
 		'the scene, its lanes, rain and the hero car are in; the moods, the instances demo and the device figures remain',
 	'M3-T1': 'the measured fence is in; the trim is on its branch',
+	'M3-B4':
+		'the rain streaks, the storm over any hour and the lamp-following city lights are in the Skyway demo; the wet-surface helper, the windshield drops and the particles link remain',
 };
 
 /** Tasks built on a helper branch, with nothing of them on this branch yet. */
-const ON_BRANCH = new Set(['M3-A3', 'M3-B4', 'M3-E9', 'M3-R14']);
+const ON_BRANCH = new Set(['M3-E9', 'M3-R14']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
 const INCOMPLETE = new Set([
@@ -40,12 +42,10 @@ const INCOMPLETE = new Set([
 	'M3-E6',
 	'M3-E8',
 	'M3-E10',
-	'M3-F2',
 	'M3-L1',
 	'M3-L3',
 	'M3-L4',
 	'M3-R12',
-	'M3-R13',
 ]);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
@@ -62,8 +62,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"the compute pass and its WebGL2 fragment form are built and tested; the first-user outcome waits on M3-F9's ocean, because the splats add-on cannot take the hook",
 	'M3-E10':
 		"the sky layer's template, ids and sizes are in place but unregistered; the example add-on that draws a sky layer, the task's first user, does not exist",
-	'M3-F2':
-		'the add-on, both file kinds, depth mixing and the pictures on both paths are in; its streaming within budget on the iPad and an S24-class phone is not recorded',
 	'M3-B1': 'the lens kit has no picture test and no cost per preset',
 	'M3-D9':
 		'the command and its refusal of an add-on that imports the engine internal entry are tested; no recorded run holds it over every foundation add-on',
@@ -76,9 +74,8 @@ const NOTES: Readonly<Record<string, string>> = {
 		'dropped with the temporal resolve it waited on (D-206); the owner may change the ruling',
 	'M3-F10': 'dropped with the temporal resolve it needs (D-206); the owner may change the ruling',
 	'M3-R12': 'the build compiles only the listed permutations; the time and size are not recorded',
-	'M3-R13': 'the fallbacks exist; no test names the three checks the task asks for',
 	'M3-A11':
-		'measured on both paths at every preset; the resolve does not beat the presets, so TAA does not ship (D-206)',
+		'measured on both paths at every preset; it does not beat the presets, so it stays behind the internal setting and does not ship (D-206). Its black-capture and bind-group faults are fixed, its shader file still loads on first use, and that first-use case is now tested on both paths',
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
 };
 

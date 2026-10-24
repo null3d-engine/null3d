@@ -110,6 +110,9 @@ const CASES: Record<string, Case> = {
 	bloom: ({ post }) => post.set({ bloom: { intensity: 0.4 } }),
 	dof: ({ post }) => post.set({ dof: { focusDistance: 4, aperture: 4 } }),
 	exposure: ({ post }) => post.set({ autoExposure: {} }),
+	// The temporal resolve's prototype. Its reprojection reads the motion target, which draws
+	// nothing in a still scene, so this case loads the resolve's own file alone.
+	taa: ({ post }) => post.set({ taa: true }),
 	fog_volume: ({ scene }) =>
 		scene.setFog({ color: '#8090a0', density: 0.05, heightFalloff: 0.2, volumetric: true }),
 	// Two effects that each read their own pixel: the engine joins them into one pass and builds that
