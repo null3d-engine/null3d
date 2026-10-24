@@ -2396,6 +2396,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [480, 270],
 		modes: ALL_MODES,
 	},
+	// A custom material that samples layers of one texture array, which its shader picks: a plane
+	// whose bands sample a layer each, a sphere that loads two layers in one surface function, and
+	// a plane that samples with a bias from a layer that its height picks.
+	{
+		name: 'custom-texture-array',
+		sketch: 'tests/pages/sketches/custom-texture-array-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
 	// Each texture map of the standard material, made in code: base color, metal-rough, normal maps
 	// on quads with and without tangents, occlusion, emissive, a light map on the second texture
 	// coordinates, and base color maps through a texture coordinate transform, standard and unlit.

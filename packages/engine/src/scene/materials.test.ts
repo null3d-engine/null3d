@@ -254,7 +254,7 @@ function fakeCore() {
 /** A custom material's WGSL as the Vite plugin compiles it, with a stand-in for its variants. */
 function compiledMaterial(
 	uniforms: { name: string; type: string; offset: number }[] = [],
-	textures: { name: string; offset: number }[] = [],
+	textures: { name: string; offset: number; array?: boolean }[] = [],
 ) {
 	return {
 		kind: 'material',
@@ -1410,6 +1410,30 @@ describe('custom material textures', () => {
 			[2, 0, 5, 0],
 			[2, 1, 6, 0],
 		]);
+	});
+
+	test('take a texture of several layers for a declaration of a texture array', () => {
+		const { shadings, maps, materials } = fakeCore();
+		const wgsl = compiledMaterial(
+			[],
+			[
+				{ name: 'facades', offset: 31, array: true },
+				{ name: 'detail', offset: 30 },
+			],
+		);
+		materials.shader({ wgsl, textures: { facades: layered(4, 6), detail: layered(5) } });
+		expect(shadings).toEqual([
+			standardCustom(SHADING_CUSTOM_FIRST) | (2 << SHADING_CUSTOM_TEXTURE_SHIFT),
+		]);
+		expect(maps).toEqual([
+			[1, 0, 4, 0],
+			[1, 1, 5, 0],
+		]);
+		const single = thrown(() => materials.shader({ wgsl, textures: { detail: layered(6, 3) } }));
+		expect(single.code).toBe('E1216');
+		expect(single.message).toStartWith(
+			'E1216: materials.shader() got a texture of 3 layers for the texture detail; a texture declared `var detail: texture_2d<f32>;` takes one layer. Declare `var detail: texture_2d_array<f32>;`',
+		);
 	});
 
 	test('refuse names that the WGSL does not declare, and values that are not one texture', () => {

@@ -176,7 +176,7 @@ const DOCS = {
 	E1216: {
 		title: 'Invalid uniform or texture',
 		cause:
-			"A custom material's or effect's uniforms or textures did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too. The textures option takes the names of the WGSL's `var name: texture_2d<f32>;` declarations, each with a texture of one layer.",
+			"A custom material's or effect's uniforms or textures did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too. The textures option takes the names of the WGSL's `var name: texture_2d<f32>;` and `var name: texture_2d_array<f32>;` declarations, each with a texture of the layers that its declaration takes.",
 		example:
 			"E1216: materials.shader.set() got speeed, which is not a uniform of the material's WGSL.",
 		since: '0.1',
