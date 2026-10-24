@@ -8,6 +8,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PAGE_TIMES_FILE, type PageTimes, pageTimesOf } from '../tests/lib/page-times.ts';
+import { gh, ghBytes } from './lib/gh.ts';
 
 const root = join(import.meta.dirname, '..');
 const args = process.argv.slice(2);
@@ -38,7 +39,7 @@ const work = mkdtempSync(join(tmpdir(), 'real-browser-times-'));
 try {
 	for (const id of runs) {
 		const listing = JSON.parse(
-			run(['gh', 'api', `repos/{owner}/{repo}/actions/runs/${id}/artifacts?per_page=100`]),
+			gh(['api', `repos/{owner}/{repo}/actions/runs/${id}/artifacts?per_page=100`], root),
 		) as { artifacts: { id: number; name: string }[] };
 		const artifacts = listing.artifacts.filter(({ name }) => name.startsWith('real-browser-runs-'));
 		if (artifacts.length === 0) throw new Error(`CI run ${id} kept no real-browser runs`);
@@ -49,10 +50,7 @@ try {
 			const zip = `${folder}.zip`;
 			writeFileSync(
 				zip,
-				Bun.spawnSync(['gh', 'api', `repos/{owner}/{repo}/actions/artifacts/${artifact.id}/zip`], {
-					cwd: root,
-					stdout: 'pipe',
-				}).stdout,
+				ghBytes(['api', `repos/{owner}/{repo}/actions/artifacts/${artifact.id}/zip`], root),
 			);
 			run(['unzip', '-q', '-o', zip, '-d', folder]);
 			for (const file of filesNamed(folder, 'page-times.json'))

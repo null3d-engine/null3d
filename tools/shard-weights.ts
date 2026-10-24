@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ALONE_PROJECT_SUFFIX, ALONE_TAG } from '../tests/lib/alone.ts';
 import { PRODUCTION_PAGES_SWITCH } from '../tests/lib/server.ts';
+import { gh, ghAsync } from './lib/gh.ts';
 import { SHARD_TOTAL_ENV } from './lib/shard-groups-reporter.ts';
 import {
 	bestWeights,
@@ -62,17 +63,6 @@ function run(
 	return result.stdout.toString();
 }
 
-async function runAsync(command: string[]): Promise<string> {
-	const child = Bun.spawn(command, { cwd: root, stdout: 'pipe', stderr: 'pipe' });
-	const [out, err, code] = await Promise.all([
-		new Response(child.stdout).text(),
-		new Response(child.stderr).text(),
-		child.exited,
-	]);
-	if (code !== 0) throw new Error(`${command.join(' ')} failed:\n${err}`);
-	return out;
-}
-
 const minutes = (seconds: number) => (seconds / 60).toFixed(1);
 const report = (seconds: number[]) =>
 	`${seconds.map(minutes).join(' ')} minutes, slowest ${minutes(Math.max(...seconds))}`;
@@ -85,18 +75,33 @@ if (!cityPattern) throw new Error(`${WORKFLOW} has no CITY_TESTS`);
 const currentWeights = current.split(':').map(Number);
 const shards = Number(option('--shards') ?? currentWeights.length);
 
-/** A job of a CI run, as `gh run view --json jobs` gives it. */
+/** A job of a CI run, as the jobs listing of its newest attempt gives it. */
 interface Job {
 	databaseId: number;
 	name: string;
 	conclusion: string;
 }
 
-/** The browser jobs of a CI run that ran. A skipped job is listed too, with no log. */
+/**
+ * The browser jobs of a CI run's newest attempt that ran. A skipped job is listed too, with no log.
+ * The listing reads 50 jobs a page: GitHub answered every request of 100 a page with HTTP 502 for a
+ * run of 137 jobs, where pages of 50 came back.
+ */
 function browserJobs(runId: string): Job[] {
-	return (
-		JSON.parse(run(['gh', 'run', 'view', runId, '--json', 'jobs'])) as { jobs: Job[] }
-	).jobs.filter((job) => job.name.startsWith('browser (') && job.conclusion !== 'skipped');
+	return gh(
+		[
+			'api',
+			'--paginate',
+			`repos/{owner}/{repo}/actions/runs/${runId}/jobs?per_page=50&filter=latest`,
+			'--jq',
+			'.jobs[] | {databaseId: .id, name, conclusion} | tojson',
+		],
+		root,
+	)
+		.split('\n')
+		.filter(Boolean)
+		.map((line) => JSON.parse(line) as Job)
+		.filter((job) => job.name.startsWith('browser (') && job.conclusion !== 'skipped');
 }
 
 /**
@@ -113,23 +118,25 @@ function chooseRuns(): { id: string; jobs: Job[] }[] {
 			return { id, jobs };
 		});
 	const count = Number(option('--runs') ?? DEFAULT_RUNS);
-	const listed = run([
-		'gh',
-		'run',
-		'list',
-		'--workflow',
-		'ci.yml',
-		'--branch',
-		'main',
-		'--status',
-		'success',
-		'--limit',
-		String(SEARCH_RUNS),
-		'--json',
-		'databaseId',
-		'--jq',
-		'.[].databaseId',
-	])
+	const listed = gh(
+		[
+			'run',
+			'list',
+			'--workflow',
+			'ci.yml',
+			'--branch',
+			'main',
+			'--status',
+			'success',
+			'--limit',
+			String(SEARCH_RUNS),
+			'--json',
+			'databaseId',
+			'--jq',
+			'.[].databaseId',
+		],
+		root,
+	)
 		.split('\n')
 		.filter(Boolean);
 	const chosen: { id: string; jobs: Job[] }[] = [];
@@ -149,12 +156,14 @@ function chooseRuns(): { id: string; jobs: Job[] }[] {
 async function runTimes(jobs: readonly Job[]): Promise<Map<string, number>> {
 	const logs = await Promise.all(
 		jobs.map((job) =>
-			runAsync([
-				'gh',
-				'api',
-				'--allow-escape-sequences',
-				`repos/{owner}/{repo}/actions/jobs/${job.databaseId}/logs`,
-			]),
+			ghAsync(
+				[
+					'api',
+					'--allow-escape-sequences',
+					`repos/{owner}/{repo}/actions/jobs/${job.databaseId}/logs`,
+				],
+				root,
+			),
 		),
 	);
 	return parseTestTimes(logs.join('\n'));
