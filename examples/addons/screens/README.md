@@ -76,8 +76,9 @@ the point. The rectangle that `paint` and `mark` take is in the canvas's own coo
 
 The LCD look adds one texture sample and the panel's math to each pixel: two derivative reads, a
 few hashes, the sub-pixel bars, the scan band and the dead-texel test. A screen made with
-`lcd: false` skips all of it and draws as an unlit image. The measured cost of each GPU path and
-preset is in [the screen decision record](../../../.dev/decisions/D-250-in-world-screens.md).
+`lcd: false` skips all of it and draws as an unlit image. [The screen decision record](../../../.dev/decisions/D-250-in-world-screens.md)
+gives the design and the cost figures, which `tests/pages/screens-cost.html` times on each GPU path
+and preset with `NULL3D_SCREEN_COST=1 bun run test:browser -- screens-cost.spec.ts`.
 
 The upload side is the engine's canvas-to-texture path: a changed rectangle costs the bytes of that
 rectangle, and the refresh rate caps the reads. [The canvas texture tests](../../../tests/image/canvas-texture.spec.ts)
@@ -89,8 +90,9 @@ hold that path's figures.
 - The panel's mesh needs texture coordinates, as the plane from `geometry.plane` has.
 - A refresh that a rate or an upload holds back returns false. The change stays for the next
   `flush`, so call `flush` from the frame's update.
-- `texture.refresh` reads the canvas on the thread that draws. A large canvas at a high refresh
-  rate costs its rectangle's bytes each time, so give a screen only the rate that its content needs.
+- `texture.refresh` reads the canvas with `getImageData` in the sketch worker. A large canvas at a
+  high refresh rate costs its rectangle's bytes each time, so give a screen only the rate that its
+  content needs.
 - A held frame runs no update. Paint the picture through `draw` or in the setup, never only in an
   update.
 
