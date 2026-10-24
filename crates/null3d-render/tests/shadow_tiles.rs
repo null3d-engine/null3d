@@ -320,8 +320,10 @@ fn too_large_an_atlas_fails_the_frame<B: Tiles>(renderer: B) {
         world.add_spot([k as f32 - 12.0, 4.0, 0.0], 6.0);
     }
     world.frame = 1;
+    // The atlas keeps one of its layers for the hero, so 23 light tiles and the hero's tile take
+    // 24 layers of 64 MiB: 1,536 MiB, past the 1 GiB ceiling.
     match world.try_record(true) {
-        Err(RecordError::ShadowAtlasTooLarge { megabytes }) => assert_eq!(megabytes, 1600),
+        Err(RecordError::ShadowAtlasTooLarge { megabytes }) => assert_eq!(megabytes, 1536),
         other => panic!("unexpected {other:?}"),
     }
 }
