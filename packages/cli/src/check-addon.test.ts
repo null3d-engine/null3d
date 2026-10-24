@@ -13,6 +13,7 @@ import {
 	publicApiProblems,
 	readAddon,
 	run,
+	sizeProblems,
 } from './check-addon.js';
 
 /** The engine that these tests declare an add-on against. */
@@ -273,19 +274,14 @@ describe('interfaceResult', () => {
 		);
 	});
 
-	it('refuses a namespace under another name', () => {
+	it("accepts a namespace name, which is the add-on's own short name, not its package name", () => {
 		expect(
 			interfaceResult(
 				'@acme/splats',
-				entry(
-					"declareAddonNamespace({ name: '@acme/hair', pluginInterface: { min: 2, max: 2 } });",
-				),
+				entry("declareAddonNamespace({ name: 'splats', pluginInterface: { min: 2, max: 2 } });"),
 				ENGINE,
 			),
-		).toEqual({
-			problem: 'checks itself as "@acme/hair", and its package is @acme/splats',
-			text: '',
-		});
+		).toEqual({ text: 'declares plugin interface 2, and this engine has 2' });
 	});
 
 	it('refuses a declaration that is no range of whole versions', () => {
@@ -363,12 +359,51 @@ describe('the add-on budgets', () => {
 	});
 });
 
+describe('sizeProblems', () => {
+	const KB = 1024;
+
+	it('accepts a file at its budget in every column', () => {
+		expect(
+			sizeProblems([{ name: 'addon.js', raw: 64 * KB, gzip: 24 * KB, brotli: 17 * KB }]),
+		).toEqual([]);
+	});
+
+	it('names each column of a file over its budget', () => {
+		expect(
+			sizeProblems([{ name: 'addon.js', raw: 65 * KB, gzip: 25 * KB, brotli: 18 * KB }]),
+		).toEqual([
+			'addon.js is 65.0 KB raw, over its 64.0 KB budget',
+			'addon.js is 25.0 KB gzip, over its 24.0 KB budget',
+			'addon.js is 18.0 KB brotli, over its 17.0 KB budget',
+		]);
+	});
+
+	it('checks every file that the build wrote', () => {
+		expect(
+			sizeProblems([
+				{ name: 'small.js', raw: KB, gzip: KB, brotli: KB },
+				{ name: 'large.js', raw: 65 * KB, gzip: KB, brotli: KB },
+			]),
+		).toEqual(['large.js is 65.0 KB raw, over its 64.0 KB budget']);
+	});
+});
+
 describe('run', () => {
 	const log = spyOn(console, 'log').mockImplementation(() => {});
 	afterEach(() => log.mockClear());
 
 	/** What the command printed, as lines. */
 	const printed = () => log.mock.calls.map((call) => String(call[0])).join('\n');
+
+	it('fails on a folder that holds no package', async () => {
+		expect(await run([fixture({})])).toBe(1);
+		expect(printed()).toStartWith('FAIL  package: package.json does not exist in this folder');
+	});
+
+	it('fails on a package with no entry file', async () => {
+		expect(await run([fixture({ 'package.json': '{"name":"@acme/splats"}' })])).toBe(1);
+		expect(printed()).toStartWith('FAIL  package: no entry file: ');
+	});
 
 	it('fails on an add-on that imports the engine internal entry', async () => {
 		const folder = fixture({
