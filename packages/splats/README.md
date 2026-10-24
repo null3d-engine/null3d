@@ -1,9 +1,10 @@
 # Gaussian splats for null3D
 
 `@null3d/splats` draws Gaussian splats in a null3D sketch: clouds of soft, colored ellipsoids from
-a scan or a training run. It reads SPZ files and glTF models that carry `KHR_gaussian_splatting`,
-gives a large cloud detail levels and a budget that follows the quality preset and the GPU path, and
-mixes the splats with the scene's meshes by depth.
+a scan or a training run. It reads SPZ files, splat streams and glTF models that carry
+`KHR_gaussian_splatting`. A large cloud gets detail levels and a budget that follows the quality
+preset and the GPU path, and the splats mix with the scene's meshes by depth. A stream downloads
+only the chunks that the view needs, so a large cloud draws before its whole file has arrived.
 
 ## Use
 
@@ -33,6 +34,9 @@ Importing the package also registers the glTF reader, so
 
 - One draw for the whole cloud. The engine culls the rows and sorts them back to front on its job
   workers, on WebGPU and WebGL2.
+- A splat stream is an index of chunk files: read the index first, then fetch the chunks that the
+  view asks for. `chunkSplats` and `encodeSpz` make the files, and `parseStreamIndex` reads an
+  index without a sketch.
 - The batch holds the budget's rows, 56 bytes each. The preset draws up to 100,000 splats on Low and
   800,000 on Ultra, half those counts on WebGL2, and the frame-budget governor lowers them again.
 - The color is the first spherical-harmonic band's. Higher bands, which change a color with the
