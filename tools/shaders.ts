@@ -16,7 +16,8 @@
 // which the cache keeps beside the entry's key and a later build joins. It writes no module. With `--entries-out <folder>`, it also copies the
 // entries that it stored there, and none that the cache held before, so each of several CI jobs can
 // upload its own new entries, and the job that builds the modules can put them all back into that
-// folder first and compile none of them:
+// folder first and compile none of them. Shard 0 also copies the shader build's program, which the
+// cache keeps beside its compiler's entries, so that job runs it without compiling it:
 //   bun tools/shaders.ts --entries-shard 0/8 --entries-out target/shader-entries
 import { join } from 'node:path';
 import {
