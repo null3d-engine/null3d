@@ -22,6 +22,7 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 		'when `post.set` turns automatic exposure on. The camera keeps its own exposure until the meter is built',
 	fog_volume:
 		'when `scene.setFog` turns the volumetric fog on. The fog keeps its sun glow until the fog is built',
+	taa: 'when `post.set` turns the temporal resolve on, a prototype for measuring only (D-206)',
 	sprites: 'with the first sprite batch',
 	picking: 'with the first `scene.pick()` call, which waits for the shaders',
 	particles: 'with the first particle system (`@null3d/particles`)',

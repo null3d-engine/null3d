@@ -1,6 +1,6 @@
 # D-206: The temporal resolve's second look, and the techniques that waited on it
 
-Status: decided on 21 October 2026 by task M3-A11 from its own measurements. [D-179](D-179-technique-rulings-2026-10-15.md) leaves TAA to this task, and leaves the many-lights prototype (M3-F3) and the temporal upscaler (M3-F10) to the same answer. The owner may change the ruling. Date: 2026-10-21. Task: M3-A11.
+Status: decided on 21 October 2026 by task M3-A11 from its own measurements, and amended on 24 October 2026: the two faults that refused the resolve are fixed, and the engine's own paths now pass on both GPU paths with MSAA and one sample. [D-179](D-179-technique-rulings-2026-10-15.md) leaves TAA to this task, and leaves the many-lights prototype (M3-F3) and the temporal upscaler (M3-F10) to the same answer. The owner may change the ruling. Date: 2026-10-21, amended 2026-10-24. Task: M3-A11, then the capture fix.
 
 Summary: The temporal resolve does not ship for 0.1.0. Its prototype draws the scene live on WebGPU, but a captured frame is black, which breaks the image tests, hold mode and the command-line screenshot. A live toggle on WebGPU also destroys a motion or depth target while a submit still uses it. Its cost in the Creek is 0.3 to 1.3 ms on WebGPU and 2.8 to 9.1 ms on WebGL2 at 1080p. The quality figures of D-129 could not be measured, because the captured frames were black. TAA is dropped, not deferred, and with it the shipping of many lights and the temporal upscaler.
 
@@ -93,3 +93,37 @@ What it did not show, and why the answer is no:
 - **Three.js mapping:** the anti-aliasing rows say that TAA is not planned and that `TRAANode`, `TAAUNode` and `TemporalReprojectNode` have no equivalent. The generated porting guide and the porting skill follow.
 - **D-129** carries an addendum that points here. **D-179's** rulings 15, 16 and 24 are settled.
 - **A later attempt** starts from three faults before it measures anything: the captured frame, the live toggle on WebGPU, and the quality bar against the material that D-129 defined.
+
+## Addendum, 24 October 2026: the captured frame and the live toggle are fixed
+
+The two faults of this record are fixed, and the engine's own paths pass. The quality bar of D-129 is still unmeasured, and the cost figures stand, so the resolve is reopened for measurement, not yet shipped.
+
+### The cause
+
+The sketch thread records each frame's draw list in one of two slots, by the frame's parity, and the thread that draws replays that slot. A setting that changes the render graph changes the plan's texture list, so the plan makes some targets again. One parity's slot then still holds a list recorded under the older plan while the other parity already holds the newer one. The older list was replayed after the newer plan had made its targets again, so its passes read targets that the plan had cleared or reused. In a capture that is the scene color's clear color and alpha; in the live toggle it was a target, such as the motion target or the scene depth, that the plan had just destroyed in flight.
+
+### The fix
+
+The engine now publishes the plan's texture generation beside each parity's list (`planEpoch`). The frame loop and a capture replay a list only while its generation equals the plan's newest. A list from an older generation is taken without drawing, as the engine already does for a list from an older GPU device, and the canvas keeps its last image until the sketch records that parity again. The engine no longer submits any list recorded for a plan it has replaced.
+
+### The proof
+
+The prototype's code was not kept, as this record's "no" landed the record alone. The fix task rebuilt it from the resolve shader kept with the task and this record's description, on the engine of 24 October 2026. It then ran five browser tests in Chrome on the Mac's GPU:
+
+| Test | Path | Samples | Result |
+| --- | --- | --- | --- |
+| Captured frame holds the live canvas | WebGPU | MSAA | pass: mean distance 0.00 levels |
+| Captured frame holds the live canvas | WebGPU | one sample | pass: mean distance 0.00 levels |
+| Captured frame holds the live canvas | WebGL2 | MSAA | pass: mean distance 0.00 levels |
+| Captured frame holds the live canvas | WebGL2 | one sample | pass: mean distance 0.00 levels |
+| Captured frame holds the live canvas, resolve off | WebGPU | MSAA | pass |
+
+Each test compares the pixels that `captureFrame` read with a screenshot of the live canvas, requires neither to be black, and requires the mean distance of the two to stay under 16 levels of 255. The four resolve-on tests also turn the setting off and on again six times while the engine runs, and each reports no failure: no E1305. The captured frames are pixel-identical to the live canvas.
+
+With the guard removed, the rebuilt prototype still captured correctly on this base, so a later engine change may already hide the original timing. The guard is what makes the result hold by construction, and a unit test (`waits for a list that the plan that draws now recorded, after its targets were made again`) keeps it.
+
+### What stands
+
+- **Cost:** the figures above stand. On WebGL2 at Medium the resolve still costs 9.1 ms, far above what a phone can pay.
+- **Quality:** the shimmer, smear and sharpness figures of D-129 are still unmeasured. The engine paths no longer block them.
+- **The decision:** TAA, the many lights and the temporal upscaler remain unshipped until the quality bar passes and the owner rules. This addendum reverses the refusal's engine-path clause only.

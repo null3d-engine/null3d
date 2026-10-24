@@ -770,8 +770,19 @@ export interface CoreGlue extends CoreErrors {
 	setSsrQuality(thousandths: number, steps: number): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
+	/**
+	 * The generation of the plan's texture list, which changes when a pass change makes the frame
+	 * make some targets again. A frame's list recorded under an older generation names textures
+	 * that a later plan replaced, so the thread that draws skips it.
+	 */
+	planEpoch(): number;
 	/** The taps of each step of the subsurface blur, from the next frame on: 0 draws none. */
 	setSubsurfaceTaps(taps: number): number;
+	/**
+	 * Temporal anti-aliasing, a prototype: the history's share in thousandths, 0 for off, and
+	 * whether the camera takes its sub-pixel offsets.
+	 */
+	setTaa(feedback: number, jitter: boolean): number;
 	/** Turns automatic exposure on with the post-processing values' settings, or off. */
 	setAutoExposure(on: boolean): number;
 	/** The meter of automatic exposure, from the next frame on: 0 the downsample, 1 the histogram. */
@@ -1233,7 +1244,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setContactSteps',
 	'setDof',
 	'setDofTaps',
+	'planEpoch',
 	'setSubsurfaceTaps',
+	'setTaa',
 	'setSsr',
 	'readsLastFrame',
 	'setSsrQuality',

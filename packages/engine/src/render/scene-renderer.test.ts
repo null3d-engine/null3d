@@ -175,6 +175,26 @@ describe('FrameReplay', () => {
 		await expect(taken).resolves.toBe(3);
 	});
 
+	it('waits for a list that the plan that draws now recorded, after its targets were made again', async () => {
+		const { slots, replay, words } = setup();
+		// A plan change made some targets again, and both slots hold lists of the plan before.
+		Atomics.store(slots, Slot.PlanEpoch, 2);
+		Atomics.store(slots, Slot.DrawListAddress0, 400);
+		Atomics.store(slots, Slot.DrawListWords0, 10);
+		Atomics.store(slots, Slot.DrawListAddress1, 800);
+		Atomics.store(slots, Slot.DrawListWords1, 10);
+		words[100] = 0x0104;
+		words[103] = 5;
+		words[200] = 0x0104;
+		words[203] = 5;
+		Atomics.store(slots, Slot.FramesTaken, 2);
+		const taken = replay.builtTaken();
+		// The next frame records under the current plan.
+		Atomics.store(slots, Slot.FramePlan0 + 1, 2);
+		Atomics.store(slots, Slot.FramesTaken, 3);
+		await expect(taken).resolves.toBe(3);
+	});
+
 	it("replays the other frame's list when a failed device cleared the taken one", () => {
 		const { slots, backend, replay, words } = setup();
 		// Frame 2's list begins with zero, where a cleared list begins; frame 3's slot still holds
