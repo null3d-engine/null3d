@@ -45,6 +45,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-K1': '`scene.createView({ camera, rect })`: `packages/engine/src/scene/scene.ts`',
 	'M3-K3':
 		'Spot-light cookies, `light.map`: `packages/engine/src/scene/scene.ts`, `docs/api/lights.md`',
+	'M3-K4':
+		"three.js r186's css3d_periodictable example is ported and compared against three.js's own CSS3DRenderer draw of the same 118 cells: `tests/pages/lib/css3d-periodictable.ts`, the sketch and the two-stage page, and `tests/image/css3d-periodictable.spec.ts`, which screenshots both stages in one run. A probe with zero tolerance passed, so the two draws had no differing pixel on the GPU; the committed tolerance is a tenth of a per cent for a slower rasteriser. The mapping's css-renderers note and the port skill name it, and D-208 carries an addendum",
 	'M3-K5': '`scene.overrideMaterial`: `packages/engine/src/scene/scene.ts`, `docs/api/scene.md`',
 	'M3-F8':
 		"`probe.capture()` again on request, with the moved object's reflection settling: `crates/null3d-render/tests/probes.rs` and the `probe-capture` picture on every tier; `docs/api/scene.md`. The compatibility-mode picture had failed three full runs against a reference drawn on a slow run; the page now pins the frame-budget governor (d3dda9e72), and the full run on 57a0a08ed passed that picture on every tier",
