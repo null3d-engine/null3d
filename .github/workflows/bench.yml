@@ -216,7 +216,10 @@ jobs:
     name: benchmark (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: [commits, build]
     runs-on: macos-15
-    timeout-minutes: 20
+    # A shard runs both commits' pages. On 24 October 2026 all eight reached this limit a
+    # second after printing their verdict, because the baseline was main's build with the
+    # final pass's loops still in it. Thirty leaves room for that pair.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
