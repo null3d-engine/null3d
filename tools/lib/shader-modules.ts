@@ -686,6 +686,15 @@ export function ensureShaderModules(root: string): boolean {
 	// another checkout's build. Each module takes its place whole, and a set that lacks its record
 	// is a miss, so a copy beside a build that stores the same set reads the whole set or nothing.
 	if (restoreFromCache(root, inputs)) return false;
+	// A build holds the machine-wide lock, so a queue job that starts one holds every other build
+	// back for however long the queue runs it at background priority: on 25 October 2026 one build
+	// waited 71 minutes that way and used three hundredths of a second of processor time, while
+	// picture runs behind it could not start. A job that reaches this line needs a real build, so
+	// it stops here and says how to make the job fast instead of making every other job slow.
+	if (process.env.NULL3D_HEAVY_SLOT)
+		throw new Error(
+			`the shader modules of ${root} are neither built nor cached, and building them inside the job queue holds the machine-wide shader lock for tens of minutes at background priority while every other build waits. Run \`bun tools/shaders.ts\` in that checkout outside the queue first, which takes under two minutes at normal priority, then run this job again. The queue sets NULL3D_HEAVY_SLOT, which is how this check knows it is inside one.`,
+		);
 	let built = false;
 	withLock(() => {
 		// Another process may have built them, or another checkout may hold them, while this one waited.
