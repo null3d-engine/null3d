@@ -1,4 +1,4 @@
-# D-250: In-world screens draw as panels by distance
+# D-252: In-world screens draw as panels by distance
 
 Status: decided. Date: 24 October 2026. Task: M3-B3. The measured cost of the LCD look is owed: a
 timing run on 25 October 2026 waited the whole ten-minute quiet limit while other jobs held the Mac
