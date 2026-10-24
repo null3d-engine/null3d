@@ -1,62 +1,100 @@
-// A screen on the gallery wall, beside the plinth: a plan drawn into a texture from code, with a
-// square for each click. The hit carries the plane's own texture coordinates, so the square lands
-// where the pointer points without the sketch working out where the plane lies in space. The
-// texture changes only when a click adds a mark, so a held frame draws the same plan on every run.
-import type { SketchContext } from '@null3d/engine';
+// A display on the gallery wall, beside the plinth, from the screens add-on: a plan painted on an
+// OffscreenCanvas, with a square for each click. The screen maps a click back to the canvas's own
+// coordinates, so the square lands where the pointer points without the sketch working out where
+// the plane lies in space. A click uploads only the rectangles that it changed: the mark it adds
+// and the mark that the plan drops. The picture is painted in the setup, so a held frame shows it.
+import type { CanvasRect, SketchContext } from '@null3d/engine';
+import { createScreen } from '../addons/screens';
 
-/** The texture's size, at the 2:1 shape of the screen. */
-const WIDTH = 128;
-const HEIGHT = 64;
+/** The canvas's size in texels, at the screen's 2:1 shape. */
+const WIDTH = 256;
+const HEIGHT = 128;
 /** The screen's size in meters. */
 const W = 3.2;
 const H = 1.6;
-/** How many click marks the plan keeps. */
+/** The side of a click mark, in texels, and how many the plan keeps. */
+const MARK = 9;
 const KEPT = 8;
 
-/** The plan's colors, as sRGB bytes. */
-const BACK = [34, 46, 78] as const;
-const GRID = [86, 132, 180] as const;
-const MARK = [255, 214, 120] as const;
+/** The plan's colors. */
+const BACK = '#222e4e';
+const GRID = '#5684b4';
+const MARK_COLOR = '#ffd678';
+/** The grid's spacing in texels. */
+const GRID_STEP = 32;
 
-export function createScreen(ctx: SketchContext) {
-	const { scene, geometry, materials, textures } = ctx;
-	const data = new Uint8Array(WIDTH * HEIGHT * 4);
-	const marks: [number, number][] = [];
-	const put = (x: number, y: number, rgb: readonly [number, number, number]) => {
-		if (x < 0 || y < 0 || x >= WIDTH || y >= HEIGHT) return;
-		const at = (y * WIDTH + x) * 4;
-		data[at] = rgb[0];
-		data[at + 1] = rgb[1];
-		data[at + 2] = rgb[2];
-		data[at + 3] = 255;
+/** The square that a mark paints, in canvas coordinates. */
+function markRect(x: number, y: number): CanvasRect {
+	const half = (MARK - 1) / 2;
+	return { x: x - half, y: y - half, width: MARK, height: MARK };
+}
+
+/** The plan on the wall, and the marks that clicks add to it. */
+export function createScreenDisplay(ctx: SketchContext): { update(): void } {
+	const { scene, geometry, materials } = ctx;
+	/** The marks, oldest first, in canvas coordinates. */
+	const marks: { x: number; y: number }[] = [];
+	/** Draws the plan's ground and grid, and the marks that reach into the rectangle. */
+	const drawRegion = (context: OffscreenCanvasRenderingContext2D, rect: CanvasRect): void => {
+		context.fillStyle = BACK;
+		context.fillRect(rect.x, rect.y, rect.width, rect.height);
+		context.strokeStyle = GRID;
+		context.lineWidth = 1;
+		context.beginPath();
+		for (
+			let x = Math.ceil(rect.x / GRID_STEP) * GRID_STEP;
+			x <= rect.x + rect.width;
+			x += GRID_STEP
+		) {
+			context.moveTo(x + 0.5, rect.y);
+			context.lineTo(x + 0.5, rect.y + rect.height);
+		}
+		for (
+			let y = Math.ceil(rect.y / GRID_STEP) * GRID_STEP;
+			y <= rect.y + rect.height;
+			y += GRID_STEP
+		) {
+			context.moveTo(rect.x, y + 0.5);
+			context.lineTo(rect.x + rect.width, y + 0.5);
+		}
+		context.stroke();
+		context.fillStyle = MARK_COLOR;
+		for (const mark of marks) {
+			const square = markRect(mark.x, mark.y);
+			if (
+				square.x > rect.x + rect.width ||
+				square.x + square.width < rect.x ||
+				square.y > rect.y + rect.height ||
+				square.y + square.height < rect.y
+			)
+				continue;
+			context.fillRect(square.x, square.y, square.width, square.height);
+		}
 	};
-	// The plan: a lit ground under a grid, and a square at each click.
-	const draw = () => {
-		for (let y = 0; y < HEIGHT; y++)
-			for (let x = 0; x < WIDTH; x++) put(x, y, x % 16 === 0 || y % 16 === 0 ? GRID : BACK);
-		for (const [u, v] of marks)
-			for (let dy = -2; dy <= 2; dy++)
-				for (let dx = -2; dx <= 2; dx++)
-					put(Math.round(u * WIDTH) + dx, Math.round(v * HEIGHT) + dy, MARK);
-	};
-	draw();
-	const map = textures.fromData({ width: WIDTH, height: HEIGHT, data, colorSpace: 'srgb' });
-	const screen = scene.createMesh({
-		mesh: geometry.plane({ width: W, height: H }),
-		material: materials.unlit({ map }),
-		position: [0, 1.1, -4.2],
+	const screen = createScreen(ctx, {
+		width: WIDTH,
+		height: HEIGHT,
+		refreshHz: 12,
+		size: [W, H],
+		draw: (context) => drawRegion(context, { x: 0, y: 0, width: WIDTH, height: HEIGHT }),
 	});
+	screen.mesh.setPosition(0, 1.1, -4.2);
 	scene.createMesh({
 		mesh: geometry.box({ width: W + 0.16, height: H + 0.16, depth: 0.1 }),
 		material: materials.standard({ color: '#0e1014', roughness: 0.5 }),
 		position: [0, 1.1, -4.27],
 	});
-	screen.on('click', (event) => {
-		// A plane has texture coordinates; a hit that found none has nothing to mark.
-		if (!event.hasUv) return;
-		marks.push([event.uv[0], event.uv[1]]);
-		if (marks.length > KEPT) marks.shift();
-		draw();
-		map.update(data);
+
+	// A click marks the plan where it landed, and uploads the two rectangles that changed.
+	screen.onClick((point) => {
+		const square = markRect(point.x, point.y);
+		const dropped = marks.length >= KEPT ? marks.shift() : undefined;
+		marks.push({ x: point.x, y: point.y });
+		const changed = dropped ? [square, markRect(dropped.x, dropped.y)] : [square];
+		for (const rect of changed) drawRegion(screen.context, rect);
+		for (const rect of changed) screen.mark(rect);
+		screen.flush();
 	});
+	// A mark that the screen's rate holds back goes in the next frame.
+	return { update: () => void screen.flush() };
 }
