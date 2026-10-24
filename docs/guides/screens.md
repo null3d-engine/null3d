@@ -73,7 +73,7 @@ and a share of the texels stays dead. The pattern's size comes from the texture 
 derivatives, so the look follows the distance without a camera value. A distant panel draws as a
 smooth image.
 
-`screen.boot()` runs a boot glitch: rows tear sideways, a dark band rolls up the panel, and the
+`screen.boot()` runs a boot glitch. Rows tear sideways, a dark band rolls up the panel, and the
 picture fades in. `screen.set` changes the look and the power at any time.
 
 | Option | Meaning | Default |
@@ -91,8 +91,8 @@ takes no values.
 ## Clicks on a screen
 
 A pointer hit on a mesh carries its texture coordinates. `screen.pointOf(event)` turns them into a
-point on the canvas, in the canvas's own coordinates from its top-left corner.
-`screen.texelOf(event)` gives the whole texel under the point.
+point on the canvas, in the canvas's own coordinates. `screen.texelOf(event)` gives the whole texel
+under the point.
 
 ```ts
 screen.onClick((point) => {
