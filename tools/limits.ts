@@ -10,6 +10,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { IMAGE_RUNS } from '../tests/image/manifest.ts';
+import { SCRIPT_RUNS } from '../tests/image/script-runs.ts';
 import { referenceProblemsOnDisk } from '../tests/lib/images.ts';
 import { budgetProblems, downloadSizes, type SizeEntry, START_BUDGET } from './lib/size-report.ts';
 
@@ -40,10 +41,11 @@ function baseRef(): string {
 
 /** The picture references, which a test without both sets of files fails without a browser. */
 function referenceRow(): Row {
-	const { files, problems } = referenceProblemsOnDisk(IMAGE_RUNS);
+	// The script runs hold references of their own, which the manifest page never draws.
+	const { files, problems } = referenceProblemsOnDisk([...IMAGE_RUNS, ...SCRIPT_RUNS]);
 	return {
 		limit: 'picture references',
-		owner: 'tests/image/manifest.ts',
+		owner: 'tests/image/manifest.ts and tests/image/script-runs.ts',
 		state: problems.length === 0 ? 'within' : 'past',
 		detail:
 			problems.length === 0
