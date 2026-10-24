@@ -150,16 +150,16 @@ The [settings of each preset](quality-preset-tables.md#settings-of-each-preset) 
 
 The pixel ratio cap is the cheapest large saving on phones. The GPU fills each device pixel, and a screen's device pixels grow with the square of its ratio. So a ratio of 3 fills 2.25 times the pixels of a ratio of 2. The `maxPixelRatio` option of `createEngine` replaces the preset's cap, and `quality.set({ maxPixelRatio })` changes it during play.
 
-The shadow settings set the GPU memory that shadows take. The shadow map stores 2 bytes per texel, and the atlas of spot and point light tiles stores 4:
+The shadow settings set the GPU memory that shadows take. The shadow map stores 2 bytes per texel. The atlas stores 4: the tiles of spot and point lights, and the sun's hero tile.
 
 | Preset | Shadow map | Shadow atlas | Both |
 | --- | --- | --- | --- |
-| Low | 4 MiB | 4 MiB | 8 MiB |
-| Medium | 24 MiB | 8 MiB | 32 MiB |
-| High | 24 MiB | 64 MiB | 88 MiB |
-| Ultra | 128 MiB | 96 MiB | 224 MiB |
+| Low | 4 MiB | 5 MiB | 9 MiB |
+| Medium | 24 MiB | 9 MiB | 33 MiB |
+| High | 24 MiB | 68 MiB | 92 MiB |
+| Ultra | 128 MiB | 100 MiB | 228 MiB |
 
-The shadow map takes its memory once the directional light casts shadows, and the atlas once a spot or point light does. The atlas grows to the preset's tiles only as more lights cast. [Shadows](shadows.md#what-shadows-cost) gives the cost of each.
+The shadow map takes its memory once the directional light casts shadows. The atlas takes its own once a spot or point light casts, and one more layer while the sun names a [hero shadow](shadows.md#a-hero-shadow). The table counts that layer: 1 MiB at Low and Medium, 4 MiB at High and Ultra. [Shadows](shadows.md#what-shadows-cost) gives the cost of each.
 
 The anisotropic filtering cap limits the `anisotropy` option of every texture, so surfaces seen at a slant cost fewer texture reads on the lighter presets. The upload budget limits the texel bytes that one frame sends to the GPU, so loading many textures does not make one frame slow. A larger texture goes up over several frames. `quality.set({ maxAnisotropy, uploadBytesPerFrame })` changes either during play.
 
