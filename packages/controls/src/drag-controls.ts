@@ -3,12 +3,10 @@
 // package's other controls, these read the sketch's input once per frame in update(dt), with no DOM
 // listeners, and they report the object that they drag instead of sending events.
 import {
-	type Mat4Like,
 	mat4,
 	type Object3D,
 	type OrthographicCamera,
 	type PerspectiveCamera,
-	type QuatLike,
 	quat,
 	type RaycastHit,
 	type SketchContext,
