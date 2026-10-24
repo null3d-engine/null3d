@@ -438,7 +438,7 @@ one canvas-backed texture, reads it at its own refresh rate, and uploads only th
 changed. Its LCD material draws the panel's structure by distance: red, green and blue bars in each
 texel, a drifting scan band, dark gaps between the rows, dead texels and a boot glitch. A click on
 the plane maps back to the canvas's own coordinates. The design and its measured cost are in
-[D-250](decisions/D-250-in-world-screens.md).
+[D-252](decisions/D-252-in-world-screens.md).
 
 - The `canvas-screen` demo draws three wall panels at 20, 12 and 8 Hz, and a console panel close to
   the camera whose texels cover several pixels, so its sub-pixels, scan band and dead texels show.

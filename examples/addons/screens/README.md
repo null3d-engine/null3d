@@ -76,7 +76,7 @@ the point. The rectangle that `paint` and `mark` take is in the canvas's own coo
 
 The LCD look adds one texture sample and the panel's math to each pixel: two derivative reads, a
 few hashes, the sub-pixel bars, the scan band and the dead-texel test. A screen made with
-`lcd: false` skips all of it and draws as an unlit image. The design is in [the screen decision record](../../../.dev/decisions/D-250-in-world-screens.md),
+`lcd: false` skips all of it and draws as an unlit image. The design is in [the screen decision record](../../../.dev/decisions/D-252-in-world-screens.md),
 which records the cost figures that `tests/pages/screens-cost.html` times on each GPU path and
 preset, in a quiet window, with `NULL3D_SCREEN_COST=1 bun run test:browser -- screens-cost.spec.ts`.
 
