@@ -35,7 +35,53 @@ const PARTIAL: Readonly<Record<string, string>> = {
 const ON_BRANCH = new Set(['M3-E9', 'M3-R14']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
-const INCOMPLETE = new Set(['M3-B1', 'M3-E6', 'M3-E8', 'M3-L1', 'M3-L3', 'M3-R12', 'M3-R22']);
+// An audit of the branch on 24 October 2026 read every ticked task against its own "Done when" and
+// its section's rule. A tick states that the task is done, so a task that audit found short of its
+// own line is not ticked here until the gap closes, whatever code it already has.
+const INCOMPLETE = new Set([
+	'M3-B1',
+	'M3-E6',
+	'M3-E8',
+	'M3-L1',
+	'M3-L3',
+	'M3-R12',
+	'M3-R22',
+	'M3-L2',
+	'M3-L4',
+	'M3-A1',
+	'M3-A2',
+	'M3-A8',
+	'M3-A9',
+	'M3-A10',
+	'M3-A11',
+	'M3-B5',
+	'M3-B6',
+	'M3-E10',
+	'M3-D1',
+	'M3-D7',
+	'M3-D8',
+	'M3-K2',
+	'M3-K4',
+	'M3-R1',
+	'M3-E2',
+	'M3-F2',
+	'M3-O1',
+	'M3-R16',
+	'M3-R17',
+	'M3-R18',
+	'M3-G1',
+	'M3-G2',
+	'M3-G3',
+	'M3-K6',
+	'M3-R2',
+	'M3-R3',
+	'M3-R4',
+	'M3-R19',
+	'M3-R20',
+	'M3-R21',
+	'M3-V1',
+	'M3-V3',
+]);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
@@ -68,6 +114,66 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-A11':
 		'measured on both paths at every preset; it does not beat the presets, so it stays behind the internal setting and does not ship (D-206). Its black-capture and bind-group faults are fixed, its shader file still loads on first use, and that first-use case is now tested on both paths',
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
+};
+
+/**
+ * Why a task whose work is on the branch is still unticked: the gap that an audit of 24 October
+ * 2026 found between the task's own "Done when" and what the branch holds. These win over the note
+ * above, because both describe the same task and only one of them can be true.
+ */
+const AUDIT_GAPS: Readonly<Record<string, string>> = {
+	'M3-L2':
+		'the memory figure is a 40,000-ball test on the main view alone, and no GPU time was taken on the Mac, an iPad or a phone-class device',
+	'M3-L4':
+		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
+	'M3-A1':
+		'`scene.pick` returns no texture coordinates; raycasts and pointer events do, so the pixel-exact pick is short of the task',
+	'M3-A2': "the refresh's cost rows are all owed, the Mac's included",
+	'M3-A8':
+		'the shipped design is a display-color table with no tone curve, which replaced the HDR input D-199 has the owner approving',
+	'M3-A9':
+		"the 4x shadow detail holds only for an object up to 1.8 m on High, and the costs were taken at loads of 13.6 to 26.3 against the spec's own limit of 8",
+	'M3-A10': 'no GPU cost was taken on an iPad or a phone-class device',
+	'M3-A11':
+		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
+	'M3-B5':
+		"the flakes are one random tilt per cell rather than the plan's glints, and no cost per preset is recorded",
+	'M3-B6': 'the real-light option lights a fixed share of the cars, not the nearest ones',
+	'M3-E10':
+		'a sky layer draws into neither the environment map nor the CPU sky light, and D-242 drops both without a ruling',
+	'M3-D1': 'no page draws an add-on from the CDN, and the test draws on no GPU tier',
+	'M3-D7':
+		'the link check runs before the texture-unit count, so an over-budget material gives a plain link error rather than the E1209 the docs promise',
+	'M3-D8': 'two add-ons that declare one name with the same fields share a namespace silently',
+	'M3-K2': 'no touch test covers the rotate and scale gizmos',
+	'M3-K4': 'no three.js CSS3D example is ported or tested',
+	'M3-R1':
+		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
+	'M3-E2':
+		"only the chunk-budget ordering goes through the task hook; the per-splat sort is the engine's own transparent sort",
+	'M3-F2':
+		"streaming is not built, and the budget's meaning is open for the owner after the iPad drew 1.07 frames a second",
+	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
+	'M3-R16': 'no test creates a project and runs it with the hook on',
+	'M3-R17': 'no skill evaluation ran as the plan defines one',
+	'M3-R18':
+		'the controls add-on follows three.js step for step but ships no notice, and the notices page says it ships only its own code',
+	'M3-G1': "the Khronos sample's texture-transform pointers are not animated",
+	'M3-G2': 'no Khronos iridescence sample is tested',
+	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',
+	'M3-K6':
+		'on the HDR path, the default on most devices, a material with tone mapping off still goes through the tone curve',
+	'M3-R2': 'the stress test has not run on an iPad or a phone-class device since the change',
+	'M3-R3': 'no 5% match is shown for the upload arenas or the shadow casters',
+	'M3-R4': 'D-247 does not compare frame time, and the Mac GPU figure is owed',
+	'M3-R19':
+		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
+	'M3-R20': 'no test or record shows the governor returning within a second',
+	'M3-R21':
+		'the picture step does not read the heavy-test jobs, so the screens and skyway pictures are not gated; the fix is on a helper branch',
+	'M3-V1':
+		'Creek has no WebGPU figure on any device, and no vegetation task after it has its own budget per preset',
+	'M3-V3': 'the Mac, iPad and phone GPU time and memory are not recorded',
 };
 
 /** The plan's groups, by the first letter of a task's part, in the plan's order. */
@@ -145,9 +251,9 @@ function description(): string {
 				? ` — part landed: ${PARTIAL[id]}`
 				: ON_BRANCH.has(id)
 					? ' — on a helper branch'
-					: INCOMPLETE.has(id) || NOTES[id]
-						? NOTES[id]
-							? ` — ${NOTES[id]}`
+					: INCOMPLETE.has(id) || NOTES[id] || AUDIT_GAPS[id]
+						? (AUDIT_GAPS[id] ?? NOTES[id])
+							? ` — ${AUDIT_GAPS[id] ?? NOTES[id]}`
 							: ' — the branch check is owed'
 						: landed.has(id) && !(id in TASK_EVIDENCE)
 							? ' — the branch check is owed'
@@ -195,7 +301,8 @@ function main(): void {
 				!INCOMPLETE.has(id) &&
 				!ON_BRANCH.has(id) &&
 				!PARTIAL[id] &&
-				!NOTES[id],
+				!NOTES[id] &&
+				!AUDIT_GAPS[id],
 		);
 		if (missing.length > 0) process.exit(1);
 	}
