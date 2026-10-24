@@ -3,6 +3,7 @@
 
 import { messageOf } from '../errors/message';
 import { CORE_NOT_COUNTED } from '../generated/core';
+import { commonStep, stepMs } from '../shared/gpu-clock';
 import {
 	COUNTER_NAMES,
 	Counter,
@@ -73,9 +74,10 @@ export interface FrameSummary {
 	/** Per thread, by name: `main`, `sketch-worker`, `render-worker`, `job-0` and so on. */
 	threads: Record<string, ThreadStats>;
 	/**
-	 * GPU time per frame, where the device has timestamp queries: from the frame's first command to
-	 * the end of its last pass. Where the browser cannot time the commands before the first pass,
-	 * the time starts at the first pass. On WebGL2 it needs the timer queries of
+	 * GPU time per frame, where the device has timestamp queries: the latest pass end less the
+	 * earliest pass begin. A tile GPU overlaps the passes, so a sum of their own times would count
+	 * the overlap again. Where the browser cannot time the commands before the first pass, the span
+	 * starts at the first pass. On WebGL2 it needs the timer queries of
 	 * `EXT_disjoint_timer_query_webgl2`, which most desktop browsers offer and most phones do not,
 	 * and covers the frame's commands as a whole. The engine times one frame in eleven, which keeps
 	 * the cost of measuring small and takes in every turn of the far shadow cascades.
@@ -90,8 +92,10 @@ export interface FrameSummary {
 	 */
 	gpuPassMs: GpuPassStats[] | null;
 	/**
-	 * The step between GPU times when the browser rounds its timestamps, or null when they look exact.
-	 * Chrome rounds them unless its WebGPU developer features are turned on.
+	 * The step between GPU times when the browser rounds its timestamps, or null when they look
+	 * exact. It is the greatest common divisor of the offsets that the timer reads back, not a
+	 * constant of the device. Chrome rounds its timestamps to a privacy grid unless a timing run
+	 * turns the rounding off.
 	 */
 	gpuStepMs: number | null;
 	/** Time between presented frames. */
@@ -322,7 +326,8 @@ export function summarizeFrames(
 		(sketch.counters[counter] ?? []).filter((entries) => entries !== CORE_NOT_COUNTED);
 	const visible = counted(Counter.VisibleEntries);
 	const occluded = counted(Counter.OccludedEntries);
-	const gpu = ring(Role.Gpu).busy;
+	const gpuRing = ring(Role.Gpu);
+	const gpu = gpuRing.busy;
 	const completion = ring(Role.Completion);
 	const intervals = render.intervals.filter((ms) => ms > 0);
 	// A frame whose update failed still presented, so the ramp must not count its interval. The
@@ -345,8 +350,8 @@ export function summarizeFrames(
 		cpuMsAllThreads: percentiles(total),
 		threads: threadStats,
 		gpuMs: gpu.length > 0 ? percentiles(gpu) : null,
-		gpuPassMs: gpuPassStats(ring(Role.Gpu)),
-		gpuStepMs: timerStep(gpu),
+		gpuPassMs: gpuPassStats(gpuRing),
+		gpuStepMs: timerStep(gpuRing.counters[GpuCounter.Tick]),
 		intervalMs: percentiles(intervals),
 		presentedFps: ratePerSecond(intervals) ?? 0,
 		completedFps: ratePerSecond(completion.intervals),
@@ -424,16 +429,13 @@ export function gpuPassStats(records: RingRecords): GpuPassStats[] | null {
 	return Array.from(parts, ([name, values]) => ({ name, ms: percentiles(values) }));
 }
 
-/** Below this, a step between GPU times is timer precision, not rounding. */
-const MIN_ROUNDING_STEP_MS = 0.01;
-
-/** The smallest GPU time, when every other time is a whole multiple of it. */
-export function timerStep(times: readonly number[]): number | null {
-	let step = Number.POSITIVE_INFINITY;
-	for (const ms of times) if (ms > 0 && ms < step) step = ms;
-	if (!Number.isFinite(step) || step < MIN_ROUNDING_STEP_MS) return null;
-	const whole = times.every((ms) => Math.abs(ms / step - Math.round(ms / step)) < 1e-3);
-	return whole ? step : null;
+/**
+ * The step between the GPU's timestamps, from the per-frame steps that its records hold: their
+ * greatest common divisor, which is the divisor of every offset that the timer read back. Null when
+ * the timestamps look exact, or where the timer recorded no step.
+ */
+export function timerStep(ticksNs: readonly number[] | undefined): number | null {
+	return ticksNs ? stepMs(commonStep(ticksNs)) : null;
 }
 
 interface MemoryMeasurement {

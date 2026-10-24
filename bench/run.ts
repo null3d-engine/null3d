@@ -63,17 +63,14 @@
 //                     window, drawing with SwiftShader as CI's Linux machines do
 //   --switches <q>    page switches that every page gets, such as shadows=3: S2 with the sun's
 //                     shadows in 3 cascades on null3d, and in one map on three.js
-// Every browser starts with WebGPU's developer features on, so GPU timestamps are not rounded.
+// Every browser starts with GPU timing on: WebGPU's developer features, and Dawn's timestamp
+// quantization off, so the timestamps are not rounded before the page reads them.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { cpus, platform } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
 import type { Browser } from '@playwright/test';
-import {
-	launchChromium,
-	SWIFTSHADER_ARGS,
-	WEBGPU_DEVELOPER_FEATURES,
-} from '../packages/cli/src/browser.js';
+import { GPU_TIMING_ARGS, launchChromium, SWIFTSHADER_ARGS } from '../packages/cli/src/browser.js';
 import { RUNS } from '../packages/cli/src/protocol.js';
 import { displayRateCheck, launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
@@ -305,11 +302,11 @@ function launchBrowser(name: BenchOptions['browser']): Promise<Browser> {
 	if (name === 'chromium')
 		return launchChromium({
 			headless: true,
-			args: [...SWIFTSHADER_ARGS, WEBGPU_DEVELOPER_FEATURES],
+			args: [...SWIFTSHADER_ARGS, ...GPU_TIMING_ARGS],
 		});
 	return launchInWindow({
 		...(name === 'brave' ? { executablePath: BRAVE } : { channel: 'chrome' }),
-		args: [WEBGPU_DEVELOPER_FEATURES],
+		args: [...GPU_TIMING_ARGS],
 	});
 }
 

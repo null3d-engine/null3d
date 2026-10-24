@@ -110,8 +110,9 @@ describe('FrameStatsWindow', () => {
 		expect(stats.objects).toBe(40);
 		expect(stats.uploadBytes).toBe(3072);
 		expect(stats.wasmBytes).toBe(WASM_BYTES);
-		// No GPU timer wrote a record, so the GPU time is unknown.
+		// No GPU timer wrote a record, so the GPU time and its step are unknown.
 		expect(stats.gpuMs).toBeNull();
+		expect(stats.gpuStepMs).toBeNull();
 		expect(stats.tier).toBe('webgl2');
 		expect(stats.preset).toBe('high');
 		expect(stats.renderScale).toBe(0.75);
@@ -374,13 +375,30 @@ describe('FrameStatsWindow GPU time', () => {
 		const gpu = new FrameRecorder(buffer, Role.Gpu);
 		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame);
 		gpu.begin(11);
+		gpu.gpuTick(65_536);
 		gpu.commit(4);
 		window.update();
 		expect(window.stats.gpuMs).toBe(4);
+		// The step between the timestamps is the divisor of the per-frame steps.
+		expect(window.stats.gpuStepMs).toBeCloseTo(0.065536, 9);
 		for (let frame = 31; frame <= 60; frame++) writeFrame(recorders, frame);
 		window.update();
 		expect(window.stats.gpuMs).toBe(4);
-		expect(JSON.parse(JSON.stringify(window.stats)).gpuMs).toBe(4);
+		expect(window.stats.gpuStepMs).toBeCloseTo(0.065536, 9);
+		const logged = JSON.parse(JSON.stringify(window.stats));
+		expect(logged.gpuMs).toBe(4);
+		expect(logged.gpuStepMs).toBeCloseTo(0.065536, 9);
+	});
+
+	it('reports no step when the times look exact', () => {
+		const { buffer, recorders, window } = setUp();
+		const gpu = new FrameRecorder(buffer, Role.Gpu);
+		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame);
+		gpu.begin(11);
+		gpu.gpuTick(1);
+		gpu.commit(4);
+		window.update();
+		expect(window.stats.gpuStepMs).toBeNull();
 	});
 });
 
