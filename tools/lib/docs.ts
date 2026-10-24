@@ -142,6 +142,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'guides/phones', title: 'Phones and tablets', since: '0.1', summary: 'Pixel-ratio caps; memory budgets; heat; testing on real devices.' },
 	{ id: 'guides/custom-shaders', title: 'Custom shaders', since: '0.1', summary: 'WGSL in sketch code; shader errors; surface functions; full shaders; uniforms and typed materials; hot reload.' },
 	{ id: 'guides/custom-passes', title: 'Custom passes and render targets', since: '0.2', summary: 'Custom effects and tone curves in WGSL; declaring passes; reading and writing named textures; layer masks.' },
+	{ id: 'guides/car-paint', title: 'Car paint', since: '0.3', summary: 'A paint material over the clear coat: metal flakes that stop shimmering, panel seams that follow the pixel, and an optional carbon weave with direction-dependent shine.' },
 	{ id: 'guides/loading-screens', title: 'Loading screens and warm-up', since: '0.1', summary: 'preload; onProgress; scene.warmUp; the preset check; upload budgets; switching presets behind a loading screen.' },
 	{ id: 'guides/accessibility', title: 'Accessibility', since: '0.1', summary: 'What the canvas tells assistive technology; keyboard use; reduced motion; pausing; loading and errors.' },
 	{ id: 'guides/content-pages', title: '3D scenes on content pages', since: '0.1', summary: 'Product and marketing pages: the fallback page, a load deadline, pausing off screen, scroll-driven cameras, second visits and crashes.' },
