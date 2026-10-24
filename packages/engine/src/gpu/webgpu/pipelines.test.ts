@@ -30,13 +30,6 @@ const LIMITS = {
 
 const STAGES = { vertex: 1, fragment: 2, compute: 4 };
 
-/** The permutation bits of a custom shader that change its pipeline layout. */
-const CUSTOM_BITS = {
-	SKIN: G.PERMUTATION_SKIN,
-	INSTANCE_INDEX: G.PERMUTATION_INSTANCE_INDEX,
-	DEPTH_MULTISAMPLED: G.PERMUTATION_DEPTH_MULTISAMPLED,
-};
-
 /** Every combination of the bits of `bits`. */
 function combinations(bits: number): number[] {
 	const words = [0];
@@ -223,7 +216,10 @@ describe('the WebGPU pipeline layouts', () => {
 
 	it('keep custom materials and effects with textures within the default limits', () => {
 		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
-		const meshBits = G.PERMUTATION_SKIN | G.PERMUTATION_INSTANCE_INDEX | G.PERMUTATION_CASTER;
+		// A custom material's builds never read their instances by index: the material compiler
+		// leaves that permutation out, and the renderer pairs it only with the engine's own mesh
+		// templates. Skinning and the caster builds are the combinations that add a group here.
+		const meshBits = G.PERMUTATION_SKIN | G.PERMUTATION_CASTER;
 		const shaders = [
 			custom(undefined, 0, meshBits),
 			custom(undefined, G.SIZE_MAP_SLOTS, meshBits),
