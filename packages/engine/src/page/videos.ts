@@ -24,7 +24,8 @@ export interface VideoOptions {
 	 * with the video's shape, and leaves a frame that is smaller as it is. The default is 512: a
 	 * 16:9 frame of that width is 512 x 288 texels, which is 576 KiB, so one frame fits the Low
 	 * preset's 2 MiB upload budget whole. A frame of 1,024 texels a side is 4 MiB, which a phone's
-	 * Low preset uploads over two frames.
+	 * Low preset uploads over two frames. Keep it within the sketch's `textures.maxSize`, the
+	 * largest texture that the device takes.
 	 */
 	maxSize?: number;
 	/**
