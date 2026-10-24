@@ -76,9 +76,10 @@
 //                       move to the new light on each GPU path, or reflection, which times S1 with
 //                       a reflection pass at a quarter and at half the render size against none,
 //                       or alpha-mask-cost, which times masked lit quads against opaque ones with
-//                       MSAA and without on each GPU path, or skyway, which plays the Skyway
-//                       showcase at the High preset on each GPU path and reports its frame rate,
-//                       display rate and first-frame time, or splats, which draws a large splat
+//                       MSAA and without on each GPU path, or demos, which plays the Skyway and
+//                       Night town showcases at the chosen preset and at High on each GPU path,
+//                       and reports their frame rate, display rate and first-frame time, or
+//                       splats, which draws a large splat
 //                       cloud on each GPU path and reports how much of it draws against the
 //                       preset's budget, with the frame rate, the first-frame time and the bytes
 //                       the page downloaded
@@ -1107,7 +1108,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'alpha-mask-cost',
 	'cluster-cost',
 	'splats',
-	'skyway',
+	'demos',
 ]);
 
 /**
