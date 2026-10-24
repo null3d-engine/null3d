@@ -187,6 +187,47 @@ describe('waitForRunners', () => {
 			expect(finished).toEqual(['slow-ipad']);
 		}));
 
+	it("reports a runner's longest silence that its runner page ended by writing again", () =>
+		withRun(['a'], async (plan) => {
+			// The wait reads the files twice a second, so the writes lie further apart than that.
+			writeRunnerFile(plan.run, 'mac-safari', 'device', {});
+			setTimeout(() => writeRunnerFile(plan.run, 'mac-safari', HEARTBEAT_NAME, {}), 1100);
+			setTimeout(() => {
+				writeRunnerFile(plan.run, 'mac-safari', 'a', { ok: true });
+				writeRunnerFile(plan.run, 'mac-safari', 'done', {});
+			}, 1700);
+			const silences: [string, number, string | undefined][] = [];
+			await waitForRunners(plan, ['mac-safari'], {
+				quietMs: () => 5000,
+				onSilence: (runner, ms, at) => silences.push([runner, ms, at]),
+			});
+			expect(silences).toHaveLength(1);
+			const [[runner, ms, at] = ['', 0, undefined]] = silences;
+			expect(runner).toBe('mac-safari');
+			expect(ms).toBeGreaterThanOrEqual(1000);
+			expect(ms).toBeLessThan(1500);
+			expect(at).toBe('a');
+		}));
+
+	it('leaves out of the longest silence the stop that a new runner page ended', () =>
+		withRun(['a'], async (plan) => {
+			writeRunnerFile(plan.run, 'mac-safari', 'device', {});
+			const silences: number[] = [];
+			await waitForRunners(plan, ['mac-safari'], {
+				quietMs: () => 50,
+				onQuiet: (runner) => {
+					setTimeout(() => {
+						writeRunnerFile(plan.run, runner, 'a', { ok: true });
+						writeRunnerFile(plan.run, runner, 'done', {});
+					}, 300);
+					return true;
+				},
+				onSilence: (_, ms) => silences.push(ms),
+			});
+			expect(silences).toHaveLength(1);
+			expect(silences[0]).toBeLessThan(250);
+		}));
+
 	it('gives the whole plan the most time that each page may get', () => {
 		const plan = { run: 'r', createdAt: '', items: [item('a', 220), item('b', 30)] };
 		expect(batchTimeoutMs(plan)).toBeGreaterThanOrEqual((220 + 30) * MOST_TIME_SHARE * 1000);
