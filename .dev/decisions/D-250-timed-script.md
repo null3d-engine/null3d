@@ -53,6 +53,12 @@ property paths of `animateProperty` (`position`, `rotation`, `scale`, `visible`,
 camera's own values), and lands before the frame at its time. A `dump` step reads the state after
 that frame.
 
+A step names an object by the name that the scene gave it, or by a component that the scene holds:
+`#camera` is the active camera, and an object that is a light or a camera answers to that
+component's own properties, such as `intensity` or `fov`. A name that finds no object fails the
+step with the names that are close, so a wrong name is easy to fix. The last dot separates the
+object from its property, so an object's own name may hold dots.
+
 `shot` holds once at each time that draws a shot or reads a dump. `test` does the same for a
 `null3d.json` entry that gives `script` instead of `hold`, and each shot step becomes an image test
 named `<test>-<state>`, with its own reference. A step that fails, such as a name that finds no

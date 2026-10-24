@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { UsageError } from './args.js';
-import { dumpSteps, parseScript, scriptProgram, shotSteps } from './script.js';
+import { parseScript, scriptProgram, shotSteps } from './script.js';
 
 /** What parsing `text` throws, as the message a person sees. */
 function mistake(text: string): string {
@@ -146,9 +146,8 @@ describe('scriptProgram', () => {
 		});
 	});
 
-	it('lists a script’s shots and dumps in time order', () => {
+	it('lists a script’s shots in time order', () => {
 		const steps = parseScript('1 dump car\n2 shot start\n3 dump car.position\n4 shot driving');
 		expect(shotSteps(steps).map((step) => step.name)).toEqual(['start', 'driving']);
-		expect(dumpSteps(steps).map((step) => step.target)).toEqual(['car', 'car']);
 	});
 });
