@@ -158,6 +158,15 @@ export const TwoStepScale = 47;
  * Each read of GPU picking's ring: the thread that draws adds one once the read's bytes are in
  * engine memory. The sketch takes a read's answer when its slot is not 0.
  */
+/**
+ * The generation of the newest plan's texture list, as the sketch thread recorded it. A list
+ * recorded under an older generation names textures that the newer plan replaced, so the thread
+ * that draws takes that frame without drawing it, as it does a frame of an older GPU epoch.
+ */
+export const PlanEpoch = 48;
+/** The plan generation each frame parity's draw list was recorded under. */
+export const FramePlan0 = 49;
+export const FramePlan1 = 50;
 export const PickRead0 = 37;
 export const PickRead1 = 38;
 export const PickRead2 = 39;

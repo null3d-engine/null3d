@@ -192,6 +192,7 @@ use crate::skinning::SkinningMode;
 use crate::sorted::{SkinnedPipeline, SortedLayout, SortedRows};
 use crate::ssr::SsrIds;
 use crate::subsurface::SubsurfaceIds;
+use crate::taa::TaaIds;
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
 use crate::view::{MAX_VIEWS, ViewFrame, ViewId};
@@ -268,6 +269,7 @@ mod ids {
     use crate::effects::EffectPass;
     use crate::particles::ParticleIds;
     use crate::subsurface::STEPS as SUBSURFACE_STEPS;
+    use crate::taa::STEPS as TAA_STEPS;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
     use crate::weighted::WeightedIds;
 
@@ -452,9 +454,11 @@ mod ids {
     pub const ACCUMULATE: u32 = EXPOSURE_STATE + 1;
     /// The settings of the final pass's still build, which draws a still view's accumulated color.
     pub const STILL_SETTINGS: u32 = ACCUMULATE + 1;
+    /// The uniform buffer of temporal anti-aliasing's resolve.
+    pub const TAA: u32 = STILL_SETTINGS + 1;
     /// Each feature-instance draw's per-instance buffer, then its count word, from
     /// `FEATURE_INSTANCES + 2 * (id - 1)`.
-    pub const FEATURE_INSTANCES: u32 = STILL_SETTINGS + 1;
+    pub const FEATURE_INSTANCES: u32 = TAA + 1;
 
     pub const fn feature_instances(id: u32) -> u32 {
         FEATURE_INSTANCES + 2 * (id - 1)
@@ -592,8 +596,10 @@ mod ids {
     pub const OUTPUT_LUT_SAMPLER: u32 = EXPOSURE_SAMPLER + 1;
     /// The color grading table's sampler that the final pass's still build owns.
     pub const STILL_LUT_SAMPLER: u32 = OUTPUT_LUT_SAMPLER + 1;
+    /// The linear sampler of temporal anti-aliasing's history.
+    pub const TAA_SAMPLER: u32 = STILL_LUT_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = STILL_LUT_SAMPLER + 1;
+    pub const SAMPLERS: u32 = TAA_SAMPLER + 1;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -723,8 +729,11 @@ mod ids {
     /// Group 0 of each compute pass, from this id on, by its view's place, after the parallax
     /// frame groups.
     pub const COMPUTE_GROUPS: u32 = PARALLAX_FRAME_GROUPS + MAX_VIEW_IDS as u32;
-    /// The bind groups of materials' maps, after the compute passes' groups.
-    pub const TEXTURE_GROUPS: u32 = COMPUTE_GROUPS + MAX_VIEWS as u32;
+    /// The bind groups of temporal anti-aliasing's resolve and copy, after the compute passes'
+    /// groups.
+    pub const TAA_GROUPS: u32 = COMPUTE_GROUPS + MAX_VIEWS as u32;
+    /// The bind groups of materials' maps, after temporal anti-aliasing's.
+    pub const TEXTURE_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -1075,6 +1084,11 @@ impl GpuDrivenRenderer {
                                 state: ids::EXPOSURE_STATE,
                                 pipelines: [ids::EXPOSURE_BINS, ids::EXPOSURE_ADAPT],
                             }),
+                        },
+                        taa: TaaIds {
+                            buffer: ids::TAA,
+                            sampler: ids::TAA_SAMPLER,
+                            first_group: ids::TAA_GROUPS,
                         },
                         transmission: TransmissionIds {
                             group: ids::TRANSMISSION_GROUP,
@@ -1672,6 +1686,12 @@ impl GpuDrivenRenderer {
             input.scene,
             parity,
             input.canvas,
+        ));
+        self.graph.set_taa(self.settings.taa_frame(
+            input.scene,
+            parity,
+            input.canvas,
+            input.render_scale,
         ));
         self.graph.set_tone_curve(self.settings.tone_curve());
         self.graph.set_grading(self.settings.grades());
@@ -3493,6 +3513,10 @@ impl FrameBuilder for GpuDrivenRenderer {
 
     fn list(&self, frame: u32) -> &DrawList {
         self.lists.list(frame)
+    }
+
+    fn plan_epoch(&self) -> u32 {
+        self.graph.plan_epoch()
     }
 
     fn check_graph(&mut self) -> Result<(), GraphError> {

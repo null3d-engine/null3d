@@ -76,6 +76,7 @@ use crate::shadows::{
 use crate::sky_maps::{MapSky, SkyMaps};
 use crate::ssr::{self, Ssr, TraceFrame};
 use crate::subsurface::{self, SubsurfaceFrame};
+use crate::taa::{self, LastView, Taa, TaaFrame};
 use crate::textures::TextureStore;
 use crate::textures::budget::NeedView;
 use crate::vertex_draws::VertexDrawTable;
@@ -481,6 +482,9 @@ pub trait FrameBuilder {
     fn allow_motion(&mut self, one_sample: bool, multisampled: bool);
     /// The list recorded for a frame's parity, as the render worker replays it.
     fn list(&self, frame: u32) -> &DrawList;
+    /// The generation of the plan's texture list. A list recorded under an older generation names
+    /// textures that a later plan replaced, so the thread that draws skips that frame.
+    fn plan_epoch(&self) -> u32;
     /// How still the camera's view is: the frames it has accumulated, from 0 while it moves. The
     /// thread that draws rests once it has accumulated enough (see [`crate::still`]).
     fn still(&self) -> crate::still::Still {
@@ -1024,6 +1028,15 @@ pub struct SceneSettings {
     fog_slices: u32,
     /// The governor's halvings of the slices that a frame draws.
     fog_halvings: u32,
+    /// Temporal anti-aliasing's settings while the sketch turns it on (a prototype).
+    taa: Option<Taa>,
+    /// What the camera saw in the last frame that temporal anti-aliasing drew.
+    taa_last: Option<LastView>,
+    /// The camera's offset in this frame, in pixels, while temporal anti-aliasing draws.
+    taa_jitter: [f32; 2],
+    /// The frames that temporal anti-aliasing has resolved since it turned on, which keep its
+    /// history out of the frame until both halves hold a frame.
+    taa_frames: u32,
     /// The color grading table while the sketch sets one.
     lut: Option<Lut>,
     /// The built-in grading table's texture while the sketch sets grading values. A job worker
@@ -1199,6 +1212,10 @@ impl SceneSettings {
             fog_volume: None,
             fog_slices: fog_volume::SLICE_COUNTS[1],
             fog_halvings: 0,
+            taa: None,
+            taa_last: None,
+            taa_jitter: [0.0; 2],
+            taa_frames: 0,
             lut: None,
             grade: None,
             vignette: None,
@@ -1834,6 +1851,77 @@ impl SceneSettings {
     /// changes only the steps' blocks, so it makes no GPU object.
     pub fn set_subsurface_taps(&mut self, taps: u32) {
         self.subsurface_taps = taps;
+    }
+
+    /// Temporal anti-aliasing's settings while it is on and no debug view draws.
+    pub fn taa(&self) -> Option<Taa> {
+        self.taa.filter(|_| !self.debug_view.is_debug())
+    }
+
+    /// Turns temporal anti-aliasing on with its settings, or off with `None`, from the next
+    /// recorded frame on. Its history starts again.
+    pub fn set_taa(&mut self, taa: Option<Taa>) {
+        if taa.is_none() {
+            self.taa_last = None;
+            self.taa_jitter = [0.0; 2];
+            self.taa_frames = 0;
+        }
+        self.taa = taa;
+    }
+
+    /// What temporal anti-aliasing resolves with in this frame of `scene`'s positions of `parity`,
+    /// on a canvas of `canvas` pixels at render scale `scale`, or `None` while it is off or without
+    /// a camera. It takes the camera's offset for this frame, which the camera's view then draws
+    /// with, and keeps what the camera sees for the next frame. Call it once per recorded frame.
+    pub(crate) fn taa_frame(
+        &mut self,
+        scene: &SceneStorage,
+        parity: usize,
+        canvas: (u32, u32),
+        scale: RenderScale,
+    ) -> Option<TaaFrame> {
+        let Some(settings) = self.taa() else {
+            self.taa_last = None;
+            self.taa_jitter = [0.0; 2];
+            self.taa_frames = 0;
+            return None;
+        };
+        let view = self.views.first()?;
+        let size = view.draw_size(canvas, scale);
+        let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
+        let camera = view.transform(scene, parity, aspect)?;
+        self.taa_jitter = if settings.jitter {
+            taa::jitter(self.clock[2].to_bits())
+        } else {
+            [0.0; 2]
+        };
+        let at = camera.cell.absolute();
+        let previous = self.taa_last.replace(LastView {
+            view_proj: camera.view_proj,
+            at,
+        });
+        // The resolve reads the history of the other parity, so both must hold a frame before
+        // either is trusted.
+        let reset = previous.is_none() || self.taa_frames < 2;
+        self.taa_frames = self.taa_frames.saturating_add(1);
+        let mut identity = [0.0; 16];
+        for k in 0..4 {
+            identity[k * 5] = 1.0;
+        }
+        Some(TaaFrame {
+            taa: settings,
+            size,
+            projection: camera.projection,
+            jitter: [
+                2.0 * self.taa_jitter[0] / size.0.max(1) as f32,
+                2.0 * self.taa_jitter[1] / size.1.max(1) as f32,
+            ],
+            reproject: previous
+                .and_then(|last| taa::reprojection(&camera.view_proj, at, &last))
+                .unwrap_or(identity),
+            reset,
+            parity: (self.clock[2].to_bits() & 1) as u8,
+        })
     }
 
     /// The taps of each step of the subsurface blur while it may draw: 0 while the quality
@@ -3576,10 +3664,15 @@ impl SceneSettings {
             (None, None) => view.transform(scene, parity, aspect)?,
         };
         let [x, y, z] = camera.cell.absolute().map(|v| v as f32);
+        let view_proj = if view_id == ViewId::CAMERA && self.taa().is_some() {
+            taa::jittered(&camera.view_proj, self.taa_jitter, (width, height))
+        } else {
+            camera.view_proj
+        };
         let (width, height) = (width as f32, height as f32);
         let output = self.drawn_output();
         let uniform = FrameUniform {
-            view_proj: camera.view_proj,
+            view_proj,
             view: camera.view,
             projection: camera.projection,
             camera_position: camera.eye,

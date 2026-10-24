@@ -1440,6 +1440,11 @@ export class SketchRunner {
 		Atomics.store(slots, Slot.DrawListWords0 + parity, glue.drawListWords(frame));
 		Atomics.store(slots, Slot.FrameRest0 + parity, glue.frameRests() ? 1 : 0);
 		Atomics.store(slots, Slot.FrameEpoch0 + (frame & 1), epoch);
+		// The frame may have made the plan's targets again, which leaves the other parity's list
+		// naming textures that the new plan replaced.
+		const planEpoch = glue.planEpoch();
+		Atomics.store(slots, Slot.PlanEpoch, planEpoch);
+		Atomics.store(slots, Slot.FramePlan0 + parity, planEpoch);
 		// The first frame that records after a restart, whether the sketch asked for it between
 		// frames or in this frame's own code, has the new settings, so the thread that draws holds it
 		// until its pipelines are built.

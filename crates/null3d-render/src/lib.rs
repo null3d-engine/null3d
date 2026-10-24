@@ -125,6 +125,7 @@ pub mod sorted;
 pub mod ssr;
 pub mod still;
 pub mod subsurface;
+pub mod taa;
 pub mod textures;
 mod transmission;
 pub mod vertex_draws;

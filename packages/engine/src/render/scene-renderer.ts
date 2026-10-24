@@ -161,7 +161,7 @@ export class FrameReplay {
 		this.end = start + Atomics.load(this.slots, Slot.DrawListWords0 + parity);
 		const end = this.end;
 		// A list whose first word is zero is the one a failed device cleared.
-		if (this.epochOf(parity) && end > start && words[start] !== 0) {
+		if (this.drawable(parity) && end > start && words[start] !== 0) {
 			const found = this.restOf(frame);
 			const rest =
 				end > found && words[found] !== 0 ? found : this.backend.restStart(words, start, end);
@@ -170,16 +170,22 @@ export class FrameReplay {
 		const other = parity ^ 1;
 		const otherStart = (Atomics.load(this.slots, Slot.DrawListAddress0 + other) >>> 0) / 4;
 		const otherEnd = otherStart + Atomics.load(this.slots, Slot.DrawListWords0 + other);
-		if (this.epochOf(other) && otherEnd > otherStart && words[otherStart] !== 0)
+		if (this.drawable(other) && otherEnd > otherStart && words[otherStart] !== 0)
 			return { from: otherStart, end: otherEnd };
 		return null;
 	}
 
-	/** True when the list of a frame's parity was recorded for the GPU device that draws now. */
-	private epochOf(parity: number): boolean {
+	/**
+	 * True when the list of a frame's parity was recorded for the GPU device that draws now and
+	 * under the plan's current generation: a list of an older plan names textures that the frame
+	 * after replaced.
+	 */
+	private drawable(parity: number): boolean {
 		return (
 			Atomics.load(this.slots, Slot.FrameEpoch0 + parity) ===
-			Atomics.load(this.slots, Slot.GpuEpoch)
+				Atomics.load(this.slots, Slot.GpuEpoch) &&
+			Atomics.load(this.slots, Slot.FramePlan0 + parity) ===
+				Atomics.load(this.slots, Slot.PlanEpoch)
 		);
 	}
 

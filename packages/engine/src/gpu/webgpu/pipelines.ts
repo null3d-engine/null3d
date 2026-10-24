@@ -54,6 +54,8 @@ import {
 	LAYOUT_SUBSURFACE_BLUR,
 	LAYOUT_SUBSURFACE_COMPOSITE,
 	LAYOUT_SUBSURFACE_COMPOSITE_MS,
+	LAYOUT_TAA,
+	LAYOUT_TAA_MS,
 	LAYOUT_TEXTURES,
 	LAYOUT_TRANSMISSION_COPY_MS,
 	LAYOUT_VIEW_COPY,
@@ -162,6 +164,9 @@ import {
 	TEMPLATE_SUBSURFACE_COMPOSITE,
 	TEMPLATE_SUBSURFACE_COMPOSITE_MS,
 	TEMPLATE_SUBSURFACE_MAPS,
+	TEMPLATE_TAA_COPY,
+	TEMPLATE_TAA_RESOLVE,
+	TEMPLATE_TAA_RESOLVE_MS,
 	TEMPLATE_TRANSMISSION_COPY,
 	TEMPLATE_VIEW_COPY,
 	TEMPLATE_WEIGHTED_COMPOSITE,
@@ -1056,6 +1061,20 @@ export class Pipelines {
 			unfiltered(3, true),
 			blurred,
 		]);
+		// Temporal anti-aliasing's resolve: its block, the scene's color, depth and motion, each
+		// read with textureLoad, the two histories, which it samples with the linear sampler, and
+		// the sampler at binding 6. The multisampled build reads the scene depth's samples.
+		const taa = (depthMultisampled: boolean): GPUBindGroupLayoutEntry[] => [
+			aoSettings,
+			unfiltered(1),
+			unfiltered(2, depthMultisampled),
+			unfiltered(3),
+			{ binding: 4, visibility: fragment, texture: {} },
+			{ binding: 5, visibility: fragment, texture: {} },
+			{ binding: 6, visibility: fragment, sampler: {} },
+		];
+		this.defineLayout(LAYOUT_TAA, 'taa', taa(false));
+		this.defineLayout(LAYOUT_TAA_MS, 'taa ms', taa(true));
 		// The subsurface blur's steps read every texture with textureLoad: the across step the skin
 		// pass's light, and the down step that, the across step's light, the scene color and the
 		// scene's depth as plain floats.
@@ -1337,6 +1356,29 @@ export class Pipelines {
 		this.defineTemplate(TEMPLATE_VIEW_COPY, {
 			label: 'view copy',
 			shader: shaders.view_copy,
+			pipeline: 'main',
+			layouts: [LAYOUT_VIEW_COPY],
+			vertexBuffers: [],
+		});
+		// Temporal anti-aliasing's resolve binds the scene's color, depth and motion and both
+		// histories; its copy binds as the copy of a view's image does.
+		this.defineTemplate(TEMPLATE_TAA_RESOLVE, {
+			label: 'taa resolve',
+			shader: shaders.taa,
+			pipeline: 'resolve',
+			layouts: [LAYOUT_TAA],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_TAA_RESOLVE_MS, {
+			label: 'taa resolve ms',
+			shader: shaders.taa_ms,
+			pipeline: 'resolve',
+			layouts: [LAYOUT_TAA_MS],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_TAA_COPY, {
+			label: 'taa copy',
+			shader: shaders.taa_copy,
 			pipeline: 'main',
 			layouts: [LAYOUT_VIEW_COPY],
 			vertexBuffers: [],
