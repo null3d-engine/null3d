@@ -50,6 +50,10 @@ export const FETCH_SITES: Readonly<Record<string, FetchSite>> = {
 		count: 1,
 		why: 'downloads the SPZ file that the sketch names',
 	},
+	'packages/splats/src/stream.ts': {
+		count: 1,
+		why: 'downloads the stream index and then only the chunks that the view asks for, which is what makes a large cloud appear without the whole file',
+	},
 	'packages/vite-plugin/src/engine-shaders.ts': {
 		count: 2,
 		why: "the build fetches the engine's shader release, and declares the fetch it offers",
