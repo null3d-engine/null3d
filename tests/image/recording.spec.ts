@@ -57,13 +57,17 @@ test('a recorded session replays to the same frames', async ({ page }) => {
 	await page.waitForTimeout(400);
 	await page.keyboard.up('w');
 	await page.waitForTimeout(200);
-	const live = await page.evaluate(frameLog);
 	const bytes = await page.evaluate(async () => {
 		const engine = (globalThis as RecordingPage).null3dEngine;
 		if (engine === undefined) throw new Error('the page has no engine');
 		return Array.from((await engine.saveRecording()) ?? []);
 	});
 	expect(bytes.length).toBeGreaterThan(64);
+	// The session's own lines reach the page as messages, so read them after the save: the
+	// recording cannot hold a frame that the page has not heard of by then.
+	await page.waitForTimeout(200);
+	const live = await page.evaluate(frameLog);
+	expect(live.length).toBeGreaterThanOrEqual(6);
 	expect(live.some((line) => line.split('|')[3] === '1')).toBe(true);
 
 	// The replay reads the same bytes from its own address, so the file needs no copy into the page.
@@ -86,6 +90,7 @@ test('a recorded session replays to the same frames', async ({ page }) => {
 	expect(replayed.length).toBeGreaterThan(5);
 	// The recording starts at the session's first frame, so the replay's frames are the live log's
 	// first ones, line for line: the same times, steps, input and seeded number.
+	expect(replayed.length).toBeLessThanOrEqual(live.length);
 	expect(replayed).toEqual(live.slice(0, replayed.length));
 	const held = await page.evaluate(() => (globalThis as RecordingPage).__null3dHold);
 	expect(held?.ok).toBe(true);
