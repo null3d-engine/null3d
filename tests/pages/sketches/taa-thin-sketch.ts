@@ -13,13 +13,14 @@ const ORBIT = Number(params.get('orbit') ?? '0.1');
 const RATE = 60;
 const MOVING = params.get('moving') !== '0';
 const FRAMES = params.has('frames');
+const JITTER = params.get('jitter') !== '0';
 const TARGET = [0, 1.2, -8] as const;
 const RADIUS = 9;
 
 export default defineSketch(async ({ scene, geometry, materials, post, quality, page, time }) => {
 	if (params.has('fixed')) quality.set({ minRenderScale: 1, maxRenderScale: 1, governor: false });
 	const setResolve = (on: boolean) =>
-		post.set({ taa: on ? { feedback: 0.9, jitter: true } : false });
+		post.set({ taa: on ? { feedback: 0.9, jitter: JITTER } : false });
 	setResolve(params.get('taa') !== '0');
 	scene.setBackground('#9cc4e8');
 	scene.createAmbientLight({ color: '#c8d8ff', intensity: 0.5 });

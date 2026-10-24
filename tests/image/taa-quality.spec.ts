@@ -63,6 +63,8 @@ function save(name: string, result: unknown): void {
 const presets = (process.env.NULL3D_TAA_PRESETS ?? 'low,medium,high,ultra').split(',');
 const scenes = (process.env.NULL3D_TAA_SCENES ?? 'thin,grass').split(',');
 const paths = (process.env.NULL3D_TAA_PATHS ?? 'webgpu,webgl2').split(',');
+const cameras = (process.env.NULL3D_TAA_CAMERAS ?? 'still,slow,brisk').split(',');
+const jitter = process.env.NULL3D_TAA_JITTER === '0' ? '&jitter=0' : '';
 
 for (const gpu of paths)
 	for (const scene of scenes)
@@ -70,7 +72,7 @@ for (const gpu of paths)
 			test.skip(!process.env.NULL3D_TAA_QUALITY, 'set NULL3D_TAA_QUALITY to measure the bar');
 			test.setTimeout(1_800_000);
 			await page.goto(
-				`taa-quality.html?gpu=${gpu}&scene=${scene}&mode=quality&fps=4&presets=${presets.join(',')}`,
+				`taa-quality.html?gpu=${gpu}&scene=${scene}&mode=quality&fps=4&cameras=${cameras.join(',')}&presets=${presets.join(',')}${jitter}`,
 			);
 			const result = await pageResult<QualityResult>(page, 1_700_000);
 			expect(result.error).toBeUndefined();

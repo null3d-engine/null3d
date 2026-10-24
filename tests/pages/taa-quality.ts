@@ -29,6 +29,7 @@ const count = Number(params.get('count') ?? '16');
 const size = (params.get('size') ?? '960x540').split('x').map(Number) as [number, number];
 const referenceSize = (params.get('ref') ?? '3840x2160').split('x').map(Number) as [number, number];
 const down = Number(params.get('down') ?? '4');
+const jitter = params.get('jitter') !== '0';
 /** Radians per second that each camera name turns at. */
 const ORBITS: Record<string, number> = { still: 0, slow: 0.1, brisk: 0.3 };
 const SKETCHES: Record<string, string> = {
@@ -151,13 +152,12 @@ function figures(frames: Sequence, reference: Sequence) {
 function sketchURL(camera: string, taa: boolean, moving: boolean): URL {
 	const url = new URL(SKETCHES[scene] as string, import.meta.url);
 	const orbit = ORBITS[camera] as number;
-	url.search = `?orbit=${orbit}&taa=${taa ? 1 : 0}&frames&fixed${moving ? '' : '&moving=0'}`;
+	url.search = `?orbit=${orbit}&taa=${taa ? 1 : 0}&jitter=${jitter ? 1 : 0}&frames&fixed${moving ? '' : '&moving=0'}`;
 	return url;
 }
 
 /** Starts one engine at `width` x `height` and waits for the sketch's frame `start`. */
 async function startEngine(
-	canvas: HTMLCanvasElement,
 	width: number,
 	height: number,
 	enginePreset: string,
@@ -165,11 +165,14 @@ async function startEngine(
 	camera: string,
 	taa: boolean,
 	moving: boolean,
-): Promise<{ engine: Engine; heard: number[] }> {
+): Promise<{ engine: Engine; heard: number[]; canvas: HTMLCanvasElement }> {
+	// A canvas goes to the engine's thread for good, so each engine takes a fresh one.
+	const canvas = document.createElement('canvas');
 	canvas.width = width;
 	canvas.height = height;
 	canvas.style.width = `${width}px`;
 	canvas.style.height = `${height}px`;
+	document.body.append(canvas);
 	const heard: number[] = [];
 	const engine = await createEngine({
 		canvas,
@@ -188,7 +191,7 @@ async function startEngine(
 		if (performance.now() > deadline) throw new Error(`the sketch never reached frame ${start}`);
 		await new Promise((resolve) => setTimeout(resolve, 20));
 	}
-	return { engine, heard };
+	return { engine, heard, canvas };
 }
 
 /** Captures `count` consecutive frames, each shrunk by `factor`, and records the sketch frames heard. */
@@ -225,7 +228,6 @@ async function capture(
 
 /** Runs one sequence, retrying once when a capture skipped a frame. */
 async function sequence(
-	canvas: HTMLCanvasElement,
 	width: number,
 	height: number,
 	enginePreset: string,
@@ -242,8 +244,7 @@ async function sequence(
 	preset: string;
 }> {
 	for (let attempt = 0; attempt < 2; attempt++) {
-		const { engine, heard } = await startEngine(
-			canvas,
+		const { engine, heard, canvas } = await startEngine(
 			width,
 			height,
 			enginePreset,
@@ -256,6 +257,7 @@ async function sequence(
 		const tier = engine.capabilities.tier as string;
 		const effective = engine.mode.preset as string;
 		await engine.destroy();
+		canvas.remove();
 		if (captured.consecutive) return { ...captured, tier, preset: effective };
 		console.warn(`a capture skipped a frame on ${camera} ${enginePreset} taa ${taa}; retrying`);
 	}
@@ -263,12 +265,8 @@ async function sequence(
 }
 
 run('taa-quality', async () => {
-	const canvas = document.querySelector('canvas');
-	if (!canvas) throw new Error('the page has no canvas');
-
 	if (mode === 'cost') {
-		const { engine } = await startEngine(
-			canvas,
+		const { engine, canvas } = await startEngine(
 			size[0],
 			size[1],
 			preset,
@@ -298,6 +296,7 @@ run('taa-quality', async () => {
 		const tier = engine.capabilities.tier;
 		const effective = engine.mode.preset;
 		await engine.destroy();
+		canvas.remove();
 		return { mode, scene, tier, preset: effective, off, on, failures };
 	}
 
@@ -320,7 +319,6 @@ run('taa-quality', async () => {
 		// is 64 samples per pixel, so a preset's shadow or texture quality is not counted as error.
 		for (const enginePreset of presets) {
 			const reference = await sequence(
-				canvas,
 				referenceSize[0],
 				referenceSize[1],
 				enginePreset,
@@ -336,7 +334,6 @@ run('taa-quality', async () => {
 			};
 			for (const taa of [false, true]) {
 				const measured = await sequence(
-					canvas,
 					size[0],
 					size[1],
 					enginePreset,
