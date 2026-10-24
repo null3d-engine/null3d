@@ -2788,7 +2788,7 @@ impl FrameBuilder for CpuCulledRenderer {
             settings.meshes(),
             &sways,
             self.shadow.and_then(|shadow| shadow.hero),
-        );
+        )?;
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
         // casters draw into the passes of each.
         let cascades = self.settings.cascade_depth().targets();
