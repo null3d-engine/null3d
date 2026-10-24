@@ -35,7 +35,7 @@ scene.
 | Text in the scene | the MSDF text add-on | not built yet; use HTML labels |
 | Water with waves and foam | `@null3d/water` | not built yet; use a custom material and a reflection pass |
 | Trees, shrubs, grass and wind | the vegetation add-on | not built yet |
-| three.js look modes for a port | `@null3d/three-compat` | not built yet; use the closest core setting |
+| three.js look modes for a port | `@null3d/three-compat` | built |
 
 ## Rules
 
