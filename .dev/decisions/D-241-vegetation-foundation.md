@@ -185,3 +185,29 @@ M3-V4's generator replaces it, and its figures set the shape of the budget.
 - **Memory:** the variant arrays may take the measured 7.0 to 22.7 MB. The GPU textures must stay
   within the measured figures for the same demo and preset, which the add-on shares with the scene.
   Creek's 3.1 MB of Blender models leave, and the arrays replace them.
+
+## Addendum: the package name, confirmed, and the generator's shape
+
+M3-V4 built the add-on as `@null3d/vegetation`, confirming the working name. The generator follows
+this record's look and answers four questions the record left to the build.
+
+- **The leaf-card level rule lives in the generator, as Q2's option A had it.** The asset tool keeps
+  its own step for meshes from files. One test holds both to the rule (`tests/lib/leaf-card-rule.test.ts`):
+  the cards take a space-filling order through their middles. Every second card of the level above
+  is kept, and each kept card grows about its middle by the square root of that step. The largest
+  dropped card is the level's error. The generator's curve key is coarser than the tool's, which
+  orders the same way and costs less at grow time.
+- **A rosette thins its leaves the same way and widens a kept leaf.** Lengthening it would move the
+  tip past the crown's bounds, and the design requires that a level switch never moves the bounds.
+- **A plant keeps at most 255 branches.** A vertex names its branch's wind record with eight bits.
+  A species record whose counts would exceed that stops growing, and the built-in records stay well
+  under it.
+- **The asset is one merged mesh for each part at each level, not a set of shared twig modules.**
+  The shared-twig idea from the research would need one draw for each module. A scene's 256 batches
+  cannot hold the tree variants beside the grass and the impostor cards. The merged parts keep the
+  measured memory. A tree takes about 0.3 to 0.5 MB over its levels, and the add-on's 78 variants
+  take about 18 MB.
+
+The built-in set holds thirteen species and six variants each. It grows on the calling thread or in
+one of the engine's job workers, with the same asset either way. Every choice comes from the
+integer hash that the shaders' `pcg` also computes.

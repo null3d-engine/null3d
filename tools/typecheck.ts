@@ -28,6 +28,8 @@ export const PROJECTS = [
 	'packages/splats/tsconfig.test.json',
 	'packages/terrain',
 	'packages/terrain/tsconfig.test.json',
+	'packages/vegetation',
+	'packages/vegetation/tsconfig.test.json',
 	'packages/three-compat',
 	'packages/three-compat/tsconfig.test.json',
 	'packages/cli',
