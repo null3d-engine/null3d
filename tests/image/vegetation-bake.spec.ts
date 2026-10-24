@@ -1,13 +1,16 @@
 // What one bake of the bark and leaf atlases costs, on each GPU path: the wall of leaf cards that
 // the sketch draws through the atlas material, then through a plain unlit material, and the two
 // frame intervals (tests/pages/vegetation-bake.ts). The difference is what a page pays to paint its
-// plants' textures once. It runs only with NULL3D_VEGETATION_BAKE set, on a quiet computer, and
+// plants' textures once. It runs only with NULL3D_VEGETATION_BAKE_COST set, on a quiet computer, and
 // prints the load beside its figures: the load decides whether a figure holds.
 import { expect, test } from '@playwright/test';
 import { load } from '../lib/cost-runs.ts';
 import { pageResult } from '../lib/page-result.ts';
 
-test.skip(!process.env.NULL3D_VEGETATION_BAKE, 'set NULL3D_VEGETATION_BAKE to time a bake');
+test.skip(
+	!process.env.NULL3D_VEGETATION_BAKE_COST,
+	'set NULL3D_VEGETATION_BAKE_COST to time a bake',
+);
 
 /** What the page measured: the frame interval with the atlas and without it, in milliseconds. */
 interface BakeResult {
