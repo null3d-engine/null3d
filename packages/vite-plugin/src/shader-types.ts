@@ -64,9 +64,14 @@ export interface ShaderVariant<Pipeline extends string = string> {
  * WGSL from a project's modules, compiled by the null3D Vite plugin: a `.wgsl` file that a module
  * imports, or a template literal that a `wgsl` block comment tags. WGSL with entry points is a
  * whole shader. WGSL without entry points holds the functions of a custom material, the function
- * of a custom effect, or a custom tone curve.
+ * of a custom effect, a custom tone curve, or a sky layer.
  */
-export type CompiledWgsl = CompiledShader | CompiledMaterial | CompiledEffect | CompiledToneCurve;
+export type CompiledWgsl =
+	| CompiledShader
+	| CompiledMaterial
+	| CompiledEffect
+	| CompiledToneCurve
+	| CompiledSkyLayer;
 
 /**
  * A whole shader from a project's modules. It has one render pipeline for each `@fragment` entry
@@ -254,4 +259,16 @@ export interface CompiledToneCurve {
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
 	/** The pieces that the engine folds into the final pass. */
 	readonly pieces: EffectPieces;
+}
+
+/**
+ * A sky layer from a project's modules, which `scene.setSkyLayer` draws over the background: WGSL
+ * that declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer`, built into every variant of the
+ * engine's sky-layer template.
+ */
+export interface CompiledSkyLayer {
+	/** Marks the WGSL of a sky layer. */
+	readonly kind: 'skyLayer';
+	/** The sky-layer template's variants with the WGSL, by name. */
+	readonly variants: Readonly<Record<string, ShaderVariant>>;
 }
