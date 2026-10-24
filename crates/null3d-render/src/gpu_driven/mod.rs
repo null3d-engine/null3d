@@ -1759,6 +1759,10 @@ impl GpuDrivenRenderer {
         // target. A frame whose pick pipelines still build keeps the passes off.
         let pick_drawing = self.pick_ready(input, requested);
         self.graph.set_picking_draws(pick_drawing);
+        // A feature-instance draw's buffers exist before the graph's compute pass binds them: the
+        // device draws the first frame of a held page at its capture, when no earlier frame made
+        // them. Their contents wait for the frame's uploads below.
+        self.create_feature_buffers(list)?;
         self.graph.prepare(list, input.canvas, input.render_scale)?;
         let pick_frame = self.begin_pick(list, input, pick_drawing)?;
         self.pick.keep = if pick_frame.is_some() {
@@ -2108,7 +2112,8 @@ impl GpuDrivenRenderer {
         if scatters {
             self.scattering.upload_records(list, arena)?;
         }
-        // A feature-instance draw's buffers exist before any bundle names them.
+        // A feature-instance draw's buffers exist before any bundle names them, and their contents
+        // reach them here, after the frame's arena is set aside.
         self.feature_buffers(list, arena)?;
         // The motion view draws while a pass reads the motion and the device draws its target. Its
         // bundles and culling groups name the copies of the last frame's data, which can grow.
@@ -2985,32 +2990,9 @@ impl GpuDrivenRenderer {
         let places = self.settings.feature_instances().capacity();
         for place in 0..places {
             let id = place as u32 + 1;
-            let Some((_, capacity, count)) = self.settings.feature_instances().record(id) else {
+            let Some((_, _, count)) = self.settings.feature_instances().record(id) else {
                 continue;
             };
-            let index = place;
-            if self.feature_capacity.get(index).copied() != Some(capacity) {
-                list.push(
-                    Op::CreateBuffer,
-                    &[
-                        ids::feature_instances(id),
-                        capacity * crate::feature_instances::INSTANCE_BYTES,
-                        usage::VERTEX | usage::STORAGE | usage::COPY_DST,
-                    ],
-                )?;
-                list.push(
-                    Op::CreateBuffer,
-                    &[
-                        ids::feature_count(id),
-                        crate::feature_instances::COUNT_BYTES,
-                        usage::STORAGE | usage::COPY_DST | usage::COPY_SRC,
-                    ],
-                )?;
-                if index >= self.feature_capacity.len() {
-                    self.feature_capacity.resize(index + 1, 0);
-                }
-                self.feature_capacity[index] = capacity;
-            }
             let (at, bytes) = arena.push(&count.to_le_bytes())?;
             list.push(Op::WriteBuffer, &[ids::feature_count(id), 0, at, bytes])?;
             // The rows that the page wrote reach the add-on's own instance buffer.
@@ -3030,6 +3012,48 @@ impl GpuDrivenRenderer {
                     ],
                 )?;
             }
+        }
+        Ok(())
+    }
+
+    /// Creates the buffers of every feature-instance draw whose capacity changed. A compute pass
+    /// binds them, and the graph records its bind group before the frame's uploads, so the buffers
+    /// exist first.
+    fn create_feature_buffers(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+        if self.settings.feature_instances().is_empty() {
+            return Ok(());
+        }
+        let places = self.settings.feature_instances().capacity();
+        for place in 0..places {
+            let id = place as u32 + 1;
+            let Some((_, capacity, _)) = self.settings.feature_instances().record(id) else {
+                continue;
+            };
+            if self.feature_capacity.get(place).copied() == Some(capacity) {
+                continue;
+            }
+            list.push(
+                Op::CreateBuffer,
+                &[
+                    ids::feature_instances(id),
+                    capacity * crate::feature_instances::INSTANCE_BYTES,
+                    usage::VERTEX | usage::STORAGE | usage::COPY_DST,
+                ],
+            )?;
+            list.push(
+                Op::CreateBuffer,
+                &[
+                    ids::feature_count(id),
+                    crate::feature_instances::COUNT_BYTES,
+                    usage::STORAGE | usage::COPY_DST | usage::COPY_SRC,
+                ],
+            )?;
+            if place >= self.feature_capacity.len() {
+                self.feature_capacity.resize(place + 1, 0);
+            }
+            self.feature_capacity[place] = capacity;
+            // A buffer that this device makes again holds no rows until the frame uploads them.
+            self.settings.feature_instances_mut().mark_all_changed(id);
         }
         Ok(())
     }
