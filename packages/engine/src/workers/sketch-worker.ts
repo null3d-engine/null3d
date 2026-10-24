@@ -104,6 +104,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					reportSketchError: (message) => replyToPage({ type: 'sketch-error', message }),
 				},
 				message.hold,
+				message.holdScript,
 			);
 			step('engine created');
 			// The sketch downloads while the renderer starts. The renderer starts before the setup,
@@ -134,6 +135,10 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 				tier = drawing.renderer.tier;
 			}
 			await runner.setup(await sketch);
+			// The page publishes this with the held frame, so it must arrive before the ready reply
+			// that the page's start waits for.
+			const scriptResult = runner.holdScriptResult;
+			if (scriptResult !== undefined) replyToPage({ type: 'hold-script', result: scriptResult });
 			step(message.hold === undefined ? 'sketch loaded' : 'sketch loaded and held');
 			if (!tier && message.hold === undefined) void runPipelined(runner, message.control, fault);
 			replyToPage({

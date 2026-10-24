@@ -408,6 +408,22 @@ describe('the files in the folder of references', () => {
 		]);
 	});
 
+	it('give the command of a run that the image page does not draw, without and with CI', () => {
+		const command =
+			'{ci}bun run test:browser image/cli-script.spec.ts -g "cli on webgl2", then bun run images:review --accept cli';
+		const cli = {
+			...run('boxes-webgl2-pipelined'),
+			id: 'cli-webgl2',
+			test: 'cli',
+			reference: { test: 'cli', tier: 'webgl2' as const, devices: [] },
+			make: command,
+		};
+		expect(referenceFileProblems([cli], [])).toEqual([
+			`chrome-real-gpu/webgl2/cli.png is missing. Make it: ${command.replace('{ci}', '')}`,
+			`chromium-swiftshader/webgl2/cli.png is missing. Make it: ${command.replace('{ci}', 'CI=1 ')}`,
+		]);
+	});
+
 	it('name every missing reference of a new test, both sets', () => {
 		const problems = referenceFileProblems(
 			RUNS,

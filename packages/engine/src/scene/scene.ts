@@ -3150,6 +3150,12 @@ export type SceneChecks = typeof SCENE_CHECKS;
 /** The color that a property write fills for a material or a light, shared by every write. */
 const PROPERTY_COLOR: [number, number, number] = [0, 0, 0];
 
+/** The values of a hold script's step, shared by every step: a rotation takes the most, at four. */
+const SCRIPT_VALUES = new Float32Array(4);
+
+/** The value that a property had before a hold script wrote it, which a full-weight write ignores. */
+const SCRIPT_BASE = new Float32Array(4);
+
 /** The smallest positive value that a light's range, a camera's planes and its view take. */
 const SMALLEST = 1e-6;
 
@@ -3306,12 +3312,13 @@ const SPOT_PATHS: ReadonlySet<number> = new Set([PROPERTY_LIGHT_ANGLE, PROPERTY_
  * The property that `path` names on `target`: `'light.intensity'` or `'intensity'` for a light,
  * `'camera.fov'` or `'fov'` for a camera, `'material.opacity'` or `'opacity'` for a material, and
  * `'position'`, `'rotation'`, `'scale'` or `'visible'` for any object. Throws E1218 for a path that
- * the target does not take, before an animation is made.
+ * the target does not take. `call` names the call in the message, such as a hold script's step.
  */
 function propertyPath(
 	target: object,
 	path: string,
 	error: (detail: string) => never,
+	call = 'animateProperty',
 ): PropertyPath {
 	const dot = path.indexOf('.');
 	const head = dot > 0 ? path.slice(0, dot) : '';
@@ -3321,7 +3328,7 @@ function propertyPath(
 		if (components > 0 && (head === 'material' || head === ''))
 			return { what: PROPERTY_MATERIAL, name, components };
 		throw error(
-			`animateProperty() got "${path}" on a material, which it does not take. A material animates the values that setUniform takes, such as "opacity" and "color", with or without the "material." prefix.`,
+			`${call}() got "${path}" on a material, which it does not take. A material animates the values that setUniform takes, such as "opacity" and "color", with or without the "material." prefix.`,
 		);
 	}
 	const kind = target instanceof Light ? 'light' : target instanceof Camera ? 'camera' : '';
@@ -3348,15 +3355,13 @@ function propertyPath(
 	const where =
 		kind === '' ? (target as Object3D).describe() : `${(target as Object3D).describe()}, a ${kind}`;
 	if (otherKind)
-		throw error(
-			`animateProperty() got "${path}" on ${where}, which this kind of ${kind} does not have.`,
-		);
+		throw error(`${call}() got "${path}" on ${where}, which this kind of ${kind} does not have.`);
 	const accepted = [
 		...(kind === '' ? [] : [...own.keys()].map((key) => `${kind}.${key}`)),
 		...[...OBJECT_PATHS.keys()].map((key) => (kind === '' ? key : `object.${key}`)),
 	];
 	throw error(
-		`animateProperty() got "${path}" on ${where}, which it does not take. It animates ${listNames(accepted)}.`,
+		`${call}() got "${path}" on ${where}, which it does not take. It animates ${listNames(accepted)}.`,
 	);
 }
 
@@ -3745,6 +3750,115 @@ export class Scene implements ViewHolder {
 		out[1] = r[i + 1] as number;
 		out[2] = r[i + 2] as number;
 		out[3] = r[i + 3] as number;
+	}
+
+	/** @internal Copies the scale of the object in `slot` into `out`. */
+	readScale(slot: number, out: Vec3Like): void {
+		const s = this.views.scales;
+		const i = slot * 3;
+		out[0] = s[i] as number;
+		out[1] = s[i + 1] as number;
+		out[2] = s[i + 2] as number;
+	}
+
+	/**
+	 * @internal Writes a value that a hold script's `set` step names, at once, with the property
+	 * paths of `animateProperty`. Throws E1218 for a target that was destroyed, a path that the
+	 * object does not take, and a count of values that the path does not take.
+	 */
+	setScriptPath(target: Object3D, path: string, values: readonly number[]): void {
+		const fail = (detail: string): never => {
+			throw this.checks.error('E1218', detail);
+		};
+		if (target.destroyedFrame !== -1) fail(`set() got ${target.describe()}, which was destroyed.`);
+		const property = propertyPath(target, path, fail, 'set');
+		if (values.length !== property.components)
+			fail(
+				`set() got ${values.length} ${values.length === 1 ? 'value' : 'values'} for "${path}" on ${target.describe()}, which takes ${property.components}.`,
+			);
+		const at = SCRIPT_VALUES;
+		for (let k = 0; k < property.components; k++) at[k] = values[k] as number;
+		SCRIPT_BASE.fill(0);
+		writeProperty(
+			target,
+			{
+				what: property.what,
+				name: property.name,
+				components: property.components,
+				base: SCRIPT_BASE,
+			},
+			at,
+			0,
+			1,
+		);
+	}
+
+	/**
+	 * @internal The value that a hold script's `dump` step reads, with the property paths of
+	 * `animateProperty`: the object's position, rotation, scale or visible flag, a camera's lens
+	 * values, or a light's color. Throws E1218 for a target that was destroyed, a path that the
+	 * object does not take, or a value that the engine does not keep to read back.
+	 */
+	readScriptPath(target: Object3D, path: string): number[] {
+		const fail = (detail: string): never => {
+			throw this.checks.error('E1218', detail);
+		};
+		if (target.destroyedFrame !== -1) fail(`dump() got ${target.describe()}, which was destroyed.`);
+		const property = propertyPath(target, path, fail, 'dump');
+		const out = new Array<number>(property.components).fill(0);
+		const read = SCRIPT_VALUES;
+		switch (property.what) {
+			case PROPERTY_POSITION:
+				this.readPosition(target.row, read);
+				break;
+			case PROPERTY_ROTATION:
+				this.readRotation(target.row, read);
+				break;
+			case PROPERTY_SCALE:
+				this.readScale(target.row, read);
+				break;
+			case PROPERTY_VISIBLE:
+				read[0] = (target.flags & C.FLAG_VISIBLE) !== 0 ? 1 : 0;
+				break;
+			case PROPERTY_CAMERA_FOV:
+				read[0] = (target as PerspectiveCamera).fov;
+				break;
+			case PROPERTY_CAMERA_NEAR:
+				read[0] = (target as Camera).near;
+				break;
+			case PROPERTY_CAMERA_FAR:
+				read[0] = (target as Camera).far;
+				break;
+			case PROPERTY_CAMERA_HEIGHT:
+				read[0] = (target as OrthographicCamera).height;
+				break;
+			case PROPERTY_LIGHT_COLOR:
+				read.set((target as Light).linear);
+				break;
+			default:
+				fail(
+					`dump() cannot read "${path}" on ${target.describe()}, which the engine does not keep. It reads position, rotation, scale, visible, a light's color, and a camera's fov, near, far and height.`,
+				);
+		}
+		for (let k = 0; k < property.components; k++) out[k] = read[k] as number;
+		return out;
+	}
+
+	/**
+	 * @internal Up to `limit` names in the scene that contain `text`, in the order the objects were
+	 * created, or the first names when none contains it. A message about a name that found no object
+	 * shows them, so the wrong name in a script or a call is easy to fix.
+	 */
+	nearNames(text: string, limit = 3): string[] {
+		const wanted = text.toLowerCase();
+		const close: string[] = [];
+		const all: string[] = [];
+		for (const name of this.names.keys()) {
+			if (name === '') continue;
+			if (all.length < limit) all.push(name);
+			if (close.length < limit && name.toLowerCase().includes(wanted)) close.push(name);
+		}
+		return close.length > 0 ? close : all;
 	}
 
 	/**
