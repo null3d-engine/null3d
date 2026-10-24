@@ -686,9 +686,9 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 			const file = await server.transformRequest('/src/tint.wgsl');
 			// The key of the hot updates follows the shader's packed records, and then the function
 			// that imports the material's builds, with the material's place in the module.
-			expect(file?.code).toMatch(/, ?"src\/tint\.wgsl", ?__null3dBuilds, ?0\)/);
+			expect(file?.code).toMatch(/, ?"src\/tint\.wgsl", ?__null3dBuilds, ?0, ?"material"\)/);
 			const literal = await server.transformRequest('/src/tint.ts');
-			expect(literal?.code).toMatch(/, ?"src\/tint\.ts#0", ?__null3dBuilds, ?0\)/);
+			expect(literal?.code).toMatch(/, ?"src\/tint\.ts#0", ?__null3dBuilds, ?0, ?"material"\)/);
 			// The dev server serves each set of the builds from memory.
 			const sets = [
 				...(literal?.code ?? '').matchAll(/virtual:null3d\/builds\/(material-[\w-]+)/g),
