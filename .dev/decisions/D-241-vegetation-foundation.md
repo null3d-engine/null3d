@@ -257,8 +257,8 @@ last, and returns flat arrays of nine floats for each point.
   percentiles of each input over the valley. A scene on other terrain moves the numbers that differ.
 
 **Figures.** Creek's 160 m valley, placed with its eight species at seed 7: 951 points, in 51 ms on
-an Apple M5 Max laptop. The layers hold 104 canopy trees, 178 saplings, 645 ground plants and 24
-dead wood. The checksum of that placement is 232657082, which the device page compares on every
+an Apple M5 Max laptop. The layers hold 104 canopy trees, 174 saplings, 651 ground plants and 26
+dead wood. The checksum of that placement is 916344353, which the device page compares on every
 device and both GPU paths.
 
 **Options rejected.**

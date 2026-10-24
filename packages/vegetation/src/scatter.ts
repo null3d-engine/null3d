@@ -500,12 +500,11 @@ export class EcoScatter {
 	/** A point's offset inside an adult's disc, from the integer hash, as a share of its radius. */
 	private clusterOffset(index: number, adult: number, child: number): readonly [number, number] {
 		const seed = this.seed;
-		const key = adult * 64 + child;
 		for (let attempt = 0; attempt < CLUSTER_TRIES; attempt++) {
-			const u = unitAt(seed, index, key, KEY_CLUSTER_POINT + attempt * 2) * 2 - 1;
-			const v = unitAt(seed, index, key, KEY_CLUSTER_POINT + attempt * 2 + 1) * 2 - 1;
-			const length = u * u + v * v;
-			if (length <= 1) return [u, v];
+			const key = KEY_CLUSTER_POINT + attempt * 2;
+			const u = unitAt(seed, index, adult, child, key) * 2 - 1;
+			const v = unitAt(seed, index, adult, child, key + 1) * 2 - 1;
+			if (u * u + v * v <= 1) return [u, v];
 		}
 		// A place that never landed inside the disc still gathers close to its adult.
 		return [0, 0];
