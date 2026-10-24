@@ -14,6 +14,8 @@ import {
 	LAYOUT_ATMOSPHERE,
 	LAYOUT_BACKGROUND,
 	LAYOUT_BLOOM,
+	LAYOUT_CLOUDS,
+	LAYOUT_CLOUDS_ATMOSPHERE,
 	LAYOUT_CLUSTER_CULL,
 	LAYOUT_COMPUTE_INSTANCE_BUFFERS,
 	LAYOUT_COMPUTE_R32_FLOAT,
@@ -98,6 +100,8 @@ import {
 	TEMPLATE_AO_DEPTH_MS,
 	TEMPLATE_BACKGROUND,
 	TEMPLATE_BACKGROUND_ATMOSPHERE,
+	TEMPLATE_BACKGROUND_CLOUDS,
+	TEMPLATE_BACKGROUND_CLOUDS_ATMOSPHERE,
 	TEMPLATE_BACKGROUND_CUBE,
 	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
@@ -996,6 +1000,29 @@ export class Pipelines {
 		]);
 		// The physical sky's group: its values, its three tables, which it reads with a linear
 		// filter, a sampler that clamps and one that repeats across the width.
+		// The volumetric cloud tier's group: the sky's own block or the physical sky's values and
+		// tables, then the noise field and its sampler at the bindings that the shared cloud module
+		// names.
+		const cloudValues: GPUBindGroupLayoutEntry = {
+			binding: 0,
+			visibility: GPUShaderStage.VERTEX | fragment,
+			buffer: { type: 'uniform' },
+		};
+		this.defineLayout(LAYOUT_CLOUDS, 'clouds', [
+			cloudValues,
+			{ binding: 6, visibility: fragment, texture: { viewDimension: '3d' } },
+			{ binding: 7, visibility: fragment, sampler: {} },
+		]);
+		this.defineLayout(LAYOUT_CLOUDS_ATMOSPHERE, 'clouds atmosphere', [
+			cloudValues,
+			{ binding: 1, visibility: fragment, texture: {} },
+			{ binding: 2, visibility: fragment, texture: {} },
+			{ binding: 3, visibility: fragment, texture: {} },
+			{ binding: 4, visibility: fragment, sampler: {} },
+			{ binding: 5, visibility: fragment, sampler: {} },
+			{ binding: 6, visibility: fragment, texture: { viewDimension: '3d' } },
+			{ binding: 7, visibility: fragment, sampler: {} },
+		]);
 		this.defineLayout(LAYOUT_ATMOSPHERE, 'atmosphere', [
 			{ binding: 0, visibility: fragment, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: fragment, texture: {} },
@@ -1457,6 +1484,22 @@ export class Pipelines {
 			shader: shaders.sky_physical,
 			pipeline: 'main',
 			layouts: [LAYOUT_FRAME, LAYOUT_ATMOSPHERE],
+			vertexBuffers: [],
+		});
+		// The volumetric cloud tier: the same box, blended over the sky, whose own group adds the
+		// noise field that the renderer makes at the tier's first use.
+		this.defineTemplate(TEMPLATE_BACKGROUND_CLOUDS, {
+			label: 'background clouds',
+			shader: shaders.sky_volume,
+			pipeline: 'main',
+			layouts: [LAYOUT_FRAME, LAYOUT_CLOUDS],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_BACKGROUND_CLOUDS_ATMOSPHERE, {
+			label: 'background clouds atmosphere',
+			shader: shaders.sky_volume_physical,
+			pipeline: 'main',
+			layouts: [LAYOUT_FRAME, LAYOUT_CLOUDS_ATMOSPHERE],
 			vertexBuffers: [],
 		});
 		if (DEV) {

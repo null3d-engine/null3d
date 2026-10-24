@@ -419,6 +419,8 @@ const FIRST_USE_SKETCHES: Partial<Record<ShaderFeature, string>> = {
 const FIRST_USE_SWITCHES: Partial<Record<ShaderFeature, string>> = {
 	instance_index: '&instances=index',
 	occlusion: '&occlusion=on',
+	// The tier starts above Medium, which WebGL2 and compatibility mode stop at.
+	clouds: '&cloudSteps=32',
 };
 
 /**
@@ -435,6 +437,14 @@ const FIRST_USE_LIVE: ReadonlySet<ShaderFeature> = new Set(['picking']);
  * image, where WebGL2 draws the view into its target directly, and only WebGPU builds the pass
  * that picks a mesh's cluster patches, where WebGL2 draws the mesh whole.
  */
+/**
+ * The other features' files that a feature's first use also downloads: the cloud tier draws over
+ * the sky, so its page loads the sky's file too.
+ */
+const FEATURE_EXTRAS: Partial<Record<ShaderFeature, readonly ShaderFeature[]>> = {
+	clouds: ['sky'],
+};
+
 const FEATURE_FILE_OWNERS: Partial<
 	Record<ShaderFeature, Partial<Record<'webgpu' | 'webgl2', ShaderFeature | null>>>
 > = {
@@ -490,10 +500,18 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				expect(shaderFiles).toEqual([]);
 				return;
 			}
-			expect(shaderFiles).toHaveLength(1);
-			// The shader files spell a feature's name with hyphens.
-			const file = (owner ?? feature).replaceAll('_', '-');
-			expect(shaderFiles[0]).toMatch(new RegExp(`/shaders-${file}-(wgsl|glsl)[^/]*$`));
+			// The shader files spell a feature's name with hyphens. A feature that draws another's
+			// file as well, such as the cloud tier over the sky, downloads both.
+			const files = [owner ?? feature, ...(FEATURE_EXTRAS[feature] ?? [])].map((name) =>
+				name.replaceAll('_', '-'),
+			);
+			expect(shaderFiles).toHaveLength(files.length);
+			for (const file of files)
+				expect(
+					shaderFiles.some((requested) =>
+						new RegExp(`/shaders-${file}-(wgsl|glsl)[^/]*$`).test(requested),
+					),
+				).toBe(true);
 		});
 
 // GPU occlusion culling runs only on WebGPU, where the first-use test turns it on. A scene whose

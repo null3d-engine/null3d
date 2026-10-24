@@ -21,6 +21,8 @@ import {
 	TEMPLATE_AO_DEPTH,
 	TEMPLATE_BACKGROUND,
 	TEMPLATE_BACKGROUND_ATMOSPHERE,
+	TEMPLATE_BACKGROUND_CLOUDS,
+	TEMPLATE_BACKGROUND_CLOUDS_ATMOSPHERE,
 	TEMPLATE_BACKGROUND_CUBE,
 	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
@@ -324,6 +326,11 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_BACKGROUND_CUBE] = { shader: shaders.background_cube, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND_SKY] = { shader: shaders.sky, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND_ATMOSPHERE] = { shader: shaders.sky_physical, pipeline: 'main' };
+	templates[TEMPLATE_BACKGROUND_CLOUDS] = { shader: shaders.sky_volume, pipeline: 'main' };
+	templates[TEMPLATE_BACKGROUND_CLOUDS_ATMOSPHERE] = {
+		shader: shaders.sky_volume_physical,
+		pipeline: 'main',
+	};
 	templates[TEMPLATE_SKY_TABLE] = { shader: shaders.sky_tables, pipeline: 'main' };
 	// WebGL2's depth step always reads one sample: the backend keeps a copy of one sample of a
 	// multisampled depth target that a shader reads.

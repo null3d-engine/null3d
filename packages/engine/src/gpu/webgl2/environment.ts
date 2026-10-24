@@ -27,6 +27,7 @@
 import type { ShaderVariant } from '../../generated/shaders';
 import type { GeneratorSource } from '../../shared/images';
 import {
+	type CloudShaders,
 	chainLevels,
 	environmentSteps,
 	levelOffsets,
@@ -96,6 +97,7 @@ export interface CubeGenerator {
 		at: number,
 		memory: GpuMemory,
 		panorama: WebGLTexture | null,
+		noise: WebGLTexture | null,
 	): void;
 	/**
 	 * Deletes what the sky map in `target` keeps between its stages, if it is one, and takes its
@@ -110,6 +112,13 @@ export interface CubeGenerator {
  */
 interface Kept {
 	programs: Record<Pipeline, WebGLProgram>;
+	/** The volumetric cloud tier's programs, or none while the page's tier draws the flat layer. */
+	clouds?: {
+		sky: WebGLProgram | undefined;
+		panorama: WebGLProgram | undefined;
+		skyNoise: number;
+		panoramaNoise: number;
+	};
 	samplers: Samplers;
 	/**
 	 * The texture units that the programs read: the cube source's, which every program that reads
@@ -121,6 +130,7 @@ interface Kept {
 interface Samplers {
 	cube: WebGLSampler;
 	panorama: WebGLSampler;
+	noise: WebGLSampler;
 }
 
 interface Units {
@@ -137,11 +147,27 @@ function unitsOf(host: ProgramHost, programs: Record<Pipeline, WebGLProgram>): U
 export function environmentGenerator(
 	shader: ShaderVariant<Pipeline>,
 	skyFilter: SkyFilter = SKY_FILTER,
+	cloudShaders?: CloudShaders,
 ): CubeGenerator {
 	const variants = { webgl2: shader };
 	const kept = new WeakMap<WebGL2RenderingContext, Kept>();
 	const preparing = new WeakMap<WebGL2RenderingContext, Promise<void>>();
 	const pipelines: Pipeline[] = ['trace', 'blur', 'half', 'prefilter', 'panorama', 'sky'];
+	const makeClouds = (host: ProgramHost): Kept['clouds'] => {
+		if (!cloudShaders) return undefined;
+		const sky = cloudShaders.sky
+			? host.program({ shader: { webgl2: cloudShaders.sky }, pipeline: 'sky' })
+			: undefined;
+		const panorama = cloudShaders.panorama
+			? host.program({ shader: { webgl2: cloudShaders.panorama }, pipeline: 'panorama' })
+			: undefined;
+		return {
+			sky,
+			panorama,
+			skyNoise: sky === undefined ? 0 : host.unit(sky, 1, 6),
+			panoramaNoise: panorama === undefined ? 0 : host.unit(panorama, 1, 6),
+		};
+	};
 	const makeSamplers = (gl: WebGL2RenderingContext): Samplers => {
 		const make = (min: number, wrapS: number) => {
 			const sampler = gl.createSampler();
@@ -153,10 +179,15 @@ export function environmentGenerator(
 			gl.samplerParameteri(sampler, gl.TEXTURE_WRAP_S, wrapS);
 			return sampler;
 		};
+		const noise = make(gl.LINEAR, gl.REPEAT);
+		for (const wrap of [gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R])
+			gl.samplerParameteri(noise, wrap, gl.REPEAT);
 		return {
 			cube: make(gl.LINEAR_MIPMAP_LINEAR, gl.CLAMP_TO_EDGE),
 			// The panorama wraps around across its width and stops at its top and bottom rows.
 			panorama: make(gl.LINEAR, gl.REPEAT),
+			// The cloud field repeats in every direction, so its march wraps without a seam.
+			noise,
 		};
 	};
 	const keep = (host: ProgramHost): Kept => {
@@ -166,7 +197,12 @@ export function environmentGenerator(
 		const programs = {} as Record<Pipeline, WebGLProgram>;
 		for (const pipeline of pipelines)
 			programs[pipeline] = host.program({ shader: variants, pipeline });
-		made = { programs, samplers: makeSamplers(gl), units: unitsOf(host, programs) };
+		made = {
+			programs,
+			clouds: makeClouds(host),
+			samplers: makeSamplers(gl),
+			units: unitsOf(host, programs),
+		};
 		kept.set(gl, made);
 		return made;
 	};
@@ -180,7 +216,12 @@ export function environmentGenerator(
 			});
 			ready = Promise.all(built).then(() => {
 				if (!kept.has(gl))
-					kept.set(gl, { programs, samplers: makeSamplers(gl), units: unitsOf(host, programs) });
+					kept.set(gl, {
+						programs,
+						clouds: makeClouds(host),
+						samplers: makeSamplers(gl),
+						units: unitsOf(host, programs),
+					});
 			});
 			preparing.set(gl, ready);
 		}
@@ -295,6 +336,7 @@ export function environmentGenerator(
 		at,
 		memory,
 		panorama,
+		noise,
 	) => {
 		let map = skyMaps.get(target);
 		if (!map) {
@@ -303,7 +345,7 @@ export function environmentGenerator(
 			memory.addTextures(map.textureBytes);
 			memory.addBuffers(map.bufferBytes);
 		}
-		map.stage(words[at + 2] as number, floats, at + 4, panorama);
+		map.stage(words[at + 2] as number, floats, at + 4, panorama, noise, words[at + 20] as number);
 	};
 	const release: CubeGenerator['release'] = (gl, target, memory) => {
 		const map = skyMaps.get(target);
@@ -321,7 +363,14 @@ interface SkyMap {
 	/** The GPU bytes of the textures and of the buffers that the map keeps. */
 	readonly textureBytes: number;
 	readonly bufferBytes: number;
-	stage(stage: number, settings: Float32Array, at: number, panorama: WebGLTexture | null): void;
+	stage(
+		stage: number,
+		settings: Float32Array,
+		at: number,
+		panorama: WebGLTexture | null,
+		noise: WebGLTexture | null,
+		cloudSteps: number,
+	): void;
 	destroy(gl: WebGL2RenderingContext): void;
 }
 
@@ -343,10 +392,12 @@ function makeSkyMap(
 	filter: SkyFilter,
 ): SkyMap {
 	const { gl } = host;
-	const { programs, samplers, units } = kept;
+	const { programs, clouds, samplers, units } = kept;
 	const alignment = gl.getParameter(gl.UNIFORM_BUFFER_OFFSET_ALIGNMENT) as number;
 	const stride = Math.ceil(STEP_BYTES / alignment) * alignment;
 	const [steps, values] = skySteps(size, levels, stride, filter);
+	/** The step values with the cloud tier's count in each step's spare value, made once. */
+	const cloudValues = new Float32Array(values);
 	const stages = skyStages(size, levels);
 	const chained = chainLevels(size);
 	const stepBinding = host.slot(0, 0);
@@ -424,13 +475,26 @@ function makeSkyMap(
 	 * Draws a part into the staging texture, and packs its texels into its buffers. A part that
 	 * draws the sky reads `panorama` where it is given.
 	 */
-	const draw = ({ step: k, first, faces }: SkyPart, panorama: WebGLTexture | null) => {
+	const draw = (
+		{ step: k, first, faces }: SkyPart,
+		panorama: WebGLTexture | null,
+		noise: WebGLTexture | null,
+		clouded: boolean,
+	) => {
 		const step = steps[k] as Step;
 		const side = step.size;
 		const x = first * side;
 		const reads = step.source === 'chain';
 		const reread = panorama !== null && step.source === 'sky';
-		gl.useProgram(programs[reread ? 'panorama' : step.pipeline]);
+		const cloud = clouded
+			? reread
+				? clouds?.panorama
+				: step.source === 'sky'
+					? clouds?.sky
+					: undefined
+			: undefined;
+		const noiseUnit = reread ? (clouds?.panoramaNoise ?? 0) : (clouds?.skyNoise ?? 0);
+		gl.useProgram(cloud ?? programs[reread ? 'panorama' : step.pipeline]);
 		if (reread) {
 			gl.activeTexture(gl.TEXTURE0 + units.panorama);
 			gl.bindTexture(gl.TEXTURE_2D, panorama);
@@ -442,6 +506,11 @@ function makeSkyMap(
 			gl.bindTexture(gl.TEXTURE_CUBE_MAP, chain);
 			gl.bindSampler(units.cube, samplers.cube);
 		}
+		if (cloud && noise !== null) {
+			gl.activeTexture(gl.TEXTURE0 + noiseUnit);
+			gl.bindTexture(gl.TEXTURE_3D, noise);
+			gl.bindSampler(noiseUnit, samplers.noise);
+		}
 		gl.viewport(x, step.row, faces * side, side);
 		gl.drawArrays(gl.TRIANGLES, 0, 3);
 		if (reads) {
@@ -452,6 +521,11 @@ function makeSkyMap(
 			gl.activeTexture(gl.TEXTURE0 + units.panorama);
 			gl.bindTexture(gl.TEXTURE_2D, null);
 			gl.bindSampler(units.panorama, null);
+		}
+		if (cloud && noise !== null) {
+			gl.activeTexture(gl.TEXTURE0 + noiseUnit);
+			gl.bindTexture(gl.TEXTURE_3D, null);
+			gl.bindSampler(noiseUnit, null);
 		}
 		// Each face's texels lie at the same place in the buffer's rows as in the drawn rows.
 		gl.pixelStorei(gl.PACK_ROW_LENGTH, 6 * side);
@@ -473,7 +547,7 @@ function makeSkyMap(
 			(finishedOffsets[levels] as number) +
 			values.byteLength +
 			SKY_BYTES,
-		stage(stage, settings, at, panorama) {
+		stage(stage, settings, at, panorama, noise, cloudSteps) {
 			const parts = stages[stage] as readonly SkyPart[];
 			if (parts.length === 0) {
 				settle();
@@ -485,6 +559,13 @@ function makeSkyMap(
 				gl.bindBuffer(gl.UNIFORM_BUFFER, sky);
 				gl.bufferSubData(gl.UNIFORM_BUFFER, 0, settings, at, SKY_BYTES / 4);
 			}
+			const clouded = cloudSteps > 0 && clouds !== undefined && noise !== null;
+			if (clouded) {
+				// The cloud shaders read the tier's step count from their step's spare value.
+				for (let k = 0; k < steps.length; k++) cloudValues[(k * stride) / 4 + 6] = cloudSteps;
+				gl.bindBuffer(gl.UNIFORM_BUFFER, uniforms);
+				gl.bufferSubData(gl.UNIFORM_BUFFER, 0, cloudValues);
+			}
 			if (drawsSky) gl.bindBufferBase(gl.UNIFORM_BUFFER, skyBinding, sky);
 			else if (chainWaits) {
 				settle();
@@ -493,7 +574,7 @@ function makeSkyMap(
 			}
 			gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 			gl.bindVertexArray(null);
-			for (let p = 0; p < parts.length; p++) draw(parts[p] as SkyPart, panorama);
+			for (let p = 0; p < parts.length; p++) draw(parts[p] as SkyPart, panorama, noise, clouded);
 			if (drawsSky) chainWaits = true;
 			gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 			if (packed) gl.deleteSync(packed);

@@ -253,6 +253,7 @@ describe('SketchQuality.lower', () => {
 			lodShadowFactor: low.lodShadowFactor,
 			lodFade: low.lodFade,
 			physicalSky: low.physicalSky,
+			cloudSteps: low.cloudSteps,
 			softwareOcclusion: low.softwareOcclusion,
 			parallax: low.parallax,
 			governor: true,

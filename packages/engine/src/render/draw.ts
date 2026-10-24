@@ -19,6 +19,11 @@ export { preloadDeviceFiles } from './renderer';
 export interface DrawingSetup extends RendererOptions, FramePacing {
 	/** The canvas that this thread owns. */
 	canvas: RenderCanvas;
+	/**
+	 * The steps of each ray of the sky's volumetric cloud tier at the page's start, above 0 when it
+	 * draws. The thread loads the tier's sky-map shaders with the first generator that it runs.
+	 */
+	cloudSteps?: number;
 	metrics: ArrayBufferLike;
 	control: ArrayBufferLike;
 	/**
@@ -59,7 +64,7 @@ export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Rendere
 	const { canvas, control, metrics, sketch, hold = false, fault, presented } = setup;
 	const { slots } = controlViews(control);
 	const imageTable = setup.imageTable ?? new ImageTable();
-	imageTable.loadGeneratorsWith(generatorLoader(setup.tier));
+	imageTable.loadGeneratorsWith(generatorLoader(setup.tier, (setup.cloudSteps ?? 0) > 0));
 	const receiving = setup.imagePort && receiveImages(setup.imagePort, imageTable, slots);
 	const options = { ...setup, imageTable };
 	const create = () => createRenderer(canvas, options);
@@ -81,27 +86,49 @@ export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Rendere
  * them: environment maps and reflection probes' filters. A page downloads them with the first
  * generator that its sketch asks for.
  */
-function generatorLoader(tier: Tier): () => Promise<unknown> {
+function generatorLoader(tier: Tier, clouds: boolean): () => Promise<unknown> {
 	if (tier === 'webgl2')
 		return async () => {
-			const [code, environment, probes] = await Promise.all([
+			const [code, environment, probes, skyClouds, panoramaClouds] = await Promise.all([
 				import('../gpu/environment'),
 				import('../generated/shaders-environment-glsl'),
 				import('../generated/shaders-probe-glsl'),
+				clouds ? import('../generated/shaders-sky-volume-env-glsl') : undefined,
+				clouds ? import('../generated/shaders-sky-volume-panorama-glsl') : undefined,
 			]);
 			return {
-				environment: code.webgl2EnvironmentGenerator(environment.ENVIRONMENT_SHADER.webgl2),
+				environment: code.webgl2EnvironmentGenerator(
+					environment.ENVIRONMENT_SHADER.webgl2,
+					undefined,
+					skyClouds && panoramaClouds
+						? {
+								sky: skyClouds.SKY_VOLUME_ENV_SHADER.webgl2,
+								panorama: panoramaClouds.SKY_VOLUME_PANORAMA_SHADER.webgl2,
+							}
+						: undefined,
+				),
 				probes: code.webgl2ProbeFilter(probes.PROBE_SHADER.webgl2),
 			};
 		};
 	return async () => {
-		const [code, environment, probes] = await Promise.all([
+		const [code, environment, probes, skyClouds, panoramaClouds] = await Promise.all([
 			import('../gpu/environment'),
 			import('../generated/shaders-environment-wgsl'),
 			import('../generated/shaders-probe-wgsl'),
+			clouds ? import('../generated/shaders-sky-volume-env-wgsl') : undefined,
+			clouds ? import('../generated/shaders-sky-volume-panorama-wgsl') : undefined,
 		]);
 		return {
-			environment: code.webgpuEnvironmentGenerator(environment.ENVIRONMENT_SHADER.webgpu),
+			environment: code.webgpuEnvironmentGenerator(
+				environment.ENVIRONMENT_SHADER.webgpu,
+				undefined,
+				skyClouds && panoramaClouds
+					? {
+							sky: skyClouds.SKY_VOLUME_ENV_SHADER.webgpu,
+							panorama: panoramaClouds.SKY_VOLUME_PANORAMA_SHADER.webgpu,
+						}
+					: undefined,
+			),
 			probes: code.webgpuProbeFilter(probes.PROBE_SHADER.webgpu),
 		};
 	};

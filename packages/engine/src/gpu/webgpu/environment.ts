@@ -17,6 +17,7 @@
 import type { ShaderVariant } from '../../generated/shaders';
 import type { GeneratorSource } from '../../shared/images';
 import {
+	type CloudShaders,
 	chainLevels,
 	environmentSteps,
 	levelOffsets,
@@ -66,6 +67,7 @@ export interface CubeGenerator {
 		at: number,
 		memory: GpuMemory,
 		panorama: GPUTexture | undefined,
+		noise: GPUTexture | undefined,
 	): void;
 	/**
 	 * Frees what the sky map in `target` keeps between its stages, if it is one, and takes its
@@ -82,15 +84,31 @@ const ALIGNMENT = 256;
  * cube, of the step that reads the panorama and of the step that draws the sky, and the samplers.
  */
 interface Kept {
-	layouts: { cube: GPUBindGroupLayout; panorama: GPUBindGroupLayout; sky: GPUBindGroupLayout };
+	layouts: {
+		cube: GPUBindGroupLayout;
+		panorama: GPUBindGroupLayout;
+		sky: GPUBindGroupLayout;
+		cloudSky: GPUBindGroupLayout;
+		cloudPanorama: GPUBindGroupLayout;
+		cloudNoise: GPUBindGroupLayout;
+	};
 	pipelines: Record<Pipeline, GPURenderPipeline>;
-	samplers: { cube: GPUSampler; panorama: GPUSampler };
+	samplers: { cube: GPUSampler; panorama: GPUSampler; noise: GPUSampler };
+	/**
+	 * The volumetric cloud tier's pipelines, from the modules that the page loaded for it, or
+	 * none when the page's tier draws the flat layer.
+	 */
+	clouds?: {
+		sky: GPURenderPipeline | undefined;
+		panorama: GPURenderPipeline | undefined;
+	};
 }
 
 /** The generator of environment maps, from the environment shader's WGSL build. */
 export function environmentGenerator(
 	shader: ShaderVariant<Pipeline>,
 	skyFilter: SkyFilter = SKY_FILTER,
+	cloudShaders?: CloudShaders,
 ): CubeGenerator {
 	const wgsl = shader.wgsl;
 	if (!wgsl) throw new Error('the environment shader has no WebGPU build');
@@ -133,6 +151,39 @@ export function environmentGenerator(
 				],
 			}),
 		};
+		const cloudLayouts = {
+			cloudSky: device.createBindGroupLayout({
+				label: 'environment clouds sky',
+				entries: [
+					uniforms,
+					{
+						binding: 5,
+						visibility: fragment,
+						buffer: { type: 'uniform', minBindingSize: SKY_BYTES },
+					},
+				],
+			}),
+			cloudPanorama: device.createBindGroupLayout({
+				label: 'environment clouds panorama',
+				entries: [
+					uniforms,
+					{ binding: 3, visibility: fragment, texture: {} },
+					{ binding: 4, visibility: fragment, sampler: {} },
+					{
+						binding: 5,
+						visibility: fragment,
+						buffer: { type: 'uniform', minBindingSize: SKY_BYTES },
+					},
+				],
+			}),
+			cloudNoise: device.createBindGroupLayout({
+				label: 'environment clouds noise',
+				entries: [
+					{ binding: 6, visibility: fragment, texture: { viewDimension: '3d' } },
+					{ binding: 7, visibility: fragment, sampler: {} },
+				],
+			}),
+		};
 		const module = device.createShaderModule({ label: 'environment', code: wgsl.source });
 		const pipelineLayouts = {
 			cube: device.createPipelineLayout({ bindGroupLayouts: [layouts.cube] }),
@@ -153,14 +204,55 @@ export function environmentGenerator(
 		});
 		const linear = { magFilter: 'linear', minFilter: 'linear' } as const;
 		const made: Kept = {
-			layouts,
+			layouts: { ...layouts, ...cloudLayouts },
 			pipelines: {} as Record<Pipeline, GPURenderPipeline>,
 			samplers: {
 				cube: device.createSampler({ ...linear, mipmapFilter: 'linear' }),
 				// The panorama wraps around across its width and stops at its top and bottom rows.
 				panorama: device.createSampler({ ...linear, addressModeU: 'repeat' }),
+				// The cloud field repeats in every direction, so its march wraps without a seam.
+				noise: device.createSampler({
+					...linear,
+					addressModeU: 'repeat',
+					addressModeV: 'repeat',
+					addressModeW: 'repeat',
+				}),
 			},
 		};
+		const cloudPipeline = <P extends 'sky' | 'panorama'>(
+			variant: ShaderVariant<P>,
+			name: P,
+			layout: GPUBindGroupLayout,
+		): GPURenderPipeline => {
+			const build = variant.wgsl;
+			if (!build) throw new Error('the cloud shader has no WebGPU build');
+			const cloudModule = device.createShaderModule({
+				label: `environment clouds ${name}`,
+				code: build.source,
+			});
+			return device.createRenderPipeline({
+				label: `environment clouds ${name}`,
+				layout: device.createPipelineLayout({
+					bindGroupLayouts: [layout, cloudLayouts.cloudNoise],
+				}),
+				vertex: { module: cloudModule, entryPoint: build.pipelines[name].vertex },
+				fragment: {
+					module: cloudModule,
+					entryPoint: build.pipelines[name].fragment,
+					targets: [{ format: 'rgba8unorm' }],
+				},
+			});
+		};
+		if (cloudShaders) {
+			made.clouds = {
+				sky: cloudShaders.sky
+					? cloudPipeline(cloudShaders.sky, 'sky', cloudLayouts.cloudSky)
+					: undefined,
+				panorama: cloudShaders.panorama
+					? cloudPipeline(cloudShaders.panorama, 'panorama', cloudLayouts.cloudPanorama)
+					: undefined,
+			};
+		}
 		const names: Pipeline[] = ['trace', 'blur', 'half', 'prefilter', 'panorama', 'sky'];
 		if (!background) {
 			for (const name of names) made.pipelines[name] = device.createRenderPipeline(describe(name));
@@ -305,6 +397,7 @@ export function environmentGenerator(
 		at,
 		memory,
 		panorama,
+		noise,
 	) => {
 		let map = skyMaps.get(target);
 		if (!map) {
@@ -313,7 +406,15 @@ export function environmentGenerator(
 			memory.addTextures(map.textureBytes);
 			memory.addBuffers(map.bufferBytes);
 		}
-		map.stage(encoder, words[at + 2] as number, floats, at + 4, panorama);
+		map.stage(
+			encoder,
+			words[at + 2] as number,
+			floats,
+			at + 4,
+			panorama,
+			noise,
+			words[at + 20] as number,
+		);
 	};
 	const release = (target: GPUTexture, memory: GpuMemory) => {
 		const map = skyMaps.get(target);
@@ -342,6 +443,8 @@ interface SkyMap {
 		settings: Float32Array,
 		at: number,
 		panorama: GPUTexture | undefined,
+		noise: GPUTexture | undefined,
+		cloudSteps: number,
 	): void;
 	destroy(): void;
 }
@@ -351,7 +454,7 @@ interface SkyMap {
  * keeps, once, so that its stages allocate nothing.
  */
 function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: SkyFilter): SkyMap {
-	const { layouts, pipelines, samplers } = kept;
+	const { layouts, pipelines, samplers, clouds } = kept;
 	const size = target.width;
 	const levels = target.mipLevelCount;
 	const [steps, values] = skySteps(size, levels, ALIGNMENT, filter);
@@ -383,10 +486,11 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 	device.queue.writeBuffer(uniforms, 0, values);
 	const sky = buffer('sky settings', SKY_BYTES, uniform);
 	const block = { binding: 0, resource: { buffer: uniforms, size: STEP_BYTES } };
+	const skyEntry = { binding: 5, resource: { buffer: sky } };
 	const groups: Partial<Record<StepSource, GPUBindGroup>> = {
 		sky: device.createBindGroup({
 			layout: layouts.sky,
-			entries: [block, { binding: 5, resource: { buffer: sky } }],
+			entries: [block, skyEntry],
 		}),
 		chain: device.createBindGroup({
 			layout: layouts.cube,
@@ -400,11 +504,49 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 	const pass: GPURenderPassDescriptor = {
 		colorAttachments: [{ view: staging.createView(), loadOp: 'clear', storeOp: 'store' }],
 	};
+	// The cloud tier's groups: the analytic sky's settings, the panorama with the same settings,
+	// and one group for the noise field of each texture that the generator is given.
+	const cloudSkyGroup = clouds
+		? device.createBindGroup({ layout: layouts.cloudSky, entries: [block, skyEntry] })
+		: undefined;
+	/** The noise field's group, by the texture that it binds. */
+	const noiseGroups = new WeakMap<GPUTexture, GPUBindGroup>();
+	const noiseGroup = (field: GPUTexture): GPUBindGroup => {
+		let group = noiseGroups.get(field);
+		if (!group) {
+			group = device.createBindGroup({
+				layout: layouts.cloudNoise,
+				entries: [
+					{ binding: 6, resource: field.createView({ dimension: '3d' }) },
+					{ binding: 7, resource: samplers.noise },
+				],
+			});
+			noiseGroups.set(field, group);
+		}
+		return group;
+	};
 	/**
 	 * The group that reads the physical sky's panorama in place of the sky's settings, and the
 	 * panorama it binds, made again only when the panorama changes.
 	 */
 	let panoramaGroup: GPUBindGroup | undefined;
+	let cloudPanoramaGroup: GPUBindGroup | undefined;
+	let cloudPanoramaBound: GPUTexture | undefined;
+	const readCloudPanorama = (panorama: GPUTexture): GPUBindGroup => {
+		if (cloudPanoramaBound !== panorama || !cloudPanoramaGroup) {
+			cloudPanoramaGroup = device.createBindGroup({
+				layout: layouts.cloudPanorama,
+				entries: [
+					block,
+					{ binding: 3, resource: panorama.createView() },
+					{ binding: 4, resource: samplers.panorama },
+					skyEntry,
+				],
+			});
+			cloudPanoramaBound = panorama;
+		}
+		return cloudPanoramaGroup;
+	};
 	let panoramaBound: GPUTexture | undefined;
 	const readPanorama = (panorama: GPUTexture): GPUBindGroup => {
 		if (panoramaBound !== panorama || !panoramaGroup) {
@@ -463,17 +605,43 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 		encoder: GPUCommandEncoder,
 		parts: readonly SkyPart[],
 		panorama: GPUTexture | undefined,
+		noise: GPUTexture | undefined,
+		cloudSteps: number,
 	) => {
 		const render = encoder.beginRenderPass(pass);
+		const clouded = cloudSteps > 0 && clouds !== undefined && noise !== undefined;
 		for (let p = 0; p < parts.length; p++) {
 			const { step: k, first, faces } = parts[p] as SkyPart;
 			const step = steps[k] as Step;
 			const reread = panorama !== undefined && step.source === 'sky';
 			render.setViewport(first * step.size, step.row, faces * step.size, step.size, 0, 1);
-			render.setPipeline(pipelines[reread ? 'panorama' : step.pipeline]);
 			dynamicOffset[0] = k * ALIGNMENT;
-			const group = reread ? readPanorama(panorama) : (groups[step.source] as GPUBindGroup);
-			render.setBindGroup(0, group, dynamicOffset, 0, 1);
+			// The cloud tier draws the sky's own base and the march together, from the cloud shader
+			// of the sky kind that this step shows.
+			const cloud =
+				clouded && noise !== undefined
+					? reread
+						? clouds?.panorama
+						: step.source === 'sky'
+							? clouds?.sky
+							: undefined
+					: undefined;
+			if (cloud && noise !== undefined) {
+				device.queue.writeBuffer(uniforms, k * ALIGNMENT + 24, Float32Array.of(cloudSteps));
+				render.setPipeline(cloud);
+				render.setBindGroup(
+					0,
+					reread ? readCloudPanorama(panorama as GPUTexture) : (cloudSkyGroup as GPUBindGroup),
+					dynamicOffset,
+					0,
+					1,
+				);
+				render.setBindGroup(1, noiseGroup(noise));
+			} else {
+				render.setPipeline(pipelines[reread ? 'panorama' : step.pipeline]);
+				const group = reread ? readPanorama(panorama) : (groups[step.source] as GPUBindGroup);
+				render.setBindGroup(0, group, dynamicOffset, 0, 1);
+			}
 			render.draw(3);
 		}
 		render.end();
@@ -503,10 +671,10 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 	return {
 		textureBytes: 4 * (texels + 6 * size * skyRows(size)),
 		bufferBytes: strip.size + finished.size + uniforms.size + sky.size,
-		stage(encoder, stage, settings, at, panorama) {
+		stage(encoder, stage, settings, at, panorama, noise, cloudSteps) {
 			const parts = stages[stage] as readonly SkyPart[];
 			if (stage === 0) device.queue.writeBuffer(sky, 0, settings, at, SKY_BYTES / 4);
-			if (parts.length > 0) draw(encoder, parts, panorama);
+			if (parts.length > 0) draw(encoder, parts, panorama, noise, cloudSteps);
 			else
 				for (let level = 0; level < levels; level++)
 					copyFaces(encoder, finished, offsets[level] as number, target, level, 0, 6);

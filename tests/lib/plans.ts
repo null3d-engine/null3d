@@ -1146,7 +1146,8 @@ export type CostedEffect =
 	| 'fog'
 	| 'effects'
 	| 'sky'
-	| 'sharpen';
+	| 'sharpen'
+	| 'clouds';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1216,6 +1217,11 @@ export function effectPlan(
 		],
 		// The two steps of the pass at the whole canvas's scale, and the sharpening in the second.
 		sharpen: [['', []]],
+		// The tier at the High preset's step count, and the tier below it.
+		clouds: [
+			['-32', ['steps=32']],
+			['-16', ['steps=16']],
+		],
 	};
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
@@ -1986,6 +1992,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	fog: () => effectPlan('fog'),
 	effects: () => effectPlan('effects'),
 	sharpen: () => effectPlan('sharpen'),
+	clouds: () => effectPlan('clouds'),
 	'physical-sky': () => effectPlan('sky'),
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,

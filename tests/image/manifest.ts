@@ -1255,6 +1255,52 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'background-sky',
 		expect: { hdr: false },
 	},
+	// The sky's volumetric cloud tier: the flat layer that the lighter presets draw, the High
+	// tier's march and the Ultra tier's, then the sky's environment map with the clouds on spheres
+	// from mirror to rough, for the analytic sky and for the physical sky. Each test sets the step
+	// count itself, so a GPU path whose preset stops at Medium draws the tier too.
+	{
+		name: 'clouds-flat',
+		sketch: 'tests/pages/sketches/clouds-sketch.ts?mode=sky',
+		hold: 0,
+		switches: ['cloudSteps=0'],
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'clouds-volume',
+		sketch: 'tests/pages/sketches/clouds-sketch.ts?mode=sky',
+		hold: 0,
+		switches: ['cloudSteps=32'],
+		timeoutSeconds: 120,
+	},
+	{
+		name: 'clouds-ultra',
+		sketch: 'tests/pages/sketches/clouds-sketch.ts?mode=sky',
+		hold: 0,
+		switches: ['cloudSteps=48'],
+		timeoutSeconds: 180,
+	},
+	{
+		name: 'clouds-environment',
+		sketch: 'tests/pages/sketches/clouds-sketch.ts?mode=environment',
+		hold: 0,
+		switches: ['cloudSteps=32'],
+		timeoutSeconds: 180,
+	},
+	{
+		name: 'clouds-environment-flat',
+		sketch: 'tests/pages/sketches/clouds-sketch.ts?mode=environment',
+		hold: 0,
+		switches: ['cloudSteps=0'],
+		timeoutSeconds: 120,
+	},
+	{
+		name: 'clouds-physical',
+		sketch: 'tests/pages/sketches/clouds-sketch.ts?mode=physical',
+		hold: 0,
+		switches: ['cloudSteps=32'],
+		timeoutSeconds: 180,
+	},
 	// The cube map through an orthographic camera, whose parallel rays all look toward one point
 	// of the cube: the view shows that point's color.
 	{

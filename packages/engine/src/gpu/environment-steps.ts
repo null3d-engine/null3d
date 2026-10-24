@@ -26,6 +26,15 @@ const FEWEST_PANORAMA_SAMPLES = 2;
 const MOST_PANORAMA_SAMPLES = 8;
 
 /** Bytes of one step's uniform values, as the shader's `Step` holds them. */
+/**
+ * The volumetric cloud tier's shader builds, by the sky kind that each draws: the analytic sky, and
+ * the physical sky's panorama.
+ */
+export interface CloudShaders {
+	readonly sky?: import('../generated/shaders').ShaderVariant<'sky'>;
+	readonly panorama?: import('../generated/shaders').ShaderVariant<'panorama'>;
+}
+
 export const STEP_BYTES = 32;
 
 /** Bytes of the sky's settings, as the shader's `SkySettings` holds them. */

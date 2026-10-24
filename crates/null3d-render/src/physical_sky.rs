@@ -197,13 +197,13 @@ const UNIFORM_BYTES: u32 = std::mem::size_of::<SkyUniform>() as u32;
 const _: () = assert!(UNIFORM_BYTES == 160);
 
 impl SkyUniform {
-    fn of(atmosphere: &Atmosphere, radius: f32, intensity: f32) -> Self {
+    fn of(atmosphere: &Atmosphere, radius: f32, intensity: f32, cloud_steps: u32) -> Self {
         let a = atmosphere;
         let [sx, sy, sz] = a.sun();
         let [mx, my, mz] = a.moon();
         Self {
             air: a.air(),
-            view: [radius, TOP_RADIUS, intensity, 0.0],
+            view: [radius, TOP_RADIUS, intensity, cloud_steps as f32],
             sun: [sx, sy, sz, a.sun_intensity],
             moon: [mx, my, mz, a.moon_intensity],
             discs: [
@@ -212,10 +212,16 @@ impl SkyUniform {
                 if a.sun_disc { 1.0 } else { 0.0 },
                 a.stars,
             ],
+            // On the volumetric tier the flat layer gives way to the cloud march, which the same
+            // settings drive; the spare view value carries the march's step count.
             clouds: [
                 a.cloud_scale,
                 a.cloud_speed,
-                a.cloud_coverage,
+                if cloud_steps > 0 {
+                    0.0
+                } else {
+                    a.cloud_coverage
+                },
                 a.cloud_density,
             ],
             cloud_place: [a.cloud_elevation, a.time, 0.0, 0.0],
@@ -301,12 +307,14 @@ pub(crate) fn record_frame(
     let sky = settings
         .physical_sky()
         .map(|(atmosphere, intensity)| (*atmosphere, intensity));
+    let cloud_steps = settings.cloud_steps();
     pass.record(
         list,
         arena,
         sky.as_ref().map(|(atmosphere, _)| atmosphere),
         y,
         sky.map_or(1.0, |(_, intensity)| intensity),
+        cloud_steps,
         |id| pipelines.built(id, pipelines_built),
     )?;
     if let Some(height) = pass.height() {
@@ -360,14 +368,17 @@ pub(crate) struct PhysicalSkyIds {
     /// The clamped sampler, and the one that repeats across the width after it.
     pub samplers: u32,
     /// The bind groups of the transmittance, multiple scattering and sky view steps, then the
-    /// group that the background and the panorama read, from this id.
+    /// group that the background and the panorama read, then the cloud tier's group, from this id.
     pub groups: u32,
+    /// The noise field of the volumetric cloud tier and its sampler.
+    pub noise: u32,
+    pub noise_sampler: u32,
 }
 
 /// The pass's ids of textures, samplers and groups that it takes after the first of each.
 pub(crate) const TEXTURES: u32 = 4;
 pub(crate) const SAMPLERS: u32 = 2;
-pub(crate) const GROUPS: u32 = 4;
+pub(crate) const GROUPS: u32 = 5;
 
 /// What a sky view drawn into its table shows: the air, the lights and the camera's height.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -394,6 +405,8 @@ pub(crate) struct PhysicalSkyPass {
     view: Option<ViewKey>,
     /// True once every table holds the frame's sky, so the background may read them.
     ready: bool,
+    /// True once the volumetric cloud tier's bind group is on the GPU.
+    cloud_group_made: bool,
 }
 
 impl PhysicalSkyPass {
@@ -409,6 +422,7 @@ impl PhysicalSkyPass {
             air: None,
             view: None,
             ready: false,
+            cloud_group_made: false,
         }
     }
 
@@ -416,6 +430,12 @@ impl PhysicalSkyPass {
     /// frame's sky.
     pub(crate) fn group(&self) -> Option<u32> {
         self.ready.then_some(self.ids.groups + 3)
+    }
+
+    /// The bind group of the volumetric cloud tier's draw, which adds the noise field to the
+    /// physical sky's values and tables, or none while the tier draws the flat layer.
+    pub(crate) fn cloud_group(&self) -> Option<u32> {
+        (self.ready && self.cloud_group_made).then_some(self.ids.groups + 4)
     }
 
     /// The GPU id of the panorama.
@@ -445,6 +465,7 @@ impl PhysicalSkyPass {
         self.view.map(|view| view.height)
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Records the frame's tables for `atmosphere` seen from a camera at height `y` in the scene,
     /// with the background's `intensity`, or nothing without a physical sky. `built` says whether
     /// the tables' pipeline draws in this frame.
@@ -455,6 +476,7 @@ impl PhysicalSkyPass {
         atmosphere: Option<&Atmosphere>,
         y: f32,
         intensity: f32,
+        cloud_steps: u32,
         built: impl Fn(u32) -> bool,
     ) -> Result<(), RecordError> {
         self.ready = false;
@@ -464,6 +486,9 @@ impl PhysicalSkyPass {
         if !self.created {
             self.create(list)?;
         }
+        if cloud_steps > 0 && !self.cloud_group_made {
+            self.create_cloud_group(list)?;
+        }
         let height = atmosphere.height_of(y);
         let shown = self.view.map(|v| v.height);
         // The sky changes little with height near the ground: the table keeps its height while
@@ -472,7 +497,7 @@ impl PhysicalSkyPass {
             Some(shown) if (height - shown).abs() <= (0.02 * height).max(0.01) => shown,
             _ => height,
         };
-        let uniform = SkyUniform::of(atmosphere, BOTTOM_RADIUS + height, intensity);
+        let uniform = SkyUniform::of(atmosphere, BOTTOM_RADIUS + height, intensity, cloud_steps);
         if self.written != Some(uniform) {
             let (at, bytes) = arena.push(bytes_of(&uniform))?;
             list.push(Op::WriteBuffer, &[self.ids.buffer, 0, at, bytes])?;
@@ -619,6 +644,51 @@ impl PhysicalSkyPass {
         Ok(())
     }
 
+    /// Records the bind group of the volumetric cloud tier's draw, which adds the noise field to
+    /// the values and tables that the background reads, at the bindings that the shared cloud
+    /// module names.
+    fn create_cloud_group(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+        let ids = self.ids;
+        let texture = |step: Step| ids.textures + step as u32;
+        let (t, m, v) = (
+            texture(Step::Transmittance),
+            texture(Step::Multiscatter),
+            texture(Step::SkyView),
+        );
+        let mut words = [0u32; 3 + 5 * 8];
+        words[..3].copy_from_slice(&[ids.groups + 4, bind_layout::CLOUDS_ATMOSPHERE, 8]);
+        words[3..8].copy_from_slice(&[0, resource_kind::BUFFER, ids.buffer, 0, UNIFORM_BYTES]);
+        for (place, table) in [t, m, v].into_iter().enumerate() {
+            words[3 + 5 * (1 + place)..][..5].copy_from_slice(&[
+                1 + place as u32,
+                resource_kind::TEXTURE,
+                table,
+                0,
+                0,
+            ]);
+        }
+        for s in 0..2u32 {
+            words[3 + 5 * (4 + s) as usize..][..5].copy_from_slice(&[
+                4 + s,
+                resource_kind::SAMPLER,
+                ids.samplers + s,
+                0,
+                0,
+            ]);
+        }
+        words[3 + 5 * 6..][..5].copy_from_slice(&[6, resource_kind::TEXTURE, ids.noise, 0, 0]);
+        words[3 + 5 * 7..][..5].copy_from_slice(&[
+            7,
+            resource_kind::SAMPLER,
+            ids.noise_sampler,
+            0,
+            0,
+        ]);
+        list.push(Op::CreateBindGroup, &words)?;
+        self.cloud_group_made = true;
+        Ok(())
+    }
+
     /// Forgets the GPU's objects after the thread that draws replaced the GPU, so the next frame
     /// makes them again and draws every table.
     pub(crate) fn reset_gpu(&mut self) {
@@ -627,6 +697,7 @@ impl PhysicalSkyPass {
         self.air = None;
         self.view = None;
         self.ready = false;
+        self.cloud_group_made = false;
     }
 }
 

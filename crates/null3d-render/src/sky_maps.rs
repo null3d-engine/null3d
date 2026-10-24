@@ -41,7 +41,7 @@ use crate::textures::TextureStore;
 
 /// Words of a stage's command: the texture, the generator, the stage, the panorama and the sky's
 /// 16 values.
-const STEP_WORDS: usize = 20;
+const STEP_WORDS: usize = 22;
 
 /// The least turn of a sun, in radians, that a map draws again for: half a degree. A sun that
 /// turns less darkens or brightens the light it gives a surface by far less than a level of 255.
@@ -367,6 +367,7 @@ impl SkyMaps {
 
     /// Records the frame's stages of each map whose texture is ready: every stage of a map that
     /// is not full yet, and the next stage of a refresh. Forgets maps whose texture was destroyed.
+    #[allow(clippy::too_many_arguments)]
     /// `panorama_drawn` is true when the frame drew the physical sky's panorama, texture
     /// `panorama`, for the sky as it is, which a fill of the physical sky needs to start. `model`
     /// is the physical sky's CPU model.
@@ -377,6 +378,8 @@ impl SkyMaps {
         panorama_drawn: bool,
         panorama: u32,
         model: Option<&AirModel>,
+        cloud_steps: u32,
+        noise: u32,
     ) -> Result<(), RecordError> {
         self.maps.retain(|map| textures.is_live(map.texture));
         let settled = self.settled();
@@ -403,7 +406,16 @@ impl SkyMaps {
             let copy = map.stages - 1;
             let last = if map.shown.is_none() { copy } else { first };
             for stage in first..=last {
-                push_stage(list, id, generator, stage, &sky, panorama)?;
+                push_stage(
+                    list,
+                    id,
+                    generator,
+                    stage,
+                    &sky,
+                    panorama,
+                    cloud_steps,
+                    noise,
+                )?;
             }
             map.fill = if last == copy {
                 map.shown = Some((sky, sh));
@@ -416,6 +428,7 @@ impl SkyMaps {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 /// Records stage `stage` of the sky map in cube texture `id`, which generator `generator` holds:
 /// of the analytic sky's settings, or of the physical sky's panorama in texture `panorama`.
 fn push_stage(
@@ -425,38 +438,66 @@ fn push_stage(
     stage: u32,
     sky: &MapSky,
     panorama: u32,
+    cloud_steps: u32,
+    noise: u32,
 ) -> Result<(), RecordError> {
     let mut words = [0u32; STEP_WORDS];
     words[..3].copy_from_slice(&[id, generator, stage]);
-    let sky = match sky {
-        MapSky::Analytic { sky, .. } => sky,
-        MapSky::Physical { .. } => {
+    // The cloud tier's step count and its noise field's texture reach the generator in the words
+    // after the sky's values: it writes the count into each step's spare value, and the cloud
+    // shaders read it there.
+    words[20] = cloud_steps;
+    words[21] = noise;
+    let values = match sky {
+        MapSky::Analytic { sky, .. } => {
+            let [x, y, z] = sky.sun_position;
+            let [heading, elevation] = sky.second_angles();
+            [
+                x,
+                y,
+                z,
+                sky.second_sky_weight,
+                sky.turbidity,
+                sky.rayleigh,
+                sky.mie_coefficient,
+                sky.mie_directional_g,
+                sky.cloud_scale,
+                sky.cloud_speed,
+                sky.cloud_coverage,
+                sky.cloud_density,
+                sky.cloud_elevation,
+                sky.time,
+                heading,
+                elevation,
+            ]
+        }
+        MapSky::Physical { atmosphere, .. } => {
+            // The panorama's cloud shader takes the lights' directions and the cloud settings,
+            // which stand where the analytic sky keeps its airs and second sky.
             words[3] = panorama;
-            list.push(Op::SkyMapStep, &words)?;
-            return Ok(());
+            let [x, y, z] = atmosphere.sun();
+            let [mx, my, mz] = atmosphere.moon();
+            [
+                x,
+                y,
+                z,
+                atmosphere.sun_intensity,
+                mx,
+                my,
+                mz,
+                atmosphere.moon_intensity,
+                atmosphere.cloud_scale,
+                atmosphere.cloud_speed,
+                atmosphere.cloud_coverage,
+                atmosphere.cloud_density,
+                atmosphere.cloud_elevation,
+                atmosphere.time,
+                0.0,
+                0.0,
+            ]
         }
     };
-    let [x, y, z] = sky.sun_position;
-    let [heading, elevation] = sky.second_angles();
-    let values = [
-        x,
-        y,
-        z,
-        sky.second_sky_weight,
-        sky.turbidity,
-        sky.rayleigh,
-        sky.mie_coefficient,
-        sky.mie_directional_g,
-        sky.cloud_scale,
-        sky.cloud_speed,
-        sky.cloud_coverage,
-        sky.cloud_density,
-        sky.cloud_elevation,
-        sky.time,
-        heading,
-        elevation,
-    ];
-    for (word, value) in words[4..].iter_mut().zip(values) {
+    for (word, value) in words[4..20].iter_mut().zip(values) {
         *word = value.to_bits();
     }
     list.push(Op::SkyMapStep, &words)?;

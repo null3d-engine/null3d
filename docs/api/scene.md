@@ -164,6 +164,8 @@ The sky takes the names and the defaults of three.js's `Sky` uniforms:
 | `time` | 0 | The time in seconds that moves the clouds, such as the sketch's time |
 | `showSunDisc` | true | Whether the sky shows the sun's disc |
 
+The quality preset's [`cloudSteps`](../concepts/quality-preset-tables.md#settings-of-each-preset) chooses which layer draws: Low and Medium draw the flat layer, and High and Ultra draw volumetric clouds, ray marched through a noise volume. Both read the same settings above, so a setting keeps its meaning when the preset changes. WebGL2 and compatibility mode stop at Medium, so a page there draws the tier with `quality.set({ cloudSteps })` or the `cloudSteps` option of `createEngine`. The tier's noise and shaders load at its first use; a page on the flat presets downloads neither. The sky's environment map takes the clouds too.
+
 Two more settings are null3D's own. They add a second sky, which `timeOfDay` uses to fade the moon's sky in as night falls:
 
 | Setting | Default | What it sets |
@@ -222,7 +224,7 @@ export default defineSketch(async ({ scene, assets }) => {
 | `altitude` | 0 | The height of the scene's y = 0 above the ground, in meters |
 | `metersPerUnit` | 1 | The meters in one unit of the scene |
 | `aerialPerspective` | 1 | The factor of the haze on objects: 0 for none, 1 for the real air. More makes a small scene look as large as a landscape |
-| `cloudCoverage`, `cloudDensity`, `cloudElevation`, `cloudScale`, `cloudSpeed`, `time` | As the analytic sky's | The clouds, lit by the physical sky's sun, moon and sky |
+| `cloudCoverage`, `cloudDensity`, `cloudElevation`, `cloudScale`, `cloudSpeed`, `time` | As the analytic sky's | The clouds, lit by the physical sky's sun, moon and sky. The preset's `cloudSteps` chooses the flat layer or the volumetric clouds, as for the analytic sky |
 | `moonPosition` | `[0, 1, 0]` | A point toward the moon |
 | `moonIntensity` | 0 | The moon's light above the air. It lights the air as the sun does, and the sky shows its disc, lit from the sun's side. 0 draws no moon |
 | `stars` | 0 | The stars' brightness. They show only where the sky is dark enough. 0 draws no stars |

@@ -544,8 +544,14 @@ export class WebGPUBackend {
 		if (op === G.OP_SKY_MAP_STEP) {
 			const panorama = words[a + 3] as number;
 			const source = panorama === 0 ? undefined : this.need(this.textures, panorama, 'texture');
+			// The cloud tier's noise field exists once the tier's first frame made it, and the
+			// generator reads it only while the tier draws.
+			const cloudSteps = words[a + 20] as number;
+			const field = words[a + 21] as number;
+			const noise =
+				cloudSteps > 0 && field !== 0 ? this.need(this.textures, field, 'texture') : undefined;
 			const encoder = this.commandEncoder();
-			code.skyStage(this.device, encoder, texture, words, floats, a, this.gpuMemory, source);
+			code.skyStage(this.device, encoder, texture, words, floats, a, this.gpuMemory, source, noise);
 		} else code.run(this.device, texture, this.images.generator(id)[0]);
 	}
 

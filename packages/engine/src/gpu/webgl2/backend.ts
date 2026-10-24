@@ -1799,8 +1799,13 @@ export class WebGL2Backend {
 		if (op === G.OP_SKY_MAP_STEP) {
 			const from = words[a + 3] as number;
 			const panorama = from === 0 ? null : (this.textureOf(from).texture as WebGLTexture);
+			// The cloud tier's noise field exists once the tier's first frame made it, and the
+			// generator reads it only while the tier draws.
+			const cloudSteps = words[a + 20] as number;
+			const field = words[a + 21] as number;
+			const noise = cloudSteps > 0 && field !== 0 ? this.textureOf(field).texture : null;
 			const host = this.programHost;
-			code.skyStage(host, target, width, mips, words, floats, a, this.gpuMemory, panorama);
+			code.skyStage(host, target, width, mips, words, floats, a, this.gpuMemory, panorama, noise);
 		} else code.run(this.programHost, target, width, mips, this.images.generator(id)[0]);
 		this.afterGenerator();
 	}

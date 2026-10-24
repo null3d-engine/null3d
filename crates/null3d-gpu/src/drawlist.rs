@@ -827,6 +827,13 @@ pub mod layout {
     /// [`TAA`] with a multisampled scene depth, whose samples the resolve reads. Only WebGPU has
     /// it.
     pub const TAA_MS: u32 = 58;
+    /// Group 1 of the analytic sky's volumetric cloud draw: the background's own uniform block,
+    /// then the cloud noise atlas and its sampler at bindings 6 and 7. The numbers leave room for
+    /// [`CLOUDS_ATMOSPHERE`]'s tables, so the shared cloud module names one set of bindings.
+    pub const CLOUDS: u32 = 60;
+    /// Group 1 of the physical sky's volumetric cloud draw: its values block and tables exactly as
+    /// [`ATMOSPHERE`] binds them, then the cloud noise atlas and its sampler at bindings 6 and 7.
+    pub const CLOUDS_ATMOSPHERE: u32 = 61;
     /// The final pass with custom effects folded into it: [`FINAL`]'s bindings, then the effects'
     /// uniform buffer at binding 4 and the scene's depth, or a blank texture, at binding 5, as
     /// plain floats.
@@ -1899,6 +1906,14 @@ pub mod template {
     /// layer's own `skyLayer` function. The bind group of index 0 is the frame's, and that of index
     /// 1 the layer's, of layout [`BACKGROUND_LAYER`](super::layout::BACKGROUND_LAYER).
     pub const BACKGROUND_LAYER: u32 = 79;
+    /// The analytic sky's volumetric clouds, drawn as [`BACKGROUND_CUBE`]'s box right after the
+    /// sky and blended over it. It binds the frame's group and the background's own group, of
+    /// layout [`CLOUDS`](super::layout::CLOUDS).
+    pub const BACKGROUND_CLOUDS: u32 = 83;
+    /// The physical sky's volumetric clouds, drawn as [`BACKGROUND_CLOUDS`] is, from the physical
+    /// sky's values and tables, of layout
+    /// [`CLOUDS_ATMOSPHERE`](super::layout::CLOUDS_ATMOSPHERE).
+    pub const BACKGROUND_CLOUDS_ATMOSPHERE: u32 = 84;
     /// The depth of a masked shadow caster: [`SHADOW_DEPTH`]'s vertices, with each fragment of the
     /// caster's material tested as its shading tests it, by the material's opacity and vertex
     /// alpha, so masked surfaces cut holes in their shadows. It binds as the depth template does.
@@ -2073,7 +2088,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 81] = [
+    pub const NAMES: [(&str, u32); 83] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2105,6 +2120,8 @@ pub mod template {
         ("AO_DENOISE", AO_DENOISE),
         ("BACKGROUND_CUBE", BACKGROUND_CUBE),
         ("BACKGROUND_SKY", BACKGROUND_SKY),
+        ("BACKGROUND_CLOUDS", BACKGROUND_CLOUDS),
+        ("BACKGROUND_CLOUDS_ATMOSPHERE", BACKGROUND_CLOUDS_ATMOSPHERE),
         ("SKY_TABLE", SKY_TABLE),
         ("BACKGROUND_ATMOSPHERE", BACKGROUND_ATMOSPHERE),
         ("SHADOW_CUTOUT", SHADOW_CUTOUT),
@@ -2280,6 +2297,14 @@ pub mod groups {
         (template::AO_DENOISE, own!(layout::AO)),
         (template::BACKGROUND_CUBE, BACKGROUND),
         (template::BACKGROUND_SKY, BACKGROUND),
+        (
+            template::BACKGROUND_CLOUDS,
+            &[&[layout::FRAME], &[layout::CLOUDS]],
+        ),
+        (
+            template::BACKGROUND_CLOUDS_ATMOSPHERE,
+            &[&[layout::FRAME], &[layout::CLOUDS_ATMOSPHERE]],
+        ),
         (template::SHADOW_CUTOUT, MESH),
         (template::SHADOW_CUTOUT_MAP, MESH),
         (template::VIEW_COPY, own!(layout::VIEW_COPY)),
@@ -2544,6 +2569,8 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
     ("AO", layout::AO),
     ("BACKGROUND", layout::BACKGROUND),
+    ("CLOUDS", layout::CLOUDS),
+    ("CLOUDS_ATMOSPHERE", layout::CLOUDS_ATMOSPHERE),
     ("INSTANCE_INDEX", layout::INSTANCE_INDEX),
     ("EFFECT", layout::EFFECT),
     ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
