@@ -380,11 +380,18 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	...drawingParts('page', 'page-renderer.js'),
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
 	// A page records or replays only with a switch, so the format and the reader load then, and the
-	// save button loads only for a page that records.
+	// save button loads only for a page that records. The page and the sketch worker each bundle
+	// their own copy of the format, as they do the glTF and KTX2 loaders, so each graph has a part.
 	{
 		name: 'page-recording.js',
 		module: 'shared/recording.ts',
 		loadedBy: 'page.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'sketch-worker-recording.js',
+		module: 'shared/recording.ts',
+		loadedBy: 'sketch-worker.js',
 		onFirstCall: true,
 	},
 	{
