@@ -608,12 +608,13 @@ describe('SketchRunner', () => {
 		expect(moves(page.calls)).toHaveLength(1);
 	});
 
-	it("gives new directional lights the preset's shadow cascades and map size before the setup", async () => {
+	it("gives new directional lights the preset's shadow cascades, map size and hero tile size", async () => {
 		const { calls } = await start(() => ({}));
 		const medium = presetSettings('medium');
 		expect(calls.filter((call) => call[0] === 'setLightDefault')).toEqual([
 			['setLightDefault', C.LIGHT_VALUE_SHADOW_CASCADES, medium.shadowCascades],
 			['setLightDefault', C.LIGHT_VALUE_SHADOW_MAP_SIZE, medium.shadowMapSize],
+			['setLightDefault', C.LIGHT_VALUE_HERO_SIZE, medium.heroTileSize],
 		]);
 	});
 

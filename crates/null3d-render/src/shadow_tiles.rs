@@ -510,7 +510,7 @@ impl ShadowTiles {
         self.hero_uniform = HeroUniform::default();
         let shadows = input.shadow_lights;
         let hero = hero.filter(|hero| hero.bounds.half > 0.0 && hero.bounds.away > 0.0);
-        let shape = self.shape_for(shadows, settings, hero.is_some());
+        let shape = self.shape_for(shadows, settings, hero.map(|hero| hero.size));
         if shape != self.shape || settings != self.settings || hero.is_some() != self.hero_on {
             self.slots = [Slot::default(); MAX_TILES];
             self.hero = HeroSlot::default();
@@ -799,8 +799,14 @@ impl ShadowTiles {
     /// The atlas's shape for the lights that cast shadows and the sun's hero, if it names one: a
     /// layer for each tile that they could fill, within the budget, and no fewer than it has while
     /// some light casts and the settings stay. The hero takes the last layer, which lights never
-    /// fill, so naming one costs them no tile.
-    fn shape_for(&self, shadows: &[LightShadow], settings: TileSettings, hero: bool) -> AtlasShape {
+    /// fill, so naming one costs them no tile. Every layer of an array texture has the same size,
+    /// so a hero tile finer than the preset's lights take sets the size of all of them.
+    fn shape_for(
+        &self,
+        shadows: &[LightShadow],
+        settings: TileSettings,
+        hero: Option<u32>,
+    ) -> AtlasShape {
         let tiles: u32 = shadows
             .iter()
             .map(|light| match light.kind {
@@ -809,15 +815,21 @@ impl ShadowTiles {
                 _ => 0,
             })
             .sum();
-        let room = (MAX_TILES as u32).saturating_sub(u32::from(hero));
+        let hero_size = hero.unwrap_or(0);
+        let hero = u32::from(hero.is_some());
+        let room = (MAX_TILES as u32).saturating_sub(hero);
         let mut lights = tiles.min(settings.tiles).min(room);
-        if settings == self.settings && hero == self.hero_on {
+        if settings == self.settings && hero == u32::from(self.hero_on) {
             lights = lights.max(self.shape.layers.saturating_sub(u32::from(self.hero_on)));
         }
-        let layers = lights + u32::from(hero);
+        let layers = lights + hero;
         AtlasShape {
             layers,
-            size: if layers > 0 { settings.size.max(1) } else { 0 },
+            size: if layers > 0 {
+                settings.size.max(hero_size).max(1)
+            } else {
+                0
+            },
         }
     }
 

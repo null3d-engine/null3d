@@ -3374,6 +3374,7 @@ impl SceneSettings {
                     parity,
                     row,
                     [x, y, z],
+                    shadow.hero_size,
                     shadow.layers,
                     shadow.bias,
                     shadow.normal_bias,

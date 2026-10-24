@@ -139,6 +139,7 @@ fn hidden_objects_still_cast_shadows() {
             contact: 0.0,
             layers: 1,
             hero: None,
+            hero_size: 0,
         }));
     world.record(true);
     let (visible, occluded) = step(&mut world, false);

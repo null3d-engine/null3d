@@ -138,8 +138,13 @@ pub mod value {
     /// light without one: a rectangle light's picture, or the map that a spot light projects over
     /// its cone. The engine sets it when it places the image.
     pub const IMAGE: u32 = 14;
+    /// Texels on each side of a directional light's hero tile: 1,024, 2,048 or 4,096. The default
+    /// is 1,024, and the quality preset sets its own through [`super::LightTable::set_default`].
+    /// A larger tile keeps the hero's shadow sharp over an object that a smaller one would blur,
+    /// at the same texel ratio to the cascades' nearest one.
+    pub const HERO_SIZE: u32 = 15;
     /// The last number.
-    pub const LAST: u32 = IMAGE;
+    pub const LAST: u32 = HERO_SIZE;
 }
 
 /// The shadow distance that follows the farthest visible receiver: the render worker finds the
@@ -174,6 +179,7 @@ const DEFAULT_VALUES: [f32; value::LAST as usize + 1] = [
     1.0,
     0.025,
     0.0,
+    1024.0,
 ];
 
 /// The cone cosines of a point light's [`VisibleLight`] record. Every direction's cosine is above
@@ -356,6 +362,8 @@ pub struct SunShadow {
     /// The scene slot of the object whose shadow the light draws into a tile of its own, or
     /// `None` for a light that names no hero.
     pub hero: Option<u32>,
+    /// Texels on each side of the hero's tile.
+    pub hero_size: u32,
 }
 
 impl SunShadow {
@@ -374,6 +382,7 @@ impl SunShadow {
             contact: values[value::SHADOW_CONTACT as usize].max(0.0),
             layers,
             hero,
+            hero_size: whole(value::HERO_SIZE, 256.0, 16_384.0),
         }
     }
 }
@@ -1074,6 +1083,20 @@ mod tests {
         assert_eq!(table.row(sun).unwrap().hero, Handle::new(9, 0));
         table.destroy(sun).unwrap();
         assert!(table.set_hero(sun, Handle::new(9, 0)).is_err());
+    }
+
+    #[test]
+    fn a_lights_hero_tile_takes_its_default_and_its_own_size() {
+        let mut table = LightTable::new();
+        let sun = table.create(Handle::new(1, 0), kind::DIRECTIONAL).unwrap();
+        assert_eq!(table.value(sun, value::HERO_SIZE).unwrap(), 1024.0);
+        table.set_value(sun, value::HERO_SIZE, 4096.0).unwrap();
+        assert_eq!(table.value(sun, value::HERO_SIZE).unwrap(), 4096.0);
+        // The quality preset sets the default for the lights that come after it.
+        table.set_default(value::HERO_SIZE, 2048.0).unwrap();
+        let later = table.create(Handle::new(2, 0), kind::DIRECTIONAL).unwrap();
+        assert_eq!(table.value(later, value::HERO_SIZE).unwrap(), 2048.0);
+        assert_eq!(table.value(sun, value::HERO_SIZE).unwrap(), 4096.0);
     }
 
     #[test]

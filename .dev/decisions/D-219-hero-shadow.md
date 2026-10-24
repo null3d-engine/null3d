@@ -1,8 +1,8 @@
 # D-219: One object's shadow at its own scale
 
-Status: decided. Date: 2026-10-23. Task: M3-A9. The cost figures below come from the hero cost spec on the Mac's own GPU, run once the feature was complete.
+Status: decided. Date: 2026-10-23, with an addendum of 2026-10-25. Task: M3-A9. The cost figures are owed: the runs that stood here were taken at a load above the cost specs' limit, and the timing helper takes them again.
 
-Summary: A directional light can name one object as its hero, which adds one draw when it moves. Its shadow draws into a tightly fitted tile of the shadow atlas, which receivers in the box read before the cascades. The tile is about eight times finer than the first cascade for a 1.8 m object, and three times for the demo's 4.4 m car.
+Summary: A directional light can name one object as its hero, which adds one draw when it moves. Its shadow draws into a tightly fitted tile of the shadow atlas, which receivers in the box read before the cascades. The tile's size is a setting: 1,024, 2,048 or 4,096 texels, with a default on each quality preset. At the defaults the demo's 4.4 m car keeps at least four times the texel density of the cascade that holds 10 m. That holds on every preset (addendum of 25 October 2026).
 
 ## Question
 
@@ -10,7 +10,7 @@ The cascades spread their texels over the whole view. A subject in close-up, suc
 
 ## Rule
 
-- The hero's own shadow has at least four times the texel density of the first cascade at 10 m, for an object a few meters wide.
+- The hero's own shadow has at least four times the texel density of the cascade that holds 10 m, at each preset's default tile size, for the demo's 4.4 m car and for an object a few meters wide. A page may raise the tile size for a larger object.
 - Changing the hero, or moving it, costs no more than one extra shadow pass per frame.
 - A scene that names no hero behaves exactly as before, with no extra pass, texture or uniform read.
 - One look on all three GPU paths, with image references on the Mac's GPU and on SwiftShader (D-52).
@@ -26,7 +26,7 @@ The cascades spread their texels over the whole view. A subject in close-up, suc
 
 ## Design
 
-- The hero tile takes the atlas's last layer, and the atlas grows by that layer when a light names a hero. Lights keep every tile that the preset gives them, except in an atlas already at its limit of 24 layers, where the smallest light gives one up.
+- The hero tile takes the atlas's last layer, and the atlas grows by that layer when a light names a hero. Lights keep every tile that the preset gives them, except in an atlas already at its limit of 24 layers, where the smallest light gives one up. The tile's size, 1,024, 2,048 or 4,096 texels, decides the hero's detail; every layer of the atlas takes it (addendum of 25 October 2026).
 - The box is square across the light around the object's world bounding sphere, reaching one radius past it toward the light and sixteen past it away from the light, where its shadow lands. The across-light extent sets the texel size; the along-light extent only sets the depth range, which is 32-bit float, as the atlas is.
 - A receiver transforms itself into the box's clip space. Inside it, and within its depth range, it reads the hero's layer with the atlas filter; outside, it reads the cascades. A caster that shadows a point inside the box must lie inside the box's across-light extent too, so the tile holds every caster that its receivers need.
 - The tile draws when the light turns, when nothing drew yet, when the hero's box moves or changes, and when a caster that touches the box moves. Otherwise it keeps its depth, as a light's tile does (D-61). The redraw cap counts lights' tiles; the hero adds at most one tile a frame.
@@ -34,38 +34,54 @@ The cascades spread their texels over the whole view. A subject in close-up, suc
 
 ## Data
 
-Texel sizes in meters at the default sizes, for an object whose bounding sphere has a radius of 0.9 m:
+Texel sizes in meters for the demo's camera (a 42 degree lens, 16:9), its sun's 60 m shadow distance, and the car's bounding sphere, 4.4 m across. The comparison is the cascade that holds 10 m, which is the cascade a receiver there reads; with a short shadow distance the first cascade ends before 10 m, so the near cascade at 10 m is the second one.
 
-| | Texels on a side | Texel |
-| --- | --- | --- |
-| First cascade, 3 cascades over 200 m, 65% lean | 2,048 | 0.0137 |
-| Hero tile | 1,024 | 0.0018 |
+| Preset | Cascades | Map | Hero tile | Cascade at 10 m | Hero texel | Ratio |
+| --- | --- | --- | --- | --- | --- | --- |
+| Low | 2 | 1,024 | 1,024 | 19.0 mm | 4.3 mm | 4.4 |
+| Medium | 3 | 2,048 | 2,048 | 14.3 mm | 2.1 mm | 6.6 |
+| High | 3 | 2,048 | 2,048 | 14.3 mm | 2.1 mm | 6.6 |
+| Ultra | 4 | 4,096 | 4,096 | 4.6 mm | 1.1 mm | 4.3 |
 
-That is 7.8 times the first cascade's density at 10 m for a bounding sphere of radius 0.9 m. The ratio falls as the object grows: the demo car's sphere, 4.4 m across, gets about 3.2 times. The Rust test `the_hero_s_tile_holds_four_times_the_first_cascade_s_texels_at_ten_metres` checks the ratio for the smaller object.
+The ratio is the tile's texels over the object's width, so it falls as the object grows at a fixed tile size. That is why the size is a setting: the Rust test `the_hero_s_tile_holds_four_times_the_cascades_texels_at_ten_metres_on_every_preset` checks each preset's default for the demo car, and `a_bigger_hero_object_needs_a_bigger_tile_for_the_same_detail` checks that a sphere twice the size holds the ratio at a tile twice the size.
 
 ## Cost
 
-The hero cost spec (`tests/image/hero-cost.spec.ts`) times the hero demo's car and yard with the sun's hero off and on, in turns, four times each. Each round measures the sides in the opposite order from the round before. The spec runs only with `NULL3D_HERO_COST` set, as the other cost specs do. It ran on the Mac (Apple M5 Max, Chrome 155) on 24 October 2026. The viewport was 1920 x 1080, the pixel ratio 1, and the loads 13.6 to 26.3. Other jobs ran beside it, so the load changed between cases. The two sides of each round ran back to back. The figures are the medians of the GPU time per frame, in ms. The still case leaves the tile to rest after its first draw. The moving case moves the car across the pad, so the tile draws in every frame.
+The figures that stood here were withdrawn on 25 October 2026. They came from runs at loads of
+13.6 to 26.3 on the Mac, against the cost specs' limit of 8, so other jobs moved each figure and
+none is a measurement. The timing helper takes them again in a quiet window, so this record states
+what is owed rather than a figure.
 
-| GPU path | Preset | Still, off | Still, on | Moving, off | Moving, on |
-| --- | --- | --- | --- | --- | --- |
-| WebGPU | Medium | 1.297 | 1.267 (-0.030) | 1.263 | 1.275 (+0.012) |
-| WebGPU | High | 2.199 | 2.209 (+0.010) | 2.198 | 2.257 (+0.059) |
-| Compatibility mode | Medium | 1.164 | 1.164 (0.000) | 1.171 | 1.173 (+0.002) |
-| WebGL2 | Medium | 3.360 | 3.087 (-0.273) | 3.387 | 3.107 (-0.280) |
+The run must measure the hero demo's car and yard on the Mac's own GPU, with the cost spec's
+protocol: the hero off and on in turns, four rounds, each round in the opposite order from the one
+before, and the medians of the GPU time per frame, of the frame interval and of the CPU time of
+each thread. It must take, at each preset's default tile size (1,024, 2,048 and 4,096):
 
-- A still hero adds no pass. The frame draws the same parts and the same draw calls with the hero off and on. On WebGPU and in compatibility mode its GPU time stays within the timer's steps; on WebGL2 it falls, as the fourth bullet says.
-- A moving hero adds one depth-only render pass a frame, which draws the car into the tile. The draw calls go from 44 to 58 at Medium and 62 to 76 at High on WebGPU. On WebGL2 they go from 57 to 66.
-- The extra pass took 0.028 ms at Medium and 0.037 ms at High on WebGPU and in compatibility mode. The frame's GPU time rose by 0.012 ms at Medium and 0.059 ms at High, around the pass's own time.
-- On WebGL2 the hero lowers the frame's GPU time by about 0.27 ms, both still and moving. A receiver in the box reads the atlas tile through the comparison sampler, and that read costs less than the cascades' per-texel reads.
-- The CPU time changed by no more than 0.01 ms.
-- With no hero the atlas holds no layer, and the frame draws the passes it drew before. The Rust test `the_hero_draws_its_own_tile` checks the layer count, the two cascade passes and the zeroed values.
-- The tile takes the preset's tile size, 512 texels at Medium and 1,024 at High. It adds one layer beyond the preset's tiles, 1 MiB or 4 MiB. The atlas then takes at most 9 MiB at Medium and 68 MiB at High, as the preset table counts. A scene with no hero spends 8 MiB or 64 MiB.
+- The still case and the moving case, against the same scene with no hero, on WebGPU, in
+  compatibility mode and on WebGL2.
+- The draw calls and the passes, and the GPU time of the hero's own pass.
+- The atlas's size and layer count, with no light tile, with 8 and with 16.
+
+What the shape of the figures already shows:
+
+- A still hero adds no pass. The tile rests after its first draw, so the frame draws the passes
+  and the draw calls that it drew with no hero. A receiver inside the box reads the tile with the
+  atlas filter, as it reads a light's tile.
+- A moving hero adds one depth-only render pass a frame, which draws the car into the tile and
+  clears it. The pass clears and draws the tile's whole area, so its cost grows with the square of
+  the tile size.
+- With no hero the atlas holds no layer, and the frame draws the passes it drew before. The Rust
+  test `the_hero_draws_its_own_tile` checks the layer count, the two cascade passes and the zeroed
+  values.
+- The atlas holds the tile, and every layer of a texture array takes one size. A tile above the
+  preset's `shadowTileSize` sets the size of every layer: (lights + 1) x size x size x 4 bytes. The
+  demo has no spot or point light that casts, so its atlas is one layer: 4 MiB at 1,024, 16 MiB at
+  2,048 and 64 MiB at 4,096. A scene with 16 light tiles at 2,048 takes 272 MiB.
 
 ## Consequences
 
 - `crates/null3d-render/src/shadows.rs` holds `HeroBox` and `HeroShadow`; `shadow_tiles.rs` plans the hero's tile and its uniform block; `crates/null3d-shaders/wgsl/lib/shadows.wgsl` reads it in `sun_hero` before `sun_shadow`'s cascades.
-- The directional light takes `shadow: { hero: object }` and `setHeroShadow(object | null)`. The core keeps the hero as a handle, so a destroyed object leaves the light without one, with no dangling row.
+- The directional light takes `shadow: { hero: object, heroTileSize }` and `setHeroShadow(object | null, tileSize?)`. The core keeps the hero as a handle, so a destroyed object leaves the light without one, with no dangling row.
 - [Shadows](../../docs/concepts/shadows.md#a-hero-shadow) describes the feature for users, and the demo is `examples/hero-shadow`.
 - The reach below the object is sixteen radii (`HERO_REACH`), about what a low sun stretches an object's shadow over. A ground far below the object, or a very low sun, cuts the shadow at the box's far face and leaves the cascades beyond it. Revisit the constant with the first scene that needs a longer one.
 
@@ -80,3 +96,25 @@ object class, so a group whose parts are known to span a box can be a hero too. 
 the car's body mesh and widens its sphere to hold the whole car, which needs no group bounds, and the
 test that the hero's tile is marked by a caster near it covers the group path through the same
 sphere.
+
+## Addendum 25 October 2026: the tile size is a setting
+
+The owner ruled on 25 October 2026 that the hero shadow's detail becomes tunable, relayed by the CI
+session. A light that names its hero gives the tile's size in texels, 1,024, 2,048 or 4,096, in
+`shadow: { hero, heroTileSize }` or `setHeroShadow(hero, size)`. The quality presets choose the
+defaults as `heroTileSize`: 1,024 on Low, 2,048 on Medium and High, and 4,096 on Ultra. A page may
+override them, and the governor may lower the size when frames run slow; it does not yet, because a
+change of size makes the atlas again and a mid-play hitch costs more than the frames it saves.
+
+The fault was the fixed size. The tile was the atlas's layer size, which the preset's
+`shadowTileSize` fixed at 512 on Low and Medium and 1,024 on High and Ultra. The ratio of the hero's
+texel density to the cascades' falls as the object grows, so a fixed tile kept four times the detail
+only for a small object. At the demo's 60 m shadow distance, a 1.8 m object at High held 8.1 times,
+while the demo's 4.4 m car held 3.3. The ratio is the tile's texels over the object's width, so only
+a tile that follows the object holds it. The tile size is now its own setting. Each preset defaults
+to the size that keeps the demo's car at or above four times.
+
+The tile draws with the atlas's filter, as it did before. The finer texels sharpen the edge, and
+the filter keeps it smooth. The cost of the larger tile is the memory that every atlas layer takes
+and the larger pass's clear and draw. The presets carry that cost, each with the tile size that
+holds the ratio, and the cost section gives the bytes and the pass.

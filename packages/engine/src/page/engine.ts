@@ -204,6 +204,12 @@ export interface EngineOptions {
 	 */
 	shadowTileSize?: number;
 	/**
+	 * Texels on each side of the tile that holds a directional light's hero shadow, for each light
+	 * whose `shadow` options name no `heroTileSize`: 1,024, 2,048 or 4,096. Without it, the quality
+	 * preset sets it. Another value fails with E1213.
+	 */
+	heroTileSize?: number;
+	/**
 	 * True makes point lights cast shadows, false keeps them from it. Without it, the quality
 	 * preset decides: High and Ultra turn them on. Another value fails with E1213.
 	 */
@@ -1663,6 +1669,7 @@ async function startEngine(
 		shadowMapSize: options.shadowMapSize,
 		shadowTiles: options.shadowTiles,
 		shadowTileSize: options.shadowTileSize,
+		heroTileSize: options.heroTileSize,
 		pointLightShadows: options.pointLightShadows,
 		depthPrepass: switches.prepass ?? options.depthPrepass,
 		gpuOcclusion: switches.occlusion ?? options.gpuOcclusion,
