@@ -45,7 +45,7 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'Spot-light cookies, `light.map`: `packages/engine/src/scene/scene.ts`, `docs/api/lights.md`',
 	'M3-K5': '`scene.overrideMaterial`: `packages/engine/src/scene/scene.ts`, `docs/api/scene.md`',
 	'M3-F8':
-		"`probe.capture()` again on request, with the moved object's reflection settling: `crates/null3d-render/tests/probes.rs` and the `probe-capture` picture on every tier; `docs/api/scene.md`. The compatibility-mode picture failed three full runs on a reference drawn from a slow run; the page now pins the frame-budget governor (d3dda9e72), and CI has yet to confirm it",
+		"`probe.capture()` again on request, with the moved object's reflection settling: `crates/null3d-render/tests/probes.rs` and the `probe-capture` picture on every tier; `docs/api/scene.md`. The compatibility-mode picture had failed three full runs against a reference drawn on a slow run; the page now pins the frame-budget governor (d3dda9e72), and the full run on 57a0a08ed passed that picture on every tier",
 	'M3-R6':
 		'D-226 records the timings on Chrome and Safari: at most 0.29 ms in Safari, nothing measurable in Chrome, so the pattern stays',
 	'M3-R10':
