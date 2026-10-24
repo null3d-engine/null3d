@@ -52,6 +52,56 @@
 			]
 		},
 		{
+			"id": "animation-pointer-uvs",
+			"cases": [
+				{
+					"time": 0,
+					"values": {
+						"materials/10/mapOffset": [0, 0],
+						"materials/11/mapRepeat": [1, 1],
+						"materials/19/emissiveMapOffset": [0, 0],
+						"materials/20/emissiveMapRepeat": [1, 1]
+					}
+				},
+				{
+					"time": 1.5,
+					"values": {
+						"materials/10/mapOffset": [-0.25, 0.25],
+						"materials/11/mapRepeat": [1.5, 1.5],
+						"materials/19/emissiveMapOffset": [-0.25, 0.25],
+						"materials/20/emissiveMapRepeat": [1.5, 1.5]
+					}
+				},
+				{
+					"time": 3,
+					"values": {
+						"materials/10/mapOffset": [-0.5, 0.5],
+						"materials/11/mapRepeat": [2, 2],
+						"materials/19/emissiveMapOffset": [-0.5, 0.5],
+						"materials/20/emissiveMapRepeat": [2, 2]
+					}
+				},
+				{
+					"time": 4.5,
+					"values": {
+						"materials/10/mapOffset": [-0.75, 0.75],
+						"materials/11/mapRepeat": [2.5, 2.5],
+						"materials/19/emissiveMapOffset": [-0.75, 0.75],
+						"materials/20/emissiveMapRepeat": [2.5, 2.5]
+					}
+				},
+				{
+					"time": 5.900000095367432,
+					"values": {
+						"materials/10/mapOffset": [-0.9833333492279053, 0.9833333492279053],
+						"materials/11/mapRepeat": [2.9666666984558105, 2.9666666984558105],
+						"materials/19/emissiveMapOffset": [-0.9833333492279053, 0.9833333492279053],
+						"materials/20/emissiveMapRepeat": [2.9666666984558105, 2.9666666984558105]
+					}
+				}
+			]
+		},
+		{
 			"id": "pointer-light",
 			"cases": [
 				{

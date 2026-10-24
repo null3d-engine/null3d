@@ -583,6 +583,26 @@ describe('Material.set', () => {
 		expect(row()[MATERIAL_PARAM_ENV_INTENSITY]).toBe(0.25);
 	});
 
+	test('a texture transform part that a property track writes keeps the other parts', () => {
+		const { table, materials } = fakeCore();
+		const stone = materials.standard({
+			uvTransform: { offset: [0.5, 0.25], repeat: [2, 3], rotation: Math.PI / 2 },
+		});
+		const row = () => table[0] as number[];
+		const close = (values: number[], expected: number[]) => {
+			for (const [k, value] of values.entries())
+				expect(value).toBeCloseTo(expected[k] as number, 12);
+		};
+		const u = () => row().slice(MATERIAL_PARAM_UV_U, MATERIAL_PARAM_UV_U + 3);
+		const v = () => row().slice(MATERIAL_PARAM_UV_V, MATERIAL_PARAM_UV_V + 3);
+		stone.writeUniform('mapOffset', [0.25, -0.5]);
+		close(u(), [0, 2, 0.25]);
+		close(v(), [-3, 0, -0.5]);
+		stone.writeUniform('emissiveMapRepeat', [4, 5]);
+		close(u(), [0, 4, 0.25]);
+		close(v(), [-5, 0, -0.5]);
+	});
+
 	test('writes the specular values, with the reflectance that the index of refraction gives', () => {
 		const { table, maps, materials } = fakeCore();
 		const glass = materials.standard({
@@ -887,7 +907,10 @@ describe('Material.set', () => {
 			{ anisotropyRotation: Number.NaN },
 		])
 			expect(thrown(() => film.set(values)).code).toBe('E1108');
-		expect(thrown(() => materials.standard({ anisotropy: 0.5 })).code).toBe('E1217');
+		// The stretch needs no map: a material without one takes a frame square to the surface.
+		materials.standard({ anisotropy: 0.5 });
+		expect((features[3] ?? 0) & MATERIAL_FEATURE_ANISOTROPY).toBe(MATERIAL_FEATURE_ANISOTROPY);
+		expect(row(3)[MATERIAL_PARAM_ANISOTROPY]).toBe(0.5);
 		const clash = thrown(() =>
 			materials.standard({ clearcoatMap: texture(5), iridescenceMap: texture(9) }),
 		);

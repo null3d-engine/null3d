@@ -126,6 +126,13 @@ export const SPECULAR_AA_LIMITS = {
 	'gltf-iridescence': 0.3,
 	'gltf-anisotropy': 0.6,
 	'gltf-toy-car': 0.32,
+	// The Khronos grids of the thin film and the stretched lobe, whose highlights cross more of the
+	// anti-aliasing kernels than a round one: 0.521%, 0.402% and 0.511% on the Mac for the stretch,
+	// 0.216%, 0.207% and 0.207% for the dielectric film, and 0.162%, 0.168% and 0.164% for the film
+	// over a thickness texture.
+	'gltf-anisotropy-strength': 0.6,
+	'gltf-iridescence-dielectric': 0.3,
+	'gltf-iridescence-suzanne': 0.25,
 } as const;
 
 /**
@@ -443,6 +450,9 @@ const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 	iridescence: SPECULAR_AA_LIMITS['gltf-iridescence'],
 	anisotropy: SPECULAR_AA_LIMITS['gltf-anisotropy'],
 	'toy-car': SPECULAR_AA_LIMITS['gltf-toy-car'],
+	'anisotropy-strength': SPECULAR_AA_LIMITS['gltf-anisotropy-strength'],
+	'iridescence-dielectric': SPECULAR_AA_LIMITS['gltf-iridescence-dielectric'],
+	'iridescence-suzanne': SPECULAR_AA_LIMITS['gltf-iridescence-suzanne'],
 };
 
 /**

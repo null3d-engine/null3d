@@ -3150,6 +3150,9 @@ export type SceneChecks = typeof SCENE_CHECKS;
 /** The color that a property write fills for a material or a light, shared by every write. */
 const PROPERTY_COLOR: [number, number, number] = [0, 0, 0];
 
+/** The pair of numbers that a property write fills for a texture transform's part. */
+const PROPERTY_PAIR: [number, number] = [0, 0];
+
 /** The smallest positive value that a light's range, a camera's planes and its view take. */
 const SMALLEST = 1e-6;
 
@@ -3190,7 +3193,11 @@ function writeProperty(
 		const material = target as Material;
 		if (!material.live) return;
 		if (binding.components === 1) material.writeUniform(binding.name, mixed(0));
-		else material.writeUniform(binding.name, color());
+		else if (binding.components === 2) {
+			PROPERTY_PAIR[0] = mixed(0);
+			PROPERTY_PAIR[1] = mixed(1);
+			material.writeUniform(binding.name, PROPERTY_PAIR);
+		} else material.writeUniform(binding.name, color());
 		return;
 	}
 	const object = target as Object3D;

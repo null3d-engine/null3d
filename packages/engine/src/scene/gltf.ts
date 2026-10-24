@@ -1540,6 +1540,14 @@ function propertyBase(target: RigPropertyTarget, data: GltfData): Float32Array |
 				return one(layers?.anisotropy);
 			case 'anisotropyRotation':
 				return one(layers?.anisotropyRotation);
+			case 'mapOffset':
+				return Float32Array.from(m.uvParts?.map?.offset ?? [0, 0]);
+			case 'mapRepeat':
+				return Float32Array.from(m.uvParts?.map?.repeat ?? [1, 1]);
+			case 'emissiveMapOffset':
+				return Float32Array.from(m.uvParts?.emissiveMap?.offset ?? [0, 0]);
+			case 'emissiveMapRepeat':
+				return Float32Array.from(m.uvParts?.emissiveMap?.repeat ?? [1, 1]);
 		}
 		return undefined;
 	}

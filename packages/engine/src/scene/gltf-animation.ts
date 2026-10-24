@@ -185,6 +185,12 @@ const MORPHED_ATTRIBUTES = [
 const POINTER_MATERIAL_VALUES: ReadonlyMap<string, string> = new Map([
 	['pbrMetallicRoughness/metallicFactor', 'metalness'],
 	['pbrMetallicRoughness/roughnessFactor', 'roughness'],
+	// The base color map's and the emissive map's texture transforms, which three.js's reference
+	// moves and leaves the other slots' transforms still.
+	['pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/offset', 'mapOffset'],
+	['pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/scale', 'mapRepeat'],
+	['emissiveTexture/extensions/KHR_texture_transform/offset', 'emissiveMapOffset'],
+	['emissiveTexture/extensions/KHR_texture_transform/scale', 'emissiveMapRepeat'],
 	['emissiveFactor', 'emissive'],
 	['alphaCutoff', 'alphaCutoff'],
 	['occlusionTexture/strength', 'aoMapIntensity'],
@@ -201,6 +207,14 @@ const POINTER_MATERIAL_VALUES: ReadonlyMap<string, string> = new Map([
 	['extensions/KHR_materials_specular/specularColorFactor', 'specularColor'],
 	['extensions/KHR_materials_transmission/transmissionFactor', 'transmission'],
 	['extensions/KHR_materials_volume/thicknessFactor', 'thickness'],
+]);
+
+/** The material values that a texture transform's part holds: a pair of numbers each. */
+const TEXTURE_TRANSFORM_VALUES: ReadonlySet<string> = new Set([
+	'mapOffset',
+	'mapRepeat',
+	'emissiveMapOffset',
+	'emissiveMapRepeat',
 ]);
 
 /** The light values that a pointer can move, by the pointer's tail after the light's index. */
@@ -867,6 +881,11 @@ function parseClip(
 				);
 				return;
 			}
+			// A texture transform's offset or scale is a pair of numbers.
+			if (TEXTURE_TRANSFORM_VALUES.has(target.value) && output.components !== 2)
+				broken(
+					`${where}'s output has ${output.components} numbers per key, and a texture transform's offset or scale has two`,
+				);
 			properties.push({ target, interpolation, components: output.components, times, values });
 			return;
 		}

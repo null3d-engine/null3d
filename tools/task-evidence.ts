@@ -38,8 +38,14 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		"Water's soft shores read the scene depth on every path: the `water-shores` picture on WebGPU, compatibility mode and WebGL2, in both reference sets, shows the pale band and foam where the water meets the sand and the island's base; without the depth copy the sheet draws its deep colour everywhere. D-202's addendum names M3-E4a for the case of depth beside textures",
 	'M3-E5':
 		'One file format for baked probe grids and light maps: `packages/engine/src/scene/baked-light.ts`, `assets.loadLightProbeGrid`, `assets.loadLightMap` and `assets.lightProbeGridFile`, with every fault named as E1434; the guide `docs/guides/baked-light-data.md`, a round-trip test and two fixtures; D-243',
+	'M3-G1':
+		"The Khronos animation-pointer samples match three.js's sampling: `tests/image/gltf-properties.spec.ts` compares every sampled value at every time with `tests/pages/lib/gltf-properties.json`, which three.js r186 and its animation-pointer plugin recorded, for AnimatedColorsCube, LightVisibility, AnimationPointerUVs (whose base color and emissive map transforms now move) and a light built in code; the same page checks `scene.animateProperty`; the mapping's `keyframe-tracks` entry carries no old version label",
+	'M3-G2':
+		'The Khronos iridescence samples draw: the `gltf-iridescence-dielectric` and `gltf-iridescence-suzanne` pictures on WebGPU, compatibility mode and WebGL2 in both reference sets, with their strict comparisons with three.js in `bench/lib/parity.ts`; `bench/scenes/gltf-models.ts`; D-215',
+	'M3-G3':
+		"The Khronos anisotropy sample draws: the `gltf-anisotropy-strength` picture on WebGPU, compatibility mode and WebGL2 in both reference sets, with its strict comparison with three.js, over the 42 materials that have anisotropy and no texture; `packages/engine/src/scene/gltf-parse.ts`, `crates/null3d-shaders/wgsl/lit.wgsl` and `crates/null3d-render/src/frame.rs`; D-215's addendum",
 	'M3-G4':
-		"`transmissionMap` and `thicknessMap`: `packages/engine/src/scene/resources.ts`, the shaders' thickness reads",
+		"`transmissionMap` and `thicknessMap`: `packages/engine/src/scene/resources.ts`, the shaders' thickness reads, and the `transmission-maps` picture on every tier",
 	'M3-K1': '`scene.createView({ camera, rect })`: `packages/engine/src/scene/scene.ts`',
 	'M3-K3':
 		'Spot-light cookies, `light.map`: `packages/engine/src/scene/scene.ts`, `docs/api/lights.md`',

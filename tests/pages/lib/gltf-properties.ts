@@ -5,6 +5,7 @@
 // animator wrote. It is plain data with the one model that code builds, so Bun and the page share
 // it.
 
+import { sampleUrl } from '../../../tools/lib/sample-url';
 import { boxPrimitive, GltfBuilder } from './gltf-files';
 
 /** A model whose clips move properties, and the properties to compare. */
@@ -27,8 +28,9 @@ export interface PropertyModel {
 }
 
 /**
- * The models: the two Khronos samples whose properties the engine animates, and a light that code
- * builds, because no Khronos sample moves a light's values.
+ * The models: the Khronos samples whose properties the engine animates, including the sample that
+ * moves texture transforms, and a light that code builds, because no Khronos sample moves a
+ * light's values.
  */
 export const PROPERTY_MODELS: readonly PropertyModel[] = [
 	{
@@ -44,6 +46,21 @@ export const PROPERTY_MODELS: readonly PropertyModel[] = [
 		clip: 'BlinkingBlueLight',
 		times: [0, 0.45, 0.9, 1.5, 2.1],
 		keys: ['nodes/5/visible'],
+	},
+	{
+		id: 'animation-pointer-uvs',
+		url: sampleUrl('sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs.gltf'),
+		clip: 'animation_0',
+		// Inside the clip: a repeating clip wraps a time at its length to its start.
+		times: [0, 1.5, 3, 4.5, 5.9],
+		// The base color map's and the emissive map's transforms, which are the ones that three.js's
+		// reference moves: the other slots' transforms stay as the file gives them.
+		keys: [
+			'materials/10/mapOffset',
+			'materials/11/mapRepeat',
+			'materials/19/emissiveMapOffset',
+			'materials/20/emissiveMapRepeat',
+		],
 	},
 	{
 		id: 'pointer-light',

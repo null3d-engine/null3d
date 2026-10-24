@@ -734,6 +734,17 @@ export interface UvTransformData {
 	rotation: number;
 }
 
+/** A texture's `KHR_texture_transform` values, with the value that glTF gives each absent part. */
+function uvTransformOf(transform: Entry, what: string): UvTransformData {
+	const offset = numbers(transform.offset, 2, [0, 0], `${what}'s texture transform offset`);
+	const scale = numbers(transform.scale, 2, [1, 1], `${what}'s texture transform scale`);
+	return {
+		offset: [offset[0] as number, offset[1] as number],
+		repeat: [scale[0] as number, scale[1] as number],
+		rotation: finite(transform.rotation ?? 0, `${what}'s texture transform rotation`),
+	};
+}
+
 /** A material as the engine's options, with its maps as indices into the texture uses. */
 export interface MaterialData {
 	name: string;
@@ -793,6 +804,11 @@ export interface MaterialData {
 		anisotropyMap?: number;
 	};
 	uvTransform?: UvTransformData;
+	/**
+	 * The base color map's and the emissive map's own texture transforms, where the file gives
+	 * them: a `KHR_animation_pointer` track moves their offset and scale, as three.js does.
+	 */
+	uvParts?: { map?: UvTransformData; emissiveMap?: UvTransformData };
 }
 
 /** A light of KHR_lights_punctual, in the units that glTF and three.js share. */
@@ -1411,7 +1427,7 @@ export function parseGltf(
 			broken(`${what} has the alpha mode ${alphaMode}`);
 		const transmission = transmissionOf(extensions, what, alphaMode === 'MASK', notes);
 		// The transmission and thickness textures take the specular textures' slots, so a material
-		// that gives both keeps the transmission textures, which change its look more.
+		// that gives both keeps the specular textures.
 		const transmissionExtension = extensions.KHR_materials_transmission as Entry | undefined;
 		const givesVolumeMaps =
 			transmissionExtension?.transmissionTexture !== undefined ||
@@ -1555,23 +1571,19 @@ export function parseGltf(
 		if (scatter) data.scatter = scatter;
 		if (layered) {
 			const values = layersOf(coat, sheen, film, anisotropy, what);
-			// The stretch's direction comes from the surface's tangent frame, which the shader
-			// builds from the texture coordinates. A material with no map draws without it.
-			if (values.anisotropy !== undefined && values.anisotropy !== 0 && !Object.keys(maps).length) {
-				notes.push(`${what}'s anisotropyStrength, which needs a map for its texture coordinates`);
-				values.anisotropy = 0;
-				values.anisotropyRotation = 0;
-			}
 			data.layers = values;
 		}
 		if (transform) {
-			const offset = numbers(transform.offset, 2, [0, 0], `${what}'s texture transform offset`);
-			const scale = numbers(transform.scale, 2, [1, 1], `${what}'s texture transform scale`);
-			data.uvTransform = {
-				offset: [offset[0] as number, offset[1] as number],
-				repeat: [scale[0] as number, scale[1] as number],
-				rotation: finite(transform.rotation ?? 0, `${what}'s texture transform rotation`),
-			};
+			data.uvTransform = uvTransformOf(transform, what);
+		}
+		const mapTransform = slots.map?.transform;
+		const emissiveTransform = slots.emissiveMap?.transform;
+		if (mapTransform || emissiveTransform) {
+			const parts: NonNullable<MaterialData['uvParts']> = {};
+			if (mapTransform) parts.map = uvTransformOf(mapTransform, `${what}'s baseColorTexture`);
+			if (emissiveTransform)
+				parts.emissiveMap = uvTransformOf(emissiveTransform, `${what}'s emissiveTexture`);
+			data.uvParts = parts;
 		}
 		return data;
 	});

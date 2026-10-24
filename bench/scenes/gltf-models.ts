@@ -72,6 +72,9 @@ export interface ModelScene {
 /** The wait of a scene with a clear coat or a sheen, whose builds a software GPU makes slowly. */
 const LAYERS_SECONDS = 60;
 
+/** The wait of a scene with hundreds of materials, whose pipeline setup a software GPU makes slowly. */
+const GRID_SECONDS = 150;
+
 /** The HDR file of the model scenes' environment: the backgrounds scene's, at full intensity. */
 export const MODELS_HDR = sampleUrl('sources/hdri/polyhaven/venice_sunset/venice_sunset_2k.hdr');
 
@@ -94,7 +97,8 @@ export const MODELS_HDR = sampleUrl('sources/hdri/polyhaven/venice_sunset/venice
  * (tests/lib/draco-fixtures.ts), each against its uncompressed scene. The Khronos models of
  * KHR_materials_clearcoat and KHR_materials_sheen draw under the sun, and two of them also under the
  * HDR environment, whose light the coat reflects and the sheen gathers. The toy car has a coat, a
- * sheen and glass in one model.
+ * sheen and glass in one model. The Khronos grids of anisotropy and iridescence draw beside the
+ * code-built scenes, so a strict comparison covers the real files too.
  */
 export const MODEL_SCENES = {
 	'metal-rough': {
@@ -229,6 +233,38 @@ export const MODEL_SCENES = {
 	'toy-car': {
 		url: sampleUrl('sources/khronos/ToyCar/glTF-Binary/ToyCar.glb'),
 		view: [0.7, 0.45, 1],
+		timeoutSeconds: LAYERS_SECONDS,
+	},
+	// The Khronos test grids of the layers above the base, which a test page keeps as one file
+	// each: the stretch of KHR_materials_anisotropy over seven strengths against seven roughnesses,
+	// and the film of KHR_materials_iridescence over the indices of refraction and the film's
+	// thicknesses. The dielectric spheres take the environment's light, which their polished
+	// surfaces reflect.
+	'anisotropy-strength': {
+		url: new URL(
+			'../../tests/pages/assets/models/sources/khronos/AnisotropyStrengthTest/AnisotropyStrengthTest.glb',
+			import.meta.url,
+		).href,
+		environment: true,
+		timeoutSeconds: GRID_SECONDS,
+	},
+	'iridescence-dielectric': {
+		url: new URL(
+			'../../tests/pages/assets/models/sources/khronos/IridescenceDielectricSpheres/IridescenceDielectricSpheres.glb',
+			import.meta.url,
+		).href,
+		environment: true,
+		timeoutSeconds: GRID_SECONDS,
+	},
+	// The Khronos sample's own directional light draws it, its film's thickness comes from a
+	// texture, and the environment's light shows through its transmissive head.
+	'iridescence-suzanne': {
+		url: new URL(
+			'../../tests/pages/assets/models/sources/khronos/IridescenceSuzanne/IridescenceSuzanne.glb',
+			import.meta.url,
+		).href,
+		ownLights: true,
+		environment: true,
 		timeoutSeconds: LAYERS_SECONDS,
 	},
 } as const satisfies Record<string, ModelScene>;

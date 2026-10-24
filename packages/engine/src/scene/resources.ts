@@ -1285,8 +1285,9 @@ export interface StandardValues extends MaterialOptions {
 	/**
 	 * How far the specular reflection stretches along one direction of the surface, from 0 (round)
 	 * to 1, as three.js's `anisotropy`: brushed metal shows a highlight across its grooves rather
-	 * than around. A material with it needs a map, whose coordinates give the surface's tangent
-	 * frame. Give it, or `anisotropyRotation`, when you create the material, to change it later.
+	 * than around. A material with a map takes the stretch's direction from the mesh's tangents or
+	 * from the map's coordinates; a material without one takes a frame square to the surface.
+	 * Give it, or `anisotropyRotation`, when you create the material, to change it later.
 	 * The default is 0.
 	 */
 	anisotropy?: number;
@@ -2315,21 +2316,46 @@ function writeValues(
 		sendValue(core, id, MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE, call);
 	}
 	if (uvTransform) {
-		// three.js's texture matrix with its center at the origin, by rows.
-		const { offset, repeat, rotation = 0 } = uvTransform;
-		const u = repeat ? repeat[0] : 1;
-		const v = repeat ? repeat[1] : 1;
-		const c = Math.cos(rotation);
-		const s = Math.sin(rotation);
-		numbers[0] = u * c;
-		numbers[1] = u * s;
-		numbers[2] = offset ? offset[0] : 0;
-		sendValue(core, id, MATERIAL_PARAM_UV_U, call);
-		numbers[0] = -v * s;
-		numbers[1] = v * c;
-		numbers[2] = offset ? offset[1] : 0;
-		sendValue(core, id, MATERIAL_PARAM_UV_V, call);
+		const offset = uvTransform.offset;
+		const repeat = uvTransform.repeat;
+		sendUvTransform(
+			core,
+			id,
+			call,
+			offset ? offset[0] : 0,
+			offset ? offset[1] : 0,
+			repeat ? repeat[0] : 1,
+			repeat ? repeat[1] : 1,
+			uvTransform.rotation ?? 0,
+		);
 	}
+}
+
+/**
+ * Writes a material's texture transform: three.js's texture matrix with its center at the origin,
+ * by rows. A part that the file leaves absent takes none for an offset and one for a repeat.
+ */
+function sendUvTransform(
+	core: CoreMemory,
+	id: number,
+	call: string,
+	offsetU: number,
+	offsetV: number,
+	repeatU: number,
+	repeatV: number,
+	rotation: number,
+): void {
+	const numbers = core.callValues();
+	const c = Math.cos(rotation);
+	const s = Math.sin(rotation);
+	numbers[0] = repeatU * c;
+	numbers[1] = repeatU * s;
+	numbers[2] = offsetU;
+	sendValue(core, id, MATERIAL_PARAM_UV_U, call);
+	numbers[0] = -repeatV * s;
+	numbers[1] = repeatV * c;
+	numbers[2] = offsetV;
+	sendValue(core, id, MATERIAL_PARAM_UV_V, call);
 }
 
 /** Sets material `id`'s value `param` to the core's call values. */
@@ -2582,11 +2608,6 @@ function checkFeatures(options: StandardOptions, call: string): void {
 			`${call}() got diffuseTransmission with the 'weighted' blending; a material of the weighted blending lets no light through to its other side. Give it the 'normal' blending.`,
 		);
 	if (hasLayers(options)) checkLayerMaps(options, call);
-	if (options.anisotropy !== undefined && !MAP_OPTIONS.some(([key]) => options[key] !== undefined))
-		throw new EngineError(
-			'E1217',
-			`${call}() got anisotropy with no map. The direction that the reflection stretches along comes from the surface's texture coordinates, so give the material a map.`,
-		);
 	if (options.parallax && !options.displacementMap)
 		throw new EngineError(
 			'E1217',
@@ -2981,6 +3002,12 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	/** The displacement map's scale and bias, which `set` changes one at a time, where it has one. */
 	private displacement: [number, number] | undefined;
 
+	/**
+	 * The texture transform's offset, repeat and rotation, where a property track moves part of it
+	 * or the material's maps have one: none while the maps sit on the coordinates unchanged.
+	 */
+	private uv: [number, number, number, number, number] | undefined;
+
 	/** @internal */
 	constructor(
 		id: number,
@@ -3044,6 +3071,23 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 			sheen,
 		);
 		this.writeHeights(values);
+		if (values.uvTransform) this.holdUv(values.uvTransform);
+	}
+
+	/**
+	 * @internal Keeps the texture transform's parts, which a property track changes one at a time,
+	 * so a write of one part restores the others.
+	 */
+	holdUv(uvTransform: UvTransform | undefined): void {
+		if (!uvTransform) return;
+		const { offset, repeat, rotation = 0 } = uvTransform;
+		this.uv = [
+			offset ? offset[0] : 0,
+			offset ? offset[1] : 0,
+			repeat ? repeat[0] : 1,
+			repeat ? repeat[1] : 1,
+			rotation,
+		];
 	}
 
 	/**
@@ -3113,17 +3157,43 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	}
 
 	/**
-	 * @internal Writes one value by name, for a property animation: a number, or a linear color as
-	 * three numbers. A number stays within the range that the value takes, because a cubic key can
-	 * overshoot. It allocates nothing, so a track writes a value in every frame.
+	 * @internal Writes one value by name, for a property animation: a number, a texture transform's
+	 * offset or repeat as two numbers, or a linear color as three numbers. A number stays within the
+	 * range that the value takes, because a cubic key can overshoot. It allocates nothing, so a
+	 * track writes a value in every frame.
 	 */
-	writeUniform(name: string, value: number | readonly [number, number, number]): void {
+	writeUniform(
+		name: string,
+		value: number | readonly [number, number] | readonly [number, number, number],
+	): void {
 		if (typeof value === 'number') {
 			const most = ONE_VALUE_MAX.get(name) ?? Number.POSITIVE_INFINITY;
 			writeOneValue(this.core, this.id, this.oneCall, name, Math.max(0, Math.min(value, most)));
 			return;
 		}
+		if (value.length === 2) {
+			this.writeUvPart(name, value);
+			return;
+		}
 		writeOneValue(this.core, this.id, this.oneCall, name, value);
+	}
+
+	/**
+	 * Writes one part of the texture transform, from the parts that the material holds: the offset
+	 * or the repeat of the maps, which a property track moves.
+	 */
+	private writeUvPart(name: string, value: readonly [number, number]): void {
+		// The maps sit on the coordinates unchanged until a transform or a track moves them.
+		this.uv ??= [0, 0, 1, 1, 0];
+		const uv = this.uv;
+		if (name === 'mapOffset' || name === 'emissiveMapOffset') {
+			uv[0] = value[0];
+			uv[1] = value[1];
+		} else {
+			uv[2] = value[0];
+			uv[3] = value[1];
+		}
+		sendUvTransform(this.core, this.id, this.oneCall, uv[0], uv[1], uv[2], uv[3], uv[4]);
 	}
 
 	/**
@@ -3231,6 +3301,7 @@ export class Materials {
 			shading,
 		);
 		if (options.bumpMap || options.displacementMap) material.heights(options);
+		material.holdUv(options.uvTransform);
 		return material;
 	}
 

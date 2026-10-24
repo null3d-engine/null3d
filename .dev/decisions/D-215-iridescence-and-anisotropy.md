@@ -90,3 +90,33 @@ Options C, B and B. The helper decided on 22 October 2026; the owner's review is
 - The row's last texel is the anisotropy's, which the shader build's test that reads the row's size now names.
 - A material cannot have a clear coat's or a sheen's maps and iridescence's or the anisotropy's maps at once. A file that gives both loses the second family's maps, and the loader says so.
 - The model scenes `gltf-iridescence` and `gltf-anisotropy` make their files in code, since the sample content pins a real Khronos file in a repository of its own. Both match three.js on all three tiers under limits of 0.3% and 0.6%, which are the specular anti-aliasing family's. [Image tests](../image-tests.md) gives the figures.
+
+## Addendum, 25 October 2026: anisotropy without a map
+
+Status: decided by the helper of the glTF intent gaps on 25 October 2026, for the owner's review. Date: 2026-10-25. Task: M3-G3.
+
+Summary: The standard material draws anisotropy with no texture at all. A material with texture coordinates draws through the standard material's maps template. Its tangent frame is three.js's exactly: the mesh's tangents where it has them, else the normal map's coordinates, else the first coordinates. A surface with neither takes any frame square to its normal. No shader build is added.
+
+### Problem
+
+The engine dropped anisotropy twice for a material with no texture. The loader set the strength and rotation to 0, with a note. The material API threw E1217 for `materials.standard({ anisotropy })` without a map. Both rested on one claim: the direction comes from the texture coordinates, which the untextured shader build does not read.
+
+The Khronos sample AnisotropyStrengthTest shows the cost. Its 50 materials compare seven anisotropy strengths against seven roughnesses, and 49 of them carry `KHR_materials_anisotropy`. None of those 49 has a texture of any kind, and 42 have a strength above 0. All 49 primitives carry `TANGENT`. three.js r186 draws the 42 stretched, because `HAS_ANISOTROPY` needs no map. It builds the frame from the mesh's tangents when the geometry has them. The engine drew all 42 as round highlights on perfect mirrors, which is a plain white or black ball where a long highlight belongs. The code-built scene `gltf-anisotropy` never met the case: it gave every sphere a white base color texture so that a map existed.
+
+### Options rejected
+
+- **Give the untextured build its own tangent frame and nothing else.** The frame would come from the surface normal alone. The stretch would show, but its direction would be arbitrary, so the picture would not match three.js on the sample and no strict comparison could pass.
+- **Add `VERTEX_TANGENT` to the untextured lit template.** Then the sample matches exactly, with or without texture coordinates. It doubles the lit family, from 2,208 to 4,416 WebGPU builds and from 5,568 to 11,136 WebGL2 builds. That is 7,776 builds, about a ninth of the whole set. It also adds to work already in progress on build time and shader build size. The owner's focus of 16 October 2026 covers both.
+
+### What the engine does now
+
+- The loader keeps the anisotropy that a material gives, with no note, and the material API takes a material without a map.
+- A material with anisotropy and texture coordinates draws through the standard material's maps template, even with no live map. The frame is the one that three.js builds. The maps group binds its white placeholders where a slot has no texture. The same condition adds `VERTEX_TANGENT` where the mesh has tangents, so a file's own tangents win, as in three.js.
+- A surface without texture coordinates cannot draw through the maps template. It keeps the untextured lit build, which now takes any frame square to the surface's normal. The stretch shows and its direction is steady; no file gives such a surface a direction to match.
+- The shader build count does not change, and neither does any download for a page that draws no anisotropy.
+
+### Consequences
+
+- An untextured anisotropy material loads the standard material's maps template on its first use. That template already loads on first use for every textured standard material. A page that draws this case downloads it, where a page without it does not.
+- [Image tests](../image-tests.md) names the three Khronos samples that now draw, with their figures.
+- The branch that carries this addendum owes a `GPU-Checked:` line. The Mac's load of 130 to 160 prevented it: the checker waits ten minutes for a load below 8, then refuses. Without that line a reader can trust the picture comparisons in both reference sets, and the three.js percentages on the Mac's GPU. They cannot trust the cost of the anisotropy path. Its untextured case now draws through the maps template, which reads maps that the lit template did not. `bun run bench:gpu-check` takes the line on a quiet Mac.

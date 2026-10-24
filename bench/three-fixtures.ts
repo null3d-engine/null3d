@@ -58,7 +58,6 @@ import {
 	type PoseCase,
 	type PoseFixture,
 	poseTime,
-	SAMPLES_PREFIX,
 } from '../tests/pages/lib/gltf-poses';
 import {
 	builtFile,
@@ -67,6 +66,7 @@ import {
 	type PropertyFixture,
 	propertyTime,
 } from '../tests/pages/lib/gltf-properties';
+import { SAMPLES_URL } from '../tools/lib/sample-url';
 import { repositoryRoot, samplesDir } from '../tools/lib/samples';
 
 const FIXTURES = join(import.meta.dirname, '../crates/null3d-render/tests/fixtures');
@@ -1074,7 +1074,7 @@ async function gltfPosesFixture(): Promise<string> {
 	const root = repositoryRoot();
 	const fixture: PoseFixture = { revision: REVISION, models: [] };
 	for (const model of POSE_MODELS) {
-		const path = join(samplesDir(root), model.url.slice(SAMPLES_PREFIX.length));
+		const path = join(samplesDir(root), model.url.slice(SAMPLES_URL.length));
 		const source = withoutImages(new Uint8Array(readFileSync(path)), path.endsWith('.glb'));
 		const gltf = await new GLTFLoader().parseAsync(source, '');
 		const { parser, scene, animations } = gltf;
@@ -1151,14 +1151,17 @@ async function gltfPosesFixture(): Promise<string> {
  * `gltf-properties.ts`: the value that each property held at each sampled time.
  */
 async function gltfPropertiesFixture(): Promise<string> {
-	// three.js's file loader reads a .gltf file's buffers by address.
-	const scope = globalThis as { ProgressEvent?: unknown };
+	// three.js's file loader reads a .gltf file's buffers by address, and its textures through the
+	// runtime's `createImageBitmap`, which Bun lacks: a placeholder keeps each material's map, so
+	// the pointer's texture-transform tracks find it.
+	const scope = globalThis as { ProgressEvent?: unknown; createImageBitmap?: unknown };
 	scope.ProgressEvent ??= class extends Event {
 		constructor(type: string, init: Record<string, unknown> = {}) {
 			super(type);
 			Object.assign(this, init);
 		}
 	};
+	scope.createImageBitmap ??= async () => ({ width: 1, height: 1, close() {} });
 	const root = repositoryRoot();
 	type Parser = { getDependency(kind: string, index: number): Promise<unknown> };
 	const read = async (gltf: { parser: Parser; scene: Object3D }, key: string) => {
@@ -1172,6 +1175,11 @@ async function gltfPropertiesFixture(): Promise<string> {
 			let material = source as Material & {
 				color: { r: number; g: number; b: number };
 				opacity: number;
+				map: { offset: { x: number; y: number }; repeat: { x: number; y: number } } | null;
+				emissiveMap: {
+					offset: { x: number; y: number };
+					repeat: { x: number; y: number };
+				} | null;
 			};
 			scene.traverse((object) => {
 				const mesh = object as Object3D & { material?: Material };
@@ -1180,6 +1188,12 @@ async function gltfPropertiesFixture(): Promise<string> {
 			});
 			if (value === 'color') return [material.color.r, material.color.g, material.color.b];
 			if (value === 'opacity') return [material.opacity];
+			// A texture transform's parts, which the pointer moves on the base color map or the
+			// emissive map, as three.js's reference does.
+			const emissive = value.startsWith('emissive');
+			const texture = emissive ? material.emissiveMap : material.map;
+			const part = value.endsWith('Repeat') ? texture?.repeat : texture?.offset;
+			if (part) return [part.x, part.y];
 		} else if (kind === 'nodes') {
 			const node = (await parser.getDependency('node', at)) as { visible: boolean };
 			return [node.visible ? 1 : 0];
@@ -1202,7 +1216,11 @@ async function gltfPropertiesFixture(): Promise<string> {
 		let source: ArrayBuffer;
 		let base: string;
 		if (model.url) {
-			const path = join(root, 'tests/pages', model.url);
+			// A pinned sample file comes from the shared cache, and a file of the repository from
+			// the test page's folder.
+			const path = model.url.startsWith(SAMPLES_URL)
+				? join(samplesDir(root), model.url.slice(SAMPLES_URL.length))
+				: join(root, 'tests/pages', model.url);
 			source = readFileSync(path).buffer as ArrayBuffer;
 			base = pathToFileURL(`${dirname(path)}/`).href;
 		} else {

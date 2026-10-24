@@ -881,6 +881,18 @@ describe('materials, textures and lights', () => {
 		expect(data.notes).toEqual([]);
 	});
 
+	test('a material keeps its anisotropy with no texture of any kind', () => {
+		const data = layered({
+			KHR_materials_anisotropy: { anisotropyStrength: 0.75, anisotropyRotation: 0.4 },
+		});
+		expect(data.materials[0]?.layers).toMatchObject({
+			anisotropy: 0.75,
+			anisotropyRotation: 0.4,
+		});
+		expect(data.materials[0]?.maps).toEqual({});
+		expect(data.notes).toEqual([]);
+	});
+
 	test('a clear coat or a sheen map keeps its slots ahead of iridescence and anisotropy, and notes them', () => {
 		const data = layered({
 			KHR_materials_clearcoat: { clearcoatTexture: { index: 0 } },
@@ -1149,7 +1161,7 @@ describe('skins and clips', () => {
 						output: b.accessor(new Float32Array([1, 0]), 1),
 						interpolation: 'STEP',
 					},
-					{ input: at([0, 1]), output: b.accessor(new Float32Array([0, 0, 0, 1, 1, 1]), 3) },
+					{ input: at([0, 1]), output: b.accessor(new Float32Array([0.25, 0.5, 0.75, 1]), 2) },
 					{ input: at([0, 1]), output: b.accessor(new Float32Array([0.5, 1]), 1) },
 				],
 				channels: [
@@ -1180,13 +1192,14 @@ describe('skins and clips', () => {
 			['material', 0, 'opacity', 1],
 			['light', 0, 'intensity', 1],
 			['node', 1, 'visible', 1],
+			['material', 0, 'mapOffset', 2],
 		]);
 		// A base color factor's fourth number becomes the opacity, key by key.
-		const [color, opacity] = clip?.properties ?? [];
+		const [color, opacity, , , mapOffset] = clip?.properties ?? [];
 		expect(Array.from(color?.values ?? [])).toEqual([1, 1, 1, 0, 0, 0]);
 		expect(Array.from(opacity?.values ?? [])).toEqual([1, 0.5]);
+		expect(Array.from(mapOffset?.values ?? [])).toEqual([0.25, 0.5, 0.75, 1]);
 		expect(data.notes).toEqual([
-			"animation 0 moves a material's pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/offset, which the engine does not animate",
 			'animation 0 moves a camera property, and the engine reads no cameras from files',
 		]);
 	});
