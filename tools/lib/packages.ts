@@ -108,7 +108,13 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		needs: [],
 		required: ['dist/shader-compiler.wasm', 'lib/client.d.ts', 'THIRD-PARTY-NOTICES.txt'],
 	},
-	controls: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	controls: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine'],
+		required: ['THIRD-PARTY-NOTICES.txt'],
+	},
 	impostors: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
 	particles: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
 	geometry: {

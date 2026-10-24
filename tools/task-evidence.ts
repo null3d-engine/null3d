@@ -50,4 +50,6 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'D-226 records the timings on Chrome and Safari: at most 0.29 ms in Safari, nothing measurable in Chrome, so the pattern stays',
 	'M3-R10':
 		"A sky map redraws only past a visible step: `crates/null3d-render/tests/sky_maps.rs` counts the fills a day cycle records; `tests/image/sky-step.spec.ts` keeps every step within 8 levels of 255 on every tier; D-118's addendum records the fills a minute",
+	'M3-R18':
+		"Shipped code contacts no server of its own: `docs/getting-started/network-use.md`, the guard `tools/lib/network-use.ts` and its 13 passing tests, and each package's `THIRD-PARTY-NOTICES.txt` with `docs/getting-started/third-party-notices.md`; when a call was added to `packages/terrain/src/index.ts`, the repository check named the call and its host, so one test failed and not the list. D-227 and its addenda record the audit and the controls package's three.js notice",
 };
