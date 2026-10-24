@@ -23,6 +23,9 @@ const LAMP_COLOURS = [
 const LAMPS_PER_STREET = 9;
 const LAMP_HEIGHT = 9;
 const LAMP_RANGE = 64;
+/** The strength of one lamp's light, and of a searchlight, when the city's lights burn fully. */
+const LAMP_INTENSITY = 2200;
+const BEAM_INTENSITY = 90_000;
 
 const groundWgsl = /* wgsl */ `
 #import null3d::noise::{fbm2}
@@ -69,6 +72,8 @@ fn surface(input: SurfaceInput) -> Surface {
 const signWgsl = /* wgsl */ `
 var screen: texture_2d<f32>;
 
+struct Uniforms { power: f32 }
+
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     let colour = textureSampleLevel(screen, screenSampler, input.uv, 0.0).rgb;
@@ -80,7 +85,7 @@ fn surface(input: SurfaceInput) -> Surface {
     s.baseColor = vec3f(0.0);
     s.metalness = 0.0;
     s.roughness = 0.5;
-    s.emissive = colour * mix(1.0, scan, near) * flicker * 1.7;
+    s.emissive = colour * mix(1.0, scan, near) * flicker * 1.7 * material.power;
     return s;
 }
 `;
@@ -89,6 +94,8 @@ fn surface(input: SurfaceInput) -> Surface {
 export interface City {
 	/** Draws the lights and signs of a preset. */
 	fit(preset: QualityPreset): void;
+	/** Sets the share of the street lights and signs that burn, from 0 by day to 1 at night. */
+	power(share: number): void;
 	/** Sweeps the searchlights. Call once per frame with the sketch time. */
 	update(t: number): void;
 }
@@ -166,22 +173,28 @@ export function createCity(ctx: SketchContext): City {
 			}
 		}
 	}
+	const streetLights: ReturnType<typeof scene.createPointLight>[] = [];
 	for (const head of heads) {
-		scene.createPointLight({
-			position: [head.x, head.y, head.z],
-			color: [head.colour[0] as number, head.colour[1] as number, head.colour[2] as number],
-			intensity: 2200,
-			range: LAMP_RANGE,
-		});
+		streetLights.push(
+			scene.createPointLight({
+				position: [head.x, head.y, head.z],
+				color: [head.colour[0] as number, head.colour[1] as number, head.colour[2] as number],
+				intensity: LAMP_INTENSITY,
+				range: LAMP_RANGE,
+			}),
+		);
 	}
 	const headGlow = materials.shader({
 		wgsl: /* wgsl */ `
+struct Uniforms { power: f32 }
+
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     s.baseColor = vec3f(0.0);
-    s.emissive = vec3f(1.0, 0.82, 0.55) * 6.0;
+    s.emissive = vec3f(1.0, 0.82, 0.55) * 6.0 * material.power;
     return s;
 }`,
+		uniforms: { power: 1 },
 		contactShadows: false,
 	});
 	const glowBatch = scene.createInstances(geometry.box(), heads.length, {
@@ -206,7 +219,7 @@ fn surface(input: SurfaceInput) -> Surface {
 			position: [beam.at[0], beam.at[1], beam.at[2]],
 			direction: [0, -1, 0],
 			color: '#bcd6ff',
-			intensity: 90_000,
+			intensity: BEAM_INTENSITY,
 			range: 700,
 			angle: 0.085,
 			penumbra: 0.55,
@@ -224,18 +237,22 @@ fn surface(input: SurfaceInput) -> Surface {
 		{ at: [330, 30, 75], yaw: Math.PI / 2 },
 		{ at: [-75, 38, 225], yaw: -Math.PI / 2 },
 	] as const;
+	const signMaterials: ReturnType<typeof materials.shader>[] = [];
 	for (let k = 0; k < signs.length; k++) {
 		const sign = signs[k] as (typeof signs)[number];
 		const { canvas } = paintSign(k);
 		const map = textures.fromCanvas(canvas);
+		const material = materials.shader({
+			wgsl: signWgsl,
+			uniforms: { power: 1 },
+			textures: { screen: map },
+			alphaMode: 'opaque',
+			fog: true,
+		});
+		signMaterials.push(material);
 		scene.createMesh({
 			mesh: geometry.plane({ width: 13, height: 6.5 }),
-			material: materials.shader({
-				wgsl: signWgsl,
-				textures: { screen: map },
-				alphaMode: 'opaque',
-				fog: true,
-			}),
+			material,
 			position: [sign.at[0], sign.at[1], sign.at[2]],
 			rotation: turnAbout('y', sign.yaw),
 			layers: EFFECT_LAYER,
@@ -245,6 +262,13 @@ fn surface(input: SurfaceInput) -> Surface {
 
 	return {
 		fit(_preset) {},
+		power(share) {
+			headGlow.setUniform('power', share);
+			// A lit sign reads by day too, so it keeps nearly half its light while the city sleeps.
+			for (const sign of signMaterials) sign.setUniform('power', 0.45 + 0.55 * share);
+			for (const light of streetLights) light.setIntensity(LAMP_INTENSITY * share);
+			for (const spot of spots) spot.setIntensity(BEAM_INTENSITY * share);
+		},
 		update(t) {
 			for (let k = 0; k < spots.length; k++) {
 				const beam = beams[k] as (typeof beams)[number];

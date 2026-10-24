@@ -177,7 +177,7 @@ The rules that the reworked demos follow, and why:
 - While the pointer steers, each drone eases toward the pointed point at a rate of its own. The rate falls from 6 to 1.2 a second as its lag grows. So a sudden move of the lamp sends a ripple through the flock. Each drone keeps its steering weight and its point in arrays, the only state of the demo. With no input both stay exactly 0, so the scripted path and the held frames do not change.
 - The instances demo writes each row's place across the field once, in the setup, since only the heights change. In each frame it works out the part of the height that depends only on the column once per column, not once per row.
 - The owner found the first instances demo too dark. It now takes golden hour from `timeOfDay`, and the sky's own light from `assets.skyEnvironment()`, with the helper's ambient light and a third more exposure. Its columns are less metallic, so the sky and the sun light them. The helper's fog color is the horizon toward the sun. Across the view, the sky's rim is a dim rose, so the demo's fog takes an amber between the two. The clouds stay still. The engine makes the sky's light again after each change of the sky, one step a frame. So drifting clouds would cost a step in every frame.
-- The instances demo takes its count of columns from a table by preset. `quality.onChange` sets the batch's active count again when the preset changes. The setup places the rows ring by ring from the middle out. So the first rows of any count fill a square in the middle of the field. Low draws 10,201 rows, the old demo's count, and the other presets draw all 100,489. The Mac held the full field at 120 fps on both GPU paths. No phone has run it yet.
+- The instances demo takes its count of columns from a table by preset. `quality.onChange` sets the batch's active count again when the preset changes. The setup places the rows ring by ring from the middle out. So the first rows of any count fill a square in the middle of the field. Low draws 10,201 rows, the old demo's count, and the other presets draw all 100,489. The Mac held the full field at 120 fps on both GPU paths. The cloud iPad Pro 13 in Safari and the Galaxy S25 in Chrome drew its held frame on all three paths. Neither run timed the frame rate.
 - The demos' interaction test (`tests/image/demo-interaction.spec.ts`) opens the math and instances demos on the Low preset. It checks the camera and the steering, not the look. On SwiftShader on the Mac, the full look took the instances test from 11.4 s to 25 to 30 s. The math test took 17 s. In CI, main's instances test already took 44.6 s of its 60 s, about four times its time on the Mac. On Low, the two tests took 7 to 10 s and 12 s on the Mac. With a quarter of the field on Low, the instances test took 14 s. That is too close to the limit in CI.
 - The three demos make the room environment, which takes time on a software GPU. On SwiftShader on the Mac their held frames took 6 to 15 s, four tests at once. So their image tests take 60 s, as the other demos with the room environment do, since CI's machines are slower.
 - The instances demo's lanes moved to the traffic-lanes add-on on 22 October 2026 (M3-B6). The demo draws 30,000 cars at Low and 100,000 at Ultra, where it drew 720 on the CPU. The add-on moves them in the vertex shader. It gives each heading's batch a lane-length bound,
@@ -532,22 +532,39 @@ and a hero car with two screens.
 - **Post starts on.** Bloom, the vignette and ambient occlusion start on, where the other showcase
   scenes start them off (D-171). A night city of neon and lit windows reads flat without the glow
   of its lights. The owner has not reviewed the look yet.
-- **Time of day.** The scene takes its sky, sun, fog and exposure from the shared stage, which
-  eases between looks and writes them every frame (`examples/lib/stage.ts`). Dusk and Night are the
-  stage's own moods. Storm is the scene's variation on the night: full cloud, a dimmed moon, fog
-  2.4 times as dense and rain 1.8 times as heavy. The stage writes the scene's lit fog with every
-  mood, through its `volumetric` option. It gained three scales for a scene whose own lights carry
-  it: the exposure, the environment light and the brightness of the sky. Skyway sets them to 4.5,
-  2.2 and 2.6, and lowers the cloud cover to 0.45. The HUD keeps Camera, Time of day, Atmosphere
-  (Fog, Rain), Lighting (AO, Environment), Post, Traffic and Quality.
-- **The moods were drawn and looked at.** The image test draws Night. Dusk warms the towers and
-  lifts the sky. Storm fills the sky with cloud, dims the moon, thickens the fog and drives the
-  rain. The physical sky is darker than the analytic night the scene drew before. The
-  references therefore moved in both sets by about 20% of their pixels.
-- **Figures.** A run in Chrome on the Mac measured these, with the shared stage, the traffic-lanes
-  add-on and its six real lights, and the lens kit in the scene. The Mac has an Apple M5 Max and a
-  120 Hz display. The frame-budget governor was on, and the window was parked past the screen's
-  edge. The machine carried a shared build load of about 18 at the time:
+- **Time of day.** The scene takes its full time of day from the shared stage, as the other
+  showcases do. It offers the same hour dial, with Auto and Studio, over the whole day. The physical
+  sky draws the real sun by day and the moon at night, and Auto moves them across the sky. The scene
+  sets the stage's three scales for a scene lit by its own lamps. The exposure is 4.5, the
+  environment light 2.2 and the sky's brightness 2.6. It lowers the cloud cover to 0.45. The scales
+  hold through the whole day, because the physical model's own exposure already falls by day and
+  rises at night. Scaling them again by the hour made midday darker than dawn. The stage writes the
+  scene's lit fog with every hour, through its `volumetric` option.
+- **The city's lights follow the hour.** The stage reports the share of a town's own lights that
+  the sun allows (`stage.lamps`). The scene gives it to the facades' windows and shop fronts, the
+  street lamps and their heads, the searchlights and the signs. Every lamp's light and every
+  searchlight fades with the share. A sign keeps nearly half its light by day, as a lit sign does.
+  At Night the share is 1 exactly, so the held frame's picture is the one the scene had.
+- **Storm is weather, not an hour.** The Atmosphere group's Storm button calls the stage's
+  `setWeather`. That gives full cloud and fog 2.4 times as dense. The sky and the light fall to a
+  third and to a half, and the rain is 1.8 times as heavy. The weather clears when the button turns
+  off. It works at any hour, so a storm at dawn is a storm under a dawn sky. A held frame has no
+  buttons, so its address takes `?storm` as well as the hour.
+- **The HUD** keeps Camera, Time of day, Atmosphere (Fog, Rain, Storm), Lighting (AO, Environment),
+  Post, Traffic and Quality. The scene's own controls reach the shared router through its `own` and
+  `extra` options. The lens kit owns the vignette and the scene's lens owns the depth of field. The
+  Traffic group stands before Quality.
+- **The hours were drawn and looked at.** The image test draws Night, whose reference did not move.
+  At night the light share is 1 and every scale is the value it always had. Dawn, Midday, Golden,
+  Dusk and Storm were drawn and reviewed. Midday reads as an overcast city that the fog still
+  layers. Golden warms the towers and the sky, and Storm drives the rain through a city of visible
+  lamps. The light power uniform moved SwiftShader's WebGL2 picture by 0.10 per cent, at the bright
+  edges of signs and lamps. That reference was drawn again. The Mac's picture still matches its own
+  reference.
+- **Figures.** A run in Chrome on the Mac measured these. It used the shared stage, the
+  traffic-lanes add-on and its six real lights, and the lens kit in the scene. The Mac has an Apple
+  M5 Max and a 120 Hz display. The frame-budget governor was on, and the window was parked past the
+  screen's edge. The machine carried a shared build load of about 18 at the time:
 
   | Preset | WebGPU | WebGL2 |
   | --- | --- | --- |
@@ -578,7 +595,9 @@ and a hero car with two screens.
 - **On a phone**, WebGL2 runs Medium at most. Low should hold 60 frames a second on an S24-class
   phone. That preset draws 30,000 cars, about 900 towers, 180 lights, the rain and reflections at a
   quarter of the render size. Medium doubles the cars and raises the reflection scale. A mid-range
-  phone may therefore fall under 60. No phone has run it yet.
+  phone may therefore fall under 60. The cloud iPad Pro 13 in Safari and the Galaxy S25 in Chrome
+  drew the demo's held frame on all three paths. Neither run timed the frame rate, so the 60 frames
+  a second target has no device figure yet.
 
 ### Engine features for the showcase
 
