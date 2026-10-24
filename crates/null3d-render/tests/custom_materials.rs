@@ -13,7 +13,9 @@ use null3d_gpu::drawlist::{Op, layout, template, vertex};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
-use null3d_render::materials::{CustomShading, MapSlot, NO_MAP, Shading, texture_layer_offset};
+use null3d_render::materials::{
+    CustomShading, MapSlot, NO_MAP, Shading, feature, texture_layer_offset,
+};
 
 /// The size of the test's textures.
 const SIZE: u32 = 16;
@@ -155,6 +157,82 @@ fn custom_materials_sample_texture_arrays_on_webgpu() {
 #[test]
 fn custom_materials_sample_texture_arrays_on_webgl2() {
     check_texture_array(World::build(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    )));
+}
+
+/// The bindings of a maps' group that a list creates under `wanted`, from its operands.
+fn map_bindings(commands: &[(Op, Vec<u32>)], wanted: u32) -> Vec<(u32, Vec<u32>)> {
+    commands
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateBindGroup && o[1] == wanted)
+        .map(|(_, o)| {
+            let count = o[2] as usize;
+            let bindings = (0..count).map(|entry| o[3 + 5 * entry]).collect();
+            (o.len() as u32, bindings)
+        })
+        .collect()
+}
+
+/// A material that reads the scene's depth takes a maps' group with the last slot and the
+/// displacement map left out, which frees the fragment stage a sampled texture for the copy. A
+/// material that reads neither keeps the group it had, binding for binding.
+fn check_scene_depth_maps<B: FrameBuilder>(mut world: World<B>) {
+    let (scene_material, plain_material) = {
+        let settings = world.renderer.settings_mut();
+        let first = settings.textures_mut().create(map_desc(SIZE)).unwrap();
+        let second = settings.textures_mut().create(map_desc(SIZE)).unwrap();
+        for texture in [first, second] {
+            settings
+                .textures_mut()
+                .set_image(texture, SIZE, SIZE, 0)
+                .unwrap();
+        }
+        let table = settings.materials_mut();
+        // The same two textures, so only the depth tells the two groups apart: the group's key
+        // must keep the flag, or one material would draw with the other's layout.
+        let mut make = |features| {
+            let material = table.create(custom(2), features, [1.0; 4]).unwrap();
+            for (slot, texture) in [(MapSlot::BaseColor, first), (MapSlot::MetalRough, second)] {
+                table.set_map(material, slot, texture, false).unwrap();
+            }
+            material
+        };
+        (make(feature::SCENE_DEPTH), make(0))
+    };
+    add_object(&mut world, scene_material + 1);
+    add_object(&mut world, plain_material + 1);
+    let mut mock = MockBackend::default();
+    let commands = world.step(&mut mock, true);
+    let scene = map_bindings(&commands, layout::MATERIAL_MAPS_SCENE);
+    assert_eq!(scene.len(), 1, "one group for the depth-reading material");
+    // Seven arrays and their samplers: the shader numbers its samplers from the slot count, so the
+    // group keeps those bindings and leaves the last slot's pair out.
+    assert_eq!(scene[0].0, 3 + 5 * 14);
+    assert_eq!(scene[0].1, [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14]);
+    let plain = map_bindings(&commands, layout::MATERIAL_MAPS);
+    assert_eq!(
+        plain.len(),
+        1,
+        "one group for the material that reads neither"
+    );
+    let mut all: Vec<u32> = (0..8).collect();
+    all.extend(8..16);
+    all.extend([16, 17]);
+    assert_eq!(plain[0].1, all);
+    // The group's words are as many as the layout has entries, so a material that reads neither
+    // costs the draw list what it did before.
+    assert_eq!(plain[0].0, 3 + 5 * 18);
+}
+
+#[test]
+fn custom_materials_that_read_the_depth_take_a_smaller_maps_group_on_webgpu() {
+    check_scene_depth_maps(World::new());
+}
+
+#[test]
+fn custom_materials_that_read_the_depth_take_a_smaller_maps_group_on_webgl2() {
+    check_scene_depth_maps(World::build(CpuCulledRenderer::new(
         CpuCulledConfig::default(),
     )));
 }

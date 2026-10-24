@@ -956,6 +956,22 @@ The budget rises to 190 KB, or 194,560 bytes, leaving 1,164 bytes of room. The o
 script means loading its performer on hold mode's first use, which is work of its own rather than a
 few names to cut; the trims owed above still stand as the next work that touches the start's size.
 
+## The first-use shader files to 56 KB after Brotli, 24 October 2026
+
+M3-F5 built `@null3d/water`. Its surface function rides every build of the standard material, as the
+engine's own material families do, and its largest set of builds measures 1,204.5 KB uncompressed,
+241.8 KB after gzip and 53.3 KB after Brotli. The add-on listing's size gate holds an add-on's
+files to these same figures ([D-225](D-225-addon-listing-check.md)), so the 52 KB figure that the
+coat and sheen family set on 22 October 2026 failed a feature that works as the engine's own
+materials do.
+
+`FIRST_USE_SHADER_BUDGET.brotli` in `tools/lib/size-report.ts` rises to 56 KB, and
+`ADDON_SHADER_BUDGET.brotli` in the add-on check rises with it; a test keeps the two equal. The gzip
+and uncompressed figures stay at 320 KB and 1,792 KB, and the add-on's largest file passes both with
+room. The rise leaves about 5% above the measured figure, as the 22 October rise did. A first-use
+file that a page never opens still costs it nothing, so the rise costs only the devices that draw
+water.
+
 ## The start's budget rises to 191 KB, 25 October 2026
 
 The recording and replay of M3-R15 (D-251) put the page's replay switch, the download and check of
