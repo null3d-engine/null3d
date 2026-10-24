@@ -341,9 +341,9 @@ Such a mesh keeps the environment's diffuse light, and takes no light from the g
 ### Limits and cost
 
 - The grid's texture is a 3D texture of half floats, at most 256 texels along each side on every device. `LightProbeGridData.toTexture()` makes it.
-- A grid holds at most 256 probes along x, 256 along y and 83 along z. The z side is smaller because the texture holds one sub-volume for each direction of L1. Each sub-volume has a padding slice at either end.
+- A grid holds at most 256 probes along x, 256 along y and 83 along z. The z side is smaller because the texture is cut into sub-volumes that hold the coefficients, and each sub-volume has a padding slice at either end.
 - `counts` takes whole numbers of 2 or more, and `spacing` must be above 0. Development builds throw E1108 for a grid too large for the texture, and the error names the limit. Use a larger spacing, or a smaller box.
-- The grid takes 24 bytes of GPU memory for each probe, the 12 half floats of its coefficients. A grid of 24 x 8 x 24 probes (4,608 probes, one per metre over a 24 m hall) takes 110 KB.
+- The grid takes 24 bytes of GPU memory for each probe, the 12 half floats of its coefficients, plus two padding slices along z. A grid of 24 x 8 x 24 probes (4,608 probes, one per metre over a 24 m hall) takes about 117 KiB.
 - Each lit pixel of a standard material reads the grid three times.
 - The grid's shaders load on first use, so a page that sets no grid downloads none of it. To load them before the first frame, list `'probe_grid'` in `createEngine`'s `preload` option: [Loading screens](../guides/loading-screens.md#loading-everything-up-front).
 
