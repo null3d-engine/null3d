@@ -140,6 +140,14 @@ entries that import it, through `null3d::lighting` and `null3d::area_lights`, an
 [D-56](decisions/D-56-first-use-shader-files.md) gives the reasons and the key. CI keeps the same two
 shader folders in the Actions cache, under the same keys ([CI's jobs](#cis-jobs)).
 
+The folder of a stamp also keeps the `shader-build` program of that compiler, in `program/`. The
+stamp covers every source of the program, so a kept program is the one that cargo would build. A
+build of the same compiler runs it and compiles nothing, in any checkout. Cargo builds it only for
+a new stamp, and the folder then keeps it. Without this, every CI job that ran the shader build
+compiled the program first. The Rust cache keeps no crate of the workspace. In run 40056066922 that
+compile took about 45 seconds in each `shader-entries` job and again in the `build` job, which every
+later job waits for.
+
 `bun tools/shaders.ts --entries-shard i/n` compiles shard `i` of `n`, counted from 0, of the
 manifest's entries. It stores them in the same per-entry cache and writes no module. It splits the
 builds by build cost, as the shader tests do. So an entry that costs more than an even share goes to
@@ -152,7 +160,8 @@ stored form, and writes the joined entry as it goes. So it holds no more than a 
 entry.
 A shard whose part the cache holds as a whole entry reads the part's builds from it
 ([D-235](decisions/D-235-shader-entry-parts.md)). `--entries-out <folder>` copies the entries that the run stored into
-the folder, and none that the cache held before. Several machines can then each fill a share of the
+the folder, and none that the cache held before. Shard 0 also copies its program there, so the job
+that joins the entries does not compile it. Several machines can then each fill a share of the
 cache. A build that first copies their folders into `<entries-dir>/<stamp>`, the folder that
 `bun tools/shaders.ts --cache-keys` names, compiles none of their entries. One entry,
 `standard_maps`, makes 77.8% of the builds. With whole entries, its shard took about three quarters

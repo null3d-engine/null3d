@@ -34,13 +34,15 @@
 // them. The single-threaded build runs on pages that are not cross-origin isolated. The
 // wasm-bindgen command-line tool must match the crate version exactly, so the script downloads
 // that release into the build folder and verifies its checksum. The build tools' modules run in
-// Node and Bun, never in a page, so they have no size budget. Every mode that builds first builds the
+// Node and Bun, never in a page, so they have no size budget. Every mode that builds also builds the
 // shader modules when they are missing or out of date, because git does not keep them.
 //
-// The two WebAssembly files and the build tools' modules then build at the same time, so that the
-// steps of one build that use a single core (the link, wasm-bindgen and wasm-opt) overlap the
-// compile of another. Each build prints its lines as they come, with its name in front, and the time
-// of each step. A failed build names itself, and its whole log prints again in one piece at the end.
+// The two WebAssembly files, the build tools' modules and the shader modules build at the same
+// time, so that the steps of one build that use a single core (the link, wasm-bindgen and
+// wasm-opt) overlap the compile of another. No Rust build reads a shader module, and a check of
+// prebuilt files builds only the modules, first. Each build prints its lines as they come, with its
+// name in front, and the time of each step. A failed build names itself, and its whole log prints
+// again in one piece at the end.
 //
 // Each file goes in place whole, by a rename from a temporary name (tools/lib/atomic-files.ts). A
 // dev server or a browser run of the same checkout can read the files while a build runs, as the
@@ -1313,9 +1315,11 @@ async function main(): Promise<void> {
 			});
 	}
 	// The step that judges the parts builds no page, so it reads no shader module.
-	if (options.judgeParts === undefined) ensureShaderModules(root);
-	if (options.prebuilt) checkPrebuilt();
-	else {
+	const modules = options.judgeParts === undefined;
+	if (options.prebuilt) {
+		if (modules) ensureShaderModules(root);
+		checkPrebuilt();
+	} else {
 		const cargoLock = readFileSync(join(root, 'Cargo.lock'), 'utf8');
 		// wasm-bindgen is fetched only when a core misses the cache, so a run that copies every file
 		// in place downloads nothing.
@@ -1333,6 +1337,13 @@ async function main(): Promise<void> {
 		}));
 		if (!options.sizesOnly)
 			builds.push({ name: 'tools', work: (log) => buildToolModules(log, tools, noCache) });
+		// No Rust build reads a shader module, so the modules build beside them, in a process of their
+		// own, whose memory and cores the builds share.
+		if (modules)
+			builds.push({
+				name: 'shaders',
+				work: (log) => log.run(process.execPath, [join(root, 'tools/shaders.ts')]),
+			});
 		console.log(
 			`\nbuilding ${listed(builds.map(({ name }) => name))} at the same time, each line headed by its build's name`,
 		);
