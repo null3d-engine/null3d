@@ -113,9 +113,15 @@ jobs:
         run: |
           # A pull request's number, a branch, a tag or a commit, as a commit.
           resolve() {
-            if [[ "$1" =~ ^[0-9]+$ ]]; then git fetch --quiet --no-tags origin "pull/$1/head"
-            else git fetch --quiet --no-tags origin "$1"; fi
-            git rev-parse FETCH_HEAD
+            if [[ "$1" =~ ^[0-9]+$ ]]; then
+              git fetch --quiet --no-tags origin "pull/$1/head"
+              git rev-parse FETCH_HEAD
+            elif git fetch --quiet --no-tags origin "$1" 2>/dev/null; then
+              git rev-parse FETCH_HEAD
+            else
+              # The remote serves no short commit id, but the checkout holds the whole history.
+              git rev-parse --verify "$1^{commit}"
+            fi
           }
           # The merge base with main, or the commit before for a commit on main.
           merge_base() {
