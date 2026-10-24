@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import {
 	baseOf,
 	changedCrates,
+	GUARD_TESTS,
+	guardSteps,
 	keepaliveSeconds,
 	LANDING_VARIABLE,
 	MILESTONE_REF,
@@ -146,6 +149,16 @@ describe('changedCrates', () => {
 	});
 });
 
+describe('guardSteps', () => {
+	it('checks the decision records and runs the tests that read every package and spec', () => {
+		expect(guardSteps().map((step) => [step.lane, step.command.join(' ')])).toEqual([
+			['QUICK', 'bun tools/decisions.ts --check'],
+			['QUICK', `bun test ${GUARD_TESTS.join(' ')}`],
+		]);
+		for (const file of GUARD_TESTS) expect(existsSync(file), file).toBe(true);
+	});
+});
+
 describe('plan', () => {
 	const commands = (files: string[], nextest = true) =>
 		plan('b2', 'a1', files, CRATES, nextest).map((step) => [step.lane, step.command.join(' ')]);
@@ -156,6 +169,10 @@ describe('plan', () => {
 			['QUICK', 'bun tools/hooks/check-trailers.ts b2..a1'],
 			['QUICK', 'bun tools/hooks/check-merges.ts b2..a1'],
 			['QUICK', 'bun tools/decisions.ts --check'],
+			[
+				'QUICK',
+				'bun test tools/lib/release.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts',
+			],
 		]);
 	});
 
@@ -165,6 +182,10 @@ describe('plan', () => {
 			['QUICK', 'bun tools/hooks/check-trailers.ts b2..a1'],
 			['QUICK', 'bun tools/hooks/check-merges.ts b2..a1'],
 			['QUICK', 'bun tools/decisions.ts --check'],
+			[
+				'QUICK',
+				'bun test tools/lib/release.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts',
+			],
 			['CPU_ONLY', 'cargo check --workspace'],
 			['CPU_ONLY', 'cargo nextest run --no-fail-fast --profile ci -p null3d-render'],
 		]);
@@ -178,7 +199,7 @@ describe('plan', () => {
 	});
 
 	it('compiles the workspace for a Rust file outside the crates, with no crate to test', () => {
-		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs'])).toHaveLength(5);
+		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs'])).toHaveLength(6);
 		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs']).at(-1)?.[1]).toBe(
 			'cargo check --workspace',
 		);

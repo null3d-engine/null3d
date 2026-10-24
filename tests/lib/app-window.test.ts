@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'bun:test';
 import { spawn, spawnSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
 import { REFRESH_MEASURE, refreshRate } from '../pages/lib/refresh-rate.ts';
 import { parseArgs, timesOnThisMachine } from '../real-browsers.ts';
@@ -22,7 +21,6 @@ import {
 	RUNNER_TITLE,
 	SMALL_SIZE,
 } from './app-window.ts';
-import { COST_VARIABLE, timesFrames } from './priority-setup.ts';
 
 /** A laptop display of 1512 by 982 points, with a 33-point menu bar and a 43-point Dock. */
 const laptop = { height: 982, x: 0, y: 43 };
@@ -224,34 +222,6 @@ try { await ${call}; console.log('WENT ON'); } catch (e) { console.log(e.message
 		},
 		30_000,
 	);
-
-	it('judges which Playwright runs time frames', () => {
-		expect(timesFrames({})).toBe(true);
-		expect(timesFrames({ CI: '1' })).toBe(false);
-		// Any variable named as a cost switch turns timing on, also one that no spec reads yet.
-		expect(timesFrames({ CI: '1', NULL3D_SCREEN_COST: '1' })).toBe(true);
-		expect(timesFrames({ CI: '1', NULL3D_A_NEW_EFFECT_COST: '1' })).toBe(true);
-		expect(timesFrames({ CI: '1', NULL3D_SCREEN_COST: '' })).toBe(false);
-		expect(timesFrames({ CI: '1', NULL3D_PORT: '5173', NULL3D_SCREEN_PRESETS: 'high' })).toBe(
-			false,
-		);
-	});
-
-	it('names the switch of every spec that runs only when asked as a cost switch', () => {
-		// A spec that waits for a variable times frames on the computer's own GPU, so the guard must
-		// know its switch by name: three such specs landed with switches that a list did not hold.
-		const folder = new URL('../image/', import.meta.url);
-		const switches = readdirSync(folder)
-			.filter((file) => file.endsWith('.spec.ts'))
-			.flatMap((file) => [
-				...readFileSync(new URL(file, folder), 'utf8').matchAll(
-					/test\.skip\(\s*!process\.env\.(NULL3D_\w+)/g,
-				),
-			])
-			.map(([, name]) => name ?? '');
-		expect(switches.length).toBeGreaterThan(0);
-		expect(switches.filter((name) => !COST_VARIABLE.test(name))).toEqual([]);
-	});
 
 	it("refuses background priority only for the runner's timed plans in this machine's browser apps", () => {
 		expect(timesOnThisMachine(parseArgs(['--plan', 'bench', 'Safari']))).toBe(true);
