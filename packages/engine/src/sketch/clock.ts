@@ -67,6 +67,15 @@ export class FrameClock {
 		this.dt = now - this.now;
 		this.now = now;
 	}
+
+	/**
+	 * Sets the clock for a frame of a replay: its sketch time and its step, both from the recording,
+	 * so the sketch sees the same time and step that it saw when the frame was recorded.
+	 */
+	replayStep(now: number, dt: number): void {
+		this.dt = dt;
+		this.now = now;
+	}
 }
 
 /**
