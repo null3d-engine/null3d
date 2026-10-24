@@ -46,6 +46,7 @@ const INCOMPLETE = new Set([
 	'M3-L3',
 	'M3-R12',
 	'M3-R22',
+	'M3-E7',
 	'M3-L2',
 	'M3-L4',
 	'M3-A1',
@@ -150,6 +151,8 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
 	'M3-R21':
 		'the picture step does not read the heavy-test jobs, so the screens and skyway pictures are not gated; the fix is on a helper branch',
+	'M3-E7':
+		"the lobe hook is landed and its wrong signature is refused, but the task's proof is car paint's glints, which are on a branch with their pictures still owed",
 	'M3-V1':
 		'Creek has no WebGPU figure on any device, and no vegetation task after it has its own budget per preset',
 	'M3-V3': 'the Mac, iPad and phone GPU time and memory are not recorded',
