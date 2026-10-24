@@ -2,7 +2,7 @@
 // cells outside its shore left out. Both carry the current in their texture coordinates, so the
 // surface shader drifts its ripples and its foam the way the water runs at each point.
 import type { MeshArrays } from '@null3d/engine';
-import type { LakeShape, RiverShape, WaterShape } from './shape';
+import type { RiverShape, WaterBody, WaterShape } from './shape';
 
 /** The most meters between two cross sections of a river's mesh. */
 const STEP = 2;
@@ -158,23 +158,8 @@ function riverMesh(
 }
 
 /** The surface's mesh for a lake: a grid over its bounds, with the cells outside its shore left out. */
-function lakeMesh(
-	shape: LakeShape,
-	level: number,
-	cell: number,
-	contains: (x: number, z: number) => boolean,
-): MeshArrays {
-	const shore = shape.shore;
-	let minX = Number.POSITIVE_INFINITY;
-	let maxX = Number.NEGATIVE_INFINITY;
-	let minZ = Number.POSITIVE_INFINITY;
-	let maxZ = Number.NEGATIVE_INFINITY;
-	for (const [x, z] of shore) {
-		minX = Math.min(minX, x);
-		maxX = Math.max(maxX, x);
-		minZ = Math.min(minZ, z);
-		maxZ = Math.max(maxZ, z);
-	}
+function lakeMesh(body: WaterBody, level: number, cell: number): MeshArrays {
+	const { minX, maxX, minZ, maxZ } = body;
 	const nx = Math.max(1, Math.ceil((maxX - minX) / cell));
 	const nz = Math.max(1, Math.ceil((maxZ - minZ) / cell));
 	const dx = (maxX - minX) / nx;
@@ -192,7 +177,12 @@ function lakeMesh(
 			const x1 = x0 + dx;
 			const z0 = minZ + j * dz;
 			const z1 = z0 + dz;
-			if (!contains(x0, z0) && !contains(x1, z0) && !contains(x0, z1) && !contains(x1, z1))
+			if (
+				!body.contains(x0, z0) &&
+				!body.contains(x1, z0) &&
+				!body.contains(x0, z1) &&
+				!body.contains(x1, z1)
+			)
 				continue;
 			const a = j * row + i;
 			b.indices.push(a, a + row, a + 1, a + 1, a + row, a + row + 1);
@@ -207,13 +197,13 @@ function lakeMesh(
  */
 export function bodyMesh(
 	shape: WaterShape,
+	body: WaterBody,
 	level: number,
 	detail: MeshDetail,
-	contains: (x: number, z: number) => boolean,
 ): MeshArrays {
 	const step = detail.step ?? STEP;
 	const across = detail.across ?? ACROSS;
 	const cell = detail.cell ?? CELL;
 	if (shape.kind === 'river') return riverMesh(shape, level, step, across, shape.speed ?? 0.35);
-	return lakeMesh(shape, level, cell, contains);
+	return lakeMesh(body, level, cell);
 }

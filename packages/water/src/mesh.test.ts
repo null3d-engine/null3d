@@ -29,7 +29,7 @@ function normalOf(mesh: Arrays, triangle: number): [number, number, number] {
 /** A shape's surface mesh, as the add-on builds it. */
 function meshOf(shape: WaterShape, level = 0, detail = {}): Arrays {
 	const body = waterBody(shape);
-	const mesh = bodyMesh(shape, level, detail, (x, z) => body.contains(x, z));
+	const mesh = bodyMesh(shape, body, level, detail);
 	return {
 		positions: mesh.positions as Float32Array,
 		uvs: mesh.uvs as Float32Array,
