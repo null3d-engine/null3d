@@ -124,6 +124,12 @@ export type {
 export type { FeatureHandle, FeatureHostOptions } from './scene/feature-host';
 export { FeatureHost } from './scene/feature-host';
 export type {
+	ComputeInstances,
+	ComputeInstancesOptions,
+	ComputeInstanceVertices,
+	FeatureInstanceBuffer,
+} from './scene/feature-instances';
+export type {
 	FeatureBand,
 	FeatureBudget,
 	FeatureDescription,
@@ -214,6 +220,11 @@ export type {
 	RaycastOptions,
 } from './scene/queries';
 export type {
+	ComputeDispatch,
+	ComputeFallback,
+	ComputeFormat,
+	ComputePassOptions,
+	ComputeWorkgroup,
 	FullscreenPassOptions,
 	PassInput,
 	PassScale,

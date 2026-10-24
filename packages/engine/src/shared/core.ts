@@ -256,6 +256,8 @@ export interface CoreGlue extends CoreErrors {
 	setBatchOrigin(batch: number): number;
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
+	/** Keeps every row of a batch whatever a view's frustum says, or culls its rows again. */
+	setBatchUnculled(batch: number, unculled: boolean): number;
 	/** Gives every row of a batch a bounding sphere of `radius` meters around its own origin. */
 	/** Sets a batch's own bounding radius, which the next frame reads from the call values. */
 	setBatchBounds(batch: number): number;
@@ -641,6 +643,38 @@ export interface CoreGlue extends CoreErrors {
 		source: number,
 	): number;
 	/**
+	 * Adds a compute pass named `pass`, which runs the compiled WGSL of compute pipeline template
+	 * `template` over the whole of a target named `target`: of `width` x `height` texels, or with
+	 * a width of 0, of `scale` of the render size each way. It writes the target as a storage
+	 * texture of `format`, a draw list format code, over a workgroup of `workgroup` invocations
+	 * packed one axis to a byte, and dispatches `counts` workgroups along each axis packed the same
+	 * way, or covers the target when every count is 0. It reads its uniforms at `effectValues` and
+	 * its textures at `effectTextures`, in one frame of every `every`. Returns the view's place
+	 * from 1, or 0 on failure, as `addPass` does.
+	 */
+	addComputePass(
+		pass: string,
+		target: string,
+		width: number,
+		height: number,
+		scale: number,
+		every: number,
+		template: number,
+		format: number,
+		workgroup: number,
+		counts: number,
+		afterScene: number,
+		countsBuffer: number,
+		instancesBuffer: number,
+		instancesBytes: number,
+	): number;
+	/**
+	 * Gives the compute pass of view place `place` the uniforms at `effectValues` and the textures
+	 * at `effectTextures`, from the next frame on. Returns 0, or the render graph's code for a
+	 * texture that closes a loop of passes.
+	 */
+	setComputeValues(place: number): number;
+	/**
 	 * Adds a view that draws the scene into a rectangle of the canvas, which the first four call
 	 * values name: its left and top, then its width and height, as fractions of the canvas. The
 	 * view's lens goes to it through `setPerspectiveCamera` or `setOrthographicCamera` with
@@ -802,6 +836,29 @@ export interface CoreGlue extends CoreErrors {
 	destroyVertexDraw(id: number): number;
 	/** Sets the vertices of one shape and the number of its copies of such a draw. */
 	setVertexDrawCounts(id: number, vertices: number, instances: number): number;
+	/**
+	 * Makes a draw of at most `capacity` instances for the object in scene slot `slot`, whose
+	 * instance count the GPU writes, and returns its id, or 0 when the scene holds the most such
+	 * draws already.
+	 */
+	createFeatureInstances(slot: number, capacity: number): number;
+	/** Forgets a draw whose instance count the GPU writes. */
+	destroyFeatureInstances(id: number): number;
+	/** The id of the per-instance buffer that such a draw reads. */
+	featureInstanceBuffer(id: number): number;
+	/** The id of the count word that such a draw takes. */
+	featureInstanceCountBuffer(id: number): number;
+	/**
+	 * Sets the count that a shadow view draws and that a page without compute sets for a draw
+	 * whose instance count the GPU writes.
+	 */
+	setFeatureInstanceCount(id: number, count: number): number;
+	/**
+	 * Writes `count` per-instance rows from `values` at row `start`, as the engine's instance
+	 * buffers hold them: three world-matrix rows, then the ids. Returns 0, or 1 for values that a
+	 * draw does not take.
+	 */
+	setFeatureInstanceRows(id: number, start: number, count: number, values: Float32Array): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/** Lets materials with parallax draw it, or draws them with their displacement alone. */
@@ -1129,6 +1186,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'destroyBatch',
 	'batchArrays',
 	'setBatchActiveCount',
+	'setBatchUnculled',
 	'setBatchBounds',
 	'setBatchDrawRange',
 	'reserveBatchRanges',
@@ -1195,6 +1253,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'clearShadowCamera',
 	'addPass',
 	'addFullscreenPass',
+	'addComputePass',
+	'setComputeValues',
 	'addSceneView',
 	'setSceneViewRect',
 	'removeSceneView',
@@ -1249,6 +1309,12 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createVertexDraw',
 	'destroyVertexDraw',
 	'setVertexDrawCounts',
+	'createFeatureInstances',
+	'destroyFeatureInstances',
+	'featureInstanceBuffer',
+	'featureInstanceCountBuffer',
+	'setFeatureInstanceCount',
+	'setFeatureInstanceRows',
 	'setSoftwareOcclusion',
 	'setParallax',
 	'setOcclusionBuffer',

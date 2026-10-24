@@ -3,6 +3,7 @@
 // engine memory and allocates nothing per command, except when a command creates a GPU object.
 
 import { messageOf } from '../../errors/message';
+import { SHADING_CUSTOM_FIRST } from '../../generated/core';
 import * as G from '../../generated/gpu';
 import type { DeviceShaders, FirstUseShaders } from '../../generated/shaders';
 import { DEV } from '../../shared/dev';
@@ -781,6 +782,15 @@ export class WebGPUBackend {
 
 	/** True when a compute template's shader is loaded: one that loads on first use, once its file arrives. */
 	private computeReady(template: number, permutation: number): boolean {
+		// An add-on's compute pass brings its own whole shader, which the sketch sent before the
+		// frame that first creates its pipeline. The template is defined once that shader arrives,
+		// and until then its pipeline waits.
+		const custom = this.images.shaders.get(template);
+		if (custom?.kind === 'compute') {
+			if (!this.pipelines.has(template)) this.pipelines.defineCustom(template, custom);
+			return true;
+		}
+		if (template >= SHADING_CUSTOM_FIRST) return false;
 		const variants = this.pipelines.computeVariants(template, permutation);
 		return (
 			variants === undefined || (this.moreShaders?.ready(variants, permutation, 'wgsl') ?? true)

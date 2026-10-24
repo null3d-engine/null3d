@@ -5,6 +5,8 @@
 // templates of the debug lines and the debug views, so release builds hold none of their code.
 
 import {
+	FORMAT_R32_FLOAT,
+	FORMAT_RGBA8_UNORM,
 	LAYOUT_ACCUMULATE,
 	LAYOUT_AO,
 	LAYOUT_AO_DEPTH,
@@ -13,6 +15,10 @@ import {
 	LAYOUT_BACKGROUND,
 	LAYOUT_BLOOM,
 	LAYOUT_CLUSTER_CULL,
+	LAYOUT_COMPUTE_INSTANCE_BUFFERS,
+	LAYOUT_COMPUTE_R32_FLOAT,
+	LAYOUT_COMPUTE_RGBA8_UNORM,
+	LAYOUT_COMPUTE_RGBA16_FLOAT,
 	LAYOUT_CULL,
 	LAYOUT_DECAL_DEPTH,
 	LAYOUT_DECAL_DEPTH_MS,
@@ -255,6 +261,38 @@ export interface RenderTemplate {
 	 * depth only with no fragment stage.
 	 */
 	readonly depthFragment?: boolean;
+}
+
+/**
+ * The shader of an add-on's compute pass: a whole WGSL module with a `@compute` entry point, whose
+ * pipelines run it once for each workgroup of a dispatch.
+ */
+export interface ComputeTemplate {
+	/** The shader's builds, which hold the module for WebGPU. */
+	readonly shader: ShaderVariants;
+}
+
+/**
+ * The bind group layout of an add-on compute pass's group 0 for the target's format code: its
+ * block of uniforms, then the storage texture that it fills. A format code of 0 names a pass that
+ * fills an instance draw's two buffers instead, with no texture.
+ */
+export function layoutOfComputeFormat(format: number): number {
+	if (format === 0) return LAYOUT_COMPUTE_INSTANCE_BUFFERS;
+	if (format === FORMAT_R32_FLOAT) return LAYOUT_COMPUTE_R32_FLOAT;
+	if (format === FORMAT_RGBA8_UNORM) return LAYOUT_COMPUTE_RGBA8_UNORM;
+	return LAYOUT_COMPUTE_RGBA16_FLOAT;
+}
+
+/**
+ * The name of the `@compute` entry point of a whole WGSL module: the function that the attribute
+ * precedes, or `main` for a module without one.
+ */
+export function computeEntryPoint(source: string): string {
+	const at = source.search(/@\s*compute\b/u);
+	if (at < 0) return 'main';
+	const name = /fn\s+([A-Za-z_][A-Za-z0-9_]*)/u.exec(source.slice(at))?.[1];
+	return name ?? 'main';
 }
 
 /**
@@ -543,6 +581,10 @@ export class Pipelines {
 	/** The layouts that only some devices bind, which the first pipeline or bind group to use them makes. */
 	private readonly laterLayouts: (GPUBindGroupLayoutDescriptor | undefined)[] = [];
 	private readonly templates: (RenderTemplate | undefined)[] = [];
+	/** The add-on compute passes' shaders, by their compute pipeline template. */
+	private readonly computeTemplates = new Map<number, ComputeTemplate>();
+	/** Each compute pass's pipeline layout, by the layout of its group 0. */
+	private readonly computeLayouts = new Map<number, GPUPipelineLayout>();
 	/**
 	 * Each template's pipeline layouts, made for their first pipelines, by the groups after the
 	 * template's own: the joint texture's for the builds that skin in the vertex shader, then the
@@ -719,10 +761,11 @@ export class Pipelines {
 			{ binding: 1, visibility: fragment, sampler: {} },
 		]);
 		// A texture array for each map slot, then each slot's sampler, then the displacement map's
-		// array and sampler. Custom materials' vertex stages sample their textures too. The
-		// displacement map is the vertex stage's alone, so the fragment stage keeps a sampled
-		// texture free, apart from the layout of parallax, whose fragment stage reads it too.
-		const maps = GPUShaderStage.VERTEX | fragment;
+		// array and sampler. Custom materials' vertex stages sample their textures too, and an
+		// add-on's compute pass samples them in its own stage. The displacement map is the vertex
+		// stage's alone, so the fragment stage keeps a sampled texture free, apart from the layout
+		// of parallax, whose fragment stage reads it too.
+		const maps = GPUShaderStage.VERTEX | fragment | GPUShaderStage.COMPUTE;
 		const mapEntries = (height: GPUShaderStageFlags): GPUBindGroupLayoutEntry[] => [
 			...MAP_SLOTS.map(
 				(binding): GPUBindGroupLayoutEntry => ({
@@ -831,6 +874,48 @@ export class Pipelines {
 			{ binding: 4, visibility: GPUShaderStage.COMPUTE, texture: computeData },
 			{ binding: 5, visibility: GPUShaderStage.COMPUTE, texture: computeData },
 		]);
+		// Group 0 of an add-on's compute pass: its block of uniforms, then the storage texture that
+		// it fills. The storage texture's format is part of the layout, so a pass of another
+		// format takes the layout of that format. Shaders read the target as an array of one
+		// layer, as they sample every pass's target.
+		const computeEntries = (format: GPUTextureFormat): GPUBindGroupLayoutEntry[] => [
+			{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
+			{
+				binding: 1,
+				visibility: compute,
+				storageTexture: { access: 'write-only', format, viewDimension: '2d-array' },
+			},
+		];
+		this.defineLayout(
+			LAYOUT_COMPUTE_RGBA16_FLOAT,
+			'compute rgba16float',
+			computeEntries('rgba16float'),
+			true,
+		);
+		this.defineLayout(
+			LAYOUT_COMPUTE_R32_FLOAT,
+			'compute r32float',
+			computeEntries('r32float'),
+			true,
+		);
+		this.defineLayout(
+			LAYOUT_COMPUTE_RGBA8_UNORM,
+			'compute rgba8unorm',
+			computeEntries('rgba8unorm'),
+			true,
+		);
+		// Group 0 of an add-on's compute pass that fills an instance draw: its block of uniforms,
+		// the draw's count word and its per-instance rows, both read and written as storage.
+		this.defineLayout(
+			LAYOUT_COMPUTE_INSTANCE_BUFFERS,
+			'compute instance buffers',
+			[
+				{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
+				{ binding: 1, visibility: compute, buffer: { type: 'storage' } },
+				{ binding: 2, visibility: compute, buffer: { type: 'storage' } },
+			],
+			true,
+		);
 		// The final pass reads the scene color with textureLoad, which takes any float format, and
 		// its color grading table, a 3D texture, with a linear filter, which reads the outline mask
 		// too.
@@ -1418,6 +1503,10 @@ export class Pipelines {
 	 */
 	defineCustom(id: number, shader: CustomShader): void {
 		const { kind } = shader;
+		if (kind === 'compute') {
+			this.computeTemplates.set(id, { shader: shader.variants });
+			return;
+		}
 		if (kind !== undefined) {
 			const effect = kind === 'effect' || kind === 'effectGroup';
 			const [layout, multisampled, label] = effect
@@ -1471,6 +1560,10 @@ export class Pipelines {
 	 * of its old shader. The pipelines that `render` describes from then on use the new shader.
 	 */
 	replaceCustom(id: number, shader: CustomShader): void {
+		if (shader.kind === 'compute') {
+			this.computeTemplates.set(id, { shader: shader.variants });
+			return;
+		}
 		const old = this.templates[id];
 		for (const variant of Object.values(old?.shader ?? {}))
 			if (variant.wgsl) this.modules.delete(variant.wgsl);
@@ -1480,7 +1573,7 @@ export class Pipelines {
 
 	/** True when a template has this id. */
 	has(id: number): boolean {
-		return this.templates[id] !== undefined;
+		return this.templates[id] !== undefined || this.computeTemplates.has(id);
 	}
 
 	/** The shader variants of a template that exists. */
@@ -1512,6 +1605,23 @@ export class Pipelines {
 		if (!later) throw new Error(`unknown bind group layout ${id}`);
 		const made = this.device.createBindGroupLayout(later);
 		this.layouts[id] = made;
+		return made;
+	}
+
+	/**
+	 * The pipeline layout of an add-on compute pass whose target has the format code `format`:
+	 * group 0 binds the pass's block and its storage texture, and group 1 the textures that it
+	 * samples, as an effect's own textures bind.
+	 */
+	private computePipelineLayout(format: number): GPUPipelineLayout {
+		const layout = layoutOfComputeFormat(format);
+		let made = this.computeLayouts.get(layout);
+		if (!made) {
+			made = this.device.createPipelineLayout({
+				bindGroupLayouts: [this.layout(layout), this.layout(LAYOUT_MATERIAL_MAPS)],
+			});
+			this.computeLayouts.set(layout, made);
+		}
 		return made;
 	}
 
@@ -1710,6 +1820,8 @@ export class Pipelines {
 	 * the start holds.
 	 */
 	computeVariants(template: number, permutation = 0): ShaderVariants | undefined {
+		const custom = this.computeTemplates.get(template);
+		if (custom) return custom.shader;
 		if (template === TEMPLATE_SKIN) return this.skin;
 		if (template === TEMPLATE_DEPTH_PYRAMID) return this.pyramid;
 		if (template === TEMPLATE_CLUSTER) return this.cluster;
@@ -1724,6 +1836,19 @@ export class Pipelines {
 	 * its permutation bits (see `SKIN_BUILDS`).
 	 */
 	compute(template: number, permutation: number): GPUComputePipelineDescriptor {
+		const custom = this.computeTemplates.get(template);
+		if (custom) {
+			const shader = variantFor(custom.shader, 0, 'wgsl')?.wgsl;
+			if (!shader) throw new Error(`the compute pass's shader has not arrived`);
+			return {
+				label: `compute pass ${template}`,
+				layout: this.computePipelineLayout(permutation),
+				compute: {
+					module: this.module('compute pass', shader),
+					entryPoint: computeEntryPoint(shader.source),
+				},
+			};
+		}
 		if (template === TEMPLATE_SKIN) {
 			const tangent = (permutation & PERMUTATION_VERTEX_TANGENT) !== 0 ? ' tangent' : '';
 			const color = (permutation & PERMUTATION_VERTEX_COLOR) !== 0 ? ' color' : '';
