@@ -5281,24 +5281,28 @@ export class Scene implements ViewHolder {
 
 	/**
 	 * Draws an add-on's sky layer over the background, under every object: the top of a sky, such
-	 * as an aurora, a second layer of clouds or a space backdrop. The layer's WGSL, compiled by the
-	 * null3D Vite plugin, declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer`. The engine
-	 * gives it the fragment's direction in the world, the core sky's cloud coverage, density,
-	 * elevation and scale, the sketch time and the share of the sun that the layer hides, and it
-	 * blends what the layer returns over the sky by the layer's coverage and opacity. A layer that
-	 * hides part of the sun also dims the disc and glow that the core sky draws, through `sun`. The
-	 * layer draws in the main view, in scene passes and in reflections, and draws nothing where the
-	 * background draws nothing, as in a debug view. A second call replaces the layer.
+	 * as an aurora, a second layer of clouds or a space backdrop. The description is a feature
+	 * description ([Add-on feature descriptions](../features.md)): it names the feature and
+	 * records at the background point, as a draw, provides the sky, and draws in the main view, the
+	 * scene passes and the reflections. The layer's WGSL, compiled by the null3D Vite plugin,
+	 * declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer`. The engine gives it the fragment's
+	 * direction in the world, the core sky's cloud coverage, density, elevation and scale, the
+	 * sketch time and the share of the sun that the layer hides, and it blends what the layer
+	 * returns over the sky by the layer's coverage and opacity. A layer that hides part of the sun
+	 * also dims the disc and glow that the core sky draws, through `sun`. The layer draws in the
+	 * main view, in scene passes and in reflections, and draws nothing where the background draws
+	 * nothing, as in a debug view. A second call replaces the layer.
 	 *
-	 * Throws E1215 for WGSL that the plugin did not compile as a sky layer, E1203 for a number that
-	 * is not finite, and E1108 for a number out of its range.
+	 * Throws E1223 for a description that the engine cannot place, E1215 for WGSL that the plugin
+	 * did not compile as a sky layer, E1203 for a number that is not finite, and E1108 for a number
+	 * out of its range.
 	 */
-	setSkyLayer(options: SkyLayerOptions): SkyLayer {
+	setSkyLayer(description: FeatureDescription, options: SkyLayerOptions): SkyLayer {
 		this.skyLayer ??= new SceneSkyLayer(
 			this.core,
 			this.makers?.materials.shaderTemplates ?? new ShaderTemplates(),
 		);
-		this.skyLayer.install(options, 'setSkyLayer');
+		this.skyLayer.install(description, options, 'setSkyLayer');
 		return this.skyLayer;
 	}
 
