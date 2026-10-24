@@ -444,7 +444,7 @@ The thread that draws reads the frame back and encodes it, so the canvas needs n
 
 ## 14. Video on a surface (0.3)
 
-A video element lives on the page. `engine.registerVideo` follows it there, and `textures.fromVideo` in the sketch shows it. The page sends one `ImageBitmap` per frame that the video presents, at the size that `maxSize` allows, and the engine closes it once it is on the GPU:
+A video element lives on the page. `engine.registerVideo` follows it there, and `textures.fromVideo` in the sketch shows it. The page sends one `ImageBitmap` per frame that the video presents, scaled to `maxSize`. The engine closes the image once it is on the GPU:
 
 ```ts
 // page.ts
