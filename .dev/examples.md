@@ -531,6 +531,28 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 - **The look follows the light, not the nearest mood:** a scene's own look, such as Creek's fireflies, mist, leaf tint and caustics, blends between the moods on either side of the hour (`moodMix` in `examples/lib/stage.ts`). Through the dark hours, while the sun is more than 18 degrees under the horizon, it holds Night. Only while the sky has light does it move from each mood to the next. The dawn's look comes in through the morning twilight and is whole at Dawn's hour. Creek once took the look of the nearest fixed mood. At 02:36, halfway between Night and Dawn, the dawn's warm caustics then came on at once, and the stream changed color in the middle of the night (owner's recording, 20 October 2026). The stage's own haze factor blends the same way. `examples/lib/stage.test.ts` checks that no mood's share steps between hours a minute apart.
 - **The showcase scenes are Creek, Night town and Skyway.** A forest at dawn, a night town under the moon, and a city from the air.
 
+### Night town's windows (M3-B2, 25 October 2026)
+
+Night town now draws its window panes through the facades example add-on
+(`examples/addons/facades/`), as Skyway does, in the add-on's pane form
+([D-254](decisions/D-254-interior-mapped-facades.md)).
+
+- Each pane looks into a room behind its glass: a lamp's pool, a floor, a ceiling, a block of
+  furniture, blinds and a curtain in some. The eye's ray meets the room's box, so the room moves in
+  parallax as the camera passes, and the view from one side of a window shows more of it than the
+  view from in front.
+- The panes keep their own row values: whether the pane is lit, how warm its light is, the phase of
+  its flicker and whether a screen lights it. The hour still dims every pane through that value.
+- The town lights up as the scene starts, from the square outward, on the add-on's power-on wave.
+  Each pane's light rises on a damped spring once the wave reaches it.
+- The panes draw the add-on's timber finish for their frames, so the wall finish that the pages
+  carry and the pane's frame agree. The house walls keep the scene's own timber texture.
+- The picture changed, so the `demo-night-town` image test needs new references in both sets. The
+  candidate differs from the old reference in 0.575% of its pixels.
+- The add-on's own cost, per GPU path and preset, is owed. The cost test needs a quiet computer,
+  and the fleet kept the Mac above the quiet threshold through the night it was built. The add-on's
+  README gives the command.
+
 ### Skyway (M3-C1, 22 October 2026)
 
 Skyway is the third showcase scene. It flies a hover car through a rainy night city. The scene
@@ -561,10 +583,15 @@ and a hero car with two screens.
   hull carried a zero-area sliver to stretch the sphere.
 - **The windows are a world-space grid.** One window is the same size on every tower and on every
   face. It never stretches with a building's scale. A lit window shows a small room in parallax:
-  a lamp panel, a floor, a ceiling and a block of furniture. Where a window covers less than a
-  pixel, the face fades to its average light. The grid then never shimmers.
+  a lamp's pool, a floor, a ceiling, a block of furniture, blinds that some rooms draw down and a
+  curtain in some. Where a window covers less than a pixel, the face fades to its average light.
+  The grid then never shimmers. The facades example add-on owns this
+  (`examples/addons/facades/`), and Skyway uses it ([D-254](decisions/D-254-interior-mapped-facades.md)).
+  The wall pages and the window codes are made in code when the scene starts, so the add-on ships
+  no image. Street level is a band of lit shop fronts, also from the add-on.
 - **The power-on wave** lights the city from the middle out over the first second, from the frame
-  clock. A held frame therefore always shows the same city.
+  clock. Each window waits for the wave to reach it and then rises on a damped spring, which
+  overshoots slightly and settles. A held frame therefore always shows the same city.
 - **The lights.** The city holds 180 point lights and three spot lights. Its windows, signs and the
   cars' lights are emissive surfaces. The engine lists at most 1,024 lights in a frame. The plan's
   1,000 to 4,000 real lights through the fog therefore waits for the many-lights work (M3-F3). The
