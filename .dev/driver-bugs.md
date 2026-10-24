@@ -2,17 +2,46 @@
 
 Faults of GPU drivers and browsers that the engine works around, written up to report upstream. Each report names the device, the driver and the browser, and gives the smallest known case. It also says where the engine's workaround and evidence are. [Browser faults](implementation-notes.md#browser-faults) holds the full story of each.
 
-## Safari 26.1 and 26.6: Creek stalls the page on WebGPU after its first frame
+## WebKit on iOS and iPadOS: Creek at Low and Medium wedges WebGPU after its first frame
 
-Status: not reported yet. The cause is not known. Found 24 October 2026.
+Status: not reported yet. Found 24 October 2026. The fault is in WebKit's WebGPU path on iOS and iPadOS. A capture of the frame on the device is still owed before a report goes upstream, and no engine change is made first.
 
 - Devices: iPhone 17 in Safari 26.1 on iOS 26, and iPad Pro 13 2025 in Safari 26.6.1 on iPadOS 26, both in BrowserStack's device cloud.
-- Seen in: Creek, `examples/showcase/creek/sketch.ts`, at the Low preset on WebGPU, at commit `5aea95fd1`.
-- What happens: the first frame draws. The page's thread then stops answering. WebDriver's script calls time out, and Safari reloads the tab after about 45 seconds. The page posts each step of its work to the dev server, and the last step is "the first frame drew".
-- What runs: the same scene at Low on WebGL2 draws 30 frames a second on the iPad. The forest demo at Low on WebGPU draws 60 frames a second, with 7 timed render passes. Creek at Low on WebGPU draws on Chrome 155 on the Mac.
-- So the fault needs Creek, WebGPU and Apple's WebKit together. It is not the measurement page, not WebGPU on its own, and not the scene on its own.
-- Not tried yet: a bisect of Creek's passes on the cloud device, one session per pass. That covers the water reflection, the caustics, the haze, the light shafts and the effects chain. A WebGPU capture on the device is the other way to the cause.
-- Workaround: none. The measurements of 24 October 2026 report Creek on WebGL2 on Apple devices, and they name the WebGPU rows that this fault kept from running.
+- Seen in: Creek, `examples/showcase/creek/sketch.ts`, at the Low and Medium presets, at commit `5aea95fd1`. The task branch `feat/m3-v1-creek-webgpu-bisect` holds the diagnostic switches that the bisect used.
+- What happens: the first frame draws. The page's thread then stops. Its own 12 second timer never fires, and WebDriver's script calls time out. Safari reloads the tab 15 to 26 seconds after the first frame.
+- What runs: the same page and scene at Low in Safari 26 on macOS. Its WebKit draws the scene and posts 719 page frames in 12 seconds. Chrome 155 on macOS draws it too, with the engine's measurement on. The forest demo draws at every preset on the iPad's WebGPU. Creek at Low on WebGL2 draws 30 frames a second on the iPad. Creek at **High** on the iPad's WebGPU runs, with 720 page frames in 12 seconds.
+
+The bisect of 24 October 2026 ran eleven sessions on the iPad Pro 13, one per pass. Each page fixed the preset and the GPU path, turned the measurement and the overlay off, and counted its own frame callbacks for 12 seconds. A pass whose page posted that count kept its thread free. A pass whose page posted no count, and whose tab reloaded, wedged it.
+
+| Pass | Page | Result |
+| --- | --- | --- |
+| 1 | Low, no measure, no overlay | Wedged |
+| 2 | High, the same | Ran |
+| 3 | Medium, the same | Wedged |
+| 4 | Low, the reflection drawn in every frame | Wedged |
+| 5 | Low, the reflection every frame at the whole render size | Wedged |
+| 6 | Low, without the water | Wedged |
+| 7 | Low, without the grass | Wedged |
+| 8 | Low, with the sky, the environment light, the shadows and the bloom off | Wedged |
+| 9 | Low, in compatibility mode | Wedged |
+| 10 | Low, without the engine's mobile texture copies | Wedged |
+| 11 | Low, in Safari on the Mac | Ran |
+
+What the bisect shows:
+
+- The measurement, the stats overlay, the GPU timings and the page's heap walk are not the cause. Pass 1 ran with none of them.
+- The water's reflection is not the cause: not its cadence (pass 4), not its target's size (pass 5), and not the water itself (pass 6).
+- The grass is not the cause (pass 7). Neither are the sky, the environment light, the shadows or the bloom (pass 8).
+- The mobile path that keeps CPU copies of textures is not the cause (pass 10).
+- The fault follows the preset. Low and Medium wedge. High runs the same scene with more content and the reflection in every frame.
+- Compatibility mode wedges too (pass 9). So the fault is not a feature of core WebGPU alone.
+- The same page and engine run in WebKit on macOS (pass 11) and in Chromium. So the fault is WebKit on iOS and iPadOS, not WebKit in general and not the scene's data as another engine sees it.
+
+Where it blocks: the page's own main thread. Its timer never fires, and the engine's JavaScript there is idle while the render worker keeps drawing. So the block is a wait in WebKit's presentation path for the GPU, not a wait in the engine's code. Whether the engine's GPU work is malformed in a way that only Apple's iOS driver mishandles is not known.
+
+Still owed: a capture of the frame on the device. BrowserStack does not offer one, because WebKit's WebGPU inspector needs a Mac with Safari's Develop menu over a cable. The next untested engine path is the texture memory budget on a tablet, which has no page switch yet.
+
+Workaround: none. The measurements of 24 October 2026 report Creek on WebGL2 on Apple devices, and they name the WebGPU rows that this fault kept from running.
 
 ## Safari 27.0: `atomicCompareExchangeWeak` does not compile
 
