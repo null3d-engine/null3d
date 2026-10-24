@@ -3,13 +3,16 @@
 // coarsest level, and each finer level downloads from a file of its own. The camera stands inside
 // the ground's bounds, where the engine draws the finest level, so the picture sharpens as the
 // stages arrive. `?max=` passes the loader's level limit, as a page on a phone sets it to skip the
-// finest level. The sketch posts 'loaded' with the levels the file gave, and 'levels' with the
-// count whenever it changes.
+// finest level. `?far` stands the camera beyond every switch distance, where only the file's own
+// level draws, so the loader drops the stages that would never draw. The sketch posts 'loaded' with
+// the levels the file gave, and 'levels' with the count whenever it changes.
 import { defineSketch } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
 /** The most levels that the load takes, or 0 for every level. */
 const MAX = Number(params.get('max') ?? 0);
+/** True when the camera stands beyond every switch distance of the model's levels. */
+const FAR = params.has('far');
 
 export default defineSketch(async ({ scene, assets, page }) => {
 	scene.setBackground('#8fa4b8');
@@ -21,14 +24,24 @@ export default defineSketch(async ({ scene, assets, page }) => {
 	);
 	const node = prefab.find('terrain');
 	scene.instantiate(prefab);
+	// The switches of this model, whose errors are in the mesh's stored units, lie beyond 6,000 m:
+	// only the coarsest level draws at the far camera.
 	scene.setActiveCamera(
-		scene.createPerspectiveCamera({
-			fov: 50,
-			near: 0.1,
-			far: 120,
-			position: [0, 2.4, 8],
-			target: [0, 0.2, -1],
-		}),
+		FAR
+			? scene.createPerspectiveCamera({
+					fov: 50,
+					near: 10,
+					far: 30_000,
+					position: [0, 1_000, 8_000],
+					target: [0, 0, 0],
+				})
+			: scene.createPerspectiveCamera({
+					fov: 50,
+					near: 0.1,
+					far: 120,
+					position: [0, 2.4, 8],
+					target: [0, 0.2, -1],
+				}),
 	);
 	const levels = () => node?.mesh?.levels.length ?? -1;
 	let posted = levels();
