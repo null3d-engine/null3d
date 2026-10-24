@@ -1467,6 +1467,41 @@ export function splatsPlan(): PlanItem<Check>[] {
 	];
 }
 
+/**
+ * The Skyway showcase on each GPU path, with the quality governor on: the frame rate, the display's
+ * rate, the first-frame time and the bytes that the page downloaded. Each path runs at the preset
+ * that the engine chooses and again at the High preset, since the chosen preset and High answer
+ * different questions. The capabilities page comes first, so a device without WebGPU skips that page.
+ */
+export function skywayPlan(): PlanItem<Check>[] {
+	// The engine's own preset answers the showcase's target; High shows what the preset above costs.
+	const presets = [
+		{ name: 'chosen', preset: undefined },
+		{ name: 'high', preset: 'high' },
+	] as const;
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...(['webgpu', 'webgl2'] as const).flatMap((tier) =>
+			presets.map(({ name, preset }) =>
+				pageItem(
+					`skyway-${tier}-${name}`,
+					'demo-frames',
+					{ kind: 'probe', tier },
+					{
+						switches: [
+							`gpu=${tier}`,
+							'demo=skyway',
+							'seconds=5',
+							...(preset === undefined ? [] : [`preset=${preset}`]),
+						],
+						timeoutSeconds: 300,
+					},
+				),
+			),
+		),
+	];
+}
+
 /** The GPU paths of the sky plan's pages, with the tier each draws on. */
 const SKY_PATHS = [
 	['webgpu', 'webgpu'],
@@ -1995,6 +2030,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'cluster-cost': clusterCostPlan,
 	'two-step': twoStepPlan,
 	sky: skyPlan,
+	skyway: skywayPlan,
 	splats: splatsPlan,
 	reflection: reflectionPlan,
 	occlusion: occlusionPlan,
