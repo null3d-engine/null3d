@@ -57,18 +57,20 @@ const POLL_MS = 100;
 /**
  * Starts a server of the project in the current folder and a headless browser. The server is the
  * project's Vite dev server, with any `plugins` besides the project's own, or with `production`, a
- * server of a production build of the project. `browserArgs` adds flags to the browser's own.
+ * server of a production build of the project, whose files carry source maps with `sourcemap`.
+ * `browserArgs` adds flags to the browser's own.
  *
- * @param {{ environment?: Environment, production?: boolean, plugins?: PluginOption[], browserArgs?: readonly string[] }} [options]
+ * @param {{ environment?: Environment, production?: boolean, sourcemap?: boolean, plugins?: PluginOption[], browserArgs?: readonly string[] }} [options]
  * @returns {Promise<Runner>}
  */
 export async function startRunner({
 	environment = defaultEnvironment(),
 	production = false,
+	sourcemap = false,
 	plugins,
 	browserArgs = [],
 } = {}) {
-	const server = await (production ? startBuildServer() : startDevServer({ plugins }));
+	const server = await (production ? startBuildServer({ sourcemap }) : startDevServer({ plugins }));
 	try {
 		const browser = await launchBrowser(environment, browserArgs);
 		return {
