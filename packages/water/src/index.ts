@@ -7,7 +7,7 @@ import { VERSION } from './version';
 checkAddonVersion('@null3d/water', VERSION);
 
 /** The add-on's names, claimed once as the sketch's module loads. */
-declareAddonNamespace({ name: 'water', errorCodes: [2200, 2299] });
+declareAddonNamespace({ name: 'water', package: '@null3d/water', errorCodes: [2200, 2299] });
 
 export type { FoamMapOptions, FoamObstacle } from './foam';
 export { foamMap } from './foam';
