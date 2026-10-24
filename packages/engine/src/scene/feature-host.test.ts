@@ -42,7 +42,7 @@ function hostOn(
 	addon = 'test',
 ): FeatureHost {
 	const namespaces = new AddonNamespaces();
-	const namespace = namespaces.claim({ name: addon });
+	const namespace = namespaces.claim({ name: addon, package: `@test/${addon}` });
 	return new FeatureHost({ ...options, namespace, namespaces });
 }
 
@@ -53,13 +53,13 @@ function twoHosts(quality = qualityOn()): { water: FeatureHost; terrain: Feature
 		water: new FeatureHost({
 			quality,
 			tier: 'webgpu',
-			namespace: namespaces.claim({ name: 'water' }),
+			namespace: namespaces.claim({ name: 'water', package: '@test/water' }),
 			namespaces,
 		}),
 		terrain: new FeatureHost({
 			quality,
 			tier: 'webgpu',
-			namespace: namespaces.claim({ name: 'terrain' }),
+			namespace: namespaces.claim({ name: 'terrain', package: '@test/terrain' }),
 			namespaces,
 		}),
 	};
@@ -243,7 +243,7 @@ describe('names that two add-ons cannot share', () => {
 			() =>
 				new FeatureHost({
 					quality: qualityOn('medium'),
-					namespace: { name: 'undeclared' },
+					namespace: { name: 'undeclared', package: '@test/undeclared' },
 					namespaces: new AddonNamespaces(),
 				}),
 		).toThrow(

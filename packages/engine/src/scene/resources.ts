@@ -1443,12 +1443,13 @@ export interface MaterialFeatures {
 	/** Takes the scene's fog. False keeps the material's color at every distance. The default is true. */
 	fog?: boolean;
 	/**
-	 * Keeps the color as the display shows it, as three.js's `toneMapped: false` does: the tone
-	 * curve leaves it alone in the shader of the material's own build, which tone maps on the
-	 * 8-bit path. The vignette and the sRGB encoding still apply, and the exposure already scales
-	 * the material's colors, so the color shows brighter than the same color tone mapped. The HDR
-	 * path tone maps the whole image in its final pass, which still maps this material's color.
-	 * The default is true.
+	 * Keeps the color as the display shows it, as three.js's `toneMapped: false` does. The tone
+	 * curve leaves it alone: the 8-bit path decides that in the shader of the material's own build,
+	 * and the HDR path's final pass reads a mask of these surfaces and skips the curve where one
+	 * draws. A blended surface keeps the curve on the HDR path, since a blended pixel mixes two
+	 * surfaces. The vignette and the sRGB encoding still apply, and the exposure already scales
+	 * the material's colors, so the color shows brighter than the same color tone mapped. The
+	 * default is true.
 	 */
 	toneMapped?: boolean;
 	/** How the material uses its alpha. The default is `opaque`. */

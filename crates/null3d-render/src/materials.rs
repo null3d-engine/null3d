@@ -346,10 +346,10 @@ pub mod feature {
     /// occlusion mapping, so relief finer than the mesh's vertices hides and shows the surface
     /// behind it. Only opaque and masked surfaces take it.
     pub const PARALLAX: u32 = 32768;
-    /// The surface keeps its color as the display shows it: the tone curve leaves it alone in the
-    /// material's own shader, which applies the output transform on the 8-bit path. The HDR path
-    /// tone maps the whole image in its final pass, which has no per-pixel flag of this kind yet,
-    /// so there the curve still maps the surface.
+    /// The surface keeps its color as the display shows it: the tone curve leaves it alone. The
+    /// 8-bit path decides that in the material's own shader, and the HDR path's final pass reads a
+    /// mask of these surfaces and skips the curve where one draws. A blended surface keeps the
+    /// curve on the HDR path.
     pub const NO_TONE_MAP: u32 = 8_388_608;
     /// The material's surface function reads the copy of the camera's opaque depth, which the
     /// frame makes while a material with this feature draws. It lies above the flags that a
@@ -1001,12 +1001,19 @@ pub struct MaterialTable {
     maps_changed: bool,
     /// The live materials whose light the subsurface blur spreads.
     scattering: u32,
+    /// The live materials that keep their color as the display shows it.
+    unmapped: u32,
 }
 
 /// True for a material of the standard shading, with or without maps, whose features give it a
 /// scatter radius.
 fn scatters(shading: Shading, features: u32) -> bool {
     features & feature::SUBSURFACE != 0 && matches!(shading, Shading::Lit | Shading::StandardMaps)
+}
+
+/// True for a material that keeps its color as the display shows it.
+fn keeps_display_color(features: u32) -> bool {
+    features & feature::NO_TONE_MAP != 0
 }
 
 /// Why a material could not be created or changed.
@@ -1041,6 +1048,7 @@ impl MaterialTable {
             values_changed: 0..0,
             maps_changed: false,
             scattering: 0,
+            unmapped: 0,
         }
     }
 
@@ -1091,6 +1099,7 @@ impl MaterialTable {
         self.biases[at] = DepthBias::NONE;
         self.states[at] = State::Live;
         self.scattering += u32::from(scatters(shading, features));
+        self.unmapped += u32::from(keeps_display_color(features));
         let values = &mut self.values[at * MATERIAL_FLOATS..][..MATERIAL_FLOATS];
         values.fill(0.0);
         let textures = match shading {
@@ -1120,6 +1129,7 @@ impl MaterialTable {
         }
         self.states[at] = State::Destroyed;
         self.scattering -= u32::from(scatters(self.shading[at], self.features[at]));
+        self.unmapped -= u32::from(keeps_display_color(self.features[at]));
         self.maps[at] = [Handle::NONE; MAP_SLOTS];
         self.heights[at] = Handle::NONE;
         self.maps_changed = true;
@@ -1167,6 +1177,22 @@ impl MaterialTable {
     /// subsurface blur's layout.
     pub fn any_scatters(&self) -> bool {
         self.scattering > 0
+    }
+
+    /// True when the material, by id, keeps its color as the display shows it: the material's own
+    /// shader skips the tone curve on the 8-bit path, and the mask marks the pixels that skip it
+    /// on the HDR path.
+    pub fn keeps_display_color(&self, id: u32) -> bool {
+        let at = id as usize;
+        at < self.features.len()
+            && self.states[at] == State::Live
+            && keeps_display_color(self.features[at])
+    }
+
+    /// True while some live material keeps its color as the display shows it, so the frame builders
+    /// hold the tone mask's layout.
+    pub fn any_keeps_display_color(&self) -> bool {
+        self.unmapped > 0
     }
 
     /// True when the material, by id, reads the copy of the camera's opaque depth.
@@ -1947,6 +1973,37 @@ mod tests {
         // The flag stays exact in the row's float, and clear of the map slots' bits.
         const { assert!(flag::NO_TONE_MAP < 1 << 24) };
         const { assert!(flag::NO_TONE_MAP > flag::SHEEN_ROUGHNESS_MAP) };
+        // The table counts the live materials that keep their display color, so the HDR path's
+        // mask is built only while one lives.
+        assert!(table.any_keeps_display_color());
+        assert!(!table.keeps_display_color(plain));
+        assert!(table.keeps_display_color(unmapped));
+        table.destroy(unmapped).unwrap();
+        assert!(!table.keeps_display_color(unmapped));
+    }
+
+    #[test]
+    fn the_count_of_materials_that_keep_their_display_color_follows_creation_and_destruction() {
+        let mut table = MaterialTable::with_capacity(3);
+        let first = table
+            .create(Shading::Unlit, feature::NO_TONE_MAP, [1.0; 4])
+            .unwrap();
+        assert!(table.any_keeps_display_color());
+        let second = table
+            .create(Shading::Lit, feature::NO_TONE_MAP, [1.0; 4])
+            .unwrap();
+        assert!(table.keeps_display_color(first));
+        assert!(table.keeps_display_color(second));
+        table.destroy(first).unwrap();
+        assert!(table.any_keeps_display_color(), "the second still lives");
+        table.destroy(second).unwrap();
+        assert!(!table.any_keeps_display_color());
+        table.release_unused(|_| false);
+        assert!(!table.any_keeps_display_color());
+        let reused = table.create(Shading::Unlit, 0, [1.0; 4]).unwrap();
+        assert_eq!(reused, first, "the lowest free id comes back");
+        assert!(!table.keeps_display_color(reused));
+        assert!(!table.any_keeps_display_color());
     }
 
     #[test]

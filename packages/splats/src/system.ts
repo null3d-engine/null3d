@@ -35,7 +35,11 @@ import { VERSION } from './version';
 checkAddonVersion('@null3d/splats', VERSION);
 
 /** The add-on's names, claimed once as the sketch's module loads. */
-const NAMESPACE = declareAddonNamespace({ name: 'splats', errorCodes: [2100, 2199] });
+const NAMESPACE = declareAddonNamespace({
+	name: 'splats',
+	package: '@null3d/splats',
+	errorCodes: [2100, 2199],
+});
 
 /** The splats that draw at full quality on each preset, from Low to Ultra. */
 const PRESET_SPLATS = [100_000, 250_000, 500_000, 800_000] as const;

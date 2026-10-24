@@ -1220,7 +1220,7 @@
       "status": "changed",
       "since": "0.3",
       "target": "toneMapped: false in the material's options, fixed when the material is created",
-      "notes": "The material's own shader keeps the color as the display shows it, which is where the 8-bit path tone maps. The HDR path tone maps the whole image in its final pass, so it still maps the material there; a scene that needs the exact color on such a device draws with hdr: false.",
+      "notes": "The material keeps its color as the display shows it on both paths. The 8-bit path decides that in the material's own shader. The HDR path's final pass reads a mask of these surfaces and skips the curve where one draws. A blended surface keeps the curve on the HDR path, so draw it on the 8-bit path with hdr: false if it needs the exact color.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\btoneMapped\\s*[:=]\\s*false"
     },

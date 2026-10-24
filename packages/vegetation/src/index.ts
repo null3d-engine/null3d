@@ -16,7 +16,11 @@ checkAddonVersion('@null3d/vegetation', VERSION);
  *
  * @category api/vegetation
  */
-export const NAMESPACE = declareAddonNamespace({ name: 'vegetation', errorCodes: [2300, 2399] });
+export const NAMESPACE = declareAddonNamespace({
+	name: 'vegetation',
+	package: '@null3d/vegetation',
+	errorCodes: [2300, 2399],
+});
 
 export type {
 	ImpostorSource,

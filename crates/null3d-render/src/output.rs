@@ -146,8 +146,8 @@ pub struct OutputUniform {
     pub tone_mapping: u32,
     /// Flags that only the final pass reads: [`OutputUniform::DISPLAY_COLOR`],
     /// [`OutputUniform::VIGNETTE`], [`OutputUniform::LUT`], [`OutputUniform::GRADE`],
-    /// [`OutputUniform::OUTLINE`], [`OutputUniform::AUTO_EXPOSURE`] and
-    /// [`OutputUniform::SHARPEN`].
+    /// [`OutputUniform::OUTLINE`], [`OutputUniform::AUTO_EXPOSURE`],
+    /// [`OutputUniform::SHARPEN`] and [`OutputUniform::UNMAPPED`].
     pub flags: u32,
     /// The part of the scene color that the scene drew, from its top-left corner: the width in
     /// pixels in the low 16 bits, and the height in the high 16 bits.
@@ -181,6 +181,9 @@ impl OutputUniform {
     /// The flag that grades the display color with the built-in grading table, which a job worker
     /// baked from the sketch's grading values.
     pub const GRADE: u32 = 256;
+    /// The flag that makes the pass leave the tone curve off each pixel whose surface keeps its
+    /// display color, which the mask's blue channel marks.
+    pub const UNMAPPED: u32 = 512;
 
     /// Sets the size the scene drew at, in pixels. Each side keeps its low 16 bits, which hold any
     /// texture size a GPU makes.

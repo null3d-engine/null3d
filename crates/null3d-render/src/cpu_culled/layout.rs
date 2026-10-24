@@ -42,6 +42,7 @@ use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 use crate::shadows::CasterPasses;
 use crate::subsurface::skin_key;
+use crate::tone_mask::tone_key;
 
 /// The data texture of a bucket's instances, as its draw record names it.
 pub(super) const RESIDENT: u32 = 0;
@@ -66,19 +67,22 @@ pub(super) enum Drawn {
     /// The scene objects whose material has a scatter radius, as the subsurface view draws them
     /// into the skin pass's target.
     Subsurface,
+    /// The scene objects whose material keeps its color as the display shows it, as the tone view
+    /// draws them into the mask that the final pass reads.
+    Tone,
 }
 
 impl Drawn {
     /// True for the passes that draw the scene's surfaces, where the scene's material override
-    /// applies: the camera's views and the subsurface view.
+    /// applies: the camera's views, the subsurface view and the tone view.
     fn overrides(self) -> bool {
-        matches!(self, Drawn::Scene | Drawn::Subsurface)
+        matches!(self, Drawn::Scene | Drawn::Subsurface | Drawn::Tone)
     }
 }
 
-/// The material of every caster bucket and every outlined bucket: neither a caster's depth nor an
-/// object's place in the outline mask depends on its material, so the objects of one mesh share a
-/// bucket.
+/// The material of every caster bucket, every outlined bucket and every tone bucket: neither a
+/// caster's depth nor a surface's place in a mask depends on its material, so the objects of one
+/// mesh share a bucket.
 const CASTER_MATERIAL: u32 = 1;
 
 // What makes a bucket, in draw order: what the mesh and material ask of their pipeline, the bind
@@ -443,6 +447,16 @@ impl Layout {
                     let (every, _) = mask_keys(skin(pipeline, skinned));
                     return Some((every, 0, page, mesh, CASTER_MATERIAL, group));
                 }
+                Drawn::Tone => {
+                    // A blended surface lets the scene behind it show, so the mask cannot say
+                    // which surface owns a pixel. Such a material keeps the curve on the HDR
+                    // path, as the docs record.
+                    if pipeline.sorts() {
+                        return None;
+                    }
+                    let visible = tone_key(skin(pipeline, skinned));
+                    return Some((visible, 0, page, mesh, CASTER_MATERIAL, group));
+                }
                 Drawn::Scene | Drawn::Subsurface => {}
             }
             // Blended pairs, and pairs that let light through, draw in the transparent pass, which
@@ -484,6 +498,7 @@ impl Layout {
                 Drawn::Casters => !shadows.any() || object & flags::CAST_SHADOWS == 0,
                 Drawn::Outlined => object & flags::OUTLINED == 0,
                 Drawn::Subsurface => !settings.scatters(material),
+                Drawn::Tone => !settings.keeps_display_color(material),
             };
             if left_out {
                 return None;
@@ -526,7 +541,7 @@ impl Layout {
                         None,
                     )
                 }
-                Drawn::Outlined | Drawn::Subsurface => None,
+                Drawn::Outlined | Drawn::Subsurface | Drawn::Tone => None,
             }
         };
         collect_bucket_keys(key_counts, scene, batches, scene_key, |_, batch| {
@@ -794,7 +809,7 @@ impl Layout {
         // outline and subsurface views the scene's rows, as batches take neither.
         let listed = match drawn {
             Drawn::Scene => resident.saturating_add(streamed),
-            Drawn::Casters | Drawn::Outlined | Drawn::Subsurface => {
+            Drawn::Casters | Drawn::Outlined | Drawn::Subsurface | Drawn::Tone => {
                 self.scene_rows.saturating_add(batch_rows)
             }
         };
