@@ -198,8 +198,20 @@ function main(): void {
 			);
 	}
 	if (process.argv.includes('--check')) {
+		// A task the tool marks unfinished or on a branch, while the evidence file already names its
+		// proof, is a stale mark: the work landed and someone forgot the set.
+		for (const id of planTasks().map((task) => task.id)) {
+			const stale = INCOMPLETE.has(id) || ON_BRANCH.has(id) || Boolean(PARTIAL[id]);
+			if (stale && id in TASK_EVIDENCE)
+				console.error(`stale: ${id} is marked unfinished or on a branch but has evidence`);
+		}
 		const missing = [...owed].filter(
-			(id) => !(id in TASK_EVIDENCE) && !INCOMPLETE.has(id) && !ON_BRANCH.has(id) && !PARTIAL[id],
+			(id) =>
+				!(id in TASK_EVIDENCE) &&
+				!INCOMPLETE.has(id) &&
+				!ON_BRANCH.has(id) &&
+				!PARTIAL[id] &&
+				!NOTES[id],
 		);
 		if (missing.length > 0) process.exit(1);
 	}
