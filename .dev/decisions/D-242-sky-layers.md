@@ -63,10 +63,10 @@ custom effects already follow.
   and the share of the sun that the layer hides. A layer declares no uniforms, textures or
   bindings of its own, so it cannot read a picture or a value that the page changes after it is
   installed. A layer that needs those asks for uniforms in a later hook.
-- The sky's environment map and its CPU diffuse light still come from the core sky alone: the map's
+- The sky's environment map and its CPU diffuse light stay the core sky's alone: the map's
   generator draws the sky with its own shader per cube face, and the light is a CPU model of the
-  analytic air. A layer therefore adds no light to the scene. Lighting from a layer is owed with the
-  volumetric-cloud tier (M3-F11), which draws its clouds in the same map.
+  analytic air. A layer therefore adds no light to the scene, and its task line says so. M3-F11
+  lights the scene from clouds, and it draws them in the same map (see the addendum of 25 October).
 - The aurora example add-on in `examples/addons/aurora/` is the first user, with the `aurora` demo
   and its image test on every GPU tier. `docs/api/scene.md` and `docs/api/features.md` record the
   call and drop the hook from the list that waits for a declaration.
@@ -75,12 +75,14 @@ custom effects already follow.
 
 ## Addendum, 25 October 2026: the environment map and the CPU sky light
 
-Status: the case goes to the owner, who rules. Until then the task line and this record disagree on
-purpose, and this addendum is the reason.
+Status: narrowed by the coordinator on 25 October 2026, with the owner reviewing it on the morning of
+26 October. The owner may reverse the narrowing in one line. This addendum records a narrowing, not
+the design that the record first carried. The cost of the wider line is in "The options" below.
 
-The task asks the hook to draw into the background, the environment map and the CPU sky light. The
-build reaches the first place alone. The two other places are not owed to M3-F11; they are questions
-for the owner now.
+The task first asked the hook to draw into the background, the environment map and the CPU sky
+light. The build reaches the first place alone. The narrowed task asks for the background and the
+sun's dimming, and says that a layer lights nothing. M3-F11 is the place that lights the scene from
+clouds, because it is the engine's own tier and sets the map's refresh step and the CPU light itself.
 
 ### The CPU sky light
 
@@ -94,7 +96,7 @@ CPU has no way to run it.
 | A: the add-on also ships a CPU copy of its layer, which the render worker calls | Rejected. It needs a WASM ABI in the hook, and it is far more than the task's two helper-weeks |
 | B: the engine reads the map's faces back and projects them on the CPU | Rejected. A readback stalls the render thread at each fill |
 | C: the add-on supplies its own spherical harmonics as data | Rejected here. It is a different, smaller hook. It does not run the layer's WGSL |
-| D: drop the clause. The CPU diffuse sky light stays the core sky's | Recommended |
+| D: drop the clause. The CPU diffuse sky light stays the core sky's | Chosen on 25 October 2026 |
 
 ### The environment map
 
@@ -118,11 +120,23 @@ Estimate for a sound build: one to one and a half helper-days, with the new fiel
 both GPU paths. The first user, the aurora, changes little across the sky. Its light in reflections
 alone would hardly show.
 
-### Proposed task line
+### The options and the cost of the wider line
+
+| Option | Verdict |
+| --- | --- |
+| A: build the environment map now, and drop the CPU light | Rejected. It costs one to one and a half helper-days, and it lights reflections alone. Its first user would hardly show |
+| B: build both places | Rejected. The CPU light has no sound way to run a layer's WGSL at all |
+| C: narrow the task to the background and the sun | Chosen on 25 October 2026, with the owner reviewing it on 26 October |
+
+If the owner reverses the narrowing, the cost is one to one and a half helper-days for the
+environment map, plus the refresh-step field, and it still lights reflections alone. The CPU light
+would need a new hook shape, which this record describes under "The CPU sky light".
+
+### The task line
 
 "H8, sky layers: an add-on draws over the background and dims the sun, so other developers can
 build volumetric clouds behind the core's cloud settings. A layer lights nothing: the sky's
-environment map and its CPU light stay the core sky's (D-242)."
+environment map and its CPU light stay the core sky's (D-242, narrowed on 25 October 2026)."
 
 M3-F11 stays the place that lights the scene from clouds. It is the engine's own tier, so it sets
 the map's refresh step and the CPU light itself.
