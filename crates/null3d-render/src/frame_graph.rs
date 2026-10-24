@@ -3820,6 +3820,18 @@ impl FrameGraph {
         self.weight_at
     }
 
+    /// The resource that bloom's first step reads: the scene's color while an effect reads the
+    /// chain, since that effect draws after the chain, or the color that the effects leave while
+    /// none of them reads it. The passes declare this source and the step that draws binds it, so
+    /// the two cannot drift apart.
+    fn bloom_source(&self) -> &'static str {
+        if self.effect_blooms.iter().any(|&level| level != 0) {
+            self.scene_output()
+        } else {
+            self.color_output()
+        }
+    }
+
     /// Declares bloom's steps: a step down into each level, the first from the scene color and
     /// each later one from the level above as the steps before it leave it, then a step up into
     /// each level but the last, which reads the level below and blends into its own. Returns the
@@ -3828,14 +3840,7 @@ impl FrameGraph {
         let target = Target::color(bloom::FORMAT);
         let size = self.bloom_chain.size;
         let levels = self.bloom_pass.as_ref().map_or(LEVELS, BloomPass::levels);
-        // An effect that reads the chain runs after it, so the chain reads the scene before that
-        // effect's pass rather than its output.
-        let reads_bloom = self.effect_blooms.iter().any(|&level| level != 0);
-        let source = if reads_bloom {
-            self.scene_output()
-        } else {
-            self.color_output()
-        };
+        let source = self.bloom_source();
         for level in 0..levels {
             let pass = Pass::new(BLOOM_DOWN[level], PassKind::Fullscreen)
                 .size(bloom::level_size(size, level))
@@ -4492,7 +4497,7 @@ impl FrameGraph {
                 if step >= 2 * levels - 1 {
                     0
                 } else if step == 0 {
-                    id(self.color_output())
+                    id(self.bloom_source())
                 } else if step < levels {
                     id(BLOOM_LEVELS[step - 1])
                 } else {
@@ -7528,6 +7533,11 @@ mod tests {
                 (CUSTOM + 2, 0)
             ]
         );
+        // No effect reads the chain, so its first step reads the color that the effects leave.
+        let out = frames.color_output();
+        let left = frames.sampled_id(out).unwrap();
+        let (sources, _) = frames.bloom_textures();
+        assert_eq!(sources[0], left, "the chain reads the effects' output");
         let mut arena = UploadArena::default();
         arena.reset(frames.upload_bound());
         list.clear();
@@ -7938,6 +7948,53 @@ mod tests {
         assert!(place(last) < place("Effect1"));
         // The final pass still mixes the glow into the effect's output.
         assert!(place("Effect1") < place("FinalBloom"));
+    }
+
+    #[test]
+    fn a_lone_effect_that_reads_bloom_keeps_the_whole_chain_and_the_glow() {
+        let canvas = (1280, 720);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default()]);
+        let mut list = DrawList::with_capacity(8192);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let effect = Effect {
+            template: CUSTOM,
+            depth: false,
+            bloom: Some(3),
+            values: [0.0; effects::EFFECT_FLOATS],
+            maps: EffectMaps::NONE,
+        };
+        frames.set_effects(&[effect], &EffectJoins::default(), [0.0; 2], None);
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
+        frames.sync(&[View::default()]);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 0);
+        pipelines.create_new(&mut list, 1).unwrap();
+        frames.request_pipelines(&mut pipelines, 1);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert!(frames.bloom_draws());
+        let names: Vec<String> = steps(&frames).into_iter().flatten().collect();
+        let place = |name: &str| names.iter().position(|n| n == name).unwrap();
+        // The chain fills every level before the one effect that reads them draws, and the final
+        // pass still mixes the glow into that effect's output.
+        assert!(place(BLOOM_DOWN[0]) < place("Effect0"));
+        assert!(place("Effect0") < place("FinalBloom"));
+        // The chain's first step reads the scene color, which the effect has not drawn over yet,
+        // as the passes declare.
+        let out = frames.scene_output();
+        let scene = frames.sampled_id(out).unwrap();
+        let out = frames.color_output();
+        let effect_target = frames.sampled_id(out).unwrap();
+        assert_ne!(scene, effect_target);
+        let (sources, _) = frames.bloom_textures();
+        assert_eq!(
+            sources[0], scene,
+            "the chain reads the scene, not the effect"
+        );
     }
 
     #[test]

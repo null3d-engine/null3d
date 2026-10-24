@@ -447,18 +447,18 @@ A run folder holds every page's full result, with frames and images, and stays o
 
 A sky map draws again only when its sun turns half a degree, a color value drifts by a fiftieth, or its clouds drift a tenth of a cell of their pattern. One last fill captures the sky exactly when its sun rests ([D-118](decisions/D-118-sky-environment.md#addendum-23-october-2026-a-map-draws-again-only-for-a-change-that-shows)). So the cost of a moving sky is the frames that record a stage, not the frames that move the sun.
 
-- `cargo test -p null3d-render --test sky_maps a_day_cycle -- --nocapture` counts them for a sun scripted to cross the sky, over scenes with a still sun, an hour-long day, a ten-minute day and a day a minute, with clouds drifting as `examples/` draws them. Each case reports the count of frames that drew a stage. The test takes about three seconds and needs no browser.
+- `cargo test -p null3d-render --test sky_maps a_day_cycle -- --nocapture` counts them, at 60 frames a second, for a sun scripted to cross the sky. The cases are a still sun with drifting clouds, an hour-long day, a ten-minute day, the showcase's 80-second day and a day a minute. Each case prints the frames that drew a stage, and one fill every 20 frames gives the fills a minute. The test takes about seven seconds and needs no browser. Its output on 25 October 2026:
+  ```text
+  sky map fills, at 60 frames a second:
+  Still sun, clouds drifting: 100 of 1800 frames drew a stage, 10 fills a minute
+  An hour a day: 100 of 1800 frames drew a stage, 10 fills a minute
+  A ten-minute day: 700 of 1800 frames drew a stage, 70 fills a minute
+  The showcase's 80-second day: 1794 of 1800 frames drew a stage, 179 fills a minute
+  A day a minute: 1796 of 1800 frames drew a stage, 179 fills a minute
+  ```
+  Before the rule, every one of those frames drew a stage.
 - `bun run --cwd tests test image/sky-step.spec.ts` weighs the steps in the picture. It sinks the sun from 8 to 6.5 degrees above the horizon, where its light changes fastest, in three half-degree steps, then fails when two captured frames lie more than 8 levels of 255 apart, when the sweep does not move the light 6 levels, or when it moves in fewer than three steps. It runs on every GPU tier, and takes about half a minute for all three. On 23 October 2026 each step measured 3 to 4 levels, and the sweep moved the light about 11 levels, on the Mac's GPU and on its software GPU.
 - A stage's own GPU time comes from `tests/pages/sky-map-cost.ts`, as [Stages by faces](decisions/D-118-sky-environment.md#stages-by-faces) gives it: about 1 ms on the Mac and about 5 ms on a software GPU.
-
-On 23 October 2026, at 60 frames a second with the built-in map's 20 stages, 1,800 frames drew these counts. Before the rule, every one of them drew a stage.
-
-| Sun | Frames that drew a stage | Fills a minute |
-| --- | --- | --- |
-| Still, clouds drifting | 100 | 12 |
-| An hour a day | 100 | 12 |
-| A ten-minute day | 700 | 70 |
-| The Auto day of `examples/lib/stage.ts`, 80 seconds | 1,794 | 180 |
 
 A sun that crosses a half-degree step faster than a fill's 20 frames keeps the map drawing in every frame, which is why the showcases' own day cycle saves nothing and a still sky saves almost all of it.
 

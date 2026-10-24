@@ -396,6 +396,10 @@ level with `bloomLevel`.
   runs before the effects, from the scene color that the first effect reads, and the final pass
   still mixes the glow into the effects' output. The render graph orders the passes from that edge:
   the effect's pass reads the level's target, so the step that writes it runs first.
+- The texture that the first step binds comes from the same choice that the passes declare, so the
+  two cannot drift apart. A held frame draws once, before it draws the effects. A chain that bound
+  their target would read its clear color and draw no glow
+  ([D-71](decisions/D-71-custom-effects.md#addendum-25-october-2026-an-effect-that-reads-blooms-chain-bound-the-wrong-source)).
 - Each effect binds one level, at binding 4 of its group, because the levels are separate textures
   and an effect names the level it wants. A group of joined effects binds one color and one level,
   so the compiler refuses to join an effect that reads bloom: it draws in a pass of its own, as an
