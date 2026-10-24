@@ -2066,6 +2066,10 @@ pub mod template {
     /// Temporal anti-aliasing's copy of the resolve's target into the history of the frame's
     /// parity, one texel per pixel. It binds as the copy of a view's image does.
     pub const TAA_COPY: u32 = 82;
+    /// The rows of a feature-instance draw, made relative to the camera: one dispatch for each
+    /// such draw in each frame, after every compute pass that writes rows and before every pass
+    /// that reads them. WebGPU only.
+    pub const FEATURE_ROWS: u32 = 83;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -2073,7 +2077,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 81] = [
+    pub const NAMES: [(&str, u32); 82] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2154,6 +2158,7 @@ pub mod template {
         ("TAA_RESOLVE", TAA_RESOLVE),
         ("TAA_RESOLVE_MS", TAA_RESOLVE_MS),
         ("TAA_COPY", TAA_COPY),
+        ("FEATURE_ROWS", FEATURE_ROWS),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2272,6 +2277,10 @@ pub mod groups {
         (template::EXPOSURE_ADAPT, own!(layout::EFFECT)),
         (template::EXPOSURE_HISTOGRAM, own!(layout::EXPOSURE)),
         (template::DEPTH_PYRAMID, own!(layout::DEPTH_PYRAMID)),
+        (
+            template::FEATURE_ROWS,
+            own!(layout::COMPUTE_INSTANCE_BUFFERS),
+        ),
         (template::LINE, MESH),
         (template::LINE_LIT, MESH),
         (template::AO_DEPTH, own!(layout::AO_DEPTH)),

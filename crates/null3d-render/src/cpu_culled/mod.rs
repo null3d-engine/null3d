@@ -2460,6 +2460,8 @@ impl CpuCulledRenderer {
             },
             // The CPU path draws every count that the page sets, so no count waits for a pass.
             |_| Ok(()),
+            // This path places every instance in the world itself, so no row waits for a command.
+            |_| Ok(()),
             |list| {
                 if motion_on {
                     motion_state.finish(list, input.parity(), skins)?;

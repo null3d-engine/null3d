@@ -1116,3 +1116,13 @@ shaders = ["cull_occlusion", "pyramid"]
 file = "light_clusters.wgsl"
 by_device = true
 variants.webgpu = { targets = ["wgsl"] }
+
+# The rows of a feature-instance draw, made relative to the camera: one compute entry point,
+# `main`, over the draw's capacity, guarded by its live count. The frame runs it once for each
+# such draw, after every compute pass that writes rows and before every pass that reads them.
+# WebGPU only: WebGL2 draws those rows through an instance batch, whose positions the engine
+# already converts.
+[shaders.feature_rows]
+file = "feature_rows.wgsl"
+by_device = true
+variants.webgpu = { targets = ["wgsl"] }

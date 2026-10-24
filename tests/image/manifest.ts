@@ -2642,6 +2642,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		modes: ALL_MODES,
 	},
+	// The same draw on a device that the start-up probe put on the direct-draw path: the frame
+	// takes the indirect path while the scene holds a feature-instance draw, so the picture is the
+	// test above's (D-229).
+	{
+		name: 'feature-instances-direct',
+		sketch: 'tests/pages/sketches/feature-instances-sketch.ts',
+		hold: 0,
+		tiers: ['webgpu', 'compat'],
+		switches: ['direct=on'],
+		reference: 'feature-instances',
+	},
 	// The compute-side proof of an instance draw: the page fills nothing, and a compute shader
 	// writes 42 instance rows and the draw's count. The picture shows exactly those 42 quads, so
 	// the count and the rows that the GPU wrote are the ones drawn. WebGL2 has no compute pass.

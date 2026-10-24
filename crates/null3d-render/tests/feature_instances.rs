@@ -6,7 +6,7 @@ mod common;
 
 use common::World;
 use null3d_core::scene::{Command, flags};
-use null3d_gpu::drawlist::{Op, buffer_usage as usage_flags};
+use null3d_gpu::drawlist::{Op, buffer_usage as usage_flags, layout as bind_layout};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::feature_instances::{INSTANCE_BYTES, INSTANCE_FLOATS};
 use null3d_render::frame::FrameBuilder;
@@ -83,6 +83,49 @@ fn the_frame_makes_the_add_ons_buffers_and_copies_the_page_count_into_the_draw()
 }
 
 #[test]
+fn the_frame_makes_the_rows_relative_to_the_camera_before_the_pass_that_draws_them() {
+    // A page writes world matrices. The frame converts them to the engine's instance format, which
+    // is relative to the camera, after every pass that writes rows and before the pass that draws
+    // them. The conversion binds the same three buffers as an add-on's compute pass.
+    let (world, _instances, _counts) = with_feature_draw(16, 5, flags::UNCULLED);
+    let commands = world.commands();
+    let group = commands
+        .iter()
+        .position(|(op, o)| {
+            *op == Op::CreateBindGroup && o[1] == bind_layout::COMPUTE_INSTANCE_BUFFERS && o[2] == 3
+        })
+        .expect("the conversion's bind group exists");
+    let dispatch = commands
+        .iter()
+        .enumerate()
+        .position(|(index, (op, o))| index > group && *op == Op::Dispatch && o[0] > 0)
+        .expect("the conversion is dispatched after its group");
+    let pass = commands
+        .iter()
+        .position(|(op, _)| *op == Op::BeginRenderPass)
+        .expect("the frame draws a pass");
+    assert!(
+        dispatch < pass,
+        "the rows are made relative to the camera before the pass that draws them"
+    );
+}
+
+#[test]
+fn a_frame_without_a_feature_draw_makes_no_conversion() {
+    // A scene with no such draw pays for no group, no dispatch and no values.
+    let mut world = World::new();
+    world.record(true);
+    let commands = world.commands();
+    assert!(
+        !commands
+            .iter()
+            .any(|(op, o)| *op == Op::CreateBindGroup
+                && o[1] == bind_layout::COMPUTE_INSTANCE_BUFFERS),
+        "no conversion group is made"
+    );
+}
+
+#[test]
 fn a_device_that_chose_the_direct_path_draws_a_feature_draw_indirectly() {
     // The direct path counts every draw on the CPU and creates no indirect buffer, so a draw whose
     // count the GPU writes takes the indirect path for the whole session. The frame then makes the
@@ -144,16 +187,20 @@ fn the_count_reaches_the_draw_after_the_compute_step() {
             .map(|(index, _)| index)
             .collect()
     };
-    let dispatch = at(Op::Dispatch)
-        .into_iter()
-        .next_back()
-        .expect("the frame culls with compute");
+    let dispatches = at(Op::Dispatch);
+    // The frame's last dispatch is the pass that makes the rows relative to the camera, which
+    // reads the count, so the copy follows the one before it.
+    assert!(
+        dispatches.len() > 1,
+        "the frame culls with compute before the conversion"
+    );
+    let dispatch = dispatches[dispatches.len() - 2];
     let last_copy = at(Op::CopyBufferToBuffer)
         .into_iter()
         .rfind(|&index| commands[index].1[0] == counts)
         .expect("the count reaches the indirect draw");
-    // The last copy follows the last compute dispatch: a count that a compute pass writes is
-    // final before the pass that reads it.
+    // The last copy follows the last compute dispatch that writes the count: a count that a
+    // compute pass writes is final before the pass that reads it.
     assert!(last_copy > dispatch);
 }
 

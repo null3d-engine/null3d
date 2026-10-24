@@ -139,6 +139,11 @@ impl FeatureInstanceTable {
         true
     }
 
+    /// The number of rows that the page has written, from the start of its rows.
+    pub fn written(&self, id: u32) -> u32 {
+        self.get(id).map_or(0, |draw| draw.written)
+    }
+
     /// The per-instance rows that the page wrote, or an empty slice before its first write.
     pub fn rows(&self, id: u32) -> &[f32] {
         self.get(id).map_or(&[], |draw| &draw.rows)

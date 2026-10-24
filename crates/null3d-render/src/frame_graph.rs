@@ -5100,6 +5100,16 @@ impl FrameGraph {
     }
 
     /// Sets the frame's reflection probe filter, which [`Self::record`] records.
+    /// True when a compute pass of this frame writes the per-instance rows in `instances`, so the
+    /// add-on fills them and the frame must not restore a page's rows over them.
+    pub(crate) fn compute_writes_rows(&self, instances: u32) -> bool {
+        self.declared_views.iter().any(|view| {
+            view.compute_pass()
+                .and_then(|pass| pass.buffers)
+                .is_some_and(|buffers| buffers.instances == instances)
+        })
+    }
+
     pub(crate) fn set_probe_filter(&mut self, filter: Option<[u32; 10]>) {
         self.probe_filter = filter;
     }
@@ -5121,6 +5131,7 @@ impl FrameGraph {
         skips: impl Fn(Role) -> bool,
         mut record: impl FnMut(&mut DrawList, Role) -> Result<(), RecordError>,
         mut after_compute: impl FnMut(&mut DrawList) -> Result<(), RecordError>,
+        before_render: impl FnOnce(&mut DrawList) -> Result<(), RecordError>,
         finish: impl FnOnce(&mut DrawList) -> Result<(), RecordError>,
     ) -> Result<(), RecordError> {
         let mut marks = std::mem::take(&mut self.word_marks);
@@ -5131,6 +5142,7 @@ impl FrameGraph {
             skips,
             &mut record,
             &mut after_compute,
+            before_render,
             finish,
             &mut marks,
         );
@@ -5162,9 +5174,11 @@ impl FrameGraph {
         skips: impl Fn(Role) -> bool,
         record: &mut impl FnMut(&mut DrawList, Role) -> Result<(), RecordError>,
         after_compute: &mut impl FnMut(&mut DrawList) -> Result<(), RecordError>,
+        before_render: impl FnOnce(&mut DrawList) -> Result<(), RecordError>,
         finish: impl FnOnce(&mut DrawList) -> Result<(), RecordError>,
         marks: &mut Vec<Range<usize>>,
     ) -> Result<(), RecordError> {
+        let mut before_render = Some(before_render);
         let plan = self
             .graph
             .plan()
@@ -5210,6 +5224,12 @@ impl FrameGraph {
                         skips(role) || !self.draws(role)
                     }) {
                         continue;
+                    }
+                    // The first render pass of the frame comes after every compute pass that
+                    // writes the buffers it reads, so a command of its own before this pass sees
+                    // each of them final.
+                    if let Some(command) = before_render.take() {
+                        command(list)?;
                     }
                     let camera = passes.iter().any(|&pass| {
                         matches!(
@@ -6009,6 +6029,7 @@ mod tests {
                 |_: &mut DrawList, _: Role| Ok(()),
                 |_| Ok(()),
                 |_| Ok(()),
+                |_| Ok(()),
             )
             .unwrap();
         assert_eq!(operands(&list, Op::BeginComputePass).len(), 1);
@@ -6074,6 +6095,7 @@ mod tests {
                 |_| [0.0; 4],
                 |_| true,
                 |_: &mut DrawList, _: Role| Ok(()),
+                |_| Ok(()),
                 |_| Ok(()),
                 |_| Ok(()),
             )
@@ -6913,6 +6935,7 @@ mod tests {
                 |_, _| Ok(()),
                 |_| Ok(()),
                 |_| Ok(()),
+                |_| Ok(()),
             )
             .unwrap();
         let passes = operands(&list, Op::BeginRenderPass);
@@ -6988,6 +7011,7 @@ mod tests {
                 |_| [0.0; 4],
                 |_| false,
                 |_, _| Ok(()),
+                |_| Ok(()),
                 |_| Ok(()),
                 |_| Ok(()),
             )
@@ -7218,6 +7242,7 @@ mod tests {
                     |_| [0.0; 4],
                     |_| false,
                     |_, _| Ok(()),
+                    |_| Ok(()),
                     |_| Ok(()),
                     |_| Ok(()),
                 )
@@ -7620,6 +7645,7 @@ mod tests {
                     |_, _| Ok(()),
                     |_| Ok(()),
                     |_| Ok(()),
+                    |_| Ok(()),
                 )
                 .unwrap();
             null3d_gpu::drawlist::decode(list.words())
@@ -7859,6 +7885,7 @@ mod tests {
                 |_, _| Ok(()),
                 |_| Ok(()),
                 |_| Ok(()),
+                |_| Ok(()),
             )
             .unwrap();
         assert!(
@@ -8057,6 +8084,7 @@ mod tests {
                     |_, _| Ok(()),
                     |_| Ok(()),
                     |_| Ok(()),
+                    |_| Ok(()),
                 )
                 .unwrap();
             let passes = operands(&list, Op::BeginRenderPass);
@@ -8237,6 +8265,7 @@ mod tests {
                     |_, _| Ok(()),
                     |_| Ok(()),
                     |_| Ok(()),
+                    |_| Ok(()),
                 )
                 .unwrap();
             let viewports = operands(&list, Op::SetViewport);
@@ -8411,6 +8440,7 @@ mod tests {
                     |_| [0.0; 4],
                     |_| false,
                     |_, _| Ok(()),
+                    |_| Ok(()),
                     |_| Ok(()),
                     |_| Ok(()),
                 )
@@ -8745,6 +8775,7 @@ mod tests {
                 |_, _| Ok(()),
                 |_| Ok(()),
                 |_| Ok(()),
+                |_| Ok(()),
             )
             .unwrap();
         let skin_light = frames.sampled_id(SKIN_LIGHT).unwrap();
@@ -8874,6 +8905,7 @@ mod tests {
                     |_| [0.5; 4],
                     |_| false,
                     |_, _| Ok(()),
+                    |_| Ok(()),
                     |_| Ok(()),
                     |_| Ok(()),
                 )
@@ -9016,6 +9048,7 @@ mod tests {
                     |_| [0.0; 4],
                     |_| false,
                     |_, _| Ok(()),
+                    |_| Ok(()),
                     |_| Ok(()),
                     |_| Ok(()),
                 )

@@ -154,34 +154,33 @@ not supported on that path. The frame then names a buffer that does not exist, a
 sketch's setup creates its draw before the first frame, so the shipped sketches take the indirect
 path.
 
-## Open fault: the space of the instance rows
+## The space of the instance rows, 24 October 2026
 
-The pictures stay empty on WebGPU for a third reason. That reason needs a decision before the API's
-contract freezes. The vertex shaders read an instance matrix in **camera-relative** space. This is
-the engine's instance format. The frame that culls a scene adds the camera-to-cell offset to each
-object's world matrix. `relative_position` then needs no further subtraction. A page writes the
-rows that `setInstances` takes as **world** matrices, as the API page says. Nothing converts them
-on the WebGPU path. The rows go straight into the add-on's buffer that the vertex shader reads.
-The measured result is exact. A page row at the world origin reads as a position on the camera's
-own plane. Its clip `w` is zero, and the triangle draws nothing. Rows that carry `-camera` in their
-translation draw the expected picture on WebGPU: 4002 bright pixels against none. The same rows
-drawn through the WebGL2 batch put the shape elsewhere, because that path places rows in world
-space.
+The pictures stayed empty on WebGPU for a third reason. The owner settled it on the same day.
+The vertex shaders read an instance matrix in **camera-relative** space. That is the engine's
+instance format: the culling adds the camera-to-cell offset to each object's world matrix. A page
+writes the rows that `setInstances` takes as **world** matrices, as the API page says. Nothing
+converted them on the WebGPU path. A page row at the world origin read as a position on the
+camera's own plane. Its clip `w` was zero, so the triangle drew nothing. Measured on the Mac's
+GPU: rows with the camera subtracted drew 4002 bright pixels where world rows drew none. The
+WebGL2 path hid the fault, because its adapter splits each row into an instance batch, whose
+positions the engine treats as world.
 
-The WebGL2 path hides the fault. Its adapter splits each row into an instance batch, whose
-positions the engine treats as world. So a page's world rows draw there and nowhere else.
+The owner chose the conversion on the GPU over a conversion at upload. The ruling of
+24 October 2026 gives the reason. One dispatch for each feature draw in each frame costs no
+upload. A camera move would spend an upload of every drawn row. As built:
 
-Letting the add-on write camera-relative rows is not enough on its own. The add-on's compute pass
-block carries no camera. A page's camera also moves after it has written its rows. Two ways out
-are open, and the choice belongs to the owner:
+- `feature_rows.wgsl` reads the camera's world position, the draw's count word and its rows. It
+  subtracts the camera from each live row's translation, and its group binds the same three
+  buffers as an add-on's compute pass.
+- The frame records one dispatch for each feature draw, once, after every compute pass that writes
+  rows and before the first pass that reads them. The render graph calls a new command at that
+  point. A scene with no such draw records no dispatch, creates no buffer and binds no group.
+- A page's rows go up again in every frame before the conversion. The conversion writes the
+  buffer, and the next frame must start from world matrices. That upload covers the rows the page
+  wrote. So a page-filled draw pays one upload of its written rows in each frame. A draw whose rows
+  a compute pass writes needs none: its add-on writes them in every frame.
+- A draw that a compute pass fills is converted the same way, so both paths reach the vertex
+  shaders in one format.
 
-1. Convert on the GPU. A small engine pass adds the frame's camera offset to the rows in place,
-   once for each feature draw in each frame. One contract serves both paths, and no CPU work
-   repeats. It costs a compute shader and a dispatch for each such draw.
-2. Convert as the rows reach the buffer. The engine adds the camera offset to a page's rows when
-   it uploads them. It also gives the add-on's compute pass the camera offset in its block, so the
-   compute writes camera-relative rows. That repeats an upload of the drawn rows in every frame
-   where the camera moves.
-
-Until then the two instance pictures stay black on WebGPU, and the references stay missing. The
-engine must not accept a blank picture as a reference.
+The API page states the contract: the rows are world matrices, and the engine converts them.

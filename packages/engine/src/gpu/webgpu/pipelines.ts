@@ -118,6 +118,7 @@ import {
 	TEMPLATE_EXPOSURE_ADAPT_HISTOGRAM,
 	TEMPLATE_EXPOSURE_HISTOGRAM,
 	TEMPLATE_EXPOSURE_LUMINANCE,
+	TEMPLATE_FEATURE_ROWS,
 	TEMPLATE_FINAL,
 	TEMPLATE_FINAL_BLOOM,
 	TEMPLATE_FOG_APPLY,
@@ -616,6 +617,9 @@ export class Pipelines {
 	private readonly cullMotion: ShaderVariants;
 	private readonly pyramid: ShaderVariants;
 	private readonly pyramidLayout: GPUPipelineLayout;
+	/** The builds of the pass that makes a feature-instance draw's rows relative to the camera. */
+	private readonly featureRows: ShaderVariants;
+	private featureRowsLayout: GPUPipelineLayout | undefined;
 	/**
 	 * The cluster pass's builds, which arrive with the cluster levels feature's shader file. It is
 	 * read by name so that a build whose generated modules are older than the manifest still type
@@ -1489,6 +1493,7 @@ export class Pipelines {
 		this.occlusion = shaders.cull_occlusion;
 		this.cullMotion = shaders.cull_motion;
 		this.pyramid = shaders.pyramid;
+		this.featureRows = shaders.feature_rows;
 		this.pyramidLayout = device.createPipelineLayout({
 			bindGroupLayouts: [this.layout(LAYOUT_DEPTH_PYRAMID)],
 		});
@@ -1875,6 +1880,7 @@ export class Pipelines {
 		if (custom) return custom.shader;
 		if (template === TEMPLATE_SKIN) return this.skin;
 		if (template === TEMPLATE_DEPTH_PYRAMID) return this.pyramid;
+		if (template === TEMPLATE_FEATURE_ROWS) return this.featureRows;
 		if (template === TEMPLATE_CLUSTER) return this.cluster;
 		if (template === TEMPLATE_CULL && permutation & PERMUTATION_MOTION) return this.cullMotion;
 		if (EXPOSURE_ENTRY_POINTS[template] !== undefined) return this.exposureHistogram;
@@ -1955,6 +1961,18 @@ export class Pipelines {
 				label: 'depth pyramid',
 				layout: this.pyramidLayout,
 				compute: { module: this.module('depth pyramid', shader), entryPoint: 'main' },
+			};
+		}
+		if (template === TEMPLATE_FEATURE_ROWS) {
+			const shader = variantFor(this.featureRows, 0, 'wgsl')?.wgsl;
+			if (!shader) throw new Error("the device's shader modules have no feature rows shader");
+			this.featureRowsLayout ??= this.device.createPipelineLayout({
+				bindGroupLayouts: [this.layout(LAYOUT_COMPUTE_INSTANCE_BUFFERS)],
+			});
+			return {
+				label: 'feature rows',
+				layout: this.featureRowsLayout,
+				compute: { module: this.module('feature rows', shader), entryPoint: 'main' },
 			};
 		}
 		const exposureEntry = EXPOSURE_ENTRY_POINTS[template];

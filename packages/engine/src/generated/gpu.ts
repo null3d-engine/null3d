@@ -320,6 +320,7 @@ export const TEMPLATE_CLUSTER = 78;
 export const TEMPLATE_TAA_RESOLVE = 80;
 export const TEMPLATE_TAA_RESOLVE_MS = 81;
 export const TEMPLATE_TAA_COPY = 82;
+export const TEMPLATE_FEATURE_ROWS = 83;
 export const TEMPLATE_CUSTOM_FIRST = 128;
 
 export const BUFFER_USAGE_MAP_READ = 1;
