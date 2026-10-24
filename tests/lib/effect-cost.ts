@@ -4,6 +4,11 @@
 // load beside its figures, as other work on the computer would spoil them.
 import { loadavg } from 'node:os';
 
+import type { SideMemory } from '../pages/lib/side-memory';
+
+/** The memory figures of one side of a cost page's turns, from the engine's stats overlay. */
+export type { SideMemory };
+
 /** One side of a cost page's turns: the medians with the effect off, or with it on. */
 export interface Side {
 	gpuMs: number | null;
@@ -22,6 +27,7 @@ export interface CostResult {
 	tier: string;
 	off: Side;
 	on: Side;
+	memory?: { off?: SideMemory; on?: SideMemory };
 	failures: string[];
 }
 
@@ -66,4 +72,19 @@ export function sideLine(name: string, side: Side, digits: number, threads = fal
 				.join(', ')}`
 		: '';
 	return `${name}: GPU ${ms(side.gpuMs)} ms, interval ${ms(side.intervalMs)} ms, CPU ${ms(side.cpuMs)} ms${busy}`;
+}
+
+/** A side's memory in one line, in mebibytes, from the engine's stats overlay. */
+export function memoryLine(name: string, memory: SideMemory | undefined): string {
+	if (!memory) return `${name} memory: none`;
+	const mib = (value: number | null) =>
+		value === null ? 'n/a' : `${(value / (1024 * 1024)).toFixed(1)} MiB`;
+	return [
+		`${name} memory:`,
+		`textures ${mib(memory.gpuTextureBytes)},`,
+		`buffers ${mib(memory.gpuBufferBytes)},`,
+		`wasm ${mib(memory.wasmBytes)},`,
+		`engine ${mib(memory.engineBytes)},`,
+		`total ${mib(memory.totalBytes)}`,
+	].join(' ');
 }
