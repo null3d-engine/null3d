@@ -38,6 +38,10 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		"Water's soft shores read the scene depth on every path: the `water-shores` picture on WebGPU, compatibility mode and WebGL2, in both reference sets, shows the pale band and foam where the water meets the sand and the island's base; without the depth copy the sheet draws its deep colour everywhere. That page is a test sheet; the first user on the branch is the splats add-on's depth mixing. D-202's addendum names M3-E4a for the case of depth beside textures",
 	'M3-E5':
 		'One file format for baked probe grids and light maps: `packages/engine/src/scene/baked-light.ts`, `assets.loadLightProbeGrid`, `assets.loadLightMap` and `assets.lightProbeGridFile`, with every fault named as E1434; the guide `docs/guides/baked-light-data.md`, a round-trip test and two fixtures; D-243',
+	'M3-E7':
+		'`fn lobe(input: LobeInput) -> vec3f` in `crates/null3d-shaders/src/material.rs` and `crates/null3d-shaders/wgsl/lit.wgsl`, called for the main light; `crates/null3d-shaders/tests/material.rs` builds a lobe on both paths and refuses a wrong signature; the car paint uses it; D-252',
+	'M3-B5':
+		"`examples/addons/car-paint/` makes the flakes with Deliot and Belcour's glint model: `paint.wgsl` counts the facets in the pixel footprint that reflect the main light, through the lobe hook; `crates/null3d-shaders/tests/material.rs` builds the shipped WGSL on both paths. The `car-paint` pictures and the cost per preset are owed to a quiet run (`NULL3D_PAINT_COST=1 bun run test:browser -- car-paint-cost.spec.ts`); D-253",
 	'M3-G4':
 		"`transmissionMap` and `thicknessMap`: `packages/engine/src/scene/resources.ts`, the shaders' thickness reads",
 	'M3-K1': '`scene.createView({ camera, rect })`: `packages/engine/src/scene/scene.ts`',
