@@ -421,6 +421,7 @@ The ways to reuse work:
 | --- | --- |
 | The WebAssembly files, the shader compiler and the shader modules | The `build` job's archive, `page-wasm`, through `.github/actions/archive`. A job that downloads it sets `NULL3D_REQUIRE_FRESH_SHADERS`, so a stale set fails the job instead of a slow build of it again. The build job keeps the WebAssembly files and the tools' modules in the Actions cache, under `bun tools/build-wasm.ts --cache-key`, so a run that changed no Rust source, flag or tool runs no cargo |
 | Rust builds | `Swatinem/rust-cache`, keyed by the workspace's `Cargo.toml` |
+| The type check | TypeScript's incremental record of each project, `target/typecheck`, which `docs-and-tools` restores from the newest run and saves after its check. TypeScript compares each file's text with the record, so a record of an older commit is safe. On the Mac the check took 9 s with the record of the same tree and 27 s without one |
 | Shader entries and module sets | `.github/actions/shaders` and the `shader-entries` jobs ([Builds](#builds)) |
 | A test that reads the whole shader set, and the workspace's Rust tests | A pass marker in the Actions cache, under a key of the files that the part reads |
 | The size check's base | The `size-base` cache, by commit |
