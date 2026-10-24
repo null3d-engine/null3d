@@ -1571,7 +1571,9 @@ jobs:
   real-browsers:
     # Safari on GitHub's macOS machines and Firefox on its Linux machines, through the same test
     # pages, each browser in shards of its own. The Enterprise plan runs up to 50 macOS jobs at once,
-    # and only Safari, which runs only on macOS, takes them. Firefox runs under a virtual display and draws
+    # and only Safari, which runs only on macOS, takes them: 48 shards and the prebuilt job's one.
+    # The benchmark workflow's 8 macOS shards run once a day and by hand, and a full run that meets
+    # one waits for machines rather than fails. Firefox runs under a virtual display and draws
     # WebGL2 with a software renderer. Neither browser gets a WebGPU adapter on these machines, so
     # a missing adapter is reported as a skip. The shards split the plan by each page's expected
     # time in Safari, and a unit test fails when a shard's pages would pass 10 minutes there.
@@ -1603,8 +1605,8 @@ jobs:
       fail-fast: false
       matrix:
         browser: [Safari, Firefox]
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41]
-        shards: [41]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48]
+        shards: [48]
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
