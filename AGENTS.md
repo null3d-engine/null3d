@@ -138,6 +138,11 @@ No reviewer reads a branch before it lands ([D-157](.dev/decisions/D-157-direct-
 
 36. A task that adds or changes a feature also brings the demos that show it in step, and makes them better where the feature allows it: the showcase, the comparison scenes and the basic demos, not only a new example. A person must be able to see the feature in a demo, with the pictures and references that the demo draws updated in the same change. The owner's words on 21 October 2026: "as we progress through m3 task list make sure to update and improve all demos accordingly, whether that be visually and/or code".
 
+39. Fix a fault rather than dropping what it blocks. A feature is never dropped or deferred because of a
+    fault that could be fixed. Either fix it, or write in the record why a fix is out of reach for this
+    milestone, naming what was tried. The temporal resolve was refused for a black captured frame that the
+    record itself narrowed to one hypothesis (owner, 24 October 2026).
+
 37. CI does each piece of work once, and only the work that its checks need. A job reuses what another job built, from an artifact or a cache, and never builds it again. A test builds only the inputs that its checks read. No job repeats a check that another job makes on the same inputs. Steps that do not depend on each other run in jobs or processes of their own, not one after another, and each uses every core. Every expensive step keeps its result in a cache, or records its pass, under a key of exactly the files that it reads. A wider key runs the step again for no reason, and a narrower key reuses a pass that no longer holds. A slow job is a sign to look for these faults, not a reason to raise its limit. In October 2026 one shard ran 11 minutes of unrelated tests after its own work. A test built 78% of all shaders to check six renders, and four jobs repeated another job's build ([D-218](.dev/decisions/D-218-efficient-ci-jobs.md)). Before you add or change a job, answer the questions in [Efficient jobs](.dev/pull-requests.md#efficient-jobs) and read a run's job and step times. The unit test `tools/lib/ci-workflow.test.ts` guards the parts that the workflow file shows.
 
 ## Performance work
