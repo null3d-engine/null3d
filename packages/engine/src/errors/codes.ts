@@ -168,7 +168,7 @@ const DOCS = {
 	E1215: {
 		title: 'Invalid custom WGSL',
 		cause:
-			'materials.shader(), post.addEffect() or post.set() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function or a vertex offset. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh. An effect declares fn effect, and a tone curve fn toneCurve.',
+			'materials.shader(), post.addEffect(), post.set() or scene.setSkyLayer() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function or a vertex offset. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh. An effect declares fn effect, a tone curve fn toneCurve, and a sky layer fn skyLayer.',
 		example:
 			'E1215: materials.shader() got WGSL as text, which the null3D Vite plugin did not compile.',
 		since: '0.1',
@@ -514,6 +514,14 @@ const DOCS = {
 			"An add-on from another developer loaded against a plugin interface that its declared range does not include, or the add-on declares no range of whole versions. An outside add-on declares the plugin interface versions that it works with, because it ships on its own schedule. The engine's own add-ons pin the engine version instead. The message names the add-on, the range it declares and this engine's plugin interface version.",
 		example:
 			'E1433: @acme/splats was built for plugin interface 1 to 2, and this page has plugin interface 3 (null3D 0.3.0).',
+		since: '0.3',
+	},
+	E1434: {
+		title: 'Baked light file not read',
+		cause:
+			"assets.loadLightProbeGrid() or assets.loadLightMap() downloaded a file that is not a baked light file that this engine reads. The file may not be JSON, or its format marker may be missing. Its version may not be the one that this engine reads, or its kind may not be the one that the call takes. A probe grid may have counts or spacing that a grid cannot take. Its coefficients may not hold 12 floats for each probe in the counts' product. A light map may have a width or height that a texture cannot take, or an encoding other than rgb8 or rgba16float. Its radiance or its direction may not hold the bytes that its size needs, which a cut-short file shows. The message names the fault.",
+		example:
+			'E1434: assets.loadLightProbeGrid() could not read https://example.com/light/grid.json: its version is 2, and this engine reads version 1.',
 		since: '0.3',
 	},
 	E1501: {

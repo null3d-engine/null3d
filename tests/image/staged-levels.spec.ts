@@ -85,6 +85,39 @@ for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
 		expectStaged(result);
 	});
 
+for (const gpu of ['webgpu', 'webgl2'] as const)
+	test(`staged-levels drop the stages that the camera never draws, on ${gpu}`, async ({ page }) => {
+		test.setTimeout(240_000);
+		/** The stage files that the page asked for. */
+		const asked = new Set<string>();
+		page.on('request', (request) => {
+			if (/\.m\d+\.lod\d+\.bin$/.test(request.url())) asked.add(request.url());
+		});
+		/** The stage files' answers, which wait for the coarse picture. */
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		await page.route(/\.m\d+\.lod\d+\.bin$/, async (route) => {
+			await gate;
+			await route.continue();
+		});
+		await page.goto(`staged-levels.html?gpu=${gpu}&far`);
+		await page.waitForFunction(() => (globalThis as { __stagedCoarse?: boolean }).__stagedCoarse);
+		release?.();
+		const far = await pageResult<StagedResult>(page, 180_000);
+		expect(far.failures).toEqual([]);
+		expect(far.expected).toBeGreaterThan(2);
+		// The stage after the file's own level always arrives. The level it brings never draws at
+		// this camera, so the loader drops the stage after it, and every finer one, without asking
+		// for their files.
+		expect(far.loaded).toEqual({ levels: 0, staged: true });
+		expect(far.levels).toBe(1);
+		expect(asked.size).toBe(1);
+		// The level that arrived never drew, so both pictures show the file's own level.
+		expect(differing(far.coarsePixels, far.finePixels)).toBeLessThan(0.001);
+	});
+
 test("staged-levels draws the file's own level first, and a level limit downloads no stage", async ({
 	page,
 }) => {

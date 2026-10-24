@@ -4,10 +4,10 @@
 // compiled result where its source was: WGSL for WebGPU, and GLSL ES 3.00 for WebGL2 with the
 // reflection that the WebGL2 backend binds by. WGSL with entry points is a whole shader. WGSL
 // without them holds a custom material's functions, such as `fn surface`, which the plugin builds
-// into every variant of the engine's standard material, or a custom effect's `fn effect` or tone
-// curve's `fn toneCurve`, which it builds into the effect template or the final pass. WGSL that
-// does not compile stops the
-// module with an error at the file, line and column of each problem.
+// into every variant of the engine's standard material, a custom effect's `fn effect` or tone
+// curve's `fn toneCurve`, which it builds into the effect template or the final pass, or a sky
+// layer's `fn skyLayer`, which it builds into the sky-layer template. WGSL that does not compile
+// stops the module with an error at the file, line and column of each problem.
 import { type ESTree, parseSync, Visitor } from 'vite';
 import {
 	type CompileResult,
@@ -15,6 +15,7 @@ import {
 	compileHere,
 	compileMaterial,
 	compileShader,
+	compileSkyLayer,
 	type EffectResult,
 	type MaterialResult,
 	type MaterialSource,
@@ -22,6 +23,7 @@ import {
 	type ShaderProblem,
 	type ShaderSource,
 	type ShaderVariantSpec,
+	type SkyLayerResult,
 } from './shader-compiler.ts';
 import type { CompiledWgsl, WgslPipeline } from './shader-types.ts';
 
@@ -191,6 +193,9 @@ function isMeshShader(source: string): boolean {
 /** The functions that a custom effect's or tone curve's WGSL declares for the engine to call. */
 const POST_FUNCTIONS: ReadonlySet<string> = new Set(['effect', 'toneCurve']);
 
+/** The functions that a sky layer's WGSL declares for the engine to call. */
+const SKY_LAYER_FUNCTIONS: ReadonlySet<string> = new Set(['skyLayer']);
+
 /** True when WGSL declares a function of `functions`, such as a custom material's `fn surface`. */
 function declaresFunction(source: string, functions: ReadonlySet<string>): boolean {
 	for (const match of blankComments(source).matchAll(FUNCTION))
@@ -242,7 +247,7 @@ function pipelinesOf(
 	if (entries.length === 0) {
 		return problem(
 			0,
-			`the WGSL has no entry point and no function of a custom material or effect. For a custom material, declare \`fn surface(input: SurfaceInput) -> Surface\`, \`fn vertexOffset(input: VertexInput) -> vec3f\`, or both. For an effect, declare \`fn effect(input: EffectInput) -> vec4f\`, and for a tone curve \`fn toneCurve(color: vec3f) -> vec3f\`. For a shader of your own, give it a \`@vertex\` and a \`@fragment\` entry point, or a \`@compute\` one. ${hint}`,
+			`the WGSL has no entry point and no function of a custom material, effect or sky layer. For a custom material, declare \`fn surface(input: SurfaceInput) -> Surface\`, \`fn vertexOffset(input: VertexInput) -> vec3f\`, or both. For an effect, declare \`fn effect(input: EffectInput) -> vec4f\`, for a tone curve \`fn toneCurve(color: vec3f) -> vec3f\`, and for a sky layer \`fn skyLayer(input: SkyLayerInput) -> SkyLayer\`. For a shader of your own, give it a \`@vertex\` and a \`@fragment\` entry point, or a \`@compute\` one. ${hint}`,
 		);
 	}
 	if (secondVertex) {
@@ -299,6 +304,7 @@ export type WgslCompile =
 type CompilePlan =
 	| { readonly kind: 'problem'; readonly problem: ShaderProblem }
 	| { readonly kind: 'effect' }
+	| { readonly kind: 'skyLayer' }
 	| { readonly kind: 'material'; readonly draw: boolean }
 	| {
 			readonly kind: 'shader';
@@ -309,12 +315,14 @@ type CompilePlan =
 
 /**
  * What a compile of a project's WGSL of `source` does. WGSL without entry points that declares a
- * post function is an effect or a tone curve, and one that declares a material function is a custom
- * material. WGSL with entry points is a whole shader, one that the engine's mesh calls or a draw
- * shader. `hint` ends the message about WGSL that is none of these.
+ * post function is an effect or a tone curve, one that declares `skyLayer` is a sky layer, and one
+ * that declares a material function is a custom material. WGSL with entry points is a whole
+ * shader, one that the engine's mesh calls or a draw shader. `hint` ends the message about WGSL
+ * that is none of these.
  */
 function planOf(path: string, source: string, hint: string): CompilePlan {
 	const noEntryPoints = entryPoints(source).length === 0;
+	if (noEntryPoints && declaresFunction(source, SKY_LAYER_FUNCTIONS)) return { kind: 'skyLayer' };
 	if (noEntryPoints && declaresFunction(source, POST_FUNCTIONS)) return { kind: 'effect' };
 	const draw = isDrawShader(source);
 	if (
@@ -356,6 +364,19 @@ function effectOutcome(result: EffectResult): WgslCompile {
 	};
 }
 
+/** A sky layer's compile as the result of compiling WGSL from a project. */
+function skyLayerOutcome(result: SkyLayerResult): WgslCompile {
+	// A sky layer builds for both GPU paths.
+	const builds = ['webgpu', 'webgl2'];
+	if (!result.ok) return { ok: false, problems: result.problems, builds };
+	return {
+		ok: true,
+		shader: { kind: 'skyLayer', variants: result.layer.variants },
+		warnings: result.warnings,
+		builds,
+	};
+}
+
 /** A custom material's compile as the result of compiling WGSL from a project. */
 function materialOutcome(result: MaterialResult, draw: boolean): WgslCompile {
 	// Custom materials build for both GPU paths.
@@ -386,6 +407,7 @@ export interface SyncShaderCompiler {
 	shader(shader: ShaderSource): CompileResult;
 	material(material: MaterialSource): MaterialResult;
 	effect(effect: MaterialSource): EffectResult;
+	skyLayer(layer: MaterialSource): SkyLayerResult;
 }
 
 /** Compiles on this thread, answering at once. */
@@ -393,6 +415,7 @@ export const compileNow: SyncShaderCompiler = {
 	shader: compileShader,
 	material: compileMaterial,
 	effect: compileEffect,
+	skyLayer: compileSkyLayer,
 };
 
 /**
@@ -412,6 +435,8 @@ export function compileWgslSync(
 			return { ok: false, problems: [plan.problem], builds: [] };
 		case 'effect':
 			return effectOutcome(compiler.effect({ path, source }));
+		case 'skyLayer':
+			return skyLayerOutcome(compiler.skyLayer({ path, source }));
 		case 'material':
 			return materialOutcome(compiler.material({ path, source }), plan.draw);
 		case 'shader':
@@ -441,6 +466,8 @@ export async function compileWgsl(
 			return { ok: false, problems: [plan.problem], builds: [] };
 		case 'effect':
 			return effectOutcome(await compiler.effect({ path, source }));
+		case 'skyLayer':
+			return skyLayerOutcome(await compiler.skyLayer({ path, source }));
 		case 'material':
 			return materialOutcome(await compiler.material({ path, source }), plan.draw);
 		case 'shader':

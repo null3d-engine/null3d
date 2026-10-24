@@ -52,3 +52,53 @@ How the data was produced: the first table from the job logs of run 40004372878;
 - The GPU check on the Mac (`bun run bench:gpu-check`) compared with the merge base with main, 9369b1380. It judged nothing, since the benchmark pages differ between the two commits. S4 drew faster at both presets, by 1.9% at Medium and 12.2% at High. S6 read +2.5% at Medium and +50.1% at High. But its baseline at High alone ran from 4.95 to 12.81 ms between rounds, a spread of 92%. No round took a quality step, so the render scale held, and that reading is noise between rounds.
 - The first frame that lets the scale drop, or turns the sharpening on, now makes the second step's pipeline and draws at the whole scale; the next frame draws the two steps. `tests/render_scale.rs` and `tests/sharpen.rs` check that frame.
 - `.dev/image-tests.md` tells how to time a change on CI's software GPU.
+
+## Addendum, 24 October 2026: the second step's cost on the cloud iPad
+
+Task M3-R19 asked for the second step's cost on the cloud iPad, per pass, against a pair of
+figures already held: 34.6 against 29.7 frames a second, and 22.56 against 27.56 ms of GPU time.
+Those figures could not be traced to a run file or a record, so this reading stands on its own.
+
+**Method.** The method is S5's benchmark page on null3D's WebGPU path, at `preset=high` with the
+quality governor on. It ran three times on BrowserStack Automate's iPad Pro 13 2025, in Safari
+26.6.1 with a display of 59 Hz, through BrowserStack Local. The page's result holds the frame's GPU
+time and each pass's GPU time, as `gpuPassMs`.
+
+**What the frame held.** At High the governor's floor is a render scale of 0.75, and the trace held
+that floor in every second of all three runs. So the two-step pass drew in every frame, and no run
+reached the 0.5 scale of the earlier pair. The frame's GPU median rose through the session:
+
+| Run | GPU ms per frame | Presented fps | Frame interval p95 / p99 |
+| --- | --- | --- | --- |
+| 1 | 23.12 | 30.06 | 37.4 / 39.6 ms |
+| 2 | 28.28 | 25.41 | 49.6 / 50.8 ms |
+| 3 | 39.31 | 20.64 | 62.4 / 97.7 ms |
+
+**Per pass.** The engine timed seven render passes and left no time between them, so each pass
+stands alone. The seventh is the frame's last pass, which draws the second step below the whole
+render scale.
+
+| Run | Pass 1 | 2 | 3 | 4 | 5 | 6 | 7, the last |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 0.67 | 1.15 | 0.68 | 2.32 | 1.47 | 1.65 | 20.52 |
+| 2 | 0.78 | 1.18 | 0.69 | 2.64 | 1.61 | 1.84 | 25.69 |
+| 3 | 0.92 | 1.66 | 0.94 | 3.42 | 2.00 | 2.37 | 34.92 |
+
+Medians in milliseconds per frame. The first three passes are the sun's shadow cascades. Passes 1
+to 6 cost 0.7 to 3.4 ms each and add up to 7.95 to 11.30 ms. The seventh costs 20.5 to 34.9 ms,
+which is 72 to 76% of the passes' medians added up and close to the whole frame's median.
+
+**What remains, written down as the price of the upscale.**
+
+Every other pass of the frame is a few milliseconds or less. The second step's pass holds the rest,
+and that is where the gap sits. This reading cannot divide that time between the upscale's shading
+and the wait that ends the frame. The last pass is the one whose completion the engine times as the
+frame's end. On a cloud session, work outside the page holds the GPU ([Device
+sessions](../devices.md#where-automate-differs-from-live)). The price is recorded as "the second
+step's pass, 20 to 35 ms at 0.75 scale on this cloud session". An iPad that is not streamed would
+be needed to split it. Nothing in this reading calls for a change to the pass.
+
+The three.js twin's three runs failed: each gave no result within its 95 s limit, after the KTX2
+loader began transcoding the scene's textures. So no fresh three.js side exists for the pair.
+
+The run is [the iPad's bench run](../tested-devices/ipad-pro-13-safari/20261024-081826-bench.md).

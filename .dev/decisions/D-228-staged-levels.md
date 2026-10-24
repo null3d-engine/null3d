@@ -1,8 +1,8 @@
 # D-228: Staged levels of detail, coarse first
 
-Status: proposed, for the owner's review. Built on the M3-L4 branch: whole levels download as stages, and the cluster patch groups' share of the layout is fixed but not yet read. Date: 23 October 2026. Task: M3-L4.
+Status: accepted. The owner approved the staged load and the automatic skip of a level that never draws on 24 October 2026. Built on the M3-L4 branch: whole levels download as stages, and the cluster patch groups' share of the layout is fixed but not yet read. Date: 23 October 2026. Task: M3-L4.
 
-Summary: A model's levels of detail can download apart from the model, so the coarsest level draws at once and each finer level replaces the triangles that the one before it drew as it arrives. The asset tool writes it with `--stages`: the file keeps the mesh's full vertex stream and its coarsest level, and each finer level goes into a file of its own beside it. Each node's extras name its stages, with the error of each level, as `NULL3D_stages`. The engine downloads them from the coarsest down and draws each as it arrives, without a new object: the copies that already draw the mesh refine in place. A loader option caps the levels that a page downloads, so a page whose camera never shows the finest level downloads less. One stage layout carries whole levels and, later, a cluster tree's patch groups.
+Summary: A model's levels of detail can download apart from the model, so the coarsest level draws at once and each finer level replaces the triangles that the one before it drew as it arrives. The asset tool writes it with `--stages`: the file keeps the mesh's full vertex stream and its coarsest level, and each finer level goes into a file of its own beside it. Each node's extras name its stages, with the error of each level, as `NULL3D_stages`. The engine downloads them from the coarsest down and draws each as it arrives, without a new object: the copies that already draw the mesh refine in place. A loader option caps the levels that a page downloads, and the engine drops a stage whose level the camera never picks, so a page whose camera never shows the finest level downloads less. One stage layout carries whole levels and, later, a cluster tree's patch groups.
 
 ## Question
 
@@ -77,3 +77,16 @@ How the data was produced: `bun packages/cli/src/assets/staged-fixture.ts`, whic
 - The Vite plugin's `assets` option passes `stages` too: it writes the stage files into the model's cache folder, lists them by reading `NULL3D_stages` back from the model, and serves and emits them beside it. So a project that imports an optimized model gets the same chain that a page loads by address.
 - Reader-facing docs: [Levels of detail](../../docs/concepts/lod.md), [The asset pipeline](../../docs/guides/assets-pipeline.md#levels-as-separate-downloads) and [Assets](../../docs/api/assets.md). The develop skill's quick reference shows `maxLevels`.
 - A commit that changes `NULL3D_stages` must change the engine's reader and the tool's writer together; the format's version word guards the pair.
+
+## Addendum, 24 October 2026: a stage that never draws costs no download
+
+The loader now skips a stage that the camera would never show, so a phone at Low does not download levels that it cannot pick.
+
+- The engine counts, for each mesh, the levels that the views picked. The count sits where the level is already picked. The GPU path counts copies in `gpu_driven/copies.rs`, and the camera view's culling output counts entries in `cpu_culled/cull.rs`. A bucket with at least one source marks its level. The counter reads each level's bucket once, and costs nothing while no loader waits (`StageWatches` in `crates/null3d-render/src/levels.rs`).
+- A level whose coarser neighbour was never picked cannot be picked either. Switch distances grow from level to level. So the loader fetches the stage after the file's own level at once. It holds each later stage until the level that the mesh draws now was picked at least once.
+- A warm-up of 120 frames decides a held stage. That is about two seconds at 60 frames a second, so a camera that starts far away can show the coarse level. When the warm-up passes with no pick, the loader drops that stage and every finer one. The switch point follows the camera and the preset, so it names no device (hard rule 14).
+- The warm-up counts only the frames that drew the mesh. A page may load a model long before it instantiates it. A frame with no source of the mesh restarts the warm-up rather than spending it. A page that never draws the model downloads no stage after the first.
+- The engine calls are `watchStageLevels(mesh)`, `stageLevelPicks(mesh)` and `stageFrames(mesh)`. The loader polls every 100 ms, which runs at load time only. No frame waits, and no frame allocates.
+- The browser test `staged-levels` takes `?far`, which stands the camera beyond every switch of the staged model. The far page asks for one stage file and keeps one level. It draws the same picture before and after that stage. The near page asks for every stage. The test runs on WebGPU and WebGL2, so both counting paths are checked.
+- The cost is that a page which reaches a hero object within the warm-up draws the level above it until the next stage lands. `maxLevels` stays as the exact limit for a page that knows its camera.
+

@@ -9,6 +9,7 @@ import { describe, expect, it } from 'bun:test';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { PRODUCTION_BUILD_PAGES, PRODUCTION_BUILD_TESTS } from '../../tests/lib/server.ts';
+import { HEARTBEAT_SECONDS } from '../../tests/pages/lib/runner-rules.ts';
 
 interface Step {
 	id?: string;
@@ -178,6 +179,21 @@ describe("CI's workflow", () => {
 		expect(gated).toEqual(others);
 	});
 
+	it('starts every job after the changes job, which waits on a push to a pull request', () => {
+		// A newer push in the wait cancels the run before any job but that one has started.
+		const waits = (name: string, seen = new Set<string>()): boolean =>
+			needsOf(jobs[name]).some(
+				(need) => need === 'changes' || (!seen.has(need) && waits(need, seen.add(need))),
+			);
+		const early = Object.keys(jobs).filter((name) => name !== 'changes' && !waits(name));
+		expect(early).toEqual([]);
+		const wait = jobNamed('changes').steps?.[0];
+		expect(wait?.if).toBe(
+			"github.event_name == 'pull_request' && github.event.action == 'synchronize'",
+		);
+		expect(wait?.run).toMatch(/^sleep \d+$/);
+	});
+
 	it("lets a job skip only on the changes job's answer that ci-passed allows", () => {
 		const step = jobNamed('ci-passed').steps?.find(({ name }) => name === 'Every job passed');
 		const gate = Object.fromEntries(
@@ -196,6 +212,7 @@ describe("CI's workflow", () => {
 		for (const [name, key] of [
 			['browser', 'shard'],
 			['browser-alone', 'shard'],
+			['browser-heavy', 'shard'],
 			['real-browsers', 'shard'],
 			['shader-entries', 'shard'],
 		] as const) {
@@ -208,10 +225,23 @@ describe("CI's workflow", () => {
 	});
 
 	it('gives each browser shard one weight', () => {
-		const weights = jobNamed('browser')
-			.steps?.map(({ env }) => env?.PWTEST_SHARD_WEIGHTS)
-			.find(Boolean);
-		expect(weights?.split(':').length).toBe((matrixOf('browser').shard as number[]).length);
+		for (const name of ['browser', 'browser-heavy']) {
+			const weights = jobNamed(name)
+				.steps?.map(({ env }) => env?.PWTEST_SHARD_WEIGHTS)
+				.find(Boolean);
+			expect(weights?.split(':').length, name).toBe((matrixOf(name).shard as number[]).length);
+		}
+	});
+
+	it('runs the heavy browser tests one at a time in a job of their own, which the shards leave out', () => {
+		const env = (workflow as { env?: Record<string, unknown> }).env ?? {};
+		expect(String(env.HEAVY_TESTS ?? '')).not.toBe('');
+		const run = (name: string) =>
+			(jobNamed(name).steps ?? []).find(({ run }) => run?.includes('bun run test:browser'))?.run ??
+			'';
+		expect(run('browser')).toMatch(/--grep-invert "[^"]*\$HEAVY_TESTS[^"]*"/);
+		expect(run('browser-heavy')).toContain('--grep "$HEAVY_TESTS"');
+		expect(run('browser-heavy')).toContain('--workers=1');
 	});
 
 	it("splits the benchmark pages' parity tests into shards that each run once", () => {
@@ -455,6 +485,17 @@ describe("CI's workflow", () => {
 
 	it('gives each download of the real-browser jobs a limit of its own and one more try', () => {
 		for (const name of ['real-browsers', 'real-browsers-prebuilt']) downloadsRetry(name);
+	});
+
+	it('caps how long a real-browser runner page may send nothing, at several heartbeats', () => {
+		for (const name of ['real-browsers', 'real-browsers-prebuilt']) {
+			const runs = (jobNamed(name).steps ?? []).filter(({ run }) =>
+				run?.includes('bun tests/real-browsers.ts'),
+			);
+			expect(runs, name).toHaveLength(1);
+			const cap = Number(runs[0]?.run?.match(/--quiet-cap (\d+)/)?.[1]);
+			expect(cap, name).toBeGreaterThanOrEqual(4 * HEARTBEAT_SECONDS);
+		}
 	});
 
 	function downloadsRetry(name: string): void {

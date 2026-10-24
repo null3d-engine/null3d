@@ -150,6 +150,36 @@ export interface Steady {
 }
 
 /**
+ * The samples with the bytes of each place that `into` names counted in the place it gives
+ * instead. The browser counts an object in the function that makes it, or in its caller where it
+ * inlines that function, so a callee's bytes move between the two places from run to run while
+ * their sum holds; counted as one place, they read the same whichever way the inlining fell.
+ */
+export function countIn(samples: readonly Sample[], into: ReadonlyMap<string, string>): Sample[] {
+	return samples.map((sample) => {
+		const places = new Map(sample.places);
+		for (const [from, to] of into) {
+			const moved = places.get(from);
+			if (!moved) continue;
+			places.delete(from);
+			const kept = places.get(to);
+			places.set(
+				to,
+				kept
+					? {
+							bytes: kept.bytes + moved.bytes,
+							burst: kept.burst + moved.burst,
+							callers: kept.largest >= moved.largest ? kept.callers : moved.callers,
+							largest: Math.max(kept.largest, moved.largest),
+						}
+					: moved,
+			);
+		}
+		return { ...sample, places };
+	});
+}
+
+/**
  * Each place's bytes per frame without its burst in the sample where it allocated least, and its
  * bytes per frame with it in the one where it allocated most. Allocation in every frame shows in
  * each sample. An event that happens once, such as a function that runs unoptimized for a moment,

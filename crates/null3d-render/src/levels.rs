@@ -632,3 +632,184 @@ mod tests {
         assert!(!levels.any());
     }
 }
+
+/// The meshes whose finer levels are still to download, and the levels that a view has picked since
+/// each watch began: how the loader decides whether a stage would ever draw.
+///
+/// A level whose neighbour above was never picked cannot be picked either, because switch distances
+/// grow from level to level. So a loader holds a stage until the level above it has been picked after
+/// a warm-up of frames, and drops the stage, and every finer one, when the warm-up passes with no
+/// pick. The device's name never enters the decision: only the frames that the renderer drew and the
+/// levels it picked.
+#[derive(Debug, Default)]
+pub struct StageWatches {
+    /// One watch per mesh, in the order that the watches began.
+    watches: Vec<StageWatch>,
+}
+
+/// One mesh's watch.
+#[derive(Clone, Copy, Debug)]
+struct StageWatch {
+    /// The base mesh's engine id.
+    mesh: u32,
+    /// One bit for each level picked since the watch began: bit 0 is the mesh itself.
+    picked: u32,
+    /// The frame that the watch began, in the frame input's own count.
+    since: u64,
+}
+
+impl StageWatches {
+    /// Watches `mesh` from `frame` on, in place of a watch that the mesh had.
+    pub fn watch(&mut self, mesh: u32, frame: u64) {
+        if let Some(watch) = self.watches.iter_mut().find(|watch| watch.mesh == mesh) {
+            watch.picked = 0;
+            watch.since = frame;
+        } else {
+            self.watches.push(StageWatch {
+                mesh,
+                picked: 0,
+                since: frame,
+            });
+        }
+    }
+
+    /// The levels picked since the mesh's watch began, one bit each, bit 0 for the mesh itself. 0
+    /// for a mesh that nothing watches.
+    pub fn picks(&self, mesh: u32) -> u32 {
+        self.watches
+            .iter()
+            .find(|watch| watch.mesh == mesh)
+            .map_or(0, |watch| watch.picked)
+    }
+
+    /// The frames drawn since the mesh's watch began, 0 for a mesh that nothing watches.
+    pub fn frames(&self, mesh: u32, frame: u64) -> u32 {
+        self.watches
+            .iter()
+            .find(|watch| watch.mesh == mesh)
+            .map_or(0, |watch| {
+                frame.saturating_sub(watch.since).min(u32::MAX as u64) as u32
+            })
+    }
+
+    /// Stops watching the meshes that `live` refuses: a removed mesh's watch would count nothing.
+    pub fn forget(&mut self, live: impl Fn(u32) -> bool) {
+        self.watches.retain(|watch| live(watch.mesh));
+    }
+
+    /// True while no mesh waits for a stage, so a frame with no loader pays nothing.
+    pub fn is_empty(&self) -> bool {
+        self.watches.is_empty()
+    }
+
+    /// Notes that a view placed at least one source in the bucket of `level` of `mesh`.
+    pub fn picked(&mut self, mesh: u32, level: usize) {
+        if let Some(watch) = self.watches.iter_mut().find(|watch| watch.mesh == mesh) {
+            watch.picked |= 1 << level;
+        }
+    }
+
+    /// Restarts the warm-up of each watch whose mesh `present` refuses. A page may load a model
+    /// before its scene draws it, so the frames that count toward a warm-up are the frames that
+    /// drew the mesh, and a page that never draws it never drops its stages.
+    pub fn hold(&mut self, frame: u64, present: impl Fn(u32) -> bool) {
+        for watch in &mut self.watches {
+            if !present(watch.mesh) {
+                watch.since = frame;
+            }
+        }
+    }
+
+    /// Notes the levels that a view placed at least one source in, from the number of entries in
+    /// each bucket of that view: `counted` gives a bucket key's entries. It reads one count for each
+    /// level of each watched mesh, so a frame with no watch pays nothing.
+    pub fn note(&mut self, levels: &Levels, counted: impl Fn(u32) -> u32) {
+        for watch in &mut self.watches {
+            let Some(set) = levels.of(watch.mesh) else {
+                continue;
+            };
+            for level in 0..set.len() {
+                if counted(level_key(watch.mesh, level)) > 0 {
+                    watch.picked |= 1 << level;
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod stage_watch_tests {
+    use super::*;
+
+    /// A set of three levels on the mesh with id 1.
+    fn levels() -> Levels {
+        let mut levels = Levels::default();
+        levels
+            .set(
+                1,
+                &[11, 12],
+                &[0.2, 0.5],
+                &[Switch::Error; 2],
+                &[0; 2],
+                0,
+                true,
+            )
+            .expect("three levels fit");
+        levels
+    }
+
+    #[test]
+    fn a_watch_counts_the_levels_a_view_put_a_source_in() {
+        let levels = levels();
+        let mut watches = StageWatches::default();
+        watches.watch(1, 100);
+        // The view's counts: the mesh itself and its coarsest level, nothing between.
+        let counted = |key: u32| match key_level(key) {
+            (1, 0) => 3,
+            (1, 2) => 7,
+            _ => 0,
+        };
+        watches.note(&levels, counted);
+        assert_eq!(watches.picks(1), 0b101);
+        assert_eq!(watches.picks(2), 0);
+        // The frames count from the watch's start.
+        assert_eq!(watches.frames(1, 340), 240);
+        assert_eq!(watches.frames(1, 50), 0);
+        assert_eq!(watches.frames(2, 340), 0);
+    }
+
+    #[test]
+    fn a_second_watch_clears_what_the_first_counted() {
+        let levels = levels();
+        let mut watches = StageWatches::default();
+        watches.watch(1, 0);
+        watches.note(&levels, |key| u32::from(key_level(key).1 == 1));
+        assert_eq!(watches.picks(1), 0b010);
+        watches.watch(1, 90);
+        assert_eq!(watches.picks(1), 0);
+        assert_eq!(watches.frames(1, 95), 5);
+        // A removed mesh's watch goes.
+        watches.forget(|mesh| mesh != 1);
+        assert_eq!(watches.frames(1, 95), 0);
+    }
+
+    #[test]
+    fn a_frame_that_draws_no_source_of_a_mesh_restarts_its_warm_up() {
+        let mut watches = StageWatches::default();
+        assert!(watches.is_empty());
+        watches.watch(1, 10);
+        watches.watch(2, 10);
+        // The mesh's bucket holds a source, which picked its base level.
+        watches.picked(1, 0);
+        assert_eq!(watches.picks(1), 1);
+        assert_eq!(watches.picks(3), 0);
+        // Mesh 2's source drew nothing this frame, so its warm-up starts again; mesh 1's goes on.
+        watches.hold(50, |mesh| {
+            assert!(mesh == 1 || mesh == 2, "only watched meshes are asked");
+            mesh == 1
+        });
+        assert_eq!(watches.frames(1, 60), 50);
+        assert_eq!(watches.frames(2, 60), 10);
+        assert_eq!(watches.picks(1), 1);
+    }
+}

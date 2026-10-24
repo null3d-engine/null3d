@@ -199,8 +199,10 @@ mod ids {
     pub const AO: u32 = BLOOM + 1;
     /// The uniform buffer of the background's values.
     pub const BACKGROUND: u32 = AO + 1;
+    /// The uniform buffer of a sky layer's values.
+    pub const BACKGROUND_LAYER: u32 = BACKGROUND + 1;
     /// The uniform buffer of the custom effects' blocks.
-    pub const EFFECTS: u32 = BACKGROUND + 1;
+    pub const EFFECTS: u32 = BACKGROUND_LAYER + 1;
     /// The uniform buffer of depth of field's steps.
     pub const DOF: u32 = EFFECTS + 1;
     /// The uniform buffer of the motion debug view's step.
@@ -411,9 +413,11 @@ mod ids {
     pub const AO_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
     /// The background's bind group, after ambient occlusion's.
     pub const BACKGROUND_GROUP: u32 = AO_GROUPS + AO_STEPS as u32;
+    /// The bind group of a sky layer's values, after the background's.
+    pub const BACKGROUND_LAYER_GROUP: u32 = BACKGROUND_GROUP + 1;
     /// The bind group of each custom effect, and of each group of joined effects, after the
-    /// background's.
-    pub const EFFECT_GROUPS: u32 = BACKGROUND_GROUP + 1;
+    /// layer's.
+    pub const EFFECT_GROUPS: u32 = BACKGROUND_LAYER_GROUP + 1;
     /// The bind group of each step of depth of field, after the effects'.
     pub const DOF_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
@@ -842,6 +846,8 @@ impl CpuCulledRenderer {
                 group: ids::BACKGROUND_GROUP,
                 blank_cube: ids::BLANK_ENVIRONMENT,
                 sampler: ids::ENVIRONMENT_SAMPLER,
+                layer_buffer: ids::BACKGROUND_LAYER,
+                layer_group: ids::BACKGROUND_LAYER_GROUP,
             }),
             particles: ParticlePass::new(ParticleIds {
                 buffers: ids::PARTICLE_BUFFERS,
@@ -2833,7 +2839,17 @@ impl FrameBuilder for CpuCulledRenderer {
                 None,
                 None,
             )
-            .map_err(|_| out_of_memory(&self.scattering))
+            .map_err(|_| out_of_memory(&self.scattering))?;
+        // The staged levels' watches read the levels that the camera's view picked.
+        if self.settings.watches_stages() {
+            let cull = self.culling.culled_in(input.frame, ViewId::CAMERA);
+            self.layout.note_stage_picks(
+                cull,
+                self.settings.stage_watches_mut(),
+                u64::from(input.frame),
+            );
+        }
+        Ok(())
     }
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {

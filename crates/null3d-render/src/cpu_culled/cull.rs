@@ -270,6 +270,18 @@ impl Culling {
         &self.views[self.slot(view)].culls[(frame & 1) as usize]
     }
 
+    /// A view's culling output for a frame, or `None` when that frame did not cull or the view has
+    /// no output.
+    pub(super) fn culled_in(&self, frame: u32, view: ViewId) -> Option<&BucketedCull> {
+        if self.culled != frame {
+            return None;
+        }
+        let slot = view.index().checked_sub(self.first.index())?;
+        self.views
+            .get(slot)
+            .map(|view| &view.culls[(frame & 1) as usize])
+    }
+
     /// The sources inside the views' frustums that blockers hid in a frame, or 0 for a frame that
     /// did not cull.
     pub(super) fn occluded_entries(&self, frame: u32) -> u32 {

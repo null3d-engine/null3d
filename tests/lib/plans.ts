@@ -1447,6 +1447,66 @@ export function twoStepPlan(): PlanItem<Check>[] {
 	];
 }
 
+/**
+ * The splats add-on's streaming on each GPU path: a cloud cut into chunks that the draw takes as
+ * they arrive, whose count the preset's budget caps. The page reports the splats that draw against
+ * the budget, the frame rate, the first-frame time and the bytes that the page downloaded. The
+ * capabilities page comes first, so a device without WebGPU skips that page.
+ */
+export function splatsPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...(['webgpu', 'webgl2'] as const).map((tier) =>
+			pageItem(
+				`splats-stream-${tier}`,
+				'splats-stream',
+				{ kind: 'probe', tier },
+				{ switches: [`gpu=${tier}`, 'splats=400000', 'seconds=3'], timeoutSeconds: 180 },
+			),
+		),
+	];
+}
+
+/** The showcase demos that the demos plan measures. */
+const MEASURED_DEMOS = ['skyway', 'night-town'] as const;
+
+/**
+ * Showcase demos on each GPU path, with the quality governor on: the frame rate, the display's
+ * rate, the first-frame time and the bytes that the page downloaded. Each demo runs at the preset
+ * that the engine chooses and again at the High preset, since the chosen preset and High answer
+ * different questions. The capabilities page comes first, so a device without WebGPU skips that page.
+ */
+export function demosPlan(): PlanItem<Check>[] {
+	// The engine's own preset answers a showcase's target; High shows what the preset above costs.
+	const presets = [
+		{ name: 'chosen', preset: undefined },
+		{ name: 'high', preset: 'high' },
+	] as const;
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...MEASURED_DEMOS.flatMap((demo) =>
+			(['webgpu', 'webgl2'] as const).flatMap((tier) =>
+				presets.map(({ name, preset }) =>
+					pageItem(
+						`demo-${demo}-${tier}-${name}`,
+						'demo-frames',
+						{ kind: 'probe', tier },
+						{
+							switches: [
+								`gpu=${tier}`,
+								`demo=${demo}`,
+								'seconds=5',
+								...(preset === undefined ? [] : [`preset=${preset}`]),
+							],
+							timeoutSeconds: 300,
+						},
+					),
+				),
+			),
+		),
+	];
+}
+
 /** The GPU paths of the sky plan's pages, with the tier each draws on. */
 const SKY_PATHS = [
 	['webgpu', 'webgpu'],
@@ -1975,6 +2035,8 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'cluster-cost': clusterCostPlan,
 	'two-step': twoStepPlan,
 	sky: skyPlan,
+	demos: demosPlan,
+	splats: splatsPlan,
 	reflection: reflectionPlan,
 	occlusion: occlusionPlan,
 	'gpu-occlusion': gpuOcclusionPlan,

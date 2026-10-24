@@ -34,6 +34,7 @@ mod position;
 mod problem;
 mod scan;
 mod shards;
+mod sky_layer;
 mod textures;
 mod typescript;
 mod uniforms;
@@ -68,6 +69,7 @@ pub use pieces::{GlslPiece, PieceOutput, WgslPiece};
 pub use position::Position;
 pub use problem::{BuildError, Problem};
 pub use shards::{Part, Shard, ShardPlan, entry_costs};
+pub use sky_layer::{SkyLayerOutput, SkyLayerSource, SkyLayerTemplates};
 pub use textures::Texture;
 pub use typescript::ModuleSet;
 pub use uniforms::Uniform;
@@ -207,7 +209,9 @@ pub fn build_with_cache_reporting(
         &mut stats,
     )?;
     for ((shader_name, shader), variants) in manifest.shaders.iter().zip(entries) {
-        if shader.custom_effects {
+        // A template that an add-on completes writes no module of its own: only the add-on's build
+        // takes its variants.
+        if shader.custom_effects || shader.sky_layers {
             continue;
         }
         output.shaders.insert(shader_name.clone(), variants);
