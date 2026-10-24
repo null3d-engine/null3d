@@ -241,8 +241,20 @@ export interface CompiledEffect<
 	/** The textures that the WGSL declares as `var name: texture_2d<f32>;` or
 	 * `var name: texture_2d_array<f32>;`, in order. */
 	readonly textures: readonly CompiledTexture<Textures>[];
-	/** The effect template's variants with the WGSL, by name. */
+	/**
+	 * The effect template's variants with the WGSL, by name. A module's value holds none: they load
+	 * on first use, through `builds`.
+	 */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
+	/**
+	 * Imports an effect's builds for one GPU path, which load on first use. The engine imports them
+	 * when it first uses the effect. The set is 0, as an effect's build takes no permutation bit
+	 * that picks a set.
+	 */
+	readonly builds?: (
+		target: 'wgsl' | 'glsl',
+		set: number,
+	) => Promise<Readonly<Record<string, ShaderVariant>>>;
 	/** The pieces that the engine joins into its hosts: none for an effect with textures. */
 	readonly pieces: EffectPieces;
 }
@@ -255,8 +267,20 @@ export interface CompiledEffect<
 export interface CompiledToneCurve {
 	/** Marks the WGSL of a custom tone curve. */
 	readonly kind: 'toneCurve';
-	/** The final pass's variants with the WGSL, by name. */
+	/**
+	 * The final pass's variants with the WGSL, by name. A module's value holds none: they load on
+	 * first use, through `builds`.
+	 */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
+	/**
+	 * Imports a tone curve's builds for one GPU path, which load on first use. The engine imports
+	 * them when it first uses the curve. The set is 0, as a curve's build takes no permutation bit
+	 * that picks a set.
+	 */
+	readonly builds?: (
+		target: 'wgsl' | 'glsl',
+		set: number,
+	) => Promise<Readonly<Record<string, ShaderVariant>>>;
 	/** The pieces that the engine folds into the final pass. */
 	readonly pieces: EffectPieces;
 }

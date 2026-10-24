@@ -205,7 +205,7 @@ describe('errors of an engine thread after the start', () => {
 	it('keep an engine error whole, and give a bare coded message its fix and link', () => {
 		const inWorker = new EngineError('E1406', 'the KTX2 transcoder did not download.');
 		expect(failureError('the render worker', inWorker.message).message).toBe(inWorker.message);
-		const bare = 'E1424: the builds of a custom material did not load: 404.';
+		const bare = 'E1424: the builds of a custom shader did not load: 404.';
 		const error = failureError('the render worker', bare);
 		expect(error.code).toBe('E1424');
 		expect(error.message).toBe(`${bare} ${ERROR_FIXES.E1424} See ${DOCS}E1424.md`);

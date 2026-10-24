@@ -33,7 +33,7 @@ import { hexValue, invalidColor } from '../math/hex';
 import { type ColorInput, writeLinearColor } from './color';
 import type { CoreMemory } from './memory';
 import { type CompiledWgsl, textureSlots } from './resources';
-import type { ShaderTemplates } from './shader-templates';
+import type { BuildsLoader, ShaderTemplates } from './shader-templates';
 import type { Texture } from './textures';
 import type { TextureValues, UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
 
@@ -141,14 +141,26 @@ export interface CompiledEffect extends CompiledWgsl {
 	readonly bloom: boolean;
 	readonly joins: boolean;
 	readonly textures: readonly { readonly name: string; readonly offset: number }[];
+	/**
+	 * The effect template's variants with the WGSL. A module's value leaves them out: they load on
+	 * first use, through `builds`.
+	 */
 	readonly variants: ShaderVariants;
+	/** Imports the effect's builds for one GPU path, which load on first use. */
+	readonly builds?: BuildsLoader;
 	readonly pieces: EffectPieces;
 }
 
 /** A custom tone curve's WGSL as the plugin compiles it. */
 interface CompiledToneCurve extends CompiledWgsl {
 	readonly kind: 'toneCurve';
+	/**
+	 * The final pass's variants with the curve. A module's value leaves them out: they load on
+	 * first use, through `builds`.
+	 */
 	readonly variants: ShaderVariants;
+	/** Imports the curve's builds for one GPU path, which load on first use. */
+	readonly builds?: BuildsLoader;
 	readonly pieces: EffectPieces;
 }
 
@@ -403,16 +415,23 @@ export class EffectChain {
 					: `${call}() got ${kindOf(wgsl)} for toneMapping, which takes a built-in curve's name or WGSL that declares fn toneCurve.`,
 			);
 		const curve = wgsl as CompiledToneCurve;
-		const template = this.templates.of(curve, () => [
-			{
-				kind: 'final',
-				variants: curve.variants,
-				locations: [],
-				textures: 0,
-				pieces: curve.pieces,
-			},
-			{ kind: 'finalBloom', variants: curve.variants, locations: [], textures: 0 },
-		]);
+		const later = firstUse(curve.builds);
+		const template = this.templates.of(
+			curve,
+			() => [
+				{
+					kind: 'final',
+					variants: curve.variants,
+					locations: [],
+					textures: 0,
+					pieces: curve.pieces,
+					...later,
+				},
+				{ kind: 'finalBloom', variants: curve.variants, locations: [], textures: 0, ...later },
+			],
+			undefined,
+			curve.builds,
+		);
 		core.check(core.glue.setToneCurve(template), call, undefined, true);
 		this.curve = { template, sizes: this.sizesOf(curve, curve.pieces) };
 		this.sendJoins(call);
@@ -535,20 +554,34 @@ export function writeEffectBlocks(
 }
 
 /**
+ * The fields that make a custom shader import its builds on first use, or none when the module
+ * holds the builds itself.
+ */
+function firstUse(builds: BuildsLoader | undefined): { builds?: boolean; buildsSet?: number } {
+	return builds === undefined ? {} : { builds: true, buildsSet: 0 };
+}
+
+/**
  * The template of a compiled effect, which an effect and a full-screen pass share: the effect
  * template's variants with the WGSL, and its textures in a second bind group.
  */
 export function effectTemplate(templates: ShaderTemplates, compiled: CompiledEffect): number {
-	return templates.of(compiled, () => [
-		{
-			kind: 'effect',
-			bloom: compiled.bloom,
-			variants: compiled.variants,
-			locations: [],
-			textures: compiled.textures.length,
-			pieces: compiled.pieces,
-		},
-	]);
+	return templates.of(
+		compiled,
+		() => [
+			{
+				kind: 'effect',
+				bloom: compiled.bloom,
+				variants: compiled.variants,
+				locations: [],
+				textures: compiled.textures.length,
+				pieces: compiled.pieces,
+				...firstUse(compiled.builds),
+			},
+		],
+		undefined,
+		compiled.builds,
+	);
 }
 
 /**
