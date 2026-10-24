@@ -1,4 +1,4 @@
-# D-244: An offset allocator for GPU sub-ranges, and why the engine keeps today's placement
+# D-247: An offset allocator for GPU sub-ranges, and why the engine keeps today's placement
 
 Status: decided by the helper of M3-R4 on 24 October 2026, for the owner's review. Built: the offset allocator in `crates/null3d-render/src/offset_alloc.rs`, its unit tests, a comparison test against today's mesh placement, and a gated cost page for the Mac's GPU. Date: 2026-10-24. Task: M3-R4. Owed: the Mac GPU frame figure; the cost page is ready and the run did not get a quiet machine.
 
