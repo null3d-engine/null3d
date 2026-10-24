@@ -282,7 +282,7 @@ Each call sets both options, and an option left out takes its default. The call 
 
 `setLightProbeGrid` lights the scene with a grid of irradiance probes, so light that changes with a surface's place, bounced from colored walls or sky, reaches it. Each probe holds L1 spherical harmonics of the light that arrives at its point. Standard materials read the grid per pixel, with three filtered reads each. Its light takes the place of the environment's diffuse light, and the environment keeps its reflections.
 
-A grid baked elsewhere passes in through `LightProbeGridData`, which packs its coefficients into the texture. Each probe holds four RGB coefficients, 12 numbers: L0, then L1 along y, z and x.
+A grid baked elsewhere passes in through `LightProbeGridData`, which packs its coefficients into the texture. Each probe holds four RGB coefficients, 12 numbers: L0, then L1 along y, z and x. A grid that a tool outside the engine baked can also come from a file: [`assets.loadLightProbeGrid`](assets.md#baked-light) reads the [baked light file](../guides/baked-light-data.md) format and gives the options below, with the texture already made. `assets.lightProbeGridFile` writes that format from a grid that `bakeProbes` made.
 
 ```ts
 const grid = new LightProbeGridData(
