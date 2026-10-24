@@ -1040,12 +1040,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		modes: ALL_MODES,
 	},
 	// The same files where the device keeps to one family of compressed formats, or has none, as
-	// ?compression= makes it: BC7 as on a desktop GPU, ASTC alone, and RGBA8. Every format draws the
-	// image of the device's own formats, so each borrows its references.
+	// ?compression= makes it: BC7 as on a desktop GPU, ASTC alone, ETC2 alone as on a device with
+	// only that family, and RGBA8. Every format draws the image of the device's own formats, so
+	// each borrows its references.
 	...(
 		[
 			['ktx2-bc7', 'bc'],
 			['ktx2-astc', 'astc'],
+			['ktx2-etc2', 'etc2'],
 			['ktx2-rgba8', 'none'],
 		] as const
 	).map(([name, family]) => ({
