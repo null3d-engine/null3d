@@ -928,6 +928,67 @@ describe('the governor in the frame loop', () => {
 		run(1000, BUDGET, 1000);
 		expect(run(2 * BUDGET, BUDGET, 700)).toBe(FULL_SCALE);
 	});
+
+	describe('frames that a slow page holds', () => {
+		/** The length of a frame on CI's software GPU below the whole scale, in ms (D-237). */
+		const HELD = 3300;
+
+		it('judges a frame that held the drawing thread, and takes a step down', () => {
+			const { run } = loop();
+			// The first frame starts the grace. The frame behind the next gap is a frame of its length,
+			// and fills the second that a step needs.
+			expect(run(HELD, HELD, HELD + GRACE_MS + 1)).toBe(FULL_SCALE - SCALE_STEP);
+		});
+
+		it('starts its windows again after a pause as long, when no frame was drawing', () => {
+			const { run } = loop();
+			run(BUDGET, BUDGET / 2, GRACE_MS + 1000);
+			// The GPU finished each frame at once, so the page paused between the frames.
+			expect(run(HELD, BUDGET, GRACE_MS + 4 * HELD)).toBe(FULL_SCALE);
+		});
+
+		it('does not take a step down for a single held frame under a second', () => {
+			const { run } = loop();
+			// A frame of 600 ms fills three of the four windows of the second that a step judges.
+			run(600, 600, 600);
+			expect(run(BUDGET, BUDGET / 2, 2 * DROP_AFTER_MS)).toBe(FULL_SCALE);
+		});
+
+		it("takes back the step at the first held frame after it, as on CI's software GPU", () => {
+			// The resize page: 2.2 frames a second at the whole scale, which the governor judges, and
+			// 0.3 a second on the two-step pass, where each frame is held for three seconds (D-237).
+			const { run } = loop();
+			expect(run(450, 450, GRACE_MS + 3 * DROP_AFTER_MS)).toBe(FULL_SCALE - SCALE_STEP);
+			expect(run(HELD, HELD, HELD + WINDOW_MS)).toBe(FULL_SCALE);
+		});
+
+		it("judges a held frame after a step before the trial's time runs out", () => {
+			const { run } = loop();
+			expect(run(450, 450, GRACE_MS + 3 * DROP_AFTER_MS)).toBe(FULL_SCALE - SCALE_STEP);
+			// The first frame after the step took 900 ms and came well within `LOWER_TRIAL_MS`, so only
+			// the held frame can undo the step: no second could be judged, and the trial's bound is far.
+			expect(run(900, 900, 900 + WINDOW_MS)).toBe(FULL_SCALE);
+		});
+
+		it('keeps the whole scale on a software device after a step below it failed', () => {
+			const { run, resolution } = loop();
+			resolution.governor.setSoftware(true);
+			expect(run(450, 450, GRACE_MS + 3 * DROP_AFTER_MS)).toBe(FULL_SCALE - SCALE_STEP);
+			// The first held frame at the new setting fails the trial, and the scale comes back.
+			expect(run(900, 900, 900 + WINDOW_MS)).toBe(FULL_SCALE);
+			// However long the slow frames last, the software device takes no step below the whole
+			// scale again.
+			for (let k = 0; k < 40; k++) expect(run(HELD, HELD, HELD + WINDOW_MS)).toBe(FULL_SCALE);
+		});
+
+		it('steps below the whole scale on a software device while the steps pay', () => {
+			const { run, resolution } = loop();
+			resolution.governor.setSoftware(true);
+			expect(run(450, 450, GRACE_MS + 3 * DROP_AFTER_MS)).toBe(FULL_SCALE - SCALE_STEP);
+			// The step held: the frames at 450 ms came no slower than the second before it.
+			expect(run(450, 450, 3 * DROP_AFTER_MS)).toBe(FULL_SCALE - 2 * SCALE_STEP);
+		});
+	});
 });
 
 /** The seconds of a trace, written as a run's per-second rates. */
