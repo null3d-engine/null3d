@@ -5,7 +5,7 @@
 // forwards to a local port.
 import { createServer } from 'node:net';
 
-/** @import { HeapProfile } from './heap-profile.js' */
+/** @import { CallFrame, HeapProfile } from './heap-profile.js' */
 
 /**
  * A page or worker that the browser reports.
@@ -428,6 +428,55 @@ export async function pageResultOf(devtools, sessionId, timeoutMs, pollMs = 1000
 		await sleep(pollMs);
 	}
 	throw new Error('the page published no result in time');
+}
+
+/**
+ * Samples the call stacks of each worker for `ms` milliseconds, and gives the call frames that ran,
+ * by worker. The heap profiler lists the places that allocated; this lists the functions that ran,
+ * so a check can tell whether it saw the code that it means to measure. `interval` is the
+ * microseconds between samples.
+ *
+ * @param {DevTools} devtools
+ * @param {ReadonlyMap<string, string>} sessions A debugging session for each worker, by name.
+ * @param {number} ms
+ * @param {number} [interval]
+ * @returns {Promise<Map<string, CallFrame[]>>}
+ */
+export async function sampledFrames(devtools, sessions, ms, interval = 500) {
+	for (const [name, sessionId] of sessions) {
+		await within(
+			devtools.send('Profiler.enable', {}, sessionId),
+			STEP_MS,
+			`enabling the CPU profiler in the ${name}`,
+		);
+		await within(
+			devtools.send('Profiler.setSamplingInterval', { interval }, sessionId),
+			STEP_MS,
+			`setting the CPU profiler's interval in the ${name}`,
+		);
+		await within(
+			devtools.send('Profiler.start', {}, sessionId),
+			STEP_MS,
+			`starting a CPU profile in the ${name}`,
+		);
+	}
+	await sleep(ms);
+	/** @type {Map<string, CallFrame[]>} */
+	const frames = new Map();
+	for (const [name, sessionId] of sessions) {
+		const { profile } = /** @type {{ profile: { nodes: { callFrame: CallFrame }[] } }} */ (
+			await within(
+				devtools.send('Profiler.stop', {}, sessionId),
+				STEP_MS,
+				`stopping the CPU profile in the ${name}`,
+			)
+		);
+		frames.set(
+			name,
+			profile.nodes.map((node) => node.callFrame),
+		);
+	}
+	return frames;
 }
 
 /**

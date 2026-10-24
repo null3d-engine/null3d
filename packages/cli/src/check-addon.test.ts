@@ -17,6 +17,7 @@ import {
 	pageOf,
 	parseCheckAddonArgs,
 	publicApiProblems,
+	ranAddonCode,
 	readAddon,
 	run,
 	sizeProblems,
@@ -488,15 +489,42 @@ describe('nameProfile', () => {
 	});
 });
 
+describe('ranAddonCode', () => {
+	/** A namer that leaves each frame as it was recorded. */
+	const asRecorded = { name: (frame: CallFrame) => frame };
+
+	it('sees the add-on code that ran, whichever worker ran it', () => {
+		const frames: CallFrame[] = [
+			{ functionName: 'draw', url: 'http://page/packages/engine/src/render/loop.ts' },
+			{ functionName: 'trail', url: 'http://page/work/addon/src/index.ts' },
+			{ functionName: 'then', url: '' },
+		];
+		expect(ranAddonCode(frames, asRecorded, { folder: '/work/addon', name: '@acme/addon' })).toBe(
+			true,
+		);
+	});
+
+	it('sees none when the page ran no code of the add-on', () => {
+		const frames: CallFrame[] = [
+			{ functionName: 'draw', url: 'http://page/packages/engine/src/render/loop.ts' },
+			{ functionName: 'then', url: '' },
+		];
+		expect(ranAddonCode(frames, asRecorded, { folder: '/work/addon', name: '@acme/addon' })).toBe(
+			false,
+		);
+	});
+});
+
 describe('allocationOutcome', () => {
 	it('prints the bytes per frame of the add-on code on each preset', () => {
 		const outcome = allocationOutcome(
 			[
-				{ preset: 'low', addonBytes: 0, pageBytes: 1536, places: [] },
+				{ preset: 'low', addonBytes: 0, pageBytes: 1536, addonRan: true, places: [] },
 				{
 					preset: 'medium',
 					addonBytes: 12,
 					pageBytes: 2048,
+					addonRan: true,
 					places: [{ worker: 'sketch-worker', place: 'onUpdate addon/sketch.ts', perFrame: 12 }],
 				},
 			],
@@ -516,7 +544,7 @@ describe('allocationOutcome', () => {
 	it('shows kilobytes for the figures above one', () => {
 		expect(
 			allocationOutcome(
-				[{ preset: 'high', addonBytes: 2560, pageBytes: 4096, places: [] }],
+				[{ preset: 'high', addonBytes: 2560, pageBytes: 4096, addonRan: true, places: [] }],
 				'Chrome 1',
 			).text,
 		).toBe("allocation per preset: high 2.5 KB per frame in the add-on's own code, on Chrome 1");

@@ -12,7 +12,15 @@ import { brotliCompressSync, gzipSync } from 'node:zlib';
 import { readArguments, UsageError } from './args.js';
 import { measurePage } from './bench.js';
 import { WEBGPU_DEVELOPER_FEATURES } from './browser.js';
-import { attachWorkers, DevTools, freePort, HeapSampler, pagesAt, sleep } from './devtools.js';
+import {
+	attachWorkers,
+	DevTools,
+	freePort,
+	HeapSampler,
+	pagesAt,
+	sampledFrames,
+	sleep,
+} from './devtools.js';
 import { placeName, profilePlaces, steadyPlaces, totalSize } from './heap-profile.js';
 import { ENGINE_GLOBAL, holdPath, holdResult, switchedPath } from './page.js';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from './protocol.js';
@@ -812,6 +820,13 @@ const STALL_SECONDS = 60;
 /** How many places of the add-on's own code a result names. */
 const SHOWN_PLACES = 8;
 
+/**
+ * Milliseconds that a CPU profile of the workers runs. The heap profile lists only the places that
+ * allocated; this profile lists the functions that ran, so the gate can tell whether it saw the
+ * add-on's own code at all.
+ */
+const CPU_PROFILE_MS = 1000;
+
 /** The global where the gate counts a page's animation frames. */
 const FRAME_COUNTER = '__null3dAddonFrames';
 
@@ -824,6 +839,7 @@ const ENGINE_TIMEOUT_MS = 60_000;
  * @typedef {object} AllocationFigures
  * @property {number} pageBytes Bytes per frame in the page's threads.
  * @property {number} addonBytes Bytes per frame in the add-on's own code.
+ * @property {boolean} addonRan Whether the workers ran any of the add-on's own code.
  * @property {{ worker: string, place: string, perFrame: number }[]} places The places of the
  *   add-on's own code that allocated, largest first.
  */
@@ -919,6 +935,23 @@ export function nameProfile(node, names, addon, into) {
 }
 
 /**
+ * Whether any of the frames that the workers ran comes from the add-on's own code. A page that runs
+ * none of it is the wrong page to measure, whatever its profile holds.
+ *
+ * @param {readonly CallFrame[]} frames
+ * @param {Namer} names
+ * @param {Addon} addon
+ * @returns {boolean}
+ */
+export function ranAddonCode(frames, names, addon) {
+	for (const frame of frames) {
+		const path = sourcePathOf(names.name(frame));
+		if (path !== undefined && belongsToAddon(path, addon)) return true;
+	}
+	return false;
+}
+
+/**
  * Waits until a page's frame counter reaches `target`, and throws when it stands still for a while,
  * as on a page whose engine failed.
  *
@@ -985,6 +1018,8 @@ async function sampleAllocation({ devtools, browserPage, url, names, addon }) {
 	const { workers } = await attachWorkers(devtools, target.targetId, SAMPLED_WORKERS);
 	await sleep(ALLOCATION_WARMUP_SECONDS * 1000);
 	await reachFrames(framesSoFar, ALLOCATION_WARMUP_FRAMES);
+	const ran = await sampledFrames(devtools, workers, CPU_PROFILE_MS);
+	const addonRan = [...ran.values()].some((frames) => ranAddonCode(frames, names, addon));
 	const sampler = new HeapSampler(devtools, workers);
 	await sampler.enable();
 	/** @type {Map<string, Sample[]>} */
@@ -1025,6 +1060,7 @@ async function sampleAllocation({ devtools, browserPage, url, names, addon }) {
 	return {
 		addonBytes: places.reduce((sum, place) => sum + place.perFrame, 0),
 		pageBytes: [...bytes.values()].reduce((sum, size) => sum + size, 0) / frames,
+		addonRan,
 		places,
 	};
 }
@@ -1115,6 +1151,11 @@ export async function allocationGate(runner, { page, folder, name }, port, timeo
 				await context.close();
 			}
 		}
+		if (!runs.some((run) => run.addonRan))
+			return {
+				status: 'FAIL',
+				text: `allocation: the page ran none of the add-on's own code on any preset, so the gate measured other code. Make the page use the add-on, and check that its files come from the add-on's folder or its installed package`,
+			};
 		return allocationOutcome(runs, runner.browserName);
 	} catch (error) {
 		return {
