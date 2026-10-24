@@ -424,6 +424,12 @@ describe("CI's workflow", () => {
 		expect(missing).toEqual([]);
 	});
 
+	it('makes git give up on a stalled transfer, so a checkout tries its fetch again', () => {
+		const env = (workflow as { env?: Record<string, unknown> }).env ?? {};
+		expect(Number(env.GIT_HTTP_LOW_SPEED_LIMIT)).toBeGreaterThan(0);
+		expect(Number(env.GIT_HTTP_LOW_SPEED_TIME)).toBeGreaterThan(0);
+	});
+
 	it('builds the city in the load pages job, which every job that downloads the city waits for', () => {
 		const cityMode = (job: Job) =>
 			(job.steps ?? []).find(({ uses }) => uses === './.github/actions/city')?.with?.mode;
