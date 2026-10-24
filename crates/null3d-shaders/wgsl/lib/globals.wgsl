@@ -145,7 +145,8 @@ struct ProbeGrid {
 /// then the values of a material that lets light through, which only the builds that let light
 /// through read, then the clear coat and sheen of a layered material, then the values of a
 /// material that lets light through a thin surface, then the scatter distances of the subsurface
-/// blur, then the thin film's values and the anisotropy's. Colors are linear.
+/// blur, then the thin film's values and the anisotropy's, then the light map's transform. Colors
+/// are linear.
 struct MaterialRow {
     color: vec4f,
     emissive: vec4f,
@@ -157,7 +158,7 @@ struct MaterialRow {
     more_maps: vec4f,
     specular: vec4f,
     /// The transmission, the thickness of the volume in the mesh's own units, the index of
-    /// refraction, and a spare.
+    /// refraction, and the layer of the light map's direction map, which is negative without one.
     transmission: vec4f,
     /// The color that white light takes after it travels the attenuation distance through the
     /// volume, and that distance, 0 for a volume that absorbs nothing.
@@ -181,6 +182,9 @@ struct MaterialRow {
     /// for iridescence's and the anisotropy's, 2 for the transmission and the thickness maps'), and
     /// a spare.
     anisotropy: vec4f,
+    /// The scale of a light map's texture coordinates along u and v, then their offset along u
+    /// and v. The identity leaves the coordinates as the mesh gives them.
+    light_map_uv: vec4f,
 }
 
 /// The values of a material that lets light through: its row's `transmission` and `attenuation`.

@@ -79,6 +79,9 @@ Put the catcher a little above the surface it lies on, so its shadows show over 
 | `displacementBias` | A number | 0 | How far the displacement map moves every vertex, added to its height's share |
 | `aoMapIntensity` | 0 to 1 | 1 | How much the occlusion map darkens ambient light |
 | `lightMapIntensity` | 0 or more | 1 | The factor of the light map's light |
+| `lightMapOffset` | Two numbers | `[0, 0]` | Where the light map's texture coordinates start. It is fixed when the material is created |
+| `lightMapRepeat` | Two numbers | `[1, 1]` | How the light map's texture coordinates stretch. It is fixed when the material is created |
+| `lightMapDecode` | `srgb` or `rgbm` | `srgb` | How the engine reads the light map's texels. `rgbm` decodes Needle's light maps. It is fixed when the material is created |
 | `ior` | 1 or more | 1.5 | The index of refraction of the non-metallic part. It sets how much light the surface reflects head on |
 | `specularIntensity` | 0 to 1 | 1 | The strength of the non-metallic part's specular reflection, at every angle |
 | `specularColor` | A [color](#color), or linear components of 0 or more | White | Tints the non-metallic part's specular reflection head on |
@@ -431,6 +434,7 @@ const brick = materials.standard({
 | `aoMap` | Standard | R, linear | Darkens ambient light, by `aoMapIntensity` |
 | `emissiveMap` | Standard | RGB, sRGB | Multiplies `emissive` times `emissiveIntensity` |
 | `lightMap` | Standard | RGB | Adds baked light to the ambient light, times `lightMapIntensity` |
+| `lightMapDirection` | Standard with `lightMap` | RGB, linear | The direction of the light at each texel of a directional light map, which bends the light with the normal. It is fixed when the material is created |
 | `specularIntensityMap` | Standard | A, linear | Its alpha multiplies `specularIntensity` |
 | `specularColorMap` | Standard | RGB, sRGB | Multiplies `specularColor` |
 | `diffuseTransmissionMap` | Standard with `diffuseTransmission` | A, linear | Its alpha multiplies `diffuseTransmission` |
@@ -445,6 +449,8 @@ A material with `diffuseTransmission` takes the two diffuse transmission maps in
 A material with `transmission` may take `transmissionMap` and `thicknessMap` in the places of the specular maps, and then takes no specular maps. Development builds throw E1217 for a material that asks for both families, and for the two maps without `transmission`.
 
 The maps of a material are fixed when you create it. A mesh needs texture coordinates to show them, and a mesh without them draws the material without its maps. A map reads the set of coordinates that its texture's `uvSet` names. Light maps usually use the second set, so load them with `uvSet: 1`. A mesh without a second set gives its first set to such a map.
+
+A light map adds baked light to the ambient light. A bake often places its light map on each mesh with its own scale and offset, which `lightMapOffset` and `lightMapRepeat` give; the other maps keep their coordinates. A directional light map also stores the light's direction at each texel: give its `lightMapDirection` and the material's normal map bends the baked light, so relief faces the light of the bake and turns away from it. `assets.loadLightMap` reads a directional map from a [baked light file](../guides/baked-light-data.md). A material made from a model for Needle's viewer takes that model's light maps with their RGBM decode.
 
 A normal map takes its frame from the mesh's tangents when the mesh has them, as `geometry.fromArrays` with `computeTangents` makes them. Otherwise the shader finds the frame from how the positions and the coordinates change between pixels, as three.js does.
 
