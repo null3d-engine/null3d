@@ -288,11 +288,16 @@ export interface CompiledToneCurve {
 /**
  * A sky layer from a project's modules, which `scene.setSkyLayer` draws over the background: WGSL
  * that declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer`, built into every variant of the
- * engine's sky-layer template.
+ * engine's sky-layer template and of the shader that fills a sky map's cube faces.
  */
 export interface CompiledSkyLayer {
 	/** Marks the WGSL of a sky layer. */
 	readonly kind: 'skyLayer';
 	/** The sky-layer template's variants with the WGSL, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
+	/**
+	 * The sky-map shader's variants with the WGSL, by name: the draws that fill the cube faces of
+	 * the sky's environment map, which make its reflections and its diffuse light.
+	 */
+	readonly map: Readonly<Record<string, ShaderVariant>>;
 }

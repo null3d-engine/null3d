@@ -1,14 +1,17 @@
 # D-242: Sky layers through a template that an add-on completes
 
-Status: decided by the helper of M3-E10 on 24 October 2026, for the owner's review. Built: the
-template, the compiler, both GPU paths, `scene.setSkyLayer` and the aurora example add-on. Date:
-2026-10-24. Task: M3-E10.
+Status: decided by the helper of M3-E10 on 24 October 2026, for the owner's review, and widened by
+the owner's ruling of 25 October 2026 (addendum). Built: the template, the compiler, both GPU paths,
+`scene.setSkyLayer`, the layer in the sky's environment map and in the diffuse light that the scene
+takes from it, and the aurora example add-on. Date: 2026-10-24, widened 2026-10-25. Task: M3-E10.
 
 Summary: A sky layer is one WGSL function, `fn skyLayer(input: SkyLayerInput) -> SkyLayer`, which
-the shader compiler joins to the engine's sky-layer template. The engine draws it as a box at the
+the shader compiler joins to the engine's sky-layer templates. The engine draws it as a box at the
 far plane right after the background, in the background's place and depth state, with the frame's
-group and one block of the core sky's values. `scene.setSkyLayer` installs it, and the layer's
-pipeline takes a template of the page's own, as a custom effect's does.
+group and one block of the core sky's values, and builds the same function into the shader that
+fills the sky map's cube faces, so reflections show the layer and the diffuse light that the map
+gives the scene carries it. `scene.setSkyLayer` installs it, and the layer's pipeline takes a
+template of the page's own, as a custom effect's does.
 
 ## Question
 
@@ -63,10 +66,10 @@ custom effects already follow.
   and the share of the sun that the layer hides. A layer declares no uniforms, textures or
   bindings of its own, so it cannot read a picture or a value that the page changes after it is
   installed. A layer that needs those asks for uniforms in a later hook.
-- The sky's environment map and its CPU diffuse light stay the core sky's alone: the map's
-  generator draws the sky with its own shader per cube face, and the light is a CPU model of the
-  analytic air. A layer therefore adds no light to the scene, and its task line says so. M3-F11
-  lights the scene from clouds, and it draws them in the same map (see the addendum of 25 October).
+- The sky's environment map holds the layer, and so does the diffuse light that the scene takes
+  from the map: the layer's WGSL is built into the map's shader, and a small pass sums the map onto
+  the nine light coefficients that the engine reads back once a fill. The owner's ruling of 25
+  October 2026 widened the record to both places, and the addendum holds the build and its costs.
 - The aurora example add-on in `examples/addons/aurora/` is the first user, with the `aurora` demo
   and its image test on every GPU tier. `docs/api/scene.md` and `docs/api/features.md` record the
   call and drop the hook from the list that waits for a declaration.
@@ -75,68 +78,95 @@ custom effects already follow.
 
 ## Addendum, 25 October 2026: the environment map and the CPU sky light
 
-Status: narrowed by the coordinator on 25 October 2026, with the owner reviewing it on the morning of
-26 October. The owner may reverse the narrowing in one line. This addendum records a narrowing, not
-the design that the record first carried. The cost of the wider line is in "The options" below.
+Status: reversed by the owner on 25 October 2026, before it was reviewed, and built the same day.
+The narrowing that this addendum first recorded is kept below, because its measurements are the
+reason the reversal costs what it does. The owner also made the reversal a rule: where options
+differ in how the result looks, the one that looks better is chosen, and effort and schedule never
+decide against it ([hard rule 40](../../AGENTS.md#hard-rules)).
+
+### The narrowing, and why the owner reversed it
 
 The task first asked the hook to draw into the background, the environment map and the CPU sky
-light. The build reaches the first place alone. The narrowed task asks for the background and the
-sun's dimming, and says that a layer lights nothing. M3-F11 is the place that lights the scene from
-clouds, because it is the engine's own tier and sets the map's refresh step and the CPU light itself.
+light. The build reached the first place alone, and this addendum first narrowed the task to the
+background and the sun's dimming, on the argument that the CPU light had no sound way to run an
+add-on's WGSL and the map cost a day and lit reflections alone. The owner's ruling of 25 October:
+a scene's sky is seen in two places as well as on the screen, and a layer that shows in only one of
+them shows a different sky in each. A lake under an aurora would hold a stale sky, and the ground
+under the aurora would stay lit as if the aurora were not there. Both places are built.
 
-### The CPU sky light
+### Look
 
-The engine cannot draw an add-on's WGSL into it. The light is a Rust port of the analytic sky's
-shader math, `crates/null3d-render/src/sky_light.rs`. It samples that model over a cube and projects
-it onto nine spherical-harmonic coefficients. A layer is GPU WGSL that the page's build makes. The
-CPU has no way to run it.
+The wider line looks better wherever a scene shows its sky more than once. Under the aurora demo's
+first fill the ice held the moon and the stars and no curtain, and the snow stood in a dim ambient
+light of the sketch's own that no measure of the sky gave it. With the layer in the map, the ice
+mirrors the curtains at the sky's own sharpness, and the ice and the snow take the aurora's green
+from above, so the demo carries no light of its own for it. The cost is met within the frame
+budget by taking it per change rather than per frame (below), which is a cheaper technique of the
+same look, not a smaller look.
 
-| Option | Verdict |
+### How the layer reaches the map
+
+The layer's one WGSL function is built a second time, into the shader that fills a sky map's cube
+faces (`environment.wgsl`, marked `sky_layer_maps` in the manifest). Its `fs_sky` composites the
+layer over the analytic sky in each sampled direction, and its `fs_panorama` composites it over the
+panorama that the physical sky draws, so a map of either sky kind holds the layer. The generator
+draws those texels with the page's own pipelines, which it builds at the map's first fill with the
+layer; the layer's values arrive in the stage's command, as the core sky's cloud settings do.
+
+The engine cannot tell how fast a layer moves, because its animation lives inside its WGSL. So the
+layer declares `refresh`, the seconds between the map's captures of it, defaulting to one second;
+0 marks a layer that stands still, whose map then fills only when the sky or the layer's values
+change. A fill costs what a map's refresh always cost, spread over the frames, so a layer's look
+costs by how often it changes and never by the frame rate.
+
+### How the layer reaches the CPU sky light
+
+The light is measured from the map rather than modelled from the layer. At a fill's last stage a
+new fragment, `fs_feedback`, sums the map's chain of levels onto the nine spherical harmonics
+coefficients of its diffuse light, in three.js's order and scale, on the same grid and with the same
+solid angles that the CPU's own projection of the core sky uses (`crates/null3d-render/
+src/sky_light.rs`). It draws nine texels of 32-bit words into an `RGBA32UI` target, which the frame
+copies into a buffer of a ring that the core made, and the engine's existing asynchronous read
+(`Op::ReadBuffer`, the one GPU picking uses) lands the coefficients in engine memory. The core then
+takes them as the map's diffuse light, in place of the CPU model's.
+
+Because the coefficients come from the texels the reflections read, the two places hold one sky by
+construction: no second implementation of the layer exists, the add-on writes nothing for it, and a
+layer of any shape lights the scene. Until the first capture lands, which is a frame or two after
+the map's levels, the map keeps the CPU model's own coefficients, so no frame loses its light and
+no frame flashes dark.
+
+### The cost
+
+| Measure | Cost |
 | --- | --- |
-| A: the add-on also ships a CPU copy of its layer, which the render worker calls | Rejected. It needs a WASM ABI in the hook, and it is far more than the task's two helper-weeks |
-| B: the engine reads the map's faces back and projects them on the CPU | Rejected. A readback stalls the render thread at each fill |
-| C: the add-on supplies its own spherical harmonics as data | Rejected here. It is a different, smaller hook. It does not run the layer's WGSL |
-| D: drop the clause. The CPU diffuse sky light stays the core sky's | Chosen on 25 October 2026 |
+| A layer's build | One more build of `environment.wgsl` with the layer, at the page's build, beside the box's build |
+| A map fill with a layer | Nine texels of a projection over a 32-texel face of the chain: a few thousand cube samples, on the GPU, once a fill |
+| The read back | 256 bytes copied and mapped asynchronously, once a fill, a frame or two before the light follows |
+| A frame | Nothing: the projection and the read belong to the fill |
+| A still layer | One fill, when the layer or the sky changes |
+| A moving layer | One fill each `refresh` seconds |
 
-### The environment map
+The GPU projection mirrors the CPU's basis and solid angle in WGSL, as the engine's sky model is
+already mirrored between `null3d::atmosphere` and `sky_light.rs`. The two grids are the same, so a
+map without a layer and the CPU model agree; the mirror sphere and the rough sphere of the
+`sky-layer-light` page check both places on every GPU tier.
 
-The map can hold a layer, but the result lights reflections alone. Its diffuse ambient light comes
-from the CPU model, so option D above also blocks the diffuse part. Two more faults make the map
-expensive now:
+### The map's light and a layer that never arrives
 
-- The engine's environment sky shader is one fixed pipeline, `crates/null3d-shaders/wgsl/
-  environment.wgsl`, whose `fs_sky` draws three.js's sky per cube face. A layer is page WGSL. To
-  join it, the map's sky draw must become a template per page, take the layer's block, and bind it,
-  as the background layer does. That is a second build of every layer's shader.
-- A map fills again only past a visible step: the sun turns half a degree, a color drifts by a
-  fiftieth, or the clouds drift a tenth of a cell (`crates/null3d-render/src/sky_maps.rs`). The
-  engine knows those steps because it owns the settings. A layer's animation lives inside its WGSL,
-  and its only values are opacity and the hidden sun. The engine cannot tell how fast the layer
-  moves, so it would either capture the whole cube in every frame or light the scene with a stale
-  layer. A sound build needs a refresh step or a `static` promise from the add-on, which is a new
-  field in the hook.
-
-Estimate for a sound build: one to one and a half helper-days, with the new field and its docs, on
-both GPU paths. The first user, the aurora, changes little across the sky. Its light in reflections
-alone would hardly show.
-
-### The options and the cost of the wider line
-
-| Option | Verdict |
-| --- | --- |
-| A: build the environment map now, and drop the CPU light | Rejected. It costs one to one and a half helper-days, and it lights reflections alone. Its first user would hardly show |
-| B: build both places | Rejected. The CPU light has no sound way to run a layer's WGSL at all |
-| C: narrow the task to the background and the sun | Chosen on 25 October 2026, with the owner reviewing it on 26 October |
-
-If the owner reverses the narrowing, the cost is one to one and a half helper-days for the
-environment map, plus the refresh-step field, and it still lights reflections alone. The CPU light
-would need a new hook shape, which this record describes under "The CPU sky light".
+A map fills with the layer only once the page's shader has reached the thread that draws. If it has
+not when a fill starts, the map draws without the layer and its light capture finds no layer, so
+both places lack it together rather than one of them; the next fill that any change starts brings
+it in. The page sends a layer's shader when the sketch installs it, so a fill in the same frame
+normally has it.
 
 ### The task line
 
-"H8, sky layers: an add-on draws over the background and dims the sun, so other developers can
-build volumetric clouds behind the core's cloud settings. A layer lights nothing: the sky's
-environment map and its CPU light stay the core sky's (D-242, narrowed on 25 October 2026)."
+"H8, sky layers: an add-on draws over the background and dims the sun, and the layer reaches the
+sky's environment map and the diffuse light that the scene takes from it, so reflections show it and
+it lights the ground it stands over. A moving layer declares how often its map captures it (D-242,
+reversed on 25 October 2026)."
 
-M3-F11 stays the place that lights the scene from clouds. It is the engine's own tier, so it sets
-the map's refresh step and the CPU light itself.
+M3-F11 stays the place that draws the engine's own clouds into the same map and light. It is the
+engine's own tier, so it sets the map's refresh step and the CPU light itself; a layer's presence
+does not change how it works.
