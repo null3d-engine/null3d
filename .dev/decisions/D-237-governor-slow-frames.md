@@ -69,7 +69,9 @@ Rule 1 lands only if the completed frames' busy time tells a slow frame from a p
 - The trap page (`tests/pages/governor-trap.ts`, `tests/image/governor-trap.spec.ts`): a light scene whose canvas the page tunes until its whole scale draws over the target rate. It runs in every thread mode, on both GPU paths of a software renderer. The governor must step below the whole scale once, judge the slow frames after it, and return to the whole scale without another step down.
 
   All ten runs passed on the Mac's software renderer, in 5.7 minutes. The canvas tuned to 2560 by 1440 pixels. There the whole scale drew 4.5 to 9.9 frames a second, or 101 to 223 ms a frame. The governor stepped about 3 s after it came on. The first frame after the step took 1.25 to 2.42 s, so each trial read a held frame rather than a judged second. The frame counts agree: the return came two or three sketch frames after the step. No run stepped below 0.95, and none changed the scale again in the 16 s that followed.
-- The governor's stress test (`tests/pages/governor.ts`): the render scale may change direction no more than twice in the last seconds of its hold. A setting that holds must not swing back and forth, while the walk down is one direction however many steps it takes.
+- The governor's stress test (`tests/pages/governor.ts`): the render scale may change direction no more than twice in the last seconds of its hold. A setting that holds must not swing back and forth.
+
+  The first version of the check counted every change of the render scale. The hold walks the scale down one step after another, so a governor that behaved read as flapping, and the check failed it. A monotone walk is not a flap: only a change of direction is. The record keeps the correction. A check that calls a settled walk a fault would push the next reader to weaken a governor that works.
 
   Both GPU paths passed on the Mac in a quiet slot, in 2.2 minutes. The hold settled the render scale at 0.55 and changed it no further in the last 15 seconds. The frames held 90% of 60 frames a second in 14 of those seconds on WebGPU and in all 15 on WebGL2.
 
