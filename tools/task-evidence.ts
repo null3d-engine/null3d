@@ -59,7 +59,7 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-E1':
 		"Splats draw through `scene.addFeatureInstances` (`packages/engine/src/scene/feature-instances.ts`); the `splats`, `splats-budget` and `splats-gltf` pictures on both paths; the draw's size in `tools/lib/size-report.ts`",
 	'M3-F6':
-		"Video textures: `engine.registerVideo` and `textures.fromVideo`, held by `tests/pages/video-texture.ts`, which passes on both GPU paths in Chrome on the Mac, on the software renderer, and in Safari 26.6.2 and Firefox 158 — a 512 by 288 frame uploads 577 KiB against the Low preset\'s 2 MiB budget, upright, within two steps of a data texture; the page\'s video support loads at its first call; the guide `guides/video-textures` and the mapping entry",
+		"Video textures: `engine.registerVideo` and `textures.fromVideo`, held by `tests/pages/video-texture.ts`, which passes on both GPU paths in Chrome on the Mac, on the software renderer, and in Safari 26.6.2 and Firefox 158 — a 512 by 288 frame uploads 577 KiB against the Low preset's 2 MiB budget, upright, within two steps of a data texture; the page's video support loads at its first call; the guide `guides/video-textures` and the mapping entry",
 	'M3-V1':
 		"Four real devices measured, one session each: `.dev/tested-devices.md` with its nine run files holds Creek's and the forest demo's frames, GPU time per pass, triangles and memory at fixed presets and paths, tree generation timed in a worker, and the splats at a quarter count on the iPad; D-241's addendum turns them into the budgets the later vegetation tasks take. The Creek-on-WebGPU stall on an Apple device is in `.dev/driver-bugs.md`",
 	'M3-R4':

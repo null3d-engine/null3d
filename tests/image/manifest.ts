@@ -2629,6 +2629,28 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/terrain-sketch.ts',
 		hold: 1,
 	},
+	// Each built-in vegetation species: three of its variants, grown from the species record and a
+	// fixed seed, in a row on flat ground. The cards carry no atlas yet, so the picture shows the
+	// crown's shape, its branches and where its cards sit.
+	...[
+		'broadleaf',
+		'conifer',
+		'shrub',
+		'fern',
+		'meadow-grass',
+		'oak',
+		'beech',
+		'birch',
+		'willow',
+		'alder',
+		'hosta',
+		'sedge',
+		'rush',
+	].map((species) => ({
+		name: `vegetation-${species}`,
+		sketch: `tests/pages/sketches/vegetation-sketch.ts?species=${species}`,
+		hold: 1,
+	})),
 	// Impostors of the impostors add-on: cards far from the world's origin, each blending the three
 	// atlas views nearest its direction to the eye and lit by the sun from the normal the surface
 	// atlas stores, and a merged row of a plain, a turned and a mirrored panel, which draws only

@@ -120,6 +120,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 	},
 	// The surface function lives in a .wgsl file, which the pack compiles into a module of its own.
 	terrain: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	vegetation: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
 	// Its tone curves and outline passes compile from .wgsl files into modules of their own.
 	'three-compat': {
 		compile: true,
