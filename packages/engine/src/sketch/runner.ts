@@ -487,6 +487,9 @@ export class SketchRunner {
 		// The page's own setting, which is not one of the preset's: it keeps the copies that bring
 		// each texture's map back after the GPU is lost.
 		glue.setTextureOption(TEXTURE_OPTION_KEEP_COPIES, sketch.quality.keepCopies === true ? 1 : 0);
+		// A device that draws on the CPU keeps the whole render scale once a step below it failed:
+		// its two-step upscale costs about what the smaller scene saves (D-237).
+		this.governor.setSoftware(device.softwareRenderer);
 		this.governorLoop =
 			holdSeconds === undefined
 				? new GovernorLoop(

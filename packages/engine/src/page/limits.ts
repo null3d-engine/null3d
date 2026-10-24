@@ -19,6 +19,7 @@ import {
 } from '../generated/gpu';
 import type { QualitySettings } from '../quality/presets';
 import type { Tier } from '../render/renderer';
+import { softwareRenderer } from '../shared/software';
 import type {
 	CompressionFamily,
 	DepthMode,
@@ -53,12 +54,21 @@ export interface DeviceReport {
 		features: string[];
 		transientAttachments: boolean;
 		directDraws: boolean;
+		/** The adapter's reported names, which tell a software renderer (D-174, D-237). */
+		adapterInfo?: {
+			vendor: string;
+			architecture: string;
+			device: string;
+			description: string;
+		} | null;
 	};
 	webgl2: {
 		extensions: Record<string, boolean>;
 		maxTextureSize: number | null;
 		maxRenderbufferSize: number | null;
 		maxViewportDims: [width: number, height: number] | null;
+		/** The renderer that the browser reports, which tells a software renderer (D-237). */
+		renderer?: string | null;
 		sharedMemoryUploads: {
 			bufferSubData: boolean;
 			texSubImage2D: boolean;
@@ -109,6 +119,11 @@ export interface CoreDevice {
 	 * its indirect draws, so the core culls on the CPU and draws each bucket directly.
 	 */
 	directDraws: boolean;
+	/**
+	 * True when the device's reported names say that the browser draws on the CPU, which keeps the
+	 * whole render scale once a step below it failed (D-237).
+	 */
+	softwareRenderer: boolean;
 	/** The anti-aliasing mode's code in the core. */
 	antialias: number;
 	/**
@@ -427,6 +442,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		directDraws:
 			tier !== 'webgl2' &&
 			(options.direct === 'on' || (options.direct === 'auto' && report.webgpu.directDraws)),
+		softwareRenderer: softwareRenderer(report),
 		antialias: ANTIALIAS_CODES[options.antialias],
 		effectsSceneColor: effects.sceneColor,
 		effectsAntialias: ANTIALIAS_CODES[effects.antialias],
