@@ -578,12 +578,13 @@ export function checksPlan({ shaders = 'all' }: PlanSettings = {}): PlanItem<Che
 		pageItem('mip-levels', 'mip-levels', { kind: 'mip-levels' }),
 		// A video on the page as a texture in the sketch: its frames arrive within the upload
 		// budget, a paused video uploads nothing, and the frame's colours are the page's colours.
+		// The Low preset sets the strictest upload budget that the engine promises.
 		...TIERS.map((tier) =>
 			pageItem(
 				`video-texture-${tier}`,
 				'video-texture',
 				{ kind: 'video-texture', tier },
-				{ switches: [`gpu=${tier}`], timeoutSeconds: 120 },
+				{ switches: [`gpu=${tier}`, 'preset=low'], timeoutSeconds: 120 },
 			),
 		),
 		...(['webgpu', 'compat', 'webgl2'] as const).map((path) =>
