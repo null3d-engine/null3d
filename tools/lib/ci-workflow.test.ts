@@ -491,4 +491,28 @@ describe("CI's workflow", () => {
 				);
 		}
 	});
+	it('leaves the image references that a job does not read out of its checkout', () => {
+		// The references are most of a checkout. These jobs read every set, as the reference check
+		// does, or check out history, which a sparse checkout would leave without its files.
+		const whole = new Set([
+			'changes',
+			'commits',
+			'docs-and-tools',
+			'generated-branch',
+			'size-base',
+			'wasm-checks',
+		]);
+		const references = 'tests/image/references';
+		for (const [name, job] of Object.entries(jobs)) {
+			const checkout = (job.steps ?? []).find(({ uses }) => uses?.startsWith('actions/checkout@'));
+			if (!checkout || whole.has(name)) continue;
+			const sparse = String(checkout.with?.['sparse-checkout'] ?? '');
+			expect(sparse, name).toContain(`!/${references}/`);
+			// The browser tests read the software GPU's set, and real browsers the real GPU's.
+			if (name.startsWith('browser') || name === 'showcase' || name === 'skill-sketches')
+				expect(sparse, name).not.toContain(`!/${references}/chromium-swiftshader/`);
+			if (name === 'real-browsers')
+				expect(sparse, name).not.toContain(`!/${references}/chrome-real-gpu/`);
+		}
+	});
 });
