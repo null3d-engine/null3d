@@ -137,25 +137,33 @@ export function releaseVersion(output: string): string | null {
 /** The version that M1's release must be. */
 export const GATE_VERSION = '0.1.0';
 
-/**
- * The workflows that must pass on the gate commit, each with the events whose runs count. Main's
- * own CI run after the merge runs every job, and so does a run started by hand (D-99). A run of a
- * pull request tested other code: GitHub's merge of it into an older main. Any run of the
- * benchmarks counts.
- */
-export const GATE_WORKFLOWS: readonly { name: string; events?: readonly string[] }[] = [
-	{ name: 'CI', events: ['push', 'workflow_dispatch'] },
-	{ name: 'Benchmarks' },
-];
-
 /** One workflow run of a commit, as `gh run list --json` gives it. */
 export interface WorkflowRun {
 	databaseId: number;
 	workflowName: string;
 	event: string;
+	headBranch: string;
 	status: string;
 	conclusion: string;
 }
+
+/**
+ * The workflows that must pass on the gate commit, each with the runs that count. Main's own CI run
+ * after the merge runs every job, and so does a run started by hand (D-99). A push to a milestone
+ * branch runs only the quick checks (D-248), and a run of a pull request tested other code:
+ * GitHub's merge of it into an older main. Any run of the benchmarks counts.
+ */
+export const GATE_WORKFLOWS: readonly {
+	name: string;
+	counts?: (run: WorkflowRun) => boolean;
+}[] = [
+	{
+		name: 'CI',
+		counts: ({ event, headBranch }) =>
+			event === 'workflow_dispatch' || (event === 'push' && headBranch === 'main'),
+	},
+	{ name: 'Benchmarks' },
+];
 
 /** One job of a workflow run, as `gh run view --json jobs` gives it. */
 export interface WorkflowJob {
@@ -165,17 +173,14 @@ export interface WorkflowJob {
 }
 
 /**
- * The newest run of a workflow whose event counts, or none. gh lists the newest run first, and a
- * workflow with no events counts a run of any event.
+ * The newest run of a workflow that counts, or none. gh lists the newest run first, and a workflow
+ * with no rule counts any run.
  */
 export function countedRun(
 	runs: readonly WorkflowRun[],
-	{ name, events }: { name: string; events?: readonly string[] },
+	{ name, counts }: (typeof GATE_WORKFLOWS)[number],
 ): WorkflowRun | null {
-	const counted = runs.find(
-		(run) => run.workflowName === name && (!events || events.includes(run.event)),
-	);
-	return counted ?? null;
+	return runs.find((run) => run.workflowName === name && (!counts || counts(run))) ?? null;
 }
 
 /**
@@ -296,7 +301,7 @@ export function gateSteps({ commit, quick }: GateOptions): GateStep[] {
 				'--commit',
 				commit,
 				'--json',
-				'workflowName,event,status,conclusion',
+				'workflowName,event,headBranch,status,conclusion',
 			],
 			timed: false,
 			read: (out) =>
