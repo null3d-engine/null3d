@@ -62,7 +62,7 @@ struct Hook {
 }
 
 /// The functions a custom material's WGSL may declare.
-const HOOKS: [Hook; 2] = [
+const HOOKS: [Hook; 3] = [
     Hook {
         name: "surface",
         def: "CUSTOM_SURFACE",
@@ -76,6 +76,13 @@ const HOOKS: [Hook; 2] = [
         params: &["VertexInput"],
         returns: "vec3f",
         signature: "fn vertexOffset(input: VertexInput) -> vec3f",
+    },
+    Hook {
+        name: "lobe",
+        def: "CUSTOM_LOBE",
+        params: &["LobeInput"],
+        returns: "vec3f",
+        signature: "fn lobe(input: LobeInput) -> vec3f",
     },
 ];
 
@@ -632,7 +639,7 @@ impl Compiler {
             problems.push(Problem::at(
                 path,
                 Some(Position { line: 1, column: 1 }),
-                "the WGSL declares no function of a custom material. Declare `fn surface(input: SurfaceInput) -> Surface`, which starts from `defaultSurface(input)`, `fn vertexOffset(input: VertexInput) -> vec3f`, or both. For a shader of your own, give the WGSL a `@vertex` and a `@fragment` entry point instead.",
+                "the WGSL declares no function of a custom material. Declare `fn surface(input: SurfaceInput) -> Surface`, which starts from `defaultSurface(input)`, `fn vertexOffset(input: VertexInput) -> vec3f`, `fn lobe(input: LobeInput) -> vec3f`, or some of them. For a shader of your own, give the WGSL a `@vertex` and a `@fragment` entry point instead.",
             ));
         }
         if !problems.is_empty() {
