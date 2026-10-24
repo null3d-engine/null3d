@@ -66,7 +66,8 @@ the same long waves and the same current, and the effect shows only near or unde
 Creek's per-pixel test, wobble, caustics and absorption.
 
 **The Creek.** It samples its own middle line and half width into the shape. It passes its own
-stone foam map. `water.ts` and `underwater.ts` go, and its route test reads `waveHeight` from the add-on.
+stone foam map. Its bisect switches keep working: `without=water` leaves the water out, and
+`reflect=always` and `reflection-scale` feed the add-on's cadence and its reflection size. `water.ts` and `underwater.ts` go, and its route test reads `waveHeight` from the add-on.
 
 ## Consequences
 
@@ -76,6 +77,11 @@ stone foam map. `water.ts` and `underwater.ts` go, and its route test reads `wav
   host. The underwater effect's were 93 KB of the add-on's entry. D-225 records the fix.
 - The Creek's image references may move where its analytic bed met the general depth read. They are
   redrawn when the images run, with their reason sent before the change is accepted.
+- The branch landed on the milestone's tip with E4a on top; E4a's own record took D-255 there,
+  because main had taken D-250 for the timed script while both were in flight.
+- The page and allocation gates ran in the browser against E4a's engine: the water page starts from
+  another origin under the strict policy, threaded and single-threaded, and the add-on's own code
+  allocates zero bytes a frame on all four presets. That is E4a's first user, end to end.
 - The cost per preset stays owed until a quiet window, because the first runs came at a machine load
   of 90 to 155. Its command is `bun packages/cli/bin/null3d.js check-addon packages/water`, which
   measures the add-on's page on each preset; `--skip-cost` leaves that gate out and runs the page
