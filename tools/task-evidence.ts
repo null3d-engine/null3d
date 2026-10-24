@@ -75,7 +75,7 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-E4':
 		"Water's soft shores read the scene depth on every path: the `water-shores` picture on WebGPU, compatibility mode and WebGL2, in both reference sets, shows the pale band and foam where the water meets the sand and the island's base; without the depth copy the sheet draws its deep colour everywhere. D-202's addendum names M3-E4a for the case of depth beside textures",
 	'M3-L4':
-		'Staged loading, coarse first: `StageWatches` in `crates/null3d-render/src/levels.rs` holds each stage until a view has picked the level the mesh draws over a 120-frame warm-up, and drops it and every finer stage when none is picked; `tests/image/staged-levels.spec.ts` passes 6 of 6, and its `?far` test shows a stage that never draws is never downloaded; D-228',
+		'Staged loading, coarse first: `StageWatches` in `crates/null3d-render/src/levels.rs` holds each stage until a view has picked the level the mesh draws over a 120-frame warm-up, and sets it and every finer stage aside when none is picked; a look every 1500 ms brings them back when the camera comes close, through `unwatchStageLevels`; `tests/image/staged-levels.spec.ts` passes 8 of 8, its `?far` test shows a level that never draws is never downloaded, and its `?near` test shows a stage set aside arrives once the camera comes close; D-228',
 	'M3-F2':
 		"Streaming within budget on a cloud phone and an iPad: `tests/pages/splats-stream.ts` and the `splats` plan in `tests/lib/plans.ts`, with the runs in `.dev/tested-devices/` — the Galaxy S24 held 37,500 of Low's 50,000 and the iPad Pro 13 drew 100,000 on WebGPU and 50,000 on WebGL2, every draw inside the budget",
 	'M3-E5':
