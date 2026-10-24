@@ -1460,18 +1460,43 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
+      # A download on GitHub's macOS machines once stalled with no error until the job's limit ended
+      # it and failed the run, in run 39990527400. Each download has a limit of its own and one more
+      # try; the slowest that finished took about 3 minutes.
       - uses: ./.github/actions/archive
-        with:
+        id: page-wasm
+        timeout-minutes: 6
+        continue-on-error: true
+        with: &page-wasm
           mode: download
           name: page-wasm
       - uses: ./.github/actions/archive
-        with:
+        if: steps.page-wasm.outcome == 'failure'
+        timeout-minutes: 6
+        with: *page-wasm
+      - uses: ./.github/actions/archive
+        id: load-pages
+        timeout-minutes: 6
+        continue-on-error: true
+        with: &load-pages
           mode: download
           name: load-pages
           root: target
+      - uses: ./.github/actions/archive
+        if: steps.load-pages.outcome == 'failure'
+        timeout-minutes: 6
+        with: *load-pages
       - uses: ./.github/actions/samples
       # S6 loads the city's files, which the city job built.
       - uses: ./.github/actions/city
+        id: city
+        timeout-minutes: 6
+        continue-on-error: true
+        with:
+          mode: download
+      - uses: ./.github/actions/city
+        if: steps.city.outcome == 'failure'
+        timeout-minutes: 6
         with:
           mode: download
       - name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of ${{ matrix.shards }}
