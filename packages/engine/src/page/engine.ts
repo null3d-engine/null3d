@@ -2698,6 +2698,9 @@ async function startEngine(
 			...(scriptResult !== undefined && { script: scriptResult }),
 			...(replayResult !== undefined && { replay: replayResult }),
 		});
+		// A replay ends on its last frame: the sketch stops there, rather than running on past the
+		// session that the file holds.
+		if (replay !== undefined) engine.setPaused(true);
 		return engine;
 	} catch (e) {
 		starting = false;
