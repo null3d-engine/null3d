@@ -68,9 +68,9 @@ the next call. Call `flush` from the frame's update so it goes out.
 ## The LCD look
 
 The material draws the panel as an LCD by distance. Each texel shows red, green and blue bars when
-it covers several pixels, a band of light drifts up the panel, the foot of each texel row darkens,
+it covers several pixels. A band of light drifts up the panel, the foot of each texel row darkens,
 and a share of the texels stays dead. The pattern's size comes from the texture coordinates'
-derivatives, so the look follows the distance without a camera value, and a distant panel draws as a
+derivatives, so the look follows the distance without a camera value. A distant panel draws as a
 smooth image.
 
 `screen.boot()` runs a boot glitch: rows tear sideways, a dark band rolls up the panel, and the
@@ -91,7 +91,7 @@ takes no values.
 ## Clicks on a screen
 
 A pointer hit on a mesh carries its texture coordinates. `screen.pointOf(event)` turns them into a
-point on the canvas, in the canvas's own coordinates from its top-left corner, and
+point on the canvas, in the canvas's own coordinates from its top-left corner.
 `screen.texelOf(event)` gives the whole texel under the point.
 
 ```ts
@@ -105,11 +105,11 @@ screen.onClick((point) => {
 
 ## Cost
 
-The LCD look adds one texture sample and the panel's math to each pixel: two derivative reads, a few
-hashes, the sub-pixel bars, the scan band and the dead-texel test. A screen made with `lcd: false`
-skips that work. The upload side is the canvas texture path: a changed rectangle costs its own
-bytes, and the refresh rate caps the reads. [Textures](../api/textures.md#canvases) gives that path's
-figures and its upload budget.
+The LCD look adds one texture sample and the panel's math to each pixel. That is two derivative
+reads, a few hashes, the sub-pixel bars, the scan band and the dead-texel test. A screen made with
+`lcd: false` skips that work. The upload side is the canvas texture path: a changed rectangle costs
+its own bytes, and the refresh rate caps the reads. [Textures](../api/textures.md#canvases) gives
+that path's figures and its upload budget.
 
 ## Limits
 

@@ -169,22 +169,22 @@ function consolePanel(ctx: SketchContext): Panel {
 			drawConsoleValues(context, 0);
 		},
 	});
-	// The panel leans back toward the camera, on a dark body with a stand below it.
-	screen.mesh.setPosition(0, -0.9, 3.4);
-	screen.mesh.setRotationEuler(-0.35, 0, 0);
+	// The panel leans back toward the camera, on a dark body with a stand below it. It stands far
+	// enough back that its top edge stays below the wall panels' readings.
+	screen.mesh.setPosition(0, -1.25, 2.6);
+	screen.mesh.setRotationEuler(-0.3, 0, 0);
 	const body = ctx.materials.standard({ color: '#141c24', roughness: 0.45, metalness: 0.5 });
 	const shell = ctx.scene.createMesh({
 		mesh: ctx.geometry.box({ width: 1.74, height: 1.02, depth: 0.08 }),
 		material: body,
-		position: [0, -0.9, 3.36],
+		position: [0, -1.25, 2.56],
 	});
-	shell.setRotationEuler(-0.35, 0, 0);
-	const stand = ctx.scene.createMesh({
-		mesh: ctx.geometry.cylinder({ radiusTop: 0.1, radiusBottom: 0.14, height: 1.0 }),
+	shell.setRotationEuler(-0.3, 0, 0);
+	ctx.scene.createMesh({
+		mesh: ctx.geometry.cylinder({ radiusTop: 0.1, radiusBottom: 0.14, height: 0.8 }),
 		material: body,
-		position: [0, -1.5, 3.45],
+		position: [0, -2.05, 2.65],
 	});
-	stand.setRotationEuler(-0.35, 0, 0);
 	const update = (now: number): void => {
 		const rects: CanvasRect[] = [WAVE, CONSOLE_VALUES];
 		drawWave(screen.context, now);
