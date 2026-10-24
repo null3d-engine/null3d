@@ -518,7 +518,7 @@ export interface CoreGlue extends CoreErrors {
 	 * changes. Before the scene's first sky background, the maps show the sky of the background's
 	 * values, which TypeScript writes first.
 	 */
-	addSkyMap(texture: number, stages: number): number;
+	addSkyMap(texture: number, stages: number, capture: number): number;
 	/**
 	 * Sets reflection probe `slot`, adding it when the slot is empty: its box from the low corner to
 	 * the high one, the point it captures from, its blend and intensity, its flags

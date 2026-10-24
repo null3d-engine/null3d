@@ -18,8 +18,11 @@ interface Capture {
 const [BEFORE, WITH, AFTER] = [0, 1, 2];
 /** The change of a color that counts as the layer's, in levels of 255. */
 const CHANGE = 15;
-/** The frames that the diffuse light may take to follow what the map shows. */
-const LAG = 4;
+/**
+ * The frames that the diffuse light may reach the scene before the map's levels do. It is never
+ * after them: no frame draws a mirror that holds the layer beside a light that does not.
+ */
+const LEAD = 3;
 /** How far the captures at the end of a stretch must agree, in levels of 255. */
 const STEADY = 3;
 const TIERS = { webgpu: 'webgpu', compat: 'webgpu-compat', webgl2: 'webgl2' } as const;
@@ -89,15 +92,15 @@ for (const gpu of Object.keys(TIERS) as (keyof typeof TIERS)[])
 			for (const frame of lastTwo)
 				expect(Math.abs(green(frame[place]) - withLayer), text).toBeLessThanOrEqual(STEADY);
 		}
-		// Neither place shows the layer while the other does not, beyond the few frames that the
-		// light takes to follow the map that the reflections read at once.
+		// The light follows the map's own texels, so it reaches the scene with them or a frame
+		// before them, never after: no frame shows the layer in the mirror beside the core sky's
+		// light alone.
 		const crossed = {
 			mirror: crossing(frames, 'mirror', greens.mirror[0], greens.mirror[1]),
 			rough: crossing(frames, 'rough', greens.rough[0], greens.rough[1]),
 		};
 		expect(crossed.mirror, JSON.stringify(greens)).toBeGreaterThanOrEqual(0);
 		expect(crossed.rough, JSON.stringify(greens)).toBeGreaterThanOrEqual(0);
-		expect(Math.abs(crossed.mirror - crossed.rough), JSON.stringify(crossed)).toBeLessThanOrEqual(
-			LAG,
-		);
+		expect(crossed.rough, JSON.stringify(crossed)).toBeLessThanOrEqual(crossed.mirror + 1);
+		expect(crossed.mirror, JSON.stringify(crossed)).toBeLessThanOrEqual(crossed.rough + LEAD);
 	});
