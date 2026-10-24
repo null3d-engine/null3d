@@ -189,6 +189,7 @@ Some calls change the scene's structure: creating or destroying a batch or an ob
 - Each row takes about 210 bytes of engine memory, or about 300 with colors or values. When the engine cannot get more memory, `createInstances` throws [E1109](../errors/E1109.md). Rows with colors or values also take 32 bytes each of GPU memory.
 - On WebGL2 the limit follows the largest texture the device allows. A device whose textures reach only 2,048 pixels, the least that WebGL2 allows, draws 1,048,576. That leaves 1,047,552 rows for batches beside a scene of up to 1,023 objects. [GPU tiers and backends](backends.md#the-portable-budget) gives the numbers.
 - Development builds warn once in the console when a scene passes the number that every device of its GPU path draws. On WebGPU that is 2,097,152, the most that devices with WebGPU's default limits draw. On WebGL2 it is 1,048,576. The engine picks the GPU path for each device, so test a scene past 1,048,576 on both paths.
+- A row costs the mesh's vertices in every pass that draws it. Many rows of a detailed mesh therefore cost more than their pixels suggest. A hull of 72 vertices drawn 30,000 times is 2,165,760 vertex shader runs for one pass, and a depth prepass draws the rows again: the reflections and ambient occlusion turn one on. Share each vertex between the faces that meet at it where the shading allows a smooth surface: the same mesh with 24 vertices does a third of that work.
 
 ## Per-row colors
 
