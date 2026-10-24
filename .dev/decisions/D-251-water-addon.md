@@ -76,5 +76,7 @@ foam map. `water.ts` and `underwater.ts` go, and its route test reads `waveHeigh
   and the underwater effect's were 93 KB of the add-on's entry. D-225 records the fix.
 - The Creek's image references may move where its analytic bed met the general depth read. They are
   redrawn when the images run.
-- The add-on's tests cover the shape, the wave copies, the foam map and the size gates. The demo
-  `examples/water` draws both bodies and the view from below.
+- The add-on's tests cover the shape, the surface mesh's coverage and winding, the wave copies,
+  the foam map and the size gates. The demo `examples/water` draws both bodies and the view from
+  below, and the package's own page (`packages/water/page`, which the tarball leaves out) gives the
+  listing check's page, cost and allocation gates a scene to measure.
