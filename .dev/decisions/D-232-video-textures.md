@@ -55,8 +55,8 @@ gives the video, so a browser that ignores the copy's resize options fails the r
 | Chrome on the Mac's GPU, WebGL2 | 590,832 bytes | 0.12 ms | 1,008 bytes |
 | Chromium on SwiftShader, WebGPU | 591,020 bytes | 0.21 ms | 1,196 bytes |
 | Chromium on SwiftShader, WebGL2 | 590,832 bytes | 0.21 ms | 1,008 bytes |
-| Firefox 158 on the Mac, WebGPU | 591,020 bytes | 1.30 ms | 1,196 bytes |
-| Firefox 158 on the Mac, WebGL2 | 590,832 bytes | 1.12 ms | 1,008 bytes |
+| Firefox 158 on the Mac, WebGPU | 591,020 bytes | 1.26 ms | 1,196 bytes |
+| Firefox 158 on the Mac, WebGL2 | 590,832 bytes | 1.26 ms | 1,008 bytes |
 | Safari 26.6.2 on the Mac, WebGPU | 591,280 bytes | 0.04 ms | 1,184 bytes |
 | Safari 26.6.2 on the Mac, WebGL2 | 591,104 bytes | 0.04 ms | 1,008 bytes |
 
