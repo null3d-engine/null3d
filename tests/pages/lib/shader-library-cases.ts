@@ -1731,13 +1731,16 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 				.setF(3, [0, 0, 1])
 				.setF(4, [1, 1, 1])
 				.setF(5, [0, 0.6, 0.8]),
-			// Roughness at zero reaches the floor, and the peak of the lobe stays finite instead of
-			// dividing by a zero alpha.
+			// Roughness at zero reaches the floor, so the lobe peaks finitely instead of dividing by
+			// a zero alpha. The view stands a few degrees off the normal, since at the exact peak the
+			// distribution's denominator is a difference of two numbers near one, which loses about
+			// a part in two hundred to 32-bit arithmetic on every GPU: the case checks the floor, not
+			// the last digits of a near-singular division.
 			new Inputs()
 				.setF(0, [0.5, 0.5, 0.5, 0])
 				.setF(1, [0, 0, 0.04, 1])
 				.setF(2, [0, 0, 1])
-				.setF(3, [0, 0, 1])
+				.setF(3, [0.1045285, 0, 0.9945219])
 				.setF(4, [1, 1, 1])
 				.setF(5, [0, 0, 1]),
 			// A grazing view raises the Fresnel term above the dielectric reflectance.

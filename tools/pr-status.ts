@@ -190,6 +190,19 @@ function main(): void {
 		process.exit(1);
 	}
 	const body = description();
+	const owed = landedTasks();
+	for (const id of owed) {
+		if (!(id in TASK_EVIDENCE) && !INCOMPLETE.has(id) && !ON_BRANCH.has(id) && !PARTIAL[id])
+			console.error(
+				`owed: ${id} landed with no entry in tools/task-evidence.ts, so its box stays empty`,
+			);
+	}
+	if (process.argv.includes('--check')) {
+		const missing = [...owed].filter(
+			(id) => !(id in TASK_EVIDENCE) && !INCOMPLETE.has(id) && !ON_BRANCH.has(id) && !PARTIAL[id],
+		);
+		if (missing.length > 0) process.exit(1);
+	}
 	if (!process.argv.includes('--apply')) {
 		process.stdout.write(body);
 		return;

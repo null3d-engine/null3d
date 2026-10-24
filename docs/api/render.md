@@ -318,7 +318,7 @@ The shader declares its own bindings. Group 0 holds the pass's block at binding 
 
 ### A pass that fills an instance draw's buffers
 
-`buffers: [draw.counts, draw.instances]` makes the pass write the two buffers of an instance draw from [`scene.addFeatureInstances`](feature-instances.md) instead of a texture. The description publishes no output. The pass gives its workgroup counts, such as `[1, 1, 1]` for a shader that writes every instance in one workgroup. A pass fills one target: its texture, or the draw's two buffers.
+`buffers: [draw.counts, draw.instances]` makes the pass write the two buffers of an instance draw from [`scene.addComputeInstances`](feature-instances.md) instead of a texture. The description publishes no output. The pass gives its workgroup counts, such as `[1, 1, 1]` for a shader that writes every instance in one workgroup. A pass fills one target: its texture, or the draw's two buffers.
 
 The shader declares the block at binding 0, the count word at binding 1 and the instance rows at binding 2:
 

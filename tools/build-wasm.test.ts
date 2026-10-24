@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import {
 	addReleaseInstance,
 	artifactFiles,
+	artifactsKey,
 	type BuildJob,
 	buildCodeHash,
 	buildLog,
@@ -39,6 +40,7 @@ describe('parseOptions', () => {
 			pagesOnly: false,
 			prebuilt: false,
 			printBase: false,
+			cacheKey: false,
 			noCache: false,
 		});
 		expect(parseOptions(['--check-size', '--base', 'origin/main'])).toEqual({
@@ -49,6 +51,7 @@ describe('parseOptions', () => {
 			pagesOnly: false,
 			prebuilt: false,
 			printBase: false,
+			cacheKey: false,
 			noCache: false,
 		});
 		expect(parseOptions(['--check-size', '--prebuilt'])).toMatchObject({
@@ -57,6 +60,7 @@ describe('parseOptions', () => {
 		});
 		expect(parseOptions(['--print-base', '--base', 'HEAD^'])).toMatchObject({
 			printBase: true,
+			cacheKey: false,
 			base: 'HEAD^',
 		});
 		expect(parseOptions(['--sizes-only']).sizesOnly).toBe(true);
@@ -67,6 +71,10 @@ describe('parseOptions', () => {
 			keepNames: true,
 			noCache: true,
 		});
+	});
+
+	it('reads the key of the artifacts that CI keeps', () => {
+		expect(parseOptions(['--cache-key']).cacheKey).toBe(true);
 	});
 
 	it('rejects unknown options, a base without a commit or a check, and builds that exclude each other', () => {
@@ -224,6 +232,14 @@ describe('variantKey', () => {
 		expect(variantKey(variant, 'stamp', false, { ...TOOLS, rust: 'other' })).not.toBe(key);
 		expect(variantKey(variant, 'stamp', false, { ...TOOLS, bindgen: '0.2.130' })).not.toBe(key);
 		expect(variantKey(variant, 'stamp', false, { ...TOOLS, wasmOpt: '133.0.0' })).not.toBe(key);
+	});
+});
+
+describe('artifactsKey', () => {
+	it("is one key of this checkout's artifacts, the same at each call", () => {
+		const key = artifactsKey();
+		expect(key).toMatch(/^[0-9a-f]{64}$/);
+		expect(artifactsKey()).toBe(key);
 	});
 });
 

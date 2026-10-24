@@ -14,7 +14,7 @@
 // reads none of the frame figures.
 import { createEngine, type Engine, type FrameMetrics } from '@null3d/engine';
 import type { FrameCounts } from '../lib/engine-checks';
-import { measureUntil } from './lib/measure';
+import { measureDrawing, measureUntil } from './lib/measure';
 import { progress, run, toBase64 } from './lib/result';
 
 const params = new URLSearchParams(location.search);
@@ -105,7 +105,7 @@ run('engine', async () => {
 		memory: memoryOption === undefined ? undefined : { maximumMiB: memoryOption },
 	});
 	await engine.firstFrame;
-	const stats = params.has('nomeasure') ? undefined : await engine.measure(seconds);
+	const stats = params.has('nomeasure') ? undefined : await measureDrawing(engine, seconds);
 	const pause = params.has('pause') ? await pauseAndCount(engine) : undefined;
 	const messages: string[] = [];
 	const count = await new Promise<unknown>((resolve) => {

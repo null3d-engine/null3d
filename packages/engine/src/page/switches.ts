@@ -128,6 +128,13 @@ export interface Switches {
 	 */
 	freshCheck: boolean;
 	/**
+	 * True when ?two-step=report makes a development page log the two-step pass's answers once the
+	 * first frame is on screen: whether the frame wanted the pass, declared it, had its second step
+	 * built and drew it, the render scale, and whether the browser has
+	 * `KHR_parallel_shader_compile`.
+	 */
+	twoStep: boolean;
+	/**
 	 * True when ?wake=message makes the engine's threads wake each other with messages, as they do
 	 * in a browser without `Atomics.waitAsync`.
 	 */
@@ -356,6 +363,7 @@ export function parseSwitches(search: string): Switches {
 		freshShaders: params.get('shaders') === 'fresh',
 		freshCheck: params.get('check') === 'fresh',
 		wakeByMessage: params.get('wake') === 'message',
+		twoStep: params.get('two-step') === 'report',
 		displayChecks: params.get('display-check') !== 'off',
 		hdr: params.get('hdr') !== 'off',
 		sceneFormat: oneOf(params.get('scene-format'), SCENE_FORMATS),

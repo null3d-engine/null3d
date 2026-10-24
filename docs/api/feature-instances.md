@@ -3,7 +3,7 @@ id: api/feature-instances
 title: Add-on instance draws
 status: experimental
 since: "0.3"
-summary: "scene.addFeatureInstances draws a capacity of instances from your own buffer, with a count that the GPU writes, on WebGPU, and an instance batch that the CPU fills on WebGL2."
+summary: "scene.addComputeInstances draws a capacity of instances from your own buffer, with a count that the GPU writes, on WebGPU, and an instance batch that the CPU fills on WebGL2."
 ---
 
 # Add-on instance draws
@@ -12,7 +12,7 @@ summary: "scene.addFeatureInstances draws a capacity of instances from your own 
 
 ```mermaid
 flowchart LR
-    description["defineFeature<br/>frame 'opaque', kind 'draw'"] --> call["scene.addFeatureInstances"]
+    description["defineFeature<br/>frame 'opaque', kind 'draw'"] --> call["scene.addComputeInstances"]
     shader["Your WGSL"] --> call
     vertices["Your shape"] --> call
     call --> buffers["Your count and instance buffers"]
@@ -22,7 +22,7 @@ flowchart LR
     call --> batch["WebGL2<br/>an instance batch the CPU fills"]
 ```
 
-`scene.addFeatureInstances` draws one shape once for each live instance. On WebGPU the live count comes from GPU memory. On WebGL2 the page gives it. Use it for a large set whose count a compute pass writes each frame, such as foliage that the pass places and culls. The add-on's compute writes the count word and the per-instance rows, and the engine draws exactly that many instances.
+`scene.addComputeInstances` draws one shape once for each live instance. On WebGPU the live count comes from GPU memory. On WebGL2 the page gives it. Use it for a large set whose count a compute pass writes each frame, such as foliage that the pass places and culls. The add-on's compute writes the count word and the per-instance rows, and the engine draws exactly that many instances.
 
 This is the adapter for a [feature description](features.md) with `kind: 'draw'` and `frame: 'opaque'`. The description places the draw; the options give the shape, the shader and the capacity.
 
@@ -63,7 +63,7 @@ export default defineSketch(async ({ scene }) => {
     kind: 'draw',
     views: ['main'],
   });
-  const draw = await scene.addFeatureInstances(description, {
+  const draw = await scene.addComputeInstances(description, {
     shader: quads,
     vertices: {
       positions: new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]),
@@ -80,7 +80,7 @@ export default defineSketch(async ({ scene }) => {
 
 ## The description
 
-`addFeatureInstances` reads these fields of the description. The [feature description page](features.md) gives the others: `name`, `reads`, `writes`, `outputs`, `provides` and the callbacks.
+`addComputeInstances` reads these fields of the description. The [feature description page](features.md) gives the others: `name`, `reads`, `writes`, `outputs`, `provides` and the callbacks.
 
 | Field | What an instance draw takes |
 | --- | --- |

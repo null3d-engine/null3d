@@ -814,6 +814,11 @@ pub mod layout {
     /// [`EFFECT_BLOOM`] with a multisampled scene depth, whose sample 0 the effect reads. Only
     /// WebGPU has it.
     pub const EFFECT_BLOOM_DEPTH_MS: u32 = 51;
+    /// Group 1 of a sky layer's draw, an add-on's layer over the core sky: its uniform block alone.
+    /// The core sky's cloud settings, the share of the sun that the layer hides and the layer's own
+    /// opacity reach it, so a layer obeys the settings the core sky obeys (see
+    /// [`template::BACKGROUND_LAYER`](super::template::BACKGROUND_LAYER)).
+    pub const BACKGROUND_LAYER: u32 = 53;
     /// The final pass with custom effects folded into it: [`FINAL`]'s bindings, then the effects'
     /// uniform buffer at binding 4 and the scene's depth, or a blank texture, at binding 5, as
     /// plain floats.
@@ -962,6 +967,12 @@ pub mod permutation {
     /// faces keep their depth, as the faces of a double-sided caster must: they hold its own lit
     /// side.
     pub const CASTER_OFFSET: u32 = 16384;
+    /// The final pass's build that scales the drawn corner up to the canvas and sharpens it, which
+    /// the second step of the two-step pass draws. The other builds read the one texel under each
+    /// pixel and hold none of that code: a software GPU pays for code in every frame, even in a
+    /// loop of no rounds. It shares [`CASTER_OFFSET`]'s value: only the final pass lists it, and
+    /// only the shadow casters' and the depth templates list the caster offset.
+    pub const UPSCALE: u32 = CASTER_OFFSET;
     /// The final pass adds bloom's levels to the scene color before the output transform.
     pub const BLOOM: u32 = 32768;
     /// A custom material's template draws an object into GPU picking's id target: the vertex
@@ -1043,7 +1054,7 @@ pub mod permutation {
     pub const WEIGHTED: u32 = 1 << 31;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 34] = [
+    pub const NAMES: [(&str, u32); 35] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -1060,6 +1071,7 @@ pub mod permutation {
         ("PREPASS", PREPASS),
         ("HALF", HALF),
         ("CASTER_OFFSET", CASTER_OFFSET),
+        ("UPSCALE", UPSCALE),
         ("BLOOM", BLOOM),
         ("PICK", PICK),
         ("OUTLINE_VISIBLE", OUTLINE_VISIBLE),
@@ -1082,7 +1094,11 @@ pub mod permutation {
 
     /// Pairs of names that share one value, because no template lists both: the shader build
     /// refuses a template that lists two names of one value, and any other shared value.
-    pub const SHARED: [(&str, &str); 2] = [("FXAA", "AREA_LIGHTS"), ("BLOOM", "PICK")];
+    pub const SHARED: [(&str, &str); 3] = [
+        ("FXAA", "AREA_LIGHTS"),
+        ("CASTER_OFFSET", "UPSCALE"),
+        ("BLOOM", "PICK"),
+    ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
     /// the draw index where WebGL2 has multi-draw, tone mapping in the shader where the device
@@ -1125,8 +1141,9 @@ pub mod permutation {
     /// The layers shade, so casters never have them, and only the test switch reads instances by
     /// index, which no layered build needs. A weighted surface blends, so it tests no mask, lets
     /// no light through and never fades, and it draws in the sorted pass's rows, which never read
-    /// instances by index.
-    pub const APART: [(u32, u32); 54] = [
+    /// instances by index. The final pass's upscale draws only in the two-step pass's second step,
+    /// with neither FXAA nor bloom.
+    pub const APART: [(u32, u32); 56] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -1181,6 +1198,8 @@ pub mod permutation {
         (WEIGHTED, OUTLINE_VISIBLE),
         (WEIGHTED, LOD_FADE),
         (LOD_FADE, DISPLACEMENT),
+        (UPSCALE, FXAA),
+        (UPSCALE, BLOOM),
     ];
 
     /// True when a permutation word holds every bit that each of its bits needs ([`NEEDS`]), and
@@ -1744,9 +1763,12 @@ pub mod sizes {
     /// one binding of the frame's group (D-146).
     pub const SHADOW_SETTINGS_BYTES: u32 =
         SHADOW_UNIFORM_BYTES + SHADOW_TILES_UNIFORM_BYTES + SHADOW_HERO_UNIFORM_BYTES;
-    /// Bytes of the background's uniform block: nine vectors, which the cube map, the sky and a
-    /// plain color read (see `null3d_render::background`).
-    pub const BACKGROUND_UNIFORM_BYTES: u32 = 144;
+    /// Bytes of the background's uniform block: ten vectors, which the cube map, the sky, a plain
+    /// color and a sky layer's sun visibility read (see `null3d_render::background`).
+    pub const BACKGROUND_UNIFORM_BYTES: u32 = 160;
+    /// Bytes of a sky layer's uniform block: two vectors, the core sky's cloud settings and the
+    /// layer's own view values (see `null3d_render::background`).
+    pub const BACKGROUND_LAYER_UNIFORM_BYTES: u32 = 32;
 }
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
@@ -1864,6 +1886,11 @@ pub mod template {
     /// three.js's analytic sky behind every object, drawn as [`BACKGROUND_CUBE`] is, from the
     /// values of the background's uniform block alone.
     pub const BACKGROUND_SKY: u32 = 36;
+    /// A sky layer that an add-on draws over the core sky, right after the background's own draw:
+    /// [`BACKGROUND_CUBE`]'s box around the camera at the far plane, whose fragments call the
+    /// layer's own `skyLayer` function. The bind group of index 0 is the frame's, and that of index
+    /// 1 the layer's, of layout [`BACKGROUND_LAYER`](super::layout::BACKGROUND_LAYER).
+    pub const BACKGROUND_LAYER: u32 = 79;
     /// The depth of a masked shadow caster: [`SHADOW_DEPTH`]'s vertices, with each fragment of the
     /// caster's material tested as its shading tests it, by the material's opacity and vertex
     /// alpha, so masked surfaces cut holes in their shadows. It binds as the depth template does.
@@ -2374,6 +2401,14 @@ impl DrawList {
     /// The recorded words.
     pub fn words(&self) -> &[u32] {
         &self.words
+    }
+
+    /// The bytes that the recorded words reserve and use.
+    pub fn memory_use(&self) -> (usize, usize) {
+        (
+            self.words.capacity() * size_of::<u32>(),
+            self.words.len() * size_of::<u32>(),
+        )
     }
 
     /// Address of the first word, for the replay loop's view on engine memory.

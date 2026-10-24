@@ -46,8 +46,13 @@ import {
 } from './background';
 import { type ColorInput, linearColor, writeLinearColor } from './color';
 import { Environment, type EnvironmentOptions, SceneEnvironment } from './environment';
-import type { FeatureDraw, FeatureDrawOptions } from './feature-draws';
-import type { FeatureInstanceOptions, FeatureInstances } from './feature-instances';
+import type {
+	FeatureDraw,
+	FeatureDrawOptions,
+	FeatureInstances,
+	FeatureInstancesOptions,
+} from './feature-draws';
+import type { ComputeInstances, ComputeInstancesOptions } from './feature-instances';
 import type { FeatureDescription } from './features';
 import { type FogOptions, setSceneFog } from './fog';
 import {
@@ -4566,6 +4571,43 @@ export class Scene implements ViewHolder {
 				geometry: makers.geometry,
 				materials: makers.materials,
 				createMesh: (mesh, material, place) => this.createMesh({ mesh, material, ...place }),
+				createInstances: (mesh, count, options) =>
+					this.createInstances(mesh, count, options as InstanceOptions),
+				fail: (detail) => new EngineError('E1223', detail),
+			},
+			call,
+		);
+	}
+
+	/**
+	 * An add-on's own kind of draw, repeated once for each row of an instance batch, declared by a
+	 * feature description with the kind `'draw'`. It takes the options of `addFeatureDraw` and a
+	 * number of copies; each row of `draw.batch` places one copy and brings its own color and four
+	 * values. The engine culls and sorts the rows in each view as it does a batch's, so a blended
+	 * draw of many copies draws back to front on both GPU paths.
+	 *
+	 * Throws E1223 for a description that the adapter cannot place, for a place that belongs to one
+	 * object, or for a count that is not a whole number from 1 up, E1215, E1216 and E1217 for WGSL
+	 * and values that `materials.shader` refuses, E1206 for vertex data that makes no mesh, and
+	 * E1406 when the adapter does not download.
+	 */
+	async addFeatureInstances<const Wgsl extends string | CompiledWgsl>(
+		description: FeatureDescription,
+		options: FeatureInstancesOptions<Wgsl>,
+	): Promise<FeatureInstances<Wgsl>> {
+		const call = 'addFeatureInstances';
+		const { makers } = this;
+		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		const draws = await loadFeatureDraws(call);
+		return draws.createFeatureInstances(
+			description,
+			options,
+			{
+				geometry: makers.geometry,
+				materials: makers.materials,
+				createMesh: (mesh, material, place) => this.createMesh({ mesh, material, ...place }),
+				createInstances: (mesh, count, options) =>
+					this.createInstances(mesh, count, options as InstanceOptions),
 				fail: (detail) => new EngineError('E1223', detail),
 			},
 			call,
@@ -4588,15 +4630,15 @@ export class Scene implements ViewHolder {
 	 * take, E1215, E1216 and E1217 for WGSL and values that `materials.shader` refuses, E1206 for
 	 * vertex data that makes no mesh, and E1406 when the adapter does not download.
 	 */
-	async addFeatureInstances<const Wgsl extends string | CompiledWgsl = string | CompiledWgsl>(
+	async addComputeInstances<const Wgsl extends string | CompiledWgsl = string | CompiledWgsl>(
 		description: FeatureDescription,
-		options: FeatureInstanceOptions<Wgsl>,
-	): Promise<FeatureInstances<Wgsl>> {
-		const call = 'addFeatureInstances';
+		options: ComputeInstancesOptions<Wgsl>,
+	): Promise<ComputeInstances<Wgsl>> {
+		const call = 'addComputeInstances';
 		const { makers, core } = this;
 		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
 		const draws = await loadFeatureInstances(call);
-		return draws.createFeatureInstances(
+		return draws.createComputeInstances(
 			description,
 			options,
 			{

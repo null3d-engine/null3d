@@ -3,6 +3,10 @@
 // file names the evidence, so a tick always means the work is here and something checks it.
 // The entries come from read-only audits of the branch on 23 October 2026.
 export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
+	'M3-R2':
+		'The governor undoes a step that does not pay: `governor.ts` with `LOWER_TRIAL_MS` and `LOWER_LOSS_PERCENT`, 6 new tests in `governor.test.ts` including a replay of the resize page, 57 of 57; D-237',
+	'M3-R21':
+		"The gate reads its software-renderer pictures from the commit's own CI browser jobs: `bench/ci-browser-jobs.ts`, 12 tests in `bench/lib/gate.test.ts`; D-238",
 	'M3-A4':
 		'`bloomLevel` in `packages/engine/src/scene/effects.ts`; documented in `docs/api/post.md`',
 	'M3-A6':

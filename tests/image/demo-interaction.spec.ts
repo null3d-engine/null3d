@@ -11,6 +11,9 @@ import { expect, type Page, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 import type { DemoProbe } from '../pages/lib/demo-probe.ts';
 
+/** How long a wait on sketch time or on a condition may take, in milliseconds of page time. */
+const PATIENCE = 60_000;
+
 /** Opens a demo on the probe page, and collects the page's errors. */
 async function open(page: Page, demo: string): Promise<string[]> {
 	const errors: string[] = [];
@@ -23,7 +26,9 @@ async function open(page: Page, demo: string): Promise<string[]> {
 	// The interaction does not depend on the look. The Low preset draws the light version of each
 	// demo, as on a phone, which CI's software GPU draws several times faster than the full look.
 	await page.goto(`demo-probe.html?demo=${demo}&preset=low`);
-	const result = await pageResult<{ error?: string }>(page, 30_000);
+	// A software GPU on a busy machine can take half a minute to start a demo, so the wait is the
+	// same one that the probes below give a frame. A page that never publishes still fails.
+	const result = await pageResult<{ error?: string }>(page, PATIENCE);
 	expect(result.error).toBeUndefined();
 	return errors;
 }
@@ -36,10 +41,9 @@ const probe = (page: Page) =>
 const apart = (a: number[], b: number[]) =>
 	Math.hypot(...a.map((value, k) => value - (b[k] as number)));
 
-/** How long a wait on sketch time or on a condition may take, in milliseconds of page time. */
-const PATIENCE = 60_000;
-// Each test waits several times, so it may take longer than the default limit on a slow GPU.
-test.describe.configure({ timeout: 180_000 });
+// Each test waits several times, for the page's start and then for each probe, so it may take
+// longer than the default limit on a slow GPU.
+test.describe.configure({ timeout: 240_000 });
 
 /** The probe of the first frame at or after the sketch time `time`. */
 async function probeAt(page: Page, time: number): Promise<DemoProbe> {

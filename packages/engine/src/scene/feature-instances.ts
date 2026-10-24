@@ -31,7 +31,7 @@ import type { InstanceBatch, Mesh } from './scene';
  *
  * @category api/feature-instances
  */
-export type FeatureInstanceVertices = MeshArrays;
+export type ComputeInstanceVertices = MeshArrays;
 
 /**
  * A handle for a buffer that the engine made for an instance draw, which a compute pass binds.
@@ -47,18 +47,18 @@ export interface FeatureInstanceBuffer {
 }
 
 /**
- * Options of `scene.addFeatureInstances` besides the feature description. The shader and its
+ * Options of `scene.addComputeInstances` besides the feature description. The shader and its
  * uniforms take the options of `materials.shader`, so a draw takes every value and texture that a
  * custom material takes.
  *
  * @category api/feature-instances
  */
-export interface FeatureInstanceOptions<Wgsl extends string | CompiledWgsl = string | CompiledWgsl>
+export interface ComputeInstancesOptions<Wgsl extends string | CompiledWgsl = string | CompiledWgsl>
 	extends Omit<ShaderOptions<Wgsl>, 'wgsl'> {
 	/** The draw's WGSL, compiled by the null3D Vite plugin. */
 	readonly shader: Wgsl;
 	/** The vertex data of one shape, which every live instance draws. */
-	readonly vertices: FeatureInstanceVertices;
+	readonly vertices: ComputeInstanceVertices;
 	/** The most instances that the draw may hold, which sizes its buffers. */
 	readonly capacity: number;
 	/** The count at the first frame. The default is 0. */
@@ -68,7 +68,7 @@ export interface FeatureInstanceOptions<Wgsl extends string | CompiledWgsl = str
 }
 
 /** What the adapter asks the scene for: the makers, the scene's core, its GPU path, and errors. */
-export interface FeatureInstancesHost {
+export interface ComputeInstancesHost {
 	/** True on the WebGL2 path, which has no compute and no storage buffer. */
 	readonly webgl2: boolean;
 	readonly core: CoreMemory;
@@ -98,7 +98,7 @@ const INSTANCE_FLOATS = C.FEATURE_INSTANCE_INSTANCE_FLOATS;
  *
  * @category api/feature-instances
  */
-export class FeatureInstances<Wgsl extends string | CompiledWgsl = string | CompiledWgsl> {
+export class ComputeInstances<Wgsl extends string | CompiledWgsl = string | CompiledWgsl> {
 	/** @internal */
 	constructor(
 		private readonly core: CoreMemory,
@@ -202,12 +202,12 @@ export class FeatureInstances<Wgsl extends string | CompiledWgsl = string | Comp
  * mesh and the material, and creates the object that draws them or, on WebGL2, the instance batch
  * that the CPU fills.
  */
-export function createFeatureInstances<const Wgsl extends string | CompiledWgsl>(
+export function createComputeInstances<const Wgsl extends string | CompiledWgsl>(
 	description: FeatureDescription,
-	options: FeatureInstanceOptions<Wgsl>,
-	host: FeatureInstancesHost,
-	call = 'addFeatureInstances',
-): FeatureInstances<Wgsl> {
+	options: ComputeInstancesOptions<Wgsl>,
+	host: ComputeInstancesHost,
+	call = 'addComputeInstances',
+): ComputeInstances<Wgsl> {
 	const invalid = (detail: string) => host.fail(`${call}() ${detail}`);
 	if (description.kind !== 'draw')
 		throw invalid(
@@ -260,7 +260,7 @@ export function createFeatureInstances<const Wgsl extends string | CompiledWgsl>
 		if (layers !== undefined) batch.setLayers(layers);
 		batch.setActiveCount(count);
 		const none = { buffer: 0, bytes: 0 };
-		return new FeatureInstances(
+		return new ComputeInstances(
 			host.core,
 			0,
 			batch,
@@ -297,7 +297,7 @@ export function createFeatureInstances<const Wgsl extends string | CompiledWgsl>
 		buffer: host.core.glue.featureInstanceBuffer(id),
 		bytes: capacity * C.FEATURE_INSTANCE_INSTANCE_BYTES,
 	};
-	return new FeatureInstances(
+	return new ComputeInstances(
 		host.core,
 		id,
 		object,

@@ -21,6 +21,7 @@ use null3d_core::culling::{CULL_CHUNK, NO_BUCKET, batch_ranges};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::levels::{LevelLink, NO_LINK};
+use null3d_core::memory::{MemoryUse, vec_bytes};
 use null3d_core::scene::flags;
 use null3d_core::world::SphereArrays;
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
@@ -220,6 +221,23 @@ pub(super) struct Layout {
 }
 
 impl Layout {
+    /// Adds the bytes that the layout's tables hold to the memory register.
+    pub(super) fn account(&self, use_: &mut MemoryUse) {
+        for array in [
+            vec_bytes(&self.batches),
+            vec_bytes(&self.buckets),
+            vec_bytes(&self.draws),
+            vec_bytes(&self.second_draws),
+            vec_bytes(&self.scene_buckets),
+            vec_bytes(&self.level_links),
+            vec_bytes(&self.drawn_slots),
+            vec_bytes(&self.waiting),
+        ] {
+            use_.add(array);
+        }
+        use_.add(self.object_ranges.memory_use());
+    }
+
     /// An empty layout of buckets that draw `drawn`.
     pub(super) fn new(drawn: Drawn) -> Self {
         Self {

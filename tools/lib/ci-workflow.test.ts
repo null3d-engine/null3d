@@ -11,6 +11,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { PRODUCTION_BUILD_PAGES, PRODUCTION_BUILD_TESTS } from '../../tests/lib/server.ts';
 
 interface Step {
+	id?: string;
 	name?: string;
 	run?: string;
 	uses?: string;
@@ -21,6 +22,7 @@ interface Step {
 
 interface Job {
 	needs?: string | string[];
+	outputs?: Record<string, string>;
 	if?: string;
 	env?: Record<string, string>;
 	strategy?: { matrix?: Record<string, unknown> & { include?: Record<string, unknown>[] } };
@@ -193,7 +195,7 @@ describe("CI's workflow", () => {
 			['browser', 'shard'],
 			['browser-alone', 'shard'],
 			['real-browsers', 'shard'],
-			['size-parts', 'part'],
+			['shader-entries', 'shard'],
 		] as const) {
 			const shards = matrixOf(name)[key] as number[];
 			expect(shards, name).toEqual(oneTo(shards.length));
@@ -385,6 +387,64 @@ describe("CI's workflow", () => {
 		const prefix = String(restore?.with?.['restore-keys']);
 		expect(String(save?.with?.key).startsWith(prefix)).toBe(true);
 		expect(needsOf(jobNamed('wasm-checks'))).toContain('size-parts');
+		// The build job reads the same memo and picks the count of parts, which
+		// tools/lib/size-memo.ts numbers from 1, and the matrix takes it.
+		const build = jobNamed('build');
+		expect(cacheStep('build', 'actions/cache/restore@v4')?.with?.['restore-keys']).toBe(prefix);
+		const pick = (build.steps ?? []).find(({ id }) => id === 'size-parts');
+		expect(pick?.run).toContain('bun tools/lib/size-memo.ts --parts');
+		expect(build.outputs?.['size-parts']).toContain('steps.size-parts.outputs.parts');
+		expect(String(matrixOf('size-parts').part)).toContain(
+			'fromJSON(needs.build.outputs.size-parts)',
+		);
+		expect(needsOf(jobNamed('size-parts'))).toContain('build');
+	});
+
+	it('builds the city in the load pages job, which every job that downloads the city waits for', () => {
+		const cityMode = (job: Job) =>
+			(job.steps ?? []).find(({ uses }) => uses === './.github/actions/city')?.with?.mode;
+		const builders = Object.entries(jobs).filter(([, job]) => cityMode(job) === 'build');
+		// The benchmark pages bundle the city's files, so the job that builds them builds the city too.
+		expect(builders.map(([name]) => name)).toEqual(['load-pages']);
+		const readers = Object.entries(jobs).filter(([, job]) => cityMode(job) === 'download');
+		expect(readers.length).toBeGreaterThan(0);
+		for (const [name, job] of readers) expect(needsOf(job), name).toContain('load-pages');
+	});
+
+	it("keeps the build job's WebAssembly files in the cache, under the build script's own key", () => {
+		const steps = jobNamed('build').steps ?? [];
+		const key = steps.find(({ id }) => id === 'wasm-key');
+		expect(key?.run).toContain('bun tools/build-wasm.ts --cache-key');
+		const cacheOf = (action: string) =>
+			steps.find(
+				({ uses, with: given }) =>
+					uses === action && String(given?.path).endsWith('/wasm-artifacts'),
+			);
+		const restore = cacheOf('actions/cache/restore@v4');
+		const save = cacheOf('actions/cache/save@v4');
+		expect(String(restore?.with?.key)).toContain('steps.wasm-key.outputs.key');
+		expect(save?.with?.key).toBe(restore?.with?.key);
+		// The restore comes before the build that copies the files from it, and the save after.
+		const at = (step: Step | undefined) => steps.indexOf(step as Step);
+		const build = steps.findIndex(({ name }) =>
+			/WebAssembly files that the test pages need/.test(name ?? ''),
+		);
+		expect(at(restore)).toBeLessThan(build);
+		expect(at(save)).toBeGreaterThan(build);
+	});
+
+	it("gives a draft's full run, started by marking it ready, a concurrency group of its own", () => {
+		const group = String((workflow as { concurrency?: { group?: string } }).concurrency?.group);
+		// The pushes after it run in the pull request's own group, so they never cancel it.
+		expect(group).toContain("github.event.action == 'ready_for_review'");
+		expect(group).toContain("format('pr-{0}{1}'");
+		// A later full run waits for it, so it ends with a result.
+		const cancel = String(
+			(workflow as { concurrency?: { 'cancel-in-progress'?: string } }).concurrency?.[
+				'cancel-in-progress'
+			],
+		);
+		expect(cancel).toContain("github.event.action != 'ready_for_review'");
 	});
 
 	it("moves the build job's files and the load builds only through the archive action", () => {
@@ -429,6 +489,30 @@ describe("CI's workflow", () => {
 				expect(globs, name).toEqual(
 					expect.arrayContaining(['crates/null3d-shaders/**', 'tools/shaders.ts']),
 				);
+		}
+	});
+	it('leaves the image references that a job does not read out of its checkout', () => {
+		// The references are most of a checkout. These jobs read every set, as the reference check
+		// does, or check out history, which a sparse checkout would leave without its files.
+		const whole = new Set([
+			'changes',
+			'commits',
+			'docs-and-tools',
+			'generated-branch',
+			'size-base',
+			'wasm-checks',
+		]);
+		const references = 'tests/image/references';
+		for (const [name, job] of Object.entries(jobs)) {
+			const checkout = (job.steps ?? []).find(({ uses }) => uses?.startsWith('actions/checkout@'));
+			if (!checkout || whole.has(name)) continue;
+			const sparse = String(checkout.with?.['sparse-checkout'] ?? '');
+			expect(sparse, name).toContain(`!/${references}/`);
+			// The browser tests read the software GPU's set, and real browsers the real GPU's.
+			if (name.startsWith('browser') || name === 'showcase' || name === 'skill-sketches')
+				expect(sparse, name).not.toContain(`!/${references}/chromium-swiftshader/`);
+			if (name === 'real-browsers')
+				expect(sparse, name).not.toContain(`!/${references}/chrome-real-gpu/`);
 		}
 	});
 });

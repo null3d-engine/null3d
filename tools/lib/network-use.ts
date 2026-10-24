@@ -46,6 +46,10 @@ export const FETCH_SITES: Readonly<Record<string, FetchSite>> = {
 		count: 1,
 		why: "reads a worker script's status while the engine names a startup failure",
 	},
+	'packages/splats/src/system.ts': {
+		count: 1,
+		why: 'downloads the SPZ file that the sketch names',
+	},
 	'packages/vite-plugin/src/engine-shaders.ts': {
 		count: 2,
 		why: "the build fetches the engine's shader release, and declares the fetch it offers",

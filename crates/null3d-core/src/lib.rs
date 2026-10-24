@@ -61,6 +61,7 @@ pub mod levels;
 pub mod lights;
 pub mod lines;
 pub mod math;
+pub mod memory;
 pub mod morph;
 pub mod occlusion;
 pub mod scene;

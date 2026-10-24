@@ -170,6 +170,29 @@ describe('the shader modules', () => {
 		expect(ensureShaderModules(root)).toBe(false);
 	});
 
+	it('read no module byte when every file has the size and time that the record keeps', () => {
+		withScratchCaches(() => {
+			const root = repository();
+			mkdirSync(join(root, 'target'));
+			const record = { inputs: inputHash(root), modules: moduleHash(root) };
+			writeFileSync(join(root, RECORD), JSON.stringify(record));
+			// The first check reads the bytes, which match, and keeps the files' sizes and times.
+			expect(ensureShaderModules(root)).toBe(false);
+			expect(JSON.parse(readFileSync(join(root, RECORD), 'utf8')).stats).toBeString();
+			// The main module, which the hash reads, cannot be read, so a check that passes read no byte.
+			const main = join(root, MODULE_DIR, 'shaders.ts');
+			chmodSync(main, 0o000);
+			try {
+				expect(ensureShaderModules(root)).toBe(false);
+			} finally {
+				chmodSync(main, 0o644);
+			}
+			// A module of another size is a change: the bytes then decide, and the stub cargo fails the build.
+			writeFileSync(main, 'export const CHANGED = 1;\n');
+			expect(() => ensureShaderModules(root)).toThrow();
+		});
+	});
+
 	it('run the build when a module changed, and release the lock when the build fails', () => {
 		withScratchCaches(() => {
 			const root = repository();

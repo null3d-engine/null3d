@@ -235,3 +235,65 @@ environment loads on such a page and its failures name the policy item or header
 A page with no build step draws with the engine's own materials, geometry and shaders. Custom
 shader WGSL needs the plugin's compile, a TypeScript sketch needs a bundler, and the add-on
 packages are separate. The docs page states all three.
+
+## Addendum, 23 October 2026: the Gaussian splats add-on and the hooks it closes
+
+Status: decided while building M3-F2. Date: 2026-10-23. Task: M3-F2.
+
+The splats add-on ships as `@null3d/splats`, its own package whose version stays in step with the
+engine's. It claims the namespace `splats` and the error codes 2100 to 2199. It reads SPZ files in
+both containers: a legacy file is one gzip stream, and a version 4 file is a plain header, a table of
+contents and one zstd stream for each array, through the browser's `DecompressionStream`. It reads
+glTF files that carry `KHR_gaussian_splatting`, and it draws the first spherical-harmonic band's
+color; higher bands are ignored, which the extension allows.
+
+### The draw goes through the feature draw hook
+
+The cloud is one instance batch whose rows are the splats that draw: `scene.addFeatureInstances`, the
+many-copies form of M3-E1's feature draw. The add-on gives one quad and a surface function, and each
+row brings a center, rotations and spreads (the row's place, its quaternion and its scales), a linear
+RGBA color (the row's color) and four values. The shader projects each row's covariance, sizes a
+camera-facing card to its ellipse, and fades the card with the same ellipse; it reads the copy of the
+scene's depth (M3-E4) to fade a splat where it meets a mesh.
+
+The per-splat sort is the engine's own: the transparent pass culls and sorts the batch's rows back to
+front on the job workers, on both GPU paths. The add-on adds no second sort, because a second sort
+would duplicate the one place that orders blended draws.
+
+### Detail levels, streaming and the budget
+
+`createSplats` cuts the cloud into chunks of nearby splats, each in importance order (blurred volume
+times opacity), so a prefix of a chunk is a coarser level of it: all, a half, a quarter and an
+eighth. A task on the job workers (M3-E2's `runTask`) chooses each chunk's prefix from its distance
+and the budget, nearest first, and the sketch writes the chosen rows between two frames. The chunks
+are cut one at a time, so the cloud appears coarse to fine and a large file holds up no frame.
+
+The budget is a feature setting through M3-E6's `FeatureHost`: 100,000 splats on Low to 800,000 on
+Ultra, with lower counts on WebGL2, and the frame-budget governor lowers it again. The host reports the batch's memory to
+the stats overlay. GPU time is not measured for add-on features yet, so the overlay shows it as not
+measured.
+
+### The glTF extension registers as the add-on loads
+
+M3-E3's handler API was per sketch (`assets.registerGltfExtension`), but a file that requires
+`KHR_gaussian_splatting` tells the developer to import the add-on, and an add-on's module has no
+sketch to register with. The hook gained `registerGltfExtension(handler)`, which registers for every
+sketch of the thread. A sketch's own handler for the same extension reads its files in the add-on's
+place. A later add-on handler for one extension replaces the earlier one, so a development reload
+does not throw E1213.
+
+### Limits
+
+- A glTF model's splats draw in the file's order inside each part, and the model is cut into up to
+  64 parts that the transparent pass sorts by depth. A large cloud uses an SPZ file, whose rows the
+  engine sorts one by one.
+- A splat casts no shadow and receives none.
+- The cards need the scene's depth copy, whose cost the material's scene input carries.
+
+### Built
+
+The add-on draws from both file kinds: an SPZ file whose cloud a sketch writes in code, and a glTF model that carries `KHR_gaussian_splatting`. The image tests draw a knot of splats above a ground with a bar in front of it, the same cloud under a capped budget, and a ribbon from a glTF model. Each draws on all three tiers and in all five thread modes: all 45 runs passed on the Mac's GPU and all 45 on SwiftShader on 23 October 2026, and each mode drew the other modes' picture. The iPhone and S24-class figures remain to be measured.
+
+### Not the first user of a GPU-written instance count
+
+M3-E9 plans a draw whose instance count the GPU writes. The splats add-on is not its first user. The splats draw is the engine's instance batch: the transparent pass culls and sorts its rows back to front on the job workers, and a GPU-written count would skip that sorted list, so the splats would blend in the wrong order. The count is also no per-frame problem here. It changes when the camera or the budget crosses a threshold, and the sketch then packs the chosen rows once between two frames. E9 therefore needs another first user, such as vegetation or hair, or a hook that keeps the engine's sorted rows.

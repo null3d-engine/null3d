@@ -19,6 +19,8 @@
 //                                           engine test page, then report and judge as --check-size does
 //   bun tools/build-wasm.ts --print-base    print the commit that --check-size compares with, and stop
 //     [--base <ref>]
+//   bun tools/build-wasm.ts --cache-key     print one key of every file that --pages-only builds, as
+//                                           key=<hash>, for CI's cache of them, and stop
 //   bun tools/build-wasm.ts --names         keep the core's function names, for a CPU profile;
 //                                           the names add size, so this skips the size checks
 //   bun tools/build-wasm.ts --pages-only    build only what the test pages and the tools need,
@@ -119,6 +121,7 @@ import {
 	keepSizeMemo,
 	mergeSizeMemoParts,
 	readSizeMemo,
+	recordedModules,
 	sizeMemoPartFile,
 	writeSizeMemo,
 } from './lib/size-memo';
@@ -475,6 +478,8 @@ export interface BuildOptions {
 	prebuilt: boolean;
 	/** Print the commit that the size check compares with, and build nothing. */
 	printBase: boolean;
+	/** Print one key of every artifact that a `--pages-only` build writes, for CI's cache of them. */
+	cacheKey: boolean;
 	/** Build every file again, instead of copying a file that an earlier build cached. */
 	noCache: boolean;
 	/** Build the engine test page, measure only this part of its files and write their sizes. */
@@ -484,7 +489,7 @@ export interface BuildOptions {
 }
 
 const USAGE =
-	'usage: bun tools/build-wasm.ts [--no-cache] [--check-size [--base <ref>] [--prebuilt [--part <i>/<n> | --judge-parts <dir>]] | --sizes-only | --prebuilt | --names | --pages-only | --print-base [--base <ref>]]';
+	'usage: bun tools/build-wasm.ts [--no-cache] [--check-size [--base <ref>] [--prebuilt [--part <i>/<n> | --judge-parts <dir>]] | --sizes-only | --prebuilt | --names | --pages-only | --print-base [--base <ref>] | --cache-key]';
 
 /** The options that take a value, with what each needs. */
 const VALUE_OPTIONS: Readonly<Record<string, string>> = {
@@ -502,6 +507,7 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		pagesOnly: false,
 		prebuilt: false,
 		printBase: false,
+		cacheKey: false,
 		noCache: false,
 	};
 	for (let i = 0; i < args.length; i++) {
@@ -512,6 +518,7 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		else if (arg === '--pages-only') options.pagesOnly = true;
 		else if (arg === '--prebuilt') options.prebuilt = true;
 		else if (arg === '--print-base') options.printBase = true;
+		else if (arg === '--cache-key') options.cacheKey = true;
 		else if (arg === '--no-cache') options.noCache = true;
 		else if (Object.hasOwn(VALUE_OPTIONS, arg)) {
 			const value = args[i + 1];
@@ -732,6 +739,24 @@ export function toolsKey(shaders: string, assets: string, tools: ToolVersions): 
 }
 
 /**
+ * One key of every artifact that a build of the cores and the tools' modules writes: a hash of each
+ * entry's own key, as the build reads them, so it changes exactly when one of the entries would.
+ * CI keeps the cache folder under it, so a run whose Rust sources, flags and tools did not change
+ * copies every file in place and runs no cargo, wasm-bindgen or wasm-opt.
+ */
+export function artifactsKey(): string {
+	const tools = toolVersions(readFileSync(join(root, 'Cargo.lock'), 'utf8'));
+	const stamp = coreSourcesStamp(root);
+	const [shaders, assets] = toolInputs(root);
+	return digest(
+		[
+			...VARIANTS.map((variant) => variantKey(variant, stamp, false, tools)),
+			toolsKey(shaders, assets, tools),
+		].join('\n'),
+	);
+}
+
+/**
  * The input hashes of the two crates that the build tools' modules come from, in `TOOL_MODULES`
  * order. A crate is named by its folder, which `inputHash` reads, so a name without its `crates/`
  * step would throw here and fail every build before it could cache anything.
@@ -825,7 +850,7 @@ function storeArtifacts(
 async function buildVariant(
 	log: BuildLog,
 	variant: Variant,
-	bindgen: string,
+	bindgen: () => Promise<string>,
 	keepNames: boolean,
 	stamp: string,
 	tools: ToolVersions,
@@ -855,7 +880,15 @@ async function buildVariant(
 	const staged = variantStagingFolder(variant);
 	rmSync(staged, { recursive: true, force: true });
 	const linked = `${targetDir}/wasm32-unknown-unknown/release/${CRATE.replace(/-/g, '_')}.wasm`;
-	await log.run(bindgen, ['--target', 'web', '--out-dir', staged, '--out-name', 'null3d', linked]);
+	await log.run(await bindgen(), [
+		'--target',
+		'web',
+		'--out-dir',
+		staged,
+		'--out-name',
+		'null3d',
+		linked,
+	]);
 	const glue = join(staged, 'null3d.js');
 	const text = readFileSync(glue, 'utf8');
 	writeFileSync(glue, stampGlue(variant.releasesInstance ? addReleaseInstance(text) : text, stamp));
@@ -1075,7 +1108,7 @@ async function measureWithMemo(files: readonly ReportFile[]): Promise<Map<string
 	const memo = readSizeMemo();
 	const sizes = await measureFiles(files, undefined, memo);
 	printMemoUse(files.length, memo.compressed);
-	keepSizeMemo(memo);
+	keepSizeMemo(memo, recordedModules(root));
 	return sizes;
 }
 
@@ -1262,6 +1295,10 @@ async function main(): Promise<void> {
 		console.log(resolveBase(chooseBase(options.base, process.env)).sha);
 		return;
 	}
+	if (options.cacheKey) {
+		console.log(`key=${artifactsKey()}`);
+		return;
+	}
 	// Only a size check takes the lock: it also builds the base commit with that commit's own build
 	// script, which may stage into the shared target folder. Ordinary builds overlap, because each one
 	// stages in a folder of its own and Cargo locks the target folder that builds share. The lock is
@@ -1280,7 +1317,10 @@ async function main(): Promise<void> {
 	if (options.prebuilt) checkPrebuilt();
 	else {
 		const cargoLock = readFileSync(join(root, 'Cargo.lock'), 'utf8');
-		const bindgen = await wasmBindgen(lockedVersion(cargoLock, 'wasm-bindgen'));
+		// wasm-bindgen is fetched only when a core misses the cache, so a run that copies every file
+		// in place downloads nothing.
+		let bindgenPath: Promise<string> | undefined;
+		const bindgen = () => (bindgenPath ??= wasmBindgen(lockedVersion(cargoLock, 'wasm-bindgen')));
 		// The stamp of the sources as the build starts, which the builds then read.
 		const stamp = coreSourcesStamp(root);
 		const tools = toolVersions(cargoLock);
@@ -1310,8 +1350,10 @@ async function main(): Promise<void> {
 	if (options.judgeParts !== undefined) {
 		// The parts' entries are those of every file of this build, so they make the next memo.
 		const entries = mergeSizeMemoParts(resolve(root, options.judgeParts));
-		printMemoUse(entries.met.size, entries.compressed);
-		keepSizeMemo(entries);
+		// Parts can each compress the same bytes, so their count can pass the count of distinct files.
+		console.log(
+			`the size parts compressed ${entries.compressed} files; the next size memo holds the sizes of ${entries.met.size} distinct files${keepSizeMemo(entries, recordedModules(root)) ? '' : ', and is not kept, since it would not change'}`,
+		);
 	}
 	const sizes: Record<string, SizeEntry> = {};
 	for (const variant of VARIANTS)
