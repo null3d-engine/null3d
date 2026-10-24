@@ -55,7 +55,7 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-E1':
 		"Splats draw through `scene.addFeatureInstances` (`packages/engine/src/scene/feature-instances.ts`); the `splats`, `splats-budget` and `splats-gltf` pictures on both paths; the draw's size in `tools/lib/size-report.ts`",
 	'M3-E10':
-		"The sky-layer template and the compiler that joins an add-on's `skyLayer` to it: `crates/null3d-shaders/tests/sky_layer.rs`, `crates/null3d-render/tests/background.rs` (`a_sky_layer_draws_after_the_background_*`); `scene.setSkyLayer` in `packages/engine/src/scene/background.ts`, with `packages/engine/src/scene/scene.test.ts`; the aurora example add-on in `examples/addons/aurora/`, and the `demo-aurora` picture on every tier; D-242",
+		"The sky-layer template and the compiler that joins an add-on's `skyLayer` to it: `crates/null3d-shaders/tests/sky_layer.rs`, `crates/null3d-render/tests/background.rs` (`a_sky_layer_draws_after_the_background_*`); `scene.setSkyLayer` in `packages/engine/src/scene/background.ts`, with `packages/engine/src/scene/scene.test.ts`; the aurora example add-on in `examples/addons/aurora/`; D-242. The demo and its six picture references land as their own change once the frames are drawn",
 	'M3-E3':
 		"`registerGltfExtension` in `packages/engine/src/scene/gltf-extensions.ts`; the `splats-gltf` picture, and E1417's hint for `KHR_gaussian_splatting` in `gltf-extensions.test.ts`",
 	'M3-E4':
