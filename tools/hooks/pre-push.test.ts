@@ -152,8 +152,8 @@ describe('changedCrates', () => {
 describe('guardSteps', () => {
 	it('checks the decision records and runs the tests that read every package and spec', () => {
 		expect(guardSteps().map((step) => [step.lane, step.command.join(' ')])).toEqual([
-			['QUICK', 'bun tools/decisions.ts --check'],
-			['QUICK', `bun test ${GUARD_TESTS.join(' ')}`],
+			['DIRECT', 'bun tools/decisions.ts --check'],
+			['DIRECT', `bun test ${GUARD_TESTS.join(' ')}`],
 		]);
 		for (const file of GUARD_TESTS) expect(existsSync(file), file).toBe(true);
 	});
@@ -168,9 +168,9 @@ describe('plan', () => {
 			['QUICK', 'bunx commitlint --from b2 --to a1'],
 			['QUICK', 'bun tools/hooks/check-trailers.ts b2..a1'],
 			['QUICK', 'bun tools/hooks/check-merges.ts b2..a1'],
-			['QUICK', 'bun tools/decisions.ts --check'],
+			['DIRECT', 'bun tools/decisions.ts --check'],
 			[
-				'QUICK',
+				'DIRECT',
 				'bun test tools/lib/release.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts',
 			],
 		]);
@@ -181,9 +181,9 @@ describe('plan', () => {
 			['QUICK', 'bunx commitlint --from b2 --to a1'],
 			['QUICK', 'bun tools/hooks/check-trailers.ts b2..a1'],
 			['QUICK', 'bun tools/hooks/check-merges.ts b2..a1'],
-			['QUICK', 'bun tools/decisions.ts --check'],
+			['DIRECT', 'bun tools/decisions.ts --check'],
 			[
-				'QUICK',
+				'DIRECT',
 				'bun test tools/lib/release.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts',
 			],
 			['CPU_ONLY', 'cargo check --workspace'],
