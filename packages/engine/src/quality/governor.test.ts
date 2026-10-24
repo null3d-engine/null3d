@@ -13,6 +13,7 @@ import {
 	DROP_AFTER_MS,
 	FAILED_RAISE_MS,
 	FEWEST_CONTACT_STEPS,
+	FLOOR_AFTER_MS,
 	FRAME_US,
 	FULL_SCALE,
 	farIntervalSteps,
@@ -23,6 +24,7 @@ import {
 	GPU_DELAY_US,
 	GRACE_MS,
 	LONGEST_RAISE_AFTER_MS,
+	LOWER_TRIAL_MS,
 	LOWEST_AO_SCALE,
 	LOWEST_SSR_SCALE,
 	RAISE_AFTER_MS,
@@ -275,6 +277,77 @@ describe('the render scale steps', () => {
 		expect(thousandths(1)).toBe(FULL_SCALE);
 		expect(thousandths(2)).toBe(FULL_SCALE);
 		expect(thousandths(0)).toBe(1);
+	});
+});
+
+describe('the trial of a step down', () => {
+	/**
+	 * Frames several times slower than `SLOW`, as on CI's software GPU after the step below the
+	 * whole scale turned on the two-step upscale (D-237).
+	 */
+	const SLOWER = { frame: 7 * SLOW.frame, delay: 7 * SLOW.delay };
+	/** The time at which a step down at `stepped` is taken back, when the frames after it are slower. */
+	const undoneAt = (stepped: number) => stepped + SETTLE_MS + DROP_AFTER_MS - WINDOW_MS;
+
+	it('takes back a step down after which the frames came slower, and keeps its level closed', () => {
+		const { controller, run, untilStep } = controlled();
+		const stepped = untilStep(SLOW);
+		expect(controller.scale).toBe(FULL_SCALE - SCALE_STEP);
+		run(SLOWER, SETTLE_MS + DROP_AFTER_MS);
+		expect(controller.scale).toBe(FULL_SCALE);
+		// The frames at the whole scale still miss, but the level below stays closed for its wait.
+		const again = untilStep(SLOW);
+		expect(controller.scale).toBe(FULL_SCALE - SCALE_STEP);
+		expect(again - undoneAt(stepped)).toBeGreaterThanOrEqual(FLOOR_AFTER_MS);
+		expect(again - undoneAt(stepped)).toBeLessThan(FLOOR_AFTER_MS + DROP_AFTER_MS + WINDOW_MS);
+	});
+
+	it('closes the level twice as long after a second failed step down into it', () => {
+		const { run, untilStep } = controlled();
+		untilStep(SLOW);
+		run(SLOWER, SETTLE_MS + DROP_AFTER_MS);
+		const stepped = untilStep(SLOW);
+		run(SLOWER, SETTLE_MS + DROP_AFTER_MS);
+		const again = untilStep(SLOW);
+		expect(again - undoneAt(stepped)).toBeGreaterThanOrEqual(2 * FLOOR_AFTER_MS);
+		expect(again - undoneAt(stepped)).toBeLessThan(2 * FLOOR_AFTER_MS + DROP_AFTER_MS + WINDOW_MS);
+	});
+
+	it('keeps a step down after which the frames came no slower', () => {
+		const { controller, run, untilStep } = controlled();
+		untilStep(SLOW);
+		run(SLOW, SETTLE_MS + DROP_AFTER_MS);
+		// The step held, and the second over the budget took the next one.
+		expect(controller.scale).toBe(FULL_SCALE - 2 * SCALE_STEP);
+	});
+
+	it('closes a level for the shortest wait again once a step into it held', () => {
+		const { controller, run, untilStep } = controlled();
+		untilStep(SLOW);
+		run(SLOWER, SETTLE_MS + DROP_AFTER_MS);
+		// The second try holds, since its frames came faster, and the frames then rise again.
+		untilStep(SLOW);
+		run(EASY, SETTLE_MS + DROP_AFTER_MS);
+		expect(controller.scale).toBe(FULL_SCALE - SCALE_STEP);
+		untilStep(EASY);
+		expect(controller.scale).toBe(FULL_SCALE);
+		// A third step into the level fails: it closes for the shortest wait, not twice it.
+		const stepped = untilStep(SLOW);
+		run(SLOWER, SETTLE_MS + DROP_AFTER_MS);
+		expect(controller.scale).toBe(FULL_SCALE);
+		const again = untilStep(SLOW);
+		expect(again - undoneAt(stepped)).toBeGreaterThanOrEqual(FLOOR_AFTER_MS);
+		expect(again - undoneAt(stepped)).toBeLessThan(FLOOR_AFTER_MS + DROP_AFTER_MS + WINDOW_MS);
+	});
+
+	it('takes back a step down after which no second could be judged in the trial', () => {
+		const { controller, untilStep } = controlled();
+		const stepped = untilStep(SLOW);
+		// Frames half a second apart or more start the windows again, so none is judged.
+		controller.gap(stepped + LOWER_TRIAL_MS);
+		expect(controller.scale).toBe(FULL_SCALE - SCALE_STEP);
+		controller.gap(stepped + LOWER_TRIAL_MS + 1);
+		expect(controller.scale).toBe(FULL_SCALE);
 	});
 });
 
@@ -837,6 +910,14 @@ describe('the governor in the frame loop', () => {
 		governor.setOn(true);
 		expect(run(2 * BUDGET, BUDGET, GRACE_MS)).toBe(FULL_SCALE);
 		expect(run(2 * BUDGET, BUDGET, DROP_AFTER_MS + WINDOW_MS)).toBe(FULL_SCALE - SCALE_STEP);
+	});
+
+	it('takes back the step below the whole scale when it slows the frames past the windows', () => {
+		// The resize page on CI's software GPU: 2.2 frames a second at the whole scale, which the
+		// governor judges, and 0.3 a second after the step, which it cannot (D-237).
+		const { run } = loop();
+		expect(run(450, 450, GRACE_MS + 3000)).toBe(FULL_SCALE - SCALE_STEP);
+		expect(run(3300, 3300, 2 * LOWER_TRIAL_MS)).toBe(FULL_SCALE);
 	});
 
 	it('starts its windows again after a pause', () => {

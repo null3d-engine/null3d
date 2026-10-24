@@ -1,8 +1,8 @@
 # D-237: The governor judges slow frames, and undoes a step down that slowed them
 
-Status: proposed, for agreement before any code. Not built yet. Date: 24 October 2026. Task: M3-R2.
+Status: rule 2 agreed, rule 1 waits for its test in every thread mode. Built: rule 2 and its bound for a trial with no judged second, in `packages/engine/src/quality/governor.ts`. Rule 1 is not built yet. Date: 24 October 2026. Task: M3-R2.
 
-Summary: The governor takes a gap of half a second between frames for a pause, and starts its windows again. So it never judges a page that draws fewer than about two frames a second. On CI's software GPU the resize page drew 2.2 frames a second at the whole render scale, and the governor stepped it to 0.95. The two-step upscale then drew as well, and the page fell to 0.3 frames a second. That is below the line where the governor judges, so the page stayed there for the rest of every test. The proposal has two parts. A gap counts as a pause only while no frame was drawing. A step down whose frames are not faster than before is undone, and becomes a floor for a while.
+Summary: The governor takes a gap of half a second between frames for a pause, and starts its windows again. So it never judges a page that draws fewer than about two frames a second. On CI's software GPU the resize page drew 2.2 frames a second at the whole render scale, and the governor stepped it to 0.95. The two-step upscale then drew as well, and the page fell to 0.3 frames a second. That is below the line where the governor judges, so the page stayed there for the rest of every test. The proposal has two parts. A gap counts as a pause only while no frame was drawing. A step down whose frames come clearly slower than before is undone, and its level closes for a while.
 
 ## Question
 
@@ -38,11 +38,11 @@ How the data was produced: a patch to the resize page made the quality sketch po
 ## Proposal
 
 1. A gap counts as a pause only when no frame was drawing during it. A frame that the GPU or the thread that draws held for half a second or more counts as a frame of that length. It fills the windows it spans, so one 3 s frame makes a whole second of windows that missed. The completed frames' busy time, which the metrics rings hold already, should tell the two cases apart. After a pause, the frame that ends the gap was quick; after a slow frame, it was not. The code must show that this holds in every thread mode, since the wait can fall before the submit as well as after it.
-2. A step down is on trial, as a step up is. When the governor judges again after the settle time, it compares the mean frame time of the new setting's first second with that of the second that caused the step. If the new frames are not faster by a clear margin, it takes the step back at once. The level below then becomes a floor: no step down into it until a wait has passed. The wait doubles with each failed step into it, up to the longest wait of a step up. A step that helped is kept, and its floor is forgotten.
+2. A step down is on trial, as a step up is. When the governor judges again after the settle time, it compares the mean frame time of the new setting's first second with that of the second that caused the step. If the new frames came a tenth slower or more (`LOWER_LOSS_PERCENT`), it takes the step back at once. A step that changes nothing stays: a step that saves little shows no gain within one second's noise, and the walk down passes through such steps. The level below then closes: no step down into it until a wait has passed. The wait starts at 10 s (`FLOOR_AFTER_MS`) and doubles with each failed step into it, up to the longest wait of a step up. A step that held is kept, and its level's wait starts again from the shortest.
 
    During a trial the page draws at the new setting for the settle time and one second of frames, about two seconds at the target rate, before the governor judges it. On a page whose frames take seconds, the trial lasts as long as those first frames. If the step made the frames slower, the user sees that slower setting for the trial's length, and the governor then takes the step back.
 
-   A trial in which no second of frames is judged within a bound of a few seconds also fails: the frames before the step were judged, so they came faster than the frames after it. The code sets the bound, and its tests check it. This needs no change to the gap rule, and it frees the page in the data above.
+   A trial in which no second of frames is judged within 4 s (`LOWER_TRIAL_MS`: the settle time and three seconds) also fails: the frames before the step were judged, so they came faster than the frames after it. The frame loop checks the bound at each gap, through `Governor.gap`. A pause in play during a trial fails it too, and the short first wait lets the governor try the step again soon. This needs no change to the gap rule, and it frees the page in the data above.
 3. An alternative bounds the step in time alone. A scale below the whole that lasts longer than the window that justified it, with no gain in frame time, steps back, and the scene never steps down again. But the comparison needs the frame times that rule 1 makes visible, so a time bound alone cannot see the gain. A scene can also grow heavier later, when a step down would help. So a floor whose wait grows fits better than a ban for the scene's life, and it reuses the trial rules of the steps up.
 
 ## Condition
@@ -54,8 +54,9 @@ Rule 1 lands only if the completed frames' busy time tells a slow frame from a p
 - Unit tests in `packages/engine/src/quality/governor.test.ts`:
   - Frames 2 s apart with a busy GPU are judged, and step down.
   - A gap of 2 s with an idle GPU still starts the windows again.
-  - A step down whose next second is no faster is undone, and becomes a floor. Its wait doubles on a second failure.
-  - A step down that helps is kept.
+  - A step down whose next second is slower is undone, and its level closes. The wait doubles on a second failure.
+  - A step down whose next second is no slower is kept.
+  - A step into a level that held sets its wait to the shortest again.
   - A step down after which no second of frames is judged before the trial ends is undone.
 - The governor's page test (`tests/pages/governor.ts`), with a scene whose step below the whole scale costs more than it saves. The scene must end at the whole scale.
 - For rule 1, a page test in each thread mode with frames held for a known time and with a pause of the same length, which the governor must tell apart.
@@ -63,6 +64,6 @@ Rule 1 lands only if the completed frames' busy time tells a slow frame from a p
 
 ## Consequences
 
-- None until the proposal is agreed.
-- The code then changes `GovernorLoop.frame`, `Governor.lower` and `Governor.judge`.
+- Rule 2 changes `GovernorLoop.frame`, which calls `Governor.gap` at a gap, and `Governor.judge` and `Governor.lower`, with the trial in `lowerFailed` and `undoLower`. Six unit tests in `governor.test.ts` check it, one of them a replay of the resize page's frame times. All 57 of the file's tests pass.
+- Rule 1 would change `GovernorLoop.frame` again, after its test in every thread mode.
 - `.dev/implementation-notes.md` describes the gap rule in its governor paragraph, so that paragraph changes too.
