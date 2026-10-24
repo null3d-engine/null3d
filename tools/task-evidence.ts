@@ -9,6 +9,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'The governor undoes a step that does not pay: `governor.ts` with `LOWER_TRIAL_MS` and `LOWER_LOSS_PERCENT`, 6 new tests in `governor.test.ts` including a replay of the resize page, 57 of 57; D-237',
 	'M3-R21':
 		"The gate reads its software-renderer pictures from the commit's own CI browser jobs: `bench/ci-browser-jobs.ts`, 12 tests in `bench/lib/gate.test.ts`; D-238",
+	'M3-R19':
+		"The two-step pass's second step read per pass on the cloud iPad at High with the governor on, three runs: D-236's addendum holds the table — the six earlier passes cost 0.7 to 3.4 ms each and the frame's last pass, which draws the second step, cost 20.5 to 34.9 ms; the run is recorded under `.dev/tested-devices/ipad-pro-13-safari/`. The earlier 0.5-scale pair could not be reproduced, and the record says so",
 	'M3-R17':
 		"The develop skill's intake section and its `Search before you hand-roll` table over all eleven foundation add-ons, mirrored in the starter template's AGENTS.md, with three evaluation cases; 22 of 22 skill checks pass",
 	'M3-R3':
