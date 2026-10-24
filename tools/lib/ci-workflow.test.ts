@@ -400,6 +400,30 @@ describe("CI's workflow", () => {
 		expect(needsOf(jobNamed('size-parts'))).toContain('build');
 	});
 
+	it("keys the city's cache on every file that its build reads", () => {
+		const action = readFileSync(join(ROOT, '.github/actions/city/action.yml'), 'utf8');
+		const globs = [...(/hashFiles\(([^)]*)\)/.exec(action)?.[1] ?? '').matchAll(/'([^']+)'/g)].map(
+			([, glob]) => glob ?? '',
+		);
+		const kept = globs.filter((glob) => !glob.startsWith('!')).map(globPattern);
+		const dropped = globs
+			.filter((glob) => glob.startsWith('!'))
+			.map((glob) => globPattern(glob.slice(1)));
+		// The build script, the plugin's asset module, and the asset tool that the plugin loads from
+		// @null3d/cli/assets, which the package's exports map to its optimizer's index.
+		const files = scriptsWithImports([
+			'bench/lib/city-files.ts',
+			'packages/vite-plugin/src/assets.ts',
+			'packages/cli/src/assets/index.js',
+		]);
+		const missing = [...files].filter(
+			(file) =>
+				!kept.some((pattern) => pattern.test(file)) ||
+				dropped.some((pattern) => pattern.test(file)),
+		);
+		expect(missing).toEqual([]);
+	});
+
 	it('builds the city in the load pages job, which every job that downloads the city waits for', () => {
 		const cityMode = (job: Job) =>
 			(job.steps ?? []).find(({ uses }) => uses === './.github/actions/city')?.with?.mode;
