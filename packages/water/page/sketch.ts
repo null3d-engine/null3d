@@ -3,7 +3,7 @@
 // caustics and the reflection all draw. The camera circles slowly, because the engine rests a still
 // view and the check's cost gate measures the frames that a running page draws.
 import { defineSketch, math, type SketchContext } from '@null3d/engine';
-import { createWater } from '../src/index.ts';
+import { createWater, foamMap } from '../src/index.ts';
 
 /** The lake's middle and its two radii, in meters. */
 const LAKE = { x: 18, z: 0, rx: 16, rz: 12 } as const;
@@ -94,7 +94,10 @@ export default defineSketch((ctx: SketchContext) => {
 			material: materials.standard({ color: '#7a746a', roughness: 0.9 }),
 			position: [stone.x, -stone.r * 0.3, stone.z],
 		});
-	const water = createWater(ctx, { shapes: shapes() });
+	const water = createWater(ctx, {
+		shapes: shapes(),
+		foam: foamMap(ctx, stones, { origin: [-60, -8], size: [80, 16], width: 1024, height: 192 }),
+	});
 	const caustics: [number, number, number] = [0.5, 0.45, 0.35];
 	water.setCaustics(caustics);
 	return {
