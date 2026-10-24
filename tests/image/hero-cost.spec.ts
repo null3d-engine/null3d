@@ -8,7 +8,6 @@
 // quiet computer, within a time limit, and prints the load beside its figures
 // (tests/lib/effect-cost.ts).
 import { expect, test } from '@playwright/test';
-import { browserOptions, GPU_TIMING_ARGS } from '../../packages/cli/src/browser.js';
 import {
 	type CostResult,
 	costTimeout,
@@ -18,15 +17,9 @@ import {
 	waitForQuiet,
 } from '../lib/effect-cost.ts';
 import { pageResult } from '../lib/page-result.ts';
+import { TIMING_BROWSER } from '../lib/timing-browser.ts';
 
-// Chrome rounds the GPU timestamps it reports unless its developer features are on, and a rounded
-// figure cannot show a cost of a few hundredths of a millisecond.
-test.use({
-	launchOptions: {
-		...browserOptions('chrome-real-gpu'),
-		args: [...GPU_TIMING_ARGS],
-	},
-});
+test.use(TIMING_BROWSER);
 
 test.skip(!process.env.NULL3D_HERO_COST, 'set NULL3D_HERO_COST to time the hero shadow');
 
