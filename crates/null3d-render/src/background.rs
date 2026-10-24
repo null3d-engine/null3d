@@ -491,7 +491,7 @@ impl BackgroundPass {
             pipelines.id(key.in_pass(targets.tone_map_only()))
         };
         // The layer takes the background's place: it draws over the sky, under every object, and it
-        // takes the same tone mapping builds.
+        // takes the same tone mapping builds. It blends its color over the sky by its coverage.
         let layer = if self.pipeline != 0 {
             settings.sky_layer()
         } else {
@@ -502,7 +502,7 @@ impl BackgroundPass {
                 template: layer.template,
                 permutation: 0,
                 vertex_format: 0,
-                state: place.depth_state() | state_flags::CULL_NONE,
+                state: place.depth_state() | state_flags::CULL_NONE | state_flags::BLEND_NORMAL,
                 bias: DepthBias::NONE,
             };
             pipelines.id(key.in_pass(targets.tone_map_only()))
