@@ -62,6 +62,10 @@ export default defineSketch(({ scene, geometry, materials, debug, page, quality,
 			void quality.setPreset(data as QualityPreset).then(() => page.post('preset', reading()));
 		}
 		if (name === 'instances') {
+			// The rows are a stress the page adds to read the memory figures, and a software GPU
+			// draws them slowly enough for the governor to step. The step is not what is measured
+			// here, and the figures must be the preset's whole scale.
+			void quality.set({ governor: false });
 			sun.setCastShadows(true);
 			box.setCastShadows(true);
 			scene.createInstances(
