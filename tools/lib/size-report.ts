@@ -379,6 +379,20 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-renderer.js', module: 'render/draw.ts', loadedBy: 'page.js' },
 	...drawingParts('page', 'page-renderer.js'),
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
+	// A page records or replays only with a switch, so the format and the reader load then, and the
+	// save button loads only for a page that records.
+	{
+		name: 'page-recording.js',
+		module: 'shared/recording.ts',
+		loadedBy: 'page.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'page-record-button.js',
+		module: 'page/record-button.ts',
+		loadedBy: 'page.js',
+		onFirstCall: true,
+	},
 	// A page that shows no video downloads none of the support that follows one.
 	{ name: 'page-videos.js', module: 'page/videos.ts', loadedBy: 'page.js', onFirstCall: true },
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
