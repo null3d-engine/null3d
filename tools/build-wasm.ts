@@ -626,7 +626,7 @@ const SIZE_CHECK_LOCK = sizeCheckLock(root);
 export function acquireBuildLock(): () => void {
 	// A build that a size check starts runs inside its parent's lock, and must not wait for it.
 	if (process.env.NULL3D_BUILD_LOCK_HELD === '1') return () => {};
-	return acquireLock(SIZE_CHECK_LOCK);
+	return acquireLock(SIZE_CHECK_LOCK, { freesSlot: true });
 }
 
 /**

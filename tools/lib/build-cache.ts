@@ -20,6 +20,7 @@ import {
 	accessSync,
 	constants,
 	copyFileSync,
+	existsSync,
 	mkdirSync,
 	readdirSync,
 	readFileSync,
@@ -331,6 +332,9 @@ function breakLock(path: string): void {
 	rmSync(aside, { recursive: true, force: true });
 }
 
+/** The variable through which the Mac's job queue (`heavy.sh`) names the slot that runs a job. */
+export const HEAVY_SLOT_ENV = 'NULL3D_HEAVY_SLOT';
+
 /**
  * Takes the lock at `path` and returns the function that releases it. The lock is a folder that holds
  * the holder's process id, so exactly one process creates it: `mkdir` either creates the folder or
@@ -338,16 +342,46 @@ function breakLock(path: string): void {
  * holder has stopped, or one that names no process and is older than a minute: the rename in
  * breakLock makes two breakers safe. The shader build, the build and the size checks all take this
  * lock, each in a path of its own.
+ *
+ * With `freesSlot`, a wait gives back the slot of the Mac's job queue (`heavy.sh`) that runs this
+ * process, named by `NULL3D_HEAVY_SLOT`: the process writes `waiting-<pid>` into the slot while it
+ * waits, and the queue opens another slot for each slot so marked. Only a lock that its caller takes
+ * while the job does nothing else frees the slot. On 24 October 2026 six jobs held slots for up to
+ * 49 minutes with almost no processor time, and were killed by hand as hung.
  */
-export function acquireLock(path: string): () => void {
+export function acquireLock(path: string, options: { freesSlot?: boolean } = {}): () => void {
 	mkdirSync(dirname(path), { recursive: true });
 	const started = performance.now();
-	let said = false;
+	const slot = process.env[HEAVY_SLOT_ENV];
+	const marker =
+		options.freesSlot && slot && existsSync(slot)
+			? join(slot, `waiting-${process.pid}`)
+			: undefined;
+	let waited: boolean;
+	try {
+		waited = waitForLock(path, marker);
+	} finally {
+		if (marker) rmSync(marker, { force: true });
+	}
+	if (waited) console.log(`took the lock at ${path} after ${secondsSince(started)} s`);
+	return () => {
+		// Only the holder removes the lock: a lock that another process broke and took must stay.
+		if (lockHolder(path) === process.pid) rmSync(path, { recursive: true, force: true });
+	};
+}
+
+/**
+ * Creates the lock folder at `path` once no live process holds it, and returns true when it had to
+ * wait. At its first wait it says who holds the lock, and writes `marker` when it has one, so the
+ * job's slot of the job queue counts as free while it waits.
+ */
+function waitForLock(path: string, marker: string | undefined): boolean {
+	let waited = false;
 	for (;;) {
 		try {
 			mkdirSync(path);
 			writeFileSync(join(path, 'pid'), String(process.pid));
-			break;
+			return waited;
 		} catch (e) {
 			if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
 		}
@@ -360,25 +394,19 @@ export function acquireLock(path: string): () => void {
 			breakLock(path);
 			continue;
 		}
-		if (!said) {
+		if (!waited) {
+			waited = true;
+			if (marker) writeFileSync(marker, `${path}\n`);
 			// A size check holds its lock across a whole base build, so a wait here can last many
 			// minutes. Say who holds it: without this a build that waits prints nothing and looks
 			// hung. When the holder is an orphaned build, or one whose work has already landed, kill
 			// it and the lock moves.
-			console.log(
-				holder > 0
-					? `waiting for the lock at ${path}, held by pid ${holder}`
-					: `waiting for the lock at ${path}, taken by a process that named no id`,
-			);
-			said = true;
+			const who = holder > 0 ? `held by pid ${holder}` : 'taken by a process that named no id';
+			const free = marker ? "; this job's slot of the job queue counts as free while it waits" : '';
+			console.log(`waiting for the lock at ${path}, ${who}${free}`);
 		}
 		sleep(LOCK_POLL_MS);
 	}
-	if (said) console.log(`took the lock at ${path} after ${secondsSince(started)} s`);
-	return () => {
-		// Only the holder removes the lock: a lock that another process broke and took must stay.
-		if (lockHolder(path) === process.pid) rmSync(path, { recursive: true, force: true });
-	};
 }
 
 /**
@@ -387,7 +415,7 @@ export function acquireLock(path: string): () => void {
  * minute, and neither finishes. Returns the function that releases it.
  */
 export function acquirePageBuildLock(): () => void {
-	return acquireLock(join(cacheRoot(), 'page-build.lock'));
+	return acquireLock(join(cacheRoot(), 'page-build.lock'), { freesSlot: true });
 }
 
 /**
