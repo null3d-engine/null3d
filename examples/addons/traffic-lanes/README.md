@@ -40,6 +40,12 @@ traffic.update(eye, time.now);
   its belly just above y = 0. `look.size` gives its half width, its height and its half length,
   which place the tail bars, the nose lamps and the skirt. A hull of your own may replace it, as
   long as it keeps that space.
+- The hull takes a detail as its third argument. `full`, the default, gives every face its own
+  vertices, so the body reads as faceted panels: 72 vertices and 36 triangles. `light` shares each
+  vertex between the faces that meet at it, so the same silhouette and the same lights take 24
+  vertices and the same 36 triangles, and the body lights as one smooth shell. The vertex work is
+  what a lane of tens of thousands of cars pays for in every pass that draws it, so a scene that
+  draws many vehicles at once asks for `light`.
 - The rows take four values each, which the shader reads as `object.values`: the start offset, the
   speed, the lane's length and the tint. Use one material for the same heading; the add-on makes
   four, one for each.
