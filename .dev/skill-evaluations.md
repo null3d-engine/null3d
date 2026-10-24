@@ -7,7 +7,7 @@ whether the skill's description finds the requests that it should. This page rec
 "search before you hand-roll" table.
 
 Result: with the skill, 55 of 60 graded expectations passed. Without it, 51 of 60 passed. The
-trigger queries selected the right skill for 20 of 20. The skill's advantage is small, and four of
+trigger queries selected the right skill for 20 of 20. The skill's advantage is small, and five of
 the ten cases scored the same either way.
 
 ## What ran
