@@ -193,11 +193,22 @@ The rules that the reworked demos follow, and why:
 
   The traffic added at most 0.6 ms to the GPU time and no error to the scene's updates.
 - The real lights went to a fixed share of the rows, one row in 7 at 30,000 cars and one in 24 at
-  100,000, so the nearest car often had no light (25 October 2026, M3-B6). The search now reads every
-  row of the lanes near the camera. It skips a lane whose line across the way runs farther from the
-  eye than the light's range, before it reads a row, so its cost follows those lanes and not the
-  count. `examples/addons/traffic-lanes/lights.test.ts` compares it with a full search at 30,000 and
-  100,000 rows and checks that the nearest car has a light.
+  100,000. The nearest car therefore often had no light (25 October 2026, M3-B6). The search now
+  reads every row of the lanes near the camera. It skips a lane whose line across the way runs
+  farther from the eye than the light's range. The search therefore follows the lanes near the eye,
+  not the count. It runs four times a second. A car that holds a light keeps it 20% past the range.
+  A camera that drifts across the edge therefore cannot blink it on and off. The search compares
+  squared distances and takes one square root per light at the end. That took the measured cost down
+  2.5 to 3 times. At a Mac load near 55, one search took about 0.3 ms at 30,000 rows and 1.1 ms at
+  100,000 rows. The medians were 0.6 and 2.5 ms. The instances demo pays the 100,000-row figure at
+  Ultra, because all of its lanes are in range. Skyway pays 0.25 to 0.5 ms, because its camera sees
+  one or two of its ten streets. A search lands whole in one frame, so the cost is a spike every
+  quarter second. The row count sets it, not the light count.
+  `examples/addons/traffic-lanes/lights.test.ts` compares the search with a full search at 30,000
+  and 100,000 rows. It checks that the nearest car has a light. It also checks the cadence, the
+  kept-range margin and the ordinary range on one car. `real-lights.test.ts` drives the add-on
+  through the option with a recorded scene. It checks that the nearest cars are the lit ones. It
+  also checks that the option off builds no light and lights nobody.
 - The instances demo gained lanes of hover cars on 18 October 2026 (M2-EX43, [D-172](decisions/D-172-neon-harbour-follow-ups.md)). Four lanes cross the sky at 17 to 22 m, on lines 45 to 75 m from the field's center, so the traffic stays a distant layer above the horizon and no car passes near the lens. Each car is a row of a body batch and a tail light batch, which blooms. The sketch writes every row from the time alone, so a held frame draws the same cars. The lanes moved to `traffic.ts` beside the sketch, which stays under 150 lines. Against the old pictures the drawn ones differ in 1.44% to 1.49% of their pixels, against the limit of 0.1%. The references moved in both sets.
 
 ### Frame rates on the Mac
