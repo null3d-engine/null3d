@@ -1600,6 +1600,28 @@ export function treeGenerationPlan(): PlanItem<Check>[] {
 	];
 }
 
+/**
+ * Creek's valley placed by the vegetation add-on's ecological rules, on each GPU path: the page
+ * checks its placement against the reference that another device recorded, and times it. The
+ * placement reads no GPU, so the two paths must give the same points.
+ */
+export function vegetationScatterPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(
+			'vegetation-scatter-webgl2',
+			'vegetation-scatter',
+			{ kind: 'probe', tier: 'webgl2' },
+			{ switches: ['runs=3'], timeoutSeconds: 180 },
+		),
+		pageItem(
+			'vegetation-scatter-webgpu',
+			'vegetation-scatter',
+			{ kind: 'probe', tier: 'webgpu' },
+			{ switches: ['runs=3', 'gpu=webgpu'], timeoutSeconds: 180 },
+		),
+	];
+}
+
 /** The showcase demos that the demos plan measures. */
 const MEASURED_DEMOS = ['skyway', 'night-town'] as const;
 
@@ -2173,6 +2195,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
 	'tree-generation': treeGenerationPlan,
+	'vegetation-scatter': vegetationScatterPlan,
 	'webgpu-stall': webgpuStallPlan,
 	reflection: reflectionPlan,
 	occlusion: occlusionPlan,
