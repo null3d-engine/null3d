@@ -91,6 +91,14 @@ The guide keeps the video element in the page's layout, out of sight, rather tha
 `display: none`: a browser that hides an element's box may also give no frame of it. The check
 page parks its element past the page's edge for the same reason.
 
+The page's video support loads at the first call that needs it, as the engine's other optional page
+features do. `engine.registerVideo` stays a synchronous call: the engine queues the calls, loads the
+module, and runs them in order once it lands. The start needed this: with the video code in it, the
+merged tree's WebGL2 pipelined start was 191,515 bytes after Brotli against its 187 KB budget. With
+the code in a first-use file it is 190,935 of 191,488 bytes, 553 left. A page that shows no video
+downloads none of it.
+
+
 No demo shows video textures. The image manifest draws each demo from its sketch alone, in hold
 mode, and a held frame has no page to send a video's frames, so a video demo would hold a picture
 of the material's color and nothing else. The canvas-screen demo shows the sibling canvas path,
