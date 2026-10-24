@@ -278,7 +278,13 @@ const NO_FADE: u32 = permutation::SKIN
     | permutation::INSTANCE_INDEX
     | permutation::TRANSMISSION
     | permutation::ALPHA_HASH
-    | permutation::DISPLACEMENT;
+    | permutation::DISPLACEMENT
+    // A caster, a motion build and a pick build draw no fading level of their own: the level's
+    // fade belongs to the camera's view, and a custom material has no build with these bits and
+    // LOD_FADE together.
+    | permutation::CASTER
+    | permutation::MOTION
+    | permutation::PICK;
 
 /// True when a pipeline has builds of a fading level: the engine's standard and unlit templates,
 /// opaque or with a mask tested by its cutoff or by coverage, and a custom material's. Masks tested
