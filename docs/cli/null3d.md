@@ -373,6 +373,7 @@ The shader and size gates build the add-on with the Vite and the null3D plugin t
 | --- | --- | --- |
 | `--page <path>` | The page to open, from the project's root, such as `/demo.html` | The first test's page in `null3d.json` |
 | `--skip-browser` | Runs no gate that opens a browser | The page gates run |
+| `--skip-cost` | Leaves out the cost gate alone, for a machine whose load would show in the figures. The page and allocation gates still run | The cost gate runs |
 
 Each page gate draws as `bench` does: with Chrome on the computer's GPU, or with Playwright's Chromium on SwiftShader when the CI variable is set. The cost gate measures the production build on each quality preset. It prints the GPU time per frame where the device times it, and the CPU time otherwise.
 

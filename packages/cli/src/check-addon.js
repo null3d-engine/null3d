@@ -99,6 +99,7 @@ const SHOWN_LINES = 12;
 const OPTIONS = /** @type {const} */ ({
 	page: { type: 'string' },
 	'skip-browser': { type: 'boolean', default: false },
+	'skip-cost': { type: 'boolean', default: false },
 	help: { type: 'boolean', short: 'h', default: false },
 });
 
@@ -141,6 +142,7 @@ export function parseCheckAddonArgs(args) {
 		folder: positionals[0] ?? process.cwd(),
 		page: values.page,
 		skipBrowser: values['skip-browser'],
+		skipCost: values['skip-cost'],
 		help: values.help,
 	};
 }
@@ -1343,7 +1345,12 @@ export async function run(args) {
 					browserArgs: [WEBGPU_DEVELOPER_FEATURES, `--remote-debugging-port=${port}`],
 				});
 				print(await strictPolicyGate(runner, chosen.page));
-				print(await costGate(runner, chosen.page));
+				if (options.skipCost)
+					print({
+						status: 'SKIP',
+						text: 'cost: --skip-cost runs no cost measurement, because a loaded machine reports its load',
+					});
+				else print(await costGate(runner, chosen.page));
 				print(await allocationGate(runner, { page: chosen.page, folder, name: addon.name }, port));
 			} catch (error) {
 				print({

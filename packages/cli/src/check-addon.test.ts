@@ -48,17 +48,25 @@ describe('parseCheckAddonArgs', () => {
 			folder: process.cwd(),
 			page: undefined,
 			skipBrowser: false,
+			skipCost: false,
 			help: false,
 		});
 	});
 
 	it('reads the folder, the page and the browser switch', () => {
 		expect(
-			parseCheckAddonArgs(['addons/splats', '--page', '/demo.html', '--skip-browser']),
+			parseCheckAddonArgs([
+				'addons/splats',
+				'--page',
+				'/demo.html',
+				'--skip-browser',
+				'--skip-cost',
+			]),
 		).toEqual({
 			folder: 'addons/splats',
 			page: '/demo.html',
 			skipBrowser: true,
+			skipCost: true,
 			help: false,
 		});
 	});
