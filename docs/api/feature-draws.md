@@ -147,6 +147,7 @@ values.set([...]); // four numbers of yours for each row, read as `object.values
 
 - The adapter places the main view alone. A scene pass and a reflection pass do not draw a feature draw yet, and a description that names one throws E1223.
 - A draw has one shape and one material, repeated once for each row. A scene that draws a different shape for each copy, or whose copies the GPU chooses, needs another hook.
+- A compact buffer of many copies that a shader expands, as a large splat scene needs, is not this hook: [compute instances](feature-instances.md) draw a capacity of instances whose live count a compute pass writes.
 - The feature description's `reads`, `writes`, `outputs` and `provides` stay with the [feature registry](features.md): this draw reads and writes no scene resource and provides no lighting slot.
 
 ## Errors

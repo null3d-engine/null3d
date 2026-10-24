@@ -52,6 +52,7 @@ import type {
 	FeatureInstances,
 	FeatureInstancesOptions,
 } from './feature-draws';
+import type { ComputeInstances, ComputeInstancesOptions } from './feature-instances';
 import type { FeatureDescription } from './features';
 import { type FogOptions, setSceneFog } from './fog';
 import {
@@ -2721,6 +2722,16 @@ export class InstanceBatch implements ViewHolder {
 		for (const part of this.parts) core.glue.setBatchDrawRange(part);
 	}
 
+	/**
+	 * Keeps every row of the batch whatever a camera's frustum says, or culls its rows again. An
+	 * add-on whose own cull or count decides what draws marks its batch unculled. A change
+	 * recomputes the rows' bounds, so make it at setup.
+	 */
+	setFrustumCulled(culled: boolean): void {
+		const { core } = this.scene;
+		core.check(core.glue.setBatchUnculled(this.id, !culled), 'setFrustumCulled', undefined, true);
+	}
+
 	/** Draws only the first `count` rows. */
 	setActiveCount(count: number): void {
 		const { core } = this.scene;
@@ -2962,6 +2973,18 @@ async function loadLines(call: string): Promise<typeof import('./lines')> {
 		throw new EngineError(
 			'E1406',
 			`the line code did not download for ${call}(): ${reasonOf(error)}.`,
+		);
+	}
+}
+
+/** Imports the instance adapter, which a page downloads with its first instance draw, or throws E1406. */
+async function loadFeatureInstances(call: string): Promise<typeof import('./feature-instances')> {
+	try {
+		return await import('./feature-instances');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the feature instance code did not download for ${call}(): ${reasonOf(error)}.`,
 		);
 	}
 }
@@ -4585,6 +4608,46 @@ export class Scene implements ViewHolder {
 				createMesh: (mesh, material, place) => this.createMesh({ mesh, material, ...place }),
 				createInstances: (mesh, count, options) =>
 					this.createInstances(mesh, count, options as InstanceOptions),
+				fail: (detail) => new EngineError('E1223', detail),
+			},
+			call,
+		);
+	}
+
+	/**
+	 * An add-on's own kind of draw whose instance count the GPU writes: the description places it,
+	 * the options give its one shape, its shader and the most instances that it holds, and the
+	 * add-on fills its per-instance data. On WebGPU the draw reads the add-on's instance buffer and
+	 * the count word that its compute pass writes; the engine copies the count into the indirect
+	 * draw each frame. WebGL2 has no compute, so the page sets the instances and the count on the
+	 * CPU, which draws the same picture.
+	 *
+	 * The description names the frame point `'opaque'` and the main view alone. The draw is
+	 * unculled: the add-on's own cull or count decides what draws. The first call downloads the
+	 * adapter.
+	 *
+	 * Throws E1223 for a description that the adapter cannot place or a capacity that it cannot
+	 * take, E1215, E1216 and E1217 for WGSL and values that `materials.shader` refuses, E1206 for
+	 * vertex data that makes no mesh, and E1406 when the adapter does not download.
+	 */
+	async addComputeInstances<const Wgsl extends string | CompiledWgsl = string | CompiledWgsl>(
+		description: FeatureDescription,
+		options: ComputeInstancesOptions<Wgsl>,
+	): Promise<ComputeInstances<Wgsl>> {
+		const call = 'addComputeInstances';
+		const { makers, core } = this;
+		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		const draws = await loadFeatureInstances(call);
+		return draws.createComputeInstances(
+			description,
+			options,
+			{
+				webgl2: this.webgl2,
+				core,
+				geometry: makers.geometry,
+				materials: makers.materials,
+				createMesh: (mesh, material, place) => this.createMesh({ mesh, material, ...place }),
+				createBatch: (mesh, material, count) => this.createInstances(mesh, count, { material }),
 				fail: (detail) => new EngineError('E1223', detail),
 			},
 			call,

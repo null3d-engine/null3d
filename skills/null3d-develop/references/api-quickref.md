@@ -648,10 +648,27 @@ const blur = render.addPass({
 });
 render.setPassUniform(blur, 'radius', 4);   // allocates nothing
 post.addEffect({ wgsl: addBlur, textures: { blur: textures.fromPass(blur) } }); // effects take textures too
+const waves = render.addPass({
+  kind: 'compute',                   // (0.3) a compute shader fills a storage texture; WebGPU only
+  description: defineFeature({
+    name: 'waves', frame: 'background', kind: 'compute',
+    outputs: { waves: { default: 'black' } },   // one output names the texture
+  }),
+  wgsl: spectrumWgsl,                // a whole shader with @compute; group 0 binding 0 is its block, binding 1 its texture_storage_2d_array
+  format: 'rgba16float',             // or 'r32float' | 'rgba8unorm'
+  workgroupSize: [8, 8, 1],          // the shader's @workgroup_size by default
+  dispatch: 'writes',                // or counts along each axis
+  values: [time],                    // up to 32 numbers, read as eight vec4f in the block
+  textures: [textures.fromPass(half)],          // group 1, in map-slot order
+  fallback: { wgsl: wavesFragments }, // the fragment form that WebGL2 runs; without it, WebGL2 throws E1220
+});
+render.setPassUniforms(waves, [next]);  // allocates nothing
+const surface = materials.unlit({ map: textures.fromPass(waves) });  // reads the same frame
 ```
 
 - A pass runs only while a texture shows it or another pass or effect reads it. Scene and reflection passes draw the sun, its shadows, the ambient and environment light and fog. They draw the point and spot lights their view sees, and the scene's background; a scene pass with `clearColor` shows that color instead. A light that only the pass sees casts no shadow there. No pass draws ambient occlusion.
 - A custom material reads a reflection with `reflection_uv` from `null3d::reflection` and sets `s.reflection` (`shaders/surface-functions`, recipe 20).
+- A compute pass's texture is a storage texture on WebGPU. Materials, effects and passes sample it in the same frame, because the graph orders the pass before its readers. The shader reads the render size, the clock, the camera and its values from the block that a full-screen pass's WGSL also gets. The texture is read as a 2D array of one layer. WebGL2 runs the `fallback` fragment form, or the call throws when it gives none.
 - A full-screen pass's `input.uv` is (0, 0) at its top left. Pass textures hold their bottom row first: sample one at `effectPassUv(input.uv)`. `effectInputSize()` is the input image's size. A pass that reads the scene (input or depth) runs after the camera: materials showing it see the frame before; effects see the same frame.
 
 Passes are declarations: the engine checks them, orders them, and shares memory between their temporary textures. No sketch code runs during rendering.

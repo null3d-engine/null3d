@@ -87,7 +87,8 @@ use null3d_render::ssr::Ssr;
 use null3d_render::subsurface;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::{
-    CanvasRect, Fullscreen, MAX_VIEWS, PassSource, View, ViewId, ViewNames, ViewTarget,
+    CanvasRect, Compute, ComputeBuffers, Fullscreen, MAX_VIEWS, PassSource, View, ViewId,
+    ViewNames, ViewTarget,
 };
 use wasm_bindgen::prelude::*;
 
@@ -1570,6 +1571,18 @@ pub fn batch_arrays(batch: u32, field: u32) -> u32 {
             batch_field::RANGES => address(batch.row_ranges()),
             _ => 0,
         })
+    })
+}
+
+/// Keeps every row of a batch whatever a view's frustum says, or culls its rows again.
+#[wasm_bindgen(js_name = setBatchUnculled)]
+pub fn set_batch_unculled(batch: u32, unculled: bool) -> u32 {
+    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
+        Ok(batch) => {
+            batch.set_unculled(unculled);
+            0
+        }
+        Err(error) => core_failure(error),
     })
 }
 
@@ -3110,6 +3123,103 @@ pub fn add_fullscreen_pass(
     )
 }
 
+/// Adds a compute pass, through a pass that the render graph names `pass`, which runs the compiled
+/// WGSL of compute pipeline template `template` over the whole of a target that it names `target`:
+/// of `width` x `height` texels, or with a width of 0, of `scale` of the render size each way, 1,
+/// 0.5 or 0.25. It writes the target as a storage texture of `format`, a draw list format code,
+/// over a workgroup of `workgroup` invocations, packed one axis to a byte, and dispatches `counts`
+/// workgroups along each axis, packed the same way, or covers the target when every count is 0. It
+/// reads its uniforms at `effectValues`
+/// and its textures at `effectTextures`, in one frame of every `every`. With `afterScene` it
+/// records after the camera's passes, which it reads the scene color of. Returns the view's place,
+/// from 1, or 0 as `addPass` does.
+#[wasm_bindgen(js_name = addComputePass)]
+#[allow(clippy::too_many_arguments)]
+pub fn add_compute_pass(
+    pass: &str,
+    target_name: &str,
+    width: u32,
+    height: u32,
+    scale: f32,
+    every: u32,
+    template: u32,
+    format: u32,
+    workgroup: u32,
+    counts: u32,
+    after_scene: u32,
+    counts_buffer: u32,
+    instances_buffer: u32,
+    instances_bytes: u32,
+) -> u32 {
+    let target = ViewTarget {
+        size: (width > 0).then_some((width, height.max(1))),
+        halvings: halvings_of(scale),
+        every: every.max(1),
+        ..ViewTarget::default()
+    };
+    // The numbers arrive packed, one axis to a byte: the workgroup's three axes, and the three
+    // workgroup counts, which all read 0 when the pass covers its target.
+    let axis = |packed: u32, k: usize| (packed >> (8 * k)) & 0xff;
+    let workgroup = [axis(workgroup, 0), axis(workgroup, 1), axis(workgroup, 2)].map(|n| n.max(1));
+    let raw = [axis(counts, 0), axis(counts, 1), axis(counts, 2)];
+    let dispatch = (raw != [0, 0, 0]).then(|| raw.map(|n| n.max(1)));
+    add_view_of(
+        |e| {
+            let content = Compute {
+                template,
+                workgroup,
+                dispatch,
+                format,
+                after_scene: after_scene != 0,
+                values: *e.effect_values,
+                maps: effect_maps(e),
+                // A pass that writes an instance draw names its count word and its rows; a pass
+                // that writes a texture names neither.
+                buffers: (counts_buffer != 0).then_some(ComputeBuffers {
+                    counts: counts_buffer,
+                    instances: instances_buffer,
+                    instances_bytes,
+                }),
+            };
+            View::compute(content, target)
+        },
+        pass,
+        target_name,
+        "",
+    )
+}
+
+/// Gives the compute pass of view place `place`, from 1, the uniforms at `effectValues` and the
+/// textures at `effectTextures`, from the next frame on. A texture that shows the pass's own
+/// target, or closes a loop of passes, fails with the render graph's error, and the pass keeps
+/// what it had.
+#[wasm_bindgen(js_name = setComputeValues)]
+pub fn set_compute_values(place: u32) -> u32 {
+    with_engine(|e| {
+        let view = ViewId::from_place(place as usize);
+        let textures = e.effect_textures.map(Handle::from_raw);
+        let values = *e.effect_values;
+        let settings = e.renderer.settings_mut();
+        let Some(kept) = settings
+            .views()
+            .get(view.index())
+            .and_then(View::compute_pass)
+            .copied()
+        else {
+            return 0;
+        };
+        settings.set_compute_values(view, &values, &textures);
+        if let Err(error) = e.renderer.check_graph() {
+            let code = graph_failure(e, error);
+            let settings = e.renderer.settings_mut();
+            settings.set_compute_values(view, &kept.values, &kept.maps.textures);
+            let _ = e.renderer.check_graph();
+            return code;
+        }
+        0
+    })
+}
+
 /// Gives the full-screen pass of view place `place`, from 1, the uniforms at `effectValues` and
 /// the textures at `effectTextures`, from the next frame on. A texture that shows the pass's own
 /// target, or closes a loop of passes, fails with the render graph's error, and the pass keeps
@@ -3857,6 +3967,72 @@ pub fn set_vertex_draw_counts(id: u32, vertices: u32, instances: u32) -> u32 {
             .vertex_draws_mut()
             .set_counts(id, vertices, instances);
         0
+    })
+}
+
+/// Makes a draw of at most `capacity` instances for the object in scene slot `slot`, whose
+/// instance count the GPU writes, and returns its id: 0 when the scene holds the most such draws
+/// already.
+#[wasm_bindgen(js_name = createFeatureInstances)]
+pub fn create_feature_instances(slot: u32, capacity: u32) -> u32 {
+    value_with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .feature_instances_mut()
+            .create(slot, capacity)
+            .map_err(|_| out_of_memory(0))
+    })
+}
+
+/// Forgets a draw whose instance count the GPU writes. Its object draws nothing from then on.
+#[wasm_bindgen(js_name = destroyFeatureInstances)]
+pub fn destroy_feature_instances(id: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .feature_instances_mut()
+            .destroy(id);
+        0
+    })
+}
+
+/// Sets the count that a shadow view draws and that a page without compute sets for a draw whose
+/// instance count the GPU writes.
+#[wasm_bindgen(js_name = setFeatureInstanceCount)]
+pub fn set_feature_instance_count(id: u32, count: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .feature_instances_mut()
+            .set_count(id, count);
+        0
+    })
+}
+
+/// The id of the per-instance buffer that a draw whose instance count the GPU writes reads.
+#[wasm_bindgen(js_name = featureInstanceBuffer)]
+pub fn feature_instance_buffer(id: u32) -> u32 {
+    null3d_render::gpu_driven::feature_buffer_ids(id).0
+}
+
+/// The id of the count word that a draw whose instance count the GPU writes takes.
+#[wasm_bindgen(js_name = featureInstanceCountBuffer)]
+pub fn feature_instance_count_buffer(id: u32) -> u32 {
+    null3d_render::gpu_driven::feature_buffer_ids(id).1
+}
+
+/// Writes `count` per-instance rows from `values` at row `start`, as the engine's instance
+/// buffers hold them: three world-matrix rows, then the ids. Returns 0, or 1 for a draw that the
+/// values do not fit.
+#[wasm_bindgen(js_name = setFeatureInstanceRows)]
+pub fn set_feature_instance_rows(id: u32, start: u32, count: u32, values: &[f32]) -> u32 {
+    with_engine(|e| {
+        u32::from(
+            !e.renderer
+                .settings_mut()
+                .feature_instances_mut()
+                .set_rows(id, values, start, count),
+        )
     })
 }
 

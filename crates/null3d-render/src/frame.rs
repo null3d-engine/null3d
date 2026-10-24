@@ -44,6 +44,7 @@ use crate::dof::{self, Dof, DofFrame};
 use crate::effects::{EFFECT_FLOATS, Effect, EffectJoins, EffectMaps, MAX_EFFECTS, MAX_TEXTURES};
 use crate::environment::{Environment, EnvironmentUniform};
 use crate::exposure::{AutoExposure, ExposureFrame, Meter};
+use crate::feature_instances::FeatureInstanceTable;
 use crate::fog::{self, Fog};
 use crate::fog_volume::{self, FogVolumeFrame, Volumetric};
 use crate::frame_data::{FrameUniform, normalized_direction};
@@ -1096,6 +1097,8 @@ pub struct SceneSettings {
     particles: ParticleTable,
     /// The draws that make their vertices from a vertex count alone.
     vertex_draws: VertexDrawTable,
+    /// The draws of an add-on feature whose instance count the GPU writes.
+    feature_instances: FeatureInstanceTable,
     /// The meshes with levels of detail.
     levels: Levels,
     /// The meshes' trees of cluster patches, which large static meshes draw instead of their whole
@@ -1229,6 +1232,7 @@ impl SceneSettings {
             area_wanted: false,
             particles: ParticleTable::default(),
             vertex_draws: VertexDrawTable::default(),
+            feature_instances: FeatureInstanceTable::default(),
             levels: Levels::default(),
             patches: crate::patches::PatchStorage::default(),
             level_quality: LevelQuality::default(),
@@ -1440,12 +1444,15 @@ impl SceneSettings {
             resolve_maps(textures, &mut effect.maps, &mut effect.values);
         }
         for view in &mut self.views {
-            let Some(pass) = view.fullscreen_pass_mut() else {
-                continue;
-            };
-            resolve_maps(textures, &mut pass.maps, &mut pass.values);
-            let reads = pass.maps.views;
-            view.target_mut().reads = reads;
+            if let Some(pass) = view.fullscreen_pass_mut() {
+                resolve_maps(textures, &mut pass.maps, &mut pass.values);
+                let reads = pass.maps.views;
+                view.target_mut().reads = reads;
+            } else if let Some(pass) = view.compute_pass_mut() {
+                resolve_maps(textures, &mut pass.maps, &mut pass.values);
+                let reads = pass.maps.views;
+                view.target_mut().reads = reads;
+            }
         }
     }
 
@@ -1459,6 +1466,8 @@ impl SceneSettings {
         }
         for view in &mut self.views {
             if let Some(pass) = view.fullscreen_pass_mut() {
+                write_layers(textures, &pass.maps, &mut pass.values);
+            } else if let Some(pass) = view.compute_pass_mut() {
                 write_layers(textures, &pass.maps, &mut pass.values);
             }
         }
@@ -2747,6 +2756,16 @@ impl SceneSettings {
         &mut self.vertex_draws
     }
 
+    /// The draws of an add-on feature whose instance count the GPU writes.
+    pub fn feature_instances(&self) -> &FeatureInstanceTable {
+        &self.feature_instances
+    }
+
+    /// Those draws, to make, change and destroy them.
+    pub fn feature_instances_mut(&mut self) -> &mut FeatureInstanceTable {
+        &mut self.feature_instances
+    }
+
     /// Moves the views on to the next frame: each mirror view takes the camera's layers unless it
     /// has its own, and the preset's size unless it has its own, and each view that draws once in
     /// several frames moves its turn on, drawing at once into a texture of a new size for the
@@ -2796,8 +2815,28 @@ impl SceneSettings {
             || self.views.get(view.index()).is_some_and(|view| {
                 view.mirrored().is_some()
                     || view.captured_face().is_some()
-                    || (view.fullscreen_pass().is_none() && view.target().clear.is_none())
+                    || (view.fullscreen_pass().is_none()
+                        && view.compute_pass().is_none()
+                        && view.target().clear.is_none())
             })
+    }
+
+    /// Gives the compute pass of a view new values and textures, from the next frame on. A view of
+    /// another kind, or a removed one, keeps what it has.
+    pub fn set_compute_values(
+        &mut self,
+        view: ViewId,
+        values: &[f32; EFFECT_FLOATS],
+        textures: &[Handle; MAX_TEXTURES],
+    ) {
+        if let Some(pass) = self
+            .views
+            .get_mut(view.index())
+            .and_then(View::compute_pass_mut)
+        {
+            pass.values = *values;
+            pass.maps.textures = *textures;
+        }
     }
 
     /// Gives the full-screen pass of a view new values and textures, from the next frame on. A view

@@ -8,7 +8,7 @@ summary: "One description for an add-on's render work: the frame point, the read
 
 # Add-on feature descriptions
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A description with `kind: 'draw'` can become a draw with [`scene.addFeatureDraw`](feature-draws.md). The other kinds do not reach the frame yet: each arrives with the add-on hook that first uses it. Until then, a registration checks the shape and changes nothing that draws. A feature's preset settings, budget and stats work today. Its GPU time reads as not measured until the engine records its frame work.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A description with `kind: 'draw'` can become a draw with [`scene.addFeatureDraw`](feature-draws.md). A description with `kind: 'compute'` can become a compute pass with [`render.addPass`](render.md#compute-passes). The full-screen kind does not reach the frame yet: it arrives with the add-on hook that first uses it. Until then, a registration checks the shape and changes nothing that draws. A feature's preset settings, budget and stats work today. Its GPU time reads as not measured until the engine records its frame work.
 
 ```mermaid
 flowchart LR
@@ -246,16 +246,16 @@ A feature has one GPU timing scope. The engine times the feature's work in the f
 
 ## Adapters
 
-An adapter turns a checked description into work in the frame. One adapter exists:
+Adapters turn a checked description into work in the frame. Three exist:
 
 - **Draws:** [`scene.addFeatureDraw(description, options)`](feature-draws.md) draws the add-on's WGSL over its own vertices, with its uniforms, at the description's frame point. The band and order place a blended draw among the transparent pass's objects. The adapter places the main view alone.
+- **Instance draws:** [`scene.addComputeInstances(description, options)`](feature-instances.md) draws a capacity of instances from the add-on's own buffer. The count comes from the GPU on WebGPU, and from the page on WebGL2. The adapter places the main view alone, at the opaque point.
+- **Compute passes:** [`render.addPass({ kind: 'compute', description, ... })`](render.md#compute-passes) runs the add-on's compute shader over a storage texture, which materials, effects and passes sample in the same frame. The adapter places the main view alone, binds no scene resource, and publishes the description's one output. A WebGL2 page runs the pass's fragment form, or the call throws.
 
 The other hooks still need their own payload, and they arrive with the add-on that uses them first:
 
 | Hook | What the description does not yet give it |
 | --- | --- |
-| Compute passes whose storage output other work reads in the same frame | The binding and ordering of the storage read. A feature has one kind, so the WebGL2 fragment-pass fallback needs a second description. |
-| Draws whose count and instances the GPU writes | The indirect buffer and the CPU-filled fallback. The description says where the draw sorts, not how its count is made. |
 | Material lobes, baked-data formats and glTF extension handlers | They are not frame features, so each needs its own hook. |
 | Scene inputs, sky layers, presets and stats | Each needs its own declaration: a depth input behind a material, the background's CPU light, or a GPU timing scope. |
 

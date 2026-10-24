@@ -2587,6 +2587,33 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		modes: ALL_MODES,
 	},
+	// An add-on's draw whose instance count the GPU writes: a field of quads that the page fills,
+	// which every GPU path and thread mode must draw the same. WebGPU takes the count through the
+	// engine's copy into the indirect draw; WebGL2 draws an instance batch of the same rows.
+	{
+		name: 'feature-instances',
+		sketch: 'tests/pages/sketches/feature-instances-sketch.ts',
+		hold: 0,
+		modes: ALL_MODES,
+	},
+	// The compute-side proof of an instance draw: the page fills nothing, and a compute shader
+	// writes 42 instance rows and the draw's count. The picture shows exactly those 42 quads, so
+	// the count and the rows that the GPU wrote are the ones drawn. WebGL2 has no compute pass.
+	{
+		name: 'feature-instances-compute',
+		sketch: 'tests/pages/sketches/feature-instances-compute-sketch.ts',
+		hold: 0,
+		tiers: ['webgpu', 'compat'],
+	},
+	// A compute pass's storage texture, which a material samples in the same frame: four colored
+	// quadrants. WebGPU runs the compute shader, and WebGL2 its fragment form, so the two paths
+	// must draw the same picture.
+	{
+		name: 'compute-pass',
+		sketch: 'tests/pages/sketches/compute-pass-sketch.ts',
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+	},
 	// Gaussian splats from an SPZ file that the sketch makes: a knot of splats above a ground, with a
 	// bar in front of part of it, so the picture shows the splats hiding behind a mesh and fading where
 	// they meet the ground. The selection runs on a job worker before the held frame draws.

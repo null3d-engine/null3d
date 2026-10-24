@@ -515,15 +515,22 @@ impl Draws<'_> {
             // A bucket whose material reads the scene's depth binds the group after its maps.
             let scene = if own && bucket.scene_depth { scene } else { 0 };
             groups.set(list, maps, scene, bucket.skins, index)?;
-            list.push(
-                Op::SetVertexBuffer,
-                &[
-                    1,
+            // A feature-instance draw reads the add-on's own buffer, which its compute pass fills,
+            // from the buffer's first instance on.
+            let (instances, offset, bytes) = if bucket.feature != 0 {
+                (
+                    ids::feature_instances(bucket.feature),
+                    0,
+                    bucket.feature_capacity.max(1) * sizes::INSTANCE_STRIDE,
+                )
+            } else {
+                (
                     ids::visible(view),
                     bucket.base * stride,
                     bucket.capacity.max(1) * stride,
-                ],
-            )?;
+                )
+            };
+            list.push(Op::SetVertexBuffer, &[1, instances, offset, bytes])?;
             // A cluster mesh draws the indices that the cluster pass copied for this view, in one
             // draw that the pass sized, instead of its whole triangle list. The direct-draw path
             // counts its own instances and records no cluster pass, so it draws the whole list.

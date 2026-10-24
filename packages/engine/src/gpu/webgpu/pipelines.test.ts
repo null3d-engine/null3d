@@ -245,6 +245,27 @@ describe('the WebGPU pipeline layouts', () => {
 		expect(found).toEqual([]);
 	});
 
+	it('build an add-on compute pass from its own shader, within the default limits', () => {
+		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
+		const id = G.TEMPLATE_CUSTOM_FIRST + 2;
+		const source = '@compute @workgroup_size(8, 8) fn main() {}';
+		const shader = {
+			kind: 'compute',
+			variants: { main: { permutation: 0, wgsl: { source, pipelines: {} }, glsl: null } },
+			locations: [],
+			textures: 0,
+		} as unknown as CustomShader;
+		pipelines.defineCustom(id, shader);
+		expect(pipelines.has(id)).toBe(true);
+		const descriptor = pipelines.compute(id, G.FORMAT_RGBA16_FLOAT);
+		expect(descriptor.compute?.entryPoint).toBe('main');
+		const groups = [...layoutOf(descriptor).bindGroupLayouts] as unknown as {
+			label: string;
+		}[];
+		expect(groups.map((group) => group.label)).toEqual(['compute rgba16float', 'material maps']);
+		expect(faults(layoutOf(descriptor), 0)).toEqual([]);
+	});
+
 	it('give a decal with maps a frame group without the probe grid', () => {
 		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
 		const layout = layoutOf(renderDescriptor(pipelines, G.TEMPLATE_DECAL_MAPS, 0));
