@@ -148,6 +148,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 			'templates/empty/AGENTS.md',
 			'templates/empty/.claude/agent-hook.mjs',
 			'templates/empty/.claude/settings.json',
+			'templates/empty/.codex/hooks.json',
 			'templates/empty/src/sketch.ts',
 			'vendor/basis/basis_encoder.js',
 			'vendor/basis/basis_encoder.wasm',

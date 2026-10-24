@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import {
 	engineDeclarations,
 	refusedCommand,
+	refusedPatch,
 	refusedSource,
 } from '../templates/empty/.claude/agent-hook.mjs';
 
@@ -150,6 +151,45 @@ describe('the source rules', () => {
 	});
 });
 
+describe('the Codex patch rules', () => {
+	it('reads each file of a patch, and names the one that breaks a rule', () => {
+		const patch = [
+			'*** Begin Patch',
+			'*** Update File: src/page.ts',
+			'@@',
+			'-const canvas = null;',
+			'+const canvas = document.querySelector("canvas");',
+			'*** Update File: src/sketch.ts',
+			'@@',
+			'+const canvas = document.querySelector("canvas");',
+			'*** End Patch',
+		].join('\n');
+		expect(refusedPatch(patch)).toContain('src/sketch.ts');
+		expect(refusedPatch(patch)).toContain('has no DOM');
+	});
+
+	it('refuses an allocation that the patch adds to onUpdate', () => {
+		const patch = [
+			'*** Begin Patch',
+			'*** Update File: src/sketch.ts',
+			'@@',
+			'+return { onUpdate() { const view = new Float32Array(3); } };',
+			'*** End Patch',
+		].join('\n');
+		expect(refusedPatch(patch)).toContain('creates an object');
+	});
+
+	it('allows a patch that breaks no rule', () => {
+		const patch = [
+			'*** Begin Patch',
+			'*** Add File: src/helpers.ts',
+			'+export const twice = (value) => value * 2;',
+			'*** End Patch',
+		].join('\n');
+		expect(refusedPatch(patch)).toBeNull();
+	});
+});
+
 describe('the hook entry', () => {
 	it('refuses a command with exit code 2 and the reason', () => {
 		const result = runHook('bash', {
@@ -194,5 +234,25 @@ describe('the hook entry', () => {
 
 	it('allows a call that it cannot read, so its own fault stops no work', () => {
 		expect(runHook('bash', 'not json').status).toBe(0);
+	});
+
+	it('refuses a DOM edit that Codex sends as a patch', () => {
+		const result = runHook('', {
+			session_id: 'session',
+			turn_id: 'turn',
+			hook_event_name: 'PreToolUse',
+			tool_name: 'apply_patch',
+			tool_input: {
+				command: [
+					'*** Begin Patch',
+					'*** Update File: src/sketch.ts',
+					'@@',
+					'+const canvas = document.querySelector("canvas");',
+					'*** End Patch',
+				].join('\n'),
+			},
+		});
+		expect(result.status).toBe(2);
+		expect(result.stderr).toContain('has no DOM');
 	});
 });
