@@ -1024,6 +1024,12 @@ impl MockBackend {
             if layout == 0 {
                 continue;
             }
+            // WebGL2 binds the scene's depth group for a whole view, whichever template draws in
+            // it, and GL reads only the units that a program names. WebGPU binds it after the maps'
+            // group, where the templates that read it list it.
+            if layout == crate::drawlist::layout::MATERIAL_SCENE {
+                continue;
+            }
             if !groups
                 .get(index)
                 .is_some_and(|allowed| allowed.contains(&layout))
