@@ -3,7 +3,7 @@ import * as G from '../../generated/gpu';
 import { type DeviceShaders, everyShader, type ShaderVariants } from '../../generated/shaders';
 import type { CustomShader } from '../../shared/images';
 import { engineTemplates } from '../webgl2/programs';
-import { Pipelines } from './pipelines';
+import { COMPUTE_MAPS_BIT, Pipelines } from './pipelines';
 
 const scope = globalThis as Record<string, unknown>;
 const GLOBALS = { GPUShaderStage: { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 } };
@@ -29,13 +29,6 @@ const LIMITS = {
 };
 
 const STAGES = { vertex: 1, fragment: 2, compute: 4 };
-
-/** The permutation bits of a custom shader that change its pipeline layout. */
-const CUSTOM_BITS = {
-	SKIN: G.PERMUTATION_SKIN,
-	INSTANCE_INDEX: G.PERMUTATION_INSTANCE_INDEX,
-	DEPTH_MULTISAMPLED: G.PERMUTATION_DEPTH_MULTISAMPLED,
-};
 
 /** Every combination of the bits of `bits`. */
 function combinations(bits: number): number[] {
@@ -198,12 +191,43 @@ describe('the WebGPU pipeline layouts', () => {
 		expect(stageCounts(entries, STAGES.fragment).sampledTextures).toBe(16);
 	});
 
+	it('give a depth-reading material with maps a maps group with one slot fewer', () => {
+		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
+		const id = G.TEMPLATE_CUSTOM_FIRST + 7;
+		pipelines.defineCustom(id, {
+			...custom(undefined, G.SIZE_MAP_SLOTS - 1, 0),
+			sceneDepth: true,
+		});
+		const layout = layoutOf(renderDescriptor(pipelines, id, 0));
+		const groups = [...layout.bindGroupLayouts] as unknown as GPUBindGroupLayoutDescriptor[];
+		expect(groups.map((group) => group.label)).toEqual([
+			'frame',
+			'material maps with scene depth',
+			'material scene depth',
+		]);
+		const maps = groups[1];
+		const bindings = [...(maps?.entries ?? [])].map((entry) => entry.binding);
+		// The shader numbers its own textures from the first binding and their samplers from the
+		// slot count, so the group keeps those numbers and leaves the last slot's pair out.
+		expect(bindings).toEqual([0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14]);
+		const entries = groups.flatMap((group) => [...group.entries]);
+		expect(stageCounts(entries, STAGES.fragment).sampledTextures).toBe(16);
+	});
+
 	it('keep custom materials and effects with textures within the default limits', () => {
 		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
-		const meshBits = G.PERMUTATION_SKIN | G.PERMUTATION_INSTANCE_INDEX | G.PERMUTATION_CASTER;
+		// A custom material's builds never read their instances by index: the material compiler
+		// leaves that permutation out, and the renderer pairs it only with the engine's own mesh
+		// templates. Skinning and the caster builds are the combinations that add a group here.
+		const meshBits = G.PERMUTATION_SKIN | G.PERMUTATION_CASTER;
 		const shaders = [
 			custom(undefined, 0, meshBits),
 			custom(undefined, G.SIZE_MAP_SLOTS, meshBits),
+			// A material that reads the scene's depth takes the group after the frame's and a maps'
+			// group with one slot fewer, which `materials.shader` matches by refusing an eighth
+			// texture, so its fragment stage stays within the default limit.
+			{ ...custom(undefined, 0, meshBits), sceneDepth: true },
+			{ ...custom(undefined, G.SIZE_MAP_SLOTS - 1, meshBits), sceneDepth: true },
 			custom('effect', G.SIZE_MAP_SLOTS, G.PERMUTATION_DEPTH_MULTISAMPLED),
 			custom('effectGroup', 0, G.PERMUTATION_DEPTH_MULTISAMPLED),
 			custom('effectFold', 0, G.PERMUTATION_DEPTH_MULTISAMPLED),
@@ -241,6 +265,48 @@ describe('the WebGPU pipeline layouts', () => {
 		expect(found).toEqual([]);
 	});
 
+	it('build an add-on compute pass from its own shader, within the default limits', () => {
+		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
+		const id = G.TEMPLATE_CUSTOM_FIRST + 2;
+		const source = '@compute @workgroup_size(8, 8) fn main() {}';
+		const shader = {
+			kind: 'compute',
+			variants: { main: { permutation: 0, wgsl: { source, pipelines: {} }, glsl: null } },
+			locations: [],
+			textures: 0,
+		} as unknown as CustomShader;
+		pipelines.defineCustom(id, shader);
+		expect(pipelines.has(id)).toBe(true);
+		const descriptor = pipelines.compute(id, G.FORMAT_RGBA16_FLOAT);
+		expect(descriptor.compute?.entryPoint).toBe('main');
+		const groups = [...layoutOf(descriptor).bindGroupLayouts] as unknown as {
+			label: string;
+		}[];
+		// The pass samples no textures, so its pipeline takes group 0 alone: a group that nothing
+		// binds fails its dispatch.
+		expect(groups.map((group) => group.label)).toEqual(['compute rgba16float']);
+		expect(faults(layoutOf(descriptor), 0)).toEqual([]);
+	});
+
+	it('give an add-on compute pass with maps the maps layout at group 1', () => {
+		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
+		const id = G.TEMPLATE_CUSTOM_FIRST + 3;
+		const source = '@compute @workgroup_size(8, 8) fn main() {}';
+		const shader = {
+			kind: 'compute',
+			variants: { main: { permutation: 0, wgsl: { source, pipelines: {} }, glsl: null } },
+			locations: [],
+			textures: 1,
+		} as unknown as CustomShader;
+		pipelines.defineCustom(id, shader);
+		const descriptor = pipelines.compute(id, G.FORMAT_RGBA16_FLOAT | COMPUTE_MAPS_BIT);
+		const groups = [...layoutOf(descriptor).bindGroupLayouts] as unknown as {
+			label: string;
+		}[];
+		expect(groups.map((group) => group.label)).toEqual(['compute rgba16float', 'material maps']);
+		expect(faults(layoutOf(descriptor), 0)).toEqual([]);
+	});
+
 	it('give a decal with maps a frame group without the probe grid', () => {
 		const pipelines = new Pipelines(fakeDevice(), deviceShaders());
 		const layout = layoutOf(renderDescriptor(pipelines, G.TEMPLATE_DECAL_MAPS, 0));
@@ -269,6 +335,7 @@ const WEBGPU_ONLY: readonly (readonly [number, string])[] = [
 	[G.TEMPLATE_PARTICLE_DEPTH_MS, 'WebGL2 reads one sample of the depth through a copy'],
 	[G.TEMPLATE_FOG_APPLY_MS, 'WebGL2 reads one sample of the depth through a copy'],
 	[G.TEMPLATE_SUBSURFACE_COMPOSITE_MS, 'WebGL2 reads one sample of the depth through a copy'],
+	[G.TEMPLATE_TAA_RESOLVE_MS, 'WebGL2 reads one sample of the depth through a copy'],
 ];
 
 /** The template ids that a backend registers, below the id where custom materials start. */

@@ -12,6 +12,7 @@
 // surface. A separate depth-only program gave other depths in Chrome on a Mac, although both
 // programs mark the position invariant.
 
+import { EngineError } from '../../errors/engine-error';
 import {
 	PERMUTATION_PREPASS,
 	TEMPLATE_ACCUMULATE,
@@ -70,6 +71,9 @@ import {
 	TEMPLATE_SUBSURFACE_BLUR,
 	TEMPLATE_SUBSURFACE_COMPOSITE,
 	TEMPLATE_SUBSURFACE_MAPS,
+	TEMPLATE_TAA_COPY,
+	TEMPLATE_TAA_RESOLVE,
+	TEMPLATE_TONE_MASK,
 	TEMPLATE_TRANSMISSION_COPY,
 	TEMPLATE_WEIGHTED_COMPOSITE,
 	TEMPLATE_WEIGHTED_DEPTH,
@@ -134,9 +138,52 @@ export const MIN_STAGE_TEXTURE_UNITS = 16;
 /** The slot of a binding of a bind group: its texture unit, uniform block binding point or sampler's place. */
 export function slotOf(group: number, binding: number): number {
 	return (GROUP_BASES[group] as number) + binding;
-}
-/** The sampler slot of a texture that a shader reads with `texelFetch`, which needs no sampler. */
+} /** The sampler slot of a texture that a shader reads with `texelFetch`, which needs no sampler. */
 export const NO_SAMPLER = -1;
+
+/**
+ * The texture units that one stage of a program reads: its distinct texture slots, since two
+ * entries of one slot read one texture. A stage that reads more than
+ * [`MIN_STAGE_TEXTURE_UNITS`] fails to link on the devices that give their stages the fewest
+ * units, so the engine refuses the program before the driver does.
+ */
+export function stageUnitCount(stage: GlslStage): number {
+	const slots = new Set<number>();
+	for (const texture of stage.textures) slots.add(slotOf(texture.group, texture.binding));
+	return slots.size;
+}
+
+/**
+ * The texture units that each stage of a context reads: the vertex stage's, then the fragment
+ * stage's. A WebGL2 device gives its stages at least [`MIN_STAGE_TEXTURE_UNITS`] each. The last of
+ * a context's units carries uploads and copies, so a program reads at most one fewer.
+ */
+export function stageTextureUnits(gl: WebGL2RenderingContext): readonly [number, number] {
+	const used = (units: number) => Math.min(units, UPLOAD_UNIT);
+	return [
+		used(gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS) as number),
+		used(gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) as number),
+	];
+}
+
+/**
+ * Throws E1209 when one stage of a program reads more textures than the device's stage has units.
+ * The engine hands out the stage's units, so a material that asks for too many hears about it,
+ * rather than the device failing to link a shader that then draws nothing. `limit` is the units
+ * that the device reports for the stage.
+ */
+export function checkStageUnits(
+	stage: GlslStage,
+	stageName: 'vertex' | 'fragment',
+	limit: number,
+): void {
+	const units = stageUnitCount(stage);
+	if (units <= limit) return;
+	throw new EngineError(
+		'E1209',
+		`a WebGL2 program reads ${units} textures in its ${stageName} stage, and a stage has ${limit} units: give the material fewer textures.`,
+	);
+}
 
 /**
  * How the backend builds the programs of one render pipeline template: the shader's variants, of
@@ -268,6 +315,7 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_SHADOW_CUTOUT] = { shader: shaders.shadow_cutout, pipeline: 'main' };
 	templates[TEMPLATE_SHADOW_CUTOUT_MAP] = { shader: shaders.shadow_cutout_map, pipeline: 'main' };
 	templates[TEMPLATE_OUTLINE_MASK] = { shader: shaders.outline_mask, pipeline: 'main' };
+	templates[TEMPLATE_TONE_MASK] = { shader: shaders.tone_mask, pipeline: 'main' };
 	templates[TEMPLATE_MOTION] = { shader: shaders.motion, pipeline: 'main' };
 	templates[TEMPLATE_PICK] = { shader: shaders.pick, pipeline: 'main' };
 	templates[TEMPLATE_PICK_MAPS] = { shader: shaders.pick_maps, pipeline: 'main' };
@@ -314,6 +362,9 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_FOG_SUM] = { shader: shaders.fog_volume, pipeline: 'sum' };
 	templates[TEMPLATE_FOG_APPLY] = { shader: shaders.fog_volume, pipeline: 'apply' };
 	templates[TEMPLATE_TRANSMISSION_COPY] = { shader: shaders.transmission_copy, pipeline: 'main' };
+	// Temporal anti-aliasing's resolve reads the same one-sample copy of the depth.
+	templates[TEMPLATE_TAA_RESOLVE] = { shader: shaders.taa, pipeline: 'resolve' };
+	templates[TEMPLATE_TAA_COPY] = { shader: shaders.taa_copy, pipeline: 'main' };
 	templates[TEMPLATE_ACCUMULATE] = { shader: shaders.accumulate, pipeline: 'main' };
 	// The subsurface blur's down step reads the same one-sample copy of the depth.
 	templates[TEMPLATE_SUBSURFACE_BLUR] = { shader: shaders.subsurface_blur, pipeline: 'across' };
@@ -473,6 +524,11 @@ function linkError(gl: WebGL2RenderingContext, p: Program, attempt: string): Err
  * Safari's random Metal fault is done once more, into a new program, and waited for.
  */
 export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: DepthSetup): void {
+	// The units are counted from the sources, before the device reads them, so a material that
+	// asks for too many hears E1209 rather than a link failure that reads as a broken shader.
+	const [vertexUnits, fragmentUnits] = stageTextureUnits(gl);
+	checkStageUnits(p.source.vertex, 'vertex', vertexUnits);
+	checkStageUnits(p.source.fragment, 'fragment', fragmentUnits);
 	if (!gl.getProgramParameter(p.program, gl.LINK_STATUS)) {
 		if (!metalFault(gl, p)) throw linkError(gl, p, '');
 		relink(gl, p);

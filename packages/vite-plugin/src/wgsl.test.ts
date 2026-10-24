@@ -247,7 +247,7 @@ describe.skipIf(!ENABLED)('compileWgsl', () => {
 		);
 		expect([none.line, none.column]).toEqual([1, 1]);
 		expect(none.message).toStartWith(
-			'the WGSL has no entry point and no function of a custom material or effect.',
+			'the WGSL has no entry point and no function of a custom material, effect or sky layer.',
 		);
 		expect(none.message).toEndWith(' HINT');
 		const twice = SHADER.replace(
@@ -313,6 +313,28 @@ fn effect(input: EffectInput) -> vec4f {
 		const bad = 'fn effect(input: EffectInput) -> vec4f {\n    return input.color * missing;\n}\n';
 		const problem = failure(await compileWgsl('src/bad.wgsl', bad, HINT));
 		expect([problem.file, problem.line]).toEqual(['src/bad.wgsl', 2]);
+	});
+
+	it('builds a sky layer into every variant of the sky-layer template', async () => {
+		const wgsl =
+			'fn skyLayer(input: SkyLayerInput) -> SkyLayer {\n    return SkyLayer(vec3f(input.clouds.x), 1.0);\n}\n';
+		const result = await compileWgsl('src/aurora.wgsl', wgsl, HINT);
+		if (!result.ok) throw new Error(JSON.stringify(result.problems));
+		expect(result.shader.kind).toBe('skyLayer');
+		if (result.shader.kind !== 'skyLayer') throw new Error('not a sky layer');
+		expect(Object.keys(result.shader.variants).sort()).toEqual([
+			'webgl2',
+			'webgl2_tone_map',
+			'webgpu',
+			'webgpu_tone_map',
+		]);
+		expect(result.shader.variants.webgpu?.wgsl?.source).toContain('skyLayer');
+		// A layer with uniforms is refused: its values come from the template's own block.
+		const bad =
+			'struct Uniforms { tint: vec3f }\nfn skyLayer(input: SkyLayerInput) -> SkyLayer {\n    return SkyLayer(vec3f(0.0), 0.0);\n}\n';
+		const problem = failure(await compileWgsl('src/bad.wgsl', bad, HINT));
+		expect([problem.file, problem.line]).toEqual(['src/bad.wgsl', 1]);
+		expect(problem.message).toContain('takes no `struct Uniforms`');
 	});
 
 	it('builds a surface function into every variant of the standard material', async () => {
@@ -393,12 +415,35 @@ fn effect(input: EffectInput) -> vec4f {
 		expect(material(await compileWgsl('src/stripes.wgsl', SURFACE, HINT)).uniforms).toEqual([]);
 	});
 
+	// A source that the compiler has not built before builds every variant, which takes longer than
+	// the default timeout on a busy machine.
+	it('lists a texture array, whose layer the shader picks', async () => {
+		const facades = `var facades: texture_2d_array<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor *= textureSampleLevel(facades, facadesSampler, input.uv, 2, 0.0).rgb;
+    return s;
+}
+`;
+		const built = material(await compileWgsl('src/facades.wgsl', facades, HINT));
+		expect(built.textures).toEqual([{ name: 'facades', offset: 31, array: true }]);
+	}, 60_000);
+
 	it('builds a vertex offset alone as a custom material', async () => {
 		const wave =
 			'fn vertexOffset(input: VertexInput) -> vec3f {\n    return input.normal * sin(input.uv.x);\n}\n';
 		const built = material(await compileWgsl('src/wave.wgsl', wave, HINT));
 		expect(built.functions).toEqual(['vertexOffset']);
 		expect(built.variants.webgpu?.wgsl?.source).toContain('fn vertexOffset(');
+	});
+
+	it('builds a lobe alone as a custom material', async () => {
+		const sparkle =
+			'fn lobe(input: LobeInput) -> vec3f {\n    return input.specular * input.values.z;\n}\n';
+		const built = material(await compileWgsl('src/sparkle.wgsl', sparkle, HINT));
+		expect(built.functions).toEqual(['lobe']);
+		expect(built.variants.webgpu?.wgsl?.source).toContain('fn lobe(');
 	});
 
 	it('builds a mesh shader of its own as a full shader of a custom material', async () => {
@@ -428,6 +473,29 @@ fn fs(@builtin(position) pixel: vec4f) -> @location(0) vec4f {
 			'webgpu_tone_map',
 			'webgpu_tone_map_receive_shadows',
 		]);
+		expect(compiled(await compileWgsl('src/glow.wgsl', SHADER, HINT)).kind).toBe('shader');
+	});
+
+	it('builds a draw shader as a custom material that reads no vertex buffer', async () => {
+		// A draw that makes its vertices from the two indices: the vertex entry point takes no mesh
+		// attribute and no InstanceIn, so the material's pipelines declare no vertex buffer.
+		const draw = `#import null3d::builtins::{camera, fill_builtins}
+
+@vertex
+fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> @builtin(position) vec4f {
+    fill_builtins(vec3f(0.0));
+    return camera.viewProjection * vec4f(f32(vertex), f32(instance), 0.0, 1.0);
+}
+
+@fragment
+fn fs() -> @location(0) vec4f {
+    return vec4f(1.0);
+}
+`;
+		const built = material(await compileWgsl('src/draw.wgsl', draw, HINT));
+		expect(built.meshless).toBe(true);
+		expect(built.locations).toEqual([]);
+		// A pass's own shader reads the vertex index alone, so it stays a whole shader.
 		expect(compiled(await compileWgsl('src/glow.wgsl', SHADER, HINT)).kind).toBe('shader');
 	});
 
@@ -626,9 +694,9 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 			const file = await server.transformRequest('/src/tint.wgsl');
 			// The key of the hot updates follows the shader's packed records, and then the function
 			// that imports the material's builds, with the material's place in the module.
-			expect(file?.code).toMatch(/, ?"src\/tint\.wgsl", ?__null3dBuilds, ?0\)/);
+			expect(file?.code).toMatch(/, ?"src\/tint\.wgsl", ?__null3dBuilds, ?0, ?"material"\)/);
 			const literal = await server.transformRequest('/src/tint.ts');
-			expect(literal?.code).toMatch(/, ?"src\/tint\.ts#0", ?__null3dBuilds, ?0\)/);
+			expect(literal?.code).toMatch(/, ?"src\/tint\.ts#0", ?__null3dBuilds, ?0, ?"material"\)/);
 			// The dev server serves each set of the builds from memory.
 			const sets = [
 				...(literal?.code ?? '').matchAll(/virtual:null3d\/builds\/(material-[\w-]+)/g),
@@ -732,5 +800,52 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 		} finally {
 			await server.close();
 		}
+	});
+});
+
+/** A project whose page names a task module, as an add-on declares one. */
+const TASK_PROJECT = {
+	'index.html': '<!doctype html><script type="module" src="./src/page.ts"></script>',
+	'src/page.ts':
+		"export const task = { name: 'probe', script: new URL('./task.ts', import.meta.url) };\n",
+	'src/task.ts': `interface Input {
+	view: Int32Array;
+}
+
+export function run(input: Input): { output: boolean } {
+	void input;
+	return { output: true };
+}
+`,
+};
+
+describe('a module that a task names', () => {
+	it('is built as a module, not copied with its types, so a worker can import it', async () => {
+		const chunks = await buildProject(fixture(TASK_PROJECT));
+		const task = chunks.find((chunk) => chunk.facadeModuleId?.endsWith('src/task.ts'));
+		expect(task).toBeDefined();
+		// The worker imports this address, and a browser cannot parse raw TypeScript.
+		expect(task?.code).not.toContain('interface Input');
+		expect(task?.code).not.toContain(': Input');
+		expect(task?.code).toContain('run');
+	});
+});
+
+/** A project whose sketch module imports another module on demand, as a worker runs it. */
+const PRELOAD_PROJECT = {
+	'index.html': '<!doctype html><script type="module" src="./src/page.ts"></script>',
+	'src/page.ts': "export const sketch = new URL('./sketch.ts', import.meta.url);\n",
+	'src/sketch.ts': `const defineSketch = (setup: () => unknown) => setup;
+export default defineSketch(() => ({ later: () => import('./later.ts') }));
+`,
+	'src/later.ts': 'export const later = true;\n',
+};
+
+describe('a chunk that a worker imports', () => {
+	it('does not preload its dynamic imports through the page, which has no document there', async () => {
+		const chunks = await buildProject(fixture(PRELOAD_PROJECT));
+		const sketch = chunks.find((chunk) => chunk.facadeModuleId?.endsWith('src/sketch.ts'));
+		expect(sketch?.dynamicImports.length).toBeGreaterThan(0);
+		expect(sketch?.code).not.toContain('__vite__mapDeps(');
 	});
 });

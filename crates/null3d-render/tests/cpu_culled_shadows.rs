@@ -31,6 +31,7 @@ const SUN: SunShadow = SunShadow {
     auto: false,
     contact: 0.0,
     layers: DEFAULT_LAYERS,
+    hero: None,
 };
 
 /// The common world on the WebGL2 builder, with the sun casting `shadow`. The lit box and the

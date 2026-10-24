@@ -33,9 +33,10 @@ function cases(words: Uint32Array): Case[] {
 		at += 1 + count;
 		return part;
 	};
+	const recordWords = G.SIZE_LIGHT_RECORD_BYTES / 4;
 	return Array.from({ length: words[0] as number }, () => ({
 		params: take(1),
-		lights: take(16),
+		lights: take(recordWords),
 		expected: take(1),
 	}));
 }
@@ -109,7 +110,7 @@ run('light-clusters', async () => {
 				if (first < 0) first = i;
 			}
 		results.push({
-			lights: c.lights.length / 16,
+			lights: c.lights.length / (G.SIZE_LIGHT_RECORD_BYTES / 4),
 			words: c.expected.length,
 			differing,
 			// The first word that differs, the GPU's value and the job workers'.

@@ -15,11 +15,14 @@ interface RewritesResult {
 test('writes into WebGL2 data textures again draw the moved boxes where they rest', async ({
 	page,
 }) => {
-	test.setTimeout(120_000);
+	// The test draws two pages, and CI's software GPU took 1.9 minutes for the pair on run
+	// 39944103955, about 57 seconds each. Run 39977400113 cut the first of them at its 60-second
+	// wait. Each wait now allows twice that, and the test's limit clears both of them.
+	test.setTimeout(270_000);
 	const frames: RewritesResult[] = [];
 	for (const query of ['', '&settled']) {
 		await page.goto(`rewrites.html?gpu=webgl2${query}`);
-		const result = await pageResult<RewritesResult>(page, 60_000);
+		const result = await pageResult<RewritesResult>(page, 120_000);
 		expect(result.error).toBeUndefined();
 		expect(result.tier).toBe('webgl2');
 		frames.push(result);

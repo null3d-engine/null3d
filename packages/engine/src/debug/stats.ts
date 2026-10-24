@@ -6,8 +6,12 @@
 // object property is a new heap object in some browsers.
 
 import type { QualityPreset } from '../quality/presets';
+import { stepMs } from '../shared/gpu-clock';
+import { MEMORY_AREA_COUNT, MEMORY_AREA_VALUES } from '../shared/memory-area';
 import {
 	Counter,
+	GpuCounter,
+	memoryAreaFigures,
 	memoryFigures,
 	PHASE_NAMES,
 	type PhaseName,
@@ -70,11 +74,19 @@ export interface FrameStats {
 	readonly threads: readonly FrameStatsThread[];
 	/**
 	 * Mean GPU time per frame, in milliseconds, from the GPU's timer queries on one frame in eleven:
-	 * from the frame's first command to the end of its last pass. Null where the GPU path has no
-	 * timer queries, and until the first timed frame comes back. The window that has no timed frame
-	 * keeps the figure of the window before it.
+	 * the latest pass end less the earliest pass begin. A tile GPU overlaps the passes, so a sum of
+	 * their own times would count the overlap again. Null where the GPU path has no timer queries,
+	 * and until the first timed frame comes back. The window that has no timed frame keeps the
+	 * figure of the window before it.
 	 */
 	readonly gpuMs: number | null;
+	/**
+	 * The step between the GPU's timestamps, in milliseconds, when the browser rounds them, or null
+	 * when they look exact. It is the greatest common divisor of the offsets that the timer reads
+	 * back, not a constant of the device. The window that has no timed frame keeps the figure of the
+	 * window before it.
+	 */
+	readonly gpuStepMs: number | null;
 	/** Mean draw calls per frame, over every pass. */
 	readonly drawCalls: number;
 	/**
@@ -131,6 +143,12 @@ export interface FrameStats {
 	 * readbacks of the GPU's timings. 0 until the thread that draws first publishes it.
 	 */
 	readonly gpuBufferBytes: number;
+	/**
+	 * The memory register's figures at the window's end: three numbers per area, in the order of
+	 * `MEMORY_AREA_NAMES`, the bytes that each reserves, uses and has used at most. All zero in a
+	 * production build, or where no page asked for a report.
+	 */
+	readonly memoryAreas: readonly number[];
 }
 
 /** Presented time that a window of frame figures covers, at least. */
@@ -186,7 +204,9 @@ const WASM_BYTES = 10;
 const MEMORY = 11;
 /** GPU time per frame, or -1 before the first timed frame, which the property reads as null. */
 const GPU_MS = FIGURES.length;
-const THREADS = GPU_MS + 1;
+/** The step between the GPU's timestamps, or -1 where it has none or the times look exact. */
+const GPU_STEP_MS = GPU_MS + 1;
+const THREADS = GPU_STEP_MS + 1;
 /** Slots of each thread: its busy time, then each phase's time. */
 const THREAD_VALUES = 1 + PHASE_NAMES.length;
 
@@ -245,6 +265,12 @@ export class FrameStatsWindow {
 	private readonly gpu: RingSums;
 	/** The memory figures that the engine's threads publish. */
 	private readonly memory: Float64Array;
+	/** The memory register's figures as of the last window's end. */
+	private readonly areas: number[] = new Array<number>(MEMORY_AREA_COUNT * MEMORY_AREA_VALUES).fill(
+		0,
+	);
+	/** The register's figures in the metrics buffer. */
+	private readonly publishedAreas: Float64Array;
 	/** The roles of each thread, in the order of `stats.threads`. */
 	private readonly roles: readonly (readonly number[])[];
 
@@ -261,8 +287,10 @@ export class FrameStatsWindow {
 		this.values = new Float64Array(THREADS + list.length * THREAD_VALUES);
 		this.values[RENDER_SCALE] = sources.renderScaleThousandths() / 1000;
 		this.values[GPU_MS] = -1;
-		this.gpu = new RingSums(buffer, Role.Gpu);
+		this.values[GPU_STEP_MS] = -1;
+		this.gpu = new RingSums(buffer, Role.Gpu, false, GpuCounter.Tick);
 		this.memory = memoryFigures(buffer);
+		this.publishedAreas = memoryAreaFigures(buffer);
 		const ring = (role: number): RingSums => {
 			let sums = this.rings[role];
 			if (!sums) {
@@ -281,6 +309,10 @@ export class FrameStatsWindow {
 			enumerable: true,
 			get: () => ((values[GPU_MS] as number) >= 0 ? values[GPU_MS] : null),
 		});
+		Object.defineProperty(stats, 'gpuStepMs', {
+			enumerable: true,
+			get: () => ((values[GPU_STEP_MS] as number) >= 0 ? values[GPU_STEP_MS] : null),
+		});
 		stats.threads = list.map(([name], k) => {
 			const at = THREADS + k * THREAD_VALUES;
 			const thread = readFigures({ name } as FrameStatsThread, ['busyMs'], values, at);
@@ -290,6 +322,7 @@ export class FrameStatsWindow {
 		});
 		stats.tier = sources.tier;
 		stats.preset = sources.preset();
+		stats.memoryAreas = this.areas;
 		this.published = stats;
 		this.stats = stats;
 	}
@@ -315,9 +348,13 @@ export class FrameStatsWindow {
 		values[RENDER_SCALE] = this.sources.renderScaleThousandths() / 1000;
 		values[WASM_BYTES] = this.sources.wasmBytes();
 		values.set(this.memory, MEMORY);
+		const { areas, publishedAreas } = this;
+		for (let k = 0; k < areas.length; k++) areas[k] = publishedAreas[k] as number;
 		const gpu = this.gpu.sums;
 		if ((gpu[SUM_RECORDS] as number) > 0) {
 			values[GPU_MS] = mean(gpu, SUM_BUSY_MS);
+			const step = stepMs(this.gpu.commonStep);
+			values[GPU_STEP_MS] = step ?? -1;
 			this.gpu.clear();
 		}
 		let busiest = 0;

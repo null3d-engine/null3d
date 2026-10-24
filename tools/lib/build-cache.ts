@@ -13,13 +13,14 @@
 // The Rust build folder is not a cache under the root: each checkout keeps its own, because Cargo
 // judges the engine's crates fresh by file times, and sccache, when installed, shares the compiled
 // dependency crates instead (see cargoEnv). Every cargo run of the repository goes through
-// `runCargo`, so that rule holds at each of them.
-import { type StdioOptions, spawnSync } from 'node:child_process';
+// `runCargo` or `runCargoAsync`, which share one setup, so that rule holds at each of them.
+import { type StdioOptions, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
 	accessSync,
 	constants,
 	copyFileSync,
+	existsSync,
 	mkdirSync,
 	readdirSync,
 	readFileSync,
@@ -109,26 +110,116 @@ export interface CargoRun {
 	error?: Error;
 }
 
+/** Takes each whole line of a command's output as it arrives; `stderr` is true for the error output. */
+export type LineSink = (line: string, stderr: boolean) => void;
+
+/** What one cargo call adds to the shared setup: its own variables, and its own build folder. */
+interface CargoOptions {
+	env?: Record<string, string>;
+	targetDir?: string;
+}
+
 /**
- * Runs cargo with `args` in `checkout`, through one helper so that every cargo call of the
- * repository sets its build folder the same way: `targetDir`, when given, names the folder of this
- * call, and cargoEnv's own folder applies without it. `env` adds what one call needs, such as a
- * build's flags, and `stdio` picks where its output goes. The caller reports its own failure.
+ * The arguments and environment of a cargo run in `checkout`, which both cargo runners use, so that
+ * every cargo call of the repository sets its build folder the same way: `targetDir`, when given,
+ * names the folder of this call, and cargoEnv's own folder applies without it. `env` adds what one
+ * call needs, such as a build's flags.
+ */
+function cargoCall(
+	checkout: string,
+	args: readonly string[],
+	{ env = {}, targetDir }: CargoOptions,
+) {
+	return {
+		args: targetDir ? [...args, '--target-dir', targetDir] : [...args],
+		env: { ...process.env, ...cargoEnv(checkout), ...env },
+	};
+}
+
+/**
+ * Runs cargo with `args` in `checkout` and waits for it, with the setup of cargoCall. `stdio` picks
+ * where its output goes. The caller reports its own failure.
  */
 export function runCargo(
 	checkout: string,
 	args: readonly string[],
-	options: { env?: Record<string, string>; targetDir?: string; stdio?: StdioOptions } = {},
+	options: CargoOptions & { stdio?: StdioOptions } = {},
 ): CargoRun {
-	const { env = {}, targetDir, stdio = 'inherit' } = options;
-	const full = targetDir ? [...args, '--target-dir', targetDir] : [...args];
-	const result = spawnSync('cargo', full, {
+	const call = cargoCall(checkout, args, options);
+	const result = spawnSync('cargo', call.args, {
 		cwd: checkout,
-		stdio,
-		env: { ...process.env, ...cargoEnv(checkout), ...env },
+		stdio: options.stdio ?? 'inherit',
+		env: call.env,
 	});
 	return { status: result.status, error: result.error ?? undefined };
 }
+
+/**
+ * Runs cargo as runCargo does, without blocking, and hands each whole line of its output to
+ * `onLine`, so that builds which run at the same time can each print theirs as it comes. The caller
+ * reports its own failure.
+ */
+export function runCargoAsync(
+	checkout: string,
+	args: readonly string[],
+	options: CargoOptions & { onLine: LineSink },
+): Promise<CargoRun> {
+	const call = cargoCall(checkout, args, options);
+	return runByLine('cargo', call.args, { cwd: checkout, env: call.env, onLine: options.onLine });
+}
+
+/**
+ * Splits one stream's text into whole lines for `take`. A chunk can end inside a line, so the last
+ * part waits for its newline, or for the end of the stream.
+ */
+function wholeLines(take: (line: string) => void) {
+	let partial = '';
+	return {
+		add(text: string) {
+			const parts = (partial + text).split('\n');
+			partial = parts.pop() ?? '';
+			for (const part of parts) take(part);
+		},
+		end() {
+			if (partial) take(partial);
+			partial = '';
+		},
+	};
+}
+
+/**
+ * Runs a command without blocking and hands each whole line that it writes to its output or its
+ * error output to `onLine`, as the line arrives. It never rejects: a command that cannot start ends
+ * with its error.
+ */
+export function runByLine(
+	command: string,
+	args: readonly string[],
+	options: { cwd: string; env?: NodeJS.ProcessEnv; onLine: LineSink },
+): Promise<CargoRun> {
+	return new Promise((resolve) => {
+		const child = spawn(command, args, {
+			cwd: options.cwd,
+			env: options.env ?? process.env,
+			stdio: ['ignore', 'pipe', 'pipe'],
+		});
+		const out = wholeLines((line) => options.onLine(line, false));
+		const err = wholeLines((line) => options.onLine(line, true));
+		child.stdout.setEncoding('utf8').on('data', out.add);
+		child.stderr.setEncoding('utf8').on('data', err.add);
+		// A command that cannot start reports an error, and may close after it: the first ends the run.
+		child.once('error', (error) => resolve({ status: null, error }));
+		child.once('close', (status) => {
+			out.end();
+			err.end();
+			resolve({ status });
+		});
+	});
+}
+
+/** Whole seconds since `started`, a reading of `performance.now()`, for a step's report. */
+export const secondsSince = (started: number): number =>
+	Math.round((performance.now() - started) / 1000);
 
 /** A SHA-256 of the given values, in order, for a cache key. */
 export function hashOf(...inputs: readonly (string | Buffer)[]): string {
@@ -241,6 +332,9 @@ function breakLock(path: string): void {
 	rmSync(aside, { recursive: true, force: true });
 }
 
+/** The variable through which the Mac's job queue (`heavy.sh`) names the slot that runs a job. */
+export const HEAVY_SLOT_ENV = 'NULL3D_HEAVY_SLOT';
+
 /**
  * Takes the lock at `path` and returns the function that releases it. The lock is a folder that holds
  * the holder's process id, so exactly one process creates it: `mkdir` either creates the folder or
@@ -248,16 +342,46 @@ function breakLock(path: string): void {
  * holder has stopped, or one that names no process and is older than a minute: the rename in
  * breakLock makes two breakers safe. The shader build, the build and the size checks all take this
  * lock, each in a path of its own.
+ *
+ * With `freesSlot`, a wait gives back the slot of the Mac's job queue (`heavy.sh`) that runs this
+ * process, named by `NULL3D_HEAVY_SLOT`: the process writes `waiting-<pid>` into the slot while it
+ * waits, and the queue opens another slot for each slot so marked. Only a lock that its caller takes
+ * while the job does nothing else frees the slot. On 24 October 2026 six jobs held slots for up to
+ * 49 minutes with almost no processor time, and were killed by hand as hung.
  */
-export function acquireLock(path: string): () => void {
+export function acquireLock(path: string, options: { freesSlot?: boolean } = {}): () => void {
 	mkdirSync(dirname(path), { recursive: true });
 	const started = performance.now();
-	let said = false;
+	const slot = process.env[HEAVY_SLOT_ENV];
+	const marker =
+		options.freesSlot && slot && existsSync(slot)
+			? join(slot, `waiting-${process.pid}`)
+			: undefined;
+	let waited: boolean;
+	try {
+		waited = waitForLock(path, marker);
+	} finally {
+		if (marker) rmSync(marker, { force: true });
+	}
+	if (waited) console.log(`took the lock at ${path} after ${secondsSince(started)} s`);
+	return () => {
+		// Only the holder removes the lock: a lock that another process broke and took must stay.
+		if (lockHolder(path) === process.pid) rmSync(path, { recursive: true, force: true });
+	};
+}
+
+/**
+ * Creates the lock folder at `path` once no live process holds it, and returns true when it had to
+ * wait. At its first wait it says who holds the lock, and writes `marker` when it has one, so the
+ * job's slot of the job queue counts as free while it waits.
+ */
+function waitForLock(path: string, marker: string | undefined): boolean {
+	let waited = false;
 	for (;;) {
 		try {
 			mkdirSync(path);
 			writeFileSync(join(path, 'pid'), String(process.pid));
-			break;
+			return waited;
 		} catch (e) {
 			if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
 		}
@@ -270,37 +394,42 @@ export function acquireLock(path: string): () => void {
 			breakLock(path);
 			continue;
 		}
-		if (!said) {
+		if (!waited) {
+			waited = true;
+			if (marker) writeFileSync(marker, `${path}\n`);
 			// A size check holds its lock across a whole base build, so a wait here can last many
 			// minutes. Say who holds it: without this a build that waits prints nothing and looks
 			// hung. When the holder is an orphaned build, or one whose work has already landed, kill
 			// it and the lock moves.
-			console.log(
-				holder > 0
-					? `waiting for the lock at ${path}, held by pid ${holder}`
-					: `waiting for the lock at ${path}, taken by a process that named no id`,
-			);
-			said = true;
+			const who = holder > 0 ? `held by pid ${holder}` : 'taken by a process that named no id';
+			const free = marker ? "; this job's slot of the job queue counts as free while it waits" : '';
+			console.log(`waiting for the lock at ${path}, ${who}${free}`);
 		}
 		sleep(LOCK_POLL_MS);
 	}
-	if (said)
-		console.log(
-			`took the lock at ${path} after ${Math.round((performance.now() - started) / 1000)} s`,
-		);
-	return () => {
-		// Only the holder removes the lock: a lock that another process broke and took must stay.
-		if (lockHolder(path) === process.pid) rmSync(path, { recursive: true, force: true });
-	};
+}
+
+/**
+ * Takes the machine's lock of production page builds, which lets one run at a time: two at once
+ * leave the bundler blocked in its own callback, gaining a tenth of a second of processor time a
+ * minute, and neither finishes. Returns the function that releases it.
+ */
+export function acquirePageBuildLock(): () => void {
+	return acquireLock(join(cacheRoot(), 'page-build.lock'), { freesSlot: true });
 }
 
 /**
  * How many bytes a cache under the root may keep before its least recently used entries go. The
- * figure bounds runaway growth rather than a working set: one shader module set is about 850 MB and
- * the entry cache of one compiler stamp was about 18 GB on 15 October 2026, so a tighter limit would
- * evict sets and entries that the next build would then rebuild.
+ * figure bounds runaway growth rather than a working set, so a tighter limit evicts sets and entries
+ * that the next build would then rebuild.
+ *
+ * It was 24 GB until 22 October 2026. That day the module cache held four sets in 23 GB, so one set
+ * is about 5.8 GB rather than the 850 MB this note claimed: the shader set grew with every feature
+ * that added a family. A worktree that merged the milestone branch found its set evicted and rebuilt
+ * the whole thing, which takes a minute on an idle machine and over an hour through the queue. The
+ * disk held 1.6 TB free, so the limit now holds about eleven sets.
  */
-export const CACHE_LIMIT_BYTES = 24 * 1024 * 1024 * 1024;
+export const CACHE_LIMIT_BYTES = 64 * 1024 * 1024 * 1024;
 
 /** An entry used within this long stays, because a build of another checkout may still read it. */
 const IN_USE_MS = 2 * 60 * 60 * 1000;

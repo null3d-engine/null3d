@@ -4,30 +4,34 @@
 // the tarballs there with Bun. In that project it runs the command-line tool's test command twice:
 // once to keep the images of the first run as the references, then once to match them. The test
 // command type checks the project against the packages' declarations, and draws the project's
-// sketch on every GPU tier. Then the tool optimizes a model, and last, it builds the project for
+// sketch on every GPU tier. It shows next that the command's upgrade moves a manifest's null3D
+// packages to one version. Then the tool optimizes a model, and last, it builds the project for
 // production. The build must hold the engine's third-party notices, and its page must start the
 // threaded engine in a browser under a strict Content-Security-Policy, whatever test switches the
 // address holds. Last, the project's service worker caches the build on a first visit, and the
-// page must start the threaded engine again with the server stopped, on both GPU paths. Then the
-// project builds a page of its own layout around a copy of this repository's examples folder, as a
-// website that holds the repository as a submodule does. Two demos, and a comparison in each
-// engine, must start from that build. Run `bun run build` first, for the WebAssembly files. Run
+// page must start the threaded engine again with the server stopped, on both GPU paths. While those
+// two checks run, the project builds a page of its own layout around a copy of this repository's
+// examples folder, as a website that holds the repository as a submodule does. Two demos, and a
+// comparison in each engine, must start from that build. Run `bun run build` first, for the WebAssembly files. Run
 // from the repository root:
 //   bun run test:packages [--keep]    --keep leaves the project's folder in place after a pass
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
+	closeSync,
 	copyFileSync,
 	cpSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	openSync,
 	readdirSync,
 	readFileSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { defaultEnvironment, launchBrowser } from '../packages/cli/src/browser.js';
 import {
 	FILES_LIST,
@@ -35,6 +39,8 @@ import {
 	NOTICES_FILE,
 	type OfflineFiles,
 } from '../packages/vite-plugin/src/index.ts';
+import { shaderCacheFolder } from '../packages/vite-plugin/src/shader-cache.ts';
+import { cacheDir, cacheOff, pruneCacheLocked, secondsSince } from '../tools/lib/build-cache.ts';
 import {
 	DEFAULT_PACK_DIR,
 	PACKAGES,
@@ -119,6 +125,55 @@ function step(
 		throw new Error(`${title} failed with ${result.error?.message ?? `status ${result.status}`}`);
 }
 
+/** A command that runs while the steps after it do. */
+interface BackgroundStep {
+	/** Waits for the command's end, prints its output, and fails as `step` does when it failed. */
+	finish(): Promise<void>;
+	/** Stops the command, when a step before its end failed. */
+	stop(): void;
+}
+
+/**
+ * Starts a command in `cwd`, as `step` runs one, and returns while it runs. Its output goes to the
+ * file `log` until `finish` prints it, so that it does not mix with the output of the steps that
+ * run meanwhile, and no pipe fills while a step holds this process.
+ */
+function stepInBackground(
+	title: string,
+	cwd: string,
+	command: string,
+	args: readonly string[],
+	log: string,
+	env: Record<string, string> = {},
+): BackgroundStep {
+	console.log(`\n${title}, while the steps below run: ${command} ${args.join(' ')}`);
+	const output = openSync(log, 'w');
+	const child = spawn(command, args, {
+		cwd,
+		stdio: ['ignore', output, output],
+		env: { ...process.env, ...env },
+	});
+	closeSync(output);
+	// Why the command failed, or nothing when it passed.
+	const ended = new Promise<string | undefined>((resolve) => {
+		child.once('error', (error) => resolve(error.message));
+		child.once('exit', (code, signal) =>
+			resolve(code === 0 ? undefined : signal ? `signal ${signal}` : `status ${code}`),
+		);
+	});
+	return {
+		async finish() {
+			const failure = await ended;
+			console.log(`\n${title}, which ran while the steps above did:`);
+			process.stdout.write(readFileSync(log, 'utf8'));
+			if (failure) throw new Error(`${title} failed with ${failure}`);
+		},
+		stop() {
+			if (child.exitCode === null && child.signalCode === null) child.kill();
+		},
+	};
+}
+
 /** A browser, as the command-line tool starts it. */
 type Browser = Awaited<ReturnType<typeof launchBrowser>>;
 
@@ -159,19 +214,43 @@ function serveBuild(dist: string, strict = true) {
 }
 
 /**
- * Waits for the page's start, and returns how it ended: the build that started, or the error.
- * Functions, not text: Playwright evaluates text with eval, which the strict policy blocks.
+ * The errors that `page` reports from now on, its own and those of its console, as they arrive. A
+ * check reads them when the page fails or never starts, so its failure says why.
+ */
+function pageErrors(page: Page): string[] {
+	const errors: string[] = [];
+	page.on('pageerror', (error) => errors.push(error.message));
+	page.on('console', (message) => {
+		if (message.type() === 'error') errors.push(message.text());
+	});
+	return errors;
+}
+
+/**
+ * Waits for the page's start, and returns how it ended: the build that started, or the error. It
+ * prints how long the start took, and a page that does not start within the limit fails with
+ * `what` and the page's `errors`. Functions, not text: Playwright evaluates text with eval, which
+ * the strict policy blocks.
  */
 async function startOf(
 	page: Page,
+	what: string,
+	errors: readonly string[],
 ): Promise<{ start: string | undefined; isolated: boolean; tier: string | undefined }> {
+	const started = performance.now();
 	const start = await page
 		.waitForFunction(
 			() => (globalThis as unknown as PageGlobals).document.documentElement.dataset.start,
 			undefined,
-			{ timeout: 30_000 },
+			{ timeout: PAGE_LIMIT_MS },
 		)
-		.then((handle) => handle.jsonValue());
+		.then((handle) => handle.jsonValue())
+		.catch((error: Error) => {
+			throw new Error(
+				`${what}: the page did not start within ${PAGE_LIMIT_MS / 1000} s (${error.message}); page errors: ${JSON.stringify(errors)}`,
+			);
+		});
+	console.log(`  ${what}: ${start} after ${secondsSince(started)} s`);
 	const isolated = await page.evaluate(
 		() => (globalThis as unknown as PageGlobals).crossOriginIsolated,
 	);
@@ -184,8 +263,39 @@ async function startOf(
 /** How long a browser may take to close before the test goes on without it. */
 const CLOSE_LIMIT_MS = 15_000;
 
-/** How long one page of the website's build may take to load and start, past Playwright's limits. */
+/** How long a page of a build may take to load and start, past Playwright's limits. */
 const PAGE_LIMIT_MS = 90_000;
+
+/**
+ * The asset tool's build, which a checkout needs before it packs the command-line tool. The pack
+ * reads it from the command's own folder, and the run stops before the project exists when it is
+ * missing. A check that only the command needs says so and goes on without it.
+ */
+const ASSET_TOOL = join(ROOT, 'packages/cli/dist/assets.wasm');
+
+/**
+ * Runs the installed command's upgrade in a folder of the project's own, whose manifest names one
+ * null3D package a version behind. It fails unless a dry run writes nothing, and the run after it
+ * moves that package to `version` and changes no other.
+ */
+function upgradesManifest(project: string, cli: string, version: string): void {
+	const folder = join(project, 'upgrade-check');
+	mkdirSync(folder);
+	const manifest = { dependencies: { '@null3d/controls': '^0.0.0', three: '0.186.1' } };
+	writeFileSync(join(folder, 'package.json'), `${JSON.stringify(manifest, null, '\t')}\n`);
+	step('Show what upgrade would change', folder, cli, ['upgrade', '--to', version, '--dry-run']);
+	const shown = readFileSync(join(folder, 'package.json'), 'utf8');
+	if (shown !== `${JSON.stringify(manifest, null, '\t')}\n`)
+		throw new Error('upgrade --dry-run wrote the manifest, and it must write nothing');
+	step('Move the null3D packages to one version', folder, cli, ['upgrade', '--to', version]);
+	const moved = JSON.parse(readFileSync(join(folder, 'package.json'), 'utf8'));
+	if (moved.dependencies['@null3d/controls'] !== version)
+		throw new Error(
+			`upgrade left @null3d/controls at ${moved.dependencies['@null3d/controls']}, not ${version}`,
+		);
+	if (moved.dependencies.three !== '0.186.1')
+		throw new Error('upgrade changed a package that is not null3D');
+}
 
 /** Resolves with `promise`, or fails with the error that `error` writes once `ms` milliseconds pass. */
 async function within<T>(promise: Promise<T>, ms: number, error: () => string): Promise<T> {
@@ -232,12 +342,13 @@ async function startsUnderStrictPolicy(dist: string): Promise<void> {
 	console.log('\nStart under a strict Content-Security-Policy');
 	await withBrowser(dist, true, async (browser, server) => {
 		const page = await browser.newPage();
+		const errors = pageErrors(page);
 		const violations: string[] = [];
 		page.on('console', (message) => {
 			if (/Content.Security.Policy/i.test(message.text())) violations.push(message.text());
 		});
 		await page.goto(`${server.url.href}?threads=off`);
-		const { start, isolated } = await startOf(page);
+		const { start, isolated } = await startOf(page, 'under the strict policy', errors);
 		if (start !== 'threaded' || !isolated || violations.length > 0)
 			throw new Error(
 				`under a strict policy, with ?threads=off in the address, the page did not start the threaded engine: start ${start}, isolated ${isolated}, policy reports ${JSON.stringify(violations)}`,
@@ -264,8 +375,9 @@ async function playsOffline(dist: string): Promise<void> {
 			throw new Error(`${FILES_LIST} leaves the ${path} renderers out of the start`);
 	await withBrowser(dist, true, async (browser, server) => {
 		const page = await browser.newPage();
+		const errors = pageErrors(page);
 		await page.goto(server.url.href);
-		const first = await startOf(page);
+		const first = await startOf(page, 'the first visit', errors);
 		if (first.start !== 'threaded' || !first.isolated)
 			throw new Error(`the first visit did not start the threaded engine: ${first.start}`);
 		const cached = await page.evaluate(async () => {
@@ -287,8 +399,11 @@ async function playsOffline(dist: string): Promise<void> {
 			if (!request.url().endsWith(`/${FILES_LIST}`)) failed.push(request.url());
 		});
 		await page.reload();
-		const offline = await startOf(page);
-		if (offline.start !== 'threaded' || !offline.isolated || failed.length > 0)
+		const offline = await startOf(page, 'offline', errors);
+		// The first frame's shader request can fail after the start resolves, so this check is
+		// given the next start's failures rather than carrying this one's into it.
+		const firstPathFailed = failed.splice(0, failed.length);
+		if (offline.start !== 'threaded' || !offline.isolated || firstPathFailed.length > 0)
 			throw new Error(
 				`offline, the page did not start the threaded engine from the cache alone: start ${offline.start}, isolated ${offline.isolated}, failed requests ${JSON.stringify(failed)}`,
 			);
@@ -299,7 +414,7 @@ async function playsOffline(dist: string): Promise<void> {
 			return;
 		}
 		await page.goto(`${server.url.href}?path=webgl2`);
-		const other = await startOf(page);
+		const other = await startOf(page, 'offline on webgl2', errors);
 		if (other.start !== 'threaded' || other.tier !== 'webgl2' || failed.length > 0)
 			throw new Error(
 				`offline, the page did not start on the GPU path that its first visit did not draw with: start ${other.start}, path ${other.tier}, failed requests ${JSON.stringify(failed)}`,
@@ -370,18 +485,34 @@ const SITE_PAGE = {
 		"\tbase: './',",
 		'\tplugins: [null3d({ urlSwitches: true })],',
 		"\tresolve: { dedupe: ['@null3d/engine', '@null3d/controls'] },",
-		"\tbuild: { outDir: '../dist-site', emptyOutDir: true },",
+		// The build's report of each file's compressed size compresses every chunk again, and the
+		// test never reads it.
+		"\tbuild: { outDir: '../dist-site', emptyOutDir: true, reportCompressedSize: false },",
 		'});',
 		'',
 	],
 };
 
 /**
- * Builds a website's page of its own layout around a copy of the repository's examples folder, as
- * a website does that holds the repository as a submodule and installs the packages from npm. The
- * build takes the packages from the project's tarballs, and each page of BUILT_PAGES must start.
+ * The website build's compiled shaders, kept between runs. The demos' custom materials each build
+ * into every variant of the standard material, and the plugin compiles them in the build. An entry
+ * is named by its WGSL, its path from the page, its variant spec and the compiler's version, so a
+ * kept entry never serves another source or another compiler. The project's own production build
+ * keeps no cache, so every run still compiles through the packed plugin. CI keeps the folder in the
+ * Actions cache. `NULL3D_NO_CACHE=1` builds without it.
  */
-async function buildsExamples(project: string): Promise<void> {
+const SITE_SHADER_CACHE = cacheDir('fresh-project-shaders');
+
+/** The most that the kept shaders may hold: the demos' set, with room for a few changes of it. */
+const SITE_SHADER_CACHE_BYTES = 4 * 1024 * 1024 * 1024;
+
+/**
+ * Starts the build of a website's page of its own layout around a copy of the repository's examples
+ * folder, as a website does that holds the repository as a submodule and installs the packages from
+ * npm. The build takes the packages from the project's tarballs and reads nothing of the project's
+ * own build, so it runs while the checks of that build do.
+ */
+function startSiteBuild(project: string): BackgroundStep {
 	const copy = join(project, 'null3d');
 	cpSync(join(ROOT, 'examples'), join(copy, 'examples'), {
 		recursive: true,
@@ -392,23 +523,38 @@ async function buildsExamples(project: string): Promise<void> {
 	mkdirSync(site);
 	for (const [file, lines] of Object.entries(SITE_PAGE))
 		writeFileSync(join(site, file), lines.join('\n'));
-	step(
+	// The page's cache folder is a link to the kept one, so the build reads and writes it in place.
+	if (!cacheOff()) {
+		mkdirSync(SITE_SHADER_CACHE, { recursive: true });
+		mkdirSync(dirname(shaderCacheFolder(site)), { recursive: true });
+		symlinkSync(SITE_SHADER_CACHE, shaderCacheFolder(site), 'dir');
+	}
+	const build = stepInBackground(
 		'Build a website page of the demos',
 		site,
 		join(project, 'node_modules/.bin/vite'),
 		['build'],
+		join(project, 'site-build.log'),
 		{
 			VITE_NULL3D_SAMPLES_BASE: './samples/',
 		},
 	);
+	return {
+		stop: build.stop,
+		async finish() {
+			await build.finish();
+			if (!cacheOff()) pruneCacheLocked(SITE_SHADER_CACHE, SITE_SHADER_CACHE_BYTES);
+		},
+	};
+}
+
+/** Waits for the website build, and then each page of BUILT_PAGES must start from it. */
+async function startsSiteDemos(project: string, build: BackgroundStep): Promise<void> {
+	await build.finish();
 	console.log('\nStart demos from the website build');
 	await withBrowser(join(project, 'dist-site'), false, async (browser, server) => {
 		const page = await browser.newPage();
-		const errors: string[] = [];
-		page.on('pageerror', (error) => errors.push(error.message));
-		page.on('console', (message) => {
-			if (message.type() === 'error') errors.push(message.text());
-		});
+		const errors = pageErrors(page);
 		for (const demo of BUILT_PAGES) {
 			const started = performance.now();
 			errors.length = 0;
@@ -446,6 +592,7 @@ async function main(): Promise<void> {
 	const project = mkdtempSync(join(tmpdir(), 'null3d-fresh-project-'));
 	console.log(`\nThe fresh project: ${project}`);
 	let passed = false;
+	let site: BackgroundStep | undefined;
 	try {
 		cpSync(TEMPLATE, project, { recursive: true });
 		const pinned = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).devDependencies;
@@ -459,6 +606,14 @@ async function main(): Promise<void> {
 		step('Install', project, 'bun', ['install']);
 		// The installed command, as `bunx @null3d/cli` runs it in a project that installs the tool.
 		const cli = join(project, 'node_modules/.bin/null3d');
+		// The upgrade takes the version of the engine that the packages ship with.
+		const engine = packed.find((pkg) => pkg.name === '@null3d/engine');
+		if (!engine) throw new Error('the pack holds no @null3d/engine');
+		if (existsSync(ASSET_TOOL)) upgradesManifest(project, cli, engine.version);
+		else
+			console.log(
+				`\nSKIP upgrade: this checkout has no ${relative(ROOT, ASSET_TOOL)}. Run bun run build first.`,
+			);
 		step('Keep the first images as references', project, cli, ['test', '--update-references']);
 		step('Match the references', project, cli, ['test']);
 		// The asset tool from the tarball: its encoder, its worker and its dependencies.
@@ -475,19 +630,35 @@ async function main(): Promise<void> {
 		);
 		if (cores.length !== 2)
 			throw new Error(`the production build holds ${cores.length} engine cores, not 2`);
-		// The engine's notices come first, then the geometry package's.
+		// The notices of every package that a page ships, the engine's first and each add-on's by
+		// name after it. The tools' notices stay out, since a page ships none of their code.
 		const notices = join(project, 'dist', NOTICES_FILE);
-		const own = (name: string) =>
-			readFileSync(join(ROOT, `packages/${name}/THIRD-PARTY-NOTICES.txt`), 'utf8').trimEnd();
-		const expected = `${own('engine')}\n\n${own('geometry')}\n`;
-		if (!existsSync(notices) || readFileSync(notices, 'utf8') !== expected)
-			throw new Error(`the production build lacks the packages' notices in ${NOTICES_FILE}`);
+		const expected = packed
+			.filter(
+				({ folder, name }) =>
+					!DEV_DEPENDENCIES.includes(name) &&
+					existsSync(join(ROOT, `packages/${folder}`, 'THIRD-PARTY-NOTICES.txt')),
+			)
+			.sort(
+				(a, b) =>
+					Number(b.name === '@null3d/engine') - Number(a.name === '@null3d/engine') ||
+					(a.name < b.name ? -1 : 1),
+			)
+			.map(({ folder }) =>
+				readFileSync(join(ROOT, `packages/${folder}`, 'THIRD-PARTY-NOTICES.txt'), 'utf8').trimEnd(),
+			)
+			.join('\n\n');
+		if (!existsSync(notices)) throw new Error(`the production build writes no ${NOTICES_FILE}`);
+		if (readFileSync(notices, 'utf8') !== `${expected}\n`)
+			throw new Error(`the production build's ${NOTICES_FILE} differs from the packages' notices`);
+		site = startSiteBuild(project);
 		await startsUnderStrictPolicy(join(project, 'dist'));
 		await playsOffline(join(project, 'dist'));
-		await buildsExamples(project);
+		await startsSiteDemos(project, site);
 		passed = true;
 		console.log(`\nThe packed packages pass in a fresh project (${packed.length} packages).`);
 	} finally {
+		site?.stop();
 		if (passed && !keep) rmSync(project, { recursive: true, force: true });
 		else console.log(`The project stays in ${project}.`);
 	}

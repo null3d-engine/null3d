@@ -1,11 +1,17 @@
-import { describe, expect, it } from 'bun:test';
+import { afterAll, describe, expect, it } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { UsageError } from './args.js';
 import type { HeldPage } from './runner.js';
 import {
 	byteSize,
+	dumpLine,
 	parseShotArgs,
 	type ShotOptions,
 	type ShotReport,
+	scriptSummary,
+	shotFileName,
 	shotReport,
 	shotSummary,
 } from './shot.js';
@@ -65,6 +71,28 @@ describe('parseShotArgs', () => {
 			expect(mistake(['--size', size])).toBe(
 				`--size takes a width and a height in pixels from 1 to 8192, such as 1280x720, not "${size}"`,
 			);
+	});
+
+	it('reads a recording to replay, and refuses a time or a script with it', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'null3d-replay-'));
+		const file = join(dir, 'bug.n3dr');
+		writeFileSync(file, Buffer.from([1, 2, 3, 4]));
+		try {
+			const options = parseShotArgs(['--replay', file]);
+			expect(options.recording?.file).toBe(file);
+			expect(Array.from(options.recording?.bytes ?? [])).toEqual([1, 2, 3, 4]);
+			expect(mistake(['--replay', file, '--time', '1'])).toContain(
+				'--time and --replay cannot both be given',
+			);
+			expect(mistake(['--replay', file, '--script', 'x.script'])).toContain(
+				'--script and --replay cannot both be given',
+			);
+			expect(mistake(['--replay', join(dir, 'absent.n3dr')])).toContain(
+				'cannot read the recording',
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	it('names an option it lacks, an option without its value, and an argument it does not take', () => {
@@ -213,5 +241,122 @@ describe('shownPath', () => {
 		expect(shownPath('/work/game/out/shot.png', '/work/game')).toBe('out/shot.png');
 		expect(shownPath('/tmp/shot.png', '/work/game')).toBe('/tmp/shot.png');
 		expect(shownPath('/work/game', '/work/game')).toBe('/work/game');
+	});
+});
+
+/** A folder for the script files of these tests, removed after them. */
+const scripts = mkdtempSync(join(tmpdir(), 'null3d-shot-script-'));
+afterAll(() => rmSync(scripts, { recursive: true, force: true }));
+
+/** Writes a script into the tests' folder, and returns its path. */
+function scriptFile(name: string, text: string): string {
+	const path = join(scripts, name);
+	writeFileSync(path, text);
+	return path;
+}
+
+describe('parseShotArgs with a script', () => {
+	it('reads the steps of the script that --script names', () => {
+		const file = scriptFile('one.script', '0 key KeyW down\n1 shot start');
+		expect(parseShotArgs(['--script', file])).toEqual({
+			...DEFAULTS,
+			steps: [
+				{ at: 0, verb: 'key', code: 'KeyW', down: true },
+				{ at: 1, verb: 'shot', name: 'start' },
+			],
+		});
+	});
+
+	it('refuses --time with a script, a script without a shot, and a file it cannot read', () => {
+		const file = scriptFile('two.script', '0 key KeyW down\n1 shot start');
+		expect(mistake(['--script', file, '--time', '1'])).toBe(
+			'--time and --script cannot both be given: each shot of a script sets its own time',
+		);
+		const noShot = scriptFile('no-shot.script', '0 key KeyW down');
+		expect(mistake(['--script', noShot])).toBe(
+			`the script ${noShot} has no shot step. A script draws an image where a step says "shot <name>"`,
+		);
+		expect(mistake(['--script', join(scripts, 'missing.script')])).toStartWith(
+			'cannot read the script ',
+		);
+	});
+});
+
+describe('shotFileName', () => {
+	it("gives each shot the output's name and the step's name", () => {
+		expect(shotFileName('/work/tour.png', { at: 1, verb: 'shot', name: 'parked' })).toBe(
+			'/work/tour-parked.png',
+		);
+		expect(shotFileName('/work/tour.PNG', { at: 2, verb: 'shot', name: 'driving' })).toBe(
+			'/work/tour-driving.png',
+		);
+	});
+});
+
+describe('scriptSummary', () => {
+	const STEP = { at: 1, verb: 'shot', name: 'parked' } as const;
+	const REPORT = {
+		ok: true,
+		page: '/?hold=1',
+		time: 1,
+		frame: 61,
+		tier: 'webgl2',
+		width: 4,
+		height: 2,
+		image: 'tour-parked.png',
+		ms: 10,
+		errors: [],
+		warnings: [],
+	};
+
+	it('prints each frame, each dump once, and each failed step once', () => {
+		const summary = scriptSummary(
+			[
+				{
+					step: STEP,
+					report: REPORT,
+					png: '/work/tour-parked.png',
+					json: '/work/tour-parked.json',
+				},
+			],
+			[
+				{
+					dumps: [
+						{ at: 0.5, target: 'car', path: 'position', value: [0, 2, 0] },
+						{ at: 0.5, target: 'car', path: 'position', value: [0, 2, 0] },
+					],
+					problems: [],
+				},
+				{
+					dumps: [{ at: 0.5, target: 'car', path: 'position', value: [0, 2, 0] }],
+					problems: [
+						{ at: 1, step: 'set "cr".position', error: 'the scene has no object named "cr".' },
+					],
+				},
+			],
+		);
+		expect(summary).toBe(
+			[
+				'Drew parked at 1 s, frame 61, on webgl2: 4 x 2 pixels.',
+				"Saved /work/tour-parked.png, and the frame's facts and what the page logged in /work/tour-parked.json.",
+				'Dump at 0.5 s: "car" position is [0,2,0].',
+				'Step at 1 s, set "cr".position, failed: the scene has no object named "cr".',
+			].join('\n'),
+		);
+	});
+});
+
+describe('dumpLine', () => {
+	it('writes a property, and a whole object, in words', () => {
+		expect(dumpLine({ at: 2, target: 'car', path: 'visible', value: [0] })).toBe(
+			'Dump at 2 s: "car" visible is [0].',
+		);
+		expect(
+			dumpLine({
+				at: 3,
+				target: 'car',
+				value: { name: 'car', kind: 'object', position: [0, 0, 0] },
+			}),
+		).toBe('Dump at 3 s: "car" is {"name":"car","kind":"object","position":[0,0,0]}.');
 	});
 });

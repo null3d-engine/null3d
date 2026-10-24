@@ -8,13 +8,13 @@ mod subset;
 use std::collections::BTreeMap;
 
 use common::{
-    SEE_RULES, SHADER, assert_feature, assert_same, build, build_each_in_shader_compiler,
-    build_wgsl, column_of, compiler_processes, only_problem, project, wgsl,
+    SEE_RULES, SHADER, assert_feature, build, build_each_in_shader_compiler, build_wgsl, column_of,
+    compiler_processes, only_problem, project, same, wgsl,
 };
 
 use null3d_shaders::{
-    ALLOWED_LANGUAGE_FEATURES, Binding, Compiler, GlslTexture, GlslUniformBlock, Inputs, Output,
-    Part, ShaderSource, Shard, ShardPlan, literals_safari_refuses, typescript,
+    ALLOWED_LANGUAGE_FEATURES, Binding, Cache, Compiler, GlslTexture, GlslUniformBlock, Inputs,
+    Output, Part, ShaderSource, Shard, ShardPlan, literals_safari_refuses, typescript,
 };
 use precision::{newer_built_in_calls, precision_breaks};
 
@@ -1250,7 +1250,9 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
 /// twenty or more feature sets those builds make; and a whole-shader first-use module, through
 /// `environment`. `lit` has the feature bits of the textured standard material, less its relief
 /// bits, at about a seventh of its builds. The textured material alone is most of the whole
-/// build, and two builds of it made this check the longest part of CI by far.
+/// build, and two builds of it made this check the longest part of CI by far. The module exports
+/// test of `null3d-shaders-wasm` builds the same list, for the same reason, and keeps a copy of it,
+/// since one crate's tests cannot read another's.
 const DETERMINISM_ENTRIES: &[&str] = &["lit", "environment", "pick", "timer_mark"];
 
 /// The one test that builds every shader of the repository. A full build takes minutes, and
@@ -1264,7 +1266,9 @@ const DETERMINISM_ENTRIES: &[&str] = &["lit", "environment", "pick", "timer_mark
 ///
 /// CI splits the work across jobs with `NULL3D_SHADER_SHARD` ([`Run::from_env`]). A shard
 /// builds its share of the builds and runs every check that reads them. The determinism check
-/// runs in a job of its own, which builds its entries twice and checks nothing else.
+/// runs in a job of its own, which builds its entries twice and checks nothing else. A shard may
+/// read its native build from the per-entry cache that CI's shader-entries jobs filled
+/// ([`native_entries`]).
 ///
 /// With `NULL3D_SHADER_COMPILER` set, the shader compiler builds the repository one entry at a
 /// time, and each entry's result must be the native build's. It cannot build the whole manifest in
@@ -1299,7 +1303,18 @@ fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule()
             (subset::repository_subset(DETERMINISM_ENTRIES), 1)
         }
     };
-    let output = null3d_shaders::build(&inputs).unwrap();
+    let cache = if run == Run::Determinism {
+        Cache::disabled()
+    } else {
+        native_entries()
+    };
+    let (output, stats) = null3d_shaders::build_with_cache(&inputs, &cache).unwrap();
+    if cache.is_on() {
+        show(&format!(
+            "The native build compiled {} entries and read {} from the per-entry cache.\n",
+            stats.compiled, stats.reused
+        ));
+    }
     // The second build runs beside the portability checks, which read only this build. A shard
     // leaves both the second build and the comparison to the determinism job.
     let narrow =
@@ -1324,10 +1339,12 @@ fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule()
         };
         (again.map(|again| again.join().unwrap()), failures)
     });
-    if checks {
-        the_shader_compiler_builds_every_entry_of_the_repository(&inputs, &output);
-    }
     let mut failures = failures;
+    if checks {
+        failures.extend(the_shader_compiler_builds_every_entry_of_the_repository(
+            &inputs, &output,
+        ));
+    }
     if let Some(again) = again {
         // Rendering every module of a build costs minutes on the larger entries, so each output is
         // rendered once and both checks read the same modules.
@@ -1343,6 +1360,24 @@ fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule()
         );
     }
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+/// The per-entry cache that the native build reads, when `NULL3D_SHADER_ENTRIES` names its
+/// folder: the `<entries-dir>/<stamp>` that the shader tool's `--cache-keys` prints, whose last
+/// name is the compiler's stamp. CI's shader-entries jobs compile every entry natively before its
+/// shader-compiler shards start, so a shard reads its share there and spends its time on the
+/// shader compiler alone. An entry that the folder lacks compiles, as with no cache. Without the
+/// variable the cache is off.
+fn native_entries() -> Cache {
+    std::env::var_os("NULL3D_SHADER_ENTRIES").map_or_else(Cache::disabled, |folder| {
+        let folder = std::path::PathBuf::from(folder);
+        let stamp = folder
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("NULL3D_SHADER_ENTRIES ends in the compiler's stamp")
+            .to_owned();
+        Cache::at(&folder, &stamp)
+    })
 }
 
 /// The part of the repository test that this process runs, as `NULL3D_SHADER_SHARD` names it.
@@ -1440,15 +1475,19 @@ fn every_module_kind(modules: &BTreeMap<String, String>) -> Result<(), String> {
 }
 
 /// Builds each entry of the manifest alone through the shader compiler when
-/// `NULL3D_SHADER_COMPILER` is set, and fails when its result differs from the native build of
-/// these inputs for that entry. Comparing with that build is what keeps the entry built once: the
+/// `NULL3D_SHADER_COMPILER` is set, and gives a failure for each piece whose result differs from
+/// the native build of these inputs for that entry. The failures join the test's other checks, so
+/// a run reports a difference beside every rule that the native build breaks. Comparing with that build is what keeps the entry built once: the
 /// reference `output` is the build the test's other checks read. An entry that builds nothing of
 /// its own, such as the template of custom materials, has no such build and is skipped. An entry
 /// that costs more than an even share of the compiler processes goes to them in pieces, each a
 /// part of its builds, so no process spends the run on one entry while the others wait.
-fn the_shader_compiler_builds_every_entry_of_the_repository(inputs: &Inputs, output: &Output) {
+fn the_shader_compiler_builds_every_entry_of_the_repository(
+    inputs: &Inputs,
+    output: &Output,
+) -> Vec<String> {
     if std::env::var_os("NULL3D_SHADER_COMPILER").is_none() {
-        return;
+        return Vec::new();
     }
     let costs = null3d_shaders::entry_costs(inputs).expect("the shader manifest");
     assert!(!costs.is_empty(), "the manifest names no shader");
@@ -1474,11 +1513,13 @@ fn the_shader_compiler_builds_every_entry_of_the_repository(inputs: &Inputs, out
         }
     }
     let requests: Vec<Inputs> = pieces.iter().map(|(_, piece)| piece.clone()).collect();
+    let mut failures = Vec::new();
     build_each_in_shader_compiler(&requests, |index, compiled| {
         let (name, piece) = &pieces[index];
         let builds = &null3d_shaders::build_names(piece).expect("the piece's manifest")[*name];
-        assert_same(name, &compiled, &one_entry(name, output, builds));
+        failures.extend(same(name, &compiled, &one_entry(name, output, builds)).err());
     });
+    failures
 }
 
 /// The result that the native build of the shard gives for one entry, with the named builds alone,
@@ -1527,10 +1568,55 @@ fn same_modules(
     }
 }
 
+/// Runs `check` once on each distinct GLSL stage of a build, a text and whether it is a fragment
+/// stage, with the stages spread over the machine's cores, and gives back its answer for each.
+/// Many builds share a stage's text, and the checks read every line of every stage, so a check
+/// of each stage in turn on one core took most of a CI shard's time beside its build.
+fn each_distinct_glsl_stage<T: Send>(
+    output: &Output,
+    check: impl Fn(&str, bool) -> T + Sync,
+) -> std::collections::HashMap<(&str, bool), T> {
+    let mut stages = std::collections::HashSet::new();
+    for variants in output.shaders.values() {
+        for built in variants.values() {
+            for (_, program) in built.glsl.iter().flatten() {
+                stages.insert((&*program.vertex.source, false));
+                stages.insert((&*program.fragment.source, true));
+            }
+        }
+    }
+    let stages: Vec<(&str, bool)> = stages.into_iter().collect();
+    let threads = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+    let chunk = stages.len().div_ceil(threads).max(1);
+    std::thread::scope(|scope| {
+        let check = &check;
+        let workers: Vec<_> = stages
+            .chunks(chunk)
+            .map(|chunk| {
+                scope.spawn(move || {
+                    chunk
+                        .iter()
+                        .map(|&(source, fragment)| ((source, fragment), check(source, fragment)))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|worker| worker.join().unwrap())
+            .collect()
+    })
+}
+
 fn glsl_keeps_the_rules_of_strict_drivers_and_webgl2(
     output: &Output,
     divide: usize,
 ) -> Result<(), String> {
+    let found = each_distinct_glsl_stage(output, |source, fragment| {
+        let mut found = precision_breaks(source, fragment);
+        found.extend(newer_built_in_calls(source));
+        found
+    });
     let mut breaks = Vec::new();
     let mut stages = 0;
     for (shader, variants) in &output.shaders {
@@ -1539,10 +1625,8 @@ fn glsl_keeps_the_rules_of_strict_drivers_and_webgl2(
                 for (stage, fragment) in [(&program.vertex, false), (&program.fragment, true)] {
                     stages += 1;
                     let kind = if fragment { "fragment" } else { "vertex" };
-                    let mut found = precision_breaks(&stage.source, fragment);
-                    found.extend(newer_built_in_calls(&stage.source));
                     breaks.extend(
-                        found.into_iter().map(|b| {
+                        found[&(&*stage.source, fragment)].iter().map(|b| {
                             format!("{shader}.{variant} ({pipeline}, {kind} shader), {b}")
                         }),
                     );
@@ -1565,15 +1649,16 @@ fn glsl_keeps_the_rules_of_strict_drivers_and_webgl2(
 /// Fails when a built GLSL shader declares a structure-typed local, parameter or result. A
 /// uniform block's own declaration is the only place a structure type may name a variable.
 fn glsl_declares_no_structure_value(output: &Output) -> Result<(), String> {
+    let found = each_distinct_glsl_stage(output, |source, _| structure_variables(source));
     let mut breaks = Vec::new();
     for (shader, variants) in &output.shaders {
         for (variant, built) in variants {
             for (pipeline, program) in built.glsl.iter().flatten() {
-                for (source, kind) in [
-                    (&program.vertex.source, "vertex"),
-                    (&program.fragment.source, "fragment"),
+                for (source, fragment, kind) in [
+                    (&program.vertex.source, false, "vertex"),
+                    (&program.fragment.source, true, "fragment"),
                 ] {
-                    for member in structure_variables(source) {
+                    for member in &found[&(&**source, fragment)] {
                         breaks.push(format!(
                             "{shader}.{variant} ({pipeline}, {kind} shader): {member}"
                         ));

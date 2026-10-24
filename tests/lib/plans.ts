@@ -130,6 +130,7 @@ import {
 	objectGrowthProblems,
 } from './object-growth.ts';
 import { type OcclusionS6Check, occlusionS6Plan, saveOcclusionS6Images } from './occlusion-s6.ts';
+import { fallbackSeconds, measuredSeconds } from './page-times.ts';
 import {
 	HEAVY_SPHERES,
 	heavyCheckProblems,
@@ -159,6 +160,11 @@ import {
 	textureCachePlan,
 	textureCacheProblems,
 } from './texture-cache.ts';
+import {
+	type VideoTextureResult,
+	videoTextureNote,
+	videoTextureProblems,
+} from './video-texture-checks.ts';
 import {
 	saveVisualResult,
 	VISUAL_LIMITS,
@@ -203,6 +209,14 @@ export type Check =
 	| { kind: 'uploads'; tier: Tier }
 	/** The mip levels page: each way of making mip levels on WebGL2, read back level by level. */
 	| { kind: 'mip-levels' }
+	/**
+	 * The recording page: a device records its own session, with the keyboard, a touch and a long
+	 * frame, and publishes the recording with the frame lines that the sketch saw. A test on the
+	 * computer replays the file and compares the lines.
+	 */
+	| { kind: 'record' }
+	/** The video texture page: a video on the page shown on a surface, within the upload budget. */
+	| { kind: 'video-texture'; tier: Tier }
 	/** The environment generator page: the built-in room made on the GPU, read back level by level. */
 	| { kind: 'environment-generator'; tier: Tier }
 	/** The skinning pass page: the WebGPU skinning shader on fixed meshes, read back and drawn. */
@@ -243,6 +257,15 @@ export type Check =
 	| { kind: 'environment'; tier: Tier }
 	/** The grass cost page: a field of blades still and swaying by their row values, in turns. */
 	| { kind: 'grass'; tier: Tier }
+	/** The alpha-mask cost page: masked lit quads opaque and masked in turns, with and without MSAA. */
+	| { kind: 'alpha-mask'; tier: Tier; antialias: 'msaa' | 'none' }
+	/** The cluster cost page: a tree of cluster patches timed at three distances. */
+	| { kind: 'cluster'; tier: Tier }
+	/**
+	 * A development page that only reports what it found, such as the two-step probe: its result
+	 * holds the figures, and nothing judges them.
+	 */
+	| { kind: 'probe'; tier: Tier }
 	/** The sky map cost page: each stage of a sky map's refresh, timed on one GPU path. */
 	| { kind: 'sky-map'; tier: Tier }
 	/** The sky refresh page: the frames from a sun move until the sky's light follows it. */
@@ -559,6 +582,17 @@ export function checksPlan({ shaders = 'all' }: PlanSettings = {}): PlanItem<Che
 		),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
 		pageItem('mip-levels', 'mip-levels', { kind: 'mip-levels' }),
+		// A video on the page as a texture in the sketch: its frames arrive within the upload
+		// budget, a paused video uploads nothing, and the frame's colours are the page's colours.
+		// The Low preset sets the strictest upload budget that the engine promises.
+		...TIERS.map((tier) =>
+			pageItem(
+				`video-texture-${tier}`,
+				'video-texture',
+				{ kind: 'video-texture', tier },
+				{ switches: [`gpu=${tier}`, 'preset=low'], timeoutSeconds: 120 },
+			),
+		),
 		...(['webgpu', 'compat', 'webgl2'] as const).map((path) =>
 			pageItem(
 				`environment-generator-${path}`,
@@ -1124,8 +1158,8 @@ export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
 
 /**
  * The effects that the effect cost page measures: bloom, ambient occlusion, depth of field, the
- * sun's contact shadows, the subsurface blur of skin, the volumetric fog, 4 custom effects, or
- * the physical sky.
+ * sun's contact shadows, the subsurface blur of skin, the volumetric fog, 4 custom effects, the
+ * physical sky, or the sharpening.
  */
 export type CostedEffect =
 	| 'bloom'
@@ -1135,7 +1169,9 @@ export type CostedEffect =
 	| 'contact'
 	| 'fog'
 	| 'effects'
-	| 'sky';
+	| 'sky'
+	| 'sharpen'
+	| 'compute';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1156,7 +1192,9 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * ambient occlusion. The physical sky plan times the physical sky against three.js's analytic sky,
  * with the sun still and with the sun moving in every frame, which draws the sky view table again
  * in each frame. The subsurface plan times the skin blur at 17 and 25 taps, High's and
- * Ultra's. D-21 records the results of the bloom plan and the ao plan, D-71 those of the
+ * Ultra's. The sharpen plan times the sharpening at the whole canvas's render scale, where the
+ * frame draws the two-step pass, and at half it, where the upscale sharpens instead. D-21 records
+ * the results of the bloom plan and the ao plan, D-71 those of the
  * effects plan, D-119 those of the dof plan, D-133 those of the fog plan, D-135 those of the
  * contact plan, D-143 those of the physical sky plan, and D-153 those of the subsurface plan.
  */
@@ -1201,6 +1239,10 @@ export function effectPlan(
 			['-17', ['taps=17']],
 			['-25', ['taps=25']],
 		],
+		// The two steps of the pass at the whole canvas's scale, and the sharpening in the second.
+		sharpen: [['', []]],
+		// A compute pass whose output a vertex offset reads, for the vegetation wind path's budgets.
+		compute: [['', []]],
 	};
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
@@ -1229,7 +1271,7 @@ export function effectPlan(
 							...switches,
 							...callSwitches,
 						],
-						timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+						timeoutSeconds: effect === 'compute' ? 180 : EFFECT_TIMEOUT_SECONDS,
 					},
 				),
 			),
@@ -1350,6 +1392,280 @@ export function grassPlan(): PlanItem<Check>[] {
 			{ switches: [`gpu=${tier}`], timeoutSeconds: EFFECT_TIMEOUT_SECONDS },
 		),
 	);
+}
+
+/** The GPU paths of the alpha-mask plan's pages: the two WebGPU paths draw on WebGPU's tier. */
+const ALPHA_MASK_PATHS = [
+	['webgpu', 'webgpu'],
+	['compat', 'webgpu'],
+	['webgl2', 'webgl2'],
+] as const;
+
+/**
+ * What an alpha-masked lit fragment costs under MSAA: the curtain of masked lit quads of the
+ * alpha-mask-cost page, timed with every quad opaque and masked in turns, with MSAA and with no
+ * antialiasing, on each GPU path. D-223 records the results.
+ */
+export function alphaMaskPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const [path, tier] of ALPHA_MASK_PATHS)
+		for (const antialias of ['msaa', 'none'] as const)
+			items.push(
+				pageItem(
+					`alpha-mask-${antialias}-${path}`,
+					'alpha-mask-cost',
+					{ kind: 'alpha-mask', tier, antialias },
+					{
+						switches: [`gpu=${path}`, `aa=${antialias}`, 'preset=high', 'prepass=off'],
+						timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+					},
+				),
+			);
+	return items;
+}
+
+/**
+ * What a tree of cluster patches costs: the heightfield of the cluster-cost page, timed at three
+ * camera distances on one GPU path, so the figures show both the saving that coarse patches make
+ * and the cost of the pass that picks them. D-213 records the results.
+ */
+export function clusterCostPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [];
+	for (const [path, tier] of ALPHA_MASK_PATHS)
+		items.push(
+			pageItem(
+				`cluster-${path}`,
+				'cluster-cost',
+				{ kind: 'cluster', tier },
+				{
+					// The patch pass belongs to the path that culls on the GPU, so the switches
+					// keep the start-up probe from choosing the direct path, which draws the whole
+					// mesh and would time another drawing.
+					switches: [`gpu=${path}`, 'preset=high', 'direct=off'],
+					timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+				},
+			),
+		);
+	return items;
+}
+
+/**
+ * The two-step probe: the sharpening's sketch with `?two-step=report`, a development page that logs
+ * the two-step pass's answers once its frame is on screen, with the browser and the WebGL2 path's
+ * compile state. One page holds the frame the image test draws, as the manifest runs it, and one
+ * plays it live, as an effect cost page does. A run names the browsers to compare, and their lines
+ * read side by side. It times nothing.
+ */
+export function twoStepPlan(): PlanItem<Check>[] {
+	const sketch = encodeURIComponent('/tests/pages/sketches/sharpen-sketch.ts?sharpen=1');
+	return [
+		{
+			id: 'two-step-held',
+			path: `/tests/pages/image.html?gpu=webgl2&hold=0&preset=high&size=320x180&two-step=report&sketch=${sketch}`,
+			timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+			check: { kind: 'probe', tier: 'webgl2' },
+		},
+		{
+			id: 'two-step-live',
+			path: '/tests/pages/effect-cost.html?gpu=webgl2&scale=1&effect=sharpen&strength=1&two-step=report',
+			timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+			check: { kind: 'probe', tier: 'webgl2' },
+		},
+	];
+}
+
+/**
+ * The splats add-on's streaming on each GPU path: the page reads a stream index from the test
+ * server and downloads only the chunks that the view needs, whose count the preset's budget caps.
+ * The page reports the splats that draw against the budget, the chunks and bytes that arrived, the
+ * frame rate, the first-frame time and the bytes that the page downloaded. Each path runs the whole
+ * cloud and a quarter of it at the same pixel count, so the two show whether the cost follows the
+ * count or the screen's fill. The capabilities page comes first, so a device without WebGPU skips
+ * that page.
+ */
+export function splatsPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...(['webgpu', 'webgl2'] as const).flatMap((tier) => [
+			pageItem(
+				`splats-stream-${tier}`,
+				'splats-stream',
+				{ kind: 'probe', tier },
+				{ switches: [`gpu=${tier}`, 'splats=400000', 'seconds=3'], timeoutSeconds: 180 },
+			),
+			pageItem(
+				`splats-quarter-${tier}`,
+				'splats-stream',
+				{ kind: 'probe', tier },
+				{ switches: [`gpu=${tier}`, 'splats=100000', 'seconds=3'], timeoutSeconds: 180 },
+			),
+		]),
+	];
+}
+
+/** The demos that the vegetation plan times on each device. */
+const VEGETATION_DEMOS = ['creek', 'forest'] as const;
+/**
+ * The GPU paths of the vegetation plan's pages, with the tier that each draws on. A device that
+ * offers compatibility mode only runs that path in place of the core WebGPU one.
+ */
+const VEGETATION_PATHS = [
+	['webgpu', 'webgpu'],
+	['compat', 'webgpu'],
+	['webgl2', 'webgl2'],
+] as const;
+/** The presets that each demo runs at, in the order that the plan runs them. */
+const VEGETATION_PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
+/**
+ * How long one page of the vegetation plan may take: a showcase scene loads its models through the
+ * cloud's tunnel, builds its detail at the preset, draws its first frame, measures the frames, and
+ * then waits for the overlay's figures.
+ */
+const VEGETATION_TIMEOUT_SECONDS = 900;
+
+/**
+ * Creek and the forest demo at every preset on each GPU path, for M3-V1's vegetation budgets: the
+ * frame interval, CPU time per frame, GPU time per pass, the triangles drawn and the memory at a
+ * fixed preset. Each page fixes its path and its preset, so the start-up check cannot lower either.
+ * The whole dress of both demos ships at one preset, so the figures compare across presets, and a
+ * page that a device cannot run is skipped by the capabilities page's report.
+ */
+export function vegetationPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+	];
+	for (const demo of VEGETATION_DEMOS)
+		for (const preset of VEGETATION_PRESETS)
+			for (const [path, tier] of VEGETATION_PATHS)
+				items.push(
+					pageItem(
+						`vegetation-${demo}-${preset}-${path}`,
+						'demo-device',
+						{ kind: 'probe', tier },
+						{
+							switches: [
+								`gpu=${path}`,
+								`demo=${demo}`,
+								`preset=${preset}`,
+								// The governor's target stays at a rate that no frame misses, so it holds the
+								// whole render scale and each preset's own cost shows.
+								'target-fps=1',
+								'seconds=5',
+							],
+							timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
+						},
+					),
+				);
+	return items;
+}
+
+/**
+ * One page for the bisect of the Creek stall on Apple WebGPU: Creek at Low on core WebGPU, with the
+ * page's own switches naming what to measure and which shared effects to turn off. The time limit is
+ * short, so a page that stalls ends its session instead of holding it for the full limit.
+ */
+export function webgpuStallPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...(['low', 'medium', 'high'] as const).map((preset) =>
+			pageItem(
+				`creek-webgpu-stall-${preset}`,
+				'demo-device',
+				{ kind: 'probe', tier: 'webgpu' },
+				{
+					switches: [`gpu=webgpu`, 'demo=creek', `preset=${preset}`, 'target-fps=1', 'seconds=5'],
+					timeoutSeconds: 240,
+				},
+			),
+		),
+		pageItem(
+			'creek-compat-stall-low',
+			'demo-device',
+			{ kind: 'probe', tier: 'webgpu' },
+			{
+				switches: ['gpu=compat', 'demo=creek', 'preset=low', 'target-fps=1', 'seconds=5'],
+				timeoutSeconds: 240,
+			},
+		),
+	];
+}
+
+/**
+ * Procedural tree generation in a worker, for M3-V1's budgets: each species at each preset's
+ * detail, generated for several seeds, with the triangles, the vertices and the bytes of each
+ * variant. It draws nothing and asks for no GPU path, so every device runs it.
+ */
+export function treeGenerationPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(
+			'tree-generation',
+			'tree-generation',
+			{ kind: 'probe', tier: 'webgl2' },
+			{ switches: ['seeds=6'], timeoutSeconds: 120 },
+		),
+	];
+}
+
+/**
+ * Creek's valley placed by the vegetation add-on's ecological rules, on each GPU path: the page
+ * checks its placement against the reference that another device recorded, and times it. The
+ * placement reads no GPU, so the two paths must give the same points.
+ */
+export function vegetationScatterPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(
+			'vegetation-scatter-webgl2',
+			'vegetation-scatter',
+			{ kind: 'probe', tier: 'webgl2' },
+			{ switches: ['runs=3'], timeoutSeconds: 180 },
+		),
+		pageItem(
+			'vegetation-scatter-webgpu',
+			'vegetation-scatter',
+			{ kind: 'probe', tier: 'webgpu' },
+			{ switches: ['runs=3', 'gpu=webgpu'], timeoutSeconds: 180 },
+		),
+	];
+}
+
+/** The showcase demos that the demos plan measures. */
+const MEASURED_DEMOS = ['skyway', 'night-town'] as const;
+
+/**
+ * Showcase demos on each GPU path, with the quality governor on: the frame rate, the display's
+ * rate, the first-frame time and the bytes that the page downloaded. Each demo runs at the preset
+ * that the engine chooses and again at the High preset, since the chosen preset and High answer
+ * different questions. The capabilities page comes first, so a device without WebGPU skips that page.
+ */
+export function demosPlan(): PlanItem<Check>[] {
+	// The engine's own preset answers a showcase's target; High shows what the preset above costs.
+	const presets = [
+		{ name: 'chosen', preset: undefined },
+		{ name: 'high', preset: 'high' },
+	] as const;
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...MEASURED_DEMOS.flatMap((demo) =>
+			(['webgpu', 'webgl2'] as const).flatMap((tier) =>
+				presets.map(({ name, preset }) =>
+					pageItem(
+						`demo-${demo}-${tier}-${name}`,
+						'demo-frames',
+						{ kind: 'probe', tier },
+						{
+							switches: [
+								`gpu=${tier}`,
+								`demo=${demo}`,
+								'seconds=5',
+								...(preset === undefined ? [] : [`preset=${preset}`]),
+							],
+							timeoutSeconds: 300,
+						},
+					),
+				),
+			),
+		),
+	];
 }
 
 /** The GPU paths of the sky plan's pages, with the tier each draws on. */
@@ -1848,7 +2164,23 @@ export function shimmerPlan(): PlanItem<Check>[] {
 	);
 }
 
+/**
+ * The recording page on a device: it records a session with the keyboard, a touch and one long
+ * frame, and publishes the file with the frame lines. The computer's replay of the file is a test
+ * of its own, `tests/image/recording-replay.spec.ts`, which reads the run's result.
+ */
+export const recordPlan = (): PlanItem<Check>[] => [
+	{
+		id: 'record-phone',
+		// One thread, so the long frame that the page holds is a frame of the session's own timeline.
+		path: '/tests/pages/recording-device.html?record&threads=off',
+		timeoutSeconds: 180,
+		check: { kind: 'record' },
+	},
+];
+
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
+	record: recordPlan,
 	checks: checksPlan,
 	smoke: smokePlan,
 	parity: parityPlan,
@@ -1870,12 +2202,23 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	contact: () => effectPlan('contact'),
 	fog: () => effectPlan('fog'),
 	effects: () => effectPlan('effects'),
+	sharpen: () => effectPlan('sharpen'),
+	compute: () => effectPlan('compute'),
 	'physical-sky': () => effectPlan('sky'),
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
 	grass: grassPlan,
+	'alpha-mask-cost': alphaMaskPlan,
+	'cluster-cost': clusterCostPlan,
+	'two-step': twoStepPlan,
 	sky: skyPlan,
+	demos: demosPlan,
+	splats: splatsPlan,
+	vegetation: vegetationPlan,
+	'tree-generation': treeGenerationPlan,
+	'vegetation-scatter': vegetationScatterPlan,
+	'webgpu-stall': webgpuStallPlan,
 	reflection: reflectionPlan,
 	occlusion: occlusionPlan,
 	'gpu-occlusion': gpuOcclusionPlan,
@@ -2080,11 +2423,10 @@ export function itemsTogether(item: PlanItem<Check>): string[] {
 }
 
 /**
- * About how long the slow pages of the checks plan take in Safari on CI's Mac, the slowest browser
- * that CI runs the plan in. The shaders page's parts grew with the shader set. In run 39291513923
- * (19 October 2026) a shard's parts took 122 and 143 seconds, each compiled first in its shard. A
- * shard holds three or four parts, so each one compiles first or second, and counts at that time.
- * The WebGPU pages of the same names skip there.
+ * About how long the slow pages of the checks plan take in Safari on CI's Mac, for pages that the
+ * measured table (`page-times.ts`) does not hold yet. The shaders page's parts grew with the shader
+ * set. In run 39291513923 (19 October 2026) a shard's parts took 122 and 143 seconds, each compiled
+ * first in its shard. The WebGPU pages of the same names skip there.
  */
 const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
 	[/^shaders-/, 120],
@@ -2093,16 +2435,23 @@ const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
 	[/restarts/, 20],
 ];
 
-/**
- * The mean time of every other page of the plan there, the skipped pages among them. In run
- * 39291513923 the shards held about 80 other pages each and took 8 to 16 minutes, about twice what
- * a mean of 1.5 seconds gave.
- */
+/** The mean time of every other page, for a browser that the measured table does not hold. */
 const PAGE_SECONDS = 2.5;
 
-/** About how long a page takes in Safari on CI's Mac, by which the shards split a plan. */
-export function expectedSeconds({ id }: { id: string }): number {
-	return SLOW_PAGE_SECONDS.find(([pattern]) => pattern.test(id))?.[1] ?? PAGE_SECONDS;
+/**
+ * About how long a page takes in `browser` on CI, by which the shards split a plan: its measured
+ * time when it is a slow page there, else the rules above for a page new to the table, else the
+ * time of the browser's other pages. In run 40046196327 the rules alone modelled Safari's shards
+ * at 2.0 to 9.4 minutes, where their pages took up to 12.6, and every Firefox shard at about 17,
+ * where they took 6.1 to 11.4. With the measured table, the split models both at about 9.
+ */
+export function expectedSeconds({ id }: { id: string }, browser = 'Safari'): number {
+	return (
+		measuredSeconds(id, browser) ??
+		SLOW_PAGE_SECONDS.find(([pattern]) => pattern.test(id))?.[1] ??
+		fallbackSeconds(browser) ??
+		PAGE_SECONDS
+	);
 }
 
 /**
@@ -2616,10 +2965,31 @@ export function judge(
 				: ['the engine started without shared memory, so the load tested no maximum'];
 		case 'room':
 			return typeof result.room === 'number' ? [] : ['the page did not count its room'];
+		case 'record': {
+			const log = result.log as unknown;
+			const frames = result.frames as unknown;
+			const recording = result.recording as unknown;
+			const problems: string[] = [];
+			if (!Array.isArray(log)) problems.push('the page published no frame lines');
+			else if (typeof frames !== 'number' || log.length !== frames)
+				problems.push(
+					`the page published ${log.length} frame lines for its ${String(frames)} frames`,
+				);
+			if (typeof frames !== 'number' || frames < 20)
+				problems.push(`the session ran ${String(frames)} frames, too few to compare`);
+			if (typeof recording !== 'string' || recording.length < 100)
+				problems.push('the page published no recording');
+			return problems;
+		}
 		case 'mip-levels': {
 			const mips = result as unknown as MipLevelsResult;
 			context?.note?.(mipLevelsNote(mips));
 			return mipLevelsProblems(mips);
+		}
+		case 'video-texture': {
+			const video = result as unknown as VideoTextureResult;
+			context?.note?.(videoTextureNote(video));
+			return videoTextureProblems(video);
 		}
 		case 'environment-generator': {
 			const { lines, problems } = generatorReport(result as unknown as GeneratorResult);
@@ -2715,19 +3085,40 @@ export function judge(
 		}
 		case 'skinning':
 			return skinningProblems(result as ItemResult & SkinningResult);
+		case 'probe':
+			// The page reports what it found, and the run's result holds it.
+			return [];
 		case 'effect':
 		case 'environment':
-		case 'grass': {
+		case 'grass':
+		case 'alpha-mask': {
 			const cost = result as ItemResult & { failures?: string[]; on?: { intervalMs?: number } };
 			const feature =
 				check.kind === 'effect'
 					? check.effect
 					: check.kind === 'grass'
 						? 'the grass swaying'
-						: 'the environment';
+						: check.kind === 'alpha-mask'
+							? 'the mask on'
+							: 'the environment';
 			return [
 				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
 				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${feature} on`]),
+			];
+		}
+		case 'cluster': {
+			// The page times the same tree at three distances, so a run that measured no frame at
+			// one of them tells nothing about how the cost falls as the camera draws back.
+			const cost = result as ItemResult & {
+				failures?: string[];
+				sides?: { distance: number; intervalMs?: number }[];
+			};
+			return [
+				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
+				...((cost.sides ?? []).length > 0 ? [] : ['the page measured no distance']),
+				...(cost.sides ?? [])
+					.filter((side) => !side.intervalMs)
+					.map((side) => `the page measured no frame at ${side.distance} m`),
 			];
 		}
 		case 'gpu-occlusion': {

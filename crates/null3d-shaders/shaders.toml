@@ -52,6 +52,10 @@
 #   effect_fold_host  True for the one shader that hosts custom effects and a custom tone curve
 #              folded into the final pass, which the shader compiler builds pieces with as for
 #              `effect_group_host`. A curve's piece builds with EFFECT_PIECE_CURVE.
+#   sky_layers True for the one template that sky layers build with. It is a template only: the
+#              build checks that it builds, with a layer that draws nothing, and writes no module
+#              of it. The shader compiler adds a layer's WGSL after its last line, and builds every
+#              variant with the shader def SKY_LAYER.
 #
 # Names of shaders, variants and pipelines use letters, digits and underscores and do not start
 # with a digit, because they become TypeScript property names.
@@ -375,8 +379,12 @@ file = "final.wgsl"
 by_device = true
 custom_tone_curves = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["FXAA", "HALF", "BLOOM"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["FXAA", "HALF", "BLOOM"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["UPSCALE", "FXAA", "HALF", "BLOOM"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["UPSCALE", "FXAA", "HALF", "BLOOM"], targets = ["glsl"] }
+# Only the UPSCALE builds hold the upscale and the sharpening, which the two-step pass's second step
+# draws; every other build reads the texel under each pixel. They stay in the start files: there
+# they add about what the other builds lose, while a file of their own would cost a page that drops
+# below the whole scale a download of its own (decision record D-236).
 
 # The template of custom effects: one triangle over the effect's target, which calls the effect's
 # function for each pixel. It builds for WebGPU, where DEPTH_MULTISAMPLED reads a multisampled
@@ -402,14 +410,15 @@ variants.webgl2 = { defs = ["WEBGL2", "EFFECT_HOST"], targets = ["glsl"] }
 
 # The final pass that hosts folded custom effects and a folded custom tone curve, from the final
 # pass's file. The engine folds only without FXAA, bloom and the HALF builds, so it has no
-# permutations.
+# permutations. It keeps the upscale and the sharpening (UPSCALE) in every build, as the final pass
+# held them before they took a build of their own.
 [shaders.final_effects]
 file = "final.wgsl"
 by_device = true
 effect_fold_host = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["EFFECT_CHAIN", "EFFECT_HOST"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "EFFECT_CHAIN", "EFFECT_HOST"], targets = ["glsl"] }
+variants.webgpu = { defs = ["EFFECT_CHAIN", "EFFECT_HOST", "UPSCALE"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "EFFECT_CHAIN", "EFFECT_HOST", "UPSCALE"], targets = ["glsl"] }
 
 # A page downloads both hosts the first time effects join or fold.
 [first_use.effect_groups]
@@ -449,6 +458,17 @@ by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["SKIN", "OUTLINE_VISIBLE", "INSTANCE_INDEX"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "OUTLINE_VISIBLE", "SKIN"], targets = ["glsl"] }
+
+# The tone mask: the objects whose material keeps its color as the display shows it, drawn as
+# instanced meshes, whose visible parts mark the mask's blue channel. It reads each instance as the
+# mesh templates do, and loads by device with them. SKIN skins in the vertex shader, as the mesh
+# templates' SKIN builds do.
+[shaders.tone_mask]
+file = "tone_mask.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["SKIN", "INSTANCE_INDEX"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "SKIN"], targets = ["glsl"] }
 
 # GPU picking: each object written with the source key of its object or of its instance's row,
 # where the scene's depth leaves it. The pass runs after the opaque pass, uses the scene's depth
@@ -666,6 +686,37 @@ by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 
+# Temporal anti-aliasing's resolve, a prototype (see taa.wgsl): blends the scene's color into a
+# history that it reads where each pixel's surface lay in the last frame, limited to the colors of
+# its neighbors. The WebGL2 variant reads a copy of one depth sample that its backend keeps.
+[shaders.taa]
+file = "taa.wgsl"
+by_device = true
+pipelines.resolve = { vertex = "vs", fragment = "resolve" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# The resolve from a multisampled depth target, whose samples it reads. Only WebGPU reads
+# multisampled textures.
+[shaders.taa_ms]
+file = "taa.wgsl"
+by_device = true
+pipelines.resolve = { vertex = "vs", fragment = "resolve" }
+variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
+
+# The copy of the resolve's target into the history of the frame's parity, one texel per pixel.
+[shaders.taa_copy]
+file = "taa_copy.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# A page downloads temporal anti-aliasing's steps when the sketch first turns it on. The frames
+# draw without it until the steps' pipelines are built.
+[first_use.taa]
+shaders = ["taa", "taa_ms", "taa_copy"]
+
 # A page downloads the copy when the sketch first adds a scene pass. The pass's texture samples as
 # no texture until the copy's pipeline is built.
 [first_use.views]
@@ -808,6 +859,17 @@ file = "cull.wgsl"
 by_device = true
 variants.webgpu = { targets = ["wgsl"] }
 
+# Cluster levels: one compute pipeline, whose three dispatches count, scan and copy the patches of
+# a view into the view's index list. WebGPU only. The build leaves the start: the path that culls on
+# the GPU asks for its pipeline, and WebGL2, which never builds that path, downloads none of it.
+[shaders.cluster_cull]
+file = "cluster_cull.wgsl"
+by_device = true
+variants.webgpu = { targets = ["wgsl"] }
+
+[first_use.cluster_levels]
+shaders = ["cluster_cull"]
+
 # The two phases of two-phase occlusion culling, from the same file: compute entry points `early`
 # and `late`. WebGPU only.
 [shaders.cull_occlusion]
@@ -907,6 +969,18 @@ variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 # texels are on the GPU.
 [first_use.background]
 shaders = ["background", "background_cube"]
+
+# The template of an add-on's sky layer, a box around the camera at the far plane that the camera's
+# opaque pass draws right after the background. The shader compiler adds a layer's WGSL after its
+# last line and builds every variant with the shader def SKY_LAYER, so that the add-on's `skyLayer`
+# replaces the template's stub. It is a template only: the build checks it and writes no module of
+# it, and the layer's pipeline takes a template of the page's own, as a custom effect's does.
+[shaders.background_layer]
+file = "background_layer.wgsl"
+sky_layers = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["TONE_MAP"], targets = ["glsl"] }
 
 # three.js's sky behind every object, drawn as the cube map background is.
 [shaders.sky]
@@ -1053,6 +1127,15 @@ bits = ["LOD_FADE"]
 # entry point is `main`. WebGPU only.
 [shaders.pyramid]
 file = "pyramid.wgsl"
+by_device = true
+variants.webgpu = { targets = ["wgsl"] }
+
+# The conversion of a feature-instance draw's world rows to the camera-relative rows that the
+# engine's vertex shaders read: one dispatch for each draw in each frame, whose count bounds the
+# instances it converts (D-229). Its compute entry point is `main`. WebGPU only: on WebGL2 the
+# adapter fills an instance batch on the CPU.
+[shaders.feature_rows]
+file = "feature_rows.wgsl"
 by_device = true
 variants.webgpu = { targets = ["wgsl"] }
 

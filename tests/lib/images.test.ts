@@ -9,6 +9,7 @@ import { ENGINE_MODES, type EngineMode } from './engine-checks.ts';
 import {
 	borrowedRun,
 	type CandidateFacts,
+	ciRunOf,
 	clearCandidate,
 	clearCandidates,
 	compareWithReference,
@@ -408,6 +409,22 @@ describe('the files in the folder of references', () => {
 		]);
 	});
 
+	it('give the command of a run that the image page does not draw, without and with CI', () => {
+		const command =
+			'{ci}bun run test:browser image/cli-script.spec.ts -g "cli on webgl2", then bun run images:review --accept cli';
+		const cli = {
+			...run('boxes-webgl2-pipelined'),
+			id: 'cli-webgl2',
+			test: 'cli',
+			reference: { test: 'cli', tier: 'webgl2' as const, devices: [] },
+			make: command,
+		};
+		expect(referenceFileProblems([cli], [])).toEqual([
+			`chrome-real-gpu/webgl2/cli.png is missing. Make it: ${command.replace('{ci}', '')}`,
+			`chromium-swiftshader/webgl2/cli.png is missing. Make it: ${command.replace('{ci}', 'CI=1 ')}`,
+		]);
+	});
+
 	it('name every missing reference of a new test, both sets', () => {
 		const problems = referenceFileProblems(
 			RUNS,
@@ -539,8 +556,17 @@ describe('comparing an image with its reference', () => {
 			status: 'new',
 			reference: 'chrome-real-gpu/webgpu/boxes.png',
 			tolerance: TOLERANCE,
+			// CI's own drawing names its run, which a software-GPU reference needs.
+			...(ciRunOf(process.env) && { ciRun: ciRunOf(process.env) }),
 		});
 		expect(readPng(`${saved}.png`)).toEqual(image([10, 20, 30]));
+	});
+
+	it('names the CI run that drew an image only inside GitHub Actions, not in a local CI=1 run', () => {
+		expect(ciRunOf({ GITHUB_ACTIONS: 'true', GITHUB_RUN_ID: '40109903483' })).toBe('40109903483');
+		expect(ciRunOf({ CI: '1' })).toBeUndefined();
+		expect(ciRunOf({ CI: 'true', GITHUB_RUN_ID: '1' })).toBeUndefined();
+		expect(ciRunOf({ GITHUB_ACTIONS: 'true' })).toBeUndefined();
 	});
 
 	it('passes an image within the tolerance, and saves nothing', () => {

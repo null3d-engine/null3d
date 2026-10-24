@@ -233,6 +233,9 @@ pub(super) enum Bundle {
     /// The outline view's objects into the outline mask: every bucket with the pipeline that marks
     /// every part, then every bucket again with the pipeline that marks the parts nothing hides.
     Outline,
+    /// The tone view's objects into the blue channel of the outline mask: each bucket with the
+    /// mask pipeline, which tests the scene's depth.
+    Tone,
     /// The casters' depth into a tile of the shadow atlas, each bucket with its pipeline for the
     /// tiles, whose depth format may differ from the cascades'.
     Tile,
@@ -247,7 +250,9 @@ pub(super) enum Bundle {
 impl Bundle {
     fn id(self, view: ViewId) -> u32 {
         match self {
-            Self::Opaque | Self::Outline | Self::Tile | Self::Subsurface => ids::bundle(view),
+            Self::Opaque | Self::Outline | Self::Tone | Self::Tile | Self::Subsurface => {
+                ids::bundle(view)
+            }
             Self::Prepass => ids::prepass_bundle(view),
             Self::Motion(parity) => ids::motion_bundle(parity),
         }
@@ -309,6 +314,7 @@ pub(super) fn record_bundle(
         hidden,
         counts: None,
         motion,
+        scene: ids::MATERIAL_SCENE_GROUPS,
     };
     match kind {
         Bundle::Opaque | Bundle::Subsurface => {
@@ -321,6 +327,7 @@ pub(super) fn record_bundle(
             draws.record(list, |b| b.pipeline, |_| false, |_| 0)?;
             draws.record(list, |b| b.prepass, |_| false, |_| 0)?;
         }
+        Bundle::Tone => draws.record(list, |b| b.pipeline, |_| false, |_| 0)?,
     }
     list.push(Op::EndBundle, &[])?;
     Ok(())
@@ -364,6 +371,7 @@ pub(super) fn record_direct(
         first_draw: 0,
         hidden,
         counts: Some(counts),
+        scene: ids::MATERIAL_SCENE_GROUPS,
         motion: match kind {
             Bundle::Motion(parity) => Some(parity),
             _ => None,
@@ -380,6 +388,7 @@ pub(super) fn record_direct(
             draws.record(list, |b| b.pipeline, |_| false, |_| 0)?;
             draws.record(list, |b| b.prepass, |_| false, |_| 0)?;
         }
+        Bundle::Tone => draws.record(list, |b| b.pipeline, |_| false, |_| 0)?,
     }
     Ok(())
 }
@@ -410,6 +419,8 @@ pub(super) fn record_pick(
         hidden,
         counts,
         motion: None,
+        // A pick build shades no surface, so its pipeline takes no scene group.
+        scene: 0,
     };
     draws.record(
         list,
@@ -439,6 +450,9 @@ struct Draws<'a> {
     counts: Option<&'a [u32]>,
     /// The frame parity whose last frame's data a motion bundle reads, or `None` for any other.
     motion: Option<usize>,
+    /// The group that a bucket whose material reads the scene's depth binds: the blank texel, or
+    /// 0 for a pass whose buckets bind none.
+    scene: u32,
 }
 
 impl Draws<'_> {
@@ -464,6 +478,7 @@ impl Draws<'_> {
             hidden,
             counts,
             motion,
+            scene,
         } = *self;
         let (mut pipeline, mut vertices, mut indices) = (None, None, None);
         let mut last_vertices = None;
@@ -504,16 +519,52 @@ impl Draws<'_> {
             } else {
                 (layout.copy_stride(), 0)
             };
-            groups.set(list, maps, bucket.skins, index)?;
-            list.push(
-                Op::SetVertexBuffer,
-                &[
-                    1,
+            // A bucket whose material reads the scene's depth binds the group after its maps.
+            let scene = if own && bucket.scene_depth { scene } else { 0 };
+            groups.set(list, maps, scene, bucket.skins, index)?;
+            // A feature-instance draw reads the rows that the frame's conversion wrote from the
+            // add-on's world rows, from the buffer's first instance on.
+            let (instances, offset, bytes) = if bucket.feature != 0 {
+                (
+                    ids::feature_relative(bucket.feature),
+                    0,
+                    bucket.feature_capacity.max(1) * sizes::INSTANCE_STRIDE,
+                )
+            } else {
+                (
                     ids::visible(view),
                     bucket.base * stride,
                     bucket.capacity.max(1) * stride,
-                ],
-            )?;
+                )
+            };
+            list.push(Op::SetVertexBuffer, &[1, instances, offset, bytes])?;
+            // A cluster mesh draws the indices that the cluster pass copied for this view, in one
+            // draw that the pass sized, instead of its whole triangle list. The direct-draw path
+            // counts its own instances and records no cluster pass, so it draws the whole list.
+            if let Some(cluster) = bucket.cluster.filter(|_| self.counts.is_none()) {
+                let draw = layout.draws[bucket.first_draw as usize];
+                let (page_vertices, _) = meshes.ids(draw.page);
+                if vertices != Some((page_vertices, 0)) {
+                    list.push(Op::SetVertexBuffer, &[0, page_vertices, 0, 0])?;
+                    vertices = Some((page_vertices, 0));
+                }
+                let tree_indices = ids::cluster_list(view);
+                if indices != Some(tree_indices) {
+                    list.push(
+                        Op::SetIndexBuffer,
+                        &[tree_indices, index_format::UINT32, 0, 0],
+                    )?;
+                    indices = Some(tree_indices);
+                }
+                list.push(
+                    Op::DrawIndexedIndirect,
+                    &[
+                        ids::cluster_draws(view),
+                        super::clusters::Clusters::draw_offset(cluster),
+                    ],
+                )?;
+                continue;
+            }
             for index in bucket.first_draw..bucket.first_draw + bucket.draws {
                 let draw = layout.draws[index as usize];
                 let (page_vertices, page_indices) = meshes.ids(draw.page);

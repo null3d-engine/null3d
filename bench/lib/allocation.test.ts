@@ -3,6 +3,17 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Glob } from 'bun';
 import {
+	burstBytes,
+	byPlace,
+	countIn,
+	type ProfileNode,
+	type ProfileSample,
+	profilePlaces,
+	type Sample,
+	steadyPlaces,
+	totalSize,
+} from '../../packages/cli/src/heap-profile.js';
+import {
 	BUDGETS,
 	PAGE_SWITCHES,
 	placeBudget,
@@ -10,16 +21,6 @@ import {
 	STATS_BUDGETS,
 	SWIFTSHADER_BUDGETS,
 } from '../allocation.ts';
-import {
-	burstBytes,
-	byPlace,
-	type ProfileNode,
-	type ProfileSample,
-	profilePlaces,
-	type Sample,
-	steadyPlaces,
-	totalSize,
-} from './allocation';
 
 let nextId = 1;
 function node(functionName: string, url: string, selfSize: number, children: ProfileNode[] = []) {
@@ -72,6 +73,30 @@ describe('allocation places', () => {
 			['draw render/loop.ts', { perFrame: 36, most: 40, callers: '' }],
 			['frame render/loop.ts', { perFrame: 0, most: 120, callers: '' }],
 		]);
+	});
+
+	test("count a callee in its caller, so the inlining's split between them cannot move bytes", () => {
+		const sample = (entries: [string, number][]): Sample => ({
+			frames: 100,
+			places: new Map(
+				entries.map(([name, bytes]) => [name, { bytes, burst: 0, callers: '', largest: bytes }]),
+			),
+		});
+		const into = new Map([['view backend.ts', 'replay backend.ts']]);
+		// The same 120 bytes per frame, split two ways by the browser's inlining.
+		const steady = steadyPlaces(
+			countIn(
+				[
+					sample([
+						['replay backend.ts', 7_000],
+						['view backend.ts', 5_000],
+					]),
+					sample([['replay backend.ts', 12_000]]),
+				],
+				into,
+			),
+		);
+		expect(steady).toEqual([['replay backend.ts', { perFrame: 120, most: 120, callers: '' }]]);
 	});
 });
 
@@ -154,11 +179,12 @@ describe('budgets', () => {
 		const real = placeBudget('render-worker', frame, { swiftShader: false });
 		expect(real).toBe(192);
 		expect(444.4 > real).toBe(true);
-		// The replay keeps its budget, and each pass adds the browser's encoder to it.
+		// The replay keeps its budget, with the canvas texture and its view, and each pass adds the
+		// browser's encoder to it.
 		const replay = 'replay webgpu/backend.ts';
-		expect(placeBudget('render-worker', replay, { swiftShader: true })).toBe(320);
-		expect(placeBudget('render-worker', replay, { swiftShader: true, extra: 32 })).toBe(352);
-		expect(380 > placeBudget('render-worker', replay, { swiftShader: true })).toBe(true);
+		expect(placeBudget('render-worker', replay, { swiftShader: true })).toBe(368);
+		expect(placeBudget('render-worker', replay, { swiftShader: true, extra: 32 })).toBe(400);
+		expect(428 > placeBudget('render-worker', replay, { swiftShader: true })).toBe(true);
 	});
 
 	test('name a function that its file still defines, so a moved function keeps its budget', () => {

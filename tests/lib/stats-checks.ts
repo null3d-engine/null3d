@@ -92,12 +92,37 @@ export type StatsResult = {
 	gpuTimer: boolean;
 	/** True when the page hid the browser's JavaScript heap and page memory figures. */
 	noPageMemory: boolean;
+	/** True in a development build, which reports the memory register. */
+	register: boolean;
 	overlay: OverlayView | null;
 	/** The sketch's figures, or null on the page that reads none. */
 	figures: StatsFigures | null;
 	/** The instance rows and shadow map that `?instances=` added, or null without them. */
 	instances: StatsInstances | null;
+	/** The test feature's figures that `?feature` added, or null without it. */
+	feature: StatsFeatureResult | null;
 };
+
+/** What the sketch resolved for the test feature on one preset. */
+export interface StatsFeatureReading {
+	/** The feature's `samples` setting, which the preset sets. */
+	samples: number;
+	/** The feature's budget at full quality, and its share after the governor's steps, in ms. */
+	budgetMs: number;
+	budgetScale: number;
+	/** The GPU bytes that the feature reports, and its GPU time, which no scope times yet. */
+	bytes: number | null;
+	gpuMs: number | null;
+}
+
+/** The test feature's figures on the page's preset, and after a change to Low. */
+export interface StatsFeatureResult {
+	added: StatsFeatureReading;
+	lowered: StatsFeatureReading;
+	/** The overlay's row for the feature on each preset. */
+	before: string;
+	after: string;
+}
 
 /** The threads that a mode's figures name, as `engine.measure` names them. */
 export function statsThreads(mode: StatsResult['mode']): string[] {
@@ -182,6 +207,17 @@ export function statsProblems(result: StatsResult): string[] {
 	expect('gpu-textures', /^\d+\.\d MiB$/);
 	expect('gpu-buffers', /^\d+\.\d MiB$/);
 	problems.push(...memoryProblems(shown));
+	// A development build lists the memory register by system, with the core's tables and the
+	// upload arenas among them. A production build asks for no report, so the section stays hidden.
+	if (result.register) {
+		expect('area:scene', /^scene$/);
+		expect('area:scene:used', /^\d+\.\d MiB$/);
+		expect('area:scene:reserved', /^\d+\.\d MiB$/);
+		expect('area:scene:peak', /^\d+\.\d MiB$/);
+		expect('area:upload arenas', /^upload arenas$/);
+		expect('area:upload arenas:used', /^\d+\.\d MiB$/);
+	} else if (Object.keys(shown).some((name) => name.startsWith('area:')))
+		problems.push('a production build shows the memory register');
 	for (const name of ['js-heap', 'page-memory'])
 		if (result.noPageMemory && name in shown)
 			problems.push(`the overlay shows ${name}, which the browser does not give`);

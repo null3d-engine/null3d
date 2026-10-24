@@ -43,6 +43,12 @@ export interface Demo {
 	/** True for a demo that starts the engine in large-world mode. */
 	largeWorld?: boolean;
 	/**
+	 * False starts the engine on the 8-bit path, where a material with `toneMapped: false` keeps its
+	 * color as the display shows it, as it does on the HDR path. The image test adds the page's
+	 * switch that takes the same path.
+	 */
+	hdr?: boolean;
+	/**
 	 * True for a demo whose mouse look wants the pointer lock: a click on the canvas asks the
 	 * browser for it, and Esc gives the pointer back.
 	 */
@@ -108,6 +114,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 180,
 	},
 	{
+		name: 'skyway',
+		group: 'Showcase',
+		sketch: new URL('./showcase/skyway/sketch.ts', import.meta.url),
+		code: 'showcase/skyway/',
+		title: 'Skyway',
+		scene: 'A rainy megacity from a hover car',
+		summary:
+			'Fly a hover car through a rainy night city: tens of thousands of hover cars streaming along the sky lanes, towers whose windows light room by room, glowing shop fronts and signs, wet streets that mirror the light, and a hero car whose deck panels read the flight, leading the camera under the rain.',
+		hold: 1,
+		timeoutSeconds: 300,
+	},
+	{
 		name: 'generators',
 		group: 'Building scenes',
 		sketch: new URL('./generators/sketch.ts', import.meta.url),
@@ -127,7 +145,7 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'An island and a crystal made with geometry.fromArrays. The engine computes their normals: smooth where triangles share vertices, and hard edges where they do not. Each vertex of the island has a color of its own, and a reflection pass mirrors the island in the water.',
 		hold: 1,
-		timeoutSeconds: 60,
+		timeoutSeconds: 120,
 	},
 	{
 		name: 'extra-shapes',
@@ -138,7 +156,7 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'A torus knot, polyhedra, a lathe, an extruded star, a tube and a flat heart from @null3d/geometry, with the parameters of three.js geometry classes, in glass, metals and glazed clay over a polished stone floor.',
 		hold: 1,
-		timeoutSeconds: 60,
+		timeoutSeconds: 120,
 	},
 	{
 		name: 'vertex-updates',
@@ -158,9 +176,10 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Objects and parents',
 		scene: 'Turntable stage',
 		summary:
-			'Crates of six materials ride a turntable on a studio stage and step off in turn. setParent with keepWorld moves each crate between the table and the stage without moving it in the world.',
+			'Crates of six materials ride a turntable on a studio stage and step off in turn. setParent with keepWorld moves each crate between the table and the stage without moving it in the world. The Look button draws the whole stage in one material, and every crate keeps its shape and its place.',
 		hold: 2.5,
 		timeoutSeconds: 60,
+		choices: [{ name: 'look', label: 'Look', options: ['Materials', 'One material'] }],
 	},
 	{
 		name: 'layers',
@@ -186,6 +205,29 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'aurora',
+		group: 'Light, materials and effects',
+		sketch: new URL('./aurora/sketch.ts', import.meta.url),
+		title: 'Aurora',
+		scene: 'A frozen lake at night',
+		summary:
+			"Curtains of green and violet light over a still night, drawn by the aurora example add-on through the sky-layer hook: one WGSL function over the core sky, under the moon and the stars, with the sky's thin clouds hiding it where they thicken. The ice holds the light and the pines stand dark against it.",
+		hold: 1.5,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'canvas-screen',
+		group: 'Light, materials and effects',
+		sketch: new URL('./canvas-screen/sketch.ts', import.meta.url),
+		code: 'canvas-screen/',
+		title: 'Screens drawn on a canvas',
+		scene: 'Reactor control room',
+		summary:
+			'Wall screens and a console panel that a sketch paints on OffscreenCanvas objects, each with its own refresh rate and uploading only the rectangle that changed. The LCD look shows sub-pixels, a scan band and dead texels up close, a click turns a panel down or up with a boot glitch, and the reactor, shield and coolant readings rise and fall under a breathing lamp.',
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'coat-and-sheen',
 		group: 'Light, materials and effects',
 		sketch: new URL('./coat-and-sheen/sketch.ts', import.meta.url),
@@ -193,9 +235,32 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Clear coat and sheen',
 		scene: 'Rainy showroom',
 		summary:
-			'A car built in code, its paint with metal flakes under a mirror-smooth clear coat, on a varnished plinth. Rain falls on wet cobbles whose puddles are a clear coat with rain rings, and velvet glows at its edges with sheen.',
+			"A car built in code, its candy red paint with glinting metal flakes and door seams under a mirror-smooth clear coat, and carbon fibre trim whose tows shine along their length, on a varnished plinth. Rain falls on wet cobbles whose puddles are a clear coat with rain rings, and velvet glows at its edges with sheen. A tablet beside the plinth shows the car's fit on a screen that a tap cycles.",
 		hold: 1,
 		timeoutSeconds: 120,
+	},
+	{
+		name: 'iridescence-and-anisotropy',
+		group: 'Light, materials and effects',
+		sketch: new URL('./iridescence-and-anisotropy/sketch.ts', import.meta.url),
+		code: 'iridescence-and-anisotropy/',
+		title: 'Iridescence and anisotropy',
+		scene: "Jeweller's bench at night",
+		summary:
+			'A jewel beetle turns on a plinth of brushed metal: its shell is a thin film whose colors run in rings over the wing cases, and the plinth stretches each highlight across its grain. Soap bubbles drift above it, each with a film of its own, over an oil slick that swirls a slower spectrum.',
+		hold: 2,
+		timeoutSeconds: 120,
+	},
+	{
+		name: 'property-animation',
+		group: 'Light, materials and effects',
+		sketch: new URL('./property-animation/sketch.ts', import.meta.url),
+		title: 'Animated values',
+		scene: 'Neon plinths',
+		summary:
+			'One value of a lamp, of a material and of a camera, each moved by keyframes that scene.animateProperty plays: the lamp breathes, the plinths cycle through the spectrum, and the lens widens and narrows. A glTF file moves the same kinds of value with KHR_animation_pointer.',
+		hold: 2.2,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'translucency',
@@ -243,7 +308,19 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			"900 crystals in one batch take their color and their place in a wave from their row, which a custom material reads as input.instance. Three stones share one material, whose bands follow each stone's own axis through object.worldMatrix, and the picked stone lights up by object.id.",
 		hold: 1,
-		timeoutSeconds: 60,
+		timeoutSeconds: 120,
+	},
+	{
+		name: 'water',
+		group: 'Light, materials and effects',
+		sketch: new URL('./water/sketch.ts', import.meta.url),
+		code: 'water/',
+		title: 'Water',
+		scene: 'River into a lake',
+		summary:
+			'A river winds down a grassy valley into a lake, drawn by @null3d/water from one description of both bodies. Waves and ripples follow the current, caustics play over the bed, boulders trail foam, the banks and the sky mirror in the surface, and the shore fades where the bed rises to meet it. The camera drifts downstream and dips under the water, where the add-on tints, bends and lights the view from below.',
+		hold: 1,
+		timeoutSeconds: 180,
 	},
 	{
 		name: 'weighted-transparency',
@@ -267,6 +344,18 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'Hills and cut boulders whose vertices move by displacement maps made in code, so their outlines and shadows follow the relief, and their light follows its slopes. A brick wall steps down the slope: parallax gives its flat faces the depth of their bricks, and bump maps give its cap stones their grain. A geodesic frame drawn as a wireframe casts a shadow of lines. Turn parallax off and on with the button or the P key.',
 		choices: [{ name: 'parallax', label: 'Parallax', options: ['On', 'Off'] }],
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'multiple-views',
+		group: 'Light, materials and effects',
+		sketch: new URL('./multiple-views/sketch.ts', import.meta.url),
+		title: 'Multiple views',
+		scene: 'Courtyard on two cameras',
+		summary:
+			"One scene drawn from two cameras in the same frame: a high, wide camera and a low one among a ring of standing stones, split across the canvas. Each view culls the scene and draws it for its own rectangle, at that rectangle's shape. The Layout button or the V key switches to a picture in picture, with the wide camera over the canvas and the low one in an inset.",
+		choices: [{ name: 'layout', label: 'Layout', options: ['Split', 'Inset'] }],
 		hold: 1,
 		timeoutSeconds: 60,
 	},
@@ -318,6 +407,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'hero-shadow',
+		group: 'Light, materials and effects',
+		sketch: new URL('./hero-shadow/sketch.ts', import.meta.url),
+		code: 'hero-shadow/',
+		title: 'Hero shadow',
+		scene: 'Launch yard at sunset',
+		summary:
+			"A car on a launch pad in the low evening sun, made in code, with stone blocks around the yard. The sun's cascades hold the blocks' long shadows at a few centimeters per texel, while the car gets a shadow map of its own, fitted tightly to it, several times finer. Every 3 seconds the car's hero shadow turns off and on again, so the difference shows.",
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'camera-lens',
 		group: 'Light, materials and effects',
 		sketch: new URL('./camera-lens/sketch.ts', import.meta.url),
@@ -352,6 +453,18 @@ export const DEMOS: readonly Demo[] = [
 		hold: 6,
 	},
 	{
+		name: 'tone-mapped',
+		group: 'Light, materials and effects',
+		sketch: new URL('./tone-mapped/sketch.ts', import.meta.url),
+		title: 'Tone mapping opt-out',
+		scene: 'Display color chart',
+		summary:
+			"Two rows of the same seven bright colors on a display in a dark gallery. The top row keeps each color exactly as the display shows it, with toneMapped: false. The bottom row takes AgX's punchy curve, which darkens and desaturates it. The demo draws on the 8-bit path.",
+		hdr: false,
+		hold: 0.5,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'light-shafts',
 		group: 'Light, materials and effects',
 		sketch: new URL('./light-shafts/sketch.ts', import.meta.url),
@@ -384,7 +497,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Post effects',
 		scene: 'Neon alley',
 		summary:
-			'Crates in a neon alley at night, whose wet asphalt mirrors the light through screen-space reflections, with bloom, ambient occlusion, an outline, depth of field, a vignette and a lens grade of color fringes, an anamorphic streak and grain. Every 3 seconds the color grading table changes: none, warm, then cool.',
+			'Crates in a neon alley at night, whose wet asphalt mirrors the light through screen-space reflections, with bloom, ambient occlusion, an outline, depth of field, a vignette, a light sharpening and a lens grade of color fringes, an anamorphic streak and grain. Every 3 seconds the color grade changes: none, warm, then cool, set from the grading controls of white balance, lift, gamma, gain, saturation and split toning.',
 		hold: 4,
 	},
 	{
@@ -397,6 +510,17 @@ export const DEMOS: readonly Demo[] = [
 			'A fountain of 2,000 glowing sparks in one sprite batch at nightfall, a neon helix of wide lines in world units, and dashes that run around the rim of a pool that reflects them all.',
 		hold: 2,
 		timeoutSeconds: 60,
+	},
+	{
+		name: 'rain',
+		group: 'Light, materials and effects',
+		sketch: new URL('./rain/sketch.ts', import.meta.url),
+		title: 'Rain from a vertex count',
+		scene: 'A night street in the rain',
+		summary:
+			'Fifty thousand rain streaks from one draw with a vertex count and no mesh data: the shader makes every streak from its instance index and the time, wraps the field in a box around the camera, and the frame uploads nothing.',
+		hold: 1.5,
+		timeoutSeconds: 90,
 	},
 	{
 		name: 'particles',
@@ -453,7 +577,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Joint overrides',
 		scene: 'Knights watch a wisp',
 		summary:
-			'Seven KayKit Knights stand in a ring in a castle courtyard at dusk and watch a wisp of light. Each plays its own idle clip, and a look-at turns its spine, chest and head toward the wisp on top of the clip, each joint within its limit.',
+			"Seven KayKit Knights stand in a ring in a castle courtyard at dusk and watch a wisp of light. Each plays its own idle clip, and a look-at turns its spine, chest and head toward the wisp on top of the clip, each joint within its limit. A second view in the canvas's corner shows one knight's face close up, where the turned head shows.",
 		assets:
 			'Shows joint overrides on a skinned character and its clips, which load from a glTF file.',
 		hold: 3,
@@ -494,6 +618,17 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'css3d-labels',
+		group: 'Motion and interaction',
+		sketch: new URL('./css3d-labels/sketch.ts', import.meta.url),
+		title: '3D labels',
+		scene: 'Ring of monoliths',
+		summary:
+			'Nine monoliths stand in a ring that turns in a dark hall, each with an HTML card that turns and scales with it, and a title above the ring that always faces the camera. The cards are planes of the scene, so one leans away as its monolith passes and the title stays square to the view.',
+		hold: 3.5,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'picking',
 		group: 'Motion and interaction',
 		sketch: new URL('./picking/sketch.ts', import.meta.url),
@@ -501,9 +636,21 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Picking and labels',
 		scene: 'Gallery plinth',
 		summary:
-			'Six polished pieces turn on pedestals on a plinth in a dark gallery under spotlights, each with an HTML label that follows it. The pointer lights up the piece under it, and a click outlines it and marks the point that the ray hit. A plan on the wall beside them marks each click where it lands.',
+			'Six polished pieces turn on pedestals on a plinth in a dark gallery under spotlights, each with an HTML label that follows it. The pointer lights up the piece under it, and a click outlines it and marks the point that the ray hit. A display on the wall beside them marks each click on its canvas where it lands, and uploads only the rectangles that changed.',
 		hold: 2,
 		timeoutSeconds: 60,
+	},
+	{
+		name: 'gizmos',
+		group: 'Motion and interaction',
+		sketch: new URL('./gizmos/sketch.ts', import.meta.url),
+		title: 'Drag, rotate and scale gizmos',
+		scene: 'Gallery plinth',
+		summary:
+			'Three pieces stand on a plinth in a dim gallery, and a click selects one. The handles turn a drag of the mouse or a finger into a move, a turn or a scale about the handle that it holds, and the buttons pick which. The handles draw over the scene and take the pointer first, so a drag of one never turns the view.',
+		hold: 2,
+		timeoutSeconds: 60,
+		choices: [{ name: 'mode', label: 'Mode', options: ['Translate', 'Rotate', 'Scale'] }],
 	},
 	{
 		name: 'math',
@@ -546,9 +693,9 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Instancing',
 		scene: '100,000 columns',
 		summary:
-			'100,000 columns in one batch at golden hour, and 10,000 on phones, with lanes of hover cars streaming across the sky in two more batches. Each frame the sketch writes the height of every row, and the place of every car, into the batch arrays, with no call per row.',
+			'100,000 columns in one batch at golden hour, and 10,000 on phones, with 30,000 to 100,000 hover cars streaming along the sky lanes above them. The sketch writes the height of every column, and the traffic-lanes add-on moves the cars in the vertex shader, so a frame costs no work per car.',
 		hold: 2,
-		timeoutSeconds: 60,
+		timeoutSeconds: 180,
 	},
 	{
 		name: 'forest',
@@ -558,7 +705,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Levels of detail',
 		scene: 'Mixed forest',
 		summary:
-			'56,000 trees of four kinds over rolling hills at golden hour, and 8,000 on phones. Three firs and a broadleaf tree are made in code at four levels of detail, and an understory of bushes covers the ground between the trunks. Each tree picks its own level in every frame by its size on the screen, and the levels share the pixels through a dither at a switch. On phones the nearest trees draw in full and the rest as cut-out cards.',
+			'56,000 trees of four kinds over rolling hills at golden hour, and 8,000 on phones. Three firs and a broadleaf tree are made in code at four levels of detail, and an understory of bushes covers the ground between the trunks and fades out at its own distance. Each tree picks its own level in every frame by its size on the screen, and the levels share the pixels through a dither at a switch. On phones the nearest trees draw in full and the rest as cut-out cards. Press B to compare the hero fir beside the flight, which keeps its detail by its own threshold bias, with the trees around it.',
 		hold: 2,
 		timeoutSeconds: 300,
 	},

@@ -104,6 +104,8 @@
 //! | [`op::SET_LAYERS`] | layer mask | unused |
 //! | [`op::SET_FLAGS`] | the [`flags::SETTABLE`] bits to change | their new values |
 //! | [`op::SET_RENDER_ORDER`] | the order's 32-bit float bits | unused |
+//! | [`op::SET_LEVEL_BIAS`] | the bias's 32-bit float bits | unused |
+//! | [`op::SET_DRAW_RANGE`] | the start distance's 32-bit float bits | the end distance's |
 //! | [`op::SET_SKIN`] | the animated instance's id plus one, or 0 | unused |
 //! | [`op::SET_MORPH`] | the morph weight block's id plus one, or 0 | unused |
 //!
@@ -133,6 +135,7 @@ use crate::handle::{Handle, SlotAllocator};
 use crate::jobs::JobSystem;
 use crate::layers::DEFAULT_LAYERS;
 use crate::math::{self, Affine, Affine64, IDENTITY_ROTATION, IDENTITY64};
+use crate::memory::{MemoryRegister, MemoryUse, area, vec_bytes};
 use crate::shared::SharedMut;
 use crate::world::{HIDDEN_RADIUS, UNBOUNDED_RADIUS, WorldArrays, WorldPtrs};
 
@@ -213,6 +216,15 @@ pub mod op {
     /// its weights. Stopping gives the object its mesh's bounds again, unless it is skinned, so
     /// write the mesh's local radius and a zero local centre first.
     pub const SET_MORPH: u32 = 12;
+    /// Sets the threshold bias that picks the object's levels of detail. `a`: the bias's bits as a
+    /// 32-bit float, above 0. A bias of 1 picks the levels that the quality settings give, a larger
+    /// one draws coarser levels, and a smaller one draws finer levels. A change rebuilds the draw
+    /// tables, as the bias is part of the object's bucket.
+    pub const SET_LEVEL_BIAS: u32 = 13;
+    /// Sets the distances between which the object draws. `a`: the start distance's bits as a
+    /// 32-bit float, 0 for none, and `b`: the end distance's, infinite for none. A change rebuilds
+    /// the draw tables, as the range decides the object's fade buckets.
+    pub const SET_DRAW_RANGE: u32 = 14;
     /// The `b` of [`SET_PARENT`] that keeps the object's place in the world.
     pub const KEEP_WORLD: u32 = 1;
 }
@@ -225,7 +237,7 @@ pub const PARALLEL_LEVEL_THRESHOLD: u32 = 256;
 pub const LEVEL_CHUNK: u32 = 128;
 /// The bytes of engine memory that each object's row takes across the storage's arrays, the slot
 /// allocator and both world buffers, outside large-world mode, which adds 12.
-pub const ROW_BYTES: u32 = 263;
+pub const ROW_BYTES: u32 = 275;
 /// Slots at or past this count build the changed bitset as a parallel loop.
 const PARALLEL_BITS_THRESHOLD: u32 = 1 << 16;
 
@@ -388,6 +400,26 @@ impl Command {
         }
     }
 
+    /// Sets the distances between which `handle` draws, with a fade at each edge.
+    pub const fn set_draw_range(handle: Handle, start: f32, end: f32) -> Command {
+        Command {
+            op: op::SET_DRAW_RANGE,
+            handle: handle.raw(),
+            a: start.to_bits(),
+            b: end.to_bits(),
+        }
+    }
+
+    /// Sets the threshold bias of `handle` that picks its levels of detail.
+    pub const fn set_level_bias(handle: Handle, bias: f32) -> Command {
+        Command {
+            op: op::SET_LEVEL_BIAS,
+            handle: handle.raw(),
+            a: bias.to_bits(),
+            b: 0,
+        }
+    }
+
     /// The operation number: the low byte of the operation word.
     pub const fn opcode(&self) -> u32 {
         self.op & 0xFF
@@ -538,6 +570,11 @@ pub struct SceneStorage {
     /// [`flags::CUSTOM_BOUNDS`].
     local_centers: Vec<f32>,
     render_orders: Vec<f32>,
+    /// The threshold bias that picks each object's levels of detail, 1 for none.
+    level_biases: Vec<f32>,
+    /// The distances at which each object draws: its start distance and its end distance, two
+    /// floats per slot, 0 and infinity for none.
+    draw_ranges: Vec<f32>,
     parents: Vec<u32>,
     flags: Vec<u32>,
     meshes: Vec<u32>,
@@ -615,6 +652,14 @@ impl SceneStorage {
             local_radii: vec![0.0; rows],
             local_centers: vec![0.0; rows * 3],
             render_orders: vec![0.0; rows],
+            level_biases: vec![1.0; rows],
+            draw_ranges: {
+                let mut ranges = vec![0.0; rows * 2];
+                for end in ranges.iter_mut().skip(1).step_by(2) {
+                    *end = f32::INFINITY;
+                }
+                ranges
+            },
             parents: vec![NO_PARENT; rows],
             flags: vec![0; rows],
             meshes: vec![0; rows],
@@ -681,6 +726,57 @@ impl SceneStorage {
         self.slots.capacity()
     }
 
+    /// Adds the bytes of each array that the storage owns to the memory register: its rows, its
+    /// world output, its slot allocator, its cell table and its level table.
+    pub fn account(&self, register: &mut MemoryRegister) {
+        let mut scene = MemoryUse::default();
+        for array in [
+            self.slots.memory_use(),
+            self.created.memory_use(),
+            vec_bytes(&self.positions),
+            vec_bytes(&self.position_cells),
+            vec_bytes(&self.rotations),
+            vec_bytes(&self.scales),
+            vec_bytes(&self.local_radii),
+            vec_bytes(&self.local_centers),
+            vec_bytes(&self.render_orders),
+            vec_bytes(&self.level_biases),
+            vec_bytes(&self.draw_ranges),
+            vec_bytes(&self.parents),
+            vec_bytes(&self.flags),
+            vec_bytes(&self.meshes),
+            vec_bytes(&self.materials),
+            vec_bytes(&self.skins),
+            vec_bytes(&self.morphs),
+            vec_bytes(&self.layers),
+            vec_bytes(&self.cells),
+            self.moved.memory_use(),
+            vec_bytes(&self.depths),
+            self.dirty.memory_use(),
+            self.branches.memory_use(),
+            self.tracked.memory_use(),
+            self.late.memory_use(),
+            self.world[0].memory_use(),
+            self.world[1].memory_use(),
+            vec_bytes(&self.changed_frames),
+            self.changed.memory_use(),
+            self.rows_changed.memory_use(),
+            self.dead_pending.memory_use(),
+            vec_bytes(&self.order),
+            vec_bytes(&self.child_offsets),
+            vec_bytes(&self.child_list),
+        ] {
+            scene.add(array);
+        }
+        for (_, worlds) in &self.retired {
+            scene.add(worlds[0].memory_use());
+            scene.add(worlds[1].memory_use());
+        }
+        register.add(area::SCENE, scene);
+        register.add(area::CELLS, self.table.memory_use());
+        register.add(area::LEVELS, vec_bytes(&self.levels));
+    }
+
     /// Raises the number of objects the storage holds to `capacity`, keeping every object, handle
     /// and pending change. Every array moves, so views of them must be made again. The world
     /// buffers move to new arrays, and the old ones stay allocated until two frames have begun,
@@ -733,6 +829,12 @@ impl SceneStorage {
         self.local_radii.resize(rows, 0.0);
         self.local_centers.resize(rows * 3, 0.0);
         self.render_orders.resize(rows, 0.0);
+        self.level_biases.resize(rows, 1.0);
+        let old_ranges = self.draw_ranges.len();
+        self.draw_ranges.resize(rows * 2, 0.0);
+        for end in self.draw_ranges[old_ranges + 1..].iter_mut().step_by(2) {
+            *end = f32::INFINITY;
+        }
         self.parents.resize(rows, NO_PARENT);
         for zeros in [
             &mut self.flags,
@@ -784,6 +886,8 @@ impl SceneStorage {
             (&mut self.local_radii, 1),
             (&mut self.local_centers, 3),
             (&mut self.render_orders, 1),
+            (&mut self.level_biases, 1),
+            (&mut self.draw_ranges, 2),
         ] {
             reserve_len(floats, rows * per_row)?;
         }
@@ -921,6 +1025,18 @@ impl SceneStorage {
     /// Render orders, one per slot: 0 unless [`op::SET_RENDER_ORDER`] set one.
     pub fn render_orders(&self) -> &[f32] {
         &self.render_orders
+    }
+
+    /// The threshold bias that picks each object's levels of detail, one per slot: 1 unless
+    /// [`op::SET_LEVEL_BIAS`] set one.
+    pub fn level_biases(&self) -> &[f32] {
+        &self.level_biases
+    }
+
+    /// The distance range of each object, two floats per slot: the start distance and the end
+    /// distance, 0 and infinity unless [`op::SET_DRAW_RANGE`] set them.
+    pub fn draw_ranges(&self) -> &[f32] {
+        &self.draw_ranges
     }
 
     /// Parent slots, [`NO_PARENT`] for roots.
@@ -1325,6 +1441,9 @@ impl SceneStorage {
                 self.local_radii[s] = 0.0;
                 self.local_centers[s * 3..s * 3 + 3].fill(0.0);
                 self.render_orders[s] = 0.0;
+                self.level_biases[s] = 1.0;
+                self.draw_ranges[s * 2] = 0.0;
+                self.draw_ranges[s * 2 + 1] = f32::INFINITY;
                 self.parents[s] = NO_PARENT;
                 self.flags[s] = 0;
                 self.meshes[s] = 0;
@@ -1410,6 +1529,16 @@ impl SceneStorage {
                 if mask & (flags::BOUNDS | flags::OCCLUDER) != 0 {
                     self.dirty.set(slot);
                 }
+            }
+            op::SET_LEVEL_BIAS => {
+                let slot = self.created_slot(command.handle)?;
+                self.level_biases[slot as usize] = f32::from_bits(command.a);
+            }
+            op::SET_DRAW_RANGE => {
+                let slot = self.created_slot(command.handle)?;
+                let at = slot as usize * 2;
+                self.draw_ranges[at] = f32::from_bits(command.a);
+                self.draw_ranges[at + 1] = f32::from_bits(command.b);
             }
             op::SET_RENDER_ORDER => {
                 let slot = self.created_slot(command.handle)?;
@@ -2188,6 +2317,8 @@ mod tests {
                 &scene.local_radii,
                 &scene.local_centers,
                 &scene.render_orders,
+                &scene.level_biases,
+                &scene.draw_ranges,
             ]
             .map(|v| v.len() * 4);
             let words = [
@@ -2226,6 +2357,32 @@ mod tests {
         let before = bytes(&scene);
         scene.try_grow(2047).unwrap();
         assert_eq!((bytes(&scene) - before) / 1024, ROW_BYTES as usize);
+    }
+
+    #[test]
+    fn the_register_counts_each_new_objects_row() {
+        let bytes = |scene: &SceneStorage| {
+            let mut register = MemoryRegister::new();
+            register.begin();
+            scene.account(&mut register);
+            let mut total = 0;
+            for area in register.areas() {
+                total += area.reserved;
+            }
+            total
+        };
+        let mut scene = SceneStorage::with_capacity(1023);
+        let before = bytes(&scene);
+        scene.try_grow(2047).unwrap();
+        // The buffers of the growth's old world arrays go once no frame reads them.
+        scene.begin_frame(3);
+        let rows = 2047 - 1023;
+        let per_object = (bytes(&scene) - before) / rows;
+        let expected = u64::from(ROW_BYTES);
+        assert!(
+            per_object.abs_diff(expected) * 20 <= expected,
+            "{per_object} bytes per object, against the row's {expected}"
+        );
     }
 
     #[test]

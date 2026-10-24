@@ -9,6 +9,7 @@ import {
 	moodMix,
 	moodShare,
 	nearestMood,
+	type StageOptions,
 	type StagePart,
 } from './stage';
 
@@ -17,17 +18,20 @@ const ROOM = { name: 'room' };
 const BACKDROP = [0.02, 0.025, 0.04] as const;
 
 /** A stage on a scene that keeps the last value of each setter. */
-function staged() {
+function staged(overrides: Partial<StageOptions> = {}) {
 	const last: {
 		background?: unknown;
+		backgroundOptions?: { intensity?: number };
 		environment?: unknown;
 		fog?: { color: readonly number[]; density: number; sunGlow: number } | null;
 		dir?: readonly number[];
 		exposure?: number;
+		sunIntensity?: number;
 	} = {};
 	const scene = {
-		setBackground: (background: unknown) => {
+		setBackground: (background: unknown, options?: { intensity?: number }) => {
 			last.background = background;
+			last.backgroundOptions = options;
 		},
 		setEnvironment: (environment: unknown) => {
 			last.environment = environment;
@@ -41,7 +45,9 @@ function staged() {
 			last.dir = [x, y, z];
 		},
 		setColor() {},
-		setIntensity() {},
+		setIntensity(value: number) {
+			last.sunIntensity = value;
+		},
 	};
 	const context = {
 		scene,
@@ -57,6 +63,7 @@ function staged() {
 		fogDensity: 0.01,
 		cloudCoverage: 0.3,
 		backdrop: BACKDROP,
+		...overrides,
 	});
 	stage.set('Night');
 	const frames = (count: number) => {
@@ -247,4 +254,42 @@ test('a look moves between the moods with the light, never at once', () => {
 			expect(Math.abs(moodShare(now, mood) - moodShare(before, mood))).toBeLessThan(0.035);
 		before = now;
 	}
+});
+
+test("a scene's own scales hold through every hour", () => {
+	const { stage, last, frames } = staged({
+		exposureScale: 4.5,
+		environmentScale: 2.2,
+		skyScale: 2.6,
+	});
+	stage.set('Midday');
+	frames(240);
+	const day = last.exposure as number;
+	// The sky's scale holds at every hour, and is not the hour's own value of 1.
+	expect(last.backgroundOptions?.intensity as number).toBeCloseTo(2.6, 2);
+	stage.set('Night');
+	frames(240);
+	expect(last.backgroundOptions?.intensity as number).toBeCloseTo(2.6, 2);
+	// The physical model's own exposure is lower by day, so a scene lit by its lamps opens up most
+	// at night without even the hours out.
+	expect(last.exposure as number).toBeGreaterThan(day);
+});
+
+test("a scene's weather thickens the fog and dims the light, and clears again", () => {
+	const { stage, last, frames } = staged();
+	stage.set('Night');
+	frames(240);
+	const clearDensity = last.fog?.density as number;
+	const clearSky = last.backgroundOptions?.intensity as number;
+	const clearSun = last.sunIntensity as number;
+	stage.setWeather({ fog: 2.4, cloud: 1, light: 0.35, sky: 0.5 });
+	frames(240);
+	expect(last.fog?.density as number).toBeCloseTo(clearDensity * 2.4, 4);
+	expect(last.backgroundOptions?.intensity as number).toBeCloseTo(clearSky * 0.5, 4);
+	expect(last.sunIntensity as number).toBeCloseTo(clearSun * 0.35, 4);
+	stage.setWeather({});
+	frames(240);
+	expect(last.fog?.density as number).toBeCloseTo(clearDensity, 4);
+	expect(last.backgroundOptions?.intensity as number).toBeCloseTo(clearSky, 4);
+	expect(last.sunIntensity as number).toBeCloseTo(clearSun, 4);
 });

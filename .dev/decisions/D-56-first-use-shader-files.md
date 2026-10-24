@@ -275,9 +275,9 @@ Status: decided, 2026-10-14, by the owner's build-speed priority.
 - the entry's file and source;
 - the entry's table in the manifest: its pipelines, its variants, and each variant's defs, permutation bits and targets, as the build names its builds;
 - every library module the entry imports, directly or through another module, with the text of each, so a change to a library module reaches exactly the entries that import it;
-- a stamp of the compiler, which the wrapper hashes from the compiler's sources, so a change to the compiler misses every entry.
+- the compiler's identity, a hash of the bytes of the compiled `shader-build` program, so a change that alters what the compiler writes misses every entry, and a change that leaves the program identical misses none ([D-248](D-248-shader-cache-compiler-program.md)).
 
-The shared tables, `shaders.ts` and the feature and combos modules, are assembled from the entries' records on every run, which is cheap. An entry that is missing, unreadable or written under another key, or whose dependency's text changed, is a miss, and the entry compiles again. A folder that cannot be read or written costs the next run its work and nothing else. The cache lives in `~/.cache/null3d/shader-cache/<stamp>`, which every checkout on the machine shares.
+The shared tables, `shaders.ts` and the feature and combos modules, are assembled from the entries' records on every run, which is cheap. An entry that is missing, unreadable or written under another key, or whose dependency's text changed, is a miss, and the entry compiles again. A folder that cannot be read or written costs the next run its work and nothing else. The cache lives in `~/.cache/null3d/shader-cache/`, in a folder whose `compiler` file records the fingerprint of the program that wrote its entries; every checkout on the machine shares it.
 
 **Data.** All figures are the wall time of `cargo run -p null3d-shaders --bin shader-build -- --root .` on the Mac on 14 October 2026, with the cargo build warm. The machine was otherwise busy, so the figures carry some load.
 
@@ -298,7 +298,7 @@ The folder held 499 MB after the cold run, because an entry's record holds the W
 - Key each entry on its own file alone. A change to a shared library module would then serve a stale entry, so this is wrong.
 - Key each entry on its file, its manifest table, the library modules it imports and a compiler stamp, as the rule says. This compiles exactly what changed.
 
-**Decision.** Keep a per-entry cache, keyed on the entry's own inputs and the library modules it imports, under a folder named by the compiler's stamp. A hit skips the composition and the GLSL translation for that entry and reuses its recorded output. `--no-cache`, and `NULL3D_NO_SHADER_CACHE=1`, compile every entry again. The Vite plugin's own shader cache ([D-175](D-175-vite-plugin-shader-cache.md)) uses the same environment variable for the same reason.
+**Decision.** Keep a per-entry cache, keyed on the entry's own inputs and the library modules it imports, in a folder that one compiler wrote, chosen by the bytes of its program. A hit skips the composition and the GLSL translation for that entry and reuses its recorded output. `--no-cache`, and `NULL3D_NO_SHADER_CACHE=1`, compile every entry again. The Vite plugin's own shader cache ([D-175](D-175-vite-plugin-shader-cache.md)) uses the same environment variable for the same reason.
 
 **Consequences.**
 - `crates/null3d-shaders/src/cache.rs` holds the cache, `crates/null3d-shaders/src/lib.rs` builds each entry through it, and `--cache`, `--stamp` and `--no-cache` reach `shader-build`.
@@ -327,3 +327,13 @@ Status: decided, 2026-10-18, by the tooling change for M2-J4 (D-190, D-191).
 **Rule.** The build writes one table for each family of a kind. A family starts as the key's first feature and splits by the next feature while its rendered table would pass 64 KB. The main module writes the depth of each split, and the loader imports the table of the family of the build that it asks for. A preload loads the table of each key that it expects, not every table.
 
 **Figures.** 214 tables replace up to 8; the largest is 34,609 bytes uncompressed and 1,288 after Brotli, against 96 KB and 16 KB. D-191 gives the split of the paragraph tables that went with it.
+
+## Addendum, 2026-10-24: the compiler's bytes choose the folder
+
+Status: decided, 2026-10-24, by M3-R22 ([D-248](D-248-shader-cache-compiler-program.md)).
+
+**Question.** The folder was named by a stamp of every compiler source, so a comment, a test or a layout constant that cannot change one generated WGSL line invalidated all 79 entries: 50 to 70 minutes on the Mac, holding the machine-wide lock. What identifies the compiler closely enough to reuse its entries, without ever reusing another compiler's output?
+
+**Rule.** The folder records a SHA-256 of the compiled `shader-build` program's bytes. A build reads the folder with that fingerprint, and the fullest one when several match; a folder that records none, as an earlier build's does, takes its fingerprint from the kept program. The source stamp still names a new folder and still forms CI's keys.
+
+**Figures.** On 24 October 2026 the source stamps `380d3d5b…` and `979c3102…` held the identical program `eb2e96fa…`, and the first held all 79 entries. A comment appended to `crates/null3d-gpu/src/drawlist.rs` then compiled 0 entries and reused 79, in 19 s. Changing `timer_mark.wgsl` from `@workgroup_size(1)` to `(2)` compiled 1 entry and reused 78, in 23 s; the generated modules changed for that entry alone.

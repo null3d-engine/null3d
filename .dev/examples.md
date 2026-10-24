@@ -160,7 +160,7 @@ On 8 October 2026 the owner asked for feature demos that look much better, while
 | Demo | What it shows now |
 | --- | --- |
 | math | A flock of 300 drones circles a lamp over a landing pad at dusk. Each drone has a body, two arms, four spinning rotors, a cyan tail light that blooms and a small point light of its own. The lamp is a point light that casts the crates' shadows. The floor's texture is concrete grain with painted lines |
-| instances | 100,489 columns (317 on each side) in one batch at golden hour, and 10,201 on the Low preset of phones, with lanes of hover cars streaming across the sky in two more batches. The sky lights the columns through `assets.skyEnvironment()`. A lamp, which blooms, hovers over the center of the wave and lights the columns around it |
+| instances | 100,489 columns (317 on each side) in one batch at golden hour, and 10,201 on the Low preset of phones, with 30,000 to 100,000 hover cars streaming along the sky lanes above them, from the traffic-lanes add-on. The sky lights the columns through `assets.skyEnvironment()`. A lamp, which blooms, hovers over the center of the wave and lights the columns around it |
 | generators | The nine shapes in polished, gold and brushed metal, plastic, a tile texture that shows each shape's texture coordinates, and a ring that blooms, over a tiled terrace at golden hour |
 
 The rules that the reworked demos follow, and why:
@@ -177,10 +177,39 @@ The rules that the reworked demos follow, and why:
 - While the pointer steers, each drone eases toward the pointed point at a rate of its own. The rate falls from 6 to 1.2 a second as its lag grows. So a sudden move of the lamp sends a ripple through the flock. Each drone keeps its steering weight and its point in arrays, the only state of the demo. With no input both stay exactly 0, so the scripted path and the held frames do not change.
 - The instances demo writes each row's place across the field once, in the setup, since only the heights change. In each frame it works out the part of the height that depends only on the column once per column, not once per row.
 - The owner found the first instances demo too dark. It now takes golden hour from `timeOfDay`, and the sky's own light from `assets.skyEnvironment()`, with the helper's ambient light and a third more exposure. Its columns are less metallic, so the sky and the sun light them. The helper's fog color is the horizon toward the sun. Across the view, the sky's rim is a dim rose, so the demo's fog takes an amber between the two. The clouds stay still. The engine makes the sky's light again after each change of the sky, one step a frame. So drifting clouds would cost a step in every frame.
-- The instances demo takes its count of columns from a table by preset. `quality.onChange` sets the batch's active count again when the preset changes. The setup places the rows ring by ring from the middle out. So the first rows of any count fill a square in the middle of the field. Low draws 10,201 rows, the old demo's count, and the other presets draw all 100,489. The Mac held the full field at 120 fps on both GPU paths. No phone has run it yet.
+- The instances demo takes its count of columns from a table by preset. `quality.onChange` sets the batch's active count again when the preset changes. The setup places the rows ring by ring from the middle out. So the first rows of any count fill a square in the middle of the field. Low draws 10,201 rows, the old demo's count, and the other presets draw all 100,489. The Mac held the full field at 120 fps on both GPU paths. The cloud iPad Pro 13 in Safari and the Galaxy S25 in Chrome drew its held frame on all three paths. Neither run timed the frame rate.
 - The demos' interaction test (`tests/image/demo-interaction.spec.ts`) opens the math and instances demos on the Low preset. It checks the camera and the steering, not the look. On SwiftShader on the Mac, the full look took the instances test from 11.4 s to 25 to 30 s. The math test took 17 s. In CI, main's instances test already took 44.6 s of its 60 s, about four times its time on the Mac. On Low, the two tests took 7 to 10 s and 12 s on the Mac. With a quarter of the field on Low, the instances test took 14 s. That is too close to the limit in CI.
 - The three demos make the room environment, which takes time on a software GPU. On SwiftShader on the Mac their held frames took 6 to 15 s, four tests at once. So their image tests take 60 s, as the other demos with the room environment do, since CI's machines are slower.
-- The instances demo gained lanes of hover cars on 18 October 2026 (M2-EX43, [D-172](decisions/D-172-rive-city-follow-ups.md)). Four lanes cross the sky at 17 to 22 m, on lines 45 to 75 m from the field's center, so the traffic stays a distant layer above the horizon and no car passes near the lens. Each car is a row of a body batch and a tail light batch, which blooms. The sketch writes every row from the time alone, so a held frame draws the same cars. The lanes moved to `traffic.ts` beside the sketch, which stays under 150 lines. Against the old pictures the drawn ones differ in 1.44% to 1.49% of their pixels, against the limit of 0.1%. The references moved in both sets.
+- The instances demo's lanes moved to the traffic-lanes add-on on 22 October 2026 (M3-B6). The demo draws 30,000 cars at Low and 100,000 at Ultra, where it drew 720 on the CPU. The add-on moves them in the vertex shader. It gives each heading's batch a lane-length bound,
+  so a frame's work does not follow the count. The lanes surround the field at 16 to 34 m over
+  2,600 m, so the cars stay a layer above the horizon. The fog hides most of them. Against the
+  old pictures the drawn ones differ in 2.6% of their pixels, and the references moved in both
+  sets. On 22 October 2026, at a Mac load of 28, the demo held these rates, from Low to Ultra:
+
+  | Path | Frame rate | GPU time |
+  | --- | --- | --- |
+  | WebGPU | 120, 119, 119, 119 fps | 3.7, 4.5, 4.6, 5.1 ms |
+  | WebGL2 | 120, 119, 119, 120 fps | 4.5, 5.2, 5.0, 5.0 ms |
+
+  The traffic added at most 0.6 ms to the GPU time and no error to the scene's updates.
+- The real lights went to a fixed share of the rows, one row in 7 at 30,000 cars and one in 24 at
+  100,000. The nearest car therefore often had no light (25 October 2026, M3-B6). The search now
+  reads every row of the lanes near the camera. It skips a lane whose line across the way runs
+  farther from the eye than the light's range. The search therefore follows the lanes near the eye,
+  not the count. It runs four times a second. A car that holds a light keeps it 20% past the range.
+  A camera that drifts across the edge therefore cannot blink it on and off. The search compares
+  squared distances and takes one square root per light at the end. That took the measured cost down
+  2.5 to 3 times. At a Mac load near 55, one search took about 0.3 ms at 30,000 rows and 1.1 ms at
+  100,000 rows. The medians were 0.6 and 2.5 ms. The instances demo pays the 100,000-row figure at
+  Ultra, because all of its lanes are in range. Skyway pays 0.25 to 0.5 ms, because its camera sees
+  one or two of its ten streets. A search lands whole in one frame, so the cost is a spike every
+  quarter second. The row count sets it, not the light count.
+  `examples/addons/traffic-lanes/lights.test.ts` compares the search with a full search at 30,000
+  and 100,000 rows. It checks that the nearest car has a light. It also checks the cadence, the
+  kept-range margin and the ordinary range on one car. `real-lights.test.ts` drives the add-on
+  through the option with a recorded scene. It checks that the nearest cars are the lit ones. It
+  also checks that the option off builds no light and lights nobody.
+- The instances demo gained lanes of hover cars on 18 October 2026 (M2-EX43, [D-172](decisions/D-172-neon-harbour-follow-ups.md)). Four lanes cross the sky at 17 to 22 m, on lines 45 to 75 m from the field's center, so the traffic stays a distant layer above the horizon and no car passes near the lens. Each car is a row of a body batch and a tail light batch, which blooms. The sketch writes every row from the time alone, so a held frame draws the same cars. The lanes moved to `traffic.ts` beside the sketch, which stays under 150 lines. Against the old pictures the drawn ones differ in 1.44% to 1.49% of their pixels, against the limit of 0.1%. The references moved in both sets.
 
 ### Frame rates on the Mac
 
@@ -189,7 +218,7 @@ The figures come from Chrome 155 on a Mac with an Apple M5 Max, on 9 October 202
 | Demo | WebGPU, High | WebGL2, Medium |
 | --- | --- | --- |
 | math | 120 fps, GPU 5.1 to 5.6 ms, sketch 0.4 to 0.5 ms, 300 drone lights | 120 fps, GPU 5.6 to 6.6 ms, sketch 0.5 to 0.6 ms |
-| instances | 120 fps, GPU 4.2 to 4.8 ms, sketch 1.0 to 1.6 ms, 1.25 million triangles | 120 fps, GPU 3.0 to 5.4 ms, sketch 0.9 to 1.7 ms |
+| instances | 119 to 120 fps, GPU 3.7 to 5.1 ms | 119 to 120 fps, GPU 4.5 to 5.2 ms |
 | generators | 120 fps, GPU 3.9 to 4.7 ms | 120 fps, GPU 4.1 to 5.2 ms |
 
 Before the change, all three held 120 fps on both paths too. The instances demo had 10,000 rows then. On a phone, a loop over all 100,489 rows should take about four times as long as on the Mac. The phone and tablet checks of the three demos are still to run.
@@ -332,7 +361,7 @@ The dusk sky, the sun's light and its long shadows stay. At the held frame the s
 
 ### The Battle and Factory upgrades for both comparisons (M2-EX43, 18 October 2026)
 
-Both comparisons took the Rive City study's touches ([D-172](decisions/D-172-rive-city-follow-ups.md)). A comparison draws one description in both engines and holds one frame for each, so every touch draws the same content in both halves. The lens grade and the scorch marks are switches, on in both halves or off in both.
+Both comparisons took the Neon Harbour study's touches ([D-172](decisions/D-172-neon-harbour-follow-ups.md)). A comparison draws one description in both engines and holds one frame for each, so every touch draws the same content in both halves. The lens grade and the scorch marks are switches, on in both halves or off in both.
 
 Battle:
 
@@ -353,7 +382,7 @@ Against the old pictures the drawn ones differ in 3.8% to 5.8% of their pixels f
 
 ### The Night town upgrade for its comparison (M2-EX43, 19 October 2026)
 
-Night town took the Rive City touches that D-172 gives it. As in the other comparisons, one description draws the same content in both halves at the same simulation time.
+Night town took the Neon Harbour touches that D-172 gives it. As in the other comparisons, one description draws the same content in both halves at the same simulation time.
 
 - A lens grade splays the colors at the edges, streaks the brightest light sideways and adds film grain. Its settings are softer than Battle's, because the town is dark and its lights are small. It runs on the linear light before bloom and tone mapping in both engines, and it is a switch.
 - Every lit window shows a room behind its glass. The eye's ray reaches the back wall and the side walls of a box that starts at the glass. A window thus shows more of its room from the side of the street than from in front. The window boxes and the room's depth come from the scene description. null3D draws it in the facade's WGSL surface function. three.js draws it in the GLSL it adds to `MeshStandardMaterial`, and in the node material on WebGPURenderer. The rooms multiply the window's light, so an unlit window stays dark.
@@ -410,6 +439,46 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. 
 
 The galaxy's sketch time is the loop that turns every star and writes its row. It grows with the count, so Low draws 30,000 stars. No phone or tablet has run the five demos yet.
 
+## The aurora demo (M3-E10, 24 October 2026)
+
+`aurora: A frozen lake at night` shows the sky-layer hook: the aurora example add-on draws one WGSL function over the core sky, under the moon and the stars, in the camera's view, in scene passes and in reflections.
+
+- The layer lights nothing: the sky's environment map and its diffuse light come from the core sky alone, and the demo adds one dim ambient light in the aurora's color so the ice and the snow read under it. A sketch that a layer must light gives it a light of its own, as this one does.
+- The layer reads the core sky's cloud coverage and density, so the demo keeps the physical sky's thin clouds: they hide the aurora where they thicken, as they hide the stars.
+- The curtains are flat in the sky and have no parallax. The camera stays at eye height over the ice, so the layer reads as a sky and not as a wall.
+- The image test holds the demo at 1.5 seconds, where the aurora's swell has moved the layer by less than a step.
+
+## The screens add-on (M3-B3, 24 October 2026)
+
+`examples/addons/screens/` draws displays in the world on `OffscreenCanvas` objects. A screen holds
+one canvas-backed texture, reads it at its own refresh rate, and uploads only the rectangles that
+changed. Its LCD material draws the panel's structure by distance: red, green and blue bars in each
+texel, a drifting scan band, dark gaps between the rows, dead texels and a boot glitch. A click on
+the plane maps back to the canvas's own coordinates. The design and its measured cost are in
+[D-253](decisions/D-253-in-world-screens.md).
+
+- The `canvas-screen` demo draws three wall panels at 20, 12 and 8 Hz, and a console panel close to
+  the camera whose texels cover several pixels, so its sub-pixels, scan band and dead texels show.
+  A click turns a panel down or up, with a boot glitch on the way on. Its first picture is painted
+  before the texture reads the canvas, so a held frame shows it.
+- The picking demo's wall plan is now a screen from the add-on. A click's point on the canvas comes
+  from the add-on's mapping of the hit's texture coordinates, and the plan uploads only the two
+  rectangles that a click changes: its new square and the square it drops.
+- The showroom demo, `coat-and-sheen`, has a tablet beside the plinth from the add-on. A tap cycles
+  its pages, and the new page uploads as one change. The panel shows its sub-pixels when the camera
+  comes close.
+- Skyway's hero car draws its speed and altitude panels, and a navigation panel between them, from
+  the add-on, in `examples/showcase/skyway/cockpit.ts`. The deck panels refresh at 12 Hz and the map
+  at 8 Hz, and each uploads only the rectangles of its canvas that its reading changed.
+- The security camera's monitor keeps its own small LCD look in `monitor.ts`, because its picture
+  comes from a render pass rather than a canvas. Its look could move onto the add-on's material if
+  the add-on took any texture, and that is a later change.
+- Against the old pictures, the Mac's GPU drew 4.063% to 4.104% of the pixels differently for
+  `demo-canvas-screen`, 0.222% to 0.410% for `demo-picking` and 0.332% to 0.354% for
+  `demo-coat-and-sheen`. SwiftShader drew 4.092% to 4.137%, 0.215% to 0.415% and 0.325% to 0.351%.
+  The limit is 0.1%, and the two sets moved together, so no `Mac-References:` trailer applies. The
+  figures and the commands to redraw the pictures are in [Image tests](image-tests.md#references).
+
 ## The automatic exposure demo (M2-EX31, 11 October 2026)
 
 `auto-exposure: Courtyard and hall` shows automatic exposure ([D-148](decisions/D-148-automatic-exposure.md)). The camera walks from a sunny courtyard into a dark stone hall, turns round, and walks out again, in a loop of 20 seconds. The eye opens in the hall, and closes again when the camera faces the bright door. E turns automatic exposure off and on, so a visitor can see the fixed exposure that the camera would have.
@@ -454,7 +523,7 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 
 - **No line limit:** a showcase scene is not a feature demo, so the 150-line limit does not apply. It lives in `examples/showcase/<name>/`, and its code link points to the folder.
 - **Shared code:** the showcase scenes share a stage (`examples/lib/stage.ts`: moods and times of day) and generators of detail (`examples/lib/procedural.ts`: textures made in code, terrain and rocks).
-- **Models:** terrain, stones, grass and water are made in code. Trees, plants and other organic hero models are built by script in Blender, and live in the sample-assets repository. A showcase scene's `assets` field says so.
+- **Models:** terrain, stones, grass and water are made in code. Trees and plants come from the vegetation add-on once it exists, generated at first use ([D-241](decisions/D-241-vegetation-foundation.md)). Until then they, and other organic hero models, are built by script in Blender, and live in the sample-assets repository. A showcase scene's `assets` field says so.
 - **Interaction:** a showcase scene takes the user's input while it runs. Its camera is the cinematic route above, and `c` hands the camera to the user, who then flies with the keys, the mouse or a touch drag, without a run from the scripted pose.
 - **The look:** each scene must look very beautiful, with shaders, effects, particles and complex geometry ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
 - **Engine features first:** each scene waits for the engine features it needs. The owner moved them before 1.0, in [D-117](decisions/D-117-showcase-features-before-1-0.md), [D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md) and [D-142](decisions/D-142-more-techniques-before-1-0.md). The table below lists them.
@@ -477,7 +546,174 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 - **The shadow range follows the camera:** the night town's sun once reached a fixed 70 m, and its shadows faded over the last 7 m. The Manual camera could dolly out with no limit. Past about 70 m every house lay beyond the range. A quick zoom then carried the whole town across the fade in a fifth of a second, so the shadows appeared at once (owner's recording, 20 October 2026). Even the opening view put the back houses at 75 to 82 m. Each scene now passes `shadowReach` to `createShowcaseEffects`: the range it asks for close up, and the sphere of its core. The core is the night town's houses and tower, and Creek's stream and banks. Each frame, the range is the shortest step of a ladder of 1.25 times that reaches the core's far side. It rises at once, and falls only once the need is a whole step lower. Close-up shadows stay as sharp as before, and the core never leaves the range. The engine's automatic distance ([D-168](decisions/D-168-auto-shadow-distance.md)) does not fit here. It follows the farthest visible receiver, which in these scenes is the ground out to the mountains. It would hold the range at 150 m or more and blur the near shadows.
 - **The sky, the sun and the moon:** the outdoor moods drive the physical sky, `scene.setBackground({ atmosphere })`, from `timeOfDay` with the physical model ([D-171](decisions/D-171-showcase-controls-hud.md)). The real sun disc lights the scene by day and the moon disc at night, the main directional light is the sun by day and the moon at night, and the lit fog and the light shafts follow that light, so a scene shows sun rays by day and moon rays at night. `Auto` advances the hour continuously and loops, so the sun rises, arcs and sets and the moon does the same, while the fixed moods hold an hour. A whole day takes 80 seconds in Auto (owner, 21 October 2026; it took 4 minutes before). `examples/lib/stage.ts` holds the moods and the Auto driver.
 - **The look follows the light, not the nearest mood:** a scene's own look, such as Creek's fireflies, mist, leaf tint and caustics, blends between the moods on either side of the hour (`moodMix` in `examples/lib/stage.ts`). Through the dark hours, while the sun is more than 18 degrees under the horizon, it holds Night. Only while the sky has light does it move from each mood to the next. The dawn's look comes in through the morning twilight and is whole at Dawn's hour. Creek once took the look of the nearest fixed mood. At 02:36, halfway between Night and Dawn, the dawn's warm caustics then came on at once, and the stream changed color in the middle of the night (owner's recording, 20 October 2026). The stage's own haze factor blends the same way. `examples/lib/stage.test.ts` checks that no mood's share steps between hours a minute apart.
-- **The first scene is Creek.** A forest at dawn, a seaside cove and a night town may follow.
+- **The showcase scenes are Creek, Night town and Skyway.** A forest at dawn, a night town under the moon, and a city from the air.
+
+### Night town's windows (M3-B2, 25 October 2026)
+
+Night town now draws its window panes through the facades example add-on
+(`examples/addons/facades/`), as Skyway does, in the add-on's pane form
+([D-254](decisions/D-254-interior-mapped-facades.md)).
+
+- Each pane looks into a room behind its glass: a lamp's pool, a floor, a ceiling, a block of
+  furniture, blinds and a curtain in some. The eye's ray meets the room's box, so the room moves in
+  parallax as the camera passes, and the view from one side of a window shows more of it than the
+  view from in front.
+- The panes keep their own row values: whether the pane is lit, how warm its light is, the phase of
+  its flicker and whether a screen lights it. The hour still dims every pane through that value.
+- The town lights up as the scene starts, from the square outward, on the add-on's power-on wave.
+  Each pane's light rises on a damped spring once the wave reaches it.
+- The panes draw the add-on's timber finish for their frames, so the wall finish that the pages
+  carry and the pane's frame agree. The house walls keep the scene's own timber texture.
+- The picture changed, so the `demo-night-town` image test needs new references in both sets. The
+  candidate differs from the old reference in 0.575% of its pixels.
+- The add-on's own cost, per GPU path and preset, is owed. The cost test needs a quiet computer,
+  and the fleet kept the Mac above the quiet threshold through the night it was built. The add-on's
+  README gives the command.
+
+### Skyway (M3-C1, 22 October 2026)
+
+Skyway is the third showcase scene. It flies a hover car through a rainy night city. The scene
+shows the engine at scale. It draws 30,000 to 100,000 hover cars on the sky lanes, on one instanced
+batch of towers whose windows light one by one. It adds 180 street lamps, three searchlights, rain,
+and a hero car with two screens.
+
+- **The lanes cost nothing per frame.** Each car is a row of one of four instance batches, one for
+  each heading. Its place along the lane comes from the row's start offset, its speed and the frame
+  clock. The shaders guide holds that contract ([Surface functions](../docs/shaders/surface-functions.md)).
+  A preset draws fewer cars by lowering the active row count. The rows were shuffled once, so a
+  thinner preset thins every lane alike. The traffic-lanes example add-on owns this
+  (`examples/addons/traffic-lanes/`), and Skyway uses it.
+- **A hull's vertices are what a lane pays for.** Every face of the vehicle hull carries its own
+  four vertices, so a car is 72 vertices for 36 triangles, and each pass that draws the lanes pays
+  for them, the reflections' depth prepass among them. `createVehicleHull` therefore takes a detail
+  as its third argument. The light hull shares each vertex between the faces that meet at it, which
+  draws the same triangles from 24 vertices and shades the body as one smooth shell instead of
+  faceted panels. Skyway draws the light hull at Low, the preset a phone runs, and the full one at
+  Medium and above. At Low, at the pixel size of a cloud phone's screen, that took the frame from
+  3.79 to 3.06 ms of GPU time on WebGPU and from 7.09 to 5.38 ms on WebGL2, and the traffic's own
+  share from 1.33 to 0.64 ms and from 2.81 to 1.11 ms
+  ([D-246](decisions/D-246-skyway-vehicle-vertices.md)).
+- **A moved row needs a larger bounding sphere.** The engine culls each row by its mesh's bounding
+  sphere. A vertex offset carries a car up to the lane's length from its row's origin. Each batch
+  therefore gives its rows a radius that covers the lane, with `batch.setBoundingRadius(span)`
+  (documented in [Instances](../docs/concepts/instances.md#culling)). Before that call existed, the
+  hull carried a zero-area sliver to stretch the sphere.
+- **The windows are a world-space grid.** One window is the same size on every tower and on every
+  face. It never stretches with a building's scale. A lit window shows a small room in parallax:
+  a lamp's pool, a floor, a ceiling, a block of furniture, blinds that some rooms draw down and a
+  curtain in some. Where a window covers less than a pixel, the face fades to its average light.
+  The grid then never shimmers. The facades example add-on owns this
+  (`examples/addons/facades/`), and Skyway uses it ([D-254](decisions/D-254-interior-mapped-facades.md)).
+  The wall pages and the window codes are made in code when the scene starts, so the add-on ships
+  no image. Street level is a band of lit shop fronts, also from the add-on.
+- **The power-on wave** lights the city from the middle out over the first second, from the frame
+  clock. Each window waits for the wave to reach it and then rises on a damped spring, which
+  overshoots slightly and settles. A held frame therefore always shows the same city.
+- **The lights.** The city holds 180 point lights and three spot lights. Its windows, signs and the
+  cars' lights are emissive surfaces. The engine lists at most 1,024 lights in a frame. The plan's
+  1,000 to 4,000 real lights through the fog therefore waits for the many-lights work (M3-F3). The
+  volumetric fog is on, so the searchlights draw their shafts through the rain.
+- **The effect layer.** The traffic, the rain, the signs and the hero car sit on `EFFECT_LAYER`
+  (`examples/lib/layers.ts`). The Auto route's clearance guard never treats a moving car as a wall.
+  Its ray tests the towers and the ground alone.
+- **The camera.** The route is a circuit of four street canyons. It climbs from the south entrance
+  to the tower tops, and dives back down. It follows the street center lines of the plan, so it
+  never enters a block. `route.test.ts` samples the whole loop through the player's own
+  interpolation. It fails on a sample inside a building.
+- **No ring of mountains.** The fog's reach is about 240 m, and the ground plane reaches 2.1 km.
+  The view therefore never sees the ground's edge or the plain background. A ring would stand in
+  the fog and add nothing.
+- **Post starts on.** Bloom, the vignette and ambient occlusion start on, where the other showcase
+  scenes start them off (D-171). A night city of neon and lit windows reads flat without the glow
+  of its lights. The owner has not reviewed the look yet.
+- **Time of day.** The scene takes its full time of day from the shared stage, as the other
+  showcases do. It offers the same hour dial, with Auto and Studio, over the whole day. The physical
+  sky draws the real sun by day and the moon at night, and Auto moves them across the sky. The scene
+  sets the stage's three scales for a scene lit by its own lamps. The exposure is 4.5, the
+  environment light 2.2 and the sky's brightness 2.6. It lowers the cloud cover to 0.45. The scales
+  hold through the whole day, because the physical model's own exposure already falls by day and
+  rises at night. Scaling them again by the hour made midday darker than dawn. The stage writes the
+  scene's lit fog with every hour, through its `volumetric` option.
+- **The city's lights follow the hour.** The stage reports the share of a town's own lights that
+  the sun allows (`stage.lamps`). The scene gives it to the facades' windows and shop fronts, the
+  street lamps and their heads, the searchlights and the signs. Every lamp's light and every
+  searchlight fades with the share. A sign keeps nearly half its light by day, as a lit sign does.
+  At Night the share is 1 exactly, so the held frame's picture is the one the scene had.
+- **Storm is weather, not an hour.** The Atmosphere group's Storm button calls the stage's
+  `setWeather`. That gives full cloud and fog 2.4 times as dense. The sky and the light fall to a
+  third and to a half, and the rain is 1.8 times as heavy. The weather clears when the button turns
+  off. It works at any hour, so a storm at dawn is a storm under a dawn sky. A held frame has no
+  buttons, so its address takes `?storm` as well as the hour.
+- **The HUD** keeps Camera, Time of day, Atmosphere (Fog, Rain, Storm), Lighting (AO, Environment),
+  Post, Traffic and Quality. The scene's own controls reach the shared router through its `own` and
+  `extra` options. The lens kit owns the vignette and the scene's lens owns the depth of field. The
+  Traffic group stands before Quality.
+- **The hours were drawn and looked at.** The image test draws Night, whose reference did not move.
+  At night the light share is 1 and every scale is the value it always had. Dawn, Midday, Golden,
+  Dusk and Storm were drawn and reviewed. Midday reads as an overcast city that the fog still
+  layers. Golden warms the towers and the sky, and Storm drives the rain through a city of visible
+  lamps. The light power uniform moved SwiftShader's WebGL2 picture by 0.10 per cent, at the bright
+  edges of signs and lamps. That reference was drawn again. The Mac's picture still matches its own
+  reference.
+- **Figures.** A run in Chrome on the Mac measured these. It used the shared stage, the
+  traffic-lanes add-on and its six real lights, and the lens kit in the scene. The Mac has an Apple
+  M5 Max and a 120 Hz display. The frame-budget governor was on, and the window was parked past the
+  screen's edge. The machine carried a shared build load of about 18 at the time:
+
+  | Preset | WebGPU | WebGL2 |
+  | --- | --- | --- |
+  | Low, 30,000 cars | 118 fps, GPU 5.0 ms | 120 fps, GPU 7.0 ms |
+  | Medium, 50,000 cars | 119 fps, GPU 5.3 ms | 108 fps, GPU 11.9 ms |
+  | High, 75,000 cars | 102 fps, GPU 5.6 ms | WebGL2 caps the settings at Medium |
+  | Ultra, 100,000 cars | 91 fps, GPU 5.8 ms | WebGL2 caps the settings at Medium |
+
+  The GPU time barely rises from Low to Ultra. The same pixels shade the same towers, and the count
+  changes the vertices alone. The scene's updates threw no error at any preset. On WebGL2 the
+  settings stop at Medium, but the demo's counts follow the preset that the page asked for. So
+  `preset=high` there draws 75,000 cars at Medium settings.
+
+  These rows draw the full hull, which the demo keeps at Medium and above. At Low it draws the light
+  hull, measured on the same Mac at a canvas of 618 x 1372 device pixels, the size that a cloud
+  phone's screen gives the demo: that took the WebGPU frame from 3.79 to 3.06 ms and the WebGL2
+  frame from 7.09 to 5.38 ms ([D-246](decisions/D-246-skyway-vehicle-vertices.md)).
+- **The lens.** The picture's grade, its sharpening, its vignette and the camera's own marks come
+  from the lens-kit example add-on (`examples/addons/lens-kit/`). The grade, the sharpening and the
+  vignette are the core's own settings, which the kit sets from one look: the grade is the core's
+  grading controls, which a job worker bakes into its table, so the kit keeps no table of its own.
+  Its one effect draws the color fringes, the anamorphic streak, the grain and the speed blur, each
+  off at 0. The streak reads level 2 of bloom's chain with `effectBloom`, so it spreads the light
+  that bloom already thresholded and blurred instead of blurring the picture again. D-173 ruling 5
+  keeps it to the core's parts: it adds no second way to do any of them. The speed blur follows the
+  camera's travel, so a held frame has none. Against the pictures without it, the lens moves 0.66%
+  of the pixels on WebGPU and 0.2% on SwiftShader, drawn before the streak read bloom's chain. The
+  picture tests in `tests/image/manifest.ts` draw each part alone, one look to a test:
+  `lens-grade`, `lens-vignette`, `lens-sharpen`, `lens-aberration`, `lens-streak`, `lens-grain`
+  and `lens-speed-blur`. The marks are custom effects, so their four tests keep the two HDR tiers;
+  the core's parts draw on all three. The streak and the grain move a pixel by a few steps. Their
+  two pictures use a tighter threshold, because the default would not see either mark. A later
+  `set` that raises a mark builds the effect then. One that lowers every mark to 0 drops it again.
+  Before 24 October 2026, a kit made with every mark at 0 never drew a mark that a later call set.
+- **The lens's cost.** The add-on's README holds the look's cost per preset. The cost test times
+  the whole look against the same scene without it. It draws at 1920 x 1080 with a render scale of
+  1, and runs as `NULL3D_LENS_COST=1 bun run test:browser -- lens-cost.spec.ts`. Its figures are
+  owed: the run needs a quiet computer, and the fleet kept the Mac above the quiet threshold. On
+  the Skyway scene at a load of 36, the effect alone added about 0.7 to 0.9 ms of GPU at every
+  preset on WebGPU, and 0.7 ms at Low and 3.2 ms at Medium on WebGL2. The core's vignette and
+  grade add nothing to a frame, since they run in the final pass; the sharpening value adds the
+  first step's pass at the whole render scale. A look that leaves all four of the effect's values
+  at 0 adds no effect at all.
+- **On a phone**, WebGL2 runs Medium at most. That preset draws 30,000 cars, about 900 towers, 180
+  lights, the rain and reflections at a quarter of the render size. Medium doubles the cars and
+  raises the reflection scale. The cloud Galaxy S24 of 24 October 2026 measured two windows in a
+  row on the changed demo, at Low. The first 5 s after its first frame presented 7.2 frames a
+  second, with a 95th percentile of 408 ms and a 99th of 2,227 ms; the next 5 s presented 29.4,
+  with a 95th percentile of 33.4 ms and a 99th of 66.7 ms, which holds the device's 30 Hz display.
+  At the High preset, which WebGL2 caps at Medium and 50,000 cars, the two windows presented 20.9
+  and 28.0. So the stalls are the demo's first seconds, not its steady play: the engine built no
+  pipeline, skipped no draw and rebuilt no table in either window, and both windows carry upload
+  spikes of about 1.2 MB, so neither explains the first window. Night town's first window had no
+  such stall. A cold phone's first seconds therefore need their own measurement before the 60 frames
+  a second target has a device figure.
 
 ### Engine features for the showcase
 
@@ -542,7 +778,9 @@ Creek is a small stream in a grassy valley (M2-EX8). The first phase, on 10 Octo
 | Under the water (`underwater.ts`) | While the camera is under the surface, a custom effect makes the view read as seen through flowing water. The current's wobble runs downstream across the picture, caustics play over the bed, and the water swallows the light with distance into its own green. The water's surface draws both faces: from below, the world above shows through a window overhead, and past the window's edge the surface turns some light back down as a faint mirror. Each pixel decides for itself, from where its line of sight leaves the near plane, so a camera half under the water splits the picture at the waterline. The effect is added while the camera is within 0.6 m above the water, since a new effect takes a few frames to start drawing. The Auto route dips under the water for about six seconds as it glides down the stream, through shots that pass the surface on purpose (`through`). `route.test.ts` keeps the dip clear of the bed and the stones (owner, 20 October 2026). |
 | Moods (`examples/lib/stage.ts`) | Afternoon, golden hour, blue hour and night from `timeOfDay`, lit by the sky's environment, and a studio lit by the built-in room. A mood can thicken the fog into a haze: golden hour and blue hour do |
 
-**The water code is temporary.** M3-F5's water add-on, `@null3d/water`, takes the Creek's river with its view from under the water. Once it exists, the Creek draws its water through the add-on, and `water.ts` and `underwater.ts` are deleted, so the scene keeps no water code of its own (owner, 20 October 2026, [D-173](decisions/D-173-addon-hooks.md)).
+**The water is the add-on's.** M3-F5's water add-on, `@null3d/water`, took the Creek's river with its view from under the water. The Creek draws its water through the add-on, and its `water.ts` and `underwater.ts` are gone, so the scene keeps no water code of its own. The add-on takes the scene's analytic middle line and half width as its river shape, and its stone foam map (owner, 20 October 2026, [D-173](decisions/D-173-addon-hooks.md); [D-257](decisions/D-257-water-addon.md)).
+
+**The plant code and models are temporary.** The vegetation add-on of M3-V4 to M3-V9 grows Creek's trees, ferns, hostas, shrubs, flowers and grass at first use. It places them over the whole valley by ecological rules and moves them all in one wind field. Once it exists, Creek draws its plants through it (M3-V11). Its Blender plant models, their script and their files of about 3.1 MB are deleted. So is the scene's own plant code: `grass.ts`, `models.ts` and the plant parts of `flora.ts`. The floating leaves and the fireflies stay (owner, 24 October 2026, [D-241](decisions/D-241-vegetation-foundation.md)).
 
 The choices, and why:
 
@@ -707,10 +945,10 @@ The rules that these demos follow, and why:
 - Picking turns its plinth and its pieces from `time.now`. It used to add `dt` each frame, which made the held frame depend on the frame rate.
 - Depth of field draws nothing on the Low preset, which phones start on, as [Post-processing](../docs/api/post.md#depth-of-field) says. The two demos look right without it.
 - Some demos make the room or the sky environment, or load large files. Their image tests may take 60 s, as the reworked math, instances and generators demos do.
-- The post effects demo took screen-space reflections and the lens grade on 18 October 2026 (M2-EX43, [D-172](decisions/D-172-rive-city-follow-ups.md)). Its puddles are almost mirror smooth, so the neon and the crates streak down into the asphalt while the dry ground stays matte. The lens grade adds color fringes, an anamorphic streak on light brighter than white, and grain that changes 24 times a second. The two grading tables moved to `grades.ts` beside the sketch, so the sketch stays under 150 lines, and the demo's code link points at its folder. Against the old pictures the drawn ones differ in 0.39% to 0.43% of their pixels, against the limit of 0.1%. The references moved in both sets. The switch that turns the reflections on for a device that leaves them off lives in `examples/lib/ssr.ts`, which every demo with them shares.
-- The security camera demo took the LCD look on 18 October 2026 (M2-EX43, [D-172](decisions/D-172-rive-city-follow-ups.md)). The monitor's shader moved to `monitor.ts` beside the sketch. It draws the panel's red, green and blue stripes when the screen is near enough to show them, and a few dead cells. Against the old pictures the drawn ones differ in 0.12% to 0.13% of their pixels, against the limit of 0.1%. The references moved in both sets.
+- The post effects demo took screen-space reflections and the lens grade on 18 October 2026 (M2-EX43, [D-172](decisions/D-172-neon-harbour-follow-ups.md)). Its puddles are almost mirror smooth, so the neon and the crates streak down into the asphalt while the dry ground stays matte. The lens grade adds color fringes, an anamorphic streak on light brighter than white, and grain that changes 24 times a second. The two grading tables moved to `grades.ts` beside the sketch, so the sketch stays under 150 lines, and the demo's code link points at its folder. Against the old pictures the drawn ones differ in 0.39% to 0.43% of their pixels, against the limit of 0.1%. The references moved in both sets. The switch that turns the reflections on for a device that leaves them off lives in `examples/lib/ssr.ts`, which every demo with them shares.
+- The security camera demo took the LCD look on 18 October 2026 (M2-EX43, [D-172](decisions/D-172-neon-harbour-follow-ups.md)). The monitor's shader moved to `monitor.ts` beside the sketch. It draws the panel's red, green and blue stripes when the screen is near enough to show them, and a few dead cells. Against the old pictures the drawn ones differ in 0.12% to 0.13% of their pixels, against the limit of 0.1%. The references moved in both sets.
 - The area lights demo took screen-space reflections on 18 October 2026 (M2-EX43). Its road is smooth where the puddles lie, so the glowing shop windows, the neon sign and the street around them mirror in it, beside each light's own shaped highlight. The reflections stop at a roughness of 0.35, so the dry asphalt stays matte. Against the old pictures the drawn ones differ in 0.33% to 0.77% of their pixels, against the limit of 0.1%. The references moved in both sets.
-- The picking demo gained a clickable plan on its wall on 18 October 2026 (M2-EX43, [D-172](decisions/D-172-rive-city-follow-ups.md)). The plan is drawn into a texture from code, with a grid and a square for each click. The sketch turns a click's world point into the plane's own coordinates, so the square lands where the pointer points. The texture changes only when a click adds a mark, so a held frame is the same on every run. The plan lives in `screen.ts` beside the sketch. Against the old pictures the drawn ones differ in 0.56% to 0.72% of their pixels, against the limit of 0.1%. The references moved in both sets.
+- The picking demo gained a clickable plan on its wall on 18 October 2026 (M2-EX43, [D-172](decisions/D-172-neon-harbour-follow-ups.md)). The plan is drawn into a texture from code, with a grid and a square for each click. The sketch turns a click's world point into the plane's own coordinates, so the square lands where the pointer points. The texture changes only when a click adds a mark, so a held frame is the same on every run. The plan lives in `screen.ts` beside the sketch. Against the old pictures the drawn ones differ in 0.56% to 0.72% of their pixels, against the limit of 0.1%. The references moved in both sets.
 
 ### Frame rates of the rendering demos on the Mac
 
@@ -741,3 +979,4 @@ The look came from five rounds of screenshots on the Mac, and these points decid
 - One leaf texture serves three slots: its color as the base color map, its alpha as the diffuse transmission map, which lets less light through the veins, and so the veins show dark against the sun.
 - The lantern's lamp has an intensity of 0.4. Inside a sphere of 0.2 m, a brighter lamp turned the paper white.
 - The tulips' petals lean out at most 0.6 radians, so they open as cups. With the leaves' lean, up to 1.05 radians, they lay flat like umbrellas.
+- The picking demo's wall plan reads the hit's own texture coordinates on 22 October 2026 (M3-A1). A click's event now carries `uv` and `hasUv`, so the plan marks the square from the hit itself instead of inverting the plane's world matrix and dividing by its size. The held frame draws no mark, so its pictures do not move.

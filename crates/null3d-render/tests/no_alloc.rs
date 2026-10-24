@@ -23,7 +23,7 @@ use null3d_core::lights::{POINT_CONE, SunShadow, VisibleLight, kind};
 use null3d_core::scene::{Command, flags};
 use null3d_core::testing::CountingAllocator;
 use null3d_gpu::drawlist::{DrawList, Op, format, template};
-use null3d_render::background::{Background, BackgroundSource};
+use null3d_render::background::{Background, BackgroundSource, Sky, SkyLayer};
 use null3d_render::bloom::Bloom;
 use null3d_render::camera::{Lens, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
@@ -97,6 +97,7 @@ fn shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
         auto: false,
         contact: 0.0,
         layers: 1,
+        hero: None,
     };
     world.renderer.settings_mut().set_sun_shadow(Some(shadow));
     world.record(true);
@@ -210,6 +211,7 @@ fn skinning_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
         auto: false,
         contact: 0.0,
         layers: 1,
+        hero: None,
     };
     world.renderer.settings_mut().set_sun_shadow(Some(shadow));
     world.record(true);
@@ -796,6 +798,7 @@ fn map_upload_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
             intensity: 1.0,
             blur: 0.0,
             rotation: [0.0; 3],
+            sun_visibility: 1.0,
         }));
     world.record(true);
     let textures = world.renderer.settings_mut().textures_mut();
@@ -1413,6 +1416,7 @@ fn physical_sky_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
             intensity: 1.0,
             blur: 0.0,
             rotation: [0.0; 3],
+            sun_visibility: 1.0,
         }));
     feature_allocations(
         &mut world,
@@ -1424,6 +1428,35 @@ fn physical_sky_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
                 .renderer
                 .settings_mut()
                 .set_sun([angle.sin(), 0.5, angle.cos()], [1.0, 1.0, 1.0]);
+        },
+    )
+}
+
+/// The sky behind the scene with a layer over it, whose share of the sun moves every frame.
+fn sky_layer_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    let settings = world.renderer.settings_mut();
+    settings.set_background_source(Some(Background {
+        source: BackgroundSource::Sky(Sky::default()),
+        intensity: 1.0,
+        blur: 0.0,
+        rotation: [0.0; 3],
+        sun_visibility: 1.0,
+    }));
+    settings.set_sky_layer(Some(SkyLayer {
+        template: template::CUSTOM_FIRST,
+        opacity: 1.0,
+        sun: 0.0,
+    }));
+    feature_allocations(
+        &mut world,
+        "the sky layer",
+        &[template::BACKGROUND_SKY, template::CUSTOM_FIRST],
+        |world, frame| {
+            world.renderer.settings_mut().set_sky_layer(Some(SkyLayer {
+                template: template::CUSTOM_FIRST,
+                opacity: 1.0,
+                sun: (frame as f32 * 0.01) % 1.0,
+            }));
         },
     )
 }
@@ -1501,6 +1534,11 @@ fn frames_with_bloom_depth_of_field_the_sky_and_the_volumetric_fog_allocate_noth
         "the physical sky on WebGPU"
     );
     assert_eq!(
+        sky_layer_allocations(hdr_world()),
+        0,
+        "the sky layer on WebGPU"
+    );
+    assert_eq!(
         volumetric_fog_allocations(hdr_world()),
         0,
         "the volumetric fog on WebGPU"
@@ -1520,6 +1558,11 @@ fn frames_with_bloom_depth_of_field_the_sky_and_the_volumetric_fog_allocate_noth
             physical_sky_allocations(hdr_webgl2_world(multi_draw)),
             0,
             "the physical sky on WebGL2, multi-draw {multi_draw}"
+        );
+        assert_eq!(
+            sky_layer_allocations(hdr_webgl2_world(multi_draw)),
+            0,
+            "the sky layer on WebGL2, multi-draw {multi_draw}"
         );
         assert_eq!(
             volumetric_fog_allocations(hdr_webgl2_world(multi_draw)),

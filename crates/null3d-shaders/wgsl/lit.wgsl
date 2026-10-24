@@ -64,8 +64,9 @@ enable draw_index;
 // The MOTION builds, which only custom materials with a vertex offset have, draw the motion of a
 // moving object for the motion pass (decision record D-140, null3d::motion): the vertex shader
 // moves each vertex by the offset with this frame's built-in values, and again with the last
-// frame's time, places the second with the last frame's matrix, and the fragment shader writes the
-// difference on the screen. Like the casters, they ignore the material's alpha.
+// frame's time and `frame.lastFrame` set, places the second with the last frame's matrix, and the
+// fragment shader writes the difference on the screen. Like the casters, they ignore the
+// material's alpha.
 //
 // The LOD_FADE builds draw a level of detail inside the band where it hands over to the next
 // (null3d::mesh): the vertex shader passes on the instance's fade value, and the fragment shader
@@ -129,6 +130,9 @@ enable draw_index;
 #endif
 #import null3d::builtins::{camera, fill_builtins, frame, object}
 #import null3d::globals::{Material}
+#ifdef SCENE_DEPTH
+#import null3d::depth::{linear_depth, orthographic_depth_to_view_z}
+#endif
 #import null3d::gtao::{screen_occlusion, screen_read}
 #import null3d::ibl::{environment_irradiance, environment_radiance, has_environment}
 #ifdef PROBE_GRID
@@ -146,8 +150,8 @@ enable draw_index;
 #ifdef MORPH
 #import null3d::mesh::{Morphed, morph_vertex}
 #endif
-#import null3d::mesh::{Instance, InstanceIn, clip_of, find_instance, finish, finish_exposed, fogged, fragment_color}
-#import null3d::mesh::{BLEND_FLAG, ambient_light, custom_value, frame as engine_frame, material_of}
+#import null3d::mesh::{Instance, InstanceIn, clip_of, find_instance, finish_exposed_material, finish_material, fogged, fragment_color}
+#import null3d::mesh::{BLEND_FLAG, ambient_light, custom_value, frame as engine_frame, keeps_display_color, material_of}
 #import null3d::mesh::{relative_position, world_normal}
 #ifndef DECAL
 #import null3d::probes::{has_probes, probe_light}
@@ -186,7 +190,7 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::mesh::{row_values_of}
 #endif
 #ifdef LOD_FADE
-#import null3d::mesh::{instance_fade, lod_kept}
+#import null3d::mesh::{instance_lod, lod_kept}
 #endif
 #ifdef CASTER
 #import null3d::mesh::{caster_clip}
@@ -216,7 +220,7 @@ fn pick_color(key: u32) -> vec4f {
 #endif
 #ifdef TRANSMISSION
 #import null3d::globals::{MaterialTransmission}
-#import null3d::mesh::{NO_FOG, material_transmission}
+#import null3d::mesh::{NO_FOG, layer_maps_kind_of, material_transmission}
 #import null3d::refraction::{transmitted_light}
 #ifdef TONE_MAP
 #import null3d::fog::{fog_factor}
@@ -241,7 +245,9 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::globals::{MaterialCoatSheen}
 #import null3d::coat_sheen::{Layers, begin_layers, coat_environment, coat_facing, coat_transmittance}
 #import null3d::coat_sheen::{finish_layers, layered_ambient, layered_environment, layered_light}
-#import null3d::mesh::{material_coat_sheen}
+#import null3d::mesh::{material_anisotropy, material_coat_sheen, material_iridescence}
+#import null3d::iridescence::{eval_iridescence, schlick_to_reflectance}
+#import null3d::math::{rotate_2d}
 #endif
 #ifdef ALPHA_COVERAGE
 #import null3d::cutout::{alpha_coverage}
@@ -282,8 +288,9 @@ var<private> hash_place: vec3f;
 #endif
 
 #ifdef LOD_FADE
-/// The fade value of the instance's level of detail, which picks the pixels it draws.
-var<private> lod_fade: f32;
+/// The fade value of the instance's level of detail, which picks the pixels it draws, and the
+/// phase of its dither.
+var<private> lod: vec2f;
 #endif
 
 #ifdef CUSTOM_UNIFORMS
@@ -306,6 +313,11 @@ var<private> pixel_material: u32;
 #ifdef TRANSMISSION
 /// The values of the material that lets light through, which the fragment shader reads once.
 var<private> transmission_row: MaterialTransmission;
+
+/// Which family of maps the material keeps in the light map's and the specular maps' slots: 2 when
+/// they hold its transmission and thickness maps, so `with_maps` reads them instead of the
+/// specular maps.
+var<private> layer_maps_kind: u32;
 
 /// The diffuse light that `light_surface` gathers, of which the light through the surface takes
 /// the transmission's share.
@@ -341,6 +353,18 @@ var<private> object_scale: vec3f;
 #ifdef COAT_SHEEN
 /// The values of the layered material's clear coat and sheen, which the fragment shader reads once.
 var<private> coat_sheen_row: MaterialCoatSheen;
+
+/// The values of the material's thin film and of its anisotropy, which the fragment shader reads
+/// once. A material without either keeps their values at nothing.
+var<private> film_row: vec4f;
+var<private> anisotropy_row: vec4f;
+
+/// The bit of a material's flags that says it has a thin film above it, whose maps take the light
+/// map's and the specular intensity map's slots.
+const IRIDESCENCE_FLAG: u32 = 4194304u;
+/// The bit of a material's flags that says its specular lobe stretches along its tangent, whose
+/// map takes the specular color map's slot.
+const ANISOTROPY_FLAG: u32 = 8388608u;
 #endif
 
 #ifdef DECAL
@@ -530,6 +554,62 @@ fn specular_color_texel(layer: f32, at: MapUv) -> vec4f {
     return textureSampleGrad(specular_color_map, specular_color_sampler, at.uv, l, at.dx, at.dy);
 }
 #endif
+#endif
+
+// The copy of the camera's opaque depth, which a surface function reads with `sceneDepth`. The
+// template binds it outside its maps' builds, since a material that reads it takes no maps.
+#ifdef SCENE_DEPTH
+// The group after the frame's on WebGPU, or after the maps' on a material that has them, and the
+// group after the draw records and the data textures on WebGL2.
+#ifdef WEBGL2
+@group(4) @binding(0) var scene_depth_copy: texture_2d<f32>;
+#else ifdef CUSTOM_TEXTURES
+@group(2) @binding(0) var scene_depth_copy: texture_2d<f32>;
+#else
+@group(1) @binding(0) var scene_depth_copy: texture_2d<f32>;
+#endif
+
+/// The texel of the copy of the scene's depth that holds the image's place `uv`, counted from the
+/// top left. A place outside the image reads the nearest texel inside it.
+fn scene_depth_texel(uv: vec2f) -> vec2u {
+    let size = textureDimensions(scene_depth_copy);
+    let pixel = vec2u(clamp(uv * vec2f(size), vec2f(0.0), vec2f(size) - 1.0));
+#ifdef WEBGL2
+    return vec2u(pixel.x, size.y - 1u - pixel.y);
+#else
+    return pixel;
+#endif
+}
+
+/// The scene's depth at `uv`, counted from the top left: 1 at the camera's near plane and 0 at its
+/// far plane, as `null3d::depth` describes, and 0 where nothing drew or no copy exists yet.
+fn sceneDepth(uv: vec2f) -> f32 {
+    return textureLoad(scene_depth_copy, scene_depth_texel(uv), 0).x;
+}
+
+/// The distance in front of the camera of the surface that the scene's depth at `uv` shows, in
+/// world units. A perspective camera's distance follows the depth's hyperbola, and an orthographic
+/// camera's rises evenly from its near plane.
+fn sceneDistance(uv: vec2f) -> f32 {
+    let depth = sceneDepth(uv);
+    let near = engine_frame.camera_range.x;
+    let far = engine_frame.camera_range.y;
+    if engine_frame.camera_position.w > 0.5 {
+        return linear_depth(depth, near, far);
+    }
+    return -orthographic_depth_to_view_z(depth, near, far);
+}
+#else ifdef SCENE_DEPTH_STUB
+// A custom material's functions join every build of this template, and its shadow caster, motion
+// and pick builds read no surface and bind no depth. These stand-ins let the functions build there;
+// the builds that shade a surface bind the copy and get the functions above.
+fn sceneDepth(uv: vec2f) -> f32 {
+    return 0.0;
+}
+
+fn sceneDistance(uv: vec2f) -> f32 {
+    return engine_frame.camera_range.y;
+}
 #endif
 
 #ifdef MAPS
@@ -794,9 +874,10 @@ struct VertexOut {
 #endif
 #endif
 #ifdef LOD_FADE
-    /// The fade value of the instance's level of detail. It shares its slot with the object ids,
-    /// as only custom materials read those, and they have no fading builds.
-    @location(12) @interpolate(flat, either) lod_fade: f32,
+    /// The fade value of the instance's level of detail, and the phase of its dither. It shares
+    /// its slot with the object ids, as only custom materials read those, and they have no fading
+    /// builds.
+    @location(12) @interpolate(flat, either) lod: vec2f,
 #endif
 #ifdef OBJECT_MATRICES
     /// The rows of the object's world matrix that give x, y and z, relative to the camera.
@@ -907,6 +988,9 @@ struct Surface {
     /// Light from the mirror direction, such as a reflection pass's color, in `rgb`, and how much
     /// of it takes the place of the environment's reflection, from 0 to 1, in `a`.
     reflection: vec4f,
+    /// Four values for the material's own lobe function, which the engine passes to `fn lobe`.
+    /// `defaultSurface` leaves them zero, and a material that declares no lobe reads none.
+    lobe: vec4f,
     /// How much of the light behind the surface passes through it, from 0 to 1, in place of that
     /// share of its diffuse light, where the material lets light through.
     transmission: f32,
@@ -941,14 +1025,64 @@ struct Surface {
     sheenColor: vec3f,
     /// The sheen's perceptual roughness, from 0 to 1.
     sheenRoughness: f32,
+    /// How much of the specular reflection a thin film above the surface tints, from 0 to 1.
+    iridescence: f32,
+    /// The film's index of refraction, 1 or more.
+    iridescenceIor: f32,
+    /// The film's thickness in nanometers.
+    iridescenceThickness: f32,
 #else ifdef COAT_SHEEN
     clearcoat: f32,
     clearcoatRoughness: f32,
     clearcoatNormal: vec3f,
     sheenColor: vec3f,
     sheenRoughness: f32,
+    /// How much of the specular reflection a thin film above the surface tints, from 0 to 1.
+    iridescence: f32,
+    /// The film's index of refraction, 1 or more.
+    iridescenceIor: f32,
+    /// The film's thickness in nanometers: the thickness map's green channel mixes the material's
+    /// least and greatest thickness.
+    iridescenceThickness: f32,
+    /// How far the specular lobe stretches along the tangent, from 0 (round) to 1.
+    anisotropy: f32,
+    /// The direction along which the lobe stretches, in radians from the tangent.
+    anisotropyRotation: f32,
+    /// The map's direction in the tangent plane, from 0 to 1 in each axis, and its strength.
+    anisotropyDirection: vec2f,
+    anisotropyMapStrength: f32,
+    /// The surface's tangent and bitangent in world space: the frame that the anisotropy turns
+    /// its direction in.
+    anisotropyTangent: vec3f,
+    anisotropyBitangent: vec3f,
 #endif
 }
+
+#ifdef CUSTOM_LOBE
+/// What a custom material's own lobe function knows of the main directional light. The surface
+/// function passes its own four values through `Surface.lobe`, and the engine adds the lobe's
+/// return to the base lobe's specular.
+struct LobeInput {
+    /// The surface's unit normal in world space.
+    normal: vec3f,
+    /// The unit direction from the surface toward the camera.
+    view: vec3f,
+    /// The unit direction from the surface toward the main light.
+    light: vec3f,
+    /// The unit half vector between the main light and the camera.
+    half: vec3f,
+    /// The surface's perceptual roughness, after the engine's filter.
+    roughness: f32,
+    /// The specular reflectance at normal incidence.
+    f0: vec3f,
+    /// The specular radiance that the base lobe reflects from the main light, before the layers.
+    specular: vec3f,
+    /// The main light's irradiance on the surface: the cosine, the color and the shadow.
+    irradiance: vec3f,
+    /// The four values that the surface function wrote to `Surface.lobe`.
+    values: vec4f,
+}
+#endif
 
 #ifdef MAPS
 /// The surface with the material's texture maps: each map that has an image multiplies or
@@ -1005,22 +1139,35 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     }
     specular_texel = vec4f(1.0);
 #ifdef COAT_SHEEN
-    // A layered material's slots 5 to 7 hold its coat, coat normal and sheen maps.
-    if map_ready(m.more_maps.y) {
-        let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
-        s.clearcoat *= select(1.0, texel.r, (flags & COAT_MAP) != 0u);
-        s.clearcoatRoughness *= select(1.0, texel.g, (flags & COAT_ROUGHNESS_MAP) != 0u);
-    }
-    if map_ready(m.more_maps.z) {
-        let at = map_uv(flags, 6u, first, second);
-        let texel = specular_intensity_texel(m.more_maps.z, at);
-        let scale = coat_sheen_row.coat.zw;
-        s.clearcoatNormal = bent_normal(texel, scale, at, input, position_dx, position_dy);
-    }
-    if map_ready(m.more_maps.w) {
-        let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
-        s.sheenColor *= select(vec3f(1.0), texel.rgb, (flags & SHEEN_COLOR_MAP) != 0u);
-        s.sheenRoughness *= select(1.0, texel.a, (flags & SHEEN_ROUGHNESS_MAP) != 0u);
+    // A layered material's slots 5 to 7 hold the maps of one family of layers, which the row's
+    // kind names: the clear coat's, the coat normal's and the sheen's, or iridescence's and its
+    // thickness with the anisotropy's.
+    if u32(anisotropy_row.z) == 1u {
+        if map_ready(m.more_maps.y) {
+            let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
+            s.iridescence *= texel.r;
+        }
+        if map_ready(m.more_maps.z) {
+            let texel = specular_intensity_texel(m.more_maps.z, map_uv(flags, 6u, first, second));
+            s.iridescenceThickness = mix(film_row.z, film_row.w, texel.g);
+        }
+    } else {
+        if map_ready(m.more_maps.y) {
+            let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
+            s.clearcoat *= select(1.0, texel.r, (flags & COAT_MAP) != 0u);
+            s.clearcoatRoughness *= select(1.0, texel.g, (flags & COAT_ROUGHNESS_MAP) != 0u);
+        }
+        if map_ready(m.more_maps.z) {
+            let at = map_uv(flags, 6u, first, second);
+            let texel = specular_intensity_texel(m.more_maps.z, at);
+            let scale = coat_sheen_row.coat.zw;
+            s.clearcoatNormal = bent_normal(texel, scale, at, input, position_dx, position_dy);
+        }
+        if map_ready(m.more_maps.w) {
+            let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
+            s.sheenColor *= select(vec3f(1.0), texel.rgb, (flags & SHEEN_COLOR_MAP) != 0u);
+            s.sheenRoughness *= select(1.0, texel.a, (flags & SHEEN_ROUGHNESS_MAP) != 0u);
+        }
     }
 #else
     if map_ready(m.more_maps.y) {
@@ -1033,6 +1180,14 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let texel = specular_intensity_texel(m.more_maps.z, map_uv(flags, 6u, first, second));
 #ifdef TRANSLUCENCY
         s.diffuseTransmission *= texel.a;
+#else ifdef TRANSMISSION
+        // A material that lets light through keeps its transmission and thickness maps there
+        // instead, whose red and green scale the transmission and the volume.
+        if layer_maps_kind == 2u {
+            s.transmission *= texel.r;
+        } else {
+            specular_texel.a = texel.a;
+        }
 #else
         specular_texel.a = texel.a;
 #endif
@@ -1041,6 +1196,12 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
 #ifdef TRANSLUCENCY
         s.diffuseTransmissionColor *= texel.rgb;
+#else ifdef TRANSMISSION
+        if layer_maps_kind == 2u {
+            s.thickness *= texel.g;
+        } else {
+            specular_texel = vec4f(texel.rgb, specular_texel.a);
+        }
 #else
         specular_texel = vec4f(texel.rgb, specular_texel.a);
 #endif
@@ -1068,7 +1229,62 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let texel = normal_texel(m.maps.z, at);
         s.normal = bent_normal(texel, m.surface.zw, at, input, position_dx, position_dy);
     }
+#ifdef COAT_SHEEN
+#ifndef CUSTOM
+    if (u32(m.strengths.z) & ANISOTROPY_FLAG) != 0u {
+        // The anisotropy's axes come from the surface's tangent frame, which three.js builds from
+        // the normal map's coordinates where the material has a normal map, and from the first
+        // coordinates otherwise.
+        var frame_at = first;
+        if heights == 0u && map_ready(m.maps.z) {
+            frame_at = map_uv(flags, 2u, first, second);
+        }
+        let frame = tangent_frame(input, frame_at, position_dx, position_dy);
+        s.anisotropyTangent = frame[0];
+        s.anisotropyBitangent = frame[1];
+        // Its map takes the specular color map's slot in the iridescence family, which the row's
+        // kind names.
+        if u32(anisotropy_row.z) == 1u && map_ready(m.more_maps.w) {
+            let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
+            s.anisotropyDirection = texel.rg;
+            s.anisotropyMapStrength = texel.b;
+        }
+    }
+#endif
+#endif
     return s;
+}
+
+/// The surface's tangent frame at the coordinates `at`, as three.js's `getTangentFrame`: the unit
+/// tangent along u, the unit bitangent along v and the input's normal. The frame comes from the
+/// mesh's tangents with VERTEX_TANGENT, and otherwise from how the position, whose changes across
+/// a pixel and up a row are `position_dx` and `position_dy`, and the coordinates change between
+/// pixels.
+fn tangent_frame(
+    input: SurfaceInput,
+    at: MapUv,
+    position_dx: vec3f,
+    position_dy: vec3f,
+) -> mat3x3f {
+    let normal = input.normal;
+    let facing = select(-1.0, 1.0, input.frontFacing);
+#ifdef VERTEX_TANGENT
+    return mat3x3f(
+        normalize(input.tangent) * facing,
+        normalize(input.bitangent) * facing,
+        normal,
+    );
+#else
+    // three.js's getTangentFrame, with rows counted upward.
+    let q1perp = cross(position_dy, normal);
+    let q0perp = cross(normal, position_dx);
+    let st_dy = at.dy * ROWS_UP;
+    var tangent = q1perp * at.dx.x + q0perp * st_dy.x;
+    var bitangent = q1perp * at.dx.y + q0perp * st_dy.y;
+    let det = max(dot(tangent, tangent), dot(bitangent, bitangent));
+    let size = select(inverseSqrt(det), 0.0, det == 0.0);
+    return mat3x3f(tangent * size * facing, bitangent * size * facing, normal);
+#endif
 }
 
 /// The input's normal bent by a normal map's `texel`, read at `at`, whose bends along u and v
@@ -1084,24 +1300,8 @@ fn bent_normal(
     position_dy: vec3f,
 ) -> vec3f {
     let bent = vec3f((texel.xy * 2.0 - 1.0) * scale, texel.z * 2.0 - 1.0);
-    let normal = input.normal;
-    let facing = select(-1.0, 1.0, input.frontFacing);
-#ifdef VERTEX_TANGENT
-    let tangent = normalize(input.tangent) * facing;
-    let bitangent = normalize(input.bitangent) * facing;
-#else
-    // three.js's getTangentFrame, with rows counted upward.
-    let q1perp = cross(position_dy, normal);
-    let q0perp = cross(normal, position_dx);
-    let st_dy = at.dy * ROWS_UP;
-    var tangent = q1perp * at.dx.x + q0perp * st_dy.x;
-    var bitangent = q1perp * at.dx.y + q0perp * st_dy.y;
-    let det = max(dot(tangent, tangent), dot(bitangent, bitangent));
-    let size = select(inverseSqrt(det), 0.0, det == 0.0);
-    tangent *= size * facing;
-    bitangent *= size * facing;
-#endif
-    return normalize(tangent * bent.x + bitangent * bent.y + normal * bent.z);
+    let frame = tangent_frame(input, at, position_dx, position_dy);
+    return normalize(frame[0] * bent.x + frame[1] * bent.y + frame[2] * bent.z);
 }
 #endif
 
@@ -1121,6 +1321,7 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
     s.irradiance = vec3f(0.0);
 #ifdef CUSTOM
     s.reflection = vec4f(0.0);
+    s.lobe = vec4f(0.0);
 #endif
 #ifdef TRANSMISSION
     s.transmission = transmission_row.values.x;
@@ -1147,12 +1348,26 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
     s.clearcoatNormal = input.normal;
     s.sheenColor = coat_sheen_row.sheen.rgb;
     s.sheenRoughness = coat_sheen_row.sheen.w;
+    s.iridescence = film_row.x;
+    s.iridescenceIor = film_row.y;
+    s.iridescenceThickness = film_row.w;
+#ifndef CUSTOM
+    s.anisotropy = anisotropy_row.x;
+    s.anisotropyRotation = anisotropy_row.y;
+    s.anisotropyDirection = vec2f(1.0, 0.5);
+    s.anisotropyMapStrength = 1.0;
+    s.anisotropyTangent = vec3f(0.0);
+    s.anisotropyBitangent = vec3f(0.0);
+#endif
 #else ifdef CUSTOM
     s.clearcoat = 0.0;
     s.clearcoatRoughness = 0.0;
     s.clearcoatNormal = input.normal;
     s.sheenColor = vec3f(0.0);
     s.sheenRoughness = 1.0;
+    s.iridescence = 0.0;
+    s.iridescenceIor = 1.0;
+    s.iridescenceThickness = 0.0;
 #endif
 #ifdef MAPS
     s = with_maps(s, input);
@@ -1232,6 +1447,9 @@ fn vs(v: VertexIn, i: InstanceIn, l: LastIn) -> MotionOut {
     frame.time = motion_block.last_clock.x;
     frame.deltaTime = motion_block.last_clock.y;
     frame.index = bitcast<u32>(motion_block.last_clock.z);
+    // The second call moves the vertex as the frame before did, so a vertex offset that reads
+    // data a pass wrote for both frames takes that frame's part.
+    frame.lastFrame = true;
 #ifdef WEBGL2
     let last = last_transform(found);
 #else
@@ -1360,7 +1578,7 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #endif
 #endif
 #ifdef LOD_FADE
-    out.lod_fade = instance_fade(i);
+    out.lod = instance_lod(i, found.source);
 #endif
 #ifdef OBJECT_MATRICES
     out.world_x = found.row_x;
@@ -1391,9 +1609,25 @@ struct Surrounding {
     irradiance: vec3f,
 }
 
+/// The normal along which the surface reflects the light around it. An anisotropic lobe reflects
+/// about a direction bent away from the normal across its stretched axis, as three.js's
+/// `getIBLAnisotropyRadiance` bends it. Other surfaces reflect about their own normal.
+fn reflection_normal(m: PbrMaterial, normal: vec3f, to_view: vec3f) -> vec3f {
+#ifdef COAT_SHEEN
+    if m.anisotropy > 0.0 {
+        let bitangent = m.anisotropy_b;
+        let across = normalize(cross(cross(bitangent, to_view), bitangent));
+        let weight = pow(1.0 - m.anisotropy * (1.0 - m.roughness), 4.0);
+        return normalize(mix(across, normal, weight));
+    }
+#endif
+    return normal;
+}
+
 fn probe_surrounding(
     relative: vec3f,
     normal: vec3f,
+    radiance_normal: vec3f,
     to_view: vec3f,
     roughness: f32,
 ) -> Surrounding {
@@ -1401,15 +1635,15 @@ fn probe_surrounding(
     var radiance = vec3f(0.0);
     var irradiance = vec3f(0.0);
     if has_environment(env) {
-        radiance = environment_radiance(env, to_view, normal, roughness);
+        radiance = environment_radiance(env, to_view, radiance_normal, roughness);
         irradiance = environment_irradiance(env, normal);
     }
     // A decal modulates the surface under it, which reflects the probes already, so the decal
     // build reads none: that keeps its fragment stage within WebGL2's texture units.
 #ifndef DECAL
     if has_probes() {
-        let reflected = reflected_direction(to_view, normal, roughness);
-        let local = probe_light(relative, reflected, normal, roughness);
+        let reflected = reflected_direction(to_view, radiance_normal, roughness);
+        let local = probe_light(relative, reflected, radiance_normal, roughness);
         radiance = local.radiance + radiance * (1.0 - local.weight);
         irradiance = local.irradiance + irradiance * (1.0 - local.weight);
     }
@@ -1442,9 +1676,10 @@ fn has_surrounding() -> bool {
 /// surface toward the camera, and `dfg` holds the split-sum terms at the surface's roughness and
 /// view angle. `reflection` holds light from the mirror direction and its share, from screen-space
 /// reflections and a custom material's planar reflection, which takes the place of that share of
-/// the reflection probes' and the environment's reflection, with or without either. In the
-/// TRANSLUCENCY builds the lights also gather the light that reaches the surface's back, and the
-/// ambient, hemisphere and environment light from behind goes to `back_indirect`.
+/// the reflection probes' and the environment's reflection, with or without either. `lobe_values`
+/// holds the material's own values for its lobe function, which the engine calls for the main
+/// light. In the TRANSLUCENCY builds the lights also gather the light that reaches the surface's
+/// back, and the ambient, hemisphere and environment light from behind goes to `back_indirect`.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
@@ -1456,6 +1691,7 @@ fn light_surface(
     occlusion: f32,
     contact: f32,
     reflection: vec4f,
+    lobe_values: vec4f,
 ) -> vec3f {
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
     let to_sun = -engine_frame.sun_direction.xyz;
@@ -1488,7 +1724,22 @@ fn light_surface(
     // The layers gather their light first, and the sheen keeps part of it from the base.
     sun_color *= layered_light(normal, to_view, to_sun, sun_color);
 #endif
-    let sun = direct_light(m, normal, to_view, to_sun, sun_color, compensation);
+    var sun = direct_light(m, normal, to_view, to_sun, sun_color, compensation);
+#ifdef CUSTOM_LOBE
+    // The material's own lobe adds its specular beside the base lobe's for the main light. It
+    // knows the light, the view and the half vector, which a surface function cannot see.
+    sun.specular += lobe(LobeInput(
+        normal,
+        to_view,
+        to_sun,
+        normalize(to_sun + to_view),
+        m.roughness,
+        m.specular_blended,
+        sun.specular,
+        saturate(dot(normal, to_sun)) * sun_color,
+        lobe_values,
+    ));
+#endif
 #ifdef TRANSLUCENCY
     gather_back_light(normal, to_sun, sun_color);
     back_indirect = ambient_light(-normal) * occlusion;
@@ -1517,7 +1768,7 @@ fn light_surface(
     if has_surrounding() || mirrored > 0.0 {
 #endif
         let strength = select(0.0, material_row.uv_u.w, has_environment(env));
-        let around = probe_surrounding(relative, normal, to_view, m.roughness);
+        let around = probe_surrounding(relative, normal, reflection_normal(m, normal, to_view), to_view, m.roughness);
         var irradiance = around.irradiance;
         let radiance = mix(around.radiance, reflection.rgb, mirrored);
         // The probe grid takes the environment's diffuse light over where the sketch sets one.
@@ -1568,7 +1819,8 @@ fn shadow_catcher(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         -engine_frame.sun_direction.xyz,
     );
 #endif
-    return fragment_color(material_row, finish(s.baseColor, pixel.xy).rgb, s.alpha * shadow);
+    let shown = finish_material(material_row, s.baseColor, pixel.xy);
+    return fragment_color(material_row, shown.rgb, s.alpha * shadow);
 }
 
 /// The color of a pixel that shows the surface: the light it reflects and the light it gives off,
@@ -1621,10 +1873,53 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     var pbr = with_specular(plain, material_row.uv_v.w, specular.rgb, specular.a);
     pbr.diffuse *= 1.0 - through_share;
 #else
-    let pbr = with_specular(plain, material_row.uv_v.w, specular.rgb, specular.a);
+    var pbr = with_specular(plain, material_row.uv_v.w, specular.rgb, specular.a);
 #endif
     let n_dot_v = saturate(dot(normal, input.viewDirection));
     let dfg = dfg_lut(n_dot_v, pbr.roughness);
+#ifdef COAT_SHEEN
+    // The thin film's Fresnel term tints the specular reflection, and its reflectance at normal
+    // incidence tints the light from all directions, as three.js's physical material sets them.
+    let layer_flags = u32(material_row.strengths.z);
+    if (layer_flags & IRIDESCENCE_FLAG) != 0u {
+        var iridescence = saturate(s.iridescence);
+        if (s.iridescenceThickness <= 0.0) {
+            iridescence = 0.0;
+        }
+        if iridescence > 0.0 {
+            let dielectric = eval_iridescence(
+                1.0, s.iridescenceIor, n_dot_v, s.iridescenceThickness, pbr.specular,
+            );
+            let metallic = eval_iridescence(
+                1.0, s.iridescenceIor, n_dot_v, s.iridescenceThickness, pbr.base_color,
+            );
+            pbr.iridescence = iridescence;
+            pbr.iridescence_fresnel = mix(dielectric, metallic, pbr.metalness);
+            pbr.iridescence_reflectance = schlick_to_reflectance(dielectric, 1.0, n_dot_v);
+            pbr.iridescence_reflectance_metallic = schlick_to_reflectance(metallic, 1.0, n_dot_v);
+        }
+    }
+#ifndef CUSTOM
+    // The anisotropy stretches the specular lobe along a direction of the surface's tangent
+    // frame, which the material's rotation turns and its map bends. three.js sets the same values.
+    if (layer_flags & ANISOTROPY_FLAG) != 0u && length(s.anisotropyTangent) > 0.0 {
+        let direction = normalize(2.0 * s.anisotropyDirection - vec2f(1.0));
+        var stretched = rotate_2d(direction, s.anisotropyRotation)
+            * (s.anisotropy * s.anisotropyMapStrength);
+        var strength = length(stretched);
+        if strength <= 0.0 {
+            stretched = vec2f(1.0, 0.0);
+        } else {
+            stretched /= strength;
+            strength = saturate(strength);
+        }
+        pbr.anisotropy = strength;
+        pbr.alpha_t = mix(pbr.roughness * pbr.roughness, 1.0, strength * strength);
+        pbr.anisotropy_t = s.anisotropyTangent * stretched.x + s.anisotropyBitangent * stretched.y;
+        pbr.anisotropy_b = s.anisotropyBitangent * stretched.x - s.anisotropyTangent * stretched.y;
+    }
+#endif
+#endif
 #ifdef COAT_SHEEN
     // The coat's roughness takes the clearcoat floor and the geometry's roughness, as three.js's
     // physical material does.
@@ -1681,6 +1976,12 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let toward_sun = dot(seen_face, engine_frame.sun_direction.xyz) < 0.0;
     let takes_contact = (u32(material_row.strengths.z) & NO_CONTACT_SHADOWS_FLAG) == 0u;
     let contact = select(1.0, screen.values.w, toward_sun && takes_contact);
+#ifdef CUSTOM
+    // The material's own values for its lobe, or zeros where it has none.
+    let lobe_values = s.lobe;
+#else
+    let lobe_values = vec4f(0.0);
+#endif
     let reflected = light_surface(
         pbr,
         input.relativePosition,
@@ -1692,6 +1993,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         s.occlusion * screen_occlusion(screen.values),
         contact,
         reflection,
+        lobe_values,
     );
 #ifdef TRANSMISSION
     // three.js's getIBLVolumeRefraction: the light from behind, through the diffuse color and less
@@ -1756,7 +2058,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     }
 #endif
 #ifdef LOD_FADE
-    if !lod_kept(lod_fade, pixel.xy) {
+    if !lod_kept(lod.x, pixel.xy, u32(lod.y)) {
         discard;
     }
 #endif
@@ -1785,7 +2087,8 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let fog = select(fog_factor(engine_frame.fog, input.relativePosition), 0.0, unfogged);
     let shade = vignette(pixel.xy, engine_frame.target_size.xy, engine_frame.vignette);
     let shaded = fogged(layered, input.relativePosition, material_row) * shade;
-    let toned = tone_map(shaded, engine_frame.output);
+    let keeps = keeps_display_color(material_row);
+    let toned = select(tone_map(shaded, engine_frame.output), saturate(shaded), keeps);
 #ifdef COAT_SHEEN
     let display = toned + through * share * (1.0 - fog) * coat_transmittance(input.viewDirection);
 #else
@@ -1793,10 +2096,18 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #endif
     let finished = vec4f(encode(saturate(display), pixel.xy), 1.0);
 #else
-    let finished = finish_exposed(fogged(layered, input.relativePosition, material_row), pixel.xy);
+    let finished = finish_exposed_material(
+        material_row,
+        fogged(layered, input.relativePosition, material_row),
+        pixel.xy,
+    );
 #endif
 #else
-    let finished = finish_exposed(fogged(layered, input.relativePosition, material_row), pixel.xy);
+    let finished = finish_exposed_material(
+        material_row,
+        fogged(layered, input.relativePosition, material_row),
+        pixel.xy,
+    );
 #endif
 #ifdef DECAL
     let shown = saturate(s.alpha) * decal_fade;
@@ -1828,6 +2139,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     material_row = material_of(in.material);
 #ifdef TRANSMISSION
     transmission_row = material_transmission(in.material);
+    layer_maps_kind = layer_maps_kind_of(in.material);
     object_scale = in.scale;
 #else ifdef TRANSLUCENCY
     translucency_row = material_translucency(in.material);
@@ -1839,12 +2151,14 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #ifdef COAT_SHEEN
     coat_sheen_row = material_coat_sheen(in.material);
+    film_row = material_iridescence(in.material);
+    anisotropy_row = material_anisotropy(in.material);
 #endif
 #ifdef ALPHA_HASH
     hash_place = in.mesh_place;
 #endif
 #ifdef LOD_FADE
-    lod_fade = in.lod_fade;
+    lod = in.lod;
 #endif
 #ifdef DISPLACEMENT
     height_scale = in.heights.x;

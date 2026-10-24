@@ -3,7 +3,7 @@ id: api/render
 title: Render graph API
 status: experimental
 since: "0.2"
-summary: "render.addPass for scene passes, reflection passes and full-screen passes of your own WGSL that draw into textures; half and quarter render sizes; the outline mask as an input; switching and removing passes; render.dumpGraph."
+summary: "render.addPass for scene passes, reflection passes, full-screen passes and compute passes of your own WGSL that write into textures; half and quarter render sizes; the outline mask as an input; switching and removing passes; render.dumpGraph."
 ---
 
 # Render graph API
@@ -18,7 +18,7 @@ flowchart LR
     opaque --> final["Final pass"] --> canvas[("canvas")]
 ```
 
-`ctx.render` adds passes of your own to the engine's [render graph](../concepts/render-graph.md). A scene pass draws the scene from a second camera into a texture. `textures.fromPass` gives that texture to materials and sprites, so a minimap, a security camera's screen or a portal shows it. A reflection pass draws the camera's view mirrored across a plane, for water and polished floors ([Reflection passes](#reflection-passes)). A full-screen pass runs WGSL of your own over a texture, such as a blur step or a texture that the GPU paints ([Full-screen passes](#full-screen-passes)). The render graph orders the passes, plans their memory and checks them as one.
+`ctx.render` adds passes of your own to the engine's [render graph](../concepts/render-graph.md). A scene pass draws the scene from a second camera into a texture. `textures.fromPass` gives that texture to materials and sprites, so a minimap, a security camera's screen or a portal shows it. A reflection pass draws the camera's view mirrored across a plane, for water and polished floors ([Reflection passes](#reflection-passes)). A full-screen pass runs WGSL of your own over a texture, such as a blur step or a texture that the GPU paints ([Full-screen passes](#full-screen-passes)). A compute pass runs a compute shader over a storage texture that materials, effects and passes sample in the same frame ([Compute passes](#compute-passes)). The render graph orders the passes, plans their memory and checks them as one.
 
 ## A minimap
 
@@ -208,7 +208,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render, pos
 | `size` | The texture's size in pixels, as `[width, height]`. | Give `size` or `scale` |
 | `scale` | The texture's size as a share of the render size each way: `1`, `0.5` or `0.25`. The texture shrinks and grows with the render scale. | 1, without `size` |
 | `input` | The image that the pass reads: `'sceneColor'`, the scene's color as the camera's passes leave it, before custom effects and bloom, or `'outlineMask'`, the [outline](post.md#outlines)'s mask. | None: transparent black |
-| `textures` | The texture of each `var name: texture_2d<f32>;` that the WGSL declares, by name: textures from files or data, or other passes' textures from `textures.fromPass`. | None: white |
+| `textures` | The texture of each `var name: texture_2d<f32>;` that the WGSL declares, by name, or a texture of several layers for a `var name: texture_2d_array<f32>;` declaration: textures from files or data, or other passes' textures from `textures.fromPass`. | None: white |
 | `uniforms` | The first value of each field of the WGSL's `struct Uniforms`, by name. | 0 for each field |
 | `every` | The pass draws in one frame of every `every`, and the texture keeps its last image between. | 1: every frame |
 | `name` | The pass's name in `render.dumpGraph()` and errors. | `writes` |
@@ -219,8 +219,129 @@ export default defineSketch(({ scene, materials, geometry, textures, render, pos
 - `render.setPassUniform(pass, name, value)` changes a uniform from the next frame on. It allocates nothing. The textures are fixed when the pass is added.
 - A pass runs only while something shows or reads its texture: a material, a custom effect, another pass's `textures`, or a scene pass's `reads`.
 - A pass with an `input`, or whose WGSL reads the depth, runs after the camera's passes. A custom effect that reads its texture sees the pass's image of the same frame. A material that shows it shows the image of the frame before.
-- With `input: 'outlineMask'`, red holds the outlined objects' coverage and green the parts that nothing hides. The mask draws only while outlines are on and an object is outlined. `width: 0` draws the mask without the engine's line.
+- With `input: 'outlineMask'`, red holds the outlined objects' coverage and green the parts that nothing hides. Blue marks the surfaces that keep their display color, which the HDR path's final pass reads, so read red and green alone. The mask draws while outlines are on and an object is outlined, or while a material with `toneMapped: false` draws on the HDR path. `width: 0` draws the mask without the engine's line.
 - The pass texture holds high dynamic range color where the device draws it, as a scene pass's texture does. On devices that draw 8-bit color, values above 1 clip, and the `'sceneColor'` input holds display color, after the tone curve.
+
+## Compute passes
+
+`render.addPass({ kind: 'compute', ... })` runs a compute shader over a texture of its own. The shader fills the texture as a storage texture, and materials, effects and other passes sample it in the same frame. The render graph orders the pass before its readers, so no copy and no wait is needed.
+
+```ts
+import { defineFeature, defineSketch } from '@null3d/engine';
+
+const waves = /* wgsl */ `
+struct ComputeBlock {
+    size: vec4f,
+    clock: vec4f,
+    inverseProjection: mat4x4f,
+    u0: vec4f,
+    u1: vec4f,
+    u2: vec4f,
+    u3: vec4f,
+    u4: vec4f,
+    u5: vec4f,
+    u6: vec4f,
+    u7: vec4f,
+    drawn: vec4f,
+    bloom: vec4f,
+}
+
+@group(0) @binding(0) var<uniform> block: ComputeBlock;
+@group(0) @binding(1) var field: texture_storage_2d_array<rgba16float, write>;
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+    let size = vec2u(block.drawn.xy);
+    if (id.x >= size.x || id.y >= size.y) { return; }
+    let p = vec2f(id.xy) / vec2f(size);
+    let height = sin(p.x * 30.0) * cos(p.y * 24.0);
+    textureStore(field, vec2i(id.xy), 0, vec4f(0.5 + 0.5 * height, 0.0, 0.0, 1.0));
+}
+`;
+
+const wavesFragments = /* wgsl */ `
+fn effect(input: EffectInput) -> vec4f {
+    // The pass texture holds its first row at the bottom, and input.uv counts from the top left.
+    let p = vec2f(input.uv.x, 1.0 - input.uv.y);
+    let height = sin(p.x * 30.0) * cos(p.y * 24.0);
+    return vec4f(0.5 + 0.5 * height, 0.0, 0.0, 1.0);
+}
+`;
+
+export default defineSketch(({ materials, geometry, scene, textures, render }) => {
+  const field = render.addPass({
+    kind: 'compute',
+    description: defineFeature({
+      name: 'waves',
+      frame: 'background',
+      kind: 'compute',
+      outputs: { waves: { default: 'black' } },
+    }),
+    wgsl: waves,
+    fallback: { wgsl: wavesFragments },
+  });
+  const water = materials.unlit({ map: textures.fromPass(field) });
+  scene.createMesh({ mesh: geometry.plane({ width: 8, height: 8 }), material: water });
+  return {};
+});
+```
+
+| Option | Meaning | Default |
+| --- | --- | --- |
+| `kind` | `'compute'`: the pass runs `wgsl` once for each workgroup of its dispatch. | Required |
+| `description` | The feature description that places the pass. Its one output names the texture that the pass writes. | Required |
+| `wgsl` | WGSL that the null3D Vite plugin compiled, with a `@compute` entry point. | Required |
+| `format` | The texture's format: `'rgba16float'` for high dynamic range color, `'r32float'` for one number per pixel, or `'rgba8unorm'` for 8-bit color. | `'rgba16float'` |
+| `workgroupSize` | The invocations along each axis of a workgroup. | The shader's `@workgroup_size` |
+| `dispatch` | `'writes'` covers the texture: the size divided by the workgroup size, rounding up. Three whole numbers give the workgroup counts along each axis. | `'writes'` |
+| `size` | The texture's size in pixels, as `[width, height]`. | Give `size` or `scale` |
+| `scale` | The texture's size as a share of the render size each way: `1`, `0.5` or `0.25`. | 1, without `size` |
+| `textures` | Up to 6 textures that the shader samples, in the order of its map slots: from files or data, or other passes' textures from `textures.fromPass`. | None: white |
+| `values` | Up to 32 numbers, which the shader reads as eight vectors in its block. | 0 |
+| `fallback` | The fragment form of the pass, which a WebGL2 page runs in its place. | None |
+| `buffers` | The two buffers of one instance draw that the pass fills, in binding order: the draw's count word, then its per-instance rows. A pass with buffers has no texture, publishes no output, gives its dispatch counts, and runs on WebGPU alone. | None |
+| `every` | The pass runs in one frame of every `every`, and the texture keeps its last image between. | 1: every frame |
+| `name` | The pass's name in `render.dumpGraph()` and errors. | The output's name |
+
+### What the shader declares
+
+The shader declares its own bindings. Group 0 holds the pass's block at binding 0 and its storage texture at binding 1:
+
+```wgsl
+@group(0) @binding(0) var<uniform> block: ComputeBlock;
+@group(0) @binding(1) var output: texture_storage_2d_array<rgba16float, write>;
+```
+
+- The block holds the render size in `size.xy` and the canvas size in `size.zw`. It holds the sketch time in `clock.x` and the seconds since the frame before in `clock.y`. `inverseProjection` is the inverse of the camera's projection, `u0` to `u7` are the eight vectors of `values`, and `drawn.xy` is the texture's size in texels. It is the same block that a full-screen pass gives its WGSL.
+- The storage texture is read as an array of one layer, as every pass texture is sampled. Write layer 0.
+- Group 1 binds the `textures` option in the order that the array gives it. A texture array sits at each binding from 0, then each one's sampler after every texture, then the displacement map's array and sampler. A texture that the option leaves out samples as white.
+
+### A pass that fills an instance draw's buffers
+
+`buffers: [draw.counts, draw.instances]` makes the pass write the two buffers of an instance draw from [`scene.addComputeInstances`](feature-instances.md) instead of a texture. The description publishes no output. The pass gives its workgroup counts, such as `[1, 1, 1]` for a shader that writes every instance in one workgroup. A pass fills one target: its texture, or the draw's two buffers.
+
+The shader declares the block at binding 0, the count word at binding 1 and the instance rows at binding 2:
+
+```wgsl
+@group(0) @binding(0) var<uniform> block: ComputeBlock;
+@group(0) @binding(1) var<storage, read_write> counts: atomic<u32>;
+@group(0) @binding(2) var<storage, read_write> instances: array<vec4f>;
+```
+
+Each row is four `vec4f`: the three rows of an instance's world matrix, with its translation in each row's `w`, then its ids. The engine copies the count word into the draw's indirect arguments after the pass. The count that the shader writes is then the count that the draw renders. The draw reads the rows through its vertex stage.
+
+### Reading the texture in the same frame
+
+- `textures.fromPass(pass)` gives the texture to a material's map, a custom effect's `textures`, or another pass's `textures`. The material shows the pass's image of the same frame when the pass runs before the camera's passes, as `frame: 'background'` or `'opaque'` does. A custom effect that reads it also sees the same frame.
+- A custom material's vertex offset that reads the texture orders the pass before every pass that draws the material: the camera's passes, the shadow views, the motion pass and a pick. A tree and its shadow therefore move with the same data. A pass at `'resolve'` or `'post'` draws after the scene, so no shadow or motion pass reads it.
+- The feature description's frame point sets one ordering rule. At `'resolve'` or `'post'`, the pass reads the scene color, so it runs after the camera's passes. At `'background'`, `'opaque'` or `'transparent'`, the passes that sample its texture order it.
+- `render.setPassUniforms(pass, values)` changes the values from the next frame on. The array's first number takes `u0`'s first component. It allocates nothing, so a sketch can change the values every frame.
+- A pass runs only while something shows or reads its texture. A pass that nothing reads costs nothing. Switch it with `render.setPassEnabled(pass, false)` while your feature's `ready` says it draws nothing, and set its values from the feature's settings.
+- The texture holds zeros until the pass runs, so a reader sees the output's `'black'` or `'transparent'` default. Give the output `'white'` and the call throws E1223.
+
+### WebGL2
+
+WebGL2 has no compute shaders. A WebGL2 page runs the `fallback` WGSL as a full-screen pass, with the same values, textures, size, scale and pace. The values keep their positions: the fields of the fragment form's `struct Uniforms` start at the same floats as the compute block's `u0`. Give no fallback when the work needs atomics, shared memory or a write to a place that the shader chooses, because a fragment shader cannot do those. The call then throws E1220 on WebGL2. The engine draws a compute pass on WebGPU only.
 
 ### Switching and removing passes
 
@@ -248,9 +369,10 @@ console.log(render.dumpGraph());
 
 | Code | Cause |
 | --- | --- |
-| E1220 | Options that `render.addPass` does not take, a `writes` or `name` that another pass has, or a 32nd pass. Both a `size` and a `scale`, or a scene pass with neither. A reflection's plane without a point, a normal of no length, or a `scale` or `every` that it does not take. An `input` other than `'sceneColor'` or `'outlineMask'`. Or something that is not a render pass, given to `render.setPassEnabled`, `render.removePass`, `render.setPassUniform` or `textures.fromPass`, or a pass of another kind given to `render.setPassUniform`. |
-| E1215 | A full-screen pass's WGSL that the null3D Vite plugin did not compile as an effect. |
+| E1220 | Options that `render.addPass` does not take, a `writes` or `name` that another pass has, or a 32nd pass. Both a `size` and a `scale`, or a scene pass with neither. A reflection's plane without a point, a normal of no length, or a `scale` or `every` that it does not take. An `input` other than `'sceneColor'` or `'outlineMask'`. A compute pass on WebGL2 with no fallback, a workgroup size that a device cannot run, or a format that a compute pass does not write. Or something that is not a render pass, given to `render.setPassEnabled`, `render.removePass`, `render.setPassUniform`, `render.setPassUniforms` or `textures.fromPass`, or a pass of another kind given to them. |
+| E1215 | A full-screen pass's WGSL that the null3D Vite plugin did not compile as an effect, or a compute pass's WGSL without a `@compute` entry point. |
 | E1216 | A uniform or a texture that the full-screen pass's WGSL does not declare, or a value of the wrong kind. |
+| E1223 | A compute pass whose feature description is not a compute feature, has no frame point, records in another view, reads a scene resource, or publishes anything but one output whose default is `'black'` or `'transparent'`. |
 | E1502 | A name in `reads` that no pass writes. Or `render.removePass` on a pass whose texture another pass reads. |
 | E1503 | A `writes` name that the engine's own passes write, such as `sceneColor`. |
 | E1504 | A pass that reads its own texture, or passes that read each other's textures. |
@@ -262,6 +384,8 @@ The core checks the whole graph when `render.addPass`, `render.removePass` or `t
 ## Related pages
 
 - [Custom passes and render targets](../guides/custom-passes.md): render-to-texture with examples, reflections, a water recipe, full-screen passes and custom effects.
+- [Multiple views](../guides/multiple-views.md): a second camera drawn into a rectangle of the canvas, for split screens and picture in picture.
+- [Scene](../api/scene.md#multiple-views): `scene.createView`.
 - [Surface functions](../shaders/surface-functions.md#reflections): the surface's `reflection`.
 - [The render graph](../concepts/render-graph.md): how the graph orders passes and plans their memory.
 - [Textures](textures.md): `textures.fromPass`.

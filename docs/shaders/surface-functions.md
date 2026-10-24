@@ -3,12 +3,12 @@ id: shaders/surface-functions
 title: Surface functions
 status: experimental
 since: "0.1"
-summary: "The surface record; uniforms and textures; reflections; transmission; light through thin surfaces; clear coat and sheen; vertex-offset functions; values per row of a batch; second texture coordinates, pixel position and instance index."
+summary: "The surface record; uniforms and textures; reflections; transmission; light through thin surfaces; clear coat and sheen; vertex-offset functions; a material's own lobe; values per row of a batch; second texture coordinates, pixel position and instance index."
 ---
 
 # Surface functions
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, textures, values per row of a batch, the diffuse transmission fields, the clear coat and sheen fields, the second texture coordinates, the pixel's position and the instance's index. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, textures, values per row of a batch, the diffuse transmission fields, the clear coat and sheen fields, the second texture coordinates, the pixel's position and the instance's index. Step 0.3 adds a material's own specular lobe. The API is experimental, so it can still change between versions.
 
 A surface function changes how a material's surface looks, and keeps the engine's lighting. You write it in WGSL. For each pixel, the engine gives it a `SurfaceInput`, and it returns a `Surface`: the base color, roughness, metalness, normal and light of that point. The engine then lights the surface with the scene's lights and shadows, as it lights a standard material. The function works on every GPU path, because the null3D Vite plugin builds it into the standard material's shader for WebGPU and WebGL2.
 
@@ -38,7 +38,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 `materials.shader(options)` makes a custom material. Its `wgsl` option holds the WGSL. Its `uniforms` and `textures` options give the values of the WGSL's [uniforms](#uniforms) and [textures](#textures). Its other options are those of `materials.standard`, but the texture maps, which a custom material samples as textures of its own. [Materials](../api/materials.md) lists them.
 
 - Write the WGSL in a template literal right after a `/* wgsl */` comment, or in a `.wgsl` file that your sketch imports. The plugin compiles it while Vite serves or builds the project. [Custom shaders](../guides/custom-shaders.md) says how.
-- The WGSL declares `fn surface(input: SurfaceInput) -> Surface`, `fn vertexOffset(input: VertexInput) -> vec3f` ([vertex offsets](#vertex-offsets)), or both, and no `@vertex` or `@fragment` entry point. For a look that the engine's lighting cannot give, write a [full shader](../guides/custom-shaders.md#full-shaders) instead.
+- The WGSL declares `fn surface(input: SurfaceInput) -> Surface`, `fn vertexOffset(input: VertexInput) -> vec3f` ([vertex offsets](#vertex-offsets)), `fn lobe(input: LobeInput) -> vec3f` ([a material's own lobe](#a-materials-own-lobe)), or some of them, and no `@vertex` or `@fragment` entry point. For a look that the engine's lighting cannot give, write a [full shader](../guides/custom-shaders.md#full-shaders) instead.
 - `set()` changes the standard values, such as `color` and `roughness`, as it does for a standard material. The surface function sees them through `defaultSurface`.
 - Materials made from the same WGSL share one shader. Make one material for each look, as you do for standard materials.
 - A mesh needs texture coordinates to draw with a custom material. The geometry generators give every mesh texture coordinates. For a mesh from `geometry.fromArrays`, pass `uvs`.
@@ -78,6 +78,7 @@ A `Surface` holds the values that the engine lights. Colors are linear, as the e
 | `emissive` | `vec3f` | Light that the point gives off itself, added after lighting |
 | `occlusion` | `f32` | How much of the ambient light and the irradiance reaches the point, from 0 to 1 |
 | `irradiance` | `vec3f` | Baked light that reaches the point, such as a light map's, added to the ambient light |
+| `lobe` | `vec4f` | Four values for the material's own lobe function ([A material's own lobe](#a-materials-own-lobe)) |
 | `reflection` | `vec4f` | Light from the mirror direction in `rgb`, such as a reflection pass's color, and in `a` how much of it takes the place of the environment's reflection, from 0 to 1 ([Reflections](#reflections)) |
 | `transmission` | `f32` | How much of the light behind the point passes through it, from 0 to 1, in a material that lets light through ([Transmission](#transmission)) |
 | `thickness` | `f32` | The thickness of the volume under the point, in the mesh's own units, which bends the light that passes through |
@@ -88,6 +89,9 @@ A `Surface` holds the values that the engine lights. Colors are linear, as the e
 | `clearcoatNormal` | `vec3f` | The coat's unit normal in world space. It starts as the input's normal, before any normal map bends the surface under it |
 | `sheenColor` | `vec3f` | The linear color of the sheen of cloth and velvet. Black gives none |
 | `sheenRoughness` | `f32` | The sheen's perceptual roughness, from 0 to 1 |
+| `iridescence` | `f32` | How much a thin film above the point tints its reflection, from 0 to 1 ([Iridescence and anisotropy](../api/materials.md#iridescence-and-anisotropy)) |
+| `iridescenceIor` | `f32` | The film's index of refraction, 1 or more |
+| `iridescenceThickness` | `f32` | The film's thickness in nanometers |
 
 `defaultSurface(input)` returns the surface that the material's own options make. The base color is `color` times the vertex color. `metalness`, `roughness` and the emissive light come from the options too. The normal is the input's normal, the occlusion is 1, and the irradiance and the reflection are zero. The transmission, the thickness, the diffuse transmission and its color, and the layers' values are the material's, and the coat's normal is the input's. Start from it, and change only the fields that your look needs:
 
@@ -102,6 +106,34 @@ fn surface(input: SurfaceInput) -> Surface {
 ```
 
 To show a value while you work on a function, put it in the emissive light and make the base color black: `s.emissive = vec3f(value); s.baseColor = vec3f(0.0);`.
+
+## A material's own lobe
+
+A material can add its own specular lobe beside the base lobe. Declare `fn lobe(input: LobeInput) -> vec3f` next to its surface function. The engine calls it for the main directional light and adds the color it returns to that light's specular.
+
+```wgsl
+fn lobe(input: LobeInput) -> vec3f {
+    // A red rim where the surface nearly faces the light.
+    let rim = 1.0 - saturate(dot(input.normal, input.light));
+    return input.specular * rim * rim * vec3f(1.0, 0.2, 0.1);
+}
+```
+
+| Field | Type | What it holds |
+| --- | --- | --- |
+| `normal` | `vec3f` | The surface's unit normal in world space |
+| `view` | `vec3f` | The unit direction from the surface toward the camera |
+| `light` | `vec3f` | The unit direction from the surface toward the main light |
+| `half` | `vec3f` | The unit half vector between the light and the view |
+| `roughness` | `f32` | The surface's perceptual roughness, after the engine's filter |
+| `f0` | `vec3f` | The specular reflectance at normal incidence |
+| `specular` | `vec3f` | The specular radiance that the base lobe reflects from the main light, before the layers |
+| `irradiance` | `vec3f` | The main light's irradiance on the surface: the cosine, the color and the shadow |
+| `values` | `vec4f` | The four values that the surface function wrote to `s.lobe` |
+
+The surface function passes four values to the lobe through `s.lobe`, and the lobe reads them as `input.values`. Use them for what the lobe needs from the surface, such as a footprint, a mask or a random value. `defaultSurface` leaves them zero.
+
+The lobe runs for the main directional light alone. Point, spot and area lights draw with the base lobe only, so a look that needs their glints is not built. A material that declares no lobe pays nothing, and the lobe runs in the builds of a material that declares one alone.
 
 ## Uniforms
 
@@ -170,20 +202,45 @@ const metal = materials.shader({ wgsl: worn, color: '#b0b4b8', textures: { detai
 ```
 
 - Sample a texture with the WGSL texture functions: `textureSample`, `textureSampleLevel`, `textureSampleBias`, `textureSampleGrad`, `textureGather` and `textureLoad`. `textureDimensions` and `textureNumLevels` work too. Pass the texture straight to the function. The engine keeps each texture as a layer of a texture array, so it adds the layer to each such call. A texture cannot go to a function of your own, so sample it where you need it.
+- `textureGather` draws on WebGPU alone: WebGL2's shader language has no gather, so a material that uses it fails to link there. Read the four texels with `textureLoad` where a material draws on both paths.
+- A texture array declares `var name: texture_2d_array<f32>;` instead, and the surface function picks the layer. Give the slot a texture of several layers, and each texture function takes the layer after the coordinates: `textureSampleLevel(facades, facadesSampler, uv, layer, 0.0)`. The layer is the texture's own, from 0 to its depth less 1, so one array serves every facade or window in a set and the shader chooses one for each pixel. `textureNumLayers(name)` gives the number of layers. A texture array takes one map slot and one number of the uniforms, as a 2D texture does.
 - A vertex offset samples textures too, with `textureSampleLevel` or `textureLoad`, as WGSL allows in a vertex shader. A height map then moves each vertex.
 - Each texture's sampler takes the `wrap` and `filter` options of the texture. The `colorSpace` option says whether sampling turns sRGB colors into linear ones, as for the maps of a standard material.
 - Until a texture's image is on the GPU, sampling it gives white: `vec4f(1.0)`. So does a texture that the WGSL declares and the `textures` option does not give. Multiply by a texture, and the material draws with its own values until the image arrives.
-- A material samples up to 6 textures. Each texture takes one of the 32 numbers of the uniforms, so a material with 2 textures has 30 numbers for its uniforms. On WebGL2 the engine's lighting takes 7 of a fragment shader's 16 texture units. A lit material with all 6 textures thus leaves 3 units free.
+- A material samples up to 6 textures. Each texture takes one of the 32 numbers of the uniforms, so a material with 2 textures has 30 numbers for its uniforms. On WebGL2 the engine's lighting takes 7 of a fragment shader's texture units, which are at least 16. A lit material with all 6 textures thus leaves 3 units free on a device with 16. When the maps and a material's textures together would pass the stage's units, the engine refuses the material with E1209, before the device fails to link its shader.
 - The textures are fixed when the material is created. Make a second material for another set of textures.
-- A texture is 2D, with one layer: an image, a KTX2 file or data with a depth of 1. Data textures of `rgba16float` sample with filtering too.
+- A texture is 2D, with one layer: an image, a KTX2 file or data with a depth of 1. A texture array comes from `textures.fromData` with a `depth`, or from a KTX2 file that holds layers, and its layers all have the texture's size. Data textures of `rgba16float` sample with filtering too.
 - In TypeScript, the `textures` option takes only the names that the WGSL declares. A wrong name fails the type check.
 
-`materials.shader` throws E1216 for a texture name that the WGSL does not declare, and for a value that is not a texture of one layer. The build stops at these problems:
+A facade material samples one texture array of six window images, and picks the window for each pixel:
+
+```ts
+// sketch.ts
+const facade = /* wgsl */ `
+var facades: texture_2d_array<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let layer = clamp(i32(input.uv.x * 6.0), 0, 5);
+    let window = textureSampleLevel(facades, facadesSampler, input.uv, layer, 0.0).rgb;
+    s.baseColor *= window;
+    s.emissive = window * 0.4;
+    return s;
+}
+`;
+
+// In the setup:
+const facades = textures.fromData({ width: 64, height: 64, depth: 6, data: windowImages, colorSpace: 'srgb' });
+const wall = materials.shader({ wgsl: facade, textures: { facades } });
+```
+
+`materials.shader` throws E1216 for a texture name that the WGSL does not declare, for a value that is not a texture, and for a texture of several layers in a slot that a `texture_2d<f32>` declaration takes. The build stops at these problems:
 
 - A texture of another type, or a texture with `@group` or `@binding`.
 - A sampler that the WGSL declares itself.
 - A seventh texture.
 - A texture that does not go straight to a texture function.
+- `textureNumLayers` of a texture that the WGSL declares as a 2D texture.
 
 Full shaders take no textures in this version.
 
@@ -213,6 +270,52 @@ Give the pass's texture to the material with `textures: { mirror: textures.fromP
 - The reflection works with or without an environment.
 - `reflection_uv(clip, offset)` gives the texture coordinates of the point whose clip position is `clip`. The texture holds the mirrored image, so the function turns the screen's x around. `offset` moves the place in texture coordinates. A ripple's tilt, such as `s.normal.xz * 0.05`, makes the reflection waver.
 - Roughness does not blur the reflection, which keeps the pass's resolution. A reflection at a quarter of the render size looks soft.
+
+## The scene's depth
+
+A surface function reads the depth of the opaque scene behind its point. The engine copies that depth after the opaque pass, and a blended surface draws after the copy. Declare the input with `sceneInputs: ['sceneDepth']`, then call one of the helpers:
+
+| Function | What it gives |
+| --- | --- |
+| `sceneDepth(uv)` | The scene's depth at the screen's place `uv`: 1 at the camera's near plane and 0 at its far plane, and 0 where nothing drew |
+| `sceneDistance(uv)` | The distance in front of the camera of the surface at `uv`, in world units |
+
+```wgsl
+struct Uniforms { shallow: vec3f, deep: vec3f, foam: vec3f }
+
+/// The distance in front of the camera of a depth value, as sceneDistance converts the copy's.
+fn distance_of(depth: f32) -> f32 {
+    let near = engine_frame.camera_range.x;
+    let far = engine_frame.camera_range.y;
+    if engine_frame.camera_position.w > 0.5 {
+        return near * far / (near + depth * (far - near));
+    }
+    return far - depth * (far - near);
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let uv = input.fragCoord.xy / frame.resolution;
+    // The water's depth along the view ray: the gap to the surface behind the sheet.
+    let gap = max(sceneDistance(uv) - distance_of(input.fragCoord.z), 0.0);
+    s.baseColor = mix(material.shallow, material.deep, smoothstep(0.05, 1.5, gap));
+    // Foam where an opaque surface nearly touches the sheet.
+    s.baseColor = mix(s.baseColor, material.foam, 1.0 - smoothstep(0.0, 0.12, gap));
+    s.alpha = smoothstep(0.0, 0.12, gap);
+    return s;
+}
+```
+
+- `input.fragCoord` counts pixels from the top left on both GPU paths, so `input.fragCoord.xy / frame.resolution` is the screen's place.
+- The water's depth is the gap between the sheet and the surface behind it, not the distance to that surface alone. A shore that fades its alpha over the last centimeters of the gap ends softly against the bank, instead of on the sheet's edge.
+- Read the helpers in the surface function, not in a vertex offset. The depth belongs to the pixels, and the vertex stage does not bind it.
+- A surface that draws before the copy exists reads 0, the far plane. That is a surface in the opaque pass, and any surface in a scene pass or a reflection pass.
+- The engine makes the copy while a material that declares the input draws, whatever the quality preset says.
+- `sceneDistance` takes a perspective and an orthographic camera. On WebGL2, the values are the depth that the device stores, so a device that draws `reversed-gl` depth gives less precise distances.
+- A material that reads the scene's depth takes up to seven textures of its own. Its maps' group gives up one slot, which leaves the copy of the depth the fragment stage's last sampled texture.
+- Development builds throw E1217 when the declaration and the WGSL disagree, and for a material with both the depth and eight textures.
+
+[Custom materials](../api/materials.md#the-scene-behind-a-surface) gives the options and the cases where an input is absent.
 
 ## Transmission
 
@@ -309,7 +412,8 @@ fn surface(input: SurfaceInput) -> Surface {
 const stone = materials.shader({ wgsl: wet, color: '#8d8a84', roughness: 0.85 });
 ```
 
-- Only WGSL that sets or reads one of the five fields builds the shaders that light the layers. Such a material always has them, and its layer options give `defaultSurface` their values. A layer option on a material whose WGSL never names the fields throws E1217.
+- Only WGSL that sets or reads one of the fields builds the shaders that light the layers. Such a material always has them, and its layer options give `defaultSurface` their values. A layer option on a material whose WGSL never names the fields throws E1217.
+- The three iridescence fields work as the coat's and the sheen's do. Anisotropy needs the standard material's tangent frame, which a surface function does not have, so a custom material cannot set it yet.
 - Ripples on the water of a wet surface only need `clearcoatNormal`: the coat then shows them while the stone under it stays still.
 
 ## Vertex offsets
@@ -373,7 +477,7 @@ fn surface(input: SurfaceInput) -> Surface {
 
 Your WGSL shares one file with the engine's standard material, so a few rules apply besides the [WGSL rules for portable shaders](wgsl-rules.md):
 
-- Do not declare a name that the engine declares. The build stops at your line when a name clashes. The engine's names are `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `custom_texture_layers`, `load_custom_texture_layers`, `VertexIn`, `VertexOut`, `vs`, `fs` and `FLAT_SHADING`. They also include the library items that the standard material imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_exposed`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`. WGSL that reads `instance` or `object.id` also meets `object_ids`, and WGSL that reads the object's matrices meets `affine_matrix` and `affine_normal_matrix`.
+- Do not declare a name that the engine declares. The build stops at your line when a name clashes. The engine's names are `SurfaceInput`, `Surface`, `VertexInput`, `LobeInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `custom_texture_layers`, `load_custom_texture_layers`, `VertexIn`, `VertexOut`, `vs`, `fs`, `FLAT_SHADING`, `sceneDepth`, `sceneDistance`, `scene_depth_copy` and `scene_depth_texel`. They also include the library items that the standard material imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_exposed`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`. WGSL that reads `instance` or `object.id` also meets `object_ids`, and WGSL that reads the object's matrices meets `affine_matrix` and `affine_normal_matrix`. The names `surface`, `vertexOffset` and `lobe` are yours to declare.
 - Import library items by name, as in `#import null3d::noise::{fbm3}`. An import of a whole module reserves the module's name. After `#import null3d::color`, no name in the file can be `color`.
 - The WGSL cannot hold directives such as `enable`.
 - Do not declare a name that ends in `Sampler` after a texture's name, such as `detailSampler` beside `detail`. The engine declares it.

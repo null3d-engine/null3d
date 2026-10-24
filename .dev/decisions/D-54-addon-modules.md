@@ -174,5 +174,318 @@ Two runs each. The differences are within the Mac's run-to-run spread.
 - **Public API only.** Add-ons and examples reach the engine only through `@null3d/engine` and `@null3d/engine/stats`. `bun tools/check-addon-imports.ts`, which `bun run check` runs, enforces it. Particles are no exception: their add-on uses the public `scene.createParticleBuffer`.
 - **Foundations.** The engine's team builds physics, Gaussian splats, MSDF text, particles, terrain, water, controls, geometry, impostors and `three-compat`. M3's content add-ons are example add-ons in `examples/addons/`.
 - **Publishing.** Each foundation add-on is its own npm package, never a sub-path of the engine package. It keeps this record's rule: its version stays in step with the engine's, through an exact pin. It also checks the engine's version at run time.
-- **WGSL compiled when packed.** An add-on's package ships its shaders compiled, because a browser cannot import a `.wgsl` file from a CDN, which this record promises. The fresh-project test installs terrain and particles, and the CDN test loads one add-on.
+- **WGSL compiled when packed.** An add-on's package ships its shaders compiled, because a browser cannot import a `.wgsl` file from a CDN, which this record promises. The fresh-project test installs terrain and particles, and the CDN test loads one add-on. M3-D1 lands it: `tools/lib/packages.ts` compiles each `.wgsl` file of a package's `src/` while it builds `lib/`, into the module shape that the plugin writes for a project's own WGSL. The module holds the compiled shader and a file per set of a custom material's builds, which a device loads when it first needs one, so a page downloads only the sets of its own GPU path. The pack check requires each compiled module and refuses a tarball that holds the raw file. A shader that does not compile fails the pack with the file, line and column, so a broken shader stops the publish rather than a user's page. An add-on then needs no `@null3d/vite-plugin` peer for its shaders.
 - **Versions for other developers.** Their add-ons get a plugin interface version and a listing check in M4, before the API freezes at 1.0.
+
+## Addendum, 22 October 2026: the CDN build for a page with no bundler
+
+M3-O1 builds a page that draws a scene with one HTML file and no bundler, from a CDN, as three.js
+allows. The record above settled how a page's engine files may come from another origin. This
+addendum settles what such a page loads and how it is made.
+
+### The gap
+
+The engine's npm package carries no built shader JavaScript, because a project's Vite build takes
+it from the release asset (above). A page that has no build step has no plugin to resolve those
+imports, so its copy of `lib/` alone fails: the engine's import of `../generated/shaders.js`
+answers no file. Every other address the engine loads is relative to its own module, and the
+`blob:` bootstrap already starts each worker from another origin.
+
+### The build
+
+`bun run build:cdn` writes `target/cdn`, or the folder that `--out` names:
+
+- the engine's built JavaScript and declarations, from the engine package's build
+- the generated shader modules that this machine's shader build writes, in `lib/generated`
+- both WebAssembly builds
+- the vendor files: the KTX2 transcoder, the meshopt and Draco decoders, and the area lights' table
+
+A page imports `lib/index.js` from that folder with a plain `<script type="module">`, or through
+an import map that gives `@null3d/engine` that address. `docs/getting-started/cdn.md` gives the
+page and the policy. The folder keeps the package's layout, so every relative address in the
+engine's files resolves on the CDN.
+
+The build stamps the folder with a hash of the engine's source files and of the files it copies, so
+a second run in the same checkout writes nothing. On 22 October 2026 the first build in a checkout
+wrote 6,656 files and 2.52 GB. Most of that is the device modules of each GPU path, each family of
+features and each value of the bits a device fixes; a page downloads only its own device's files,
+each on its first use.
+
+### The one engine change
+
+`scene/panorama.ts` started its worker with `new Worker` directly. A page whose engine files come
+from another origin cannot start a worker that way, because the worker's script must have the
+page's origin. It now goes through `spawnWorker`, as every other worker does, so an HDR
+environment loads on such a page and its failures name the policy item or header that is missing.
+
+### Options rejected
+
+- **Put the shader modules in the npm package.** They are hundreds of megabytes, and a project
+  with a build step never reads them from there.
+- **Fetch the release asset's tar in the page and make modules of it.** That adds a second loader,
+  a policy item for the archive's origin and a slow start, for files that a CDN can serve as they
+  are.
+- **One UMD file with a global, as three.js ships.** The engine's workers, WebAssembly and
+  first-use shader files stay files of their own by design (D-56 and the rule above). A single
+  file would inline every device's shader builds, or would still load files beside it and gain
+  nothing.
+
+### Limits
+
+A page with no build step draws with the engine's own materials, geometry and shaders. Custom
+shader WGSL needs the plugin's compile, a TypeScript sketch needs a bundler, and the add-on
+packages are separate. The docs page states all three.
+
+## Addendum, 23 October 2026: the Gaussian splats add-on and the hooks it closes
+
+Status: decided while building M3-F2. Date: 2026-10-23. Task: M3-F2.
+
+The splats add-on ships as `@null3d/splats`, its own package whose version stays in step with the
+engine's. It claims the namespace `splats` and the error codes 2100 to 2199. It reads SPZ files in
+both containers: a legacy file is one gzip stream, and a version 4 file is a plain header, a table of
+contents and one zstd stream for each array, through the browser's `DecompressionStream`. It reads
+glTF files that carry `KHR_gaussian_splatting`, and it draws the first spherical-harmonic band's
+color; higher bands are ignored, which the extension allows.
+
+### The draw goes through the feature draw hook
+
+The cloud is one instance batch whose rows are the splats that draw: `scene.addFeatureInstances`, the
+many-copies form of M3-E1's feature draw. The add-on gives one quad and a surface function, and each
+row brings a center, rotations and spreads (the row's place, its quaternion and its scales), a linear
+RGBA color (the row's color) and four values. The shader projects each row's covariance, sizes a
+camera-facing card to its ellipse, and fades the card with the same ellipse; it reads the copy of the
+scene's depth (M3-E4) to fade a splat where it meets a mesh.
+
+The per-splat sort is the engine's own: the transparent pass culls and sorts the batch's rows back to
+front on the job workers, on both GPU paths. The add-on adds no second sort, because a second sort
+would duplicate the one place that orders blended draws.
+
+### Detail levels, streaming and the budget
+
+`createSplats` cuts the cloud into chunks of nearby splats, each in importance order (blurred volume
+times opacity), so a prefix of a chunk is a coarser level of it: all, a half, a quarter and an
+eighth. A task on the job workers (M3-E2's `runTask`) chooses each chunk's prefix from its distance
+and the budget, nearest first, and the sketch writes the chosen rows between two frames. The chunks
+are cut one at a time, so the cloud appears coarse to fine and a large file holds up no frame.
+
+The budget is a feature setting through M3-E6's `FeatureHost`: 100,000 splats on Low to 800,000 on
+Ultra, with lower counts on WebGL2, and the frame-budget governor lowers it again. The host reports the batch's memory to
+the stats overlay. GPU time is not measured for add-on features yet, so the overlay shows it as not
+measured.
+
+### The glTF extension registers as the add-on loads
+
+M3-E3's handler API was per sketch (`assets.registerGltfExtension`), but a file that requires
+`KHR_gaussian_splatting` tells the developer to import the add-on, and an add-on's module has no
+sketch to register with. The hook gained `registerGltfExtension(handler)`, which registers for every
+sketch of the thread. A sketch's own handler for the same extension reads its files in the add-on's
+place. A later add-on handler for one extension replaces the earlier one, so a development reload
+does not throw E1213.
+
+### Limits
+
+- A glTF model's splats draw in the file's order inside each part, and the model is cut into up to
+  64 parts that the transparent pass sorts by depth. A large cloud uses an SPZ file, whose rows the
+  engine sorts one by one.
+- A splat casts no shadow and receives none.
+- The cards need the scene's depth copy, whose cost the material's scene input carries.
+
+### Built
+
+The add-on draws from both file kinds: an SPZ file whose cloud a sketch writes in code, and a glTF model that carries `KHR_gaussian_splatting`. The image tests draw a knot of splats above a ground with a bar in front of it, the same cloud under a capped budget, and a ribbon from a glTF model. Each draws on all three tiers and in all five thread modes: all 45 runs passed on the Mac's GPU and all 45 on SwiftShader on 23 October 2026, and each mode drew the other modes' picture. The iPhone and S24-class figures remain to be measured.
+
+### Not the first user of a GPU-written instance count
+
+M3-E9 plans a draw whose instance count the GPU writes. The splats add-on is not its first user. The splats draw is the engine's instance batch: the transparent pass culls and sorts its rows back to front on the job workers, and a GPU-written count would skip that sorted list, so the splats would blend in the wrong order. The count is also no per-frame problem here. It changes when the camera or the budget crosses a threshold, and the sketch then packs the chosen rows once between two frames. E9 therefore needs another first user, such as vegetation or hair, or a hook that keeps the engine's sorted rows.
+
+## Addendum, 24 October 2026: a splat count does not describe what a page pays
+
+Status: open, for the owner's ruling on the budget. Date: 2026-10-24. Task: M3-F2.
+
+The budget above is a count of splats. The device runs and a control show that a count says little
+about what a page pays. The cost follows how much of the screen each splat's card covers, and the
+count says nothing about that.
+
+### What was measured
+
+The streaming check drew a 400,000-splat cloud whose cards are about 0.05 m wide, at 4 to 6 m from
+the camera. On the cloud devices, at the preset's own budget:
+
+| Device and path | Preset | Drawn | Presented fps | Display |
+| --- | --- | --- | --- | --- |
+| iPad Pro 13, WebGPU | Low | 100,000 | 1.07 | 60 Hz |
+| iPad Pro 13, WebGL2 | Low | 50,000 | 3.29 | 60 Hz |
+| Galaxy S24, WebGL2 | Low, governor at 75% | 37,500 | 12.4 | 30 Hz |
+
+A control ran the same page on the Mac's GPU at the iPad's own pixel count. The canvas was 1032 by
+1376 at 2x, so 11.4 million pixels, with the budget pinned:
+
+| Drawn | Presented fps | Frame interval | GPU ms per frame |
+| --- | --- | --- | --- |
+| 1 | 60 at the display's cap | 16.7 ms | 0.72 |
+| 25,000 | 11.67 | 83.3 ms | 142.9 |
+| 50,000 | 7.29 | 133.3 ms | 241.9 |
+| 100,000 | 4.26 | 233.3 ms | 497.7 |
+
+Three readings follow:
+
+- Everything that is not the splats costs 0.72 ms of GPU time, under 1% of each frame. On the
+  screen's schedule that part is at most one 60 Hz frame. Counting it so, the splats take 80%, 88%
+  and 93% of the frame at 25,000, 50,000 and 100,000.
+- The count alone does not set the cost. At 50,000 the same page drew 6.2 frames a second at 11.4
+  million pixels, against 24.0 at 0.9 million. The cards covered about 12 times the pixels for 3.9
+  times the frame time.
+- A quarter of the count still misses a usable rate at the iPad's pixels: 11.67 frames a second for
+  25,000 splats.
+
+The test cloud is the worst case for coverage. At 11.4 million pixels each card covers tens of
+thousands of pixels, so 100,000 of them cover the screen hundreds of times over. A scan's splats
+are usually far smaller on screen at the same distance, so the same count costs far less fill.
+
+### The two options
+
+1. **Keep the count**. Document that the budget is a cap on the drawn splats, not a promise of a
+   frame rate. A page whose cards cover a lot tunes the count itself, through `setBudget`,
+   `capacity`, the camera or a lower preset. A real scan pays nothing: it draws its full count, and
+   its small cards leave room in the frame. A close camera or a scene of large cards still stalls,
+   and the engine gives no warning and no guard. This costs no code and no memory.
+2. **Add a coverage budget**.
+
+   The budget becomes a pixel allowance beside the count. The selection already has each chunk's
+   radius and its distance. It can estimate the screen area the prefix covers, and keep the total
+   under the allowance. A real scan would lose splats only when its
+   cards cover more than the allowance. That is when they are large on screen, so the look can turn
+   coarser where the camera is close. In exchange the page holds its frame target without tuning.
+   This costs a setting per preset and GPU path, a coverage term in the selection task, and tuning
+   on the phones and the iPad. It also needs a test scene whose coverage is known. The batch's
+   memory still follows the count, unless the count is lowered too.
+
+Neither option is taken here. The count and the budget stay as they are until the owner rules. One
+test scene whose cards cover the screen many times over must not tune the engine.
+
+The runs are the two 24 October 2026 records for [the cloud iPad](../tested-devices/ipad-pro-13-safari/20261024-074806-splats.md)
+and [the Galaxy S24](../tested-devices/galaxy-s24-sm-s921b-chrome/20261024-074630-splats.md).
+
+## Addendum, 25 October 2026: the add-ons in the CDN build
+
+The 22 October build carried the engine alone. A page with no bundler could not use an add-on. Its
+guide said a page loads an add-on only from a build of its own. Rule 7 above asks that an add-on
+work from a CDN. D-173's platform task asks for a test that loads one add-on from the CDN build.
+
+### The fault in the layout
+
+An add-on's built code imports the engine by its package name, `@null3d/engine`. A page's import
+map resolves that name for the page's own modules. It does not reach a worker, and an add-on's code
+runs in the sketch worker and the job workers. A copy of the package beside the engine would
+therefore start on the page and fail on the first worker.
+
+### The build now
+
+`bun run build:cdn` builds each foundation add-on with the same pack-time compile that the npm
+packages take, so its WGSL is compiled and no `.wgsl` file ships. It copies the add-on to
+`addons/<name>/` in the layout of the add-on's package. It rewrites each JavaScript file's engine
+imports to a relative address that reaches the engine in the same build, such as
+`../../../lib/index.js`. Both the page and every worker then resolve the same engine module from
+the same version of the build.
+
+The build writes `null3d-third-party-notices.txt` at its root, with the engine's notices first and
+each add-on's after it. A host publishes the folder, which is a redistribution, so the notices
+travel with it.
+
+### What proves it
+
+`tests/image/cdn-script-tag.spec.ts` serves the build from another origin and draws a terrain from
+it. The terrain's shader comes from the pack-time compile, and the add-on's code imports the engine
+beside it. The page renders on each GPU path that the browser offers, in both thread modes. The
+four tests are WebGPU, compatibility mode and WebGL2 threaded, and WebGL2 single-threaded without
+the isolation headers. On the Mac on 25 October 2026 all four passed. Every path drew the same
+frame mean, which shows that each path showed the same ground.
+
+### Options rejected
+
+- **Leave the add-ons out.** The page cannot load them, and the add-on rule above stays unmet.
+- **Give the page's import map the add-on's engine import.** A worker reads no import map, so the
+  add-on fails as soon as the sketch runs in a worker.
+- **Ship a second copy of the engine beside each add-on.** A page would load two engine modules and
+  could mix versions.
+
+## Addendum, 25 October 2026: a splat stream loads the chunks that the view needs
+
+Status: decided while building M3-F2. Date: 2026-10-25. Task: M3-F2.
+
+The add-on downloaded every cloud as one file and cut it only after the whole download had ended.
+So a large cloud showed nothing until all of its bytes had arrived. The plan asks for streaming in
+its What and again in its Done when. The add-on now reads a small index first. It then downloads
+only the chunks that the selection wants, nearest first.
+
+### The stream is an index of SPZ files
+
+- SPZ version 4 stores one zstd stream for each attribute of the whole cloud. Its table of
+  contents names six streams. It does not name a part of the cloud that a reader could fetch on
+  its own. So a stream cannot be cut out of an ordinary SPZ file.
+- The index is a JSON file of a few kilobytes. It names each chunk's file, its count, its bounds
+  and its size. Each chunk is an ordinary SPZ file, so the reader that already reads SPZ files
+  reads a chunk with no change. The reader, `decodeSpz`, and the writer, `encodeSpz`, stay the
+  only code that knows the SPZ layout.
+- A binary container would put the same table in one file. The index keeps each chunk a file that
+  a CDN caches on its own, and a person can read the index without a tool. It also needs no second
+  binary format to validate.
+- `chunkSplats` cuts a cloud, and `encodeSpz` writes each chunk. A converter makes a stream by
+  writing the chunks as files and naming them in the index.
+- A whole SPZ file and a glTF model load as they did. A page that wants no stream pays nothing.
+
+### The load path
+
+`createSplats` reads the index, which arrives at once, and makes the draw from its counts and
+bounds. The selection task chooses each chunk's prefix from the chunk's bounds, which the index
+gives before any chunk has loaded. The sketch turns that answer into a fetch order, nearest first,
+and the loader keeps four requests in flight.
+
+A chunk that fails is fetched twice more, with a wait that doubles. A request that sends nothing
+for 30 seconds is given up and counted as a failure. A chunk that still fails is reported in the
+console and counted in `splats.failed`. The rest of the cloud keeps drawing. A chunk that arrives
+after the camera moved away stays in memory but takes no row. The pack follows the last
+selection's counts, so a late chunk never draws where it no longer belongs.
+
+`ready` resolves when the chunks that the last update wants have loaded. So the first drawn view
+has no hole. A moving camera can show a part of the cloud. The chunks that come into view arrive
+while it draws. `bytes` gives the cloud's size and `loadedBytes` gives the part that has arrived.
+
+### Measured
+
+
+The test cloud of 400,000 splats is 5,628,772 bytes in 11 chunk files, and its index is 1.6 KB. Two
+cloud devices ran the streaming plan on 24 October 2026:
+
+| Device and path | Chunks loaded at the first view | Bytes at the first view | Presented fps |
+| --- | --- | --- | --- |
+| Galaxy S24, WebGL2 | 3 of 11 | 1,890,725 (34%) | 12.74 |
+| iPad Pro 13, WebGL2 | 5 of 11 | 3,451,272 (61%) | 3.28 |
+| iPad Pro 13, WebGPU | 11 of 11 | 5,628,772 (100%) | 1.06 |
+
+The S24's display ran at 30 Hz and the Mac was loaded, so every timing figure there is unreliable.
+The rates follow the runs of the same cloud before the stream: 12.4, 3.29 and 1.07 frames a second.
+The draw held its settled budget on each page, and no chunk failed.
+
+The iPad's WebGPU path loaded the whole cloud. The engine's startup preset check drew the feature at
+Medium before it settled at Low. Medium's 250,000-splat budget wanted every chunk at a coarse level.
+A cloud with many more chunks than the budget covers would load only its share. This one has 11, so
+the check wanted all of them. No test cloud should be tuned to hide that. A page that minds the
+check's download can set its own cap for the start, through `setBudget`.
+
+The runs are [the iPad record](../tested-devices/ipad-pro-13-safari/20261024-171907-splats.md) and
+[the S24 record](../tested-devices/galaxy-s24-sm-s921b-chrome/20261024-171610-splats.md).
+
+### The budget question stays open
+
+The count budget still decides what draws. The open question of the 24 October addendum above stays
+open. The streaming run repeats its figures at the cloud devices' own pixel counts. The iPad drew
+75,000 splats at 1.06 frames a second on WebGPU, and 50,000 at 3.28 on WebGL2. The S24 drew 37,500 at
+12.74 on a 30 Hz display. The Mac control at the iPad's 11.4 million pixels measured 25,000 splats
+at 11.67 frames a second with 142.9 ms of GPU time. Everything but the splats took 0.72 ms.
+
+So a count alone cannot hold a frame target on a screen whose cards cover many pixels. The owner
+decides between the two options that the 24 October addendum gives: keep the count, or add a
+coverage budget beside it. Streaming changes neither: it lowers the bytes that a view downloads, not
+the fill that its splats cost.
+

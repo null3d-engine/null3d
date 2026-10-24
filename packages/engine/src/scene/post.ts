@@ -3,7 +3,9 @@
 // occlusion, which darkens the ambient light of the camera's opaque objects, screen-space
 // reflections, which reflect what the screen shows in their shiny surfaces, outlines, the
 // vignette, which the final pass applies before the tone mapping, the color grading table, which
-// it applies after, depth of field, which blurs by distance before bloom, and automatic exposure,
+// it applies after, the grading controls, whose values a job worker bakes into a table, the
+// sharpening, which sharpens display color at the whole canvas's render scale, depth of field,
+// which blurs by distance before bloom, and automatic exposure,
 // which adapts the final pass's exposure to the scene's brightness. The core takes one
 // exposure: the sketch's exposure times the camera
 // exposure of its EV100. The sketch's custom effects and custom tone curve come through here too
@@ -12,15 +14,23 @@
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
+import { hexValue, invalidColor } from '../math/hex';
 import type { Vec3Like } from '../math/types';
 import { type ColorInput, writeLinearColor } from './color';
 import { type Effect, EffectChain, type EffectOptions } from './effects';
+import type { GradeValues, GradingSettings, Rgb } from './grading';
 import { Lut } from './lut';
 import type { CoreMemory, ViewHolder } from './memory';
 import type { CompiledWgsl } from './resources';
 import { ShaderPreloads } from './shader-preloads';
 import { ShaderTemplates } from './shader-templates';
 import type { UniformValues } from './wgsl-uniforms';
+
+export type {
+	GradingSettings,
+	SplitToningSettings,
+	WhiteBalanceSettings,
+} from './grading';
 
 /**
  * How the engine maps the scene's high dynamic range color to the screen. Three curves use
@@ -61,11 +71,14 @@ const SETTINGS = [
 	'ao',
 	'lut',
 	'lutIntensity',
+	'grading',
 	'vignette',
 	'outline',
 	'dof',
 	'ssr',
 	'autoExposure',
+	'sharpen',
+	'taa',
 ] as const;
 const BLOOM_SETTINGS = ['intensity', 'threshold', 'knee', 'blend', 'weights'] as const;
 /** Each way of blending bloom's glow, by its code in the core. */
@@ -463,6 +476,14 @@ export interface PostSettings {
 	 */
 	lutIntensity?: number;
 	/**
+	 * The grading controls: white balance, lift, gamma, gain, saturation and split toning, which a
+	 * job worker bakes into a table of 32 texels a side. The final pass grades each pixel's display
+	 * color with the table after the tone mapping, so changing a value costs no frame work. The
+	 * picture shows the new grade once the worker has baked the table. Settings turn it on, `{}`
+	 * with the values it had, and `false` turns it off. It is off by default.
+	 */
+	grading?: GradingSettings | false;
+	/**
 	 * Darkens the picture toward its edges. Settings turn the vignette on, `{}` with the values it
 	 * had, and `false` turns it off. It is off by default.
 	 */
@@ -499,6 +520,27 @@ export interface PostSettings {
 	 * needs HDR color, as bloom does.
 	 */
 	autoExposure?: AutoExposureSettings | false;
+	/**
+	 * Sharpens edges and fine detail: a share from 0 for none to 1 for the most, or `false` to turn
+	 * it off. It is off by default, and 0.5 is a good start. The engine sharpens the display color
+	 * after the tone mapping, so bright edges cannot gain rings the way sharpened light does. It
+	 * draws at the whole canvas's render scale; below one, the upscale sharpens the image itself.
+	 * See the post-processing concepts page.
+	 */
+	sharpen?: number | false;
+	/**
+	 * @internal A prototype of temporal anti-aliasing (M3-A11), for measuring only: `true` or
+	 * settings turn it on, `false` off.
+	 */
+	taa?: TaaPrototypeSettings | boolean;
+}
+
+/** @internal The prototype's settings of temporal anti-aliasing. */
+export interface TaaPrototypeSettings {
+	/** The history's share of each pixel, from 0 to 0.99. 0.9 by default. */
+	feedback?: number;
+	/** False keeps the camera still, so the resolve only blends frames. True by default. */
+	jitter?: boolean;
 }
 
 /**
@@ -527,6 +569,13 @@ export class Post implements ViewHolder {
 	private ao = false;
 	private warnedNoAo = false;
 	private lut: Lut | false = false;
+	/** The grading values, as `post.set` resolved them, or `false` while the sketch grades with none. */
+	private gradeValues: GradeValues | false = false;
+	/** The bakes asked for so far: an answer that is not the newest one is dropped. */
+	private gradeBakes = 0;
+	/** Resolves once the bakes asked for so far have written the table, or have failed. */
+	private gradeSettled: Promise<void> = Promise.resolve();
+	private warnedNoGrade = false;
 	private vignette = false;
 	private outline = false;
 	private dof = false;
@@ -535,6 +584,9 @@ export class Post implements ViewHolder {
 	private warnedNoSsr = false;
 	private autoExposure = false;
 	private warnedNoExposure = false;
+	/** True while the sketch sharpens the picture. */
+	private sharpen = false;
+	private taa = false;
 	/** The custom tone curve that maps the scene's color, while the sketch sets one. */
 	private toneCurve: ToneCurve | undefined;
 	/** True when an effect or a tone curve came since the last frame, with pipelines to build. */
@@ -565,6 +617,11 @@ export class Post implements ViewHolder {
 		templates = new ShaderTemplates(),
 		/** False when each custom effect draws in a pass of its own, as ?join=off asks. */
 		joinEffects = true,
+		/**
+		 * The texture store that holds the baked grading table: it writes the texels and holds the
+		 * texture, or `write` takes them.
+		 */
+		private readonly gradeTable?: { write(texels: Float32Array): number },
 	) {
 		this.effects = new EffectChain(core, templates, joinEffects);
 		core.holdViews(this);
@@ -637,13 +694,16 @@ export class Post implements ViewHolder {
 			ao,
 			lut,
 			lutIntensity,
+			grading,
 			vignette,
 			outline,
 			dof,
 			ssr,
 			autoExposure,
+			sharpen,
 		} = settings;
 		const { core } = this;
+		if (settings.taa !== undefined) this.setTaa(settings.taa);
 		const { glue } = core;
 		const values = this.block();
 		const sketchExposure = exposure ?? this.exposure;
@@ -680,6 +740,7 @@ export class Post implements ViewHolder {
 			}
 			core.check(glue.setLut(table ? table.texture.handle : 0), 'post.set', undefined, true);
 		}
+		if (grading !== undefined) this.setGrading(grading);
 		if (vignette !== undefined) {
 			this.vignette = vignette !== false;
 			if (vignette !== false) {
@@ -695,6 +756,11 @@ export class Post implements ViewHolder {
 		if (ssr !== undefined) this.setSsr(ssr, values);
 		if (dof !== undefined) this.setDof(dof, values);
 		if (autoExposure !== undefined) this.setAutoExposure(autoExposure, values);
+		if (sharpen !== undefined) {
+			this.sharpen = sharpen !== false && sharpen > 0;
+			if (this.sharpen) values[C.POST_VALUE_SHARPEN] = sharpen as number;
+			core.check(glue.setSharpen(this.sharpen), 'post.set', undefined, true);
+		}
 		if (outline !== undefined) {
 			this.outline = outline !== false;
 			if (outline !== false) {
@@ -731,6 +797,64 @@ export class Post implements ViewHolder {
 		}
 		if (this.bloom && this.hdrEffects) this.shaders.need('bloom');
 		core.check(glue.setBloom(this.bloom), 'post.set', undefined, true);
+	}
+
+	/**
+	 * Turns the grading controls on with the values that `grading` gives, or off with `false`. A bake
+	 * in a job worker turns the values into the table's texels, and the picture shows the new grade
+	 * once the texels reach the GPU. The call itself allocates a few numbers, and the frames do no
+	 * work for it.
+	 */
+	private setGrading(grading: GradingSettings | false): void {
+		const { core } = this;
+		if (grading === false) {
+			this.gradeValues = false;
+			this.gradeBakes++;
+			core.check(core.glue.setGrade(0), 'post.set', undefined, true);
+			return;
+		}
+		const values = resolveGrading(grading, this.gradeValues);
+		this.gradeValues = values;
+		this.bakeGrade();
+	}
+
+	/** Asks a job worker to bake the newest grading values, and gives the core the table's texture. */
+	private bakeGrade(): void {
+		const values = this.gradeValues;
+		const table = this.gradeTable;
+		if (!values || !table) return;
+		const bake = ++this.gradeBakes;
+		const done = (texels: Float32Array): void => {
+			if (bake !== this.gradeBakes) return;
+			const handle = table.write(texels);
+			this.core.check(this.core.glue.setGrade(handle), 'post.set', undefined, true);
+		};
+		// Bakes run one after another, so a later one replaces an earlier one's table when it lands.
+		this.gradeSettled = this.gradeSettled.then(() =>
+			import('../shared/tasks')
+				.then(({ runTaskWithError }) =>
+					runTaskWithError<Float32Array>({ name: 'grade' }, values, [], gradeError),
+				)
+				.then((texels) => {
+					done(texels);
+				})
+				.catch((thrown: unknown) => {
+					if (DEV && !this.warnedNoGrade) {
+						this.warnedNoGrade = true;
+						console.warn(
+							`null3D: the grading values could not bake, so the picture keeps its colors: ${thrown instanceof Error ? thrown.message : String(thrown)}.`,
+						);
+					}
+				}),
+		);
+	}
+
+	/**
+	 * @internal Resolves once the newest grading bake has written the table, or has failed. Hold
+	 * mode waits for it before it draws the held frame, so that frame shows the grade.
+	 */
+	gradingSettled(): Promise<void> {
+		return this.gradeSettled;
 	}
 
 	/** Turns depth of field on with the settings that `dof` gives, or off with `false`. */
@@ -788,6 +912,20 @@ export class Post implements ViewHolder {
 		}
 		if (this.autoExposure && this.hdrEffects) this.shaders.need('exposure');
 		this.core.check(this.core.glue.setAutoExposure(this.autoExposure), 'post.set', undefined, true);
+	}
+
+	/** Turns the prototype of temporal anti-aliasing on or off. */
+	private setTaa(taa: TaaPrototypeSettings | boolean): void {
+		this.taa = taa !== false;
+		const settings = typeof taa === 'object' ? taa : {};
+		const feedback = this.taa ? Math.round(Math.min(settings.feedback ?? 0.9, 0.99) * 1000) : 0;
+		if (this.taa && this.hdrEffects) this.shaders.need('taa');
+		this.core.check(
+			this.core.glue.setTaa(Math.max(feedback, this.taa ? 1 : 0), settings.jitter !== false),
+			'post.set',
+			undefined,
+			true,
+		);
 	}
 
 	/** Turns ambient occlusion on with the settings that `ao` gives, or off with `false`. */
@@ -864,6 +1002,7 @@ export class Post implements ViewHolder {
 		return (
 			this.bloom ||
 			this.dof ||
+			this.taa ||
 			this.autoExposure ||
 			this.toneCurve !== undefined ||
 			this.effects.any
@@ -935,7 +1074,7 @@ function checkSettings(settings: PostSettings): void {
 		if (!(SETTINGS as readonly string[]).includes(key))
 			throw new EngineError(
 				'E1213',
-				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline, dof, ssr and autoExposure.`,
+				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, grading, vignette, outline, dof, ssr, autoExposure and sharpen.`,
 			);
 	const {
 		toneMapping,
@@ -945,12 +1084,16 @@ function checkSettings(settings: PostSettings): void {
 		ao,
 		lut,
 		lutIntensity,
+		grading,
 		vignette,
 		outline,
 		dof,
 		ssr,
+		sharpen,
 	} = settings;
 	checkDof(dof);
+	checkGrading(grading);
+	if (sharpen !== undefined && sharpen !== false) checkNumber('sharpen', sharpen, 1);
 	checkGroup('ssr', ssr, SSR_SETTINGS, 'intensity, maxDistance, thickness and maxRoughness');
 	if (ssr) {
 		checkNumber('ssr.intensity', ssr.intensity, 1);
@@ -1180,4 +1323,181 @@ function checkGroup(
 				'E1213',
 				`post.set() got the ${name} setting ${key}, and ${name} has only ${listed}.`,
 			);
+}
+
+/** The grading values of a picture that the sketch grades with none. */
+const NEUTRAL_GRADE: GradeValues = {
+	whiteBalance: [6500, 0],
+	lift: [0, 0, 0],
+	gamma: [1, 1, 1],
+	gain: [1, 1, 1],
+	saturation: 1,
+	shadows: [0.5, 0.5, 0.5],
+	highlights: [0.5, 0.5, 0.5],
+	balance: 0,
+	strength: 0,
+};
+
+/** The grading's setting names, and each group's. */
+const GRADING_SETTINGS = [
+	'whiteBalance',
+	'lift',
+	'gamma',
+	'gain',
+	'saturation',
+	'splitToning',
+] as const;
+const WHITE_BALANCE_SETTINGS = ['temperature', 'tint'] as const;
+const SPLIT_TONING_SETTINGS = ['shadows', 'highlights', 'balance', 'strength'] as const;
+
+/** Keeps `value` within `low` and `high`. */
+const within = (value: number, low: number, high: number): number =>
+	Number.isFinite(value) ? Math.min(Math.max(value, low), high) : low;
+
+/** The display color of an input: a color's channels as the canvas holds them, from 0 to 1. */
+function displayColor(color: ColorInput, call: string): Rgb {
+	if (typeof color === 'string' || typeof color === 'number') {
+		const value = hexValue(color);
+		if (value < 0) throw invalidColor(color, call);
+		return [((value >> 16) & 255) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255];
+	}
+	if (color?.length !== 3 || !color.every((c) => c >= 0 && c <= 1)) throw invalidColor(color, call);
+	return [color[0], color[1], color[2]];
+}
+
+/** Three clamped numbers of a channel setting, or the values that `previous` holds. */
+function channels(given: Rgb | undefined, previous: Rgb, low: number, high: number): Rgb {
+	if (!given) return [previous[0], previous[1], previous[2]];
+	return [
+		within(given[0] as number, low, high),
+		within(given[1] as number, low, high),
+		within(given[2] as number, low, high),
+	];
+}
+
+/**
+ * The grading values that `settings` names, with the values that `previous` holds where the call
+ * leaves a setting out. A value that the call gives out of its range is clamped: development builds
+ * refuse it in `checkSettings` first.
+ */
+function resolveGrading(settings: GradingSettings, previous: GradeValues | false): GradeValues {
+	const base = previous || NEUTRAL_GRADE;
+	const whiteBalance = settings.whiteBalance === false ? undefined : settings.whiteBalance;
+	const split = settings.splitToning === false ? undefined : settings.splitToning;
+	const temperature = whiteBalance?.temperature;
+	const tint = whiteBalance?.tint;
+	return {
+		whiteBalance: [
+			within(temperature ?? base.whiteBalance[0], 1667, 25000),
+			within(tint ?? base.whiteBalance[1], -1, 1),
+		],
+		lift: channels(settings.lift, base.lift, -1, 1),
+		gamma: channels(settings.gamma, base.gamma, 1e-4, 1000),
+		gain: channels(settings.gain, base.gain, 0, 1000),
+		saturation: within(settings.saturation ?? base.saturation, 0, 100),
+		shadows:
+			split?.shadows === undefined
+				? ([...base.shadows] as Rgb)
+				: displayColor(split.shadows, 'post.set'),
+		highlights:
+			split?.highlights === undefined
+				? ([...base.highlights] as Rgb)
+				: displayColor(split.highlights, 'post.set'),
+		balance: within(split?.balance ?? base.balance, -1, 1),
+		strength: within(split?.strength ?? base.strength, 0, 1),
+	};
+}
+
+/**
+ * The error that a bake's task fails with: the codes that a task's load or run failure reports,
+ * with its message.
+ */
+function gradeError(
+	code: 'E1405' | 'E1406' | 'E1418' | 'E1422' | 'E1423',
+	message: string,
+): EngineError {
+	return new EngineError(code, message);
+}
+
+/** Throws E1203 for a value that is not a finite number, and E1213 for one outside `low` to `high`. */
+function checkRange(name: string, value: number | undefined, low: number, high: number): void {
+	if (value === undefined) return;
+	if (typeof value !== 'number' || !Number.isFinite(value))
+		throw new EngineError('E1203', `post.set() got ${String(value)} for ${name}.`);
+	if (value < low || value > high)
+		throw new EngineError(
+			'E1213',
+			`post.set() got ${value} for ${name}, outside ${low} to ${high}.`,
+		);
+}
+
+/**
+ * Throws E1213 unless `value`, a setting of three channels, is three numbers in `low` to `high`.
+ * With `aboveZero`, each channel must be above 0 instead.
+ */
+function checkChannels(
+	name: string,
+	value: Rgb | undefined,
+	low: number,
+	high: number,
+	aboveZero = false,
+): void {
+	if (value === undefined) return;
+	if (!Array.isArray(value) || value.length !== 3)
+		throw new EngineError(
+			'E1213',
+			`post.set() got ${String(value)} for grading.${name}, which takes three numbers, one for each channel.`,
+		);
+	for (const channel of value) {
+		if (aboveZero) {
+			if (typeof channel !== 'number' || !Number.isFinite(channel))
+				throw new EngineError(
+					'E1203',
+					`post.set() got ${String(channel)} for a grading.${name} channel.`,
+				);
+			if (channel <= 0)
+				throw new EngineError(
+					'E1213',
+					`post.set() got ${String(value)} for grading.${name}, which takes each channel above 0.`,
+				);
+		} else {
+			checkRange(`a grading.${name} channel`, channel, low, high);
+		}
+	}
+}
+
+/** Throws the error of the first grading setting that `post.set` cannot take. */
+function checkGrading(grading: GradingSettings | false | undefined): void {
+	checkGroup(
+		'grading',
+		grading,
+		GRADING_SETTINGS,
+		'whiteBalance, lift, gamma, gain, saturation and splitToning',
+	);
+	if (!grading) return;
+	checkGroup(
+		'grading.whiteBalance',
+		grading.whiteBalance,
+		WHITE_BALANCE_SETTINGS,
+		'temperature and tint',
+	);
+	const whiteBalance = grading.whiteBalance;
+	if (whiteBalance) {
+		checkRange('grading.whiteBalance.temperature', whiteBalance.temperature, 1667, 25000);
+		checkRange('grading.whiteBalance.tint', whiteBalance.tint, -1, 1);
+	}
+	checkChannels('lift', grading.lift, -1, 1);
+	checkChannels('gamma', grading.gamma, 0, 0, true);
+	checkChannels('gain', grading.gain, 0, Number.MAX_VALUE);
+	checkNumber('grading.saturation', grading.saturation);
+	checkGroup(
+		'grading.splitToning',
+		grading.splitToning,
+		SPLIT_TONING_SETTINGS,
+		'shadows, highlights, balance and strength',
+	);
+	const split = grading.splitToning;
+	if (!split) return;
+	checkRange('grading.splitToning.balance', split.balance, -1, 1);
+	checkRange('grading.splitToning.strength', split.strength, 0, 1);
 }

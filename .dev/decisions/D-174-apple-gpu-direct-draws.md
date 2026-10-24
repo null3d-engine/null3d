@@ -64,6 +64,7 @@ The engine cannot keep GPU culling and draw directly. The instance count is what
 2. Each bucket draws with `drawIndexed(indexCount, visibleCount, firstIndex, baseVertex)`, with no indirect buffer in the pass. A direct draw's count changes every frame, so the direct path records these draws in the pass itself, not in a render bundle. The traffic is one upload of each view's instance buffer a frame.
 3. No mesh shader changes. Its vertex shader already reads each instance's matrix rows and ids from instance-rate vertex attributes. The culling shader's cell offset step moves to the CPU.
 4. GPU occlusion culling and the `?instances=index` test switch are off on this path: both need the counts that the GPU culls.
+5. A scene that holds a feature-instance draw, whose live count the GPU writes, takes the indirect path instead. Its count exists only in a buffer that a compute pass writes, and a direct draw needs a count on the CPU. The first frame picks the path, so the scene never mixes the two. An add-on that creates such a draw after the first frame is not supported, and D-229 records that limit.
 
 This reuses every WebGPU shader build, so it adds no shader variant and no download size. `engine.capabilities.directDraws` reports the choice.
 

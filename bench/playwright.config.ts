@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test';
+import { LOAD_PAGES_SWITCH } from '../tests/lib/load-server.ts';
 import { PREVIEW_PORT, REPO_ROOT } from '../tests/lib/server.ts';
 import browserTests, { DEV_SERVER } from '../tests/playwright.config.ts';
 
@@ -20,7 +21,8 @@ export default defineConfig({
 	webServer: [
 		DEV_SERVER,
 		{
-			command: `bunx vite build --config bench/vite.pages.config.ts --outDir ${BUILD} && bunx vite preview --outDir ${BUILD} --port ${PREVIEW_PORT} --strictPort`,
+			// The pages build first, unless an earlier step built them, as CI's load pages job does.
+			command: `${process.env[LOAD_PAGES_SWITCH] === 'prebuilt' ? '' : `bunx vite build --config bench/vite.pages.config.ts --outDir ${BUILD} && `}bunx vite preview --outDir ${BUILD} --port ${PREVIEW_PORT} --strictPort`,
 			cwd: REPO_ROOT,
 			url: `http://localhost:${PREVIEW_PORT}/bench/pages/index.html`,
 			reuseExistingServer: false,

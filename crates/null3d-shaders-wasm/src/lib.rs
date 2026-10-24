@@ -13,6 +13,9 @@
 //! - `compile_effect()` builds a custom effect's or a custom tone curve's WGSL, an
 //!   [`EffectSource`], into every variant of the engine's effect template or of its final pass.
 //!   The output is an [`EffectOutput`](null3d_shaders::EffectOutput).
+//! - `compile_sky_layer()` builds a sky layer's WGSL, a [`SkyLayerSource`], into every variant of
+//!   the engine's sky-layer template. The output is a
+//!   [`SkyLayerOutput`](null3d_shaders::SkyLayerOutput).
 //! - `build()` builds a whole manifest, as the native `shader-build` command does. The request is
 //!   the manifest and every file, the library modules too, as [`Inputs`], and the output is an
 //!   [`Output`](null3d_shaders::Output). It writes the first piece of that answer.
@@ -25,7 +28,8 @@
 //!   in the folder of the generated modules and its text.
 //! - `response()` and `response_length()` give the last call's response, which is one piece of a
 //!   manifest build's answer: `{"ok": true, "output": ...}` or `{"ok": false, "problems": [...]}`.
-//!   A response of `compile`, `compile_material` or `compile_effect` also holds `"warnings": [...]`
+//!   A response of `compile`, `compile_material`, `compile_effect` or `compile_sky_layer` also
+//!   holds `"warnings": [...]`
 //!   when the shader calls a built-in function that a target browser cannot compile.
 //! - `stopped()` and `stopped_length()` give the module's account of a call it stopped for want of
 //!   memory, or an empty text when the last call was given everything it asked for. The caller
@@ -56,7 +60,8 @@ use std::sync::Once;
 
 use null3d_shaders::{
     BuildError, Compiler, EffectSource, Inputs, MaterialSource, MaterialTemplate, ModuleSet,
-    Output, PostTemplates, Problem, Response, ShaderSource, Shard, ShardPlan, VariantOutput,
+    Output, PostTemplates, Problem, Response, ShaderSource, SkyLayerSource, SkyLayerTemplates,
+    VariantOutput,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -81,6 +86,8 @@ thread_local! {
     /// The templates of custom effects and tone curves, read on the first call of
     /// `compile_effect`.
     static POST_TEMPLATES: RefCell<Option<PostTemplates>> = const { RefCell::new(None) };
+    /// The template of sky layers, read on the first call of `compile_sky_layer`.
+    static SKY_LAYER_TEMPLATES: RefCell<Option<SkyLayerTemplates>> = const { RefCell::new(None) };
     /// The answer of the last `build`, which `build_next` hands over a piece at a time.
     static STREAM: RefCell<Option<Answer>> = const { RefCell::new(None) };
     /// The build that `prepare_modules` made, which `module` renders one module at a time.
@@ -146,6 +153,23 @@ pub extern "C" fn compile_effect() {
                 None => PostTemplates::load(&inputs())?,
             };
             let result = with_compiler(|compiler| compiler.compile_effect(&templates, &effect));
+            *slot = Some(templates);
+            result
+        })
+    });
+}
+
+/// Builds the sky layer in the request into the engine's sky-layer template.
+#[unsafe(no_mangle)]
+pub extern "C" fn compile_sky_layer() {
+    respond(|request| {
+        let layer: SkyLayerSource = parse(request)?;
+        SKY_LAYER_TEMPLATES.with_borrow_mut(|slot| {
+            let templates = match slot.take() {
+                Some(templates) => templates,
+                None => SkyLayerTemplates::load(&inputs())?,
+            };
+            let result = with_compiler(|compiler| compiler.compile_sky_layer(&templates, &layer));
             *slot = Some(templates);
             result
         })
@@ -228,22 +252,17 @@ pub extern "C" fn prepare_modules() {
         // Drop the previous build before the next one takes its room: the engine's output is most
         // of what a 32-bit module may hold.
         MODULES.with_borrow_mut(|slot| *slot = None);
-        // A request may name a shard, `{ "shard": "i/n" }`, so CI splits the whole build across
-        // jobs by estimated build cost. The modules need whole entries, so the split keeps each
-        // entry whole. An empty request builds every shader.
-        let inputs = inputs();
-        let inputs = match parse::<PrepareRequest>(request)
-            .ok()
-            .and_then(|ask| ask.shard)
-        {
-            Some(spec) => match Shard::parse(&spec) {
-                Some(shard) => {
-                    ShardPlan::by_entry(&inputs, shard.count)?.inputs(&inputs, shard.index)
-                }
-                // A shard that does not parse builds everything, so a typo costs time, not truth.
-                None => inputs,
-            },
-            None => inputs,
+        // A request may name the entries to build, `{ "entries": [...] }`, so a check that reads a
+        // few kinds of module builds a few entries. An empty request, or one without entries,
+        // builds every shader.
+        let ask = if request.is_empty() {
+            PrepareRequest::default()
+        } else {
+            parse::<PrepareRequest>(request)?
+        };
+        let inputs = match ask.entries {
+            Some(entries) => only_entries(&inputs(), &entries)?,
+            None => inputs(),
         };
         let output = null3d_shaders::build(&inputs)?;
         let prepared = Prepared::new(output);
@@ -502,10 +521,27 @@ fn inputs() -> Inputs {
     }
 }
 
-/// A request to prepare the build, which may name the shard to build.
-#[derive(serde::Deserialize)]
+/// A request to prepare the build, which may name the entries to build.
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PrepareRequest {
-    shard: Option<String>,
+    entries: Option<Vec<String>>,
+}
+
+/// `inputs` narrowed to the named entries, or the problem that names an entry the manifest lacks.
+fn only_entries(inputs: &Inputs, entries: &[String]) -> Result<Inputs, BuildError> {
+    let known: Vec<String> = null3d_shaders::entry_costs(inputs)?
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    if let Some(unknown) = entries.iter().find(|name| !known.contains(name)) {
+        return Err(Problem::general(format!(
+            "the engine's shader manifest has no entry named `{unknown}`: name entries that the manifest lists."
+        ))
+        .into());
+    }
+    let names: Vec<&str> = entries.iter().map(String::as_str).collect();
+    Ok(null3d_shaders::narrowed(inputs, &names))
 }
 
 /// Reads a JSON request.
@@ -640,6 +676,19 @@ mod tests {
         serde_json::to_vec(&serde_json::json!({ "name": name })).unwrap()
     }
 
+    /// A request that names an entry the manifest lacks answers the problem that names it, and
+    /// builds nothing.
+    #[test]
+    fn prepare_modules_refuses_an_unknown_entry() {
+        let answer = call(prepare_modules, &entries_request(&["not_a_shader"]));
+        assert_eq!(answer["ok"], false);
+        let message = answer["problems"][0]["message"].as_str().unwrap();
+        assert!(
+            message.contains("no entry named `not_a_shader`"),
+            "{message}"
+        );
+    }
+
     /// A `module` call before `prepare_modules` answers the problem that says to prepare first.
     #[test]
     fn module_without_a_prepared_build_answers_a_problem() {
@@ -649,26 +698,27 @@ mod tests {
         assert!(message.contains("call prepare_modules first"), "{message}");
     }
 
-    /// A call prepares the engine's build without rendering it, and the next renders one module,
-    /// whose text is the set's for that module.
+    /// A request that names the entries to build.
+    fn entries_request(entries: &[&str]) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({ "entries": entries })).unwrap()
+    }
+
+    /// The entries whose builds between them make one module of every kind that a build writes:
+    /// the list that the shader crate's determinism check builds (`DETERMINISM_ENTRIES` in its
+    /// build tests), which explains how each entry makes its kinds.
+    const EVERY_KIND_ENTRIES: &[&str] = &["lit", "environment", "pick", "timer_mark"];
+
+    /// A kind of module, by the name that a failure gives it, and the test that its file names pass.
+    type ModuleKind = (&'static str, fn(&str) -> bool);
+
+    /// A call prepares a build of the engine's entries without rendering it, and the next renders
+    /// one module, whose text is the set's for that module. The entries are the few that make one
+    /// module of every kind, so the test checks each kind without the cost of the whole build.
     #[test]
     fn prepare_modules_lists_every_module_and_module_renders_one() {
-        // CI builds a shard per job; without a shard, every shader is built. The test prints the
-        // whole split, so a job's log shows every shard's estimated share beside its own.
-        let spec = std::env::var("NULL3D_SHADER_SHARD").ok();
-        if let Some(shard) = spec.as_deref().and_then(Shard::parse) {
-            let plan = ShardPlan::by_entry(&inputs(), shard.count).expect("the engine's manifest");
-            let shown = format!("This job prepares shard {shard} of the shader entries.\n{plan}");
-            // Written to the stream itself, past the test harness's capture of `eprintln!`.
-            let _ = std::io::Write::write_all(&mut std::io::stderr(), shown.as_bytes());
-        }
-        let request = spec
-            .map(|spec| serde_json::json!({ "shard": spec }).to_string())
-            .unwrap_or_default();
-        let prepared = call(prepare_modules, request.as_bytes());
+        let prepared = call(prepare_modules, &entries_request(EVERY_KIND_ENTRIES));
         assert_eq!(prepared["ok"], true, "{}", prepared["problems"]);
         let names: Vec<String> = serde_json::from_value(prepared["output"].clone()).unwrap();
-        assert!(!names.is_empty(), "the build makes modules");
         MODULES.with_borrow(|slot| {
             let set = &slot.as_ref().expect("the prepared build").set;
             assert_eq!(
@@ -676,27 +726,38 @@ mod tests {
                 set.names().map(str::to_owned).collect::<Vec<String>>()
             );
         });
-        // One module of each kind that the engine's build makes: the main module, the features
-        // module, a device module, a table of shared paragraphs, a table of builds of several
-        // features and a shader that loads on a feature's first use as a whole.
-        let mut chosen: Vec<String> = ["shaders.ts", "shader-features.ts"]
-            .map(str::to_owned)
-            .to_vec();
-        let kinds: [fn(&str) -> bool; 4] = [
-            |name| name.starts_with("shaders-") && name.ends_with(".js"),
-            |name| name.starts_with("shader-paragraphs-"),
-            |name| {
-                name.starts_with("shaders-") && name.ends_with(".ts") && name.contains("-combos")
-            },
-            |name| {
-                name.starts_with("shaders-") && name.ends_with(".ts") && !name.contains("-combos")
-            },
+        // The first module of each kind, by the file names that the shader crate's determinism
+        // check reads. Every kind must be there, or the list no longer covers it.
+        let kinds: [ModuleKind; 6] = [
+            ("the main module", |name| name == "shaders.ts"),
+            ("the features module", |name| name == "shader-features.ts"),
+            ("a device module", |name| {
+                name.starts_with("shaders-") && name.ends_with(".js")
+            }),
+            ("a shared-paragraph table", |name| {
+                name.starts_with("shader-paragraphs-") && name.ends_with(".js")
+            }),
+            ("a whole-shader first-use module", |name| {
+                name.starts_with("shaders-")
+                    && (name.ends_with("-wgsl.ts") || name.ends_with("-glsl.ts"))
+            }),
+            ("a combined loader table", |name| {
+                name.starts_with("shaders-") && name.contains("-combos") && name.ends_with(".ts")
+            }),
         ];
-        for kind in kinds {
-            if let Some(name) = names.iter().find(|name| kind(name)) {
-                chosen.push(name.clone());
+        let mut chosen = Vec::new();
+        let mut missing = Vec::new();
+        for (kind, holds) in kinds {
+            match names.iter().find(|name| holds(name)) {
+                Some(name) => chosen.push(name.clone()),
+                None => missing.push(kind),
             }
         }
+        assert!(
+            missing.is_empty(),
+            "the build makes no {}",
+            missing.join(", no ")
+        );
         for name in chosen {
             let expected = MODULES.with_borrow(|slot| {
                 slot.as_ref()

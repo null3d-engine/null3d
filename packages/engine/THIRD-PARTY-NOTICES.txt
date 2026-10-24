@@ -313,12 +313,15 @@ Licensed under the Apache License, Version 2.0, whose text the Basis Universal s
 gives in full.
 
 ==============================================================================
-three.js: the table of specular terms in the engine core (null3d_bg.wasm), and the OpenEXR
-decoders in the HDR file reader (panorama-worker.js)
+three.js: the table of specular terms in the engine core (null3d_bg.wasm), the ambient
+occlusion and wide line shaders (the shader modules), and the OpenEXR decoders in the HDR file
+reader (panorama-worker.js)
 ==============================================================================
 
 The values of three.js's DFG table, from three.js 0.186.1, https://github.com/mrdoob/three.js.
-The ports of EXRLoader's decoders, from the same release.
+The ports of its GTAOPass and PoissonDenoiseShader into ao.wgsl, and of its Line2 and
+LineSegments2 geometry and shader into line.wgsl. The ports of EXRLoader's decoders, from the
+same release.
 
 The MIT License
 
@@ -457,6 +460,7 @@ or the Apache License 2.0. null3D takes them under the MIT License.
 - The Rust standard library: Copyright (c) The Rust Project Contributors
 - bumpalo 3.20.3: Copyright (c) 2019 Nick Fitzgerald
 - cfg-if 1.0.5: Copyright (c) 2014 Alex Crichton
+- dlmalloc 0.2.14: Copyright (c) 2014 Alex Crichton, the threaded build's heap
 - once_cell 1.21.4: Copyright (c) Aleksey Kladov
 - wasm-bindgen 0.2.129: Copyright (c) 2014 Alex Crichton
 

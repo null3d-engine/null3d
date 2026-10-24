@@ -6,6 +6,7 @@
 use std::collections::TryReserveError;
 
 use crate::alloc::{filled, reserve_len};
+use crate::memory::{MemoryUse, vec_bytes};
 
 /// A bitset with a fixed number of bits, which only [`Bitset::grow`] changes. Bits past [`Bitset::len`] in the last
 /// word are always clear.
@@ -16,6 +17,11 @@ pub struct Bitset {
 }
 
 impl Bitset {
+    /// The bytes that the set's words hold.
+    pub(crate) fn memory_use(&self) -> MemoryUse {
+        vec_bytes(&self.words)
+    }
+
     /// A bitset of `len` clear bits.
     pub fn new(len: u32) -> Self {
         let Ok(bits) = Self::try_new(len) else {

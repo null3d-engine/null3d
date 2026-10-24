@@ -22,11 +22,14 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 		'when `post.set` turns automatic exposure on. The camera keeps its own exposure until the meter is built',
 	fog_volume:
 		'when `scene.setFog` turns the volumetric fog on. The fog keeps its sun glow until the fog is built',
+	taa: 'when `post.set` turns the temporal resolve on, a prototype for measuring only (D-206)',
 	sprites: 'with the first sprite batch',
 	picking: 'with the first `scene.pick()` call, which waits for the shaders',
 	particles: 'with the first particle system (`@null3d/particles`)',
 	lines: 'with the first line batch',
 	decals: 'with the first mesh of a decal material (`materials.decal`)',
+	cluster_levels:
+		'with the first frame that draws a tree of cluster patches (`setMeshPatches`), which builds the pass that picks a tree of patches. A scene without a tree downloads none of it, and WebGL2 never builds that pass',
 	probe_grid: 'when the sketch first sets a light probe grid (`scene.setLightProbeGrid`)',
 	transmission: 'with the first material that lets light through (`transmission`)',
 	translucency:
@@ -38,7 +41,7 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 		'with the first material whose light spreads under its surface (`subsurfaceRadius`). The skin pass and the blur draw its light',
 	motion:
 		'when a pass first reads the motion. The motion debug view is such a pass, and it exists in development builds only',
-	coat_sheen: 'with the first material with a clear coat or a sheen',
+	coat_sheen: 'with the first material with a clear coat, a sheen, iridescence or anisotropy',
 	weighted: "with the first material of the `'weighted'` blending",
 	area_lights: 'with the first rectangle or tube light',
 	background: 'with the first texture, environment or cube map background',

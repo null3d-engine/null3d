@@ -1,17 +1,23 @@
 import { describe, expect, it } from 'bun:test';
+import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
 	addReleaseInstance,
 	artifactFiles,
+	artifactsKey,
+	type BuildJob,
+	baseTreeDamaged,
 	buildCodeHash,
+	buildLog,
 	cargoTargetBase,
 	checkHeapStart,
 	lockedVersion,
 	parseOptions,
 	readArtifacts,
 	releaseTarget,
+	runBuilds,
 	sizeCheckLock,
 	type ToolVersions,
 	toolInputs,
@@ -36,6 +42,7 @@ describe('parseOptions', () => {
 			pagesOnly: false,
 			prebuilt: false,
 			printBase: false,
+			cacheKey: false,
 			noCache: false,
 		});
 		expect(parseOptions(['--check-size', '--base', 'origin/main'])).toEqual({
@@ -46,6 +53,7 @@ describe('parseOptions', () => {
 			pagesOnly: false,
 			prebuilt: false,
 			printBase: false,
+			cacheKey: false,
 			noCache: false,
 		});
 		expect(parseOptions(['--check-size', '--prebuilt'])).toMatchObject({
@@ -54,6 +62,7 @@ describe('parseOptions', () => {
 		});
 		expect(parseOptions(['--print-base', '--base', 'HEAD^'])).toMatchObject({
 			printBase: true,
+			cacheKey: false,
 			base: 'HEAD^',
 		});
 		expect(parseOptions(['--sizes-only']).sizesOnly).toBe(true);
@@ -64,6 +73,10 @@ describe('parseOptions', () => {
 			keepNames: true,
 			noCache: true,
 		});
+	});
+
+	it('reads the key of the artifacts that CI keeps', () => {
+		expect(parseOptions(['--cache-key']).cacheKey).toBe(true);
 	});
 
 	it('rejects unknown options, a base without a commit or a check, and builds that exclude each other', () => {
@@ -224,6 +237,14 @@ describe('variantKey', () => {
 	});
 });
 
+describe('artifactsKey', () => {
+	it("is one key of this checkout's artifacts, the same at each call", () => {
+		const key = artifactsKey();
+		expect(key).toMatch(/^[0-9a-f]{64}$/);
+		expect(artifactsKey()).toBe(key);
+	});
+});
+
 describe('buildCodeHash', () => {
 	it('changes with this script or with the module that rewrites the glue', () => {
 		// Both decide what an entry holds: the script sets the flags and the staging, and the glue
@@ -379,15 +400,147 @@ describe('the artifact cache', () => {
 		});
 	});
 
-	it('does not throw when the cache cannot be written', () => {
+	it('returns false, and does not throw, when the cache cannot be written', () => {
 		withBase((base) => {
 			const source = join(base, 'source.bin');
 			writeFileSync(source, 'bytes');
 			// A base that is a file, not a folder, cannot hold an entry.
 			const blocked = join(base, 'blocked');
 			writeFileSync(blocked, 'a file, not a folder');
-			expect(() => writeArtifacts(blocked, 'key', [['a.bin', source]])).not.toThrow();
+			expect(writeArtifacts(blocked, 'key', [['a.bin', source]])).toBe(false);
 			expect(readArtifacts(blocked, 'key', ['a.bin'])).toBeNull();
+			expect(writeArtifacts(base, 'key', [['a.bin', source]])).toBe(true);
 		});
+	});
+});
+
+describe('buildLog', () => {
+	it("prints each line at once with the build's name, keeps it, and names a command that failed", async () => {
+		const printed: [string, boolean][] = [];
+		const log = buildLog('tools', (line, stderr) => printed.push([line, stderr]));
+		log.say('building');
+		await log.run('sh', ['-c', 'echo compiled; echo warned >&2']);
+		await expect(log.run('sh', ['-c', 'echo broke; exit 2'])).rejects.toThrow(
+			'sh -c echo broke; exit 2 failed: its exit status was 2',
+		);
+		expect(printed[0]).toEqual(['[tools] building', false]);
+		// Each output's lines arrive through a pipe of its own, so only each one's own order is certain.
+		expect(printed.slice(1, 3).sort()).toEqual([
+			['[tools] compiled', false],
+			['[tools] warned', true],
+		]);
+		expect(printed.slice(3)).toEqual([
+			[expect.stringMatching(/^\[tools\] sh took \d+ s$/), false],
+			['[tools] broke', false],
+		]);
+		expect(log.text()).toBe(
+			`${printed.map(([line]) => line.slice('[tools] '.length)).join('\n')}\n`,
+		);
+	});
+});
+
+describe('baseTreeDamaged', () => {
+	/** Runs git in the test tree, with an identity of its own and no hooks or signing. */
+	const git = (cwd: string, ...args: string[]) =>
+		execFileSync(
+			'git',
+			[
+				'-c',
+				'user.email=test@example.com',
+				'-c',
+				'user.name=test',
+				'-c',
+				'commit.gpgsign=false',
+				'-c',
+				'core.hooksPath=/dev/null',
+				...args,
+			],
+			{ cwd, stdio: 'ignore' },
+		);
+
+	it('is true for a tree that is gone or has lost a file, and false for a whole checkout', () => {
+		const tree = mkdtempSync(join(tmpdir(), 'null3d-base-tree-'));
+		try {
+			expect(baseTreeDamaged(tree)).toBe(true);
+			git(tree, 'init', '--quiet');
+			writeFileSync(join(tree, 'a.txt'), 'a\n');
+			git(tree, 'add', 'a.txt');
+			git(tree, 'commit', '--quiet', '-m', 'first');
+			expect(baseTreeDamaged(tree)).toBe(false);
+			rmSync(join(tree, 'a.txt'));
+			expect(baseTreeDamaged(tree)).toBe(true);
+		} finally {
+			rmSync(tree, { recursive: true, force: true });
+		}
+	});
+});
+
+describe('runBuilds', () => {
+	it('prints every line as it comes, runs every build to its end, then prints a failed log whole', async () => {
+		const printed: [string, boolean][] = [];
+		const run = runBuilds(
+			[
+				{
+					name: 'slow',
+					work: async (log) => {
+						log.say('slow starts');
+						await Bun.sleep(40);
+						log.say('slow ends');
+					},
+				},
+				{
+					name: 'broken',
+					work: async (log) => {
+						log.say('broken starts');
+						await Bun.sleep(15);
+						throw new Error('cargo build failed');
+					},
+				},
+				{
+					name: 'quick',
+					work: async (log) => {
+						log.say('quick starts');
+						await Bun.sleep(1);
+						log.say('quick ends');
+					},
+				},
+			],
+			(line, stderr) => printed.push([line.replace(/\d+ s/, 'N s'), stderr]),
+		);
+		await expect(run).rejects.toThrow('the broken build failed; its whole log is above');
+		// The builds' lines mix as they come, each with its build's name; the slow build ran to its
+		// end after the broken one failed; and the failed build's log then printed again in one piece.
+		expect(printed).toEqual([
+			['[slow] slow starts', false],
+			['[broken] broken starts', false],
+			['[quick] quick starts', false],
+			['[quick] quick ends', false],
+			['[quick] done in N s', false],
+			['[broken] error: cargo build failed', true],
+			['[broken] failed after N s', true],
+			['[slow] slow ends', false],
+			['[slow] done in N s', false],
+			[
+				'\nthe whole log of the broken build, which failed after N s:\nbroken starts\nerror: cargo build failed',
+				true,
+			],
+		]);
+	});
+
+	it('names every build that failed, in the order of the builds', async () => {
+		const failing = (name: string, ms: number): BuildJob => ({
+			name,
+			work: async () => {
+				await Bun.sleep(ms);
+				throw new Error('cargo build failed');
+			},
+		});
+		const builds = [failing('threaded', 20), failing('single', 1), failing('tools', 10)];
+		await expect(runBuilds(builds, () => {})).rejects.toThrow(
+			'the threaded, single and tools builds failed; their whole logs are above',
+		);
+		await expect(runBuilds([{ name: 'tools', work: async () => {} }], () => {})).resolves.toBe(
+			undefined,
+		);
 	});
 });

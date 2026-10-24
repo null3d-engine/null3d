@@ -41,9 +41,13 @@ import {
 	BACKGROUND_VALUE_TIME,
 	BACKGROUND_VALUE_TURBIDITY,
 } from '../generated/core';
+import type { ShaderVariants } from '../generated/shaders';
 import { Environment } from './environment';
+import type { FeatureDescription } from './features';
 import type { CoreMemory, ViewHolder } from './memory';
+import type { CompiledWgsl } from './resources';
 import { ShaderPreloads } from './shader-preloads';
+import type { ShaderTemplates } from './shader-templates';
 import { Texture } from './textures';
 
 /**
@@ -332,7 +336,188 @@ export type BackgroundSource =
 	| SkyBackground
 	| AtmosphereBackground;
 
+/**
+ * The values of a sky layer that `scene.setSkyLayer` takes, and that a later call changes: its
+ * opacity and the share of the sun that it hides. A value that a later call leaves out keeps its
+ * own.
+ *
+ * @category api/scene
+ */
+export interface SkyLayerValues {
+	/** How much of the layer's color draws, from 0 for none to 1 for all of it. The default is 1. */
+	readonly opacity?: number;
+	/**
+	 * How much of the sun the layer hides, from 0 for none to 1 for all of it. The core sky dims
+	 * its disc and glow by the rest, and the layer reads the share to dim its own. The default is
+	 * 0.
+	 */
+	readonly sun?: number;
+}
+
+/**
+ * Options of `scene.setSkyLayer`: the layer's WGSL, compiled by the null3D Vite plugin, and its
+ * first values.
+ *
+ * @category api/scene
+ */
+export interface SkyLayerOptions extends SkyLayerValues {
+	/**
+	 * The layer's WGSL, which declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer`. It draws
+	 * over the background, under every object, on every GPU path. `SkyLayerInput` gives the
+	 * fragment's direction, the core sky's cloud settings, the sketch time and the share of the sun
+	 * that the layer hides.
+	 */
+	readonly wgsl: CompiledWgsl;
+}
+
+/**
+ * A sky layer that `scene.setSkyLayer` installed over the background. `set` changes its values,
+ * and `scene.clearSkyLayer` removes it.
+ *
+ * @category api/scene
+ */
+export interface SkyLayer {
+	/** Changes the layer's opacity, the share of the sun that it hides, or both. */
+	set(values: SkyLayerValues): void;
+}
+
 const CALL = 'setBackground';
+
+/** @internal The scene's sky layer, from its compiled WGSL to the core. */
+export class SceneSkyLayer implements SkyLayer {
+	/** The render pipeline template of the layer's shader, which the draw thread builds, or 0. */
+	private template = 0;
+	private opacity = 1;
+	private sun = 0;
+
+	constructor(
+		private readonly core: CoreMemory,
+		private readonly templates: ShaderTemplates,
+	) {}
+
+	/**
+	 * Installs a layer over the background, or replaces the one there. The description names the
+	 * feature and must record at the background point, as a draw, provide the sky, and draw in the
+	 * main view, the scene passes and the reflections. Throws E1223 for such a description that it
+	 * cannot place, E1215 for WGSL that the plugin did not compile as a sky layer, and the checks
+	 * of `set` for its values.
+	 */
+	install(description: FeatureDescription, options: SkyLayerOptions, call: string): void {
+		checkSkyLayer(description, call);
+		if (DEV && (typeof options !== 'object' || options === null))
+			throw new EngineError(
+				'E1213',
+				`${call}() got ${String(options)}, which is not an object of a sky layer's options. Give { wgsl }, with WGSL that declares fn skyLayer(input: SkyLayerInput) -> SkyLayer.`,
+			);
+		const compiled = compiledSkyLayer(options.wgsl, call);
+		const { opacity, sun } = options;
+		if (DEV) checkLayerValues({ opacity, sun }, call);
+		this.template = this.templates.of(compiled, () => [
+			{
+				kind: 'skyLayer',
+				variants: compiled.variants,
+				locations: [],
+				textures: 0,
+			},
+		]);
+		this.opacity = opacity ?? 1;
+		this.sun = sun ?? 0;
+		this.send(call);
+	}
+
+	/** Changes the layer's values. Throws E1101 while no layer is installed. */
+	set(values: SkyLayerValues): void {
+		const call = 'SkyLayer.set';
+		if (DEV) {
+			checkLayerLive(this.template, call);
+			checkLayerValues(values, call);
+		}
+		this.opacity = values.opacity ?? this.opacity;
+		this.sun = values.sun ?? this.sun;
+		this.send(call);
+	}
+
+	/** Removes the layer from the next frame on. */
+	clear(): void {
+		if (this.template === 0) return;
+		this.template = 0;
+		this.core.check(this.core.glue.setSkyLayer(0, 0, 1), 'clearSkyLayer', undefined, true);
+	}
+
+	/** Writes the layer's template and values into the core, which the next frame draws. */
+	private send(call: string): void {
+		const { core } = this;
+		core.check(core.glue.setSkyLayer(this.template, this.sun, this.opacity), call, undefined, true);
+	}
+}
+
+/** Throws E1101 unless a layer is installed. Call it inside `if (DEV)`. */
+function checkLayerLive(template: number, call: string): void {
+	if (template === 0)
+		throw new EngineError(
+			'E1101',
+			`${call}() ran on a sky layer that scene.clearSkyLayer() removed. Install another with scene.setSkyLayer().`,
+		);
+}
+
+/** The views that a sky layer draws in, which its description must name. */
+const SKY_LAYER_VIEWS = ['main', 'scenePass', 'reflection'] as const;
+
+/**
+ * Throws E1223 unless the description places a sky layer: the background point, as a draw, with the
+ * sky slot and the three views that the engine draws it in.
+ */
+function checkSkyLayer(description: FeatureDescription, call: string): void {
+	if (typeof description !== 'object' || description === null)
+		throw new EngineError(
+			'E1223',
+			`${call}() got ${String(description)}, which is not a feature description. Give defineFeature({ name, frame: 'background', kind: 'draw', provides: ['sky'], views: ['main', 'scenePass', 'reflection'] }).`,
+		);
+	const name = description.name;
+	if (description.frame !== 'background')
+		throw new EngineError(
+			'E1223',
+			`${call}() got the feature '${name}' with the frame ${JSON.stringify(description.frame)}; a sky layer records at 'background'.`,
+		);
+	if (description.kind !== 'draw')
+		throw new EngineError(
+			'E1223',
+			`${call}() got the feature '${name}' with the kind ${JSON.stringify(description.kind)}; a sky layer draws, so give the kind 'draw'.`,
+		);
+	const provides = description.provides ?? [];
+	if (!provides.includes('sky'))
+		throw new EngineError(
+			'E1223',
+			`${call}() got the feature '${name}' with the provides ${JSON.stringify(provides)}; a sky layer provides 'sky'.`,
+		);
+	const views = description.views ?? [];
+	if (views.length !== SKY_LAYER_VIEWS.length || !SKY_LAYER_VIEWS.every((v) => views.includes(v)))
+		throw new EngineError(
+			'E1223',
+			`${call}() got the feature '${name}' with the views ${JSON.stringify(views)}; a sky layer draws in 'main', 'scenePass' and 'reflection'.`,
+		);
+}
+
+/** Throws E1108 or E1203 for a layer's value outside 0 to 1. Call it inside `if (DEV)`. */
+function checkLayerValues(values: SkyLayerValues, call: string): void {
+	if (values.opacity !== undefined) checkNumber('opacity', values.opacity, 0, 1, call);
+	if (values.sun !== undefined) checkNumber('sun', values.sun, 0, 1, call);
+}
+
+/** A layer's compiled WGSL, or throws E1215 for WGSL that the plugin did not compile as one. */
+function compiledSkyLayer(
+	wgsl: unknown,
+	call: string,
+): CompiledWgsl & { readonly variants: ShaderVariants } {
+	if (typeof wgsl === 'object' && wgsl !== null && (wgsl as CompiledWgsl).kind === 'skyLayer')
+		return wgsl as CompiledWgsl & { readonly variants: ShaderVariants };
+	throw new EngineError(
+		'E1215',
+		typeof wgsl === 'string'
+			? `${call}() got WGSL as text, which the null3D Vite plugin did not compile. Tag the WGSL with a /* wgsl */ comment, or import it from a .wgsl file.`
+			: `${call}() got ${JSON.stringify((wgsl as CompiledWgsl)?.kind ?? wgsl)}, which is not a sky layer. A sky layer's WGSL declares fn skyLayer(input: SkyLayerInput) -> SkyLayer.`,
+	);
+}
 
 /** @internal The scene's background source as the core holds it. */
 export class SceneBackground implements ViewHolder {
@@ -572,10 +757,13 @@ function checkAtmosphere(settings: AtmosphereOptions): void {
 	}
 }
 
-/** Throws E1203 for a number that is not finite, and E1108 for one outside `low` to `high`. */
-function checkNumber(name: string, value: number, low: number, high: number): void {
+/**
+ * Throws E1203 for a number that is not finite, and E1108 for one outside `low` to `high`, naming
+ * the call that `call` gives.
+ */
+function checkNumber(name: string, value: number, low: number, high: number, call = CALL): void {
 	if (typeof value !== 'number' || !Number.isFinite(value))
-		throw new EngineError('E1203', `${CALL}() got ${value} for ${name}.`);
+		throw new EngineError('E1203', `${call}() got ${value} for ${name}.`);
 	if (value < low || value > high) {
 		const range =
 			high === Number.POSITIVE_INFINITY
@@ -583,7 +771,7 @@ function checkNumber(name: string, value: number, low: number, high: number): vo
 					? 'more than 0'
 					: `${low} or more`
 				: `${low} to ${high}`;
-		throw new EngineError('E1108', `${CALL}() got ${value} for ${name}; it takes ${range}.`);
+		throw new EngineError('E1108', `${call}() got ${value} for ${name}; it takes ${range}.`);
 	}
 }
 

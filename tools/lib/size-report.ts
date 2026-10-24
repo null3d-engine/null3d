@@ -10,6 +10,8 @@
 //
 // CI can split the measuring into parts that run at the same time: each part builds the same page
 // and measures its own share of the files, and one step merges the parts' sizes and judges them.
+// A file's sizes depend only on its bytes and the compressors, so a measuring can take them from a
+// memo of earlier measurings, by the hash of the bytes, and compress only the files that changed.
 import { createHash } from 'node:crypto';
 import { availableParallelism } from 'node:os';
 import { posix } from 'node:path';
@@ -45,6 +47,33 @@ const BROTLI_OPTIONS = { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } };
 const gzipAsync = promisify(gzip);
 const brotliAsync = promisify(brotliCompress);
 
+/**
+ * The compressors and their settings that a size memo's entries hold for. A memo made under
+ * another stamp, such as by another runtime's zlib, holds no entry for this one.
+ */
+export const SIZE_MEMO_STAMP = JSON.stringify({
+	gzip: GZIP_OPTIONS,
+	brotli: BROTLI_OPTIONS,
+	zlib: process.versions.zlib,
+	runtime: process.versions.bun ?? process.version,
+});
+
+/**
+ * The sizes that earlier measurings found, by the SHA-256 of a file's bytes, and the entries of the
+ * files that this measuring met, which are what a later measuring needs.
+ */
+export interface SizeMemo {
+	known: ReadonlyMap<string, SizeEntry>;
+	met: Map<string, SizeEntry>;
+	/** How many files this measuring compressed, because the memo held no entry for them. */
+	compressed: number;
+}
+
+/** A memo of the given entries, by the hash of a file's bytes. */
+export function sizeMemo(known: Readonly<Record<string, SizeEntry>> = {}): SizeMemo {
+	return { known: new Map(Object.entries(known)), met: new Map(), compressed: 0 };
+}
+
 /** [`measure`]'s sizes, with both compressions on the runtime's worker threads. */
 async function measureAsync(bytes: Buffer): Promise<SizeEntry> {
 	const [gzipped, brotli] = await Promise.all([
@@ -69,18 +98,35 @@ export interface ReportFile {
 /**
  * The size of each of `files`, by name, in their order. `onMeasured` follows each file as it ends.
  * The files compress on every core at once: as many at a time as the machine has cores, each read
- * only when its turn comes, so the memory held stays a few files.
+ * only when its turn comes, so the memory held stays a few files. With a memo, a file whose bytes
+ * the memo knows takes its sizes from there, and every file's entry goes into the memo's `met`.
  */
 export async function measureFiles(
 	files: readonly ReportFile[],
 	onMeasured?: (file: ReportFile) => void,
+	memo?: SizeMemo,
 ): Promise<Map<string, SizeEntry>> {
 	const measured = new Array<SizeEntry>(files.length);
 	let next = 0;
+	// Each set of bytes that the memo lacks compresses once, however many files hold it.
+	const compressing = new Map<string, Promise<SizeEntry>>();
+	const sizeOf = async (bytes: Buffer): Promise<SizeEntry> => {
+		if (!memo) return measureAsync(bytes);
+		const hash = createHash('sha256').update(bytes).digest('hex');
+		const known = memo.known.get(hash);
+		let size = known ? Promise.resolve(known) : compressing.get(hash);
+		if (!size) {
+			size = measureAsync(bytes);
+			compressing.set(hash, size);
+			memo.compressed++;
+		}
+		memo.met.set(hash, await size);
+		return size;
+	};
 	const worker = async () => {
 		for (let at = next++; at < files.length; at = next++) {
 			const file = files[at] as ReportFile;
-			measured[at] = await measureAsync(file.read());
+			measured[at] = await sizeOf(file.read());
 			onMeasured?.(file);
 		}
 	};
@@ -158,6 +204,7 @@ export async function measureSizePart(
 	files: readonly ReportFile[],
 	spec: PartSpec,
 	onMeasured?: (file: ReportFile) => void,
+	memo?: SizeMemo,
 ): Promise<SizePart> {
 	const share = partShare(files, spec);
 	const own = files.filter(({ name }) => share.has(name));
@@ -166,7 +213,7 @@ export async function measureSizePart(
 		of: spec.count,
 		build: buildHash(files),
 		files: files.map(({ name }) => name),
-		sizes: Object.fromEntries(await measureFiles(own, onMeasured)),
+		sizes: Object.fromEntries(await measureFiles(own, onMeasured, memo)),
 	};
 }
 
@@ -239,6 +286,13 @@ export interface EnginePart {
 	 * neither call downloads neither part.
 	 */
 	onFirstCall?: boolean;
+	/**
+	 * True for a part whose module the start's own files also hold, which the bundler keeps inline:
+	 * it writes a file of its own only for the thread that loads the module on demand. Every page
+	 * downloads the module's code at its start in the start's files, so no first-use check watches
+	 * it, and its own file carries the threads that load it on demand only.
+	 */
+	alsoInStart?: boolean;
 }
 
 /**
@@ -284,7 +338,8 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
  * script, the one part that a module path outside the engine's source names.
  * The readers of color grading tables load in the thread that runs the sketch with
  * the first table, the sprite code with the first sprite batch, and the line code with the first
- * line batch.
+ * line batch. The code of a feature draw, and of the instance draw that a compute pass fills, loads
+ * in the thread that runs the sketch with the first call that makes one.
  * The preset check loads after the first frame, in the thread that runs the sketch, so no download
  * before the first frame counts it. The stats overlay loads on the page when the sketch first asks
  * for it, and the frame figures that it and `debug.frameStats` read load with it, or in the thread
@@ -312,16 +367,62 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		module: 'errors/message.ts',
 		loadedBy: 'page.js',
 	},
+	{
+		// The engine's error type, which the page's start, its loader and its checks all raise, so the
+		// bundler keeps it in a file of its own that every page loads.
+		name: 'engine-error.js',
+		module: 'errors/engine-error.ts',
+		loadedBy: 'page.js',
+	},
 	{ name: 'page-gpu.js', module: 'generated/gpu.ts', loadedBy: 'page.js' },
 	{ name: 'page-control.js', module: 'shared/control.ts', loadedBy: 'page.js' },
 	{ name: 'page-renderer.js', module: 'render/draw.ts', loadedBy: 'page.js' },
 	...drawingParts('page', 'page-renderer.js'),
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
+	// A page records or replays only with a switch, so the format and the reader load then, and the
+	// save button loads only for a page that records. The page and the sketch worker each bundle
+	// their own copy of the format, as they do the glTF and KTX2 loaders, so each graph has a part.
+	{
+		name: 'page-recording.js',
+		module: 'shared/recording.ts',
+		loadedBy: 'page.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'sketch-worker-recording.js',
+		module: 'shared/recording.ts',
+		loadedBy: 'sketch-worker.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'page-record-button.js',
+		module: 'page/record-button.ts',
+		loadedBy: 'page.js',
+		onFirstCall: true,
+	},
+	// A page that shows no video downloads none of the support that follows one.
+	{ name: 'page-videos.js', module: 'page/videos.ts', loadedBy: 'page.js', onFirstCall: true },
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
+	{ name: 'page-assets.js', module: 'scene/assets.ts', loadedBy: 'page-sketch-runner.js' },
+	{ name: 'page-baked-light.js', module: 'scene/baked-light.ts', loadedBy: 'page-assets.js' },
+	// The half-float helpers are read by several of the start's own modules, so the bundler writes
+	// them to a file of their own that every page loads: a part of the start, not a first-use file.
+	{
+		name: 'page-half-float.js',
+		module: 'scene/half-float.ts',
+		loadedBy: 'page-assets.js',
+		alsoInStart: true,
+	},
+	// Modules that both the page's start and the file loader carry, which the bundler puts in files
+	// of their own that every page loads: they are parts of the start, not first-use files.
+	{ name: 'page-shader-features.js', module: 'generated/shader-features.ts', loadedBy: 'page.js' },
+	{ name: 'page-check.js', module: 'quality/check.ts', loadedBy: 'page.js' },
+	{ name: 'page-core.js', module: 'generated/core.ts', loadedBy: 'page.js' },
 	{ name: 'page-tasks.js', module: 'shared/tasks.ts', loadedBy: 'page-ktx2.js' },
 	{ name: 'task-worker.js', module: 'workers/task-worker.ts', loadedBy: 'page-tasks.js' },
 	{ name: 'task-worker-ktx2.js', module: 'scene/ktx2-transcode.ts', loadedBy: 'task-worker.js' },
+	{ name: 'task-worker-grade.js', module: 'scene/grade-task.ts', loadedBy: 'task-worker.js' },
 	{ name: 'page-lut.js', module: 'scene/lut-files.ts', loadedBy: 'page-sketch-runner.js' },
 	{
 		name: 'page-environment.js',
@@ -337,6 +438,16 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-sprites.js', module: 'scene/sprites.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-lines.js', module: 'scene/lines.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-particles.js', module: 'scene/particles.ts', loadedBy: 'page-sketch-runner.js' },
+	{
+		name: 'page-feature-draws.js',
+		module: 'scene/feature-draws.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
+	{
+		name: 'page-feature-instances.js',
+		module: 'scene/feature-instances.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
 	{
 		name: 'page-area-light-tables.js',
 		module: 'scene/area-light-tables.ts',
@@ -379,7 +490,33 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	...drawingParts('sketch-worker', 'sketch-worker-renderer.js'),
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-gltf.js', module: 'scene/gltf.ts', loadedBy: 'sketch-worker.js' },
+	{ name: 'sketch-worker-assets.js', module: 'scene/assets.ts', loadedBy: 'sketch-worker.js' },
+	{
+		name: 'sketch-worker-baked-light.js',
+		module: 'scene/baked-light.ts',
+		loadedBy: 'sketch-worker-assets.js',
+	},
+	{
+		name: 'sketch-worker-shader-features.js',
+		module: 'generated/shader-features.ts',
+		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'sketch-worker-images.js',
+		module: 'shared/images.ts',
+		loadedBy: 'sketch-worker.js',
+	},
+	{ name: 'sketch-worker-gpu.js', module: 'generated/gpu.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-tasks.js', module: 'shared/tasks.ts', loadedBy: 'sketch-worker-ktx2.js' },
+	// The worker bootstrap, which the first feature of a worker that starts one of its own loads.
+	{
+		// The page's start imports this module too, so every page downloads its code in the start's
+		// own files; the worker's copy loads on demand in the thread that starts a worker of its own.
+		name: 'sketch-worker-worker-start.js',
+		module: 'shared/worker-start.ts',
+		loadedBy: 'sketch-worker-tasks.js',
+		alsoInStart: true,
+	},
 	{ name: 'gltf-worker.js', module: 'workers/gltf-worker.ts', loadedBy: 'sketch-worker-gltf.js' },
 	{ name: 'gltf-meshopt.js', module: 'scene/gltf-meshopt.ts', loadedBy: 'gltf-worker.js' },
 	{ name: 'gltf-draco.js', module: 'scene/gltf-draco.ts', loadedBy: 'gltf-worker.js' },
@@ -414,6 +551,16 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'sketch-worker-particles.js',
 		module: 'scene/particles.ts',
+		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'sketch-worker-feature-draws.js',
+		module: 'scene/feature-draws.ts',
+		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'sketch-worker-feature-instances.js',
+		module: 'scene/feature-instances.ts',
 		loadedBy: 'sketch-worker.js',
 	},
 	{
@@ -575,6 +722,9 @@ const THREAD_MODES: readonly ThreadMode[] = [
 			'page.js',
 			'probe-worker.js',
 			'sketch-worker.js',
+			'sketch-worker-gpu.js',
+			'sketch-worker-images.js',
+			'sketch-worker-shader-features.js',
 			'render-worker.js',
 			'job-worker.js',
 		],
@@ -587,6 +737,9 @@ const THREAD_MODES: readonly ThreadMode[] = [
 			'page.js',
 			'probe-worker.js',
 			'sketch-worker.js',
+			'sketch-worker-gpu.js',
+			'sketch-worker-images.js',
+			'sketch-worker-shader-features.js',
 			'sketch-worker-renderer.js',
 			'job-worker.js',
 		],
@@ -600,6 +753,9 @@ const THREAD_MODES: readonly ThreadMode[] = [
 			'page-renderer.js',
 			'probe-worker.js',
 			'sketch-worker.js',
+			'sketch-worker-gpu.js',
+			'sketch-worker-images.js',
+			'sketch-worker-shader-features.js',
 			'job-worker.js',
 		],
 	},
@@ -647,9 +803,14 @@ export const DOWNLOADS: readonly Download[] = THREAD_MODES.flatMap(({ mode, part
 			...parts,
 			// Small modules that many files share, which the bundler puts in files of their own that
 			// every page loads.
+			'engine-error.js',
 			'page-message.js',
 			'page-gpu.js',
+			'page-check.js',
+			'page-core.js',
+			'page-shader-features.js',
 			'page-control.js',
+			'page-half-float.js',
 			`${drawing}-${path.part}.js`,
 			`${drawing}-gpu-shared.js`,
 		],
@@ -699,14 +860,72 @@ export function findEngineParts(
 			);
 		found.set(part.name, matches[0]!);
 	}
-	for (const part of parts) {
-		const loader = part.loadedBy ? found.get(part.loadedBy) : undefined;
-		if (!loader) continue;
-		const claimed = new Set(found.values());
-		const file = files.find(
-			(f) => !claimed.has(f) && holds(f, part.module) && loader.text.includes(f.file),
-		);
-		if (file) found.set(part.name, file);
+	// A loader names the files that it loads, and each of those names more: a feature's loader loads
+	// the loaders of the files that the feature reads. So a part's file is named in the text of the
+	// loader, or of a file that the loader names, two steps down.
+	// The files that each file names, read once: a loader names the files it loads, and each of
+	// those may name more, as a feature's loader loads the loaders of the files that feature reads.
+	const mentions = new Map<string, string[]>();
+	const byName = new Map(files.map((file) => [file.file, file]));
+	for (const file of files) mentions.set(file.file, file.text.match(/[A-Za-z0-9_.-]+\.js/g) ?? []);
+	const namedCache = new Map<string, Set<string>>();
+	/** The names of the files that a loader fetches, two steps down its chain of loaders. */
+	const named = (loader: BuiltFile): Set<string> => {
+		const cached = namedCache.get(loader.file);
+		if (cached) return cached;
+		const names = new Set<string>();
+		const reached = new Set<string>([loader.file]);
+		let frontier = [loader.file];
+		for (let step = 0; step < 2 && frontier.length > 0; step++) {
+			const next: string[] = [];
+			for (const file of frontier)
+				for (const name of mentions.get(file) ?? []) {
+					names.add(name);
+					if (!reached.has(name) && byName.has(name)) {
+						reached.add(name);
+						next.push(name);
+					}
+				}
+			frontier = next;
+		}
+		namedCache.set(loader.file, names);
+		return names;
+	};
+	// Each part that a loader loads takes a file that the loader names, in the parts' order, and
+	// then a file that the loader reaches through the files it names: a feature's loader loads the
+	// loaders of the files that the feature reads, as the file loader loads the glTF loader. A
+	// round repeats while a loader that was found names the file of a part that waited for it.
+	const loaded = parts.filter((part) => part.loadedBy);
+	for (let round = 0; round < 4; round++) {
+		let foundOne = false;
+		for (const part of loaded) {
+			if (found.has(part.name)) continue;
+			const loader = found.get(part.loadedBy as string);
+			if (!loader) continue;
+			const claimed = new Set(found.values());
+			const direct = new Set(mentions.get(loader.file) ?? []);
+			const file = files.find(
+				(f) => !claimed.has(f) && holds(f, part.module) && direct.has(f.file),
+			);
+			if (file) {
+				found.set(part.name, file);
+				foundOne = true;
+			}
+		}
+		for (const part of loaded) {
+			if (found.has(part.name)) continue;
+			const loader = found.get(part.loadedBy as string);
+			if (!loader) continue;
+			const claimed = new Set(found.values());
+			const file = files.find(
+				(f) => !claimed.has(f) && holds(f, part.module) && named(loader).has(f.file),
+			);
+			if (file) {
+				found.set(part.name, file);
+				foundOne = true;
+			}
+		}
+		if (!foundOne) break;
 	}
 	const claimed = new Set(found.values());
 	const shaders = new Map<string, BuiltFile>();
@@ -785,11 +1004,62 @@ export function downloadSizes(
  * draw probe back in its worker's script: the branch measured 170,517 bytes against 169,984 and the
  * reflection probes still to land add about 1.4 KB. The raise comes with the reclaim the owner asked
  * for: the frame figures behind `measure()` and the error-fix table load on their first use.
+ *
+ * The owner raised it to 178 KB on 22 October 2026, for the level bias, the canvas textures and the
+ * sharpening value, which took the largest start to 181,238 bytes against the old 176 KB line. The
+ * trim that pays it back is in hand: the fog write, the picks and the pointer events move to files
+ * that load on first use and save about 2.6 KB, which needs the size report to follow the chunks the
+ * bundler splits out.
+ *
+ * The owner gave standing permission to raise it without asking on 22 October 2026. It went to
+ * 182 KB the same morning, because the night's work left the largest start at 181,958 bytes, 314
+ * bytes under the line, and the next feature would have stopped every build on the machine for as
+ * long as a raise waited. The trim above is still owed and still pays it back.
+ *
+ * The cluster levels' culling pass draws its shader into the start of every page, 2.7 KB after
+ * Brotli, although only the WebGPU path builds its pipeline: the measured start moved by 650 bytes
+ * and stays inside this budget. The trim it owes is to load that shader on the feature's first use,
+ * as a material's shader loads, which returns the whole shader to pages that never draw a cluster
+ * tree and keeps WebGL2's start as it was.
+ *
+ * It went to 186 KB on 23 October 2026, because compute passes and the draws that read the count a
+ * GPU writes put their Rust and their glue into every start: WebGL2's pipelined start reached
+ * 189,064 bytes, 648 bytes over the old line, and the shader build and every picture run after it
+ * stop until the budget names the cost. The trim owed, beyond the cluster shader's, is to load the
+ * compute pass and the instance draw's adapter with their first use rather than with the page.
+ *
+ * It went to 188 KB on 24 October 2026: WebGL2's pipelined start reached 191,594 bytes, 106 bytes
+ * over the old line, after that day's landings. A hundred bytes is below the noise of one module's
+ * change, so the raise costs less than finding them, and the trims owed above still pay it back.
+ *
+ * It went to 190 KB on 24 October 2026: WebGL2's pipelined start reached 193,396 bytes, 884 bytes
+ * over the old line, for the timed script that hold mode performs. The script's steps and the scene
+ * property reads and writes that they use are in the sketch runner, and the page and a script share
+ * one writer of input records. The rise leaves 1,164 bytes of room.
+ *
+ * It went to 191 KB on 25 October 2026: the recording and its replay added 722 bytes after Brotli
+ * to the start, for the page's replay switch, the download and check of a recording, and the offer
+ * to save one. The day's other landings had already filled most of the room: the base reached
+ * 194,126 bytes of the 194,560 line, so the feature landed 288 bytes over. The rise leaves 736
+ * bytes.
+ *
+ * It went to 192 KB the same day, because the 191 KB figure was a local build's against a stale
+ * base: CI measured the same commit's pipelined WebGL2 start at 196,106 bytes, 522 over that line,
+ * and every run stopped on it. The time of a GPU frame as the span of its passes had also grown the
+ * frame figures and the stats overlay. The rise leaves 502 bytes. The start went from 186 KB to
+ * 192 KB in two days, and the owner ruled on 25 October 2026 to keep raising the line as needed for
+ * now. A trim that wins bytes back runs beside the raises, and no crossing waits for it.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 176 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 192 * 1024 };
 
-/** The budget for each part that loads after the start. */
-export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
+/**
+ * The budget for each part that loads after the start. The Brotli figure rose on 22 October 2026,
+ * from 16 KB, because the glTF worker drew the thin film's and the stretched lobe's options, their
+ * map slots and their loader notes: it went from 14,737 to 16,832 bytes after Brotli (D-215). The
+ * figure is the cap of every file that loads after the start, so the raise loosens each of them by
+ * the same kilobyte; no other file is near it.
+ */
+export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 17 * 1024 };
 
 /**
  * The budget for a generated combination table, whose name holds `-combos`: the list of module
@@ -797,7 +1067,8 @@ export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 1
  * combination that a feature's bits can form, so its uncompressed size grows with the engine's
  * features while its compressed figure, which is what a page downloads, stays small. The owner
  * approved this figure on 18 October 2026, for the four tables that the translucency builds grew
- * past 64 KB; the compressed figures stay at [`LATER_BUDGET`]'s.
+ * past 64 KB. The compressed figures date from that approval and did not follow the later
+ * raise of [`LATER_BUDGET`], which the glTF worker alone outgrew.
  */
 export const COMBOS_BUDGET: Budget = { raw: 96 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
 
@@ -822,12 +1093,51 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
  * does, so these limits do not keep the start budget's proportions. Only hosts without Brotli meet
  * the gzip limit. Each limit is the owner's, and decision record D-14 holds its figures and
  * approvals.
+ *
+ * These are the caps of a file that a feature loads on its first use, and not of the JavaScript
+ * that a page loads at its start, whose own figures are [`START_BUDGET`]. The raw and Brotli
+ * figures rose on 22 October 2026 for the coat and sheen family, which gained iridescence's and
+ * anisotropy's code (D-215). That code rides the family's builds, which the largest combinations
+ * fill with over a hundred builds: the largest file went from 1,332,440 to 1,752,865 bytes
+ * uncompressed and from 39,341 to 49,501 bytes after Brotli. A separate permutation value would
+ * have doubled the lit builds instead, past the build budget.
+ *
+ * The Brotli figure rose to 56 KB on 24 October 2026 for the water add-on (D-14's addendum of that
+ * date). Its surface function rides every build of the standard material, and the largest set is
+ * 1,204.5 KB uncompressed and 53.3 KB after Brotli, so the add-on's own gate would have failed on a
+ * feature that works as the engine's own materials do.
  */
 export const FIRST_USE_SHADER_BUDGET: Budget = {
-	raw: 1_536 * 1024,
+	raw: 1_792 * 1024,
 	gzip: 320 * 1024,
-	brotli: 49 * 1024,
+	brotli: 56 * 1024,
 };
+
+/**
+ * The share of the start budget that a start may reach before the build prints a warning: 97%. A
+ * start that passes it has little room for the next feature, so the report names it while the
+ * build still passes. The owner asked for this warning in M3-T1.
+ */
+export const NEAR_BUDGET_SHARE = 0.97;
+
+/**
+ * A warning for each start that passes [`NEAR_BUDGET_SHARE`] of its Brotli budget without passing
+ * the budget itself, which [`budgetProblems`] reports instead. The warning names the bytes left, so
+ * a person can see how much room the next feature has.
+ */
+export function budgetWarnings(
+	sizes: ReadonlyMap<string, SizeEntry>,
+	downloads: readonly Download[] = DOWNLOADS,
+): string[] {
+	const near = Math.floor(START_BUDGET.brotli * NEAR_BUDGET_SHARE);
+	return downloadSizes(sizes, downloads).flatMap(({ mode, size }) =>
+		size.brotli > near && size.brotli <= START_BUDGET.brotli
+			? [
+					`the engine JavaScript that a page downloads at its start in ${mode} mode is ${size.brotli.toLocaleString('en-US')} bytes after Brotli, past ${Math.round(NEAR_BUDGET_SHARE * 100)}% of its ${START_BUDGET.brotli / 1024} KB budget, with ${(START_BUDGET.brotli - size.brotli).toLocaleString('en-US')} bytes left`,
+				]
+			: [],
+	);
+}
 
 /**
  * A problem for each thread mode whose start passes the start budget in a column, for each part

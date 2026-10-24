@@ -1,6 +1,7 @@
 // Clear coat and sheen in a showroom on a rainy night. A candy red car turns on a varnished
-// plinth: metal flakes in its paint glitter under a smooth clear coat, which mirrors the room.
-// Rain falls around the plinth onto wet cobbles: puddles are a clear coat that a surface function
+// plinth: metal flakes in its paint glitter under a smooth clear coat, its door seams catch the
+// light, and its carbon fibre trim shines along the tows, which the car-paint add-on draws. Rain
+// falls around the plinth onto wet cobbles: puddles are a clear coat that a surface function
 // sets where the ground dips, darker beneath, with rain rings in the coat's normal. A reflection
 // pass mirrors the room in the puddles. A velvet curtain and a velvet seat glow at their edges
 // with sheen, and so do the car's tyres, faintly. A blue lamp follows the pointer across the floor.
@@ -11,6 +12,7 @@ import { interact } from '../lib/interact';
 import { createCar } from './car';
 import { createRain } from './rain';
 import { cobbles, drapes } from './surfaces';
+import { createTablet } from './tablet';
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, render, post, time, engine } = ctx;
@@ -89,6 +91,7 @@ export default defineSketch(async (ctx) => {
 		receiveShadows: true,
 	});
 	createCar(ctx, scene.createGroup({ parent: plinth, position: [0, 0.17, 0] }));
+	const tablet = createTablet(ctx);
 
 	// Velvet: a crimson curtain behind, and a teal seat beside the plinth.
 	scene.createMesh({
@@ -126,6 +129,7 @@ export default defineSketch(async (ctx) => {
 			// The lamp glides toward the pointed point, a little above the floor.
 			const [x, , z] = view.point;
 			lamp.setPosition(math.lerp(2, x, view.steering), 1.4, math.lerp(2, z, view.steering));
+			tablet.update();
 		},
 	};
 });

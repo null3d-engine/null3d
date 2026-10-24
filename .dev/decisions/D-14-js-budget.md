@@ -1,8 +1,8 @@
 # D-14: The engine's JavaScript budget
 
-Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The same day the owner added a limit for first-use shader files, two recorded exceptions and the gzip columns, in [Additions of 4 October 2026](#additions-of-4-october-2026). On 14 October 2026 the owner raised the start to 145 KB and then to 160 KB after Brotli, and each first-use shader file to 48 KB after Brotli. On 15 October 2026 the owner returned the gzip and uncompressed figures to 448 KB and 3,328 KB, and raised the start's Brotli figure to 165 KB and each first-use shader file to 49 KB, in [The figures raised on 14 and 15 October 2026](#the-figures-raised-on-14-and-15-october-2026), raised the start's Brotli figure to 166 KB on 18 October 2026, in [The fourth raise](#the-fourth-raise-18-october-2026-the-start-to-166-kb), and to 176 KB the same day with a reclaim, in [The fifth raise](#the-fifth-raise-18-october-2026-the-start-to-176-kb-with-a-reclaim). On 19 October 2026 the owner accepted about 45 ms of extra cold start and permitted a raise when a feature needs one, in [The owner's standing ruling](#the-owners-standing-ruling-19-october-2026). Date: 2026-09-30.
+Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The same day the owner added a limit for first-use shader files, two recorded exceptions and the gzip columns, in [Additions of 4 October 2026](#additions-of-4-october-2026). On 14 October 2026 the owner raised the start to 145 KB and then to 160 KB after Brotli, and each first-use shader file to 48 KB after Brotli. On 15 October 2026 the owner returned the gzip and uncompressed figures to 448 KB and 3,328 KB, and raised the start's Brotli figure to 165 KB and each first-use shader file to 49 KB, in [The figures raised on 14 and 15 October 2026](#the-figures-raised-on-14-and-15-october-2026), raised the start's Brotli figure to 166 KB on 18 October 2026, in [The fourth raise](#the-fourth-raise-18-october-2026-the-start-to-166-kb), and to 176 KB the same day with a reclaim, in [The fifth raise](#the-fifth-raise-18-october-2026-the-start-to-176-kb-with-a-reclaim). On 19 October 2026 the owner accepted about 45 ms of extra cold start and permitted a raise when a feature needs one, in [The owner's standing ruling](#the-owners-standing-ruling-19-october-2026). The start's later raises are in the sections below, the last to 191 KB on 25 October 2026. A trim the same day took the frame-budget governor out of the page's own file, which returned 2,891 bytes, in [The governor out of the page's start](#the-governor-out-of-the-pages-start-25-october-2026). Date: 2026-09-30.
 
-Summary: The engine's JavaScript that a page downloads at its start may take 176 KB after Brotli, 448 KB after gzip and 3,328 KB uncompressed, in each thread mode on each GPU path. Each file that loads on first use or after the first frame may take 16 KB after Brotli. Each first-use shader file may take 49 KB after Brotli, 320 KB after gzip and 1,536 KB uncompressed. A feature that a page does not use loads its code on first use. Draco's decoder (59 KB) and, after 1.0, the area-light tables are recorded exceptions. The WebGL2 shader text drives the growth: every raise went to it, and the start sat at 99.8% of its budget within hours of the second one ([The trend](#the-trend-and-the-task-that-tracks-it)).
+Summary: The engine's JavaScript that a page downloads at its start may take 191 KB after Brotli, 448 KB after gzip and 3,328 KB uncompressed, in each thread mode on each GPU path. A trim on 25 October 2026 returned 2,891 bytes of that, which the next features may use. Each file that loads on first use or after the first frame may take 16 KB after Brotli. Each first-use shader file may take 49 KB after Brotli, 320 KB after gzip and 1,536 KB uncompressed. A feature that a page does not use loads its code on first use. Draco's decoder (59 KB) and, after 1.0, the area-light tables are recorded exceptions. The WebGL2 shader text drives the growth: every raise went to it, and the start sat at 99.8% of its budget within hours of the second one ([The trend](#the-trend-and-the-task-that-tracks-it)).
 
 ## Question
 
@@ -688,3 +688,434 @@ the worst start measured 167.5 KB of the 176 KB budget, so 8.5 KB remained.
 
 The reclaimed code stays out. The frame figures behind `engine.measure()` and the error-fix table
 serve measurements and error text, not drawing, so no page loses anything it uses to draw.
+
+### Where the start's bytes are, 22 October 2026
+
+M3-T1 trims the start back under 160 KB. The first step measured the pipelined WebGL2 start of the
+milestone branch, 183,810 bytes after Brotli, part by part, with the report's own tooling: a page
+build at `target/js-size`, and `downloadSizes` over its parts.
+
+| Part | Bytes after Brotli | Holds |
+| --- | --- | --- |
+| The WebGL2 shader device file | 51,334 | the largest of the twelve device modules a device may load |
+| `sketch-worker.js` | 61,360 | the scene API and its feature modules |
+| `page.js` | 30,360 | the page's start, the quality preset tables and the probes |
+| `render-worker.js` | 18,245 | the frame loop, the recovery and the protocol |
+| `render-worker-webgl2.js` | 14,123 | the WebGL2 renderer |
+| `render-worker-gpu-shared.js` | 3,883 | the scene renderer of both paths |
+| The other six parts | 4,505 | the probe worker, the job worker, the small shared modules |
+
+The shader file is not the lever it was. Removing whole templates from it, and whole permutation
+builds of the standard material, barely changes its compressed size: dropping 193,000 characters of
+build text saves 1,096 bytes, because the builds are near copies of each other and Brotli already
+holds them once. The device modules are a floor of about 33 KB on WebGPU and 51 KB on WebGL2 until
+the shader library itself shrinks.
+
+The code is the lever, and its cost is spread across many modules rather than held in one. The
+scene API's own modules are about 24 KB of the sketch worker. Its feature modules are about 37 KB,
+and each one is a few kilobytes: the post settings, the assets loader, the texture and mesh array
+creators, the queries, the picks, the cameras, the background, the fog, the reflection probes, the
+probe grid, the object events and the labels.
+
+A feature module can load on its first use only where its calls can answer later. The loader of
+files answers with promises already, so its module moves out of the start with no API change. A
+setter that validates its arguments and throws an error code for a bad one cannot: the error must
+reach the caller at the call, so the module that holds its checks and its message text stays. That
+is why the sprites, lines, particles, area lights, light images, glTF, KTX2 and panorama code could
+move, and the setters could not.
+
+`budgetWarnings` in `tools/lib/size-report.ts` now prints a warning for each start past 97% of the
+budget, so a start that is about to pass it is named while the build still passes. M3-T1 asked for
+that guard.
+
+### What a first-use file costs the report, 22 October 2026
+
+Moving the file loader out of the start showed that a deferral is not free for the size report. The
+bundler put the loader's dependencies in files of their own and kept second copies of three shared
+modules that the start still needs. The report names one built file for each part. It finds the
+file that a part loads by reading the text of the part that loads it, one level deep. So a loader
+whose dependencies load from the loader's own file needs a part for each of them. Each part must
+come after it in the list, and each copy needs a part of its own.
+
+The measurement of that attempt: the sketch worker's file fell from 212,171 to 195,829 bytes. The
+page's fell from 93,189 to 90,546, about 4.7 KB and 0.8 KB after Brotli. The change waits until the
+report can follow a chunk graph, so that the copies and the nested loaders need no part of their
+own. The guard and every other finding of this section stand.
+
+### The file loader's first use, measured, 22 October 2026
+
+The build of the milestone branch with the file loader loading on first use measured these starts,
+in bytes after Brotli:
+
+| Start | Before | After |
+| --- | --- | --- |
+| pipelined, WebGL2 | 183,810 | 178,096 |
+| low latency, WebGL2 | 180,422 | 174,848 |
+| drawing on the main thread, WebGL2 | 181,689 | 176,007 |
+| sketch on the main thread, WebGL2 | 174,261 | 170,842 |
+| single-threaded, WebGL2 | 170,426 | 167,039 |
+| pipelined, WebGPU | 167,753 | 162,039 |
+| drawing on the main thread, WebGPU | 165,801 | 160,165 |
+| low latency, WebGPU | 164,452 | 158,817 |
+| sketch on the main thread, WebGPU | 158,204 | 154,785 |
+| single-threaded, WebGPU | 154,538 | 151,197 |
+
+Every start passes the 176 KB budget, and every WebGPU start passes 160 KB. The WebGL2 starts still
+sit above 160 KB, because of the shader file that this section measured.
+
+That build also held an experiment that moved the sky's write out of the start, which measured
+about 860 bytes and is not part of the change: without it, the figure above for each start that
+loads the sketch worker rises by about that much.
+
+### The files that the first-use loader added, measured, 22 October 2026
+
+The build of the milestone branch names ten files that grew past the limit of the size check. Six
+are new files, and four are files that grew. None of the six new files loads at a page's start.
+These are their sizes after Brotli:
+
+| File | Base | This build |
+| --- | ---: | ---: |
+| `js/page-assets.js` | new | 3,865 |
+| `js/page-assets-core.js` | new | 302 |
+| `js/page-assets-check.js` | new | 188 |
+| `js/page-shader-features.js` | new | 960 |
+| `js/sketch-worker-assets.js` | new | 3,717 |
+| `js/sketch-worker-worker-start.js` | new | 1,033 |
+| `js/sketch-worker.js` | 57,489 | 60,220 |
+| `js/page-control.js` | 508 | 721 |
+| `single/null3d.js` | 17,267 | 18,008 |
+| `threaded/null3d.js` | 17,439 | 18,178 |
+
+The loader's file names two shared modules, the core tables and the quality check. Each one needs a
+copy of its own there, because the start keeps its own. The report follows that chain, so each copy
+holds a part in the list.
+
+The worker's start grew by 2,731 bytes after Brotli, which is the cost of the deferral. The starts
+table above shows the other side of it: every start that the loader left fell by between 3,341 and
+5,714 bytes. A page that reads no file still downloads the worker's start, so the cost stands.
+
+The WebAssembly bindings grew by about 800 bytes in each mode, from this milestone's new exports.
+The control table gained the 3D label's entries.
+
+### The fog, picks and pointer-event move, measured and dropped, 22 October 2026
+
+M3-T1 asked for the start to fall to 155 KB. The sections above show why the shader file cannot give
+those bytes back, so the task turned to moving features onto their first use. The three moves were
+the fog's write, the picks and the objects' pointer events. The move was built and measured, and it
+cost the start more than it saved. It was dropped, and the table is here so that nobody repeats it.
+
+The two builds' size records, read with one report implementation, in bytes after Brotli:
+
+| Start | Before | With the move | Difference |
+| --- | --- | --- | --- |
+| pipelined, WebGL2 | 182,116 | 183,569 | +1,453 |
+| pipelined, WebGPU | 166,159 | 167,612 | +1,453 |
+| low latency, WebGL2 | 178,803 | 180,171 | +1,368 |
+| low latency, WebGPU | 162,854 | 164,208 | +1,354 |
+| drawing on the main thread, WebGL2 | 180,088 | 181,521 | +1,433 |
+| drawing on the main thread, WebGPU | 164,326 | 165,794 | +1,468 |
+| single-threaded, WebGL2 | 168,992 | 169,558 | +566 |
+| single-threaded, WebGPU | 153,230 | 153,831 | +601 |
+| sketch on the main thread, WebGL2 | 172,716 | 173,302 | +586 |
+| sketch on the main thread, WebGPU | 156,759 | 157,345 | +586 |
+
+The parts say why. The moves themselves did what they should: `page-fog.js` 266 bytes,
+`sketch-worker-fog.js` 256, `page-picks.js` 841 and `sketch-worker-picks.js` 811, with
+`page-sketch-runner.js` down 298, `sketch-worker.js` down 34 and `sketch-worker-renderer.js` down
+133. That is about 1.1 KB out of each threaded start.
+
+Then the deferral made the error class a file of its own: `page-engine-error.js` 789 bytes and
+`sketch-worker-engine-error.js` 603. A module that several files share moves into a file of its own
+when one of them loads on demand, and each start imports that file. A 1.6 KB file compresses far
+worse alone than the same code inside a 90 KB chunk, so the class costs about 1.4 KB more than it
+did. Those two parts nearly cancel. The rest of the measured 1,453 bytes is the churn that the new
+files put through the page's and the worker's starts.
+
+The pointers' dispatcher was to be the largest saving, about 1.6 KB, but it never split. `queries.ts`
+read its hit-field constants, which kept the whole module in the start. Moving those constants into
+a module of their own, `scene/pointer-fields.ts`, makes the split possible. That work is written but
+not landed. It would save between nothing and about 700 bytes on the threaded starts, since a split
+module compresses worse than the same code in a chunk. That is not room for the work still to
+land, so the task's target stays unreached.
+
+What would reach it: the start needs code removed, not moved. The scene API's own modules are about
+24 KB of the sketch worker, and the feature modules behind them about 37 KB. A trim that pays has to
+take a whole feature out of the engine's start, with its shaders, or the shader file has to shrink.
+
+## The core WebAssembly's growth, 23 October 2026
+
+The milestone branch's build grew each core WebAssembly file after Brotli against main's build. The
+threaded file went from 485,521 to 500,408 bytes, or 3.1 percent, and the single-threaded file from
+484,906 to 499,117 bytes, or 2.9 percent. Both stay inside the 600 KB budget that a core file has.
+
+The growth is the level system: the level table with its switch measures, the distance bands, the
+ranges texture that culling reads, and the per-level materials. The commit gate asks for a
+`Size-Growth:` line while a file grows by more than 2 percent against main, so the landing carries
+one for each core file.
+
+## The start's squeeze, 23 October 2026
+
+The grading controls pushed the engine's start close to its budget. In pipelined WebGL2 mode the
+start is 185,857 bytes after Brotli against 186,368, so 511 bytes remain. The small path's low
+latency mode reads 182,219 and the main-thread mode 183,497. That puts every threaded start past the
+97 percent warning that the owner asked for, so every page build names them while it still passes.
+
+Two files explain the movement. The engine's error type, `errors/engine-error.ts`, is imported by the
+page's start, its loader and its checks, so the bundler keeps it in `js/engine-error.js` of its own,
+771 bytes after Brotli. The size report had not named that file, which is why the four size jobs
+failed on the tip's first runs. And `js/render-worker.js` grew from 17,993 to 18,520 bytes, or
+2.9 percent, because the grading table's bake runs on the render worker.
+
+Both need a `Size-Growth:` line, as the commit gate asks. The start's remaining room is the finding
+that matters: the next feature that touches the start has nowhere to go, so a trim is due before
+another one lands.
+
+## The start's budget rises to 184 KB, 23 October 2026
+
+The first-use fix moved three shared modules out of the loader's file and into the start's own files,
+where every page loads them. The work that followed, the levels, the transmission maps and the hero
+shadow, added start code of its own. A production page build of the tip then measured 186,587 bytes
+after Brotli in pipelined WebGL2 mode, which is 219 over the 182 KB budget.
+
+The budget rises to 184 KB, or 188,416 bytes, leaving 1,829 bytes of room. The owner's rule of
+22 October allows the start's budget to rise as needed without asking. This is the smallest step that
+keeps the check useful, because a rise of 2 KB cannot hide a feature's cost the way a larger one would.
+
+The squeeze stands. This is the second rise in three days, and M3-T1's target of 160 KB is still far
+away. The next change that touches the start needs a trim, not another rise.
+## The cluster levels' shader, 23 October 2026
+
+The cluster levels' culling pass is a compute shader of 9,738 bytes of WGSL, 2,736 after Brotli, and
+every page's start carries it although only the WebGPU path builds its pipeline. It moved pipelined
+WebGL2 mode's start by 650 bytes, where it compresses beside the shader text already there. That
+fits the room that this morning's 184 KB line leaves, so it needs no rise of its own and takes none;
+the landing's build prints the figure.
+
+The trim it owes is to build the pass with the builds the engine loads on a feature's first use, as
+a material's shader does: a page that never draws a cluster tree then downloads none of it, and
+WebGL2, which never builds the pass, keeps its start. [D-213](D-213-cluster-levels.md) holds the
+drawing method and its numbers.
+
+
+## The start's budget rises to 186 KB for compute passes, 23 October 2026
+
+E8's compute pass and E9's instance draw, whose count a compute shader writes, put their Rust and
+their adapter code into every start. A production page build then measured 189,064 bytes after
+Brotli in pipelined WebGL2 mode, which is 648 over the 184 KB budget that this morning's rise set.
+The check stopped the build before any picture ran, as it is meant to.
+
+The budget rises to 186 KB, or 190,464 bytes, leaving 1,400 bytes of room. The owner's rule of
+22 October allows the start's budget to rise as needed without asking. The previous section asked
+for a trim rather than another rise; this change raises instead, because the growth is the feature's
+own Rust and the option checks that must run when a sketch adds a compute pass, and a trim large
+enough to pay for them means loading code that the call must have before it returns.
+
+The trim now owed is to load the compute pass's option checks and the instance draw's adapter with
+their first use, as the cluster levels' shader trim already asks, so a page that adds neither
+downloads neither. Until then this is the second rise in two days, and M3-T1's target of 160 KB
+stays far away.
+
+## The start's budget rises to 188 KB, 24 October 2026
+
+The half-float helpers that several of the start's own modules read became a file of their own, which
+every page loads, and the line rose to 187 KB for them. Later the same day the video textures' page
+support and the day's other landings put a production page build at 191,594 bytes after Brotli in
+pipelined WebGL2 mode, 106 bytes over that line.
+
+The budget rises to 188 KB, or 192,512 bytes, leaving 918 bytes of room. The owner's rule of
+22 October allows the start's budget to rise as needed without asking. A hundred bytes is below the
+noise of one module's change, so finding them costs more than the rise does.
+
+The squeeze stands: this is the third rise in two days, and M3-T1's target of 160 KB is still far
+away. The trims that the sections above owe, the cluster levels' shader and the compute pass's
+option checks, are the next work that touches the start's size, and they come before any feature
+that wants room.
+
+## The 160 KB target is closed, 24 October 2026
+
+M3-T1 asked for every start mode at or under 155 KB after Brotli, with the line set back to 160 KB. Its
+target was written before the owner's ruling of 22 October that the start's budget may rise as needed,
+and the trims it named were measured: the fence is in, and the trim that moved the fog write, the picks
+and the events out of the start cost more bytes than it saved and was reverted, as the section above
+records.
+
+The owner closed the task as superseded on 24 October 2026. The line stands at 188 KB, and the raises
+are recorded above. Two trims still pay the line back: the cluster levels' shader and the compute pass's
+option checks. Both stay named here as work rather than as a milestone task.
+
+## The start's budget rises to 190 KB, 24 October 2026
+
+The timed script that hold mode performs (M3-R14, D-250) put its steps, and the scene property
+reads and writes that they use, into the sketch runner, and one writer of input records now serves
+both the page's own input and a script. A production page build reached 193,396 bytes after Brotli
+in pipelined WebGL2 mode, 884 bytes over the 188 KB line, against a base that had 407 bytes of room
+left. `js/page-sketch-runner.js` grew 1,275 bytes and `js/page-control.js` grew 81.
+
+The budget rises to 190 KB, or 194,560 bytes, leaving 1,164 bytes of room. The owner's rule of
+22 October allows the start's budget to rise as needed without asking. A trim that pays for the
+script means loading its performer on hold mode's first use, which is work of its own rather than a
+few names to cut; the trims owed above still stand as the next work that touches the start's size.
+
+## The first-use shader files to 56 KB after Brotli, 24 October 2026
+
+M3-F5 built `@null3d/water`. Its surface function rides every build of the standard material, as the
+engine's own material families do, and its largest set of builds measures 1,204.5 KB uncompressed,
+241.8 KB after gzip and 53.3 KB after Brotli. The add-on listing's size gate holds an add-on's
+files to these same figures ([D-225](D-225-addon-listing-check.md)), so the 52 KB figure that the
+coat and sheen family set on 22 October 2026 failed a feature that works as the engine's own
+materials do.
+
+`FIRST_USE_SHADER_BUDGET.brotli` in `tools/lib/size-report.ts` rises to 56 KB, and
+`ADDON_SHADER_BUDGET.brotli` in the add-on check rises with it; a test keeps the two equal. The gzip
+and uncompressed figures stay at 320 KB and 1,792 KB, and the add-on's largest file passes both with
+room. The rise leaves about 5% above the measured figure, as the 22 October rise did. A first-use
+file that a page never opens still costs it nothing, so the rise costs only the devices that draw
+water.
+
+## The start's budget rises to 191 KB, 25 October 2026
+
+The recording and replay of M3-R15 (D-251) put the page's replay switch, the download and check of
+a recording, and the offer to save one into the start: 722 bytes after Brotli across the page and
+the sketch runner. The day's other landings had already filled most of the room, so the base
+reached 194,126 bytes of the 194,560 line, and the feature landed 288 bytes over at 194,848.
+
+The budget rises to 191 KB, or 195,584 bytes, leaving 736 bytes of room. The owner's rule of
+22 October allows the start's budget to rise as needed without asking. The recording's own code,
+the format and the save button, loads only for a page that records or replays, and each has its own
+first-call budget; the trims owed above still stand as the next work that touches the start's size.
+
+## The start's budget rises to 192 KB, 25 October 2026
+
+The 194,848 bytes above came from a local build measured against a stale base, and CI contradicts
+it. CI measured the same commit's pipelined WebGL2 start at 196,106 bytes, 522 over the 191 KB line.
+That was run 40127501793, on 130f70795, which changes no engine file after the recording landed. Low
+latency measured 192,288 and drawing on the main thread 192,953. The time of a GPU frame as the span
+of its passes (ac99af391) had also grown `js/page-frame-stats.js` and the stats overlay. The run
+before it measured 194,483, and the one after it 194,677.
+
+The budget rises to 192 KB, or 196,608 bytes, leaving 502 bytes of room. A figure in this record
+comes from CI's `wasm-checks` job from now on, not from a local build. The start went from 186 KB to
+192 KB in two days, each step reasonable on its own. The owner ruled on 25 October 2026 to keep
+raising the line as needed for now, as the rule of 22 October allows. A trim that wins back real
+bytes runs beside the raises, and no crossing waits for it.
+
+## The governor out of the page's start, 25 October 2026
+
+Status: done on the milestone branch. Task: the start's trim (M3-T1's work, which the owner closed
+as superseded and kept as work rather than as a task).
+
+### Question
+
+The start was over its line before this change. A production page build at the milestone branch's
+tip, `2166104f7`, measured 196,092 bytes after Brotli in pipelined WebGL2 mode. The 191 KB line is
+195,584 bytes, so the build was 508 bytes over. The branch failed its own build, and no landing
+could add a feature until the bytes came back. Which code in the start runs nowhere before the
+first frame?
+
+### Data
+
+`bun run build` on a worktree of that tip, then the report's own `downloadSizes` over its parts. The
+machine's load was far above 8, so this section takes no timing. Sizes do not depend on load.
+
+The start in pipelined WebGL2 mode, in bytes after Brotli, after gzip and uncompressed:
+
+| Part | Brotli | gzip | Uncompressed | Holds |
+| --- | ---: | ---: | ---: | --- |
+| `js/sketch-worker.js` | 68,127 | 78,727 | 239,741 | the sketch runner and the scene API with every feature module that it imports |
+| the WebGL2 shader device file | 53,283 | | | the shader text of a device with the draw index, tone mapping and half precision |
+| `js/page.js` | 31,563 | 35,408 | 97,903 | engine creation, the device probe, the preset tables, the input capture |
+| `js/render-worker.js` | 18,614 | 22,907 | 110,536 | the frame loop, the recovery and the first-use shader tables |
+| `js/render-worker-webgl2.js` | 14,379 | 16,242 | 53,198 | the WebGL2 renderer |
+| `js/render-worker-gpu-shared.js` | 3,902 | 4,308 | 10,802 | the code both GPU paths use |
+| `js/job-worker.js` | 1,717 | 1,871 | 4,262 | the core loader in a job worker |
+| `js/probe-worker.js` | 1,458 | 1,654 | 3,512 | the probe of the drawing path |
+| seven small shared modules | 2,726 | | | the control block, the error type, the GPU and core constants, the half-float helpers and the message helper |
+| Total | 196,092 | 365,692 | 1,847,734 | 100.3% of the line |
+
+The rest of the modes, in bytes after Brotli: drawing on the main thread WebGL2 193,016, low latency
+WebGL2 192,408, sketch on the main thread WebGL2 185,480, pipelined WebGPU 180,795, single-threaded
+WebGL2 180,687, drawing on the main thread WebGPU 177,804, low latency WebGPU 176,994, sketch on the
+main thread WebGPU 170,183, single-threaded WebGPU 165,475.
+
+The page's own file held the frame-budget governor, `quality/governor.ts`, at 8,792 of its 97,903
+bytes: a tenth of the file. The page never runs it. A page keeps the quality preset's values and
+hands the settings to the threads; the governor runs in the thread that runs the sketch. The module
+came in through one number: `scene/features.ts` read `BUDGET_STEPS`, the budgets' step count, when it
+works out a feature's scale from its quality setting. The bundler keeps the whole module because the
+governor computes constants from the preset table as it loads, which the bundler cannot prove has no
+side effects. A guard exists for exactly this: a module that one file reads for one number stays out
+of every file that reads none of it.
+
+### What changed
+
+The render scale and the budgets' scale moved into `quality/budget.ts`: `FULL_SCALE`, `SCALE_STEP`,
+`BUDGET_STEP`, `BUDGET_STEPS`, `thousandths`, `budgetSteps` and `budgetScale`. Each is a number or a
+function of numbers, and the module computes nothing else as it loads. `scene/features.ts`,
+`sketch/quality.ts` and `sketch/runner.ts` read them from there. The governor and its loop stay where
+they were, and the thread that runs the sketch still loads them.
+
+The change adds one module of 26 lines and moves 26 lines out of the governor. It changes no
+behavior and no public API. None of these names is exported from the engine's entry point.
+
+### Results
+
+The same build, with the change. In bytes after Brotli, and the total of each start mode:
+
+| Start | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| pipelined, WebGL2 | 196,092 | 193,201 | -2,891 |
+| drawing on the main thread, WebGL2 | 193,016 | 190,142 | -2,874 |
+| low latency, WebGL2 | 192,408 | 189,463 | -2,945 |
+| pipelined, WebGPU | 180,795 | 177,904 | -2,891 |
+| drawing on the main thread, WebGPU | 177,804 | 174,935 | -2,869 |
+| low latency, WebGPU | 176,994 | 174,072 | -2,922 |
+| sketch on the main thread, WebGL2 | 185,480 | 185,194 | -286 |
+| single-threaded, WebGL2 | 180,687 | 180,418 | -269 |
+| sketch on the main thread, WebGPU | 170,183 | 169,897 | -286 |
+| single-threaded, WebGPU | 165,475 | 165,211 | -264 |
+
+The parts of the largest start that moved, in bytes after Brotli:
+
+| Part | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| `js/page.js` | 31,563 | 28,925 | -2,638 |
+| `js/sketch-worker.js` | 68,127 | 68,062 | -65 |
+| `js/page-check.js` | 188 | in `page.js` | -188 |
+
+The modes that run the sketch on the page change little. Their sketch runner sits in
+`js/page-sketch-runner.js` rather than in the worker, and the engine gives the governor and its
+settings to the thread that draws in that mode too, so the page still loads the module.
+
+The largest start is 2,383 bytes under the 191 KB line, so the build passes again at 98.8% of it.
+The line does not move: this change pays back the raises of 24 and 25 October and leaves room for
+about two of the features that follow.
+
+### What this change ruled out
+
+- **The shader device file, 53,283 bytes.** It is 28% of the start and the largest part after the
+  sketch worker. [The section of 22 October](#where-the-starts-bytes-are-22-october-2026) measured
+  that removing whole templates and whole permutation builds saves about 1 KB for 193,000 characters
+  of text, because Brotli already holds the near copies once. The file is a floor until the shader
+  library itself shrinks.
+- **The combination key tables, 29,374 bytes uncompressed in `js/render-worker.js`.** They list every
+  feature set that has a shader module of its own, and they compress to about 2.3 KB alone. They are
+  written by the shader build, and one reader takes them as the renderer starts, so moving them would
+  add a download to the path that builds its first pipelines. Splitting them needs a change to the
+  shader build and a rebuild of every shader module, which is far more than this trim is worth.
+- **The fog write, the picks and the pointer events out of the sketch worker, about 7.5 KB
+  uncompressed.** [The section of 22 October](#the-fog-picks-and-pointer-event-move-measured-and-dropped-22-october-2026)
+  measured this at 1,453 bytes *more* in each threaded start: a small module that leaves a large file
+  compresses worse alone than inside it, and the pieces here are each a few kilobytes.
+- **One copy of the shared helpers for the page and every worker.** `shared/images.ts` sits in three
+  start files at 4,465, 4,603 and about 3,700 bytes, and `shared/metrics.ts` in the same three at
+  5,828, 3,710 and about 2,400. That is about 25 KB uncompressed, and moving it needs the build step
+  of [option G](#options-for-the-rest), which ships the engine's workers prebuilt beside shared
+  files. It is a change to how the package builds, not a change to the engine's code.
+- **The hold-mode script performer and the page's replay code, about 1.5 KB uncompressed each.** Both
+  run only in a test page. A part that leaves a start pays for its own file, and at this size it
+  pays about what it saves.
+- **`scene/light-probes.ts` in the page's start, 1,638 bytes uncompressed, about 780 after Brotli.**
+  The page's own code reaches none of it. Two chunks that a page may load later both read it, so the
+  bundler keeps it in the start for them. Its pieces cannot simply move, because the constants that
+  both halves read would then sit in the start instead, so the split needs three modules for under a
+  kilobyte. This is the next trim worth taking if the room runs out again.

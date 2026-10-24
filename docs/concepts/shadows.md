@@ -112,7 +112,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 ### Which lights get tiles
 
-The quality preset's `shadowTiles` setting caps the tiles, and `shadowTileSize` sets the texels on each side of each tile. [Quality presets](quality-presets.md) lists their values. The atlas grows to as many tiles as the lights that cast shadows can fill. It keeps them when a light stops casting, so a light whose shadows turn off and on again does not make the atlas again. It goes when no light casts shadows.
+The quality preset's `shadowTiles` setting caps the tiles, and `shadowTileSize` sets the texels on each side of each tile. [Quality presets](quality-presets.md) lists their values. The atlas grows to as many tiles as the lights that cast shadows can fill, and one more while the sun names a [hero shadow](#a-hero-shadow). It keeps them when a light stops casting, so a light whose shadows turn off and on again does not make the atlas again. It goes when no light casts shadows and no light names a hero.
 
 Each frame, the spot and point lights in the camera's view compete for the tiles. A light's size on screen is its range over its distance from the camera, and the largest lights get tiles first. A point light needs six free tiles, so a smaller spot light can take the last tile that a point light cannot use. A light keeps its tile from frame to frame while it still gets one. The other lights cast no shadows in that frame, and they still light surfaces.
 
@@ -146,6 +146,7 @@ The `shadow` option of `createDirectionalLight` and the light's `setShadow` call
 | `bias` | 0.01 | How far each receiving surface moves toward the light before its test, in meters, up to one texel of its cascade, scaled by its angle to the light. |
 | `normalBias` | 0.02 | How far each receiving surface moves along its normal before its test, in meters, up to one texel of its cascade, scaled by its angle to the light. |
 | `contactDistance` | 0.3 | How far [contact shadows](#contact-shadows) reach from each surface toward the light, in meters. 0 turns them off for this light. |
+| `hero` | None | The object that gets a [hero shadow](#a-hero-shadow) of its own, or `null` for none. |
 
 The quality preset gives the default cascade count and map size: the lighter presets draw fewer cascades and smaller maps ([Quality presets](quality-presets.md#the-settings-of-each-preset)). A light that names its own keeps them on every preset. So leave both out, unless your scene needs other values on every device.
 
@@ -354,6 +355,50 @@ const grass = materials.standard({
 });
 ```
 
+## A hero shadow
+
+The cascades spread their texels over the whole view, so a car, a character or a product in close-up gets shadows that are a few centimeters coarse. A hero shadow gives one object a shadow map of its own, fitted tightly to it, and surfaces near it read that map instead.
+
+```mermaid
+flowchart LR
+    object["The hero object,<br/>named by the light"] --> fit["A tile fitted<br/>along the light"]
+    fit --> tile["The atlas tile:<br/>texels a few millimeters wide"]
+    tile --> near["Surfaces in the object's<br/>box read the tile"]
+    cascades["The cascades"] --> far["Surfaces beyond<br/>the box read them"]
+```
+
+```ts
+const car = scene.createMesh({ mesh: carMesh, castShadows: true, receiveShadows: true });
+const sun = scene.createDirectionalLight({
+  direction: [-1, -2, -0.5],
+  intensity: 3,
+  castShadows: true,
+  shadow: { hero: car },
+});
+// Later, or for another object.
+sun.setHeroShadow(car);
+// Back to the cascades alone.
+sun.setHeroShadow(null);
+```
+
+It follows these rules:
+
+- Only the first directional light draws one, and only while it casts shadows, and only in the frame's main camera view.
+- The object casts shadows (`castShadows: true`) and the light shares its layers. A hero that does not cast draws an empty tile.
+- The box fits the object's bounding sphere. A mesh takes its mesh's bounds; a group has none of its own, so give it a `setBounds` sphere. An object with no bounds draws no hero shadow.
+- The tile is square across the light around the object's bounding sphere, and reaches past it along the light by sixteen times the sphere's radius, where its shadow lands. A surface of the object, or one within that distance below it, reads the tile. Further out, the cascades shadow it.
+- The tile's texels are the atlas's tile size spread over the object's bounds, so a smaller object gets finer shadows. An object 1.8 m across gets about eight times the first cascade's texel density at the default map sizes. A 4.4 m object, such as the demo's car, gets about three times.
+- The tile comes from `shadowTiles`, the atlas that point and spot lights share. Naming a hero adds a layer to the atlas for it, so the lights keep their tiles; only an atlas already at its limit of 24 layers gives one up, to the light that looks smallest. A hero makes the atlas while no spot or point light casts.
+- The tile draws when the light, the object or a caster that touches its box moves, and rests otherwise. A tile holds 4 bytes per texel: 4 MiB at 1,024 texels on each side.
+- The object's own shadow uses the light's `bias` and `normalBias`, capped by the tile's small texels, so it sits close to its caster.
+- The shadow distance does not cut it, and it does not fade: the light names the object, so its shadow shows wherever the box goes.
+
+A hero shadow suits a scene with one subject in close-up. When several objects need sharp shadows, or the camera moves far from them, prefer a shadowed spot light aimed at the subject. It takes one tile of the same atlas.
+
+### Where the box ends
+
+The box holds the object, a radius of space above it and sixteen radii below, where its shadow lands. A hero that stands far above the ground, such as a bird, then shadows nothing past the box's far face. An object that another object shadows keeps that shadow only where the caster lies in the box too, which reaches one radius past the hero toward the light. Keep a hero in scenes where it stands alone: a showroom floor, a starting grid, a plinth.
+
 ## Which objects cast and receive
 
 - The first directional light created casts the shadows, if it has `castShadows`. Other directional lights light surfaces, and cast none.
@@ -378,6 +423,8 @@ Each layer of the shadow map takes 2 bytes per texel: 8 MiB at 2,048 texels on e
 
 A tile costs a render pass and its culling, but only in the frames in which it draws. A point light draws the tiles of the faces that a moving caster touches, and at most 12 tiles draw again in a frame. Its culling runs on the GPU on WebGPU, and on the job workers on WebGL2. Each tile takes 4 bytes per texel: 4 MiB at 1,024 texels on each side. A receiving surface reads one tile for each shadowed light that reaches it, 4 or 9 times per pixel, as for the cascades.
 
+A hero shadow adds one more tile pass, which draws only the casters in its box. It draws in the frames where the hero moves, like a moving caster's light tile. Surfaces in the hero's box read one more layer of the atlas, 4 or 9 times per pixel. The surfaces outside it pay one matrix multiply and a comparison, and read nothing.
+
 Contact shadows need the depth prepass. WebGL2 draws it on every preset. On WebGPU they turn it on while they draw, which costs a second pass over the opaque objects' vertices. They then cost one copy of the depth at half the render size, and one ray of `contactShadowSteps` reads per texel at that size. A blur then smooths the rays' noise without crossing objects' edges. With ambient occlusion on, they share its copy, its horizon step and its denoise.
 
 To make shadows cheaper, use fewer cascades, a smaller map, a shorter distance, a higher `farCascadeInterval` or a `shadowFilter` of 3. Mark only the objects whose shadows matter as casters. For spot and point lights, give shadows only to the lights that need them, and keep their ranges short. Prefer a spot light to a point light where a cone covers the area.
@@ -401,6 +448,7 @@ WebGPU and WebGL2 draw the same shadows. Both keep the shadow map as a depth tex
 - A material with `alphaTest` cuts its shadow at `alphaTest` in three.js, and so does a masked material in null3D, at `alphaCutoff`. With `alphaToCoverage`, three.js cuts at 0.5, and null3D at `alphaCutoff`. With `alphaHash`, three.js casts the whole shape, and null3D a hashed shadow.
 - three.js draws a spot or point light's shadow map in every frame. null3D draws a tile only when its light or a caster in its range moves.
 - three.js has no contact shadows, so a ported scene gains them on High and Ultra. Set `contactDistance: 0` on the light to match three.js's look. drei's `ContactShadows` component is another technique, a blurred shadow on a ground plane, which null3D does not draw.
+- three.js has no hero shadow. A port that fakes one with a second shadowed light, or with a hand-fitted shadow camera, can replace it with `hero`, which follows the object without a camera of its own.
 
 ## Related pages
 
@@ -409,3 +457,4 @@ WebGPU and WebGL2 draw the same shadows. Both keep the shadow map as a depth tex
 - [Lighting and environment](lighting.md): how lights reach surfaces.
 - [Render graph](render-graph.md): the passes that draw each frame.
 - [Quality presets](quality-presets.md): `shadowCascades`, `shadowMapSize`, `shadowFilter`, `farCascadeInterval`, `followMovingCasters`, `shadowCascadeBlend` and their values on each preset.
+- [The hero shadow demo](https://github.com/null3d-engine/null3d/tree/main/examples/hero-shadow): a car on a launch pad whose own shadow map turns off and on every 3 seconds, beside shadows from the cascades.

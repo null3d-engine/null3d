@@ -51,9 +51,9 @@ use null3d_core::cells::ORIGIN_CELL;
 use null3d_core::clusters::RowCells;
 use null3d_core::culling::{
     self as core_culling, BY_ROW, BucketedCull, CullRun, CullSet, CullView, LevelChoice, LevelRows,
-    NO_BUCKET, RowRadii, SetLayers, SetOrder,
+    NO_BUCKET, RowBiases, RowRadii, RowRanges, SetLayers, SetOrder,
 };
-use null3d_core::levels::{LevelLink, LevelRule};
+use null3d_core::levels::LevelRule;
 use null3d_gpu::drawlist::DrawList;
 
 use super::data::{DataTexture, RING, RingSlot, TextureRows, write_rows};
@@ -74,6 +74,8 @@ pub(super) struct Occlusion<'a> {
     pub(super) occluders: &'a mut Occluders,
     pub(super) meshes: &'a MeshStorage,
     pub(super) materials: &'a MaterialTable,
+    /// The material that every mesh of the main pass draws with, or 0 for none.
+    pub(super) override_material: u32,
 }
 
 /// The culling sets: the scene's slots in place, the still scene objects through the scene's cell
@@ -268,6 +270,18 @@ impl Culling {
         &self.views[self.slot(view)].culls[(frame & 1) as usize]
     }
 
+    /// A view's culling output for a frame, or `None` when that frame did not cull or the view has
+    /// no output.
+    pub(super) fn culled_in(&self, frame: u32, view: ViewId) -> Option<&BucketedCull> {
+        if self.culled != frame {
+            return None;
+        }
+        let slot = view.index().checked_sub(self.first.index())?;
+        self.views
+            .get(slot)
+            .map(|view| &view.culls[(frame & 1) as usize])
+    }
+
     /// The sources inside the views' frustums that blockers hid in a frame, or 0 for a frame that
     /// did not cull.
     pub(super) fn occluded_entries(&self, frame: u32) -> u32 {
@@ -420,7 +434,14 @@ impl Culling {
             let buffer = match (&mut occlusion, &view.frame) {
                 (Some(o), Some(frame)) if k == 0 => o
                     .occluders
-                    .draw(input, frame, view.offsets.as_slice(), o.meshes, o.materials)?
+                    .draw(
+                        input,
+                        frame,
+                        view.offsets.as_slice(),
+                        o.meshes,
+                        o.materials,
+                        o.override_material,
+                    )?
                     .is_some(),
                 _ => false,
             };
@@ -528,6 +549,8 @@ impl Culling {
                     spheres: scene.world(parity).spheres(),
                     cells: core_culling::RowCells::Rows(scene.cells()),
                     radii: RowRadii::Rows(scene.local_radii()),
+                    biases: RowBiases::Rows(scene.level_biases()),
+                    ranges: RowRanges::Rows(scene.draw_ranges()),
                 };
             }
             let k = (set - FIRST_BATCH_SET) as usize;
@@ -540,10 +563,11 @@ impl Culling {
                     core_culling::RowCells::One,
                 ),
                 radii: RowRadii::One(batch.local_radius()),
+                biases: RowBiases::One(1.0),
+                ranges: core_culling::batch_ranges(batches, batch),
             }
         };
         let links = &layout.level_links;
-        let picks = |bucket: u32| links.get(bucket as usize).is_some_and(LevelLink::has_next);
         for (k, view) in self.views.iter_mut().enumerate() {
             let Some(frame) = &view.frame else {
                 continue;
@@ -578,7 +602,7 @@ impl Culling {
             let by_row = self
                 .runs
                 .iter()
-                .filter(|run| run.bucket == BY_ROW || picks(run.bucket))
+                .filter(|run| choice.run_looks_up(run.bucket, run.set))
                 .count();
             let room = &layout.room;
             view.culls[parity].try_reserve(

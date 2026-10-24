@@ -3,7 +3,7 @@ id: api/scene
 title: Scene
 status: experimental
 since: "0.1"
-summary: "Creating objects; models and copies; find; background, environment, reflection probes, fog, sky; the light probe grid; warmUp."
+summary: "Creating objects; models and copies; find; multiple views of one scene; background, environment, reflection probes, fog, sky; the light probe grid; the material override; warmUp."
 ---
 
 # Scene
@@ -58,6 +58,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `createSprites(options)` | A batch of camera-facing quads, after an `await`: [Sprites](sprites.md) |
 | `createPoints(options)` | A batch of points, after an `await`: [Points](points.md) |
 | `createLines(options)` | A batch of wide lines, after an `await`: [Lines](lines.md) |
+| `addFeatureDraw(description, options)` | A draw that an add-on's feature description declares, after an `await`: [Add-on feature draws](feature-draws.md) |
 
 Groups, meshes, cameras and lights take the same object options: `name`, `position`, `rotation`, `scale`, `parent`, `dynamic` and `layers`. [Objects and transforms](objects.md) describes them. `createMesh` also takes `castShadows` and `receiveShadows`, which [Shadows](../concepts/shadows.md) explains. It takes `occluder` too, which [Culling](../concepts/culling.md) explains. `createInstances` takes `colors: true` and `values: true` for a color and four values per row: [Instances and batching](../concepts/instances.md). Meshes come from `geometry` and materials from `materials` in the sketch context. One mesh and one material can serve any number of objects.
 
@@ -234,6 +235,80 @@ The first background of each kind downloads its shaders, `'background'`, `'sky'`
 
 Development builds throw E1203 for a number that is not finite, and E1108 for a number out of its range. They throw E1213 for `blur` on a background that is not an environment, and for `rotation` on a texture or the sky. Every build throws E1101 for a background that was destroyed. [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) says how each background draws, and what it costs.
 
+### Sky layers
+
+`scene.setSkyLayer(description, { wgsl })` draws an add-on's own layer over the sky: the top of the sky, a second layer of clouds, an aurora or a space backdrop. The description is a [feature description](features.md): it names the feature and records at the `'background'` point, as a `'draw'`, provides `'sky'`, and draws in the `'main'`, `'scenePass'` and `'reflection'` views. The layer's WGSL declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer` and the null3D Vite plugin builds it into the engine's sky-layer template, which owns the box around the camera, the bindings, the depth state and the blend. The layer draws right after the background, in the pixels that no object covers, on WebGPU, WebGL2 and in compatibility mode.
+
+```ts
+import { defineFeature, defineSketch } from '@null3d/engine';
+import curtain from './curtain.wgsl';
+
+export default defineSketch(({ scene }) => {
+  scene.setBackground({ sky: { cloudCoverage: 0.1 } });
+  const description = defineFeature({
+    name: 'curtain',
+    frame: 'background',
+    kind: 'draw',
+    provides: ['sky'],
+    views: ['main', 'scenePass', 'reflection'],
+  });
+  const layer = scene.setSkyLayer(description, { wgsl: curtain, sun: 0.2 });
+  return {
+    onUpdate(time) {
+      layer.set({ opacity: 0.8 + 0.2 * Math.sin(time.now) });
+    },
+  };
+});
+```
+
+| Option | Takes | Default | What it sets |
+| --- | --- | --- | --- |
+| `wgsl` | Compiled WGSL that declares `fn skyLayer` | | The layer's function, from a `.wgsl` file or a tagged template literal |
+| `opacity` | 0 to 1 | 1 | How much of the layer's color draws, which multiplies its coverage |
+| `sun` | 0 to 1 | 0 | The share of the sun that the layer hides. The core sky dims its disc and glow by the rest |
+
+The layer's function reads one input and returns one value:
+
+| Field | What it holds |
+| --- | --- |
+| `SkyLayerInput.direction` | The fragment's view ray in the world, from the camera |
+| `SkyLayerInput.clouds` | The core sky's cloud coverage, density, elevation and scale, as the four numbers |
+| `SkyLayerInput.time` | The sketch time in seconds |
+| `SkyLayerInput.sun` | The share of the sun that the layer hides, from 0 to 1 |
+| `SkyLayer.color` | The layer's linear color, which the pass tone maps with the scene's exposure |
+| `SkyLayer.coverage` | How much of the pixel the layer covers, from 0 to 1. 0 draws nothing there |
+
+A layer declares no uniforms, textures or bindings of its own: the engine binds the frame and the layer's values, and the add-on's numbers are constants in its WGSL. It draws in the camera's view, in scene passes and in reflections, and it draws nothing where the background draws nothing, as in a debug view. A second call replaces the layer, `set` changes its values, and `scene.clearSkyLayer()` removes it and gives the core sky its full sun back.
+
+The scene's environment map and its diffuse light come from the core sky alone, so a layer adds no light to the scene. Give a scene that a layer should light a light of its own. The aurora example add-on in `examples/addons/aurora/` draws one.
+
+## Multiple views
+
+`scene.createView({ camera, rect })` draws the scene again from another camera, into a rectangle of the canvas, after the camera's view and in the same frame. Use it for a split screen or a picture in picture. `rect` is `[x, y, width, height]` as fractions of the canvas's width and height from its top-left corner, so `[0.5, 0, 0.5, 1]` is the right half.
+
+```ts
+export default defineSketch(({ scene }) => {
+  const main = scene.createPerspectiveCamera({ fov: 55, position: [6, 5, 9], target: [0, 1, 0] });
+  scene.setActiveCamera(main);
+  const close = scene.createPerspectiveCamera({ fov: 70, position: [0, 1.4, 2.5], target: [1, 1.4, 0] });
+  // A picture in picture in the canvas's top-right corner.
+  const inset = scene.createView({ camera: close, rect: [0.69, 0.02, 0.29, 0.32] });
+  // setRect changes the rectangle from the next frame on, and allocates nothing.
+  inset.setRect([0.5, 0, 0.5, 1]);
+  return {};
+});
+```
+
+The view's camera gives its layer mask, as the active camera's does, and the view follows the camera's layers when they change. The rectangle's shape sets the camera's aspect ratio, so objects keep their proportions in a half-width view. `setCamera` changes the view's camera, `setRect` changes its rectangle, and `destroy` removes the view.
+
+Each view culls the scene on its own, and draws it at its rectangle's pixels with its own depth. The sun's and the spot lights' shadows, the environment's light and the fog cost nothing more than the camera's view. On every GPU path and in every thread mode the view draws in the same frame as the camera's view, and the final image takes the tone mapping, the effects and bloom once. On the 8-bit path the view writes display color into the camera's image, and the resolve pass or the final pass draws it to the canvas.
+
+A view costs one more cull and one more scene draw. The camera's view still draws the whole canvas first, with the canvas's aspect ratio, so a split screen of two half-width views draws the scene three times: once across the canvas underneath and once for each half. A picture in picture draws it twice. The rectangle follows the render scale, as the camera's view does, so a lower scale lowers a view's cost too. A small rectangle costs little on a phone. Bloom's threshold and the tone curve see the whole image once.
+
+A view's objects take no ambient occlusion or screen-space reflections, which shade the camera's view. The camera's volumetric fog and outline are added to the whole image after the views draw, so they also reach a view's rectangle. An object whose material shows a render pass's texture does not draw in a view, as it does not draw in another pass. `screenToRay` and `worldToScreen` map the whole canvas, so they do not follow a view's rectangle. A scene and its passes share 32 views, the camera's included; `scene.createView` throws E1501 when none is free. Development builds throw E1213 for a camera or a rectangle that a view does not take, and E1203 for a number that is not finite.
+
+[Multiple views](../guides/multiple-views.md) covers split screens, picture in picture and their cost.
+
 ## The environment
 
 `setEnvironment` lights the scene with an environment map from [`assets.loadEnvironment`, `assets.builtinEnvironment` or `assets.skyEnvironment`](assets.md#environments), as three.js's `scene.environment` does with a texture from `PMREMGenerator`. Standard materials reflect it, sharply when smooth and blurred when rough, and take its diffuse light. `setEnvironment(null)` removes it. The background stays as `setBackground` set it.
@@ -248,13 +323,13 @@ scene.setEnvironment(sunset, { intensity: 0.8, rotation: [0, Math.PI / 2, 0] });
 | `intensity` | 1 | The factor of the environment's light, 0 or more, as three.js's `scene.environmentIntensity` |
 | `rotation` | `[0, 0, 0]` | The environment's turn, as Euler angles in radians in the order X, Y, Z, as `scene.environmentRotation` |
 
-Each call sets both options, and an option left out takes its default. The call allocates nothing, so a sketch can turn the environment in every frame. `bun run bench:allocation --environment` checks it. A material's `envIntensity` scales the light on that material. The scene draws without a file's environment until its map is on the GPU. The built-in room's map and the sky's map are whole in the first frame that uses them. The sky's map follows the sky background: after a change of the sky, the scene takes the new light 19 frames later. The scene draws without the environment again after `environment.destroy()`. Development builds throw E1203 for a number that is not finite and E1108 for a negative intensity. They throw E1213 for a value that is not an environment. Every build throws E1101 for an environment that was destroyed. [Lighting and environment](../concepts/lighting.md#environment-maps) says how the environment lights a surface, and what it costs.
+Each call sets both options, and an option left out takes its default. The call allocates nothing, so a sketch can turn the environment in every frame. `bun run bench:allocation --environment` checks it. A material's `envIntensity` scales the light on that material. The scene draws without a file's environment until its map is on the GPU. The built-in room's map and the sky's map are whole in the first frame that uses them. The sky's map follows the sky background: after a change that shows, the scene takes the new light up to 19 frames later, and a smaller change waits for its next step. The scene draws without the environment again after `environment.destroy()`. Development builds throw E1203 for a number that is not finite and E1108 for a negative intensity. They throw E1213 for a value that is not an environment. Every build throws E1101 for an environment that was destroyed. [Lighting and environment](../concepts/lighting.md#environment-maps) says how the environment lights a surface, and what it costs.
 
 ## The light probe grid
 
 `setLightProbeGrid` lights the scene with a grid of irradiance probes, so light that changes with a surface's place, bounced from colored walls or sky, reaches it. Each probe holds L1 spherical harmonics of the light that arrives at its point. Standard materials read the grid per pixel, with three filtered reads each. Its light takes the place of the environment's diffuse light, and the environment keeps its reflections.
 
-A grid baked elsewhere passes in through `LightProbeGridData`, which packs its coefficients into the texture. Each probe holds four RGB coefficients, 12 numbers: L0, then L1 along y, z and x.
+A grid baked elsewhere passes in through `LightProbeGridData`, which packs its coefficients into the texture. Each probe holds four RGB coefficients, 12 numbers: L0, then L1 along y, z and x. A grid that a tool outside the engine baked can also come from a file: [`assets.loadLightProbeGrid`](assets.md#baked-light) reads the [baked light file](../guides/baked-light-data.md) format and gives the options below, with the texture already made. `assets.lightProbeGridFile` writes that format from a grid that `bakeProbes` made.
 
 ```ts
 const grid = new LightProbeGridData(
@@ -317,7 +392,7 @@ export default defineSketch(async ({ scene, assets, textures }) => {
 });
 ```
 
-Development builds throw E1203 for a number that is not finite, E1108 for a value out of range, and E1213 for something that is not a texture. Every build throws E1101 for a texture that was destroyed, and E1222 for a texture that is not a 3D texture: make the grid's texture with `LightProbeGridData.toTexture()`. The grid takes 24 bytes of GPU memory per probe, and each lit pixel reads it three times. [Lighting and environment](../concepts/lighting.md#light-probe-grid) gives the grid's limits, what takes its light, and how its shaders load.
+Development builds throw E1203 for a number that is not finite, E1108 for a value out of range, and E1213 for something that is not a texture. Every build throws E1101 for a texture that was destroyed, and E1222 for a texture that is not a 3D texture: make the grid's texture with `LightProbeGridData.toTexture()`. The grid takes 24 bytes of GPU memory per probe, plus a padding slice at either end of each sub-volume, and each lit pixel reads it three times. [Lighting and environment](../concepts/lighting.md#light-probe-grid) gives the grid's limits, what takes its light, and how its shaders load.
 
 ## Reflection probes
 
@@ -355,7 +430,7 @@ export default defineSketch(async ({ scene, assets, input }) => {
 | `layers` | The default layer | The layers of the objects that the captures draw |
 | `priority` | 0 | Where boxes overlap, the higher priority wins, then the smaller box |
 
-`probe.set(options)` sets every option again: a new position or new layers capture again. `probe.capture()` captures again after objects around the probe moved. `probe.destroy()` removes the probe, and its box takes the light of other probes or of the environment from the next frame.
+`probe.set(options)` sets every option again. A new position or new layers capture again. `probe.capture()` captures again in a frame soon after the call, as after an object around the probe moved. The surfaces in its box read the new map from that frame. Without a call, a probe that refreshes once keeps its last map. `probe.destroy()` removes the probe. Its box takes the light of other probes or of the environment from the next frame.
 
 A scene has at most 16 probes, and their captures take 6 of the 32 views that the scene and its [passes](render.md) share. Each throws E1430 past its limit. Development builds throw E1213 for an option that probes do not take, E1203 for a number that is not finite, and E1108 for a negative blend or intensity, or a box whose `min` does not lie below its `max`. They also throw E1101 for a call on a probe that was destroyed.
 
@@ -465,6 +540,14 @@ Each light is an object, so a scene can hold many, and each call creates another
 
 A decal is a mesh of `geometry.box()` with a `materials.decal` material, which projects its look onto the opaque surfaces in the box ([Decals](materials.md#decals)). `scene.setDecalLayers(mask)` sets the layers whose objects decals mark, and objects on other layers show none. The default is every layer.
 
+## Drawing every mesh with one material
+
+`scene.overrideMaterial = material` draws every mesh and instance batch of the main pass with that material, in place of each object's own. This matches three.js's `scene.overrideMaterial`. Each object keeps its mesh, its place and its instances. A batch draws all of its rows with the override. Set the property to `null` to draw each object with its own material again.
+
+Sprites, points, lines and particle systems keep their own materials. The shadow maps also keep each object's material, as three.js's shadow maps do, so a masked object still cuts its shadow. A sprite, point or line material throws E1224.
+
+The change reaches the frame after the call, and that frame rebuilds the engine's draw tables. After that the override adds no draw call and no pipeline beyond the materials it replaces. For the built-in debug views, use `debug.view` instead.
+
 ## When changes take effect
 
 Creating an object, `destroy`, `setParent`, `setVisible`, `setLayers` and `setDynamic` change the structure of the scene, and so do the mesh calls: `setMaterial`, `setMesh`, `setCastShadows`, `setReceiveShadows`, `setRenderOrder`, `setFrustumCulled` and `setBounds`. The engine queues these changes and applies them after `onUpdate` returns, before it updates transforms and draws. The frame drawn after the call shows the change. Some of them make the engine rebuild its draw tables, as the [performance guide](../guides/performance.md#objects-during-play) lists.
@@ -484,7 +567,7 @@ An instance batch is one object that draws many copies of one mesh with one mate
 ## Limits
 
 - A scene starts with room for 1,023 objects: groups, meshes, cameras and lights together. When it needs more, it grows on its own. It doubles its room at the start of a frame once it is three quarters full. A create call that finds it full doubles it at once. A destroyed object frees its place when the frame applies the change.
-- Each growth copies the scene's tables, about 263 bytes per object, in one short pause. A scene that knows its size can start with room for every object, with the `expectedObjects` option of [`createEngine`](engine.md#options), and never grows during play.
+- Each growth copies the scene's tables, about 267 bytes per object, in one short pause. A scene that knows its size can start with room for every object, with the `expectedObjects` option of [`createEngine`](engine.md#options), and never grows during play.
 - A scene holds up to 1,048,575 objects, the most that a handle can name. Past that, a create call throws E1102. A growth that the engine's memory cannot hold throws E1109. Each place counts toward the objects and instance rows that the GPU draws (`engine.capabilities.maxInstances`), and a growth past that limit throws E1501.
 - The rows of an instance batch take none of those places. One engine holds up to 256 batches, and `createInstances(prefab, ...)` takes one for each mesh of the model.
 - The queue holds up to 65,536 changes between two frames. One more throws E1102.

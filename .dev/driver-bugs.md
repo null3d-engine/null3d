@@ -2,6 +2,90 @@
 
 Faults of GPU drivers and browsers that the engine works around, written up to report upstream. Each report names the device, the driver and the browser, and gives the smallest known case. It also says where the engine's workaround and evidence are. [Browser faults](implementation-notes.md#browser-faults) holds the full story of each.
 
+## WebKit on iOS and iPadOS: Creek at Low and Medium wedges WebGPU after its first frame
+
+Status: not reported yet. Found 24 October 2026. The fault is in WebKit's WebGPU path on iOS and iPadOS. A capture of the frame on the device is still owed before a report goes upstream, and no engine change is made first.
+
+- Devices: iPhone 17 in Safari 26.1 on iOS 26, and iPad Pro 13 2025 in Safari 26.6.1 on iPadOS 26, both in BrowserStack's device cloud.
+- Seen in: Creek, `examples/showcase/creek/sketch.ts`, at the Low and Medium presets, at commit `5aea95fd1`. The task branch `feat/m3-v1-creek-webgpu-bisect` holds the diagnostic switches that the bisect used.
+- What happens: the first frame draws. The page's thread then stops. Its own 12 second timer never fires, and WebDriver's script calls time out. Safari reloads the tab 15 to 26 seconds after the first frame.
+- What runs: the same page and scene at Low in Safari 26 on macOS. Its WebKit draws the scene and posts 719 page frames in 12 seconds. Chrome 155 on macOS draws it too, with the engine's measurement on. The forest demo draws at every preset on the iPad's WebGPU. Creek at Low on WebGL2 draws 30 frames a second on the iPad. Creek at **High** on the iPad's WebGPU runs, with 720 page frames in 12 seconds.
+
+The bisect of 24 October 2026 ran eleven sessions on the iPad Pro 13, one per pass. Each page fixed the preset and the GPU path, turned the measurement and the overlay off, and counted its own frame callbacks for 12 seconds. A pass whose page posted that count kept its thread free. A pass whose page posted no count, and whose tab reloaded, wedged it.
+
+| Pass | Page | Result |
+| --- | --- | --- |
+| 1 | Low, no measure, no overlay | Wedged |
+| 2 | High, the same | Ran |
+| 3 | Medium, the same | Wedged |
+| 4 | Low, the reflection drawn in every frame | Wedged |
+| 5 | Low, the reflection every frame at the whole render size | Wedged |
+| 6 | Low, without the water | Wedged |
+| 7 | Low, without the grass | Wedged |
+| 8 | Low, with the sky, the environment light, the shadows and the bloom off | Wedged |
+| 9 | Low, in compatibility mode | Wedged |
+| 10 | Low, without the engine's mobile texture copies | Wedged |
+| 11 | Low, in Safari on the Mac | Ran |
+
+What the bisect shows:
+
+- The measurement, the stats overlay, the GPU timings and the page's heap walk are not the cause. Pass 1 ran with none of them.
+- The water's reflection is not the cause: not its cadence (pass 4), not its target's size (pass 5), and not the water itself (pass 6).
+- The grass is not the cause (pass 7). Neither are the sky, the environment light, the shadows or the bloom (pass 8).
+- The mobile path that keeps CPU copies of textures is not the cause (pass 10).
+- The fault follows the preset. Low and Medium wedge. High runs the same scene with more content and the reflection in every frame.
+- Compatibility mode wedges too (pass 9). So the fault is not a feature of core WebGPU alone.
+- The same page and engine run in WebKit on macOS (pass 11) and in Chromium. So the fault is WebKit on iOS and iPadOS, not WebKit in general and not the scene's data as another engine sees it.
+
+Where it blocks: the page's own main thread. Its timer never fires, and the engine's JavaScript there is idle while the render worker keeps drawing. So the block is a wait in WebKit's presentation path for the GPU, not a wait in the engine's code. Whether the engine's GPU work is malformed in a way that only Apple's iOS driver mishandles is not known.
+
+Still owed: a capture of the frame on the device. BrowserStack does not offer one, because WebKit's WebGPU inspector needs a Mac with Safari's Develop menu over a cable. The next untested engine path is the texture memory budget on a tablet, which has no page switch yet.
+
+Workaround: none. The measurements of 24 October 2026 report Creek on WebGL2 on Apple devices, and they name the WebGPU rows that this fault kept from running.
+
+What the bisect could not reach, 24 October 2026. The texture budget is not the mechanism: Creek at
+Low held 120.6 MiB of GPU textures on the iPad against Low's 256 MiB, so Low never fills its budget
+and never drops a mip level. The budget setting correlates with the preset only because every quality
+setting does, and the one cut-correlated setting with a plausible mechanism, the 1024 and 2048 texel
+shadow map, is already excluded by pass 8. What remains in the engine is a short list of settings
+that change with the preset and have no named mechanism.
+
+**What compatibility mode narrows it to, 24 October 2026.** Compatibility mode wedges too. So the
+fault is not in a core WebGPU feature, such as a texture format, a higher limit or a query. It lies
+in what both modes share: WebKit's WebGPU on iOS and iPadOS, and the path that presents a canvas a
+worker draws.
+
+The preset cut then reads best as pacing rather than content. Low and Medium present fast frames.
+High presents slow ones, and every piece that the bisect removed made the frames faster without
+lifting the wedge. Two facts say that pace alone is not enough. The forest demo at Low presents 60
+frames a second on the same iPad and runs, and Creek at High runs with the same passes. So Creek's
+own frame carries something that meets the pace.
+
+The test that this hypothesis names, before a capture, is cheap. Run the Low page with `?fps=15`,
+which caps the rate that the drawing thread holds. If a capped frame rate runs, the fault
+follows the pace of presentation. If it still wedges, pace is out.
+
+That test has now run, and pace is out. The Low page with `?fps=15` on the iPad's WebGPU drew its
+first frame, never fired its own 12 second timer, and reloaded 29 seconds later; a second attempt did
+the same at 19 seconds. Neither attempt reached the page's own step that reports a drawn frame. So
+capping the rate does not lift the wedge, and the fault does not follow how fast the drawing thread
+presents.
+
+The next step is therefore a capture of the frame on a device, not another bisect in the cloud. WebKit's WebGPU inspector needs a Mac running Safari's Develop menu over a
+cable.
+
+## Adreno 619: compatibility mode loses the Vulkan device on its first frame
+
+Status: not reported yet. Found 24 October 2026.
+
+- Device: Samsung Galaxy Tab A9+ (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
+- Browser: Chrome 152.0.7977.54, WebGPU through Dawn's Vulkan backend.
+- Seen in: Creek at Low, in compatibility mode, in the vegetation run of 24 October 2026 ([tested devices](tested-devices.md#vegetation-on-four-cloud-devices-24-october-2026), run 20261024-111020).
+- What happens: the engine's capabilities page reports no compatibility adapter on this device. A page that asked for the mode anyway started, drew no scene, and its render worker lost the device. It reported E1302, `vkQueueSubmit failed with VK_ERROR_DEVICE_LOST` from Dawn. No adapter was left to start another. The engine's frame counter still advanced. So the page reported 3 frames in 5.5 s, and the runner counted a pass.
+- What runs: Creek at Low on WebGL2 draws 0.8 frames a second on the same device.
+- Not tried: whether the loss follows the first draw, a pipeline, or an allocation, and whether any shader triggers it. The engine's own choice never takes the mode there, so the loss comes only from a page that forces it.
+- Workaround: none needed for users, because the engine picks the path from the capabilities report. A page that forces the mode can still hit it. The device page now fails on any engine failure, so a run like this cannot pass again.
+
 ## Safari 27.0: `atomicCompareExchangeWeak` does not compile
 
 Status: fixed in WebKit on 13 September 2026 (commit 4f56cc248e8a, 321006@main, inside bug 323873), not yet in a Safari release. No bug names the fault. Not reported by null3D: a draft waits for the owner. Found 8 October 2026.

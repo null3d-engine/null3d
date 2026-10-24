@@ -8,7 +8,7 @@ summary: "HDR scene color, ambient occlusion and screen-space reflections at hal
 
 # The post-processing chain
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, screen-space reflections, custom effects, depth of field, bloom, automatic exposure and outlines. The final pass adds color grading, the vignette and custom tone curves. A still view blends and then rests the GPU.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, screen-space reflections, custom effects, depth of field, bloom, automatic exposure and outlines. The final pass adds color grading, the vignette, sharpening and custom tone curves. A still view blends and then rests the GPU.
 
 ```mermaid
 flowchart LR
@@ -29,7 +29,7 @@ flowchart LR
     up --> final
     mask["Outline mask:<br/>outlined objects"] --> line
     final --> line["In the same pass:<br/>the outline's line,<br/>the color grading table,<br/>then dithering"]
-    final -- "below the whole canvas,<br/>when the scale can drop" --> scaled["A second step:<br/>scales the image up, then<br/>the outline's line, the color<br/>grading table and dithering"]
+    final -- "below the whole canvas,<br/>or while sharpening" --> scaled["A second step:<br/>sharpens the display color<br/>and scales it up, then<br/>the outline's line, the color<br/>grading table and dithering"]
     line --> canvas["Canvas"]
     scaled --> canvas
 ```
@@ -60,7 +60,9 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 The engine can draw the scene at a lower scale than the canvas, then scale the image up, to hold a frame rate on a slow GPU ([Dynamic resolution](quality-presets.md#dynamic-resolution)). Below the whole canvas's scale, the final pass runs in two steps, while the render scale can drop below 1, which the default presets allow. At the whole canvas's scale, and while the scale cannot drop below 1, one pass does that work, exactly as before the split.
 
 1. The first step draws at the render size, one pixel for each render pixel. It adds bloom's light, darkens the edges with the vignette, and runs the output transform, which is the tone curve and the sRGB encode. It smooths edges with FXAA too. It writes an 8-bit target the size of the canvas, with the image in its corner at the render scale. The second step reads that target as display color. The first step leaves the dither to the second step: that step draws canvas pixels, so the noise lands at the canvas's size.
-2. The second step is the plain final pass. It reads the 8-bit target and scales it up to the whole canvas with GSR 1, Qualcomm's spatial upscaler, which keeps edges sharper than a bilinear filter. The pass blends the four nearest texels as a bilinear filter does, then votes on their green channel to find an edge. Where an edge passes, it weighs twelve texels around the pixel and adds a bounded correction to the blend; a flat area keeps the blend alone. The work runs only where a pixel reads a smaller corner on the canvas, so an image at the whole canvas's scale pays nothing for it. Then the pass darkens the edges with the vignette, draws the outline's line, applies the color grading table, when the sketch sets one, and dithers.
+2. The second step is the plain final pass. It reads the 8-bit target and scales it up to the whole canvas with GSR 1, Qualcomm's spatial upscaler, which keeps edges sharper than a bilinear filter. The pass blends the four nearest texels as a bilinear filter does, then votes on their green channel to find an edge. Where an edge passes, it weighs twelve texels around the pixel and adds a bounded correction to the blend; a flat area keeps the blend alone. The work runs only where a pixel reads a smaller corner on the canvas, so an image at the whole canvas's scale pays nothing for it. Then the pass sharpens the display color while the sketch asks for it ([Sharpening](#sharpening)), darkens the edges with the vignette, draws the outline's line, applies the color grading table, when the sketch sets one, and dithers.
+
+The two steps also draw at the whole canvas's scale while the sketch sets `sharpen`, since the sharpening reads display color. Without it, one pass does the work there, as the sections below describe.
 
 Two costs come with the split. Both go away while the render scale cannot drop, which `quality.set({ minRenderScale: 1 })` keeps:
 
@@ -73,7 +75,7 @@ The first step rounds to 8 bits before the second step blends. A frame below the
 
 Bloom spreads light from the bright parts of the scene into their surroundings, as a camera lens does. It draws a chain of levels, each half the size of the one before, as Bevy, Filament and Unity draw bloom:
 
-1. Steps down. The first step reads the scene color into the largest level, the base. It keeps the light that passes `threshold`, and limits each color to what a 16-bit float holds. Each later step reads the level above into the next level.
+1. Steps down. The first step reads the scene color into the largest level, the base. It keeps the light that passes `threshold`, and limits each color to what a 16-bit float holds. A color that is not a number (NaN) becomes black there, so one bad pixel cannot spread over the picture. Each later step reads the level above into the next level.
 2. Each step down reads 13 texels around each texel, with the weights of Call of Duty: Advanced Warfare's bloom. The first step also takes a Karis average: a very bright group of texels counts less. So a small bright point does not flicker as it moves.
 3. Steps up. From the smallest level back to the base, each step blurs the level below with a 3 x 3 tent filter. It blends the result into its own level. The base then holds the light of every level, each with its share of the glow.
 4. The final pass reads the base once for each pixel, and blends it into the scene color before the tone mapping.
@@ -210,6 +212,7 @@ post.addEffect({ wgsl: warm });
 - Effects run after the scene passes and before depth of field and bloom, on linear HDR color after the exposure. Light that an effect adds can glow, and the tone curve maps it with the rest.
 - Each effect reads the color that the effect before it wrote. It can read any pixel, and the scene's depth on every GPU path.
 - Effects run from the lowest `order` to the highest, at most 8 at once.
+- An effect that calls `effectBloom(input.uv)` reads a level of bloom's chain, and `bloomLevel` names which level, from 0 for the narrowest glow. The chain then draws before the effects, from the scene color rather than from their output, and the final pass still blends its glow into the picture after them. A streak, a glare or a halo reads the level that suits its width instead of blurring the picture again. Such an effect draws in a pass of its own, as an effect with textures does, and a level that the chain does not draw reads black.
 - Two targets of the render size serve all the effects. The render graph lets them share memory, because each effect's target lives only until the next effect has read it.
 - A full-screen pass reads and writes 8 bytes per pixel. The engine joins an effect that reads only its own pixel into the pass of the effect before it, while the render scale cannot drop below the whole canvas. With bloom and FXAA off, the last of these passes folds into the final pass then too. While the scale can drop, each effect draws a pass of its own, at every scale ([below the whole canvas's render scale](#below-the-whole-canvass-render-scale)). [Custom passes](../guides/custom-passes.md#cost) gives the rules.
 
@@ -336,8 +339,19 @@ A color grading table, from a `.cube` or a `.3dl` file through `assets.loadLut` 
 - The table works on display color, after the tone mapping. Grading tools make tables for display color, so they look as their authors made them.
 - Both draw on every GPU path, with HDR color or without it, as [Post-processing API](../api/post.md#vignette) says.
 - They are settings of the final pass, not passes of their own. Turning one on builds no pipeline, so the picture changes in the next frame with no pause.
-- The table is a 3D texture, read with one filtered texture read per pixel. The vignette costs a few operations per pixel.
+- Each table is a 3D texture, read with one filtered texture read per pixel. The vignette costs a few operations per pixel.
+- The grading controls' table holds 32 texels a side, and the final pass takes the square root of a color before it reads the table, which places the texels closer together toward black where a grade's curve is steepest. A job worker computes the table's texels, so a value that changes costs no frame. The table keeps the worker's whole range, past white, and the canvas clips it, so a color that crosses white inside a texel's cell still matches the grade.
 - The engine's parity test compares a `.cube` table alone with three.js's composer. It matches in all but under 0.1% of the pixels on every GPU path. With the vignette too, mapped from `VignetteShader`'s settings for AgX, it matches as closely.
+
+## Sharpening
+
+Sharpening makes edges and fine detail crisper, as a lens that is stopped down does. `post.set({ sharpen: 0.5 })` turns it on with half its strength, and it is off by default. [The post-processing API](../api/post.md#sharpening) lists its setting.
+
+- It works on display color, after the tone mapping and the sRGB encoding, as FSR 1's RCAS does at the end of its chain. Sharpening light before the tone curve lets a bright edge gain colored rings, so the engine sharpens what the canvas shows.
+- RCAS is robust contrast-adaptive sharpening. Each pixel reads the four neighbors that cross it. The pass takes a share of them that grows where they form an edge, and shrinks it where the ring around the pixel is noise. Flat areas and grain therefore stay as they are. It also limits the result to the colors' own range, so no channel clips and no dark or bright halo appears.
+- It draws at the whole canvas's render scale. A render scale below 1 sharpens its own upscale, so the value adds nothing there.
+- While it is on, the frame draws the two steps that a lower render scale draws. The first step tone maps into the 8-bit target. The second reads that target, sharpens it, and draws the canvas. The sharpening therefore adds one full-screen pass.
+- A still view keeps drawing while the sharpening is on. The sharpening draws in the moving frame's second step, so the history that a still view keeps is not sharpened.
 
 ## Dithering
 
@@ -356,7 +370,7 @@ The engine finds a still view by comparing each frame's draw commands and upload
 
 - While the view blends, the final pass skips FXAA: the blended frames smooth the edges instead. With MSAA, each blended frame keeps its 4 samples.
 - Meshes and sprites move by the sub-pixel offset. Lines, points and particles draw without it.
-- Some views never blend. Their picture can change on the GPU alone, or with the clock alone, or the blend would mix what it cannot average. Those views draw every frame as before. Views with bloom, outlines, automatic exposure, volumetric fog, particles, custom effects, custom materials or the physical sky never blend either. Nor does a canvas that keeps its alpha, or the 8-bit color path.
+- Some views never blend. Their picture can change on the GPU alone, or with the clock alone, or the blend would mix what it cannot average. Those views draw every frame as before. Views with bloom, outlines, automatic exposure, volumetric fog, particles, custom effects, custom materials, the physical sky or sharpening never blend either. Nor does a canvas that keeps its alpha, or the 8-bit color path.
 - The history is one 16-bit target the size of the canvas: 8 bytes per pixel, about 17 MB at 1920 × 1080.
 - Hold mode, and so the image tests, draws without it. The option `createEngine({ still: false })` and the page switch `?still-camera=off` turn it off.
 
@@ -381,12 +395,13 @@ The devices that the engine was tested on all draw HDR color with WebGL2, and wi
 - `new GTAOPass(scene, camera, width, height)` becomes `post.set({ ao: {} })`. Its `updateGtaoMaterial({ radius, thickness, distanceExponent, distanceFallOff, scale, samples })` settings keep their names, with `distanceFalloff` spelled so, and `blendIntensity` becomes `intensity`. Set `quality.set({ aoScale: 0.5 })` too where phones and tablets should draw it.
 - `SSAOPass`, `SAOPass` and the N8AO library also become `post.set({ ao })`. Their settings have other meanings, so start from the defaults and tune `radius` and `scale` by eye.
 - `new OutlinePass(resolution, scene, camera, selectedObjects)` becomes `post.set({ outline: { color, hiddenColor, width } })`, from `visibleEdgeColor` and `hiddenEdgeColor`. `OutlinePass` draws its edge at half size, so a `width` of twice its `edgeThickness` gives about the same line. three.js draws a dark brown line around hidden parts by default, and null3D draws none until `hiddenColor` is set. Each selected mesh calls `setOutlined(true)`. A selected model's copy from `scene.instantiate` calls it once for all of its meshes.
-- `OutlinePass` blurs its edge, and `edgeStrength`, `edgeGlow` and `pulsePeriod` set how bright it is, how far it glows and how fast it pulses. null3D's line is crisp and opaque, so it has none of these settings. To pulse the line, change its color or width every frame.
+- A port that needs `OutlinePass`'s soft edge, its glow or its pulse installs `@null3d/three-compat` and calls `createOutlinePass(ctx, { color, hiddenColor, strength, thickness, glow, pulsePeriod })`. Its settings keep `edgeStrength`, `edgeThickness`, `edgeGlow` and `pulsePeriod`, and `visibleEdgeColor` and `hiddenEdgeColor` become `color` and `hiddenColor`. The add-on turns the core's crisp line off, and it costs five full-screen passes and one effect ([three.js compatibility](../api/three-compat.md)).
 - three.js has no automatic exposure. pmndrs's `ToneMappingEffect` with `mode: ToneMappingMode.REINHARD2_ADAPTIVE` adapts, and becomes `post.set({ autoExposure: { metering: 'mean' } })`. Its `adaptationRate` becomes about `speedUp` and `speedDown`, and its `middleGrey` the `compensation`: `log2(middleGrey / 0.18)` stops. Its Reinhard curve becomes a custom tone curve. pmndrs meters a mip chain of the whole frame. null3D meters on the GPU with center weighting, so the result differs a little.
-- `renderer.toneMapping` and `toneMappingExposure` become `post.set({ toneMapping, exposure })`. three.js applies no tone mapping by default, and null3D applies punchy AgX. A port that set `AgXToneMapping` sets `'agx'`. The exposure gives the same picture: null3D applies it to each light rather than at the end, and bloom's threshold keeps its meaning.
+- `renderer.toneMapping` and `toneMappingExposure` become `post.set({ toneMapping, exposure })`. three.js applies no tone mapping by default, and null3D applies punchy AgX. A port that set `AgXToneMapping` sets `'agx'`, and one that set `ACESFilmicToneMapping` sets `'aces'`. `ReinhardToneMapping` and `CineonToneMapping` become the `reinhard` and `cineon` curves of `@null3d/three-compat`. The exposure gives the same picture: null3D applies it to each light rather than at the end, and bloom's threshold keeps its meaning.
 - `new LUTPass({ lut: result.texture3D, intensity })` after a `LUTCubeLoader` or `LUT3dlLoader` becomes `post.set({ lut: await assets.loadLut(url), lutIntensity: intensity })`. A `Data3DTexture` that code fills becomes `await assets.lutFromData({ size, data })`.
 - A `ShaderPass(VignetteShader)` with its `offset` and `darkness` uniforms becomes `post.set({ vignette: { size: offset, intensity: darkness } })`. Under ACES the default falloff gives a close match. Under AgX, keep `intensity` at 1 or less and set `falloff` to 3. With a `darkness` below 1, three.js also lifts dark corners toward a gray, and null3D does not.
-- Any other `ShaderPass` becomes `post.addEffect` with the shader rewritten in WGSL. A pass after `OutputPass` saw display color, and an effect sees linear HDR color. Numbers that assume colors from 0 to 1 may need changes. `ReinhardToneMapping`, `CineonToneMapping` and `CustomToneMapping` become a custom tone curve. [Porting post-processing](../porting/threejs-postprocessing.md) shows both.
+- `new SharpenNode(target, sharpness, denoise)` becomes `post.set({ sharpen })`. Both sharpen display color with FSR 1's RCAS over the same five texels. null3D draws it in the final pass, so the port needs no render target and no pass of its own. The two settings count the other way round. three.js scales the sharpening by `2^-sharpness`, where 0 sharpens the most and 2 does nothing. So `sharpen` takes that factor: three.js's default of 0.2 is `sharpen: 0.87`, and `sharpen: 0.5` is stronger than three.js's default. null3D always damps the sharpening where the ring around a pixel is noise, which three.js does only with `denoise: true`.
+- Any other `ShaderPass` becomes `post.addEffect` with the shader rewritten in WGSL. A pass after `OutputPass` saw display color, and an effect sees linear HDR color. Numbers that assume colors from 0 to 1 may need changes. `CustomToneMapping` becomes a custom tone curve, and `ReinhardToneMapping` and `CineonToneMapping` take the curves of `@null3d/three-compat`. [Porting post-processing](../porting/threejs-postprocessing.md) shows both.
 
 ## Related pages
 

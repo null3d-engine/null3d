@@ -24,14 +24,44 @@ three.js apps usually run everything on the main thread: DOM, input, scene updat
 | DOM input listeners for the 3D view | `sketch.ts` reads `ctx.input` | The page shim forwards input through shared memory |
 | Camera controls | `sketch.ts` | `@null3d/controls` |
 | HTML UI, menus, HUD, lil-gui panels, stats panels | `page.ts` | Messages to and from the sketch |
-| Labels (CSS2DRenderer) | Both | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page (0.2) |
+| Labels (CSS2DRenderer, CSS3DRenderer) | Both | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page (0.2); `transform: 'world'` or `'billboard'` makes the element a plane of the scene |
 | Audio (Web Audio, three.js Audio) | `page.ts` | Sketch sends events and positions |
-| Video elements | `page.ts` | In 0.3: `engine.registerVideo` and `textures.fromVideo`. Until then, send `ImageBitmap` frames (null3d-develop recipe 14) |
+| Video elements | `page.ts` | `engine.registerVideo` on the page and `textures.fromVideo` in the sketch (0.3): the page sends one image per frame that the video presents. Keep a frame within the upload budget (null3d-develop recipe 14) |
 | `localStorage`, cookies, URL parameters | `page.ts` | Send what the sketch needs at start; IndexedDB also works in the sketch |
 | `fetch` of JSON, binary data, models | `sketch.ts` | Workers have `fetch`; relative URLs resolve against the page |
 | `GLTFLoader` with `KTX2Loader` (0.2) | `sketch.ts` | `assets.loadGltf(url)` parses in a worker and needs no decoder paths; `scene.instantiate(prefab)` for each copy |
 | Physics libraries | `sketch.ts` | WebAssembly physics runs in workers |
 | Analytics, ads, routing | `page.ts` | Unchanged |
+
+### Porting a CSS3D example, such as the periodic table
+
+three.js's `css3d_periodictable` example is a table of DOM cells that `CSS3DRenderer` places in the scene. The sketch holds the scene and the page holds the DOM:
+
+```ts
+// sketch.ts
+const camera = scene.createPerspectiveCamera({ fov: 40, near: 1, far: 10000, position: [0, 0, 3000], target: [0, 0, 0] });
+scene.setActiveCamera(camera);
+ELEMENTS.forEach((cell, index) => {
+  const object = scene.createGroup({ position: [cell.group * 140 - 1330, -cell.period * 180 + 990, 0] });
+  ui.trackLabel(object, `cell-${index}`, { transform: 'world' });
+});
+```
+
+```ts
+// page.ts
+for (let index = 0; index < ELEMENTS.length; index++) {
+  const element = cell(index);   // The example's .element markup, 120 x 160 CSS pixels.
+  layer.append(element);
+  engine.labels.bind(`cell-${index}`, element);
+}
+```
+
+- A label element is sized in CSS pixels, which are the scene's units, so the example's camera and positions carry over unchanged.
+- The example fills the window. A port with a fixed frame gives the camera that frame's aspect ratio.
+- `createEngine`'s `maxLabels3d` holds 256 labels by default, which fits the table's 118 cells.
+- The cells' CSS goes in the page's stylesheet, and the layer that holds the elements covers the canvas.
+- The example's random start positions and tints have no held picture. Take them from the cell's place instead, as the port does with an integer hash of the index.
+- The engine hides a plane whose anchor is behind the camera or outside the near and far planes. `CSS3DRenderer` draws it there, mirrored.
 
 ## 2. Messages between page and sketch
 
@@ -158,7 +188,7 @@ Pointer events that land on HTML UI elements above the canvas do not reach the e
 | --- | --- |
 | lil-gui, dat.gui, Tweakpane | Keep on the page; send values to the sketch |
 | stats.js | `debug.stats(true)` in the sketch, or (0.2) `createEngine({ stats: true })` on the page, shows an overlay; `debug.frameStats()` gives its figures. In 0.2 it sits at the canvas's top right, takes a `{ collapsed }` option, and adds GPU time, triangles and objects drawn and memory; `engine.measure()` on the page gives percentiles |
-| GSAP, tween.js | For scene values, lerp in `onUpdate` (property animation comes in 0.3); DOM tweens stay on the page |
+| GSAP, tween.js | For a scene value, `scene.animateProperty(target, path, { times, values })`; a value that a tween drives from code still lerps in `onUpdate`. DOM tweens stay on the page |
 | cannon-es, Rapier, Ammo | Run in the sketch worker; copy transforms into dynamic objects or batches after each step |
 | three-mesh-bvh | Delete; raycasting uses built-in acceleration structures (0.2) |
 | troika-three-text | The MSDF text add-on (0.3, not built yet). Until then, use HTML labels, pre-rendered text textures, or text meshes baked into glTF |

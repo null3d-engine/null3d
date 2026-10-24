@@ -3,12 +3,13 @@
 //
 // The glTF worker (workers/gltf-worker.ts) parses each file off the sketch's frames, and hands
 // back plain data: vertex arrays in the types the file holds them in, the node tree, materials,
-// textures, lights and instancing. This thread then downloads what the file names by address
-// through `assets`, so the loading counts and preloads cover those files too, and makes the
-// engine's meshes, materials and textures, once each. The prefab it returns is a template of the
-// file's objects, which `scene.instantiate` copies with one batch of commands. The loader keeps no
-// copy of the arrays: the engine copies them into its memory, and the garbage collector frees
-// them.
+// textures, lights, instancing, and the primitives of the extensions that add-ons registered
+// handlers for. This thread then downloads what the file names by address through `assets`, so the
+// loading counts and preloads cover those files too, and makes the engine's meshes, materials and
+// textures, once each. It hands each registered extension its primitives, and draws what the
+// handler returns. The prefab it returns is a template of the file's objects, which
+// `scene.instantiate` copies with one batch of commands. The loader keeps no copy of the arrays:
+// the engine copies them into its memory, and the garbage collector frees them.
 //
 // Like the KTX2 loader, this module imports no engine module but constants, types and the prefab
 // class, which only it uses. The bundler would move a module that it shares with its thread's
@@ -33,10 +34,17 @@ import { DEV } from '../shared/dev';
 import { onEngineStop } from '../shared/helper-workers';
 import { compileOnce, type WasmFile } from '../shared/tasks';
 import type { WasmError } from '../shared/wasm';
-import { bootstrapFailure, spawnWorker } from '../shared/worker-start';
+import { bootstrapFailure, spawnWorker, watchWorkerError } from '../shared/worker-start';
 import type { GltfAnswer, GltfDecoder, GltfRequest } from '../workers/gltf-worker';
 import { type AnimationRig, destroyRig, loadAnimationRig } from './animation';
-import type { FileSource } from './assets';
+import type {
+	FileSource,
+	GltfExtensionData,
+	GltfExtensionHandler,
+	GltfExtensionPart,
+	LoadGltfOptions,
+} from './assets';
+import type { RigJoint, RigPropertyTarget } from './gltf-animation';
 import { affineOf, growBox, multiplyAffine } from './gltf-math';
 import type {
 	BlockerData,
@@ -46,6 +54,7 @@ import type {
 	MeshData,
 	NodeData,
 	NodeLevels,
+	PatchesData,
 	PrimitiveData,
 	TextureUse,
 } from './gltf-parse';
@@ -57,14 +66,26 @@ import {
 	type MorphTemplate,
 	type PartTemplate,
 	Prefab,
+	type PropertyAnimationData,
 	type TemplateNode,
 } from './prefab';
+import {
+	PROPERTY_LIGHT_ANGLE,
+	PROPERTY_LIGHT_COLOR,
+	PROPERTY_LIGHT_INTENSITY,
+	PROPERTY_LIGHT_RANGE,
+	PROPERTY_MATERIAL,
+	PROPERTY_VISIBLE,
+	type PropertyBinding,
+	type PropertyTrack,
+} from './property-animation';
 import type {
 	Geometry,
 	Material,
 	Materials,
 	MeshArrays,
 	MeshGeometry,
+	MeshLevel,
 	StandardOptions,
 	UnlitOptions,
 } from './resources';
@@ -107,9 +128,11 @@ export interface GltfContext {
 	): void;
 	/** Makes one of the engine's coded errors: the caller's `EngineError`. */
 	error(
-		code: Parameters<WasmError>[0] | 'E1411' | 'E1412' | 'E1416' | 'E1417' | 'E1420',
+		code: Parameters<WasmError>[0] | 'E1213' | 'E1411' | 'E1412' | 'E1416' | 'E1417' | 'E1420',
 		message: string,
 	): EngineError;
+	/** The handlers that add-ons registered for glTF extensions, if the page loaded any. */
+	extensionHandlers: readonly GltfExtensionHandler[];
 }
 
 /**
@@ -162,10 +185,7 @@ class Parser {
 			if (!('needs' in event.data)) this.waiting.delete(event.data.id);
 			waiting.resolve(event.data);
 		};
-		this.worker.onerror = (event) => {
-			event.preventDefault();
-			this.stop(event.message || 'its script did not load');
-		};
+		watchWorkerError(this.worker, (message) => this.stop(message || 'its script did not load'));
 	}
 
 	/** Stops the worker, and fails every waiting request with `reason`. */
@@ -263,7 +283,15 @@ function parse(
 						),
 				),
 		);
-		worker.send({ id, file, url: address.href }, [file]);
+		worker.send(
+			{
+				id,
+				file,
+				url: address.href,
+				extensions: [...new Set(context.extensionHandlers.flatMap((h) => h.extensions))],
+			},
+			[file],
+		);
 	});
 }
 
@@ -273,8 +301,24 @@ export async function loadGltf(
 	file: Blob,
 	address: URL,
 	call: string,
+	options: LoadGltfOptions = {},
 ): Promise<Prefab> {
 	const { data, bitmaps } = await parse(context, await file.arrayBuffer(), address, call);
+	return makePrefab(context, data, bitmaps, address, call, options);
+}
+
+/**
+ * Makes the prefab of a parsed file: its textures, materials, extension handlers' parts and
+ * objects. Exported for its tests.
+ */
+export async function makePrefab(
+	context: GltfContext,
+	data: GltfData,
+	bitmaps: (ImageBitmap | undefined)[],
+	address: URL,
+	call: string,
+	options: LoadGltfOptions = {},
+): Promise<Prefab> {
 	// The thread that draws downloads the shader files of the features that the asset tool
 	// recorded with the file (its `NULL3D_shaders` list), and then the skinning and morph shader
 	// files of a file without such a list, while the textures decode. So a model waits less for
@@ -288,7 +332,24 @@ export async function loadGltf(
 	const made: Made = { meshes: [] };
 	try {
 		materials.makeBase();
-		return await buildPrefab(context, data, textures, materials, made, address, call);
+		const parts = await makeExtensionParts(context, data, materials, made, call);
+		const staged = new Map<number, StagedNode>();
+		const prefab = await buildPrefab(
+			context,
+			data,
+			textures,
+			materials,
+			made,
+			parts,
+			address,
+			call,
+			staged,
+		);
+		// The file draws its coarsest level, which the prefab holds: the finer levels download while
+		// the sketch draws it, so a model never waits for the whole file.
+		if (staged.size > 0)
+			startStages(context, prefab, staged.values(), made.meshes, options, address, call);
+		return prefab;
 	} catch (error) {
 		// A load that fails frees everything it made. No object uses any of it yet.
 		materials.destroy();
@@ -305,39 +366,397 @@ interface Made {
 	rig?: AnimationRig;
 }
 
-/** The screen height in pixels at which `MSFT_screencoverage` turns into errors. */
-const COVERAGE_HEIGHT = 1080;
+/** A part that an add-on's extension handler draws at a node. */
+interface HandlerPart {
+	mesh: MeshGeometry;
+	material: Material;
+}
+
+/**
+ * The parts that the add-ons' extension handlers draw, by the index of the node that holds them.
+ * A handler gets each primitive that carries one of its extensions, with the node's place, the
+ * primitive's attributes and material, and the engine's geometry and material makers. The meshes
+ * and materials that it returns join the model, so a copy draws them and `destroy` frees them.
+ */
+async function makeExtensionParts(
+	context: GltfContext,
+	data: GltfData,
+	materials: FileMaterials,
+	made: Made,
+	call: string,
+): Promise<Map<number, HandlerPart[]>> {
+	const handlers = new Map<string, GltfExtensionHandler>();
+	for (const handler of context.extensionHandlers)
+		for (const name of handler.extensions) handlers.set(name, handler);
+	const parts = new Map<number, HandlerPart[]>();
+	if (handlers.size === 0) return parts;
+	for (const [index, node] of data.nodes.entries()) {
+		const mesh = node.mesh < 0 ? undefined : data.meshes[node.mesh];
+		for (const primitive of mesh?.extensionPrimitives ?? []) {
+			for (const { name, json } of primitive.extensions) {
+				const handler = handlers.get(name);
+				if (!handler) continue;
+				const returned = await handler.load(
+					{
+						extension: name,
+						json,
+						node: nodeOf(node),
+						primitive: {
+							attributes: primitive.attributes,
+							count: primitive.count,
+							indices: primitive.indices,
+							mode: primitive.mode,
+							material: materials.ofExtension(primitive.material),
+						},
+					},
+					{ geometry: context.geometry, materials: context.materials },
+				);
+				const returnedParts: readonly GltfExtensionPart[] =
+					returned === undefined
+						? []
+						: Array.isArray(returned)
+							? returned
+							: [returned as GltfExtensionPart];
+				const at = parts.get(index) ?? [];
+				for (const part of returnedParts) {
+					if (!part.mesh || !part.material)
+						throw context.error(
+							'E1213',
+							`${call}() got a part from the handler for ${name} without a mesh or a material. Return the mesh and material that the part draws.`,
+						);
+					if (!made.meshes.includes(part.mesh)) made.meshes.push(part.mesh);
+					materials.own(part.material);
+					at.push({ mesh: part.mesh, material: part.material });
+				}
+				if (at.length > 0) parts.set(index, at);
+			}
+		}
+	}
+	return parts;
+}
+
+/** A parsed node's name and place, as an extension handler gets them. */
+function nodeOf(node: NodeData): GltfExtensionData['node'] {
+	const t = node.transform;
+	return {
+		name: node.name,
+		position: [t[0] as number, t[1] as number, t[2] as number],
+		rotation: [t[3] as number, t[4] as number, t[5] as number, t[6] as number],
+		scale: [t[7] as number, t[8] as number, t[9] as number],
+	};
+}
+
+/** The glTF names of the attributes that a primitive's vertices hold. */
+const ATTRIBUTE_NAMES = [
+	'POSITION',
+	'NORMAL',
+	'TEXCOORD_0',
+	'TEXCOORD_1',
+	'COLOR_0',
+	'TANGENT',
+	'JOINTS_0',
+	'WEIGHTS_0',
+] as const;
+
+/**
+ * True when a level primitive's vertices are its base primitive's own: the file names the same
+ * accessor for every attribute. The asset tool writes levels that way, which lets the engine store
+ * a level as its base's vertices with other indices: the planner simplifies by dropping vertices,
+ * so a level names a subset of the base's accessor in the same order. A level that names an
+ * accessor of its own, or whose base mesh the engine had to split into parts, copies the vertices
+ * instead.
+ */
+export function sharesVertices(
+	level: PrimitiveData | undefined,
+	base: PrimitiveData | undefined,
+): boolean {
+	if (level === undefined || base === undefined) return false;
+	if (level.indices === undefined) return false;
+	const one = level.accessors;
+	const other = base.accessors;
+	if (one === undefined || other === undefined) return false;
+	// A level carries no morph targets, so a morphed base keeps copies. A skinned base shares them:
+	// its skin moves the same vertices whichever level names them.
+	if (base.morph !== undefined || base.normals === undefined) return false;
+	return ATTRIBUTE_NAMES.every((name) => one[name] === other[name]);
+}
 
 /**
  * Gives each primitive's mesh of a node the levels of detail that `MSFT_lod` names: the same
  * primitive of each level node's mesh. Each level's error comes from the asset tool's
- * `NULL3D_lod_error`, or from `MSFT_screencoverage`: a level switches in where the mesh's sphere
- * covers less of the screen's height than the level before allows, on a screen 1,080 pixels
- * high. Levels whose meshes have other primitives, or no errors, are left out, and so are levels
- * that a mesh cannot take, with a note.
+ * `NULL3D_lod_error`, which measured the level's own error, or its share of the screen's height
+ * from `MSFT_screencoverage`. A measured error changes the picture by under a pixel at its switch,
+ * so the level switches at once; a coverage given by hand keeps a fading band. A level that names
+ * another material than the node's primitive draws with it. Levels whose meshes have other
+ * primitives, or no errors, are left out, and so are levels that a mesh cannot take, with a note.
  */
 function setFileLevels(
 	base: readonly MeshGeometry[],
 	levels: NodeLevels,
 	data: GltfData,
-	meshOf: (k: number) => MeshGeometry[],
+	levelOf: (k: number) => MeshGeometry[],
+	materials: FileMaterials,
+	primitives: readonly PrimitiveData[],
 ): void {
 	const count = base.length;
 	if (levels.meshes.some((k) => (data.meshes[k] as MeshData).primitives.length !== count)) return;
-	const lower = levels.meshes.map(meshOf);
+	const lower = levels.meshes.map(levelOf);
 	for (const [p, mesh] of base.entries()) {
-		const errors =
-			levels.errors ??
-			levels.coverage?.map((coverage) => (2 * mesh.radius) / (coverage * COVERAGE_HEIGHT));
-		if (!errors) return;
+		const measured = levels.errors !== undefined;
+		const errors = levels.errors;
+		const coverage = levels.coverage;
+		if (!measured && !coverage) return;
+		const own = primitives[p] as PrimitiveData | undefined;
 		try {
 			mesh.setLevels(
-				lower.map((meshes, j) => ({ mesh: meshes[p] as MeshGeometry, error: errors[j] })),
+				lower.map((meshes, j) => {
+					const level = (data.meshes[levels.meshes[j] as number] as MeshData).primitives[
+						p
+					] as PrimitiveData;
+					const material = own && level.material !== own.material ? materials.of(level) : undefined;
+					return {
+						mesh: meshes[p] as MeshGeometry,
+						...(measured
+							? { error: (errors as number[])[j] as number, fade: false }
+							: { coverage: (coverage as number[])[j] as number }),
+						...(material && { material }),
+					};
+				}),
 			);
 		} catch (error) {
 			data.notes.push(`the levels of detail of a mesh (${(error as Error).message})`);
 			return;
 		}
+	}
+}
+
+/** A node's staged levels, and the meshes that draw them, one for each primitive of its mesh. */
+interface StagedNode {
+	/** The node's meshes, in the order of its mesh's primitives. */
+	meshes: MeshGeometry[];
+	/** The triangles that each mesh draws now, which the next stage replaces. */
+	indices: (Uint16Array | Uint32Array | undefined)[];
+	/** The error of the level that the file holds. */
+	error: number;
+	/** The stages, from the level after the file's own down to the finest. */
+	stages: { url: string; bytes: number; error: number }[];
+}
+
+/** The magic number that a stage file starts with, as the word `N3DS` counted little-endian. */
+const STAGE_MAGIC = 0x5344334e;
+/** The version of the stage layout that the engine reads. */
+const STAGE_VERSION = 1;
+/** The kind of a stage that holds a level's triangles, one list for each of a mesh's primitives. */
+const STAGE_LEVELS = 0;
+/** The words of a stage file's header: its magic number, its version, its kind and its list count. */
+const STAGE_HEADER = 4;
+
+/**
+ * The triangle lists that a stage file holds: one for each of the node's primitives, in the order
+ * of its mesh's primitives. Exported for its tests. Each list names the number of bytes of its indices, so a mesh of at
+ * most 65,535 vertices takes two. Undefined for a file that this engine does not read, which leaves
+ * the model at the level it had.
+ */
+export function readStage(bytes: ArrayBuffer, count: number): Uint32Array[] | undefined {
+	const size = bytes.byteLength;
+	if (size < STAGE_HEADER * 4) return undefined;
+	const view = new DataView(bytes);
+	if (
+		view.getUint32(0, true) !== STAGE_MAGIC ||
+		view.getUint32(4, true) !== STAGE_VERSION ||
+		view.getUint32(8, true) !== STAGE_LEVELS ||
+		view.getUint32(12, true) !== count
+	)
+		return undefined;
+	const lists: Uint32Array[] = [];
+	let at = STAGE_HEADER * 4;
+	for (let k = 0; k < count; k++) {
+		if (at + 8 > size) return undefined;
+		const length = view.getUint32(at, true);
+		const width = view.getUint32(at + 4, true);
+		at += 8;
+		if (width !== 2 && width !== 4) return undefined;
+		const bytesOf = Math.ceil((length * width) / 4) * 4;
+		if (at + bytesOf > size) return undefined;
+		const list = new Uint32Array(length);
+		if (width === 2) list.set(new Uint16Array(bytes, at, length));
+		else list.set(new Uint32Array(bytes, at, length));
+		lists.push(list);
+		at += bytesOf;
+	}
+	return at === size ? lists : undefined;
+}
+
+/**
+ * Starts the downloads of a file's staged levels, each node's from the coarsest down, without
+ * waiting for them: the sketch draws the level that the file holds while they arrive. `maxLevels`
+ * stops each node's downloads after that many levels, the file's own counted first, so a page that
+ * never shows the finest level saves its download.
+ */
+function startStages(
+	context: GltfContext,
+	prefab: Prefab,
+	staged: Iterable<StagedNode>,
+	made: MeshGeometry[],
+	options: LoadGltfOptions,
+	address: URL,
+	call: string,
+): void {
+	const given = options.maxLevels ?? Number.POSITIVE_INFINITY;
+	const maxLevels = given >= 1 ? Math.floor(given) : 1;
+	for (const node of staged)
+		void loadStages(context, prefab, node, made, maxLevels, address, call).catch((error) => {
+			if (DEV)
+				console.warn(
+					`${call}() could not finish the levels of ${address}: ${error instanceof Error ? error.message : String(error)}`,
+				);
+		});
+}
+
+/**
+ * The frames that the engine draws before a level that it never picked gives up its stage for now.
+ * A camera that starts far away has time to show the level that the file draws: about two seconds
+ * at 60 frames a second. A page that comes close waits at most that long for its finest stage.
+ */
+const STAGE_WARMUP_FRAMES = 120;
+
+/**
+ * The frames that the loader watches a stage it gave up for the camera coming close. A view that
+ * picks the level the mesh draws shows that pick within the window, and the stage comes back.
+ */
+const STAGE_RETRY_FRAMES = 20;
+
+/**
+ * How long the loader waits between checks of the levels that the engine picked, and how long it
+ * waits, with no watch running, before it looks again at a stage that it gave up. While it waits it
+ * holds no watch, so a frame pays one check and nothing else.
+ */
+const STAGE_POLL_MS = 100;
+const STAGE_RETRY_PAUSE_MS = 1500;
+
+/**
+ * True once a view has picked the levels that the node's meshes draw now, or false when `frames`
+ * pass with no pick: a level that never draws cannot hand over to a finer one, so the stage would
+ * buy nothing yet. A frame that draws no source of a mesh restarts that mesh's warm-up, so a page
+ * that loads a model before it instantiates it keeps its stages. The watch that the check makes is
+ * released before either answer, so the frames after it pay nothing.
+ */
+async function stagePicked(
+	context: GltfContext,
+	prefab: Prefab,
+	meshes: readonly MeshGeometry[],
+	frames: number,
+): Promise<boolean> {
+	const { glue } = context.core;
+	const ids = meshes.filter((mesh) => mesh.live).map((mesh) => mesh.id);
+	if (ids.length === 0) return false;
+	for (const id of ids) glue.watchStageLevels(id);
+	try {
+		for (;;) {
+			if (!prefab.live) return false;
+			let drawn = 0;
+			for (const id of ids) {
+				// Bit 0 is the level that the mesh draws now: the pending stage would replace it.
+				if ((glue.stageLevelPicks(id) & 1) !== 0) return true;
+				drawn = Math.max(drawn, glue.stageFrames(id));
+			}
+			if (drawn >= frames) return false;
+			await new Promise((resolve) => setTimeout(resolve, STAGE_POLL_MS));
+		}
+	} finally {
+		for (const id of ids) glue.unwatchStageLevels(id);
+	}
+}
+
+/**
+ * True once a view picks the level that the node's meshes draw now, so the stage on hold would
+ * replace a level on screen: false only when the model or its meshes have gone. A stage that the
+ * warm-up passes without a pick is not gone for good: the loader stops watching it and looks again
+ * after a pause, so a camera that starts far away and comes close later still gets the level it
+ * then needs.
+ */
+async function stageWanted(
+	context: GltfContext,
+	prefab: Prefab,
+	meshes: readonly MeshGeometry[],
+): Promise<boolean> {
+	if (await stagePicked(context, prefab, meshes, STAGE_WARMUP_FRAMES)) return true;
+	for (;;) {
+		if (!prefab.live || !meshes.some((mesh) => mesh.live)) return false;
+		await new Promise((resolve) => setTimeout(resolve, STAGE_RETRY_PAUSE_MS));
+		if (!prefab.live || !meshes.some((mesh) => mesh.live)) return false;
+		if (await stagePicked(context, prefab, meshes, STAGE_RETRY_FRAMES)) return true;
+	}
+}
+
+/**
+ * Downloads one node's staged levels, coarsest first, and gives the node's meshes each level as it
+ * arrives: the level that the mesh drew becomes a level of the mesh, and the arriving one takes its
+ * place, so the objects that already draw the mesh refine without a new object. The first stage
+ * always arrives, and each later one waits until the level loaded now has drawn. A level that never
+ * draws holds its stage back while it can, and a camera that later asks for it brings it back. A
+ * mesh that cannot take another triangle list keeps the level it has, and its stages stop.
+ */
+async function loadStages(
+	context: GltfContext,
+	prefab: Prefab,
+	node: StagedNode,
+	made: MeshGeometry[],
+	maxLevels: number,
+	address: URL,
+	call: string,
+): Promise<void> {
+	const levels = node.meshes.map((): MeshLevel[] => []);
+	const indices = node.indices.slice();
+	// Each arriving stage adds the level that the mesh drew until then, so the level's own error
+	// is the one that the file or the stage before it gave.
+	let drawn = node.error;
+	let loaded = 1;
+	for (const [index, stage] of node.stages.entries()) {
+		if (loaded >= maxLevels) return;
+		// The stage after the file's own level always arrives: it is what the file draws until it
+		// does. Each finer stage waits for the level loaded now to be picked, and a stage that the
+		// camera ignores waits again rather than dropping out of the chain.
+		if (index > 0 && !(await stageWanted(context, prefab, node.meshes))) return;
+		const blob = await context.download(new URL(stage.url, address), call);
+		const bytes = await blob.arrayBuffer();
+		if (!prefab.live) return;
+		const lists = readStage(bytes, node.meshes.length);
+		if (!lists) {
+			if (DEV)
+				console.warn(
+					`${call}() left out a level of ${address}: the file at ${stage.url} does not hold the triangles of ${node.meshes.length} primitives.`,
+				);
+			return;
+		}
+		loaded += 1;
+		let taken = false;
+		for (const [k, mesh] of node.meshes.entries()) {
+			const current = indices[k];
+			const list = lists[k] as Uint32Array;
+			if (current === undefined) continue;
+			const level = context.geometry.fromLevel(mesh, current);
+			if (!level || !mesh.replaceTriangles(list)) {
+				level?.destroy();
+				continue;
+			}
+			made.push(level);
+			levels[k]?.unshift({ mesh: level, error: drawn, fade: false });
+			try {
+				mesh.setLevels(levels[k] ?? []);
+			} catch (error) {
+				if (DEV)
+					console.warn(
+						`${call}() left out a level of ${address}: ${error instanceof Error ? error.message : String(error)}`,
+					);
+				return;
+			}
+			indices[k] = list;
+			taken = true;
+		}
+		// No mesh of the node took the list, so no finer stage would either.
+		if (!taken) return;
+		drawn = stage.error;
 	}
 }
 
@@ -348,14 +767,34 @@ async function buildPrefab(
 	textures: readonly (Texture | undefined)[],
 	materials: FileMaterials,
 	made: Made,
+	extensionParts: ReadonlyMap<number, HandlerPart[]>,
 	address: URL,
 	call: string,
+	staged: Map<number, StagedNode>,
 ): Promise<Prefab> {
 	// Only the meshes that nodes draw: joints move copies of some of the file's meshes.
 	const meshes: (MeshGeometry[] | undefined)[] = [];
 	const meshOf = (k: number) => {
 		meshes[k] ??= makeMeshes(context, data.meshes[k] as MeshData, made.meshes, address, call);
 		return meshes[k];
+	};
+	/**
+	 * A level's meshes built over its base's vertices, where the file gives the level the base's
+	 * own accessors: the level then costs indices alone. Each base keeps its own copy, since a
+	 * level belongs to the mesh whose vertices it draws.
+	 */
+	const levels = new Map<string, MeshGeometry[]>();
+	const levelOf = (baseIndex: number, k: number) => {
+		const key = `${baseIndex} ${k}`;
+		let lower = levels.get(key);
+		if (!lower) {
+			lower = makeMeshes(context, data.meshes[k] as MeshData, made.meshes, address, call, {
+				meshes: meshOf(baseIndex),
+				primitives: (data.meshes[baseIndex] as MeshData).primitives,
+			});
+			levels.set(key, lower);
+		}
+		return lower;
 	};
 	const lights = data.lights.map(lightTemplate);
 	const rig = await makeRig(context, data, address, call);
@@ -368,6 +807,7 @@ async function buildPrefab(
 			flags: FLAG_VISIBLE,
 			layers: LAYERS_DEFAULT,
 			renderOrder: 0,
+			levelBias: 1,
 			root: true,
 		},
 	];
@@ -375,31 +815,85 @@ async function buildPrefab(
 	/** Each file node's template node, which its children go under, or -1 for a joint. */
 	const placed: number[] = [];
 	const parents = new Set(data.nodes.map((n) => n.parent));
+	/**
+	 * Adds a template node, which a copy makes an object of. A node that the file hides draws
+	 * nothing until a clip shows it.
+	 */
 	const node = (
-		fields: Partial<TemplateNode> & Pick<TemplateNode, 'name' | 'parent' | 'transform'>,
-	) =>
-		template.push({ flags: FLAG_VISIBLE, layers: LAYERS_DEFAULT, renderOrder: 0, ...fields }) - 1;
+		fields: Partial<TemplateNode> &
+			Pick<TemplateNode, 'name' | 'parent' | 'transform'> & { visible?: boolean },
+	) => {
+		const { visible = true, ...rest } = fields;
+		return (
+			template.push({
+				flags: FLAG_VISIBLE,
+				layers: LAYERS_DEFAULT,
+				renderOrder: 0,
+				levelBias: 1,
+				...rest,
+				...(visible ? {} : { flags: 0 }),
+			}) - 1
+		);
+	};
+	/** The template node that holds each file light, by the light's index. */
+	const lightNode: number[] = [];
 	for (const [index, n] of data.nodes.entries()) {
 		const parent = n.parent < 0 ? 0 : (placed[n.parent] as number);
+		const visible = n.visible !== false;
 		const mesh = n.mesh < 0 ? undefined : (data.meshes[n.mesh] as MeshData);
 		const made = n.mesh < 0 ? [] : meshOf(n.mesh);
-		if (n.levels && !n.skinned) setFileLevels(made, n.levels, data, meshOf);
-		const parts = (mesh?.primitives ?? []).map((p, k) => ({
-			mesh: made[k] as MeshGeometry,
-			material: materials.of(p),
-			...morphOf(mesh as MeshData, p, n),
-			// The asset tool marks the primitives that block the view, as `setOccluder` does.
-			...(p.occluder && { flags: FLAG_VISIBLE | FLAG_OCCLUDER }),
-		}));
+		if (n.levels)
+			setFileLevels(
+				made,
+				n.levels,
+				data,
+				(k) => levelOf(n.mesh, k),
+				materials,
+				mesh?.primitives ?? [],
+			);
+		// A staged mesh draws the level that the file holds, and takes the finer ones as they
+		// download. Only a mesh whose primitives all name their triangles can take another list.
+		// One chain per mesh, whichever nodes draw it: a mesh that two nodes draw takes each stage
+		// once, so the two copies refine together.
+		if (
+			n.stages &&
+			made.length > 0 &&
+			!staged.has(n.mesh) &&
+			(n.mesh < 0 || data.meshes[n.mesh]?.primitives.every((p) => p.indices !== undefined))
+		)
+			staged.set(n.mesh, {
+				meshes: made,
+				indices: made.map((_, k) => data.meshes[n.mesh]?.primitives[k]?.indices),
+				error: n.stages.error,
+				stages: n.stages.levels,
+			});
+		const parts = [
+			...(mesh?.primitives ?? []).map((p, k) => ({
+				mesh: made[k] as MeshGeometry,
+				material: materials.of(p),
+				...morphOf(mesh as MeshData, p, n),
+				// The asset tool marks the primitives that block the view, as `setOccluder` does.
+				...(p.occluder && { flags: FLAG_VISIBLE | FLAG_OCCLUDER }),
+			})),
+			...(extensionParts.get(index) ?? []),
+		];
 		const light = n.light < 0 ? undefined : lights[n.light];
 		if (n.skinned) {
 			// Joints move the mesh in the space of the copy's group, where the parser boxed it.
 			parts.forEach((part, k) => {
 				const rest = mesh?.primitives[k]?.rest;
-				node({ name: n.name, parent: 0, transform: IDENTITY, ...part, skinned: true, rest });
+				node({
+					name: n.name,
+					parent: 0,
+					transform: IDENTITY,
+					visible,
+					...part,
+					skinned: true,
+					rest,
+				});
 			});
 			const isObject = (n.joint ?? -1) < 0 && parents.has(index);
-			placed.push(isObject ? node({ name: n.name, parent, transform: n.transform }) : -1);
+			placed.push(isObject ? node({ name: n.name, parent, transform: n.transform, visible }) : -1);
 			continue;
 		}
 		if ((n.joint ?? -1) >= 0 && parts.length === 0 && !light) {
@@ -408,30 +902,42 @@ async function buildPrefab(
 			continue;
 		}
 		if (n.instancing) {
-			const at = node({ name: n.name, parent, transform: n.transform });
+			const at = node({ name: n.name, parent, transform: n.transform, visible });
 			placed.push(at);
 			instancing.push({
 				node: at,
 				...n.instancing,
 				parts: parts.map((part) => ({ ...part, matrix: IDENTITY_PART })),
 			});
-			if (light) node({ name: n.name, parent: at, transform: IDENTITY, light });
+			if (light)
+				lightNode[n.light] = node({
+					name: n.name,
+					parent: at,
+					transform: IDENTITY,
+					light,
+					visible,
+				});
 			continue;
 		}
 		if (parts.length === 1 && !light) {
 			const [part] = parts as [(typeof parts)[number]];
-			placed.push(node({ name: n.name, parent, transform: n.transform, ...part }));
+			placed.push(node({ name: n.name, parent, transform: n.transform, visible, ...part }));
 			continue;
 		}
 		if (parts.length === 0 && light) {
-			placed.push(node({ name: n.name, parent, transform: n.transform, light }));
+			const at = node({ name: n.name, parent, transform: n.transform, light, visible });
+			lightNode[n.light] = at;
+			placed.push(at);
 			continue;
 		}
-		const at = node({ name: n.name, parent, transform: n.transform });
+		const at = node({ name: n.name, parent, transform: n.transform, visible });
 		placed.push(at);
-		for (const part of parts) node({ name: n.name, parent: at, transform: IDENTITY, ...part });
-		if (light) node({ name: n.name, parent: at, transform: IDENTITY, light });
+		for (const part of parts)
+			node({ name: n.name, parent: at, transform: IDENTITY, visible, ...part });
+		if (light)
+			lightNode[n.light] = node({ name: n.name, parent: at, transform: IDENTITY, light, visible });
 	}
+	const properties = propertyAnimation(data, materials, placed, lightNode, rig, data.notes);
 	const { parts, bounds } = partsOf(template, data, meshes, instancing);
 	if (DEV && data.notes.length > 0)
 		console.warn(`${call}() left out parts of ${address}: ${data.notes.join('; ')}.`);
@@ -455,6 +961,7 @@ async function buildPrefab(
 			geometry: context.geometry,
 			error: context.scene.checks.error,
 		},
+		properties,
 	);
 }
 
@@ -486,9 +993,14 @@ async function makeRig(
 	call: string,
 ): Promise<AnimationRig | undefined> {
 	const animation = data.animation;
-	if (!animation || animation.joints.length === 0) return undefined;
+	if (!animation) return undefined;
+	const movesProperties = animation.clips.some((clip) => (clip.properties?.length ?? 0) > 0);
+	if (animation.joints.length === 0 && !movesProperties) return undefined;
 	try {
-		return await loadAnimationRig(context.scene, animation);
+		// A file that moves only properties still takes a skeleton, which holds its clips: one
+		// joint at the origin, which moves no vertex.
+		const rig = animation.joints.length > 0 ? animation : { ...animation, joints: [REST_JOINT] };
+		return await loadAnimationRig(context.scene, rig);
 	} catch (error) {
 		throw context.error(
 			'E1416',
@@ -600,9 +1112,21 @@ function isKtx2(bytes: Uint8Array): boolean {
 	return KTX2_IDENTIFIER.every((byte, k) => bytes[k] === byte);
 }
 
+/** The joint of a model whose clips move only properties: it rests at the origin. */
+const REST_JOINT: RigJoint = {
+	name: '',
+	parent: -1,
+	translation: [0, 0, 0],
+	rotation: [0, 0, 0, 1],
+	scale: [1, 1, 1],
+	inverseBind: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]),
+};
+
 /**
  * The engine's meshes of a glTF mesh, one for each primitive, with the stored tree and the blocker
- * that the asset tool gave each primitive. Each mesh also goes into `out` as it is made.
+ * that the asset tool gave each primitive. Each mesh also goes into `out` as it is made. A level
+ * whose primitive shares its base primitive's vertex accessors draws the base mesh's vertices from
+ * its own indices, so it costs the GPU indices alone; any other level copies its arrays.
  */
 function makeMeshes(
 	context: GltfContext,
@@ -610,6 +1134,7 @@ function makeMeshes(
 	out: MeshGeometry[],
 	address: URL,
 	call: string,
+	base?: { meshes: readonly MeshGeometry[]; primitives: readonly PrimitiveData[] },
 ): MeshGeometry[] {
 	return mesh.primitives.map((p, k) => {
 		const arrays: MeshArrays = {
@@ -630,9 +1155,11 @@ function makeMeshes(
 				},
 			}),
 		};
-		let made: MeshGeometry;
+		let made: MeshGeometry | undefined;
 		try {
-			made = context.geometry.fromArrays(arrays);
+			if (base?.meshes[k] !== undefined && sharesVertices(p, base.primitives[k]))
+				made = context.geometry.fromLevel(base.meshes[k] as MeshGeometry, p.indices ?? []);
+			made ??= context.geometry.fromArrays(arrays);
 		} catch (error) {
 			// A mesh too large for engine memory keeps its own code, which says how to make room.
 			if ((error as { code?: unknown }).code === 'E1109') throw error;
@@ -647,6 +1174,10 @@ function makeMeshes(
 				`${call}() found a stored tree in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so raycasts build their own. Optimize the file again.`,
 			);
 		if (typeof p.occluder === 'object') storeBlocker(context.core, made.id, p.occluder, call);
+		if (p.patches && storePatches(context.core, made.id, p.patches, call) !== 1 && DEV)
+			console.warn(
+				`${call}() found a tree of patches in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so the mesh draws whole. Optimize the file again.`,
+			);
 		return made;
 	});
 }
@@ -672,6 +1203,26 @@ function storeBlocker(core: CoreMemory, mesh: number, blocker: BlockerData, call
 }
 
 /**
+ * Gives a mesh the tree of cluster patches that the file stores: the patches' spheres and records,
+ * then their indices, at the address that the staging words give. Returns 1 when the mesh takes
+ * the tree, and 0 or the code of the rule that refused it otherwise (see `setMeshPatches`).
+ */
+function storePatches(core: CoreMemory, mesh: number, patches: PatchesData, call: string): number {
+	const { bounds, words, indices, root } = patches;
+	const records = words.length / 4;
+	const at = core.checkGrowth(core.glue.meshArrays(records * 8 + indices.length), call);
+	// Eight words a patch: its sphere's four floats, then its record's four integers.
+	const staging = core.u32(at, records * 8);
+	const floats = new Float32Array(staging.buffer, staging.byteOffset, records * 8);
+	for (let k = 0; k < records; k++) {
+		floats.set(bounds.subarray(k * 4, k * 4 + 4), k * 8);
+		staging.set(words.subarray(k * 4, k * 4 + 4), k * 8 + 4);
+	}
+	core.u32(at + records * 32, indices.length).set(indices);
+	return core.glue.setMeshPatches(mesh, records, indices.length, root);
+}
+
+/**
  * The engine's materials of a file: one for each of its materials, and one for each other way a
  * primitive draws it, as three.js's GLTFLoader makes them. A primitive with vertex colors turns
  * them on, one without normals shades flat, and one without tangents turns its normal map's
@@ -679,6 +1230,8 @@ function storeBlocker(core: CoreMemory, mesh: number, blocker: BlockerData, call
  */
 class FileMaterials {
 	private readonly made = new Map<string, Material>();
+	/** The materials that the extension handlers made, which the model frees too. */
+	private readonly extra: Material[] = [];
 
 	private base: Material[] = [];
 
@@ -698,20 +1251,46 @@ class FileMaterials {
 		return this.base;
 	}
 
-	/** Every material made so far: the file's, and the other ways that primitives draw them. */
+	/**
+	 * Every material that draws the file's material `k`: the material itself, and each variant of
+	 * it that a primitive asked for. A property animation writes them all.
+	 */
+	variants(k: number): Material[] {
+		const out: Material[] = [];
+		for (const [key, material] of this.made) if (key.startsWith(`${k} `)) out.push(material);
+		return out;
+	}
+
+	/** Every material made so far: the file's, the other ways that primitives draw them, and the
+	 * handlers' materials. */
 	all(): Material[] {
-		return [...this.made.values()];
+		return [...this.made.values(), ...this.extra];
+	}
+
+	/** Takes a material that an extension handler made, so the model frees it once. */
+	own(material: Material): void {
+		if (this.extra.includes(material) || [...this.made.values()].includes(material)) return;
+		this.extra.push(material);
 	}
 
 	/** Destroys every material made so far, for a load that fails. */
 	destroy(): void {
-		for (const material of this.made.values()) material.destroy();
+		for (const material of new Set([...this.made.values(), ...this.extra])) material.destroy();
 		this.made.clear();
+		this.extra.length = 0;
 	}
 
 	/** The material that draws a primitive. */
 	of(p: PrimitiveData): Material {
 		return this.variant(p.material, p.colors !== undefined, !p.normals, p.tangents !== undefined);
+	}
+
+	/**
+	 * The material that the file gives a primitive which an extension handler reads, or undefined
+	 * when it gives none. The handler may draw with it or with a material of its own.
+	 */
+	ofExtension(material: number): Material | undefined {
+		return material < 0 ? undefined : this.variant(material, false, false, true);
 	}
 
 	private variant(k: number, vertexColors: boolean, flat: boolean, tangents: boolean): Material {
@@ -766,6 +1345,8 @@ class FileMaterials {
 			specularColorMap: map(m.maps.specularColorMap),
 			diffuseTransmissionMap: map(m.maps.diffuseTransmissionMap),
 			diffuseTransmissionColorMap: map(m.maps.diffuseTransmissionColorMap),
+			transmissionMap: map(m.maps.transmissionMap),
+			thicknessMap: map(m.maps.thicknessMap),
 		};
 		const volume = m.transmission ?? m.diffuseTransmission;
 		if (volume) {
@@ -790,14 +1371,193 @@ class FileMaterials {
 			options.clearcoatNormalScale = [scale, tangents ? scale : -scale];
 			options.sheenColor = layers.sheenColor;
 			options.sheenRoughness = layers.sheenRoughness;
+			// A material pays nothing for an extension that its file does not give.
+			if (layers.iridescence !== undefined) options.iridescence = layers.iridescence;
+			if (layers.iridescenceIor !== undefined) options.iridescenceIor = layers.iridescenceIor;
+			if (layers.iridescenceThicknessRange !== undefined)
+				options.iridescenceThicknessRange = layers.iridescenceThicknessRange;
+			if (layers.anisotropy !== undefined) options.anisotropy = layers.anisotropy;
+			if (layers.anisotropyRotation !== undefined)
+				options.anisotropyRotation = layers.anisotropyRotation;
 			options.clearcoatMap = map(m.maps.clearcoatMap);
 			options.clearcoatRoughnessMap = map(m.maps.clearcoatRoughnessMap);
 			options.clearcoatNormalMap = map(m.maps.clearcoatNormalMap);
 			options.sheenColorMap = map(m.maps.sheenColorMap);
 			options.sheenRoughnessMap = map(m.maps.sheenRoughnessMap);
+			options.iridescenceMap = map(m.maps.iridescenceMap);
+			options.iridescenceThicknessMap = map(m.maps.iridescenceThicknessMap);
+			options.anisotropyMap = map(m.maps.anisotropyMap);
 		}
 		return materials.standard(options);
 	}
+}
+
+/** The properties of a light that a track may move, by the name that a pointer gives them. */
+const LIGHT_PROPERTIES: ReadonlyMap<string, number> = new Map([
+	['intensity', PROPERTY_LIGHT_INTENSITY],
+	['color', PROPERTY_LIGHT_COLOR],
+	['range', PROPERTY_LIGHT_RANGE],
+	['angle', PROPERTY_LIGHT_ANGLE],
+]);
+
+/**
+ * The properties that a model's clips move, as the prefab's copies play them: one binding for each
+ * property, with the value that the file gave it, and the tracks of each clip by its id in the
+ * core. Returns undefined when no clip moves a property, and notes the tracks that name a target
+ * the copy does not have.
+ */
+function propertyAnimation(
+	data: GltfData,
+	materials: FileMaterials,
+	placed: readonly number[],
+	lightNode: readonly number[],
+	rig: AnimationRig | undefined,
+	notes: string[],
+): PropertyAnimationData | undefined {
+	if (!rig || !data.animation) return undefined;
+	const bindings: PropertyBinding[] = [];
+	const targets: (Material[] | { node: number })[] = [];
+	const keys: string[] = [];
+	const known = new Map<string, number>();
+	const clips: (PropertyTrack[] | undefined)[] = [];
+	let found = false;
+	for (const clip of data.animation.clips) {
+		const id = rig.clips.get(clip.name);
+		if (id === undefined) continue;
+		const tracks: PropertyTrack[] = [];
+		for (const track of clip.properties ?? []) {
+			const { target, components } = track;
+			const key = `${target.kind} ${target.index} ${target.value}`;
+			let binding = known.get(key);
+			if (binding === undefined) {
+				const base = propertyBase(target, data);
+				const where = propertyTarget(target, materials, placed, lightNode);
+				if (!base || !where) {
+					notes.push(
+						`the clip "${clip.name}" moves ${target.kind} ${target.index}'s ${target.value}, which this copy does not have`,
+					);
+					continue;
+				}
+				binding = bindings.length;
+				const what =
+					target.kind === 'material'
+						? PROPERTY_MATERIAL
+						: target.kind === 'node'
+							? PROPERTY_VISIBLE
+							: (LIGHT_PROPERTIES.get(target.value) ?? PROPERTY_LIGHT_INTENSITY);
+				bindings.push({
+					what,
+					name: target.kind === 'material' ? target.value : '',
+					components,
+					base,
+				});
+				targets.push(where);
+				// The key names the property as a file's pointer does, such as "materials/0/color".
+				keys.push(`${target.kind}s/${target.index}/${target.value}`);
+				known.set(key, binding);
+			}
+			tracks.push({
+				binding,
+				interpolation: track.interpolation ?? 'linear',
+				times: track.times as Float32Array,
+				values: track.values as Float32Array,
+			});
+		}
+		if (tracks.length === 0) continue;
+		found = true;
+		clips[id - 1] = tracks;
+	}
+	return found ? { bindings, targets, clips, keys } : undefined;
+}
+
+/** Where a property binding's target lies in a copy: the materials that draw it, or its node. */
+function propertyTarget(
+	target: RigPropertyTarget,
+	materials: FileMaterials,
+	placed: readonly number[],
+	lightNode: readonly number[],
+): Material[] | { node: number } | undefined {
+	if (target.kind === 'material') {
+		const variants = materials.variants(target.index);
+		return variants.length > 0 ? variants : undefined;
+	}
+	const node = target.kind === 'light' ? lightNode[target.index] : placed[target.index];
+	return node === undefined || node < 0 ? undefined : { node };
+}
+
+/**
+ * The value that the file gave a property, which a clip at less than full weight mixes with: the
+ * value that the engine made the material, the light or the node with.
+ */
+function propertyBase(target: RigPropertyTarget, data: GltfData): Float32Array | undefined {
+	if (target.kind === 'material') {
+		const m = data.materials[target.index];
+		if (!m) return undefined;
+		const layers = m.layers;
+		const one = (value: number | undefined) => new Float32Array([value ?? 0]);
+		switch (target.value) {
+			case 'color':
+				return Float32Array.from(m.color);
+			case 'opacity':
+				return one(m.opacity);
+			case 'metalness':
+				return one(m.metalness);
+			case 'roughness':
+				return one(m.roughness);
+			case 'emissive':
+				return Float32Array.from(m.emissive);
+			case 'emissiveIntensity':
+				return one(m.emissiveIntensity);
+			case 'alphaCutoff':
+				// The loader clamps the cutoff, so the material holds the clamped value.
+				return one(Math.min(m.alphaCutoff, 1));
+			case 'aoMapIntensity':
+				return one(m.aoMapIntensity);
+			case 'specularIntensity':
+				return one(m.specularIntensity);
+			case 'specularColor':
+				return Float32Array.from(m.specularColor);
+			case 'transmission':
+				return one(m.transmission?.factor);
+			case 'thickness':
+				return one(m.transmission?.thickness ?? m.diffuseTransmission?.thickness);
+			case 'clearcoat':
+				return one(layers?.clearcoat);
+			case 'clearcoatRoughness':
+				return one(layers?.clearcoatRoughness);
+			case 'sheenColor':
+				return layers ? Float32Array.from(layers.sheenColor) : new Float32Array(3);
+			case 'sheenRoughness':
+				return one(layers?.sheenRoughness);
+			case 'iridescence':
+				return one(layers?.iridescence);
+			case 'iridescenceIor':
+				return one(layers?.iridescenceIor);
+			case 'anisotropy':
+				return one(layers?.anisotropy);
+			case 'anisotropyRotation':
+				return one(layers?.anisotropyRotation);
+		}
+		return undefined;
+	}
+	if (target.kind === 'light') {
+		const light = data.lights[target.index];
+		if (!light) return undefined;
+		if (target.value === 'color') return Float32Array.from(light.color);
+		// The engine's range covers the file's light when the file gives none, so it comes from the
+		// template that the copy makes its light from.
+		const values = lightTemplate(light).values;
+		const code =
+			target.value === 'intensity'
+				? LIGHT_VALUE_INTENSITY
+				: target.value === 'range'
+					? LIGHT_VALUE_RANGE
+					: LIGHT_VALUE_ANGLE;
+		for (const [which, value] of values) if (which === code) return new Float32Array([value]);
+		return undefined;
+	}
+	const node = data.nodes[target.index];
+	return node ? new Float32Array([node.visible === false ? 0 : 1]) : undefined;
 }
 
 /** A light's template: its kind and values, with a range where the file gives none. */
@@ -842,6 +1602,12 @@ function partsOf(
 	const grow = (m: Float64Array, mesh: MeshGeometry) => {
 		const p = primitives.get(mesh);
 		if (p) growBox(m, p.min, p.max, min, max);
+		else {
+			// A mesh that an extension handler made gives no box of its own, so its radius around
+			// the node's origin holds it.
+			const r = mesh.radius;
+			growBox(m, [-r, -r, -r], [r, r, r], min, max);
+		}
 	};
 	const parts: PartTemplate[] = [];
 	template.forEach((node, k) => {

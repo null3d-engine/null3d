@@ -69,9 +69,11 @@
 // the pass's uniform every frame, for the allocation sample of render.setPassUniform, the pass's
 // block and the effect's texture. It also keeps the pass on with render.setPassEnabled in every frame.
 // The `terrain` switch puts the terrain add-on's ground under the swarm, whose quadtree follows
-// the orbiting camera in every frame, and the `impostors` switch a field of the impostors
-// add-on's cards around it, which pick their views from the camera in every frame, for the
-// allocation samples of the add-ons' steps.
+// the orbiting camera in every frame, the `impostors` switch a field of the impostors
+// add-on's cards around it, which pick their views from the camera in every frame, and the
+// `splats` switch a cloud of the splats add-on's Gaussians above it, whose chunks a job worker
+// selects for the camera's position in every frame, for the allocation samples of the add-ons'
+// steps.
 // The `calls` switch makes, in every frame, the calls whose docs promise no allocation and that no
 // other switch makes: a raycast, a mesh's vertex update, a camera's ray through the pointer and
 // its screen point of a place, the orbit and fly controls' update, and the sketch's read of the
@@ -108,7 +110,7 @@ import {
 import { createParticles, type ParticleSystem, particleTextures } from '@null3d/particles';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { BACKGROUND, S1_BOB_HEIGHT, S1_EXTENT, s1Camera, VIEW_LIGHTS } from '../../scenes/spec';
-import { createImpostorField, createTerrainGround } from './addons';
+import { createImpostorField, createSplatCloud, createTerrainGround } from './addons';
 import { createAnimatedCrowd, readAnimated } from './crowd';
 import { createMorphedRow, readMorphed } from './morphed';
 import { followPath, frameCount, readCount, readShadows, setUpView } from './sketch-common';
@@ -118,7 +120,9 @@ export default defineSketch(async (context) => {
 	const { time } = context;
 	const cascades = readShadows(import.meta.url);
 	const camera = setUpView(context, VIEW_LIGHTS, BACKGROUND, { cascades });
-	const moveCamera = followPath(camera, s1Camera);
+	// The camera's position for the add-ons' steps, which the path copies in every frame.
+	const cameraAt = new Float64Array(3);
+	const moveCamera = followPath(camera, s1Camera, cameraAt);
 	const switches = new URL(import.meta.url).searchParams;
 	const count = readCount(import.meta.url);
 	const poseSwarm = switches.has('sprites')
@@ -138,10 +142,10 @@ export default defineSketch(async (context) => {
 		switches.has('inertial'),
 	);
 	const followTerrain = switches.has('terrain') ? createTerrainGround(context) : undefined;
-	const pickViews = switches.has('impostors') ? await createImpostorField(context) : undefined;
-	// The camera's position for the add-ons' steps, and the target that the path writes beside it.
-	const cameraAt = new Float64Array(3);
-	const lookAt = new Float64Array(3);
+	if (switches.has('impostors')) await createImpostorField(context);
+	const followSplats = switches.has('splats')
+		? await createSplatCloud(context, Number(switches.get('splats')) || undefined)
+		: undefined;
 	const morph = createMorphedRow(context, readMorphed(import.meta.url));
 	createLabels(context, Number(switches.get('labels') ?? 0));
 	const grading = switches.has('grading');
@@ -244,7 +248,15 @@ export default defineSketch(async (context) => {
 	const setValues = switches.has('setters') ? await createSetters(context, camera, now) : undefined;
 	const makeCalls = switches.has('calls') ? createCalls(context, camera, now) : undefined;
 	const moveDay = switches.has('timeOfDay') ? createTimeOfDay(now) : undefined;
+	// The add-ons' steps in a small function of their own. The path has already copied the camera's
+	// position into their array, so no fraction crosses a call that the browser may not inline.
+	const followAddons = (): void => {
+		followTerrain?.(cameraAt);
+		followSplats?.(cameraAt);
+	};
 	const pose = (t: number) => {
+		// The frame's time goes through a typed array first: a step of its own reads it from there.
+		now[0] = t;
 		poseSwarm(t);
 		moveCamera(t);
 		animate(t);
@@ -252,18 +264,11 @@ export default defineSketch(async (context) => {
 		moveCasters?.(t);
 		moveSmoke?.(t);
 		turnDecals?.(t);
-		if (followTerrain || pickViews) {
-			s1Camera(t, cameraAt, lookAt);
-			followTerrain?.(cameraAt);
-			pickViews?.(cameraAt);
-		}
+		if (followTerrain || followSplats) followAddons();
 		if (outlined) {
 			line.width = 2 + Math.sin(t);
 			context.post.set(outlineSettings);
 		}
-		// The frame's time goes through a typed array: a step of its own takes no fraction, so no
-		// number crosses a call that the browser may not inline.
-		now[0] = t;
 		if (room) {
 			turn[1] = 0.5 * t;
 			lighting.intensity = 0.75 + 0.25 * Math.sin(t);

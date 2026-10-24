@@ -16,6 +16,7 @@ use null3d_gpu::caps::{CUBE_TEXTURE_SIZE, Capabilities};
 use null3d_gpu::drawlist::{address, filter, format, sizes, upload_flags};
 use null3d_render::arrays::ArrayName;
 use null3d_render::cpu_culled::{CpuCulledConfig, MAX_SOURCE_BITS};
+use null3d_render::feature_instances;
 use null3d_render::frame::{NO_MATERIAL, NO_MESH};
 use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
@@ -24,6 +25,7 @@ use null3d_render::output::{Antialias, ToneMapping};
 use null3d_render::particles;
 use null3d_render::skinning::SkinningMode;
 use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET, MAX_LAYERS};
+use null3d_render::vertex_draws;
 use null3d_render::{debug_view, fog};
 
 /// Fields of `sceneArrays`.
@@ -51,6 +53,8 @@ pub mod batch_field {
     pub const DIRTY_WORDS: u32 = 6;
     /// An instance batch's own values, 4 floats a row, which shaders read.
     pub const VALUES: u32 = 7;
+    /// An instance batch's own distance ranges, 2 floats a row.
+    pub const RANGES: u32 = 8;
 }
 
 /// Fields of `debugLineArrays`.
@@ -115,9 +119,8 @@ pub mod shading {
     pub const CUSTOM_OBJECT_IDS: u32 = 1 << 31;
 }
 
-/// The map slots that `setMaterialMap` takes, in the order of a material's row, then the maps of
-/// a layered material in [`LayerMap::ALL`]'s order, which take the slots that such a material has
-/// no other use for.
+/// The map slots that `setMaterialMap` takes, in the order of a material's row, then the maps that
+/// take a slot the material has no other use for, in [`LayerMap::ALL`]'s order.
 pub mod map_slot {
     use null3d_render::materials::{LayerMap, MAP_SLOTS, MapSlot};
 
@@ -142,6 +145,11 @@ pub mod map_slot {
     pub const COAT_NORMAL: u32 = layer(LayerMap::CoatNormal);
     pub const SHEEN_COLOR: u32 = layer(LayerMap::SheenColor);
     pub const SHEEN_ROUGHNESS: u32 = layer(LayerMap::SheenRoughness);
+    pub const IRIDESCENCE: u32 = layer(LayerMap::Iridescence);
+    pub const IRIDESCENCE_THICKNESS: u32 = layer(LayerMap::IridescenceThickness);
+    pub const ANISOTROPY: u32 = layer(LayerMap::Anisotropy);
+    pub const TRANSMISSION: u32 = layer(LayerMap::Transmission);
+    pub const THICKNESS: u32 = layer(LayerMap::Thickness);
 
     /// The number that `setMaterialMap` takes for a layer map: its place after the map slots.
     const fn layer(map: LayerMap) -> u32 {
@@ -168,6 +176,9 @@ pub mod probe_flag {
 pub mod effect_flag {
     /// The effect or the pass reads the scene's depth.
     pub const DEPTH: u32 = 1;
+    /// The flags' lowest bit of the bloom level that an effect reads, which the call holds plus
+    /// one: 0 reads no bloom. The level itself is 0 to 9.
+    pub const BLOOM_SHIFT: u32 = 8;
 }
 
 /// The kinds of pass that `addPass` adds.
@@ -192,7 +203,8 @@ pub mod pass_source {
 
 /// The numbers that `textureStat` reads from the texture store.
 /// The places of the post-processing values in the block that `postValues` gives: 32-bit floats
-/// that TypeScript writes before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`. The
+/// that TypeScript writes before it calls `setOutput`, `setBloom`, `setLut`, `setVignette`,
+/// `setSharpen` or `setOutline`. The
 /// values come through engine memory, not as arguments, because the browser stores each fraction
 /// that it passes to a call it does not inline in an object of its own.
 pub mod post_value {
@@ -260,8 +272,10 @@ pub mod post_value {
     pub const SSR_MAX_DISTANCE: u32 = 60;
     pub const SSR_THICKNESS: u32 = 61;
     pub const SSR_MAX_ROUGHNESS: u32 = 62;
+    /// The sharpening's strength, from 0 to 1.
+    pub const SHARPEN: u32 = 63;
     /// The values in the block.
-    pub const COUNT: u32 = 63;
+    pub const COUNT: u32 = 64;
 }
 
 /// The block of numbers that `callValues` gives: 64-bit floats that TypeScript writes before a
@@ -398,6 +412,8 @@ pub mod texture_stat {
     pub const RELOAD_LEVEL: u32 = 14;
     /// The hidden texture that takes the texels of one texture's load again.
     pub const RELOAD_TEXTURE: u32 = 15;
+    /// 1 while one texture waits for texels to upload, and 0 otherwise.
+    pub const UPLOADING: u32 = 16;
 }
 
 /// The parts of the number that `shadowCasters` returns.
@@ -486,6 +502,9 @@ pub mod arrays_problem {
     pub const MORPH_NOT_FINITE: u32 = 10;
     /// A vertex update named a mesh with joints or morph targets, which take no updates.
     pub const POSED: u32 = 11;
+    /// A level cannot draw the base mesh's vertices, because the base is split into parts or its
+    /// vertices are posed. The caller copies the level's vertices instead.
+    pub const LEVEL_BASE: u32 = 12;
     /// Plus the array's code; the second detail is the place of the value in the array.
     pub const NOT_FINITE: u32 = 16;
 }
@@ -674,7 +693,7 @@ pub mod query {
     pub const RAY_FLOATS: u32 = 6;
 
     /// Numbers per hit record.
-    pub const HIT_FLOATS: u32 = 11;
+    pub const HIT_FLOATS: u32 = 14;
     /// The object's slot, or 0 for a batch row.
     pub const HIT_SLOT: u32 = 0;
     /// The batch's id, or 0 for an object.
@@ -689,6 +708,10 @@ pub mod query {
     pub const HIT_POINT: u32 = 5;
     /// The triangle's unit normal in the world, facing the ray's origin, three numbers.
     pub const HIT_NORMAL: u32 = 8;
+    /// The first texture coordinates at the hit, two numbers: NaN when the hit has none.
+    pub const HIT_UV: u32 = 11;
+    /// 1 when the hit carries first texture coordinates, 0 when it does not.
+    pub const HIT_HAS_UV: u32 = 13;
 
     /// The closest hit.
     pub const CLOSEST: u32 = 0;
@@ -732,6 +755,8 @@ pub fn typescript() -> String {
                 ("SET_RENDER_ORDER", op::SET_RENDER_ORDER),
                 ("SET_SKIN", op::SET_SKIN),
                 ("SET_MORPH", op::SET_MORPH),
+                ("SET_LEVEL_BIAS", op::SET_LEVEL_BIAS),
+                ("SET_DRAW_RANGE", op::SET_DRAW_RANGE),
                 ("KEEP_WORLD", op::KEEP_WORLD),
                 ("WORDS", COMMAND_WORDS),
             ],
@@ -811,6 +836,7 @@ pub fn typescript() -> String {
                 ("FRAMES", batch_field::FRAMES),
                 ("DIRTY_WORDS", batch_field::DIRTY_WORDS),
                 ("VALUES", batch_field::VALUES),
+                ("RANGES", batch_field::RANGES),
             ],
         ),
         (
@@ -856,6 +882,8 @@ pub fn typescript() -> String {
                 ("HIT_DISTANCE", query::HIT_DISTANCE),
                 ("HIT_POINT", query::HIT_POINT),
                 ("HIT_NORMAL", query::HIT_NORMAL),
+                ("HIT_UV", query::HIT_UV),
+                ("HIT_HAS_UV", query::HIT_HAS_UV),
                 ("CLOSEST", query::CLOSEST),
                 ("ANY", query::ANY),
                 ("ALL", query::ALL),
@@ -974,6 +1002,26 @@ pub fn typescript() -> String {
                 ("MAX_RECORDS", particles::MAX_RECORDS),
             ],
         ),
+        // The most that a draw whose instance count the GPU writes holds.
+        (
+            "FEATURE_INSTANCE",
+            &[
+                ("MAX_DRAWS", feature_instances::MAX_FEATURE_INSTANCES),
+                ("MAX_CAPACITY", feature_instances::MAX_CAPACITY),
+                ("INSTANCE_FLOATS", feature_instances::INSTANCE_FLOATS),
+                ("INSTANCE_BYTES", feature_instances::INSTANCE_BYTES),
+                ("COUNT_BYTES", feature_instances::COUNT_BYTES),
+            ],
+        ),
+        // The most that a draw which makes its own vertices holds.
+        (
+            "VERTEX_DRAW",
+            &[
+                ("MAX_DRAWS", vertex_draws::MAX_DRAWS as u32),
+                ("MAX_VERTICES", vertex_draws::MAX_VERTICES),
+                ("MAX_INSTANCES", vertex_draws::MAX_INSTANCES),
+            ],
+        ),
         (
             "SHADING",
             &[
@@ -1022,6 +1070,10 @@ pub fn typescript() -> String {
                 ("DECAL", feature::DECAL),
                 ("WIREFRAME", feature::WIREFRAME),
                 ("PARALLAX", feature::PARALLAX),
+                ("NO_TONE_MAP", feature::NO_TONE_MAP),
+                ("SCENE_DEPTH", feature::SCENE_DEPTH),
+                ("IRIDESCENCE", feature::IRIDESCENCE),
+                ("ANISOTROPY", feature::ANISOTROPY),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -1068,6 +1120,11 @@ pub fn typescript() -> String {
                 ("COAT_NORMAL", map_slot::COAT_NORMAL),
                 ("SHEEN_COLOR", map_slot::SHEEN_COLOR),
                 ("SHEEN_ROUGHNESS", map_slot::SHEEN_ROUGHNESS),
+                ("IRIDESCENCE", map_slot::IRIDESCENCE),
+                ("IRIDESCENCE_THICKNESS", map_slot::IRIDESCENCE_THICKNESS),
+                ("ANISOTROPY", map_slot::ANISOTROPY),
+                ("TRANSMISSION", map_slot::TRANSMISSION),
+                ("THICKNESS", map_slot::THICKNESS),
                 ("BUMP", map_slot::BUMP),
                 ("DISPLACEMENT", map_slot::DISPLACEMENT),
             ],
@@ -1112,6 +1169,18 @@ pub fn typescript() -> String {
                 ),
                 ("SHEEN_COLOR", param::SHEEN_COLOR as u32),
                 ("SHEEN_ROUGHNESS", param::SHEEN_ROUGHNESS as u32),
+                ("IRIDESCENCE", param::IRIDESCENCE as u32),
+                ("IRIDESCENCE_IOR", param::IRIDESCENCE_IOR as u32),
+                (
+                    "IRIDESCENCE_THICKNESS_MIN",
+                    param::IRIDESCENCE_THICKNESS_MIN as u32,
+                ),
+                (
+                    "IRIDESCENCE_THICKNESS_MAX",
+                    param::IRIDESCENCE_THICKNESS_MAX as u32,
+                ),
+                ("ANISOTROPY", param::ANISOTROPY as u32),
+                ("ANISOTROPY_ROTATION", param::ANISOTROPY_ROTATION as u32),
                 ("DECAL_FADE_START", param::DECAL_FADE_START as u32),
                 ("DECAL_FADE_END", param::DECAL_FADE_END as u32),
                 ("DECAL_EDGE_FADE", param::DECAL_EDGE_FADE as u32),
@@ -1126,6 +1195,7 @@ pub fn typescript() -> String {
                 ("FLOATS", null3d_render::effects::EFFECT_FLOATS as u32),
                 ("TEXTURES", null3d_render::effects::MAX_TEXTURES as u32),
                 ("DEPTH", effect_flag::DEPTH),
+                ("BLOOM_SHIFT", effect_flag::BLOOM_SHIFT),
             ],
         ),
         // The kinds of pass that `addPass` adds, and the input images of a full-screen pass.
@@ -1219,6 +1289,7 @@ pub fn typescript() -> String {
                 ("SSR_MAX_DISTANCE", post_value::SSR_MAX_DISTANCE),
                 ("SSR_THICKNESS", post_value::SSR_THICKNESS),
                 ("SSR_MAX_ROUGHNESS", post_value::SSR_MAX_ROUGHNESS),
+                ("SHARPEN", post_value::SHARPEN),
                 ("COUNT", post_value::COUNT),
             ],
         ),
@@ -1306,6 +1377,7 @@ pub fn typescript() -> String {
                 ("BUDGET_EPOCH", texture_stat::BUDGET_EPOCH),
                 ("RELOAD_LEVEL", texture_stat::RELOAD_LEVEL),
                 ("RELOAD_TEXTURE", texture_stat::RELOAD_TEXTURE),
+                ("UPLOADING", texture_stat::UPLOADING),
             ],
         ),
         (
@@ -1534,6 +1606,7 @@ pub fn typescript() -> String {
                 ("MORPH_LENGTH", arrays_problem::MORPH_LENGTH),
                 ("MORPH_NOT_FINITE", arrays_problem::MORPH_NOT_FINITE),
                 ("POSED", arrays_problem::POSED),
+                ("LEVEL_BASE", arrays_problem::LEVEL_BASE),
                 ("NOT_FINITE", arrays_problem::NOT_FINITE),
             ],
         ),

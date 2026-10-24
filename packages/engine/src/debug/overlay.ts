@@ -13,13 +13,15 @@
 // holds its look.
 
 import type { EngineMode } from '../page/engine';
+import type { FeatureStats } from '../scene/features';
+import { MEMORY_AREA_COUNT, MEMORY_AREA_NAMES } from '../shared/memory-area';
 import { refreshRate, sampleFrames } from '../shared/metrics';
 import type { FrameMode } from './overlay-look';
 import { PageMemorySampler, pageHeapBytes } from './page-meters';
 import { type FrameStats, FrameStatsWindow, type StatsSources } from './stats';
 import type { StatsOverlayOptions } from './stats-options';
 import { StatsPanel } from './stats-panel';
-import type { StatsFigures } from './stats-text';
+import type { StatsFigures, StatsMemoryArea } from './stats-text';
 
 export { OVERLAY_ATTRIBUTE } from './stats-panel';
 
@@ -41,6 +43,8 @@ export interface OverlaySetup {
 	gpuFeatures: readonly string[];
 	/** The threads that run the sketch and draw, as `engine.mode` gives them. */
 	mode: Pick<EngineMode, 'latency' | 'sketchThread' | 'renderThread'>;
+	/** The add-on features' figures, as the sketch last reported them. */
+	features?: () => readonly FeatureStats[];
 }
 
 /** How often the overlay reads new figures and follows the canvas. */
@@ -53,8 +57,13 @@ export interface PageFigures {
 }
 
 /** The overlay's figures: the engine's frame figures, with the page's own. */
-export function overlayFigures(stats: FrameStats, page: PageFigures): StatsFigures {
+export function overlayFigures(
+	stats: FrameStats,
+	page: PageFigures,
+	features: readonly FeatureStats[] = [],
+): StatsFigures {
 	return {
+		features,
 		heading: `${stats.tier}  ${stats.preset}  scale ${stats.renderScale.toFixed(2)}`,
 		frames: stats.frames,
 		presentedFps: stats.presentedFps,
@@ -74,8 +83,26 @@ export function overlayFigures(stats: FrameStats, page: PageFigures): StatsFigur
 			jsHeapBytes: page.jsHeapBytes,
 			page: page.page,
 		},
+		memoryAreas: memoryAreaList(stats.memoryAreas),
 		mainThread: null,
 	};
+}
+
+/**
+ * The memory register's figures as the card lists them, or undefined where no page asked for a
+ * report: a production build, or a page that does not show the figures.
+ */
+function memoryAreaList(values: readonly number[]): StatsMemoryArea[] | undefined {
+	const areas: StatsMemoryArea[] = [];
+	let reported = false;
+	for (let k = 0; k < MEMORY_AREA_COUNT; k++) {
+		const reservedBytes = values[k * 3] as number;
+		const usedBytes = values[k * 3 + 1] as number;
+		const peakBytes = values[k * 3 + 2] as number;
+		if (reservedBytes > 0 || usedBytes > 0) reported = true;
+		areas.push({ name: MEMORY_AREA_NAMES[k] as string, reservedBytes, usedBytes, peakBytes });
+	}
+	return reported ? areas : undefined;
 }
 
 export class StatsOverlay {
@@ -156,10 +183,11 @@ export class StatsOverlay {
 	}
 
 	private updateCard(): void {
-		const figures: StatsFigures = overlayFigures(this.window.stats, {
-			jsHeapBytes: pageHeapBytes(),
-			page: this.pageMemory.page,
-		});
+		const figures: StatsFigures = overlayFigures(
+			this.window.stats,
+			{ jsHeapBytes: pageHeapBytes(), page: this.pageMemory.page },
+			this.setup.features?.(),
+		);
 		this.panel.update(figures, {
 			refreshHz: this.refreshHz(),
 			maxTargetFps: this.setup.maxTargetFps,

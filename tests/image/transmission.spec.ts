@@ -9,6 +9,7 @@ import {
 	TRANSMISSION_BALLS,
 	TRANSMISSION_CAMERA,
 } from '../../bench/scenes/transmission.ts';
+import type { EngineModeName } from '../lib/engine-checks.ts';
 import {
 	difference,
 	type Image,
@@ -19,7 +20,7 @@ import {
 	type Vec3,
 	variant,
 } from '../lib/frame-pixels.ts';
-import { IMAGE_RUNS } from './manifest.ts';
+import { IMAGE_RUNS, manifestRun } from './manifest.ts';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -83,6 +84,31 @@ test('transmission: glass bends, blurs and tints the wall behind it', async ({ p
 			.soft(blueness(tinted) - blueness(clear), `${run.id}: the volume tints the light`)
 			.toBeGreaterThan(0.15);
 		expect.soft(tinted[0], `${run.id}: the volume absorbs red`).toBeLessThan(clear[0] / 2);
+	}
+});
+
+/**
+ * The transmission map's red and the thickness map's green vary across the balls in bands, which
+ * change what shows through them and how far the light bends. The plain scene is the same scene
+ * without them, so the ball differs from it by far more than a drawing's own noise.
+ */
+test('transmission-maps: the transmission and thickness maps vary the glass', async ({ page }) => {
+	test.setTimeout(240_000);
+	const runs = IMAGE_RUNS.filter((run) => run.test === 'transmission-maps');
+	expect(runs.length).toBe(3);
+	for (const run of runs) {
+		const mapped = await imageOf(page, run.path);
+		// The plain scene's run of the same tier and thread mode draws the same balls without maps.
+		const plain = manifestRun(
+			'transmission',
+			run.tier,
+			run.mode?.name as EngineModeName | undefined,
+		);
+		const without = await imageOf(page, plain.path);
+		const smooth = discOf(mapped, SMOOTH);
+		expect
+			.soft(difference(mapped, without, smooth), `${run.id}: the maps vary the glass`)
+			.toBeGreaterThan(0.01);
 	}
 });
 

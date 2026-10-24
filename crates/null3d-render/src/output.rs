@@ -145,8 +145,9 @@ pub struct OutputUniform {
     pub exposure: f32,
     pub tone_mapping: u32,
     /// Flags that only the final pass reads: [`OutputUniform::DISPLAY_COLOR`],
-    /// [`OutputUniform::VIGNETTE`], [`OutputUniform::LUT`], [`OutputUniform::OUTLINE`] and
-    /// [`OutputUniform::AUTO_EXPOSURE`].
+    /// [`OutputUniform::VIGNETTE`], [`OutputUniform::LUT`], [`OutputUniform::GRADE`],
+    /// [`OutputUniform::OUTLINE`], [`OutputUniform::AUTO_EXPOSURE`],
+    /// [`OutputUniform::SHARPEN`] and [`OutputUniform::UNMAPPED`].
     pub flags: u32,
     /// The part of the scene color that the scene drew, from its top-left corner: the width in
     /// pixels in the low 16 bits, and the height in the high 16 bits.
@@ -174,6 +175,15 @@ impl OutputUniform {
     /// The flag that makes the pass dither even where it holds display color. The second step sets
     /// it when the first step's target came from high dynamic range color.
     pub const DITHER: u32 = 64;
+    /// The flag that sharpens the display color at the whole canvas's render scale. The second step
+    /// sets it while the sketch asks for sharpening.
+    pub const SHARPEN: u32 = 128;
+    /// The flag that grades the display color with the built-in grading table, which a job worker
+    /// baked from the sketch's grading values.
+    pub const GRADE: u32 = 256;
+    /// The flag that makes the pass leave the tone curve off each pixel whose surface keeps its
+    /// display color, which the mask's blue channel marks.
+    pub const UNMAPPED: u32 = 512;
 
     /// Sets the size the scene drew at, in pixels. Each side keeps its low 16 bits, which hold any
     /// texture size a GPU makes.

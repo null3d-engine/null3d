@@ -112,6 +112,10 @@ run('replay', async () => {
 	cull.set(frustumPlanes(viewProj), 0);
 	new Uint32Array(cull.buffer).set([positions.length, viewLayers, 0, 0], 24);
 	const indirect = new Uint32Array([36, 0, 0, 0, 0, 36, 0, 0, 0, 0]);
+	// The start and the end distance of each source, which the culling group reads: no band here,
+	// so every source holds 0 and infinity.
+	const ranges = new Float32Array(positions.length * 4);
+	for (let i = 1; i < ranges.length; i += 4) ranges[i] = Number.POSITIVE_INFINITY;
 	const mesh = boxMesh(BOX);
 
 	const memory = new TestMemory(1 << 20, 4096);
@@ -126,6 +130,7 @@ run('replay', async () => {
 		buckets: memory.put(bucketInfo),
 		indirect: memory.put(indirect),
 		cull: memory.put(cull),
+		ranges: memory.put(ranges),
 		// Three.js's table of the split-sum terms of specular light, which the frame group binds in
 		// the materials' custom values: every entry holds the scale and bias of a smooth surface
 		// seen head on, which keeps the specular light finite at every roughness and view angle.
@@ -362,6 +367,34 @@ run('replay', async () => {
 		1,
 		G.VIEW_2D,
 	);
+	// The distances between which each source draws, which the culling group binds: one texel for
+	// each source, holding the start and the end. This view sets no band, so each source holds 0
+	// and infinity, as a source without a band does. A zero end would hide every source.
+	memory.push(
+		G.OP_CREATE_TEXTURE,
+		22,
+		positions.length,
+		1,
+		1,
+		G.FORMAT_RGBA32_FLOAT,
+		GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+		1,
+		1,
+		G.VIEW_2D,
+	);
+	memory.push(
+		G.OP_WRITE_TEXTURE,
+		22,
+		0,
+		0,
+		0,
+		0,
+		positions.length,
+		1,
+		1,
+		blobs.ranges,
+		positions.length * 16,
+	);
 	// The blank array of reflection probes, one texel, which the frame group binds at binding 3
 	// while the view lists no probe.
 	memory.push(
@@ -424,7 +457,7 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		2,
 		G.LAYOUT_CULL,
-		11,
+		12,
 		...[10, 5, 6, 7, 8, 9, 11, 12, 17].flatMap((buffer, binding) => [
 			binding,
 			G.RESOURCE_BUFFER,
@@ -434,8 +467,10 @@ run('replay', async () => {
 		]),
 		...[9, G.RESOURCE_TEXTURE, 7, 0, 0],
 		// The first joint of each source of a shared skinned bucket. This view draws no skinned
-		// object, but the culling group's last binding must still be filled.
+		// object, but the culling group's bindings must all be filled.
 		...[10, G.RESOURCE_TEXTURE, 9, 0, 0],
+		// The distance band of each source, which every row outside hides in.
+		...[11, G.RESOURCE_TEXTURE, 22, 0, 0],
 	);
 	memory.push(G.OP_BEGIN_BUNDLE, 1, G.FORMAT_CANVAS, G.FORMAT_DEPTH32_FLOAT, SAMPLES);
 	memory.push(G.OP_SET_PIPELINE, 1);

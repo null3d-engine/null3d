@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { MEMORY_AREA_COUNT, MEMORY_AREA_NAMES, MEMORY_AREA_VALUES } from '../shared/memory-area';
 import {
 	Counter,
 	createMetricsBuffer,
@@ -23,6 +24,8 @@ const THREADS: [string, number[]][] = [
 
 /** Presented time per frame: the window ends with its 30th frame. */
 const PRESENTED_MS = STATS_WINDOW_MS / 30 + 0.001;
+/** Bytes in a mebibyte. */
+const MIB = 1024 * 1024;
 
 /**
  * Writes one frame's records to every ring, with fractions as real frames have. Without `counted`,
@@ -107,8 +110,9 @@ describe('FrameStatsWindow', () => {
 		expect(stats.objects).toBe(40);
 		expect(stats.uploadBytes).toBe(3072);
 		expect(stats.wasmBytes).toBe(WASM_BYTES);
-		// No GPU timer wrote a record, so the GPU time is unknown.
+		// No GPU timer wrote a record, so the GPU time and its step are unknown.
 		expect(stats.gpuMs).toBeNull();
+		expect(stats.gpuStepMs).toBeNull();
 		expect(stats.tier).toBe('webgl2');
 		expect(stats.preset).toBe('high');
 		expect(stats.renderScale).toBe(0.75);
@@ -281,6 +285,40 @@ describe('statsText', () => {
 		]);
 	});
 
+	it('lists the memory register by area, with the bytes each reserves, uses and has used at most', () => {
+		const { recorders, window } = setUp();
+		const report = new Float64Array(MEMORY_AREA_COUNT * MEMORY_AREA_VALUES);
+		const scene = MEMORY_AREA_NAMES.indexOf('scene') * MEMORY_AREA_VALUES;
+		report.set([8 * MIB, 6 * MIB, 7 * MIB], scene);
+		const uploads = MEMORY_AREA_NAMES.indexOf('upload arenas') * MEMORY_AREA_VALUES;
+		report.set([1 * MIB, 0.5 * MIB, 1 * MIB], uploads);
+		recorders[0]?.publishMemoryRegister(report);
+		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame);
+		window.update();
+		expect(window.stats.memoryAreas).toEqual(Array.from(report));
+		const areas = overlayFigures(window.stats, NO_PAGE_FIGURES).memoryAreas;
+		expect(areas?.[MEMORY_AREA_NAMES.indexOf('scene')]).toEqual({
+			name: 'scene',
+			reservedBytes: 8 * MIB,
+			usedBytes: 6 * MIB,
+			peakBytes: 7 * MIB,
+		});
+		const lines = statsText(overlayFigures(window.stats, NO_PAGE_FIGURES)).split('\n');
+		expect(lines).toContain('memory register  used / reserved / peak');
+		expect(lines).toContain('  scene           6.0 MiB  8.0 MiB  7.0 MiB');
+		expect(lines).toContain('  upload arenas   0.5 MiB  1.0 MiB  1.0 MiB');
+	});
+
+	it('leaves the memory register out where no page asked for a report', () => {
+		const { recorders, window } = setUp();
+		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame);
+		window.update();
+		expect(overlayFigures(window.stats, NO_PAGE_FIGURES).memoryAreas).toBeUndefined();
+		expect(statsText(overlayFigures(window.stats, NO_PAGE_FIGURES))).not.toContain(
+			'memory register',
+		);
+	});
+
 	it('shows large counts in thousands and millions, and a page figure still being measured', () => {
 		const lines = statsText({
 			heading: 'three.js WebGLRenderer',
@@ -337,13 +375,30 @@ describe('FrameStatsWindow GPU time', () => {
 		const gpu = new FrameRecorder(buffer, Role.Gpu);
 		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame);
 		gpu.begin(11);
+		gpu.gpuTick(65_536);
 		gpu.commit(4);
 		window.update();
 		expect(window.stats.gpuMs).toBe(4);
+		// The step between the timestamps is the divisor of the per-frame steps.
+		expect(window.stats.gpuStepMs).toBeCloseTo(0.065536, 9);
 		for (let frame = 31; frame <= 60; frame++) writeFrame(recorders, frame);
 		window.update();
 		expect(window.stats.gpuMs).toBe(4);
-		expect(JSON.parse(JSON.stringify(window.stats)).gpuMs).toBe(4);
+		expect(window.stats.gpuStepMs).toBeCloseTo(0.065536, 9);
+		const logged = JSON.parse(JSON.stringify(window.stats));
+		expect(logged.gpuMs).toBe(4);
+		expect(logged.gpuStepMs).toBeCloseTo(0.065536, 9);
+	});
+
+	it('reports no step when the times look exact', () => {
+		const { buffer, recorders, window } = setUp();
+		const gpu = new FrameRecorder(buffer, Role.Gpu);
+		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame);
+		gpu.begin(11);
+		gpu.gpuTick(1);
+		gpu.commit(4);
+		window.update();
+		expect(window.stats.gpuStepMs).toBeNull();
 	});
 });
 

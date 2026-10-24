@@ -13,6 +13,10 @@ interface LabelMessage {
 	text: string;
 	/** True to highlight the label, such as for a selected object. */
 	active?: boolean;
+	/** The element's width in CSS pixels, for a label that is a plane of the scene. */
+	width?: number;
+	/** The element's height in CSS pixels, for a label that is a plane of the scene. */
+	height?: number;
 }
 
 export interface StartOptions {
@@ -71,6 +75,7 @@ export async function startDemo({
 			canvas,
 			sketch: demo.sketch,
 			largeWorld: demo.largeWorld,
+			hdr: demo.hdr,
 			// Collapsed, the overlay stays small until clicked.
 			stats: stats && { collapsed: true },
 			onProgress: (stage) => loader.stage(stage),
@@ -226,11 +231,16 @@ function labelReader(engine: Engine, layer: HTMLElement): (type: string, data: u
 	const tags = new Map<string, HTMLElement>();
 	return (type, data) => {
 		if (type !== 'label') return;
-		const { id, text, active = false } = data as LabelMessage;
+		const { id, text, active = false, width, height } = data as LabelMessage;
 		let tag = tags.get(id);
 		if (!tag) {
 			tag = document.createElement('div');
-			tag.className = 'label';
+			// A label that is a plane of the scene is sized in CSS pixels, which are the scene's units.
+			const sized = width !== undefined || height !== undefined;
+			tag.className = sized ? 'label label--card' : 'label';
+			if (width !== undefined) tag.style.width = `${width}px`;
+			if (height !== undefined) tag.style.height = `${height}px`;
+			if (sized) tag.style.boxSizing = 'border-box';
 			layer.append(tag);
 			tags.set(id, tag);
 			engine.labels.bind(id, tag);

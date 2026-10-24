@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { SHADING_CUSTOM_FIRST } from '../../generated/core';
 import * as G from '../../generated/gpu';
 import type { DeviceShaders } from '../../generated/shaders';
+import { ImageTable } from '../../shared/images';
 import { MemoryViews } from '../../shared/memory-views';
 import { ReadSink } from '../readback';
 import { WebGPUBackend } from './backend';
@@ -63,6 +65,16 @@ function fakeDevice() {
 			log.push('end pass');
 		},
 	};
+	const computePass = {
+		setPipeline() {},
+		setBindGroup() {},
+		dispatchWorkgroups(x: number, y: number, z: number) {
+			log.push(`dispatch ${x} x ${y} x ${z}`);
+		},
+		end() {
+			log.push('end compute pass');
+		},
+	};
 	const pipeline = { getBindGroupLayout: () => ({}) };
 	const device = {
 		createBindGroupLayout: () => ({}),
@@ -70,6 +82,14 @@ function fakeDevice() {
 		createShaderModule: () => ({}),
 		createSampler: () => ({}),
 		createBindGroup: () => ({}),
+		createComputePipeline() {
+			log.push('build compute');
+			return pipeline;
+		},
+		createComputePipelineAsync() {
+			log.push('background build compute');
+			return Promise.resolve(pipeline);
+		},
 		createRenderPipeline(descriptor: GPURenderPipelineDescriptor) {
 			log.push(`build ${descriptor.fragment?.targets[0]?.format}`);
 			return pipeline;
@@ -121,6 +141,10 @@ function fakeDevice() {
 			return buffer;
 		},
 		createCommandEncoder: () => ({
+			beginComputePass() {
+				log.push('begin compute pass');
+				return computePass;
+			},
 			beginRenderPass(descriptor: GPURenderPassDescriptor) {
 				// The backend fills one descriptor again for each pass, so the log keeps copies.
 				const colors = [...descriptor.colorAttachments].map((color) => ({ ...color }));
@@ -164,6 +188,11 @@ function replay(backend: WebGPUBackend, words: Uint32Array): void {
 	backend.replay(words, new Float32Array(words.buffer), 0, words.length, new ArrayBuffer(0));
 }
 
+/** Replays a draw list from `from`, after the pipelines that its front creates. */
+function replayFrom(backend: WebGPUBackend, words: Uint32Array, from: number): void {
+	backend.replay(words, new Float32Array(words.buffer), from, words.length, new ArrayBuffer(0));
+}
+
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** A texture's operands: id, size, layers, format, usage, samples, mip levels and view dimension. */
@@ -195,6 +224,66 @@ describe('WebGPUBackend', () => {
 		await settle();
 		replay(backend, drawList(texture(1, 64, 1, 3, G.VIEW_2D_ARRAY), [G.OP_GENERATE_MIPMAPS, 1, 0]));
 		expect(log.filter((entry) => entry.startsWith('build'))).toEqual([]);
+	});
+
+	it('skips a compute pass’s dispatches while its pipeline is pending, and runs them once it is built', async () => {
+		const { device, log } = fakeDevice();
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		await settle();
+		log.length = 0;
+		// A compute pass whose pipeline the list's front creates: it builds in the background, so the
+		// pass sets a pipeline that is still pending and dispatches into nothing.
+		const words = drawList(
+			[G.OP_CREATE_COMPUTE_PIPELINE, 1, G.TEMPLATE_SKIN, 0],
+			[G.OP_BEGIN_COMPUTE_PASS],
+			[G.OP_SET_COMPUTE_PIPELINE, 1],
+			[G.OP_DISPATCH, 2, 1, 1],
+			[G.OP_END_COMPUTE_PASS],
+		);
+		const from = backend.prepare(words, 0, words.length);
+		replayFrom(backend, words, from);
+		expect(log.filter((entry) => entry.startsWith('dispatch'))).toEqual([]);
+		expect(backend.counts.dispatches).toBe(0);
+		await settle();
+		replayFrom(backend, words, from);
+		expect(log.filter((entry) => entry.startsWith('dispatch'))).toEqual(['dispatch 2 x 1 x 1']);
+		expect(backend.counts.dispatches).toBe(1);
+	});
+
+	it('skips an add-on compute pass’s dispatches while its pipeline is pending, as it does a built-in pass’s', async () => {
+		const { device, log } = fakeDevice();
+		// An add-on's pass brings a whole WGSL module of its own, under a template id of its own.
+		const images = new ImageTable();
+		images.setShader(SHADING_CUSTOM_FIRST, {
+			kind: 'compute',
+			variants: {
+				compute: {
+					permutation: 0,
+					wgsl: { source: '@compute @workgroup_size(1) fn main() {}', pipelines: {} },
+					glsl: null,
+				},
+			},
+			locations: [],
+			textures: 0,
+		});
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS, undefined, images);
+		await settle();
+		log.length = 0;
+		const words = drawList(
+			[G.OP_CREATE_COMPUTE_PIPELINE, 1, SHADING_CUSTOM_FIRST, G.FORMAT_RGBA16_FLOAT],
+			[G.OP_BEGIN_COMPUTE_PASS],
+			[G.OP_SET_COMPUTE_PIPELINE, 1],
+			[G.OP_DISPATCH, 3, 1, 1],
+			[G.OP_END_COMPUTE_PASS],
+		);
+		const from = backend.prepare(words, 0, words.length);
+		replayFrom(backend, words, from);
+		expect(log.filter((entry) => entry.startsWith('dispatch'))).toEqual([]);
+		expect(backend.counts.dispatches).toBe(0);
+		await settle();
+		replayFrom(backend, words, from);
+		expect(log.filter((entry) => entry.startsWith('dispatch'))).toEqual(['dispatch 3 x 1 x 1']);
+		expect(backend.counts.dispatches).toBe(1);
 	});
 
 	it('draws a capture of a frame that resolves into the canvas into color targets of its own', () => {

@@ -1,7 +1,8 @@
 // Measures a running engine until the measurements hold what a test needs, such as enough frames,
 // for the tests that count work over frames. A software GPU on a busy machine can take more than a
 // second for a frame, and a measurement counts only the frames that start and end within it. So
-// each further measurement is twice as long as the one before.
+// each further measurement is twice as long as the one before, or repeats as it is while the
+// engine draws nothing at all.
 import type { Engine, FrameMetrics } from '@null3d/engine';
 
 /**
@@ -21,4 +22,34 @@ export async function measureUntil(
 		add(await engine.measure(length), length);
 		if (enough()) return;
 	}
+}
+
+/**
+ * The frames that a running engine draws, in windows of `seconds` that repeat while the engine
+ * draws none: a software GPU on a busy machine can take longer than one window for a frame. The
+ * engine gets `windows` windows before the caller reads a count of none as an engine that does not
+ * draw.
+ */
+export async function framesDrawn(engine: Engine, seconds = 0.5, windows = 10): Promise<number> {
+	let frames = 0;
+	for (let window = 0; window < windows && frames === 0; window++)
+		frames = (await engine.measure(seconds)).frames;
+	return frames;
+}
+
+/**
+ * Measures the engine for `seconds`, and again in the same window while that window holds no frame:
+ * a software GPU on a busy machine can take longer than one window for a frame, and the figures of
+ * a window without one say nothing about the work the engine does. The last measurement comes back
+ * after `windows` windows, whatever it holds.
+ */
+export async function measureDrawing(
+	engine: Engine,
+	seconds: number,
+	windows = 10,
+): Promise<FrameMetrics> {
+	let stats = await engine.measure(seconds);
+	for (let window = 1; window < windows && stats.frames === 0; window++)
+		stats = await engine.measure(seconds);
+	return stats;
 }

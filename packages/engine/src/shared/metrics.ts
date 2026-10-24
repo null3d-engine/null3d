@@ -9,7 +9,9 @@
 // the writer overwrote meanwhile is counted as lost instead of read half-written.
 
 import * as Counter from './counter';
+import { gcd } from './gpu-clock';
 import * as GpuCounter from './gpu-counter';
+import { MEMORY_AREA_COUNT, MEMORY_AREA_VALUES } from './memory-area';
 import * as MemoryFigure from './memory-figure';
 import * as Phase from './phase';
 import * as Role from './role';
@@ -139,7 +141,13 @@ const FIRST_DRAW = 8;
  * samples, in the order of `MemoryFigure`.
  */
 const MEMORY = 9;
-const HEADER_WORDS = 2 * (MEMORY + MemoryFigure.Count);
+/**
+ * Float64 index of the first of the memory register's figures that the sketch thread publishes:
+ * the bytes each area reserves, uses and has used at most.
+ */
+const MEMORY_AREAS = MEMORY + MemoryFigure.Count;
+const AREA_VALUES = MEMORY_AREA_COUNT * MEMORY_AREA_VALUES;
+const HEADER_WORDS = 2 * (MEMORY_AREAS + AREA_VALUES);
 const WRITTEN = HEADER_WORDS;
 
 function recordsStart(rings: number): number {
@@ -220,6 +228,15 @@ export function memoryFigures(buffer: ArrayBufferLike): Float64Array {
 	return new Float64Array(buffer, MEMORY * 8, MemoryFigure.Count);
 }
 
+/**
+ * A view of the memory register's figures, which the sketch thread publishes: three numbers per
+ * area, in the order of `MEMORY_AREA_NAMES`. Each area's numbers are the bytes that it reserves,
+ * uses and has used at most, and all are 0 until the page asks for a report.
+ */
+export function memoryAreaFigures(buffer: ArrayBufferLike): Float64Array {
+	return new Float64Array(buffer, MEMORY_AREAS * 8, AREA_VALUES);
+}
+
 /** The display's refresh rate in hertz, as the thread that draws measured it, or 0 before then. */
 export function refreshRate(buffer: ArrayBufferLike): number {
 	return new Float64Array(buffer, 0, HEADER_WORDS / 2)[REFRESH_HZ] as number;
@@ -297,6 +314,11 @@ export class FrameRecorder {
 		words[this.at + COUNTERS + GpuCounter.RenderPasses] = renderPasses;
 	}
 
+	/** A GPU record's step between its frame's timestamps, in nanoseconds, or 0 when it has none. */
+	gpuTick(ns: number): void {
+		this.views.words[this.at + COUNTERS + GpuCounter.Tick] = ns;
+	}
+
 	/** A GPU record's time in one slot: 0 for the copies before the first pass, then one per pass. */
 	gpuTime(slot: number, ms: number): void {
 		this.views.floats[this.at + PHASES + slot] = ms;
@@ -345,6 +367,14 @@ export class FrameRecorder {
 	/** Publishes a memory figure by its `MemoryFigure` place, for the frame figures on any thread. */
 	publishMemory(figure: number, value: number): void {
 		this.views.times[MEMORY + figure] = value;
+	}
+
+	/**
+	 * Publishes the memory register's figures, three numbers for each area, from `from` on.
+	 */
+	publishMemoryRegister(values: ArrayLike<number>, from = 0): void {
+		const { times } = this.views;
+		for (let k = 0; k < AREA_VALUES; k++) times[MEMORY_AREAS + k] = values[from + k] as number;
 	}
 
 	/**
@@ -559,28 +589,39 @@ export class RingSums {
 	readonly sums: Float64Array;
 	private readonly views: MetricsViews;
 	private next: number;
+	/** The greatest common divisor of `stepCounter`'s values over the records added, or 0. */
+	private step = 0;
+	private readonly stepCounter: number;
 
 	/** With detail, a record's phases and counters, copied before the check that the record held. */
 	private readonly detail: Float64Array | undefined;
 
 	/**
 	 * Sums `ring`'s records from those written after this call. With `detail`, the sums also hold
-	 * each phase and each counter.
+	 * each phase and each counter. With `stepCounter`, `commonStep` keeps the greatest common
+	 * divisor of those counter values, for a figure that the records measure as a step.
 	 */
 	constructor(
 		buffer: ArrayBufferLike,
 		readonly ring: number,
 		detail = false,
+		stepCounter = -1,
 	) {
 		this.views = new MetricsViews(buffer);
 		this.next = Atomics.load(this.views.header, WRITTEN + ring);
 		this.sums = new Float64Array(detail ? SUM_COUNTERS + COUNTER_NAMES.length : SUM_PHASES);
 		this.detail = detail ? new Float64Array(DETAIL_VALUES) : undefined;
+		this.stepCounter = stepCounter;
+	}
+
+	/** The greatest common divisor of the step counter's values in the records added, or 0. */
+	get commonStep(): number {
+		return this.step;
 	}
 
 	/** Takes in the records written since the last call. */
 	add(): void {
-		const { views, sums, detail } = this;
+		const { views, sums, detail, stepCounter } = this;
 		const { floats, words } = views;
 		const written = Atomics.load(views.header, WRITTEN + this.ring);
 		const from = Math.max(this.next, written - views.capacity);
@@ -589,12 +630,14 @@ export class RingSums {
 			if (!views.holds(at, sequence)) continue;
 			const busy = floats[at + BUSY] as number;
 			const interval = floats[at + INTERVAL] as number;
+			const step = stepCounter >= 0 ? (words[at + COUNTERS + stepCounter] as number) : 0;
 			if (detail) {
 				for (let p = 0; p < PHASE_NAMES.length; p++) detail[p] = floats[at + PHASES + p] as number;
 				for (let c = 0; c < COUNTER_NAMES.length; c++)
 					detail[PHASE_NAMES.length + c] = words[at + COUNTERS + c] as number;
 			}
 			if (!views.holds(at, sequence)) continue;
+			if (step > 0) this.step = gcd(this.step, step);
 			sums[SUM_RECORDS] = (sums[SUM_RECORDS] as number) + 1;
 			sums[SUM_BUSY_MS] = (sums[SUM_BUSY_MS] as number) + busy;
 			sums[SUM_LONGEST_BUSY_MS] = Math.max(sums[SUM_LONGEST_BUSY_MS] as number, busy);
@@ -606,9 +649,10 @@ export class RingSums {
 		this.next = written;
 	}
 
-	/** Starts a new window: the sums go back to zero, and the place in the ring stays. */
+	/** Starts a new window: the sums and the step go back to zero, and the place in the ring stays. */
 	clear(): void {
 		this.sums.fill(0);
+		this.step = 0;
 	}
 }
 

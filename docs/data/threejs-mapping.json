@@ -77,7 +77,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "post.set({ toneMapping: 'agx' | 'agx-punchy' | 'neutral' | 'aces' | 'none' | curveWgsl, exposure })",
-      "notes": "The engine default is \"agx-punchy\", AgX with Filament's punchy look; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". A port keeps the curve it set: AgXToneMapping becomes \"agx\" and ACESFilmicToneMapping \"aces\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Copy toneMappingExposure to exposure unchanged: null3D multiplies it into each light rather than into the finished picture, which gives the same image, and bloom's threshold keeps its meaning. A scene in real units sets ev100 instead, and exposure then acts as exposure compensation. Reinhard, Cineon and CustomToneMapping become a custom tone curve: post.set({ toneMapping: wgsl }), where the WGSL declares fn toneCurve(color: vec3f) -> vec3f. Leave out the curve's multiply by toneMappingExposure, because the color arrives exposed.",
+      "notes": "The engine default is \"agx-punchy\", AgX with Filament's punchy look; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". A port keeps the curve it set: AgXToneMapping becomes \"agx\" and ACESFilmicToneMapping \"aces\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Copy toneMappingExposure to exposure unchanged: null3D multiplies it into each light rather than into the finished picture, which gives the same image, and bloom's threshold keeps its meaning. A scene in real units sets ev100 instead, and exposure then acts as exposure compensation. ReinhardToneMapping and CineonToneMapping become the reinhard and cineon curves of @null3d/three-compat: post.set({ toneMapping: reinhard }), with three.js's formulas. CustomToneMapping becomes a custom tone curve: post.set({ toneMapping: wgsl }), where the WGSL declares fn toneCurve(color: vec3f) -> vec3f. Leave out the curve's multiply by toneMappingExposure, because the color arrives exposed. A custom curve needs HDR color, as bloom does, so compatibility mode draws in HDR color with FXAA while one is set; a device without an HDR target keeps the built-in curve.",
       "docs": "api/post",
       "detect": "\\b\\w+ToneMapping\\b|\\.toneMapping(Exposure)?\\s*="
     },
@@ -175,8 +175,8 @@
       "three": "renderer.setViewport / setScissor (split screens, picture in picture)",
       "status": "changed",
       "since": "0.3",
-      "target": "A scene pass whose texture (textures.fromPass) a mesh or sprites show, for minimaps and picture in picture (0.2)",
-      "notes": "Several full views (scene.createView), such as split screens, come in 0.3.",
+      "target": "scene.createView({ camera, rect }): one scene drawn again from another camera, into a rectangle of the canvas, after the camera's view",
+      "notes": "rect is [x, y, width, height] as fractions of the canvas from its top-left corner, so [0.5, 0, 0.5, 1] is its right half. Give each view its own camera; setRect changes the rectangle and allocates nothing, and destroy removes the view. The camera's view draws the whole canvas first, so a split screen that covers the canvas draws the scene once for the camera and once for each view. Each view costs one cull and one scene draw at its rectangle's pixels; the sun's shadows and the lights cost nothing more. A view's objects take no ambient occlusion or screen-space reflections; the camera's volumetric fog and outline reach the whole image, a view's rectangle included. For a minimap that a material shows in the world, a scene pass into a texture (textures.fromPass) is cheaper than a view.",
       "docs": "guides/multiple-views",
       "detect": "\\.set(Scissor|Viewport)(Test)?\\s*\\("
     },
@@ -274,8 +274,8 @@
       "three": "parent.add(child) / remove / attach / scene.add",
       "status": "changed",
       "since": "0.1",
-      "target": "child.setParent(parent); setParent(parent, { keepWorld: true }) for attach(); destroy() to remove",
-      "notes": "Objects are in the scene as soon as they are created. setParent keeps the local transform, like add(). Creating, destroying and re-parenting rebuild the draw tables in that frame, so during play hide with setVisible and pool with setActiveCount instead (guides/performance).",
+      "target": "child.setParent(parent); setParent(parent, { keepWorld: true }) for attach(); getParent() for object.parent; destroy() to remove",
+      "notes": "Objects are in the scene as soon as they are created. setParent keeps the local transform, like add(), and getParent() returns an object's parent, or null for a root object. Creating, destroying and re-parenting rebuild the draw tables in that frame, so during play hide with setVisible and pool with setActiveCount instead (guides/performance).",
       "docs": "api/objects",
       "detect": "\\bscene\\.(add|remove)\\s*\\(|\\.attach\\s*\\("
     },
@@ -395,8 +395,8 @@
       "three": "object.layers / camera.layers (set, enable, disable)",
       "status": "changed",
       "since": "0.1",
-      "target": "obj.setLayers(mask), camera.setLayers(mask), batch.setLayers(mask); the layers option of createMesh, createInstances and createPerspectiveCamera",
-      "notes": "Masks have the same 32 bits and the same default, layer 0 alone, and a camera draws an object when their masks share a bit. layers.set(n) becomes setLayers(1 << n). For enable and disable, keep the mask in your code and pass the new mask. An InstancedMesh's layers become its batch's, for every row. Raycasts and declared passes take layer masks from 0.2. Shadow casters differ: three.js tests them against the camera's layers, and null3D against the light's. Give each light that casts shadows the layers of every object that must cast, or those objects cast nothing.",
+      "target": "obj.setLayers(mask), obj.getLayers(), camera.setLayers(mask), batch.setLayers(mask); the layers option of createMesh, createInstances and createPerspectiveCamera",
+      "notes": "Masks have the same 32 bits and the same default, layer 0 alone, and a camera draws an object when their masks share a bit. layers.set(n) becomes setLayers(1 << n), and layers.mask becomes getLayers(). For enable and disable, read the mask with getLayers() and pass the new mask. An InstancedMesh's layers become its batch's, for every row. Raycasts and declared passes take layer masks from 0.2. Shadow casters differ: three.js tests them against the camera's layers, and null3D against the light's. Give each light that casts shadows the layers of every object that must cast, or those objects cast nothing.",
       "docs": "concepts/render-layers",
       "detect": "\\.layers\\.(set|enable|disable|toggle|enableAll|disableAll|mask)\\b"
     },
@@ -470,11 +470,11 @@
       "id": "override-material",
       "category": "Scene graph",
       "three": "scene.overrideMaterial",
-      "status": "changed",
+      "status": "direct",
       "since": "0.3",
-      "target": "debug.view('normals' | 'depth' | 'wireframe') while you debug",
-      "notes": "A material override for a whole pass comes in 0.3.",
-      "docs": "guides/custom-passes",
+      "target": "scene.overrideMaterial = material, and null for each object's own material",
+      "notes": "Draws every mesh and instance batch of the main pass with the material, each keeping its mesh, place and instances, as three.js does. Sprites, points, lines and particle systems keep their own materials, and the shadow maps keep each object's material, so a masked caster still cuts its shadow. A sprite, point or line material throws E1224. The change rebuilds the engine's draw tables in the next frame, and adds no draw call or pipeline after that.",
+      "docs": "api/scene",
       "detect": "\\.overrideMaterial\\s*="
     },
     {
@@ -560,7 +560,7 @@
       "three": "ArrayCamera / StereoCamera",
       "status": "unsupported",
       "since": null,
-      "target": "None; split screens come in 0.3 with multiple views",
+      "target": "None; split screens use scene.createView with one camera for each view",
       "notes": "Stereo rendering belongs to XR, which is out of scope.",
       "docs": "porting/threejs-unsupported",
       "detect": "\\b(Array|Stereo)Camera\\b"
@@ -593,8 +593,8 @@
       "three": "SpotLight(color, intensity, distance, angle, penumbra, decay)",
       "status": "direct",
       "since": "0.1",
-      "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, decay, intensity, castShadows, shadow, intensityUnit })",
-      "notes": "distance becomes range, which every spot light needs. intensity stays in candela; light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by π at any cone angle, as power does. target is a point: call light.lookAt(x, y, z) when it moves. castShadow becomes castShadows, and shadow takes bias and normalBias in meters. The quality preset sets the tile size in place of shadow.mapSize, and shadow.camera has no equivalent. Spot light cookies (light.map) come in 0.3.",
+      "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, decay, intensity, map, castShadows, shadow, intensityUnit })",
+      "notes": "distance becomes range, which every spot light needs. intensity stays in candela; light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by π at any cone angle, as power does. target is a point: call light.lookAt(x, y, z) when it moves. castShadow becomes castShadows, and shadow takes bias and normalBias in meters. The quality preset sets the tile size in place of shadow.mapSize, and shadow.camera has no equivalent. light.map becomes map: sRGB pixels as { width, height, data }, or setMap(pixels), resampled to 128 x 128 texels and projected by the cone as three.js projects it; its top row follows the world's up, as three.js aims its map's camera, so a light rolled about its axis shows the same map. Up to 32 lights show a map at once.",
       "docs": "api/lights",
       "detect": "\\bSpotLight\\b"
     },
@@ -846,8 +846,8 @@
       "three": "MeshPhysicalMaterial (clearcoat, transmission, sheen, iridescence, anisotropy, specular)",
       "status": "changed",
       "since": "0.1",
-      "target": "materials.standard, with ior, specularIntensity, specularColor and their maps, transmission, clearcoat and sheen",
-      "notes": "materials.standard takes ior, specularIntensity, specularColor, specularIntensityMap and specularColorMap with three.js's names and formulas, transmission, thickness, attenuationColor and attenuationDistance (see the transmission entry), and the clear coat and the sheen (see their entries). Iridescence and anisotropy come in 0.3. Until then, approximate them with the standard options or write a surface function.",
+      "target": "materials.standard, with ior, specularIntensity, specularColor and their maps, transmission, clearcoat, sheen, iridescence and anisotropy",
+      "notes": "materials.standard takes ior, specularIntensity, specularColor, specularIntensityMap and specularColorMap with three.js's names and formulas, transmission, thickness, attenuationColor and attenuationDistance (see the transmission entry), the clear coat and the sheen (see their entries), and iridescence and anisotropy (see their entries).",
       "docs": "api/materials",
       "detect": "\\bMeshPhysicalMaterial\\b"
     },
@@ -869,7 +869,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "materials.standard({ transmission, thickness, ior, roughness, attenuationColor, attenuationDistance })",
-      "notes": "Same names, ranges and formulas: the surface samples a mipmapped copy of the opaque objects' colors where its bent ray leaves the volume, as three.js does, and glTF's KHR_materials_transmission and KHR_materials_volume load into them. Give transmission when you create the material, even as 0, to change it later. transmissionMap and thicknessMap are not drawn yet (they come in 0.3), and dispersion has no option. The copy holds opaque objects only: three.js also draws the back faces of double-sided glass into it. Where the bent ray lands on an opaque object in front of the surface, null3D shows what lies straight behind the surface, and three.js shows that object's color. A custom material sets s.transmission in its surface function.",
+      "notes": "Same names, ranges and formulas: the surface samples a mipmapped copy of the opaque objects' colors where its bent ray leaves the volume, as three.js does, and glTF's KHR_materials_transmission and KHR_materials_volume load into them. Give transmission when you create the material, even as 0, to change it later. transmissionMap and thicknessMap take the specular maps' slots, whose red and green scale the transmission and the thickness, so a material with them takes no specular maps and a development build refuses both. dispersion has no option. The copy holds opaque objects only: three.js also draws the back faces of double-sided glass into it. Where the bent ray lands on an opaque object in front of the surface, null3D shows what lies straight behind the surface, and three.js shows that object's color. A custom material sets s.transmission in its surface function.",
       "docs": "api/materials",
       "detect": "\\b(transmission|thickness|attenuationColor|attenuationDistance)\\s*[:=]"
     },
@@ -891,9 +891,31 @@
       "status": "changed",
       "since": "0.2",
       "target": "materials.standard({ clearcoat, clearcoatRoughness, clearcoatNormalScale, clearcoatMap, clearcoatRoughnessMap, clearcoatNormalMap })",
-      "notes": "Same names, ranges and formulas, and glTF's KHR_materials_clearcoat loads into them. Give a clear coat option when you create the material, even as 0, to change it later. clearcoatMap and clearcoatRoughnessMap must be one texture, with the coat in red and its roughness in green, as glTF packs them: pack two textures into one. A material with a clear coat or a sheen takes no lightMap, specularIntensityMap or specularColorMap. A custom material sets s.clearcoat in its surface function.",
+      "notes": "Same names, ranges and formulas, and glTF's KHR_materials_clearcoat loads into them. Give a clear coat option when you create the material, even as 0, to change it later. clearcoatMap and clearcoatRoughnessMap must be one texture, with the coat in red and its roughness in green, as glTF packs them: pack two textures into one. A material with a clear coat or a sheen takes no lightMap, specularIntensityMap or specularColorMap. A custom material sets s.clearcoat in its surface function. The car paint add-on builds metal flakes and panel seams over this clear coat, and three.js has no flake lobe: its metal flakes are a normal map.",
       "docs": "api/materials",
       "detect": "\\bclearcoat(Roughness|NormalScale|Map|RoughnessMap|NormalMap)?\\b"
+    },
+    {
+      "id": "mat-iridescence",
+      "category": "Materials",
+      "three": "MeshPhysicalMaterial iridescence / iridescenceIOR / iridescenceThicknessRange / iridescenceMap / iridescenceThicknessMap",
+      "status": "changed",
+      "since": "0.3",
+      "target": "materials.standard({ iridescence, iridescenceIor, iridescenceThicknessRange, iridescenceMap, iridescenceThicknessMap })",
+      "notes": "The same thin-film formulas, and glTF's KHR_materials_iridescence loads into them. three.js names the index of refraction iridescenceIOR and takes its thickness as one range; give iridescenceIor and iridescenceThicknessRange, in nanometers. Give an iridescence option when you create the material to change it later. A material with iridescence takes no lightMap, specularIntensityMap or specularColorMap, and no clear coat's or sheen's maps. A custom material sets s.iridescence, s.iridescenceIor and s.iridescenceThickness in its surface function.",
+      "docs": "api/materials",
+      "detect": "\\biridescence(IOR|Ior|ThicknessRange|Map|ThicknessMap)?\\b"
+    },
+    {
+      "id": "mat-anisotropy",
+      "category": "Materials",
+      "three": "MeshPhysicalMaterial anisotropy / anisotropyRotation / anisotropyMap",
+      "status": "changed",
+      "since": "0.3",
+      "target": "materials.standard({ anisotropy, anisotropyRotation, anisotropyMap })",
+      "notes": "The same anisotropic GGX lobe with three.js's formulas, and glTF's KHR_materials_anisotropy loads into it. A material with anisotropy needs a map, whose texture coordinates give the surface's tangent frame: three.js builds that frame from them too. It takes no lightMap, specularIntensityMap or specularColorMap, and no clear coat's or sheen's maps. Rectangles and tubes of light shade it as three.js does, without the stretch.",
+      "docs": "api/materials",
+      "detect": "\\banisotropy(Strength|Rotation|Map)\\b|[{,]\\s*anisotropy\\s*:"
     },
     {
       "id": "mat-sheen",
@@ -982,6 +1004,16 @@
       "notes": "The engine has no shader chunks to patch. Keep the standard options on the new material: defaultSurface applies them. A custom material takes no standard maps (map, normalMap and the rest): declare textures in the WGSL and pass them with the textures option (0.2).",
       "docs": "shaders/surface-functions",
       "detect": "\\.onBeforeCompile\\s*="
+    },
+    {
+      "id": "mat-scene-depth",
+      "category": "Materials",
+      "three": "A ShaderMaterial that samples the scene's depth texture",
+      "status": "changed",
+      "since": "0.3",
+      "target": "materials.shader({ sceneInputs: ['sceneDepth'], wgsl }) with sceneDepth(uv) or sceneDistance(uv)",
+      "notes": "Declare sceneInputs: ['sceneDepth'] and read the opaque scene's depth in the surface function, with uv = input.fragCoord.xy / frame.resolution. The engine binds a copy of the opaque depth. sceneDepth gives 1 at the near plane and 0 at the far plane, and sceneDistance gives the distance in world units. A surface in the opaque pass, or in a scene or reflection pass, reads 0, the far plane.",
+      "docs": "api/materials"
     },
     {
       "id": "mat-shader-builtins",
@@ -1187,8 +1219,8 @@
       "three": "material.toneMapped = false",
       "status": "changed",
       "since": "0.3",
-      "target": "Tune the color so that tone mapping gives the value you want, or draw the item in the page's HTML",
-      "notes": "A per-material flag comes in 0.3. Until then, tone mapping runs once for the whole image.",
+      "target": "toneMapped: false in the material's options, fixed when the material is created",
+      "notes": "The material keeps its color as the display shows it on both paths. The 8-bit path decides that in the material's own shader. The HDR path's final pass reads a mask of these surfaces and skips the curve where one draws. A blended surface keeps the curve on the HDR path, so draw it on the 8-bit path with hdr: false if it needs the exact color.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\btoneMapped\\s*[:=]\\s*false"
     },
@@ -1263,9 +1295,9 @@
       "category": "Textures",
       "three": "CanvasTexture (a 2D canvas redrawn at run time)",
       "status": "changed",
-      "since": "0.1",
-      "target": "Draw on an OffscreenCanvas in the sketch worker, then textures.fromImageBitmap(bitmap) and texture.update(bitmap)",
-      "notes": "The sketch worker has no DOM canvas; OffscreenCanvas with a 2D context works in workers. Decode with createImageBitmap(canvas, { imageOrientation: 'flipY' }) so the drawing stands upright, as three.js flips it.",
+      "since": "0.2",
+      "target": "Draw on an OffscreenCanvas in the sketch, then textures.fromCanvas(canvas, { refreshHz }) and texture.refresh(rect)",
+      "notes": "The sketch worker has no DOM canvas; OffscreenCanvas with a 2D context works in workers. The canvas's last row goes to v = 0, so it stands upright on a plane, as three.js shows a CanvasTexture. In three.js, setting texture.needsUpdate uploads the whole canvas; here refresh uploads only the rectangle. Ask for the 2D context with willReadFrequently: true, so the browser keeps the pixels where the engine reads them.",
       "docs": "api/textures",
       "detect": "\\bCanvasTexture\\b"
     },
@@ -1275,8 +1307,8 @@
       "three": "VideoTexture",
       "status": "changed",
       "since": "0.3",
-      "target": "In 0.3: engine.registerVideo on the page and textures.fromVideo in the sketch. Until then, send ImageBitmap frames from the page and call texture.update(bitmap)",
-      "notes": "The ImageBitmap route decodes and uploads every frame, so keep frames small (null3d-develop recipe 14).",
+      "target": "engine.registerVideo(video, { name }) on the page, then textures.fromVideo(name) in the sketch",
+      "notes": "A video element lives on the page, where it plays with its own controls and sound, so the page owns it and the sketch shows it. The page sends the image of each frame that the video presents, scaled down to maxSize, and the sketch uploads the newest one within the frame's upload budget. A paused video presents no frame, so it costs nothing, and the sketch's call sends the frame that the video holds then. Keep a frame within the upload budget, 2 MiB on Low: 512 texels of a 16:9 video is 576 KiB. Safari and Firefox cannot make a VideoFrame from a video element, so every browser reads frames through createImageBitmap.",
       "docs": "guides/video-textures",
       "detect": "\\bVideoTexture\\b"
     },
@@ -1441,7 +1473,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "scene.createInstances(mesh, count, { material, dynamic, colors }); write batch.positions / rotations / scales / colors",
-      "notes": "Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. colors: true adds the colors array: linear RGBA per row, which multiplies the base color and opacity as setColorAt's color does (drawn from step 0.2). scene.createInstances(prefab, count) instances a glTF model (0.2). castShadow and receiveShadow become the castShadows and receiveShadows options, or batch.setCastShadows / setReceiveShadows (0.2).",
+      "notes": "Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. colors: true adds the colors array: linear RGBA per row, which multiplies the base color and opacity as setColorAt's color does (drawn from step 0.2). scene.createInstances(prefab, count) instances a glTF model (0.2). castShadow and receiveShadow become the castShadows and receiveShadows options, or batch.setCastShadows / setReceiveShadows (0.2). An InstancedMesh's boundingSphere becomes batch.setBoundingRadius(radius) for that batch (0.2); the spheres stay centered on their rows.",
       "docs": "concepts/instances",
       "detect": "\\bInstancedMesh\\b|\\.set(Matrix|Color)At\\s*\\(|\\binstance(Matrix|Color)\\b"
     },
@@ -1468,13 +1500,24 @@
       "detect": "\\bInstanced(Buffer)?(Geometry|Attribute|InterleavedBuffer)\\b|\\bInstancedBufferAttribute\\b"
     },
     {
+      "id": "vertex-draw",
+      "category": "Instancing and batching",
+      "three": "A BufferGeometry with no attributes, drawn from a vertex count in a ShaderMaterial (gl_VertexID and gl_InstanceID)",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.createVertexDraw({ shader, vertices, instances, bounds, ...material options })",
+      "notes": "The shader makes every vertex from @builtin(vertex_index) and @builtin(instance_index), and the draw holds no mesh data and no per-instance data, so a frame uploads nothing for it. three.js needs a geometry with a placeholder attribute and an InstancedBufferGeometry for the instance count. A draw blends, sorts as one object, takes no texture, casts no shadow, and a raycast does not hit its shapes.",
+      "docs": "api/vertex-draws",
+      "detect": "\\bgl_VertexID\\b|\\bgl_InstanceID\\b|\\binstanceCount\\s*="
+    },
+    {
       "id": "lod",
       "category": "Instancing and batching",
       "three": "LOD (addLevel)",
       "status": "changed",
       "since": "0.2",
       "target": "baseMesh.setLevels([{ mesh, distance }]) on the base mesh, then draw the base mesh; or levels from `bunx @null3d/cli assets optimize --lod`, which assets.loadGltf reads",
-      "notes": "Levels belong to the mesh, and every object and instance row picks its own level each frame, on the GPU or on job workers, by the level's error on the screen. A distance converts to an error at a 50 degree field of view on a screen 1,080 pixels high. Dithered bands replace hysteresis. Shadows draw a coarser level. getCurrentLevel and autoUpdate have no match. Far copies can also draw as impostor cards or as one merged mesh per far cell, from @null3d/impostors.",
+      "notes": "Levels belong to the mesh, and every object and instance row picks its own level each frame, on the GPU or on job workers, by the level's error, distance or screen coverage. A distance holds on every screen height, and so does a coverage. It measures to the nearest point of an object's bounds, where three.js measures to its position, so a large object switches later. A hand-set level fades over a dithered band, which replaces hysteresis; a level with a measured error switches at once. A mesh whose bound covers fewer pixels than the threshold draws nothing. Shadows draw a coarser level. A level may name a material of its own, so a far level shades more cheaply, such as without a normal map. `object.setLevelBias(bias)` moves one object's threshold, as Godot's `lod_bias` does: above 1 it draws coarser levels, and below 1 it keeps more detail. `object.setDrawRange(start, end)` draws a mesh only inside a band of distances, and fades it at each edge. getCurrentLevel and autoUpdate have no match. Far copies can also draw as impostor cards or as one merged mesh per far cell, from @null3d/impostors. The cards blend the three nearest stored views and light from the normals the bake stores, so a moving sun relights them with the meshes. A large static mesh can also take a tree of cluster patches from `bunx @null3d/cli assets optimize --clusters`: the engine then draws fine patches near the camera and coarse ones far from it, in one draw, on WebGPU. three.js has no equivalent, and its LOD picks one level for the whole object.",
       "docs": "concepts/lod",
       "detect": "new\\s+(THREE\\.)?LOD\\s*\\(|\\.addLevel\\s*\\("
     },
@@ -1495,8 +1538,8 @@
       "three": "AnimationClip / KeyframeTrack built in code",
       "status": "changed",
       "since": "0.3",
-      "target": "Animate values in onUpdate; transform clips authored in glTF play through the animator (0.2)",
-      "notes": "Property animation (scene.animateProperty and glTF KHR_animation_pointer) comes in 0.3.",
+      "target": "const pulse = scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true }); const recolor = scene.animateProperty(material, 'color', { times: [0, 1], values: [1, 0, 0, 0, 0, 1] })",
+      "notes": "A track names a value of a light, a camera, a material or an object: 'light.intensity', 'light.color', 'camera.fov', a material value that setUniform takes, or 'position', 'rotation', 'scale' and 'visible'. Keys hold a number, or three numbers for a color, a position or a scale, or four for a rotation. Interpolation: 'linear', 'step' or glTF's cubic spline ('cubic'), and a cubic key holds an in-tangent, the value and an out-tangent. animation.setTime(t) places the animation, setSpeed, setPaused, setLoop and stop control it, and a material animation changes every object that uses the material. glTF files play their KHR_animation_pointer tracks through the model's animator, with the clip's time, speed, fades and weights: a light's intensity, color and range, a material's values, a node's visibility, and a node's transform or morph weights. A pointer the engine does not read leaves its value as the file has it, with a warning in development builds. three.js needs a plugin for the extension.",
       "docs": "api/animation",
       "detect": "\\bAnimationClip\\b|\\b\\w+KeyframeTrack\\b"
     },
@@ -1540,7 +1583,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "camera.screenToRay(x, y, ray); scene.raycast(ray.origin, ray.direction, { layers }, hit)",
-      "notes": "scene.raycast writes the closest hit into a hit object that you create once, and scene.raycastAll writes every hit, nearest first, into an array. A hit has object, instance (instanceId), point, normal, distance and triangle (faceIndex). The layer mask defaults to layer 0 alone, as Raycaster's does, and the whole scene is tested. Hidden objects are never hit. A skinned mesh is tested in its bind pose, not its animated pose. camera.screenToRay uses the camera of the frame on screen at the pointer's event. For clicks and hover on objects, obj.on('click', fn) casts the ray itself. Acceleration structures are built in. Rays hit sprites, points and lines as they draw. params.Points.threshold and params.Line.threshold become the pointThreshold and lineThreshold options. Sprites, points and lines sized in pixels use the active camera, or the camera of the event's frame, in place of raycaster.camera. three.js's Line2 and LineSegments2 ignore raycaster.far; maxDistance limits every null3D hit, lines too.",
+      "notes": "scene.raycast writes the closest hit into a hit object that you create once, and scene.raycastAll writes every hit, nearest first, into an array. A hit has object, instance (instanceId), point, normal, distance and triangle (faceIndex), and uv (intersection.uv) with hasUv, which says whether the hit triangle has texture coordinates. The layer mask defaults to layer 0 alone, as Raycaster's does, and the whole scene is tested. Hidden objects are never hit. A skinned mesh is tested in its bind pose, not its animated pose. camera.screenToRay uses the camera of the frame on screen at the pointer's event. For clicks and hover on objects, obj.on('click', fn) casts the ray itself. Acceleration structures are built in. Rays hit sprites, points and lines as they draw. params.Points.threshold and params.Line.threshold become the pointThreshold and lineThreshold options. Sprites, points and lines sized in pixels use the active camera, or the camera of the event's frame, in place of raycaster.camera. three.js's Line2 and LineSegments2 ignore raycaster.far; maxDistance limits every null3D hit, lines too.",
       "docs": "api/raycast",
       "detect": "\\bRaycaster\\b|\\.setFromCamera\\s*\\(|\\.intersectObjects?\\s*\\("
     },
@@ -1583,9 +1626,9 @@
       "three": "TransformControls / DragControls",
       "status": "changed",
       "since": "0.3",
-      "target": "Dragging with scene.raycast against a plane",
-      "notes": "Gizmos come in 0.3.",
-      "docs": "porting/threejs-unsupported",
+      "target": "createTransformControls(ctx, camera, { mode, space, size, showX, showY, showZ, translationSnap, rotationSnap, scaleSnap }) from @null3d/controls, then attach(object) and controls.update(dt) in onUpdate; createDragControls(ctx, camera, objects, { recursive, transformGroup, rotateSpeed, mouseButtons, touches })",
+      "notes": "Option names and defaults match TransformControls and DragControls. There is no DOM element, getHelper or event: the controls make their handles in the scene, report dragging, axis, hovered and state, and update(dt) returns true when it moved something. A gizmo turns an object by the exact angle that the pointer sweeps around the axis, where three.js scales a linear approximation of it. minX to maxZ and showXY, showYZ and showXZ are not built yet, and showX, showY and showZ hide the plane handles too. A press on a handle reaches the handle alone, so a click handler on the object behind it does not hear it.",
+      "docs": "api/controls",
       "detect": "\\b(Transform|Drag)Controls\\b"
     },
     {
@@ -1683,7 +1726,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "A light probe grid for bounce light (scene.setLightProbeGrid), with ambient occlusion (post.set({ ao }))",
-      "notes": "null3D has no bounce light from the screen and no voxel cone tracing. The probe grid gives coloured bounce light everywhere, from objects off the screen too, at a fixed cost per pixel. Light from moving objects reaches it only when the sketch bakes it again.",
+      "notes": "null3D has no bounce light from the screen and no voxel cone tracing. The probe grid gives colored bounce light everywhere, from objects off the screen too, at a fixed cost per pixel. Light from moving objects reaches it only when the sketch bakes it again.",
       "docs": "api/scene",
       "detect": "\\b(SSGI|VXGI)Node\\b|\\bssgi\\s*\\("
     },
@@ -1694,7 +1737,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "createEngine({ antialias: 'fxaa' }); the quality presets take MSAA 4x from Medium, and FXAA on Low",
-      "notes": "FXAA runs inside the final pass, where three.js adds FXAAPass after OutputPass. SMAA has no equivalent. TAARenderPass and SSAARenderPass need no pass on a still camera, and sampleLevel has no counterpart: a view that holds still blends jittered frames into a sharper picture by itself and then stops drawing (concepts/post-processing). TAA of a moving view comes after 1.0. The engine records each object's motion vectors, which the motion debug view reads.",
+      "notes": "FXAA runs inside the final pass, where three.js adds FXAAPass after OutputPass. SMAA has no equivalent. TAARenderPass and SSAARenderPass need no pass on a still camera, and sampleLevel has no counterpart: a view that holds still blends jittered frames into a sharper picture by itself and then stops drawing (concepts/post-processing). TAA of a moving view is a prototype that does not ship: the temporal resolve passes the engine's own paths, and its quality against the presets was measured and did not pass (D-206). The engine records each object's motion vectors, which the motion debug view reads.",
       "docs": "concepts/quality-presets",
       "detect": "\\b(FXAA|SMAA|TAARender|SSAARender)Pass\\b|FXAAShader"
     },
@@ -1705,7 +1748,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "MSAA, which the quality presets take from Medium up, with FXAA on Low",
-      "notes": "null3D has no temporal anti-aliasing and no temporal upscaler. Drop the node and keep the scene's MSAA, which TAAUNode had to turn off. For speed on phones, the governor lowers the render scale, and the final pass scales the image up.",
+      "notes": "null3D has no temporal anti-aliasing and no temporal upscaler. The temporal resolve's prototype passes the engine's own paths, and its quality against the reference was measured: it does not beat the presets, so no version ships it. Drop the node and keep the scene's MSAA, which TAAUNode had to turn off. For speed on phones, the governor lowers the render scale, and the final pass scales the image up.",
       "docs": "concepts/quality-presets",
       "detect": "\\b(TRAA|TAAU|TemporalReproject)Node\\b|\\btraa\\s*\\("
     },
@@ -1716,9 +1759,20 @@
       "status": "changed",
       "since": "0.1",
       "target": "The render scale: quality.set({ minRenderScale, maxRenderScale })",
-      "notes": "The engine draws the scene below the canvas size when the render scale is under 1, and its final pass scales the image up with GSR 1, an edge-aware spatial upscaler, which fills FSR 1's role. It has no FSR 1 pass and no separate sharpening control.",
+      "notes": "The engine draws the scene below the canvas size when the render scale is under 1, and its final pass scales the image up with GSR 1, an edge-aware spatial upscaler, which fills FSR 1's role. It has no FSR 1 pass. Sharpening is a setting of its own, post.set({ sharpen }), which draws at the whole canvas's render scale.",
       "docs": "api/quality",
       "detect": "\\bFSR1Node\\b|\\bfsr1\\s*\\("
+    },
+    {
+      "id": "sharpen",
+      "category": "Post-processing",
+      "three": "SharpenNode / sharpen() (RCAS)",
+      "status": "changed",
+      "since": "0.2",
+      "target": "post.set({ sharpen })",
+      "notes": "Both sharpen display color with FSR 1's RCAS in the final pass, so the port needs no render target and no pass of its own. three.js scales the sharpening by 2^-sharpness, where 0 sharpens the most and 2 does nothing: set sharpen to that factor, so three.js's default of 0.2 is sharpen: 0.87. null3D damps the sharpening where the ring around a pixel is noise, which three.js does only with denoise: true. It draws at the whole canvas's render scale; below one, the upscale sharpens the image itself.",
+      "docs": "api/post",
+      "detect": "\\bSharpenNode\\b|\\bsharpen\\s*\\("
     },
     {
       "id": "outline",
@@ -1726,8 +1780,8 @@
       "three": "OutlinePass / OutlineEffect",
       "status": "changed",
       "since": "0.2",
-      "target": "post.set({ outline: { color, hiddenColor, width } }) and mesh.setOutlined(true)",
-      "notes": "selectedObjects becomes setOutlined(true) on each mesh, or on a model's copy from scene.instantiate. null3D draws a crisp line of one width in CSS pixels, with no blur. visibleEdgeColor and hiddenEdgeColor become color and hiddenColor. OutlinePass draws its edge at half size, so edgeThickness t becomes width of about 2t. OutlinePass draws a dark brown line around hidden parts by default; null3D draws none until hiddenColor is set, so set hiddenColor: [0.1, 0.04, 0.02], its linear default, to keep it. pmndrs OutlineEffect: xRay: false becomes hiddenColor: false, and its edge is one texel of its mask at resolutionScale, so width is about 1 / resolutionScale. edgeStrength has no setting, as the line is opaque. edgeGlow, pulsePeriod, the pattern texture and pmndrs blur and pulseSpeed have no setting: the line stays crisp. To pulse it, change its color or width every frame. For OutlinePass's soft glow, a full-screen pass reads the mask with input: 'outlineMask', at scale 0.5, and an effect adds its texture to the scene color; width: 0 drops the crisp line (guides/custom-passes, a soft outline glow). One outline style covers every outlined object.",
+      "target": "post.set({ outline: { color, hiddenColor, width } }) and mesh.setOutlined(true), or createOutlinePass(ctx, { color, hiddenColor, strength, thickness, glow, pulsePeriod }) from @null3d/three-compat",
+      "notes": "selectedObjects becomes setOutlined(true) on each mesh, or on a model's copy from scene.instantiate. null3D draws a crisp line of one width in CSS pixels, with no blur. visibleEdgeColor and hiddenEdgeColor become color and hiddenColor. OutlinePass draws its edge at half size, so edgeThickness t becomes width of about 2t. OutlinePass draws a dark brown line around hidden parts by default; null3D draws none until hiddenColor is set, so set hiddenColor: [0.1, 0.04, 0.02], its linear default, to keep it. pmndrs OutlineEffect: xRay: false becomes hiddenColor: false, and its edge is one texel of its mask at resolutionScale, so width is about 1 / resolutionScale. For OutlinePass itself, install @null3d/three-compat and call createOutlinePass(ctx, { color, hiddenColor, strength, thickness, glow, pulsePeriod }): its settings are edgeStrength, edgeThickness, edgeGlow and pulsePeriod, with edgeStrength, edgeThickness and edgeGlow kept as they are, and visibleEdgeColor and hiddenEdgeColor as color and hiddenColor. It draws the soft edge, the glow and the pulse, and it turns the crisp line off. The pattern texture has no setting, the mask reads at half size, and downSampleRatio is fixed at 2. The core's crisp line stays the cheaper choice where a soft edge is not needed. One outline style covers every outlined object in either form. For a soft glow built by hand, a full-screen pass reads the mask with input: 'outlineMask', at scale 0.5, and an effect adds its texture to the scene color; width: 0 drops the crisp line (guides/custom-passes, a soft outline glow).",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bOutline(Pass|Effect)\\b"
     },
@@ -1815,7 +1869,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const pass = render.addPass({ kind: 'reflection', writes: 'water', plane: { point, normal } }); materials.shader({ wgsl, textures: { mirror: textures.fromPass(pass) } }), whose surface function sets s.reflection from reflection_uv",
-      "notes": "A reflection pass draws the camera's view mirrored across the plane, with an oblique near plane that clips everything below it, as Reflector's clip plane does. The mesh no longer carries the reflection: a custom material reads the texture by screen position with null3d::reflection::reflection_uv and puts it in the surface's reflection, which the engine lights with the material's Fresnel. Reflector's textureWidth and textureHeight become scale, a share of the render size; its color becomes the material's color with metalness 1 and roughness 0. Water's distortionScale becomes the factor on the normal's tilt in reflection_uv's offset, waterColor the material's color and sunColor the scene's sun. Water's normal map becomes ripples in the surface function. The reflection draws the scene's background, the sun's light and shadows, and the point and spot lights that it sees. A water add-on that does this work for rivers and lakes comes in step 0.3. Refractor and Water2's refraction become transmission: give the water's custom material transmission and thickness, and its surface function sets s.transmission and its rippled normal.",
+      "notes": "A reflection pass draws the camera's view mirrored across the plane, with an oblique near plane that clips everything below it, as Reflector's clip plane does. The mesh no longer carries the reflection: a custom material reads the texture by screen position with null3d::reflection::reflection_uv and puts it in the surface's reflection, which the engine lights with the material's Fresnel. Reflector's textureWidth and textureHeight become scale, a share of the render size; its color becomes the material's color with metalness 1 and roughness 0. Water's distortionScale becomes the factor on the normal's tilt in reflection_uv's offset, waterColor the material's color and sunColor the scene's sun. Water's normal map becomes ripples in the surface function. The reflection draws the scene's background, the sun's light and shadows, and the point and spot lights that it sees. For a river or a lake, createWater from @null3d/water does this work and adds the soft shore, the foam, the caustics and the view from under the water; a reflection pass stays the way to mirror a floor. Refractor and Water2's refraction become transmission: give the water's custom material transmission and thickness, and its surface function sets s.transmission and its rippled normal.",
       "docs": "api/render",
       "detect": "new\\s+(Reflector|Refractor|Water2?)\\s*\\("
     },
@@ -1914,9 +1968,20 @@
       "status": "changed",
       "since": "0.2",
       "target": "createTerrain(ctx, { size, height, layers, splat, maxLevel, split }) from @null3d/terrain; terrain.update(cameraX, cameraZ) in onUpdate; terrain.heightAt(x, z)",
-      "notes": "A port replaces one displaced grid with a height field drawn as a camera-centred quadtree of blocks: the ground near the camera keeps fine detail, the far hills draw coarse blocks, and a skirt around each block hides the seam where two levels meet. Up to four tiled layers blend by a splat map, which the add-on fills by default from the height and the slope, in place of a hand-painted or vertex-colored ground. The terrain carries no collision, so a port that walked on the ground reads heightAt and normalAt to place objects instead of a physics collider. A port that morphed two levels on the GPU keeps its own morph; this add-on draws the levels as they are and closes the seam with the skirt.",
+      "notes": "A port replaces one displaced grid with a height field drawn as a camera-centerd quadtree of blocks: the ground near the camera keeps fine detail, the far hills draw coarse blocks, and a skirt around each block hides the seam where two levels meet. Up to four tiled layers blend by a splat map, which the add-on fills by default from the height and the slope, in place of a hand-painted or vertex-colored ground. The terrain carries no collision, so a port that walked on the ground reads heightAt and normalAt to place objects instead of a physics collider. A port that morphed two levels on the GPU keeps its own morph; this add-on draws the levels as they are and closes the seam with the skirt.",
       "docs": "api/terrain",
       "detect": "\\bImprovedNoise\\b|\\bgenerateHeight\\b|\\bgetHeightAt\\b"
+    },
+    {
+      "id": "vegetation",
+      "category": "Geometry",
+      "three": "A tree model per species loaded from a glTF file, or a procedural plant from an add-on such as Sapling or ez-tree",
+      "status": "changed",
+      "since": "0.3",
+      "target": "generatePlant(species, { seed, variant }) from @null3d/vegetation; bakePlantAtlases(ctx) and plantMaterial(ctx, { atlases, part, cell, color }) for the bark and the leaves; geometry.fromArrays(part.arrays) for each part of a level; mesh.setLevels(lower) for the levels below the first",
+      "notes": "three.js has no plant system. A port replaces a model file or a private generator with a species record and a seed: the add-on grows the skeleton, the branches, the leaf cards and the lower levels at first use, in a job worker, so the page downloads no plant. A record holds numbers only, so a themed set is a list of records. The asset carries wind bytes in the vertex colors, a pivot record for each branch, the crown's bounds and the source that a far card bakes from; the bark and leaf atlases are painted in the browser at first use, so a port needs no texture file, and the material that draws them is the add-on's own. A generated plant keeps whole levels, never cluster levels.",
+      "docs": "api/vegetation",
+      "detect": "\\b(Tree|Foliage|Vegetation)(Generator|Factory)\\b|\\bSapling\\b|\\bez-tree\\b"
     },
     {
       "id": "css-renderers",
@@ -1924,8 +1989,8 @@
       "three": "CSS2DRenderer / CSS3DRenderer (HTML labels)",
       "status": "changed",
       "since": "0.2",
-      "target": "Sketch: ui.trackLabel(obj, 'hp-12', { offset: [0, 2, 0] }). Page: engine.labels.bind('hp-12', element)",
-      "notes": "The sketch places each label with the camera of each frame, and the page moves the element over it in the frame on screen; no messages per frame. The element's center sits where CSS2DRenderer puts a CSS2DObject's, and the offset turns and scales with the object, as a CSS2DObject's position does under its parent. Put the elements in a container that covers the canvas. Hidden labels get visibility: hidden, not display: none. No z-index by distance, and no center or rotation2D. CSS3D transforms come in 0.3.",
+      "target": "Sketch: ui.trackLabel(obj, 'hp-12', { offset: [0, 2, 0] }). Page: engine.labels.bind('hp-12', element). A plane of the scene: ui.trackLabel(obj, 'card', { transform: 'world' }), or 'billboard' with a rotation",
+      "notes": "The sketch places each label with the camera of each frame, and the page moves the element over it in the frame on screen; no messages per frame. The element's center sits where CSS2DRenderer puts a CSS2DObject's, and the offset turns and scales with the object, as a CSS2DObject's position does under its parent. Put the elements in a container that covers the canvas. Hidden labels get visibility: hidden, not display: none. No z-index by distance, and no center. For CSS3DRenderer, a label with transform 'world' takes a CSS3DObject's matrix and 'billboard' takes a CSS3DSprite's, with rotation2D as rotation: the page moves the element into a container inside its parent, which holds the camera's perspective, and turns the element with its world matrix, as CSS3DRenderer draws it. An element is sized in CSS pixels, which are the scene's units. The engine hides a plane whose anchor is behind the camera or outside the near and far planes, which CSS3DRenderer does not do, and it leaves the pointer to your CSS, so give an element pointer-events: auto for the clicks that CSS3DRenderer gives it. It writes a transform only when it changes, and a page holds its planes with maxLabels3d. three.js's css3d_periodictable example ports directly: one object and one ui.trackLabel(object, id, { transform: 'world' }) for each cell, the cell's HTML in the element, and the example's camera; the port skill's architecture guide shows it.",
       "docs": "api/ui",
       "detect": "\\bCSS[23]D(Renderer|Object|Sprite)\\b"
     },
@@ -1946,9 +2011,9 @@
       "three": "GaussianSplat / GaussianSplatPLYLoader / SPZLoader / SPLATLoader / KSPLATLoader (addons)",
       "status": "changed",
       "since": "0.3",
-      "target": "The Gaussian splats add-on",
-      "notes": "Not built yet. A splats add-on comes in step 0.3, with detail levels, streaming, a splat budget and depth mixing with meshes. It reads KHR_gaussian_splatting glTF files and SPZ files.",
-      "docs": "porting/threejs-unsupported",
+      "target": "const splats = await createSplats(ctx, { url }) from @null3d/splats; assets.loadGltf for a KHR_gaussian_splatting model",
+      "notes": "Importing @null3d/splats registers the KHR_gaussian_splatting reader, so a glTF model of splats loads with assets.loadGltf. An SPZ file loads through createSplats, which cuts the cloud into detail levels, chooses the splats that draw within a budget that follows the quality preset and the GPU path, and lets the engine sort them by depth. A large cloud loads as a splat stream: createSplats reads an index of chunk files and downloads only the chunks that the view needs, so the cloud draws before its whole file arrives. three.js has no equivalent. Update them once in each frame with splats.update(eye), from the camera's getPosition. The first spherical-harmonic band gives each splat's color; higher bands are ignored. three.js's GaussianSplat and its loaders are add-ons, so each name maps to this one add-on.",
+      "docs": "api/splats",
       "detect": "\\bGaussianSplat\\w*\\b|\\b(SPZ|SPLAT|KSPLAT)Loader\\b"
     },
     {
@@ -2027,6 +2092,17 @@
       "notes": "The sketch worker has no DOM. createEngine({ sketchThread: 'main' }) runs the sketch on the page's thread, where it can reach the DOM.",
       "docs": "api/sketch",
       "detect": "\\bdocument\\.(getElementById|querySelector|querySelectorAll|body|createElement)\\b|\\bwindow\\.(innerWidth|innerHeight|devicePixelRatio|addEventListener)\\b"
+    },
+    {
+      "id": "worker",
+      "category": "Other",
+      "three": "new Worker(...) / worker.postMessage / SharedArrayBuffer",
+      "status": "changed",
+      "since": "0.3",
+      "target": "runTask: the task's module and its WebAssembly run in the engine's job workers",
+      "notes": "An add-on starts no worker of its own. Give runTask the address of a module that exports run, and await its answer. A SharedArrayBuffer in the task's input is shared with the worker rather than copied. The engine never waits for a task in a frame, and an answer arrives between frames.",
+      "docs": "api/tasks",
+      "detect": "new\\s+Worker\\s*\\(|\\bSharedArrayBuffer\\b"
     }
   ]
 }

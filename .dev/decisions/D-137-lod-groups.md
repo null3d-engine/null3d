@@ -179,7 +179,7 @@ now 8%, so less of the tree dithers at once while the hand-over stays smooth. Th
 
 ## Addendum: M3's level-of-detail work (owner, 19 October 2026)
 
-A review on 19 October 2026 compared this system with other work. The sources were Hyper3D's article "[Level of detail 3D](https://hyper3d.ai/blog/level-of-detail-3d)", Unity 6's Mesh LOD and LOD Group, and Godot 4's mesh LOD and visibility ranges. They were also Bevy's visibility range, SpeedTree, meshoptimizer 1.x and its [`clusterlod.h`](https://github.com/zeux/meshoptimizer/blob/master/demo/clusterlod.h), [nanite-webgpu](https://github.com/Scthe/nanite-webgpu) and Unreal 5.7's Nanite foliage. The owner ruled that all of its proposals are built, cluster levels included. They are M3's first tasks, M3-L1 to M3-L4, before the tasks of [D-172](D-172-rive-city-follow-ups.md). They come first because they also correct guidance in this record and in the docs.
+A review on 19 October 2026 compared this system with other work. The sources were Hyper3D's article "[Level of detail 3D](https://hyper3d.ai/blog/level-of-detail-3d)", Unity 6's Mesh LOD and LOD Group, and Godot 4's mesh LOD and visibility ranges. They were also Bevy's visibility range, SpeedTree, meshoptimizer 1.x and its [`clusterlod.h`](https://github.com/zeux/meshoptimizer/blob/master/demo/clusterlod.h), [nanite-webgpu](https://github.com/Scthe/nanite-webgpu) and Unreal 5.7's Nanite foliage. The owner ruled that all of its proposals are built, cluster levels included. They are M3's first tasks, M3-L1 to M3-L4, before the tasks of [D-172](D-172-neon-harbour-follow-ups.md). They come first because they also correct guidance in this record and in the docs.
 
 The review found five weak points in what this record describes:
 
@@ -199,3 +199,269 @@ Cluster levels (M3-L3) serve large static meshes that do not bend, such as scans
 - Multi-draw indirect and 64-bit atomics wait for browsers, as [D-179](D-179-technique-rulings-2026-10-15.md) ruling 27 says. Cluster levels need neither.
 
 Follow-ups 1, 4 and 5 come in M3, in M3-L2. Follow-ups 2 and 3 stay open. Live simplification of meshes while the program runs is not planned: it costs CPU time and uploads every frame, and cluster levels give its result.
+
+## Addendum: the level distance reaches the nearest point (21 October 2026)
+
+The level rule measured from the camera to the center of an object's bounding sphere. It now
+measures to the nearest point of the sphere, as meshoptimizer's README, Godot and `clusterlod.h`
+do. The distance is `max(center distance - radius, 1 mm)`. The minimum keeps the distance positive
+when the camera lies inside the bounds. Such an object then keeps its base level, and the fade
+ratio stays defined.
+
+`LevelRule::distance` in `crates/null3d-core/src/levels.rs` picks for the job workers, and
+`level_of` in `crates/null3d-shaders/wgsl/cull.wgsl` picks for the GPU cull. Both use the same
+expression, so a switch happens at the same camera distance on every GPU path.
+
+An object whose radius is half its distance showed twice the allowed error on its near side before.
+Its switch now moves outward by its radius. Large meshes and merged far cells therefore keep finer
+levels at the same camera distance.
+
+The level-of-detail image tests place their spheres by their nearest points. The image tests and the
+forest, atmosphere, light-shafts and impostors demos were rechecked, and their references were
+redrawn where the picture moved.
+## Addendum: a dither phase per copy (21 October 2026)
+
+The band's 4 × 4 ordered dither was the same for every copy, so the copies inside a band lined up into one grid. The owner saw that grid on Creek's foliage, and the narrower band of 19 October made it smaller but did not remove it.
+
+Each copy now shifts the pattern by a phase from 0 to 15 that a hash of the copy picks. Two copies rarely share a phase, so their patterns no longer line up. The shift moves the pattern by whole pixels within its 4 × 4 tile. Every copy therefore draws the same set of dither values, in another place.
+
+The two levels of a band draw the same copy, so they take the same phase. Each pixel still draws exactly one level, and no gap opens between them. A copy's source names it on both GPU paths. The culling shader writes it beside the fade value on WebGPU, and the index list holds it on WebGL2. The hash is `pcg` from `null3d::noise`, which every GPU works out alike. The phase rides in the flat vertex value that already carried the fade value. The change adds no texture, no draw and no lookup, and the vertex shader hashes each copy once per vertex.
+
+Both GPU paths carry the phase in the same shader source, so a change to the pattern lands on both at once. The `lod-fade` test drew new pictures, about 1% of its pixels on each tier, and its references moved in both sets. The demos whose trees carry levels stayed within the image tolerance on both GPUs, so their references did not move.
+## Addendum: a bound under a pixel draws nothing (21 October 2026)
+
+M3-L1 gives every level set a last level that holds no geometry. An object or instance row hides
+when the world diameter of its bounding sphere covers fewer pixels than `lodThreshold`:
+
+```text
+diameter × factor < distance,  factor = render height × P[1][1] / (2 × threshold)
+```
+
+This is the factor that picks every level, so the render height, the render scale and the
+governor's doubled threshold all move the hide distance. The diameter, not the radius, measures the
+object: a bound that covers half a pixel each way is a pixel across, and other engines cull at that
+size. At Medium and above an object goes when its diameter is under a pixel, and on Low under two.
+
+Past the hide distance lies the same 8% band as a level switch. There the level that the object
+would draw goes into its fade bucket with a negative fade value, so the dither drops a growing
+share of its pixels until none remain. Without a band, or without a fading build, the object hides
+at the hide distance. A mesh without levels never hides, so a scene without levels still pays
+nothing. Both paths compare the same values: the job workers and the direct-draw culling read
+`levels.rs`, and the GPU's culling shader reads `cull.wgsl`.
+
+The shadow views use their own threshold, times `lodShadowFactor`, as their level choice does. A
+caster's shadow therefore goes at a nearer distance than the object itself. It draws no band, as
+the shadow maps already pick without one.
+
+## Addendum: the copy lists follow what draws (22 October 2026)
+
+A view's compacted instance buffer holds one copy of each source that draws, in the slice that the
+bucket's draw reads. The build gave every bucket of a mesh with levels a slice for every source of
+the set, because any source may pick any level. A set of four levels therefore took four times the
+copies that its sources need. With fading bands it took eight times. Each cost 64 bytes per source
+per level per view. The copies of a dense forest passed WebGPU's 128 MiB binding limit near 260,000
+copies.
+
+The frame now sizes each level's slice to the copies that it draws. The slices of one set take the
+room of the set's sources. `Layout::fit_copies`
+(`crates/null3d-render/src/gpu_driven/copies.rs`) counts the copies that each view places in each
+bucket. It uses the same stateless rule that the culling shader runs. It takes the largest count
+over the views that draw the layout. A source near a switch distance counts toward both levels that
+it may pick. So a slice never falls short of the shader's writes, whatever the last bits of a
+shared distance come to. The buckets without levels keep the slices of the build. A scene without
+levels runs no count.
+
+| Copies of four levels, with fading bands | Before | After |
+| --- | --- | --- |
+| 40,000 copies, the main view | 20.5 MB | 2.6 MB |
+| 40,000 copies, the main view and four cascades | 61 MB | 13 MB |
+
+`crates/null3d-render/tests/levels.rs` measures the figures from the frame's own copy lists. A
+band adds about a tenth more, for the sources inside it, which take a copy in each of two fade
+buckets.
+
+The culling shader cannot size these slices itself. A draw reads its bucket's copies from a vertex
+buffer offset that the frame records on the CPU. An indirect draw keeps its first instance at 0
+(hard rule 8). A count on the GPU would need a readback, or a second pass that costs every frame.
+The CPU count runs only for the sources of a mesh with levels. A list of chosen patches per view has
+the same sizing problem (M3-L3). Its count can read this one.
+
+## Addendum: an object may bias its threshold (22 October 2026)
+
+Godot gives each geometry instance a `lod_bias`, which moves the levels of that object alone: a
+hero object keeps its detail while its neighbours turn coarse. null3D now has the same, as
+`object.setLevelBias(bias)`.
+
+The bias divides the factor of the level rule. A bias above 1 raises the object's threshold, so
+every switch happens at a nearer distance, and a bias below 1 keeps its detail. The same factor
+divides the rule that hides a bound under the threshold. A detailed hero object therefore also
+stays visible farther out. A bias of 1 leaves both rules as they were, and a scene without levels
+pays nothing.
+
+The bias belongs to the object, and it reaches the culling shader in the object's bucket record. A
+bucket holds one bias. So an object whose bias differs from 1 draws from a bucket of its own, which
+the layout's bounds code gives it. Objects that share a bias share a bucket. Instance rows have no
+bias of their own yet, so a batch keeps the threshold of the quality settings.
+
+| The rule that picks a level | At a bias of 1 | At a bias of 2 |
+| --- | --- | --- |
+| A level switches in at | `error × scale × factor` | half that distance |
+| A bound hides at | `diameter × factor` | half that distance |
+
+The core keeps one float for each object, which raises an object's row from 263 bytes to 267. The
+job workers read it beside each row's sphere. `cull.wgsl` reads it from the bucket record, which
+takes 14 words in place of 13. A record that holds 0 keeps the quality settings' threshold, so a
+test needs no bias.
+
+## Addendum: the fade rule and the distance bands (22 October 2026)
+
+D-211 builds the fade rule, the three switch measures and the distance bands that this record's
+addendum of 19 October 2026 asked for. It supersedes two statements above: the fade is no longer
+a setting for every band, and a distance or a coverage no longer becomes an error at a reference
+screen. A bucket record now holds 15 words, the measure joined the switch value, and the culling
+shader reads a source's distance range from a data texture.
+
+## Addendum: a level may shade with its own material (22 October 2026, M3-L2)
+
+A far level now draws with a material of its own where the author gives one, so it shades more
+cheaply than the near level: without a normal map, or with an opaque mask in place of an
+alpha-tested one. The engine's part is small because buckets are already per material.
+
+- `mesh.setLevels` takes a `material` on any level. A level without one draws with the material of
+  the level before it, so a set names the cheaper material once. The base level draws with the
+  object's or the instance batch's material.
+- The rule is a chain rather than an absolute material on every level, so `links_of` can find a
+  coarser level's bucket from any level's key without carrying the base material. A level key
+  holds its own effective material, and the next level takes its own or that one.
+- A level's bucket key is built from the level's mesh and material, through the same steps as a
+  source's key: the pipeline, the map group, the page, the level key and the material. The
+  receive-shadows bit comes from the base key's pipeline, since the level belongs to the same
+  object. A level whose material cannot draw with the mesh's vertex format is left out, like any
+  pair that draws nowhere.
+- Fading builds follow each level's own pipeline. A cheaper level material that masks fades; one
+  that does not mask has no fading build and switches at once.
+- A glTF file gives a level a material when the level node's primitive names another material than
+  the node's primitive. The asset tool keeps one material per mesh, so its levels inherit.
+
+The lod image test's new `lod-material` case draws each level with a material of its own in the
+level's color, a different pipeline from the base's vertex-colored one, and must draw the same
+image as `lod`. E1221 now names a level material that is destroyed or from another engine.
+
+## Addendum: the tool thins leaf cards (22 October 2026, M3-L2)
+
+The asset tool now writes levels for meshes whose parts are separate cards, so a tree that leaves
+Blender without levels still gets them (follow-up 5).
+
+- The tool calls a part a card list when every separate piece of it, after welding, is a quad of
+  four vertices and two triangles, or a card folded along its middle of six vertices and four
+  triangles, as Creek makes its leaves. A flat-shaded surface splits into pieces of three vertices,
+  so it never matches, and it keeps the simplifier's path.
+- Each level keeps every second card of the level above, in an order along a space-filling curve
+  of the cards' middles, so a level thins the crown evenly rather than one side first.
+- Each kept card grows about its middle by the square root of two for that step, so the cards
+  keep the surface that the dropped ones covered. The file stores the level's own positions,
+  because the growth moves vertices. This is the one level kind that copies vertices.
+- The level's error is the size of the largest card that it drops, as the follow-up said. Creek's
+  cards are 0.8 m wide. On a 1,080-pixel screen, a level switches at about a kilometer. That is
+  conservative: it thins a crown only long after the geometry detail has gone. A hand-authored
+  level, as Creek's Blender script makes, switches nearer. The tool's rule stays geometric and
+  predictable. An author who wants earlier thinning gives the level its own error.
+- The card step runs only for a mesh that a skin does not pose, because a posed list's positions
+  are in the scene's units and the level's stored positions are in the mesh's.
+
+## Addendum: texture coordinates in the level error (22 October 2026, M3-L2)
+
+The simplifier weighed normals and vertex colors in its error, so a texture could slide between
+two vertices of a level with no error shown. The planner now adds each texture coordinate set to
+the attributes that the simplifier keeps, with a weight of a sixty-fourth of the mesh's longest
+side. A texture coordinate's unit covers the texture across the mesh, so a slide of a large share
+of a texture counts like a small distance, while a slide of a few texels stays under the geometry's
+own error. Texture seams still lock, and welding still keeps two copies of a vertex apart where
+their coordinates differ.
+
+The weight is deliberately modest. The error that the simplifier reports includes the attributes,
+and the engine reads a level's error as a distance, so a heavy weight would make every textured
+mesh switch levels much farther out. At a sixty-fourth, the test scene's ball keeps four levels,
+where the same scene without texture coordinates in the error has six.
+
+## Addendum: the level pictures place each copy by its own distance (22 October 2026, M3-L2)
+
+The level image tests placed each copy at a depth equal to the share of its switch, and then moved
+it off the camera's axis to spread the copies across the picture. A copy off the axis lies farther
+from the camera than its depth, by 2 to 4 percent of the distance, so every copy sat a little
+nearer its next switch than the test meant.
+
+The five percent either side of a switch hid that in the pictures where the levels switch at once.
+The bias test did not hide it. Its objects take a bias of 2, which halves the switch and the copies'
+distance with it, while the sideways offset keeps its size. The nearest copy, at 95 percent of its
+switch, then crossed that switch and drew level one.
+
+Each copy now stands along its own ray at the exact distance the rule measures. The measured
+figures, from a native test on the job workers and from the picture on all three paths:
+
+| Object | Switch | Copy at 95 percent | Copy at 103 percent |
+| --- | --- | --- | --- |
+| No bias | 15.59 m | base level, one copy | level 1 |
+| Bias of 2 | 7.795 m | base level, one copy | level 1 |
+
+The biased switch is exactly half the unbiased one. The pictures moved by 0.5 to 0.9 percent for
+the tests that switch levels at once, and by 2.7 to 3.2 percent for the fading bands, whose dither
+depends on how far past a switch a copy lies. The new `lod-bias` picture has its own references in
+both environments: a bias of 2 puts the same levels at half the distance, so the copies are twice
+the size on screen and cannot share the plain picture.
+
+## Addendum: a level from a file costs its indices alone (22 October 2026, M3-L2R)
+
+The asset tool writes each level's triangles over the base mesh's own vertex accessors. The loader
+read them as a mesh of its own all the same, so it copied the whole vertex stream once per level.
+
+A level now draws the base mesh's vertices from its own indices. It shares the base's page and
+vertex ranges. The storage appends the level's triangles after the base's own. On WebGL2 it shifts
+them by the part's place in its page; on WebGPU the draw adds the part's base vertex. The level
+takes the base's radius, format and vertex count. It goes when the base goes. Taking the level out
+frees its indices alone, never the base's vertices.
+
+Two kinds of level still copy their vertices. One names its own positions, as the tool's cards do.
+The other has a base that the engine split into parts, or that morph targets pose. A skinned base
+shares its vertices, because the skin moves the same vertices whichever level names them.
+
+The test scene's ball shows the saving. Its base has 1,225 vertices of 16 bytes, and four levels.
+Held as copies, the levels took 91,600 bytes of GPU memory. Held over the base's vertices, they
+take 13,200. The four levels save 78,400 bytes on that one mesh. One picture test draws the file
+with each level's accessors copied. Its picture must match the shared one: the shared level draws
+the same pixels as the copied level. On 23 October 2026 that held on the Mac, which matched the two
+frames in every pixel on its GPU and on its software GPU. CI's software GPU differed in one to three
+pixels of the 640 x 360 frame, each by one step of 255. The same vertices, read from another place
+in a buffer, round so there. The test keeps the exact match on the Mac and allows sixteen pixels on
+SwiftShader ([Image tests](../image-tests.md#references)).
+
+## Addendum, 23 October 2026: impostor cards that blend three views and relight
+
+D-151 recorded three-view blending as a later step, and said the impostor cards are a sprite batch
+that shows the stored view nearest the camera. The atlas was also shaded for one sun, so a scene
+whose sun moves showed cards lit for a sun that had set. M3-L4 asked for both faults to go.
+
+The cards are now one instance batch of quads, drawn by the add-on's own material, which the engine
+compiles from WGSL that ships with the package. Three properties carry the change:
+
+- The vertex offset faces every quad to the screen. It reads the instance's world matrix, whose
+  columns are the card's axes turned into the view's space, and returns the move that puts the
+  quad's corner on the screen's plane. The engine applies the instance transform afterwards, so
+  the offset is that rotation's inverse applied to the wanted point.
+- The surface function folds the direction from the card toward the eye onto the octahedral grid,
+  finds the triangle of cell centers that holds it, and blends the three cells by its barycentric
+  weights. The same weights blend their stored normals, which are decoded in each view's space and
+  turned by the camera's axes, since the card faces the screen. The engine then lights the card
+  with the scene's lights, exactly as it lights a mesh.
+- The atlas is twice what it was: a color atlas, in sRGB, and a surface atlas whose red and green
+  hold the octahedral code of the view's normal, blue the point's depth and alpha its coverage.
+  `encodeImpostorSurface` writes those texels, so a bake stores the surface and never its light.
+
+The add-on still changes no engine source, as D-151 ruled: the material, the quad and the octahedral
+code all sit in `@null3d/impostors`. The octahedral fold now exists twice, once in TypeScript for
+the bake and the unit tests and once in WGSL for the card, so a change to one must change the other;
+the picture test draws the cards around many directions so a disagreement shows.
+
+The eye comes from the frame's camera, so the cards have no per-frame call. `update` left the API,
+and with it the origin that the sprite batch needed: the engine draws everything relative to the
+camera, so world positions keep their precision far from the world's origin.

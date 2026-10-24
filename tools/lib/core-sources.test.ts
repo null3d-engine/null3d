@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'bun:test';
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { Connect, ViteDevServer } from 'vite';
-import { coreSourcesServer, coreSourcesStamp, STAMP_MODULE, stampGlue } from './core-sources';
+import {
+	coreFromOtherSources,
+	coreSourcesServer,
+	coreSourcesStamp,
+	refuseStaleCore,
+	STAMP_MODULE,
+	stampGlue,
+} from './core-sources';
 import { fixture } from './fixture';
 
 /** A repository with the core's crate, its path dependency and a crate that it does not use. */
@@ -74,5 +81,59 @@ describe('the dev server', () => {
 		const after = serve(`/${STAMP_MODULE}`);
 		expect(after).not.toBe(before);
 		expect(after).toContain(coreSourcesStamp(root));
+	});
+});
+
+/** A checkout with the core's crate and no built core yet. */
+const checkout = () => repository();
+/** Writes a built core whose glue carries `stamp`. */
+const buildCore = (root: string, stamp: string) => {
+	for (const build of ['single', 'threaded']) {
+		const glue = join(root, `packages/engine/dist/wasm/${build}/null3d.js`);
+		mkdirSync(dirname(glue), { recursive: true });
+		writeFileSync(glue, stampGlue('export {};\n', stamp));
+	}
+};
+
+describe('the core that a page build ships', () => {
+	it('accepts the cores that this checkout built', () => {
+		const root = checkout();
+		buildCore(root, coreSourcesStamp(root));
+		expect(coreFromOtherSources(root)).toBeNull();
+	});
+
+	it('refuses a core that the checkout built from other sources', () => {
+		const root = checkout();
+		buildCore(root, '0123456789abcdef');
+		const message = coreFromOtherSources(root);
+		expect(message).toContain('the single engine core');
+		expect(message).toContain('Run bun run build.');
+	});
+
+	it('refuses a core that no build wrote', () => {
+		const root = checkout();
+		buildCore(root, coreSourcesStamp(root));
+		writeFileSync(join(root, 'packages/engine/dist/wasm/threaded/null3d.js'), 'export {};\n');
+		expect(coreFromOtherSources(root)).toContain('the threaded engine core');
+	});
+});
+
+describe('a build that packs or ships the core', () => {
+	it('stops with the message that names bun run build', () => {
+		const root = checkout();
+		buildCore(root, '0123456789abcdef');
+		expect(() => refuseStaleCore(root)).toThrow('Run bun run build.');
+	});
+
+	it('passes a core that this checkout built', () => {
+		const root = checkout();
+		buildCore(root, coreSourcesStamp(root));
+		expect(() => refuseStaleCore(root)).not.toThrow();
+	});
+
+	it('asks nothing of a project that installs the engine package', () => {
+		const root = fixture({ 'package.json': '{ "name": "a project" }\n' });
+		expect(coreFromOtherSources(root)).toBeNull();
+		expect(() => refuseStaleCore(root)).not.toThrow();
 	});
 });

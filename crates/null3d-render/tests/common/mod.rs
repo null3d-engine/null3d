@@ -221,6 +221,7 @@ impl<B: FrameBuilder> World<B> {
             auto: false,
             contact: 0.0,
             layers: DEFAULT_LAYERS,
+            hero: None,
         }));
     }
 
@@ -349,6 +350,7 @@ impl<B: FrameBuilder> World<B> {
             &self.morphs,
             settings.meshes(),
             settings.materials(),
+            settings.override_material(),
         );
         self.scene.update_transforms(&self.jobs);
         self.batches

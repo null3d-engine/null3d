@@ -20,14 +20,20 @@
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
-import { EFFECT_DEPTH, EFFECT_FLOATS, EFFECT_MAX, EFFECT_TEXTURES } from '../generated/core';
+import {
+	EFFECT_BLOOM_SHIFT,
+	EFFECT_DEPTH,
+	EFFECT_FLOATS,
+	EFFECT_MAX,
+	EFFECT_TEXTURES,
+} from '../generated/core';
 import type { ShaderVariants } from '../generated/shaders';
 import type { EffectPieces, PieceBuilds } from '../gpu/effect-join';
 import { hexValue, invalidColor } from '../math/hex';
 import { type ColorInput, writeLinearColor } from './color';
 import type { CoreMemory } from './memory';
 import { type CompiledWgsl, textureSlots } from './resources';
-import type { ShaderTemplates } from './shader-templates';
+import type { BuildsLoader, ShaderTemplates } from './shader-templates';
 import type { Texture } from './textures';
 import type { TextureValues, UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
 
@@ -68,6 +74,13 @@ export interface EffectOptions<Wgsl extends string | CompiledWgsl = string | Com
 	 * effects of the same order run in the order they were added. It is 0 by default.
 	 */
 	order?: number;
+	/**
+	 * The level of bloom's chain that the effect reads, from 0 for the narrowest glow to 9 for the
+	 * widest, for WGSL that calls `effectBloom`. The effect reads the level at any pixel of the
+	 * image, so it draws in a pass of its own. Turn bloom on, with `post.bloom`, to give the chain
+	 * to the effect. A level that the chain does not draw reads black.
+	 */
+	bloomLevel?: number;
 }
 
 /**
@@ -93,7 +106,9 @@ export class Effect<Values = UniformValues<string>> {
 		readonly depth: boolean,
 		/** @internal True when it joins the effect before it: it reads its own pixel alone. */
 		readonly joins: boolean,
-		/** @internal True when its WGSL declares textures, so it draws in a pass of its own. */
+		/** @internal The level of bloom's chain that it reads, or -1 for none. */
+		readonly bloomLevel: number,
+		/** @internal True when it draws in a pass of its own: it declares textures or reads bloom. */
 		readonly alone: boolean,
 		/** @internal The WGSL that its pieces add to a group's host and to the final pass's. */
 		readonly pieceSizes: PieceSizes,
@@ -123,16 +138,29 @@ export interface CompiledEffect extends CompiledWgsl {
 	readonly kind: 'effect';
 	readonly uniforms: readonly EffectUniform[];
 	readonly depth: boolean;
+	readonly bloom: boolean;
 	readonly joins: boolean;
 	readonly textures: readonly { readonly name: string; readonly offset: number }[];
+	/**
+	 * The effect template's variants with the WGSL. A module's value leaves them out: they load on
+	 * first use, through `builds`.
+	 */
 	readonly variants: ShaderVariants;
+	/** Imports the effect's builds for one GPU path, which load on first use. */
+	readonly builds?: BuildsLoader;
 	readonly pieces: EffectPieces;
 }
 
 /** A custom tone curve's WGSL as the plugin compiles it. */
 interface CompiledToneCurve extends CompiledWgsl {
 	readonly kind: 'toneCurve';
+	/**
+	 * The final pass's variants with the curve. A module's value leaves them out: they load on
+	 * first use, through `builds`.
+	 */
 	readonly variants: ShaderVariants;
+	/** Imports the curve's builds for one GPU path, which load on first use. */
+	readonly builds?: BuildsLoader;
 	readonly pieces: EffectPieces;
 }
 
@@ -169,6 +197,36 @@ function piecesSize(builds: PieceBuilds): number {
 /** The characters of WGSL that pieces add to each host. */
 function sizesOf(pieces: EffectPieces): PieceSizes {
 	return { group: piecesSize(pieces.group), fold: piecesSize(pieces.fold) };
+}
+
+/** The levels of bloom's chain that an effect can read, from the narrowest to the widest. */
+const BLOOM_LEVELS = 10;
+
+/**
+ * The level of bloom's chain that the effect's WGSL reads, or -1 for none. Throws E1213 when the
+ * WGSL calls `effectBloom` and the options name no level, or the options name one and the WGSL
+ * does not read it.
+ */
+function checkBloom(compiled: CompiledEffect, level: number | undefined, call: string): number {
+	if (compiled.bloom) {
+		if (level === undefined)
+			throw new EngineError(
+				'E1213',
+				`${call}() got WGSL that calls effectBloom, without bloomLevel. Give the level of bloom's chain that the effect reads, a whole number from 0 to ${BLOOM_LEVELS - 1}.`,
+			);
+		if (!Number.isInteger(level) || level < 0 || level >= BLOOM_LEVELS)
+			throw new EngineError(
+				'E1213',
+				`${call}() got ${level} for bloomLevel, which takes a whole number from 0 to ${BLOOM_LEVELS - 1}.`,
+			);
+		return level;
+	}
+	if (level !== undefined)
+		throw new EngineError(
+			'E1213',
+			`${call}() got ${level} for bloomLevel, and the WGSL does not call effectBloom. Read the level with effectBloom(input.uv) to give the effect a level of bloom's chain.`,
+		);
+	return -1;
 }
 
 /** The numbers each type of uniform takes. */
@@ -285,12 +343,14 @@ export class EffectChain {
 				`${call}() got effect ${this.chain.length + 1}, and at most ${EFFECT_MAX} effects run at once. Remove an effect first, or join effects that read only their own pixel into one WGSL function.`,
 			);
 		const uniforms = new Map(compiled.uniforms.map((u) => [u.name, u]));
+		const bloomLevel = checkBloom(compiled, options.bloomLevel, call);
 		const template = effectTemplate(this.templates, compiled);
 		const effect = new Effect(
 			template,
 			compiled.depth,
 			compiled.joins,
-			compiled.textures.length > 0,
+			bloomLevel,
+			compiled.textures.length > 0 || compiled.bloom,
 			this.sizesOf(compiled, compiled.pieces),
 			uniforms,
 			order,
@@ -355,16 +415,23 @@ export class EffectChain {
 					: `${call}() got ${kindOf(wgsl)} for toneMapping, which takes a built-in curve's name or WGSL that declares fn toneCurve.`,
 			);
 		const curve = wgsl as CompiledToneCurve;
-		const template = this.templates.of(curve, () => [
-			{
-				kind: 'final',
-				variants: curve.variants,
-				locations: [],
-				textures: 0,
-				pieces: curve.pieces,
-			},
-			{ kind: 'finalBloom', variants: curve.variants, locations: [], textures: 0 },
-		]);
+		const later = firstUse(curve.builds);
+		const template = this.templates.of(
+			curve,
+			() => [
+				{
+					kind: 'final',
+					variants: curve.variants,
+					locations: [],
+					textures: 0,
+					pieces: curve.pieces,
+					...later,
+				},
+				{ kind: 'finalBloom', variants: curve.variants, locations: [], textures: 0, ...later },
+			],
+			undefined,
+			curve.builds,
+		);
 		core.check(core.glue.setToneCurve(template), call, undefined, true);
 		this.curve = { template, sizes: this.sizesOf(curve, curve.pieces) };
 		this.sendJoins(call);
@@ -466,7 +533,8 @@ export class EffectChain {
 	private send(effect: Effect, call: string): void {
 		const { core } = this;
 		writeEffectBlocks(core, effect.values, effect.textures);
-		const flags = effect.depth ? EFFECT_DEPTH : 0;
+		const level = effect.bloomLevel >= 0 ? (effect.bloomLevel + 1) << EFFECT_BLOOM_SHIFT : 0;
+		const flags = (effect.depth ? EFFECT_DEPTH : 0) | level;
 		core.check(core.glue.setEffect(effect.place, effect.template, flags), call, undefined, true);
 	}
 }
@@ -486,19 +554,34 @@ export function writeEffectBlocks(
 }
 
 /**
+ * The fields that make a custom shader import its builds on first use, or none when the module
+ * holds the builds itself.
+ */
+function firstUse(builds: BuildsLoader | undefined): { builds?: boolean; buildsSet?: number } {
+	return builds === undefined ? {} : { builds: true, buildsSet: 0 };
+}
+
+/**
  * The template of a compiled effect, which an effect and a full-screen pass share: the effect
  * template's variants with the WGSL, and its textures in a second bind group.
  */
 export function effectTemplate(templates: ShaderTemplates, compiled: CompiledEffect): number {
-	return templates.of(compiled, () => [
-		{
-			kind: 'effect',
-			variants: compiled.variants,
-			locations: [],
-			textures: compiled.textures.length,
-			pieces: compiled.pieces,
-		},
-	]);
+	return templates.of(
+		compiled,
+		() => [
+			{
+				kind: 'effect',
+				bloom: compiled.bloom,
+				variants: compiled.variants,
+				locations: [],
+				textures: compiled.textures.length,
+				pieces: compiled.pieces,
+				...firstUse(compiled.builds),
+			},
+		],
+		undefined,
+		compiled.builds,
+	);
 }
 
 /**

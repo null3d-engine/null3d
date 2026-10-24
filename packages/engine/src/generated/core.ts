@@ -13,6 +13,8 @@ export const COMMAND_SET_FLAGS = 9;
 export const COMMAND_SET_RENDER_ORDER = 10;
 export const COMMAND_SET_SKIN = 11;
 export const COMMAND_SET_MORPH = 12;
+export const COMMAND_SET_LEVEL_BIAS = 13;
+export const COMMAND_SET_DRAW_RANGE = 14;
 export const COMMAND_KEEP_WORLD = 1;
 export const COMMAND_WORDS = 4;
 
@@ -74,6 +76,7 @@ export const BATCH_FIELD_SIZES = 4;
 export const BATCH_FIELD_FRAMES = 5;
 export const BATCH_FIELD_DIRTY_WORDS = 6;
 export const BATCH_FIELD_VALUES = 7;
+export const BATCH_FIELD_RANGES = 8;
 
 export const SPRITE_MAX_ATLAS_SIDE = 2048;
 
@@ -101,7 +104,7 @@ export const QUERY_CAMERA_NONE = 0;
 export const QUERY_CAMERA_PERSPECTIVE = 1;
 export const QUERY_CAMERA_ORTHOGRAPHIC = 2;
 export const QUERY_RAY_FLOATS = 6;
-export const QUERY_HIT_FLOATS = 11;
+export const QUERY_HIT_FLOATS = 14;
 export const QUERY_HIT_SLOT = 0;
 export const QUERY_HIT_BATCH = 1;
 export const QUERY_HIT_ROW = 2;
@@ -109,6 +112,8 @@ export const QUERY_HIT_TRIANGLE = 3;
 export const QUERY_HIT_DISTANCE = 4;
 export const QUERY_HIT_POINT = 5;
 export const QUERY_HIT_NORMAL = 8;
+export const QUERY_HIT_UV = 11;
+export const QUERY_HIT_HAS_UV = 13;
 export const QUERY_CLOSEST = 0;
 export const QUERY_ANY = 1;
 export const QUERY_ALL = 2;
@@ -174,6 +179,16 @@ export const PARTICLE_FRAME_FLOATS = 4;
 export const PARTICLE_MAX_SYSTEMS = 256;
 export const PARTICLE_MAX_RECORDS = 4194304;
 
+export const FEATURE_INSTANCE_MAX_DRAWS = 64;
+export const FEATURE_INSTANCE_MAX_CAPACITY = 1048576;
+export const FEATURE_INSTANCE_INSTANCE_FLOATS = 16;
+export const FEATURE_INSTANCE_INSTANCE_BYTES = 64;
+export const FEATURE_INSTANCE_COUNT_BYTES = 4;
+
+export const VERTEX_DRAW_MAX_DRAWS = 256;
+export const VERTEX_DRAW_MAX_VERTICES = 1048576;
+export const VERTEX_DRAW_MAX_INSTANCES = 16777216;
+
 export const SHADING_LIT = 0;
 export const SHADING_UNLIT = 1;
 export const SHADING_TEXCOORDS = 2;
@@ -214,6 +229,10 @@ export const MATERIAL_FEATURE_WEIGHTED = 524288;
 export const MATERIAL_FEATURE_DECAL = 131072;
 export const MATERIAL_FEATURE_WIREFRAME = 16384;
 export const MATERIAL_FEATURE_PARALLAX = 32768;
+export const MATERIAL_FEATURE_NO_TONE_MAP = 8388608;
+export const MATERIAL_FEATURE_SCENE_DEPTH = 16777216;
+export const MATERIAL_FEATURE_IRIDESCENCE = 33554432;
+export const MATERIAL_FEATURE_ANISOTROPY = 67108864;
 
 export const DEBUG_VIEW_LIT = 0;
 export const DEBUG_VIEW_NORMALS = 1;
@@ -243,8 +262,13 @@ export const MAP_SLOT_COAT_ROUGHNESS = 9;
 export const MAP_SLOT_COAT_NORMAL = 10;
 export const MAP_SLOT_SHEEN_COLOR = 11;
 export const MAP_SLOT_SHEEN_ROUGHNESS = 12;
-export const MAP_SLOT_BUMP = 13;
-export const MAP_SLOT_DISPLACEMENT = 14;
+export const MAP_SLOT_IRIDESCENCE = 13;
+export const MAP_SLOT_IRIDESCENCE_THICKNESS = 14;
+export const MAP_SLOT_ANISOTROPY = 15;
+export const MAP_SLOT_TRANSMISSION = 16;
+export const MAP_SLOT_THICKNESS = 17;
+export const MAP_SLOT_BUMP = 18;
+export const MAP_SLOT_DISPLACEMENT = 19;
 
 export const MATERIAL_PARAM_COLOR = 0;
 export const MATERIAL_PARAM_OPACITY = 3;
@@ -276,6 +300,12 @@ export const MATERIAL_PARAM_CLEARCOAT_ROUGHNESS = 45;
 export const MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE = 46;
 export const MATERIAL_PARAM_SHEEN_COLOR = 48;
 export const MATERIAL_PARAM_SHEEN_ROUGHNESS = 51;
+export const MATERIAL_PARAM_IRIDESCENCE = 60;
+export const MATERIAL_PARAM_IRIDESCENCE_IOR = 61;
+export const MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MIN = 62;
+export const MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX = 63;
+export const MATERIAL_PARAM_ANISOTROPY = 64;
+export const MATERIAL_PARAM_ANISOTROPY_ROTATION = 65;
 export const MATERIAL_PARAM_DECAL_FADE_START = 36;
 export const MATERIAL_PARAM_DECAL_FADE_END = 37;
 export const MATERIAL_PARAM_DECAL_EDGE_FADE = 38;
@@ -284,6 +314,7 @@ export const EFFECT_MAX = 8;
 export const EFFECT_FLOATS = 32;
 export const EFFECT_TEXTURES = 6;
 export const EFFECT_DEPTH = 1;
+export const EFFECT_BLOOM_SHIFT = 8;
 
 export const PASS_KIND_SCENE = 0;
 export const PASS_KIND_REFLECTION = 1;
@@ -343,7 +374,8 @@ export const POST_VALUE_SSR_INTENSITY = 59;
 export const POST_VALUE_SSR_MAX_DISTANCE = 60;
 export const POST_VALUE_SSR_THICKNESS = 61;
 export const POST_VALUE_SSR_MAX_ROUGHNESS = 62;
-export const POST_VALUE_COUNT = 63;
+export const POST_VALUE_SHARPEN = 63;
+export const POST_VALUE_COUNT = 64;
 
 export const CALL_VALUE_COUNT = 10;
 
@@ -411,6 +443,7 @@ export const TEXTURE_STAT_DROPPED_TEXTURES = 12;
 export const TEXTURE_STAT_BUDGET_EPOCH = 13;
 export const TEXTURE_STAT_RELOAD_LEVEL = 14;
 export const TEXTURE_STAT_RELOAD_TEXTURE = 15;
+export const TEXTURE_STAT_UPLOADING = 16;
 
 export const CAMERA_TARGET_VIEW = 0;
 export const CAMERA_TARGET_SHADOWS = 1;
@@ -580,6 +613,7 @@ export const ARRAYS_PROBLEM_MORPH_TOO_LARGE = 8;
 export const ARRAYS_PROBLEM_MORPH_LENGTH = 9;
 export const ARRAYS_PROBLEM_MORPH_NOT_FINITE = 10;
 export const ARRAYS_PROBLEM_POSED = 11;
+export const ARRAYS_PROBLEM_LEVEL_BASE = 12;
 export const ARRAYS_PROBLEM_NOT_FINITE = 16;
 
 export const LEVEL_PROBLEM_TOO_MANY = 1;

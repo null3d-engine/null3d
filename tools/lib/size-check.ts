@@ -66,32 +66,23 @@ export type BaseChoice =
  * The base of the size check. `--base <ref>` names it. A push to main compares with the commit that
  * main pointed to before the push, which CI passes as `PUSH_BEFORE`: work lands by a merge of main
  * into a branch and a push (D-157), so the commit before (HEAD^) is the branch's own, and the push's
- * growth and trailers are those of every commit after main's old tip. A push with no such commit,
- * such as a branch's first, compares with the commit before. A merge queue run
- * compares with the commit that its group builds on, which holds the pull requests ahead of it in
- * the queue: the queue squashes each pull request into one commit on top of that commit, so it is
- * the commit before too. Otherwise the base is HEAD's merge base with main, or with the branch that
- * a pull request targets. CI builds a pull request as GitHub's merge of it into that branch, so
- * there the merge base is the branch's commit that the pull request was merged into.
+ * growth and trailers are those of every commit after main's old tip. A push to main with no such
+ * commit compares with the commit before. Every other run compares with HEAD's merge base with
+ * main: a push to a milestone branch judges the whole milestone, as its pull request did, since a
+ * newer push can drop a waiting run, and a check of each push alone would then miss that one.
  */
 export function chooseBase(
 	ref: string | undefined,
 	env: Readonly<Record<string, string | undefined>>,
 ): BaseChoice {
 	if (ref) return { ref, why: 'the commit that --base names' };
-	if (env.GITHUB_EVENT_NAME === 'push') {
+	if (env.GITHUB_EVENT_NAME === 'push' && env.GITHUB_REF === 'refs/heads/main') {
 		const before = env.PUSH_BEFORE ?? '';
 		if (before && !/^0+$/.test(before))
 			return { ref: before, why: "main's commit before this push" };
 		return { ref: 'HEAD^', why: 'the commit before on the branch, as the push names none' };
 	}
-	if (env.GITHUB_EVENT_NAME === 'merge_group')
-		return {
-			ref: 'HEAD^',
-			why: 'the commit that the merge group builds on, with the pull requests ahead of it',
-		};
-	const branch = env.GITHUB_BASE_REF || 'main';
-	return { branch, why: `the merge base with origin/${branch}` };
+	return { branch: 'main', why: 'the merge base with origin/main' };
 }
 
 const bytes = (n: number | undefined) => (n === undefined ? '-' : n.toLocaleString('en-US'));
@@ -157,9 +148,10 @@ export function growthSummary(
 }
 
 /**
- * True when a new file loads only on the first use of a feature: one of the shader families' tables
- * or combination loaders. Such a file adds nothing to a page's start download, and its own budget
- * caps it, so it needs no Size-Growth trailer that names it.
+ * True for a file that loads only on the first use of a feature: one of the shader families' tables
+ * or combination loaders. Such a file is absent from a page's start download whether it is new or
+ * grows, because the feature that names it asks for it, and its own budget caps it. It therefore
+ * needs no Size-Growth trailer, and one change to a shared shader library moves thousands of them.
  */
 function firstUseShaderFile(file: string): boolean {
 	const name = file.startsWith('js/') ? file.slice(3) : file;
@@ -173,7 +165,7 @@ export function growthProblems(
 ): string[] {
 	return grownFiles(changes)
 		.filter((change) => !explainedBy.has(change.file))
-		.filter((change) => !(change.base === undefined && firstUseShaderFile(change.file)))
+		.filter((change) => !firstUseShaderFile(change.file))
 		.map((change) =>
 			change.base === undefined
 				? `${change.file} is new, ${bytes(change.head)} bytes after Brotli, and no Size-Growth trailer names it`

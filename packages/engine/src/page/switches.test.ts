@@ -15,6 +15,7 @@ describe('parseSwitches', () => {
 			parallelCompile: true,
 			freshShaders: false,
 			freshCheck: false,
+			twoStep: false,
 			wakeByMessage: false,
 			displayChecks: true,
 			hdr: true,
@@ -37,6 +38,8 @@ describe('parseSwitches', () => {
 			memoryMiB: undefined,
 			preset: undefined,
 			hold: undefined,
+			replay: undefined,
+			record: false,
 			still: true,
 			bench: false,
 			stats: undefined,
@@ -107,6 +110,17 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?half=on').half).toBe(true);
 		expect(parseSwitches('?half=off').half).toBe(false);
 		expect(parseSwitches('?half=yes').half).toBeUndefined();
+	});
+
+	it('reads the recording that ?replay= names, and ?record with or without a value', () => {
+		expect(parseSwitches('?replay=/bug.n3dr').replay).toBe('/bug.n3dr');
+		expect(parseSwitches('?replay=https://example.com/bug.n3dr').replay).toBe(
+			'https://example.com/bug.n3dr',
+		);
+		expect(parseSwitches('').replay).toBeUndefined();
+		expect(parseSwitches('?record').record).toBe(true);
+		expect(parseSwitches('?record=on').record).toBe(true);
+		expect(parseSwitches('').record).toBe(false);
 	});
 
 	it('reads ?bench with or without a value', () => {

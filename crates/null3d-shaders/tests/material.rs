@@ -5,8 +5,10 @@ mod precision;
 
 use std::path::Path;
 
+use null3d_gpu::drawlist::permutation;
 use null3d_shaders::{
-    BuildError, Compiler, Inputs, MaterialOutput, MaterialSource, MaterialTemplate, Problem, Share,
+    BuildError, Compiler, Inputs, Manifest, MaterialOutput, MaterialSource, MaterialTemplate,
+    Problem, Share,
 };
 
 /// The display path of a custom material's WGSL in the tests.
@@ -503,7 +505,7 @@ fn inputs_that_cost_something_build_only_into_materials_that_read_them() {
     let plain = compile(STRIPES).expect("the surface function builds");
     assert!(!plain.object_ids);
     for variant in plain.variants.values() {
-        let wgsl = variant.wgsl.as_ref().map_or("", |w| w.source.as_str());
+        let wgsl = variant.wgsl.as_ref().map_or("", |w| &*w.source);
         assert!(!wgsl.contains("object_ranges") && !wgsl.contains("world_x"));
     }
 }
@@ -640,6 +642,57 @@ fn textures_build_into_every_variant_and_read_their_layers_in_both_stages() {
         skin.contains("@group(2) @binding(0)\nvar joint_matrices"),
         "{skin}"
     );
+}
+
+#[test]
+fn a_texture_array_builds_with_the_layer_that_the_shader_picks() {
+    let source = "struct Uniforms { layer: i32 }
+
+var facades: texture_2d_array<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor *= textureSampleLevel(facades, facadesSampler, input.uv, material.layer, 0.0).rgb;
+    return s;
+}
+";
+    let built = compile(source).expect("the texture array builds");
+    let textures: Vec<(&str, bool)> = built
+        .textures
+        .iter()
+        .map(|t| (t.name.as_str(), t.array))
+        .collect();
+    assert_eq!(textures, [("facades", true)]);
+    let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
+    assert!(
+        wgsl.contains("@group(1) @binding(0)\nvar facades: texture_2d_array<f32>;"),
+        "{wgsl}"
+    );
+    // The texture function keeps the layer that the shader names, and the engine's layer only
+    // waits for the image: a call of a declared texture array gains no layer of its own.
+    let call = wgsl
+        .split("textureSampleLevel(facades, facadesSampler,")
+        .nth(1)
+        .expect("the shader's call survives the build");
+    let arguments = &call[..call.find(')').expect("the call ends")];
+    assert_eq!(
+        arguments.matches(',').count(),
+        2,
+        "the call takes the coordinates and the shader's own layer, and no layer of the engine: {arguments}"
+    );
+    assert!(
+        wgsl.contains("material.layer"),
+        "the layer that the shader names comes from its uniform: {wgsl}"
+    );
+    assert!(wgsl.contains("custom_texture_layers[0]"), "{wgsl}");
+    // WebGL2 samples the same array and layer through its own texture unit.
+    let program = &built.variants["webgl2_draw_index"]
+        .glsl
+        .as_ref()
+        .expect("GLSL")["main"];
+    assert!(program.fragment.source.contains("sampler2DArray"));
+    assert!(program.fragment.source.contains("textureLod("));
+    assert!(program.fragment.source.contains("custom_texture_layers[0]"));
 }
 
 #[test]
@@ -830,4 +883,218 @@ fn a_share_past_its_count_is_refused() {
     let error = compile_share(STRIPES, Some(Share { index: 2, count: 2 }))
         .expect_err("share 2 of 2 does not exist");
     assert!(error.problems[0].message.contains("share 2 of 2"));
+}
+
+/// A surface function that reads the copy of the scene's depth, with a vertex offset, so the
+/// build also makes its caster, motion and pick variants.
+const DEPTH: &str = "fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let uv = input.fragCoord.xy / frame.resolution;
+    s.roughness = clamp(sceneDistance(uv) * 0.1, 0.0, 1.0);
+    return s;
+}
+
+fn vertexOffset(input: VertexInput) -> vec3f {
+    return vec3f(0.0);
+}
+";
+
+#[test]
+fn a_surface_function_that_reads_the_depth_binds_its_copy_alone_in_the_shading_builds() {
+    let built = compile(DEPTH).expect("the surface function builds");
+    assert!(built.scene_depth);
+    let mut shaded = 0;
+    for (name, variant) in &built.variants {
+        // A vertex offset's caster, motion and pick builds name their kind right after the shading
+        // variant's name, and their permutations follow it.
+        let kind = name
+            .strip_prefix("webgpu_")
+            .or_else(|| name.strip_prefix("webgl2_"))
+            .unwrap_or_default();
+        let culled = ["shadow", "motion", "pick"]
+            .iter()
+            .any(|culled| kind.starts_with(culled));
+        // The shading builds that write WGSL hold the binding, and the builds that shade no surface
+        // lose it on both paths.
+        if let Some(wgsl) = &variant.wgsl {
+            if culled {
+                assert!(!wgsl.source.contains("scene_depth_copy"), "{name}");
+            } else {
+                assert!(wgsl.source.contains("scene_depth_copy"), "{name}");
+                shaded += 1;
+            }
+        }
+        if let Some(programs) = &variant.glsl {
+            for program in programs.values() {
+                if culled {
+                    assert!(
+                        !program.fragment.source.contains("scene_depth_copy"),
+                        "{name}"
+                    );
+                }
+            }
+        }
+    }
+    assert!(shaded > 0);
+    assert!(!compile(STRIPES).expect("the material builds").scene_depth);
+}
+
+/// A material whose own lobe adds part of the base specular for the main light, from the four
+/// values that its surface function passes.
+const SPARKLE: &str = "fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.lobe = vec4f(0.5, 0.25, 2.0, 0.75);
+    return s;
+}
+
+fn lobe(input: LobeInput) -> vec3f {
+    return input.specular * input.values.z;
+}
+";
+
+#[test]
+fn a_lobe_function_builds_into_every_variant_with_the_surface_values() {
+    let built = compile(SPARKLE).expect("the material with a lobe builds");
+    assert_eq!(built.functions, ["surface", "lobe"]);
+    let mut builds = 0;
+    for (name, variant) in &built.variants {
+        // The custom WGSL joins the template before its variants are built, so the lobe's body is
+        // in the caster, motion and pick builds too, and each must compile with it.
+        if let Some(wgsl) = &variant.wgsl {
+            assert!(wgsl.source.contains("fn lobe("), "{name}");
+            builds += 1;
+        }
+    }
+    assert!(builds > 0);
+}
+
+#[test]
+fn a_lobe_with_another_signature_is_refused_at_its_name() {
+    let problem = only_problem("fn lobe(input: SurfaceInput) -> vec3f { return vec3f(0.0); }");
+    assert!(
+        problem
+            .message
+            .contains("`lobe` does not have the signature that the engine calls"),
+        "{problem}"
+    );
+    assert!(
+        problem
+            .message
+            .contains("Declare it as `fn lobe(input: LobeInput) -> vec3f`."),
+        "{problem}"
+    );
+}
+
+/// The car-paint add-on's WGSL, as the repository ships it.
+const CAR_PAINT: &str = include_str!("../../../examples/addons/car-paint/paint.wgsl");
+
+#[test]
+fn the_car_paints_glint_model_builds_on_both_paths() {
+    let built = compile(CAR_PAINT).expect("the car paint builds");
+    assert_eq!(built.functions, ["surface", "lobe"]);
+    assert!(built.variants["webgpu"].wgsl.is_some());
+    assert!(built.variants["webgl2"].glsl.is_some());
+}
+
+/// A surface function that samples a texture and reads the copy of the scene's depth, with a
+/// vertex offset, so the build also makes its caster, motion and pick variants.
+const DEEP_TEXTURED: &str = "var foam: texture_2d<f32>;
+
+fn vertexOffset(input: VertexInput) -> vec3f {
+    return vec3f(0.0);
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let uv = input.fragCoord.xy / frame.resolution;
+    s.baseColor *= textureSample(foam, foamSampler, input.uv).rgb;
+    s.alpha = clamp(sceneDistance(uv) * 0.1, 0.0, 1.0);
+    return s;
+}
+";
+
+/// A material with both its own textures and the scene's depth binds three groups of its own, so
+/// the joint texture of its SKIN builds sits after them. Its caster, motion and pick builds shade
+/// no surface and drop the depth's group, so the joint texture follows the maps' group alone.
+#[test]
+fn textures_beside_the_scene_depth_push_the_joint_texture_after_both_groups() {
+    let built = compile(DEEP_TEXTURED).expect("the textured material that reads the depth builds");
+    assert!(built.scene_depth);
+    let mut seen = 0;
+    for (name, variant) in &built.variants {
+        if !name.starts_with("webgpu_") {
+            continue;
+        }
+        let Some(wgsl) = &variant.wgsl else { continue };
+        if !wgsl.source.contains("joint_matrices") {
+            continue;
+        }
+        seen += 1;
+        let kind = name.strip_prefix("webgpu_").unwrap_or_default();
+        let culled = ["shadow", "motion", "pick"]
+            .iter()
+            .any(|culled| kind.starts_with(culled));
+        if culled {
+            assert!(
+                wgsl.source
+                    .contains("@group(2) @binding(0)\nvar joint_matrices"),
+                "{name}"
+            );
+        } else {
+            assert!(
+                wgsl.source
+                    .contains("@group(3) @binding(0)\nvar joint_matrices"),
+                "{name}"
+            );
+            assert!(
+                wgsl.source
+                    .contains("@group(2) @binding(0)\nvar scene_depth_copy"),
+                "{name}"
+            );
+            assert!(
+                wgsl.source.contains("@group(1) @binding(0)\nvar foam"),
+                "{name}"
+            );
+        }
+    }
+    assert!(seen > 0, "some build skins the mesh");
+}
+
+/// A custom material reads its instances from the copies that the culling shader writes, so its
+/// builds leave out the instance-index permutation that the template offers. That build would bind
+/// a group of its own, which is the fifth that WebGPU's default of four does not allow (D-23).
+#[test]
+fn a_custom_material_leaves_out_the_instance_index_build() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let inputs = Inputs::read(&root).expect("the repository's shaders");
+    let manifest = Manifest::parse(&inputs.manifest).expect("the shader manifest");
+    let template = manifest
+        .shaders
+        .values()
+        .find(|shader| shader.custom_materials)
+        .expect("the template that custom materials build with");
+    assert!(
+        template.variants.values().any(|variant| variant
+            .permutations
+            .iter()
+            .any(|name| name == "INSTANCE_INDEX")),
+        "the template offers the instance-index build, so this test has one to see dropped"
+    );
+
+    let built = compile(DEEP_TEXTURED).expect("the material builds");
+    assert!(
+        built
+            .variants
+            .values()
+            .any(|variant| variant.permutation & permutation::SKIN != 0),
+        "the builds keep their other permutation bits"
+    );
+    for (name, variant) in &built.variants {
+        assert_eq!(
+            variant.permutation & permutation::INSTANCE_INDEX,
+            0,
+            "{name}: a custom material reads its instances from the culling shader's copies, so it \
+             takes no build that reads them by index"
+        );
+    }
 }

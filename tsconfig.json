@@ -33,6 +33,10 @@
 		"packages/geometry/**",
 		"packages/particles/**",
 		"packages/impostors/**",
-		"packages/terrain/**"
+		"packages/terrain/**",
+		"packages/vegetation/**",
+		"packages/three-compat/**",
+		"packages/splats/**",
+		"packages/water/**"
 	]
 }

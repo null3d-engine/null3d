@@ -302,3 +302,34 @@ The page runs unchanged on the iPad, the cloud S25, Pixel 9 and Pixel 11. It nee
 host for the iPad and a tunnel URL for the phone runner. No engine build is needed. The S25 run
 decides the 0.2 ms band. The nearest baseline and the mip bias are in the image table above. A
 `gsrSharp` switch shows the softer GSR 1 variant at 1.0.
+
+## Addendum, 21 October 2026: the sharpening answers question 5
+
+Question 5 asked whether RCAS fuses into the upscale, and how a `sharpen` value scales with the
+render scale. D-205 answers both. The value draws its own RCAS in the second step, over the four
+texels that cross each pixel, after the upscale and before the color table, the outline and the
+dither. It draws only at the whole canvas's render scale, so no scaling against the upscale is
+needed: below scale 1 the upscale's own GSR 1 sharpening runs, and the value adds nothing. A sketch
+that sets the value draws these two steps at the whole scale too, so the sharpening reads display
+color after one tone curve for each pixel.
+
+## Addendum, 23 October 2026: the first frame of a held picture draws the two steps
+
+On 23 October 2026 the test `render-scale-75-fxaa` differed from its reference in 10.7 to 11.1
+percent of its pixels. It differed on every GPU path, and its picture held no FXAA. Hold mode draws
+one frame, and that frame asks for the two steps' pipelines before it declares its passes.
+
+`two_step_built`, the answer "the two steps can draw", was read from `two_step_declared`. The
+declaration sets that flag later in the same frame. So the first frame of every hold-mode picture
+found the steps undeclared and drew the final pass alone. That pass leaves the image unsmoothed
+below the whole canvas's scale. Every later frame drew the steps. `3e007fdd1`, which added the
+sharpening, made the change: it replaced the wish `self.scales` with the declaration in that
+expression. The sharpening draws in the second step too, so a held picture also lost it at every
+scale.
+
+`FrameGraph::two_step_wanted` now holds the wish, the render scale's range or the sharpening, and
+both the declaration and the pipeline request read it. `render_scale.rs`'s
+`fxaa_draws_the_two_step_pass_on_the_first_frame_below_the_whole_canvas` and
+`the_sharpening_draws_the_two_step_pass_on_the_first_frame` pin the passes of the first frame. Both
+fail with the expression that drew the fault.
+

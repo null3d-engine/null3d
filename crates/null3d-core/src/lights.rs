@@ -134,8 +134,9 @@ pub mod value {
     pub const HEIGHT: u32 = 12;
     /// The radius in meters of a tube light. The default is 0.025.
     pub const RADIUS: u32 = 13;
-    /// The layer of a rectangle light's image in the frame builder's light tables, plus one, or 0
-    /// for a light without an image. The engine sets it when it places the image.
+    /// The layer of the light's image in the frame builder's light tables, plus one, or 0 for a
+    /// light without one: a rectangle light's picture, or the map that a spot light projects over
+    /// its cone. The engine sets it when it places the image.
     pub const IMAGE: u32 = 14;
     /// The last number.
     pub const LAST: u32 = IMAGE;
@@ -180,12 +181,11 @@ const DEFAULT_VALUES: [f32; value::LAST as usize + 1] = [
 /// light through in full.
 pub const POINT_CONE: [f32; 2] = [-2.0, -1.0];
 
-/// A visible point, spot or area light, as one frame's list holds it: 64 bytes, four groups of four
+/// A visible point, spot or area light, as one frame's list holds it: 80 bytes, five groups of four
 /// 32-bit values, ready for the GPU.
 ///
 /// An area light needs no decay and no cone, so its record keeps its shape in their places (see
-/// [`VisibleLight::area`]): its half sides, or its half axis and radius, and its texture's layer
-/// where a point or spot light keeps its shadow tile, since area lights cast no shadows.
+/// [`VisibleLight::area`]): its half sides, or its half axis and radius.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct VisibleLight {
@@ -212,6 +212,14 @@ pub struct VisibleLight {
     /// The light's first tile in the frame builder's shadow atlas plus one, as a float, or 0 when
     /// the light has no tile. The core writes 0, and the frame builder the tile.
     pub shadow: f32,
+    /// The up axis that a spot light's projected map reads with, of length 1, or zero for another
+    /// light: the `+Y` axis of a camera that looks along the light with the world's up as near its
+    /// own as it can be, as three.js turns a spot light's shadow camera.
+    pub up: [f32; 3],
+    /// The layer of the light's image in the frame builder's light tables plus one, or 0 when the
+    /// light shows none: a spot light projects it over its cone, and a rectangle light shows it
+    /// over its area.
+    pub image: f32,
 }
 
 impl VisibleLight {
@@ -220,7 +228,7 @@ impl VisibleLight {
     /// `along` and `across`. A tube light passes half its axis as `along`, and its radius as
     /// `across[0]`. The record keeps `along` where a spot light keeps its direction, and `across`
     /// in the places of the decay and the two cone cosines, in that order. `image` is the layer of
-    /// a rectangle light's image plus one, or 0, which the record keeps in the shadow tile's place.
+    /// a rectangle light's image plus one, or 0.
     #[allow(clippy::too_many_arguments)]
     pub fn area(
         kind: u32,
@@ -242,7 +250,9 @@ impl VisibleLight {
             penumbra_cos: across[2],
             kind,
             light,
-            shadow: image,
+            shadow: 0.0,
+            up: [0.0; 3],
+            image,
         }
     }
 }
@@ -343,11 +353,15 @@ pub struct SunShadow {
     pub contact: f32,
     /// The light's layer mask: its cascades draw the casters whose masks share a bit with it.
     pub layers: u32,
+    /// The scene slot of the object whose shadow the light draws into a tile of its own, or
+    /// `None` for a light that names no hero.
+    pub hero: Option<u32>,
 }
 
 impl SunShadow {
-    /// The shadows of a light with `values`, by [`value`], and the layer mask `layers`.
-    fn of(values: &[f32; value::LAST as usize + 1], layers: u32) -> Self {
+    /// The shadows of a light with `values`, by [`value`], the layer mask `layers`, and the scene
+    /// slot of its hero object, if the light names one that still exists.
+    fn of(values: &[f32; value::LAST as usize + 1], layers: u32, hero: Option<u32>) -> Self {
         let whole = |code: u32, low: f32, high: f32| values[code as usize].clamp(low, high) as u32;
         let distance = values[value::SHADOW_DISTANCE as usize];
         Self {
@@ -359,6 +373,7 @@ impl SunShadow {
             auto: distance <= 0.0,
             contact: values[value::SHADOW_CONTACT as usize].max(0.0),
             layers,
+            hero,
         }
     }
 }
@@ -435,6 +450,9 @@ struct Row {
     colors: [[f32; 3]; 2],
     /// Numbers, by [`value`].
     values: [f32; value::LAST as usize + 1],
+    /// The object that a directional light draws a shadow of its own for, or
+    /// [`Handle::NONE`] for none.
+    hero: Handle,
 }
 
 impl Row {
@@ -445,6 +463,7 @@ impl Row {
         order: 0,
         colors: [[0.0; 3]; 2],
         values: [0.0; value::LAST as usize + 1],
+        hero: Handle::NONE,
     };
 }
 
@@ -546,6 +565,7 @@ impl LightTable {
             order: self.created,
             colors: [[1.0; 3]; 2],
             values: self.defaults,
+            hero: Handle::NONE,
         };
         self.created = self.created.wrapping_add(1);
         Ok(row)
@@ -560,6 +580,7 @@ impl LightTable {
         let copy = &mut self.rows[row as usize];
         copy.colors = source.colors;
         copy.values = source.values;
+        copy.hero = source.hero;
         Ok(row)
     }
 
@@ -656,6 +677,13 @@ impl LightTable {
             .ok_or(past(which, value::LAST))
     }
 
+    /// Sets the object that a directional light draws a hero shadow of, or [`Handle::NONE`] to
+    /// stop drawing one. Fails with [`CoreError::InvalidHandle`] for a row that holds no light.
+    pub fn set_hero(&mut self, light: u32, object: Handle) -> Result<(), CoreError> {
+        self.row_mut(light)?.hero = object;
+        Ok(())
+    }
+
     /// The point and spot lights that the last [`LightTable::gather`] found visible, in row order.
     pub fn visible(&self) -> &[VisibleLight] {
         &self.visible
@@ -721,8 +749,13 @@ impl LightTable {
                         frame.sun_direction = forward(world.matrix(s));
                         frame.sun_color = lit;
                         let casts = scene.flags()[s] & flags::CAST_SHADOWS != 0;
-                        frame.sun_shadow =
-                            casts.then(|| SunShadow::of(&row.values, scene.layers()[s]));
+                        frame.sun_shadow = casts.then(|| {
+                            // A hero object that the sketch destroyed leaves the light without one.
+                            let hero = (row.hero != Handle::NONE)
+                                .then(|| scene.resolve(row.hero).ok())
+                                .flatten();
+                            SunShadow::of(&row.values, scene.layers()[s], hero)
+                        });
                     }
                 }
                 kind::POINT | kind::SPOT => {
@@ -818,11 +851,13 @@ impl LightTable {
 }
 
 /// Where a point, spot or area light stands for a view: its cell position, its position relative to the
-/// view's camera, the direction it points, and whether its range sphere meets the view's frustum.
+/// view's camera, the direction it points and the up axis that a spot light's map reads with, and
+/// whether its range sphere meets the view's frustum.
 struct Placed {
     at: CellPosition,
     relative: [f32; 3],
     direction: [f32; 3],
+    up: [f32; 3],
     seen: bool,
 }
 
@@ -837,15 +872,17 @@ impl Placed {
         let seen = view
             .frustum
             .contains_sphere(relative[0], relative[1], relative[2], range);
-        let direction = if row.kind == kind::SPOT {
-            forward(scene.world(parity).matrix(slot as usize))
+        let (direction, up) = if row.kind == kind::SPOT {
+            let direction = forward(scene.world(parity).matrix(slot as usize));
+            (direction, map_up(direction))
         } else {
-            [0.0; 3]
+            ([0.0; 3], [0.0; 3])
         };
         Self {
             at,
             relative,
             direction,
+            up,
             seen,
         }
     }
@@ -853,10 +890,14 @@ impl Placed {
     /// The light's record in a visible list, with colors times `exposure` and no shadow tile.
     fn record(&self, row: &Row, light: u32, exposure: f32) -> VisibleLight {
         let [intensity, range, decay, angle, penumbra, ..] = row.values;
-        let (cone_cos, penumbra_cos) = if row.kind == kind::SPOT {
-            (cosine(angle), cosine(angle * (1.0 - penumbra)))
+        let (cone_cos, penumbra_cos, image) = if row.kind == kind::SPOT {
+            (
+                cosine(angle),
+                cosine(angle * (1.0 - penumbra)),
+                row.values[value::IMAGE as usize],
+            )
         } else {
-            (POINT_CONE[0], POINT_CONE[1])
+            (POINT_CONE[0], POINT_CONE[1], 0.0)
         };
         VisibleLight {
             position: self.relative,
@@ -869,6 +910,8 @@ impl Placed {
             kind: row.kind,
             light,
             shadow: 0.0,
+            up: self.up,
+            image,
         }
     }
 
@@ -935,6 +978,37 @@ fn forward(m: &[f32; 12]) -> [f32; 3] {
     unit_or([-m[2], -m[6], -m[10]], [0.0, -1.0, 0.0])
 }
 
+/// The +Y axis of the frame that a camera looking along `direction` with the world's up axis holds:
+/// the frame that a spot light's projected map reads, as three.js aims the camera that casts and
+/// projects a spot light's map. The map turns with the direction alone, so rolling the light about
+/// its own axis leaves the map as it is. A light that points along the world's up axis takes the
+/// same small tilt as three.js's `lookAt`, which keeps the frame defined there.
+fn map_up(direction: [f32; 3]) -> [f32; 3] {
+    let world_up = [0.0, 1.0, 0.0];
+    let mut z = direction.map(|v| -v);
+    let mut x = cross(world_up, z);
+    if dot(x, x) < 1e-8 {
+        z[2] += 0.0001;
+        z = unit_or(z, [0.0, 0.0, -1.0]);
+        x = cross(world_up, z);
+    }
+    cross(z, unit_or(x, [1.0, 0.0, 0.0]))
+}
+
+/// The cross product of `a` and `b`.
+fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+/// The dot product of `a` and `b`.
+fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
 /// The X and Y axes of a world matrix of three rows, made unit length and at right angles to each
 /// other and to its Z axis, so a scale or a shear in the matrix leaves an area light's shape as its
 /// numbers give it. A matrix that flattens an axis gives the world's X and Y axes.
@@ -989,6 +1063,17 @@ mod tests {
         assert_eq!(c, a);
         assert_eq!(table.object(c).unwrap(), Handle::new(6, 0));
         assert_eq!(table.kind(c), kind::AMBIENT);
+    }
+
+    #[test]
+    fn a_light_keeps_its_hero_and_a_free_row_takes_none() {
+        let mut table = LightTable::new();
+        let sun = table.create(Handle::new(1, 0), kind::DIRECTIONAL).unwrap();
+        assert_eq!(table.row(sun).unwrap().hero, Handle::NONE);
+        table.set_hero(sun, Handle::new(9, 0)).unwrap();
+        assert_eq!(table.row(sun).unwrap().hero, Handle::new(9, 0));
+        table.destroy(sun).unwrap();
+        assert!(table.set_hero(sun, Handle::new(9, 0)).is_err());
     }
 
     #[test]

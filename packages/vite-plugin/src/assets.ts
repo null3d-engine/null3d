@@ -21,6 +21,17 @@ export interface AssetOptions {
 	/** Add levels of detail to meshes of 64 triangles or more. The default is false. */
 	lod?: boolean;
 	/**
+	 * Write each mesh's levels of detail as separate files beside the model, so the engine draws the
+	 * coarsest level at once and takes each finer one as it arrives. It needs `lod`. The default is
+	 * false.
+	 */
+	stages?: boolean;
+	/**
+	 * Add a tree of cluster patches to each large static mesh of 20,000 triangles or more. The
+	 * default is false.
+	 */
+	clusters?: boolean;
+	/**
 	 * Keep this share of each mesh's triangles, above 0 and up to 1, as far as `simplifyError`
 	 * allows. The default, 1, keeps them all.
 	 */
@@ -77,7 +88,11 @@ interface AssetTool {
 		path: string,
 		options: Required<AssetOptions> & { textureFolder: string },
 		encode: (job: unknown) => Promise<unknown>,
-	): Promise<{ glb: Uint8Array; files: Map<string, Uint8Array> }>;
+	): Promise<{
+		glb: Uint8Array;
+		files: Map<string, Uint8Array>;
+		stages: Map<string, Uint8Array>;
+	}>;
 }
 
 /** The asset tool, loaded on the first optimized import. */
@@ -158,6 +173,27 @@ export function fileCodeHash(path: string): string | null {
 	}
 }
 
+/** A stage file's name: a plain file name beside the model, as the tool writes it. */
+const STAGE_FILE = /^[\w.-]+\.bin$/;
+
+/**
+ * The stage files that a model names, by their file names beside it: the files of the levels that
+ * download after it, from `NULL3D_stages` in each node's extras.
+ */
+function stagesOf(glb: Uint8Array): string[] {
+	const view = new DataView(glb.buffer, glb.byteOffset, glb.byteLength);
+	const json = JSON.parse(
+		new TextDecoder().decode(glb.subarray(20, 20 + view.getUint32(12, true))),
+	) as {
+		nodes?: { extras?: { NULL3D_stages?: { levels?: { url?: unknown }[] } } }[];
+	};
+	const out: string[] = [];
+	for (const node of json.nodes ?? [])
+		for (const level of node.extras?.NULL3D_stages?.levels ?? [])
+			if (typeof level.url === 'string' && STAGE_FILE.test(level.url)) out.push(level.url);
+	return out;
+}
+
 /** The textures that a model file names, by their file names. */
 function texturesOf(glb: Uint8Array): string[] {
 	const view = new DataView(glb.buffer, glb.byteOffset, glb.byteLength);
@@ -192,7 +228,11 @@ export async function optimizedModel(
 	const listed = (glb: Uint8Array): CachedModel => ({
 		key,
 		name,
-		files: [`${key}/${name}`, ...texturesOf(glb).map((file) => `${TEXTURES}/${file}`)],
+		files: [
+			`${key}/${name}`,
+			...stagesOf(glb).map((file) => `${key}/${file}`),
+			...texturesOf(glb).map((file) => `${TEXTURES}/${file}`),
+		],
 	});
 	if (existsSync(join(folder, name))) return listed(readFileSync(join(folder, name)));
 	const pending = running.get(key);
@@ -211,6 +251,8 @@ export async function optimizedModel(
 			rmSync(staging, { recursive: true, force: true });
 			mkdirSync(staging, { recursive: true });
 			writeFileSync(join(staging, name), model.glb);
+			// A tool older than this plugin writes no stage, and its answer holds no such list.
+			for (const [file, bytes] of model.stages ?? []) writeFileSync(join(staging, file), bytes);
 			rmSync(folder, { recursive: true, force: true });
 			renameSync(staging, folder);
 			return listed(model.glb);
@@ -225,7 +267,8 @@ export async function optimizedModel(
 
 /** The media type of an optimized file. */
 export function assetType(file: string): string {
-	return file.endsWith('.ktx2') ? 'image/ktx2' : 'model/gltf-binary';
+	if (file.endsWith('.ktx2')) return 'image/ktx2';
+	return file.endsWith('.bin') ? 'application/octet-stream' : 'model/gltf-binary';
 }
 
 /**

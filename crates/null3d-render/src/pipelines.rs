@@ -1085,8 +1085,16 @@ mod tests {
         walk(&wgsl, &mut found);
         found.sort();
         // The physical sky draws with its own template; the frame values that custom materials
-        // read come from the builtins.
-        assert_eq!(found, ["builtins.wgsl", "sky_physical.wgsl"]);
+        // read come from the builtins. A sky layer moves its clouds with the clock, so the layer
+        // shader reads it too.
+        assert_eq!(
+            found,
+            [
+                "background_layer.wgsl",
+                "builtins.wgsl",
+                "sky_physical.wgsl"
+            ]
+        );
         assert!(reads_frame_clock(template::BACKGROUND_ATMOSPHERE));
         assert!(reads_frame_clock(template::CUSTOM_FIRST));
         assert!(!reads_frame_clock(template::FINAL));

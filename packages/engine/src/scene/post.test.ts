@@ -26,6 +26,7 @@ function post(
 	vignettes: [boolean, ...number[]][];
 	outlines: number[][];
 	ssrs: [boolean, ...number[]][];
+	sharpens: [boolean, number][];
 	reads: () => number;
 } {
 	const calls: [number, number][] = [];
@@ -37,6 +38,7 @@ function post(
 	const dofs: [boolean, ...number[]][] = [];
 	const ssrs: [boolean, ...number[]][] = [];
 	const exposures: [boolean, ...number[]][] = [];
+	const sharpens: [boolean, number][] = [];
 	const needs: string[] = [];
 	const block = Float32Array.of(
 		...[1, 0.15, 0, 0.1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
@@ -47,6 +49,7 @@ function post(
 		...[10, 2.8, 0, 0.02, 0, 0, 0, 0, 0],
 		...[1, 0.1, 0.9, 0.5, 3, 1, -4, 4, 0],
 		...[1, 100, 0.5, 0.5],
+		...[0],
 	);
 	expect(block.length).toBe(C.POST_VALUE_COUNT);
 	let views = 0;
@@ -121,6 +124,10 @@ function post(
 				ssrs.push([on, ...[0, 1, 2, 3].map((k) => at(C.POST_VALUE_SSR_INTENSITY + k))]);
 				return 0;
 			},
+			setSharpen(on: boolean) {
+				sharpens.push([on, at(C.POST_VALUE_SHARPEN)]);
+				return 0;
+			},
 		},
 		check: (result: number) => result,
 		holdViews: () => {},
@@ -138,6 +145,7 @@ function post(
 		vignettes,
 		outlines,
 		ssrs,
+		sharpens,
 		reads: () => views,
 	};
 }
@@ -471,6 +479,31 @@ describe('post.set', () => {
 		);
 	});
 
+	it('turns the sharpening on with its strength, keeps the strength while off, and takes 0 as off', () => {
+		const { post: output, sharpens } = post();
+		output.set({ exposure: 2 });
+		expect(sharpens).toEqual([]);
+		output.set({ sharpen: 0.5 });
+		output.set({ sharpen: 0 });
+		output.set({ sharpen: 0.25 });
+		output.set({ sharpen: false });
+		expect(sharpens).toEqual([
+			[true, 0.5],
+			// A value of 0 turns the sharpening off and keeps the strength the block holds.
+			[false, 0.5],
+			[true, 0.25],
+			[false, 0.25],
+		]);
+	});
+
+	it('refuses a sharpening strength past the most with E1213', () => {
+		const { post: output } = post();
+		expect(() => output.set({ sharpen: 1.5 })).toThrow('E1213');
+		expect(() => output.set({ sharpen: -0.5 })).toThrow('E1213');
+		expect(() => output.set({ sharpen: Number.NaN })).toThrow('E1203');
+		expect(() => output.set({ sharpen: {} } as unknown as PostSettings)).toThrow('E1203');
+	});
+
 	it("gives a camera's exposure for its EV100 with Filament's formula", () => {
 		// Filament's Exposure.cpp: 1 / (1.2 × 2^EV100). Its default camera, f/16 at 1/125 s and
 		// ISO 100, is about EV100 15, where a sun of 100,000 lux lights white paper near 1.
@@ -554,6 +587,20 @@ describe('post.set', () => {
 			{ ao: { samples: 0 } },
 			{ ao: { samples: 8.5 } },
 			{ ao: { samples: 65 } },
+			{ grading: true },
+			{ grading: { contrast: 1.2 } },
+			{ grading: { whiteBalance: { temperature: 1000 } } },
+			{ grading: { whiteBalance: { temperature: 30000 } } },
+			{ grading: { whiteBalance: { tint: -2 } } },
+			{ grading: { whiteBalance: { hue: 1 } } },
+			{ grading: { lift: [0, 0] } },
+			{ grading: { lift: [1.5, 0, 0] } },
+			{ grading: { gamma: [0, 1, 1] } },
+			{ grading: { gain: [-1, 1, 1] } },
+			{ grading: { saturation: -1 } },
+			{ grading: { splitToning: { balance: 2 } } },
+			{ grading: { splitToning: { strength: 2 } } },
+			{ grading: { splitToning: { tint: '#fff' } } },
 		])
 			expect(() => output.set(bad as PostSettings)).toThrow('E1213');
 		expect(calls).toEqual([]);

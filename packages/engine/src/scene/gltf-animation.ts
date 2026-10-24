@@ -101,11 +101,31 @@ export interface RigTrack {
 	values: ArrayLike<number>;
 }
 
-/** A named clip of a rig, with its events. */
+/**
+ * What a property track moves: a value of one of the file's materials, a value of one of its
+ * lights, or the visibility of one of its nodes. The indices are the file's own lists.
+ */
+export type RigPropertyTarget =
+	| { kind: 'material'; index: number; value: string }
+	| { kind: 'light'; index: number; value: string }
+	| { kind: 'node'; index: number; value: 'visible' };
+
+/** One track of a clip that moves a property rather than a joint or a morph weight. */
+export interface RigPropertyTrack {
+	target: RigPropertyTarget;
+	interpolation?: KeyInterpolation;
+	/** The numbers per key: 1 for a number, 3 for a color. */
+	components: number;
+	times: ArrayLike<number>;
+	values: ArrayLike<number>;
+}
+
+/** A named clip of a rig, with its events and the properties that it moves. */
 export interface RigClip {
 	name: string;
 	tracks: readonly RigTrack[];
 	events?: readonly { time: number; name: string }[];
+	properties?: readonly RigPropertyTrack[];
 }
 
 /** A skeleton and its clips, as a loaded model gives them. */
@@ -156,6 +176,115 @@ const MORPHED_ATTRIBUTES = [
 	['TANGENT', 'tangents'],
 	['COLOR_0', 'colors'],
 ] as const;
+
+/**
+ * The material values that a `KHR_animation_pointer` channel can move, by the pointer's tail after
+ * the material's index. The base color factor goes to the material's color and its opacity, which
+ * the engine keeps apart, and every other name is a value that `setUniform` writes.
+ */
+const POINTER_MATERIAL_VALUES: ReadonlyMap<string, string> = new Map([
+	['pbrMetallicRoughness/metallicFactor', 'metalness'],
+	['pbrMetallicRoughness/roughnessFactor', 'roughness'],
+	['emissiveFactor', 'emissive'],
+	['alphaCutoff', 'alphaCutoff'],
+	['occlusionTexture/strength', 'aoMapIntensity'],
+	['extensions/KHR_materials_emissive_strength/emissiveStrength', 'emissiveIntensity'],
+	['extensions/KHR_materials_clearcoat/clearcoatFactor', 'clearcoat'],
+	['extensions/KHR_materials_clearcoat/clearcoatRoughnessFactor', 'clearcoatRoughness'],
+	['extensions/KHR_materials_sheen/sheenColorFactor', 'sheenColor'],
+	['extensions/KHR_materials_sheen/sheenRoughnessFactor', 'sheenRoughness'],
+	['extensions/KHR_materials_iridescence/iridescenceFactor', 'iridescence'],
+	['extensions/KHR_materials_iridescence/iridescenceIor', 'iridescenceIor'],
+	['extensions/KHR_materials_anisotropy/anisotropyStrength', 'anisotropy'],
+	['extensions/KHR_materials_anisotropy/anisotropyRotation', 'anisotropyRotation'],
+	['extensions/KHR_materials_specular/specularFactor', 'specularIntensity'],
+	['extensions/KHR_materials_specular/specularColorFactor', 'specularColor'],
+	['extensions/KHR_materials_transmission/transmissionFactor', 'transmission'],
+	['extensions/KHR_materials_volume/thicknessFactor', 'thickness'],
+]);
+
+/** The light values that a pointer can move, by the pointer's tail after the light's index. */
+const POINTER_LIGHT_VALUES: ReadonlyMap<string, string> = new Map([
+	['intensity', 'intensity'],
+	['color', 'color'],
+	['range', 'range'],
+	['spot/outerConeAngle', 'angle'],
+]);
+
+/** The colors of an object's material, with their numbers per key. */
+const COLOR_COMPONENTS = 3;
+
+/** What a JSON pointer of `KHR_animation_pointer` names. */
+type PointerTarget =
+	| {
+			kind: 'node';
+			node: number;
+			path: 'translation' | 'rotation' | 'scale' | 'weights';
+			target?: undefined;
+			colorSplit?: undefined;
+	  }
+	| { kind: 'property'; target: RigPropertyTarget; colorSplit: boolean; node?: undefined };
+
+/**
+ * What the pointer of a channel names: a node's transform or morph weights, which the clips
+ * animate like a channel that names its node, or a property of a material, a light or a node.
+ * Returns undefined for a pointer the engine does not read, with a note.
+ */
+function pointerTarget(
+	pointer: string,
+	counts: { materials: number; lights: number },
+	what: string,
+	notes: string[],
+): PointerTarget | undefined {
+	const node = /^\/nodes\/(\d+)\/(translation|rotation|scale|weights)$/.exec(pointer);
+	if (node)
+		return {
+			kind: 'node',
+			node: Number(node[1]),
+			path: node[2] as 'translation' | 'rotation' | 'scale' | 'weights',
+		};
+	const visible = /^\/nodes\/(\d+)\/extensions\/KHR_node_visibility\/visible$/.exec(pointer);
+	if (visible)
+		return {
+			kind: 'property',
+			target: { kind: 'node', index: Number(visible[1]), value: 'visible' },
+			colorSplit: false,
+		};
+	const material = /^\/materials\/(\d+)\/(.+)$/.exec(pointer);
+	if (material) {
+		const index = Number(material[1]);
+		if (index >= counts.materials)
+			broken(`${what} moves material ${index}, and the file has fewer`);
+		const tail = material[2] as string;
+		if (tail === 'pbrMetallicRoughness/baseColorFactor')
+			return {
+				kind: 'property',
+				target: { kind: 'material', index, value: 'color' },
+				colorSplit: true,
+			};
+		const value = POINTER_MATERIAL_VALUES.get(tail);
+		if (value !== undefined)
+			return { kind: 'property', target: { kind: 'material', index, value }, colorSplit: false };
+		notes.push(`${what} moves a material's ${tail}, which the engine does not animate`);
+		return undefined;
+	}
+	const light = /^\/extensions\/KHR_lights_punctual\/lights\/(\d+)\/(.+)$/.exec(pointer);
+	if (light) {
+		const index = Number(light[1]);
+		if (index >= counts.lights) broken(`${what} moves light ${index}, and the file has fewer`);
+		const value = POINTER_LIGHT_VALUES.get(light[2] as string);
+		if (value !== undefined)
+			return { kind: 'property', target: { kind: 'light', index, value }, colorSplit: false };
+		notes.push(`${what} moves a light's ${light[2]}, which the engine does not animate`);
+		return undefined;
+	}
+	if (pointer.startsWith('/cameras/')) {
+		notes.push(`${what} moves a camera property, and the engine reads no cameras from files`);
+		return undefined;
+	}
+	notes.push(`${what} moves ${pointer}, which the engine does not animate`);
+	return undefined;
+}
 
 const INTERPOLATIONS: ReadonlyMap<string, KeyInterpolation> = new Map([
 	['LINEAR', 'linear'],
@@ -277,6 +406,7 @@ export function parseAnimation(
 	nodes: NodeData[],
 	meshes: MeshData[],
 	place: Int32Array,
+	counts: { materials: number; lights: number },
 	read: Reader,
 	budget: FileBudget,
 	notes: string[],
@@ -287,7 +417,7 @@ export function parseAnimation(
 	const n = nodes.length;
 	const skins = skinDefs.map((value, s) => parseSkin(entry(value, `skin ${s}`), s, place, read));
 	const clips = animationDefs.map((value, k) =>
-		parseClip(entry(value, `animation ${k}`), k, nodes, meshes, place, read, budget, notes),
+		parseClip(entry(value, `animation ${k}`), k, nodes, meshes, place, counts, read, budget, notes),
 	);
 	uniqueNames(clips);
 
@@ -407,11 +537,52 @@ export function parseAnimation(
 		}
 	});
 	addWeightJoints(clips, nodes, meshes, joints);
+	carryPropertyLengths(clips, joints);
 	if (joints.length > MAX_RIG_JOINTS)
 		broken(
 			`its skins and clips need ${joints.length} joints, three morph weights to a joint, and the engine's skeletons hold up to ${MAX_RIG_JOINTS}`,
 		);
 	return { joints, clips: clips.map(({ weights: _, ...clip }) => clip), skins: skinJoints };
+}
+
+/** The last key time of a track, or 0 for a track without keys. */
+function lastKey(times: ArrayLike<number>): number {
+	return times.length === 0 ? 0 : (times[times.length - 1] as number);
+}
+
+/**
+ * Gives each clip whose properties run past its joint tracks, or which moves no node at all, a
+ * joint that moves nothing, with a track across the clip: the core takes a clip's length, and so
+ * its looping, from its tracks. Nothing is skinned to the joint, so it moves no vertex.
+ */
+function carryPropertyLengths(clips: readonly ParsedClip[], joints: RigJoint[]): void {
+	let carrier = -1;
+	for (const clip of clips) {
+		let end = 0;
+		for (const track of clip.tracks) end = Math.max(end, lastKey(track.times));
+		let properties = 0;
+		for (const track of clip.properties ?? [])
+			properties = Math.max(properties, lastKey(track.times));
+		if (!(properties > end)) continue;
+		if (carrier < 0) {
+			carrier = joints.length;
+			joints.push({
+				name: '',
+				parent: -1,
+				translation: [0, 0, 0],
+				rotation: [0, 0, 0, 1],
+				scale: [1, 1, 1],
+				inverseBind: IDENTITY_BIND,
+			});
+		}
+		clip.tracks.push({
+			joint: carrier,
+			channel: 'translation',
+			interpolation: 'linear',
+			times: new Float32Array([0, properties]),
+			values: new Float32Array([0, 0, 0, 0, 0, 0]),
+		});
+	}
 }
 
 /**
@@ -550,7 +721,8 @@ function parseSkin(skin: Entry, s: number, place: Int32Array, read: Reader): Ski
 
 /**
  * One animation of the file as a clip. Its joint tracks name nodes by their index in the node
- * list, until `parseAnimation` turns them into joints.
+ * list, until `parseAnimation` turns them into joints. Its property tracks name the material, the
+ * light or the node that each moves, which the loader binds to the objects of a copy.
  */
 function parseClip(
 	animation: Entry,
@@ -558,6 +730,7 @@ function parseClip(
 	nodes: readonly NodeData[],
 	meshes: readonly MeshData[],
 	place: Int32Array,
+	counts: { materials: number; lights: number },
 	read: Reader,
 	budget: FileBudget,
 	notes: string[],
@@ -570,23 +743,53 @@ function parseClip(
 	);
 	const tracks: RigTrack[] = [];
 	const weights: WeightTrack[] = [];
+	const properties: RigPropertyTrack[] = [];
 	const seen = new Set<string>();
 	list(animation.channels, `${what}'s channels`).forEach((value, c) => {
 		const channel = entry(value, `${what}'s channel ${c}`);
 		const target = entry(channel.target, `${what}'s channel ${c}'s target`);
 		const path = text(target.path);
-		if (target.node === undefined) {
+		const extension = (target.extensions as Entry | undefined)?.KHR_animation_pointer as
+			| Entry
+			| undefined;
+		const pointer = path === 'pointer' ? text(extension?.pointer) : '';
+		if (path === 'pointer' && pointer === '') {
+			notes.push(`${what}'s channel ${c} names a pointer that is not text, so it moves nothing`);
+			return;
+		}
+		if (pointer === '' && target.node === undefined) {
 			notes.push(`${what} moves a property that is not a node's, which the engine does not read`);
 			return;
 		}
-		const node = place[index(target.node, place.length, `${what}'s channel ${c}'s node`)] as number;
-		if (path !== 'weights' && !PATHS.has(path))
+		/**
+		 * A node's channel, as a node-list index and a path, or a property track's target. A node
+		 * outside the scene draws nothing that a clip could move.
+		 */
+		let node = -1;
+		let nodePath = path;
+		let property: Extract<PointerTarget, { kind: 'property' }> | undefined;
+		if (pointer !== '') {
+			const named = pointerTarget(pointer, counts, what, notes);
+			if (named === undefined) return;
+			if (named.kind === 'node') {
+				nodePath = named.path;
+				node = place[index(named.node, place.length, `${what}'s channel ${c}'s node`)] as number;
+				if (node < 0) return;
+			} else property = named;
+		} else {
+			node = place[index(target.node, place.length, `${what}'s channel ${c}'s node`)] as number;
+			if (node < 0) return;
+		}
+		if (pointer === '' && nodePath !== 'weights' && !PATHS.has(nodePath))
 			broken(`${what}'s channel ${c} has the path ${path}`);
-		const key = `${String(target.node)} ${path}`;
-		if (seen.has(key)) broken(`${what} moves node ${String(target.node)}'s ${path} twice`);
+		const key = pointer !== '' ? pointer : `${String(target.node)} ${path}`;
+		if (seen.has(key))
+			broken(
+				pointer !== ''
+					? `${what} moves ${pointer} twice`
+					: `${what} moves node ${String(target.node)}'s ${path} twice`,
+			);
 		seen.add(key);
-		// A node outside the scene draws nothing that a clip could move.
-		if (node < 0) return;
 		const sampler =
 			samplers[index(channel.sampler, samplers.length, `${what}'s channel ${c}'s sampler`)];
 		const where = `${what}'s sampler ${String(channel.sampler)}`;
@@ -604,8 +807,14 @@ function parseClip(
 		}
 		const output = read(Number(sampler?.output), `${where}'s output`, true);
 		const values = toFloats(output.array, output.normalized, budget, `${where}'s output`);
-		let perKey = path === 'rotation' ? 4 : 3;
-		if (path === 'weights') {
+		let perKey: number;
+		if (property) {
+			// A property's numbers per key are the accessor's own, and an integer accessor reads as
+			// floats when glTF allows one.
+			perKey = output.components;
+			if (perKey === 0 || perKey > 4) broken(`${where}'s output holds ${perKey} values per key`);
+		} else perKey = nodePath === 'rotation' ? 4 : 3;
+		if (perKey === 3 && !property && nodePath === 'weights') {
 			const mesh = (nodes[node] as NodeData).mesh;
 			perKey = mesh < 0 ? 0 : ((meshes[mesh] as MeshData).weights?.length ?? 0);
 			if (perKey === 0) {
@@ -614,7 +823,7 @@ function parseClip(
 				);
 				return;
 			}
-		} else if (output.componentType !== FLOAT && path !== 'rotation')
+		} else if (!property && output.componentType !== FLOAT && nodePath !== 'rotation')
 			broken(`${where}'s output is not floats`);
 		if (interpolation === 'cubic') perKey *= 3;
 		if (values.length !== times.length * perKey)
@@ -622,17 +831,56 @@ function parseClip(
 		if (!values.every(Number.isFinite))
 			broken(`${where}'s output holds a value that is not a number`);
 		if (times.length === 0) return;
-		if (path === 'weights') weights.push({ node, interpolation, times, values });
+		if (property) {
+			const target = property.target;
+			if (property.colorSplit) {
+				// A base color factor holds the color and its opacity in one four-number key, and
+				// the engine keeps them apart.
+				if (output.components !== 4)
+					broken(
+						`${where}'s output has ${output.components} numbers per key, and a base color factor has four`,
+					);
+				const parts = interpolation === 'cubic' ? 3 : 1;
+				const color = new Float32Array(times.length * parts * COLOR_COMPONENTS);
+				const opacity = new Float32Array(times.length * parts);
+				for (let key = 0; key < times.length * parts; key++) {
+					const at = key * 4;
+					color.set(values.subarray(at, at + COLOR_COMPONENTS), key * COLOR_COMPONENTS);
+					opacity[key] = values[at + COLOR_COMPONENTS] as number;
+				}
+				const material = target as Extract<RigPropertyTarget, { kind: 'material' }>;
+				properties.push(
+					{
+						target: { ...material, value: 'color' },
+						interpolation,
+						components: COLOR_COMPONENTS,
+						times,
+						values: color,
+					},
+					{
+						target: { ...material, value: 'opacity' },
+						interpolation,
+						components: 1,
+						times,
+						values: opacity,
+					},
+				);
+				return;
+			}
+			properties.push({ target, interpolation, components: output.components, times, values });
+			return;
+		}
+		if (nodePath === 'weights') weights.push({ node, interpolation, times, values });
 		else
 			tracks.push({
 				joint: node,
-				channel: path as RigTrack['channel'],
+				channel: nodePath as RigTrack['channel'],
 				interpolation,
 				times,
 				values,
 			});
 	});
-	return { name, tracks, weights };
+	return { name, tracks, weights, properties };
 }
 
 /** Gives clips with the same name the suffixes " 2", " 3" and on, so each name finds one clip. */

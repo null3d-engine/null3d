@@ -18,10 +18,11 @@ use std::collections::TryReserveError;
 use std::ops::Range;
 
 use null3d_core::cells::CELL_SHIFT;
-use null3d_core::culling::NO_BUCKET;
+use null3d_core::culling::{NO_BUCKET, RowRanges, batch_ranges};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::levels::{LevelLink, NO_LINK};
+use null3d_core::memory::{MemoryUse, vec_bytes};
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
@@ -38,24 +39,35 @@ use crate::frame::{
     FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, joined_rows, words_as_bytes,
 };
-use crate::levels::{BucketKey, KeyLinks, expand_level_keys, is_fade_key, links_of};
+use crate::levels::{
+    BucketKey, KeyLinks, expand_level_keys, is_fade_key, key_level, level_key, links_of,
+};
 use crate::motion::ChangedRanges;
 use crate::object_ranges::ObjectRanges;
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 use crate::shadows::CasterPasses;
 use crate::subsurface::skin_key;
+use crate::tone_mask::tone_key;
 
 /// Words of one bucket record in the culling shader: base, material, radius, first draw, draw
 /// count, the centre of the local sphere that culls the bucket's sources, and the first joint of
 /// the skin of a bucket whose vertex shader skins.
-const BUCKET_WORDS: u32 = sizes::BUCKET_WORDS;
+pub(super) const BUCKET_WORDS: u32 = sizes::BUCKET_WORDS;
 /// Bytes of one bucket record.
 const BUCKET_BYTES: u32 = BUCKET_WORDS * 4;
 /// Bytes of one world matrix: three rows of four floats.
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 /// The index entries that fit in the bytes of one copied instance.
-const INDEX_ENTRIES_PER_COPY: u32 = sizes::INSTANCE_STRIDE / sizes::INDEX_STRIDE;
+pub(super) const INDEX_ENTRIES_PER_COPY: u32 = sizes::INSTANCE_STRIDE / sizes::INDEX_STRIDE;
+/// Floats of one source's texel in the ranges texture: its start and its end distance, its own
+/// local radius, which 0 leaves to its bucket's sphere, then a word that nothing reads.
+const RANGE_FLOATS: usize = sizes::RANGE_TEXELS as usize * 4;
+
+/// Appends one source's texel to the ranges texture's data.
+fn push_range(ranges: &mut Vec<f32>, start: f32, end: f32, radius: f32) {
+    ranges.extend_from_slice(&[start, end, radius, 0.0]);
+}
 
 // What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the bind
 // group of its material's map, the mesh page of its mesh's first part, its engine mesh id or a
@@ -76,9 +88,20 @@ pub(super) enum Drawn {
     /// The objects whose material has a scatter radius, as the subsurface view draws them into the
     /// skin pass's target.
     Subsurface,
+    /// The objects whose material keeps its color as the display shows it, as the tone view draws
+    /// them into the mask that the final pass reads.
+    Tone,
     /// The opaque objects and instance rows, as the motion view draws the motion of those that
     /// move into the motion target.
     Motion,
+}
+
+impl Drawn {
+    /// True for the passes that draw the scene's surfaces, where the scene's material override
+    /// applies: the camera's views, the subsurface view and the tone view.
+    fn overrides(self) -> bool {
+        matches!(self, Drawn::Scene | Drawn::Subsurface | Drawn::Tone)
+    }
 }
 
 /// The material of every caster bucket and every outlined bucket: neither a caster's depth nor an
@@ -99,14 +122,27 @@ const SHARED_SKIN_BOUNDS: u32 = u32::MAX;
 
 /// The bounds part of a scene object's bucket key. The culling shader reads one local sphere per
 /// bucket, so each object with a sphere of its own draws from a bucket of its own, apart from the
-/// skinned objects that the vertex shaders skin, whose copies need no vertices of their own.
-fn bounds_of(scene: &SceneStorage, skinning: &Skinning, slot: usize) -> u32 {
+/// skinned objects that the vertex shaders skin, whose copies need no vertices of their own. An
+/// object that a feature-instance draw places always draws from a bucket of its own: the bucket
+/// names the add-on's rows and count word, and the frame draws the count that the page or the
+/// add-on's compute wrote. Such an object is unculled, because the add-on's own count is its cull,
+/// and a mesh made from arrays carries no bounds of its own.
+fn bounds_of(
+    scene: &SceneStorage,
+    skinning: &Skinning,
+    features: &crate::feature_instances::FeatureInstanceTable,
+    slot: usize,
+) -> u32 {
     let object_flags = scene.flags()[slot];
-    if object_flags & flags::UNCULLED != 0 {
+    if !features.is_empty() && features.id_of(slot as u32).is_some() {
+        OWN_BOUNDS + slot as u32
+    } else if object_flags & flags::UNCULLED != 0 {
         UNCULLED_BOUNDS
     } else if skinning.skins_in_vertex_shader(slot as u32) {
         SHARED_SKIN_BOUNDS
-    } else if object_flags & flags::CUSTOM_BOUNDS != 0 {
+    } else if object_flags & flags::CUSTOM_BOUNDS != 0 || scene.level_biases()[slot] != 1.0 {
+        // A bucket holds one threshold bias, so an object whose bias differs from the quality
+        // settings' draws from a bucket of its own.
         OWN_BOUNDS + slot as u32
     } else {
         MESH_BOUNDS
@@ -138,7 +174,7 @@ fn local_sphere(scene: &SceneStorage, bounds: u32, mesh_radius: f32) -> ([f32; 3
 }
 
 /// One bucket: its pipeline, its slice of each view's compacted instance buffer, and its draws.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(super) struct Bucket {
     /// The id of its render pipeline. In the casters' layout, the pipeline that draws into the
     /// shadow cascades, or 0 while the cascades are off.
@@ -159,6 +195,9 @@ pub(super) struct Bucket {
     /// Its draws, one per part of its mesh: `draws` of the layout's draws from `first_draw` on.
     pub(super) first_draw: u32,
     pub(super) draws: u32,
+    /// The mesh field of its bucket key: the mesh's engine id, or a level key. The staged levels'
+    /// watches read it to tell which mesh and level a bucket draws.
+    pub(super) mesh_key: u32,
     /// The local sphere that culls its sources.
     pub(super) center: [f32; 3],
     pub(super) radius: f32,
@@ -184,8 +223,24 @@ pub(super) struct Bucket {
     /// The id of the pipeline that draws its objects into GPU picking's id target, or 0 while
     /// picking is off or its pair has no pick build.
     pub(super) pick: u32,
+    /// True when its material reads the copy of the scene's depth, which its draws bind.
+    pub(super) scene_depth: bool,
     /// True when that pipeline binds the material's maps, as a custom material's pick build does.
     pub(super) pick_maps: bool,
+    /// The threshold bias that picks its sources' levels of detail: 1 for the quality settings'
+    /// threshold, and above or below 1 for a coarser or a finer level.
+    pub(super) bias: f32,
+    /// The cluster tree that its mesh draws in the camera's views, as a place in
+    /// [`Layout::clusters`], or `None` for a bucket whose mesh draws its whole triangle list.
+    pub(super) cluster: Option<u32>,
+    /// The id of the feature-instance draw that fills this bucket's per-instance buffer and whose
+    /// count word the bucket's indirect draws take, or 0 for a bucket of the engine's own.
+    pub(super) feature: u32,
+    /// The most instances that the feature draw's buffer holds, 0 for a bucket of the engine's own.
+    pub(super) feature_capacity: u32,
+    /// The scene slot of the object that places the feature draw, or `u32::MAX` for a bucket of the
+    /// engine's own.
+    pub(super) feature_slot: u32,
 }
 
 /// One indexed indirect draw of each view: a part of a bucket's mesh.
@@ -225,9 +280,10 @@ fn entry(bucket: u32, cell: u32, occluder: bool) -> u32 {
 }
 
 /// A scene object's entry in the bucket table: its bucket, whether it is an occluder, and its
-/// cell, or `HIDDEN` while it is hidden, which its world radius says.
-fn scene_entry(home: u32, world_radius: f32, cell: u32, object_flags: u32) -> u32 {
-    if world_radius == f32::NEG_INFINITY {
+/// cell, or `HIDDEN` while it is hidden, which its world radius says, and for an object whose
+/// feature-instance draw the GPU counts, which the culling shader never visits.
+fn scene_entry(home: u32, world_radius: f32, cell: u32, object_flags: u32, gpu_count: bool) -> u32 {
+    if gpu_count || world_radius == f32::NEG_INFINITY {
         HIDDEN
     } else {
         entry(home, cell, object_flags & flags::OCCLUDER != 0)
@@ -242,6 +298,13 @@ fn row_entry(bucket: u32, batch: &InstanceBatch, row: u32, active: u32) -> u32 {
     } else {
         HIDDEN
     }
+}
+
+/// True when the object that places a feature-instance bucket is hidden, so its draw draws nothing
+/// whatever its own count says.
+pub(super) fn feature_hidden(radii: &[f32], bucket: &Bucket) -> bool {
+    bucket.feature_slot != u32::MAX
+        && radii.get(bucket.feature_slot as usize) == Some(&f32::NEG_INFINITY)
 }
 
 /// The occluders among entries.
@@ -314,6 +377,17 @@ struct BatchRows {
     layers: u32,
 }
 
+/// One cluster mesh: its first patch in the layout's tables, the patches it has, the slot of its
+/// copy in a view's compacted instances, the first of its indirect draws, and its base vertex.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(super) struct ClusterMesh {
+    pub(super) first_patch: u32,
+    pub(super) patch_count: u32,
+    pub(super) slot: u32,
+    pub(super) first_draw: u32,
+    pub(super) base_vertex: u32,
+}
+
 /// The source layout and bucket tables, rebuilt when the structure changes.
 #[derive(Default)]
 pub(super) struct Layout {
@@ -326,7 +400,7 @@ pub(super) struct Layout {
     parallax: bool,
     pub(super) sources: u32,
     /// Each batch's raw id and the first source of its rows.
-    batch_bases: Vec<(u32, u32)>,
+    pub(super) batch_bases: Vec<(u32, u32)>,
     /// The sources up to the last row of a batch with row values, which the row values texture
     /// holds, or 0 while no batch has them.
     pub(super) value_sources: u32,
@@ -335,6 +409,10 @@ pub(super) struct Layout {
     object_ranges: ObjectRanges,
     ranges_pending: bool,
     pub(super) buckets: Vec<Bucket>,
+    /// The views whose pass targets the buckets' materials sample, as a mask of view places.
+    pub(super) material_views: u32,
+    /// The views whose pass targets the buckets' pick pipelines sample, as a mask of view places.
+    pub(super) pick_views: u32,
     /// The slots of the buckets that read copies, and of those that read indices, which each
     /// view's compacted instance buffer holds after the copies.
     pub(super) copied: u32,
@@ -347,6 +425,14 @@ pub(super) struct Layout {
     occluders: u32,
     /// The layer mask of every source.
     source_layers: Vec<u32>,
+    /// The texel of the ranges texture that every source reads: its start and end distance, its own
+    /// local radius, which 0 leaves to its bucket's sphere, then a word that nothing reads.
+    source_ranges: Vec<f32>,
+    /// The texel rows of the distance ranges texture, 0 before it exists.
+    ranges_rows: u32,
+    /// True when any source of the scene draws in a distance band, which every layout of that
+    /// scene culls by, its own sources or another layout's.
+    has_ranges: bool,
     /// True when every scene slot holds the default mask in the layer table, as it does while no
     /// object has a mask of its own.
     scene_layers_default: bool,
@@ -358,9 +444,25 @@ pub(super) struct Layout {
     pub(super) scene_rows: u32,
     /// The bucket of every source as the CPU culling reads it, or `NO_BUCKET` for a source that
     /// draws nowhere. It is `instance_buckets` without the occluder bit and the cell index.
-    cull_buckets: Vec<u32>,
+    pub(super) cull_buckets: Vec<u32>,
     /// Each bucket's link to its next level of detail, as the CPU culling reads it.
-    level_links: Vec<LevelLink>,
+    pub(super) level_links: Vec<LevelLink>,
+    /// True for each bucket that holds a level's copies: the buckets of a level set and their
+    /// fade buckets. Their slices follow the copies that a frame draws
+    /// ([`Layout::fit_copies`](super::copies)).
+    pub(super) marks: Vec<u8>,
+    /// The buckets that `marks` marks, in bucket order.
+    pub(super) level_buckets: Vec<u32>,
+    /// The cluster meshes that the camera's views draw from their trees.
+    pub(super) clusters: Vec<ClusterMesh>,
+    /// Every cluster patch of those meshes, eight words each: its sphere and its record.
+    pub(super) cluster_patches: Vec<[u32; 8]>,
+    /// Every patch's indices, one patch after another.
+    pub(super) cluster_indices: Vec<u32>,
+    /// The copies that one view places in each bucket, and the largest count over the views that
+    /// draw the layout: working space of [`Layout::fit_copies`](super::copies).
+    pub(super) copy_counts: Vec<u32>,
+    pub(super) copy_fits: Vec<u32>,
     /// The most words that the CPU culling lists for one view: a source that fades between levels
     /// lists three words more than one that does not.
     cull_rows: u32,
@@ -381,7 +483,7 @@ pub(super) struct Layout {
     /// The pipelines of the skinned objects that the layout leaves out until they are built.
     waiting: Vec<u32>,
     /// Bucket records in the culling shader's layout.
-    bucket_records: Vec<u32>,
+    pub(super) bucket_records: Vec<u32>,
     /// True when a bucket draws without writing depth, so a background drawn after the objects
     /// would cover it where nothing lies behind it.
     pub(super) depthless: bool,
@@ -394,14 +496,51 @@ pub(super) struct Layout {
     /// The cell culling build that the order follows, and whether the GPU holds it.
     order_build: Option<u32>,
     order_uploaded: bool,
+    /// The buckets whose records this frame changed, from the first to the last plus one: every
+    /// bucket of a rebuilt table, the buckets whose slice moved, and a skinned bucket whose bounds
+    /// moved. The frame uploads them in one write, so no two writes to the table share a frame.
+    records_dirty: Option<Range<u32>>,
 }
 
 impl Layout {
+    /// Adds the bytes that the layout's tables hold to the memory register.
+    pub(super) fn account(&self, use_: &mut MemoryUse) {
+        for array in [
+            vec_bytes(&self.batch_bases),
+            vec_bytes(&self.buckets),
+            vec_bytes(&self.draws),
+            vec_bytes(&self.instance_buckets),
+            vec_bytes(&self.source_layers),
+            vec_bytes(&self.source_ranges),
+            vec_bytes(&self.home_buckets),
+            vec_bytes(&self.cull_buckets),
+            vec_bytes(&self.level_links),
+            vec_bytes(&self.marks),
+            vec_bytes(&self.level_buckets),
+            vec_bytes(&self.clusters),
+            vec_bytes(&self.cluster_patches),
+            vec_bytes(&self.cluster_indices),
+            vec_bytes(&self.copy_counts),
+            vec_bytes(&self.copy_fits),
+            vec_bytes(&self.batch_rows),
+            vec_bytes(&self.indirect_template),
+            vec_bytes(&self.skinned),
+            vec_bytes(&self.skin_firsts),
+            vec_bytes(&self.waiting),
+            vec_bytes(&self.bucket_records),
+        ] {
+            use_.add(array);
+        }
+        use_.add(self.object_ranges.memory_use());
+        use_.add(self.order.memory_use());
+    }
+
     /// Bytes of each view's compacted instance buffer for this layout: a copy for each slot of the
-    /// buckets that read copies, then an index entry for each slot of those that read indices.
+    /// buckets that read copies, then an index entry for each slot of those that read indices. One
+    /// copy more keeps the binding of a bucket whose slice holds none inside the buffer.
     pub(super) fn compacted_bytes(&self) -> u32 {
         let stride = self.copy_stride();
-        (self.copied * stride + self.indexed * sizes::INDEX_STRIDE).max(stride)
+        (self.copied * stride + self.indexed * sizes::INDEX_STRIDE).max(stride) + stride
     }
 
     /// Bytes of each copy in a view's compacted instance buffer: the motion layout's copies hold the
@@ -423,13 +562,6 @@ impl Layout {
     /// Each bucket's link to its next level of detail, as the CPU culling reads it.
     pub(super) fn level_links(&self) -> &[LevelLink] {
         &self.level_links
-    }
-
-    /// True when the CPU culling picks a level for rows of `bucket`.
-    pub(super) fn picks(&self, bucket: u32) -> bool {
-        self.level_links
-            .get(bucket as usize)
-            .is_some_and(LevelLink::has_next)
     }
 
     /// The most words that the CPU culling lists for one view of this layout.
@@ -490,6 +622,7 @@ impl Layout {
             Drawn::Casters => (ids::CASTER_BUCKETS, ids::CASTER_RECORDS),
             Drawn::Outlined => (ids::OUTLINE_BUCKETS, ids::OUTLINE_RECORDS),
             Drawn::Subsurface => (ids::SUBSURFACE_BUCKETS, ids::SUBSURFACE_RECORDS),
+            Drawn::Tone => (ids::TONE_BUCKETS, ids::TONE_RECORDS),
             Drawn::Motion => (ids::MOTION_BUCKETS, ids::MOTION_RECORDS),
         }
     }
@@ -537,19 +670,23 @@ impl Layout {
     }
 
     /// The most that one frame copies into its arena for the tables: the bucket table, the layer
-    /// table, the bucket records and the cell order.
+    /// table, the bucket records, the cell order and the ranges texture.
     pub(super) fn upload_bound(&self) -> usize {
-        let rows = self.sources as usize * 4 + self.owned(self.sources) as usize * 8;
+        let owned = self.owned(self.sources) as usize;
+        // Each source has a row of the bucket table. The layout that owns the tables gives each
+        // source a row of the layer table, a place in the cell order, and a texel of the ranges
+        // texture.
+        let rows = self.sources as usize * 4 + owned * (4 + 4 + RANGE_FLOATS * 4);
         let firsts = self.skin_firsts.len() * 4;
         // A frame that writes every record writes the skinned objects' bounds again after them.
         let writes = if self.skinned.is_empty() { 1 } else { 2 };
         // The scene's layout may build its table of object ranges in the frame, after this bound.
-        let ranges = if self.owns_sources() {
+        let object_ranges = if self.owns_sources() {
             sizes::OBJECT_RANGE_BYTES as usize
         } else {
             0
         };
-        rows + firsts + self.buckets.len() * BUCKET_BYTES as usize * writes + ranges
+        rows + firsts + self.buckets.len() * BUCKET_BYTES as usize * writes + object_ranges
     }
 
     /// Makes room for the bucket table, the layer table and the cell order of `sources` sources.
@@ -572,15 +709,20 @@ impl Layout {
 
     /// Empties the buckets, for a layout that draws nothing until it is built again.
     pub(super) fn clear(&mut self) {
+        self.records_dirty = None;
         self.depthless = false;
         self.occluders = 0;
         self.buckets.clear();
+        self.marks.clear();
+        self.level_buckets.clear();
         (self.copied, self.indexed) = (0, 0);
         self.draws.clear();
         self.skinned.clear();
         self.waiting.clear();
         self.indirect_template.clear();
         self.bucket_records.clear();
+        self.material_views = 0;
+        self.pick_views = 0;
     }
 
     /// The shown scene objects that the sketch marks as occluders.
@@ -593,6 +735,7 @@ impl Layout {
         self.built = false;
         self.buffer_sizes = [0; 5];
         self.skin_firsts_rows = 0;
+        self.ranges_rows = 0;
         self.order_uploaded = false;
     }
 
@@ -755,11 +898,19 @@ impl Layout {
                 return None;
             }
             let page = meshes.parts(meshes.mesh(mesh - 1)?, false).first()?.page;
-            // Casters and outlined objects draw with no material, through the depth template's
-            // bindings, apart from masked casters, which test their material's alpha.
+            // Casters, outlined objects and toned objects draw with no material, through the depth
+            // template's bindings, apart from masked casters, which test their material's alpha.
             let depth_key = match drawn {
                 Drawn::Casters => Some(settings.caster_of(pipeline, material)),
                 Drawn::Outlined => Some((mask_keys(pipeline).0, 0)),
+                Drawn::Tone => {
+                    // A blended surface lets the scene behind it show, so the mask cannot say
+                    // which surface owns a pixel. Such a material keeps the curve on the HDR path.
+                    if pipeline.sorts() {
+                        return None;
+                    }
+                    Some((tone_key(pipeline), 0))
+                }
                 Drawn::Scene | Drawn::Subsurface => None,
                 Drawn::Motion => Some(settings.motion_of(pipeline, material)?),
             };
@@ -769,6 +920,7 @@ impl Layout {
                     && key.permutation & permutation::ALPHA_MASK == 0;
                 let material = if key.template == template::SHADOW_DEPTH
                     || drawn == Drawn::Outlined
+                    || drawn == Drawn::Tone
                     || unmasked_motion
                 {
                     CASTER_MATERIAL
@@ -799,18 +951,25 @@ impl Layout {
         let world = scene.world(parity);
         let any_key = |slot: usize| {
             let object = scene.flags()[slot];
+            let own = scene.materials()[slot];
+            let material = if drawn.overrides() {
+                settings.drawn_material(own)
+            } else {
+                own
+            };
             let left_out = match drawn {
                 Drawn::Scene => false,
                 Drawn::Casters => !shadows.any() || object & flags::CAST_SHADOWS == 0,
                 Drawn::Outlined => object & flags::OUTLINED == 0,
-                Drawn::Subsurface => !settings.scatters(scene.materials()[slot]),
+                Drawn::Subsurface => !settings.scatters(material),
+                Drawn::Tone => !settings.keeps_display_color(material),
                 Drawn::Motion => false,
             };
             if left_out {
                 return None;
             }
-            let bounds = bounds_of(scene, skinning, slot);
-            let (mesh, material) = (scene.meshes()[slot], scene.materials()[slot]);
+            let bounds = bounds_of(scene, skinning, settings.feature_instances(), slot);
+            let mesh = scene.meshes()[slot];
             key_of(
                 settings.pipeline_of(mesh, material),
                 mesh,
@@ -840,28 +999,79 @@ impl Layout {
                     } else {
                         MESH_BOUNDS
                     };
-                    let pipeline = settings.batch_pipeline_of(batch);
-                    key_of(pipeline, batch.mesh(), batch.material(), bounds, bits, None)
+                    let (material, pipeline) = if drawn.overrides() {
+                        settings.drawn_batch_pipeline_of(batch)
+                    } else {
+                        (batch.material(), settings.batch_pipeline_of(batch))
+                    };
+                    key_of(pipeline, batch.mesh(), material, bounds, bits, None)
                 }
-                Drawn::Outlined | Drawn::Subsurface => None,
+                Drawn::Outlined | Drawn::Subsurface | Drawn::Tone => None,
             }
         };
 
         collect_bucket_keys(key_counts, scene, batches, scene_key, |_, batch| {
             batch_key(batch)
         });
-        // A skinned or morphed object draws its base level: its vertices come from regions of its
-        // own, which the levels do not have.
-        let eligible = |key: &BucketKey| {
-            let object = object_of(key.5);
-            key.0.permutation & (permutation::SKIN | permutation::MORPH) == 0
-                && object.is_none_or(|slot| {
-                    skinning.object(slot).is_none() && scene.morphs()[slot as usize] == 0
-                })
-        };
+        // A morphed object draws its base level: a level carries no morph targets. A skinned
+        // object may pick one when every level of its set draws the base mesh's own vertices, which
+        // the skin moves and the level then names from indices of its own.
         let levels = settings.levels();
+        let eligible = |key: &BucketKey| levels.may_pick(key.3, key.0.permutation);
+        // A level may name a material of its own, so its bucket key comes from the level's mesh and
+        // material, while it keeps the fields of the bucket that names it: its bounds, and the
+        // object's receive-shadows bit, which the base key's pipeline holds.
+        let level_bucket = |key: &BucketKey, level: usize| {
+            let (base, _) = key_level(key.3);
+            let set = levels.of(base)?;
+            let mesh = set.mesh(level);
+            let material = match set.material(level) {
+                0 => key.4,
+                own => own,
+            };
+            let object = if key.0.permutation & permutation::RECEIVE_SHADOWS != 0 {
+                flags::RECEIVE_SHADOWS
+            } else {
+                0
+            };
+            let mut bucket = key_of(
+                settings.pipeline_of(mesh, material),
+                mesh,
+                material,
+                key.5,
+                object,
+                None,
+            )?;
+            // The level draws the vertices that its base key's skin moves, so it keeps the
+            // skin and morph bits that the scene gave that key.
+            bucket.0.permutation |= key.0.permutation & (permutation::SKIN | permutation::MORPH);
+            bucket.3 = level_key(base, level);
+            Some(bucket)
+        };
         let fades = drawn == Drawn::Scene && settings.levels_fade() && !self.index_instances;
-        expand_level_keys(key_counts, levels, meshes, fades, eligible);
+        // The keys whose sources draw in a distance band, which need a fade bucket beside each of
+        // their levels only while the quality settings fade those bands.
+        let mut ranged_keys: Vec<BucketKey> = Vec::new();
+        if fades {
+            for slot in 0..scene_rows as usize {
+                let [start, end] = scene
+                    .draw_ranges()
+                    .get(slot * 2..slot * 2 + 2)
+                    .map_or([0.0, f32::INFINITY], |range| [range[0], range[1]]);
+                if start > 0.0 || end.is_finite() {
+                    ranged_keys.extend(scene_key(slot));
+                }
+            }
+            for (_, batch) in batches.iter() {
+                if !batch_ranges(batches, batch).is_none() {
+                    ranged_keys.extend(batch_key(batch));
+                }
+            }
+            ranged_keys.sort_unstable();
+            ranged_keys.dedup();
+        }
+        let ranged = |key: &BucketKey| ranged_keys.binary_search(key).is_ok();
+        expand_level_keys(key_counts, levels, fades, ranged, eligible, &level_bucket);
         self.depthless = key_counts
             .iter()
             .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
@@ -887,7 +1097,7 @@ impl Layout {
                     Drawn::Casters => shadows.pipelines(pipelines, pipeline),
                     Drawn::Motion => (pipelines.id(pipeline.in_pass(targets)), 0),
                     Drawn::Scene => pipelines.opaque(pipeline, targets, prepass),
-                    Drawn::Subsurface => (pipelines.id(pipeline.in_pass(targets)), 0),
+                    Drawn::Subsurface | Drawn::Tone => (pipelines.id(pipeline.in_pass(targets)), 0),
                 };
                 self.waiting
                     .extend([pipeline, second].into_iter().filter(|&id| id != 0));
@@ -897,11 +1107,16 @@ impl Layout {
         self.buckets.clear();
         self.draws.clear();
         self.skinned.clear();
+        self.clusters.clear();
+        self.cluster_patches.clear();
+        self.cluster_indices.clear();
         self.parallax = false;
+        self.material_views = 0;
+        self.pick_views = 0;
         let (mut copied, mut indexed) = (0, 0);
         for &(key, count) in key_counts.iter() {
             let (pipeline, group, _, mesh, material, bounds) = key;
-            let links = links_of(key, &*key_counts, levels, meshes, eligible);
+            let links = links_of(key, &*key_counts, levels, eligible, &level_bucket);
             let mesh = levels
                 .mesh_of_key(mesh)
                 .expect("level keys name known levels");
@@ -918,6 +1133,44 @@ impl Layout {
             };
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let parts = meshes.parts(slot, pipeline.state & state_flags::LINE_LIST != 0);
+            // A mesh with a tree of cluster patches draws it in the camera's views, when its
+            // vertices fit one part, which every patch's indices then name. One copy draws it: the
+            // pass picks the patches of that copy alone, and the mesh draws them in one indirect
+            // draw of one instance. A bucket that reads its copies by index holds the copy's id
+            // alone, not its matrix, so the patch test has no matrix to move the patch with.
+            let tree = settings.patches().of(mesh).filter(|_| {
+                matches!(drawn, Drawn::Scene) && parts.len() == 1 && count == 1 && !by_index
+            });
+            let slot_base = if by_index { indexed } else { copied };
+            let first_draw = self.draws.len() as u32;
+            let cluster = tree.map(|tree| {
+                let index = self.clusters.len() as u32;
+                self.clusters.push(ClusterMesh {
+                    first_patch: self.cluster_patches.len() as u32,
+                    patch_count: tree.len() as u32,
+                    slot: slot_base,
+                    first_draw,
+                    base_vertex: parts[0].base_vertex,
+                });
+                // A patch's run starts in its own mesh's indices, which follow the indices of the
+                // meshes before it in the scene's table.
+                let base = self.cluster_indices.len() as u32;
+                for (k, record) in tree.records().iter().enumerate() {
+                    let sphere = tree.bounds()[k];
+                    self.cluster_patches.push([
+                        sphere[0].to_bits(),
+                        sphere[1].to_bits(),
+                        sphere[2].to_bits(),
+                        sphere[3].to_bits(),
+                        record[0] + base,
+                        record[1],
+                        record[2],
+                        record[3],
+                    ]);
+                }
+                self.cluster_indices.extend_from_slice(tree.indices());
+                index
+            });
             // A displaced material moves vertices past its mesh's sphere, by up to its margin.
             let margin = settings.materials().bounds_margin(material.wrapping_sub(1));
             let (center, radius) = local_sphere(scene, bounds, slot.radius + margin);
@@ -976,20 +1229,40 @@ impl Layout {
                     let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
                     (pipeline, prepass, own)
                 }
-                Drawn::Subsurface => (pipelines.id(pipeline.in_pass(targets)), 0, false),
+                Drawn::Subsurface | Drawn::Tone => {
+                    (pipelines.id(pipeline.in_pass(targets)), 0, false)
+                }
             };
             let base = if by_index { &mut indexed } else { &mut copied };
             self.parallax |= parallax;
+            // The pass targets that this bucket's material samples, so a pass that draws the
+            // bucket waits for the pass that writes them.
+            let sampled = settings.textures().group_pass_views(group);
+            self.material_views |= sampled;
+            if pick_maps {
+                self.pick_views |= sampled;
+            }
+            // A bucket draws its material's surface function in the camera's opaque or skin pass,
+            // and only a custom material's own reads the copy of the scene's depth. The shadow,
+            // outline, motion and pick builds drop it.
+            let scene_depth = matches!(drawn, Drawn::Scene | Drawn::Subsurface)
+                && settings.materials().reads_scene_depth(material - 1);
+            // A feature-instance draw fills a bucket of its own from its own buffer, so its count
+            // word comes from the page or the add-on's compute rather than from culling.
+            let feature = object.and_then(|slot| settings.feature_instances().id_of(slot));
+            let record = feature.and_then(|id| settings.feature_instances().record(id));
             self.buckets.push(Bucket {
                 pipeline,
                 prepass,
                 prepass_own,
                 group,
                 material,
+                scene_depth,
                 base: *base,
                 capacity: count,
-                first_draw: self.draws.len() as u32,
+                first_draw,
                 draws: parts.len() as u32,
+                mesh_key: key.3,
                 center,
                 radius,
                 skins,
@@ -1001,6 +1274,13 @@ impl Layout {
                 pairs: is_fade_key(&key),
                 pick,
                 pick_maps,
+                // A bucket of a scene object whose bias differs from the quality settings' holds
+                // that object's bias; every other bucket takes the threshold as it is.
+                bias: object.map_or(1.0, |slot| scene.level_biases()[slot as usize]),
+                cluster,
+                feature: feature.unwrap_or(0),
+                feature_capacity: record.map_or(0, |(_, capacity, _)| capacity),
+                feature_slot: object.unwrap_or(u32::MAX),
             });
             *base += count;
             self.draws.extend(parts.iter().enumerate().map(|(k, part)| {
@@ -1038,8 +1318,9 @@ impl Layout {
                 self.skinned.push((home, slot as u32));
             }
             self.home_buckets.push(home);
+            let gpu_count = settings.feature_instances().id_of(slot as u32).is_some();
             self.instance_buckets
-                .push(scene_entry(home, radius, cell, flags));
+                .push(scene_entry(home, radius, cell, flags, gpu_count));
         }
         self.skinned.sort_unstable();
         if self.owns_sources() {
@@ -1054,9 +1335,22 @@ impl Layout {
         }
         self.occluders = occluders_in(&self.instance_buckets);
         self.source_layers.clear();
+        self.source_ranges.clear();
+        self.has_ranges = scene.draw_ranges().chunks(2).any(|range| {
+            range.first().is_some_and(|&start| start > 0.0)
+                || range.get(1).is_some_and(|&end| end.is_finite())
+        }) || batches
+            .iter()
+            .any(|(_, batch)| !batch_ranges(batches, batch).is_none());
         if self.owns_sources() {
             self.source_layers
                 .extend_from_slice(&scene.layers()[..scene_rows as usize]);
+            for range in scene.draw_ranges()[..scene_rows as usize * 2]
+                .as_chunks::<2>()
+                .0
+            {
+                push_range(&mut self.source_ranges, range[0], range[1], 0.0);
+            }
         }
         self.scene_layers_default = scene.common_layers().is_some();
         self.batch_rows.clear();
@@ -1074,6 +1368,23 @@ impl Layout {
             if self.owns_sources() {
                 let rows = self.source_layers.len() + batch.capacity() as usize;
                 self.source_layers.resize(rows, layers);
+                // A batch's rows may move away from their origins in its vertex shader, so each
+                // carries the batch's own radius, which the culling shader tests around the row.
+                let radius = batch.local_radius();
+                match batch_ranges(batches, batch) {
+                    RowRanges::One(range) => {
+                        for _ in 0..batch.capacity() {
+                            push_range(&mut self.source_ranges, range.start, range.end, radius);
+                        }
+                    }
+                    RowRanges::Rows(values) => {
+                        let ranges = RowRanges::Rows(values);
+                        for row in 0..batch.capacity() as usize {
+                            let range = ranges.range(row);
+                            push_range(&mut self.source_ranges, range.start, range.end, radius);
+                        }
+                    }
+                }
             }
         }
 
@@ -1086,12 +1397,29 @@ impl Layout {
         self.level_links.clear();
         self.level_links
             .extend(self.buckets.iter().map(|bucket| LevelLink {
-                error: bucket.levels.error,
+                value: bucket.levels.value,
+                switch: bucket.levels.switch,
                 next: bucket.levels.next.unwrap_or(NO_LINK),
                 fade: bucket.levels.fade.unwrap_or(NO_LINK),
             }));
+        // The buckets that take a level's copies: the buckets of the sets and their fade buckets,
+        // whose slices the frame sizes to the copies it draws.
+        self.marks.clear();
+        self.marks.resize(self.buckets.len(), 0);
+        for (bucket, link) in self.level_links.iter().enumerate() {
+            for target in [link.next, link.fade] {
+                if target != NO_LINK {
+                    self.marks[bucket] = 1;
+                    self.marks[target as usize] = 1;
+                }
+            }
+        }
+        self.level_buckets.clear();
+        self.level_buckets.extend(
+            (0..self.buckets.len() as u32).filter(|&bucket| self.marks[bucket as usize] != 0),
+        );
         let fades = self.level_links.iter().any(LevelLink::has_next);
-        self.cull_rows = if fades {
+        self.cull_rows = if fades || self.has_ranges {
             self.sources.saturating_mul(4)
         } else {
             self.sources
@@ -1124,13 +1452,56 @@ impl Layout {
                 // instances move by themselves.
                 u32::from(bucket.indexed || bucket.moves),
                 // The culling shader reads a bucket as its index plus one, and 0 as none.
-                bucket.levels.error.to_bits(),
+                bucket.levels.value.to_bits(),
                 bucket.levels.next.map_or(0, |bucket| bucket + 1),
                 bucket.levels.fade.map_or(0, |bucket| bucket + 1),
+                bucket.bias.to_bits(),
+                bucket.levels.switch as u32,
             ]);
         }
+        self.records_dirty = Some(0..self.buckets.len() as u32);
         self.built = true;
         Ok(())
+    }
+
+    /// The count that a view drawing this layout draws for feature-instance draw `id`, or `None`
+    /// when the layout holds no bucket for it.
+    pub(super) fn feature_template_count(&self, id: u32) -> Option<u32> {
+        let bucket = self.buckets.iter().find(|bucket| bucket.feature == id)?;
+        Some(self.indirect_template[(bucket.first_draw * sizes::INDIRECT_WORDS + 1) as usize])
+    }
+
+    /// Sets each feature-instance draw's count in the template that a frame's reset uploads. A
+    /// shadow view draws that count, because the add-on's compute writes the main view's count
+    /// alone. The culling shader never visits these buckets, so it keeps the count as it is.
+    /// `radii` holds each scene slot's world radius: a hidden object draws nothing, as its draw
+    /// would in any other bucket, so its count is 0.
+    pub(super) fn set_feature_counts(
+        &mut self,
+        features: &crate::feature_instances::FeatureInstanceTable,
+        radii: &[f32],
+    ) {
+        for bucket in self.buckets.iter().filter(|bucket| bucket.feature != 0) {
+            let count = Self::feature_count(features, radii, bucket);
+            for index in bucket.first_draw..bucket.first_draw + bucket.draws {
+                self.indirect_template[(index * sizes::INDIRECT_WORDS + 1) as usize] = count;
+            }
+        }
+    }
+
+    /// The count that a bucket's feature-instance draw draws: the page's count, or 0 while the
+    /// object that places it is hidden.
+    pub(super) fn feature_count(
+        features: &crate::feature_instances::FeatureInstanceTable,
+        radii: &[f32],
+        bucket: &Bucket,
+    ) -> u32 {
+        if feature_hidden(radii, bucket) {
+            return 0;
+        }
+        features
+            .record(bucket.feature)
+            .map_or(0, |(_, _, count)| count)
     }
 
     /// Gives each bucket of skinned objects the sphere that holds its objects' spheres, which the
@@ -1168,14 +1539,9 @@ impl Layout {
         }
     }
 
-    /// Uploads the bounds of the skinned objects' buckets, which the animation step moved: one
-    /// write of the records from the first such bucket to the last.
-    pub(super) fn update_skinned(
-        &mut self,
-        list: &mut DrawList,
-        arena: &mut UploadArena,
-        scene: &SceneStorage,
-    ) -> Result<(), RecordError> {
+    /// Moves the bounds of the skinned objects' buckets, which the animation step moved, and marks
+    /// the records from the first such bucket to the last for the frame's one table upload.
+    pub(super) fn update_skinned(&mut self, scene: &SceneStorage) -> Result<(), RecordError> {
         let (Some(&(first, _)), Some(&(last, _))) = (self.skinned.first(), self.skinned.last())
         else {
             return Ok(());
@@ -1188,11 +1554,7 @@ impl Layout {
             record[2] = radius.to_bits();
             record[5..8].copy_from_slice(&center.map(f32::to_bits));
         }
-        let words = &self.bucket_records
-            [(first * BUCKET_WORDS) as usize..((last + 1) * BUCKET_WORDS) as usize];
-        let (at, bytes) = arena.push(words_as_bytes(words))?;
-        let (_, records) = self.table_ids();
-        list.push(Op::WriteBuffer, &[records, first * BUCKET_BYTES, at, bytes])?;
+        self.mark_records(first..last + 1);
         Ok(())
     }
 
@@ -1245,14 +1607,73 @@ impl Layout {
                 everything,
             )?;
         }
-        if !self.buckets.is_empty() {
-            let (at, bytes) = arena.push(words_as_bytes(&self.bucket_records))?;
-            list.push(Op::WriteBuffer, &[records, 0, at, bytes])?;
-        }
         if self.owns_sources() {
             recreated |= self.upload_skin_firsts(list, arena)?;
+            recreated |= self.upload_ranges(list, arena)?;
         }
         Ok(recreated)
+    }
+
+    /// Marks the records of buckets `range` to upload again this frame.
+    pub(super) fn mark_records(&mut self, range: Range<u32>) {
+        self.records_dirty = Some(match self.records_dirty.take() {
+            Some(dirty) => dirty.start.min(range.start)..dirty.end.max(range.end),
+            None => range,
+        });
+    }
+
+    /// Uploads the bucket records that changed this frame, in one write, or nothing when none did.
+    /// A rebuild marks every bucket, so the table goes up whole, and a frame's other changes ride
+    /// in the same write: two writes to the table in one frame would leave whichever the device
+    /// routed last, and a direct write lands before a staged copy whatever their order in the list.
+    pub(super) fn upload_records(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        let Some(range) = self.records_dirty.take() else {
+            return Ok(());
+        };
+        if range.is_empty() || self.bucket_records.is_empty() {
+            return Ok(());
+        }
+        let words = &self.bucket_records[range.start as usize * BUCKET_WORDS as usize
+            ..range.end as usize * BUCKET_WORDS as usize];
+        let (at, bytes) = arena.push(words_as_bytes(words))?;
+        let (_, records) = self.table_ids();
+        list.push(
+            Op::WriteBuffer,
+            &[records, range.start * BUCKET_BYTES, at, bytes],
+        )?;
+        Ok(())
+    }
+
+    /// Makes the distance ranges texture big enough for the sources, with room to grow, and at
+    /// least one texel, which the culling groups bind while no source has a range, then uploads
+    /// each source's range. Returns true when it made the texture again.
+    fn upload_ranges(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<bool, RecordError> {
+        let count = (self.source_ranges.len() / RANGE_FLOATS) as u32;
+        let needed = count.div_ceil(sizes::RANGES_PER_TEXTURE_ROW);
+        let limit = BUDGET[Limit::TextureDimension2D as usize];
+        let texture = DataTexture::ranges(ids::INSTANCE_RANGES, 1);
+        let made = texture.grow(list, &mut self.ranges_rows, needed, limit)?;
+        if count > 0 {
+            let (at, _) = arena.push(floats_as_bytes(&self.source_ranges))?;
+            let rows = TextureRows {
+                first: 0,
+                count,
+                column: 0,
+                per_row: sizes::RANGES_PER_TEXTURE_ROW,
+                texels: sizes::RANGE_TEXELS,
+                bytes: 16,
+            };
+            data_texture::write_rows(list, ids::INSTANCE_RANGES, rows, at)?;
+        }
+        Ok(made)
     }
 
     /// Makes the skin firsts texture big enough for the first joints, with room to grow, and at
@@ -1286,6 +1707,7 @@ impl Layout {
         list: &mut DrawList,
         arena: &mut UploadArena,
         input: &FrameInput<'_>,
+        features: &crate::feature_instances::FeatureInstanceTable,
         parity: usize,
     ) -> Result<(), RecordError> {
         let scene = input.scene;
@@ -1308,8 +1730,16 @@ impl Layout {
         );
         let mut check = |start: u32, count: u32| -> Result<(), RecordError> {
             let slots = start..(start + count).min(scene_rows);
-            let entry =
-                |s: usize| scene_entry(home_buckets[s], radii[s], cells[s], object_flags[s]);
+            let entry = |s: usize| {
+                let counted = features.id_of(s as u32).is_some();
+                scene_entry(
+                    home_buckets[s],
+                    radii[s],
+                    cells[s],
+                    object_flags[s],
+                    counted,
+                )
+            };
             let range = slots.start as usize..slots.end as usize;
             let before = occluders_in(&instance_buckets[range.clone()]);
             if let Some(rows) = sync_rows(instance_buckets, slots.clone(), entry) {
@@ -1513,6 +1943,259 @@ mod tests {
     use crate::gpu_driven::{RendererConfig, scene_settings};
     use crate::materials::Shading;
 
+    /// The texels of the ranges texture that a frame uploads, as the culling shader reads them.
+    fn uploaded_ranges(layout: &mut Layout) -> Vec<[f32; 4]> {
+        let mut list = DrawList::with_capacity(4096);
+        let mut arena = UploadArena::default();
+        arena.reset(1 << 16);
+        layout.apply(&mut list, &mut arena, u32::MAX).unwrap();
+        let base = arena.bytes().as_ptr() as usize;
+        let op = null3d_gpu::drawlist::decode(list.words())
+            .map(|command| command.unwrap())
+            .find(|command| {
+                command.op == Op::WriteTexture
+                    && command.operands.first() == Some(&ids::INSTANCE_RANGES)
+            })
+            .map(|command| command.operands.to_vec())
+            .expect("the frame writes the ranges texture");
+        let (at, bytes) = (op[8] as usize, op[9] as usize);
+        // The list records the upload's address as the low word of the arena's pointer, as WebAssembly
+        // holds pointers in one word; a native test reads the offset back the same way.
+        let start = (at as u32).wrapping_sub(base as u32) as usize;
+        let block = arena.bytes().len() - start;
+        assert!(
+            bytes <= block,
+            "the write takes {bytes} bytes from a block of {block}"
+        );
+        arena.bytes()[start..start + bytes]
+            .as_chunks::<16>()
+            .0
+            .iter()
+            .map(|texel| {
+                let mut row = [0.0f32; 4];
+                for (word, bytes) in row.iter_mut().zip(texel.as_chunks::<4>().0) {
+                    *word = f32::from_le_bytes(*bytes);
+                }
+                row
+            })
+            .collect()
+    }
+
+    /// The culling shader reads each source's range from the start of one texel of the ranges
+    /// texture. This gives three objects different ranges, records the frame's upload and reads
+    /// what the shader would see for each source.
+    #[test]
+    fn each_sources_range_reaches_its_own_texel_of_the_ranges_texture() {
+        let mut settings = scene_settings(&RendererConfig::default());
+        let box_mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+        let mesh = settings.meshes_mut().add(&box_mesh).unwrap() + 1;
+        let material = settings
+            .materials_mut()
+            .create(Shading::Lit, 0, [1.0; 4])
+            .unwrap()
+            + 1;
+        let mut scene = SceneStorage::with_capacity(8);
+        let mut commands = Vec::new();
+        let ranges = [(0.0f32, 10.0f32), (12.0, 30.0), (40.0, 50.0)];
+        let mut slots = Vec::new();
+        for &(start, end) in &ranges {
+            let object = scene.reserve().unwrap();
+            commands.push(Command::create(object, Handle::NONE, mesh, flags::VISIBLE));
+            commands.push(Command::set_material(object, material));
+            commands.push(Command::set_draw_range(object, start, end));
+            slots.push(scene.resolve(object).unwrap() as usize);
+        }
+        scene.apply_commands(&commands, 1).unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+
+        let mut layout = Layout::default();
+        let batches = BatchTable::with_capacity(1);
+        let mut pipelines = PipelineCache::default();
+        let targets = PassTargets {
+            color_format: format::CANVAS,
+            depth_format: format::DEPTH32_FLOAT,
+            samples: 4,
+            permutation: 0,
+        };
+        layout
+            .rebuild(
+                &settings,
+                &mut pipelines,
+                targets,
+                &scene,
+                &batches,
+                scene.parity(),
+                u32::MAX,
+                CasterPasses::default(),
+                Prepass::Off,
+                &Skinning::default(),
+                &mut KeyCounts::new(),
+                targets,
+                false,
+            )
+            .unwrap();
+
+        // Each object reads its own range from the texel of its source.
+        let texels = uploaded_ranges(&mut layout);
+        for ((start, end), slot) in ranges.iter().zip(slots) {
+            let texel = texels.get(slot).expect("the frame uploads every source");
+            assert_eq!(
+                [texel[0], texel[1]],
+                [*start, *end],
+                "source {slot} reads {texel:?}"
+            );
+        }
+    }
+
+    /// The culling shader reads each source's range and own radius from one texel of the ranges
+    /// texture, so the data must give every source a whole texel: its start and end, its own local
+    /// radius, then the word that nothing reads. Data of fewer words per source lands every second
+    /// source's range in the wrong texel and reads past the block.
+    #[test]
+    fn every_sources_range_fills_a_whole_texel_of_the_ranges_texture() {
+        let mut ranges = Vec::new();
+        push_range(&mut ranges, 12.0, 30.0, 0.0);
+        push_range(&mut ranges, 0.0, f32::INFINITY, 2600.0);
+        assert_eq!(ranges.len(), 2 * RANGE_FLOATS);
+        assert_eq!(ranges.len() * 4, 2 * 16);
+        assert_eq!(
+            ranges,
+            [12.0, 30.0, 0.0, 0.0, 0.0, f32::INFINITY, 2600.0, 0.0]
+        );
+    }
+
+    /// A batch may carry its rows far from their origins in its vertex shader, so the shader must
+    /// cull them by the batch's own radius around each row, not by the sphere of the mesh that they
+    /// draw. The ranges texture's third word carries it for every row of the batch, where a scene
+    /// object keeps 0 and its bucket's sphere.
+    #[test]
+    fn a_batch_row_carries_its_own_local_radius_to_the_culling_shader() {
+        let mut settings = scene_settings(&RendererConfig {
+            max_materials: 4,
+            ..RendererConfig::default()
+        });
+        let mesh = settings
+            .meshes_mut()
+            .add(&box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap())
+            .unwrap()
+            + 1;
+        let material = settings
+            .materials_mut()
+            .create(Shading::Lit, 0, [1.0; 4])
+            .unwrap()
+            + 1;
+        let mut scene = SceneStorage::with_capacity(8);
+        scene.apply_commands(&[], 1).unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+        let object = scene.reserve().unwrap();
+        scene
+            .apply_commands(
+                &[
+                    Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+                    Command::set_material(object, material),
+                ],
+                1,
+            )
+            .unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+        let mut batches = BatchTable::with_capacity(1);
+        batches
+            .create(4, false, false, mesh, material, 2600.0)
+            .unwrap();
+        let mut layout = Layout::default();
+        let mut pipelines = PipelineCache::default();
+        let targets = PassTargets {
+            color_format: format::CANVAS,
+            depth_format: format::DEPTH32_FLOAT,
+            samples: 4,
+            permutation: 0,
+        };
+        layout
+            .rebuild(
+                &settings,
+                &mut pipelines,
+                targets,
+                &scene,
+                &batches,
+                scene.parity(),
+                u32::MAX,
+                CasterPasses::default(),
+                Prepass::Off,
+                &Skinning::default(),
+                &mut KeyCounts::new(),
+                targets,
+                false,
+            )
+            .unwrap();
+        let texels = uploaded_ranges(&mut layout);
+        let scene_rows = (scene.capacity() + 1) as usize;
+        // The scene's object reads no radius of its own; each batch row reads the batch's.
+        assert_eq!(texels[0][2], 0.0, "{:?}", texels[0]);
+        for texel in &texels[scene_rows..scene_rows + 4] {
+            assert_eq!(texel[2], 2600.0, "{texel:?}");
+        }
+    }
+
+    /// A frame that rebuilds the layout copies a row of the bucket table for every source and,
+    /// in the layout that owns the tables, a row of the layer table, a place in the cell order
+    /// and a texel of the ranges texture. The room that the layout asks for must cover every one
+    /// of those copies, so a frame whose arena holds exactly that room records no overflow.
+    #[test]
+    fn the_room_a_layout_asks_for_covers_every_table_a_rebuild_copies() {
+        let mut settings = scene_settings(&RendererConfig {
+            max_materials: 4,
+            ..RendererConfig::default()
+        });
+        let mesh = settings
+            .meshes_mut()
+            .add(&box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap())
+            .unwrap()
+            + 1;
+        let material = settings
+            .materials_mut()
+            .create(Shading::Lit, 0, [1.0; 4])
+            .unwrap()
+            + 1;
+        let mut scene = SceneStorage::with_capacity(8);
+        scene.apply_commands(&[], 1).unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+        let mut batches = BatchTable::with_capacity(1);
+        batches
+            .create(4096, false, false, mesh, material, 0.9)
+            .unwrap();
+        let mut layout = Layout::default();
+        let mut pipelines = PipelineCache::default();
+        let targets = PassTargets {
+            color_format: format::CANVAS,
+            depth_format: format::DEPTH32_FLOAT,
+            samples: 4,
+            permutation: 0,
+        };
+        layout
+            .rebuild(
+                &settings,
+                &mut pipelines,
+                targets,
+                &scene,
+                &batches,
+                scene.parity(),
+                u32::MAX,
+                CasterPasses::default(),
+                Prepass::Off,
+                &Skinning::default(),
+                &mut KeyCounts::new(),
+                targets,
+                false,
+            )
+            .unwrap();
+        let mut list = DrawList::with_capacity(1 << 16);
+        let mut arena = UploadArena::default();
+        arena.reset(layout.upload_bound());
+        layout
+            .apply(&mut list, &mut arena, u32::MAX)
+            .expect("the frame's tables fit the room the layout asked for");
+    }
+
     #[test]
     fn objects_with_bounds_of_their_own_or_none_cull_in_buckets_of_their_own() {
         let mut settings = scene_settings(&RendererConfig {
@@ -1590,6 +2273,159 @@ mod tests {
         let words = BUCKET_WORDS as usize;
         let record = &layout.bucket_records[2 * words..3 * words];
         assert_eq!(record[5..8], [0.0f32, 1.5, 0.0].map(f32::to_bits));
-        assert_eq!(record[8..], [0; 5]);
+        assert_eq!(record[8..13], [0; 5]);
+        // The bucket takes the quality settings' threshold, as it holds no bias of its own.
+        assert_eq!(record[13], 1.0f32.to_bits());
+    }
+
+    #[test]
+    fn an_object_with_a_bias_of_its_own_culls_in_a_bucket_of_its_own() {
+        let mut settings = scene_settings(&RendererConfig {
+            max_materials: 4,
+            ..RendererConfig::default()
+        });
+        let mesh = settings
+            .meshes_mut()
+            .add(&box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap())
+            .unwrap()
+            + 1;
+        let material = settings
+            .materials_mut()
+            .create(Shading::Lit, 0, [1.0; 4])
+            .unwrap()
+            + 1;
+        let mut scene = SceneStorage::with_capacity(8);
+        let mut commands = Vec::new();
+        let mut slots = Vec::new();
+        for _ in 0..3 {
+            let object = scene.reserve().unwrap();
+            commands.push(Command::create(object, Handle::NONE, mesh, flags::VISIBLE));
+            commands.push(Command::set_material(object, material));
+            slots.push(object);
+        }
+        scene.apply_commands(&commands, 1).unwrap();
+        // One object keeps its detail: its bucket takes the bias of its threshold, and the other
+        // two keep the bucket they share.
+        let keen = slots[2];
+        scene
+            .apply_commands(&[Command::set_level_bias(keen, 0.5)], 1)
+            .unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+        let mut layout = Layout::default();
+        let batches = BatchTable::with_capacity(1);
+        let parity = scene.parity();
+        let mut pipelines = PipelineCache::default();
+        let targets = PassTargets {
+            color_format: format::CANVAS,
+            depth_format: format::DEPTH32_FLOAT,
+            samples: 4,
+            permutation: 0,
+        };
+        layout
+            .rebuild(
+                &settings,
+                &mut pipelines,
+                targets,
+                &scene,
+                &batches,
+                parity,
+                u32::MAX,
+                CasterPasses::default(),
+                Prepass::Off,
+                &Skinning::default(),
+                &mut KeyCounts::new(),
+                targets,
+                false,
+            )
+            .unwrap();
+        let biases: Vec<(u32, f32)> = layout
+            .buckets
+            .iter()
+            .map(|bucket| (bucket.capacity, bucket.bias))
+            .collect();
+        assert_eq!(biases, [(2, 1.0), (1, 0.5)]);
+        // The record holds the bias after the level's links, where the culling shader reads it.
+        let words = BUCKET_WORDS as usize;
+        assert_eq!(layout.bucket_records[words + 13], 0.5f32.to_bits());
+        assert_eq!(layout.bucket_records[13], 1.0f32.to_bits());
+    }
+
+    #[test]
+    fn a_feature_instance_draw_keeps_a_bucket_of_its_own_that_culling_never_counts() {
+        // The adapter marks its object unculled, because the add-on's own count is its cull, and a
+        // mesh made from arrays carries no bounds of its own. Each of these keys must still give
+        // the draw a bucket that names it, its buffers and its count.
+        for bounds in [flags::UNCULLED, flags::CUSTOM_BOUNDS, 0] {
+            let mut settings = scene_settings(&RendererConfig {
+                max_materials: 4,
+                ..RendererConfig::default()
+            });
+            let box_mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+            let mesh = settings.meshes_mut().add(&box_mesh).unwrap() + 1;
+            let material = settings.materials_mut().create(Shading::Lit, 0, [1.0; 4]);
+            let material = material.unwrap() + 1;
+            let mut scene = SceneStorage::with_capacity(8);
+            let object = scene.reserve().unwrap();
+            let mut commands = vec![
+                Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+                Command::set_material(object, material),
+            ];
+            commands.push(Command::set_flags(object, flags::BOUNDS, bounds));
+            scene.apply_commands(&commands, 1).unwrap();
+            scene.set_local_radius(object, 2.0).unwrap();
+            scene.update_transforms(&JobSystem::new(0));
+            let slot = scene.resolve(object).unwrap();
+            let id = settings.feature_instances_mut().create(slot, 40).unwrap();
+            assert!(settings.feature_instances_mut().set_count(id, 6));
+
+            let mut layout = Layout::default();
+            let batches = BatchTable::with_capacity(1);
+            let mut pipelines = PipelineCache::default();
+            let targets = PassTargets {
+                color_format: format::CANVAS,
+                depth_format: format::DEPTH32_FLOAT,
+                samples: 4,
+                permutation: 0,
+            };
+            layout
+                .rebuild(
+                    &settings,
+                    &mut pipelines,
+                    targets,
+                    &scene,
+                    &batches,
+                    scene.parity(),
+                    u32::MAX,
+                    CasterPasses::default(),
+                    Prepass::Off,
+                    &Skinning::default(),
+                    &mut KeyCounts::new(),
+                    targets,
+                    false,
+                )
+                .unwrap();
+            // The object's entry draws nowhere, so the culling shader never counts its instances.
+            assert_eq!(layout.instance_buckets[slot as usize], HIDDEN);
+            let (first_draw, feature_capacity) = layout
+                .buckets
+                .iter()
+                .find(|bucket| bucket.feature == id)
+                .map(|bucket| (bucket.first_draw, bucket.feature_capacity))
+                .unwrap_or_else(|| panic!("the draw with the bounds {bounds} has a bucket"));
+            assert_eq!(feature_capacity, 40);
+            let count_word = (first_draw * sizes::INDIRECT_WORDS + 1) as usize;
+            // The template that the frame's reset uploads keeps the page's count, which a shadow
+            // view draws.
+            assert_eq!(layout.indirect_template[count_word], 0);
+            layout.set_feature_counts(settings.feature_instances(), scene.world(1).radii());
+            assert_eq!(layout.feature_template_count(id), Some(6));
+            assert_eq!(layout.indirect_template[count_word], 6);
+        }
+    }
+
+    #[test]
+    fn an_entry_counted_on_the_gpu_is_hidden_from_culling() {
+        assert_eq!(scene_entry(4, 1.0, 3, flags::VISIBLE, true), HIDDEN);
+        assert_ne!(scene_entry(4, 1.0, 3, flags::VISIBLE, false), HIDDEN);
     }
 }

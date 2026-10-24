@@ -12,6 +12,8 @@
 //                      instead of test-results/images
 //   --ci <run>         fetch the images that a CI run's browser jobs saved, with the GitHub CLI,
 //                      then review them. CI draws with SwiftShader, so its references come this way
+//   --local-reason <why>  accept SwiftShader images that this machine drew, which --accept refuses
+//                      otherwise, and record the reason in tests/image/local-references.json
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -19,16 +21,23 @@ import { HARNESS_DIRS } from './lib/images.ts';
 import { acceptCandidates, readCandidates, reviewLines, reviewPage } from './lib/review.ts';
 import { REPO_ROOT } from './lib/server.ts';
 
-const USAGE = 'usage: bun run images:review [--accept [<tests>]] [--from <folder> | --ci <run>]';
+const USAGE =
+	'usage: bun run images:review [--accept [<tests>]] [--from <folder> | --ci <run>] [--local-reason <why>]';
 
 /** The CI artifacts that hold images for review: the browser test shards' and the Safari and Firefox jobs'. */
-const CI_ARTIFACTS = ['browser-test-results-*', 'real-browser-runs-*'];
+const CI_ARTIFACTS = [
+	'browser-test-results-*',
+	'browser-heavy-test-results-*',
+	'real-browser-runs-*',
+];
 
 export interface ReviewOptions {
 	/** Accept the images: undefined to only show them, all of them for [], or those of the tests named. */
 	accept?: string[];
 	from?: string;
 	ci?: string;
+	/** Why SwiftShader images that this machine drew become references on purpose. */
+	localReason?: string;
 }
 
 export function parseReviewArgs(args: readonly string[]): ReviewOptions {
@@ -45,6 +54,9 @@ export function parseReviewArgs(args: readonly string[]): ReviewOptions {
 			i++;
 		} else if (arg === '--ci' && next && /^\d+$/.test(next)) {
 			options.ci = next;
+			i++;
+		} else if (arg === '--local-reason' && next?.trim() && !next.startsWith('--')) {
+			options.localReason = next.trim();
 			i++;
 		} else
 			throw new Error(`${arg === undefined ? 'no option' : `unknown option ${arg}`}\n${USAGE}`);
@@ -79,7 +91,10 @@ function main(): void {
 	const candidates = readCandidates(folder);
 	if (options.accept) {
 		const tests = options.accept.length > 0 ? options.accept : undefined;
-		const { written, refused } = acceptCandidates(candidates, HARNESS_DIRS.references, tests);
+		const { written, refused } = acceptCandidates(candidates, HARNESS_DIRS.references, tests, {
+			...(options.ci && { ciRun: options.ci }),
+			...(options.localReason && { localReason: options.localReason }),
+		});
 		for (const file of written) console.log(`accepted  ${file}`);
 		for (const reason of refused) console.log(`left      ${reason}`);
 		if (written.length === 0 && refused.length === 0) console.log('No images to accept.');

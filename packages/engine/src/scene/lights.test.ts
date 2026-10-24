@@ -20,14 +20,17 @@ beforeEach(() => setErrorFixes(ERROR_FIXES));
 /** Scene slots of the fake core, and records of its command ring. */
 const CAPACITY = 31;
 const RING = 256;
-/** Where the fake core keeps its arrays in memory: each scene field, then the ring. */
-const AT = { fields: 0, records: 8192, write: 12288, read: 12292 };
+/** Where the fake core keeps its arrays in memory: each scene field, then the ring, then images. */
+const AT = { fields: 0, records: 8192, write: 12288, read: 12292, images: 16384 };
 /** The frame that the fake scene says it runs. */
 const FRAME = 3;
+/** The layer in the light tables that the fake core gives the first image, plus one. */
+const IMAGE_LAYER = 5;
 
 /** A core that hands out slots and light rows, keeps the command ring, and records light calls. */
 function fakeCore() {
-	const memory = new WebAssembly.Memory({ initial: 1 });
+	// Enough memory for a light's image, which holds every mip level of 128 x 128 texels.
+	const memory = new WebAssembly.Memory({ initial: 4 });
 	let slot = 0;
 	let row = 0;
 	/** Each light row's kind, object, colors by code and numbers by code. */
@@ -38,16 +41,19 @@ function fakeCore() {
 			handle: number;
 			colors: number[][];
 			values: (number | undefined)[];
+			hero: number;
 			live: boolean;
 		}
 	>();
+	/** The light rows whose images the scene asked the core to make room for. */
+	const images: number[] = [];
 	const glue = {
 		sceneCapacity: () => CAPACITY,
 		sceneArrays: (field: number) => AT.fields + field * 512,
 		commandRing: (field: number) => [AT.records, RING, AT.write, AT.read][field] as number,
 		reserveObject: () => ++slot,
 		createLight: (handle: number, kind: number) => {
-			rows.set(++row, { kind, handle, colors: [], values: [], live: true });
+			rows.set(++row, { kind, handle, colors: [], values: [], hero: 0, live: true });
 			return row;
 		},
 		destroyLight: (light: number) => {
@@ -60,6 +66,26 @@ function fakeCore() {
 		},
 		setLightValue: (light: number, which: number, value: number) => {
 			(rows.get(light) as { values: (number | undefined)[] }).values[which] = value;
+			return 0;
+		},
+		setLightHero: (light: number, object: number) => {
+			const row = rows.get(light);
+			if (!row) return 1;
+			row.hero = object;
+			return 0;
+		},
+		lightImage: (light: number) => {
+			if (!rows.has(light)) return 0;
+			images.push(light);
+			return AT.images;
+		},
+		finishLightImage: (light: number) => {
+			(rows.get(light) as { values: (number | undefined)[] }).values[C.LIGHT_VALUE_IMAGE] =
+				IMAGE_LAYER;
+			return 0;
+		},
+		removeLightImage: (light: number) => {
+			(rows.get(light) as { values: (number | undefined)[] }).values[C.LIGHT_VALUE_IMAGE] = 0;
 			return 0;
 		},
 		lastErrorCode: () => 0,
@@ -88,7 +114,7 @@ function fakeCore() {
 		const [x, y, z, w] = rotation(light) as [number, number, number, number];
 		return new Vector3(0, 0, -1).applyQuaternion(new Quaternion(x, y, z, w)).toArray();
 	};
-	return { scene, commands, tableRow, rotation, pointing };
+	return { scene, commands, tableRow, rotation, pointing, images };
 }
 
 /** The error that `call` throws. */
@@ -268,6 +294,39 @@ describe('creating lights', () => {
 		expect(tableRow(plain).values).toEqual([]);
 	});
 
+	test("a directional light's hero object reaches the core, through its options and its setter", () => {
+		const { scene, tableRow } = fakeCore();
+		const hero = scene.createGroup();
+		const sun = scene.createDirectionalLight({
+			castShadows: true,
+			shadow: { hero },
+		});
+		expect(tableRow(sun).hero).toBe(hero.handle >>> 0);
+		// Leaving the option out keeps the hero that the light names.
+		sun.setShadow({ cascades: 2 });
+		expect(tableRow(sun).hero).toBe(hero.handle >>> 0);
+		// null takes it away; setHeroShadow gives it back.
+		sun.setShadow({ hero: null });
+		expect(tableRow(sun).hero).toBe(0);
+		sun.setHeroShadow(hero);
+		expect(tableRow(sun).hero).toBe(hero.handle >>> 0);
+		sun.setHeroShadow(null);
+		expect(tableRow(sun).hero).toBe(0);
+	});
+
+	test('a hero that is not an object throws, and a destroyed one too', () => {
+		const { scene } = fakeCore();
+		const hero = scene.createGroup();
+		const sun = scene.createDirectionalLight({ castShadows: true });
+		const error = thrown(() => sun.setHeroShadow({} as never));
+		expect(error.code).toBe('E1213');
+		expect(error.message).toContain('not an object');
+		sun.setHeroShadow(hero);
+		hero.destroy();
+		const destroyed = thrown(() => sun.setHeroShadow(hero));
+		expect(destroyed.message).toContain('destroyed');
+	});
+
 	test("a spot light's shadow biases land in the light table, and setShadow changes only those it names", () => {
 		const { scene, tableRow } = fakeCore();
 		const spot = scene.createSpotLight({
@@ -445,6 +504,39 @@ describe('light calls', () => {
 			handle & ((1 << C.HANDLE_SLOT_BITS) - 1),
 		);
 		expect(scene.find('Lamp')).toBeUndefined();
+	});
+});
+
+describe('light maps', () => {
+	/** A picture of 2 x 2 white pixels. */
+	const picture = () => ({ width: 2, height: 2, data: new Uint8Array(16).fill(255) });
+
+	test('a spot light takes a map, which the core writes into a light tables layer', async () => {
+		const { scene, tableRow, images } = fakeCore();
+		const spot = scene.createSpotLight({ range: 6, map: picture() });
+		await scene.imagesSettled();
+		expect(images).toEqual([spot.id]);
+		expect(tableRow(spot).values[C.LIGHT_VALUE_IMAGE]).toBe(IMAGE_LAYER);
+		// A new map goes into the light's own place.
+		spot.setMap(picture());
+		await scene.imagesSettled();
+		expect(images).toEqual([spot.id, spot.id]);
+		expect(tableRow(spot).values[C.LIGHT_VALUE_IMAGE]).toBe(IMAGE_LAYER);
+		// Null goes back to one color and frees the place.
+		spot.setMap(null);
+		expect(tableRow(spot).values[C.LIGHT_VALUE_IMAGE]).toBe(0);
+	});
+
+	test('a map whose pixels a light cannot take throws E1108', () => {
+		const { scene } = fakeCore();
+		const bad = [
+			{ width: 0, height: 2, data: new Uint8Array(16) },
+			{ width: 2, height: 1.5, data: new Uint8Array(16) },
+			{ width: 2, height: 2, data: new Uint8Array(8) },
+		];
+		for (const map of bad) {
+			expect(thrown(() => scene.createSpotLight({ range: 4, map })).code).toBe('E1108');
+		}
 	});
 });
 

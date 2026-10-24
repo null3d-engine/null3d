@@ -190,7 +190,7 @@ The 13:35 answers matched the proposal's five questions. A draft of rulings from
 2. **Volumetric clouds are left to other developers,** as an add-on behind the core's cloud settings. They are not on the engine team's plan. This is a choice of scope, not a deferral.
 3. **Particles are not an exception.** The add-on uses a public engine method (F3). The method gets a written docs page.
 4. **The foundation add-ons** are physics, Gaussian splats, MSDF text, particles, terrain, water, controls, geometry, impostors and `three-compat`. The engine's team builds them. A later add-on is a foundation when other add-ons or many kinds of project build on it. So is one that implements a standard or wraps a large third-party library.
-5. **M3's six content add-ons are example add-ons,** not npm packages: the lens kit, facades, screens, weather, car paint and traffic lanes. Each lives in `examples/addons/<name>/`, shaped like a package, under the engine's licences. It uses only the public API and has image tests through the examples. This changes [D-172](D-172-rive-city-follow-ups.md). The lens kit uses the core's sharpening, grading and vignette, and weather says which feature makes rain (F11).
+5. **M3's six content add-ons are example add-ons,** not npm packages: the lens kit, facades, screens, weather, car paint and traffic lanes. Each lives in `examples/addons/<name>/`, shaped like a package, under the engine's licences. It uses only the public API and has image tests through the examples. This changes [D-172](D-172-neon-harbour-follow-ups.md). The lens kit uses the core's sharpening, grading and vignette, and weather says which feature makes rain (F11).
 6. **Publishing.** Each foundation add-on is its own npm package. It pins the exact engine version and checks the engine's version at run time. Its WGSL is compiled when the package is packed (F8). The engine package holds no bundle of add-ons in the style of `three/addons`.
 7. **Rule 11 reads:** "an add-on extends or replaces a core feature only through that feature's own settings" (F2).
 8. **Each hook is built with its first user, all before 1.0.** That covers H1 to H9, the preset and stats links, the texture-unit allocator and the namespaces. The coordinator moved H1, H2 and H8 from 1.x to before 1.0 at the owner's word, about 5 helper-weeks. H4 waits for the clear coat check, still before 1.0. The table below gives each hook's first user.
@@ -218,6 +218,8 @@ This table replaces the hook list under "Data". Every hook is public, works on b
 | Namespaces | A shader library name, an error-code range and quality keys per add-on | Every outside add-on | Both | M4 |
 | Plugin interface version | An outside add-on declares the interface range it was built for, and the engine refuses a mismatch with an error that names both | Outside add-ons | Both | M4 |
 
+The two hooks' start code measures as follows, on 25 October 2026. H3 adds 4,199 bytes of TypeScript to the start module. Without comment lines it adds 2,182 bytes, which Brotli compresses alone to 536 bytes. With the comments it compresses to 1,157 bytes. The adapter's own code loads on first use, in `page-feature-draws.js` at 1,114 bytes after Brotli and `sketch-worker-feature-draws.js` at 1,117. H9 adds 3,309 bytes to the glTF extension handler. Without comment lines it adds 1,562 bytes, which Brotli compresses alone to 589 bytes. With the comments it compresses to 1,087 bytes. Compressing a part alone reads high, because it shares no dictionary with the rest of the bundle. Each figure therefore bounds the part's share of the start. Both hooks stay under the budget of about 1 to 2 KB, and `bun run build` names each module and its bytes.
+
 ## Options rejected
 
 - **Private hooks for the engine's own add-ons.** Faster to build. But another developer could never match those add-ons, and a marketplace would start uneven.
@@ -235,8 +237,9 @@ This table replaces the hook list under "Data". Every hook is public, works on b
 Done in this change:
 
 - **AGENTS.md:** the rules for add-on modules gain rules 11 to 13. They are one place per feature, public API only with its check, and the foundations with their publishing. The two pairs of rules that repeated numbers 8 and 9 became one rule each.
-- **The check:** `tools/check-addon-imports.ts`, run by `bun run check`. It reads the shipped code of every package beside the engine, less the build tools `cli` and `vite-plugin`, and every file of `examples/`. It refuses an import of any engine entry point other than `@null3d/engine` and `@null3d/engine/stats`, and an import of the engine's source. Tests are not checked. `tools/lib/addon-imports.test.ts` tests it.
-- **Records:** [D-54](D-54-addon-modules.md) and [D-172](D-172-rive-city-follow-ups.md) gain addenda that point here. [D-179](D-179-technique-rulings-2026-10-15.md) holds the same day's rulings on techniques and on every item that was set for after 1.0.
+- **The check:** `tools/check-addon-imports.ts`, run by `bun run check`. It reads the shipped code of every package beside the engine, less the build tools `cli` and `vite-plugin`, and every file of `examples/`. It refuses an import of any engine entry point other than `@null3d/engine` and `@null3d/engine/stats`, and an import of the engine's source. It also refuses an import from any package into `examples/`, because an example add-on is never published (ruling 5). Tests are not checked. `tools/lib/addon-imports.test.ts` tests it, over fixtures and over the repository's own files.
+- **The layout check:** `tools/check-addon-layout.ts`, also run by `bun run check`. It holds each folder under `examples/addons/` to the shape in the shared README. The shape is an `index.ts` entry, a `.wgsl` file that the entry imports, and the `.wgsl.d.ts` beside it. The README gives a `## Licence` section that names the engine's licences. `tools/lib/addon-layout.test.ts` tests it, over fixtures and over the real folders. M3's content add-ons follow it and the demos import them.
+- **Records:** [D-54](D-54-addon-modules.md) and [D-172](D-172-neon-harbour-follow-ups.md) gain addenda that point here. [D-179](D-179-technique-rulings-2026-10-15.md) holds the same day's rulings on techniques and on every item that was set for after 1.0.
 
 Tasks, each with its first user:
 
@@ -251,7 +254,7 @@ Tasks, each with its first user:
 
 ## Addendum, 21 October 2026: M4's hook and platform tasks move into M3
 
-The owner moved all of M4's feature work into M3 ([D-199](D-199-m4-features-and-study-tasks-in-m3.md)). The hooks table's M4 rows now come in M3: H1 (M3-E8), H2 (M3-E9), H8 (M3-E10), the texture-unit allocator (M3-D7), namespaces (M3-D8), the plugin interface version (M3-D6) and the listing check (M3-D9). The plugin interface version still freezes with the API, in M4. Before H3, M3-R1 defines one public feature description that every hook is an instance of. Built-in renderer features stay internal and do not use these hooks; a feature that leaves the core uses them.
+The owner moved all of M4's feature work into M3 ([D-199](D-199-m4-features-and-study-tasks-in-m3.md)). The hooks table's M4 rows now come in M3: H1 (M3-E8), H2 (M3-E9), H8 (M3-E10), the texture-unit allocator (M3-D7), namespaces (M3-D8), the plugin interface version (M3-D6) and the listing check (M3-D9). The plugin interface version still freezes with the API, in M4. Before H3, M3-R1 defines one public feature description that every hook is an instance of. [D-223](D-223-plugin-interface-version.md) gives the version, the declared range and the refusal that M3-D6 builds. Built-in renderer features stay internal and do not use these hooks; a feature that leaves the core uses them.
 
 ## Addendum, 21 October 2026: the volumetric cloud tier is built in M3
 
@@ -262,3 +265,132 @@ and Medium. The H8 sky-layers hook (M3-E10) keeps its place: it is how another d
 own clouds behind these settings, not a second way for the engine to draw them.
 
 The rule of one place per feature holds. Clouds stay in the core, and no cloud add-on is planned.
+
+## Addendum, 21 October 2026: the add-ons come last in M3
+
+The owner ruled on 21 October 2026 that the add-ons wait until the architecture and the core engine
+work are done. The order inside M3 is therefore:
+
+1. The core's work: level of detail, the Neon Harbour follow-ups, the glTF and API features, the script
+   tag and the study's tasks. M3-R1, one feature description for every hook, is architecture and
+   belongs here.
+2. The add-on platform: the pack, version, namespace, texture-unit, listing and interface-version
+   tasks (M3-D1 to M3-D9), the hooks each with its first user (M3-E1 to M3-E10), and the example
+   add-on layout (M3-D5).
+3. The add-on products: `@null3d/particles`-style Gaussian splats (M3-F2), `@null3d/water` with the
+   FFT ocean (M3-F5, M3-F9) and `@null3d/three-compat` (M3-F7).
+
+This changes no ruling about what is built, only when. Hooks still ship with a first user, so each
+hook's task waits for the add-on that uses it.
+## Addendum, 21 October 2026: the shape of H9, glTF extension handlers
+
+M3-E3 builds H9, with M3-D3's hint for files that load without it. The shape:
+
+- `assets.registerGltfExtension(handler)` registers a handler for one or more extension names, for the engine that the `assets` object belongs to. It returns a function that unregisters the handler. A second handler for one extension fails with E1213.
+- A handler is `{ extensions, load(data, context) }`, close to three.js's `GLTFLoader.register()`. The loader calls `load` once for each primitive that carries one of the handler's extensions.
+- `data` holds the extension's `name` and its `json` as the file gives them. It holds the `node`'s name and place, and the `primitive`'s attributes as floats by their glTF names. It also holds the `count`, `indices`, `mode` and file material. The loader reads attribute names that the engine does not know, so the splat rotation, scale, opacity and spherical-harmonic names arrive.
+- `context` holds the engine's public `geometry` and `materials` makers, so a handler makes its parts through the public API alone.
+- `load` returns one `{ mesh, material }` part, a list of them, or nothing, which draws nothing. The loader places the parts at the node. They join the prefab's template and instance parts, so `scene.instantiate`, `scene.createInstances` and `prefab.destroy()` treat them as the model's own. A handler may return a promise.
+- A primitive that a handler claims draws only what the handler returns. The mesh's other primitives draw as usual. The parser reads claimed primitives in the worker, and their arrays move to the sketch thread with the model's own arrays.
+- The loader sends the registered extension names with each file. A file's `extensionsRequired` passes for a name that a handler reads, so a registered add-on loads a file that requires its extension.
+- Without a handler, a required extension that a foundation add-on reads fails with E1417, whose message names the package: `KHR_gaussian_splatting` names `@null3d/splats`. The table in `gltf-parse.ts` holds that list, so a new add-on's extensions join it with the add-on's handler.
+
+Not in this shape: extensions on materials, nodes or the file itself, and a handler that runs before the file's other objects exist. The first user, splats, carries its data on a mesh primitive, and its own draw uses H3 and H5. The handler also gives no bounds; the model's bounds hold a part's mesh by its radius around the node.
+
+## Addendum, 21 October 2026: H5's shape, an add-on's tasks on the job workers
+
+**Problem.** H5's first user, the Gaussian splats add-on (M3-F2), sorts its instances in every frame on WebGL2. The engine's on-demand loader already runs such work in the job workers for its own decoders. No public entry point exposes it. An add-on that copied the loader would start workers of its own, which D-54 rejects. A page with two add-ons would then run three sets of threads, and each would solve CDN delivery and the page's policy again.
+
+**Decision.** `runTask(task, input, transfer?)` is the hook, exported from `@null3d/engine`.
+
+- A task is one object: a name, the address of the module that exports `run`, and the WebAssembly files that the module uses. The engine compiles each file once per page. It imports the module once in each worker that runs it, so a module keeps its state between tasks.
+- `run` gets the task's input and a function that returns each compiled module by the name the task gives it. It returns `{ output, transfer? }` or a promise of one.
+- The promise resolves on the thread that queued the task. A rejection is a `TaskFailure` with the stage `'load'`, `'run'` or `'stopped'`, or an engine error when a WebAssembly file does not download or compile.
+- The public function loads the loader on first use. `TaskFailure` and `TaskLoadError` live in files of their own. An export that pulled the loader into the page's start also pulled its worker in. The size report refused that chunk as engine code that no part named. A page that runs no task now pays nothing.
+
+The contract, which the docs page and the TSDoc give:
+
+- The task runs in a job worker, never in the thread that runs the sketch.
+- A job worker leaves the job loop only between frame chunks, and with two or more job workers one never takes tasks ([D-07](D-07-job-workers.md), [D-54](D-54-addon-modules.md)). So no frame waits for a task.
+- An answer reaches the thread that queued the task between two frames. A `then` callback runs before the next frame's `onUpdate`, and that frame draws what the task wrote.
+- Tasks run at the same time in different job workers, and their answers come back in no fixed order.
+- A `SharedArrayBuffer` in the input is posted to the worker shared, not copied, and the engine neither copies nor transfers it. Once the promise resolves, the worker has stopped writing.
+- Where no job worker takes the tasks, the loader starts a task worker, as it does on a page without worker threads. A task worker that does not start fails the task with E1406.
+- When the engine stops, the tasks that wait reject with the stage `'stopped'`.
+
+**Options rejected.**
+
+- A worker handle that an add-on starts and keeps. It is D-54's rejected option, with the same costs.
+- A callback without a promise, delivered at a frame point. An add-on could not tell when the worker had finished writing, and the engine would need a frame point for work that has none.
+- A copy of every input and output. A per-frame sort of a large splat scene copies megabytes in each frame, on the thread that must keep the frame.
+- A plugin object with one interface per hook. M3-R1 gives every hook one feature description; H5 has no frame point and no scene resource, so it stays a function and a task descriptor.
+
+**Changes the public hook needed.** Three faults would show with a second add-on, or with a sketch on the page:
+
+- A file's name was global to the page, so two add-ons that both named a file `sort` received each other's module. The engine now keys each file by its task's module address, both in the thread's cache of compiled modules and in each worker's table.
+- The cache of compiled modules was keyed by a file's name. It is keyed by the file's address, so two files with one name each compile once.
+- When the sketch runs on the page (`sketchThread: 'main'`), the page never heard which job workers started. The engine sent that news to the sketch worker alone. The first task then waited its full limit of 10 seconds before it ran. The page's own loader now takes the same news. The browser test's case for that mode took 10.7 seconds before the fix, and 0.66 seconds after it.
+
+**Tests.** `packages/engine/src/shared/tasks.test.ts` checks the shared buffer, the failure stages and the per-task module key. The browser test `tests/image/addon-tasks.spec.ts` runs the hook in every thread mode, through the minimal add-on in `tests/pages/addons/task-probe/`. It checks four things. The task ran in a job worker or the task worker. Each answer landed in a frame after the frame that queued it. The rounds reached the frames in order. The last answer is the one that the drawn frame shows.
+
+**What shows it.** The hook's visible user is the splats add-on, which brings its demo. No demo shows a job-worker task on its own, so this change adds no demo (M3-F2 owns that one).
+## Addendum, 23 October 2026: the texture-unit allocator of M3-D7
+
+WebGL2 gives each shader stage 16 texture units. The lit shader reads most of them, so an add-on's material that adds textures of its own could pass a stage's share, and the device would then fail to link the program: the draw would show nothing and report no reason. M3-D7 refuses it first.
+
+`prepareProgram` in `packages/engine/src/gpu/webgl2/programs.ts` counts the distinct texture slots that each stage declares, before it numbers them, and calls `checkStageUnits`. A stage past 16 throws E1209 with the count and the limit. The count reads the composed GLSL's declared textures rather than the linked program's, since a driver removes a texture that the shader never reads and the declared list is the bound that a device without the removal rule would see.
+
+The refusal comes at the first draw of a material, when its program is prepared, and not at `materials.shader()`. An add-on's shader can arrive as a first-use loader, so the material's variants may be empty when it is created, while the program always has its composed source. WebGPU needs no such check: the engine's own layouts already stay within its 16 sampled textures, and a device refusal there names E1305.
+
+The test add-on is a stage of 17 declared textures in `programs.test.ts`, beside the existing test that every build of the engine's own shaders stays within the units.
+
+### Addendum, 25 October 2026: the count runs before the link, against the device's units
+
+The count above ran after `prepareProgram` read the program's link result. On a device with 16 units, a stage of 17 textures therefore threw the driver's plain link error, and E1209 never came. The count now runs first, on the declared sources of both stages. It compares against the units that the device reports for each stage (`MAX_VERTEX_TEXTURE_IMAGE_UNITS` and `MAX_TEXTURE_IMAGE_UNITS`), rather than the 16 that every device gives. A device that reports more units lets a larger stage link.
+
+The browser test `tests/image/program-units.spec.ts` builds a program by hand, with one texture more than the device's fragment stage holds. It reads the link result before the engine does. It then checks that the engine throws E1209 with the device's real count. `programs.test.ts` keeps the boundary tests with an explicit limit.
+
+## Addendum, 23 October 2026: H1's storage surface is one texture at a fixed binding
+
+Status: decided by the coordinator on 2026-10-23. Task: M3-E8.
+
+An add-on's compute pass writes one storage texture at a fixed binding of the pass's group. The add-on's uniforms and sampled textures follow it in the same layout that a full-screen effect uses. The shader download and the bind group layout stay the same whatever a scene uses, so an add-on does not pay for a surface that it ignores.
+
+**Rejected: declared storage bindings.** The pass would declare each binding by name, kind, format and access, and the engine would build the layout. That covers a ping-pong pair or a storage buffer in one pass. It also makes the shader download and the layout depend on the add-on, gives every page the code for a surface that it may not use, and turns one fixed thing to test into a set. A pass that needs two textures uses two passes and swaps its target.
+
+**Consequences.** A ping-pong pair is two passes. A storage buffer waits for the first user that needs one, and M3-E9's GPU-written count buffer reuses this surface rather than bringing a second one. The target's default format is `rgba16float`. The call refuses on WebGL2, which has no compute, and the docs give the full-screen fallback.
+
+## Addendum, 24 October 2026: vegetation is the eleventh foundation
+
+The owner made vegetation a foundation add-on ([D-241](D-241-vegetation-foundation.md)). It passes ruling 4's test, because many kinds of project use plants and other developers' style packs build on it. It holds the species generator, the scatter, the grass, the leaf material, the wind and the hand-off to impostors. Themed species packs stay content for other developers, as the "vegetation styles" of the owner's answer of 14 October. Rule 13 in AGENTS.md lists it. H2's GPU-written draws gain a second user that needs the shadow views: the near grass, which casts shadows (M3-E9).
+
+## Addendum, 25 October 2026: what M3-E2's line covers
+
+M3-E2's plan line read "splat sorting runs on the job workers on WebGL2 through it". An audit read
+"splat sorting" as the per-splat depth sort, which left the task unmet. That sort is not the hook's,
+and the hook cannot honestly carry it.
+
+- An answer reaches the thread that queued the task between two frames, as the contract above says.
+  The transparent pass needs the rows' order inside the frame that draws them, so an order that a
+  task returns can only reach a later frame.
+- The engine's transparent pass culls and sorts every blended batch's rows back to front on the job
+  workers, inside the frame's own job chunks (`crates/null3d-core/src/depth_sort.rs`). The batch
+  takes rows, a count and dirty marks, and no order that a caller gives: the pass's sort replaces
+  any order in which the rows arrived ([D-54](D-54-addon-modules.md)).
+- So a second sort in the add-on would be discarded by the engine's sort. To keep it, the add-on
+  would also re-upload every row in the new order in every frame, and the engine would still sort
+  them again. That duplicates the one place that orders blended draws, which D-54 rejects.
+
+What runs through the hook is the add-on's selection. The task sorts the cloud's chunks by their
+distance to the camera, lowers their detail levels where the budget runs out, and answers each
+chunk's prefix; the sketch packs those rows between two frames. The engine's transparent pass then
+sorts the chosen rows back to front on its job workers, on both GPU paths, as it does for every
+blended draw. The allocation check covers the whole path
+([Benchmarks](../benchmarks.md#allocation-and-profiling)).
+
+The line, as M3-E2 should read: "the splats add-on's selection, which splats draw and each chunk's
+prefix, nearest first, runs on the job workers on WebGL2 through the hook, the engine's transparent
+pass sorts the chosen rows there, and the allocation check covers the path."
+
+H5's table row above says "Splat sorting" as the first user, and this addendum reads that as the
+add-on's selection. [Tasks on the job workers](../../docs/api/tasks.md) now says the same.

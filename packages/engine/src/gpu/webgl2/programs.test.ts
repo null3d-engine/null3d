@@ -3,10 +3,12 @@ import {
 	everyShader,
 	type GlslProgram,
 	type GlslStage,
+	type GlslTexture,
 	type ShaderBinding,
 } from '../../generated/shaders';
 import { DEPTH_SETUPS } from './depth';
 import {
+	checkStageUnits,
 	createProgram,
 	declaresUniform,
 	type GlslTemplate,
@@ -20,6 +22,7 @@ import {
 	RELINK_TAIL,
 	relink,
 	slotOf,
+	stageUnitCount,
 	UPLOAD_UNIT,
 } from './programs';
 
@@ -142,6 +145,58 @@ describe('WebGL2 slots of bind groups', () => {
 	});
 });
 
+describe('WebGL2 texture-unit allocator', () => {
+	const texture = (binding: number): GlslTexture => ({
+		name: `texture${binding}`,
+		group: 3,
+		binding,
+		sampler: null,
+	});
+	const stage = (textures: GlslTexture[]): GlslStage => ({
+		source: '',
+		uniformBlocks: [],
+		textures,
+	});
+
+	it('counts the distinct units that a stage reads', () => {
+		expect(stageUnitCount(stage([texture(0), texture(0), texture(1)]))).toBe(2);
+	});
+
+	it("gives an add-on's material the error when it asks for too many units", () => {
+		const many = stage(
+			Array.from({ length: MIN_STAGE_TEXTURE_UNITS + 1 }, (_, binding) => texture(binding)),
+		);
+		const thrown = (() => {
+			try {
+				checkStageUnits(many, 'fragment', MIN_STAGE_TEXTURE_UNITS);
+				return null;
+			} catch (error) {
+				return error as { code?: string; message: string };
+			}
+		})();
+		expect(thrown?.code).toBe('E1209');
+		expect(thrown?.message).toContain(
+			`reads ${MIN_STAGE_TEXTURE_UNITS + 1} textures in its fragment stage, and a stage has ${MIN_STAGE_TEXTURE_UNITS} units`,
+		);
+	});
+
+	it('lets a stage that fills every unit draw', () => {
+		const full = stage(
+			Array.from({ length: MIN_STAGE_TEXTURE_UNITS }, (_, binding) => texture(binding)),
+		);
+		expect(() => checkStageUnits(full, 'fragment', MIN_STAGE_TEXTURE_UNITS)).not.toThrow();
+	});
+
+	it('holds a stage to the units that the device reports, not to the fewest of any device', () => {
+		const many = stage(
+			Array.from({ length: MIN_STAGE_TEXTURE_UNITS + 1 }, (_, binding) => texture(binding)),
+		);
+		expect(() => checkStageUnits(many, 'fragment', MIN_STAGE_TEXTURE_UNITS)).toThrow(/E1209/);
+		expect(() => checkStageUnits(many, 'fragment', MIN_STAGE_TEXTURE_UNITS + 1)).not.toThrow();
+		expect(() => checkStageUnits(many, 'fragment', 64)).not.toThrow();
+	});
+});
+
 describe('WebGL2 multi-draw vertex shaders', () => {
 	// Some Adreno drivers fail to link a program whose vertex shader reads a uniform array at the
 	// draw index, with an empty log (see .dev/driver-bugs.md), so such shaders read a texture.
@@ -187,6 +242,9 @@ describe('WebGL2 programs that a driver optimized', () => {
 		const gl = {
 			LINK_STATUS: 0x8b82,
 			INVALID_INDEX: 0xffffffff,
+			MAX_VERTEX_TEXTURE_IMAGE_UNITS: 0x8b45,
+			MAX_TEXTURE_IMAGE_UNITS: 0x8b46,
+			getParameter: () => 16,
 			getProgramParameter: () => true,
 			detachShader: () => {},
 			deleteShader: () => {},
@@ -247,6 +305,10 @@ describe("WebGL2 links that Safari's Metal translator broke", () => {
 			LINK_STATUS: 0x8b82,
 			VERTEX_SHADER: 0x8b31,
 			FRAGMENT_SHADER: 0x8b30,
+			// The units that a device reports, which every WebGL2 device gives a stage at least 16 of.
+			MAX_VERTEX_TEXTURE_IMAGE_UNITS: 0x8b45,
+			MAX_TEXTURE_IMAGE_UNITS: 0x8b46,
+			getParameter: (parameter: number) => (parameter === 0x8b45 ? 32 : 16),
 			createProgram: () => ({}),
 			createShader: () => ({ log: shaderLogs[shaders++] ?? '' }),
 			shaderSource: (_: unknown, source: string) => sources.push(source),

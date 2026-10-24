@@ -708,6 +708,27 @@ pub mod layout {
     /// view's parameters, the scene's tables, its compacted instances and indirect draws, then its
     /// depth pyramid or a placeholder, the cell offsets texture and the skin firsts texture.
     pub const CULL: u32 = 1;
+    /// Group 0 of an add-on's compute pipeline: its block of uniforms, then the storage texture
+    /// that it fills, as 16-bit floats. The storage texture's format is part of the layout, so a
+    /// pass of another format takes the layout of that format.
+    pub const COMPUTE_RGBA16_FLOAT: u32 = 53;
+    /// [`COMPUTE_RGBA16_FLOAT`] for a target of 32-bit floats.
+    pub const COMPUTE_R32_FLOAT: u32 = 54;
+    /// [`COMPUTE_RGBA16_FLOAT`] for a target of 8-bit color.
+    pub const COMPUTE_RGBA8_UNORM: u32 = 55;
+    /// Group 0 of an add-on's compute pipeline that writes the two buffers of an instance draw: its
+    /// block of uniforms, then the draw's count word and its per-instance rows, which the shader
+    /// reads and writes as storage. A pass of this layout has no storage texture.
+    pub const COMPUTE_INSTANCE_BUFFERS: u32 = 56;
+    /// Group 0 of the compute pipeline that converts a feature-instance draw's world rows to the
+    /// camera-relative rows that the engine's vertex shaders read: its block of uniforms, which
+    /// holds the camera's world position, then the draw's count word, its world rows and the rows
+    /// that it writes.
+    pub const FEATURE_ROWS: u32 = 60;
+    /// Group 0 of the cluster levels' compute pipeline: the dispatch's parameters at a dynamic
+    /// offset, then the scene's patches and mesh records, its tree indices, the view's compacted
+    /// instances, and the view's counts, offsets, index list and indirect draws.
+    pub const CLUSTER_CULL: u32 = 52;
     /// Group 1 of render pipelines that read instances from data textures: the draw records.
     pub const DRAWS: u32 = 2;
     /// Group 2 of render pipelines that read instances from data textures: the textures.
@@ -729,6 +750,13 @@ pub mod layout {
     /// builds of parallax occlusion mapping. The fragment stage then reads every sampled texture
     /// that WebGPU's default limits give it, so only materials with parallax take it.
     pub const MATERIAL_MAPS_PARALLAX: u32 = 34;
+    /// [`MATERIAL_MAPS`] for a custom material that reads the scene's depth: the first seven map
+    /// slots, their samplers at the bindings after every slot, and no displacement map, which only
+    /// a standard material reads. The last slot's two bindings are left out, so the depth copy that
+    /// the material's own group carries keeps the fragment stage within WebGPU's default count of
+    /// sampled textures. Only WebGPU has it: WebGL2 gives a program a unit only for a texture that
+    /// it reads.
+    pub const MATERIAL_MAPS_SCENE: u32 = 61;
     /// [`FRAME`] for the builds of parallax occlusion mapping: the same groups without the copy of
     /// the opaque color. A parallax material reads the displacement map in the fragment stage as
     /// well as the vertex stage, so its maps' group holds one more sampled texture than any other
@@ -792,6 +820,26 @@ pub mod layout {
     /// [`EFFECT`] with a multisampled scene depth, whose sample 0 the effect reads. Only WebGPU has
     /// it: WebGL2 reads a copy of one sample that the backend keeps.
     pub const EFFECT_DEPTH_MS: u32 = 22;
+    /// [`EFFECT`] with a level of bloom's chain at binding 4, which the effect samples with its
+    /// linear sampler. An effect that reads a level draws in a pass of its own.
+    pub const EFFECT_BLOOM: u32 = 50;
+    /// [`EFFECT_BLOOM`] with a multisampled scene depth, whose sample 0 the effect reads. Only
+    /// WebGPU has it.
+    pub const EFFECT_BLOOM_DEPTH_MS: u32 = 51;
+    /// Group 1 of a sky layer's draw, an add-on's layer over the core sky: its uniform block alone.
+    /// The core sky's cloud settings, the share of the sun that the layer hides and the layer's own
+    /// opacity reach it, so a layer obeys the settings the core sky obeys. A layer's pipeline takes
+    /// a template of the page's own, as a custom effect's does, because the page's WGSL completes
+    /// the engine's sky-layer template.
+    pub const BACKGROUND_LAYER: u32 = 59;
+    /// Group 0 of temporal anti-aliasing's resolve: its uniform block, the scene color, the scene's
+    /// depth, the motion target and the two histories at bindings 1 to 5, and the linear sampler
+    /// of the histories at 6. The scene color, the depth and the motion read with `textureLoad`;
+    /// the histories read with the sampler.
+    pub const TAA: u32 = 57;
+    /// [`TAA`] with a multisampled scene depth, whose samples the resolve reads. Only WebGPU has
+    /// it.
+    pub const TAA_MS: u32 = 58;
     /// The final pass with custom effects folded into it: [`FINAL`]'s bindings, then the effects'
     /// uniform buffer at binding 4 and the scene's depth, or a blank texture, at binding 5, as
     /// plain floats.
@@ -845,6 +893,11 @@ pub mod layout {
     /// [`DECAL_DEPTH`] for a multisampled depth target, whose sample 0 the decals read. Only WebGPU
     /// has it.
     pub const DECAL_DEPTH_MS: u32 = 37;
+    /// The group of a custom material that reads the scene's depth: the copy of the camera's
+    /// opaque depth, which its surface function reads with `textureLoad` as plain floats. It is
+    /// group 1 of the custom material's template and group 2 of one with textures on WebGPU, and
+    /// group 4 on WebGL2. A view that makes no copy binds one texel at the far plane.
+    pub const MATERIAL_SCENE: u32 = 38;
     /// Group 0 of the decal templates on WebGPU: [`FRAME`]'s bindings without the light probe
     /// grids' texture and the copy of the opaque color, which no decal build reads. A decal with
     /// maps then reads 15 sampled textures in its fragment stage, within WebGPU's default limit of
@@ -935,6 +988,12 @@ pub mod permutation {
     /// faces keep their depth, as the faces of a double-sided caster must: they hold its own lit
     /// side.
     pub const CASTER_OFFSET: u32 = 16384;
+    /// The final pass's build that scales the drawn corner up to the canvas and sharpens it, which
+    /// the second step of the two-step pass draws. The other builds read the one texel under each
+    /// pixel and hold none of that code: a software GPU pays for code in every frame, even in a
+    /// loop of no rounds. It shares [`CASTER_OFFSET`]'s value: only the final pass lists it, and
+    /// only the shadow casters' and the depth templates list the caster offset.
+    pub const UPSCALE: u32 = CASTER_OFFSET;
     /// The final pass adds bloom's levels to the scene color before the output transform.
     pub const BLOOM: u32 = 32768;
     /// A custom material's template draws an object into GPU picking's id target: the vertex
@@ -1016,7 +1075,7 @@ pub mod permutation {
     pub const WEIGHTED: u32 = 1 << 31;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 34] = [
+    pub const NAMES: [(&str, u32); 35] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -1033,6 +1092,7 @@ pub mod permutation {
         ("PREPASS", PREPASS),
         ("HALF", HALF),
         ("CASTER_OFFSET", CASTER_OFFSET),
+        ("UPSCALE", UPSCALE),
         ("BLOOM", BLOOM),
         ("PICK", PICK),
         ("OUTLINE_VISIBLE", OUTLINE_VISIBLE),
@@ -1055,7 +1115,11 @@ pub mod permutation {
 
     /// Pairs of names that share one value, because no template lists both: the shader build
     /// refuses a template that lists two names of one value, and any other shared value.
-    pub const SHARED: [(&str, &str); 2] = [("FXAA", "AREA_LIGHTS"), ("BLOOM", "PICK")];
+    pub const SHARED: [(&str, &str); 3] = [
+        ("FXAA", "AREA_LIGHTS"),
+        ("CASTER_OFFSET", "UPSCALE"),
+        ("BLOOM", "PICK"),
+    ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
     /// the draw index where WebGL2 has multi-draw, tone mapping in the shader where the device
@@ -1098,8 +1162,9 @@ pub mod permutation {
     /// The layers shade, so casters never have them, and only the test switch reads instances by
     /// index, which no layered build needs. A weighted surface blends, so it tests no mask, lets
     /// no light through and never fades, and it draws in the sorted pass's rows, which never read
-    /// instances by index.
-    pub const APART: [(u32, u32); 54] = [
+    /// instances by index. The final pass's upscale draws only in the two-step pass's second step,
+    /// with neither FXAA nor bloom.
+    pub const APART: [(u32, u32); 56] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -1154,6 +1219,8 @@ pub mod permutation {
         (WEIGHTED, OUTLINE_VISIBLE),
         (WEIGHTED, LOD_FADE),
         (LOD_FADE, DISPLACEMENT),
+        (UPSCALE, FXAA),
+        (UPSCALE, BLOOM),
     ];
 
     /// True when a permutation word holds every bit that each of its bits needs ([`NEEDS`]), and
@@ -1279,6 +1346,8 @@ pub mod vertex {
     pub const POSITION: usize = 0;
     /// The location of the normal.
     pub const NORMAL: usize = 1;
+    /// The location of the first texture coordinates.
+    pub const UV0_LOCATION: usize = 2;
 
     /// How an attribute's values sit in a vertex. The codes are the TypeScript constants'.
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -1618,9 +1687,11 @@ pub mod sizes {
     /// 32-bit words per bucket record of the culling shader: its slice's base, its material, its
     /// local sphere's radius, its first draw and draw count, the sphere's centre, the first joint
     /// of a skin that the vertex shader skins, 1 for a bucket whose slice holds source indices
-    /// instead of copies of the matrices, and for a mesh with levels of detail, the level's error,
-    /// the bucket of the next coarser level plus one, and the level's fade bucket plus one.
-    pub const BUCKET_WORDS: u32 = 13;
+    /// instead of copies of the matrices, for a mesh with levels of detail the level's switch
+    /// value, the bucket of the next coarser level plus one, the level's fade bucket plus one, the
+    /// threshold bias that picks the levels, 1 for none, and the measure that the switch value
+    /// names.
+    pub const BUCKET_WORDS: u32 = 15;
     /// A bucket record's first joint that sends the culling shader to each source's own: the
     /// buckets that skinned objects share, whose vertex shaders skin, read the first joint of each
     /// object's skin from a data texture of 32-bit indices, at the object's source.
@@ -1640,20 +1711,27 @@ pub mod sizes {
     pub const ROW_VALUE_TEXELS: u32 = 2;
     /// Row values per row of their data texture, which is 2,048 texels wide.
     pub const ROW_VALUES_PER_TEXTURE_ROW: u32 = 1024;
+    /// Texels of an `RGBA32_FLOAT` data texture per source's distance range: its start distance
+    /// and its end distance.
+    pub const RANGE_TEXELS: u32 = 1;
+    /// Distance ranges per row of their data texture, which is 2,048 texels wide.
+    pub const RANGES_PER_TEXTURE_ROW: u32 = 2048;
     /// Bytes of the table of object ranges, a uniform block that the vertex shaders of custom
     /// materials which read an instance's index or an object's id search: the largest uniform
     /// block that every WebGL2 device and WebGPU's compatibility mode allow.
     pub const OBJECT_RANGE_BYTES: u32 = 16384;
     /// Bytes of one point or spot light's record, which fragment shaders read from the light
-    /// list: four vectors of four 32-bit values.
-    pub const LIGHT_RECORD_BYTES: u32 = 64;
-    /// Light records per row of WebGL2's light data texture, four texels each, from its first
-    /// column. A power of two.
+    /// list: five vectors of four 32-bit values.
+    pub const LIGHT_RECORD_BYTES: u32 = 80;
+    /// Texels of an `RGBA32_UINT` data texture per light record: one per vector.
+    pub const LIGHT_RECORD_TEXELS: u32 = LIGHT_RECORD_BYTES / 16;
+    /// Light records per row of WebGL2's light data texture, from its first column. A power of
+    /// two.
     pub const LIGHTS_PER_TEXTURE_ROW: u32 = 256;
     /// Words of the light grid per row of WebGL2's light data texture, four to a texel, in the
-    /// columns after the light records'. A power of two. The texture is 2,048 texels wide, the
-    /// width that every WebGL2 device allows.
-    pub const GRID_WORDS_PER_TEXTURE_ROW: u32 = 4096;
+    /// columns after the light records'. A power of two. The texture is 1,792 texels wide, inside
+    /// the 2,048 that every WebGL2 device allows.
+    pub const GRID_WORDS_PER_TEXTURE_ROW: u32 = 2048;
     /// Bytes of one draw record: the start of the draw's slice of the index list, its material
     /// and the data texture its instances come from, and one spare word.
     pub const DRAW_RECORD_BYTES: u32 = 16;
@@ -1662,11 +1740,12 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: fifteen `vec4f`s. The row holds the base
-    /// values, the transmission's values, the attenuation's, the clear coat's, the sheen's, the
-    /// diffuse transmission's and the subsurface scatter's. On WebGL2 each row is a row of fifteen
-    /// `RGBA32_FLOAT` texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 240;
+    /// Bytes of one material's row in the material table: seventeen `vec4f`s. The row holds the
+    /// base values, the transmission's values, the attenuation's, the clear coat's, the sheen's,
+    /// the diffuse transmission's, the subsurface scatter's, the iridescence's and the
+    /// anisotropy's. On WebGL2 each row is a row of seventeen `RGBA32_FLOAT` texels of a data
+    /// texture.
+    pub const MATERIAL_BYTES: u32 = 272;
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;
@@ -1698,12 +1777,19 @@ pub mod sizes {
     /// Bytes of the uniform block of the shadow atlas's tiles: a matrix for each of the 24 tiles,
     /// then a vector for each, then the filter's vector.
     pub const SHADOW_TILES_UNIFORM_BYTES: u32 = 1936;
-    /// Bytes of the frame's shadow settings: the cascades' block followed by the tiles' block, one
-    /// binding of the frame's group (D-146).
-    pub const SHADOW_SETTINGS_BYTES: u32 = SHADOW_UNIFORM_BYTES + SHADOW_TILES_UNIFORM_BYTES;
-    /// Bytes of the background's uniform block: nine vectors, which the cube map, the sky and a
-    /// plain color read (see `null3d_render::background`).
-    pub const BACKGROUND_UNIFORM_BYTES: u32 = 144;
+    /// Bytes of the uniform block of the sun's hero shadow: its matrix, then its vector of the
+    /// texel size, the light's biases and its layer.
+    pub const SHADOW_HERO_UNIFORM_BYTES: u32 = 80;
+    /// Bytes of the frame's shadow settings: the cascades' block, the tiles' block and the hero's,
+    /// one binding of the frame's group (D-146).
+    pub const SHADOW_SETTINGS_BYTES: u32 =
+        SHADOW_UNIFORM_BYTES + SHADOW_TILES_UNIFORM_BYTES + SHADOW_HERO_UNIFORM_BYTES;
+    /// Bytes of the background's uniform block: ten vectors, which the cube map, the sky, a plain
+    /// color and a sky layer's sun visibility read (see `null3d_render::background`).
+    pub const BACKGROUND_UNIFORM_BYTES: u32 = 160;
+    /// Bytes of a sky layer's uniform block: two vectors, the core sky's cloud settings and the
+    /// layer's own view values (see `null3d_render::background`).
+    pub const BACKGROUND_LAYER_UNIFORM_BYTES: u32 = 32;
 }
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
@@ -1870,6 +1956,10 @@ pub mod template {
     /// do, with their base color map where it has an image. Its group 0 is
     /// [`super::layout::MOTION_FRAME`], and group 1 the map's.
     pub const MOTION: u32 = 73;
+    /// The tone mask of instanced meshes: the parts of the objects whose material keeps its color
+    /// as the display shows it, in blue, where the scene's depth leaves them. The final pass reads
+    /// it to skip the tone curve for those pixels. It binds as the depth template does.
+    pub const TONE_MASK: u32 = 79;
     /// One level of screen-space reflections' depth pyramid: one triangle over the level's drawn
     /// corner, each texel the nearest depth of the 2 x 2 texels of the level below it.
     pub const SSR_REDUCE: u32 = 49;
@@ -1974,6 +2064,25 @@ pub mod template {
     pub const PICK_MAPS: u32 = 76;
     /// GPU picking with a masked unlit map: the pick template that binds its single base color map.
     pub const PICK_TEXTURE_MAPS: u32 = 77;
+    /// Cluster levels: one compute pipeline whose dispatch counts, scans or copies the patches of
+    /// a view, which the dispatch's parameters pick. WebGPU only.
+    pub const CLUSTER: u32 = 78;
+    /// Temporal anti-aliasing's resolve, a prototype (M3-A11): one triangle over a target of the
+    /// render size, which blends the scene's color into the history that it reads where each
+    /// pixel's surface lay in the frame before, from the motion target and the depth. Its group 0
+    /// is [`TAA`](super::layout::TAA), or [`TAA_MS`](super::layout::TAA_MS) from a multisampled
+    /// scene depth.
+    pub const TAA_RESOLVE: u32 = 80;
+    /// [`TAA_RESOLVE`] from a multisampled scene depth, whose samples it reads. WebGPU only.
+    pub const TAA_RESOLVE_MS: u32 = 81;
+    /// Temporal anti-aliasing's copy of the resolve's target into the history of the frame's
+    /// parity, one texel per pixel. It binds as the copy of a view's image does.
+    pub const TAA_COPY: u32 = 82;
+    /// The conversion of a feature-instance draw's world rows to camera-relative rows: one
+    /// dispatch for each draw in each frame, whose count bounds the instances it converts. The
+    /// engine's vertex shaders read rows relative to their view's camera, and a page writes world
+    /// rows (D-229). WebGPU only.
+    pub const FEATURE_ROWS: u32 = 83;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -1981,7 +2090,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 77] = [
+    pub const NAMES: [(&str, u32); 83] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2000,6 +2109,7 @@ pub mod template {
         ("LIGHT_WRITE", LIGHT_WRITE),
         ("SKIN", SKIN),
         ("OUTLINE_MASK", OUTLINE_MASK),
+        ("TONE_MASK", TONE_MASK),
         ("SPRITE", SPRITE),
         ("SPRITE_MAP", SPRITE_MAP),
         ("OCCLUSION_EARLY", OCCLUSION_EARLY),
@@ -2058,6 +2168,11 @@ pub mod template {
         ("PICK_RESOLVE", PICK_RESOLVE),
         ("PICK_MAPS", PICK_MAPS),
         ("PICK_TEXTURE_MAPS", PICK_TEXTURE_MAPS),
+        ("CLUSTER", CLUSTER),
+        ("TAA_RESOLVE", TAA_RESOLVE),
+        ("TAA_RESOLVE_MS", TAA_RESOLVE_MS),
+        ("TAA_COPY", TAA_COPY),
+        ("FEATURE_ROWS", FEATURE_ROWS),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2086,7 +2201,10 @@ pub mod groups {
     /// shader, the maps' group of a build that samples maps, and the view's index group of a build
     /// that reads its instances by index. WebGL2 reads each view's instance data from groups of its
     /// own, the draws' group and the instances' one, and binds a material's maps at the group after
-    /// them. A decal adds the scene's depth: at index 2 on WebGPU, after the maps on WebGL2.
+    /// them. A decal adds the scene's depth: at index 2 on WebGPU, after the maps on WebGL2. That
+    /// last index on WebGL2 also holds the copy of the scene's depth that a custom material reads,
+    /// which the view binds once for the whole pass: a pass that draws such a material carries it
+    /// at every draw. A WebGL2 program reads no binding that it does not declare.
     const MESH: &[&[u32]] = &[
         &[layout::FRAME, layout::DEPTH],
         &[
@@ -2105,7 +2223,11 @@ pub mod groups {
             layout::DECAL_DEPTH_MS,
         ],
         &[layout::TEXTURES, layout::MATERIAL_MAPS],
-        &[layout::DECAL_DEPTH, layout::DECAL_DEPTH_MS],
+        &[
+            layout::DECAL_DEPTH,
+            layout::DECAL_DEPTH_MS,
+            layout::MATERIAL_SCENE,
+        ],
     ];
     /// [`MESH`] for a decal's templates, whose frame group leaves out the bindings that no decal
     /// build reads.
@@ -2160,11 +2282,17 @@ pub mod groups {
         (template::FINAL_BLOOM, own!(layout::FINAL_BLOOM)),
         (template::EXPOSURE_LUMINANCE, own!(layout::EFFECT)),
         (template::CULL, own!(layout::CULL)),
+        (template::CLUSTER, own!(layout::CLUSTER_CULL)),
+        (template::TAA_RESOLVE, own!(layout::TAA)),
+        (template::TAA_RESOLVE_MS, own!(layout::TAA_MS)),
+        (template::TAA_COPY, own!(layout::VIEW_COPY)),
+        (template::FEATURE_ROWS, own!(layout::FEATURE_ROWS)),
         (template::LIGHT_COUNT, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_PLACE, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_WRITE, own!(layout::LIGHT_CLUSTERS)),
         (template::SKIN, own!(layout::SKIN)),
         (template::OUTLINE_MASK, MESH),
+        (template::TONE_MASK, MESH),
         (template::SPRITE, MESH),
         (template::SPRITE_MAP, MESH),
         (template::OCCLUSION_EARLY, own!(layout::CULL)),
@@ -2328,6 +2456,14 @@ impl DrawList {
         &self.words
     }
 
+    /// The bytes that the recorded words reserve and use.
+    pub fn memory_use(&self) -> (usize, usize) {
+        (
+            self.words.capacity() * size_of::<u32>(),
+            self.words.len() * size_of::<u32>(),
+        )
+    }
+
     /// Address of the first word, for the replay loop's view on engine memory.
     pub fn as_ptr(&self) -> *const u32 {
         self.words.as_ptr()
@@ -2408,6 +2544,70 @@ pub fn decode(words: &[u32]) -> impl Iterator<Item = Result<Command<'_>, DecodeE
         })
     })
 }
+
+/// The bind group layouts that the generated table lists, by name. Each id names one layout: two
+/// layouts at one id make the render worker refuse to start.
+const GENERATED_LAYOUTS: &[(&str, u32)] = &[
+    ("FRAME", layout::FRAME),
+    ("CULL", layout::CULL),
+    ("DRAWS", layout::DRAWS),
+    ("INSTANCES", layout::INSTANCES),
+    ("FINAL", layout::FINAL),
+    ("TEXTURES", layout::TEXTURES),
+    ("MATERIAL_MAPS", layout::MATERIAL_MAPS),
+    ("MATERIAL_MAPS_PARALLAX", layout::MATERIAL_MAPS_PARALLAX),
+    ("MATERIAL_MAPS_SCENE", layout::MATERIAL_MAPS_SCENE),
+    ("FRAME_PARALLAX", layout::FRAME_PARALLAX),
+    ("DEPTH", layout::DEPTH),
+    ("LIGHT_CLUSTERS", layout::LIGHT_CLUSTERS),
+    ("BLOOM", layout::BLOOM),
+    ("FINAL_BLOOM", layout::FINAL_BLOOM),
+    ("JOINTS", layout::JOINTS),
+    ("SKIN", layout::SKIN),
+    ("COMPUTE_RGBA16_FLOAT", layout::COMPUTE_RGBA16_FLOAT),
+    ("COMPUTE_R32_FLOAT", layout::COMPUTE_R32_FLOAT),
+    ("COMPUTE_RGBA8_UNORM", layout::COMPUTE_RGBA8_UNORM),
+    ("COMPUTE_INSTANCE_BUFFERS", layout::COMPUTE_INSTANCE_BUFFERS),
+    ("FEATURE_ROWS", layout::FEATURE_ROWS),
+    ("DEPTH_PYRAMID", layout::DEPTH_PYRAMID),
+    ("AO_DEPTH", layout::AO_DEPTH),
+    ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
+    ("AO", layout::AO),
+    ("BACKGROUND", layout::BACKGROUND),
+    ("INSTANCE_INDEX", layout::INSTANCE_INDEX),
+    ("EFFECT", layout::EFFECT),
+    ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
+    ("EFFECT_BLOOM", layout::EFFECT_BLOOM),
+    ("EFFECT_BLOOM_DEPTH_MS", layout::EFFECT_BLOOM_DEPTH_MS),
+    ("BACKGROUND_LAYER", layout::BACKGROUND_LAYER),
+    ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
+    ("FINAL_EFFECTS_DEPTH_MS", layout::FINAL_EFFECTS_DEPTH_MS),
+    ("VIEW_COPY", layout::VIEW_COPY),
+    ("ACCUMULATE", layout::ACCUMULATE),
+    ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
+    ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
+    ("MOTION_FRAME", layout::MOTION_FRAME),
+    ("SSR_REDUCE", layout::SSR_REDUCE),
+    ("SSR_TRACE", layout::SSR_TRACE),
+    ("WEIGHTED_COMPOSITE", layout::WEIGHTED_COMPOSITE),
+    ("WEIGHTED_DEPTH_MS", layout::WEIGHTED_DEPTH_MS),
+    ("TRANSMISSION_COPY_MS", layout::TRANSMISSION_COPY_MS),
+    ("CLUSTER_CULL", layout::CLUSTER_CULL),
+    ("TAA", layout::TAA),
+    ("TAA_MS", layout::TAA_MS),
+    ("SUBSURFACE_BLUR", layout::SUBSURFACE_BLUR),
+    ("SUBSURFACE_COMPOSITE", layout::SUBSURFACE_COMPOSITE),
+    ("SUBSURFACE_COMPOSITE_MS", layout::SUBSURFACE_COMPOSITE_MS),
+    ("DECAL_DEPTH", layout::DECAL_DEPTH),
+    ("DECAL_DEPTH_MS", layout::DECAL_DEPTH_MS),
+    ("DECAL_FRAME", layout::DECAL_FRAME),
+    ("MATERIAL_SCENE", layout::MATERIAL_SCENE),
+    ("PARTICLE", layout::PARTICLE),
+    ("PARTICLE_SCENE_DEPTH", layout::PARTICLE_SCENE_DEPTH),
+    ("PARTICLE_DEPTH_MS", layout::PARTICLE_DEPTH_MS),
+    ("ATMOSPHERE", layout::ATMOSPHERE),
+    ("EXPOSURE", layout::EXPOSURE),
+];
 
 /// The TypeScript constants for the replay loop, generated from the definitions above.
 pub fn typescript_constants() -> String {
@@ -2518,57 +2718,7 @@ pub fn typescript_constants() -> String {
                 ("SAMPLER", resource_kind::SAMPLER),
             ],
         ),
-        (
-            "LAYOUT",
-            &[
-                ("FRAME", layout::FRAME),
-                ("CULL", layout::CULL),
-                ("DRAWS", layout::DRAWS),
-                ("INSTANCES", layout::INSTANCES),
-                ("FINAL", layout::FINAL),
-                ("TEXTURES", layout::TEXTURES),
-                ("MATERIAL_MAPS", layout::MATERIAL_MAPS),
-                ("MATERIAL_MAPS_PARALLAX", layout::MATERIAL_MAPS_PARALLAX),
-                ("FRAME_PARALLAX", layout::FRAME_PARALLAX),
-                ("DEPTH", layout::DEPTH),
-                ("LIGHT_CLUSTERS", layout::LIGHT_CLUSTERS),
-                ("BLOOM", layout::BLOOM),
-                ("FINAL_BLOOM", layout::FINAL_BLOOM),
-                ("JOINTS", layout::JOINTS),
-                ("SKIN", layout::SKIN),
-                ("DEPTH_PYRAMID", layout::DEPTH_PYRAMID),
-                ("AO_DEPTH", layout::AO_DEPTH),
-                ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
-                ("AO", layout::AO),
-                ("BACKGROUND", layout::BACKGROUND),
-                ("INSTANCE_INDEX", layout::INSTANCE_INDEX),
-                ("EFFECT", layout::EFFECT),
-                ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
-                ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
-                ("FINAL_EFFECTS_DEPTH_MS", layout::FINAL_EFFECTS_DEPTH_MS),
-                ("VIEW_COPY", layout::VIEW_COPY),
-                ("ACCUMULATE", layout::ACCUMULATE),
-                ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
-                ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
-                ("MOTION_FRAME", layout::MOTION_FRAME),
-                ("SSR_REDUCE", layout::SSR_REDUCE),
-                ("SSR_TRACE", layout::SSR_TRACE),
-                ("WEIGHTED_COMPOSITE", layout::WEIGHTED_COMPOSITE),
-                ("WEIGHTED_DEPTH_MS", layout::WEIGHTED_DEPTH_MS),
-                ("TRANSMISSION_COPY_MS", layout::TRANSMISSION_COPY_MS),
-                ("SUBSURFACE_BLUR", layout::SUBSURFACE_BLUR),
-                ("SUBSURFACE_COMPOSITE", layout::SUBSURFACE_COMPOSITE),
-                ("SUBSURFACE_COMPOSITE_MS", layout::SUBSURFACE_COMPOSITE_MS),
-                ("DECAL_DEPTH", layout::DECAL_DEPTH),
-                ("DECAL_DEPTH_MS", layout::DECAL_DEPTH_MS),
-                ("DECAL_FRAME", layout::DECAL_FRAME),
-                ("PARTICLE", layout::PARTICLE),
-                ("PARTICLE_SCENE_DEPTH", layout::PARTICLE_SCENE_DEPTH),
-                ("PARTICLE_DEPTH_MS", layout::PARTICLE_DEPTH_MS),
-                ("ATMOSPHERE", layout::ATMOSPHERE),
-                ("EXPOSURE", layout::EXPOSURE),
-            ],
-        ),
+        ("LAYOUT", GENERATED_LAYOUTS),
         ("PERMUTATION", &permutation::NAMES),
         (
             "VERTEX",
@@ -2676,6 +2826,10 @@ pub fn typescript_constants() -> String {
                 (
                     "SHADOW_TILES_UNIFORM_BYTES",
                     sizes::SHADOW_TILES_UNIFORM_BYTES,
+                ),
+                (
+                    "SHADOW_HERO_UNIFORM_BYTES",
+                    sizes::SHADOW_HERO_UNIFORM_BYTES,
                 ),
                 ("BACKGROUND_UNIFORM_BYTES", sizes::BACKGROUND_UNIFORM_BYTES),
             ],
@@ -3247,6 +3401,18 @@ mod tests {
         assert_eq!(commands[3].operands[9..11], [0, 24]);
         assert_eq!(f32::from_bits(commands[7].operands[5]), 1.0);
         assert_eq!(commands[6].operands[5..10], [5, 0, 0, 40, 1]);
+    }
+
+    /// The generated table names each bind group layout once: two layouts at one id make the
+    /// render worker refuse to start with E1405 when the pipelines are made.
+    #[test]
+    fn generated_layout_ids_are_unique() {
+        let mut ids = std::collections::BTreeMap::new();
+        for &(name, id) in GENERATED_LAYOUTS {
+            if let Some(first) = ids.insert(id, name) {
+                panic!("{name} and {first} both take layout {id}");
+            }
+        }
     }
 
     /// Keeps the generated TypeScript constants equal to the Rust definitions.

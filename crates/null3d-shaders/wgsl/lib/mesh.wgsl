@@ -8,6 +8,9 @@ enable draw_index;
 #import null3d::tonemap
 #import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction}
 #import null3d::vertex::{transform_normal, transform_point}
+#ifdef LOD_FADE
+#import null3d::noise::{pcg}
+#endif
 #ifdef WEBGL2
 #import null3d::tables::{materials}
 #else
@@ -178,9 +181,15 @@ struct InstanceBucket {
     center_z: f32,
     first_joint: u32,
     indices: u32,
+    /// The switch value of the bucket's level, the bucket of the next coarser level plus one, the
+    /// level's fade bucket plus one, the threshold bias that picks the levels, and the measure that
+    /// the switch value names. The vertex shader reads none of them, but the record's stride holds
+    /// every word that the culling shader reads.
     level_error: f32,
     next_level: u32,
     fade_bucket: u32,
+    bias: f32,
+    level_switch: u32,
 }
 
 // The group after the template's own: the frame's, then the maps' in the builds that sample maps
@@ -424,6 +433,39 @@ fn material_coat_sheen(id: u32) -> MaterialCoatSheen {
     return MaterialCoatSheen(materials[id].coat, materials[id].sheen);
 #endif
 }
+
+/// The thin film's values of material `id`: how much of its specular reflection the film tints,
+/// the film's index of refraction, and its thickness where its map is 0 and where it is 1.
+fn material_iridescence(id: u32) -> vec4f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(15u, id), 0);
+#else
+    return materials[id].iridescence;
+#endif
+}
+
+/// The anisotropy's values of material `id`: the strength of the stretched lobe, and its rotation
+/// from the tangent in radians.
+fn material_anisotropy(id: u32) -> vec4f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(16u, id), 0);
+#else
+    return materials[id].anisotropy;
+#endif
+}
+#endif
+
+#ifdef TRANSMISSION
+/// Which family of maps material `id` keeps in the light map's and the specular maps' slots: 2
+/// when they hold its transmission and thickness maps, and 0 otherwise, since a material that
+/// lets light through takes no layers.
+fn layer_maps_kind_of(id: u32) -> u32 {
+#ifdef WEBGL2
+    return u32(textureLoad(materials, vec2u(16u, id), 0).z);
+#else
+    return u32(materials[id].anisotropy.z);
+#endif
+}
 #endif
 
 #ifdef DECAL
@@ -454,6 +496,15 @@ fn custom_value(id: u32, k: u32) -> vec4f {
 
 /// The bit of a material's flags that keeps the scene's fog off its color.
 const NO_FOG: u32 = 4u;
+
+/// The bit of a material's flags that keeps the output transform's tone curve off its color: the
+/// color reaches the display as the material gives it.
+const NO_TONE_MAP: u32 = 2097152u;
+
+/// True when material `m` keeps its color as the display shows it.
+fn keeps_display_color(m: Material) -> bool {
+    return (u32(m.strengths.z) & NO_TONE_MAP) != 0u;
+}
 
 /// Exposed linear color `c` of a fragment at `relative`, its position relative to the camera, seen
 /// through the scene's fog, whose color the core exposes and the sun may light. A material with fog
@@ -625,27 +676,38 @@ fn find_instance(i: InstanceIn) -> Instance {
 }
 
 #ifdef LOD_FADE
+/// The phase of the dither of a fading level, from 0 to 15, for the copy whose source is `source`:
+/// a hash of the source, so that neighboring copies dither in different places rather than in one
+/// grid. Both levels of a band name the same copy, so they keep the same phase.
+fn lod_hash(source: u32) -> u32 {
+    return pcg(source) & 15u;
+}
+
 /// The fade value of the instance that a vertex shader invocation draws, from a fade bucket of a
 /// level of detail: positive for the level that a band hands over to, negative for the level it
-/// hands over from. On WebGPU the culling shader writes it into the copy's fourth id, and on
-/// WebGL2 it follows the instance's entry in the index list.
-fn instance_fade(i: InstanceIn) -> f32 {
+/// hands over from. Then the phase of its dither, from the copy that `source` names. On WebGPU the
+/// culling shader writes the fade value into the copy's fourth id, and on WebGL2 it follows the
+/// instance's entry in the index list.
+fn instance_lod(i: InstanceIn, source: u32) -> vec2f {
 #ifdef WEBGL2
     let record = draw_record(i);
     let index_row = (1u << INDEX_ROW_SHIFT) - 1u;
     let slot = record.x + i.instance * 2u + 1u;
-    return bitcast<f32>(textureLoad(visible, vec2u(slot & index_row, slot >> INDEX_ROW_SHIFT), 0).x);
+    let fade = bitcast<f32>(textureLoad(visible, vec2u(slot & index_row, slot >> INDEX_ROW_SHIFT), 0).x);
+    return vec2f(fade, f32(lod_hash(source)));
 #else
-    return bitcast<f32>(i.ids.w);
+    return vec2f(bitcast<f32>(i.ids.w), f32(lod_hash(source)));
 #endif
 }
 
-/// True when the pixel at `pixel` belongs to a fading level of detail with fade value `fade`: the
-/// pixel's value in a 4 × 4 ordered dither, from 1/32 to 31/32, lies under a positive fade value,
-/// or at or over the size of a negative one. The two levels of a band take the fade value with
-/// opposite signs, so each pixel draws one of them, and a fade value of 0 keeps every pixel.
-fn lod_kept(fade: f32, pixel: vec2f) -> bool {
-    let p = vec2u(pixel) & vec2u(3u);
+/// True when the pixel at `pixel` belongs to a fading level of detail with fade value `fade` and
+/// dither phase `phase`: the pixel's value in a 4 × 4 ordered dither, from 1/32 to 31/32, lies
+/// under a positive fade value, or at or over the size of a negative one. The phase moves the
+/// pattern by whole pixels within its 4 × 4 tile. The two levels of a band take the fade value
+/// with opposite signs and the same phase, so each pixel draws one of them, and a fade value of 0
+/// keeps every pixel.
+fn lod_kept(fade: f32, pixel: vec2f, phase: u32) -> bool {
+    let p = (vec2u(pixel) + vec2u(phase & 3u, phase >> 2u)) & vec2u(3u);
     let low = p & vec2u(1u);
     let high = p >> vec2u(1u);
     // The 2 × 2 dither is 0, 2 on its first row and 3, 1 on its second.
@@ -725,6 +787,25 @@ fn finish_exposed(c: vec3f, pixel: vec2f) -> vec4f {
     );
 }
 
+/// The color a fragment of material `m` writes for linear color `c` in the scene's units at
+/// framebuffer position `pixel`: `finish`, apart from the tone curve for a material whose color
+/// is the display's already.
+fn finish_material(m: Material, c: vec3f, pixel: vec2f) -> vec4f {
+    return finish_exposed_material(m, exposed(c), pixel);
+}
+
+/// The color a fragment of material `m` writes for exposed linear color `c` at framebuffer
+/// position `pixel`: `finish_exposed`, apart from the tone curve for a material whose color is the
+/// display's already, which the vignette still darkens.
+fn finish_exposed_material(m: Material, c: vec3f, pixel: vec2f) -> vec4f {
+#ifdef TONE_MAP
+    if (keeps_display_color(m)) {
+        return null3d::tonemap::finish_unmapped(c, pixel, frame.target_size.xy, frame.vignette);
+    }
+#endif
+    return finish_exposed(c, pixel);
+}
+
 /// A direction from the mesh into the world: the instance's world matrix without its translation.
 fn world_direction(found: Instance, direction: vec3f) -> vec3f {
     return transform_direction(transform_of(found), direction);
@@ -776,6 +857,8 @@ const JOINTS_PER_ROW: u32 = 512u;
 
 #ifdef WEBGL2
 @group(2) @binding(4) var joint_matrices: texture_2d<f32>;
+#else ifdef JOINTS_AFTER_SCENE
+@group(3) @binding(0) var joint_matrices: texture_2d<f32>;
 #else ifdef JOINTS_AFTER_MAPS
 @group(2) @binding(0) var joint_matrices: texture_2d<f32>;
 #else

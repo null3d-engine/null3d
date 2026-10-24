@@ -1,12 +1,21 @@
 import { describe, expect, it } from 'bun:test';
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import {
 	baseOf,
 	changedCrates,
+	crateTests,
+	GUARD_TESTS,
+	guardSteps,
 	keepaliveSeconds,
+	LANDING_VARIABLE,
+	landingSteps,
+	MILESTONE_REF,
+	milestoneRefusal,
 	parsePush,
 	plan,
 	pushToMain,
+	pushToMilestone,
 	SKIP_TRAILER,
 	skipReason,
 	sshHost,
@@ -34,6 +43,35 @@ describe('pushToMain', () => {
 		expect(pushToMain(parsePush(line('refs/heads/work')))).toBeUndefined();
 		expect(pushToMain(parsePush(line(MAIN, ZERO)))).toBeUndefined();
 		expect(pushToMain(parsePush(''))).toBeUndefined();
+	});
+});
+
+describe('the milestone branch', () => {
+	const line = (remoteRef: string, localSha = 'a1', remoteSha = 'b2') =>
+		`refs/heads/work ${localSha} ${remoteRef} ${remoteSha}`;
+
+	it('finds the push to m3-start, including one that deletes it', () => {
+		const refs = parsePush(`${line('refs/heads/work')}\n${line(MILESTONE_REF)}\n`);
+		expect(pushToMilestone(refs)?.remoteRef).toBe(MILESTONE_REF);
+		expect(pushToMilestone(parsePush(line(MILESTONE_REF, ZERO)))).toBeDefined();
+		expect(pushToMilestone(parsePush(line('refs/heads/work')))).toBeUndefined();
+	});
+
+	it('refuses a helper its push to m3-start, and names the variable for the landing', () => {
+		const message = milestoneRefusal(parsePush(line(MILESTONE_REF)), false);
+		expect(message).toContain(MILESTONE_REF);
+		expect(message).toContain(LANDING_VARIABLE);
+		expect(message).toContain('only the coordinator');
+	});
+
+	it('allows the same push when the coordinator sets the landing variable', () => {
+		expect(milestoneRefusal(parsePush(line(MILESTONE_REF)), true)).toBeUndefined();
+	});
+
+	it('leaves a push to another branch alone', () => {
+		const refs = parsePush(line('refs/heads/fix/platform-claim-gaps'));
+		expect(milestoneRefusal(refs, false)).toBeUndefined();
+		expect(milestoneRefusal(parsePush(''), false)).toBeUndefined();
 	});
 });
 
@@ -113,6 +151,55 @@ describe('changedCrates', () => {
 	});
 });
 
+describe('guardSteps', () => {
+	it('checks the decision records and runs the tests that read every package and spec', () => {
+		expect(guardSteps().map((step) => [step.lane, step.command.join(' ')])).toEqual([
+			['DIRECT', 'bun tools/decisions.ts --check'],
+			['DIRECT', `bun test ${GUARD_TESTS.join(' ')}`],
+		]);
+		for (const file of GUARD_TESTS) expect(existsSync(file), file).toBe(true);
+	});
+});
+
+describe('landingSteps', () => {
+	const lanes = (files: string[], withCrateTests = true) =>
+		landingSteps(files, CRATES, true, withCrateTests).map((step) => [
+			step.lane,
+			step.command.join(' '),
+		]);
+
+	it('runs only the guards unless the crate tests are asked for', () => {
+		const guards = guardSteps().map((step) => [step.lane, step.command.join(' ')]);
+		expect(lanes(['crates/null3d-render/src/textures.rs'], false)).toEqual(guards);
+		expect(landingSteps(['crates/null3d-render/src/textures.rs'], CRATES, true)).toEqual(
+			guardSteps(),
+		);
+	});
+
+	it('runs only the guards for a landing that changes no Rust', () => {
+		const guards = guardSteps().map((step) => [step.lane, step.command.join(' ')]);
+		expect(lanes(['.dev/x.md'])).toEqual(guards);
+		expect(lanes(['packages/engine/src/index.ts', 'tests/lib/x.test.ts'])).toEqual(guards);
+	});
+
+	it('tests the crates that a landing changes, in the CPU lane, and checks no whole workspace', () => {
+		const steps = lanes(['crates/null3d-render/src/textures.rs', 'packages/engine/src/index.ts']);
+		expect(steps.slice(0, -1)).toEqual(
+			guardSteps().map((step) => [step.lane, step.command.join(' ')]),
+		);
+		expect(steps.at(-1)).toEqual([
+			'CPU_ONLY',
+			'cargo nextest run --no-fail-fast --profile ci -p null3d-render',
+		]);
+		expect(steps.some(([, command]) => command?.includes('--workspace'))).toBe(false);
+	});
+
+	it('shares the crate tests with a push to main', () => {
+		const files = ['crates/null3d-render/src/textures.rs'];
+		expect(crateTests(files, CRATES, true)).toEqual(plan('b2', 'a1', files, CRATES, true).at(-1));
+	});
+});
+
 describe('plan', () => {
 	const commands = (files: string[], nextest = true) =>
 		plan('b2', 'a1', files, CRATES, nextest).map((step) => [step.lane, step.command.join(' ')]);
@@ -122,6 +209,11 @@ describe('plan', () => {
 			['QUICK', 'bunx commitlint --from b2 --to a1'],
 			['QUICK', 'bun tools/hooks/check-trailers.ts b2..a1'],
 			['QUICK', 'bun tools/hooks/check-merges.ts b2..a1'],
+			['DIRECT', 'bun tools/decisions.ts --check'],
+			[
+				'DIRECT',
+				'bun test tools/lib/release.test.ts tools/lib/cdn.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts tools/lib/ci-workflow.test.ts',
+			],
 		]);
 	});
 
@@ -130,6 +222,11 @@ describe('plan', () => {
 			['QUICK', 'bunx commitlint --from b2 --to a1'],
 			['QUICK', 'bun tools/hooks/check-trailers.ts b2..a1'],
 			['QUICK', 'bun tools/hooks/check-merges.ts b2..a1'],
+			['DIRECT', 'bun tools/decisions.ts --check'],
+			[
+				'DIRECT',
+				'bun test tools/lib/release.test.ts tools/lib/cdn.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts tools/lib/ci-workflow.test.ts',
+			],
 			['CPU_ONLY', 'cargo check --workspace'],
 			['CPU_ONLY', 'cargo nextest run --no-fail-fast --profile ci -p null3d-render'],
 		]);
@@ -143,7 +240,7 @@ describe('plan', () => {
 	});
 
 	it('compiles the workspace for a Rust file outside the crates, with no crate to test', () => {
-		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs'])).toHaveLength(4);
+		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs'])).toHaveLength(6);
 		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs']).at(-1)?.[1]).toBe(
 			'cargo check --workspace',
 		);

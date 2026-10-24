@@ -55,7 +55,12 @@ import {
 	type Tier,
 	tiersOf,
 } from '../lib/images.ts';
-import { STOPS, TONE_MAPPINGS, toneMappingTest } from '../pages/lib/bright-scene.ts';
+import {
+	ADDON_TONE_MAPPINGS,
+	STOPS,
+	TONE_MAPPINGS,
+	toneMappingTest,
+} from '../pages/lib/bright-scene.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 import { MOTION_HOLD } from '../pages/lib/motion-vectors.ts';
 
@@ -85,6 +90,9 @@ const FULL_PRECISION = 'half=off';
 /** The sketch of the tone mapping tests: tiles whose linear colors run from about 0.2 to 16. */
 export const BRIGHT_SKETCH = 'tests/pages/sketches/bright-sketch.ts';
 
+/** The sketch of the tone mapping flag's test: one bright color on two panels, with the flag and without. */
+export const TONE_MAPPED_SKETCH = 'tests/pages/sketches/tone-mapped-sketch.ts';
+
 /** The name of the test that draws a tone mapping test at an exposure of 1 on the 8-bit path. */
 export const eightBitTest = (tone: string) => `tone-${tone}-8-bit`;
 
@@ -99,10 +107,12 @@ const EIGHT_BIT_TOLERANCE = { maxDiffRatio: 0.03 };
 /**
  * The bright scene under each tone mapping, at an exposure of 1 and of 0.5. The 8-bit path, whose
  * shaders tone map themselves, must draw the HDR path's image at an exposure of 1. AgX's punchy
- * look, which three.js lacks, joins the curves that three.js shares here.
+ * look, which three.js lacks, joins the curves that three.js shares here. The two curves of
+ * `@null3d/three-compat` draw on every tier, as the effects do: compatibility mode moves to HDR
+ * color with FXAA for a custom curve.
  */
 function toneMappingTests(): ImageTest[] {
-	return [...TONE_MAPPINGS, 'agx-punchy'].flatMap((tone): ImageTest[] => [
+	const builtIn = [...TONE_MAPPINGS, 'agx-punchy'].flatMap((tone): ImageTest[] => [
 		...STOPS.map(
 			(stops): ImageTest => ({
 				name: toneMappingTest(tone, stops),
@@ -122,6 +132,14 @@ function toneMappingTests(): ImageTest[] {
 			deviceTolerance: EIGHT_BIT_TOLERANCE,
 		},
 	]);
+	const curves = ADDON_TONE_MAPPINGS.flatMap((tone): ImageTest[] =>
+		STOPS.map((stops) => ({
+			name: toneMappingTest(tone, stops),
+			sketch: `${BRIGHT_SKETCH}?tone=${tone}&stops=${stops}`,
+			hold: 0,
+		})),
+	);
+	return [...builtIn, ...curves];
 }
 
 /**
@@ -131,6 +149,17 @@ function toneMappingTests(): ImageTest[] {
  * or missing geometry changes far more.
  */
 const OPTIMIZED_TOLERANCE = { threshold: 0.1, maxDiffRatio: 0.02 };
+
+/**
+ * How far a level stored over its base mesh's vertices may stray from the same level stored as a
+ * mesh of its own, on CI's software GPU. Both draw the same vertices and indices, from another
+ * place in the buffer, and SwiftShader's rasterizer rounds a few pixels of the frame by one step
+ * of 255 there. The Mac draws both pictures identically, on its GPU and on its software GPU, so it
+ * keeps the exact tolerance. A device keeps the default one on the real-GPU references.
+ */
+const LEVEL_ROUNDING_TOLERANCE = {
+	maxDiffRatio: 16 / (MODELS_IMAGE.width * MODELS_IMAGE.height),
+};
 
 /** The sketch of the bloom tests: glowing shapes on a dark ground (bench/scenes/bloom.ts). */
 const BLOOM_SKETCH = 'tests/pages/sketches/bloom-sketch.ts';
@@ -374,19 +403,78 @@ function effectsTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the lens kit's looks: a wall of fine detail under bloom, with bright bars. */
+const LENS_KIT_SKETCH = 'tests/pages/sketches/lens-kit-sketch.ts';
+
+/**
+ * The lens kit's looks, one picture each: the grade, the vignette and the sharpening that the kit
+ * takes from the core, and the add-on's own color fringes, anamorphic streak, grain and speed blur.
+ * Each picture turns one part of the look on and leaves the others off. The marks are custom
+ * effects, which the 8-bit path does not draw, so those four keep the two HDR tiers; the core's
+ * parts draw on every tier.
+ */
+function lensKitTests(): ImageTest[] {
+	const test = (name: string, look: string, tiers?: readonly Tier[]): ImageTest => ({
+		name: `lens-${name}`,
+		sketch: `${LENS_KIT_SKETCH}?look=${look}`,
+		hold: 0,
+		...(tiers && { tiers }),
+	});
+	return [
+		test('grade', 'grade'),
+		test('vignette', 'vignette'),
+		// The sharpening moves an edge by about 10 steps, which the default threshold would not
+		// count: a picture that lost it must fail. CI's software GPU rounds the same edge another
+		// way, so there a step of 10 may move more pixels than the tight limit allows.
+		{
+			...test('sharpen', 'sharpen'),
+			tolerance: { threshold: 0.02, maxDiffRatio: 0.002 },
+			swiftShaderTolerance: { threshold: 0.1, maxDiffRatio: 0.005 },
+		},
+		test('aberration', 'aberration', ['webgpu', 'webgl2']),
+		// The streak and the grain move a pixel by a few steps, which the default threshold does
+		// not count: a picture that lost either mark would still match. The threshold is tight
+		// enough to count the mark, and the software GPU rounds the same pixels within a step.
+		{
+			...test('streak', 'streak', ['webgpu', 'webgl2']),
+			tolerance: { threshold: 0.02, maxDiffRatio: 0.005 },
+		},
+		{
+			...test('grain', 'grain', ['webgpu', 'webgl2']),
+			tolerance: { threshold: 0.02, maxDiffRatio: 0.005 },
+		},
+		test('speed-blur', 'speed', ['webgpu', 'webgl2']),
+	];
+}
+
 /** The sketch of the HDR limit tests: light past the largest 16-bit float. */
 export const HDR_LIMIT_SKETCH = 'tests/pages/sketches/hdr-limit-sketch.ts';
 
 /**
  * Light far past the largest 16-bit float, without bloom and with it, on every tier: an emissive
  * sphere and the sun's highlight on a smooth metal floor. Both must draw white, and the sphere must
- * glow with bloom. The HDR limit spec checks those pixels too, so CI's software GPU, which stores
- * such light as infinity without the limit, fails even where a reference would match.
+ * glow with bloom. The same scene with ?nan adds a plate that gives off light, whose upper half
+ * writes a NaN in every channel: it must draw black on every path, and with bloom it must not
+ * spread through the blur. The HDR limit spec checks those pixels too, so CI's software GPU, which
+ * stores such light as infinity without the limit, fails even where a reference would match.
  */
 function hdrLimitTests(): ImageTest[] {
 	return [
 		{ name: 'hdr-limit', sketch: HDR_LIMIT_SKETCH, hold: 0 },
 		{ name: 'hdr-limit-bloom', sketch: `${HDR_LIMIT_SKETCH}?bloom`, hold: 0 },
+		{ name: 'hdr-limit-nan', sketch: `${HDR_LIMIT_SKETCH}?nan`, hold: 0 },
+		{ name: 'hdr-limit-nan-bloom', sketch: `${HDR_LIMIT_SKETCH}?nan&bloom`, hold: 0 },
+		{
+			name: 'hdr-limit-nan-8-bit',
+			sketch: `${HDR_LIMIT_SKETCH}?nan`,
+			hold: 0,
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'hdr-limit-nan',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
 	];
 }
 
@@ -568,7 +656,9 @@ const OUTLINE_SKETCH = 'tests/pages/sketches/outline-sketch.ts';
  * in the open. At half the render scale, the mask draws into the corner of its target, and the
  * line keeps its width on the canvas. Compatibility mode keeps the 8-bit path with MSAA. The
  * page's switch that turns HDR off puts the other tiers on that path too. The parity test compares
- * both outlines with the same line drawn from the mask of three.js's OutlinePass.
+ * both outlines with the same line drawn from the mask of three.js's OutlinePass. The two
+ * compatibility tests draw the soft outline of `@null3d/three-compat`: one with its glow, and one
+ * with its pulse held half a period in, where the edge shows the pulse's dimmest point.
  */
 function outlineTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -587,6 +677,8 @@ function outlineTests(): ImageTest[] {
 			switches: ['hdr=off'],
 			expect: { hdr: false },
 		},
+		{ ...test('outline-compat-glow', '?compat=glow'), hold: 0.1 },
+		{ ...test('outline-compat-pulse', '?compat=pulse'), hold: 0.5 },
 	];
 }
 
@@ -725,6 +817,12 @@ export const PROBE_SKETCH = 'tests/pages/sketches/probe-sketch.ts';
  * levels. The flat test turns box projection off, so the floor reflects the walls as if they lay
  * far away. The blend test splits the room into two probes that fade into each other. The probe
  * captures in the held frame, whose filter runs before the camera's passes.
+ *
+ * The capture test runs the engine live, because a held frame captures a probe once whatever the
+ * sketch calls. A glowing sphere on a dark floor moves twice: once with probe.capture() after it,
+ * and once without. The page reports the column of the floor's reflection after each move, so the
+ * test proves that a call captures what moved, and that a probe which captures once keeps its map
+ * until one comes.
  */
 function probeTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -737,6 +835,19 @@ function probeTests(): ImageTest[] {
 		test('probe-rough', '?rough'),
 		test('probe-flat', '?flat'),
 		test('probe-blend', '?two'),
+		{
+			name: 'probe-capture',
+			page: 'tests/pages/probe-capture.html',
+			size: [320, 180],
+			// ?target-fps=1 keeps the frame-budget governor from lowering the render scale while a
+			// slow GPU draws the scene, which would draw the settled frame upscaled. A frame that
+			// takes over a second still misses that target, so the sketch pins the governor as well.
+			switches: ['target-fps=1'],
+			expect: { beforeLeft: true, refreshed: true, stale: true },
+			// Every step waits for the floor's reflection to settle, which a software GPU's slow
+			// frames stretch out.
+			timeoutSeconds: 120,
+		},
 	];
 }
 
@@ -749,6 +860,11 @@ const TRANSLUCENCY_SKETCH = 'tests/pages/sketches/translucency-sketch.ts';
 const SUBSURFACE_SKETCH = 'tests/pages/sketches/subsurface-sketch.ts';
 /** The sketch of the clear coats and sheens. */
 const COAT_SHEEN_SKETCH = 'tests/pages/sketches/coat-sheen-sketch.ts';
+/** The sketch of the facades add-on: a wall of rooms, far away, and through the power-on wave. */
+const FACADES_SKETCH = 'tests/pages/sketches/facades-sketch.ts';
+
+/** The sketch of the car paint, its flakes, its seams and its carbon weave. */
+const CAR_PAINT_SKETCH = 'tests/pages/sketches/car-paint-sketch.ts';
 /** The sketch of decals on a stone yard. */
 const DECALS_SKETCH = 'tests/pages/sketches/decals-sketch.ts';
 
@@ -958,12 +1074,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		modes: ALL_MODES,
 	},
 	// The same files where the device keeps to one family of compressed formats, or has none, as
-	// ?compression= makes it: BC7 as on a desktop GPU, ASTC alone, and RGBA8. Every format draws the
-	// image of the device's own formats, so each borrows its references.
+	// ?compression= makes it: BC7 as on a desktop GPU, ASTC alone, ETC2 alone as on a device with
+	// only that family, and RGBA8. Every format draws the image of the device's own formats, so
+	// each borrows its references.
 	...(
 		[
 			['ktx2-bc7', 'bc'],
 			['ktx2-astc', 'astc'],
+			['ktx2-etc2', 'etc2'],
 			['ktx2-rgba8', 'none'],
 		] as const
 	).map(([name, family]) => ({
@@ -1036,6 +1154,42 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'asset-scene',
 		tolerance: OPTIMIZED_TOLERANCE,
 		deviceTolerance: OPTIMIZED_TOLERANCE,
+	},
+	// The same scene with levels of detail, whose ball is biased to draw its first level: the file
+	// gives each level the base mesh's vertex accessors, so the loader stores it over the base
+	// mesh's own vertices. The ball's silhouette moves by its level's error, so the picture keeps
+	// its own reference.
+	{
+		name: 'asset-scene-lod',
+		sketch: 'tests/pages/sketches/asset-scene-sketch.ts?file=lod',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+	},
+	// A skinned box built in code, bent by a joint, whose level names two of its twelve triangles
+	// and the box's own vertex accessors: the engine stores that level over the base's vertices, and
+	// the joint bends it too. Its copy gives the level accessors of its own and must draw the same
+	// pixels, which proves that a skinned level draws the base mesh's own vertices.
+	{
+		name: 'skinned-lod',
+		sketch: 'tests/pages/sketches/skinned-lod-sketch.ts',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+	},
+	// The same file with each level's vertices copied into accessors of its own, which the loader
+	// stores as a separate mesh: a level stored over its base mesh's vertices must draw what the
+	// same level drawn from its own vertex stream drew. Both carry the same arrays and indices, and
+	// the Mac draws the two frames alike, so the exact tolerance holds there. CI's software GPU
+	// rounds a pixel or three of the two buffer layouts by one step, which the SwiftShader
+	// tolerance allows. The test keeps the device tolerance of `asset-scene-lod`, whose picture it
+	// borrows: narrowing it to zero asked a device for a Mac picture bit for bit.
+	{
+		name: 'asset-scene-lod-copied',
+		sketch: 'tests/pages/sketches/asset-scene-sketch.ts?file=lod&copied',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+		reference: 'asset-scene-lod',
+		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		swiftShaderTolerance: LEVEL_ROUNDING_TOLERANCE,
 	},
 	// The outputs of assets convert: a skinned, morphed column from FBX halfway through its clip,
 	// the same column from OBJ, a pyramid from STL with face colors and a cube from PLY with corner
@@ -1146,12 +1300,30 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Fifty textures that load in waves in a live engine, a band of rows per frame under a small
 	// upload budget, while their array grows twice, to 64 layers. No frame may upload more than the
 	// budget, and the GPU memory count must match the array.
+	// The budget is half a texture, so the page must draw about 120 frames before every image is on
+	// the GPU. CI's software GPU drew them at about half a second each and published no result
+	// within 60 seconds in any thread mode, its trail still counting frames down to the last few
+	// images. The limit therefore allows about twice what CI's slowest mode needs. The test's worst
+	// case, a page that stalls in every mode, grows to 11 minutes of a shard.
 	{
 		name: 'texture-arrays',
 		page: 'tests/pages/texture-arrays.html',
 		size: [400, 240],
 		modes: ALL_MODES,
 		expect: { withinBudget: true, memoryCounted: true },
+		timeoutSeconds: 120,
+	},
+	// A screen that follows a 1024 x 1024 OffscreenCanvas in the sketch and refreshes a 256 x 256
+	// rectangle of it at most 30 times a second. A refresh uploads only the rectangle, so every
+	// measured frame keeps within the preset's upload budget, and the screen shows the canvas
+	// upright: each corner has its own color.
+	{
+		name: 'canvas-texture',
+		page: 'tests/pages/canvas-texture.html',
+		size: [400, 240],
+		modes: ALL_MODES,
+		expect: { withinBudget: true, partial: true, rateKept: true, refreshed: true },
+		timeoutSeconds: 120,
 	},
 	// Two 512 x 512 textures and a small one past a texture memory budget of 1 MiB in a live engine.
 	// The large ones drop their largest mip level, so each quarter draws one flat color where the
@@ -1173,6 +1345,38 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// A small static scene: lit and unlit meshes, a hierarchy and an instance batch.
 	{ name: 'scene', sketch: 'tests/pages/sketches/boxes-sketch.ts', hold: 0, modes: ALL_MODES },
+	// A water sheet whose custom material reads the copy of the opaque scene's depth: shallow
+	// edges stay pale, deep water darkens, and foam shows where a box nearly touches the sheet.
+	// Both GPU paths and every thread mode must bind the copy the same way.
+	{
+		name: 'scene-depth',
+		page: 'tests/pages/scene-depth.html',
+		size: [320, 180],
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+		modes: ALL_MODES,
+	},
+	// A beach and a pond whose water meets a bed that rises to the surface, an island and two stones.
+	// The surface function reads the copy of the opaque scene's depth and fades the water over a band
+	// at the end of its gap to the geometry behind it, so each shoreline is soft rather than a hard
+	// polygon edge. Without the copy the water draws its deep color with no foam line. Every GPU tier
+	// must bind the copy the same way.
+	{
+		name: 'water-shores',
+		sketch: 'tests/pages/sketches/water-shores-sketch.ts',
+		hold: 0,
+		modes: ALL_MODES,
+	},
+	// The same shoreline, with the water's own textures beside the depth: a sheet of ripple rings and
+	// a field of foam flecks. A material that reads the copy of the opaque scene's depth takes a maps'
+	// group with one slot fewer, so both the copy and the textures fit the fragment stage. Every GPU
+	// tier must bind all three groups, so a tier that drops one shows a different shore.
+	{
+		name: 'depth-textures',
+		sketch: 'tests/pages/sketches/depth-textures-sketch.ts',
+		hold: 0,
+		modes: ALL_MODES,
+	},
 	// A box that fixed steps move at 50 steps per second, and a camera that follows it from the late
 	// update, held at 1.5 seconds: the box stays at the center, and every mode runs the same steps.
 	{
@@ -1235,7 +1439,51 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tolerance: EIGHT_BIT_TOLERANCE,
 		deviceTolerance: EIGHT_BIT_TOLERANCE,
 	},
+	// The sharpening at the whole canvas's render scale: a wall of small boxes whose edges fill the
+	// image, at the most that the value takes, on the HDR path and on the 8-bit path. Both paths
+	// sharpen display color, in the second step of the two-step pass, which sharpening draws at the
+	// whole scale. Each path keeps its own references: the sharpening widens the one-step difference
+	// of the tones that the two paths resolve at an edge. The threshold is tighter than the default,
+	// because the sharpening moves an edge by about 10 steps, which the default would not count: a
+	// picture that lost it must fail.
+	{
+		name: 'sharpen',
+		sketch: 'tests/pages/sketches/sharpen-sketch.ts?sharpen=1',
+		hold: 0,
+		tolerance: { threshold: 0.02, maxDiffRatio: 0.002 },
+		// The sharpening widens a one-step difference at an edge to about 10 steps, so CI's software
+		// GPU on another machine may count more pixels than the tight threshold allows. A picture
+		// that lost the sharpening moves far more, at about a fifth of the image.
+		swiftShaderTolerance: { threshold: 0.1, maxDiffRatio: 0.005 },
+	},
+	{
+		name: 'sharpen-8-bit',
+		sketch: 'tests/pages/sketches/sharpen-sketch.ts?sharpen=1',
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['hdr=off'],
+		expect: { hdr: false },
+		tolerance: { threshold: 0.02, maxDiffRatio: 0.002 },
+		swiftShaderTolerance: { threshold: 0.1, maxDiffRatio: 0.005 },
+	},
 	...toneMappingTests(),
+	// One bright unlit color on two panels, the left with toneMapped: false. The 8-bit path applies
+	// the output transform in each material's shader. The HDR path's final pass reads the mask of the
+	// surfaces that keep their display color and skips the curve for those pixels. So each path keeps
+	// that panel's color as the display shows it and tone maps the other: the panels differ. The spec
+	// reads the panels on every tier and checks each path's promise.
+	{ name: 'tone-mapped', sketch: TONE_MAPPED_SKETCH, hold: 0 },
+	// The same scene forced onto the 8-bit path on both backends. Compatibility mode covers the
+	// WebGPU build of the material shaders, and WebGL2 uses the build that naga writes instead, so
+	// each must keep the flagged panel's color.
+	{
+		name: 'tone-mapped-8-bit',
+		sketch: TONE_MAPPED_SKETCH,
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['hdr=off'],
+		expect: { hdr: false },
+	},
 	...antialiasTests(),
 	// The edges scene in a live engine with the still-camera accumulation on, captured once the
 	// view has blended its frames and rests (tests/pages/still.ts). Its edges come out smoother
@@ -1257,6 +1505,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...exposureTests(),
 	...fogVolumeTests(),
 	...effectsTests(),
+	...lensKitTests(),
 	...hdrLimitTests(),
 	...realUnitsTests(),
 	...aoTests(),
@@ -1377,6 +1626,19 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			hold: 0,
 		}),
 	),
+	// A small scene of lit, unlit and blended objects and an instance batch, drawn with each object's
+	// own materials and with one material over every mesh and batch row of the main pass: the
+	// override shades the unlit sphere, makes the blended box opaque and keeps the batch's rows.
+	{
+		name: 'override-material-off',
+		sketch: 'tests/pages/sketches/override-material-sketch.ts',
+		hold: 0,
+	},
+	{
+		name: 'override-material',
+		sketch: 'tests/pages/sketches/override-material-sketch.ts?override=1',
+		hold: 0,
+	},
 	// The motion debug view (D-140) of a scene where most things move: a drifting camera, a sliding
 	// box, a spinning box, a dynamic batch, grass that a custom material sways, a skinned tube, a
 	// morphed sphere and a masked pane. The motion spec checks exact cases pixel by pixel.
@@ -1975,6 +2237,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [LIGHTS_IMAGE.width, LIGHTS_IMAGE.height],
 	},
+	// A spot light that projects a picture over its cone: a gobo with a dark cross and border and
+	// colored squares, over a floor, a wall and a sphere in the beam. The map's colors tint the
+	// light, and its pattern shows the projection on both GPU paths and in compatibility mode.
+	{
+		name: 'spot-map',
+		sketch: 'tests/pages/sketches/spot-map-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	// The hemisphere light as two halves, one turned upside down with its colors swapped, which take
 	// their intensities and colors in every frame. The frame sums them to the single light, so the
 	// test borrows its references.
@@ -2033,11 +2306,47 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold,
 		size: [480, 270] as const,
 	})),
+	// Cluster levels: a heightfield of 32,768 triangles that the asset tool cut into a tree of
+	// patches. The camera looks along the ground, so the near edge draws fine patches and the far
+	// edge coarse ones, in one draw for the whole mesh. The second test stands farther back, where
+	// every patch that draws is coarser. The patch pass runs on the indirect path, so the tests
+	// force it: the start-up probe may pick the direct path, which draws the whole mesh, and the
+	// picture then depends on which path the probe measured.
+	{
+		name: 'cluster',
+		sketch: 'tests/pages/sketches/cluster-sketch.ts',
+		hold: 0,
+		size: [480, 270] as const,
+		switches: ['direct=off'],
+	},
+	{
+		name: 'cluster-far',
+		sketch: 'tests/pages/sketches/cluster-sketch.ts?d=70',
+		hold: 0,
+		size: [480, 270] as const,
+		switches: ['direct=off'],
+	},
+	{
+		// A threshold of 16 pixels draws patches far coarser than the mesh, so the picture shows
+		// the near ground fine and the far ground simplified. The WebGL2 path draws the whole mesh
+		// and so draws no difference from the plain test, so this one takes the WebGPU tiers.
+		name: 'cluster-coarse',
+		sketch: 'tests/pages/sketches/cluster-sketch.ts?coarse',
+		hold: 0,
+		size: [480, 270] as const,
+		tiers: ['webgpu', 'compat'] as const,
+		switches: ['direct=off'],
+	},
 	// Levels of detail: copies of a sphere whose levels each take a color, just before and just past
 	// each of three switch distances. Every GPU path must draw the first path's image, so each
 	// switches at the same distances. The copies draw as objects and as the rows of a batch, with
 	// the levels switching at once and in their fading bands, opaque and as a mask smoothed by alpha
 	// to coverage, and one copy casts a coarser level's shadow onto a wall.
+	//
+	// The sketch places each copy along its own ray at the distance the rule measures, so a copy
+	// sits at the share of its switch that the test means: at 95 percent of a 9.27 m switch it
+	// draws the base level with one copy, and at 103 percent the first lower level. The bias test
+	// halves that switch once: 4.63 m, and the same shares of it draw the same levels.
 	{
 		name: 'lod',
 		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp',
@@ -2049,6 +2358,27 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'lod-batch',
 		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp&batch',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod',
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	{
+		// Each object takes a bias of 2, which halves its switch once, so each copy is placed at half
+		// the distance of the first test's and draws the same level there. The copies are then
+		// twice the size on screen, so this test keeps a picture of its own rather than the first
+		// test's: a bias moves the switches, not the sizes.
+		name: 'lod-bias',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp&bias',
+		hold: 0,
+		size: [480, 270],
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	{
+		// Each level draws with a material of its own, in the level's color, instead of the base
+		// mesh's material with its vertex colors: the image must match the first test's.
+		name: 'lod-material',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp&material',
 		hold: 0,
 		size: [480, 270],
 		reference: 'lod',
@@ -2074,6 +2404,37 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/lod-sketch.ts?shadows',
 		hold: 0,
 		size: [480, 270],
+	},
+	// A distance band hides a copy outside it and fades it at each edge. Two rows of copies stand
+	// around the band's start and its end: one outside, one inside the fade band, and one past it.
+	// The fade dither's phase follows each copy's number in its draw, which each GPU path numbers
+	// its own way, so every path keeps a picture of its own, as the level fade's test does.
+	{
+		name: 'lod-range',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?range',
+		hold: 0,
+		size: [480, 270],
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	{
+		name: 'lod-range-batch',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?range&batch',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod-range',
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// A bound that covers fewer pixels than the threshold draws nothing: the last level holds no
+	// geometry. Three copies stand at 95%, 103% and 109% of that distance, the second inside the
+	// band that thins the last level out with the dither. Every GPU path must draw the first's
+	// image, so both pickers hide at the same distance.
+	{
+		name: 'lod-hide',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?hide',
+		hold: 0,
+		size: [480, 270],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
 	},
 	// The built-in values of custom materials, at a held time: frame, camera and object, and the
 	// surface's world position, in a surface function and a vertex offset.
@@ -2107,6 +2468,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/custom-inputs-sketch.ts',
 		hold: 1,
 		size: [480, 270],
+		timeoutSeconds: 120,
 	},
 	// The README's dissolve: a surface function with uniforms and the mask alpha mode, at four
 	// stages of its progress.
@@ -2115,6 +2477,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/custom-dissolve-sketch.ts',
 		hold: 0,
 		size: [480, 270],
+		timeoutSeconds: 120,
 	},
 	// Custom materials with textures: two textures that a surface function samples, the same WGSL
 	// without them, which samples white, a vertex offset that reads a height in the vertex stage,
@@ -2122,6 +2485,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'custom-textures',
 		sketch: 'tests/pages/sketches/custom-textures-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
+	// A custom material that samples layers of one texture array, which its shader picks: a plane
+	// whose bands sample a layer each, a sphere that loads two layers in one surface function, and
+	// a plane that samples with a bias from a layer that its height picks.
+	{
+		name: 'custom-texture-array',
+		sketch: 'tests/pages/sketches/custom-texture-array-sketch.ts',
 		hold: 0,
 		size: [480, 270],
 		modes: ALL_MODES,
@@ -2270,10 +2643,66 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/terrain-sketch.ts',
 		hold: 1,
 	},
-	// Impostors of the impostors add-on: cards around an origin far from the world's, each drawing
-	// an atlas cell, and a merged row of a plain, a turned and a mirrored panel, which draws only
-	// when the merge reverses the mirrored copy's winding. The frame each card picks from its
-	// direction to the eye is checked by the package's unit test, which the picture cannot show.
+	// Each built-in vegetation species: three of its variants, grown from the species record and a
+	// fixed seed, in a row on flat ground, drawn with the bark and leaf atlases that the GPU paints
+	// at first use.
+	...[
+		'broadleaf',
+		'conifer',
+		'shrub',
+		'fern',
+		'meadow-grass',
+		'oak',
+		'beech',
+		'birch',
+		'willow',
+		'alder',
+		'hosta',
+		'sedge',
+		'rush',
+	].map((species) => ({
+		name: `vegetation-${species}`,
+		sketch: `tests/pages/sketches/vegetation-sketch.ts?species=${species}`,
+		hold: 1,
+	})),
+	// The four maps that the GPU paints for the two atlases, each with its mip levels beside it,
+	// and below them a trunk and a leaf card drawn through the materials that sample them.
+	{
+		name: 'vegetation-atlas',
+		sketch: 'tests/pages/sketches/vegetation-atlas-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+	},
+	// One oak crown at three distances from one camera: the leaf cards keep the share of the picture
+	// that they cover as they shrink, since every level of the atlas is painted with its own filter.
+	// Creek's painted oak beside the generated one: the file that the showcase loads, with an
+	// artist's bark and leaf textures, and the same species grown by the add-on and drawn from the
+	// atlases that the GPU paints at first use. The picture is the judge of the two side by side.
+	{
+		name: 'vegetation-versus-creek',
+		sketch: 'tests/pages/sketches/vegetation-versus-creek-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+		// Creek's model files are large, and the software GPU takes its time with their textures.
+		timeoutSeconds: 180,
+	},
+	{
+		name: 'vegetation-leaf-cards',
+		sketch: 'tests/pages/sketches/leaf-card-coverage-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+	},
+	{
+		name: 'vegetation-coverage',
+		sketch: 'tests/pages/sketches/vegetation-coverage-sketch.ts',
+		hold: 1,
+		size: [640, 360],
+	},
+	// Impostors of the impostors add-on: cards far from the world's origin, each blending the three
+	// atlas views nearest its direction to the eye and lit by the sun from the normal the surface
+	// atlas stores, and a merged row of a plain, a turned and a mirrored panel, which draws only
+	// when the merge reverses the mirrored copy's winding. The colours run around the direction
+	// their views were drawn from, so a card's colour shows the views it blends.
 	{
 		name: 'impostors',
 		sketch: 'tests/pages/sketches/impostors-sketch.ts',
@@ -2306,6 +2735,77 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/points-sketch.ts',
 		hold: 0,
 		size: [POINT_IMAGE.width, POINT_IMAGE.height],
+	},
+	// A point cloud that an add-on declares with a feature description: an opaque cloud of discs
+	// behind a blended cloud of soft discs. Each draw gives its WGSL, its vertex format, its uniforms
+	// and the description's frame point and order, so every thread mode must draw the same picture.
+	{
+		name: 'feature-draw',
+		sketch: 'tests/pages/sketches/feature-draw-sketch.ts',
+		hold: 0,
+		modes: ALL_MODES,
+	},
+	// An add-on's draw whose instance count the GPU writes: a field of quads that the page fills,
+	// which every GPU path and thread mode must draw the same. WebGPU takes the count through the
+	// engine's copy into the indirect draw; WebGL2 draws an instance batch of the same rows.
+	{
+		name: 'feature-instances',
+		sketch: 'tests/pages/sketches/feature-instances-sketch.ts',
+		hold: 0,
+		modes: ALL_MODES,
+	},
+	// The compute-side proof of an instance draw: the page fills nothing, and a compute shader
+	// writes 42 instance rows and the draw's count. The picture shows exactly those 42 quads, so
+	// the count and the rows that the GPU wrote are the ones drawn. WebGL2 has no compute pass.
+	{
+		name: 'feature-instances-compute',
+		sketch: 'tests/pages/sketches/feature-instances-compute-sketch.ts',
+		hold: 0,
+		tiers: ['webgpu', 'compat'],
+	},
+	// A compute pass's storage texture, which a material samples in the same frame: four colored
+	// quadrants. WebGPU runs the compute shader, and WebGL2 its fragment form, so the two paths
+	// must draw the same picture.
+	{
+		name: 'compute-pass',
+		sketch: 'tests/pages/sketches/compute-pass-sketch.ts',
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+	},
+	// A custom material's vertex offset that reads the texture of a compute pass, in the main view
+	// and in its shadow: the pass steps from its old value to its held one at the hold time, so a
+	// pass that ran after the shadow pass leaves the shadow a metre behind the box. WebGL2 runs the
+	// pass's fragment form, which writes the same texture.
+	{
+		name: 'compute-vertex-offset',
+		sketch: 'tests/pages/sketches/compute-vertex-offset-sketch.ts',
+		hold: 0.5,
+		tiers: ['webgpu', 'webgl2'],
+	},
+	// Gaussian splats from an SPZ file that the sketch makes: a knot of splats above a ground, with a
+	// bar in front of part of it, so the picture shows the splats hiding behind a mesh and fading where
+	// they meet the ground. The selection runs on a job worker before the held frame draws.
+	{
+		name: 'splats',
+		sketch: 'tests/pages/sketches/splats-sketch.ts',
+		hold: 0,
+		modes: ALL_MODES,
+	},
+	// The same cloud with the budget capped, so fewer splats draw: the worker keeps the most
+	// important prefix of each chunk, and the picture must differ from the whole cloud's.
+	{
+		name: 'splats-budget',
+		sketch: 'tests/pages/sketches/splats-sketch.ts?budget=9000',
+		hold: 0,
+		modes: ALL_MODES,
+	},
+	// The same add-on's glTF reader: a model that carries KHR_gaussian_splatting, which the add-on
+	// reads as its module loads. Its splats draw in the file's order inside each part.
+	{
+		name: 'splats-gltf',
+		sketch: 'tests/pages/sketches/splats-gltf-sketch.ts',
+		hold: 0,
+		modes: ALL_MODES,
 	},
 	// 100,000 sprites of a dynamic batch in one draw: a field of them seen from above, and a row of
 	// sprites sized in pixels whose centers lie outside the view. It holds its first frame, and takes
@@ -2387,6 +2887,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: `${TRANSMISSION_SKETCH}?blend`,
 		hold: 0,
 		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
+	},
+	// The balls' transmission and thickness vary across them, from the two maps that take the
+	// specular maps' slots: bands of the transmission map's red and bands of the thickness map's
+	// green. A software GPU builds these shaders slowly.
+	{
+		name: 'transmission-maps',
+		sketch: `${TRANSMISSION_SKETCH}?maps`,
+		hold: 0,
+		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
+		timeoutSeconds: 60,
 	},
 	// Clear water over a bed of stones: the bed shows through the water, bent by its ripples.
 	{ name: 'transmission-water', sketch: TRANSMISSION_WATER_SKETCH, hold: 0 },
@@ -2486,6 +2996,37 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'coat-sheen',
 		timeoutSeconds: 60,
 	},
+	// Car paint: a metallic body with filtered flakes and panel seams, and the same body with each
+	// part left out or with a carbon weave whose tows stretch their highlight. The paint spec
+	// checks that each part changes the image. A software GPU builds a custom shader and the room
+	// slowly.
+	{ name: 'car-paint', sketch: CAR_PAINT_SKETCH, hold: 0, timeoutSeconds: 120 },
+	// The facades add-on: a wall of lit rooms seen close and in parallax, the same wall from far
+	// enough that the far fallback takes over, and a held frame partway through the power-on wave.
+	// The facades spec checks that the rooms' furniture, the blinds and the wave each change the
+	// image. A software GPU builds a custom shader and the wall pages slowly.
+	{ name: 'facades', sketch: FACADES_SKETCH, hold: 1, timeoutSeconds: 120 },
+	{ name: 'facades-far', sketch: `${FACADES_SKETCH}?far`, hold: 1, timeoutSeconds: 120 },
+	{ name: 'facades-wave', sketch: `${FACADES_SKETCH}?wave`, hold: 0.35, timeoutSeconds: 120 },
+	{ name: 'facades-close', sketch: `${FACADES_SKETCH}?close`, hold: 1, timeoutSeconds: 120 },
+	{
+		name: 'car-paint-no-flakes',
+		sketch: `${CAR_PAINT_SKETCH}?flakes=off`,
+		hold: 0,
+		timeoutSeconds: 120,
+	},
+	{
+		name: 'car-paint-no-seams',
+		sketch: `${CAR_PAINT_SKETCH}?seams=off`,
+		hold: 0,
+		timeoutSeconds: 120,
+	},
+	{
+		name: 'car-paint-weave',
+		sketch: `${CAR_PAINT_SKETCH}?weave=on`,
+		hold: 0,
+		timeoutSeconds: 120,
+	},
 	// Weighted blending: crossing panes of glass and overlapping puffs blend in any order in the
 	// camera's weighted layer, over a pane of normal blending.
 	{ name: 'weighted', sketch: WEIGHTED_SKETCH, hold: 0, size: [480, 270] },
@@ -2542,16 +3083,44 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	),
 	// Each demo in examples/, held at the demo's time. A showcase scene draws its Low preset on
 	// SwiftShader, which keeps the software GPU's run short, and its full look everywhere else.
-	...DEMOS.map(
-		(demo): ImageTest => ({
+	...DEMOS.map((demo): ImageTest => {
+		const switches = [
+			...(demo.largeWorld ? ['largeWorld'] : []),
+			// The engine reads the page's switch, but not the demo's option, which a sketch test has no
+			// page to pass. Both take the 8-bit path that the demo's own start takes.
+			...(demo.hdr === false ? ['hdr=off'] : []),
+		];
+		return {
 			name: `demo-${demo.name}`,
 			sketch: `examples/${sketchPath(demo)}`,
 			hold: demo.hold,
-			...(demo.largeWorld && { switches: ['largeWorld'] }),
+			...(switches.length > 0 && { switches }),
+			...(demo.hdr === false && { expect: { hdr: false } }),
 			...(demo.timeoutSeconds !== undefined && { timeoutSeconds: demo.timeoutSeconds }),
+			// The screens draw their readings into a 2D canvas, and each browser rasterises that
+			// text its own way: the readings and the layout match everywhere, while the digits'
+			// edges differ. On 24 October 2026 Safari differed on 1.0 per cent of the pixels and
+			// Firefox on 1.8, against a device tolerance of half a per cent.
+			...(demo.name === 'canvas-screen' && {
+				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.025 },
+			}),
+			// The rain and the lens marks land on pixels that each browser's own GPU rounds its
+			// own way: every run that judged it found the same city, pose and traffic. Firefox
+			// differed on 0.9 per cent of the pixels on 24 October 2026.
+			...(demo.name === 'skyway' && {
+				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.012 },
+			}),
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
-		}),
-	),
+		};
+	}),
+	// The objects demo's Look button, which a held frame cannot press: the same stage and time with
+	// one material over every mesh of the main pass, so each crate keeps its shape and its place.
+	{
+		name: 'demo-objects-one-material',
+		sketch: 'examples/objects/sketch.ts?look=one',
+		hold: 2.5,
+		timeoutSeconds: 60,
+	},
 	// Each comparison with three.js, held at its time and count, in each engine. Each engine draws its
 	// own references: the owner reviews the two frames side by side, as each draws each effect with
 	// its own technique for the same look.

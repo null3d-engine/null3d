@@ -114,6 +114,7 @@ use crate::ao::{self, AoIds};
 use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
+use crate::compute::ComputePassIds;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
 use crate::dof::DofIds;
@@ -127,7 +128,7 @@ use crate::frame::{
     RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, drawn_rows, joined_rows,
     settled,
 };
-use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
+use crate::frame_graph::{DrawnViews, FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
 use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{LightGrid, LightGrids, LightLimits};
@@ -146,6 +147,7 @@ use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame
 use crate::sorted::{SkinnedPipeline, SortedLayout, SortedRows};
 use crate::ssr::SsrIds;
 use crate::subsurface::SubsurfaceIds;
+use crate::taa::TaaIds;
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
 use crate::view::{MAX_VIEWS, ViewFrame, ViewId};
@@ -168,6 +170,7 @@ mod ids {
     use crate::effects::EffectPass;
     use crate::particles::ParticleIds;
     use crate::subsurface::STEPS as SUBSURFACE_STEPS;
+    use crate::taa::STEPS as TAA_STEPS;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
     use crate::weighted::WeightedIds;
 
@@ -196,8 +199,10 @@ mod ids {
     pub const AO: u32 = BLOOM + 1;
     /// The uniform buffer of the background's values.
     pub const BACKGROUND: u32 = AO + 1;
+    /// The uniform buffer of a sky layer's values.
+    pub const BACKGROUND_LAYER: u32 = BACKGROUND + 1;
     /// The uniform buffer of the custom effects' blocks.
-    pub const EFFECTS: u32 = BACKGROUND + 1;
+    pub const EFFECTS: u32 = BACKGROUND_LAYER + 1;
     /// The uniform buffer of depth of field's steps.
     pub const DOF: u32 = EFFECTS + 1;
     /// The uniform buffer of the motion debug view's step.
@@ -227,8 +232,10 @@ mod ids {
     pub const ACCUMULATE: u32 = EXPOSURE + 1;
     /// The settings of the final pass's still build, which draws a still view's accumulated color.
     pub const STILL_SETTINGS: u32 = ACCUMULATE + 1;
+    /// The uniform buffer of temporal anti-aliasing's resolve.
+    pub const TAA: u32 = STILL_SETTINGS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = STILL_SETTINGS + 1;
+    pub const PAGES: u32 = TAA + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -280,9 +287,11 @@ mod ids {
     pub const BLANK_AO: u32 = MORPH_WEIGHTS + 1;
     /// The texture that custom effects bind in place of the scene's depth when they read none.
     pub const BLANK_EFFECT_DEPTH: u32 = BLANK_AO + 1;
+    /// The texel that custom effects bind in place of bloom's level when they read none.
+    pub const BLANK_EFFECT_BLOOM: u32 = BLANK_EFFECT_DEPTH + 1;
     /// The texel that frame groups bind in place of the copy of the camera's opaque color while
     /// nothing lets light through.
-    pub const BLANK_TRANSMISSION: u32 = BLANK_EFFECT_DEPTH + 1;
+    pub const BLANK_TRANSMISSION: u32 = BLANK_EFFECT_BLOOM + 1;
     /// The texel that a full-screen pass without an input image reads, and the one that it binds
     /// in place of the scene's depth when it reads none.
     pub const BLANK_PASS_COLOR: u32 = BLANK_TRANSMISSION + 1;
@@ -297,9 +306,11 @@ mod ids {
     pub const BLANK_PROBES: u32 = STREAMED_VALUES + RING;
     /// The texel that particle systems bind in place of a view's depth copy.
     pub const BLANK_PARTICLE_DEPTH: u32 = BLANK_PROBES + 1;
+    /// The texel that custom materials bind in place of the copy of the camera's opaque depth.
+    pub const BLANK_SCENE_DEPTH: u32 = BLANK_PARTICLE_DEPTH + 1;
     /// The texture of one texel that the motion debug view reads in place of the motion target
     /// where the device draws none.
-    pub const BLANK_MOTION: u32 = BLANK_PARTICLE_DEPTH + 1;
+    pub const BLANK_MOTION: u32 = BLANK_SCENE_DEPTH + 1;
     /// The physical sky's tables and panorama.
     pub const SKY_TABLES: u32 = BLANK_MOTION + 1;
     /// The automatic exposure's cells, its texel, which the final pass reads, and its stored texel.
@@ -336,6 +347,10 @@ mod ids {
     pub const TARGETS: u32 = PICK_GROUP + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
+    /// The uniform buffer of the compute passes' blocks. WebGL2 runs no compute pass, so nothing
+    /// uses these, and the graph's ids stay a table of one shape on both builders.
+    pub const COMPUTE: u32 = TEXTURE_ARRAYS + 1;
+    pub const COMPUTE_PIPELINES: u32 = 100;
     /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
     pub const SHADOW_SAMPLER: u32 = 1;
     /// The linear sampler of bloom's steps and of the final pass's bloom build.
@@ -364,7 +379,10 @@ mod ids {
     /// The color grading table's sampler that the final pass's still build owns.
     pub const STILL_LUT_SAMPLER: u32 = OUTPUT_LUT_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = STILL_LUT_SAMPLER + 1;
+    /// The linear sampler of temporal anti-aliasing's history.
+    pub const TAA_SAMPLER: u32 = STILL_LUT_SAMPLER + 1;
+    /// The samplers of materials' maps.
+    pub const SAMPLERS: u32 = TAA_SAMPLER + 1;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -395,9 +413,11 @@ mod ids {
     pub const AO_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
     /// The background's bind group, after ambient occlusion's.
     pub const BACKGROUND_GROUP: u32 = AO_GROUPS + AO_STEPS as u32;
+    /// The bind group of a sky layer's values, after the background's.
+    pub const BACKGROUND_LAYER_GROUP: u32 = BACKGROUND_GROUP + 1;
     /// The bind group of each custom effect, and of each group of joined effects, after the
-    /// background's.
-    pub const EFFECT_GROUPS: u32 = BACKGROUND_GROUP + 1;
+    /// layer's.
+    pub const EFFECT_GROUPS: u32 = BACKGROUND_LAYER_GROUP + 1;
     /// The bind group of each step of depth of field, after the effects'.
     pub const DOF_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
@@ -426,8 +446,11 @@ mod ids {
     pub const STILL_GROUP: u32 = ACCUMULATE_GROUP + 1;
     /// The bind group of the scene depth that the decal pass reads, after the still build's.
     pub const DECAL_DEPTH_GROUP: u32 = STILL_GROUP + 1;
-    /// The bind groups of the volumetric fog's steps, after the decal pass's depth.
-    pub const FOG_GROUPS: u32 = DECAL_DEPTH_GROUP + 1;
+    /// The first of two bind groups that custom materials which read the scene's depth bind: the
+    /// blank texel, then the copy of the camera's opaque depth.
+    pub const MATERIAL_SCENE_GROUPS: u32 = DECAL_DEPTH_GROUP + 1;
+    /// The bind groups of the volumetric fog's steps, after the materials' scene groups.
+    pub const FOG_GROUPS: u32 = MATERIAL_SCENE_GROUPS + 2;
     /// The bind groups of the automatic exposure's meter, after the fog's.
     pub const EXPOSURE_GROUPS: u32 = FOG_GROUPS + crate::fog_volume::GROUPS;
     /// The motion pass's frame group for each frame parity and each slot of the streamed ring,
@@ -438,8 +461,13 @@ mod ids {
         MOTION_FRAME_GROUPS + parity as u32 * RING + streamed
     }
 
-    /// The bind groups of materials' maps, after the motion pass's.
-    pub const TEXTURE_GROUPS: u32 = MOTION_FRAME_GROUPS + 2 * RING;
+    /// Group 0 of each compute pass. WebGL2 runs no compute pass, so nothing uses this band, and
+    /// it keeps the builder's table the same shape as the other path's.
+    pub const COMPUTE_GROUPS: u32 = MOTION_FRAME_GROUPS + 2 * RING;
+    /// The bind groups of temporal anti-aliasing's resolve and copy, after the compute passes'.
+    pub const TAA_GROUPS: u32 = COMPUTE_GROUPS + MAX_VIEWS as u32;
+    /// The bind groups of materials' maps, after temporal anti-aliasing's.
+    pub const TEXTURE_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
 }
 
 /// The group index of the decal pass's scene depth in the decal templates on WebGL2: after the
@@ -509,6 +537,20 @@ pub const fn max_sources(max_texture_size: u32) -> u32 {
 /// Bits of a source in an index list entry: those below the cell index.
 pub const MAX_SOURCE_BITS: u32 = CELL_SHIFT;
 
+/// The layouts a frame builds besides the scene's, which its passes draw.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct LayoutWanted {
+    /// The outlined objects, which the outline view draws into the mask.
+    outlines: bool,
+    /// The objects whose material has a scatter radius, which the subsurface view draws.
+    scatters: bool,
+    /// The objects whose material keeps its display color, which the tone view draws into the
+    /// mask.
+    tones: bool,
+    /// True when the scene's draws get their motion pipelines.
+    motion: bool,
+}
+
 /// Records one draw list per frame for the WebGL2 path.
 pub struct CpuCulledRenderer {
     config: CpuCulledConfig,
@@ -567,6 +609,12 @@ pub struct CpuCulledRenderer {
     /// The subsurface view's culling output and draws.
     skin_culling: Culling,
     skin_draws: Opaque,
+    /// The tone view's layout, culling output and draws.
+    tone: Layout,
+    tone_culling: Culling,
+    tone_draws: Opaque,
+    /// True when the layouts were built while some material keeps its display color.
+    layouts_toned: bool,
     /// True when the cascades' uniform block holds cascades, which receivers then read.
     cascades_held: bool,
     lines: LinesPass,
@@ -703,6 +751,7 @@ impl CpuCulledRenderer {
                             sampler: ids::EFFECT_SAMPLER,
                             first_group: ids::EFFECT_GROUPS,
                             blank_depth: ids::BLANK_EFFECT_DEPTH,
+                            blank_bloom: ids::BLANK_EFFECT_BLOOM,
                         },
                         fullscreen: FullscreenIds {
                             buffer: ids::FULLSCREEN,
@@ -710,6 +759,11 @@ impl CpuCulledRenderer {
                             first_group: ids::FULLSCREEN_GROUPS,
                             blank_color: ids::BLANK_PASS_COLOR,
                             blank_depth: ids::BLANK_PASS_DEPTH,
+                        },
+                        compute: ComputePassIds {
+                            buffer: ids::COMPUTE,
+                            first_group: ids::COMPUTE_GROUPS,
+                            first_pipeline: ids::COMPUTE_PIPELINES,
                         },
                         dof: DofIds {
                             buffer: ids::DOF,
@@ -729,6 +783,11 @@ impl CpuCulledRenderer {
                             stored: ids::EXPOSURE_STORED,
                             first_group: ids::EXPOSURE_GROUPS,
                             compute: None,
+                        },
+                        taa: TaaIds {
+                            buffer: ids::TAA,
+                            sampler: ids::TAA_SAMPLER,
+                            first_group: ids::TAA_GROUPS,
                         },
                         view_copy: None,
                         transmission: TransmissionIds {
@@ -753,6 +812,8 @@ impl CpuCulledRenderer {
                             first_group: ids::WEIGHTED_GROUPS,
                         },
                         particle_depth: ids::PARTICLE_DEPTH_COPY_GROUP,
+                        material_scene: ids::MATERIAL_SCENE_GROUPS,
+                        blank_scene_depth: ids::BLANK_SCENE_DEPTH,
                     },
                 );
                 graph.bind_shadow_map(config.cascade_depth);
@@ -788,6 +849,10 @@ impl CpuCulledRenderer {
             outline_draws: Opaque::new(ViewId::OUTLINE, config.multi_draw),
             skin_culling: Culling::new(ViewId::SUBSURFACE),
             skin_draws: Opaque::new(ViewId::SUBSURFACE, config.multi_draw),
+            tone: Layout::new(Drawn::Tone),
+            tone_culling: Culling::new(ViewId::TONE),
+            tone_draws: Opaque::new(ViewId::TONE, config.multi_draw),
+            layouts_toned: false,
             cascades_held: false,
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
@@ -805,6 +870,8 @@ impl CpuCulledRenderer {
                 group: ids::BACKGROUND_GROUP,
                 blank_cube: ids::BLANK_ENVIRONMENT,
                 sampler: ids::ENVIRONMENT_SAMPLER,
+                layer_buffer: ids::BACKGROUND_LAYER,
+                layer_group: ids::BACKGROUND_LAYER_GROUP,
             }),
             particles: ParticlePass::new(ParticleIds {
                 buffers: ids::PARTICLE_BUFFERS,
@@ -891,6 +958,7 @@ impl CpuCulledRenderer {
             (_, Some(_)) => &self.tile_culling,
             _ if view == ViewId::OUTLINE => &self.outline_culling,
             _ if view == ViewId::SUBSURFACE => &self.skin_culling,
+            _ if view == ViewId::TONE => &self.tone_culling,
             _ => &self.culling,
         }
     }
@@ -898,6 +966,12 @@ impl CpuCulledRenderer {
     /// The outline views that the frame culls: one while outlines are on.
     fn outline_views(&self) -> usize {
         usize::from(self.layouts_outlined)
+    }
+
+    /// The tone views that the frame culls: one while some material keeps its display color and
+    /// the path draw HDR color.
+    fn tone_views(&self) -> usize {
+        usize::from(self.layouts_toned && !self.tone.buckets.is_empty())
     }
 
     /// The subsurface views that the frame culls: one while the subsurface blur has taps and some
@@ -1000,18 +1074,22 @@ impl CpuCulledRenderer {
     /// Assigns every source to a data texture and a bucket, then makes room for the new layout:
     /// the clusters, the culling runs and every view's output, and the upload arenas. While
     /// `shadows` has a pass on, the casters' layout holds the casters, and the receivers read the
-    /// shadow maps. With `outlines`, the outlined layout holds the outlined objects, and with
-    /// `scatters` the subsurface layout holds the objects whose material has a scatter radius.
-    /// With `motion`, the scene's draws get their motion pipelines.
+    /// shadow maps. `wanted` says which of the other layouts a pass draws: the outlined objects,
+    /// the objects whose material has a scatter radius, and the objects whose material keeps its
+    /// display color; and whether the scene's draws get their motion pipelines.
     fn rebuild_layout(
         &mut self,
         input: &FrameInput<'_>,
         shadows: CasterPasses,
-        outlines: bool,
-        scatters: bool,
-        motion: bool,
+        wanted: LayoutWanted,
         picking: bool,
     ) -> Result<(), RecordError> {
+        let LayoutWanted {
+            outlines,
+            scatters,
+            tones,
+            motion,
+        } = wanted;
         self.settings
             .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
         let rows = input.scene.capacity().saturating_add(1);
@@ -1094,6 +1172,28 @@ impl CpuCulledRenderer {
             self.outlined.clear();
         }
         self.layouts_outlined = outlines;
+        if tones {
+            let targets = self.with_draw_index(self.graph.outline_targets());
+            let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
+            self.tone.rebuild(
+                settings,
+                pipelines,
+                skins,
+                targets,
+                input,
+                limit,
+                multi_draw,
+                shadows,
+                Prepass::Off,
+                None,
+                &mut self.key_counts,
+                pick_targets,
+                false,
+            )?;
+        } else {
+            self.tone.clear();
+        }
+        self.layouts_toned = tones;
         if scatters {
             let targets = self.with_draw_index(self.graph.skin_targets());
             let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
@@ -1210,6 +1310,7 @@ impl CpuCulledRenderer {
         let (scene_buckets, casters) = (&self.layout.scene_buckets, &self.casters.scene_buckets);
         let outlined = &self.outlined.scene_buckets;
         let scattering = &self.scattering.scene_buckets;
+        let toned = &self.tone.scene_buckets;
         let in_layout = |buckets: &[u32], slot: usize| {
             buckets.get(slot).is_some_and(|&bucket| bucket != NO_BUCKET)
         };
@@ -1218,6 +1319,7 @@ impl CpuCulledRenderer {
                 || in_layout(casters, slot)
                 || in_layout(outlined, slot)
                 || in_layout(scattering, slot)
+                || in_layout(toned, slot)
         };
         self.cells
             .classify(input.scene, &culled)
@@ -1250,6 +1352,9 @@ impl CpuCulledRenderer {
         self.skin_culling
             .reserve(self.scattering.room, self.skin_views())
             .map_err(out_of_memory)?;
+        self.tone_culling
+            .reserve(self.tone.room, self.tone_views())
+            .map_err(out_of_memory)?;
         // Room for every static batch's cluster order, so a batch coming to rest later uploads
         // its clusters without growing the arena.
         let bound = self.upload_bound_without_clusters() + self.layout.cluster_rows as usize * 4;
@@ -1270,12 +1375,14 @@ impl CpuCulledRenderer {
         let tiles = self.tile_count();
         let outlines = self.outline_views();
         let skins = self.skin_views();
+        let tones = self.tone_views();
         for (culling, layout, count) in [
             (&mut self.culling, &self.layout, views),
             (&mut self.cascade_culling, &self.casters, cascades),
             (&mut self.tile_culling, &self.casters, tiles),
             (&mut self.outline_culling, &self.outlined, outlines),
             (&mut self.skin_culling, &self.scattering, skins),
+            (&mut self.tone_culling, &self.tone, tones),
         ] {
             if culling.views() < count {
                 let room = layout.room;
@@ -1347,7 +1454,7 @@ impl CpuCulledRenderer {
         let views = self.settings.views().len();
         let tiles = (self.settings.tile_settings().tiles as usize).min(MAX_TILES);
         let cascades = (MAX_CASCADES + tiles) * per_view(&self.casters);
-        let outline = per_view(&self.outlined) + per_view(&self.scattering);
+        let outline = per_view(&self.outlined) + per_view(&self.scattering) + per_view(&self.tone);
         let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
         meshes
             + materials
@@ -1434,7 +1541,7 @@ impl CpuCulledRenderer {
         &mut self,
         list: &mut DrawList,
         input: &FrameInput<'_>,
-        first_new: [usize; 5],
+        first_new: [usize; 6],
         rebuilt: bool,
     ) -> Result<bool, RecordError> {
         let limit = self.config.max_texture_size;
@@ -1452,12 +1559,14 @@ impl CpuCulledRenderer {
         let tiles = self.tile_count();
         let outlines = self.outline_views();
         let skin_views = self.skin_views();
+        let tone_views = self.tone_views();
         let [
             first_new,
             first_new_cascade,
             first_new_tile,
             first_new_outline,
             first_new_skin,
+            first_new_tone,
         ] = first_new;
         for (culling, draws, layout, count, first_new) in [
             (
@@ -1494,6 +1603,13 @@ impl CpuCulledRenderer {
                 &self.scattering,
                 skin_views,
                 first_new_skin,
+            ),
+            (
+                &mut self.tone_culling,
+                &mut self.tone_draws,
+                &self.tone,
+                tone_views,
+                first_new_tone,
             ),
         ] {
             let first = if rebuilt { 0 } else { first_new };
@@ -1673,6 +1789,12 @@ impl CpuCulledRenderer {
         ));
         self.settings.prepare_effect_maps();
         self.graph.set_exposure(self.settings.exposure_frame());
+        self.graph.set_taa(self.settings.taa_frame(
+            input.scene,
+            input.parity(),
+            input.canvas,
+            input.render_scale,
+        ));
         self.graph.set_effects(
             self.settings.effects(),
             self.settings.effect_joins(),
@@ -1681,8 +1803,11 @@ impl CpuCulledRenderer {
         );
         self.graph.set_tone_curve(self.settings.tone_curve());
         self.graph.set_grading(self.settings.grades());
+        self.graph.set_sharpen(self.settings.sharpen());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
+        self.graph
+            .set_tone_mask(!self.tone.buckets.is_empty() && self.graph.hdr_color());
         self.graph.set_still_enabled(self.settings.still_enabled());
         self.graph.set_still(self.settings.still());
         self.graph.set_subsurface(
@@ -1706,8 +1831,11 @@ impl CpuCulledRenderer {
         let redraws = self.redraws_built && skipped != 0;
         self.graph
             .set_decals(!self.decal_layout.is_empty(), redraws);
-        self.graph
-            .set_soft_particles(self.settings.particles().wants_depth());
+        let materials_read_depth = self.settings.materials().any_reads_scene_depth();
+        self.graph.set_soft_particles(
+            self.settings.particles().wants_depth() || materials_read_depth,
+            materials_read_depth,
+        );
         // The render scale's range decides which of the final pass's pipelines the frame asks for.
         self.graph.set_scaling(self.settings.render_scaling());
         self.graph
@@ -1742,6 +1870,9 @@ impl CpuCulledRenderer {
         self.settings.prepare_probe_capture(input.frame);
         self.settings.pace_views(input.canvas, input.render_scale);
         self.settings.mark_shown_views();
+        // The shadow, motion and pick passes draw their layouts' materials, so each reads the pass
+        // targets those materials sample: a compute pass finds its place before them.
+        self.sync_drawn_views();
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.set_debug_lines(!input.lines.is_empty());
@@ -1844,6 +1975,12 @@ impl CpuCulledRenderer {
         self.outline_draws.add_views(list, outlines)?;
         if first_new_outline < outlines {
             Opaque::bind_frame(list, ViewId::OUTLINE, None)?;
+        }
+        let tones = self.tone_views();
+        let first_new_tone = self.tone_draws.views();
+        self.tone_draws.add_views(list, tones)?;
+        if first_new_tone < tones {
+            Opaque::bind_frame(list, ViewId::TONE, None)?;
         }
         // The subsurface view lights its objects as the camera's view does, so its frame groups
         // bind the camera's textures, again whenever the camera's do.
@@ -1969,7 +2106,8 @@ impl CpuCulledRenderer {
             || first_new_cascade < cascades
             || first_new_tile < tiles
             || first_new_outline < outlines
-            || first_new_skin < skin_views;
+            || first_new_skin < skin_views
+            || first_new_tone < tones;
         let new_texture = if rebuilt || new_views {
             let first_new = [
                 first_new,
@@ -1977,6 +2115,7 @@ impl CpuCulledRenderer {
                 first_new_tile,
                 first_new_outline,
                 first_new_skin,
+                first_new_tone,
             ];
             self.size_resources(list, input, first_new, rebuilt)?
         } else {
@@ -2102,6 +2241,18 @@ impl CpuCulledRenderer {
                     streamed,
                 },
             )?;
+            upload_views(
+                list,
+                arena,
+                (&mut self.tone_culling, &mut self.tone_draws, &self.tone),
+                None,
+                tones,
+                UploadFrame {
+                    frame,
+                    hold_uniforms,
+                    streamed,
+                },
+            )?;
             if let Some(shadow) = &self.shadow {
                 shadows::upload(list, arena, ids::SHADOWS, shadow)?;
                 upload_views(
@@ -2135,12 +2286,14 @@ impl CpuCulledRenderer {
         let (tile_culling, tile_draws) = (&self.tile_culling, &self.tile_draws);
         let (outline_culling, outline_draws) = (&self.outline_culling, &self.outline_draws);
         let (skin_culling, skin_draws) = (&self.skin_culling, &self.skin_draws);
+        let (tone_culling, tone_draws) = (&self.tone_culling, &self.tone_draws);
         let (layout, casters, meshes) = (&self.layout, &self.casters, &self.meshes);
-        let (outlined, scattering) = (&self.outlined, &self.scattering);
+        let (outlined, scattering, toned) = (&self.outlined, &self.scattering, &self.tone);
         let (transparent, background) = (&self.transparent, &self.background);
         let (decals, decal_records_at) = (&self.decals, self.decal_records_at);
         let (redraws, redraw_records_at) = (&self.redraws, self.redraw_records_at);
         let particles = &self.particles;
+        let vertex_draws = self.settings.vertex_draws();
         let light_textures = &self.light_textures;
         // A view leaves out the objects whose maps show a target that it does not read.
         let settings = &self.settings;
@@ -2156,6 +2309,13 @@ impl CpuCulledRenderer {
         let (motion_state, motion_moving, skins) =
             (&mut self.motion, &self.motion_moving, &self.skins);
         let motion_group = ids::motion_frame_group(input.parity(), self.streamed_slot.slot());
+        // The scene group that each view's blended draws bind for a custom material that reads the
+        // scene's depth, and the blank group that a draw before the copy exists binds.
+        let scene_blank = self.graph.material_scene_blank();
+        let mut scene_groups = [0u32; MAX_VIEWS];
+        for (index, group) in scene_groups.iter_mut().enumerate() {
+            *group = self.graph.material_scene_group(ViewId::from_index(index));
+        }
         // A cascade or a tile that does not draw keeps its depth: its render pass is left out.
         let skips = |role: Role| match role {
             Role::Shadow(view) if view.tile_index().is_some() => tile_culling.frame(view).is_none(),
@@ -2182,7 +2342,19 @@ impl CpuCulledRenderer {
                     let starts = culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Lit { light_slot };
                     let hidden = hidden_in(view);
-                    opaque.record(list, arena, view, starts, layout, meshes, shading, &hidden)?;
+                    // The opaque pass runs before the copy of its depth, so a material that reads
+                    // the depth binds the blank texel here and the copy in the transparent pass.
+                    opaque.record(
+                        list,
+                        arena,
+                        view,
+                        starts,
+                        layout,
+                        meshes,
+                        shading,
+                        &hidden,
+                        scene_blank,
+                    )?;
                     if backdrop {
                         background.record(list, group, &[slot, slot], Place::Last)?;
                     }
@@ -2194,32 +2366,60 @@ impl CpuCulledRenderer {
                         light_slot: light_textures.slot(view),
                     };
                     let hidden = hidden_in(view);
-                    opaque.record(list, arena, view, starts, layout, meshes, shading, &hidden)
+                    opaque.record(
+                        list, arena, view, starts, layout, meshes, shading, &hidden, 0,
+                    )
                 }
                 Role::Shadow(view) if cascade_culling.frame(view).is_some() => {
                     let starts = cascade_culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Depth;
-                    cascade_draws
-                        .record(list, arena, view, starts, casters, meshes, shading, &never)
+                    cascade_draws.record(
+                        list, arena, view, starts, casters, meshes, shading, &never, 0,
+                    )
                 }
                 Role::Shadow(view) if tile_culling.frame(view).is_some() => {
                     let starts = tile_culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Tile;
-                    tile_draws.record(list, arena, view, starts, casters, meshes, shading, &never)
-                }
-                Role::OutlineMask if outline_culling.frame(ViewId::OUTLINE).is_some() => {
-                    let view = ViewId::OUTLINE;
-                    let starts = outline_culling.culled(frame, view).bucket_starts();
-                    outline_draws.record(
-                        list,
-                        arena,
-                        view,
-                        starts,
-                        outlined,
-                        meshes,
-                        Shading::Depth,
-                        &never,
+                    tile_draws.record(
+                        list, arena, view, starts, casters, meshes, shading, &never, 0,
                     )
+                }
+                Role::OutlineMask
+                    if outline_culling.frame(ViewId::OUTLINE).is_some()
+                        || tone_culling.frame(ViewId::TONE).is_some() =>
+                {
+                    if outline_culling.frame(ViewId::OUTLINE).is_some() {
+                        let view = ViewId::OUTLINE;
+                        let starts = outline_culling.culled(frame, view).bucket_starts();
+                        outline_draws.record(
+                            list,
+                            arena,
+                            view,
+                            starts,
+                            outlined,
+                            meshes,
+                            Shading::Depth,
+                            &never,
+                            0,
+                        )?;
+                    }
+                    // The tone view shares the mask pass, into the mask's blue channel.
+                    if tone_culling.frame(ViewId::TONE).is_some() {
+                        let view = ViewId::TONE;
+                        let starts = tone_culling.culled(frame, view).bucket_starts();
+                        tone_draws.record(
+                            list,
+                            arena,
+                            view,
+                            starts,
+                            toned,
+                            meshes,
+                            Shading::Depth,
+                            &never,
+                            0,
+                        )?;
+                    }
+                    Ok(())
                 }
                 Role::SkinLight if skin_culling.frame(ViewId::SUBSURFACE).is_some() => {
                     let view = ViewId::SUBSURFACE;
@@ -2229,7 +2429,15 @@ impl CpuCulledRenderer {
                     };
                     let hidden = hidden_in(ViewId::CAMERA);
                     skin_draws.record(
-                        list, arena, view, starts, scattering, meshes, shading, &hidden,
+                        list,
+                        arena,
+                        view,
+                        starts,
+                        scattering,
+                        meshes,
+                        shading,
+                        &hidden,
+                        scene_blank,
                     )
                 }
                 Role::Transparent(view) if culling.frame(view).is_some() => {
@@ -2241,11 +2449,23 @@ impl CpuCulledRenderer {
                     let at = opaque.sorted_records_at(view, layout);
                     let draws = ids::draws_group(view);
                     let light_slot = light_textures.slot(view);
-                    let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot);
+                    let scene = scene_groups.get(view.index()).copied().unwrap_or(0);
+                    let bind =
+                        |list: &mut DrawList| opaque.bind_view(list, view, light_slot, scene);
                     let hidden = hidden_in(view);
                     let index = view.index();
                     transparent.record(
-                        list, arena, index, rows, draws, at, meshes, bind, &hidden, particles,
+                        list,
+                        arena,
+                        index,
+                        rows,
+                        draws,
+                        at,
+                        meshes,
+                        bind,
+                        &hidden,
+                        particles,
+                        vertex_draws,
                     )
                 }
                 Role::Weighted if culling.frame(ViewId::CAMERA).is_some() => {
@@ -2253,11 +2473,21 @@ impl CpuCulledRenderer {
                     let at = opaque.sorted_records_at(view, layout);
                     let draws = ids::draws_group(view);
                     let light_slot = light_textures.slot(view);
-                    let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot);
+                    let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot, 0);
                     let hidden = hidden_in(view);
                     let (index, rows) = (view.index(), SortedRows::Weighted);
                     transparent.record(
-                        list, arena, index, rows, draws, at, meshes, bind, &hidden, particles,
+                        list,
+                        arena,
+                        index,
+                        rows,
+                        draws,
+                        at,
+                        meshes,
+                        bind,
+                        &hidden,
+                        particles,
+                        vertex_draws,
                     )
                 }
                 Role::Decals if culling.frame(ViewId::CAMERA).is_some() => {
@@ -2266,7 +2496,7 @@ impl CpuCulledRenderer {
                     let draws = ids::draws_group(view);
                     let light_slot = light_textures.slot(view);
                     let bind = |list: &mut DrawList| {
-                        opaque.bind_view(list, view, light_slot)?;
+                        opaque.bind_view(list, view, light_slot, 0)?;
                         let group = ids::DECAL_DEPTH_GROUP;
                         list.push(Op::SetBindGroup, &[DECAL_DEPTH_INDEX, group, 0])?;
                         Ok(())
@@ -2283,6 +2513,7 @@ impl CpuCulledRenderer {
                         bind,
                         &hidden,
                         particles,
+                        vertex_draws,
                     )
                 }
                 Role::DecalRedraw if culling.frame(ViewId::CAMERA).is_some() => {
@@ -2290,7 +2521,10 @@ impl CpuCulledRenderer {
                     let at = opaque.sorted_records_at(view, layout) + redraw_records_at;
                     let draws = ids::draws_group(view);
                     let light_slot = light_textures.slot(view);
-                    let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot);
+                    // The redraw runs before the copy of the opaque depth, so a material that reads
+                    // the depth binds the blank texel.
+                    let bind =
+                        |list: &mut DrawList| opaque.bind_view(list, view, light_slot, scene_blank);
                     let hidden = hidden_in(view);
                     redraws.record(
                         list,
@@ -2303,6 +2537,7 @@ impl CpuCulledRenderer {
                         bind,
                         &hidden,
                         particles,
+                        vertex_draws,
                     )
                 }
                 Role::Pick if culling.frame(ViewId::CAMERA).is_some() => {
@@ -2322,6 +2557,7 @@ impl CpuCulledRenderer {
                         meshes,
                         Shading::Pick,
                         &hidden,
+                        0,
                     )
                 }
                 Role::PickResolve => {
@@ -2349,6 +2585,11 @@ impl CpuCulledRenderer {
                 }
                 _ => Ok(()),
             },
+            // The CPU path draws every count that the page sets, so no count waits for a pass.
+            |_| Ok(()),
+            // WebGL2 has no compute pass, so it converts no rows between the compute steps and the
+            // render steps: its adapter fills an instance batch on the CPU.
+            |_| Ok(()),
             |list| {
                 if motion_on {
                     motion_state.finish(list, input.parity(), skins)?;
@@ -2464,7 +2705,40 @@ fn upload_views(
     Ok(())
 }
 
+impl CpuCulledRenderer {
+    /// Tells the graph which pass targets the shadow, motion and pick passes' materials sample,
+    /// so each of those passes reads them and runs after the pass that writes them.
+    fn sync_drawn_views(&mut self) {
+        self.graph.set_drawn_views(DrawnViews {
+            casters: self.casters.material_views,
+            motion: self.layout.material_views,
+            pick: self.layout.pick_views,
+        });
+    }
+}
+
 impl FrameBuilder for CpuCulledRenderer {
+    fn account(&self, register: &mut null3d_core::memory::MemoryRegister) {
+        let mut layouts = null3d_core::memory::MemoryUse::default();
+        for layout in [&self.layout, &self.outlined, &self.scattering, &self.tone] {
+            layout.account(&mut layouts);
+        }
+        register.add(null3d_core::memory::area::LAYOUTS, layouts);
+        let mut casters = null3d_core::memory::MemoryUse::default();
+        self.casters.account(&mut casters);
+        register.add(null3d_core::memory::area::CASTERS, casters);
+        let size = std::mem::size_of::<(crate::frame::BucketKey, u32)>() as u64;
+        register.add(
+            null3d_core::memory::area::BUCKET_KEYS,
+            null3d_core::memory::MemoryUse::new(
+                self.key_counts.capacity() as u64 * size,
+                self.key_counts.len() as u64 * size,
+            ),
+        );
+        register.add(null3d_core::memory::area::CELLS, self.cells.memory_use());
+        self.lists.account(register);
+    }
+
     fn settings(&self) -> &SceneSettings {
         &self.settings
     }
@@ -2482,7 +2756,8 @@ impl FrameBuilder for CpuCulledRenderer {
         self.cascade_culling.reserve_sources(sources)?;
         self.tile_culling.reserve_sources(sources)?;
         self.outline_culling.reserve_sources(sources)?;
-        self.skin_culling.reserve_sources(sources)
+        self.skin_culling.reserve_sources(sources)?;
+        self.tone_culling.reserve_sources(sources)
     }
 
     fn cull(&mut self, input: &FrameInput<'_>) -> Result<(), RecordError> {
@@ -2512,6 +2787,7 @@ impl FrameBuilder for CpuCulledRenderer {
             camera.as_ref(),
             settings.meshes(),
             &sways,
+            self.shadow.and_then(|shadow| shadow.hero),
         );
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
         // casters draw into the passes of each.
@@ -2526,6 +2802,9 @@ impl FrameBuilder for CpuCulledRenderer {
         };
         let outlines = self.settings.outline().is_some();
         let scatters = self.settings.holds_scattering();
+        // The tone mask only matters on the path whose final pass applies the tone curve. The
+        // 8-bit path applies the flag in each material's shader.
+        let tones = self.settings.any_keeps_display_color() && self.graph.hdr_color();
         let motion = self.settings.motion_wanted();
         // Ambient occlusion and the sun's contact shadows read the depth prepass's depth, so
         // turning them on or off can switch the prepass, whose pipelines the layout holds.
@@ -2562,21 +2841,28 @@ impl FrameBuilder for CpuCulledRenderer {
             .settings
             .update_probe_shading(&mut self.pipelines, input.pipelines_built);
         let particles_changed = self.settings.particles_mut().take_changed();
+        let wanted = LayoutWanted {
+            outlines,
+            scatters,
+            tones,
+            motion,
+        };
         if particles_changed
             || input.structure_changed
             || !self.layout.built
             || area_switched
             || probe_switched
             || shadows != self.layouts_shadowed
-            || outlines != self.layouts_outlined
-            || scatters != self.layouts_scattered
-            || motion != self.layouts_moving
+            || wanted.outlines != self.layouts_outlined
+            || wanted.scatters != self.layouts_scattered
+            || wanted.tones != self.layouts_toned
+            || wanted.motion != self.layouts_moving
             || prepass_changed
             || self.redraws_wanted() != self.redraws_built
             || picking != self.layouts_picked
             || skinned_appear
         {
-            self.rebuild_layout(input, shadows, outlines, scatters, motion, picking)?;
+            self.rebuild_layout(input, shadows, wanted, picking)?;
         }
         self.add_culled_views()?;
         self.cells.update(input);
@@ -2615,6 +2901,7 @@ impl FrameBuilder for CpuCulledRenderer {
                     occluders: &mut self.occluders,
                     meshes: settings.meshes(),
                     materials: settings.materials(),
+                    override_material: settings.override_material(),
                 }),
             )
             .map_err(|_| out_of_memory(&self.layout))?;
@@ -2699,7 +2986,32 @@ impl FrameBuilder for CpuCulledRenderer {
                 None,
                 None,
             )
-            .map_err(|_| out_of_memory(&self.scattering))
+            .map_err(|_| out_of_memory(&self.scattering))?;
+        // The tone view sees what the camera's view sees, while some object's material keeps its
+        // display color.
+        let tones = !self.tone.buckets.is_empty();
+        self.tone_culling
+            .cull(
+                input,
+                &self.tone,
+                &mut self.clusters,
+                cells,
+                &|_| camera.filter(|_| tones),
+                &|_| camera_rule,
+                None,
+                None,
+            )
+            .map_err(|_| out_of_memory(&self.tone))?;
+        // The staged levels' watches read the levels that the camera's view picked.
+        if self.settings.watches_stages() {
+            let cull = self.culling.culled_in(input.frame, ViewId::CAMERA);
+            self.layout.note_stage_picks(
+                cull,
+                self.settings.stage_watches_mut(),
+                u64::from(input.frame),
+            );
+        }
+        Ok(())
     }
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
@@ -2810,6 +3122,8 @@ impl FrameBuilder for CpuCulledRenderer {
         self.outline_draws.forget_gpu();
         self.skin_culling.forget_gpu();
         self.skin_draws.forget_gpu();
+        self.tone_culling.forget_gpu();
+        self.tone_draws.forget_gpu();
         self.pick.reset_gpu();
         self.tiles.forget_gpu();
         self.cascades_held = false;
@@ -2831,6 +3145,10 @@ impl FrameBuilder for CpuCulledRenderer {
         self.lists.list(frame)
     }
 
+    fn plan_epoch(&self) -> u32 {
+        self.graph.plan_epoch()
+    }
+
     fn check_graph(&mut self) -> Result<(), GraphError> {
         self.settings.prepare_effect_maps();
         self.settings.mark_shown_views();
@@ -2841,9 +3159,14 @@ impl FrameBuilder for CpuCulledRenderer {
     fn graph_dot(&mut self) -> String {
         self.settings.prepare_effect_maps();
         self.settings.mark_shown_views();
+        self.sync_drawn_views();
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.dot()
+    }
+
+    fn two_step_report(&self) -> [u32; 5] {
+        self.graph.two_step_report()
     }
 
     fn reads_last_frame(&self) -> bool {

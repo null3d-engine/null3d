@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import {
+	MAP_SLOT_ANISOTROPY,
 	MAP_SLOT_BASE_COLOR,
 	MAP_SLOT_BUMP,
 	MAP_SLOT_COAT,
@@ -10,35 +11,46 @@ import {
 	MAP_SLOT_DIFFUSE_TRANSMISSION,
 	MAP_SLOT_DIFFUSE_TRANSMISSION_COLOR,
 	MAP_SLOT_DISPLACEMENT,
+	MAP_SLOT_IRIDESCENCE,
+	MAP_SLOT_IRIDESCENCE_THICKNESS,
 	MAP_SLOT_LIGHT,
 	MAP_SLOT_NORMAL,
 	MAP_SLOT_SHEEN_COLOR,
 	MAP_SLOT_SHEEN_ROUGHNESS,
 	MAP_SLOT_SPECULAR_COLOR,
 	MAP_SLOT_SPECULAR_INTENSITY,
+	MAP_SLOT_THICKNESS,
+	MAP_SLOT_TRANSMISSION,
 	MATERIAL_FEATURE_ADDITIVE,
 	MATERIAL_FEATURE_ALPHA_HASH,
 	MATERIAL_FEATURE_ALPHA_MASK,
 	MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
+	MATERIAL_FEATURE_ANISOTROPY,
 	MATERIAL_FEATURE_BLEND,
 	MATERIAL_FEATURE_COAT_SHEEN,
 	MATERIAL_FEATURE_DECAL,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
+	MATERIAL_FEATURE_IRIDESCENCE,
 	MATERIAL_FEATURE_MULTIPLY,
 	MATERIAL_FEATURE_NO_CONTACT_SHADOWS,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
+	MATERIAL_FEATURE_NO_TONE_MAP,
 	MATERIAL_FEATURE_PARALLAX,
+	MATERIAL_FEATURE_SCENE_DEPTH,
 	MATERIAL_FEATURE_SHADOW_CATCHER,
 	MATERIAL_FEATURE_SINGLE_PASS,
 	MATERIAL_FEATURE_SUBSURFACE,
 	MATERIAL_FEATURE_TRANSLUCENCY,
+	MATERIAL_FEATURE_TRANSMISSION,
 	MATERIAL_FEATURE_VERTEX_COLORS,
 	MATERIAL_FEATURE_WEIGHTED,
 	MATERIAL_FEATURE_WIREFRAME,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
+	MATERIAL_PARAM_ANISOTROPY,
+	MATERIAL_PARAM_ANISOTROPY_ROTATION,
 	MATERIAL_PARAM_CLEARCOAT,
 	MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE,
 	MATERIAL_PARAM_CLEARCOAT_ROUGHNESS,
@@ -51,6 +63,10 @@ import {
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
 	MATERIAL_PARAM_ENV_INTENSITY,
+	MATERIAL_PARAM_IRIDESCENCE,
+	MATERIAL_PARAM_IRIDESCENCE_IOR,
+	MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX,
+	MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MIN,
 	MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
 	MATERIAL_PARAM_METALNESS,
 	MATERIAL_PARAM_NORMAL_SCALE,
@@ -125,6 +141,12 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE, 2],
 	[MATERIAL_PARAM_SHEEN_COLOR, 3],
 	[MATERIAL_PARAM_SHEEN_ROUGHNESS, 1],
+	[MATERIAL_PARAM_IRIDESCENCE, 1],
+	[MATERIAL_PARAM_IRIDESCENCE_IOR, 1],
+	[MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MIN, 1],
+	[MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX, 1],
+	[MATERIAL_PARAM_ANISOTROPY, 1],
+	[MATERIAL_PARAM_ANISOTROPY_ROTATION, 1],
 	[MATERIAL_PARAM_DECAL_FADE_START, 1],
 	[MATERIAL_PARAM_DECAL_FADE_END, 1],
 	[MATERIAL_PARAM_DECAL_EDGE_FADE, 1],
@@ -232,7 +254,7 @@ function fakeCore() {
 /** A custom material's WGSL as the Vite plugin compiles it, with a stand-in for its variants. */
 function compiledMaterial(
 	uniforms: { name: string; type: string; offset: number }[] = [],
-	textures: { name: string; offset: number }[] = [],
+	textures: { name: string; offset: number; array?: boolean }[] = [],
 ) {
 	return {
 		kind: 'material',
@@ -243,6 +265,7 @@ function compiledMaterial(
 		locations: [0, 1, 2],
 		attributes: VERTEX_UV0,
 		baseColor: true,
+		sceneDepth: false,
 	} as const;
 }
 
@@ -357,6 +380,9 @@ describe('Material.set', () => {
 		materials.standard();
 		materials.standard({ contactShadows: true });
 		materials.standard({ contactShadows: false, doubleSided: true });
+		materials.unlit({ toneMapped: false });
+		materials.standard({ toneMapped: true, fog: false });
+		materials.standard();
 		expect(features).toEqual([
 			MATERIAL_FEATURE_DOUBLE_SIDED | MATERIAL_FEATURE_FLAT_SHADING,
 			MATERIAL_FEATURE_VERTEX_COLORS | MATERIAL_FEATURE_NO_FOG,
@@ -365,6 +391,9 @@ describe('Material.set', () => {
 			0,
 			0,
 			MATERIAL_FEATURE_NO_CONTACT_SHADOWS | MATERIAL_FEATURE_DOUBLE_SIDED,
+			MATERIAL_FEATURE_NO_TONE_MAP,
+			MATERIAL_FEATURE_NO_FOG,
+			0,
 		]);
 	});
 
@@ -662,6 +691,50 @@ describe('Material.set', () => {
 		expect(table).toEqual([]);
 	});
 
+	test('puts the transmission and thickness maps in the specular slots', () => {
+		const { table, maps, features, materials } = fakeCore();
+		materials.standard({
+			transmission: 0.8,
+			thickness: 0.5,
+			transmissionMap: texture(5),
+			thicknessMap: texture(6, 1),
+		});
+		expect((features[0] ?? 0) & MATERIAL_FEATURE_TRANSMISSION).toBe(MATERIAL_FEATURE_TRANSMISSION);
+		// They take the two slots that the specular maps leave free, and read the same channels.
+		expect(maps).toEqual([
+			[1, MAP_SLOT_TRANSMISSION, 5, 0],
+			[1, MAP_SLOT_THICKNESS, 6, 1],
+		]);
+		// A material that asks for the specular maps too is refused, never drawn without one.
+		const specular = thrown(() =>
+			materials.standard({
+				transmission: 0.8,
+				transmissionMap: texture(5),
+				specularIntensityMap: texture(5),
+			}),
+		);
+		expect(specular.message).toStartWith(
+			'E1217: materials.standard() got specularIntensityMap with transmissionMap;',
+		);
+		const opaque = thrown(() => materials.standard({ thicknessMap: texture(5) }));
+		expect(opaque.message).toStartWith(
+			'E1217: materials.standard() got thicknessMap without transmission;',
+		);
+		const leaf = thrown(() =>
+			materials.standard({ transmission: 0.8, diffuseTransmission: 0, thicknessMap: texture(5) }),
+		);
+		expect(leaf.message).toStartWith(
+			'E1217: materials.standard() got thicknessMap with diffuseTransmission;',
+		);
+		const painted = thrown(() =>
+			materials.standard({ transmission: 0.8, clearcoat: 1, transmissionMap: texture(5) }),
+		);
+		expect(painted.message).toStartWith(
+			'E1217: materials.standard() got transmissionMap with a clear coat, a sheen, iridescence or anisotropy,',
+		);
+		expect(table).toHaveLength(1);
+	});
+
 	test('refuses diffuse transmission beside layers and the weighted blending', () => {
 		const { table, materials } = fakeCore();
 		const velvet = thrown(() =>
@@ -748,7 +821,7 @@ describe('Material.set', () => {
 		const light = thrown(() => materials.standard({ clearcoat: 1, lightMap: texture(8) }));
 		expect(light.code).toBe('E1217');
 		expect(light.message).toStartWith(
-			'E1217: materials.standard() got lightMap with a clear coat or a sheen,',
+			'E1217: materials.standard() got lightMap with a clear coat, a sheen, iridescence or anisotropy,',
 		);
 		const specular = thrown(() =>
 			materials.standard({ sheenColor: '#ffffff', specularColorMap: texture(8) }),
@@ -765,6 +838,74 @@ describe('Material.set', () => {
 		);
 		expect(sheens.code).toBe('E1217');
 		expect(features).toHaveLength(1);
+	});
+
+	test('gives iridescence and anisotropy their layers, their values and their maps', () => {
+		const { table, maps, features, materials } = fakeCore();
+		const film = materials.standard({
+			iridescence: 1,
+			iridescenceIor: 1.8,
+			iridescenceThicknessRange: [300, 500],
+		});
+		const brushed = materials.standard({
+			anisotropy: 0.8,
+			anisotropyRotation: 0.5,
+			map: texture(1),
+			anisotropyMap: texture(9),
+		});
+		materials.standard({ roughness: 0.5 });
+		// A thin film or a stretched lobe takes the shader builds of the layers above the base.
+		for (const bits of features.slice(0, 2))
+			expect((bits ?? 0) & MATERIAL_FEATURE_COAT_SHEEN).toBe(MATERIAL_FEATURE_COAT_SHEEN);
+		expect((features[0] ?? 0) & MATERIAL_FEATURE_IRIDESCENCE).toBe(MATERIAL_FEATURE_IRIDESCENCE);
+		expect((features[0] ?? 0) & MATERIAL_FEATURE_ANISOTROPY).toBe(0);
+		expect((features[1] ?? 0) & MATERIAL_FEATURE_ANISOTROPY).toBe(MATERIAL_FEATURE_ANISOTROPY);
+		expect((features[2] ?? 0) & (MATERIAL_FEATURE_IRIDESCENCE | MATERIAL_FEATURE_ANISOTROPY)).toBe(
+			0,
+		);
+		const row = (k: number) => table[k] as number[];
+		expect(row(0)[MATERIAL_PARAM_IRIDESCENCE]).toBe(1);
+		expect(row(0)[MATERIAL_PARAM_IRIDESCENCE_IOR]).toBe(1.8);
+		expect(row(0)[MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MIN]).toBe(300);
+		expect(row(0)[MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX]).toBe(500);
+		expect(row(1)[MATERIAL_PARAM_ANISOTROPY]).toBe(0.8);
+		expect(row(1)[MATERIAL_PARAM_ANISOTROPY_ROTATION]).toBe(0.5);
+		expect(maps).toEqual([
+			[2, MAP_SLOT_BASE_COLOR, 1, 0],
+			[2, MAP_SLOT_ANISOTROPY, 9, 0],
+		]);
+		film.set({ iridescenceThicknessRange: [100, 200] });
+		brushed.set({ anisotropy: 0.25 });
+		expect(row(0)[MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MIN]).toBe(100);
+		expect(row(0)[MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX]).toBe(200);
+		expect(row(1)[MATERIAL_PARAM_ANISOTROPY]).toBe(0.25);
+		for (const values of [
+			{ iridescence: 1.5 },
+			{ iridescenceIor: 0.5 },
+			{ anisotropy: -1 },
+			{ iridescenceThicknessRange: [500, 300] as const },
+			{ anisotropyRotation: Number.NaN },
+		])
+			expect(thrown(() => film.set(values)).code).toBe('E1108');
+		expect(thrown(() => materials.standard({ anisotropy: 0.5 })).code).toBe('E1217');
+		const clash = thrown(() =>
+			materials.standard({ clearcoatMap: texture(5), iridescenceMap: texture(9) }),
+		);
+		expect(clash.code).toBe('E1217');
+		expect(clash.message).toContain('iridescenceMap with the maps of a clear coat or a sheen');
+	});
+
+	test('puts the iridescence maps in the light and specular intensity map slots', () => {
+		const { maps, materials } = fakeCore();
+		materials.standard({
+			iridescence: 1,
+			iridescenceMap: texture(5),
+			iridescenceThicknessMap: texture(6),
+		});
+		expect(maps).toEqual([
+			[1, MAP_SLOT_IRIDESCENCE, 5, 0],
+			[1, MAP_SLOT_IRIDESCENCE_THICKNESS, 6, 0],
+		]);
 	});
 
 	test('checks the map values before it changes any', () => {
@@ -1011,6 +1152,69 @@ describe('materials.shader', () => {
 		]);
 	});
 
+	test('marks WGSL that reads the scene depth, and checks its declaration', () => {
+		const { features, materials } = fakeCore();
+		const depth = { ...compiledMaterial(), sceneDepth: true };
+		materials.shader({ wgsl: depth, sceneInputs: ['sceneDepth'] });
+		expect(features).toEqual([MATERIAL_FEATURE_SCENE_DEPTH]);
+		const undeclared = thrown(() => materials.shader({ wgsl: depth, sceneInputs: [] }));
+		expect(undeclared.code).toBe('E1217');
+		expect(undeclared.message).toStartWith(
+			"E1217: materials.shader() got WGSL that reads the scene's depth, but sceneInputs does not declare it.",
+		);
+		const unused = thrown(() =>
+			materials.shader({ wgsl: compiledMaterial(), sceneInputs: ['sceneDepth'] }),
+		);
+		expect(unused.message).toStartWith(
+			"E1217: materials.shader() got the scene input 'sceneDepth', but its WGSL never calls sceneDepth or sceneDistance.",
+		);
+		// A material that reads the depth keeps seven of the maps' eight slots, so the copy fits
+		// the fragment stage beside them.
+		const two = [
+			{ name: 'foam', offset: 0 },
+			{ name: 'mirror', offset: 1 },
+		];
+		materials.shader({
+			wgsl: { ...compiledMaterial([], two), sceneDepth: true },
+			sceneInputs: ['sceneDepth'],
+			textures: { foam: layered(1), mirror: layered(2) },
+		});
+		const eight = Array.from({ length: 8 }, (_, slot) => ({ name: `map${slot}`, offset: slot }));
+		const textured = thrown(() =>
+			materials.shader({
+				wgsl: { ...compiledMaterial([], eight), sceneDepth: true },
+				sceneInputs: ['sceneDepth'],
+				textures: Object.fromEntries(eight.map(({ name }) => [name, layered(1)])),
+			}),
+		);
+		expect(textured.message).toStartWith(
+			"E1217: materials.shader() got WGSL that reads the scene's depth and declares 8 textures.",
+		);
+		expect(textured.message).toContain('Drop 1 of the textures');
+	});
+
+	test('refuses the scene inputs that a custom material does not read yet', () => {
+		const { materials } = fakeCore();
+		for (const input of ['sceneColor', 'normals', 'motionVectors'] as const) {
+			const error = thrown(() =>
+				materials.shader({ wgsl: compiledMaterial(), sceneInputs: [input] }),
+			);
+			expect(error.code).toBe('E1217');
+			expect(error.message).toStartWith(
+				`E1217: materials.shader() got the scene input '${input}', which custom materials do not read yet.`,
+			);
+		}
+		const twice = thrown(() =>
+			materials.shader({
+				wgsl: { ...compiledMaterial(), sceneDepth: true },
+				sceneInputs: ['sceneDepth', 'sceneDepth'],
+			}),
+		);
+		expect(twice.message).toStartWith(
+			"E1217: materials.shader() got the scene input 'sceneDepth' twice in sceneInputs;",
+		);
+	});
+
 	test('refuses the alpha hash and alpha to coverage, which custom materials do not take', () => {
 		const { shadings, materials } = fakeCore();
 		const wgsl = compiledMaterial();
@@ -1107,7 +1311,7 @@ describe('materials.shader', () => {
 		const refused = thrown(() => materials.shader({ wgsl: plain, sheenColor: '#ffffff' }));
 		expect(refused.code).toBe('E1217');
 		expect(refused.message).toStartWith(
-			"E1217: materials.shader() got a clear coat or a sheen, but its WGSL never names the surface's layers,",
+			"E1217: materials.shader() got a clear coat, a sheen or iridescence, but its WGSL never names the surface's layers,",
 		);
 	});
 
@@ -1217,6 +1421,30 @@ describe('custom material textures', () => {
 			[2, 0, 5, 0],
 			[2, 1, 6, 0],
 		]);
+	});
+
+	test('take a texture of several layers for a declaration of a texture array', () => {
+		const { shadings, maps, materials } = fakeCore();
+		const wgsl = compiledMaterial(
+			[],
+			[
+				{ name: 'facades', offset: 31, array: true },
+				{ name: 'detail', offset: 30 },
+			],
+		);
+		materials.shader({ wgsl, textures: { facades: layered(4, 6), detail: layered(5) } });
+		expect(shadings).toEqual([
+			standardCustom(SHADING_CUSTOM_FIRST) | (2 << SHADING_CUSTOM_TEXTURE_SHIFT),
+		]);
+		expect(maps).toEqual([
+			[1, 0, 4, 0],
+			[1, 1, 5, 0],
+		]);
+		const single = thrown(() => materials.shader({ wgsl, textures: { detail: layered(6, 3) } }));
+		expect(single.code).toBe('E1216');
+		expect(single.message).toStartWith(
+			'E1216: materials.shader() got a texture of 3 layers for the texture detail; a texture declared `var detail: texture_2d<f32>;` takes one layer. Declare `var detail: texture_2d_array<f32>;`',
+		);
 	});
 
 	test('refuse names that the WGSL does not declare, and values that are not one texture', () => {

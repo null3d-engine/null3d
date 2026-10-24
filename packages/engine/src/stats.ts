@@ -21,6 +21,7 @@ export {
 	type StatsFigures,
 	type StatsMainThread,
 	type StatsMemory,
+	type StatsMemoryArea,
 	type StatsThread,
 	statsText,
 } from './debug/stats-text';

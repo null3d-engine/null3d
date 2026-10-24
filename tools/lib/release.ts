@@ -483,8 +483,9 @@ export function packageFolders(root: string): string[] {
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * Every copy of the release version: each package manifest, the engine's `VERSION` export, the
- * Rust workspace version (which the core reports), and the workspace crates in the lockfile.
+ * Every copy of the release version: each package manifest, the engine's `VERSION` export and the
+ * matching constant of each add-on, the Rust workspace version (which the core reports), and the
+ * workspace crates in the lockfile.
  */
 export function versionCopies(root: string): VersionCopy[] {
 	const manifests = packageFolders(root).map((name) => `packages/${name}/package.json`);
@@ -494,7 +495,17 @@ export function versionCopies(root: string): VersionCopy[] {
 	});
 	return [
 		...manifests.map((path) => ({ path, pattern: /("version":\s*")([^"]*)(")/ })),
-		{ path: 'packages/engine/src/index.ts', pattern: /(export const VERSION = ')([^']*)(')/ },
+		{
+			path: 'packages/engine/src/shared/version.ts',
+			pattern: /(export const VERSION = ')([^']*)(')/,
+		},
+		...packageFolders(root)
+			.filter((name) => name !== 'engine')
+			.filter((name) => existsSync(join(root, 'packages', name, 'src/version.ts')))
+			.map((name) => ({
+				path: `packages/${name}/src/version.ts`,
+				pattern: /(export const VERSION = ')([^']*)(')/,
+			})),
 		{ path: 'Cargo.toml', pattern: /(\[workspace\.package\][^[]*?\nversion = ")([^"]*)(")/ },
 		// The agent skills' plugin: its version, and the release tag it fetches the skills from.
 		{ path: '.claude-plugin/marketplace.json', pattern: /("version":\s*")([^"]*)(")/ },

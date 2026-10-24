@@ -1,0 +1,252 @@
+---
+id: api/vegetation
+title: "Vegetation (@null3d/vegetation)"
+status: experimental
+since: "0.3"
+summary: "Trees, conifers, shrubs, ferns, hostas and grass grown from a species record and a seed, and placed by ecological rules over a ground read once into maps."
+---
+
+# Vegetation (@null3d/vegetation)
+
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the scatter by ecological rules, the grass, the far-tree impostors and the leaf and bark materials of the vegetation pipeline. This page covers the species generator, the bark and leaf atlases that the browser paints at first use, and the material that draws a plant from them.
+
+```mermaid
+flowchart LR
+    record["A species record"] --> grow["The skeleton:<br/>every random choice"]
+    grow --> mesh["Every detail level:<br/>branches, cards, blades"]
+    ground["The terrain's height<br/>and normal"] --> maps["The ground maps"]
+    rules["Ecological rules<br/>a curve for each input"] --> scatter["The scatter:<br/>hash points, occupancy"]
+    maps --> scatter
+    scatter --> points["Placed plants:<br/>flat arrays of points"]
+    mesh --> asset["An asset:<br/>arrays, wind data, crown"]
+    asset --> geometry["geometry.fromArrays"]
+    asset --> worker["A job worker,<br/>off the frame loop"]
+```
+
+The `@null3d/vegetation` package grows plants from a short record of numbers and a seed. A record describes a tree, a conifer, a shrub, a fern, a hosta or a grass clump. The generator makes the plant's skeleton first, then every detail level from that skeleton, so a crown keeps its shape as it thins. A plant ships no model and no texture: a page grows it at first use.
+
+```sh
+bun add @null3d/vegetation
+```
+
+```ts
+// sketch.ts
+import { defineSketch } from '@null3d/engine';
+import {
+  bakePlantAtlases,
+  builtInSpecies,
+  generateVariantSet,
+  leafCellFor,
+  plantMaterial,
+} from '@null3d/vegetation';
+
+export default defineSketch((ctx) => {
+  const { scene, geometry } = ctx;
+  const camera = scene.createPerspectiveCamera({ fov: 50, position: [14, 6, 18], target: [0, 4, 0] });
+  scene.setActiveCamera(camera);
+  scene.createDirectionalLight({ direction: [-0.4, -1, -0.3], intensity: 3 });
+  scene.createAmbientLight({ intensity: 0.4 });
+
+  const oak = builtInSpecies('oak');
+  if (!oak) return {};
+  const atlases = bakePlantAtlases(ctx);
+  const bark = plantMaterial(ctx, { atlases, part: 'wood', color: oak.color.bark });
+  const leaves = plantMaterial(ctx, {
+    atlases,
+    part: 'leaves',
+    cell: leafCellFor(oak),
+    color: oak.color.leaf,
+  });
+
+  for (const [index, asset] of generateVariantSet(oak, { seed: 7 }).entries()) {
+    for (const part of asset.levels[0]?.parts ?? []) {
+      scene.createMesh({
+        mesh: geometry.fromArrays(part.arrays),
+        material: part.name === 'wood' ? bark : leaves,
+        position: [index * 6 - 15, 0, 0],
+      });
+    }
+  }
+  return {};
+});
+```
+
+The first level draws the plant in full detail. Pass a lower level's arrays to a mesh for a cheaper copy. Set the levels on the mesh, and the engine picks one by distance.
+
+## How a plant grows
+
+The generator makes every random choice in the skeleton. The meshing step reads the skeleton and chooses nothing, so two levels of the same plant share its branches, its card places and its crown.
+
+1. The skeleton grows from the record. Each branch level names its child count, length, angle, curve and taper, and the crown's outline scales a branch by its height.
+2. Radii follow the pipe model: a branch's cross section carries the tip and every child beyond it. A trunk flares where it meets the ground.
+3. Leaves become cards. A broadleaf carries folded cluster cards that face up and out, and a conifer carries narrow needle cards. A plant with no branch system grows a rosette of blades, fronds or broad leaves.
+4. Each coarser level keeps fewer rings on every branch and a share of the cards. Every kept card grows about its middle, so the crown keeps its coverage. See [Detail levels](#detail-levels).
+
+All choices come from a 32-bit integer hash of the seed, the species' salt, the variant, the branch and the card. The hash matches the shaders' `pcg`, so a page can reproduce a choice in WGSL. The same record and seed grow the same plant on every device and both GPU paths.
+
+## The species record
+
+A record holds only numbers and short strings. This table shows the parts that a record uses most.
+
+| Field | Holds |
+| --- | --- |
+| `id`, `kind` | A name, and `tree`, `conifer`, `shrub`, `fern`, `rosette` or `grass` |
+| `branchLevels` | One entry per level: `children`, `prune`, `length`, `lengthVariance`, `angle`, `angleVariance`, `curve`, `curveVariance`, `taper`, `start`, `end`, `sides`, `segments` and `twist` |
+| `crown` | A `shape` from the nine outlines, the `start` height, a `spread`, and the vertical `pull` |
+| `leaf` | `kind` (`cluster`, `needle`, `frond` or `blade`), `cards`, `width`, `height`, `perCard`, `up`, `out`, `start` and `end` |
+| `rosette` | For a plant without branches: `blades`, `length`, `width`, `arch`, `segments`, `shape`, `pinnae`, `upright` and `flowers` |
+| `wind` | `stiffness` for each branch level, the flutter's `flutter` distance and its `frequency` |
+| `color` | `bark`, `leaf`, `tint` and `transmission` |
+| `height`, `trunks` | The plant's height and the trunks that rise from one base |
+| `heightVariance`, `size` | How much a variant's height and a copy's scale vary |
+| `flare`, `levels`, `variants` | The root flare, the detail levels, and the variants that a scene makes |
+| `seedSalt` | A number that changes this species alone when the scene's seed changes |
+
+`speciesProblems(record)` lists every field that cannot grow, and `checkSpecies` throws one message with all of them. A themed species pack is a list of these records. It needs no code.
+
+## Detail levels
+
+A plant gets one to three whole levels, most detailed first. Each level holds the plant's parts and the largest distance that its surface lies from the base level's, in meters. Pass the lower levels to `mesh.setLevels`. The engine then picks one by distance. [Levels of detail](../concepts/lod.md) explains the rule that the engine applies.
+
+A coarser level keeps every second or fourth card in a space-filling order through the crown. It grows each kept card about its middle by the square root of that step. The same rule thins trees that the asset tool converts from files, so a generated tree and a converted one switch alike. A plant keeps whole levels, never cluster levels, because every card is a separate piece with open edges.
+
+A rosette thins its leaves the same way, and widens each kept leaf instead of lengthening it, so the clump keeps its size and never grows past its bounds.
+
+## Wind data and the crown
+
+Every vertex's color carries four bytes: the branch's index, the leaf's flutter phase, the branch's stiffness and the crown's occlusion. `asset.wind.pivots` holds one record for each branch, sixteen floats each: the pivot, the axis, the parent's index, the stiffness, the flutter, the branch level and the branch's length. Upload it as a data texture and read it in a material's vertex offset. A plant keeps at most 255 branches, because the index takes eight bits.
+
+`asset.crown` holds the outline, the bounds, the center and the radius. The bounds hold every level, so a switch never moves them. `asset.impostorSource` names the level, the bounds, the pivot and the tint that a far card bakes from.
+
+The generator does not draw anything by itself. The leaf and bark materials that read this data arrive in a later step.
+
+## Generating in a worker
+
+`generatePlant` runs on the calling thread. `generatePlantInTask` runs the same work in one of the engine's job workers, beside the frames, through [Tasks](tasks.md). A scene that grows many species and variants should await the task form, so the page's first frames do not wait.
+
+```ts
+const asset = await generatePlantInTask(oak, { seed: 7, variant: 2 });
+```
+
+A worker task's input and output are plain data and typed arrays, so an asset crosses without a copy. The task takes the seed, the variant and the levels, and gives back the asset.
+
+## Placing plants
+
+`scatterVegetation` places every species where its rules allow. It reads the ground once, places the layers in order and returns the points as one flat array. A page then grows one asset for each variant and draws a copy at each point.
+
+```ts
+import { builtinRules, CREEK_SPECIES, groundMaps, scatterVegetation } from '@null3d/vegetation';
+
+const ground = groundMaps({ size: 160, water: 0, height: terrain });
+const rules = builtinRules(CREEK_SPECIES);
+const points = scatterVegetation({ seed: 7, ground, rules });
+
+for (let i = 0; i < points.count; i++) {
+  const at = i * points.stride;
+  const x = points.data[at] as number;
+  const y = points.data[at + 1] as number;
+  const z = points.data[at + 2] as number;
+  const rule = points.rules[points.data[at + 3] as number];
+  // Draw a copy of rule.species at the point.
+}
+```
+
+### The ground maps
+
+`groundMaps` reads the terrain once into flat grids. It takes a terrain, which answers `heightAt` and `normalAt`, or a plain height function. A grid holds:
+
+- how high the ground stands above the water, and how far it lies from the water;
+- the slope, the aspect in degrees clockwise from north, and how far the slope faces north and east;
+- the curvature, positive in a hollow;
+- the wetness that gathers from the water's flow and from the hollows;
+- the shares that paths, rocks and cave mouths cover.
+
+Pass `paths`, `rocks` and `caves` as a function or as a list of discs and strips. No plant grows where one of them covers the ground.
+
+The maps hold `resolution` samples along each side, which is one a meter by default. A valley of 160 m therefore reads 161 samples each way. Read a grid at any point with `sampleAt`, which interpolates and allocates nothing.
+
+### Ecological rules
+
+A rule names a species, a layer, the room that the plant keeps and a tolerance curve for each input. A curve holds four numbers, `min`, `best`, `worst` and `max`. Its score is 0 outside the curve, 1 between `best` and `worst`, and a straight ramp between them. A place's score for a rule is the lowest of its curves, so a plant grows only where every need holds. The chance that a candidate grows is its score.
+
+The inputs are `heightAboveWater`, `distanceToWater`, `slope`, `northness`, `eastness`, `wetness` and `curvature`, then `canopy`, `edge` and `openness`, which the scatter works out from the trees that it has already placed.
+
+The layers are placed in this order: `canopy`, `young`, `understory`, `shrub`, `ground` and `deadwood`. A `young` rule gathers its saplings around the adults that its `cluster` names. A rule's `overlaps` names the layers whose plants it must not stand inside. Its default is every layer, so a rule that grows under a crown names only its own layer. A rule's `clump` picks the share of a clump field that the species grows in, from 0 to 1. That leaves gaps that another species fills. `clumpScale` sets the size of those clumps in meters.
+
+`builtinRules` gives a rule for each built-in species that the page passes. The curves suit a valley that has water at zero, so a scene with other terrain changes the numbers that differ.
+
+### Points from an integer hash
+
+A candidate point comes from a grid of cells. The cell's size is the rule's `spacing`, and the hash of the seed, the rule, the row and the column picks the point inside it. The same hash picks the rotation and the scale, and the same hash decides whether the candidate grows. No choice reads a floating-point noise or a clock, so one seed places the same plants on every device and on both GPU paths.
+
+A shared occupancy grid stops two plants overlapping. A plant takes a place when no plant that it must avoid holds it. The first plant to claim a place keeps it. The layers run in a fixed order, so nothing depends on the order of the calls.
+
+`scatterChecksum` hashes a point list into one number. A page compares its own placement against a reference that another device recorded, which is how the same placement is checked across devices.
+
+### Tiles
+
+A large scene need not place every plant at once. `EcoScatter` takes tiles with `addTile`, and `build` places the plants of the tiles added. A point's cell belongs to one tile. The cells run in one row-by-row order over the whole square, so neither the order nor the size of the tiles changes the result. A page can therefore place the tiles beside the frames.
+
+### Variance maps
+
+`varianceMaps` holds three patches at one to two meters. The type picks a species' variant, the color shifts a plant's tint, and the lichen covers a plant or a stone. Each point carries the values at its place in its `tint` and `lichen` fields. Neighboring plants therefore differ a little, and the ground gains patches.
+
+## Speed and memory
+
+The built-in set holds thirteen species and six variants each. Grown in one call, the whole set takes about 50 ms on an Apple M5 Max laptop. The measured budgets are 60 ms for the iPhone and the iPad, and 200 ms for the slowest tablet. A tree takes about 3,000 to 5,500 triangles at full detail, and all of its levels together take about 0.3 to 0.5 MB. The whole set of 78 variants takes about 18 MB of vertex arrays.
+
+Growth is linear in the branch count and the card count. A species whose record raises `children` at several levels grows many more branches and costs more to generate. Keep a plant under 255 branches, and let a species with more rely on a coarser record instead.
+
+Reading Creek's 160 m valley into the ground maps and placing its eight species takes about 55 ms on an Apple M5 Max laptop, for about a thousand points. Ground cover is the most of it. A species at one meter of spacing offers tens of thousands of candidates.
+## Bark and leaf textures
+
+A plant ships no image file, so its bark and leaves come from two atlases that the browser paints the first time a page asks for them. `bakePlantAtlases` paints them, and `plantMaterial` draws a plant part from them.
+
+```mermaid
+flowchart LR
+    hashes["Integer hashes:<br/>no image file"] --> paint["The atlases:<br/>a colour map<br/>and a surface map"]
+    paint --> material["plantMaterial:<br/>colour, normal,<br/>coverage and thickness"]
+    material --> mesh["A trunk or a leaf card"]
+```
+
+```ts
+const atlases = bakePlantAtlases(ctx);
+const bark = plantMaterial(ctx, { atlases, part: 'wood', color: oak.color.bark });
+const leaves = plantMaterial(ctx, {
+  atlases,
+  part: 'leaves',
+  cell: leafCellFor(oak),
+  color: oak.color.leaf,
+});
+```
+
+- **Bark** comes from stretched cells warped by noise, with cracks between them and fibres up the trunk. It tiles around and along a branch.
+- **Leaves** come from outlines cut with teeth or lobes, and veins written into a height field, which the surface map's normal follows. Its blue channel holds the leaf's coverage, and its alpha its thickness.
+- **A leaf cell holds more than one leaf.** The leaves differ in outline, colour and veins, and a few have a piece bitten out of an edge. A crown therefore does not read as one leaf shape tiled over and over.
+- **The leaf block holds eight cells**: four leaf clusters, a needle spray, a frond, a blade and a broad leaf. `leafCellFor` picks one from a species record.
+- **The colour map multiplies the species' colour.** It holds the veins, the shade of each leaf and the lift of its ridges, so two species that share a cell still differ.
+- **The engine makes each texture's mip levels.** A masked material fades its cut edges with alpha to coverage, so a leaf card that shrinks keeps the share of the picture that its leaves cover, and a crown far away stays as dense as it is up close.
+- **The four textures take about 4.6 MB of texture memory.** They are painted once, in the setup, and kept for the visit.
+
+
+## Compared with three.js
+
+| three.js | null3D |
+| --- | --- |
+| A tree modeled in Blender or generated by an add-on such as Sapling, loaded as a glTF file | A species record and a seed, grown at first use with no file |
+| `InstancedMesh` with a separate mesh for each species | Add the add-on's arrays with `geometry.fromArrays`, then draw copies with `scene.createInstances` |
+| A custom shader that bends vertices for wind | Wind data in the vertex color, which a custom material's vertex offset reads |
+| A scatter tool that places plants with floating-point noise, so two devices place them differently | `scatterVegetation` places them from an integer hash and the ground's maps, so every device places the same plants |
+| `LOD` chooses a child object by distance | `mesh.setLevels` with a level for each detail |
+
+## Related pages
+
+- [Levels of detail](../concepts/lod.md) for the error and distance rule that picks a level.
+- [Instances](../concepts/instances.md) for the copies of one plant.
+- [Terrain](terrain.md) for the height field that the ground maps read.
+- [Tasks](tasks.md) for work that runs in a job worker.
+- [Custom materials](materials.md) for a vertex offset that reads the wind data.
+
+## API reference
+
+[The API reference](reference/vegetation.md) lists every export, with its signature and its doc comment.

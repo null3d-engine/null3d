@@ -182,8 +182,10 @@ The header stays in the corner when the card opens, and the card opens under it,
 | Work bars | CPU time per frame of each engine thread, and the GPU's time per frame, against the target |
 | `Held back by` | Below the target frame rate, the part of the frame that holds it back |
 | `Memory` | The engine's memory, the GPU's textures and buffers, and the page's JavaScript heap, as one bar with a legend |
+| `Memory by system` | Development builds only: one row for each engine table and allocator, with the bytes that it uses, reserves and has used at most |
 | Whole page | The memory of the whole page and its workers, as the browser counts it |
 | Counts | Draw calls, triangles and objects per frame |
+| `Add-ons` | One row for each add-on feature that reports figures: its GPU time, its settings, its budget and its memory. The section shows only while a feature reports figures |
 | Last line | The GPU path, the quality preset and the render scale |
 
 **The target.** The overlay judges each frame against the engine's own [target frame rate](../concepts/quality-presets.md#the-target-frame-rate): the one that the preset check and the quality governor defend. It is the display's refresh rate, at most 60 frames a second, unless the page's `targetFps` option asks for more. The `?fps=` switch caps it too. The engine still draws at the display's full rate when the GPU allows it. So on a 120 Hz display the card reads `120 Hz ≥60 fps · 16.7 ms`: the engine draws up to 120 frames per second and defends 60. With `targetFps: 'display'`, the same card reads `120 fps · 8.3 ms`. The display symbol is a button whose tooltip explains the figures, as the mode's symbol does.
@@ -207,6 +209,8 @@ A bar stacks parts only where the parts add up to the time beside it. A thread's
 **The colors.** A work bar's time is green below 80% of the target's interval, amber up to the interval, and red past it. The ring gauge in the header fills with the frame rate as a share of the target. It is green from 90% of the target, the share that a preset must hold in the preset check. It is amber from 75%, and red below.
 
 **Held back by.** While the frame rate is below 90% of the target, a line under the GPU bar names the bar furthest past the target's mark: `Held back by: GPU`, `Drawing`, `Sketch`, `Sketch + drawing`, `Jobs` or `Page`. When no bar passes the mark, it reads `Held back by: outside the engine`. The rest of the page's code, or the browser, then holds the frame back.
+
+**The add-ons' rows.** A feature that an add-on declares with `settings`, `budget` or `memory` gets one row under the counts, such as `splats  gpu 0.42 ms  budgetSplats 500000  budget 3.0 of 4.0 ms  memory 12.0 MiB`. The row names the feature, its one GPU timing scope, its own settings, its budget and the memory that it reports. The budget shows now and at full quality. A feature's GPU scope reads `gpu not measured` until the engine records and times its work. [Add-on feature descriptions](features.md#stats) explains the figures.
 
 **Figures that the browser gives.** The frame rate, the work bars, the engine's and the GPU's memory and the counts show in every browser that runs the engine. The page's JavaScript heap comes from `performance.memory`, and the whole page's memory from `performance.measureUserAgentSpecificMemory`. Some browsers have neither. Where the browser lacks one, the overlay leaves it out, and the memory total adds up what it lists. Where the GPU path has no timer queries, the GPU bar reads `not measured` and stays empty.
 
@@ -236,13 +240,15 @@ export default defineSketch(({ debug, page, time }) => {
 | `completedFps` | Frames per second that the GPU finished. Below `presentedFps`, the GPU limits the frame rate |
 | `cpuMs` | CPU time per frame of the busiest thread, in milliseconds |
 | `threads` | Each engine thread's name, its CPU time per frame, and the time of each phase, as `engine.measure` names them |
-| `gpuMs` | GPU time per frame in milliseconds, from one frame in eleven, or null without timer queries |
+| `gpuMs` | GPU time per frame in milliseconds, from one frame in eleven, or null without timer queries. It is the latest pass end less the earliest pass begin, because a tile GPU overlaps the passes |
+| `gpuStepMs` | The step between the GPU's timestamps in milliseconds, when the browser rounds them, or null when they look exact. It is the greatest common divisor of the offsets that the timer reads back |
 | `drawCalls`, `uploadBytes` | Draw calls and bytes uploaded to the GPU, per frame |
 | `triangles`, `objects` | Triangles and objects drawn per frame, over every pass |
 | `wasmBytes` | The size of the engine's WebAssembly memory |
 | `textureBytes`, `meshBytes` | The GPU memory of the scene's textures and of its meshes, as `quality.textureMemory.bytes` and `geometry.memoryBytes` give them |
 | `gpuTextureBytes`, `gpuBufferBytes` | The GPU memory of every texture and of every buffer that the engine holds, render targets and shadow maps included ([GPU memory](#gpu-memory)) |
 | `textureBudgetBytes`, `droppedLevels` | The texture memory budget, and the largest mip levels that the budget dropped |
+| `memoryAreas` | The memory register's figures, three per area in the card's order: each area's reserved, used and peak bytes. All zero where no page asked for a report |
 | `tier`, `preset`, `renderScale` | The GPU path, the quality preset, and the share of the canvas's size that the scene draws at |
 
 ### Triangles and objects
@@ -264,6 +270,8 @@ The engine counts every draw of every pass on the thread that draws. That covers
 | Whole page | The memory of the whole page and its workers, from `performance.measureUserAgentSpecificMemory`, where the browser gives it |
 
 The memory bar's parts add up to the total beside `Memory`. The whole page's figure is not that total, so it has its own line. The browser counts a shared memory once for each thread that holds it. Every engine thread holds the engine's WebAssembly memory, so the browser's figure counts it many times. Beside the browser's figure, the overlay gives the figure with the shared memory counted once. The browser answers once every worker has run the measurement, or after about a minute. While a measurement runs, the engine's idle job workers leave the job loop to run it between frame jobs, so it does not wait on them. `measurePageMemory()` from `@null3d/engine/stats` takes one measurement the same way, for a page that wants the browser's own breakdown. Until the first one ends, the line reads `measuring`. The page asks for one measurement at a time.
+
+**Memory by system.** A development build also lists the memory of each engine table and allocator under `Memory by system`. Each row gives three figures: the bytes that the area uses, reserves and has used at most. The rows cover the scene's own rows and world output, the instance batches, the grid cells, the level table and the frame builder's bucket-key scratch. After them come the shadow casters' table, the other draw tables, the upload arenas, the recorded draw lists and the animation table. Each figure's tooltip gives its exact bytes. The register runs only while the card is open, and only in a development build. A production page therefore pays nothing for it. The figures name faults that a single memory total hides. A table that keeps a high-water mark after a scene shrinks shows in its peak. An arena that grew for a frame shows the same.
 
 Some browsers offer the measurement but never answer it. When no answer comes within two minutes of the first request, the overlay hides the line. The page then asks no more for the rest of its life. An answer that comes later still shows.
 
@@ -376,7 +384,11 @@ for (const part of stats.gpuPassMs ?? []) {
 
 ### GPU time
 
-`gpuMs` and `gpuPassMs` need GPU timer queries. Some WebGPU devices offer timestamp queries. On WebGL2, most desktop browsers offer `EXT_disjoint_timer_query_webgl2` and most phones do not; there `gpuMs` covers the frame as a whole, and `gpuPassMs` is empty. Without timer queries both are null. `gpuPassMs` splits `gpuMs` into the parts of the frame, in the order the GPU runs them:
+`gpuMs` and `gpuPassMs` need GPU timer queries. Some WebGPU devices offer timestamp queries. On WebGL2, most desktop browsers offer `EXT_disjoint_timer_query_webgl2` and most phones do not; there `gpuMs` covers the frame as a whole, and `gpuPassMs` is empty. Without timer queries both are null.
+
+`gpuMs` is the latest pass end less the earliest pass begin, not the sum of the passes' own times. A tile GPU overlaps the spans of its passes, so a sum counts the shared time more than once. A browser gives no period for its timestamps, so `gpuStepMs` finds the step between them as the greatest common divisor of the offsets that the timer reads back. It is null when they look exact. Start Chrome with `--enable-webgpu-developer-features --disable-dawn-features=timestamp_quantization` to turn off its timestamp rounding.
+
+`gpuPassMs` splits `gpuMs` into the parts of the frame, in the order the GPU runs them:
 
 | Part | What it is |
 | --- | --- |

@@ -1,0 +1,26 @@
+{
+	"hooks": {
+		"PreToolUse": [
+			{
+				"matcher": "Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.claude/agent-hook.mjs\" bash",
+						"statusMessage": "Checking the null3D rules"
+					}
+				]
+			},
+			{
+				"matcher": "Edit|Write|apply_patch",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.claude/agent-hook.mjs\" edit",
+						"statusMessage": "Checking the null3D rules"
+					}
+				]
+			}
+		]
+	}
+}

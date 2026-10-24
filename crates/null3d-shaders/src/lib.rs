@@ -34,6 +34,7 @@ mod position;
 mod problem;
 mod scan;
 mod shards;
+mod sky_layer;
 mod textures;
 mod typescript;
 mod uniforms;
@@ -68,6 +69,7 @@ pub use pieces::{GlslPiece, PieceOutput, WgslPiece};
 pub use position::Position;
 pub use problem::{BuildError, Problem};
 pub use shards::{Part, Shard, ShardPlan, entry_costs};
+pub use sky_layer::{SkyLayerOutput, SkyLayerSource, SkyLayerTemplates};
 pub use textures::Texture;
 pub use typescript::ModuleSet;
 pub use uniforms::Uniform;
@@ -207,7 +209,9 @@ pub fn build_with_cache_reporting(
         &mut stats,
     )?;
     for ((shader_name, shader), variants) in manifest.shaders.iter().zip(entries) {
-        if shader.custom_effects {
+        // A template that an add-on completes writes no module of its own: only the add-on's build
+        // takes its variants.
+        if shader.custom_effects || shader.sky_layers {
             continue;
         }
         output.shaders.insert(shader_name.clone(), variants);
@@ -309,7 +313,8 @@ struct Built {
 
 /// The variants of every entry, in the manifest's order. An entry comes from the cache when it
 /// holds it; the builds of the other entries compile together, spread over the machine's cores.
-/// An entry that the inputs give a part builds only that part's builds, and skips the cache.
+/// An entry that the inputs give a part builds only that part's builds, and the cache keeps them
+/// as that part of the entry, under the entry's key, which a later build of the whole entry joins.
 /// Problems go to `errors` in the order that building one entry after another gives. An entry
 /// with a problem returns whatever it built, which the caller discards; it is never stored, so a
 /// later run compiles it again.
@@ -328,18 +333,25 @@ fn build_entries(
     for (entry, (shader_name, shader)) in shaders.iter().enumerate() {
         let part = inputs.parts.get(shader_name.as_str()).copied();
         // The cache is off in the shader compiler, which a page or a bundler loads, so its key and
-        // its manifest table leave no trace there. An entry that builds one part of its builds
-        // has no key: the key covers the whole entry, so the part is neither read nor stored.
+        // its manifest table leave no trace there. A part of an entry's builds is kept under the
+        // whole entry's key, beside the part.
         #[cfg(not(target_arch = "wasm32"))]
-        let cached = if part.is_some() {
-            Err(None)
-        } else {
+        let cached = {
             let table = toml::to_string(shader).unwrap_or_default();
             let source = &inputs.files[&shader.file];
             let key = cache.key(shader_name, &shader.file, source, &table);
-            cache
-                .load(shader_name, &key, &inputs.files)
-                .ok_or(Some(key))
+            let found = match part {
+                Some(part) => {
+                    let builds: Vec<String> =
+                        planned_builds(&shader.variants, |place, _, _| part.holds(place))
+                            .into_iter()
+                            .map(|(_, build)| build.name)
+                            .collect();
+                    cache.load_part(shader_name, &key, part, &builds, &inputs.files)
+                }
+                None => cache.load(shader_name, &key, &inputs.files),
+            };
+            found.ok_or(Some(key))
         };
         #[cfg(target_arch = "wasm32")]
         let cached = {
@@ -403,7 +415,12 @@ fn build_entries(
             let source = &inputs.files[&shader.file];
             files.extend(compiler.library.imported_files(source));
             let deps: Vec<String> = files.into_iter().collect();
-            cache.store(shader_name, &key, &deps, &inputs.files, &built);
+            match inputs.parts.get(shader_name.as_str()) {
+                Some(&part) => {
+                    cache.store_part(shader_name, &key, part, &deps, &inputs.files, &built);
+                }
+                None => cache.store(shader_name, &key, &deps, &inputs.files, &built),
+            }
         }
         #[cfg(target_arch = "wasm32")]
         let _ = (key, failed, shader);
@@ -481,7 +498,14 @@ fn compile_jobs(
 #[cfg(not(target_arch = "wasm32"))]
 fn threads(jobs: usize) -> usize {
     let cores = std::thread::available_parallelism().map_or(1, NonZeroUsize::get);
-    cores.min(jobs).max(1)
+    // A machine that several checkouts build on at once stays usable when one build leaves cores
+    // for the others: NULL3D_SHADER_THREADS caps it, and an unset or zero value keeps every core.
+    let cap = std::env::var("NULL3D_SHADER_THREADS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|count| *count > 0)
+        .unwrap_or(cores);
+    cores.min(cap).min(jobs).max(1)
 }
 
 /// WebAssembly has no threads in a page or a bundler, so its builds compile on one.
@@ -777,7 +801,7 @@ impl Compiler {
                 )]
             })?;
             Some(WgslOutput {
-                source: finish_source(&literals::compact_floats(&written)),
+                source: finish_source(&literals::compact_floats(&written)).into(),
                 pipelines: pipelines.clone(),
             })
         } else {

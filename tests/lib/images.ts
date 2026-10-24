@@ -9,7 +9,14 @@
 // test-results/images/, with its diff. Only the review step (tests/review-images.ts) turns a
 // candidate into a reference.
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	copyFileSync,
+	existsSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { join, relative } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import {
@@ -197,6 +204,12 @@ export interface ImageRun {
 	reference: { test: string; tier: Tier; devices: readonly string[] };
 	/** Another test of the same scene whose reference is the same picture as this run's. */
 	samePicture?: string;
+	/**
+	 * The command that makes this run's reference, for a run that the image page does not draw, such
+	 * as one that the command-line tool makes. `{ci}` becomes `CI=1 ` where the place draws on
+	 * SwiftShader. Without it, the command is the image tests' own.
+	 */
+	make?: string;
 	tolerance: Tolerance;
 	/** The tolerance against SwiftShader's references, where it differs from `tolerance`. */
 	swiftShaderTolerance?: Tolerance;
@@ -452,12 +465,35 @@ function makeCommand(run: ImageRun, place: Place): string {
 	if ('device' in place)
 		return `run the checks plan on ${place.device} (.dev/devices.md), then ${accept}`;
 	const ci = place.environment === REAL_GPU ? '' : 'CI=1 ';
+	if (run.make) return run.make.replace('{ci}', ci);
 	return `${ci}bun run test:images -g "${test} on ${tier}", then ${accept}`;
 }
 
 /** Each reference that a run needs, with the place that drew it. */
 function* neededReferences(run: ImageRun): Generator<{ place: Place; file: string }> {
 	for (const place of placesNeeding(run)) yield { place, file: referenceOf(run, place).file };
+}
+
+/**
+ * What is wrong with the references on disk, without a browser: the missing and the unused files
+ * and the pictures that two tests of one scene share, with the count of files that it read. The
+ * unit check (`bun run check`) and the report of every fixed limit (`bun run limits`) both call it,
+ * so the two can never disagree about the reference set.
+ */
+export function referenceProblemsOnDisk(runs: readonly ImageRun[]): {
+	files: number;
+	problems: string[];
+} {
+	const files = readdirSync(HARNESS_DIRS.references, { recursive: true, withFileTypes: true })
+		.filter((entry) => entry.isFile())
+		.map((entry) => relative(HARNESS_DIRS.references, `${entry.parentPath}/${entry.name}`));
+	return {
+		files: files.length,
+		problems: [
+			...referenceFileProblems(runs, files),
+			...sharedReferenceProblems(runs, referenceDigest),
+		],
+	};
 }
 
 /**
@@ -572,6 +608,17 @@ export interface CandidateFacts {
 	tolerance: Tolerance;
 	/** Why the image cannot become the reference, when it cannot. */
 	fixed?: string;
+	/**
+	 * The CI run whose job drew the image, when GitHub Actions drew it. A software-GPU reference
+	 * comes only from CI's own drawing, so the review accepts one only with this run, or from a run
+	 * that it fetched itself.
+	 */
+	ciRun?: string;
+}
+
+/** The CI run that draws in this process, from GitHub Actions' own variables, or none elsewhere. */
+export function ciRunOf(env: Readonly<Record<string, string | undefined>>): string | undefined {
+	return env.GITHUB_ACTIONS === 'true' && env.GITHUB_RUN_ID ? env.GITHUB_RUN_ID : undefined;
 }
 
 /** The files of one candidate, which differ in their endings. */
@@ -620,6 +667,7 @@ export function compareWithReference(
 		reference: reference.file,
 		tolerance: reference.tolerance,
 		...(reference.fixed && { fixed: reference.fixed }),
+		...(ciRunOf(process.env) && { ciRun: ciRunOf(process.env) }),
 	};
 	// The first mode that differs keeps its candidate: the later modes of a test on a tier draw the
 	// same pixels, or fail for that on their own. The facts go last, so they mark a whole candidate.

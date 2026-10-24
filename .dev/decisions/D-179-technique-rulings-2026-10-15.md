@@ -109,3 +109,134 @@ accepted two ordering rules:
 - The API features of ruling 26 (M3-K1 to M3-K6) are built early in M3, not last. They cost little,
   but they add public surface just before the API freezes, and time to use them is what makes that
   surface safe to freeze.
+
+## Addendum, 21 October 2026: how spot-light cookies are built (M3-K3)
+
+Ruling 26 gave the spot-light cookie, three.js's `SpotLight.map`, to M3. The plan guessed an image in the shadow atlas or in an atlas of its own, costing one WebGL2 texture unit. The build takes the light tables' array instead, so it costs no GPU binding at all.
+
+**What it does.** `map` and `setMap({ width, height, data })` take the sRGB pixels that a rectangle light's `image` takes, and the engine resamples them to 128 x 128 linear half floats with every mip level, in the layer that a light's image already occupies. The shader projects the picture over the cone: it takes the uv from the direction to the surface and the cone's half angle, as three.js projects `light.map` through its spot light's shadow camera. Three.js turns that camera with the light's target and the world's up axis, not with the light's own roll, so the cookie follows the direction alone. A light that points straight down takes the same small tilt that three.js's `lookAt` gives it, so the frame stays defined there. The image's layer now has a field of the record of its own, so a frame's shadow tiles and a light's image cannot share one, as they once did for rectangle lights (the image test guide's note of 17 October 2026).
+
+**Cost per light.** None in texture units: the light tables' array is at binding 3 of the frame group in every lit pipeline, on both GPU paths, and the cookie adds no binding to it. A visible light's record grows from 64 to 80 bytes (five vectors, from four) so that it can hold the map's layer and the up axis its projection needs. On WebGL2 that is one more texel per record in the light data texture: the light grid's words per row halve, from 4,096 to 2,048, which keeps the texture 1,792 texels wide, inside the 2,048 that every WebGL2 device allows. The frame's light records therefore take 80 KiB at the engine's 1,024-light cap instead of 64 KiB, per camera view and ring slot. A map's own layer costs about 175 KB with its mip levels, and the 32 places for light images are shared with rectangle lights' pictures.
+
+**Options rejected.** One texture unit per light, as the plan first said: WebGL2's lit fragment stage has no unit to spare and a scene with many mapped lights would exceed its count. An engine texture handle per light: a sampled binding of its own for each light, or a copy of its texels into the layer for each format, compressed ones included, where a light's picture already takes the sRGB pixels that a rectangle light's image takes and resamples them once. A tile of the shadow atlas: a spot light that casts shadows needs its tile for depth, so a mapped light that casts them would need two, and a light that casts none still needs a projection frame. A separate atlas and binding: a second unit of the frame group on WebGL2 for one feature, where the light tables' array already holds 128 x 128 layers with mips.
+
+**Consequences.** The three.js mapping's `spot-light` entry names `map`, the API page has a "Spot light maps" section, and the develop skill's quick reference lists it. An image test draws a gobo on both GPU paths and in compatibility mode. The light record's layout change is why the GPU's light clustering test fixture is made again.
+
+## Addendum, 21 October 2026: two of ruling 20's drops come back, and two move past 1.0
+
+The owner read the four dropped techniques back on 21 October 2026 with the engine's aim in mind, an
+engine for demanding games rather than for demos, and ruled:
+
+- **Screen-space bounce light comes into M3 as a core task (M3-F12)**, after M3-A11's temporal
+  resolve, at half resolution and on High and above. It is core because it feeds the lighting model;
+  an add-on pass could only tint the final picture.
+- **Moment transparency comes into M3 as a core task (M3-F13)**, off by default and turned on by a
+  scene's setting. It resolves once per pixel, and MSAA stays on for opaque geometry; the surfaces it
+  resolves take the post-process anti-alias the setting names rather than MSAA's samples, because
+  per-sample OIT multiplies its bandwidth by the sample count.
+- **OpenPBR goes on the post-1.0 roadmap**, and waits for the file formats to carry it: glTF and
+  MaterialX shipping OpenPBR is the signal.
+- **Distance-field shadows go on the post-1.0 roadmap**, behind a future hook that lets an add-on or
+  a core path own the shadow term; until then cascades and contact shadows carry the ground.
+- **GPU grass and hair go on the post-1.0 roadmap beside OpenPBR** (owner, 21 October 2026), as
+  content packs. The trigger for either is a real scene that needs it: vegetation-heavy ground for
+  grass, and a groomed character asset for hair, which also needs an asset path for grooming before
+  the renderer is worth building.
+
+Ruling 20's other drops stand: GPU grass and hair stay out of the plan, and the rest of the list is unchanged.
+
+## Addendum, 21 October 2026: M3-A11 refuses the temporal resolve
+
+M3-A11, the temporal resolve's second look, refused the resolve on 21 October 2026 ([D-200](D-206-temporal-resolve.md)). Ruling 24 therefore drops TAA. Ruling 15 drops the many lights' shipping, because their noise has no temporal cleanup. Ruling 16 drops the temporal upscaler. The resolve's prototype did not pass the engine's capture and live-toggle paths, and its WebGL2 cost was too high. The three.js mapping says that TAA, `TRAANode`, `TAAUNode` and `TemporalReprojectNode` have no equivalent.
+
+## Addendum, 24 October 2026: GPU grass comes back for Creek
+
+The owner ruled that Creek's hills are the "vegetation-heavy ground" that the addendum of 21 October names as the trigger for GPU grass ([D-241](D-241-vegetation-foundation.md)). GPU grass therefore returns to M3, inside the vegetation foundation add-on rather than as a content pack of its own. WebGPU makes and culls the blades in a compute pass and draws them through H2. WebGL2 draws grass tiles that the CPU builds into instance batches. Ruling 20's other drops stand, and hair stays on the post-1.0 roadmap.
+
+## Addendum, 24 October 2026: what the three-compat add-on ships
+
+Ruling 23 gives `@null3d/three-compat` Reinhard, Cineon and `OutlinePass`'s glow, pulse and blurred
+edge. It ships as a foundation add-on (M3-F7) with this shape:
+
+- **Tone curves.** The add-on exports `reinhard` and `cineon` as compiled tone curves, which
+  `post.set({ toneMapping })` takes through the core's own setting. Both use three.js 0.186.1's
+  formulas from `tonemapping_pars_fragment.glsl.js`, and leave out the exposure that three.js
+  multiplies in, because the engine's color arrives exposed. ACES stays in the core.
+- **Tests.** `tests/image/tone-mapping.spec.ts` compares the bright scene's tile colors against
+  three.js's `ReinhardToneMapping` and `CineonToneMapping` at two exposures, on every GPU tier.
+  The maximum difference is the same 4 steps of 255 that the built-in curves use. A custom curve
+  moves compatibility mode to HDR color with FXAA, as the effects do, so the curves draw there
+  too. The forced 8-bit path keeps the built-in curve, so the curves have no 8-bit copy.
+- **Outline.** `createOutlinePass(ctx, options)` reads the core outline's mask, with the crisp line
+  at a width of 0. It runs five full-screen passes, three at half the render size and two at a
+  quarter, and one custom effect that adds the edges before bloom and the tone curve. Together they
+  shade about 0.88 of the canvas's pixels and read about nine texels for each screen pixel, plus two
+  in the effect. The settings are `OutlinePass`'s `edgeStrength`, `edgeThickness`, `edgeGlow` and
+  `pulsePeriod`, with `visibleEdgeColor` and `hiddenEdgeColor` as `color` and `hiddenColor`. The
+  pattern texture and `downSampleRatio` have no setting, and the mask reads at half size. Each blur
+  pass names the scene's color as its input: the graph places a full-screen pass with no input
+  before the camera's passes, so a chain after the mask needs that marker, or the graph reports a
+  cycle (E1504). `guides/custom-passes` records the rule for users.
+- **Why an add-on.** The add-on extends the outline only through the core feature's own settings and
+  the public passes and effects ([D-173](D-173-addon-hooks.md) ruling 11), so another developer
+  could build it. The engine's start code is unchanged.
+
+## Addendum, 25 October 2026: what a glint model needs
+
+Status: open. This record asks the owner to choose between building H4 (M3-E7) now and amending
+ruling 17. No glint model has landed.
+
+Ruling 17 asks for Deliot and Belcour's glints, and the audit of 24 October 2026 found that the
+car-paint add-on ships one random normal tilt per cell instead. The add-on cannot do better with the
+hook it has, for two measured reasons:
+
+- The glint model multiplies the continuous specular of each light by `b(N, p) / (N p)`. `b` is a
+  binomial count over the `N` facets in the pixel footprint, and `p` is the share of facets whose
+  normals reflect that light toward the eye. `p` is a function of the half vector, so the model runs
+  inside a light's shading, not on the surface alone.
+- A custom material's `surface` function sees no light. `docs/shaders/builtins.md` says "Light
+  values are not built yet", and the `Surface` record has no specular scale or lobe. The engine
+  computes each light's specular after the surface function returns. So the add-on can bend the
+  normal and change the roughness, and nothing more.
+
+[Hook H4](D-173-addon-hooks.md) is the place this belongs. Its first user is car paint's glints, and
+the clear-coat check (F6) closed it for the hashed-normal model. That model does not meet ruling 17,
+so H4 is needed after all.
+
+### The smallest sound H4
+
+- The WGSL declares `fn glint(input: GlintInput) -> vec3f`. `GlintInput` holds the surface's normal,
+  the view and light directions, the half vector, the base roughness, the base reflectance, the
+  light's irradiance, the base specular radiance, and one `vec4f` that the surface function fills
+  with the flake footprint and tilt.
+- The engine calls it for the sun and for each point and spot light, and adds its result to that
+  light's specular. Area lights keep their own path, which is an LTC integral and needs the
+  area-light form of the paper. A page with area lights draws them without glints, and the docs say
+  so.
+- A material that declares the hook gets its own builds, as a material with a surface function does.
+  Every other material keeps its builds and its speed.
+- The `Surface` record gains one field, `glint: vec4f`, which `defaultSurface` sets to zero. Only
+  WGSL that names it carries the flake data.
+
+### Cost
+
+- Engine code: the hook table and its signature check, `GlintInput` and the call in the direct-light
+  path, the `Surface` field, and the thread of one `vec4f` through the lighting functions. About 200
+  to 300 lines in four files, on both GPU paths through the existing WGSL-to-GLSL step.
+- Tests: a shader-crate test for the signature and the builds, the add-on's own images redrawn, and
+  the cost per preset recorded. The paint's five pictures move on three tiers in both reference
+  sets, which needs a quiet Mac and a SwiftShader run. The `GPU-Checked:` line needs the GPU timer.
+- Time: about one and a half to two helper-days, most of it the references and the cost run.
+- The plan's 0.3 to 1 ms is the glint shader alone on a full screen, which matches a per-light
+  branch of a few dozen instructions.
+
+### Options
+
+| Option | Verdict |
+| --- | --- |
+| A: build H4 (M3-E7) in its own branch, then M3-B5's flakes use it | Recommended if glints are to ship in 0.3.0. It clears both tasks and leaves the API one hook |
+| B: keep the hashed normal, and the owner amends ruling 17 and the B5 line | Needs an owner ruling. It drops a feature the owner approved |
+| C: ship a model that still resolves to one tilt per cell and call it glints | Rejected. It leaves the code and the task's promise disagreeing, which the audit already found |
+
+The machine ran at a load near 100 on 25 October 2026, so no reference or cost run could be made
+for option A in that session.

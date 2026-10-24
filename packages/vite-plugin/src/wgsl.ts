@@ -4,16 +4,26 @@
 // compiled result where its source was: WGSL for WebGPU, and GLSL ES 3.00 for WebGL2 with the
 // reflection that the WebGL2 backend binds by. WGSL with entry points is a whole shader. WGSL
 // without them holds a custom material's functions, such as `fn surface`, which the plugin builds
-// into every variant of the engine's standard material, or a custom effect's `fn effect` or tone
-// curve's `fn toneCurve`, which it builds into the effect template or the final pass. WGSL that
-// does not compile stops the
-// module with an error at the file, line and column of each problem.
+// into every variant of the engine's standard material, a custom effect's `fn effect` or tone
+// curve's `fn toneCurve`, which it builds into the effect template or the final pass, or a sky
+// layer's `fn skyLayer`, which it builds into the sky-layer template. WGSL that does not compile
+// stops the module with an error at the file, line and column of each problem.
 import { type ESTree, parseSync, Visitor } from 'vite';
 import {
+	type CompileResult,
+	compileEffect,
 	compileHere,
+	compileMaterial,
+	compileShader,
+	compileSkyLayer,
+	type EffectResult,
+	type MaterialResult,
+	type MaterialSource,
 	type ShaderCompiler,
 	type ShaderProblem,
+	type ShaderSource,
 	type ShaderVariantSpec,
+	type SkyLayerResult,
 } from './shader-compiler.ts';
 import type { CompiledWgsl, WgslPipeline } from './shader-types.ts';
 
@@ -143,7 +153,27 @@ function blankComments(source: string): string {
 }
 
 /** The functions that a custom material's WGSL may declare for the engine to call. */
-const MATERIAL_FUNCTIONS: ReadonlySet<string> = new Set(['surface', 'vertexOffset']);
+const MATERIAL_FUNCTIONS: ReadonlySet<string> = new Set(['surface', 'vertexOffset', 'lobe']);
+
+/**
+ * True when WGSL is a draw shader: its `@vertex` entry point takes the vertex and instance indices
+ * and no mesh attribute, so the shader makes every vertex of every copy. Such a shader draws as a
+ * custom material of a draw that has no mesh data. A vertex entry point that reads a mesh attribute
+ * or an `InstanceIn` is not one, and a pass's own vertex shader reads the vertex index alone.
+ */
+function isDrawShader(source: string): boolean {
+	const text = blankComments(source);
+	for (const match of text.matchAll(FUNCTION)) {
+		if (!/@\s*vertex\b/.test(match[1] ?? '')) continue;
+		const open = text.indexOf('(', match.index + match[0].length);
+		const close = open < 0 ? -1 : text.indexOf('{', open);
+		if (close <= open) return false;
+		const args = text.slice(open, close);
+		if (/\bInstanceIn\b/.test(args) || /@\s*location\b/.test(args)) return false;
+		return /@\s*builtin\s*\(\s*instance_index\s*\)/.test(args);
+	}
+	return false;
+}
 
 /**
  * True when WGSL is a mesh shader of its own: its `@vertex` entry point takes an `InstanceIn`, as
@@ -162,6 +192,9 @@ function isMeshShader(source: string): boolean {
 
 /** The functions that a custom effect's or tone curve's WGSL declares for the engine to call. */
 const POST_FUNCTIONS: ReadonlySet<string> = new Set(['effect', 'toneCurve']);
+
+/** The functions that a sky layer's WGSL declares for the engine to call. */
+const SKY_LAYER_FUNCTIONS: ReadonlySet<string> = new Set(['skyLayer']);
 
 /** True when WGSL declares a function of `functions`, such as a custom material's `fn surface`. */
 function declaresFunction(source: string, functions: ReadonlySet<string>): boolean {
@@ -214,7 +247,7 @@ function pipelinesOf(
 	if (entries.length === 0) {
 		return problem(
 			0,
-			`the WGSL has no entry point and no function of a custom material or effect. For a custom material, declare \`fn surface(input: SurfaceInput) -> Surface\`, \`fn vertexOffset(input: VertexInput) -> vec3f\`, or both. For an effect, declare \`fn effect(input: EffectInput) -> vec4f\`, and for a tone curve \`fn toneCurve(color: vec3f) -> vec3f\`. For a shader of your own, give it a \`@vertex\` and a \`@fragment\` entry point, or a \`@compute\` one. ${hint}`,
+			`the WGSL has no entry point and no function of a custom material, effect or sky layer. For a custom material, declare \`fn surface(input: SurfaceInput) -> Surface\`, \`fn vertexOffset(input: VertexInput) -> vec3f\`, \`fn lobe(input: LobeInput) -> vec3f\`, or some of them. For an effect, declare \`fn effect(input: EffectInput) -> vec4f\`, for a tone curve \`fn toneCurve(color: vec3f) -> vec3f\`, and for a sky layer \`fn skyLayer(input: SkyLayerInput) -> SkyLayer\`. For a shader of your own, give it a \`@vertex\` and a \`@fragment\` entry point, or a \`@compute\` one. ${hint}`,
 		);
 	}
 	if (secondVertex) {
@@ -267,6 +300,153 @@ export type WgslCompile =
 			readonly builds: readonly string[];
 	  };
 
+/** What a compile of WGSL from a project does: which compiler call, and what it builds. */
+type CompilePlan =
+	| { readonly kind: 'problem'; readonly problem: ShaderProblem }
+	| { readonly kind: 'effect' }
+	| { readonly kind: 'skyLayer' }
+	| { readonly kind: 'material'; readonly draw: boolean }
+	| {
+			readonly kind: 'shader';
+			readonly pipelines: Readonly<Record<string, WgslPipeline>>;
+			readonly variants: Readonly<Record<string, ShaderVariantSpec>>;
+			readonly builds: readonly string[];
+	  };
+
+/**
+ * What a compile of a project's WGSL of `source` does. WGSL without entry points that declares a
+ * post function is an effect or a tone curve, one that declares `skyLayer` is a sky layer, and one
+ * that declares a material function is a custom material. WGSL with entry points is a whole
+ * shader, one that the engine's mesh calls or a draw shader. `hint` ends the message about WGSL
+ * that is none of these.
+ */
+function planOf(path: string, source: string, hint: string): CompilePlan {
+	const noEntryPoints = entryPoints(source).length === 0;
+	if (noEntryPoints && declaresFunction(source, SKY_LAYER_FUNCTIONS)) return { kind: 'skyLayer' };
+	if (noEntryPoints && declaresFunction(source, POST_FUNCTIONS)) return { kind: 'effect' };
+	const draw = isDrawShader(source);
+	if (
+		(noEntryPoints && declaresFunction(source, MATERIAL_FUNCTIONS)) ||
+		draw ||
+		isMeshShader(source)
+	)
+		return { kind: 'material', draw };
+	const shape = pipelinesOf(path, source, hint);
+	if ('problem' in shape) return { kind: 'problem', problem: shape.problem };
+	const render = Object.keys(shape.pipelines).length > 0;
+	const variants = render ? BUILDS : { webgpu: BUILDS.webgpu };
+	return { kind: 'shader', pipelines: shape.pipelines, variants, builds: Object.keys(variants) };
+}
+
+/** An effect's or a tone curve's compile as the result of compiling WGSL from a project. */
+function effectOutcome(result: EffectResult): WgslCompile {
+	// Effects and tone curves build for both GPU paths.
+	const builds = ['webgpu', 'webgl2'];
+	if (!result.ok) return { ok: false, problems: result.problems, builds };
+	const { warnings } = result;
+	const {
+		function: kind,
+		uniforms,
+		depth,
+		bloom,
+		joins,
+		textures,
+		variants,
+		pieces,
+	} = result.effect;
+	if (kind === 'toneCurve')
+		return { ok: true, shader: { kind, variants, pieces }, warnings, builds };
+	return {
+		ok: true,
+		shader: { kind, uniforms, depth, bloom, joins, textures, variants, pieces },
+		warnings,
+		builds,
+	};
+}
+
+/** A sky layer's compile as the result of compiling WGSL from a project. */
+function skyLayerOutcome(result: SkyLayerResult): WgslCompile {
+	// A sky layer builds for both GPU paths.
+	const builds = ['webgpu', 'webgl2'];
+	if (!result.ok) return { ok: false, problems: result.problems, builds };
+	return {
+		ok: true,
+		shader: { kind: 'skyLayer', variants: result.layer.variants },
+		warnings: result.warnings,
+		builds,
+	};
+}
+
+/** A custom material's compile as the result of compiling WGSL from a project. */
+function materialOutcome(result: MaterialResult, draw: boolean): WgslCompile {
+	// Custom materials build for both GPU paths.
+	const builds = ['webgpu', 'webgl2'];
+	if (!result.ok) return { ok: false, problems: result.problems, builds };
+	const shader = {
+		kind: 'material',
+		...result.material,
+		...(draw && { meshless: true }),
+	} as const;
+	return { ok: true, shader, warnings: result.warnings, builds };
+}
+
+/** A whole shader's compile as the result of compiling WGSL from a project. */
+function shaderOutcome(result: CompileResult, builds: readonly string[]): WgslCompile {
+	if (!result.ok) return { ok: false, problems: result.problems, builds };
+	const { webgpu, webgl2 } = result.variants;
+	if (!webgpu) throw new Error('null3D: the shader compiler gave no WebGPU build.');
+	const shader = { kind: 'shader', webgpu, webgl2: webgl2 ?? null } as const;
+	return { ok: true, shader, warnings: result.warnings, builds };
+}
+
+/**
+ * A shader compiler that answers at once: the engine's library runs on the calling thread, which
+ * a build tool may do while it packs a package.
+ */
+export interface SyncShaderCompiler {
+	shader(shader: ShaderSource): CompileResult;
+	material(material: MaterialSource): MaterialResult;
+	effect(effect: MaterialSource): EffectResult;
+	skyLayer(layer: MaterialSource): SkyLayerResult;
+}
+
+/** Compiles on this thread, answering at once. */
+export const compileNow: SyncShaderCompiler = {
+	shader: compileShader,
+	material: compileMaterial,
+	effect: compileEffect,
+	skyLayer: compileSkyLayer,
+};
+
+/**
+ * Compiles WGSL from a project with the engine's shader library, as `compileWgsl` does, on the
+ * thread that calls it. A build tool that has no other work meanwhile uses this, so that its steps
+ * keep their order.
+ */
+export function compileWgslSync(
+	path: string,
+	source: string,
+	hint: string,
+	compiler: SyncShaderCompiler = compileNow,
+): WgslCompile {
+	const plan = planOf(path, source, hint);
+	switch (plan.kind) {
+		case 'problem':
+			return { ok: false, problems: [plan.problem], builds: [] };
+		case 'effect':
+			return effectOutcome(compiler.effect({ path, source }));
+		case 'skyLayer':
+			return skyLayerOutcome(compiler.skyLayer({ path, source }));
+		case 'material':
+			return materialOutcome(compiler.material({ path, source }), plan.draw);
+		case 'shader':
+			return shaderOutcome(
+				compiler.shader({ path, source, pipelines: plan.pipelines, variants: plan.variants }),
+				plan.builds,
+			);
+	}
+}
+
 /**
  * Compiles WGSL from a project with the engine's shader library. A whole shader builds for WebGPU,
  * and for WebGL2 when it has a render pipeline. A custom material's functions build into every
@@ -280,43 +460,22 @@ export async function compileWgsl(
 	hint: string,
 	compiler: ShaderCompiler = compileHere,
 ): Promise<WgslCompile> {
-	const noEntryPoints = entryPoints(source).length === 0;
-	if (noEntryPoints && declaresFunction(source, POST_FUNCTIONS)) {
-		const result = await compiler.effect({ path, source });
-		// Effects and tone curves build for both GPU paths.
-		const builds = ['webgpu', 'webgl2'];
-		if (!result.ok) return { ok: false, problems: result.problems, builds };
-		const { warnings } = result;
-		const { function: kind, uniforms, depth, joins, textures, variants, pieces } = result.effect;
-		if (kind === 'toneCurve')
-			return { ok: true, shader: { kind, variants, pieces }, warnings, builds };
-		return {
-			ok: true,
-			shader: { kind, uniforms, depth, joins, textures, variants, pieces },
-			warnings,
-			builds,
-		};
+	const plan = planOf(path, source, hint);
+	switch (plan.kind) {
+		case 'problem':
+			return { ok: false, problems: [plan.problem], builds: [] };
+		case 'effect':
+			return effectOutcome(await compiler.effect({ path, source }));
+		case 'skyLayer':
+			return skyLayerOutcome(await compiler.skyLayer({ path, source }));
+		case 'material':
+			return materialOutcome(await compiler.material({ path, source }), plan.draw);
+		case 'shader':
+			return shaderOutcome(
+				await compiler.shader({ path, source, pipelines: plan.pipelines, variants: plan.variants }),
+				plan.builds,
+			);
 	}
-	const material = noEntryPoints && declaresFunction(source, MATERIAL_FUNCTIONS);
-	if (material || isMeshShader(source)) {
-		const result = await compiler.material({ path, source });
-		// Custom materials build for both GPU paths.
-		const builds = ['webgpu', 'webgl2'];
-		if (!result.ok) return { ok: false, problems: result.problems, builds };
-		const shader = { kind: 'material', ...result.material } as const;
-		return { ok: true, shader, warnings: result.warnings, builds };
-	}
-	const shape = pipelinesOf(path, source, hint);
-	if ('problem' in shape) return { ok: false, problems: [shape.problem], builds: [] };
-	const render = Object.keys(shape.pipelines).length > 0;
-	const variants = render ? BUILDS : { webgpu: BUILDS.webgpu };
-	const result = await compiler.shader({ path, source, pipelines: shape.pipelines, variants });
-	const builds = Object.keys(variants);
-	if (!result.ok) return { ok: false, problems: result.problems, builds };
-	const { webgpu, webgl2 } = result.variants;
-	if (!webgpu) throw new Error('null3D: the shader compiler gave no WebGPU build.');
-	const shader = { kind: 'shader', webgpu, webgl2: webgl2 ?? null } as const;
-	return { ok: true, shader, warnings: result.warnings, builds };
 }
 
 /** Where WGSL starts in the file that holds it: the file as messages name it, and a place. */
@@ -424,6 +583,18 @@ export type ShaderOrError =
 	| { readonly shader: CompiledWgsl; readonly warnings: readonly string[] }
 	| { readonly error: WgslError };
 
+/** A `.wgsl` file's compile as the shader that takes its place, or the error that stops it. */
+function fileOutcome(
+	compiled: WgslCompile,
+	source: string,
+	origin: WgslOrigin,
+	id: string,
+): ShaderOrError {
+	if (compiled.ok)
+		return { shader: compiled.shader, warnings: warningLines(compiled, source, origin) };
+	return { error: wgslError(compiled, source, origin, id, source) };
+}
+
 /**
  * Compiles a `.wgsl` file. `path` names the file in messages, `id` is its module id, and `text` its
  * content as read from disk.
@@ -436,10 +607,22 @@ export async function compileWgslFile(
 ): Promise<ShaderOrError> {
 	const source = text.replaceAll('\r\n', '\n');
 	const compiled = await compileWgsl(path, source, FILE_HINT, compiler);
-	const origin = { path, line: 1, column: 1 };
-	if (compiled.ok)
-		return { shader: compiled.shader, warnings: warningLines(compiled, source, origin) };
-	return { error: wgslError(compiled, source, origin, id, source) };
+	return fileOutcome(compiled, source, { path, line: 1, column: 1 }, id);
+}
+
+/**
+ * Compiles a `.wgsl` file on the calling thread, as `compileWgslFile` does. A pack step uses this,
+ * so that a shader that does not compile fails the pack with a message that names the file.
+ */
+export function compileWgslFileSync(
+	path: string,
+	id: string,
+	text: string,
+	compiler: SyncShaderCompiler = compileNow,
+): ShaderOrError {
+	const source = text.replaceAll('\r\n', '\n');
+	const compiled = compileWgslSync(path, source, FILE_HINT, compiler);
+	return fileOutcome(compiled, source, { path, line: 1, column: 1 }, id);
 }
 
 /**

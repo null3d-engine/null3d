@@ -6,7 +6,7 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { readOptions, readSeconds, readTiers, UsageError } from './args.js';
-import { WEBGPU_DEVELOPER_FEATURES } from './browser.js';
+import { GPU_TIMING_ARGS } from './browser.js';
 import { ENGINE_GLOBAL, switchedPath, TIERS } from './page.js';
 import { MEASURE_SECONDS, ms, RUNS, summarizeRuns, timedRun, WARMUP_SECONDS } from './protocol.js';
 import { failure, pollPage, startRunner, visitPage } from './runner.js';
@@ -172,7 +172,7 @@ async function within(promise, ms, error) {
  * @param {{ warmupSeconds: number, measureSeconds: number }} protocol
  * @returns {Promise<BenchRun>}
  */
-async function measurePage(page, url, timeoutMs, { warmupSeconds, measureSeconds }) {
+export async function measurePage(page, url, timeoutMs, { warmupSeconds, measureSeconds }) {
 	/** @type {string | undefined} */
 	let thrown;
 	page.on('pageerror', (error) => {
@@ -408,7 +408,7 @@ export async function run(args) {
 	let report;
 	let runner;
 	try {
-		runner = await startRunner({ production: true, browserArgs: [WEBGPU_DEVELOPER_FEATURES] });
+		runner = await startRunner({ production: true, browserArgs: [...GPU_TIMING_ARGS] });
 		unbuiltPage(page, runner.server.hasFile);
 		const { runs, errors, warnings } = await runRounds(runner, options, gpus);
 		const paths = pathReports(gpus, runs);

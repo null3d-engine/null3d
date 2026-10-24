@@ -4,6 +4,7 @@ import null3d from './packages/vite-plugin/src/index.ts';
 import { loadServer } from './tests/lib/load-server.ts';
 import { reportCollector } from './tests/lib/report-collector.ts';
 import { checkoutServer, HTTP_PORT, HTTPS_PORT } from './tests/lib/server.ts';
+import { splatStreamServer } from './tests/lib/splat-stream.ts';
 import { tunnelServer } from './tests/lib/tunnel-server.ts';
 import { coreSourcesServer } from './tools/lib/core-sources.ts';
 import { sampleEnvironmentsServer } from './tools/lib/sample-environments.ts';
@@ -79,12 +80,17 @@ const config: UserConfig = {
 		sampleTexturesServer(import.meta.dirname),
 		coreSourcesServer(import.meta.dirname),
 		cityServer(import.meta.dirname),
+		splatStreamServer(),
 		checkoutServer(import.meta.dirname),
 		indexRedirect,
 	],
 	// The pages take the packages' source, not the files that their pack step builds.
 	resolve: sourceResolve,
 	server: {
+		// The phone reaches the plain server through a USB forwarding rule to the IPv4 loopback, so
+		// that server binds 127.0.0.1 rather than the name that resolves to IPv6 first. The secure
+		// server answers the local network, so it binds every interface.
+		host: https ? true : '127.0.0.1',
 		port: https ? HTTPS_PORT : HTTP_PORT,
 		strictPort: true,
 		fs: { strict: true, allow: [searchForWorkspaceRoot(import.meta.dirname)], deny: DENIED },

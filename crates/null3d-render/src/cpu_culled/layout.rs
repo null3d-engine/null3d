@@ -17,10 +17,11 @@ use std::collections::TryReserveError;
 use null3d_core::clusters::{
     CLUSTER_ROWS, CLUSTER_SHIFT, ClusterScratch, NO_ROW, RowCells, RowClusters, cluster_room,
 };
-use null3d_core::culling::{CULL_CHUNK, NO_BUCKET};
+use null3d_core::culling::{BucketedCull, CULL_CHUNK, NO_BUCKET, batch_ranges};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::levels::{LevelLink, NO_LINK};
+use null3d_core::memory::{MemoryUse, vec_bytes};
 use null3d_core::scene::flags;
 use null3d_core::world::SphereArrays;
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
@@ -33,12 +34,15 @@ use crate::frame::{
     FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, bucket_of,
     collect_bucket_keys, put_u32,
 };
-use crate::levels::{BucketKey, expand_level_keys, is_fade_key, links_of};
+use crate::levels::{
+    BucketKey, StageWatches, expand_level_keys, is_fade_key, key_level, level_key, links_of,
+};
 use crate::object_ranges::{ObjectRanges, STREAMED_KEY};
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 use crate::shadows::CasterPasses;
 use crate::subsurface::skin_key;
+use crate::tone_mask::tone_key;
 
 /// The data texture of a bucket's instances, as its draw record names it.
 pub(super) const RESIDENT: u32 = 0;
@@ -63,11 +67,22 @@ pub(super) enum Drawn {
     /// The scene objects whose material has a scatter radius, as the subsurface view draws them
     /// into the skin pass's target.
     Subsurface,
+    /// The scene objects whose material keeps its color as the display shows it, as the tone view
+    /// draws them into the mask that the final pass reads.
+    Tone,
 }
 
-/// The material of every caster bucket and every outlined bucket: neither a caster's depth nor an
-/// object's place in the outline mask depends on its material, so the objects of one mesh share a
-/// bucket.
+impl Drawn {
+    /// True for the passes that draw the scene's surfaces, where the scene's material override
+    /// applies: the camera's views, the subsurface view and the tone view.
+    fn overrides(self) -> bool {
+        matches!(self, Drawn::Scene | Drawn::Subsurface | Drawn::Tone)
+    }
+}
+
+/// The material of every caster bucket, every outlined bucket and every tone bucket: neither a
+/// caster's depth nor a surface's place in a mask depends on its material, so the objects of one
+/// mesh share a bucket.
 const CASTER_MATERIAL: u32 = 1;
 
 // What makes a bucket, in draw order: what the mesh and material ask of their pipeline, the bind
@@ -80,6 +95,9 @@ const CASTER_MATERIAL: u32 = 1;
 pub(super) struct Bucket {
     /// The engine material id.
     pub(super) material: u32,
+    /// The mesh field of its bucket key: the mesh's engine id, or a level key. The staged levels'
+    /// watches read it to tell which mesh and level a bucket draws.
+    pub(super) mesh_key: u32,
     pub(super) group: u32,
     /// Instances per index list entry, as a shift: 0 for rows, [`CLUSTER_SHIFT`] for clusters.
     pub(super) shift: u32,
@@ -175,6 +193,10 @@ pub(super) struct Layout {
     object_ranges: ObjectRanges,
     ranges_pending: bool,
     pub(super) buckets: Vec<Bucket>,
+    /// The views whose pass targets the buckets' materials sample, as a mask of view places.
+    pub(super) material_views: u32,
+    /// The views whose pass targets the buckets' pick pipelines sample, as a mask of view places.
+    pub(super) pick_views: u32,
     /// Every bucket's draws, in bucket order. Buckets are sorted by pipeline and by the vertex page
     /// of their mesh's first part, so the draws of one pipeline and page sit together, apart from
     /// the later parts of meshes split over several pages. The outlined layout lists every
@@ -189,6 +211,9 @@ pub(super) struct Layout {
     /// Each bucket's level of detail: its level's error, the bucket of rows of the next coarser
     /// level and its fade bucket, or none for a bucket without levels.
     pub(super) level_links: Vec<LevelLink>,
+    /// Every bucket that a level's rows draw in, or that a distance band's fade draws in, in bucket
+    /// order: the buckets whose entries the staged levels' watches read.
+    pub(super) level_buckets: Vec<u32>,
     /// Each scene slot's bucket, with 0 for the slots that draw in the transparent pass: the rows
     /// whose matrices the resident texture needs.
     pub(super) drawn_slots: Vec<u32>,
@@ -212,6 +237,24 @@ pub(super) struct Layout {
 }
 
 impl Layout {
+    /// Adds the bytes that the layout's tables hold to the memory register.
+    pub(super) fn account(&self, use_: &mut MemoryUse) {
+        for array in [
+            vec_bytes(&self.batches),
+            vec_bytes(&self.buckets),
+            vec_bytes(&self.draws),
+            vec_bytes(&self.second_draws),
+            vec_bytes(&self.scene_buckets),
+            vec_bytes(&self.level_links),
+            vec_bytes(&self.level_buckets),
+            vec_bytes(&self.drawn_slots),
+            vec_bytes(&self.waiting),
+        ] {
+            use_.add(array);
+        }
+        use_.add(self.object_ranges.memory_use());
+    }
+
     /// An empty layout of buckets that draw `drawn`.
     pub(super) fn new(drawn: Drawn) -> Self {
         Self {
@@ -241,9 +284,12 @@ impl Layout {
         self.draws.clear();
         self.scene_buckets.clear();
         self.level_links.clear();
+        self.level_buckets.clear();
         self.batches.clear();
         self.waiting.clear();
         self.room = CullRoom::default();
+        self.material_views = 0;
+        self.pick_views = 0;
     }
 
     /// The pipelines of the skinned objects that the layout leaves out, which must be built before
@@ -254,6 +300,43 @@ impl Layout {
 
     pub(super) fn batch(&self, target: u32) -> Option<&BatchSlot> {
         self.batches.iter().find(|slot| slot.id.raw() == target)
+    }
+
+    /// Notes the levels that a view's culling placed entries in, for the staged levels that a
+    /// loader waits on: a level whose bucket lists an entry was picked. A mesh that the layout
+    /// draws at no level restarts its warm-up, so a page that loads a model before it draws it
+    /// keeps its stages. `None` for a view that did not cull this frame resets every warm-up. Costs
+    /// nothing while no loader waits.
+    pub(super) fn note_stage_picks(
+        &self,
+        cull: Option<&BucketedCull>,
+        watches: &mut StageWatches,
+        frame: u64,
+    ) {
+        if watches.is_empty() {
+            return;
+        }
+        let Some(cull) = cull else {
+            watches.hold(frame, |_| false);
+            return;
+        };
+        watches.hold(frame, |mesh| self.draws_mesh(mesh));
+        let starts = cull.bucket_starts();
+        for &bucket in &self.level_buckets {
+            let at = bucket as usize;
+            if starts.get(at + 1).copied().unwrap_or(0) > starts.get(at).copied().unwrap_or(0) {
+                let (mesh, level) = key_level(self.buckets[at].mesh_key);
+                watches.picked(mesh, level);
+            }
+        }
+    }
+
+    /// True when a bucket of the layout draws `mesh` at some level: a source of the mesh exists in
+    /// the scene, whatever the view shows.
+    fn draws_mesh(&self, mesh: u32) -> bool {
+        self.level_buckets
+            .iter()
+            .any(|&bucket| key_level(self.buckets[bucket as usize].mesh_key).0 == mesh)
     }
 
     /// Assigns every source to a data texture and a bucket, from the frame's world state, with
@@ -364,6 +447,16 @@ impl Layout {
                     let (every, _) = mask_keys(skin(pipeline, skinned));
                     return Some((every, 0, page, mesh, CASTER_MATERIAL, group));
                 }
+                Drawn::Tone => {
+                    // A blended surface lets the scene behind it show, so the mask cannot say
+                    // which surface owns a pixel. Such a material keeps the curve on the HDR
+                    // path, as the docs record.
+                    if pipeline.sorts() {
+                        return None;
+                    }
+                    let visible = tone_key(skin(pipeline, skinned));
+                    return Some((visible, 0, page, mesh, CASTER_MATERIAL, group));
+                }
                 Drawn::Scene | Drawn::Subsurface => {}
             }
             // Blended pairs, and pairs that let light through, draw in the transparent pass, which
@@ -394,16 +487,23 @@ impl Layout {
         };
         let any_key = |slot: usize| {
             let object = scene.flags()[slot];
+            let own = scene.materials()[slot];
+            let material = if drawn.overrides() {
+                settings.drawn_material(own)
+            } else {
+                own
+            };
             let left_out = match drawn {
                 Drawn::Scene => false,
                 Drawn::Casters => !shadows.any() || object & flags::CAST_SHADOWS == 0,
                 Drawn::Outlined => object & flags::OUTLINED == 0,
-                Drawn::Subsurface => !settings.scatters(scene.materials()[slot]),
+                Drawn::Subsurface => !settings.scatters(material),
+                Drawn::Tone => !settings.keeps_display_color(material),
             };
             if left_out {
                 return None;
             }
-            let (mesh, material) = (scene.meshes()[slot], scene.materials()[slot]);
+            let mesh = scene.meshes()[slot];
             key_of(
                 settings.pipeline_of(mesh, material),
                 mesh,
@@ -427,23 +527,85 @@ impl Layout {
             match drawn {
                 Drawn::Casters if bits & flags::CAST_SHADOWS == 0 => None,
                 Drawn::Scene | Drawn::Casters => {
-                    let pipeline = settings.batch_pipeline_of(batch);
-                    let (mesh, material) = (batch.mesh(), batch.material());
-                    key_of(pipeline, mesh, material, group_of(batch), bits, None)
+                    let (material, pipeline) = if drawn.overrides() {
+                        settings.drawn_batch_pipeline_of(batch)
+                    } else {
+                        (batch.material(), settings.batch_pipeline_of(batch))
+                    };
+                    key_of(
+                        pipeline,
+                        batch.mesh(),
+                        material,
+                        group_of(batch),
+                        bits,
+                        None,
+                    )
                 }
-                Drawn::Outlined | Drawn::Subsurface => None,
+                Drawn::Outlined | Drawn::Subsurface | Drawn::Tone => None,
             }
         };
         collect_bucket_keys(key_counts, scene, batches, scene_key, |_, batch| {
             batch_key(batch)
         });
-        // A skinned or morphed object draws its base level: it skins and morphs in the vertex
-        // shader, from vertices that the levels do not have.
-        let eligible =
-            |key: &BucketKey| key.0.permutation & (permutation::SKIN | permutation::MORPH) == 0;
+        // A morphed object draws its base level: a level carries no morph targets. A skinned
+        // object may pick one when every level of its set draws the base mesh's own vertices, which
+        // the skin moves and the level then names from indices of its own.
         let levels = settings.levels();
+        let eligible = |key: &BucketKey| levels.may_pick(key.3, key.0.permutation);
+        // A level may name a material of its own, so its bucket key comes from the level's mesh and
+        // material, while it keeps the fields of the bucket that names it: its group, and the
+        // object's receive-shadows bit, which the base key's pipeline holds.
+        let level_bucket = |key: &BucketKey, level: usize| {
+            let (base, _) = key_level(key.3);
+            let set = levels.of(base)?;
+            let mesh = set.mesh(level);
+            let material = match set.material(level) {
+                0 => key.4,
+                own => own,
+            };
+            let object = if key.0.permutation & permutation::RECEIVE_SHADOWS != 0 {
+                flags::RECEIVE_SHADOWS
+            } else {
+                0
+            };
+            let mut bucket = key_of(
+                settings.pipeline_of(mesh, material),
+                mesh,
+                material,
+                key.5,
+                object,
+                None,
+            )?;
+            // The level draws the vertices that its base key's skin moves, so it keeps the
+            // skin and morph bits that the scene gave that key.
+            bucket.0.permutation |= key.0.permutation & (permutation::SKIN | permutation::MORPH);
+            bucket.3 = level_key(base, level);
+            Some(bucket)
+        };
         let fades = drawn == Drawn::Scene && settings.levels_fade();
-        expand_level_keys(key_counts, levels, meshes, fades, eligible);
+        // The keys whose sources draw in a distance band, which need a fade bucket beside each of
+        // their levels only while the quality settings fade those bands.
+        let mut ranged_keys: Vec<BucketKey> = Vec::new();
+        if fades {
+            for slot in 0..scene.capacity() as usize + 1 {
+                let [start, end] = scene
+                    .draw_ranges()
+                    .get(slot * 2..slot * 2 + 2)
+                    .map_or([0.0, f32::INFINITY], |range| [range[0], range[1]]);
+                if start > 0.0 || end.is_finite() {
+                    ranged_keys.extend(scene_key(slot));
+                }
+            }
+            for (_, batch) in batches.iter() {
+                if !batch_ranges(batches, batch).is_none() {
+                    ranged_keys.extend(batch_key(batch));
+                }
+            }
+            ranged_keys.sort_unstable();
+            ranged_keys.dedup();
+        }
+        let ranged = |key: &BucketKey| ranged_keys.binary_search(key).is_ok();
+        expand_level_keys(key_counts, levels, fades, ranged, eligible, &level_bucket);
         self.depthless = key_counts
             .iter()
             .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
@@ -475,6 +637,9 @@ impl Layout {
         self.draws.clear();
         self.second_draws.clear();
         self.level_links.clear();
+        self.level_buckets.clear();
+        self.material_views = 0;
+        self.pick_views = 0;
         for &(key, _) in key_counts.iter() {
             let (pipeline, textures, _, mesh, material, group) = key;
             let mesh = levels
@@ -509,9 +674,10 @@ impl Layout {
             let (first, prepass) = pipelines_of(pipelines, pipeline);
             let pairs = is_fade_key(&key);
             // Each key's bucket of rows is at twice its place in the keys.
-            let links = links_of(key, &*key_counts, levels, meshes, eligible);
+            let links = links_of(key, &*key_counts, levels, eligible, &level_bucket);
             self.level_links.push(LevelLink {
-                error: links.error,
+                value: links.value,
+                switch: links.switch,
                 next: links.next.map_or(NO_LINK, |key| 2 * key),
                 fade: links.fade.map_or(NO_LINK, |key| 2 * key),
             });
@@ -524,10 +690,22 @@ impl Layout {
                 let bucket = self.buckets.len() as u32;
                 self.buckets.push(Bucket {
                     material,
+                    mesh_key: key.3,
                     group,
                     shift,
                     moves,
                 });
+                // The pass targets that this key's material samples, so a pass that draws it waits
+                // for the pass that writes them.
+                if textures != 0 {
+                    self.material_views |= settings.textures().group_pass_views(textures);
+                }
+                if motion_textures != 0 {
+                    self.material_views |= settings.textures().group_pass_views(motion_textures);
+                }
+                if pick != 0 && pick_textures != 0 {
+                    self.pick_views |= settings.textures().group_pass_views(pick_textures);
+                }
                 for part in meshes.parts(slot, lines) {
                     let draw = Draw {
                         pipeline,
@@ -554,6 +732,18 @@ impl Layout {
             }
         }
         self.draws.extend_from_slice(&self.second_draws);
+        // The buckets whose entries belong to a level, or to a distance band's fade: each is a
+        // level's own bucket or a bucket that a level's link names.
+        for (bucket, link) in self.level_links.iter().enumerate() {
+            for target in [link.next, link.fade] {
+                if target != NO_LINK {
+                    self.level_buckets.push(bucket as u32);
+                    self.level_buckets.push(target);
+                }
+            }
+        }
+        self.level_buckets.sort_unstable();
+        self.level_buckets.dedup();
         // A key's bucket of rows; its bucket of clusters is the next one.
         let counts = &*key_counts;
         let bucket_of =
@@ -568,15 +758,26 @@ impl Layout {
         let mut by_row = self.scene_rows.div_ceil(CULL_CHUNK);
         let links = &self.level_links;
         let picks = |bucket: u32| links.get(bucket as usize).is_some_and(LevelLink::has_next);
-        // Rows that fade list two pairs of words in place of one entry.
-        let mut fading_rows = if picks_any(&self.scene_buckets, links) {
+        // A run whose rows draw in a distance band looks each row up too, even without levels.
+        let scene_ranges = (0..self.scene_rows as usize).any(|slot| {
+            let [start, end] = scene
+                .draw_ranges()
+                .get(slot * 2..slot * 2 + 2)
+                .map_or([0.0, f32::INFINITY], |range| [range[0], range[1]]);
+            start > 0.0 || end.is_finite()
+        });
+        // Rows that fade list two pairs of words in place of one entry, and a row inside a
+        // distance band's edge lists its entry and a fade value.
+        let mut fading_rows = if picks_any(&self.scene_buckets, links) || scene_ranges {
             self.scene_rows
         } else {
             0
         };
         for ((_, batch), slot) in batches.iter().zip(&mut self.batches) {
             slot.bucket = bucket_of(batch_key(batch));
-            slot.levels = picks(slot.bucket);
+            let picked = picks(slot.bucket);
+            let ranged = !batch_ranges(batches, batch).is_none();
+            slot.levels = picked || ranged;
             if slot.bucket != NO_BUCKET {
                 let chunks = batch.capacity().div_ceil(CULL_CHUNK);
                 runs += chunks;
@@ -587,11 +788,7 @@ impl Layout {
                 }
             }
         }
-        let fading_words = if fades {
-            fading_rows.saturating_mul(3)
-        } else {
-            0
-        };
+        let fading_words = fading_rows.saturating_mul(3);
 
         // The ring slot of draw records: one block per multi-draw call, or one aligned record per
         // draw.
@@ -612,7 +809,7 @@ impl Layout {
         // outline and subsurface views the scene's rows, as batches take neither.
         let listed = match drawn {
             Drawn::Scene => resident.saturating_add(streamed),
-            Drawn::Casters | Drawn::Outlined | Drawn::Subsurface => {
+            Drawn::Casters | Drawn::Outlined | Drawn::Subsurface | Drawn::Tone => {
                 self.scene_rows.saturating_add(batch_rows)
             }
         };

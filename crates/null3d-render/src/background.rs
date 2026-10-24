@@ -18,6 +18,11 @@
 //! pass draws the color as a background too, with the cube map's pipeline and its plain color, so
 //! the vignette darkens it before the tone mapping as the final pass does on the HDR path.
 //!
+//! An add-on's sky layer draws right after the background: a box around the camera at the far
+//! plane, whose fragments call the add-on's `skyLayer` function over the core sky (see
+//! [`SkyLayer`]). It takes the background's place and depth state, so it draws over the sky and
+//! under every object, and it draws nothing where the background draws nothing.
+//!
 //! Each draws at the far plane in the camera's opaque pass, after the opaque objects and before
 //! the transparent ones, with the depth test on and no depth write. It shades only the pixels
 //! where no object wrote depth, so a costly background such as the sky costs nothing where objects
@@ -84,6 +89,9 @@ pub struct Background {
     /// The turn of a cube map or an environment about the scene, as Euler angles in radians in
     /// three.js's default order, X then Y then Z, as `scene.backgroundRotation`.
     pub rotation: [f32; 3],
+    /// What of the sun the sky draws: 1 while no sky layer hides it, and less as a layer covers it.
+    /// It scales the disc and its glow, and leaves the directional light's intensity alone.
+    pub sun_visibility: f32,
 }
 
 /// three.js's sky, with the names of its uniforms.
@@ -109,6 +117,30 @@ pub struct Sky {
     /// `second_sky_weight`, with the same air and clouds. A weight of 0 draws no second sky.
     pub second_sun_position: [f32; 3],
     pub second_sky_weight: f32,
+}
+
+impl Background {
+    /// The core sky's cloud coverage, density, elevation and scale, as a sky layer reads them. A
+    /// background that draws no sky has none.
+    pub fn clouds(&self) -> [f32; 4] {
+        match self.source {
+            BackgroundSource::Sky(sky) => [
+                sky.cloud_coverage,
+                sky.cloud_density,
+                sky.cloud_elevation,
+                sky.cloud_scale,
+            ],
+            BackgroundSource::Atmosphere(atmosphere) => [
+                atmosphere.cloud_coverage,
+                atmosphere.cloud_density,
+                atmosphere.cloud_elevation,
+                atmosphere.cloud_scale,
+            ],
+            BackgroundSource::Texture(_)
+            | BackgroundSource::Environment(_)
+            | BackgroundSource::Cubemap(_) => [0.0; 4],
+        }
+    }
 }
 
 impl Sky {
@@ -173,6 +205,8 @@ struct BackdropUniform {
     cloud_place: [f32; 4],
     /// A plain color, exposed linear color, and 1 when the background draws it, else 0.
     color: [f32; 4],
+    /// What of the sun the sky draws, which scales its disc and glow, then three spare values.
+    layer: [f32; 4],
 }
 
 const _: () =
@@ -189,6 +223,7 @@ impl BackdropUniform {
                 levels.saturating_sub(1) as f32,
                 0.0,
             ],
+            layer: [background.sun_visibility, 0.0, 0.0, 0.0],
             ..Self::default()
         };
         match background.source {
@@ -233,6 +268,47 @@ impl BackdropUniform {
     }
 }
 
+/// A layer that an add-on draws over the background, from the template that its compiled WGSL gave
+/// the page (see the shader's `background_layer.wgsl`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SkyLayer {
+    /// The render pipeline template of the layer's shader, which the page sent.
+    pub template: u32,
+    /// The layer's opacity, from 0 to 1.
+    pub opacity: f32,
+    /// The share of the sun that the layer hides, from 0 to 1, which dims the disc that the core
+    /// sky draws.
+    pub sun: f32,
+}
+
+/// The layer's uniform block, laid out as the sky-layer template's `Layer` reads it.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct LayerUniform {
+    /// The core sky's cloud coverage, cloud density, cloud elevation and cloud scale.
+    clouds: [f32; 4],
+    /// The share of the sun that the layer hides, its opacity, and two spare values.
+    view: [f32; 4],
+}
+
+const _: () =
+    assert!(std::mem::size_of::<LayerUniform>() == sizes::BACKGROUND_LAYER_UNIFORM_BYTES as usize);
+
+impl LayerUniform {
+    /// The values of `layer`, over the core sky's `clouds`.
+    fn of(layer: &SkyLayer, clouds: [f32; 4]) -> Self {
+        Self {
+            clouds,
+            view: [
+                layer.sun.clamp(0.0, 1.0),
+                layer.opacity.clamp(0.0, 1.0),
+                0.0,
+                0.0,
+            ],
+        }
+    }
+}
+
 /// The GPU ids of the pass's objects, and of the objects it binds that the builder makes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct BackgroundIds {
@@ -244,6 +320,10 @@ pub(crate) struct BackgroundIds {
     pub blank_cube: u32,
     /// The filtering sampler of cube textures.
     pub sampler: u32,
+    /// The uniform buffer of the layer's values.
+    pub layer_buffer: u32,
+    /// The bind group of the layer's buffer.
+    pub layer_group: u32,
 }
 
 /// The index at which the texture background binds the texture's group, after the frame's group.
@@ -294,6 +374,36 @@ struct Draw {
     place: Place,
 }
 
+/// The layer's own pipeline, buffer and bind group, and whether this frame draws it.
+#[derive(Debug)]
+struct LayerPass {
+    ids: LayerIds,
+    /// The id of the layer's pipeline, from the builder's pipeline cache, or 0 without a layer.
+    pipeline: u32,
+    /// True once the GPU has the uniform buffer.
+    created: bool,
+    /// The values in the buffer, once written.
+    written: Option<LayerUniform>,
+}
+
+/// The ids of the layer's objects.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LayerIds {
+    buffer: u32,
+    group: u32,
+}
+
+impl LayerPass {
+    fn new(ids: LayerIds) -> Self {
+        Self {
+            ids,
+            pipeline: 0,
+            created: false,
+            written: None,
+        }
+    }
+}
+
 /// The background's pipeline, its buffer and bind group, and the draw of the frame being recorded.
 #[derive(Debug)]
 pub(crate) struct BackgroundPass {
@@ -310,11 +420,16 @@ pub(crate) struct BackgroundPass {
     bound: Option<(u32, Handle)>,
     /// The values in the buffer, once written.
     written: Option<BackdropUniform>,
+    /// The layer that an add-on draws over the background.
+    layer: LayerPass,
+    /// True when this frame's background drew and its layer's bindings are ready.
+    layer_ready: bool,
 }
 
 impl BackgroundPass {
-    /// Bytes a frame may copy into its arena: the whole uniform block.
-    pub(crate) const UPLOAD_BYTES: usize = sizes::BACKGROUND_UNIFORM_BYTES as usize;
+    /// Bytes a frame may copy into its arena: both uniform blocks.
+    pub(crate) const UPLOAD_BYTES: usize =
+        sizes::BACKGROUND_UNIFORM_BYTES as usize + sizes::BACKGROUND_LAYER_UNIFORM_BYTES as usize;
 
     pub(crate) fn new(ids: BackgroundIds) -> Self {
         Self {
@@ -325,6 +440,11 @@ impl BackgroundPass {
             created: false,
             bound: None,
             written: None,
+            layer: LayerPass::new(LayerIds {
+                buffer: ids.layer_buffer,
+                group: ids.layer_group,
+            }),
+            layer_ready: false,
         }
     }
 
@@ -370,6 +490,23 @@ impl BackgroundPass {
             };
             pipelines.id(key.in_pass(targets.tone_map_only()))
         };
+        // The layer takes the background's place: it draws over the sky, under every object, and it
+        // takes the same tone mapping builds. It blends its color over the sky by its coverage.
+        let layer = if self.pipeline != 0 {
+            settings.sky_layer()
+        } else {
+            None
+        };
+        self.layer.pipeline = layer.map_or(0, |layer| {
+            let key = DrawKey {
+                template: layer.template,
+                permutation: 0,
+                vertex_format: 0,
+                state: place.depth_state() | state_flags::CULL_NONE | state_flags::BLEND_NORMAL,
+                bias: DepthBias::NONE,
+            };
+            pipelines.id(key.in_pass(targets.tone_map_only()))
+        });
     }
 
     /// Finds the frame's draw once the frame recorded its texture work, and makes what it binds:
@@ -384,6 +521,7 @@ impl BackgroundPass {
         sky_group: Option<u32>,
     ) -> Result<(), RecordError> {
         self.draw = None;
+        self.layer_ready = false;
         if self.pipeline == 0 {
             return Ok(());
         }
@@ -396,6 +534,9 @@ impl BackgroundPass {
                 shape: Shape::Physical { group },
                 place: self.place,
             });
+            if self.draw.is_some() {
+                self.prepare_layer(list, arena, settings)?;
+            }
             return Ok(());
         }
         let textures = settings.textures();
@@ -476,6 +617,59 @@ impl BackgroundPass {
             shape,
             place: self.place,
         });
+        self.prepare_layer(list, arena, settings)?;
+        Ok(())
+    }
+
+    /// Makes what the layer binds: its uniform buffer when the GPU lacks it, its values when they
+    /// changed, and its group once. A frame with no layer, or whose background draws nothing,
+    /// draws none.
+    fn prepare_layer(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+        settings: &SceneSettings,
+    ) -> Result<(), RecordError> {
+        self.layer_ready = false;
+        let Some(layer) = settings.sky_layer() else {
+            return Ok(());
+        };
+        if self.layer.pipeline == 0 {
+            return Ok(());
+        }
+        let clouds = settings.background().map_or([0.0; 4], |b| b.clouds());
+        let uniform = LayerUniform::of(&layer, clouds);
+        let ids = self.layer.ids;
+        if !self.layer.created {
+            list.push(
+                Op::CreateBuffer,
+                &[
+                    ids.buffer,
+                    sizes::BACKGROUND_LAYER_UNIFORM_BYTES,
+                    usage::UNIFORM | usage::COPY_DST,
+                ],
+            )?;
+            self.layer.created = true;
+            list.push(
+                Op::CreateBindGroup,
+                &[
+                    ids.group,
+                    bind_layout::BACKGROUND_LAYER,
+                    1,
+                    0,
+                    resource_kind::BUFFER,
+                    ids.buffer,
+                    0,
+                    sizes::BACKGROUND_LAYER_UNIFORM_BYTES,
+                ],
+            )?;
+        }
+        if self.layer.written != Some(uniform) {
+            let (at, bytes) = arena.push(bytes_of(&uniform))?;
+            list.push(Op::WriteBuffer, &[ids.buffer, 0, at, bytes])?;
+            self.layer.written = Some(uniform);
+        }
+        self.layer_ready = true;
         Ok(())
     }
 
@@ -483,7 +677,8 @@ impl BackgroundPass {
     /// `place` among its objects, with the view's frame group `frame_group` bound at the dynamic
     /// offsets `offsets` as the opaque pass binds it. It records nothing without a background whose
     /// texels are on the GPU, or when the background draws in the other place. It sets every
-    /// binding it reads, so it can follow a render bundle, which clears them.
+    /// binding it reads, so it can follow a render bundle, which clears them. A sky layer draws
+    /// right after the background that it lies over.
     pub(crate) fn record(
         &self,
         list: &mut DrawList,
@@ -511,6 +706,12 @@ impl BackgroundPass {
                 list.push(Op::Draw, &[36, 1, 0, 0])?;
             }
         }
+        if self.layer_ready {
+            list.push(Op::SetPipeline, &[self.layer.pipeline])?;
+            bind_frame_group(list, frame_group, offsets)?;
+            list.push(Op::SetBindGroup, &[1, self.layer.ids.group, 0])?;
+            list.push(Op::Draw, &[36, 1, 0, 0])?;
+        }
         Ok(())
     }
 
@@ -519,6 +720,9 @@ impl BackgroundPass {
         self.created = false;
         self.bound = None;
         self.written = None;
+        self.layer.created = false;
+        self.layer.written = None;
+        self.layer_ready = false;
     }
 }
 
@@ -532,6 +736,7 @@ mod tests {
             intensity: 2.0,
             blur: 0.5,
             rotation: [0.0, 0.0, 0.0],
+            sun_visibility: 1.0,
         }
     }
 

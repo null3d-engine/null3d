@@ -111,6 +111,20 @@ describe('meshes', () => {
 		expect(hull?.primitives.map((p) => p.material)).toEqual([0, 1]);
 	});
 
+	test('a primitive records the accessor behind each attribute, which a level shares with its base', () => {
+		const b = new GltfBuilder();
+		const positions = b.positions(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]));
+		const normals = b.accessor(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]), 3);
+		const base = b.mesh([{ attributes: { POSITION: positions, NORMAL: normals } }], 'base');
+		const level = b.mesh([{ attributes: { POSITION: positions, NORMAL: normals } }], 'base_lod1');
+		b.node({ mesh: base });
+		b.node({ mesh: level });
+		const [first, second] = parse(b.glb()).meshes;
+		// The second mesh names the first's accessors, so the parser can tell that it shares them.
+		expect(second?.primitives[0]?.accessors).toEqual(first?.primitives[0]?.accessors);
+		expect(first?.primitives[0]?.accessors).toEqual({ POSITION: positions, NORMAL: normals });
+	});
+
 	test('quantized attributes keep their integers, and normalized ones say so', () => {
 		const b = new GltfBuilder().uses('KHR_mesh_quantization', true);
 		const positions = b.positions(new Uint16Array([0, 0, 0, 1000, 0, 0, 0, 1000, 0]));
@@ -588,6 +602,46 @@ describe('materials, textures and lights', () => {
 		expect(data.materials[3]?.diffuseTransmission).toBeUndefined();
 	});
 
+	test('KHR_materials_transmission and KHR_materials_volume give the transmission and thickness maps', () => {
+		const b = specularBuilder()
+			.uses('KHR_materials_transmission')
+			.uses('KHR_materials_volume')
+			.uses('KHR_materials_specular');
+		const [glass, shiny, dull] = b.json.materials as [GltfJson, GltfJson, GltfJson];
+		glass.extensions = {
+			KHR_materials_transmission: { transmissionFactor: 1, transmissionTexture: { index: 0 } },
+			KHR_materials_volume: { thicknessFactor: 0.4, thicknessTexture: { index: 1 } },
+		};
+		shiny.extensions = {
+			KHR_materials_specular: { specularTexture: { index: 2 } },
+			KHR_materials_transmission: { transmissionFactor: 0.5, transmissionTexture: { index: 0 } },
+		};
+		// A material that lets no light through takes neither map.
+		dull.extensions = {
+			KHR_materials_transmission: { transmissionFactor: 0, transmissionTexture: { index: 0 } },
+			KHR_materials_volume: { thicknessTexture: { index: 1 } },
+		};
+		const data = parse(b.glb());
+		const [first, second, third] = data.materials;
+		expect(first?.transmission).toMatchObject({ factor: 1, thickness: 0.4 });
+		const transmission = first?.maps.transmissionMap ?? -1;
+		const thickness = first?.maps.thicknessMap ?? -1;
+		expect(transmission).toBeGreaterThanOrEqual(0);
+		expect(thickness).toBeGreaterThanOrEqual(0);
+		expect(data.textures[transmission]?.colorSpace).toBe('linear');
+		expect(data.textures[thickness]?.colorSpace).toBe('linear');
+		// The specular textures keep their slots, which the transmission textures would take.
+		expect(second?.maps.specularIntensityMap).toBeDefined();
+		expect(second?.maps.transmissionMap).toBeUndefined();
+		expect(second?.maps.thicknessMap).toBeUndefined();
+		expect(third?.transmission).toBeUndefined();
+		expect(third?.maps.transmissionMap).toBeUndefined();
+		expect(third?.maps.thicknessMap).toBeUndefined();
+		expect(data.notes).toContain(
+			"material 1's transmission and thickness textures, which a material with specular textures does not take",
+		);
+	});
+
 	test('a clear coat or a sheen wins over KHR_materials_diffuse_transmission', () => {
 		const b = specularBuilder()
 			.uses('KHR_materials_diffuse_transmission')
@@ -606,7 +660,7 @@ describe('materials, textures and lights', () => {
 		expect(first?.diffuseTransmission).toBeUndefined();
 		expect(first?.maps.diffuseTransmissionMap).toBeUndefined();
 		expect(data.notes).toContain(
-			"material 0's diffuse transmission, which the engine does not draw beside a clear coat or a sheen",
+			"material 0's diffuse transmission, which the engine does not draw beside a clear coat, a sheen, iridescence or anisotropy",
 		);
 	});
 
@@ -751,7 +805,7 @@ describe('materials, textures and lights', () => {
 		expect(data.textures[maps.sheenRoughnessMap ?? -1]?.image).toBe(2);
 		expect(maps.specularColorMap).toBeUndefined();
 		expect(data.notes).toEqual([
-			"material 0's specular textures, which the engine does not draw beside a clear coat or a sheen",
+			"material 0's specular textures, which the engine does not draw beside a clear coat, a sheen, iridescence or anisotropy",
 			"material 0's clearcoatRoughnessTexture, which is not the texture of its pair and is not drawn",
 		]);
 	});
@@ -779,6 +833,103 @@ describe('materials, textures and lights', () => {
 			[
 				{ KHR_materials_clearcoat: { clearcoatTexture: { index: 9 } } },
 				"material 0's clearcoatTexture",
+			],
+		];
+		for (const [extensions, message] of cases) {
+			const [code, text] = refusal(withExtensions(extensions));
+			expect([code, text.includes(message)]).toEqual(['E1416', true]);
+		}
+	});
+
+	test('KHR_materials_iridescence and KHR_materials_anisotropy give their values and maps', () => {
+		const data = layered({
+			KHR_materials_iridescence: {
+				iridescenceFactor: 0.75,
+				iridescenceIor: 1.8,
+				iridescenceThicknessMinimum: 200,
+				iridescenceThicknessMaximum: 600,
+				iridescenceTexture: { index: 0 },
+				iridescenceThicknessTexture: { index: 1 },
+			},
+			KHR_materials_anisotropy: {
+				anisotropyStrength: 0.6,
+				anisotropyRotation: 0.5,
+				anisotropyTexture: { index: 2 },
+			},
+		});
+		const material = data.materials[0];
+		expect(material?.layers).toMatchObject({
+			iridescence: 0.75,
+			iridescenceIor: 1.8,
+			iridescenceThicknessRange: [200, 600],
+			anisotropy: 0.6,
+			anisotropyRotation: 0.5,
+		});
+		const maps = material?.maps ?? {};
+		expect(data.textures[maps.iridescenceMap ?? -1]).toMatchObject({
+			image: 0,
+			colorSpace: 'linear',
+		});
+		expect(data.textures[maps.iridescenceThicknessMap ?? -1]).toMatchObject({
+			image: 1,
+			colorSpace: 'linear',
+		});
+		expect(data.textures[maps.anisotropyMap ?? -1]).toMatchObject({
+			image: 2,
+			colorSpace: 'linear',
+		});
+		expect(data.notes).toEqual([]);
+	});
+
+	test('a clear coat or a sheen map keeps its slots ahead of iridescence and anisotropy, and notes them', () => {
+		const data = layered({
+			KHR_materials_clearcoat: { clearcoatTexture: { index: 0 } },
+			KHR_materials_iridescence: {
+				iridescenceTexture: { index: 1 },
+				iridescenceThicknessTexture: { index: 2 },
+			},
+			KHR_materials_anisotropy: { anisotropyTexture: { index: 2 } },
+		});
+		const maps = data.materials[0]?.maps ?? {};
+		expect(data.textures[maps.clearcoatMap ?? -1]?.image).toBe(0);
+		expect(maps.iridescenceMap).toBeUndefined();
+		expect(maps.anisotropyMap).toBeUndefined();
+		expect(data.notes).toEqual([
+			"material 0's iridescence or anisotropy textures, which the engine does not draw beside a clear coat's or a sheen's",
+		]);
+	});
+
+	test('iridescence and anisotropy values outside their ranges give E1416', () => {
+		const withExtensions = (extensions: GltfJson) => {
+			const b = shipBuilder().uses('KHR_materials_iridescence').uses('KHR_materials_anisotropy');
+			b.json.materials[0].extensions = extensions;
+			return b.glb();
+		};
+		const cases: [GltfJson, string][] = [
+			[
+				{ KHR_materials_iridescence: { iridescenceFactor: 2 } },
+				"material 0's iridescenceFactor is 2",
+			],
+			[
+				{ KHR_materials_iridescence: { iridescenceIor: 0.5 } },
+				"material 0's iridescenceIor is 0.5",
+			],
+			[
+				{
+					KHR_materials_iridescence: {
+						iridescenceThicknessMinimum: 600,
+						iridescenceThicknessMaximum: 400,
+					},
+				},
+				"material 0's iridescenceThicknessMinimum is 600 and its maximum 400",
+			],
+			[
+				{ KHR_materials_anisotropy: { anisotropyStrength: 2 } },
+				"material 0's anisotropyStrength is 2",
+			],
+			[
+				{ KHR_materials_anisotropy: { anisotropyTexture: { index: 9 } } },
+				"material 0's anisotropyTexture",
 			],
 		];
 		for (const [extensions, message] of cases) {
@@ -957,6 +1108,86 @@ describe('skins and clips', () => {
 		]).toEqual([1, 'translation', 'step', [0, 0.5]]);
 		expect(clips[1]?.tracks.map((t) => [t.joint, t.channel, t.interpolation])).toEqual([
 			[3, 'scale', 'linear'],
+		]);
+	});
+
+	test('KHR_animation_pointer moves nodes, materials and lights, and notes what it cannot', () => {
+		const b = new GltfBuilder();
+		b.json.extensionsUsed = ['KHR_animation_pointer', 'KHR_lights_punctual'];
+		b.json.extensions = {
+			KHR_lights_punctual: {
+				lights: [{ type: 'spot', color: [0.5, 0.5, 0.5], intensity: 3, range: 5 }],
+			},
+		};
+		const material = b.material({
+			name: 'glow',
+			pbrMetallicRoughness: { baseColorFactor: [0.2, 0.4, 0.6, 0.8], metallicFactor: 0 },
+		});
+		const mesh = b.mesh([boxPrimitive(b, material)], 'box');
+		const box = b.node({ name: 'Box', mesh });
+		const lamp = b.node({ name: 'Lamp', translation: [0, 2, 0] });
+		b.json.nodes[lamp].extensions = { KHR_lights_punctual: { light: 0 } };
+		b.json.scenes[0].nodes = [box, lamp];
+		const at = (seconds: number[]) =>
+			b.accessor(new Float32Array(seconds), 1, { min: [0], max: [seconds.at(-1) ?? 0] });
+		const pointer = (path: string) => ({
+			path: 'pointer',
+			extensions: { KHR_animation_pointer: { pointer: path } },
+		});
+		b.json.animations = [
+			{
+				name: 'Move',
+				samplers: [
+					{ input: at([0, 1]), output: b.accessor(new Float32Array([0, 0, 0, 1, 1, 1]), 3) },
+					{
+						input: at([0, 1]),
+						output: b.accessor(new Float32Array([1, 1, 1, 1, 0, 0, 0, 0.5]), 4),
+					},
+					{ input: at([0, 1]), output: b.accessor(new Float32Array([1, 4]), 1) },
+					{
+						input: at([0, 1]),
+						output: b.accessor(new Float32Array([1, 0]), 1),
+						interpolation: 'STEP',
+					},
+					{ input: at([0, 1]), output: b.accessor(new Float32Array([0, 0, 0, 1, 1, 1]), 3) },
+					{ input: at([0, 1]), output: b.accessor(new Float32Array([0.5, 1]), 1) },
+				],
+				channels: [
+					{ sampler: 0, target: pointer('/nodes/0/translation') },
+					{ sampler: 1, target: pointer('/materials/0/pbrMetallicRoughness/baseColorFactor') },
+					{ sampler: 2, target: pointer('/extensions/KHR_lights_punctual/lights/0/intensity') },
+					{ sampler: 3, target: pointer('/nodes/1/extensions/KHR_node_visibility/visible') },
+					{
+						sampler: 4,
+						target: pointer(
+							'/materials/0/pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/offset',
+						),
+					},
+					{ sampler: 5, target: pointer('/cameras/0/perspective/yfov') },
+				],
+			},
+		];
+		const data = parse(b.glb());
+		const clip = data.animation?.clips[0];
+		// A pointer to a node's transform becomes that node's track, as a channel of its own does.
+		expect(clip?.tracks.map((t) => [t.channel, t.interpolation])).toEqual([
+			['translation', 'linear'],
+		]);
+		expect(
+			clip?.properties?.map((p) => [p.target.kind, p.target.index, p.target.value, p.components]),
+		).toEqual([
+			['material', 0, 'color', 3],
+			['material', 0, 'opacity', 1],
+			['light', 0, 'intensity', 1],
+			['node', 1, 'visible', 1],
+		]);
+		// A base color factor's fourth number becomes the opacity, key by key.
+		const [color, opacity] = clip?.properties ?? [];
+		expect(Array.from(color?.values ?? [])).toEqual([1, 1, 1, 0, 0, 0]);
+		expect(Array.from(opacity?.values ?? [])).toEqual([1, 0.5]);
+		expect(data.notes).toEqual([
+			"animation 0 moves a material's pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/offset, which the engine does not animate",
+			'animation 0 moves a camera property, and the engine reads no cameras from files',
 		]);
 	});
 
@@ -1368,6 +1599,98 @@ describe('stored trees and blockers', () => {
 	});
 });
 
+describe('trees of cluster patches', () => {
+	/** A box whose primitive carries the patch tree that `extensions` makes. */
+	const boxWith = (extensions: (b: GltfBuilder) => GltfJson) => {
+		const b = new GltfBuilder();
+		b.node({ mesh: b.mesh([{ ...boxPrimitive(b), extensions: extensions(b) }]) });
+		return b;
+	};
+	/** A tree of two patches over the box's vertices: a root and the leaf below it. */
+	const TREE = (b: GltfBuilder) => ({
+		NULL3D_clusters: {
+			indices: b.accessor(new Uint32Array([0, 1, 2, 3, 4, 5]), 1),
+			bounds: b.accessor(new Float32Array([0, 0, 0, 1, 0.5, 0.5, 0.5, 0.5]), 4),
+			patches: b.accessor(new Uint32Array([0, 3, 0, 0x3dcc_cccd, 3, 3, 1, 0]), 4),
+			root: 0,
+		},
+	});
+
+	test('a primitive keeps the tree of patches that the tool built', () => {
+		const [p] = parse(boxWith(TREE).glb()).meshes[0]?.primitives ?? [];
+		expect(p?.patches?.root).toBe(0);
+		expect(Array.from(p?.patches?.indices ?? [])).toEqual([0, 1, 2, 3, 4, 5]);
+		expect(Array.from(p?.patches?.words ?? [])).toEqual([0, 3, 0, 0x3dcc_cccd, 3, 3, 1, 0]);
+		expect(Array.from(p?.patches?.bounds ?? [])).toEqual([0, 0, 0, 1, 0.5, 0.5, 0.5, 0.5]);
+	});
+
+	test('a plain primitive has no tree', () => {
+		expect(parse(shipBuilder().glb()).meshes[0]?.primitives[0]?.patches).toBeUndefined();
+	});
+
+	test('a tree that breaks the rules gives E1416', () => {
+		const broken = (change: (tree: GltfJson, b: GltfBuilder) => void) =>
+			boxWith((b) => {
+				const extensions = TREE(b);
+				change(/** @type {GltfJson} */ (extensions.NULL3D_clusters), b);
+				return extensions;
+			});
+		const message = (b: GltfBuilder) => refusal(b.glb())[1];
+		expect(
+			message(
+				broken((tree) => {
+					tree.patches = 0;
+				}),
+			),
+		).toContain('patches are not four unsigned integers per patch');
+		expect(
+			message(
+				broken((tree, b) => {
+					tree.bounds = b.accessor(new Float32Array(3), 3);
+				}),
+			),
+		).toContain('patch bounds are not four floats per patch');
+		expect(
+			message(
+				broken((tree) => {
+					tree.root = 2;
+				}),
+			),
+		).toContain('patch tree has no root among its patches');
+		// Indices that name no whole triangles, and bounds that are not four floats a patch.
+		expect(
+			message(
+				broken((tree, b) => {
+					tree.bounds = b.accessor(new Float32Array(4), 2);
+				}),
+			),
+		).toContain('patch bounds are not four floats per patch');
+		const withWords = (words: number[]) => (tree: GltfJson, b: GltfBuilder) => {
+			tree.patches = b.accessor(new Uint32Array(words), 4);
+		};
+		// A run that is not whole triangles.
+		expect(message(broken(withWords([0, 4, 0, 0, 3, 3, 1, 0])))).toContain(
+			'patch 0 names no whole triangles of its tree',
+		);
+		// A run past the tree's indices.
+		expect(message(broken(withWords([4, 3, 0, 0, 3, 3, 1, 0])))).toContain(
+			'patch 0 names no whole triangles of its tree',
+		);
+		// A patch that is its own parent.
+		expect(message(broken(withWords([0, 3, 1, 0, 3, 3, 1, 0])))).toContain(
+			'patch 0 names the patch 1 as its parent',
+		);
+		// An index past the box's vertices.
+		expect(
+			message(
+				broken((tree, b) => {
+					tree.indices = b.accessor(new Uint32Array([0, 1, 2, 3, 4, 99]), 1);
+				}),
+			),
+		).toContain('past its 24 vertices');
+	});
+});
+
 describe("the asset tool's shader list", () => {
 	test('reads the recorded bits and files, and leaves out a name that is not text', () => {
 		const builder = shipBuilder();
@@ -1392,5 +1715,53 @@ describe("the asset tool's shader list", () => {
 		const wrong = shipBuilder();
 		wrong.json.asset.extras = { NULL3D_shaders: 'skinning' };
 		expect(parse(wrong.glb()).shaders).toBeUndefined();
+	});
+});
+
+describe("the asset tool's staged levels", () => {
+	test('reads each stage with the error of the level that the file holds', () => {
+		const builder = shipBuilder();
+		builder.json.nodes[0].extras = {
+			NULL3D_stages: {
+				error: 0.2,
+				levels: [
+					{ url: 'ship.m0.lod2.bin', bytes: 120, error: 0.1 },
+					{ url: 'ship.m0.lod3.bin', bytes: 60, error: 0.04 },
+				],
+			},
+		};
+		const hull = parse(builder.glb()).nodes.find((node) => node.name === 'Hull');
+		expect(hull?.stages).toEqual({
+			error: 0.2,
+			levels: [
+				{ url: 'ship.m0.lod2.bin', bytes: 120, error: 0.1 },
+				{ url: 'ship.m0.lod3.bin', bytes: 60, error: 0.04 },
+			],
+		});
+	});
+
+	test('stops at a stage that holds no address, no length or no error', () => {
+		const builder = shipBuilder();
+		builder.json.nodes[0].extras = {
+			NULL3D_stages: {
+				error: 0.2,
+				levels: [
+					{ url: 'a.bin', bytes: 120, error: 0.1 },
+					{ url: '', bytes: 60, error: 0.04 },
+					{ url: 'c.bin', bytes: 30, error: 0.01 },
+				],
+			},
+		};
+		const hull = parse(builder.glb()).nodes.find((node) => node.name === 'Hull');
+		expect(hull?.stages?.levels).toEqual([{ url: 'a.bin', bytes: 120, error: 0.1 }]);
+	});
+
+	test('gives no stages for a file without them, or one whose own level has no error', () => {
+		const plain = parse(shipBuilder().glb()).nodes.find((node) => node.name === 'Hull');
+		expect(plain?.stages).toBeUndefined();
+		const wrong = shipBuilder();
+		wrong.json.nodes[0].extras = { NULL3D_stages: { levels: [{ url: 'a', bytes: 1, error: 1 }] } };
+		const hull = parse(wrong.glb()).nodes.find((node) => node.name === 'Hull');
+		expect(hull?.stages).toBeUndefined();
 	});
 });

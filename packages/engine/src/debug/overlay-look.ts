@@ -25,8 +25,15 @@
 // overlay and its styles do not reach the page. A style sheet made in script passes a Content
 // Security Policy without 'unsafe-inline'. Browsers without one get a style element instead.
 
+import type { FeatureStats } from '../scene/features';
 import { type Level, rateLevel, workLevel } from './frame-target';
-import { count, type StatsFigures, type StatsThread } from './stats-text';
+import {
+	count,
+	featureLine,
+	type StatsFigures,
+	type StatsMemoryArea,
+	type StatsThread,
+} from './stats-text';
 
 const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 
@@ -164,6 +171,16 @@ h3 span { text-transform: none; letter-spacing: 0; font-weight: 500; }
 .counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding-top: 10px; border-top: 1px solid #dfe3e8; }
 .counts b { display: block; font-size: 14px; }
 .counts small { font-size: 11px; color: #5b6573; }
+.features { display: grid; gap: 4px; padding-top: 10px; border-top: 1px solid #dfe3e8; }
+.features h3 { font-size: 10px; }
+.feature { font-size: 11px; color: #3b4450; }
+.register { display: grid; gap: 4px; padding-top: 10px; border-top: 1px solid #dfe3e8; }
+.register h3 { font-size: 10px; }
+.areas { display: grid; grid-template-columns: 1fr auto auto auto; gap: 2px 8px; font-size: 11px; color: #3b4450; }
+.areas .head, .areas .area { display: contents; }
+.areas .head { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: #5b6573; }
+.areas .name { white-space: nowrap; }
+.areas span:not(.name) { text-align: right; }
 .heading { font-size: 11px; }
 .held { font-size: 12px; font-weight: 600; color: var(--bad-text); }
 .update-error-line { font-size: 12px; font-weight: 600; color: var(--bad-text); }
@@ -319,8 +336,17 @@ function setText(node: Text, text: string): void {
 	if (node.data !== text) node.data = text;
 }
 
-/** Sets an element's level attribute, when it changed. */
-function setLevel(node: HTMLElement | SVGElement, level: Level | undefined): void {
+/** Shows a figure's exact bytes in its tooltip, so a rounded row still gives the figure. */
+function exact(node: Text, bytes: number): void {
+	const element = node.parentElement;
+	const title = `${Math.round(bytes)} bytes`;
+	if (element && element.title !== title) element.title = title;
+}
+
+/** Sets an element's level attribute, when it changed. */ function setLevel(
+	node: HTMLElement | SVGElement,
+	level: Level | undefined,
+): void {
 	if (node.dataset.level === level) return;
 	if (level) node.dataset.level = level;
 	else delete node.dataset.level;
@@ -717,6 +743,14 @@ export class StatsCard {
 	private readonly triangles: Text;
 	private readonly objects: Text;
 	private readonly heading: Text;
+	private readonly featureSection: HTMLElement;
+	private readonly featureList: HTMLElement;
+	/** The text of each feature's row, by the feature's name. */
+	private readonly featureRows = new Map<string, Text>();
+	private readonly registerSection: HTMLElement;
+	private readonly areaList: HTMLElement;
+	/** Each memory area's three figures, by the area's name. */
+	private readonly areaRows = new Map<string, { used: Text; reserved: Text; peak: Text }>();
 	private readonly threads = new WorkThreads();
 	/** Each memory part in tenths of a MiB, or -1 where the page does not know it. */
 	private readonly memory = new Int32Array(MEMORY_PARTS.length);
@@ -765,6 +799,22 @@ export class StatsCard {
 		this.draws = countCell(counts, 'draws');
 		this.triangles = countCell(counts, 'triangles');
 		this.objects = countCell(counts, 'objects');
+		const features = element('div', 'features', card);
+		const featuresTitle = element('h3', '', features);
+		featuresTitle.append('Add-ons');
+		this.featureList = element('div', '', features);
+		this.featureSection = features;
+		features.hidden = true;
+		const register = element('div', 'register', card);
+		const registerTitle = element('h3', '', register);
+		registerTitle.append('Memory by system');
+		const registerUnit = element('span', '', registerTitle);
+		registerUnit.append('used / reserved / peak');
+		this.areaList = element('div', 'areas', register);
+		const head = element('div', 'head', this.areaList);
+		for (const label of ['', 'used', 'reserved', 'peak']) element('span', '', head).append(label);
+		this.registerSection = register;
+		register.hidden = true;
 		this.heading = figure('div', 'heading', card, 'muted heading').text;
 		this.element = card;
 	}
@@ -818,6 +868,64 @@ export class StatsCard {
 		setText(this.draws, `${Math.round(figures.drawCalls)}`);
 		setText(this.triangles, count(figures.triangles));
 		setText(this.objects, count(figures.objects));
+		this.updateFeatures(figures.features ?? []);
+		this.updateAreas(figures.memoryAreas);
+	}
+
+	/**
+	 * The memory register's rows: one line per area with the bytes that it uses, reserves and has
+	 * used at most. The section hides where no page asked for a report.
+	 */
+	private updateAreas(areas: readonly StatsMemoryArea[] | undefined): void {
+		const shown = areas !== undefined && areas.length > 0;
+		this.registerSection.hidden = !shown;
+		if (!areas) return;
+		for (const area of areas) {
+			let row = this.areaRows.get(area.name);
+			if (!row) {
+				const line = element('div', 'area', this.areaList);
+				const name = figure('span', `area:${area.name}`, line, 'name');
+				setText(name.text, area.name);
+				row = {
+					used: figure('span', `area:${area.name}:used`, line).text,
+					reserved: figure('span', `area:${area.name}:reserved`, line).text,
+					peak: figure('span', `area:${area.name}:peak`, line).text,
+				};
+				this.areaRows.set(area.name, row);
+			}
+			setText(row.used, mibText(tenthsOfMib(area.usedBytes)));
+			setText(row.reserved, mibText(tenthsOfMib(area.reservedBytes)));
+			setText(row.peak, mibText(tenthsOfMib(area.peakBytes)));
+			exact(row.used, area.usedBytes);
+			exact(row.reserved, area.reservedBytes);
+			exact(row.peak, area.peakBytes);
+		}
+	}
+
+	/**
+	 * The add-ons' rows: one line per feature with its GPU time, its settings, its budget and its
+	 * memory. The section hides while no feature reports figures.
+	 */
+	private updateFeatures(features: readonly FeatureStats[]): void {
+		this.featureSection.hidden = features.length === 0;
+		const seen = new Set<string>();
+		for (const feature of features) {
+			seen.add(feature.name);
+			let text = this.featureRows.get(feature.name);
+			if (!text) {
+				const row = element('div', 'feature', this.featureList);
+				row.dataset.figure = `feature:${feature.name}`;
+				text = document.createTextNode('');
+				row.append(text);
+				this.featureRows.set(feature.name, text);
+			}
+			setText(text, featureLine(feature));
+		}
+		for (const [name, text] of this.featureRows) {
+			if (seen.has(name)) continue;
+			text.parentElement?.remove();
+			this.featureRows.delete(name);
+		}
 	}
 
 	/** A thread's lane, hidden where the engine runs no such thread. */

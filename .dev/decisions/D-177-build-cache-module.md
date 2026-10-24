@@ -184,3 +184,30 @@ The GPU check's baseline cache now fills its folder through the module's atomic 
 other caches do. It renames no folder itself. Its own rules stay: it keeps six builds by commit, and
 it prunes by use. The Vite plugin's cache still keeps its own copy of the rules, as the Decision
 above says.
+
+## Addendum, 23 October 2026: the key covers the sources, and a shipped core now names its own staleness
+
+The WebAssembly cache's key covers every file that decides the core. Those are the workspace's
+`Cargo.toml`, `Cargo.lock` and `rust-toolchain.toml`, and every file under the core crate and its
+path dependencies (`null3d-wasm`, `null3d-core`, `null3d-gpu` and `null3d-render`), which was 150
+files at the tip. The key also covers each variant's Rust flags, cargo arguments and wasm-opt
+features. It covers the target, the release profile and the versions of Rust, wasm-bindgen and
+wasm-opt. The build script's own hash is part of it too. A hit checks every recorded file hash
+before it serves the entry. So the cache cannot hand a build a core from other sources, and the
+stale core of 23 October 2026 did not come from it.
+
+The unchecked input was `packages/engine/dist`. A checkout whose core was built before a Rust change
+kept it, and every page build copied it as it was. A development build compares the core's stamp
+with the served sources and raises E1402. A production build drops that check, so the pair ran until
+the GPU refused a command, with E1305.
+
+`refuseStaleCore` in `tools/lib/core-sources.ts` now compares each core's stamp with the checkout's.
+It stops the build with the message that names `bun run build`. The page builds of the benchmarks,
+the startup build and the browser tests call it. So do the pack step, the CDN build and the examples
+build. A project that installs the engine package holds no core crate, so the check leaves
+it alone. The release's publish job builds the core from the tag before it packs, and it now refuses
+a stale core too.
+
+## Addendum, 23 October 2026: each source by number, and shared in memory
+
+The per-entry shader cache's format version is now 3. A file holds each WGSL and GLSL source of its entry once, and each build names its sources by their number in that list, in place of the `{"$text": n}` references to texts of 40 characters or more. A read gives every build that names a source the same text in memory, since the shader output types now hold their sources as shared texts. The shader build's peak on CI's data fell from 14.1 GB to 7.3 GB ([D-235](D-235-shader-entry-parts.md#update-23-october-2026-the-joins-memory)).

@@ -143,10 +143,18 @@ const DOCS = {
 			'E1208: textures.fromData() got 12 numbers for 2 x 2 x 1 texels, not 16: give four per texel.',
 		since: '0.1',
 	},
+	E1209: {
+		title: 'Too many textures',
+		cause:
+			'A material whose shader reads more textures than a WebGL2 shader stage has units. The engine numbers the textures that a program reads, and WebGL2 gives every stage at least 16 units, as many as the device reports. The lit shader reads most of them, so a custom material or add-on draw reaches the limit with its own textures, beside the maps and the shadows.',
+		example:
+			'E1209: a WebGL2 program reads 18 textures in its fragment stage, and a stage has 16 units: give the material fewer textures.',
+		since: '0.3',
+	},
 	E1213: {
 		title: 'Invalid setting',
 		cause:
-			'A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, a negative exposure, and a built-in environment that the engine does not have.',
+			'A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, a negative exposure, a grading control outside its range, and a built-in environment that the engine does not have. It also covers a glTF extension handler that names no extension, that another handler reads, or that returns a part without a mesh or a material.',
 		example: `E1213: post.set() got the tone mapping "filmic", which is not 'agx', 'agx-punchy', 'neutral', 'aces' or 'none'.`,
 		since: '0.1',
 	},
@@ -160,7 +168,7 @@ const DOCS = {
 	E1215: {
 		title: 'Invalid custom WGSL',
 		cause:
-			'materials.shader(), post.addEffect() or post.set() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function or a vertex offset. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh. An effect declares fn effect, and a tone curve fn toneCurve.',
+			'materials.shader(), post.addEffect(), post.set() or scene.setSkyLayer() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function, a vertex offset or a lobe. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh. An effect declares fn effect, a tone curve fn toneCurve, and a sky layer fn skyLayer.',
 		example:
 			'E1215: materials.shader() got WGSL as text, which the null3D Vite plugin did not compile.',
 		since: '0.1',
@@ -168,7 +176,7 @@ const DOCS = {
 	E1216: {
 		title: 'Invalid uniform or texture',
 		cause:
-			"A custom material's or effect's uniforms or textures did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too. The textures option takes the names of the WGSL's `var name: texture_2d<f32>;` declarations, each with a texture of one layer.",
+			"A custom material's or effect's uniforms or textures did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too. The textures option takes the names of the WGSL's `var name: texture_2d<f32>;` and `var name: texture_2d_array<f32>;` declarations, each with a texture of the layers that its declaration takes.",
 		example:
 			"E1216: materials.shader.set() got speeed, which is not a uniform of the material's WGSL.",
 		since: '0.1',
@@ -176,7 +184,7 @@ const DOCS = {
 	E1217: {
 		title: 'Invalid material option',
 		cause:
-			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options and the blending that they do not take, and a material that lets light through refuses the mask and hash alpha modes and the weighted blending. A layered material, with a clear coat or a sheen, refuses a light map, specular maps, and two textures for a pair of layer maps that glTF packs into one. A material that lets light through to its other side refuses the specular maps, whose places its diffuse transmission maps take, a clear coat, a sheen and the weighted blending, and other materials refuse the diffuse transmission maps. A custom material refuses subsurfaceRadius, which only a standard material takes.',
+			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options and the blending that they do not take, and a material that lets light through refuses the mask and hash alpha modes and the weighted blending. A layered material, with a clear coat or a sheen, refuses a light map, specular maps, the transmission and thickness maps, and two textures for a pair of layer maps that glTF packs into one. A material with transmission refuses the specular maps beside the transmission and thickness maps, whose slots they share, and other materials refuse those two maps. A material that lets light through to its other side refuses the specular maps, whose places its diffuse transmission maps take, a clear coat, a sheen and the weighted blending, and other materials refuse the diffuse transmission maps. A custom material refuses subsurfaceRadius, which only a standard material takes.',
 		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 		since: '0.1',
 	},
@@ -190,15 +198,15 @@ const DOCS = {
 	E1219: {
 		title: 'Invalid label',
 		cause:
-			"ui.trackLabel() or ui.untrackLabel() got an id that is not a string with at least one character. Or the sketch tracked more labels at once than createEngine's maxLabels option allows: 4,096 by default.",
+			"ui.trackLabel() or ui.untrackLabel() got an id that is not a string with at least one character. Or trackLabel() got a transform that is not 'screen', 'world' or 'billboard', or a rotation that is not a number for a label that faces the camera. Or the sketch tracked more labels at once than createEngine's maxLabels option allows: 4,096 by default. A label that is a plane of the scene counts against maxLabels3d instead, which holds 256 by default.",
 		example:
-			'E1219: trackLabel() could not track "hp-4097": the engine already tracks 4096 labels.',
+			'E1219: trackLabel() could not track "hp-4097": the engine already tracks 4096 labels. Raise createEngine()\'s maxLabels option for more.',
 		since: '0.2',
 	},
 	E1220: {
 		title: 'Invalid render pass',
 		cause:
-			'render.addPass() got options that it does not take: an unknown kind or option, no camera, a size outside 1 to the largest texture, both a size and a scale, an input image it does not know, or a texture name or pass name that another pass has. Or the sketch added more passes than draw at once: 31. Or textures.fromPass(), render.setPassEnabled(), render.setPassUniform() or render.removePass() got something that is not a render pass, or render.setPassUniform() got a pass that is not a full-screen pass.',
+			'render.addPass() got options that it does not take: an unknown kind or option, no camera, a size outside 1 to the largest texture, both a size and a scale, an input image it does not know, a workgroup size or dispatch that a device cannot run, a format that a compute pass does not write, a compute pass on WebGL2 with no fallback, or a texture name or pass name that another pass has. Or the sketch added more passes than draw at once: 31. Or textures.fromPass(), render.setPassEnabled(), render.setPassUniform(), render.setPassUniforms() or render.removePass() got something that is not a render pass, render.setPassUniform() got a pass that is not a full-screen pass, or render.setPassUniforms() got a pass that is not a compute pass.',
 		example:
 			'E1220: render.addPass() got writes "minimap", which the pass "minimap" writes already. Give each pass a texture name of its own.',
 		since: '0.2',
@@ -206,7 +214,7 @@ const DOCS = {
 	E1221: {
 		title: 'Invalid levels of detail',
 		cause:
-			"mesh.setLevels() received levels that the mesh cannot take, or a glTF file's MSFT_lod levels could not become them. Each level's error, or its distance, must be a finite number above 0, and larger than the level's before it. A mesh takes at most 7 lower levels. Each level must be another live mesh of the same engine, with the same vertex attributes as the base mesh. Each level draws with the base mesh's material and shading.",
+			"mesh.setLevels() received levels that the mesh cannot take, or a glTF file's MSFT_lod levels could not become them. Each level's error, or its distance, must be a finite number above 0, and larger than the level's before it. A mesh takes at most 7 lower levels. Each level must be another live mesh of the same engine, with the same vertex attributes as the base mesh. A level's material, where it gives one, must be a live material of the same engine.",
 		example:
 			'E1221: mesh.setLevels() got an error of 0.02 for level 2, not above the 0.05 of level 1. Errors grow from level to level.',
 		since: '0.2',
@@ -218,6 +226,30 @@ const DOCS = {
 		example:
 			"E1222: setLightProbeGrid() got a texture that is not a 3D texture. Make the grid's texture with LightProbeGridData.toTexture().",
 		since: '0.2',
+	},
+	E1223: {
+		title: 'Invalid feature description',
+		cause:
+			'defineFeature(), FeatureRegistry.add(), addFeatureDraw(), scene.setSkyLayer() or a compute pass of render.addPass() got a description that it cannot take: an unknown option, a name that is empty or longer than 64 characters, a frame point or kind that does not exist or does not go together, an order outside its band, an unknown resource, lighting slot or view, a resource or view without a frame point, an output with no neutral default, a feature name or output name that another feature has, a lighting slot that another feature provides, a draw at a frame point, view or alpha mode that the draw adapter does not place, a sky layer that does not record at the background point, as a draw, providing the sky and drawing in the three views, or a compute pass at a frame point, view, scene resource read or output that the compute adapter does not place.',
+		example:
+			"E1223: FeatureRegistry.add() got the slot 'ao', which the feature 'ambient-occlusion' provides already. One feature provides each lighting slot.",
+		since: '0.3',
+	},
+	E1224: {
+		title: 'Material cannot draw a mesh',
+		cause:
+			'scene.overrideMaterial received a sprite, point or line material. Such a material draws the rows of its batch, or a sprite or line of its own, rather than the surface of a mesh, so it cannot stand in for every mesh of the pass.',
+		example:
+			'E1224: scene.overrideMaterial got a sprite material. It takes a material that draws meshes, from materials.standard(), materials.unlit(), materials.shader() or materials.decal().',
+		since: '0.3',
+	},
+	E1225: {
+		title: 'Add-on name clash',
+		cause:
+			'An add-on registered a name that the engine or another add-on holds: its namespace, its shader library, an error-code range, a quality key, or the name of a feature, output or lighting slot. A namespace also names the package that owns it, so a second add-on that takes the name is refused even when its other fields match, while a reload of the same package keeps its namespace. Two add-ons cannot share a name, a range or a key, because the engine would have two answers for one of them.',
+		example:
+			"E1225: declareAddonNamespace() got the add-on name 'water' for the package '@ben/water', which the package '@ana/water' claims already. Give each add-on a name of its own.",
+		since: '0.3',
 	},
 	E1301: {
 		title: 'No usable GPU path',
@@ -385,7 +417,7 @@ const DOCS = {
 	E1417: {
 		title: 'glTF feature not supported',
 		cause:
-			'A glTF file needs an extension that the engine does not read, as its extensionsRequired list says. Or a call asked a model for something it cannot give, such as instance batches of a model with no meshes.',
+			'A glTF file needs an extension that the engine does not read, as its extensionsRequired list says. When a foundation add-on reads that extension, the message names the package to import, such as "Import @null3d/splats, which reads it", and that add-on registers the handler that loads the file. Or a call asked a model for something it cannot give, such as instance batches of a model with no meshes.',
 		example:
 			'E1417: assets.loadGltf() cannot load https://example.com/ship.glb: it requires KHR_materials_variants, which the engine does not read.',
 		since: '0.2',
@@ -438,11 +470,11 @@ const DOCS = {
 		since: '0.2',
 	},
 	E1424: {
-		title: 'Custom material builds not downloaded',
+		title: 'Custom shader builds not downloaded',
 		cause:
-			"A set of a custom material's builds did not download. The null3D Vite plugin builds each custom material for every GPU path, and puts the builds in files of their own beside the sketch's files, named material-*.js: one for each GPU path, each kind of device, and the builds that skin. A page downloads its device's file when the sketch first uses the material, and another file when a pipeline needs it, such as the builds that skin for the first skinned mesh. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off. The engine then draws no new frames.",
+			"A set of a custom shader's builds did not download. The null3D Vite plugin builds each custom material, effect and tone curve for every GPU path, and puts the builds in files of their own beside the sketch's files. A material's files are named material-*.js: one for each GPU path, each kind of device, and the builds that skin. An effect's and a tone curve's are named effect-*.js and curve-*.js: one for each GPU path. A page downloads its device's file when the sketch first uses the shader, and another material file when a pipeline needs it, such as the builds that skin for the first skinned mesh. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off. The engine then draws no new frames.",
 		example:
-			'E1424: the builds of a custom material did not load: Failed to fetch dynamically imported module: https://example.com/assets/material-glsl-3-4c1d2e9a5b6f7081-Bx3kQ9.js.',
+			'E1424: the builds of a custom shader did not load: Failed to fetch dynamically imported module: https://example.com/assets/material-glsl-3-4c1d2e9a5b6f7081-Bx3kQ9.js.',
 		since: '0.2',
 	},
 	E1425: {
@@ -467,6 +499,38 @@ const DOCS = {
 		example:
 			"E1431: the area lights' tables did not load from https://example.com/assets/area-light-tables-Zx8c_Vb1.bin: HTTP 404",
 		since: '0.2',
+	},
+	E1432: {
+		title: 'Add-on for another engine version',
+		cause:
+			'An add-on package loaded beside an engine of another version. Each add-on ships in step with the engine and pins the engine version that it was built for, so a page may mix no two versions. The message names the add-on, its version and the engine version.',
+		example:
+			'E1432: @null3d/controls 0.1.0 was built for null3D 0.1.0, and this page runs null3D 0.2.0.',
+		since: '0.3',
+	},
+	E1433: {
+		title: 'Add-on for another plugin interface',
+		cause:
+			"An add-on from another developer loaded against a plugin interface that its declared range does not include, or the add-on declares no range of whole versions. An outside add-on declares the plugin interface versions that it works with, because it ships on its own schedule. The engine's own add-ons pin the engine version instead. The message names the add-on, the range it declares and this engine's plugin interface version.",
+		example:
+			'E1433: @acme/splats was built for plugin interface 1 to 2, and this page has plugin interface 3 (null3D 0.3.0).',
+		since: '0.3',
+	},
+	E1434: {
+		title: 'Baked light file not read',
+		cause:
+			"assets.loadLightProbeGrid() or assets.loadLightMap() downloaded a file that is not a baked light file that this engine reads. The file may not be JSON, or its format marker may be missing. Its version may not be the one that this engine reads, or its kind may not be the one that the call takes. A probe grid may have counts or spacing that a grid cannot take. Its coefficients may not hold 12 floats for each probe in the counts' product. A light map may have a width or height that a texture cannot take, or an encoding other than rgb8 or rgba16float. Its radiance or its direction may not hold the bytes that its size needs, which a cut-short file shows. The message names the fault.",
+		example:
+			'E1434: assets.loadLightProbeGrid() could not read https://example.com/light/grid.json: its version is 2, and this engine reads version 1.',
+		since: '0.3',
+	},
+	E1435: {
+		title: 'Recording not read',
+		cause:
+			'createEngine() could not read the recording that ?replay= names, or the recording does not match this page. The file may not be a null3D recording, may come from another version of the format, may be cut short, or may name keys or fixed steps that this engine does not have. The message names the fault.',
+		example:
+			'E1435: createEngine() could not read the recording https://example.com/bug.n3dr: the file is not a null3D recording: it does not start with the format marker. Save the recording again, or ask for a new one.',
+		since: '0.3',
 	},
 	E1501: {
 		title: 'Render space full',

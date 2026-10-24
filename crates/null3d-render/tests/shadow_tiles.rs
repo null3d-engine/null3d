@@ -18,7 +18,7 @@ use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, NO_MESH};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::light_grid::LightGrid;
-use null3d_render::shadow_tiles::{MAX_REDRAWS, ShadowTiles, TileSettings};
+use null3d_render::shadow_tiles::{AtlasShape, MAX_REDRAWS, ShadowTiles, TileSettings};
 use null3d_render::shadows::CascadeDepth;
 use null3d_render::view::ViewId;
 
@@ -168,6 +168,106 @@ fn webgl2_tiles_draw_only_when_their_casters_or_lights_move() {
             ..CpuCulledConfig::default()
         };
         tiles_draw_only_when_their_casters_or_lights_move(CpuCulledRenderer::new(config));
+    }
+}
+
+/// Checks that the sun's hero object draws into the atlas's last tile, that the tile rests while
+/// nothing moves, and that it draws again when the hero or a caster near it moves, on either
+/// builder.
+fn the_hero_draws_its_own_tile<B: Tiles>(renderer: B) {
+    let mut world = world(renderer, TWO_TILES);
+    let [hero, _, ball, far] = world.objects[..] else {
+        panic!("four objects")
+    };
+    let (_, sun) = world.add_sun(2);
+    world
+        .light_table
+        .as_mut()
+        .unwrap()
+        .set_hero(sun, hero)
+        .unwrap();
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    let first = step(&mut world, &mut mock, true);
+
+    // The hero alone fills the atlas: one layer of 256 texels, which the frame draws, while the
+    // sun's cascades keep their own map.
+    assert_eq!(
+        world.renderer.tiles().shape(),
+        Some(AtlasShape {
+            layers: 1,
+            size: 256
+        })
+    );
+    assert_eq!(world.renderer.tiles().drawn(), 1);
+    assert!(world.renderer.tiles().frame(0).is_some());
+    assert_eq!(
+        depth_passes(&first),
+        1 + 2,
+        "the hero's tile and two cascades"
+    );
+    // Receivers read the tile's layer plus one, and the object's own texel size. The hero's
+    // filter comes from the tiles' block, which this frame writes while no light has a tile.
+    let kernel = world.renderer.tiles().uniform().kernel;
+    assert_eq!(kernel, [256.0, 1.0 / 256.0, 3.0, 0.0]);
+    let read = world.renderer.tiles().hero_uniform().params;
+    assert_eq!(read[3], 1.0);
+    assert!(read[0] > 0.0 && read[0] < 0.02, "{read:?}");
+
+    // A still frame keeps the tile, as a still frame keeps a light's.
+    let still = step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+    assert_eq!(depth_passes(&still), 2);
+
+    // A caster far from the hero moves: still no tile.
+    world.scene.set_position(far, [3.0, 0.5, 0.0]).unwrap();
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+
+    // A caster inside the hero's box moves: its shadow can change the tile, which draws again.
+    world.scene.set_position(ball, [-2.3, 0.5, 0.0]).unwrap();
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 1);
+    world.scene.set_position(ball, [-2.1, 0.5, 0.0]).unwrap();
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 1);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+
+    // The hero moves: its tile draws once, then rests.
+    world.scene.set_position(hero, [-2.5, 0.5, 0.0]).unwrap();
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 1);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+
+    // The light stops drawing a hero: the atlas goes, as no light draws into it.
+    world
+        .light_table
+        .as_mut()
+        .unwrap()
+        .set_hero(sun, Handle::NONE)
+        .unwrap();
+    let off = step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().shape(), None);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+    assert_eq!(depth_passes(&off), 2);
+    assert_eq!(world.renderer.tiles().hero_uniform().params[3], 0.0);
+}
+
+#[test]
+fn webgpu_the_hero_draws_its_own_tile() {
+    the_hero_draws_its_own_tile(GpuDrivenRenderer::new(Default::default()));
+}
+
+#[test]
+fn webgl2_the_hero_draws_its_own_tile() {
+    for multi_draw in [true, false] {
+        let config = CpuCulledConfig {
+            multi_draw,
+            ..CpuCulledConfig::default()
+        };
+        the_hero_draws_its_own_tile(CpuCulledRenderer::new(config));
     }
 }
 
@@ -898,13 +998,13 @@ fn webgl2_casters_draw_with_a_pipeline_for_each_depth_format() {
     }
 }
 
-/// A rectangle light's record carries its image's layer where a point or spot light carries its
-/// tile of the atlas ([`VisibleLight::area`]), so marking the tiles leaves that layer alone: the
-/// shader reads it as the layer of the light tables' texture that holds the light's picture. The
-/// bench's rectangle-light tests drew the picture-less scene for four days while every mark of the
-/// tiles wiped the layer, and their references were pictures of nothing.
+/// A rectangle light's record keeps its image's layer in a field of its own, and its shadow tile's
+/// place free, so marking the tiles leaves that layer alone: the shader reads it as the layer of the
+/// light tables' texture that holds the light's picture. The bench's rectangle-light tests drew the
+/// picture-less scene for four days while every mark of the tiles wiped the layer, and their
+/// references were pictures of nothing.
 #[test]
-fn an_area_lights_record_keeps_its_image_where_a_spot_light_keeps_its_tile() {
+fn marking_the_tiles_leaves_an_area_lights_image_alone() {
     let mut world = world(GpuDrivenRenderer::new(Default::default()), TWO_TILES);
     // The area lights' tables arrive, as they do before an area light lights anything.
     let tables = world.renderer.settings_mut().light_tables_mut();
@@ -944,15 +1044,17 @@ fn an_area_lights_record_keeps_its_image_where_a_spot_light_keeps_its_tile() {
     step(&mut world, &mut mock, true);
     let grid = world.renderer.light_grid().lights();
     let record = |window: u32| {
-        grid.iter()
-            .find(|light| light.kind == window)
-            .unwrap()
-            .shadow
+        let light = grid.iter().find(|light| light.kind == window).unwrap();
+        (light.shadow, light.image)
     };
-    assert_eq!(record(kind::SPOT), 1.0, "the spot light takes tile 1");
+    assert_eq!(
+        record(kind::SPOT),
+        (1.0, 0.0),
+        "the spot light takes tile 1 and holds no image"
+    );
     assert_eq!(
         record(kind::RECT),
-        3.0,
-        "the rectangle light keeps its image's layer"
+        (0.0, 3.0),
+        "the rectangle light keeps its image's layer and takes no tile"
     );
 }

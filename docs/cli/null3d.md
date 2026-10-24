@@ -3,12 +3,12 @@ id: cli/null3d
 title: "The `null3d` command"
 status: experimental
 since: "0.1"
-summary: "create, test, bench, shot, assets, docs, port, skills, mcp, doctor."
+summary: "create, test, bench, check-addon, shot, upgrade, assets, docs, port, skills, mcp, doctor."
 ---
 
 # The `null3d` command
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `assets`. The API is experimental, so it can still change between versions. The commands `create`, `docs`, `port`, `skills`, `mcp` and `doctor` are not built yet. Coding agents must not use them. `test` runs image tests, but no behavior tests yet.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `assets`, and step 0.3 adds `create`, `upgrade` and `check-addon`. The API is experimental, so it can still change between versions. The commands `docs`, `port`, `skills`, `mcp` and `doctor` are not built yet. Coding agents must not use them. `test` runs image tests, but no behavior tests yet.
 
 The `@null3d/cli` package holds the `null3d` command. You need no command to build or run a sketch: Vite and the null3D Vite plugin do that. The command does jobs that a bundler does not do, such as drawing a frame of your scene with no person watching.
 
@@ -21,6 +21,21 @@ bunx @null3d/cli --version
 ```
 
 The command needs Node 20.19 or later, or Node 22.12 or later, as Vite 8 does.
+
+## create
+
+`create` writes a new project from a template. The project runs with Vite, and it holds the rules and the hook that an AI agent uses.
+
+```sh
+bunx @null3d/cli create my-game
+bunx @null3d/cli create my-game --template empty
+```
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--template <name>` | The template to copy | `empty` |
+
+The folder must not exist, or it must be empty. The command never overwrites an existing `.claude/settings.json`, because that file can hold your own hooks. The command writes its own version into the project's package pins, and it installs nothing. Run `bun install` in the new folder, then `bunx vite`. [Project structure](../getting-started/project-structure.md) lists the files and explains the agent hook.
 
 ## shot
 
@@ -43,6 +58,8 @@ bunx @null3d/cli shot --out shot.png --time 1.5 --size 1280x720 --gpu webgl2
 | --- | --- | --- |
 | `--out <file.png>` | The image to write. The JSON file beside it takes its name, such as `shot.json` | `shot.png` |
 | `--time <seconds>` | The sketch time of the frame, from 0 to 600 | The `hold` option of `createEngine`, or 0 |
+| `--script <file>` | A [timed script](#timed-scripts) that drives the page. Each of its shot steps writes its own image, such as `shot-start.png` | No script: one frame at `--time` |
+| `--replay <file>` | A [recording](#replay-a-recording) that the page replays, and the last frame draws | No recording: a hold at `--time` |
 | `--size <width>x<height>` | The browser window's size in CSS pixels. Each CSS pixel is one pixel of the image | `1280x720` |
 | `--gpu <tier>` | Forces a GPU tier: `webgpu`, `compat` or `webgl2` | The engine picks the tier |
 | `--page <path>` | The page to open, from the dev server's root, with any query of its own | `/` |
@@ -91,6 +108,81 @@ When no frame is drawn, `shot` says why, saves the JSON file and exits with 1. I
 
 A page must start the engine as it loads. A page that waits for a click never starts the hold, so `shot` gives up after `--timeout` seconds.
 
+## Replay a recording
+
+A page that opens with `?record` records each frame's step and the input that the sketch read, from the page's first frame, and shows a **Save recording** button. Its recording replays on another machine with `?replay=<file>`, or from the command line with a file anywhere on the computer:
+
+```sh
+bunx @null3d/cli shot --replay bug.n3dr --out bug.png
+```
+
+The command serves the file to the page, runs the recording's frames in order with their recorded steps and input, and draws the last one. It reads no live input, and `--time` and `--script` cannot be given with it: the recording sets every frame's time. The summary names the frames, the final sketch time and the sketch that recorded them.
+
+A recording stops at 600 seconds of sketch time, and its file says so. A sketch that reads the quality preset or the device's capabilities can draw differently on a replay, because the replay picks this computer's own preset. [Testing your sketch](../guides/testing.md#record-a-session-that-went-wrong) gives the whole workflow.
+
+## Timed scripts
+
+A timed script drives your page through states and draws an image of each one. It holds keys, moves the pointer, and writes properties at exact sketch times. `shot --script` draws the images, and a `test` entry that gives `script` compares them with references.
+
+A script is a text file with one step on each line. Each line starts with the sketch time in seconds. Lines that start with `#` and empty lines are left out.
+
+```text
+# The first state is the page as it starts.
+0 shot start
+# The forward key moves the ship for a while.
+0.2 key KeyW down
+2 key KeyW up
+2 shot forward
+# A press puts a marker where the pointer is, and the ship goes.
+2.2 pointer move 200 90
+2.3 pointer down 200 90
+2.4 pointer up
+2.6 set ship.visible=false
+3 dump ship.position
+3 shot parked
+```
+
+| Step | What it does |
+| --- | --- |
+| `key <code> down`, `key <code> up` | Presses or releases a key, by its `KeyboardEvent.code` name, such as `KeyW`, `Space` or `ArrowLeft` |
+| `pointer move <x> <y>` | Moves the main pointer, in CSS pixels from the canvas's top-left corner |
+| `pointer down [<x> <y>]`, `pointer up [<x> <y>]` | Presses or releases the main button. Without a place, the pointer stays where it is |
+| `pointer wheel <dx> <dy>` | Scrolls the wheel |
+| `set <object>.<property>=<value>` | Writes a property: one to four numbers, joined by commas or spaces, and `true` or `false` for a flag |
+| `dump <object>.<property>`, `dump <object>` | Records a value, or every property of an object, at the step's time |
+| `shot <name>` | Draws an image at the step's time. The name becomes part of the file's name |
+
+The times never fall back. The command names the line that is wrong for a line that is no step, or a time that falls back. It also refuses two shot steps with one name, or at one time.
+
+### Objects in a script
+
+A step names an object by the name that the scene gave it. `#camera` names the active camera. The last dot separates the object from the property. An object's name may have dots of its own: `Cube.001.position` writes the position of the object named `Cube.001`.
+
+A property is one that `animateProperty` takes. Every object has `position` (three numbers), `rotation` (four numbers, as a quaternion), `scale` (three numbers) and `visible` (a flag). A camera adds `fov`, `near`, `far` and, for an orthographic camera, `height`. A light adds `intensity`, `color` (three numbers from 0 to 1), `range`, `decay`, `angle` and `penumbra`.
+
+`dump` reads `position`, `rotation`, `scale` and `visible` for every object, a camera's `fov`, `near`, `far` and `height`, and a light's `color`.
+
+A name that finds no object fails the command and lists the names that are close:
+
+```text
+Step at 1.2 s, set "cr".position, failed: the scene has no object named "cr". Names that are close: "car".
+```
+
+### What shot draws with a script
+
+Each shot step writes its own image and JSON file. `--out tour.png` with the three steps above writes `tour-start.png`, `tour-forward.png` and `tour-parked.png`, each with a JSON file beside it. The command prints each image, each dump and each failed step once:
+
+```text
+Drew start at 0 s, frame 1, on webgl2: 1280 x 720 pixels.
+Saved tour-start.png, and the frame's facts and what the page logged in tour-start.json.
+Drew forward at 2 s, ...
+Dump at 3 s: "ship" position is [0,1,0].
+```
+
+Every image is a hold from time 0 that performs the script up to its step. So an image shows the state at its step, and no step after it. A dump after the last shot still runs, and its line prints. `--time` cannot be given with `--script`.
+
+The engine reads the script only in hold mode. A page that you run with Vite never performs one, and its input stays the user's.
+
 ## test
 
 ```mermaid
@@ -133,7 +225,8 @@ bunx @null3d/cli test --update-references
   "tests": [
     { "name": "start", "sketch": "sketch.ts", "hold": 1.5 },
     { "name": "harbor-at-night", "sketch": "sketch.ts?view=harbor", "hold": 4, "size": "640x360", "tiers": ["webgpu", "webgl2"] },
-    { "name": "home-page", "page": "/", "hold": 1.5 }
+    { "name": "home-page", "page": "/", "hold": 1.5 },
+    { "name": "drive", "sketch": "sketch.ts", "script": "tests/drive.script" }
   ]
 }
 ```
@@ -143,11 +236,14 @@ bunx @null3d/cli test --update-references
 | `name` | The test's name in lowercase words joined by dashes. It names the test's image files | Required |
 | `sketch` | A sketch module to draw, from your project's folder. A query after the path reaches the sketch ([Testing your sketch](../guides/testing.md#frames-that-stay-the-same-on-every-run)) | Give `sketch` or `page` |
 | `page` | A page of your project to open instead, from the dev server's root | Give `sketch` or `page` |
-| `hold` | The sketch time to hold at, in seconds, from 0 to 600 | Required |
+| `hold` | The sketch time to hold at, in seconds, from 0 to 600 | Give `hold` or `script` |
+| `script` | A [timed script](#timed-scripts), from your project's folder. Each of its shot steps draws an image, under the name `<name>-<shot>` | Give `hold` or `script` |
 | `size` | The image's width and height in pixels, such as `640x360` | `320x180` |
 | `tiers` | The GPU tiers to draw on: `webgpu`, `compat` and `webgl2` | All three |
 
 A sketch test draws your sketch module on a page that `test` serves itself. The canvas has the test's size, and the engine has its default options. A page test opens your page in a window of the test's size, as `shot` does. Use a page test when your page passes options to `createEngine` that change the image. When `null3d.json` has a mistake, `test` names each wrong setting and runs no image tests.
+
+A test that gives `script` draws each of the script's shot steps. Each step is its own result, named `<name>-<shot>`: the example above keeps `drive-start.png`, `drive-forward.png` and `drive-parked.png`, with a reference for each. A dump step prints its line, and a step that fails fails the test. Every state is a hold from time 0, so the script's states are the same on every machine.
 
 ### References and results
 
@@ -253,6 +349,36 @@ When a run fails, `bench` says why after the figures of its path, and exits with
 - Vite builds `index.html` alone, unless `build.rolldownOptions.input` in your Vite config lists more pages. For a page outside the build, `bench` says so.
 - The page must start the engine as it loads. A page that waits for a click never starts the engine, so `bench` gives up after `--timeout` seconds.
 
+## check-addon
+
+`check-addon` runs the engine's gates on one add-on package. An add-on's author runs it before a release, and a listing runs it before it publishes the add-on. It prints one line for each gate, and exits with 1 when a gate fails. [Building an add-on](../guides/add-ons.md) gives the rules that the gates check.
+
+```sh
+bunx @null3d/cli check-addon addons/splats
+```
+
+| Gate | What it checks |
+| --- | --- |
+| package | the folder has a manifest with a name and an entry file |
+| public API | the add-on's shipped code imports only `@null3d/engine` and `@null3d/engine/stats` |
+| interface | the entry declares the plugin interface range that it works with, or, for a `@null3d/...` package, pins the exact engine version |
+| shaders | a build compiles the add-on's WGSL for WebGPU and WebGL2 |
+| sizes | each file that the add-on loads after the start holds to its budget |
+| page | the page starts from another origin under the strict policy, and its cost is measured per quality preset |
+| allocation | the bytes per frame that the add-on's own code allocates, on each quality preset |
+
+The shader and size gates build the add-on with the Vite and the null3D plugin that it installs. The page gates take the page of the first test in `null3d.json`, or the page that `--page` names. The page gates are skipped when there is no page.
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--page <path>` | The page to open, from the project's root, such as `/demo.html` | The first test's page in `null3d.json` |
+| `--skip-browser` | Runs no gate that opens a browser | The page gates run |
+| `--skip-cost` | Leaves out the cost gate alone, for a machine whose load would show in the figures. The page and allocation gates still run | The cost gate runs |
+
+Each page gate draws as `bench` does: with Chrome on the computer's GPU, or with Playwright's Chromium on SwiftShader when the CI variable is set. The cost gate measures the production build on each quality preset. It prints the GPU time per frame where the device times it, and the CPU time otherwise.
+
+The allocation gate samples the heaps of the page's sketch and render workers. It names each function by the source file that the build's map gives it. It prints the bytes per frame that the add-on's own code allocated on each preset, and the page's own figure beside it. A source file counts as the add-on's own when the file is in its folder, or in its copy under `node_modules`. The gate fails when it cannot measure the page, such as on a page that runs no engine worker. It also fails when the page ran none of the add-on's own code, because then it measured other code. It never fails on a figure. The gate holds at most 250,000 sampled objects for each worker in each sample, and samples a page that allocates faster less finely. On the software GPU, the page's animation frames outrun the engine's drawn frames, so the figure there is lower than on a real GPU.
+
 ## assets
 
 `assets optimize` makes glTF models smaller and faster to load and draw. It merges equal meshes, materials and textures into one copy. It stores each mesh's vertices as 8-bit and 16-bit integers, in the order that the GPU reads them fastest. It stores each animation clip at the rate of keys that the engine keeps, so the engine copies the keys at load. It encodes each texture as a KTX2 file with every mip level. Each model becomes one `.glb` file in the output folder, with its textures in a `textures` folder beside it. It prints a budget report for each model, which ends with the shader features and permutation bits the model needs. The report also gives the pipeline keys they make and each preset whose texture memory budget the model's textures pass. The shader list goes into the model too, so the engine downloads those shader files as it loads the model.
@@ -331,6 +457,42 @@ bunx @null3d/cli assets normal-from-bump textures/stone_bump.png textures/stone_
 | `--max-texture-size <pixels>` | The largest side of a `.ktx2` texture: a power of two up to 2048 | 2048 |
 
 Both exit with 1 when an image cannot be read. [The asset pipeline](../guides/assets-pipeline.md#pack-occlusion-roughness-and-metalness) says what each makes.
+
+## upgrade
+
+```mermaid
+flowchart LR
+    upgrade["bunx @null3d/cli upgrade"] --> manifest["package.json"]
+    upgrade --> engine["The installed engine's version"]
+    engine --> changes["Every @null3d package<br/>takes that version"]
+    changes --> manifest
+    manifest --> install["bun install"]
+```
+
+An add-on package and the engine ship in step, and each pins the version of the other. A page that loads two versions of null3D stops with [E1432](../errors/E1432.md) before it draws. `upgrade` moves every null3D package that your `package.json` names to one version. The page then loads one version.
+
+```sh
+bunx @null3d/cli upgrade
+bunx @null3d/cli upgrade --to 0.2.0
+bunx @null3d/cli upgrade --dry-run
+```
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--to <version>` | The version that every null3D package takes | The version of the `@null3d/engine` in `node_modules`, or the version of this tool when the project installs no engine |
+| `--dry-run` | Prints the changes and writes nothing | `package.json` is written |
+
+The command reads and writes `package.json` alone. It edits no code, installs nothing and touches no other file. After it writes the manifest, run `bun install` to install the packages.
+
+```text
+@null3d/controls: ^0.1.0 -> 0.2.0 (dependencies)
+@null3d/terrain: 0.1.0 -> 0.2.0 (devDependencies)
+Moved 2 packages to 0.2.0. Run bun install to install them.
+```
+
+A package that names a file, a workspace or a git address stays as it is, because the command writes no such address. A manifest whose packages already share one version writes nothing, and the command says so.
+
+Run it after you upgrade the engine alone, or when a page stops with [E1432](../errors/E1432.md).
 
 ## Where the commands draw
 

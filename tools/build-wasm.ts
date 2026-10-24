@@ -19,6 +19,8 @@
 //                                           engine test page, then report and judge as --check-size does
 //   bun tools/build-wasm.ts --print-base    print the commit that --check-size compares with, and stop
 //     [--base <ref>]
+//   bun tools/build-wasm.ts --cache-key     print one key of every file that --pages-only builds, as
+//                                           key=<hash>, for CI's cache of them, and stop
 //   bun tools/build-wasm.ts --names         keep the core's function names, for a CPU profile;
 //                                           the names add size, so this skips the size checks
 //   bun tools/build-wasm.ts --pages-only    build only what the test pages and the tools need,
@@ -32,8 +34,15 @@
 // them. The single-threaded build runs on pages that are not cross-origin isolated. The
 // wasm-bindgen command-line tool must match the crate version exactly, so the script downloads
 // that release into the build folder and verifies its checksum. The build tools' modules run in
-// Node and Bun, never in a page, so they have no size budget. Every mode that builds first builds the
+// Node and Bun, never in a page, so they have no size budget. Every mode that builds also builds the
 // shader modules when they are missing or out of date, because git does not keep them.
+//
+// The two WebAssembly files, the build tools' modules and the shader modules build at the same
+// time, so that the steps of one build that use a single core (the link, wasm-bindgen and
+// wasm-opt) overlap the compile of another. No Rust build reads a shader module, and a check of
+// prebuilt files builds only the modules, first. Each build prints its lines as they come, with its
+// name in front, and the time of each step. A failed build names itself, and its whole log prints
+// again in one piece at the end.
 //
 // Each file goes in place whole, by a rename from a temporary name (tools/lib/atomic-files.ts). A
 // dev server or a browser run of the same checkout can read the files while a build runs, as the
@@ -51,9 +60,10 @@
 // The size check's base is a build of main, or on main and in the merge queue of the commit before:
 // tools/lib/size-check.ts picks the commit, and the check builds it in a worktree under
 // target/ with that commit's own build script. It keeps the sizes of each base commit it built and
-// reuses them. Every mode that measures writes the sizes to target/size-report.json, so CI can keep
-// a commit's sizes as the base of later checks; a part writes only its own share, and the step that
-// judges the parts writes the whole record.
+// reuses them. A base build whose worktree is gone or damaged, because something removed it while
+// the build ran, makes the tree again and builds once more. Every mode that measures writes the sizes
+// to target/size-report.json, so CI can keep a commit's sizes as the base of later checks; a part
+// writes only its own share, and the step that judges the parts writes the whole record.
 //
 // Almost all of the check's time goes into compressing the engine test page's files at the highest
 // levels, one file after another, and the first-use shader files hold nearly all of their bytes. So
@@ -85,12 +95,17 @@ import { keptCommits } from './hooks/check-trailers';
 import { copyInPlace, replaceFolder } from './lib/atomic-files';
 import {
 	acquireLock,
+	acquirePageBuildLock,
+	type CargoRun,
 	cacheDir,
 	cacheOff,
 	hashFiles,
 	hashOf,
+	type LineSink,
 	pruneCacheLocked,
-	runCargo,
+	runByLine,
+	runCargoAsync,
+	secondsSince,
 	touchCacheEntry,
 	writeFolderAtomic,
 } from './lib/build-cache';
@@ -106,9 +121,18 @@ import {
 	growthSummary,
 } from './lib/size-check';
 import {
+	keepSizeMemo,
+	mergeSizeMemoParts,
+	readSizeMemo,
+	recordedModules,
+	sizeMemoPartFile,
+	writeSizeMemo,
+} from './lib/size-memo';
+import {
 	type Budget,
 	type BuiltFile,
 	budgetProblems,
+	budgetWarnings,
 	COLUMNS,
 	COMBOS_BUDGET,
 	type CORE_BUILDS,
@@ -333,13 +357,110 @@ function run(cmd: string, args: string[], env: Record<string, string> = {}, cwd 
 }
 
 /**
- * Runs cargo through the caches' one helper, which sets the build folder of the call and sccache,
- * and throws when it fails.
+ * The log of one of the builds that run at the same time. It prints each line at once, with the
+ * build's name in front, so a long build shows its progress while it runs. It also keeps every line,
+ * so that the whole log of a failed build can print again in one piece once every build has ended,
+ * and it notes the time that each command took.
  */
-function cargo(args: readonly string[], env: Record<string, string>, targetDir: string): void {
-	const { status, error } = runCargo(root, args, { env, targetDir });
-	if (error) throw error;
-	if (status !== 0) throw new Error(`cargo ${args.join(' ')} failed`);
+export interface BuildLog {
+	/** Adds a line of the build's own; `stderr` sends it to the error output. */
+	say(line: string, stderr?: boolean): void;
+	/** Runs a command in the checkout, adds its output line by line, and throws when it fails. */
+	run(command: string, args: readonly string[]): Promise<void>;
+	/**
+	 * Runs cargo through the caches' one setup, which sets the build folder of the call and sccache,
+	 * adds its output line by line, and throws when it fails.
+	 */
+	cargo(args: readonly string[], env: Record<string, string>, targetDir: string): Promise<void>;
+	/** Every line that the build said and that its commands wrote, in order, without the name. */
+	text(): string;
+}
+
+/** Prints a line to the output, or to the error output. */
+const printLine: LineSink = (line, stderr) => (stderr ? console.error(line) : console.log(line));
+
+/** An empty log for the build `name`, which prints through `write`. */
+export function buildLog(name: string, write: LineSink = printLine): BuildLog {
+	let text = '';
+	const say = (line: string, stderr = false) => {
+		text += `${line}\n`;
+		write(`[${name}] ${line}`, stderr);
+	};
+	/** Runs a command, and says how long it took, or throws when it failed. */
+	const timed = async (
+		label: string,
+		args: readonly string[],
+		start: (onLine: LineSink) => Promise<CargoRun>,
+	): Promise<void> => {
+		const started = performance.now();
+		const { status, error } = await start(say);
+		if (error) throw new Error(`could not run ${label}: ${error.message}`);
+		if (status !== 0) {
+			const ended = status === null ? 'a signal stopped it' : `its exit status was ${status}`;
+			throw new Error(`${label} ${args.join(' ')} failed: ${ended}`);
+		}
+		say(`${label} took ${secondsSince(started)} s`);
+	};
+	return {
+		say,
+		run: (command, args) =>
+			timed(basename(command), args, (onLine) => runByLine(command, args, { cwd: root, onLine })),
+		cargo: (args, env, targetDir) =>
+			timed('cargo', args, (onLine) => runCargoAsync(root, args, { env, targetDir, onLine })),
+		text: () => text,
+	};
+}
+
+/** A build that runs beside the others: the name that its lines and its failure give, and its work. */
+export interface BuildJob {
+	name: string;
+	work: (log: BuildLog) => Promise<void>;
+}
+
+/** The names joined as a sentence lists them: "a", "a and b", "a, b and c". */
+function listed(names: readonly string[]): string {
+	return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : `${names[0]}`;
+}
+
+/**
+ * Runs the builds at the same time, so that the steps of one build that use a single core, such as
+ * wasm-bindgen, wasm-opt and the link, overlap the compile of another. Each build prints its lines as
+ * they come, with its name in front, and a line that says how it ended and after how long. A build
+ * that fails ends its log with its error, and the others still run to their end, so that no command
+ * keeps running after the script has stopped. Then each failed build's whole log prints again in one
+ * piece, to the error output, so that the failure reads without the other builds' lines, and the call
+ * throws, naming each build that failed.
+ */
+export async function runBuilds(
+	builds: readonly BuildJob[],
+	write: LineSink = printLine,
+): Promise<void> {
+	const ends = await Promise.all(
+		builds.map(async ({ name, work }) => {
+			const log = buildLog(name, write);
+			const started = performance.now();
+			let failed = false;
+			try {
+				await work(log);
+			} catch (e) {
+				log.say(`error: ${(e as Error).message}`, true);
+				failed = true;
+			}
+			const seconds = secondsSince(started);
+			write(`[${name}] ${failed ? 'failed after' : 'done in'} ${seconds} s`, failed);
+			return { name, failed, seconds, text: log.text() };
+		}),
+	);
+	const failed = ends.filter((end) => end.failed);
+	for (const { name, seconds, text } of failed)
+		write(
+			`\nthe whole log of the ${name} build, which failed after ${seconds} s:\n${text.trimEnd()}`,
+			true,
+		);
+	const names = failed.map(({ name }) => name);
+	if (names.length === 1) throw new Error(`the ${names[0]} build failed; its whole log is above`);
+	if (names.length > 1)
+		throw new Error(`the ${listed(names)} builds failed; their whole logs are above`);
 }
 
 const git = (args: string[], cwd = root) =>
@@ -360,6 +481,8 @@ export interface BuildOptions {
 	prebuilt: boolean;
 	/** Print the commit that the size check compares with, and build nothing. */
 	printBase: boolean;
+	/** Print one key of every artifact that a `--pages-only` build writes, for CI's cache of them. */
+	cacheKey: boolean;
 	/** Build every file again, instead of copying a file that an earlier build cached. */
 	noCache: boolean;
 	/** Build the engine test page, measure only this part of its files and write their sizes. */
@@ -369,7 +492,7 @@ export interface BuildOptions {
 }
 
 const USAGE =
-	'usage: bun tools/build-wasm.ts [--no-cache] [--check-size [--base <ref>] [--prebuilt [--part <i>/<n> | --judge-parts <dir>]] | --sizes-only | --prebuilt | --names | --pages-only | --print-base [--base <ref>]]';
+	'usage: bun tools/build-wasm.ts [--no-cache] [--check-size [--base <ref>] [--prebuilt [--part <i>/<n> | --judge-parts <dir>]] | --sizes-only | --prebuilt | --names | --pages-only | --print-base [--base <ref>] | --cache-key]';
 
 /** The options that take a value, with what each needs. */
 const VALUE_OPTIONS: Readonly<Record<string, string>> = {
@@ -387,6 +510,7 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		pagesOnly: false,
 		prebuilt: false,
 		printBase: false,
+		cacheKey: false,
 		noCache: false,
 	};
 	for (let i = 0; i < args.length; i++) {
@@ -397,6 +521,7 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		else if (arg === '--pages-only') options.pagesOnly = true;
 		else if (arg === '--prebuilt') options.prebuilt = true;
 		else if (arg === '--print-base') options.printBase = true;
+		else if (arg === '--cache-key') options.cacheKey = true;
 		else if (arg === '--no-cache') options.noCache = true;
 		else if (Object.hasOwn(VALUE_OPTIONS, arg)) {
 			const value = args[i + 1];
@@ -502,7 +627,7 @@ const SIZE_CHECK_LOCK = sizeCheckLock(root);
 export function acquireBuildLock(): () => void {
 	// A build that a size check starts runs inside its parent's lock, and must not wait for it.
 	if (process.env.NULL3D_BUILD_LOCK_HELD === '1') return () => {};
-	return acquireLock(SIZE_CHECK_LOCK);
+	return acquireLock(SIZE_CHECK_LOCK, { freesSlot: true });
 }
 
 /**
@@ -617,6 +742,24 @@ export function toolsKey(shaders: string, assets: string, tools: ToolVersions): 
 }
 
 /**
+ * One key of every artifact that a build of the cores and the tools' modules writes: a hash of each
+ * entry's own key, as the build reads them, so it changes exactly when one of the entries would.
+ * CI keeps the cache folder under it, so a run whose Rust sources, flags and tools did not change
+ * copies every file in place and runs no cargo, wasm-bindgen or wasm-opt.
+ */
+export function artifactsKey(): string {
+	const tools = toolVersions(readFileSync(join(root, 'Cargo.lock'), 'utf8'));
+	const stamp = coreSourcesStamp(root);
+	const [shaders, assets] = toolInputs(root);
+	return digest(
+		[
+			...VARIANTS.map((variant) => variantKey(variant, stamp, false, tools)),
+			toolsKey(shaders, assets, tools),
+		].join('\n'),
+	);
+}
+
+/**
  * The input hashes of the two crates that the build tools' modules come from, in `TOOL_MODULES`
  * order. A crate is named by its folder, which `inputHash` reads, so a name without its `crates/`
  * step would throw here and fail every build before it could cache anything.
@@ -670,16 +813,16 @@ export function artifactFiles(folder: string): string[] {
 
 /**
  * Stores the files of `sources`, each under its name, at `base` under `key`, with the record that
- * checks them. A cache that cannot be written is not an error: the build's output is already in
- * place, and the next build writes the entry again.
+ * checks them. Returns false when the cache cannot be written, which is not an error: the build's
+ * output is already in place, and the next build writes the entry again.
  */
 export function writeArtifacts(
 	base: string,
 	key: string,
 	sources: readonly (readonly [string, string])[],
-): void {
+): boolean {
 	const folder = join(base, key);
-	const written = writeFolderAtomic(folder, (staging) => {
+	return writeFolderAtomic(folder, (staging) => {
 		const record: Record<string, string> = {};
 		for (const [name, source] of sources) {
 			const file = join(staging, name);
@@ -688,29 +831,40 @@ export function writeArtifacts(
 		}
 		writeFileSync(join(staging, ARTIFACT_RECORD), `${JSON.stringify(record, null, '\t')}\n`);
 	});
-	// A cache that cannot be written is not an error: the build's output is already in place.
-	if (!written) console.warn('could not write the build cache; the build continues');
+}
+
+/** Stores a build's files in the artifact cache under `key`, then prunes the cache. */
+function storeArtifacts(
+	log: BuildLog,
+	key: string,
+	sources: readonly (readonly [string, string])[],
+): void {
+	if (!writeArtifacts(ARTIFACT_CACHE_BASE, key, sources))
+		log.say('warning: could not write the build cache; the build continues', true);
+	pruneCacheLocked(ARTIFACT_CACHE_BASE);
 }
 
 /**
  * Builds a variant's WebAssembly file and its generated module, which holds `stamp`, the stamp of
  * the Rust sources that the build read. It copies the files of an earlier build of the same inputs
- * from the cache, when there is one, and skips cargo, wasm-bindgen and wasm-opt.
+ * from the cache, when there is one, and skips cargo, wasm-bindgen and wasm-opt. Its lines go to
+ * `log`, which names the build, because it runs at the same time as the other builds (see runBuilds).
  */
-function buildVariant(
+async function buildVariant(
+	log: BuildLog,
 	variant: Variant,
-	bindgen: string,
+	bindgen: () => Promise<string>,
 	keepNames: boolean,
 	stamp: string,
 	tools: ToolVersions,
 	noCache: boolean,
-): void {
+): Promise<void> {
 	const targetDir = buildFolder(variant);
 	const dest = join(root, OUT_DIR, variant.name);
 	const key = variantKey(variant, stamp, keepNames, tools);
 	const cached = noCache ? null : readArtifacts(ARTIFACT_CACHE_BASE, key, CORE_ARTIFACTS);
 	if (cached) {
-		console.log(`\nthe ${variant.name} WebAssembly file is unchanged, copying it from the cache`);
+		log.say(`the ${variant.name} WebAssembly file is unchanged, copying it from the cache`);
 		// The entry is in use now, so pruning keeps it while this build copies from it.
 		touchCacheEntry(cached);
 		withInstallLock(variant.name, () => {
@@ -718,8 +872,8 @@ function buildVariant(
 		});
 		return;
 	}
-	console.log(`\nbuilding the ${variant.name} WebAssembly file`);
-	cargo(
+	log.say(`building the ${variant.name} WebAssembly file`);
+	await log.cargo(
 		['build', '-p', CRATE, '--release', '--target', 'wasm32-unknown-unknown', ...variant.cargoArgs],
 		{ RUSTFLAGS: variant.rustflags },
 		targetDir,
@@ -729,12 +883,20 @@ function buildVariant(
 	const staged = variantStagingFolder(variant);
 	rmSync(staged, { recursive: true, force: true });
 	const linked = `${targetDir}/wasm32-unknown-unknown/release/${CRATE.replace(/-/g, '_')}.wasm`;
-	run(bindgen, ['--target', 'web', '--out-dir', staged, '--out-name', 'null3d', linked]);
+	await log.run(await bindgen(), [
+		'--target',
+		'web',
+		'--out-dir',
+		staged,
+		'--out-name',
+		'null3d',
+		linked,
+	]);
 	const glue = join(staged, 'null3d.js');
 	const text = readFileSync(glue, 'utf8');
 	writeFileSync(glue, stampGlue(variant.releasesInstance ? addReleaseInstance(text) : text, stamp));
 	const wasm = `${staged}/null3d_bg.wasm`;
-	run(join(root, 'node_modules/.bin/wasm-opt'), [
+	await log.run(join(root, 'node_modules/.bin/wasm-opt'), [
 		'-O3',
 		// wasm-opt drops the name section unless it keeps debug information.
 		...(keepNames ? ['--debuginfo'] : []),
@@ -753,12 +915,11 @@ function buildVariant(
 	// sources match the key. The glue carries the stamp of the sources that the build read, so such a
 	// core fails with E1402 on the next page load and asks for a build.
 	if (!noCache) {
-		if (coreSourcesStamp(root) === stamp) {
-			writeArtifacts(ARTIFACT_CACHE_BASE, key, stagedFiles);
-			pruneCacheLocked(ARTIFACT_CACHE_BASE);
-		} else
-			console.warn(
-				'the core sources changed while this build ran, so the cache stores nothing for it; build again',
+		if (coreSourcesStamp(root) === stamp) storeArtifacts(log, key, stagedFiles);
+		else
+			log.say(
+				'warning: the core sources changed while this build ran, so the cache stores nothing for it; build again',
+				true,
 			);
 	}
 	// Each build stages in a folder of its own, so the put-in-place step is the only place two builds
@@ -772,16 +933,20 @@ function buildVariant(
  * no JavaScript glue. The build drops the function names and skips wasm-opt, which on the shader
  * compiler takes longer than the whole build, saves almost nothing after Brotli and makes compiles
  * no faster. It copies the modules of an earlier build of the same inputs from the cache, when
- * there is one.
+ * there is one. Its lines go to `log`, as buildVariant's do.
  */
-function buildToolModules(tools: ToolVersions, noCache: boolean): void {
+async function buildToolModules(
+	log: BuildLog,
+	tools: ToolVersions,
+	noCache: boolean,
+): Promise<void> {
 	const names = TOOL_MODULES.map(({ crate }) => `${crate}.wasm`);
 	const [shaders, assets] = toolInputs(root);
 	const key = toolsKey(shaders, assets, tools);
 	const cached = noCache ? null : readArtifacts(ARTIFACT_CACHE_BASE, key, names);
 	if (cached) {
-		console.log(
-			"\nthe shader compiler and the asset tool's formats are unchanged, copying them from the cache",
+		log.say(
+			"the shader compiler and the asset tool's formats are unchanged, copying them from the cache",
 		);
 		// The entry is in use now, so pruning keeps it while this build copies from it.
 		touchCacheEntry(cached);
@@ -791,8 +956,8 @@ function buildToolModules(tools: ToolVersions, noCache: boolean): void {
 		return;
 	}
 	const targetDir = `${CARGO_TARGET_BASE}/wasm-shaders`;
-	console.log("\nbuilding the shader compiler and the asset tool's formats");
-	cargo(
+	log.say("building the shader compiler and the asset tool's formats");
+	await log.cargo(
 		[
 			'build',
 			...TOOL_MODULES.flatMap(({ crate }) => ['-p', crate]),
@@ -813,16 +978,16 @@ function buildToolModules(tools: ToolVersions, noCache: boolean): void {
 	// modules are not what the key names (see buildVariant, which takes the same care).
 	if (!noCache) {
 		const [nowShaders, nowAssets] = toolInputs(root);
-		if (nowShaders === shaders && nowAssets === assets) {
-			writeArtifacts(
-				ARTIFACT_CACHE_BASE,
+		if (nowShaders === shaders && nowAssets === assets)
+			storeArtifacts(
+				log,
 				key,
 				TOOL_MODULES.map(({ crate, path }) => [`${crate}.wasm`, path] as const),
 			);
-			pruneCacheLocked(ARTIFACT_CACHE_BASE);
-		} else
-			console.warn(
-				"the tools' crate sources changed while this build ran, so the cache stores nothing for it; build again",
+		else
+			log.say(
+				"warning: the tools' crate sources changed while this build ran, so the cache stores nothing for it; build again",
+				true,
 			);
 	}
 }
@@ -837,16 +1002,25 @@ function buildToolModules(tools: ToolVersions, noCache: boolean): void {
  */
 function buildEngineTestPage(): BuiltFile[] {
 	console.log('\nbuilding the engine test page for production');
-	const args = ['vite', 'build', '--sourcemap', 'hidden', '--outDir', JS_BUILD_DIR];
-	// The report names every file that the build writes, so a build with many first-use shader
-	// files prints more than a capture of a megabyte holds; a smaller buffer kills the build.
-	const build = spawnSync('bunx', args, {
-		cwd: root,
-		encoding: 'utf8',
-		maxBuffer: 64 * 1024 * 1024,
-	});
-	if (build.status !== 0)
-		throw new Error(`the production build failed:\n${build.stdout}\n${build.stderr}`);
+	// The build folder is outside the project, so the build does not empty it. A file of an earlier
+	// build would then read as a part of this one, and a chunk that this build writes to another
+	// name leaves the earlier copy behind.
+	rmSync(join(root, JS_BUILD_DIR), { recursive: true, force: true });
+	const release = acquirePageBuildLock();
+	try {
+		const args = ['vite', 'build', '--sourcemap', 'hidden', '--outDir', JS_BUILD_DIR];
+		// The report names every file that the build writes, so a build with many first-use shader
+		// files prints more than a capture of a megabyte holds; a smaller buffer kills the build.
+		const build = spawnSync('bunx', args, {
+			cwd: root,
+			encoding: 'utf8',
+			maxBuffer: 64 * 1024 * 1024,
+		});
+		if (build.status !== 0)
+			throw new Error(`the production build failed:\n${build.stdout}\n${build.stderr}`);
+	} finally {
+		release();
+	}
 	const assets = join(root, JS_BUILD_DIR, 'assets');
 	return readdirSync(assets).flatMap((file) => {
 		if (!file.endsWith('.js')) return [];
@@ -907,18 +1081,42 @@ async function writeSizePart(spec: PartSpec): Promise<void> {
 	const started = performance.now();
 	let done = 0;
 	let tenths = 0;
-	const record = await measureSizePart(files, spec, ({ weight }) => {
-		done += weight;
-		const reached = total > 0 ? Math.floor((done / total) * 10) : 10;
-		if (reached <= tenths) return;
-		tenths = reached;
-		const seconds = Math.round((performance.now() - started) / 1000);
-		console.log(`  ${tenths * 10}% of the part's bytes measured, after ${seconds} s`);
-	});
+	const memo = readSizeMemo();
+	const record = await measureSizePart(
+		files,
+		spec,
+		({ weight }) => {
+			done += weight;
+			const reached = total > 0 ? Math.floor((done / total) * 10) : 10;
+			if (reached <= tenths) return;
+			tenths = reached;
+			const seconds = secondsSince(started);
+			console.log(`  ${tenths * 10}% of the part's bytes measured, after ${seconds} s`);
+		},
+		memo,
+	);
+	printMemoUse(share.size, memo.compressed);
 	const path = join(root, SIZE_PARTS_DIR, sizePartFile(spec));
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, `${JSON.stringify(record, null, '\t')}\n`);
+	writeSizeMemo(join(root, SIZE_PARTS_DIR, sizeMemoPartFile(spec)), memo);
 	console.log(`\nwrote ${relative(root, path)}`);
+}
+
+/** Prints how many of a measuring's files it compressed, and how many the memo held. */
+function printMemoUse(files: number, compressed: number): void {
+	console.log(
+		`compressed ${compressed} of ${files} files; the size memo held the sizes of the rest`,
+	);
+}
+
+/** The sizes of `files`, through the memo, which then holds the entries of these files alone. */
+async function measureWithMemo(files: readonly ReportFile[]): Promise<Map<string, SizeEntry>> {
+	const memo = readSizeMemo();
+	const sizes = await measureFiles(files, undefined, memo);
+	printMemoUse(files.length, memo.compressed);
+	keepSizeMemo(memo, recordedModules(root));
+	return sizes;
 }
 
 /** The sizes of the engine test page's files, merged from every part's file in `dir`. */
@@ -997,15 +1195,40 @@ function resolveBase(choice: BaseChoice): Base {
 	return { sha, subject: git(['log', '-1', '--format=%s', sha]), why: choice.why };
 }
 
+/**
+ * Why the base worktree is locked. `git worktree list` shows it, and `git worktree remove` and
+ * `git worktree prune` refuse a locked worktree, so a tidy-up of the clone's worktrees leaves it.
+ * On 24 October 2026 a sweep of worktrees whose commit had landed removed a base worktree while its
+ * page build ran, and the check failed with ENOENT on a file that the build had just written.
+ */
+const BASE_TREE_LOCK =
+	'the size check of tools/build-wasm.ts builds its base commit here, and reuses this worktree';
+
 /** Puts the base worktree at the commit, and makes it when it is missing or broken. True when new. */
 function checkoutBaseTree(tree: string, sha: string): boolean {
 	if (existsSync(join(tree, '.git'))) {
 		const args = ['checkout', '--force', '--quiet', '--detach', sha];
-		if (spawnSync('git', args, { cwd: tree }).status === 0) return false;
+		if (spawnSync('git', args, { cwd: tree }).status === 0) {
+			// A worktree from before the lock gets it now; a locked one refuses a second lock.
+			spawnSync('git', ['worktree', 'lock', '--reason', BASE_TREE_LOCK, tree], { cwd: root });
+			return false;
+		}
 	}
 	rmSync(tree, { recursive: true, force: true });
-	// --force also takes over the path when git still lists a worktree there that was deleted.
-	git(['worktree', 'add', '--force', '--detach', tree, sha]);
+	// --force twice also takes over the path when git still lists a worktree there that was deleted,
+	// locked or not.
+	git([
+		'worktree',
+		'add',
+		'--force',
+		'--force',
+		'--lock',
+		'--reason',
+		BASE_TREE_LOCK,
+		'--detach',
+		tree,
+		sha,
+	]);
 	return true;
 }
 
@@ -1029,9 +1252,44 @@ function seedBuildFolders(tree: string): void {
 }
 
 /**
+ * True when the base worktree cannot build as it stands: its checkout is gone, or a tracked file is
+ * missing or changed. A tidy-up of worktrees, or a clean of the checkout's target folder, removes
+ * the tree wherever it stands, and a removal that stops part way leaves a tree without its files.
+ */
+export function baseTreeDamaged(tree: string): boolean {
+	if (!existsSync(join(tree, '.git'))) return true;
+	const status = spawnSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+		cwd: tree,
+		encoding: 'utf8',
+	});
+	return status.status !== 0 || status.stdout.trim() !== '';
+}
+
+/** Builds the base commit in the base worktree and keeps its sizes in `kept`. */
+function buildBase(sha: string, kept: string, tree: string): void {
+	console.log(`\nbuilding the base, ${sha.slice(0, 8)}, in ${BASE_TREE}`);
+	if (checkoutBaseTree(tree, sha)) seedBuildFolders(tree);
+	run('bun', ['install', '--frozen-lockfile'], { HUSKY: '0' }, tree);
+	const committed = existsSync(join(tree, COMMITTED_RECORD));
+	// The base builds into the worktree's own target, seeded from this checkout, so it never
+	// writes this checkout's build folder or the shared cache's staging folder.
+	run(
+		'bun',
+		['tools/build-wasm.ts', committed ? '--update-size' : '--sizes-only'],
+		// The base runs inside this process's lock, so it must not wait for that same lock.
+		{ NULL3D_CARGO_TARGET: 'local', NULL3D_BUILD_LOCK_HELD: '1' },
+		tree,
+	);
+	mkdirSync(dirname(kept), { recursive: true });
+	copyFileSync(join(tree, committed ? COMMITTED_RECORD : SIZE_RECORD), kept);
+}
+
+/**
  * The base commit's sizes. The check keeps them by commit and reuses them. Otherwise it builds the
  * commit in the base worktree with the commit's own build script, so the base has that commit's
- * flags, toolchain and list of parts.
+ * flags, toolchain and list of parts. A build whose worktree is gone or damaged, because something
+ * removed it while the build ran, makes the tree again and builds once more. A failure beside a
+ * worktree whose checkout is whole is thrown as it comes.
  */
 function baseSizes(sha: string): Record<string, Pick<SizeEntry, 'brotli'>> {
 	const kept = join(root, BASE_DIR, `${sha}.json`);
@@ -1044,25 +1302,21 @@ function baseSizes(sha: string): Record<string, Pick<SizeEntry, 'brotli'>> {
 	const group = process.env.GITHUB_ACTIONS === 'true';
 	if (group) console.log(`::group::the base build of ${sha.slice(0, 8)}`);
 	try {
-		console.log(`\nbuilding the base, ${sha.slice(0, 8)}, in ${BASE_TREE}`);
-		if (checkoutBaseTree(tree, sha)) seedBuildFolders(tree);
-		run('bun', ['install', '--frozen-lockfile'], { HUSKY: '0' }, tree);
-		const committed = existsSync(join(tree, COMMITTED_RECORD));
-		// The base builds into the worktree's own target, seeded from this checkout, so it never
-		// writes this checkout's build folder or the shared cache's staging folder.
-		run(
-			'bun',
-			['tools/build-wasm.ts', committed ? '--update-size' : '--sizes-only'],
-			// The base runs inside this process's lock, so it must not wait for that same lock.
-			{ NULL3D_CARGO_TARGET: 'local', NULL3D_BUILD_LOCK_HELD: '1' },
-			tree,
-		);
-		mkdirSync(dirname(kept), { recursive: true });
-		copyFileSync(join(tree, committed ? COMMITTED_RECORD : SIZE_RECORD), kept);
+		for (let attempt = 1; ; attempt++) {
+			try {
+				buildBase(sha, kept, tree);
+				break;
+			} catch (error) {
+				if (attempt > 1 || !baseTreeDamaged(tree)) throw error;
+				console.warn(
+					`\nthe base worktree is gone or damaged, so the check makes it again and builds the base once more`,
+				);
+			}
+		}
 	} finally {
 		if (group) console.log('::endgroup::');
 	}
-	console.log(`built the base in ${Math.round((performance.now() - started) / 1000)} s`);
+	console.log(`built the base in ${secondsSince(started)} s`);
 	return JSON.parse(readFileSync(kept, 'utf8'));
 }
 
@@ -1104,6 +1358,10 @@ async function main(): Promise<void> {
 		console.log(resolveBase(chooseBase(options.base, process.env)).sha);
 		return;
 	}
+	if (options.cacheKey) {
+		console.log(`key=${artifactsKey()}`);
+		return;
+	}
 	// Only a size check takes the lock: it also builds the base commit with that commit's own build
 	// script, which may stage into the shared target folder. Ordinary builds overlap, because each one
 	// stages in a folder of its own and Cargo locks the target folder that builds share. The lock is
@@ -1118,18 +1376,39 @@ async function main(): Promise<void> {
 			});
 	}
 	// The step that judges the parts builds no page, so it reads no shader module.
-	if (options.judgeParts === undefined) ensureShaderModules(root);
-	if (options.prebuilt) checkPrebuilt();
-	else {
+	const modules = options.judgeParts === undefined;
+	if (options.prebuilt) {
+		if (modules) ensureShaderModules(root);
+		checkPrebuilt();
+	} else {
 		const cargoLock = readFileSync(join(root, 'Cargo.lock'), 'utf8');
-		const bindgen = await wasmBindgen(lockedVersion(cargoLock, 'wasm-bindgen'));
+		// wasm-bindgen is fetched only when a core misses the cache, so a run that copies every file
+		// in place downloads nothing.
+		let bindgenPath: Promise<string> | undefined;
+		const bindgen = () => (bindgenPath ??= wasmBindgen(lockedVersion(cargoLock, 'wasm-bindgen')));
 		// The stamp of the sources as the build starts, which the builds then read.
 		const stamp = coreSourcesStamp(root);
 		const tools = toolVersions(cargoLock);
 		const noCache = options.noCache || cacheOff();
-		for (const variant of VARIANTS)
-			buildVariant(variant, bindgen, options.keepNames, stamp, tools, noCache);
-		if (!options.sizesOnly) buildToolModules(tools, noCache);
+		// Each build has its own Rust build folder, staging folder and install lock, so none waits for
+		// another. The size report reads their files only after every build has ended.
+		const builds: BuildJob[] = VARIANTS.map((variant) => ({
+			name: variant.name,
+			work: (log) => buildVariant(log, variant, bindgen, options.keepNames, stamp, tools, noCache),
+		}));
+		if (!options.sizesOnly)
+			builds.push({ name: 'tools', work: (log) => buildToolModules(log, tools, noCache) });
+		// No Rust build reads a shader module, so the modules build beside them, in a process of their
+		// own, whose memory and cores the builds share.
+		if (modules)
+			builds.push({
+				name: 'shaders',
+				work: (log) => log.run(process.execPath, [join(root, 'tools/shaders.ts')]),
+			});
+		console.log(
+			`\nbuilding ${listed(builds.map(({ name }) => name))} at the same time, each line headed by its build's name`,
+		);
+		await runBuilds(builds);
 	}
 	if (options.pagesOnly) return;
 	if (options.part) return writeSizePart(options.part);
@@ -1138,8 +1417,16 @@ async function main(): Promise<void> {
 	// a build here otherwise: the same sizes in the same order either way.
 	const page =
 		options.judgeParts === undefined
-			? await measureFiles(engineTestPageFiles())
+			? await measureWithMemo(engineTestPageFiles())
 			: readSizeParts(options.judgeParts);
+	if (options.judgeParts !== undefined) {
+		// The parts' entries are those of every file of this build, so they make the next memo.
+		const entries = mergeSizeMemoParts(resolve(root, options.judgeParts));
+		// Parts can each compress the same bytes, so their count can pass the count of distinct files.
+		console.log(
+			`the size parts compressed ${entries.compressed} files; the next size memo holds the sizes of ${entries.met.size} distinct files${keepSizeMemo(entries, recordedModules(root)) ? '' : ', and is not kept, since it would not change'}`,
+		);
+	}
 	const sizes: Record<string, SizeEntry> = {};
 	for (const variant of VARIANTS)
 		for (const file of CORE_FILES)
@@ -1206,6 +1493,7 @@ async function main(): Promise<void> {
 		.map(([file]) => `${file} is over its 600 KB Brotli budget`);
 	problems.push(...budgetProblems(parts));
 	const growth = options.checkSize ? checkGrowth(sizes, options.base) : [];
+	for (const warning of budgetWarnings(parts)) console.warn(`warning: ${warning}`);
 	for (const p of [...problems, ...growth]) console.error(`error: ${p}`);
 	if (growth.length > 0) {
 		console.error('');

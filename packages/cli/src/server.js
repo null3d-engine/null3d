@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
+import { shaderFiles } from './shader-files.js';
 
 /** @import { Logger, PluginOption } from 'vite' */
 
@@ -18,6 +19,8 @@ import { stripVTControlCharacters } from 'node:util';
  * @property {string[]} errors The errors that the server logged, oldest first.
  * @property {(path: string) => boolean} hasFile Whether the server serves a file at a path from
  *   its root, from the project's folder or from its folder of public files.
+ * @property {string} [buildDir] The folder of a production build, which this server serves; a dev
+ *   server has none.
  * @property {() => Promise<void>} close
  */
 
@@ -107,11 +110,17 @@ export async function startDevServer({ plugins = [] } = {}) {
 /**
  * Builds the project in the current folder for production, as `vite build` would with its own
  * config, into a new temporary folder, and serves the build as `vite preview` would. The project's
- * own build folder stays as it was, and closing the server deletes the temporary one.
+ * own build folder stays as it was, and closing the server deletes the temporary one. `sourcemap`
+ * writes a map beside each built file, for the tools that name a frame by its source; the maps carry
+ * no address in the built files, so the page loads nothing more, and no source's text, which a map
+ * would otherwise copy. With `linkedShaders`,
+ * the engine's shader builds stay as the files that the shared shader build wrote, linked beside
+ * the script that names them, so the page's build passes no shader bytes through the bundler.
  *
+ * @param {{ sourcemap?: boolean, linkedShaders?: boolean }} [options]
  * @returns {Promise<DevServer>}
  */
-export async function startBuildServer() {
+export async function startBuildServer({ sourcemap = false, linkedShaders = false } = {}) {
 	const vite = await projectVite(process.cwd());
 	/** @type {string[]} */
 	const errors = [];
@@ -127,8 +136,16 @@ export async function startBuildServer() {
 		// which a production build reads only when it asks for them.
 		await vite.build({
 			...shared,
+			plugins: linkedShaders ? [shaderFiles()] : [],
 			define: { __NULL3D_URL_SWITCHES__: 'true' },
-			build: { outDir, emptyOutDir: true },
+			build: {
+				outDir,
+				emptyOutDir: true,
+				...(sourcemap && {
+					sourcemap: 'hidden',
+					rollupOptions: { output: { sourcemapExcludeSources: true } },
+				}),
+			},
 		});
 	} catch (error) {
 		remove();
@@ -149,6 +166,7 @@ export async function startBuildServer() {
 		return {
 			url,
 			errors,
+			buildDir: outDir,
 			hasFile: (path) => existsSync(join(outDir, path)),
 			async close() {
 				await preview.close();

@@ -221,6 +221,16 @@ enum Source {
     Image { id: u32, count: u32, flags: u32 },
     /// Tightly packed rows, layer after layer, in the store's data slot `slot`.
     Data { slot: u32 },
+    /// Tightly packed rows of a rectangle of one layer's level 0, in the store's data slot `slot`.
+    /// The rectangle's bottom row comes first. A texture takes a region only once its texels are
+    /// on the GPU, because a rectangle leaves the rest of them as they were.
+    Region {
+        slot: u32,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+    },
     /// Generator `id`, which the thread that draws holds under an image id and runs on the GPU in
     /// one command. The store keeps it until the texture gets other texels or is destroyed, so a
     /// new GPU device runs it again.
@@ -234,7 +244,7 @@ impl Source {
         match self {
             Self::Image { id, count, .. } => Some(id + count - 1),
             Self::Generated { id, .. } => Some(id),
-            Self::Data { .. } => None,
+            Self::Data { .. } | Self::Region { .. } => None,
         }
     }
 }
@@ -293,6 +303,9 @@ struct TextureSlot {
     owner: Handle,
     /// The last frame that a view saw an object that maps the texture, from the budget's estimate.
     seen: u32,
+    /// The array's generation in which the texture's texels last reached the GPU, or `None` before
+    /// the first upload. A new generation replaces the GPU texture, so the texels must arrive again.
+    shown: Option<u32>,
     /// The largest levels that no view needs, from the budget's estimate: up to
     /// [`budget::MAX_DROPPED_LEVELS`].
     unneeded: u32,
@@ -319,6 +332,7 @@ impl TextureSlot {
             incoming: Handle::NONE,
             owner: Handle::NONE,
             seen: 0,
+            shown: None,
             unneeded: 0,
             pixels: 0.0,
         }
@@ -328,6 +342,13 @@ impl TextureSlot {
     fn full_levels(&self) -> u32 {
         self.levels + self.dropped
     }
+    /// True for a texture whose texels reached the GPU in the array's current generation, so its
+    /// GPU texture holds them even while newer texels wait to upload: a grading table that a later
+    /// bake replaces keeps the picture graded until the new texels land.
+    fn shown_now(&self, generation: u32) -> bool {
+        self.shown == Some(generation)
+    }
+
     /// The mip levels of the texture at `width` x `height`: a whole chain that the GPU makes, or
     /// the levels that the texels bring, at most the chain of that size.
     fn mips(&self, width: u32, height: u32) -> u32 {
@@ -641,12 +662,22 @@ struct MapSetKey {
     /// True when the fragment stage reads the displacement map too, for parallax: the group then
     /// has a layout of its own.
     parallax: bool,
+    /// True for a material that reads the scene's depth. Its group leaves out the last slot and
+    /// the displacement map, which no custom material reads, so the copy of the depth fits the
+    /// fragment stage beside the maps.
+    scene: bool,
 }
 
 impl MapSetKey {
-    /// Every array and sampler that the group binds.
+    /// Every slot's array and sampler that the group binds, and the displacement map's after them.
     fn pairs(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
-        self.slots.iter().copied().chain([self.height])
+        let slots = if self.scene {
+            &self.slots[..MAP_SET_SLOTS - 1]
+        } else {
+            &self.slots[..]
+        };
+        let height = if self.scene { None } else { Some(self.height) };
+        slots.iter().copied().chain(height)
     }
 }
 
@@ -1070,12 +1101,14 @@ impl TextureStore {
     /// The GPU id of the bind group that samples a material's maps, one per map slot: each live
     /// texture's array with its sampler, and a white texel where a slot has none. Materials whose
     /// maps share arrays and samplers share the group. A texture that moves to another array needs
-    /// its material's group again.
+    /// its material's group again. A material that reads the scene's depth takes a group with the
+    /// last slot and the displacement map left out, under a layout of its own.
     pub fn map_set_group(
         &mut self,
         maps: &[Handle; MAP_SET_SLOTS],
         height: Handle,
         parallax: bool,
+        scene: bool,
     ) -> Result<u32, TextureError> {
         let empty = self.placeholder()?;
         let mut slots = [empty; MAP_SET_SLOTS];
@@ -1089,6 +1122,7 @@ impl TextureStore {
             slots,
             height,
             parallax,
+            scene,
         };
         Ok(self.ids.first_group + self.group_of_key(GroupKey::Maps(key)))
     }
@@ -1136,6 +1170,7 @@ impl TextureStore {
             slots,
             height: self.map_pair(height).unwrap_or(empty),
             parallax: false,
+            scene: false,
         };
         let group = self.ids.first_group + self.group_of_key(GroupKey::Maps(key));
         Ok((group, slot_units))
@@ -1194,6 +1229,7 @@ impl TextureStore {
                 count: 1,
                 flags,
             },
+            true,
         )?;
         Ok((id, moved))
     }
@@ -1222,6 +1258,7 @@ impl TextureStore {
                 count: view::CUBE_FACES,
                 flags,
             },
+            true,
         )?;
         Ok(id)
     }
@@ -1239,7 +1276,7 @@ impl TextureStore {
         }
         self.last_image = next_frame(self.last_image);
         let id = self.last_image;
-        self.queue_source(texture, Source::Generated { id })?;
+        self.queue_source(texture, Source::Generated { id }, true)?;
         Ok(id)
     }
 
@@ -1280,8 +1317,76 @@ impl TextureStore {
             }
         };
         self.data[slot] = data;
-        self.queue_source(texture, Source::Data { slot: slot as u32 })?;
+        self.queue_source(texture, Source::Data { slot: slot as u32 }, true)?;
         Ok((&mut self.data[slot], moved))
+    }
+
+    /// Gives a rectangle of a texture new texels: `width` x `height` texels at (`x`, `y`) in its
+    /// first layer's level 0, and returns the words that the caller fills with them, tightly
+    /// packed rows with the rectangle's bottom row first. The texture keeps every texel outside
+    /// the rectangle. Returns `None` while the texture still waits for all its texels, because a
+    /// rectangle cannot fill the rest. Throws `Unsupported` for a rectangle outside the texture,
+    /// an empty one, or a texture that shares no array of one-layer 8-bit texels.
+    pub fn set_region(
+        &mut self,
+        texture: Handle,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<&mut [u32]>, TextureError> {
+        let slot = *self.slot(texture)?;
+        let key = self.arrays[slot.array as usize].key;
+        if key.kind != Kind::Layers
+            || key.depth != 1
+            || !matches!(key.format, format::RGBA8_UNORM | format::RGBA8_UNORM_SRGB)
+        {
+            return Err(TextureError::Unsupported);
+        }
+        if width == 0
+            || height == 0
+            || x > key.width
+            || y > key.height
+            || width > key.width - x
+            || height > key.height - y
+            || slot.owner != Handle::NONE
+        {
+            return Err(TextureError::Unsupported);
+        }
+        if !matches!(slot.state, State::Uploaded { .. }) {
+            return Ok(None);
+        }
+        let bytes = u64::from(width) * u64::from(height) * 4;
+        let words = usize::try_from(bytes.div_ceil(4)).map_err(|_| out_of_memory(bytes))?;
+        let mut data = Vec::new();
+        data.try_reserve_exact(words)
+            .map_err(|_| out_of_memory(bytes))?;
+        data.resize(words, 0);
+        let slot = match self.data.iter().position(|d| d.capacity() == 0) {
+            Some(slot) => slot,
+            None => {
+                self.data.push(Vec::new());
+                self.data.len() - 1
+            }
+        };
+        self.data[slot] = data;
+        self.queue_source(
+            texture,
+            Source::Region {
+                slot: slot as u32,
+                x,
+                y,
+                width,
+                height,
+            },
+            false,
+        )?;
+        Ok(Some(&mut self.data[slot]))
+    }
+
+    /// True while a texture waits for texels to upload.
+    pub fn pending(&self, texture: Handle) -> Result<bool, TextureError> {
+        Ok(matches!(self.slot(texture)?.state, State::Queued { .. }))
     }
 
     /// Readies a texture for new texels of `width` x `height`, and returns true when it moved to an
@@ -1338,8 +1443,14 @@ impl TextureStore {
     }
 
     /// Makes `source` the texels that a texture uploads next, and releases texels that were
-    /// waiting.
-    fn queue_source(&mut self, texture: Handle, source: Source) -> Result<(), TextureError> {
+    /// waiting. `relayer` says that the new texels may change the layer that materials sample or
+    /// whether they sample one, as a new size does.
+    fn queue_source(
+        &mut self,
+        texture: Handle,
+        source: Source,
+        relayer: bool,
+    ) -> Result<(), TextureError> {
         let slot = self.slot_mut(texture)?;
         let old = slot.state;
         slot.state = State::Queued { source, rows: 0 };
@@ -1349,7 +1460,9 @@ impl TextureStore {
                 if self.holds_after_upload(source) {
                     self.release_unused(source);
                 }
-                self.layers_changed = true;
+                if relayer {
+                    self.layers_changed = true;
+                }
                 self.queue.push(texture);
             }
             State::Empty => self.queue.push(texture),
@@ -1401,7 +1514,7 @@ impl TextureStore {
             source,
             after: match source {
                 Source::Image { .. } | Source::Generated { .. } => 0,
-                Source::Data { .. } => self.recorded,
+                Source::Data { .. } | Source::Region { .. } => self.recorded,
             },
             texture: Handle::NONE,
         });
@@ -1468,6 +1581,16 @@ impl TextureStore {
                 [key.width, key.height, key.depth],
             )
         })
+    }
+
+    /// The GPU id of a 3D texture whose texels reached the GPU in its array's current generation,
+    /// even while newer texels wait to upload. A picture that reads a table this way keeps the old
+    /// table until the new one lands, instead of losing the table for a frame or two.
+    pub fn held_volume(&self, texture: Handle) -> Option<u32> {
+        let slot = self.slot(texture).ok()?;
+        let array = &self.arrays[slot.array as usize];
+        (array.key.kind == Kind::Volume && slot.shown_now(array.generation))
+            .then(|| self.array_id(slot.array))
     }
 
     /// The GPU id of a cube texture and its mip levels, once its texels are on the GPU.
@@ -1889,7 +2012,9 @@ impl TextureStore {
                     }
                 }
                 Source::Generated { id, .. } => list.push(Op::ReleaseImage, &[id])?,
-                Source::Data { slot } => self.data[slot as usize] = Vec::new(),
+                Source::Data { slot } | Source::Region { slot, .. } => {
+                    self.data[slot as usize] = Vec::new()
+                }
             }
             if let Ok(slot) = self.handles.resolve(release.texture) {
                 let state = &mut self.textures[slot as usize].state;
@@ -1961,62 +2086,110 @@ impl TextureStore {
             let id = self.array_id(slot.array);
             let levels = slot.source_levels(key);
             let block = format::block_size(key.format);
-            let total = match source {
-                Source::Generated { .. } => 1,
-                _ => key.rows(levels),
+            let total = if let Source::Region { height, .. } = source {
+                height
+            } else if matches!(source, Source::Generated { .. }) {
+                1
+            } else {
+                key.rows(levels)
             };
-            if let Source::Generated { id: generator } = source {
-                // The generator makes the whole map in one command, outside the upload budget, so
-                // the frame that records it already draws with the map.
-                list.push(Op::GenerateTexture, &[id, generator])?;
-                rows = total;
-            }
-            while rows < total {
-                let band = key.band(rows, levels);
-                let left = budget.saturating_sub(spent);
-                let mut take = u64::from(band.rows_left).min(left / band.row_bytes) as u32;
-                if take == 0 {
-                    if spent > 0 {
-                        spent_all = true;
-                        break;
+            if let Source::Region {
+                slot: data,
+                x,
+                y,
+                width,
+                ..
+            } = source
+            {
+                // A rectangle's rows sit tightly packed at its own width, and go to their place in
+                // level 0 of the texture's layer.
+                let row_bytes = u64::from(width) * 4;
+                while rows < total {
+                    let left = budget.saturating_sub(spent);
+                    let mut take = u64::from(total - rows).min(left / row_bytes) as u32;
+                    if take == 0 {
+                        if spent > 0 {
+                            spent_all = true;
+                            break;
+                        }
+                        take = 1;
                     }
-                    take = 1;
-                }
-                let layer = slot.layer + band.layer;
-                let y = band.row * block;
-                if let Source::Image {
-                    id: first, flags, ..
-                } = source
-                {
-                    let image = first + band.layer;
-                    list.push(
-                        Op::UploadImage,
-                        &[id, 0, 0, y, layer, key.width, take, image, flags, 0, y],
-                    )?;
-                } else if let Source::Data { slot: data } = source {
                     let bytes = words_as_bytes(&self.data[data as usize]);
-                    let length = u64::from(take) * band.row_bytes;
-                    let texels = &bytes[band.offset as usize..(band.offset + length) as usize];
-                    // The last row of blocks may reach past the level's edge.
-                    let level_height = format::level_size(key.height, band.level);
+                    let offset = u64::from(rows) * row_bytes;
+                    let length = u64::from(take) * row_bytes;
+                    let texels = &bytes[offset as usize..(offset + length) as usize];
                     list.push(
                         Op::WriteTexture,
                         &[
                             id,
-                            band.level,
                             0,
-                            y,
-                            layer,
-                            format::level_size(key.width, band.level),
-                            (take * block).min(level_height - y),
+                            x,
+                            y + rows,
+                            slot.layer,
+                            width,
+                            take,
                             1,
                             memory_address(texels),
                             length as u32,
                         ],
                     )?;
+                    spent += length;
+                    rows += take;
                 }
-                spent += u64::from(take) * band.row_bytes;
-                rows += take;
+            } else {
+                if let Source::Generated { id: generator } = source {
+                    // The generator makes the whole map in one command, outside the upload budget,
+                    // so the frame that records it already draws with the map.
+                    list.push(Op::GenerateTexture, &[id, generator])?;
+                    rows = total;
+                }
+                while rows < total {
+                    let band = key.band(rows, levels);
+                    let left = budget.saturating_sub(spent);
+                    let mut take = u64::from(band.rows_left).min(left / band.row_bytes) as u32;
+                    if take == 0 {
+                        if spent > 0 {
+                            spent_all = true;
+                            break;
+                        }
+                        take = 1;
+                    }
+                    let layer = slot.layer + band.layer;
+                    let y = band.row * block;
+                    if let Source::Image {
+                        id: first, flags, ..
+                    } = source
+                    {
+                        let image = first + band.layer;
+                        list.push(
+                            Op::UploadImage,
+                            &[id, 0, 0, y, layer, key.width, take, image, flags, 0, y],
+                        )?;
+                    } else if let Source::Data { slot: data } = source {
+                        let bytes = words_as_bytes(&self.data[data as usize]);
+                        let length = u64::from(take) * band.row_bytes;
+                        let texels = &bytes[band.offset as usize..(band.offset + length) as usize];
+                        // The last row of blocks may reach past the level's edge.
+                        let level_height = format::level_size(key.height, band.level);
+                        list.push(
+                            Op::WriteTexture,
+                            &[
+                                id,
+                                band.level,
+                                0,
+                                y,
+                                layer,
+                                format::level_size(key.width, band.level),
+                                (take * block).min(level_height - y),
+                                1,
+                                memory_address(texels),
+                                length as u32,
+                            ],
+                        )?;
+                    }
+                    spent += u64::from(take) * band.row_bytes;
+                    rows += take;
+                }
             }
             self.textures[index as usize].state = if rows == total {
                 if slot.mipmaps && key.mips > 1 {
@@ -2025,8 +2198,9 @@ impl TextureStore {
                     }
                 }
                 // A generator stays for a new GPU device, which runs it again. So does every source
-                // while the store keeps copies, which is what a new device uploads again.
-                if !matches!(source, Source::Generated { .. }) && !self.keep_copies {
+                // while the store keeps copies, which is what a new device uploads again. A
+                // rectangle is left out: it cannot fill the rest of a texture by itself.
+                if !self.holds_after_upload(source) {
                     self.releases.push(Release {
                         source,
                         after: frame,
@@ -2034,6 +2208,8 @@ impl TextureStore {
                     });
                 }
                 self.layers_changed = true;
+                self.textures[index as usize].shown =
+                    Some(self.arrays[slot.array as usize].generation);
                 State::Uploaded {
                     source,
                     released_in: 0,
@@ -2125,29 +2301,41 @@ impl TextureStore {
                         continue;
                     }
                     // Each slot's array at the binding of its slot, then each slot's sampler
-                    // after every array, then the displacement map's array and sampler.
+                    // after every array, then the displacement map's array and sampler. A
+                    // material that reads the scene's depth leaves out the last slot and the
+                    // displacement map, under a layout of its own.
                     let mut words = [0; 3 + (2 * MAP_SET_SLOTS + 2) * 5];
-                    let layout = if key.parallax {
+                    let slots = if key.scene {
+                        MAP_SET_SLOTS - 1
+                    } else {
+                        MAP_SET_SLOTS
+                    };
+                    let layout = if key.scene {
+                        layout::MATERIAL_MAPS_SCENE
+                    } else if key.parallax {
                         layout::MATERIAL_MAPS_PARALLAX
                     } else {
                         layout::MATERIAL_MAPS
                     };
-                    words[..3].copy_from_slice(&[id, layout, 2 * MAP_SET_SLOTS as u32 + 2]);
-                    let (array, sampler) = key.height;
-                    let height = 3 + 5 * 2 * MAP_SET_SLOTS;
-                    words[height..height + 10].copy_from_slice(&[
-                        HEIGHT_BINDING,
-                        resource_kind::TEXTURE,
-                        self.array_id(array),
-                        0,
-                        0,
-                        HEIGHT_BINDING + 1,
-                        resource_kind::SAMPLER,
-                        self.ids.first_sampler + sampler,
-                        0,
-                        0,
-                    ]);
-                    for (k, &(array, sampler)) in key.slots.iter().enumerate() {
+                    let count = if key.scene { 2 * slots } else { 2 * slots + 2 };
+                    words[..3].copy_from_slice(&[id, layout, count as u32]);
+                    if !key.scene {
+                        let (array, sampler) = key.height;
+                        let height = 3 + 5 * 2 * slots;
+                        words[height..height + 10].copy_from_slice(&[
+                            HEIGHT_BINDING,
+                            resource_kind::TEXTURE,
+                            self.array_id(array),
+                            0,
+                            0,
+                            HEIGHT_BINDING + 1,
+                            resource_kind::SAMPLER,
+                            self.ids.first_sampler + sampler,
+                            0,
+                            0,
+                        ]);
+                    }
+                    for (k, &(array, sampler)) in key.slots[..slots].iter().enumerate() {
                         let texture = 3 + 5 * k;
                         words[texture..texture + 5].copy_from_slice(&[
                             k as u32,
@@ -2156,7 +2344,7 @@ impl TextureStore {
                             0,
                             0,
                         ]);
-                        let at = 3 + 5 * (MAP_SET_SLOTS + k);
+                        let at = 3 + 5 * (slots + k);
                         words[at..at + 5].copy_from_slice(&[
                             (MAP_SET_SLOTS + k) as u32,
                             resource_kind::SAMPLER,
@@ -2165,7 +2353,7 @@ impl TextureStore {
                             0,
                         ]);
                     }
-                    list.push(Op::CreateBindGroup, &words)?;
+                    list.push(Op::CreateBindGroup, &words[..3 + 5 * count])?;
                 }
             }
             self.groups[index].created = true;
@@ -2200,7 +2388,7 @@ impl TextureStore {
                 // The list that releases the image never ran, so the image is still there.
                 Source::Image { .. } => released_in == 0 || frame_after(released_in, taken),
                 // The store frees data as it records the release.
-                Source::Data { .. } => released_in == 0,
+                Source::Data { .. } | Source::Region { .. } => released_in == 0,
                 // The store keeps a generator until the texture no longer uses it.
                 Source::Generated { .. } => true,
             };
@@ -2694,6 +2882,76 @@ mod tests {
         // The next frame's list releases the image, after every list that uploads it.
         let (commands, _) = h.frame();
         assert_eq!(ops(&commands, Op::ReleaseImage), [vec![1]]);
+    }
+
+    #[test]
+    fn a_region_uploads_only_its_rows_within_the_budget_and_keeps_the_rest() {
+        let mut h = Harness::new();
+        let texture = h.texture(8, 8);
+        let (words, _) = h.store.set_data(texture, 8, 8).unwrap();
+        words.fill(0x11223344);
+        h.frame();
+        h.store.take_layers_changed();
+        assert_eq!(h.store.ready_layer(texture), Some(0));
+        // Rows of 4 texels take 16 bytes, so a budget of 40 bytes takes 2 rows a frame.
+        h.store.set_budget(40);
+        let region = h
+            .store
+            .set_region(texture, 2, 3, 4, 4)
+            .unwrap()
+            .expect("the texture holds its texels");
+        region.fill(0x55667788);
+        assert!(h.store.pending(texture).unwrap());
+        let mut bands = Vec::new();
+        for frame in 0..2 {
+            let (commands, _) = h.frame();
+            let uploads = ops(&commands, Op::WriteTexture);
+            let bytes: u32 = uploads.iter().map(|u| u[9]).sum();
+            assert!(bytes <= 40, "a frame uploads {bytes} bytes");
+            bands.extend(uploads.iter().map(|u| (u[1], u[2], u[3], u[5], u[6], u[7])));
+            // The whole map makes its mip levels again once the rectangle is up.
+            assert_eq!(
+                ops(&commands, Op::GenerateMipmaps).len(),
+                usize::from(frame == 1)
+            );
+        }
+        // Two rows at a time, at the rectangle's place in level 0 of the texture's layer.
+        assert_eq!(bands, [(0, 2, 3, 4, 2, 1), (0, 2, 5, 4, 2, 1)]);
+        assert!(!h.store.pending(texture).unwrap());
+        assert_eq!(h.store.ready_layer(texture), Some(0));
+        // The whole map makes its mip levels again once the rectangle is up.
+        assert!(h.store.take_layers_changed());
+    }
+
+    #[test]
+    fn a_region_waits_until_the_texture_holds_all_its_texels() {
+        let mut h = Harness::new();
+        let texture = h.texture(8, 8);
+        assert_eq!(h.store.set_region(texture, 0, 0, 4, 4).unwrap(), None);
+        let (words, _) = h.store.set_data(texture, 8, 8).unwrap();
+        words.fill(0);
+        assert_eq!(h.store.set_region(texture, 0, 0, 4, 4).unwrap(), None);
+        h.frame();
+        assert!(h.store.set_region(texture, 0, 0, 4, 4).unwrap().is_some());
+        // A rectangle waits for the one before it, and a frame uploads that one.
+        assert!(h.store.set_region(texture, 4, 4, 2, 2).unwrap().is_none());
+        h.frame();
+        // A rectangle outside the texture, or an empty one, is refused.
+        assert_eq!(
+            h.store.set_region(texture, 6, 0, 4, 4),
+            Err(TextureError::Unsupported)
+        );
+        assert_eq!(
+            h.store.set_region(texture, 0, 0, 0, 4),
+            Err(TextureError::Unsupported)
+        );
+        // A rectangle never changes the size, so it never moves the texture.
+        assert!(h.store.set_region(texture, 6, 6, 2, 2).unwrap().is_some());
+        // Until the frame that records the rectangle draws its map, the map waits.
+        assert_eq!(h.store.ready_layer(texture), None);
+        let (commands, _) = h.frame();
+        assert_eq!(ops(&commands, Op::WriteTexture).len(), 1);
+        assert_eq!(h.store.ready_layer(texture), Some(0));
     }
 
     #[test]

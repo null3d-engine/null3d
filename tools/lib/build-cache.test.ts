@@ -21,10 +21,13 @@ import {
 	cacheOff,
 	cacheRoot,
 	cargoEnv,
+	HEAVY_SLOT_ENV,
 	hashFiles,
 	hashOf,
 	pruneCache,
+	runByLine,
 	runCargo,
+	runCargoAsync,
 	touchCacheEntry,
 	writeFileAtomic,
 	writeFolderAtomic,
@@ -309,40 +312,86 @@ describe('acquireLock', () => {
 			rmSync(folder, { recursive: true, force: true });
 		}
 	});
+
+	it("marks its job's queue slot while it waits, and only for a lock that frees the slot", async () => {
+		const folder = mkdtempSync(join(tmpdir(), 'null3d-lock-'));
+		const lock = join(folder, 'page-build.lock');
+		const slot = join(folder, 'c1');
+		mkdirSync(slot);
+		const module = join(import.meta.dir, 'build-cache.ts');
+		const release = acquireLock(lock);
+		const waiter = (options: string) =>
+			spawn(
+				'bun',
+				[
+					'-e',
+					`import { acquireLock } from ${JSON.stringify(module)}; const r = acquireLock(${JSON.stringify(lock)}, ${options}); console.log('acquired'); r();`,
+				],
+				{ stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, [HEAVY_SLOT_ENV]: slot } },
+			);
+		const plain = waiter('{}');
+		const freeing = waiter('{ freesSlot: true }');
+		let out = '';
+		freeing.stdout.on('data', (chunk) => {
+			out += chunk;
+		});
+		/** Waits up to 10 s for `done`, which a loaded machine may take seconds to reach. */
+		const until = async (done: () => boolean) => {
+			for (let k = 0; k < 100 && !done(); k++) await Bun.sleep(100);
+		};
+		try {
+			await until(() => out.includes('waiting for the lock'));
+			// Only the waiter whose lock frees the slot marks it, by its own id, and says so.
+			expect(readdirSync(slot)).toEqual([`waiting-${freeing.pid}`]);
+			expect(readFileSync(join(slot, `waiting-${freeing.pid}`), 'utf8')).toBe(`${lock}\n`);
+			expect(out).toContain('counts as free while it waits');
+			release();
+			await until(() => out.includes('acquired'));
+			// Each took the lock in turn, and the mark went once its waiter held the lock.
+			expect(out).toContain('acquired');
+			expect(readdirSync(slot)).toEqual([]);
+		} finally {
+			plain.kill();
+			freeing.kill();
+			rmSync(folder, { recursive: true, force: true });
+		}
+	});
 });
 
 describe('runCargo', () => {
 	/**
 	 * A folder holding a stub `cargo` first on the PATH, which writes its arguments, its folder and
-	 * its target folder's environment to a file. A test then reads what the one cargo helper gave
-	 * the toolchain, without running it.
+	 * its target folder's environment to a file. A test then reads what the cargo runners gave the
+	 * toolchain, without running it.
 	 */
-	function withStubCargo(run: (checkout: string, read: () => string) => void): void {
-		withFolder((folder) => {
-			const bin = join(folder, 'bin');
-			mkdirSync(bin, { recursive: true });
-			const said = join(folder, 'said');
-			const cargo = join(bin, 'cargo');
-			writeFileSync(
-				cargo,
-				`#!/bin/sh\nprintf '%s\\n' "$PWD" "$CARGO_TARGET_DIR" "$RUSTC_WRAPPER" "$@" > ${said}\n`,
-			);
-			chmodSync(cargo, 0o755);
-			const checkout = join(folder, 'checkout');
-			mkdirSync(checkout);
-			const before = { path: process.env.PATH, target: process.env.CARGO_TARGET_DIR };
-			process.env.PATH = `${bin}:${before.path ?? ''}`;
+	async function withStubCargo(
+		run: (checkout: string, read: () => string) => void | Promise<void>,
+	): Promise<void> {
+		const folder = mkdtempSync(join(tmpdir(), 'null3d-cache-'));
+		const bin = join(folder, 'bin');
+		mkdirSync(bin, { recursive: true });
+		const said = join(folder, 'said');
+		const cargo = join(bin, 'cargo');
+		writeFileSync(
+			cargo,
+			`#!/bin/sh\nprintf '%s\\n' "$PWD" "$CARGO_TARGET_DIR" "$RUSTC_WRAPPER" "$@" > ${said}\n`,
+		);
+		chmodSync(cargo, 0o755);
+		const checkout = join(folder, 'checkout');
+		mkdirSync(checkout);
+		const before = { path: process.env.PATH, target: process.env.CARGO_TARGET_DIR };
+		process.env.PATH = `${bin}:${before.path ?? ''}`;
+		delete process.env.CARGO_TARGET_DIR;
+		try {
+			await run(checkout, () => readFileSync(said, 'utf8'));
+		} finally {
+			process.env.PATH = before.path;
 			delete process.env.CARGO_TARGET_DIR;
-			try {
-				run(checkout, () => readFileSync(said, 'utf8'));
-			} finally {
-				process.env.PATH = before.path;
-				delete process.env.CARGO_TARGET_DIR;
-			}
-		});
+			rmSync(folder, { recursive: true, force: true });
+		}
 	}
 
-	it('runs in the checkout, with its own target folder and the call\u2019s own arguments', () => {
+	it('runs in the checkout, with its own target folder and the call\u2019s own arguments', () =>
 		withStubCargo((checkout, read) => {
 			const run = runCargo(checkout, ['build', '-p', 'null3d-core'], {
 				env: { RUSTFLAGS: '-Cstrip=symbols' },
@@ -357,10 +406,9 @@ describe('runCargo', () => {
 			// sccache is a wrapper only when it is installed, and an empty value turns it off.
 			expect(!wrapper || existsSync(wrapper)).toBe(true);
 			expect(args).toEqual(['build', '-p', 'null3d-core']);
-		});
-	});
+		}));
 
-	it('builds into the target folder that the call names', () => {
+	it('builds into the target folder that the call names', () =>
 		withStubCargo((checkout, read) => {
 			const target = join(checkout, 'target', 'wasm-plain');
 			runCargo(checkout, ['build', '-p', 'null3d-core'], { targetDir: target });
@@ -371,6 +419,60 @@ describe('runCargo', () => {
 				'--target-dir',
 				target,
 			]);
+		}));
+
+	it('gives the asynchronous form the same folder, target folder and arguments', () =>
+		withStubCargo(async (checkout, read) => {
+			const target = join(checkout, 'target', 'wasm-plain');
+			const lines: string[] = [];
+			const run = await runCargoAsync(checkout, ['build', '-p', 'null3d-core'], {
+				targetDir: target,
+				onLine: (line) => lines.push(line),
+			});
+			expect(run).toEqual({ status: 0 });
+			expect(lines).toEqual([]);
+			const [cwd, folder, , ...args] = read().trim().split('\n');
+			expect(cwd).toBe(realpathSync(checkout));
+			expect(folder).toBe(join(checkout, 'target'));
+			expect(args).toEqual(['build', '-p', 'null3d-core', '--target-dir', target]);
+		}));
+});
+
+describe('runByLine', () => {
+	/** Runs a shell command and returns how it ended, with each line it wrote and that line's stream. */
+	async function lines(script: string) {
+		const said: [string, boolean][] = [];
+		const run = await runByLine('sh', ['-c', script], {
+			cwd: tmpdir(),
+			onLine: (line, stderr) => said.push([line, stderr]),
 		});
+		return { run, said };
+	}
+
+	it('hands on each whole line of both outputs, with its stream and the exit status', async () => {
+		const { run, said } = await lines('echo built; echo warned >&2; exit 3');
+		expect(run).toEqual({ status: 3 });
+		// The two outputs arrive through two pipes, so only each one's own order is certain.
+		expect(said.sort()).toEqual([
+			['built', false],
+			['warned', true],
+		]);
+	});
+
+	it('joins a line that arrives in parts, and hands on a last line that has no newline', async () => {
+		const { said } = await lines("printf 'com'; sleep 0.2; printf 'piled\\nlast'");
+		expect(said).toEqual([
+			['compiled', false],
+			['last', false],
+		]);
+	});
+
+	it('ends with the error of a command that cannot start, and never rejects', async () => {
+		const run = await runByLine(join(tmpdir(), 'null3d-no-such-command'), [], {
+			cwd: tmpdir(),
+			onLine: () => {},
+		});
+		expect(run.status).toBeNull();
+		expect(run.error).toBeInstanceOf(Error);
 	});
 });
