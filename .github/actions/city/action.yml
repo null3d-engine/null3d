@@ -5,8 +5,12 @@ description: >-
   The load pages job builds them once per run, with "build", since the benchmark pages bundle them,
   and hands them to the jobs that load S6 as two artifacts, which those jobs take with "download". A build takes about 6 minutes on GitHub's
   Linux machines, too long for every shard of a job (D-106). The Actions cache keeps the built files,
-  keyed on the pinned sample content, the module that builds the files and the asset tool, so the
-  city job builds them again only when one of those changes. The cache saves only when the
+  keyed on exactly the files that the build reads: the pinned sample content, the module that builds
+  the files with the modules it imports, the plugin's asset module, and the asset tool's optimizer
+  that the plugin loads from @null3d/cli/assets, with its imports and its formats' crate. So the
+  city job builds them again only when one of those changes, and not for a change to another of the
+  command-line tool's commands. tools/lib/ci-workflow.test.ts fails on an import that the key leaves
+  out. The cache saves only when the
   workflow's SAVE_CACHES is true. Run "build" after the samples action and after the asset tool is
   built.
 
@@ -18,6 +22,10 @@ inputs:
 runs:
   using: composite
   steps:
+    - id: key
+      if: inputs.mode == 'build'
+      shell: bash
+      run: echo "key=null3d-city-${{ hashFiles('tools/samples/lock.json', 'tools/lib/samples.ts', 'tools/lib/sample-url.ts', 'tools/lib/build-cache.ts', 'bench/lib/city-files.ts', 'bench/scenes/s6.ts', 'bench/scenes/spec.ts', 'packages/cli/package.json', 'packages/cli/src/assets/**', '!packages/cli/src/assets/**/*.test.ts', 'packages/cli/src/protocol.js', 'packages/cli/src/text.js', 'packages/cli/src/version.js', 'packages/vite-plugin/src/assets.ts', 'crates/null3d-assets-wasm/**') }}" >> "$GITHUB_OUTPUT"
     - uses: actions/cache/restore@v4
       if: inputs.mode == 'build'
       id: restore
@@ -25,7 +33,7 @@ runs:
         path: |
           ~/.cache/null3d/samples/city
           node_modules/.cache/null3d-assets
-        key: null3d-city-${{ hashFiles('tools/samples/lock.json', 'bench/lib/city-files.ts', 'packages/cli/package.json', 'packages/cli/src/**', 'crates/null3d-assets-wasm/**', 'packages/vite-plugin/src/assets.ts') }}
+        key: ${{ steps.key.outputs.key }}
     - name: Build and optimize the city's files
       if: inputs.mode == 'build'
       shell: bash
@@ -36,7 +44,7 @@ runs:
         path: |
           ~/.cache/null3d/samples/city
           node_modules/.cache/null3d-assets
-        key: null3d-city-${{ hashFiles('tools/samples/lock.json', 'bench/lib/city-files.ts', 'packages/cli/package.json', 'packages/cli/src/**', 'crates/null3d-assets-wasm/**', 'packages/vite-plugin/src/assets.ts') }}
+        key: ${{ steps.key.outputs.key }}
     # The built files and the optimized ones lie under different roots, so each takes an artifact.
     # Their images are already compressed, so the artifacts skip compression.
     - uses: actions/upload-artifact@v4
