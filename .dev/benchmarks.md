@@ -430,6 +430,12 @@ A run folder holds every page's full result, with frames and images, and stays o
 - Run it on the Mac in a quiet lane: `NULL3D_CLUSTER_COST=1 bun run test:browser -- cluster-cost.spec.ts`. `NULL3D_CLUSTER_PRESETS` narrows the presets, as a list.
 - The frame's GPU time falls as the camera draws back, which is the saving that coarser patches make: by about a quarter on the phone and on the tablet's compatibility mode, and by a tenth on the tablet's core WebGPU path, where the fill of its many pixels weighs more. [D-231](decisions/D-231-cluster-levels-cost.md) gives each device's figures.
 
+## Vegetation scatter
+
+- `tests/pages/vegetation-scatter.html` places Creek's 160 m valley with the vegetation add-on's ecological rules at seed 7. It compares the point list with a reference checksum, then places the tiles in reverse order and with a second tile size, which must give the same points. It times three placements and reports the middle one. The placement runs on the CPU and starts no engine, so both GPU paths give the same points.
+- Run it on a phone with the plan: `bun run devices:cloud --only bsgalaxys24-chrome --plan vegetation-scatter`. Run it on the Mac with `bun tests/real-browsers.ts --plan vegetation-scatter "Google Chrome"`. The page takes `?runs=` for the timed runs, `?seed=` for another seed and `?tile=` for the second tile size.
+- On 25 October 2026 two cloud phones placed the valley. The Galaxy S24 took 9.0 ms and 11.7 ms, with ground maps of 85.9 ms and 60.0 ms. The Galaxy S25 took 9.8 ms and 5.9 ms, with ground maps of 51.3 ms and 50.9 ms. Each page reached the reference checksum, 916344353, with 955 plants. Both displays ran at 30 Hz and the cloud reported both phones hot, so read the times as upper bounds. [D-241](decisions/D-241-vegetation-foundation.md#addendum-how-the-scatter-places-plants) gives the rule and the point counts.
+
 ## Double-sided see-through objects
 
 - The page switch `?sides=two` draws every box of S2 see-through and double-sided. The transparent pass then draws each run's back faces, then its front faces ([D-82](decisions/D-82-transparency-parity.md)). `?sides=one` draws the same boxes with `forceSinglePass`, in one draw. The difference between the two is the cost of the second draw.

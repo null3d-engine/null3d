@@ -53,7 +53,6 @@ const INCOMPLETE = new Set([
 	'M3-A8',
 	'M3-A9',
 	'M3-A10',
-	'M3-V6',
 	'M3-V5',
 	'M3-A11',
 	'M3-R1',
@@ -135,8 +134,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
 	'M3-R21':
 		'the picture step reads the heavy-test jobs now, but the task is done only when the gate and CI give the same verdict on the screens and skyway pictures, and that comparison is being taken against a run of the current tip',
-	'M3-V6':
-		"the scatter is built and its determinism proof is byte-identical point lists across tile orders and sizes, but the task's second half — the placement time for Creek's valley on a real device — is owed to a quiet machine",
 	'M3-V5':
 		"the atlases draw and the crowns keep their coverage at three distances, but the task's line asks the owner to judge them at least as good as Creek's painted textures, and its author reports the generated leaves are not there yet; the paint time per device is owed too",
 	'M3-V1':
