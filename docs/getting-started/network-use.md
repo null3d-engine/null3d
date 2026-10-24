@@ -62,6 +62,11 @@ Set `NULL3D_ENGINE_SHADERS` to a folder that holds the engine's generated shader
 
 `bunx @null3d/cli` contacts no server of its own. It serves the page from a server on the same machine, and it drives a browser on that machine. When Playwright's browser is missing, the tool prints the command that installs it. You run that command yourself.
 
+`check-addon` reads the allocations of an add-on's own code by asking the browser it started for a
+heap profile. That browser listens on a loopback address on this machine, and the tool talks to it
+over that address and its debugging socket. Nothing leaves the machine, and no address is a server
+the tool chooses.
+
 A command that builds the page also runs the build's one download, the engine's generated shader modules, as the section above says. Set `NULL3D_ENGINE_SHADERS` on that command to keep the tool's whole run off every network.
 
 ## Check the claim

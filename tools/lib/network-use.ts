@@ -54,6 +54,22 @@ export const FETCH_SITES: Readonly<Record<string, FetchSite>> = {
 		count: 2,
 		why: "the build fetches the engine's shader release, and declares the fetch it offers",
 	},
+	'packages/cli/src/devtools.js': {
+		count: 1,
+		why: "reads the debugging address of the browser that the tool started, on this machine's own loopback",
+	},
+};
+
+/**
+ * The only files that may open a socket, each with the reason.
+ *
+ * A socket here speaks to a browser on this machine, which the tool itself started, over that
+ * browser's own debugging protocol. It names no server and reaches no other machine.
+ */
+export const SOCKET_SITES: Readonly<Record<string, { readonly why: string }>> = {
+	'packages/cli/src/devtools.js': {
+		why: 'drives the browser that the command-line tool started, over its debugging socket',
+	},
 };
 
 /** Calls that reach the network, or report about it, which no shipped file may make. */
@@ -152,7 +168,9 @@ export function networkProblems(root: string): {
 		const path = relative(root, file).split(sep).join('/');
 		const text = readFileSync(file, 'utf8');
 		for (const [name, pattern] of FORBIDDEN_APIS) {
-			if (pattern.test(text)) problems.push(`${path}: uses ${name}, which reaches the network`);
+			const declared = name === 'WebSocket' && SOCKET_SITES[path];
+			if (pattern.test(text) && !declared)
+				problems.push(`${path}: uses ${name}, which reaches the network`);
 		}
 		const site = FETCH_SITES[path];
 		const found = text.match(new RegExp(FETCH_CALL, 'g'))?.length ?? 0;
