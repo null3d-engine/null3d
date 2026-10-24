@@ -355,24 +355,40 @@ describe("CI's workflow", () => {
 		expect(browser).not.toContain('package.json');
 	});
 
-	it('makes the load builds in one job, which every job that serves them waits for', () => {
+	it('makes each load build in a job of its own, which every job that serves it waits for', () => {
+		/** The load build of each job, by the folder that its command names. */
+		const loadJobs: Record<string, string> = {
+			'load-pages': 'bench-pages',
+			'load-startup-pages': 'startup-pages',
+		};
 		const builders = Object.entries(jobs).filter(([, job]) =>
 			commandsOf(job).some(({ text }) => text.includes('tests/lib/load-server.ts')),
 		);
-		expect(builders.map(([name]) => name)).toEqual(['load-pages']);
-		// The builds travel through the archive action, which packs each content once.
-		const upload = (jobNamed('load-pages').steps ?? []).find(
-			({ uses, with: given }) => uses === ARCHIVE && given?.name === 'load-pages',
-		);
-		expect(upload?.with?.mode).toBe('upload');
-		expect(upload?.with?.link).toBe('true');
+		expect(builders.map(([name]) => name).sort()).toEqual(Object.keys(loadJobs).sort());
+		for (const [name, folder] of Object.entries(loadJobs)) {
+			const job = jobNamed(name);
+			const command = `tests/lib/load-server.ts ${folder}`;
+			expect(
+				commandsOf(job).some(({ text }) => text.includes(command)),
+				name,
+			).toBe(true);
+			// The builds travel through the archive action, which packs each content once.
+			const upload = (job.steps ?? []).find(
+				({ uses, with: given }) => uses === ARCHIVE && given?.name === name,
+			);
+			expect(upload?.with?.mode, name).toBe('upload');
+			expect(upload?.with?.link, name).toBe('true');
+			expect(upload?.with?.paths, name).toBe(folder);
+		}
+		// A job that serves load builds downloads at least one, and waits for the job of each.
 		const servers = Object.entries(jobs).filter(
 			([, job]) => job.env?.NULL3D_LOAD_PAGES === 'prebuilt',
 		);
 		expect(servers.length).toBeGreaterThan(0);
 		for (const [name, job] of servers) {
-			expect(needsOf(job), name).toContain('load-pages');
-			expect(hands(job, 'load-pages', 'download'), name).toBe(true);
+			const served = Object.keys(loadJobs).filter((load) => hands(job, load, 'download'));
+			expect(served.length, name).toBeGreaterThan(0);
+			for (const load of served) expect(needsOf(job), name).toContain(load);
 		}
 	});
 
