@@ -225,6 +225,22 @@ fn box_pipelines(commands: &[(Op, Vec<u32>)], template: u32, depth: u32) -> Vec<
         .collect()
 }
 
+/// The ids of the sky layer's pipelines that a frame's list creates: the box's state, and a blend
+/// over the sky by the layer's coverage.
+fn layer_pipelines(commands: &[(Op, Vec<u32>)], depth: u32) -> Vec<u32> {
+    commands
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[1] == LAYER)
+        .map(|(_, o)| {
+            assert_eq!(
+                o[6],
+                depth | state_flags::CULL_NONE | state_flags::BLEND_NORMAL
+            );
+            o[0]
+        })
+        .collect()
+}
+
 /// The uniform buffer that the background's group binds, from the frame that made the group.
 fn values_buffer(commands: &[(Op, Vec<u32>)]) -> u32 {
     let (_, words) = commands
@@ -415,7 +431,7 @@ fn a_sky_layer_draws_after_the_background<B: FrameBuilder>(mut world: World<B>) 
     let commands = world.step(&mut mock, true);
     let sky = box_pipelines(&commands, template::BACKGROUND_SKY, LAST);
     assert_eq!(sky.len(), 1);
-    let layers = box_pipelines(&commands, LAYER, LAST);
+    let layers = layer_pipelines(&commands, LAST);
     assert_eq!(layers.len(), 1, "the layer takes the background's place");
     let layer = layers[0];
 
@@ -480,7 +496,7 @@ fn a_debug_view_or_a_scene_without_a_background_draws_no_layer() {
     settings.set_sky_layer(Some(sky_layer(0.4, 1.0)));
     let commands = world.step(&mut mock, true);
     assert!(
-        box_pipelines(&commands, LAYER, LAST).is_empty(),
+        layer_pipelines(&commands, LAST).is_empty(),
         "a layer needs a background to lie over"
     );
 
@@ -489,7 +505,7 @@ fn a_debug_view_or_a_scene_without_a_background_draws_no_layer() {
     settings.set_debug_view(DebugView::Normals);
     let commands = world.step(&mut mock, true);
     assert!(
-        box_pipelines(&commands, LAYER, LAST).is_empty(),
+        layer_pipelines(&commands, LAST).is_empty(),
         "a debug view draws no background"
     );
 }

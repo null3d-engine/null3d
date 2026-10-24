@@ -14,9 +14,10 @@
 // the same coverage, density, elevation and scale that the core's flat clouds obey, and the sun's
 // visibility reaches it so the layer can dim the disc that the core sky draws.
 //
-// The pass blends straight alpha over the sky. On the 8-bit path the blend mixes encoded colors, as
-// the engine's transparent objects do, so a layer that covers fully draws the same on both paths and
-// one that covers partly differs by the encode's rounding.
+// The pass blends the layer over the sky as the engine's transparent objects blend, with the color
+// premultiplied by the coverage, which the fragment writes. On the 8-bit path the blend mixes
+// encoded colors, as those objects do, so a layer that covers fully draws the same on both paths
+// and one that covers partly differs by the encode's rounding.
 #import null3d::globals::Frame
 #import null3d::tonemap
 #import null3d::backdrop::box_corner
@@ -77,7 +78,7 @@ fn fs(in: LayerOut) -> @location(0) vec4f {
         frame.target_size.xy,
         frame.vignette,
     );
-    return vec4f(finished.rgb, coverage);
+    return vec4f(finished.rgb * coverage, coverage);
 }
 
 #ifndef SKY_LAYER
