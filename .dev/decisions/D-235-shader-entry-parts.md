@@ -89,3 +89,7 @@ Each `shader-entries` job hands its entries to the `build` job as one tar file c
 
 CI runs twelve `shader-entries` jobs in place of eight. In run 40046196327, which compiled every entry, the eight jobs compiled for 198 to 265 s each, 1,732 s in all, and took 3.9 to 5.2 minutes with their setup of about 40 s. They sit at the head of the longest chain of a run that changes the shaders, before the `build` job. Twelve jobs give each about 8.3% of the builds, about 145 s of compiling on average, so the slowest job should take about 3.5 minutes. The four more jobs cost their setup, about 3 machine minutes a run that changes the shaders; a run that changes no shader looks the set up in the cache and compiles nothing.
 
+## Update, 24 October 2026: sixteen jobs
+
+CI runs sixteen `shader-entries` jobs in place of twelve. In test run 40062880929, which compiled every entry and a new compiler, the twelve jobs compiled for 119 to 197 s each and took 2.4 to 3.9 minutes. About 45 s of each compile step built the compiler's program, which the per-entry cache now keeps for later runs of the same stamp. The jobs head the longest chain of a run that changes the shaders, and the enterprise runs 500 jobs at once. So sixteen jobs give each about 6.3% of the builds. The slowest should then compile for about 150 s, and take about 3 minutes.
+
