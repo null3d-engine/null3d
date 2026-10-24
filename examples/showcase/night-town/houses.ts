@@ -487,7 +487,7 @@ export function createHouses(
 	const panes = createWindow(ctx, {
 		kind: 'timber',
 		window: { width: 0.73, height: 1.01, frame: 0.055 },
-		room: { depth: 1.7, light: 2.2, flicker: 0.5 },
+		room: { depth: 1.7, light: 3.4, flicker: 0.5 },
 	});
 	const windows = scene.createInstances(
 		geometry.plane({ width: 1, height: 1 }),

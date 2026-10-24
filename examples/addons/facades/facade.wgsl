@@ -92,8 +92,8 @@ fn surface(input: SurfaceInput) -> Surface {
     let facade = material.mode < 0.5;
 
     // The cell's coordinates: its bay along the wall and its floor up it. A window batch's own
-    // coordinates span one cell. The cell's derivatives stand here, in the entry point's uniform
-    // control flow, and every texture read below uses them.
+    // coordinates span one cell. Every derivative call stands here, before the first branch: WebGPU
+    // refuses a derivative whose control flow depends on a material's value.
     let along = select(input.worldPosition.x, input.worldPosition.z, abs(n.x) > abs(n.z));
     let world_cell = vec2f(
         along / max(material.cellWidth, 0.01),
@@ -104,6 +104,13 @@ fn surface(input: SurfaceInput) -> Surface {
     let covered = max(fwidth(cell.x), fwidth(cell.y));
     let far = smoothstep(material.farFade, max(material.farFull, material.farFade + 0.01), covered);
 
+    // The wall finish: a look's own tile, or one that each building's seed picks.
+    let picked = floor(random2(vec2f(seed * 71.3, 11.7)) * 3.999);
+    let index = select(material.wallTile, picked, material.wallTile < 0.0);
+    let tile = vec2f(fract(index * 0.5) * 2.0, floor(index * 0.5));
+    let atlas_uv = (tile + f) * 0.5;
+    let dx = dpdx(atlas_uv);
+    let dy = dpdy(atlas_uv);
     // A box building's top face is a roof deck, not a wall: a dark tarred surface that keeps the
     // city's own faint glow and none of the windows below.
     if (facade && abs(n.y) > 0.5) {
@@ -116,13 +123,6 @@ fn surface(input: SurfaceInput) -> Surface {
         return roof;
     }
 
-    // The wall finish: a look's own tile, or one that each building's seed picks.
-    let picked = floor(random2(vec2f(seed * 71.3, 11.7)) * 3.999);
-    let index = select(material.wallTile, picked, material.wallTile < 0.0);
-    let tile = vec2f(fract(index * 0.5) * 2.0, floor(index * 0.5));
-    let atlas_uv = (tile + f) * 0.5;
-    let dx = dpdx(atlas_uv);
-    let dy = dpdy(atlas_uv);
     // Far away the cell repeats faster than a pixel, so the wall reads its page's coarser levels:
     // the pattern fades to the page's average instead of drawing a moire over the skyline.
     let blur = 1.0 + far * 10.0;
