@@ -35,7 +35,7 @@ const PARTIAL: Readonly<Record<string, string>> = {
 const ON_BRANCH = new Set(['M3-E9', 'M3-R14']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
-const INCOMPLETE = new Set(['M3-B1', 'M3-E6', 'M3-E8', 'M3-L1', 'M3-L3', 'M3-R12']);
+const INCOMPLETE = new Set(['M3-B1', 'M3-E6', 'M3-E8', 'M3-L1', 'M3-L3', 'M3-R12', 'M3-R22']);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
@@ -57,6 +57,8 @@ const NOTES: Readonly<Record<string, string>> = {
 		'every item is built with its pictures, but D-211 records Mac figures alone: the phone GPU time the fade item asks for, and the iPad and phone figures the section asks for, are missing',
 	'M3-L3':
 		'the WebGPU path draws the patches, but D-213 records the WebGL2 multi-draw path, the whole-level fallback and the GPU time as not built',
+	'M3-R22':
+		"the shader cache now reuses every entry when a compiler change leaves the compiled program identical: 0 compiled and 79 reused in 19 s, where the same change cost an hour, and a real shader change compiles exactly one. The task's own done-when is the two checks' times in CI, which are still unmeasured",
 	'M3-F3':
 		'dropped with the temporal resolve it waited on (D-206); the owner may change the ruling',
 	'M3-F10': 'dropped with the temporal resolve it needs (D-206); the owner may change the ruling',

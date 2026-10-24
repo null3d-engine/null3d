@@ -5,7 +5,7 @@ name: CI
 # gh workflow run ci.yml --ref main
 # A push to a milestone branch, such as m3-start, runs only the quick checks. Its runs and the full
 # runs started by hand on the branch share the branch's caches, so neither does again the work that
-# the other saved: a pull request's runs kept caches of their own (D-248).
+# the other saved: a pull request's runs kept caches of their own (D-249).
 on:
   push:
     branches: [main, 'm[0-9]+-start']

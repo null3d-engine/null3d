@@ -1,4 +1,4 @@
-# D-248: A milestone branch's pushes run its quick checks, in the branch's caches
+# D-249: A milestone branch's pushes run its quick checks, in the branch's caches
 
 Status: decided by the owner on 24 October 2026, landed in ci/milestone-push-runs. Date: 2026-10-24.
 Task: none.
