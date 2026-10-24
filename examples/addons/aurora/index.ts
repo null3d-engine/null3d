@@ -7,8 +7,20 @@
 // The layer reads the core sky's cloud settings, the sketch time and the share of the sun that it
 // hides, so it needs no values of its own: its colors and its rate of drift are constants in
 // `aurora.wgsl`, which is what an example add-on keeps small enough to copy.
-import type { SketchContext } from '@null3d/engine';
+import { defineFeature, type SketchContext } from '@null3d/engine';
 import auroraShader from './aurora.wgsl';
+
+/**
+ * The aurora's feature description: the background point, drawn as a box, the sky slot that it
+ * provides, and the three views that a sky layer draws in.
+ */
+const AURORA = defineFeature({
+	name: 'aurora',
+	frame: 'background',
+	kind: 'draw',
+	provides: ['sky'],
+	views: ['main', 'scenePass', 'reflection'],
+});
 
 /** How the aurora starts: how much of it draws, and how much of the sun it hides. */
 export interface AuroraOptions {
@@ -39,7 +51,7 @@ export interface Aurora {
  * where the background draws nothing.
  */
 export function createAurora(ctx: SketchContext, options: AuroraOptions = {}): Aurora {
-	const layer = ctx.scene.setSkyLayer({
+	const layer = ctx.scene.setSkyLayer(AURORA, {
 		wgsl: auroraShader,
 		opacity: options.opacity ?? 1,
 		sun: options.sun ?? 0.15,

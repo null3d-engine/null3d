@@ -43,6 +43,7 @@ import {
 } from '../generated/core';
 import type { ShaderVariants } from '../generated/shaders';
 import { Environment } from './environment';
+import type { FeatureDescription } from './features';
 import type { CoreMemory, ViewHolder } from './memory';
 import type { CompiledWgsl } from './resources';
 import { ShaderPreloads } from './shader-preloads';
@@ -395,10 +396,14 @@ export class SceneSkyLayer implements SkyLayer {
 	) {}
 
 	/**
-	 * Installs a layer over the background, or replaces the one there. Throws E1215 for WGSL that
-	 * the plugin did not compile as a sky layer, and the checks of `set` for its values.
+	 * Installs a layer over the background, or replaces the one there. The description names the
+	 * feature and must record at the background point, as a draw, provide the sky, and draw in the
+	 * main view, the scene passes and the reflections. Throws E1223 for such a description that it
+	 * cannot place, E1215 for WGSL that the plugin did not compile as a sky layer, and the checks
+	 * of `set` for its values.
 	 */
-	install(options: SkyLayerOptions, call: string): void {
+	install(description: FeatureDescription, options: SkyLayerOptions, call: string): void {
+		checkSkyLayer(description, call);
 		if (DEV && (typeof options !== 'object' || options === null))
 			throw new EngineError(
 				'E1213',
@@ -452,6 +457,44 @@ function checkLayerLive(template: number, call: string): void {
 		throw new EngineError(
 			'E1101',
 			`${call}() ran on a sky layer that scene.clearSkyLayer() removed. Install another with scene.setSkyLayer().`,
+		);
+}
+
+/** The views that a sky layer draws in, which its description must name. */
+const SKY_LAYER_VIEWS = ['main', 'scenePass', 'reflection'] as const;
+
+/**
+ * Throws E1223 unless the description places a sky layer: the background point, as a draw, with the
+ * sky slot and the three views that the engine draws it in.
+ */
+function checkSkyLayer(description: FeatureDescription, call: string): void {
+	if (typeof description !== 'object' || description === null)
+		throw new EngineError(
+			'E1223',
+			`${call}() got ${String(description)}, which is not a feature description. Give defineFeature({ name, frame: 'background', kind: 'draw', provides: ['sky'], views: ['main', 'scenePass', 'reflection'] }).`,
+		);
+	const name = description.name;
+	if (description.frame !== 'background')
+		throw new EngineError(
+			'E1223',
+			`${call}() got the feature '${name}' with the frame ${JSON.stringify(description.frame)}; a sky layer records at 'background'.`,
+		);
+	if (description.kind !== 'draw')
+		throw new EngineError(
+			'E1223',
+			`${call}() got the feature '${name}' with the kind ${JSON.stringify(description.kind)}; a sky layer draws, so give the kind 'draw'.`,
+		);
+	const provides = description.provides ?? [];
+	if (!provides.includes('sky'))
+		throw new EngineError(
+			'E1223',
+			`${call}() got the feature '${name}' with the provides ${JSON.stringify(provides)}; a sky layer provides 'sky'.`,
+		);
+	const views = description.views ?? [];
+	if (views.length !== SKY_LAYER_VIEWS.length || !SKY_LAYER_VIEWS.every((v) => views.includes(v)))
+		throw new EngineError(
+			'E1223',
+			`${call}() got the feature '${name}' with the views ${JSON.stringify(views)}; a sky layer draws in 'main', 'scenePass' and 'reflection'.`,
 		);
 }
 
