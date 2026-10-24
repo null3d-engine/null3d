@@ -2,6 +2,18 @@
 
 Faults of GPU drivers and browsers that the engine works around, written up to report upstream. Each report names the device, the driver and the browser, and gives the smallest known case. It also says where the engine's workaround and evidence are. [Browser faults](implementation-notes.md#browser-faults) holds the full story of each.
 
+## Safari 26.1 and 26.6: Creek stalls the page on WebGPU after its first frame
+
+Status: not reported yet. The cause is not known. Found 24 October 2026.
+
+- Devices: iPhone 17 in Safari 26.1 on iOS 26, and iPad Pro 13 2025 in Safari 26.6.1 on iPadOS 26, both in BrowserStack's device cloud.
+- Seen in: Creek, `examples/showcase/creek/sketch.ts`, at the Low preset on WebGPU, at commit `5aea95fd1`.
+- What happens: the first frame draws. The page's thread then stops answering. WebDriver's script calls time out, and Safari reloads the tab after about 45 seconds. The page posts each step of its work to the dev server, and the last step is "the first frame drew".
+- What runs: the same scene at Low on WebGL2 draws 30 frames a second on the iPad. The forest demo at Low on WebGPU draws 60 frames a second, with 7 timed render passes. Creek at Low on WebGPU draws on Chrome 155 on the Mac.
+- So the fault needs Creek, WebGPU and Apple's WebKit together. It is not the measurement page, not WebGPU on its own, and not the scene on its own.
+- Not tried yet: a bisect of Creek's passes on the cloud device, one session per pass. That covers the water reflection, the caustics, the haze, the light shafts and the effects chain. A WebGPU capture on the device is the other way to the cause.
+- Workaround: none. The measurements of 24 October 2026 report Creek on WebGL2 on Apple devices, and they name the WebGPU rows that this fault kept from running.
+
 ## Safari 27.0: `atomicCompareExchangeWeak` does not compile
 
 Status: fixed in WebKit on 13 September 2026 (commit 4f56cc248e8a, 321006@main, inside bug 323873), not yet in a Safari release. No bug names the fault. Not reported by null3D: a draft waits for the owner. Found 8 October 2026.
