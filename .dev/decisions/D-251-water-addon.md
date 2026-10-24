@@ -75,7 +75,11 @@ stone foam map. `water.ts` and `underwater.ts` go, and its route test reads `wav
 - A custom effect that draws its own pass keeps no pieces in its module, because they never reach a
   host. The underwater effect's were 93 KB of the add-on's entry. D-225 records the fix.
 - The Creek's image references may move where its analytic bed met the general depth read. They are
-  redrawn when the images run.
+  redrawn when the images run, with their reason sent before the change is accepted.
+- The cost per preset stays owed until a quiet window, because the first runs came at a machine load
+  of 90 to 155. Its command is `bun packages/cli/bin/null3d.js check-addon packages/water`, which
+  measures the add-on's page on each preset; `--skip-cost` leaves that gate out and runs the page
+  and allocation gates.
 - The add-on's tests cover the shape, the mesh's coverage and winding, the wave copies, the foam
   map and the size gates. The demo `examples/water` draws both bodies and the view from below. The
   package's own page (`packages/water/page`, which the tarball leaves out) gives the listing check's
