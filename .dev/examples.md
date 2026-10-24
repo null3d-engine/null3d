@@ -450,6 +450,9 @@ the plane maps back to the canvas's own coordinates. The design and its measured
 - The showroom demo, `coat-and-sheen`, has a tablet beside the plinth from the add-on. A tap cycles
   its pages, and the new page uploads as one change. The panel shows its sub-pixels when the camera
   comes close.
+- Skyway's hero car draws its speed and altitude panels, and a navigation panel between them, from
+  the add-on, in `examples/showcase/skyway/cockpit.ts`. The deck panels refresh at 12 Hz and the map
+  at 8 Hz, and each uploads only the rectangles of its canvas that its reading changed.
 - The security camera's monitor keeps its own small LCD look in `monitor.ts`, because its picture
   comes from a render pass rather than a canvas. Its look could move onto the add-on's material if
   the add-on took any texture, and that is a later change.
