@@ -426,27 +426,31 @@ describe("CI's workflow", () => {
 		expect(missing).toEqual([]);
 	});
 
-	it('gives each download of the real-browser job a limit of its own and one more try', () => {
-		const steps = jobNamed('real-browsers').steps ?? [];
+	it('gives each download of the real-browser jobs a limit of its own and one more try', () => {
+		for (const name of ['real-browsers', 'real-browsers-prebuilt']) downloadsRetry(name);
+	});
+
+	function downloadsRetry(name: string): void {
+		const steps = jobNamed(name).steps ?? [];
 		const downloads = steps.filter(
 			({ uses, with: given }) =>
 				(uses === './.github/actions/archive' || uses === './.github/actions/city') &&
 				given?.mode === 'download',
 		);
 		const firsts = downloads.filter((step) => step.id !== undefined);
-		expect(firsts.length).toBeGreaterThan(0);
+		expect(firsts.length, name).toBeGreaterThan(0);
 		for (const first of firsts) {
-			expect(first['timeout-minutes'], first.id).toBeGreaterThan(0);
-			expect(first['continue-on-error'], first.id).toBe(true);
+			expect(first['timeout-minutes'], `${name} ${first.id}`).toBeGreaterThan(0);
+			expect(first['continue-on-error'], `${name} ${first.id}`).toBe(true);
 			const retry = steps[steps.indexOf(first) + 1];
-			expect(retry?.if, first.id).toBe(`steps.${first.id}.outcome == 'failure'`);
-			expect(retry?.uses, first.id).toBe(first.uses);
-			expect(retry?.with, first.id).toEqual(first.with);
-			expect(retry?.['timeout-minutes'], first.id).toBeGreaterThan(0);
+			expect(retry?.if, `${name} ${first.id}`).toBe(`steps.${first.id}.outcome == 'failure'`);
+			expect(retry?.uses, `${name} ${first.id}`).toBe(first.uses);
+			expect(retry?.with, `${name} ${first.id}`).toEqual(first.with);
+			expect(retry?.['timeout-minutes'], `${name} ${first.id}`).toBeGreaterThan(0);
 		}
 		// Every download is a first try or the retry of one.
-		expect(downloads).toHaveLength(2 * firsts.length);
-	});
+		expect(downloads, name).toHaveLength(2 * firsts.length);
+	}
 
 	it('builds the city in the load pages job, which every job that downloads the city waits for', () => {
 		const cityMode = (job: Job) =>

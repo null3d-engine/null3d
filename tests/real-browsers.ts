@@ -110,6 +110,10 @@
 //                       device lacks
 //   --only <ids>        run only these items of a fixed plan, such as the pages that failed in an
 //                       earlier run, with the items whose results their checks compare with
+//   --prebuilt only|none
+//                       run only the items of a fixed plan that load what CI's load pages job
+//                       makes, a production build or S6's city files, or only the other items, so
+//                       that CI's shards of the others need not wait for that job
 //   --rounds <n>        run the items n times over, one round after another, to catch a fault
 //                       that comes only now and then
 //   --shields on|off    the state of Brave's Shields for the dev server's site, which the runner
@@ -319,6 +323,8 @@ export interface Options {
 	shard?: Shard;
 	/** The ids of the only items of a fixed plan to run, when given. */
 	only?: string[];
+	/** Only the items that load what CI's load pages job makes, or only the others, when given. */
+	prebuilt?: (typeof PREBUILT_CHOICES)[number];
 	/** How many times over to run the items, when given. */
 	rounds?: number;
 	/** Page switches that every page of the plan gets, joined by `&`, when given. */
@@ -342,7 +348,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shaders all|sampled] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [--front] [<browser app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shaders all|sampled] [--shard <i>/<n>] [--only <ids>] [--prebuilt only|none] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [--front] [<browser app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -395,6 +401,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--shaders') options.shaders = oneOf(arg, args[++i], SHADER_PLANS);
 		else if (arg === '--shard') options.shard = shard(args[++i]);
 		else if (arg === '--only') options.only = list(args[++i]);
+		else if (arg === '--prebuilt') options.prebuilt = oneOf(arg, args[++i], PREBUILT_CHOICES);
 		else if (arg === '--rounds') options.rounds = wholeNumber(arg, args[++i]);
 		else if (arg === '--shields') options.shields = oneOf(arg, args[++i], SHIELDS_STATES);
 		else if (arg === '--switches') options.switches = readSwitches(args[++i], arg);
@@ -415,6 +422,7 @@ export function parseArgs(args: readonly string[]): Options {
 	for (const [flag, given] of [
 		['--shard', options.shard],
 		['--only', options.only],
+		['--prebuilt', options.prebuilt],
 		['--rounds', options.rounds],
 	] as const)
 		if (given && options.plan === SCALE_PLAN)
@@ -1327,6 +1335,20 @@ function wholeHeatText(samples: readonly HeatSample[]): string | undefined {
  * only with --attended: a phone over USB gets a new runner page from the runner tool, but a
  * tablet's runner page that Safari did not reload stays closed.
  */
+/** The choices of `--prebuilt`. */
+const PREBUILT_CHOICES = ['only', 'none'] as const;
+
+/** S6's pages, which load the city's files. */
+const CITY_PAGE = /\/bench\/pages\/[\w-]+\/s6\.html/;
+
+/**
+ * True when an item loads what CI's load pages job makes: a production build that the load routes
+ * serve, or S6's city files.
+ */
+export function loadsPrebuilt(item: { path: string }): boolean {
+	return buildsForLoads([item.path]).length > 0 || CITY_PAGE.test(item.path);
+}
+
 export function planItems(options: Options): PlanItem<Check>[] | undefined {
 	const planned = PLANS[options.plan]?.({
 		count: options.count,
@@ -1348,7 +1370,17 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 					path: `${item.path}${item.path.includes('?') ? '&' : '?'}${switches}`,
 				}));
 	const needs = (item: PlanItem<Check>) => itemsNeeded(item.check);
-	const items = only ? pickItems(all, only, needs) : all;
+	const picked = only ? pickItems(all, only, needs) : all;
+	const items =
+		options.prebuilt === undefined
+			? picked
+			: options.prebuilt === 'only'
+				? pickItems(
+						picked,
+						picked.filter(loadsPrebuilt).map(({ id }) => id),
+						needs,
+					)
+				: picked.filter((item) => !loadsPrebuilt(item));
 	if (options.lan.length > 0 && !options.attended && items.some((item) => item.endsTab))
 		throw new Error(
 			`the ${options.plan} plan crashes the tab on purpose, and after a crash soon after another, Safari on a tablet stops reloading the runner page; run it on --lan devices with --attended, while someone can reopen the page`,
@@ -1363,7 +1395,7 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 		);
 	// Every shard loads the capabilities page first, so its runner page can skip the pages of the GPU
 	// paths that the device lacks.
-	const report = items.find((item) => item.check.kind === 'capabilities');
+	const report = all.find((item) => item.check.kind === 'capabilities');
 	return repeatItems(report && !part.includes(report) ? [report, ...part] : part, rounds);
 }
 
