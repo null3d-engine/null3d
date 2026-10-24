@@ -494,6 +494,25 @@ fn custom_value(id: u32, k: u32) -> vec4f {
 #endif
 }
 
+/// The scale of material `id`'s light map coordinates along u and v, then their offset along u
+/// and v.
+fn material_light_map_uv(id: u32) -> vec4f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(17u, id), 0);
+#else
+    return materials[id].light_map_uv;
+#endif
+}
+
+/// The layer of material `id`'s light map direction map, or a negative value without one.
+fn material_light_map_direction(id: u32) -> f32 {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(9u, id), 0).w;
+#else
+    return materials[id].transmission.w;
+#endif
+}
+
 /// The bit of a material's flags that keeps the scene's fog off its color.
 const NO_FOG: u32 = 4u;
 

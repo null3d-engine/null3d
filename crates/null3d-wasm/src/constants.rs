@@ -136,6 +136,8 @@ pub mod map_slot {
     pub const BUMP: u32 = MAP_SLOTS as u32 + LayerMap::ALL.len() as u32;
     /// A displacement map, which has a binding of its own.
     pub const DISPLACEMENT: u32 = BUMP + 1;
+    /// A light map's direction map, which shares the light map's texture array.
+    pub const LIGHT_MAP_DIRECTION: u32 = DISPLACEMENT + 1;
     /// The diffuse transmission map's slot in a material with the translucency feature.
     pub const DIFFUSE_TRANSMISSION: u32 = MapSlot::DIFFUSE_TRANSMISSION as u32;
     /// The diffuse transmission color map's slot in a material with the translucency feature.
@@ -1074,6 +1076,7 @@ pub fn typescript() -> String {
                 ("SCENE_DEPTH", feature::SCENE_DEPTH),
                 ("IRIDESCENCE", feature::IRIDESCENCE),
                 ("ANISOTROPY", feature::ANISOTROPY),
+                ("LIGHT_MAP_RGBM", feature::LIGHT_MAP_RGBM),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -1127,6 +1130,7 @@ pub fn typescript() -> String {
                 ("THICKNESS", map_slot::THICKNESS),
                 ("BUMP", map_slot::BUMP),
                 ("DISPLACEMENT", map_slot::DISPLACEMENT),
+                ("LIGHT_MAP_DIRECTION", map_slot::LIGHT_MAP_DIRECTION),
             ],
         ),
         // The values that `setMaterialValue` changes, by the float where each starts in a row.
@@ -1181,6 +1185,8 @@ pub fn typescript() -> String {
                 ),
                 ("ANISOTROPY", param::ANISOTROPY as u32),
                 ("ANISOTROPY_ROTATION", param::ANISOTROPY_ROTATION as u32),
+                ("LIGHT_MAP_SCALE", param::LIGHT_MAP_SCALE as u32),
+                ("LIGHT_MAP_OFFSET", param::LIGHT_MAP_OFFSET as u32),
                 ("DECAL_FADE_START", param::DECAL_FADE_START as u32),
                 ("DECAL_FADE_END", param::DECAL_FADE_END as u32),
                 ("DECAL_EDGE_FADE", param::DECAL_EDGE_FADE as u32),

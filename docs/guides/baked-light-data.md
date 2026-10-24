@@ -8,7 +8,7 @@ summary: "One file format for probe grids and light maps baked outside the engin
 
 # Baked light data
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The format is stable: version 1 holds the members that this page lists, and a reader ignores members that it does not know. A change that an earlier reader would misread takes a new version number. A light map's direction is read from the file, and no material draws it yet.
+> Roadmap step 0.3, first released in null3D 0.1.0. The format is stable: version 1 holds the members that this page lists, and a reader ignores members that it does not know. A change that an earlier reader would misread takes a new version number. A directional light map bends its light with a normal map, as the light of the bake came from a direction.
 
 ```mermaid
 flowchart LR
@@ -81,7 +81,9 @@ The probes run x fastest, then y, then z. Each probe holds four RGB coefficients
 | `radiance` | Base64 of the texels, rows along v from the first texel at u = 0, v = 0 |
 | `direction` | Optional. Base64 of three signed bytes per texel, each axis of the light's direction divided by 127 |
 
-Use `rgba16float` for light above 1, such as a window or a lamp that the bake kept bright. It takes 8 bytes for each texel, against 3 for `rgb8`. A `direction` adds 3 bytes for each texel: a directional light map takes twice the memory of an `rgb8` radiance. The engine reads the direction but no material draws with it yet.
+Use `rgba16float` for light above 1, such as a window or a lamp that the bake kept bright. It takes 8 bytes for each texel, against 3 for `rgb8`. A `direction` adds 3 bytes for each texel: a directional light map takes twice the memory of an `rgb8` radiance.
+
+The direction is a unit vector in world space, and it points from the surface toward the light. Each curve of the map's ranges from -1 to 1, then divided by 127 and stored as a signed byte. The engine gives the direction a texture of its own, in the radiance's size and format, so the two share one texture array and one texture binding.
 
 ## Load a file
 
@@ -93,17 +95,36 @@ export default defineSketch(async ({ scene, assets, materials }) => {
   const grid = await assets.loadLightProbeGrid('/light/probe-grid.json');
   scene.setLightProbeGrid(grid);
 
-  // A light map, which a material takes as one of its maps.
+  // A light map, which a material takes as one of its maps. A directional map also bends its
+  // light with the material's normal map.
   const map = await assets.loadLightMap('/light/light-map.json');
   const wallTexture = await assets.loadTexture('/tex/wall.png');
-  const wall = materials.standard({ map: wallTexture, lightMap: map.texture, lightMapIntensity: 2 });
+  const wall = materials.standard({
+    map: wallTexture,
+    lightMap: map.texture,
+    lightMapDirection: map.directionTexture,
+    lightMapIntensity: 2,
+  });
   return {};
 });
 ```
 
 `loadLightProbeGrid` gives the texture and the three placement values, so its result goes straight to `scene.setLightProbeGrid`. The grid replaces the environment's diffuse light, as a grid that `bakeProbes` made does.
 
-`loadLightMap` gives a texture for a material's `lightMap`. It also gives the direction bytes, if the file holds them. The texture is an `rgba8unorm` texture in sRGB, or an `rgba16float` texture in linear light. The file's three colour bytes become three channels and an opaque fourth, because the engine has no three-channel texture format. The first load of either kind loads the reader, which is about 2 KB after Brotli. A page that reads no baked light file downloads none of it.
+`loadLightMap` gives a texture for a material's `lightMap`. A file with a `direction` also gives a `directionTexture`, which a material takes as `lightMapDirection`. The radiance texture is an `rgba8unorm` texture in sRGB, or an `rgba16float` texture in linear light. The file's three colour bytes become three channels and an opaque fourth, because the engine has no three-channel texture format. The direction texture has the radiance's size and format, so a shader reads it through the light map's own binding. The first load of either kind loads the reader, which is about 2 KB after Brotli. A page that reads no baked light file downloads none of it.
+
+With `lightMapDirection`, the engine weights the light map at each pixel by how far the shaded normal turns toward the stored direction from the mesh's own normal. A normal map's relief then brightens where it faces the light of the bake and darkens where it turns away. A surface without a normal map keeps the light that the bake gave it. The weight costs one texture read and a few arithmetic operations for each pixel of a directional map, and a plain map pays a branch.
+
+## Needle light maps
+
+A model made for [Needle's viewer](https://engine.needle.tools/) carries its light maps in glTF's `NEEDLE_lightmaps` extension, and each node's `MeshRenderer` in `NEEDLE_components` names the map that it reads and the scale and offset that place the bake on its mesh. The loader gives each such node's material the map:
+
+- The texture keeps the file's bytes, and the material decodes its RGBM texels: each colour is multiplied by the texel's alpha times 8, then the sRGB transfer turns it linear. The texture is read in linear colour for that reason.
+- The map reads the second texture coordinates. A mesh without a second set reads its first, as Needle's viewer does.
+- The renderer's `lightmapScaleOffset` places the bake, and Needle's offset counts rows from the top, so the vertical offset flips in the engine.
+- A skybox or reflection map that the extension registers is left out, and so is a pointer to a file that is not a texture of the model.
+
+The loader makes a material for each node that places a light map of its own, so each bake lands where the file put it.
 
 Both calls throw [E1434](../errors/E1434.md) for a file that the engine cannot read. The message names the fault. It may name a version that the engine does not read, or a payload that does not hold the count that the file gives. It may also name a file that a download cut short.
 

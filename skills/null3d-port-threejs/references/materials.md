@@ -29,7 +29,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `normalMap`, `normalScale` | `normalMap`, `normalScale: [x, y]` | Tangent space only. The frame comes from the mesh's tangents where it has them, else from the pixels around it, as in three.js |
 | `normalMapType: ObjectSpaceNormalMap` | Not supported | Convert to tangent space offline |
 | `aoMap`, `aoMapIntensity` | `aoMap`, `aoMapIntensity` | three.js reads AO from the R channel; so does null3D |
-| `lightMap`, `lightMapIntensity` | `lightMap`, `lightMapIntensity` | Usually on the second UV set: the texture option `uvSet: 1` |
+| `lightMap`, `lightMapIntensity` | `lightMap`, `lightMapIntensity` | Usually on the second UV set: the texture option `uvSet: 1`. A texture's `offset` and `repeat` become `lightMapOffset` and `lightMapRepeat`. A directional light map's direction texture becomes `lightMapDirection` |
 | `emissive`, `emissiveIntensity` | Same names | `emissive` is an sRGB color, as in three.js |
 | `emissiveMap` | `emissiveMap` | Must be sRGB |
 | `envMap`, `envMapIntensity` | `scene.setEnvironment(env)`, `envIntensity` (0.2) | Per-material environment maps are not supported; one scene environment lights everything. An `envMap` from a `CubeCamera` becomes `scene.createReflectionProbe({ box, position })` (0.2), which lights every surface in its box. `envIntensity` multiplies the scene's `intensity`, where three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment |

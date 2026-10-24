@@ -1511,6 +1511,15 @@ impl TextureStore {
         self.handles.is_live(texture)
     }
 
+    /// True when two textures share a texture array, so a shader that binds the array of one
+    /// reads the other at its own layer.
+    pub fn same_array(&self, first: Handle, second: Handle) -> bool {
+        match (self.slot(first), self.slot(second)) {
+            (Ok(a), Ok(b)) => a.array == b.array,
+            _ => false,
+        }
+    }
+
     /// The layer that a material samples a texture from, once its texels are on the GPU.
     pub fn ready_layer(&self, texture: Handle) -> Option<u32> {
         let slot = self.slot(texture).ok()?;

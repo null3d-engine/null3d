@@ -2504,12 +2504,15 @@ pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) 
     // two slots of their own.
     let raw = slot;
     let height = raw == map_slot::BUMP || raw == map_slot::DISPLACEMENT;
+    let direction = raw == map_slot::LIGHT_MAP_DIRECTION;
     let slot = raw as usize;
     let layer = slot
         .checked_sub(MapSlot::ALL.len())
         .map(|k| LayerMap::ALL.get(k));
     let (slot, layer) = if height {
         (MapSlot::Normal, None)
+    } else if direction {
+        (MapSlot::Light, None)
     } else {
         match (MapSlot::ALL.get(slot), layer) {
             (Some(&slot), _) => (slot, None),
@@ -2529,6 +2532,7 @@ pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) 
         let set = match raw {
             map_slot::BUMP => table.set_bump_map(id, map, second_uv),
             map_slot::DISPLACEMENT => table.set_displacement_map(id, map, second_uv),
+            map_slot::LIGHT_MAP_DIRECTION => table.set_light_map_direction(id, map),
             _ => match layer {
                 Some(layer) => table.set_layer_map(id, layer, map, second_uv),
                 None => table.set_map(id, slot, map, second_uv),
