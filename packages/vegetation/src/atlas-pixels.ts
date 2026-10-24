@@ -507,19 +507,12 @@ function sprayLeaves(seed: number, family: LeafFamily, options: SprayOptions): P
 		const side = (i & 1) === 0 ? 1 : -1;
 		const along = options.from + (options.to - options.from) * f + (random2(key, 3) - 0.5) * 0.07;
 		const lean = options.lean[0] + (options.lean[1] - options.lean[0]) * f;
+		const angle = side * (lean + 0.3 * (random2(key, 6) - 0.5));
+		const baseX = 0.5 + side * options.spread * random2(key, 5);
 		const length =
 			(options.length[0] + (options.length[1] - options.length[0]) * f) *
 			(0.9 + 0.2 * random2(key, 4));
-		leaves.push(
-			placeLeaf(
-				key,
-				family,
-				0.5 + side * options.spread * random2(key, 5),
-				along,
-				side * (lean + 0.3 * (random2(key, 6) - 0.5)),
-				length,
-			),
-		);
+		leaves.push(placeLeaf(key, family, baseX, along, angle, length));
 	}
 	return leaves;
 }
@@ -562,44 +555,44 @@ function leafCells(): LeafCellPainter[] {
 		// birch's small teeth and a willow's long narrow blade.
 		leafSpray(
 			sprayLeaves(11, FAMILIES.oak, {
-				count: 11,
-				from: 0.05,
-				to: 0.95,
-				lean: [0.95, 1.4],
-				length: [0.42, 0.28],
+				count: 22,
+				from: 0.04,
+				to: 0.96,
+				lean: [0.5, 1.45],
+				length: [0.46, 0.3],
 				spread: 0.05,
 			}),
 			0.03,
 		),
 		leafSpray(
 			sprayLeaves(23, FAMILIES.beech, {
-				count: 12,
-				from: 0.05,
-				to: 0.95,
-				lean: [1, 1.45],
-				length: [0.36, 0.25],
+				count: 23,
+				from: 0.04,
+				to: 0.96,
+				lean: [0.5, 1.45],
+				length: [0.42, 0.28],
 				spread: 0.05,
 			}),
 			0.02,
 		),
 		leafSpray(
 			sprayLeaves(37, FAMILIES.birch, {
-				count: 13,
-				from: 0.04,
-				to: 0.96,
-				lean: [1.05, 1.5],
-				length: [0.32, 0.22],
+				count: 24,
+				from: 0.03,
+				to: 0.97,
+				lean: [0.55, 1.5],
+				length: [0.38, 0.24],
 				spread: 0.05,
 			}),
 			0.03,
 		),
 		leafSpray(
 			sprayLeaves(41, FAMILIES.willow, {
-				count: 10,
-				from: 0.05,
-				to: 0.95,
-				lean: [0.95, 1.35],
-				length: [0.46, 0.3],
+				count: 20,
+				from: 0.04,
+				to: 0.96,
+				lean: [0.5, 1.4],
+				length: [0.5, 0.32],
 				spread: 0.05,
 			}),
 			0.03,
