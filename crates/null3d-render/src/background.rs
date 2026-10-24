@@ -521,6 +521,7 @@ impl BackgroundPass {
         sky_group: Option<u32>,
     ) -> Result<(), RecordError> {
         self.draw = None;
+        self.layer_ready = false;
         if self.pipeline == 0 {
             return Ok(());
         }
