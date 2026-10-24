@@ -379,3 +379,149 @@ fn a_material_without_depth_writes_draws_over_the_sky_on_webgl2() {
         CpuCulledConfig::default(),
     )));
 }
+
+/// The render pipeline template of a sky layer: a page's own, as a custom effect's is.
+const LAYER: u32 = template::CUSTOM_FIRST;
+
+/// A layer over the test's sky, with the template that its shader would take.
+fn sky_layer(sun: f32, opacity: f32) -> null3d_render::background::SkyLayer {
+    null3d_render::background::SkyLayer {
+        template: LAYER,
+        opacity,
+        sun,
+    }
+}
+
+/// The uniform block of a sky layer that a frame's list creates: the buffer that the group binds,
+/// and the bytes of its block.
+fn layer_buffer(commands: &[(Op, Vec<u32>)]) -> u32 {
+    let (_, words) = commands
+        .iter()
+        .find(|(op, o)| *op == Op::CreateBindGroup && o[1] == layout::BACKGROUND_LAYER)
+        .expect("the frame makes the layer's group");
+    assert_eq!(words[7], sizes::BACKGROUND_LAYER_UNIFORM_BYTES);
+    words[5]
+}
+
+/// Steps a world with a sky and a layer over it, on either frame builder: the layer's pipeline
+/// draws the box right after the background, in the background's place, and its values are written
+/// only when they change.
+fn a_sky_layer_draws_after_the_background<B: FrameBuilder>(mut world: World<B>) {
+    let mut mock = MockBackend::default();
+    world.add_object(&grid(1, 1), Shading::Lit);
+    let settings = world.renderer.settings_mut();
+    settings.set_background_source(Some(background(BackgroundSource::Sky(Sky::default()))));
+    settings.set_sky_layer(Some(sky_layer(0.4, 1.0)));
+    let commands = world.step(&mut mock, true);
+    let sky = box_pipelines(&commands, template::BACKGROUND_SKY, LAST);
+    assert_eq!(sky.len(), 1);
+    let layers = box_pipelines(&commands, LAYER, LAST);
+    assert_eq!(layers.len(), 1, "the layer takes the background's place");
+    let layer = layers[0];
+
+    let (_, draw) = background_draw(&commands, layer).expect("the layer draws");
+    assert_eq!(draw, vec![36, 1, 0, 0], "the template's box");
+    // The layer draws in the background's render pass, after its own draw.
+    let set = commands
+        .iter()
+        .position(|(op, o)| *op == Op::SetPipeline && o[0] == layer)
+        .unwrap();
+    let end = set
+        + commands[set..]
+            .iter()
+            .position(|(op, _)| *op == Op::EndRenderPass)
+            .unwrap();
+    let sky_set = commands
+        .iter()
+        .position(|(op, o)| *op == Op::SetPipeline && o[0] == sky[0])
+        .unwrap();
+    assert!(sky_set < set, "the layer draws after the sky");
+    let between = &commands[sky_set..set];
+    assert_eq!(
+        between
+            .iter()
+            .filter(|(op, _)| DRAWS.contains(op) || *op == Op::SetPipeline)
+            .count(),
+        2,
+        "nothing draws between the sky and the layer"
+    );
+    assert!(end > set);
+
+    // The layer's block holds the sky's clouds and the share of the sun that it hides.
+    let buffer = layer_buffer(&commands);
+    assert_eq!(value_writes(&commands, buffer), 1);
+    let commands = world.step(&mut mock, false);
+    assert_eq!(value_writes(&commands, buffer), 0, "the same values");
+    world
+        .renderer
+        .settings_mut()
+        .set_sky_layer(Some(sky_layer(0.6, 0.5)));
+    let commands = world.step(&mut mock, false);
+    assert_eq!(value_writes(&commands, buffer), 1, "the layer changed");
+}
+
+#[test]
+fn a_sky_layer_draws_after_the_background_on_webgpu() {
+    a_sky_layer_draws_after_the_background(World::new());
+}
+
+#[test]
+fn a_sky_layer_draws_after_the_background_on_webgl2() {
+    a_sky_layer_draws_after_the_background(World::build(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    )));
+}
+
+#[test]
+fn a_debug_view_or_a_scene_without_a_background_draws_no_layer() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    let settings = world.renderer.settings_mut();
+    settings.set_sky_layer(Some(sky_layer(0.4, 1.0)));
+    let commands = world.step(&mut mock, true);
+    assert!(
+        box_pipelines(&commands, LAYER, LAST).is_empty(),
+        "a layer needs a background to lie over"
+    );
+
+    let settings = world.renderer.settings_mut();
+    settings.set_background_source(Some(background(BackgroundSource::Sky(Sky::default()))));
+    settings.set_debug_view(DebugView::Normals);
+    let commands = world.step(&mut mock, true);
+    assert!(
+        box_pipelines(&commands, LAYER, LAST).is_empty(),
+        "a debug view draws no background"
+    );
+}
+
+#[test]
+fn a_layer_dims_the_sun_that_the_sky_draws() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    let settings = world.renderer.settings_mut();
+    settings.set_background_source(Some(background(BackgroundSource::Sky(Sky::default()))));
+    settings.set_sky_layer(Some(sky_layer(0.25, 1.0)));
+    assert_eq!(
+        world
+            .renderer
+            .settings()
+            .background()
+            .unwrap()
+            .sun_visibility,
+        0.75,
+        "the sky draws the rest of the sun"
+    );
+    // A new background keeps the layer's share.
+    let settings = world.renderer.settings_mut();
+    settings.set_background_source(Some(background(BackgroundSource::Sky(Sky::default()))));
+    assert_eq!(
+        world
+            .renderer
+            .settings()
+            .background()
+            .unwrap()
+            .sun_visibility,
+        0.75
+    );
+    let _ = world.step(&mut mock, true);
+}

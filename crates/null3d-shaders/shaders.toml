@@ -52,6 +52,10 @@
 #   effect_fold_host  True for the one shader that hosts custom effects and a custom tone curve
 #              folded into the final pass, which the shader compiler builds pieces with as for
 #              `effect_group_host`. A curve's piece builds with EFFECT_PIECE_CURVE.
+#   sky_layers True for the one template that sky layers build with. It is a template only: the
+#              build checks that it builds, with a layer that draws nothing, and writes no module
+#              of it. The shader compiler adds a layer's WGSL after its last line, and builds every
+#              variant with the shader def SKY_LAYER.
 #
 # Names of shaders, variants and pipelines use letters, digits and underscores and do not start
 # with a digit, because they become TypeScript property names.
@@ -954,6 +958,18 @@ variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 # texels are on the GPU.
 [first_use.background]
 shaders = ["background", "background_cube"]
+
+# The template of an add-on's sky layer, a box around the camera at the far plane that the camera's
+# opaque pass draws right after the background. The shader compiler adds a layer's WGSL after its
+# last line and builds every variant with the shader def SKY_LAYER, so that the add-on's `skyLayer`
+# replaces the template's stub. It is a template only: the build checks it and writes no module of
+# it, and the layer's pipeline takes a template of the page's own, as a custom effect's does.
+[shaders.background_layer]
+file = "background_layer.wgsl"
+sky_layers = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["TONE_MAP"], targets = ["glsl"] }
 
 # three.js's sky behind every object, drawn as the cube map background is.
 [shaders.sky]

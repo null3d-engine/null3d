@@ -35,7 +35,7 @@ use null3d_gpu::drawlist::{
 
 use crate::ao::{self, Ao, Contact};
 use crate::area_shading::AreaShading;
-use crate::background::{Background, BackgroundSource};
+use crate::background::{Background, BackgroundSource, SkyLayer};
 use crate::bloom::{Bloom, ChainFrame};
 use crate::camera::{Lens, Mat4, multiply};
 use crate::debug_lines::DebugLines;
@@ -968,6 +968,8 @@ pub struct SceneSettings {
     used_materials: Vec<bool>,
     /// What the camera's view draws behind every object, over the background color.
     background: Option<Background>,
+    /// The layer that an add-on draws over the background, from the template the page sent.
+    sky_layer: Option<SkyLayer>,
     /// The CPU model of the physical sky's air, once the scene drew a physical sky.
     air: Option<AirModel>,
     /// True while the quality settings draw the physical sky, else the analytic sky stands in.
@@ -1172,6 +1174,7 @@ impl SceneSettings {
             shared_map_units: 0,
             used_materials: Vec::new(),
             background: None,
+            sky_layer: None,
             air: None,
             physical_sky: true,
             stand_in: None,
@@ -2447,17 +2450,35 @@ impl SceneSettings {
 
     /// Draws `background` behind every object in the camera's view, or only the background color
     /// with none.
-    pub fn set_background_source(&mut self, background: Option<Background>) {
+    pub fn set_background_source(&mut self, mut background: Option<Background>) {
+        if let Some(background) = background.as_mut() {
+            background.sun_visibility = self.sun_visibility();
+        }
         self.background = background;
         self.update_sky();
     }
 
-    /// Sets what of the sun the sky draws, from 0 for none to 1 for all of it, as a sky layer
-    /// covers the disc. It scales the disc and its glow, never the lights that a page set.
-    pub fn set_sun_visibility(&mut self, visibility: f32) {
+    /// Draws `layer` over the background from the next frame on, or nothing with `None`. A layer
+    /// dims the share of the sun that it hides, from the disc that the core sky draws.
+    pub fn set_sky_layer(&mut self, layer: Option<SkyLayer>) {
+        self.sky_layer = layer;
+        let visibility = self.sun_visibility();
         if let Some(background) = self.background.as_mut() {
-            background.sun_visibility = visibility.clamp(0.0, 1.0);
+            background.sun_visibility = visibility;
         }
+    }
+
+    /// What of the sun the core sky draws: 1 while no layer hides any of it.
+    fn sun_visibility(&self) -> f32 {
+        1.0 - self
+            .sky_layer
+            .map_or(0.0, |layer| layer.sun.clamp(0.0, 1.0))
+    }
+
+    /// The layer that an add-on draws over the background, or none without a background to draw
+    /// over or in a debug view, which draws no background.
+    pub fn sky_layer(&self) -> Option<SkyLayer> {
+        self.sky_layer.filter(|_| self.background().is_some())
     }
 
     /// Draws the physical sky while `on`, else the analytic sky in its place, as the quality
