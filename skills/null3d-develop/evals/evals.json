@@ -99,6 +99,48 @@
         "Focuses with focusPoint on the hero's position, passed again each frame without allocating, or with focusDistance",
         "Mentions that the Low preset draws no depth of field unless quality.set({ dofSamples }) turns it on"
       ]
+    },
+    {
+      "id": 8,
+      "prompt": "I'm building a campfire scene in null3d. I'll write my own particle system: a pool of quads, each with a velocity and a lifetime, updated every frame in onUpdate. Is that the right approach, or is there something built in?",
+      "expected_output": "The answer points to the particles add-on: createParticles from @null3d/particles with particleTextures.flame or smoke, emitters and bursts, presented as built. It explains that the add-on animates particles in closed form on the GPU, so the sketch needs no per-frame simulation or pool, and it does not write the hand-rolled pool. It mentions blending and soft particles for the look, and warns that particles cost fill rate on phones.",
+      "files": [],
+      "expectations": [
+        "Recommends createParticles from @null3d/particles, presented as built",
+        "Does not present the hand-rolled quad pool as the main answer",
+        "Names an emitter or burst, and a particle texture such as particleTextures.flame or smoke",
+        "Explains that the add-on animates particles in closed form on the GPU, so no per-frame JavaScript simulation is needed",
+        "Mentions blending, such as additive for fire and normal for smoke, or soft particles",
+        "Mentions the fill-rate cost on phones or a quality setting"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "Add physics to my null3d game: about 300 crates should fall, stack and collide with a ground plane. I want a null3d physics API, so show me the call.",
+      "expected_output": "The answer says that null3D has no physics API in this version and that the physics foundation add-on is not built yet. It does not invent scene.createPhysics or @null3d/physics. It runs Rapier (@dimforge/rapier3d-compat) in the sketch worker, uses one dynamic instance batch for the crates, and copies each body's translation into batch.positions without allocating. It says that the physics state is copied into the scene each frame, and that the add-on replaces the workaround when it ships.",
+      "files": [],
+      "expectations": [
+        "States that null3D has no physics API in this version, or that the physics add-on is not built yet",
+        "Does not invent a null3D physics call or package, such as scene.createPhysics or @null3d/physics",
+        "Runs @dimforge/rapier3d-compat or cannon-es in the sketch worker",
+        "Uses one dynamic instance batch for the crates and writes batch.positions from the body translations",
+        "Writes batch.positions directly with no array or object literal in the loop, and names the library's own per-call objects as the remaining allocation",
+        "Names the workaround as temporary until the physics add-on ships"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "My null3d product page needs a 40,000 square metre valley with hills, and the camera orbits 200 m above it. I planned to write a subdivided height-map plane and update it myself. Is that the best route?",
+      "expected_output": "The answer recommends createTerrain from @null3d/terrain, presented as built, with terrainTextures for its surface. It explains the camera-centred quadtree of blocks and that a still camera costs no work. It places objects with heightAt and normalAt because the terrain carries no collision. It does not write the hand-rolled plane as the main answer, and it suggests checking the WebGL2 path.",
+      "files": [],
+      "expectations": [
+        "Recommends createTerrain from @null3d/terrain, presented as built",
+        "Does not present the hand-rolled subdivided height-map plane as the main answer",
+        "Explains the camera-centred quadtree of blocks, or that detail follows the camera",
+        "Uses heightAt or normalAt to place objects, and says that the terrain carries no collision",
+        "Mentions terrainTextures or a splat-mapped surface",
+        "Suggests checking the WebGL2 path"
+      ]
     }
   ]
 }
