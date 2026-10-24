@@ -44,10 +44,12 @@ export const TRAP = {
 	gapMs: 500,
 	/**
 	 * The most frames between the step and its return, when a held frame decided the trial. The
-	 * held frame is judged at the frame after it, and one more frame covers a completion record
-	 * that lands late. A trial that only its 4 s bound ended takes several frames longer.
+	 * held frame is judged at the frame after it, and a frame or two more cover a completion record
+	 * that lands late. A slow software renderer draws few frames a second, so its record arrives a
+	 * frame later than this Mac's does: CI measured four, against the two or three recorded here.
+	 * A trial that only its 4 s bound ended still takes several frames more than this.
 	 */
-	mostHeldFramesBetween: 3,
+	mostHeldFramesBetween: 5,
 	/** The most frames between the step and its return, when a judged second did. */
 	mostJudgedFramesBetween: 8,
 	/** The most scale changes the page allows after the return. */

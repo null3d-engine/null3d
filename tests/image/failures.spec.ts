@@ -58,7 +58,7 @@ for (const mode of ENGINE_MODES) {
 		const result = await pageResult<FailureResult>(page, 30_000);
 		expect(result.error).toBeUndefined();
 		expect(result.codes[0]).toBe('E1424');
-		expect(result.messages[0]).toContain('the builds of a custom material did not load: ');
+		expect(result.messages[0]).toContain('the builds of a custom shader did not load: ');
 		expect(result.ticks).toBeGreaterThan(0);
 	});
 }
