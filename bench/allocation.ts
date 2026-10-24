@@ -165,17 +165,17 @@ import {
 	launchChromium,
 	SWIFTSHADER_ARGS,
 } from '../packages/cli/src/browser.js';
-import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
-import { DEBUG_PORT } from '../tests/lib/server.ts';
+import { HeapSampler } from '../packages/cli/src/devtools.js';
 import {
 	countIn,
-	type HeapProfile,
 	type ProfileNode,
 	profilePlaces,
 	type Sample,
 	steadyPlaces,
 	totalSize,
-} from './lib/allocation';
+} from '../packages/cli/src/heap-profile.js';
+import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
+import { DEBUG_PORT } from '../tests/lib/server.ts';
 import { attachWorkers, DevTools, evaluate, pagesAt, sleep, within } from './lib/devtools';
 import { pagePath } from './lib/parity';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
@@ -881,48 +881,20 @@ async function main(): Promise<void> {
 		console.log(
 			`Warmed up: ${await framesSoFar()} frames in ${((performance.now() - warmupStart) / 1000).toFixed(0)} s`,
 		);
-		for (const [name, sessionId] of sessions)
-			await within(
-				devtools.send('HeapProfiler.enable', {}, sessionId),
-				STEP_MS,
-				`enabling the heap profiler in the ${name}`,
-			);
+		const sampler = new HeapSampler(devtools, sessions);
+		await sampler.enable();
 		const stepsBefore = driven.steps;
 		const samples = new Map<string, Sample[]>();
 		const bytes = new Map<string, number>();
 		let frames = 0;
 		for (let k = 0; k < SAMPLES; k++) {
-			for (const [name, sessionId] of sessions) {
-				// The profiler keeps the samples of objects that garbage collection frees, which
-				// per-frame garbage is; by default it reports only objects still alive when sampling
-				// stops.
-				await within(
-					devtools.send(
-						'HeapProfiler.startSampling',
-						{
-							samplingInterval: SAMPLING_INTERVAL,
-							includeObjectsCollectedByMajorGC: true,
-							includeObjectsCollectedByMinorGC: true,
-						},
-						sessionId,
-					),
-					STEP_MS,
-					`starting sample ${k + 1} in the ${name}`,
-				);
-			}
+			await sampler.start(SAMPLING_INTERVAL);
 			const startFrames = await framesSoFar();
 			const startCalls = await callsSoFar();
 			await sleep(seconds * 1000);
-			const profiles = new Map<string, HeapProfile>();
-			for (const [name, sessionId] of sessions) {
-				const { profile } = await within(
-					devtools.send<{ profile: HeapProfile }>('HeapProfiler.stopSampling', {}, sessionId),
-					STEP_MS,
-					`stopping sample ${k + 1} in the ${name}`,
-				);
+			const profiles = await sampler.stop();
+			for (const profile of profiles.values())
 				if (server.names) nameNodes(profile.head, server.names);
-				profiles.set(name, profile);
-			}
 			const sampleFrames = (await framesSoFar()) - startFrames;
 			const endCalls = await callsSoFar();
 			frames += sampleFrames;

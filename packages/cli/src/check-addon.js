@@ -3,7 +3,7 @@
 // the entry points that its shipped code imports, the plugin interface that it declares, a build
 // that compiles its shaders for WebGPU and WebGL2, and the sizes of the files it loads after the
 // start. With a page in the project's config, a browser opens that page for the remaining gates.
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
@@ -12,16 +12,22 @@ import { brotliCompressSync, gzipSync } from 'node:zlib';
 import { readArguments, UsageError } from './args.js';
 import { measurePage } from './bench.js';
 import { WEBGPU_DEVELOPER_FEATURES } from './browser.js';
-import { holdPath, holdResult, switchedPath } from './page.js';
+import { attachWorkers, DevTools, freePort, HeapSampler, pagesAt, sleep } from './devtools.js';
+import { placeName, profilePlaces, steadyPlaces, totalSize } from './heap-profile.js';
+import { ENGINE_GLOBAL, holdPath, holdResult, switchedPath } from './page.js';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from './protocol.js';
-import { startRunner, visitPage } from './runner.js';
+import { failure, pollPage, startRunner, visitPage } from './runner.js';
+import { BuildNames } from './source-names.js';
 import { outcomeText, summaryLine } from './test.js';
 import { readTestConfig } from './test-config.js';
 import { counted } from './text.js';
 
 /** @import { Outcome } from './project-checks.js' */
+/** @import { CallFrame, ProfileNode, Sample } from './heap-profile.js' */
 /** @import { HoldFailure } from './page.js' */
+/** @import { Page } from 'playwright-core' */
 /** @import { Runner } from './runner.js' */
+/** @import { TargetInfo } from './devtools.js' */
 
 /** The file that names an add-on's package, in its folder. */
 const MANIFEST = 'package.json';
@@ -94,8 +100,10 @@ Runs the engine's gates on one add-on package, in \`folder\` (the current folder
                package, pins the engine version
   shaders      a build compiles the add-on's WGSL for WebGPU and WebGL2
   sizes        each file that the add-on loads after the start holds to its budget
-  page         with a page, it starts from another origin under the strict policy, allocates
-               nothing in a frame, and its cost is measured on each quality preset
+  page         with a page, it starts from another origin under the strict policy
+  cost         with a page, its cost per frame is measured on each quality preset
+  allocation   with a page, the bytes that the add-on's own code allocates per frame are
+               measured on each quality preset
 
 The page comes from \`page\` in the first test of null3d.json, or from --page. Without one, the
 page gates are skipped.
@@ -559,6 +567,9 @@ function moreLines(/** @type {string[]} */ lines) {
 /** The quality presets that the cost gate measures, lowest first. */
 const PRESETS = /** @type {const} */ (['low', 'medium', 'high', 'ultra']);
 
+/** The gates that open a browser, which the page's config or an option can leave out. */
+const BROWSER_GATES = ['page', 'cost', 'allocation'];
+
 /** The headers that make a page cross-origin isolated, which its worker threads need. */
 const ISOLATION = {
 	'cross-origin-opener-policy': 'same-origin',
@@ -774,6 +785,348 @@ async function costGate(runner, page) {
 }
 
 /**
+ * The workers that the allocation gate samples, by a part of their script's address. The engine
+ * runs the page's frame code in the sketch worker, and draws in the render worker.
+ */
+const SAMPLED_WORKERS = ['sketch-worker', 'render-worker'];
+
+/** Bytes between the heap profiler's samples, small so that a few bytes per frame still show. */
+const SAMPLING_INTERVAL = 128;
+
+/** Seconds that a page warms up before a sample, so the browser optimizes its frame code. */
+const ALLOCATION_WARMUP_SECONDS = 20;
+
+/**
+ * Frames that a page draws before a sample too. The browser optimizes code that runs once a frame
+ * only after many frames, and until then the numbers that such code computes are allocated.
+ */
+const ALLOCATION_WARMUP_FRAMES = 1200;
+
+/** Samples that the gate takes one after another, and the seconds that each runs. */
+const ALLOCATION_SAMPLES = 2;
+const ALLOCATION_SAMPLE_SECONDS = 4;
+
+/** Seconds without a new frame after which the gate gives up on a page that stopped drawing. */
+const STALL_SECONDS = 60;
+
+/** How many places of the add-on's own code a result names. */
+const SHOWN_PLACES = 8;
+
+/** The global where the gate counts a page's animation frames. */
+const FRAME_COUNTER = '__null3dAddonFrames';
+
+/** How long a page may take to start the engine. */
+const ENGINE_TIMEOUT_MS = 60_000;
+
+/**
+ * The figures of one page on one quality preset.
+ *
+ * @typedef {object} AllocationFigures
+ * @property {number} pageBytes Bytes per frame in the page's threads.
+ * @property {number} addonBytes Bytes per frame in the add-on's own code.
+ * @property {{ worker: string, place: string, perFrame: number }[]} places The places of the
+ *   add-on's own code that allocated, largest first.
+ */
+
+/**
+ * Runs in the page: counts the browser's animation frames under `name`, from now on.
+ *
+ * @param {string} name
+ */
+function startCountingFrames(name) {
+	const scope =
+		/** @type {{ requestAnimationFrame: (callback: () => void) => number } & Record<string, unknown>} */ (
+			/** @type {unknown} */ (globalThis)
+		);
+	if (scope[name]) return;
+	const counter = { frames: 0 };
+	const tick = () => {
+		counter.frames++;
+		scope.requestAnimationFrame(tick);
+	};
+	scope.requestAnimationFrame(tick);
+	scope[name] = counter;
+}
+
+/**
+ * Runs in the page: the animation frames counted since the counter started.
+ *
+ * @param {string} name
+ * @returns {number}
+ */
+function countedFrames(name) {
+	const counter = /** @type {{ frames: number } | undefined} */ (
+		/** @type {Record<string, unknown>} */ (globalThis)[name]
+	);
+	return counter?.frames ?? 0;
+}
+
+/**
+ * The file of a named frame, as a path, or nothing for a frame of the browser or of a script with no
+ * address of its own.
+ *
+ * @param {CallFrame} frame
+ * @returns {string | undefined}
+ */
+function sourcePathOf({ url }) {
+	if (!/^https?:/.test(url)) return undefined;
+	try {
+		return decodeURIComponent(new URL(url).pathname);
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Something that names a frame through a build's source maps, such as a `BuildNames`.
+ *
+ * @typedef {{ name: (frame: CallFrame) => CallFrame }} Namer
+ */
+
+/**
+ * An add-on's package name and its folder, with symbolic links resolved.
+ *
+ * @typedef {{ folder: string, name: string }} Addon
+ */
+
+/**
+ * Whether a source file is the add-on's own: in its folder, as a page that imports its source uses
+ * it, or in its copy under `node_modules`, as a page that imports the published package uses it.
+ *
+ * @param {string} path
+ * @param {Addon} addon
+ * @returns {boolean}
+ */
+function belongsToAddon(path, { folder, name }) {
+	return `${path}${sep}`.startsWith(`${folder}${sep}`) || path.includes(`/node_modules/${name}/`);
+}
+
+/**
+ * Names each function of a profile through the build's source maps, and notes each place that the
+ * add-on's own code allocated in. A place belongs to the add-on when its source file is the
+ * add-on's, so the gate names the page's and the add-on's code, not the engine's.
+ *
+ * @param {ProfileNode} node
+ * @param {Namer} names
+ * @param {Addon} addon
+ * @param {Set<string>} into
+ */
+export function nameProfile(node, names, addon, into) {
+	node.callFrame = names.name(node.callFrame);
+	const path = sourcePathOf(node.callFrame);
+	if (path !== undefined && belongsToAddon(path, addon)) into.add(placeName(node.callFrame));
+	for (const child of node.children) nameProfile(child, names, addon, into);
+}
+
+/**
+ * Waits until a page's frame counter reaches `target`, and throws when it stands still for a while,
+ * as on a page whose engine failed.
+ *
+ * @param {() => Promise<number>} frames
+ * @param {number} target
+ */
+async function reachFrames(frames, target) {
+	let last = -1;
+	let still = 0;
+	for (;;) {
+		const now = await frames();
+		if (now >= target) return;
+		still = now === last ? still + 1 : 0;
+		if (still >= STALL_SECONDS)
+			throw new Error(`the page drew no frame for ${STALL_SECONDS} s, at ${now} of ${target}`);
+		last = now;
+		await sleep(1000);
+	}
+}
+
+/**
+ * The browser's page target at the address that the gate opened, or the newest page at its path for
+ * a page that rewrote its address. The address names the preset, so a page that an earlier gate left
+ * open does not match it.
+ *
+ * @param {DevTools} devtools
+ * @param {string} url
+ * @returns {Promise<TargetInfo | undefined>}
+ */
+async function pageTargetAt(devtools, url) {
+	const { targetInfos } = /** @type {{ targetInfos: TargetInfo[] }} */ (
+		await devtools.send('Target.getTargets')
+	);
+	const exact = targetInfos.filter(
+		(target) => target.type === 'page' && target.url.startsWith(url),
+	);
+	return exact.at(-1) ?? (await pagesAt(devtools, url)).at(-1);
+}
+
+/**
+ * Opens the page on one quality preset and samples what its workers allocate per frame, then gives
+ * the bytes per frame of the add-on's own code and of the page.
+ *
+ * @param {{ devtools: DevTools, browserPage: Page, url: string, names: Namer, addon: Addon }} options
+ * @returns {Promise<AllocationFigures | { error: string }>}
+ */
+async function sampleAllocation({ devtools, browserPage, url, names, addon }) {
+	const started = await pollPage(browserPage, url, ENGINE_TIMEOUT_MS, async (overdue) => {
+		const found = await browserPage
+			.evaluate((name) => name in globalThis, ENGINE_GLOBAL)
+			.catch(() => false);
+		if (found) return true;
+		if (overdue)
+			return failure(
+				'the page did not start the engine in time. The allocation gate needs a page that starts the engine as it loads, with no click',
+			);
+		return undefined;
+	});
+	if (started !== true) return { error: started.error };
+	await browserPage.evaluate(startCountingFrames, FRAME_COUNTER);
+	const framesSoFar = () => browserPage.evaluate(countedFrames, FRAME_COUNTER);
+	const target = await pageTargetAt(devtools, url);
+	if (target === undefined) return { error: 'the browser reported no page for this address' };
+	const { workers } = await attachWorkers(devtools, target.targetId, SAMPLED_WORKERS);
+	await sleep(ALLOCATION_WARMUP_SECONDS * 1000);
+	await reachFrames(framesSoFar, ALLOCATION_WARMUP_FRAMES);
+	const sampler = new HeapSampler(devtools, workers);
+	await sampler.enable();
+	/** @type {Map<string, Sample[]>} */
+	const samples = new Map();
+	/** @type {Map<string, number>} */
+	const bytes = new Map();
+	/** @type {Set<string>} */
+	const addonPlaces = new Set();
+	let frames = 0;
+	for (let sample = 0; sample < ALLOCATION_SAMPLES; sample++) {
+		await sampler.start(SAMPLING_INTERVAL);
+		const startFrames = await framesSoFar();
+		await sleep(ALLOCATION_SAMPLE_SECONDS * 1000);
+		const profiles = await sampler.stop();
+		const drawn = (await framesSoFar()) - startFrames;
+		if (drawn <= 0) return { error: 'the page drew no frame while it was sampled' };
+		frames += drawn;
+		for (const [worker, profile] of profiles) {
+			nameProfile(profile.head, names, addon, addonPlaces);
+			samples.set(worker, [
+				...(samples.get(worker) ?? []),
+				{ places: profilePlaces(profile), frames: drawn },
+			]);
+			bytes.set(worker, (bytes.get(worker) ?? 0) + totalSize(profile.head));
+		}
+	}
+	const unsampled = [...samples.keys()].filter((worker) => !bytes.get(worker));
+	if (unsampled.length > 0)
+		return {
+			error: `the heap profiler sampled nothing in the ${unsampled.join(' and the ')}. Its page must run the engine's sketch and render workers`,
+		};
+	/** @type {{ worker: string, place: string, perFrame: number }[]} */
+	const places = [];
+	for (const [worker, workerSamples] of samples)
+		for (const [place, { perFrame }] of steadyPlaces(workerSamples))
+			if (addonPlaces.has(place)) places.push({ worker, place, perFrame });
+	places.sort((a, b) => b.perFrame - a.perFrame);
+	return {
+		addonBytes: places.reduce((sum, place) => sum + place.perFrame, 0),
+		pageBytes: [...bytes.values()].reduce((sum, size) => sum + size, 0) / frames,
+		places,
+	};
+}
+
+/** The size of a figure per frame: whole bytes below one kilobyte, and kilobytes above it. */
+const perFrameSize = (/** @type {number} */ bytes) =>
+	bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${Math.round(bytes)} bytes`;
+
+/**
+ * What the allocation gate prints: the bytes per frame in the add-on's own code on each preset,
+ * then the page's own figure and the places that allocated on each.
+ *
+ * @param {readonly ({ preset: string } & AllocationFigures)[]} runs
+ * @param {string} browserName
+ * @returns {Outcome}
+ */
+export function allocationOutcome(runs, browserName) {
+	const shown = runs.map((run) => `${run.preset} ${perFrameSize(run.addonBytes)}`);
+	/** @type {string[]} */
+	const details = runs.map(
+		(run) =>
+			`${run.preset}: ${perFrameSize(run.pageBytes)} per frame in the page's threads, ${perFrameSize(run.addonBytes)} of it in the add-on's own code`,
+	);
+	for (const run of runs)
+		for (const { worker, place, perFrame } of run.places.slice(0, SHOWN_PLACES))
+			details.push(`${run.preset}: ${perFrameSize(perFrame)} per frame in ${place} (${worker})`);
+	return {
+		status: 'PASS',
+		text: `allocation per preset: ${shown.join(', ')} per frame in the add-on's own code, on ${browserName}`,
+		details,
+	};
+}
+
+/**
+ * Measures what the add-on's own code allocates per frame on the page, on each quality preset. The
+ * page runs its production build, as the cost gate measures it, and the gate samples the sketch and
+ * render workers' heaps. A page that the gate cannot measure fails; a figure that a seller publishes
+ * for its add-on never does.
+ *
+ * @param {Runner} runner
+ * @param {{ page: string, folder: string, name: string }} options The page, from the project's
+ *   root, and the add-on that it belongs to.
+ * @param {number} port The port of the browser's debugging socket.
+ * @param {number} [timeoutMs] How long the browser may take to answer on that port.
+ * @returns {Promise<Outcome>}
+ */
+export async function allocationGate(runner, { page, folder, name }, port, timeoutMs = 20_000) {
+	const buildDir = runner.server.buildDir;
+	if (buildDir === undefined)
+		return { status: 'FAIL', text: 'allocation: the project has no production build' };
+	/** @type {DevTools} */
+	let devtools;
+	try {
+		devtools = await DevTools.connect(port, timeoutMs);
+	} catch (error) {
+		return {
+			status: 'FAIL',
+			text: `allocation: the gate could not reach the browser's debugging socket: ${error instanceof Error ? error.message : error}`,
+		};
+	}
+	const names = new BuildNames(buildDir);
+	// A build names the sources by the path that Vite resolved, and a symbolic link in the folder's
+	// own path would hide the add-on's code from the gate.
+	/** @type {Addon} */
+	const addon = { name, folder };
+	try {
+		addon.folder = realpathSync(folder);
+	} catch {
+		addon.folder = folder;
+	}
+	try {
+		/** @type {({ preset: string } & AllocationFigures)[]} */
+		const runs = [];
+		for (const preset of PRESETS) {
+			const context = await runner.browser.newContext({
+				viewport: { width: 1280, height: 720 },
+				deviceScaleFactor: 1,
+				ignoreHTTPSErrors: true,
+			});
+			try {
+				const browserPage = await context.newPage();
+				const url = new URL(switchedPath(page, { bench: '', preset }), runner.server.url).href;
+				const run = await sampleAllocation({ devtools, browserPage, url, names, addon });
+				if ('error' in run)
+					return { status: 'FAIL', text: `allocation: on ${preset}, ${run.error}` };
+				runs.push({ preset, ...run });
+			} finally {
+				await context.close();
+			}
+		}
+		return allocationOutcome(runs, runner.browserName);
+	} catch (error) {
+		return {
+			status: 'FAIL',
+			text: `allocation: the gate stopped: ${error instanceof Error ? error.message : error}`,
+		};
+	} finally {
+		devtools.close();
+	}
+}
+
+/**
  * Runs the command with its arguments, prints each gate as it comes and a count at the end, and
  * returns the exit code: 0 when no gate failed, 1 when one did.
  *
@@ -870,11 +1223,14 @@ export async function run(args) {
 	}
 
 	if (options.skipBrowser) {
-		print({ status: 'SKIP', text: 'page: --skip-browser runs no gate that opens a browser' });
+		for (const gate of BROWSER_GATES)
+			print({ status: 'SKIP', text: `${gate}: --skip-browser runs no gate that opens a browser` });
 	} else {
 		const chosen = pageOf(folder, options.page);
 		if (chosen.page === undefined) {
 			print({ status: 'SKIP', text: `page: ${chosen.reason ?? ''}` });
+			print({ status: 'SKIP', text: 'cost: there is no page to measure' });
+			print({ status: 'SKIP', text: 'allocation: there is no page to sample' });
 		} else {
 			/** @type {Runner | undefined} */
 			let runner;
@@ -882,12 +1238,16 @@ export async function run(args) {
 			const cwd = process.cwd();
 			try {
 				process.chdir(folder);
+				// The allocation gate reads the workers' heaps through the browser's debugging socket.
+				const port = await freePort();
 				runner = await startRunner({
 					production: true,
-					browserArgs: [WEBGPU_DEVELOPER_FEATURES],
+					sourcemap: true,
+					browserArgs: [WEBGPU_DEVELOPER_FEATURES, `--remote-debugging-port=${port}`],
 				});
 				print(await strictPolicyGate(runner, chosen.page));
 				print(await costGate(runner, chosen.page));
+				print(await allocationGate(runner, { page: chosen.page, folder, name: addon.name }, port));
 			} catch (error) {
 				print({
 					status: 'FAIL',

@@ -56,6 +56,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		"Namespaces for an add-on's shader library, error codes and quality keys: `packages/engine/src/scene/namespaces.ts`",
 	'M3-D9':
 		"`bunx @null3d/cli check-addon` runs the engine's gates on one add-on: `packages/cli/src/check-addon.js`, which refuses `tests/fixtures/d9-addon-internal` for importing `@null3d/engine/internal`; D-225 records the run over every foundation add-on and the fixture's page and cost gates",
+	'M3-D9a':
+		"The allocation gate of `check-addon`: the engine's profiler now lives once in `packages/cli/src/heap-profile.js`, `devtools.js` and `source-names.js`, and the benchmarks import it; D-225's addendum records the figures that `tests/fixtures/d9-addon` and `tests/fixtures/d9-addon-allocating` gave on 24 October 2026",
 	'M3-E1':
 		"Splats draw through `scene.addFeatureInstances` (`packages/engine/src/scene/feature-instances.ts`); the `splats`, `splats-budget` and `splats-gltf` pictures on both paths; the draw's size in `tools/lib/size-report.ts`",
 	'M3-F6':

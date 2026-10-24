@@ -1,6 +1,6 @@
 # D-225: The add-on listing check
 
-Status: decided. Date: 2026-10-23. Task: M3-D9. This record gives the command that [D-173](D-173-addon-hooks.md) ruling 10 asks for. The allocation gate that ruling names moves to M3-D9a, for the reason under "Not in this task".
+Status: decided. Date: 2026-10-23. Task: M3-D9, M3-D9a. This record gives the command that [D-173](D-173-addon-hooks.md) ruling 10 asks for. The allocation gate that ruling names moves to M3-D9a, for the reason under "Not in this task". The addendum of 24 October 2026 builds it.
 
 Summary: `bunx @null3d/cli check-addon [folder]` runs the engine's gates on one add-on package and prints one line per gate. It checks the package, the public imports, the plugin interface range, a build of the WGSL for both GPU paths, the size of first-use files, the page's strict-policy start, and its cost per preset. The page comes from the project's `null3d.json` or `--page`, and the page gates skip with a reason without one.
 
@@ -107,9 +107,13 @@ measured every preset.
 
 ## Not in this task
 
-The allocation gate is not built. Porting the engine's profiler harness into the command-line tool is most of a task of its own. It also measures a page that an outside add-on may not ship.
+The allocation gate was left out of M3-D9. Porting the engine's profiler harness into the
+command-line tool is most of a task of its own. It also measures a page that an outside add-on may
+not ship.
 
-The coordinator moved it to M3-D9a on 23 October 2026, with the profiler port named, so it stays tracked work rather than a silent deferral. M3-D9a decides between a port of the harness and a public form of its sampling.
+The coordinator moved it to M3-D9a on 23 October 2026, with the profiler port named, so it stays
+tracked work rather than a silent deferral. The addendum below records what M3-D9a decided and
+built.
 
 ## Addendum, 24 October 2026: the three-compat add-on
 
@@ -134,3 +138,78 @@ shader builds of its two tone curves and its outline passes. That is the shape t
 [D-56](D-56-first-use-shader-files.md) moved out of code for the engine: shader text belongs in a
 file that loads on the feature's first use, under the shader budget, not inside the add-on's entry.
 The gate did its job: three-compat shipped over budget because nothing had measured it.
+
+## Addendum, 24 October 2026: the allocation gate (M3-D9a)
+
+M3-D9a held a choice: port the engine's profiling harness into the command-line package, or publish a
+form of its sampling that the tool calls. The gate is now built.
+
+**The decision: a port.** The harness drives Chrome's debugging protocol, attaches to a page's
+workers and reads their heaps. That is tool code, not engine code. A public form would freeze a
+benchmark harness into the engine's public API, which [D-199](D-199-m4-features-and-study-tasks-in-m3.md)
+and hard rule 14 keep for engine features. The package already ships the browser that the bench
+imports, so the port adds no new direction of dependency.
+
+**Where the one implementation lives.** Three modules in `@null3d/cli`:
+
+- `packages/cli/src/heap-profile.js` reads a heap profile into the bytes that each place allocated,
+  sets aside the burst that the browser makes when it installs code it has just optimized, and gives
+  each place's bytes per frame across the samples.
+- `packages/cli/src/devtools.js` is the debugging-protocol client, the worker attach, `HeapSampler`,
+  which starts and stops a sample in every worker, and the free port that the browser listens on.
+- `packages/cli/src/source-names.js` names a built function by its source file through the build's
+  source map.
+
+The benchmarks import these modules, and there is one copy of the profiler. The bench keeps only
+what belongs to the repository's own tools: the phone's entry, `connectPhoneChrome`, and the load
+address that the startup tool serves a build under.
+
+**What the gate does.** For each preset it opens the page's production build with `?bench&preset=`,
+waits for the engine, attaches to the sketch and render workers, warms up for 20 s and 1,200 frames,
+and samples each worker's heap twice for 4 s. It names each function through the build's source maps.
+Then it sums the places whose source file is the add-on's own: in the add-on's folder, or in its copy
+under `node_modules`. It prints the page's own figure beside it. A page with no such place reports
+zero.
+
+**Why the build carries source maps.** A production build's frames name bundled chunks, so without
+maps the gate could not tell the add-on's code from the engine's. The check builds with
+`sourcemap: 'hidden'`, which writes the maps and adds no address to a built file, so the page loads
+nothing more. The cost gate measures the same build.
+
+**The verdict.** The gate prints figures and passes once it has measured them. It fails only when it
+cannot measure: no production build, no answer on the browser's debugging socket, no worker target,
+no frame while it sampled, or a worker whose profile held nothing. It never fails because a figure
+differs from one that an add-on publishes. The engine's own allocation check keeps its budgets,
+because it measures the engine. An add-on's page has no such budget, and needs none: the page's own
+sketch in `tests/fixtures/d9-addon` allocates a few bytes per frame by itself. That is the browser
+boxing a fraction that a setter takes, which the engine's own budgets record as an allowed cost. A
+budget on the add-on's figure would fail an honest add-on.
+
+**The run.** `tests/fixtures/d9-addon` passed every gate, and the allocation gate printed:
+
+```text
+PASS  allocation per preset: low 0 bytes, medium 0 bytes, high 0 bytes, ultra 0 bytes per frame in the add-on's own code, on Chrome 155.0.8059.85
+      low: 782 bytes per frame in the page's threads, 0 bytes of it in the add-on's own code
+      medium: 775 bytes per frame in the page's threads, 0 bytes of it in the add-on's own code
+      high: 789 bytes per frame in the page's threads, 0 bytes of it in the add-on's own code
+      ultra: 786 bytes per frame in the page's threads, 0 bytes of it in the add-on's own code
+```
+
+A first probe of the same page, with a warm-up of 8 s, read 8.9 bytes per frame in the fixture's
+`onUpdate`. With the gate's longer warm-up, the browser inlines the setter, and the boxing stops.
+The budget of the engine's own check would have failed that first probe's figure.
+
+`tests/fixtures/d9-addon-allocating` is the fixture that shows the gate catching allocation: its
+page calls the add-on's step in every frame, and the step makes objects there. The gate printed:
+
+```text
+PASS  allocation per preset: low 5.6 KB, medium 5.6 KB, high 5.8 KB, ultra 5.7 KB per frame in the add-on's own code, on Chrome 155.0.8059.85
+      low: 5.6 KB per frame in trail src/index.ts (sketch-worker)
+      medium: 5.6 KB per frame in trail src/index.ts (sketch-worker)
+      high: 5.8 KB per frame in trail src/index.ts (sketch-worker)
+      ultra: 5.7 KB per frame in trail src/index.ts (sketch-worker)
+```
+
+The place is the add-on's own step, in the sketch worker, and the page's other threads allocate the
+rest. The gate passes with those figures rather than failing, as its verdict says. A listing that
+wants a budget for the add-on's own code adds one; the gate's figures are what such a budget reads.

@@ -73,11 +73,14 @@ PASS  shaders: 2 files built with WGSL for WebGPU and WebGL2
 PASS  sizes: the largest file is 41.2 KB raw, 11.4 KB gzip, 9.8 KB brotli, within budget
 PASS  page: the page starts from another origin under the strict policy, threaded and single-threaded
 PASS  cost per preset: low 0.42 ms of GPU time, medium 0.51 ms of GPU time, high 0.63 ms of GPU time, ultra 0.71 ms of GPU time per frame, on Chrome 141
+PASS  allocation per preset: low 0 bytes, medium 0 bytes, high 0 bytes, ultra 0 bytes per frame in the add-on's own code, on Chrome 141
 ```
 
 Use `--skip-browser` on a machine that has no GPU or no browser. The shader build and the size gate need the add-on's own Vite and null3D plugin.
 
 The cost figures are measured, and the check prints them; it does not compare them with a number that the add-on claims. The page builds for production, so the figures match what a user gets.
+
+The allocation gate counts the bytes that the add-on's own code allocates in each frame, on each quality preset. It reads the heaps of the page's sketch worker and render worker, and names each function by its source file. A place counts as the add-on's own when its source file is in the add-on's folder, or in the add-on's copy under `node_modules`. The gate prints the page's figure beside it. A frame that allocates feeds the browser's garbage collector, so aim at zero.
 
 ## Related pages
 
