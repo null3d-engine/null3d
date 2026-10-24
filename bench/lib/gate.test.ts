@@ -11,6 +11,7 @@ import {
 	comparisonFigure,
 	countedRun,
 	desktopTarget,
+	GATE_WORKFLOWS,
 	type GateRecord,
 	gateMarkdown,
 	gateSteps,
@@ -103,6 +104,7 @@ describe('the gate steps', () => {
 		const ci = {
 			workflowName: 'CI',
 			event: 'push',
+			headBranch: 'main',
 			status: 'completed',
 			conclusion: 'success',
 		};
@@ -128,6 +130,9 @@ describe('the gate steps', () => {
 			figure: 'CI: no run, Benchmarks: success',
 			verdict: 'fail',
 		});
+		// A push to a milestone branch runs only the quick checks, which pass with no browser job.
+		const quick = { ...ci, headBranch: 'm3-start' };
+		expect(workflowResult(runs([quick, bench])).figure).toBe('CI: no run, Benchmarks: success');
 		// A full run started by hand counts as main's own run does, and the newer of them decides.
 		const byHand = { ...ci, event: 'workflow_dispatch' };
 		expect(workflowResult(runs([byHand, { ...ci, conclusion: 'failure' }, bench])).verdict).toBe(
@@ -211,19 +216,22 @@ describe('the gate steps', () => {
 		);
 	});
 
-	test('count a CI run of a push or a run started by hand, and no pull request run', () => {
+	test('count a CI run of a push to main or a run started by hand, and no quick run', () => {
 		const run = {
 			databaseId: 42,
 			workflowName: 'CI',
 			event: 'push',
+			headBranch: 'main',
 			status: 'completed',
 			conclusion: 'success',
 		};
-		const events = ['push', 'workflow_dispatch'];
-		expect(countedRun([{ ...run, event: 'pull_request' }], { name: 'CI', events })).toBeNull();
-		expect(
-			countedRun([{ ...run, event: 'pull_request', databaseId: 41 }, run], { name: 'CI', events }),
-		).toEqual(run);
+		const ci = GATE_WORKFLOWS.find(({ name }) => name === 'CI');
+		if (!ci) throw new Error('the gate lists no CI workflow');
+		expect(countedRun([{ ...run, event: 'pull_request' }], ci)).toBeNull();
+		expect(countedRun([{ ...run, headBranch: 'm3-start' }], ci)).toBeNull();
+		const byHand = { ...run, event: 'workflow_dispatch', headBranch: 'm3-start', databaseId: 43 };
+		expect(countedRun([byHand, run], ci)).toEqual(byHand);
+		expect(countedRun([{ ...run, headBranch: 'm3-start', databaseId: 41 }, run], ci)).toEqual(run);
 	});
 
 	test('judge the desktop target by own work against three.js', () => {

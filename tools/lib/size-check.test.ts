@@ -157,31 +157,39 @@ describe('chooseBase', () => {
 	});
 
 	it("compares a push to main with main's commit before the push, not the merge's first parent", () => {
-		const env = { GITHUB_EVENT_NAME: 'push', GITHUB_BASE_REF: '', PUSH_BEFORE: '3c8d23afb0' };
+		const env = {
+			GITHUB_EVENT_NAME: 'push',
+			GITHUB_REF: 'refs/heads/main',
+			PUSH_BEFORE: '3c8d23afb0',
+		};
 		expect(chooseBase(undefined, env)).toEqual({
 			ref: '3c8d23afb0',
 			why: "main's commit before this push",
 		});
 	});
 
-	it('compares a push that names no commit before with the commit before on the branch', () => {
+	it('compares a push to main that names no commit before with the commit before on the branch', () => {
 		const why = 'the commit before on the branch, as the push names none';
 		for (const before of [undefined, '', '0000000000000000000000000000000000000000'])
-			expect(chooseBase(undefined, { GITHUB_EVENT_NAME: 'push', PUSH_BEFORE: before })).toEqual({
-				ref: 'HEAD^',
-				why,
-			});
+			expect(
+				chooseBase(undefined, {
+					GITHUB_EVENT_NAME: 'push',
+					GITHUB_REF: 'refs/heads/main',
+					PUSH_BEFORE: before,
+				}),
+			).toEqual({ ref: 'HEAD^', why });
 	});
 
-	it('compares a pull request with its merge base with the branch it targets', () => {
-		const env = { GITHUB_EVENT_NAME: 'pull_request', GITHUB_BASE_REF: 'main' };
+	it('compares a push to a milestone branch with its merge base with main, not its last push', () => {
+		// A newer push can drop the branch's waiting run, whose push a check of each push would miss.
+		const env = {
+			GITHUB_EVENT_NAME: 'push',
+			GITHUB_REF: 'refs/heads/m3-start',
+			PUSH_BEFORE: '3c8d23afb0',
+		};
 		expect(chooseBase(undefined, env)).toEqual({
 			branch: 'main',
 			why: 'the merge base with origin/main',
-		});
-		expect(chooseBase(undefined, { ...env, GITHUB_BASE_REF: 'feat/cells' })).toEqual({
-			branch: 'feat/cells',
-			why: 'the merge base with origin/feat/cells',
 		});
 	});
 

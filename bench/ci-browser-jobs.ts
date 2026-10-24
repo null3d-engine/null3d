@@ -1,8 +1,8 @@
 // Prints the jobs of the gate commit's CI run, for the gate's software-renderer picture step. That
 // step judges the image test manifest as CI drew it on Linux SwiftShader, which is the authority
-// for those pictures, rather than drawing them again on the Mac. The gate counts a run of a push or
-// one started by hand, as its workflows step does (D-99): a pull request's run tested GitHub's
-// merge of it into an older main, not the commit. From the repository root:
+// for those pictures, rather than drawing them again on the Mac. The gate counts a run of a push to
+// main or one started by hand, as its workflows step does (D-99): a push to a milestone branch runs
+// no browser jobs. From the repository root:
 //   bun bench/ci-browser-jobs.ts <commit>
 // It needs the GitHub CLI with access to the repository. The output is one JSON object, which
 // `browserPictures` in bench/lib/gate.ts judges: the counted run, or null, and its jobs.
@@ -35,7 +35,7 @@ const runs = JSON.parse(
 		'--workflow',
 		'ci.yml',
 		'--json',
-		'databaseId,workflowName,event,status,conclusion',
+		'databaseId,workflowName,event,headBranch,status,conclusion',
 	),
 ) as WorkflowRun[];
 const workflow = GATE_WORKFLOWS.find(({ name }) => name === 'CI');

@@ -66,25 +66,23 @@ export type BaseChoice =
  * The base of the size check. `--base <ref>` names it. A push to main compares with the commit that
  * main pointed to before the push, which CI passes as `PUSH_BEFORE`: work lands by a merge of main
  * into a branch and a push (D-157), so the commit before (HEAD^) is the branch's own, and the push's
- * growth and trailers are those of every commit after main's old tip. A push with no such commit,
- * such as a branch's first, compares with the commit before. Otherwise the base is HEAD's merge
- * base with main, or with the branch that a pull request targets. CI builds a pull request as
- * GitHub's merge of it into that branch, so there the merge base is the branch's commit that the
- * pull request was merged into.
+ * growth and trailers are those of every commit after main's old tip. A push to main with no such
+ * commit compares with the commit before. Every other run compares with HEAD's merge base with
+ * main: a push to a milestone branch judges the whole milestone, as its pull request did, since a
+ * newer push can drop a waiting run, and a check of each push alone would then miss that one.
  */
 export function chooseBase(
 	ref: string | undefined,
 	env: Readonly<Record<string, string | undefined>>,
 ): BaseChoice {
 	if (ref) return { ref, why: 'the commit that --base names' };
-	if (env.GITHUB_EVENT_NAME === 'push') {
+	if (env.GITHUB_EVENT_NAME === 'push' && env.GITHUB_REF === 'refs/heads/main') {
 		const before = env.PUSH_BEFORE ?? '';
 		if (before && !/^0+$/.test(before))
 			return { ref: before, why: "main's commit before this push" };
 		return { ref: 'HEAD^', why: 'the commit before on the branch, as the push names none' };
 	}
-	const branch = env.GITHUB_BASE_REF || 'main';
-	return { branch, why: `the merge base with origin/${branch}` };
+	return { branch: 'main', why: 'the merge base with origin/main' };
 }
 
 const bytes = (n: number | undefined) => (n === undefined ? '-' : n.toLocaleString('en-US'));
