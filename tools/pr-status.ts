@@ -32,7 +32,7 @@ const PARTIAL: Readonly<Record<string, string>> = {
 };
 
 /** Tasks built on a helper branch, with nothing of them on this branch yet. */
-const ON_BRANCH = new Set(['M3-E9', 'M3-R14']);
+const ON_BRANCH = new Set(['M3-E9', 'M3-R14', 'M3-V2']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
 // An audit of the branch on 24 October 2026 read every ticked task against its own "Done when" and
@@ -61,7 +61,6 @@ const INCOMPLETE = new Set([
 	'M3-D8',
 	'M3-K4',
 	'M3-R1',
-	'M3-F2',
 	'M3-O1',
 	'M3-G1',
 	'M3-G2',
@@ -138,8 +137,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-K4': 'no three.js CSS3D example is ported or tested',
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
-	'M3-F2':
-		"streaming is not built, and the budget's meaning is open for the owner after the iPad drew 1.07 frames a second",
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
 	'M3-G1': "the Khronos sample's texture-transform pointers are not animated",
 	'M3-G2': 'no Khronos iridescence sample is tested',
