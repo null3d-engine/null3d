@@ -1,7 +1,7 @@
 {
 	"name": "@null3d/vegetation",
 	"version": "0.0.0",
-	"description": "Vegetation for null3D sketches: parametric trees, conifers, shrubs, ferns and grass grown from a short record of numbers and a seed, with detail levels and wind data, built on the engine's public API.",
+	"description": "Vegetation for null3D sketches: parametric trees, conifers, shrubs, ferns and grass grown from a short record of numbers and a seed, placed by ecological rules, with detail levels and wind data, built on the engine's public API.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",
 	"homepage": "https://github.com/null3d-engine/null3d#readme",

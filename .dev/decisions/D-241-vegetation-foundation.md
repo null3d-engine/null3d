@@ -217,3 +217,56 @@ this record's look and answers four questions the record left to the build.
 The built-in set holds thirteen species and six variants each. It grows on the calling thread or in
 one of the engine's job workers, with the same asset either way. Every choice comes from the
 integer hash that the shaders' `pcg` also computes.
+
+## Addendum: how the scatter places plants
+
+M3-V6 built the placement half of the add-on. The record above named what it must do; this addendum
+records the choices that the build made, and the figures that shaped them.
+
+**What it does.** `groundMaps` reads the ground once into flat grids: height above the water,
+distance to the water, slope, aspect, northness and eastness, curvature, wetness from the water's
+flow and from the hollows, and the shares that paths, rocks and cave mouths cover. A rule holds one
+tolerance curve for each input and scores a place by the lowest curve, the `EcoBrush` rule that the
+research recommended. `scatterVegetation` places six layers in order, canopy first and dead wood
+last, and returns flat arrays of nine floats for each point.
+
+**The choices, and why.**
+
+- **The placement path uses no transcendental function.** Position, rotation, scale, variant,
+  tint and lichen all come from the integer hash, and the rotation is stored as a share of a whole
+  turn rather than an angle in radians. A point list therefore matches bit for bit on every device,
+  with no tolerance to argue about. A strict comparison across devices needed this: `Math.sin` and
+  `Math.atan2` are allowed to differ in their last bit between engines, and a position built from
+  them would not compare equal.
+- **The tiles cannot change the result.** A candidate's cell is indexed over the whole square, not
+  over the tile, and the build walks the cells of the tiles added in one row-by-row order. The first
+  plant to claim a place keeps it. Both the order that the tiles arrive in and the tile size
+  therefore leave the points identical, and the test checks all three. The first version walked the
+  tiles one after another, which placed each tile band's rows before the next tile band's, so a
+  larger tile won other shared places.
+- **The occupancy grid records the layer, and a rule names the layers it must avoid.** The default
+  is every layer. A sapling names only its own layer, so it stands under the crown that shelters
+  it; ground cover and shrubs do the same. Without this the young layer placed 12 plants in Creek's
+  valley, because every sapling stood inside its parent's crown radius.
+- **Wetness is normalized at the flow's 95th percentile, not its maximum.** Flow gathers by a power
+  law, so one channel holds most of it and the maximum left the rest of the ground at 0.06. The
+  percentile gives the channels 1 and the slopes near 0, which is what a species' curve can use.
+- **The curves were fitted to Creek's measured ground.** The first set was written from the general
+  shape of a valley and placed 57 plants in Creek, with nothing in the ground layer at all: the
+  bounds were narrower than the ground's own bands. The built-in rules now follow the measured
+  percentiles of each input over the valley. A scene on other terrain moves the numbers that differ.
+
+**Figures.** Creek's 160 m valley, placed with its eight species at seed 7: 951 points, in 51 ms on
+an Apple M5 Max laptop. The layers hold 104 canopy trees, 178 saplings, 645 ground plants and 24
+dead wood. The checksum of that placement is 232657082, which the device page compares on every
+device and both GPU paths.
+
+**Options rejected.**
+
+- **Float noise for the point source.** It draws other plants on other GPUs, which hard rule 29
+  already refuses for shaders.
+- **A hard cutoff instead of a score.** A tolerance curve that accepted or refused a place outright
+  gave hard band edges, where the density jumped from one species to none. The score as the chance
+  that a candidate grows fades each species into its neighbor's ground.
+- **Occupancy resolved per tile.** A tile that arrived later would have seen another tile's plants
+  and refused its own, so the result would follow the streaming order.

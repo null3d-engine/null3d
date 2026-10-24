@@ -847,3 +847,5 @@ export default defineSketch((ctx) => {
 ```
 
 Call `generatePlantInTask` in place of `generateVariantSet` when a scene grows many plants: it runs in a job worker, so the first frames do not wait. A species record is plain data, so a themed set is a list of records and needs no code. The package draws no texture and no material of its own yet, so give its parts materials of your own. Docs: `api/vegetation`.
+
+To place the plants rather than set them out by hand, read the ground once with `groundMaps`, take `builtinRules` for the species, and call `scatterVegetation`. It returns flat point arrays, one record for each plant, so a page looks up the variant and draws a copy at each point. The same seed places the same plants on every device. Pass `EcoScatter` and `addTile` when a scene should place its ground in tiles beside the frames.
