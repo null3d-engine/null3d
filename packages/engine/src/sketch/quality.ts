@@ -10,8 +10,8 @@
 // scale the frame-budget governor lowers with its other steps.
 
 import { EngineError } from '../errors/engine-error';
+import { budgetScale, budgetSteps } from '../quality/budget';
 import type { PresetCheck } from '../quality/check';
-import { budgetScale, budgetSteps } from '../quality/governor';
 import {
 	capTextureMemory,
 	checkSettings,
