@@ -1,4 +1,4 @@
-# D-228: Compute passes with a storage output that the same frame reads
+# D-240: Compute passes with a storage output that the same frame reads
 
 Status: decided by the helper of M3-E8 on 23 October 2026, for the owner's review. Built: the
 pass, both GPU paths and the tests, as the consequences list. Date: 2026-10-23. Task: M3-E8.

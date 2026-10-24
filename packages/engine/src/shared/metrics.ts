@@ -10,6 +10,7 @@
 
 import * as Counter from './counter';
 import * as GpuCounter from './gpu-counter';
+import { MEMORY_AREA_COUNT, MEMORY_AREA_VALUES } from './memory-area';
 import * as MemoryFigure from './memory-figure';
 import * as Phase from './phase';
 import * as Role from './role';
@@ -139,7 +140,13 @@ const FIRST_DRAW = 8;
  * samples, in the order of `MemoryFigure`.
  */
 const MEMORY = 9;
-const HEADER_WORDS = 2 * (MEMORY + MemoryFigure.Count);
+/**
+ * Float64 index of the first of the memory register's figures that the sketch thread publishes:
+ * the bytes each area reserves, uses and has used at most.
+ */
+const MEMORY_AREAS = MEMORY + MemoryFigure.Count;
+const AREA_VALUES = MEMORY_AREA_COUNT * MEMORY_AREA_VALUES;
+const HEADER_WORDS = 2 * (MEMORY_AREAS + AREA_VALUES);
 const WRITTEN = HEADER_WORDS;
 
 function recordsStart(rings: number): number {
@@ -218,6 +225,15 @@ function sample(header: Int32Array, word: number, on: boolean): void {
  */
 export function memoryFigures(buffer: ArrayBufferLike): Float64Array {
 	return new Float64Array(buffer, MEMORY * 8, MemoryFigure.Count);
+}
+
+/**
+ * A view of the memory register's figures, which the sketch thread publishes: three numbers per
+ * area, in the order of `MEMORY_AREA_NAMES`. Each area's numbers are the bytes that it reserves,
+ * uses and has used at most, and all are 0 until the page asks for a report.
+ */
+export function memoryAreaFigures(buffer: ArrayBufferLike): Float64Array {
+	return new Float64Array(buffer, MEMORY_AREAS * 8, AREA_VALUES);
 }
 
 /** The display's refresh rate in hertz, as the thread that draws measured it, or 0 before then. */
@@ -345,6 +361,14 @@ export class FrameRecorder {
 	/** Publishes a memory figure by its `MemoryFigure` place, for the frame figures on any thread. */
 	publishMemory(figure: number, value: number): void {
 		this.views.times[MEMORY + figure] = value;
+	}
+
+	/**
+	 * Publishes the memory register's figures, three numbers for each area, from `from` on.
+	 */
+	publishMemoryRegister(values: ArrayLike<number>, from = 0): void {
+		const { times } = this.views;
+		for (let k = 0; k < AREA_VALUES; k++) times[MEMORY_AREAS + k] = values[from + k] as number;
 	}
 
 	/**

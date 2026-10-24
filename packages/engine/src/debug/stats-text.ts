@@ -64,6 +64,22 @@ export interface StatsMemory {
 }
 
 /**
+ * One area of the memory register, in `StatsFigures.memoryAreas`.
+ *
+ * @category api/debug
+ */
+export interface StatsMemoryArea {
+	/** The area's name, such as `scene` or `upload arenas`. */
+	readonly name: string;
+	/** The bytes that the area's tables reserve. */
+	readonly reservedBytes: number;
+	/** The bytes of them that hold values. */
+	readonly usedBytes: number;
+	/** The most bytes that the area has used since the engine started. */
+	readonly peakBytes: number;
+}
+
+/**
  * The figures that the stats overlay shows, in the form that `statsText` lays out. Means per frame
  * are over the last window of frames, about half a second.
  *
@@ -99,6 +115,11 @@ export interface StatsFigures {
 	readonly objects: number | null;
 	/** The memory figures. */
 	readonly memory: StatsMemory;
+	/**
+	 * The memory register's areas: the bytes that each engine table and allocator reserves, uses
+	 * and has used at most. A page that shows no development figures leaves it out.
+	 */
+	readonly memoryAreas?: readonly StatsMemoryArea[];
 	/** The page's own thread, or null where the browser does not report long tasks. */
 	readonly mainThread: StatsMainThread | null;
 	/**
@@ -180,8 +201,15 @@ export function statsText(figures: StatsFigures): string {
 		`triangles ${count(figures.triangles)}  objects ${count(figures.objects)}`,
 	);
 	for (const feature of figures.features ?? []) lines.push(featureLine(feature));
+	lines.push(`memory  wasm ${mib(memory.wasmBytes)}  js heap ${mib(memory.jsHeapBytes)}`);
+	if (figures.memoryAreas && figures.memoryAreas.length > 0) {
+		lines.push('memory register  used / reserved / peak');
+		for (const area of figures.memoryAreas)
+			lines.push(
+				`  ${area.name.padEnd(14)}  ${mib(area.usedBytes)}  ${mib(area.reservedBytes)}  ${mib(area.peakBytes)}`,
+			);
+	}
 	lines.push(
-		`memory  wasm ${mib(memory.wasmBytes)}  js heap ${mib(memory.jsHeapBytes)}`,
 		`gpu memory  textures ${mib(memory.gpuTextureBytes)}  buffers ${mib(memory.gpuBufferBytes)}`,
 		pageLine(memory.page),
 		mainThreadLine(mainThread),

@@ -22,6 +22,7 @@ use null3d_core::culling::{NO_BUCKET, RowRanges, batch_ranges};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::levels::{LevelLink, NO_LINK};
+use null3d_core::memory::{MemoryUse, vec_bytes};
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
@@ -480,6 +481,38 @@ pub(super) struct Layout {
 }
 
 impl Layout {
+    /// Adds the bytes that the layout's tables hold to the memory register.
+    pub(super) fn account(&self, use_: &mut MemoryUse) {
+        for array in [
+            vec_bytes(&self.batch_bases),
+            vec_bytes(&self.buckets),
+            vec_bytes(&self.draws),
+            vec_bytes(&self.instance_buckets),
+            vec_bytes(&self.source_layers),
+            vec_bytes(&self.source_ranges),
+            vec_bytes(&self.home_buckets),
+            vec_bytes(&self.cull_buckets),
+            vec_bytes(&self.level_links),
+            vec_bytes(&self.marks),
+            vec_bytes(&self.level_buckets),
+            vec_bytes(&self.clusters),
+            vec_bytes(&self.cluster_patches),
+            vec_bytes(&self.cluster_indices),
+            vec_bytes(&self.copy_counts),
+            vec_bytes(&self.copy_fits),
+            vec_bytes(&self.batch_rows),
+            vec_bytes(&self.indirect_template),
+            vec_bytes(&self.skinned),
+            vec_bytes(&self.skin_firsts),
+            vec_bytes(&self.waiting),
+            vec_bytes(&self.bucket_records),
+        ] {
+            use_.add(array);
+        }
+        use_.add(self.object_ranges.memory_use());
+        use_.add(self.order.memory_use());
+    }
+
     /// Bytes of each view's compacted instance buffer for this layout: a copy for each slot of the
     /// buckets that read copies, then an index entry for each slot of those that read indices. One
     /// copy more keeps the binding of a bucket whose slice holds none inside the buffer.

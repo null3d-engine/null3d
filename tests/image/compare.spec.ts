@@ -158,8 +158,9 @@ for (const engine of ['null3d', 'threejs'] as const)
 				'the software GPU runs one ramp per engine',
 			);
 			// On the software GPU, three.js's WebGPURenderer builds Battle's skinned pipelines on the
-			// CPU, and its page took 96 s and 101 s in CI. The limit leaves room for a slower runner.
-			const limit = softwareGpu() ? 160_000 : 100_000;
+			// CPU, and its page took 96 s and 101 s in CI. Run 39977400113 passed neither figure: it
+			// had no result in 160 seconds. The limit is twice the slower of the two.
+			const limit = softwareGpu() ? 200_000 : 100_000;
 			test.setTimeout(limit + 20_000);
 			const errors: string[] = [];
 			page.on('pageerror', (error) => errors.push(error.message));

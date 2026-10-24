@@ -1571,14 +1571,11 @@ fn escape_into(out: &mut String, text: &str) {
 
 /// Every stage source of a build: its WGSL module, and each GLSL program's two shaders.
 fn sources(variant: &VariantOutput) -> impl Iterator<Item = &str> {
-    let wgsl = variant.wgsl.iter().map(|wgsl| wgsl.source.as_str());
+    let wgsl = variant.wgsl.iter().map(|wgsl| &*wgsl.source);
     let glsl = variant.glsl.iter().flat_map(|programs| {
-        programs.values().flat_map(|program| {
-            [
-                program.vertex.source.as_str(),
-                program.fragment.source.as_str(),
-            ]
-        })
+        programs
+            .values()
+            .flat_map(|program| [&*program.vertex.source, &*program.fragment.source])
     });
     wgsl.chain(glsl)
 }
@@ -1854,7 +1851,7 @@ mod tests {
 
     fn build(target: Target, permutation: u32) -> VariantOutput {
         let wgsl = WgslOutput {
-            source: String::new(),
+            source: "".into(),
             pipelines: BTreeMap::new(),
         };
         VariantOutput {
@@ -2225,7 +2222,7 @@ mod tests {
 
     fn glsl_program(vertex: &str, fragment: &str) -> crate::GlslProgram {
         let stage = |source: &str| GlslStage {
-            source: source.to_owned(),
+            source: source.into(),
             uniform_blocks: Vec::new(),
             textures: Vec::new(),
         };
@@ -2328,7 +2325,7 @@ mod tests {
     fn build_from(target: Target, permutation: u32, source: &str) -> VariantOutput {
         let mut variant = build(target, permutation);
         if let Some(wgsl) = &mut variant.wgsl {
-            wgsl.source = source.to_owned();
+            wgsl.source = source.into();
         }
         variant
     }

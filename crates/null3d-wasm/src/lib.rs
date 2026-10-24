@@ -13,7 +13,7 @@
 //! engine's error table.
 
 use std::cell::{Cell, UnsafeCell};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use null3d_core::animation::{
@@ -33,6 +33,7 @@ use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, LoopExit, WorkerId
 use null3d_core::levels::Switch;
 use null3d_core::lights::{LightTable, kind as light_kind, value as light_value};
 use null3d_core::lines::{LineLook, LineMode};
+use null3d_core::memory::{AREA_COUNT as MEMORY_AREA_COUNT, MemoryRegister};
 use null3d_core::morph::MorphWeights;
 use null3d_core::occlusion::BlockerMesh;
 use null3d_core::scene::{CommandRing, SceneStorage, flags};
@@ -200,6 +201,10 @@ struct Engine {
     lights: LightTable,
     snapshot: FrameSnapshot,
     renderer: Box<dyn FrameBuilder>,
+    /// What each table and allocator holds, for the stats overlay's development figures.
+    memory: MemoryRegister,
+    /// The register's figures as the page reads them: each area's reserved, used and peak bytes.
+    memory_values: Box<[f64]>,
     structure_changed: bool,
     /// True when the last recorded frame rebuilt its draw tables.
     rebuilt: bool,
@@ -582,6 +587,8 @@ pub fn init_engine(
         batches: BatchTable::with_capacity(max_batches),
         lights: LightTable::new(),
         snapshot: FrameSnapshot::with_capacity(UPLOAD_RANGES),
+        memory: MemoryRegister::new(),
+        memory_values: vec![0.0; MEMORY_AREA_COUNT * 3].into_boxed_slice(),
         renderer: if webgl2 {
             Box::new(CpuCulledRenderer::new(CpuCulledConfig {
                 canvas,
@@ -1239,6 +1246,36 @@ pub fn draw_list_words(frame: u32) -> u32 {
     value_with_engine(|e| Ok(e.renderer.list(frame).len() as u32))
 }
 
+// --- The memory register, which only development pages read ---
+//
+// Each table and allocator reports the bytes that it reserves, uses and has used at most. A report
+// runs only when the page asks for one, so a page that shows no development figures pays nothing.
+// The figures go into three numbers per area, in the order of `null3d_core::memory::area`, which
+// the page names (`packages/engine/src/shared/memory-area.ts`).
+
+/// Fills the register with what each table and allocator holds, and returns the address of three
+/// numbers per area: the bytes that it reserves, uses and has used at most.
+#[wasm_bindgen(js_name = updateMemoryRegister)]
+pub fn update_memory_register() -> u32 {
+    value_with_engine(|e| {
+        e.memory.begin();
+        e.scene.account(&mut e.memory);
+        e.batches.account(&mut e.memory);
+        e.renderer.account(&mut e.memory);
+        if let Some(animations) = &e.animations {
+            animations.account(&mut e.memory);
+        }
+        e.memory.report(&mut e.memory_values);
+        Ok(address(&e.memory_values[..]))
+    })
+}
+
+/// The number of memory areas that `updateMemoryRegister` reports.
+#[wasm_bindgen(js_name = memoryAreas)]
+pub fn memory_areas() -> u32 {
+    MEMORY_AREA_COUNT as u32
+}
+
 // --- Debug lines, which only development builds of the engine draw ---
 //
 // TypeScript writes each frame's points into the arrays whose addresses `debugLineArrays` gives,
@@ -1849,6 +1886,40 @@ pub fn create_level_mesh(base: u32, indices: u32) -> u32 {
             .map_err(mesh_failure);
         drop(staging);
         added
+    })
+}
+
+/// Gives the live mesh `mesh` the `indices` triangles that TypeScript wrote into the staging words,
+/// which the call frees, in place of the triangles it drew. A staged level that arrives after its
+/// base replaces the base's triangles this way, so the objects that draw the base draw the finer
+/// geometry at once. The indices name the mesh's own vertices. Fails with the problem for a mesh
+/// that cannot take them: one that is split into parts, morphed, a level of its own, or drawn as
+/// lines. Returns 0 when the mesh takes the list.
+#[wasm_bindgen(js_name = replaceMeshIndices)]
+pub fn replace_mesh_indices(mesh: u32, indices: u32) -> u32 {
+    value_with_engine(|e| {
+        let staging = std::mem::take(&mut e.staging);
+        let words = indices as usize;
+        if staging.len() < words {
+            return Err(fail(codes::BAD_ARRAYS, [0, 0]));
+        }
+        // SAFETY: the words are initialized and aligned, and every bit pattern is an index.
+        let list = unsafe { std::slice::from_raw_parts(staging.as_ptr(), words) };
+        let replaced = e
+            .renderer
+            .settings_mut()
+            .meshes_mut()
+            .replace_indices(mesh.checked_sub(1).unwrap_or(u32::MAX), list);
+        drop(staging);
+        match replaced {
+            Ok(()) => {
+                // The mesh's raycast tree held the old triangles.
+                e.queries.mesh_changed(mesh);
+                e.structure_changed = true;
+                Ok(0)
+            }
+            Err(error) => Ok(mesh_failure(error)),
+        }
     })
 }
 
@@ -3407,6 +3478,39 @@ pub fn render_graph_dot() -> String {
     engine.map_or_else(String::new, |e| e.renderer.graph_dot())
 }
 
+/// True while the development probe of the two-step pass is on, which `setDebugTwoStep` sets.
+static TWO_STEP_PROBE: AtomicBool = AtomicBool::new(false);
+
+/// The two-step answers of the last recorded frame. They are atomics because the page reads them
+/// while the sketch thread records frames: whether the frame wanted the two-step pass, declared it,
+/// had its second step built and drew it, then the render scale in thousandths.
+static TWO_STEP_VALUES: [AtomicU32; 5] = [const { AtomicU32::new(0) }; 5];
+
+/// Turns the development probe of the two-step pass on or off. Its answers stay zero until it is on,
+/// so a page that never asks for them prints nothing.
+#[wasm_bindgen(js_name = setDebugTwoStep)]
+pub fn set_debug_two_step(on: bool) {
+    TWO_STEP_PROBE.store(on, Ordering::Relaxed);
+}
+
+/// The two-step answers of the last recorded frame, as the address of five 32-bit words in engine
+/// memory: whether the frame wanted the two-step pass, declared it, had its second step built and
+/// drew it, then the render scale in thousandths. The address is zero, with no answers to read,
+/// until `setDebugTwoStep(true)`.
+#[wasm_bindgen(js_name = debugTwoStep)]
+pub fn debug_two_step() -> u32 {
+    if !TWO_STEP_PROBE.load(Ordering::Relaxed) {
+        return 0;
+    }
+    // SAFETY: as in `with_engine`.
+    let engine = unsafe { (*ENGINE.0.get()).as_ref() };
+    let report = engine.map_or([0; 5], |e| e.renderer.two_step_report());
+    for (word, value) in TWO_STEP_VALUES.iter().zip(report) {
+        word.store(value, Ordering::Relaxed);
+    }
+    TWO_STEP_VALUES.as_ptr() as usize as u32
+}
+
 /// Fits the main directional light's cascades to the camera's view again, after a camera with the
 /// shadows' target fitted them.
 #[wasm_bindgen(js_name = clearShadowCamera)]
@@ -4393,6 +4497,7 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
             intensity,
             blur,
             rotation,
+            sun_visibility: 1.0,
         }));
         0
     })
@@ -4461,9 +4566,11 @@ pub fn set_physical_sky(on: bool) -> u32 {
 
 // Makes cube texture `texture`, which a generator fills, a sky map: an environment map of the
 // scene's sky, which fills in the first frame after the generator ran and refreshes over the next
-// frames, one of its `stages` stages a frame, whenever the sky changes. Before the scene's first
-// sky background, the maps show the sky of the background's values, which TypeScript writes
-// first. Fails for a texture that is not live.
+// frames, one of its `stages` stages a frame, whenever the sky moves past a step that shows: half
+// a degree of its sun, a fiftieth of a color value, or a tenth of a cell of its clouds. A sky that
+// comes to rest fills once more, exactly. Before the scene's first sky background, the maps show
+// the sky of the background's values, which TypeScript writes first. Fails for a texture that is
+// not live.
 /// Makes a generated cube texture a map of the scene's sky.
 #[wasm_bindgen(js_name = addSkyMap)]
 pub fn add_sky_map(texture: u32, stages: u32) -> u32 {

@@ -266,7 +266,7 @@ pub fn wgsl(output: &Output, variant: &str) -> String {
         .as_ref()
         .expect("a WGSL target")
         .source
-        .clone()
+        .to_string()
 }
 
 /// The one problem of a failed build.

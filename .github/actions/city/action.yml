@@ -2,8 +2,8 @@ name: S6's city files
 description: >-
   Gives a job the model files of S6, the city, which bench/lib/city-files.ts builds from the sample
   content's layout and optimizes into the null3D plugin's cache, as .dev/sample-content.md says.
-  The city job builds them once per run, with "build", and hands them to the jobs that load S6 as
-  two artifacts, which those jobs take with "download". A build takes about 6 minutes on GitHub's
+  The load pages job builds them once per run, with "build", since the benchmark pages bundle them,
+  and hands them to the jobs that load S6 as two artifacts, which those jobs take with "download". A build takes about 6 minutes on GitHub's
   Linux machines, too long for every shard of a job (D-106). The Actions cache keeps the built files,
   keyed on the pinned sample content, the module that builds the files and the asset tool, so the
   city job builds them again only when one of those changes. The cache saves only when the

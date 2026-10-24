@@ -3,8 +3,7 @@ id: api/scene
 title: Scene
 status: experimental
 since: "0.1"
-summary: "Creating objects; models and copies; find; background, environment, reflection probes, fog, sky; the light probe grid; the material override; warmUp."
-summary: "Creating objects; models and copies; find; multiple views of one scene; background, environment, reflection probes, fog, sky; the light probe grid; warmUp."
+summary: "Creating objects; models and copies; find; multiple views of one scene; background, environment, reflection probes, fog, sky; the light probe grid; the material override; warmUp."
 ---
 
 # Scene
@@ -277,7 +276,7 @@ scene.setEnvironment(sunset, { intensity: 0.8, rotation: [0, Math.PI / 2, 0] });
 | `intensity` | 1 | The factor of the environment's light, 0 or more, as three.js's `scene.environmentIntensity` |
 | `rotation` | `[0, 0, 0]` | The environment's turn, as Euler angles in radians in the order X, Y, Z, as `scene.environmentRotation` |
 
-Each call sets both options, and an option left out takes its default. The call allocates nothing, so a sketch can turn the environment in every frame. `bun run bench:allocation --environment` checks it. A material's `envIntensity` scales the light on that material. The scene draws without a file's environment until its map is on the GPU. The built-in room's map and the sky's map are whole in the first frame that uses them. The sky's map follows the sky background: after a change of the sky, the scene takes the new light 19 frames later. The scene draws without the environment again after `environment.destroy()`. Development builds throw E1203 for a number that is not finite and E1108 for a negative intensity. They throw E1213 for a value that is not an environment. Every build throws E1101 for an environment that was destroyed. [Lighting and environment](../concepts/lighting.md#environment-maps) says how the environment lights a surface, and what it costs.
+Each call sets both options, and an option left out takes its default. The call allocates nothing, so a sketch can turn the environment in every frame. `bun run bench:allocation --environment` checks it. A material's `envIntensity` scales the light on that material. The scene draws without a file's environment until its map is on the GPU. The built-in room's map and the sky's map are whole in the first frame that uses them. The sky's map follows the sky background: after a change that shows, the scene takes the new light up to 19 frames later, and a smaller change waits for its next step. The scene draws without the environment again after `environment.destroy()`. Development builds throw E1203 for a number that is not finite and E1108 for a negative intensity. They throw E1213 for a value that is not an environment. Every build throws E1101 for an environment that was destroyed. [Lighting and environment](../concepts/lighting.md#environment-maps) says how the environment lights a surface, and what it costs.
 
 ## The light probe grid
 
@@ -384,7 +383,7 @@ export default defineSketch(async ({ scene, assets, input }) => {
 | `layers` | The default layer | The layers of the objects that the captures draw |
 | `priority` | 0 | Where boxes overlap, the higher priority wins, then the smaller box |
 
-`probe.set(options)` sets every option again: a new position or new layers capture again. `probe.capture()` captures again after objects around the probe moved. `probe.destroy()` removes the probe, and its box takes the light of other probes or of the environment from the next frame.
+`probe.set(options)` sets every option again. A new position or new layers capture again. `probe.capture()` captures again in a frame soon after the call, as after an object around the probe moved. The surfaces in its box read the new map from that frame. Without a call, a probe that refreshes once keeps its last map. `probe.destroy()` removes the probe. Its box takes the light of other probes or of the environment from the next frame.
 
 A scene has at most 16 probes, and their captures take 6 of the 32 views that the scene and its [passes](render.md) share. Each throws E1430 past its limit. Development builds throw E1213 for an option that probes do not take, E1203 for a number that is not finite, and E1108 for a negative blend or intensity, or a box whose `min` does not lie below its `max`. They also throw E1101 for a call on a probe that was destroyed.
 
@@ -498,7 +497,7 @@ A decal is a mesh of `geometry.box()` with a `materials.decal` material, which p
 
 `scene.overrideMaterial = material` draws every mesh and instance batch of the main pass with that material, in place of each object's own. This matches three.js's `scene.overrideMaterial`. Each object keeps its mesh, its place and its instances. A batch draws all of its rows with the override. Set the property to `null` to draw each object with its own material again.
 
-Sprites, points, lines and particle systems keep their own materials. The shadow maps also keep each object's material, as three.js's shadow maps do, so a masked object still cuts its shadow. A sprite, point or line material throws E1223.
+Sprites, points, lines and particle systems keep their own materials. The shadow maps also keep each object's material, as three.js's shadow maps do, so a masked object still cuts its shadow. A sprite, point or line material throws E1224.
 
 The change reaches the frame after the call, and that frame rebuilds the engine's draw tables. After that the override adds no draw call and no pipeline beyond the materials it replaces. For the built-in debug views, use `debug.view` instead.
 

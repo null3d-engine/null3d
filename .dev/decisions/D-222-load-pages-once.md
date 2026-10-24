@@ -25,7 +25,7 @@ How the data was produced: the shard's job log, and the run record that it uploa
 ## Decision
 
 - `bun tests/lib/load-server.ts` makes every load build, and prints each build's time.
-- The `load-pages` job runs it once, after the build and city jobs, and hands both folders on through `.github/actions/archive` with `link` set, which stores each content once (see the update below).
+- The `load-pages` job runs it once, after the build job, and hands both folders on through `.github/actions/archive` with `link` set, which stores each content once (see the update below).
 - Each `real-browsers` shard downloads them and sets `NULL3D_LOAD_PAGES=prebuilt`: the runner then builds none, and stops with the command to run when a build that its plan loads is missing.
 - The `bench` shards and the `allocation` jobs download them too, with the same switch. The benchmark pages' server, `serveBenchPages`, and the benchmark tests' Playwright server then serve the build as it is.
 

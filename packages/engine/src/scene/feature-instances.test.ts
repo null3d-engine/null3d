@@ -3,7 +3,7 @@
 // CPU path. Stand-ins stand in for the core, the geometry, the material and the object makers, so
 // the test reads no GPU.
 import { describe, expect, it } from 'bun:test';
-import { createFeatureInstances, type FeatureInstancesHost } from './feature-instances';
+import { type ComputeInstancesHost, createComputeInstances } from './feature-instances';
 import type { FeatureDescription } from './features';
 
 /** The vertex data of one square, which a stand-in geometry accepts. */
@@ -83,7 +83,7 @@ function standIns(webgl2: boolean, calls: string[]) {
 		setVisible: () => {},
 		setRenderOrder: () => {},
 	};
-	const host: FeatureInstancesHost = {
+	const host: ComputeInstancesHost = {
 		webgl2,
 		core: core(calls),
 		geometry: {
@@ -91,13 +91,13 @@ function standIns(webgl2: boolean, calls: string[]) {
 				calls.push('fromArrays');
 				return mesh;
 			},
-		} as unknown as FeatureInstancesHost['geometry'],
+		} as unknown as ComputeInstancesHost['geometry'],
 		materials: {
 			shader: () => {
 				calls.push('shader');
 				return material;
 			},
-		} as unknown as FeatureInstancesHost['materials'],
+		} as unknown as ComputeInstancesHost['materials'],
 		createMesh: () => {
 			calls.push('createMesh');
 			return object as never;
@@ -119,7 +119,7 @@ function standIns(webgl2: boolean, calls: string[]) {
 /** The 16 floats of one instance: a 2× scale on y, a quarter turn about z, moved to (5, 6, 7). */
 const INSTANCE = new Float32Array([0, 2, 0, 5, -1, 0, 0, 6, 0, 0, 1, 7, 0, 0, 0, 0]);
 
-describe('createFeatureInstances', () => {
+describe('createComputeInstances', () => {
 	it('refuses a description that an instance draw cannot place', () => {
 		for (const wrong of [
 			description({ kind: 'compute' }),
@@ -129,7 +129,7 @@ describe('createFeatureInstances', () => {
 			const calls: string[] = [];
 			const { host } = standIns(false, calls);
 			expect(() =>
-				createFeatureInstances(wrong, { shader: WGSL, vertices: VERTICES, capacity: 4 }, host),
+				createComputeInstances(wrong, { shader: WGSL, vertices: VERTICES, capacity: 4 }, host),
 			).toThrow('E1223');
 			expect(calls).toEqual(['fail']);
 		}
@@ -146,7 +146,7 @@ describe('createFeatureInstances', () => {
 			const calls: string[] = [];
 			const { host } = standIns(false, calls);
 			expect(() =>
-				createFeatureInstances(
+				createComputeInstances(
 					description(),
 					{ shader: WGSL, vertices: VERTICES, ...options } as never,
 					host,
@@ -159,7 +159,7 @@ describe('createFeatureInstances', () => {
 	it('makes the object and the two buffers on the GPU path', () => {
 		const calls: string[] = [];
 		const { host } = standIns(false, calls);
-		const draw = createFeatureInstances(
+		const draw = createComputeInstances(
 			description(),
 			{ shader: WGSL, vertices: VERTICES, capacity: 4, count: 2 },
 			host,
@@ -198,7 +198,7 @@ describe('createFeatureInstances', () => {
 	it('fills an unculled instance batch on the CPU path', () => {
 		const calls: string[] = [];
 		const { host, positions, rotations, scales } = standIns(true, calls);
-		const draw = createFeatureInstances(
+		const draw = createComputeInstances(
 			description(),
 			{ shader: WGSL, vertices: VERTICES, capacity: 4, count: 2 },
 			host,

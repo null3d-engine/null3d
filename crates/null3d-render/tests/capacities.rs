@@ -277,6 +277,29 @@ fn a_crowd_of_1000_characters_spreads_its_skinned_vertices_over_storage_bindings
 }
 
 #[test]
+fn a_skinning_pass_past_the_default_binding_checks_the_device_limit_and_falls_back() {
+    use null3d_gpu::drawlist::sizes;
+    // WebGPU's default storage binding holds 128 MiB. About 140 MB of skinned vertices is past it,
+    // so the pass keeps every buffer within the limit the device reports and spills the rest into
+    // another binding.
+    let default = sizes::PORTABLE_STORAGE_BINDING_BYTES;
+    let (tight, tight_buffers) = skins_every_vertex(1_200, 1_654, default);
+    assert!(tight_buffers.len() >= 2, "{tight_buffers:?}");
+    assert!(tight.len() >= 2);
+    assert!(tight_buffers.iter().all(|&bytes| bytes <= default));
+    // The same crowd on a device that offers twice the binding needs fewer bindings and no more
+    // dispatches, and every buffer stays within what that device reports.
+    let roomy = 2 * default;
+    let (roomy_dispatches, roomy_buffers) = skins_every_vertex(1_200, 1_654, roomy);
+    assert!(
+        roomy_buffers.len() < tight_buffers.len(),
+        "{roomy_buffers:?} against {tight_buffers:?}"
+    );
+    assert!(roomy_dispatches.len() <= tight.len());
+    assert!(roomy_buffers.iter().all(|&bytes| bytes <= roomy));
+}
+
+#[test]
 fn skinned_vertices_past_every_buffer_fail_with_their_cap_and_recover() {
     // At a 1 MiB binding, the eight skinned vertex buffers hold 8 MiB: 24 columns of 288,000
     // bytes, three to a buffer.

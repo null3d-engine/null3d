@@ -94,7 +94,7 @@ export default defineSketch(async ({ scene, render, engine }) => {
 		band: 'normal',
 		views: ['main'],
 	});
-	const draw = await scene.addFeatureInstances(drawFeature, {
+	const draw = await scene.addComputeInstances(drawFeature, {
 		shader: QUADS,
 		vertices: {
 			positions: new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]),

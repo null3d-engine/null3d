@@ -92,6 +92,8 @@ export type StatsResult = {
 	gpuTimer: boolean;
 	/** True when the page hid the browser's JavaScript heap and page memory figures. */
 	noPageMemory: boolean;
+	/** True in a development build, which reports the memory register. */
+	register: boolean;
 	overlay: OverlayView | null;
 	/** The sketch's figures, or null on the page that reads none. */
 	figures: StatsFigures | null;
@@ -205,6 +207,17 @@ export function statsProblems(result: StatsResult): string[] {
 	expect('gpu-textures', /^\d+\.\d MiB$/);
 	expect('gpu-buffers', /^\d+\.\d MiB$/);
 	problems.push(...memoryProblems(shown));
+	// A development build lists the memory register by system, with the core's tables and the
+	// upload arenas among them. A production build asks for no report, so the section stays hidden.
+	if (result.register) {
+		expect('area:scene', /^scene$/);
+		expect('area:scene:used', /^\d+\.\d MiB$/);
+		expect('area:scene:reserved', /^\d+\.\d MiB$/);
+		expect('area:scene:peak', /^\d+\.\d MiB$/);
+		expect('area:upload arenas', /^upload arenas$/);
+		expect('area:upload arenas:used', /^\d+\.\d MiB$/);
+	} else if (Object.keys(shown).some((name) => name.startsWith('area:')))
+		problems.push('a production build shows the memory register');
 	for (const name of ['js-heap', 'page-memory'])
 		if (result.noPageMemory && name in shown)
 			problems.push(`the overlay shows ${name}, which the browser does not give`);

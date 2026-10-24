@@ -6,8 +6,8 @@
 // with no case here fails the test, so a new first-use table needs a case.
 import {
 	defineSketch,
-	type SketchCallbacks,
 	type SketchContext,
+	type SketchSetup,
 	type StandardOptions,
 } from '@null3d/engine';
 import {
@@ -101,8 +101,11 @@ function morphedCard({ scene, geometry, materials }: SketchContext) {
 	object.setMorphWeight(0, 0.5);
 }
 
+/** A case that joins the sketch: it draws the feature, and may load a file before it does. */
+type Case = SketchSetup | ((context: SketchContext) => void);
+
 /** The cases, by the shader manifest's names of the features. */
-const CASES: Record<string, (context: SketchContext) => SketchCallbacks | void> = {
+const CASES: Record<string, Case> = {
 	ao: ({ post }) => post.set({ ao: {} }),
 	bloom: ({ post }) => post.set({ bloom: { intensity: 0.4 } }),
 	dof: ({ post }) => post.set({ dof: { focusDistance: 4, aperture: 4 } }),
@@ -202,6 +205,21 @@ const CASES: Record<string, (context: SketchContext) => SketchCallbacks | void> 
 		batch.markDirty();
 	},
 	lod_fade: fadingLevels,
+	// A tree of cluster patches comes only from the asset tool, so the case loads the model that
+	// the tool cut. A frame draws the tree only while its mesh is culled into a layout, which the
+	// camera does from outside the ground. WebGL2 draws the mesh whole and builds no cluster pass.
+	cluster_levels: async ({ scene, assets }) => {
+		scene.instantiate(await assets.loadGltf('assets/models/cluster-terrain.glb'));
+		scene.setActiveCamera(
+			scene.createPerspectiveCamera({
+				fov: 50,
+				near: 0.5,
+				far: 200,
+				position: [0, 12, 34],
+				target: [0, 0, 0],
+			}),
+		);
+	},
 	// A pick draws the scene into the pass's id target, whose builds load with its first call. The
 	// call needs a frame that the camera has drawn, so the case asks on the frame after the first
 	// one: a pick during setup has none and answers with a ray, which loads no shader. The live
@@ -250,7 +268,7 @@ fn effect(input: EffectInput) -> vec4f {
 }
 `;
 
-export default defineSketch((context) => {
+export default defineSketch(async (context) => {
 	const { scene, geometry, materials } = context;
 	const use = CASES[feature];
 	if (!use)
@@ -268,5 +286,5 @@ export default defineSketch((context) => {
 		receiveShadows: true,
 	});
 	ground.setRotationEuler(-Math.PI / 2, 0, 0);
-	return use(context) ?? {};
+	return (await use(context)) ?? {};
 });

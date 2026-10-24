@@ -24,6 +24,7 @@ export const API_PACKAGES: readonly ApiPackage[] = [
 	{ entry: 'packages/engine/src/stats.ts', source: 'packages/engine/src' },
 	{ entry: 'packages/controls/src/index.ts', source: 'packages/controls/src' },
 	{ entry: 'packages/particles/src/index.ts', source: 'packages/particles/src' },
+	{ entry: 'packages/splats/src/index.ts', source: 'packages/splats/src' },
 	{ entry: 'packages/impostors/src/index.ts', source: 'packages/impostors/src' },
 	{ entry: 'packages/terrain/src/index.ts', source: 'packages/terrain/src' },
 	{ entry: 'packages/geometry/src/index.ts', source: 'packages/geometry/src' },

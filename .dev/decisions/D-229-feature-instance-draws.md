@@ -54,7 +54,7 @@ What the engine had before this change:
 
 ```ts
 const description = defineFeature({ name: 'splats', frame: 'opaque', kind: 'draw', views: ['main'] });
-const draw = await scene.addFeatureInstances(description, { shader, vertices, capacity, count });
+const draw = await scene.addComputeInstances(description, { shader, vertices, capacity, count });
 draw.counts     // the engine's one-word count buffer, for the add-on's compute pass
 draw.instances  // the engine's capacity of 16-float instance rows, for the same pass
 draw.setCount(n);                        // the page's count, and a shadow view's count

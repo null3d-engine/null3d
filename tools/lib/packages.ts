@@ -120,6 +120,9 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 	},
 	// The surface function lives in a .wgsl file, which the pack compiles into a module of its own.
 	terrain: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	// Its task module is built as the JavaScript that the job workers import, and its two shaders
+	// compile into modules of their own.
+	splats: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
 	cli: {
 		compile: false,
 		shaders: false,

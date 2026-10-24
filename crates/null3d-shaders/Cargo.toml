@@ -11,13 +11,13 @@ publish.workspace = true
 null3d-gpu = { path = "../null3d-gpu" }
 naga = { version = "30", features = ["wgsl-in", "wgsl-out", "glsl-out"] }
 naga_oil = { version = "0.23", default-features = false }
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 toml = "1"
 
-# The per-entry cache stores each compiled entry as JSON, the same records that the shader
-# compiler sends. Only the native build command reads and writes it; the shader compiler, which a
-# page or a bundler loads, is built for WebAssembly and leaves it out. The build tests compare
-# their results with the shader compiler's JSON too.
+# The per-entry cache stores each compiled entry as JSON, with each source held once. Only the
+# native build command reads and writes it; the shader compiler, which a page or a bundler loads,
+# is built for WebAssembly and leaves it out. The build tests compare their results with the shader
+# compiler's JSON too.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 serde_json = "1"
 

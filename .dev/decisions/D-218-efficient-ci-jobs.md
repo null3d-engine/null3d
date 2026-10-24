@@ -65,3 +65,20 @@ How the data was produced: `gh api repos/{owner}/{repo}/actions/runs/<run>/jobs`
   - Each pass key names every script that its part starts, with the files that those scripts import. A part that reads the build job's shader modules names the files they are built from.
 - This replaces D-192's rule that the module exports test reads the engine's whole build, and changes D-194's shader test layout.
 - The estimated run time when shader inputs change is about 16 minutes, and about 15 with the faster build job. A run without shader changes stays at about 15 minutes, which `packages` sets.
+
+## Update, 24 October 2026: the compiler shards read the native build
+
+Each `shader-compiler` shard built its share natively, ran the GLSL and WGSL rules on that build, and then built the same share through the compiler. The `shader-entries` jobs had compiled every entry natively already, and the `build` job keeps them in the Actions cache. So the `build` job now hands on that cache's key and folders as outputs, and each shard restores the cache and reads its native build there, through `NULL3D_SHADER_ENTRIES` (`crates/null3d-shaders/tests/build.rs`). An entry that the cache lacks still compiles. The determinism part never reads the cache, since it must compile each build twice.
+
+The two GLSL rule checks then took most of what was left. They read each stage of each build in turn, on one core: 572 MB of GLSL for shard 7/12, of which only 374 MB was distinct text. Each check now reads every distinct text once, with the texts spread over the machine's cores, and reports the same lines in the same order.
+
+On this Mac, shard 7/12 without the compiler took 272 s, and the checks 98 s of it. With the cache its native build took 6 s, and with the spread checks the whole test took 25 s. In test run 40031098178 every shard compiled no entry and read them all from the cache. The shards' test times came to 3,213 s in all, against 5,059 s in run 40022423739, 36% less, and the longest fell from 539 to 364 s. The jobs took 5.1 to 8.7 minutes, against 6.0 to 10.2.
+
+The Actions keys of the shader caches moved into `bun tools/shaders.ts --cache-keys`, which prints the whole key and its two fallback prefixes, so the shaders action and the `shader-entries` job no longer each build the branch's part of the key.
+
+## Update, 24 October 2026: an unpack that ends in a broken pipe
+
+Three full runs of 23 October 2026 failed on a Safari shard's download of an archive. In two of them, the shard of run 40000245794 with `page-wasm` and the one of run 40016767660 with `load-pages`, the download passed its digest check, and the unpack failed after 11 to 12 s, about the time a whole unpack takes on those machines. tar printed nothing, and zstd printed `/*stdout*\: Broken pipe`, so tar had closed the pipe and zstd failed the step. In the third, run 39990527400, the download of `load-pages` never ended, and the job's limit stopped it after 33 minutes. Both shards passed when run again.
+
+The unpack in `.github/actions/archive` now judges tar's status first. When tar passed and zstd failed on a broken pipe, through its message or the pipe's signal, the step passes with a warning that names the archive. A tar that stops reading at the archive's end marker, before the padding behind it, closes the pipe that way after it has unpacked every file. Any other failure of either still fails the step: an archive cut short makes zstd fail with another message, even where tar, which then sees no file, passes. On this Mac, 303 unpacks of archives of 101 sizes through macOS's tar never broke the pipe, so the warning will show whether that tar is the cause on GitHub's macOS machines. The stalled download is not handled yet.
+

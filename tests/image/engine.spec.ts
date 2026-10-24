@@ -410,8 +410,9 @@ const FIRST_USE_LIVE: ReadonlySet<ShaderFeature> = new Set(['picking']);
 /**
  * The feature whose shader file a feature downloads on each GPU path, where it is another's, and
  * null where the path has no file for it: WebGPU morphs in the skinning pass, only WebGPU reads
- * index-only instance data and culls by occlusion on the GPU, and only WebGPU copies a view's
- * image, where WebGL2 draws the view into its target directly.
+ * index-only instance data and culls by occlusion on the GPU, only WebGPU copies a view's
+ * image, where WebGL2 draws the view into its target directly, and only WebGPU builds the pass
+ * that picks a mesh's cluster patches, where WebGL2 draws the mesh whole.
  */
 const FEATURE_FILE_OWNERS: Partial<
 	Record<ShaderFeature, Partial<Record<'webgpu' | 'webgl2', ShaderFeature | null>>>
@@ -420,6 +421,7 @@ const FEATURE_FILE_OWNERS: Partial<
 	instance_index: { webgl2: null },
 	occlusion: { webgl2: null },
 	views: { webgl2: null },
+	cluster_levels: { webgl2: null },
 };
 
 /**

@@ -46,9 +46,9 @@ An add-on from another developer goes into a listing. What does the listing run 
 
 ## Consequences
 
-- The command joins the command table, the [`null3d` page](../../docs/cli/null3d.md) and the package README.
+- The command joins the command table, the [`null3d` page](../../docs/cli/null3d.md) and the package README. [Building an add-on](../../docs/guides/add-ons.md) is the add-on author's guide, and it links the command.
 - The unit tests cover the refusal of an add-on that imports `@null3d/engine/internal`, the clean case, every interface mismatch in both declaration forms, the page lookup and the size-budget equality.
-- M3-D8 gives an add-on one registration call, `declareAddonNamespace`, and its record carries an optional `pluginInterface` range. The namespace's claim runs `checkPluginInterface`, so the static gate reads either form and the two checks cannot disagree. The D8 record was numbered D-224 while this one was in flight, so this record is D-225.
+- M3-D8 gives an add-on one registration call, `declareAddonNamespace`, and its record carries an optional `pluginInterface` range. The namespace's claim runs `checkPluginInterface`, so the static gate reads either form and the two checks cannot disagree. The namespace's name is the add-on's own short name, so only the standalone call's name must equal the package name. The D8 record was numbered D-224 while this one was in flight, so this record is D-225.
 - The page gates need a browser and a GPU, so their tests run after the machine's gate window and with the engine's browser rules.
 
 ## Not in this task

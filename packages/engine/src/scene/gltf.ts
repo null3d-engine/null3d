@@ -42,6 +42,7 @@ import type {
 	GltfExtensionData,
 	GltfExtensionHandler,
 	GltfExtensionPart,
+	LoadGltfOptions,
 } from './assets';
 import type { RigJoint, RigPropertyTarget } from './gltf-animation';
 import { affineOf, growBox, multiplyAffine } from './gltf-math';
@@ -84,6 +85,7 @@ import type {
 	Materials,
 	MeshArrays,
 	MeshGeometry,
+	MeshLevel,
 	StandardOptions,
 	UnlitOptions,
 } from './resources';
@@ -302,9 +304,10 @@ export async function loadGltf(
 	file: Blob,
 	address: URL,
 	call: string,
+	options: LoadGltfOptions = {},
 ): Promise<Prefab> {
 	const { data, bitmaps } = await parse(context, await file.arrayBuffer(), address, call);
-	return makePrefab(context, data, bitmaps, address, call);
+	return makePrefab(context, data, bitmaps, address, call, options);
 }
 
 /**
@@ -317,6 +320,7 @@ export async function makePrefab(
 	bitmaps: (ImageBitmap | undefined)[],
 	address: URL,
 	call: string,
+	options: LoadGltfOptions = {},
 ): Promise<Prefab> {
 	// The thread that draws downloads the shader files of the features that the asset tool
 	// recorded with the file (its `NULL3D_shaders` list), and then the skinning and morph shader
@@ -332,7 +336,23 @@ export async function makePrefab(
 	try {
 		materials.makeBase();
 		const parts = await makeExtensionParts(context, data, materials, made, call);
-		return await buildPrefab(context, data, textures, materials, made, parts, address, call);
+		const staged = new Map<number, StagedNode>();
+		const prefab = await buildPrefab(
+			context,
+			data,
+			textures,
+			materials,
+			made,
+			parts,
+			address,
+			call,
+			staged,
+		);
+		// The file draws its coarsest level, which the prefab holds: the finer levels download while
+		// the sketch draws it, so a model never waits for the whole file.
+		if (staged.size > 0)
+			startStages(context, prefab, staged.values(), made.meshes, options, address, call);
+		return prefab;
 	} catch (error) {
 		// A load that fails frees everything it made. No object uses any of it yet.
 		materials.destroy();
@@ -513,6 +533,150 @@ function setFileLevels(
 	}
 }
 
+/** A node's staged levels, and the meshes that draw them, one for each primitive of its mesh. */
+interface StagedNode {
+	/** The node's meshes, in the order of its mesh's primitives. */
+	meshes: MeshGeometry[];
+	/** The triangles that each mesh draws now, which the next stage replaces. */
+	indices: (Uint16Array | Uint32Array | undefined)[];
+	/** The error of the level that the file holds. */
+	error: number;
+	/** The stages, from the level after the file's own down to the finest. */
+	stages: { url: string; bytes: number; error: number }[];
+}
+
+/** The magic number that a stage file starts with, as the word `N3DS` counted little-endian. */
+const STAGE_MAGIC = 0x5344334e;
+/** The version of the stage layout that the engine reads. */
+const STAGE_VERSION = 1;
+/** The kind of a stage that holds a level's triangles, one list for each of a mesh's primitives. */
+const STAGE_LEVELS = 0;
+/** The words of a stage file's header: its magic number, its version, its kind and its list count. */
+const STAGE_HEADER = 4;
+
+/**
+ * The triangle lists that a stage file holds: one for each of the node's primitives, in the order
+ * of its mesh's primitives. Exported for its tests. Each list names the number of bytes of its indices, so a mesh of at
+ * most 65,535 vertices takes two. Undefined for a file that this engine does not read, which leaves
+ * the model at the level it had.
+ */
+export function readStage(bytes: ArrayBuffer, count: number): Uint32Array[] | undefined {
+	const size = bytes.byteLength;
+	if (size < STAGE_HEADER * 4) return undefined;
+	const view = new DataView(bytes);
+	if (
+		view.getUint32(0, true) !== STAGE_MAGIC ||
+		view.getUint32(4, true) !== STAGE_VERSION ||
+		view.getUint32(8, true) !== STAGE_LEVELS ||
+		view.getUint32(12, true) !== count
+	)
+		return undefined;
+	const lists: Uint32Array[] = [];
+	let at = STAGE_HEADER * 4;
+	for (let k = 0; k < count; k++) {
+		if (at + 8 > size) return undefined;
+		const length = view.getUint32(at, true);
+		const width = view.getUint32(at + 4, true);
+		at += 8;
+		if (width !== 2 && width !== 4) return undefined;
+		const bytesOf = Math.ceil((length * width) / 4) * 4;
+		if (at + bytesOf > size) return undefined;
+		const list = new Uint32Array(length);
+		if (width === 2) list.set(new Uint16Array(bytes, at, length));
+		else list.set(new Uint32Array(bytes, at, length));
+		lists.push(list);
+		at += bytesOf;
+	}
+	return at === size ? lists : undefined;
+}
+
+/**
+ * Starts the downloads of a file's staged levels, each node's from the coarsest down, without
+ * waiting for them: the sketch draws the level that the file holds while they arrive. `maxLevels`
+ * stops each node's downloads after that many levels, the file's own counted first, so a page that
+ * never shows the finest level saves its download.
+ */
+function startStages(
+	context: GltfContext,
+	prefab: Prefab,
+	staged: Iterable<StagedNode>,
+	made: MeshGeometry[],
+	options: LoadGltfOptions,
+	address: URL,
+	call: string,
+): void {
+	const given = options.maxLevels ?? Number.POSITIVE_INFINITY;
+	const maxLevels = given >= 1 ? Math.floor(given) : 1;
+	for (const node of staged)
+		void loadStages(context, prefab, node, made, maxLevels, address, call).catch((error) => {
+			if (DEV)
+				console.warn(
+					`${call}() could not finish the levels of ${address}: ${error instanceof Error ? error.message : String(error)}`,
+				);
+		});
+}
+
+/**
+ * Downloads one node's staged levels, coarsest first, and gives the node's meshes each level as it
+ * arrives: the level that the mesh drew becomes a level of the mesh, and the arriving one takes its
+ * place, so the objects that already draw the mesh refine without a new object. A mesh that cannot
+ * take another triangle list keeps the level it has, and its stages stop.
+ */
+async function loadStages(
+	context: GltfContext,
+	prefab: Prefab,
+	node: StagedNode,
+	made: MeshGeometry[],
+	maxLevels: number,
+	address: URL,
+	call: string,
+): Promise<void> {
+	const levels = node.meshes.map((): MeshLevel[] => []);
+	const indices = node.indices.slice();
+	// Each arriving stage adds the level that the mesh drew until then, so the level's own error
+	// is the one that the file or the stage before it gave.
+	let drawn = node.error;
+	let loaded = 1;
+	for (const stage of node.stages) {
+		if (loaded >= maxLevels) return;
+		const blob = await context.download(new URL(stage.url, address), call);
+		const bytes = await blob.arrayBuffer();
+		if (!prefab.live) return;
+		const lists = readStage(bytes, node.meshes.length);
+		if (!lists) {
+			if (DEV)
+				console.warn(
+					`${call}() left out a level of ${address}: the file at ${stage.url} does not hold the triangles of ${node.meshes.length} primitives.`,
+				);
+			return;
+		}
+		loaded += 1;
+		for (const [k, mesh] of node.meshes.entries()) {
+			const current = indices[k];
+			const list = lists[k] as Uint32Array;
+			if (current === undefined) continue;
+			const level = context.geometry.fromLevel(mesh, current);
+			if (!level || !mesh.replaceTriangles(list)) {
+				level?.destroy();
+				continue;
+			}
+			made.push(level);
+			levels[k]?.unshift({ mesh: level, error: drawn, fade: false });
+			try {
+				mesh.setLevels(levels[k] ?? []);
+			} catch (error) {
+				if (DEV)
+					console.warn(
+						`${call}() left out a level of ${address}: ${error instanceof Error ? error.message : String(error)}`,
+					);
+				return;
+			}
+			indices[k] = list;
+		}
+		drawn = stage.error;
+	}
+}
+
 /** The prefab of a parsed file, once its textures and materials exist. */
 async function buildPrefab(
 	context: GltfContext,
@@ -523,6 +687,7 @@ async function buildPrefab(
 	extensionParts: ReadonlyMap<number, HandlerPart[]>,
 	address: URL,
 	call: string,
+	staged: Map<number, StagedNode>,
 ): Promise<Prefab> {
 	// Only the meshes that nodes draw: joints move copies of some of the file's meshes.
 	const meshes: (MeshGeometry[] | undefined)[] = [];
@@ -603,6 +768,22 @@ async function buildPrefab(
 				materials,
 				mesh?.primitives ?? [],
 			);
+		// A staged mesh draws the level that the file holds, and takes the finer ones as they
+		// download. Only a mesh whose primitives all name their triangles can take another list.
+		// One chain per mesh, whichever nodes draw it: a mesh that two nodes draw takes each stage
+		// once, so the two copies refine together.
+		if (
+			n.stages &&
+			made.length > 0 &&
+			!staged.has(n.mesh) &&
+			(n.mesh < 0 || data.meshes[n.mesh]?.primitives.every((p) => p.indices !== undefined))
+		)
+			staged.set(n.mesh, {
+				meshes: made,
+				indices: made.map((_, k) => data.meshes[n.mesh]?.primitives[k]?.indices),
+				error: n.stages.error,
+				stages: n.stages.levels,
+			});
 		const parts = [
 			...(mesh?.primitives ?? []).map((p, k) => ({
 				mesh: made[k] as MeshGeometry,

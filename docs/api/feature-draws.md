@@ -3,7 +3,7 @@ id: api/feature-draws
 title: Add-on feature draws
 status: experimental
 since: "0.3"
-summary: "scene.addFeatureDraw turns a draw feature description into a draw of your WGSL, your vertices, your uniforms and the description's sort place, on both GPU paths and in every thread mode."
+summary: "scene.addFeatureDraw turns a draw feature description into a draw of your WGSL, your vertices, your uniforms and the description's sort place, on both GPU paths and in every thread mode; scene.addFeatureInstances repeats that shape once for each row of a batch."
 ---
 
 # Add-on feature draws
@@ -112,10 +112,42 @@ A draw's vertex data and material draw as one scene object. The engine culls it 
 
 A draw can cast the shadows that a directional light casts with `castShadows`, and receive shadows with `receiveShadows`. `draw.object` gives the scene object for every other object call: `setPosition`, `setRotation`, `setScale`, `setVisible`, `setLayers` and `destroy`.
 
+## Many copies of one shape
+
+`scene.addFeatureInstances` draws the same declaration many times. It takes the options of
+`addFeatureDraw`, and `instances`, the number of copies. Each copy is a row of an instance batch,
+with its own place, rotation, scale, color and four values, which you write in `draw.batch`:
+
+```ts
+const cloud = await scene.addFeatureInstances(description, {
+  shader: points,
+  vertices: PLANE,
+  instances: 40_000,
+  rows: { colors: true, values: true },
+  uniforms: { gain: 1.5 },
+});
+// Each row places one copy, and colors it. A row's color reaches the shader as the vertex color.
+const { positions, rotations, scales, colors, values } = cloud.batch;
+values.set([...]); // four numbers of yours for each row, read as `object.values`
+```
+
+- The engine culls the rows and, for a blended material, sorts them back to front in each view on
+  its job workers, on both GPU paths. A draw of many blended copies therefore needs no sort of its
+  own.
+- `rows.colors` adds a linear RGBA color for each row, which multiplies the material's color and
+  opacity. `rows.values` adds four numbers of yours, which a surface function reads as
+  `object.values`. `rows.dynamic` uploads every row in every frame.
+- `draw.setCount(count)` draws only the first rows, and `draw.batch` gives the row arrays and their
+  calls. Write the rows that draw, then `draw.batch.markDirty(0, count)` for a batch that is not
+  dynamic.
+- `origin` gives the point that every row's position is relative to, as `scene.createInstances`
+  takes it.
+
 ## Limits
 
 - The adapter places the main view alone. A scene pass and a reflection pass do not draw a feature draw yet, and a description that names one throws E1223.
-- A draw has one shape and one material. A compact buffer of many copies that a shader expands, as a large splat scene needs, is not this hook: [instance draws](feature-instances.md) draw a capacity of instances whose live count the GPU writes.
+- A draw has one shape and one material, repeated once for each row. A scene that draws a different shape for each copy, or whose copies the GPU chooses, needs another hook.
+- A compact buffer of many copies that a shader expands, as a large splat scene needs, is not this hook: [compute instances](feature-instances.md) draw a capacity of instances whose live count a compute pass writes.
 - The feature description's `reads`, `writes`, `outputs` and `provides` stay with the [feature registry](features.md): this draw reads and writes no scene resource and provides no lighting slot.
 
 ## Errors

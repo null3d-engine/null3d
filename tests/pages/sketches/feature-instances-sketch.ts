@@ -61,7 +61,7 @@ export default defineSketch(async ({ scene }) => {
 	const columns = 9;
 	const rows = 5;
 	const live = columns * rows;
-	const draw = await scene.addFeatureInstances(description, {
+	const draw = await scene.addComputeInstances(description, {
 		shader: QUADS,
 		vertices: {
 			positions: new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]),

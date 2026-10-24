@@ -52,10 +52,14 @@ for (const mode of ENGINE_MODES) {
 	test(`errors keep their code and full message, and the engine starts again, ${mode.name}`, async ({
 		page,
 	}) => {
+		// The pipelined start pays the built page's first load, which CI's software GPU took 52.1
+		// seconds for on one run and more than 60 on the next, where the other four modes took 10
+		// to 18. Both waits allow a run twice as slow as that, and the test's limit clears them.
+		test.setTimeout(150_000);
 		const requests: string[] = [];
 		page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
 		await page.goto(`errors.html?gpu=webgpu&${mode.query}`);
-		const result = await pageResult<ErrorsResult>(page, 60_000);
+		const result = await pageResult<ErrorsResult>(page, 120_000);
 		expect(result.error).toBeUndefined();
 		// The fixes' text is a file of its own, which the first error loads.
 		expect(requests.filter((path) => FIXES_FILE.test(path)).length).toBeGreaterThan(0);

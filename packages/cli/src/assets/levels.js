@@ -789,6 +789,165 @@ function positionAccessor(doc, base, values, buffer) {
 }
 
 /**
+ * The magic number that a stage file starts with, as the word `N3DS` counted little-endian.
+ * @type {number}
+ */
+export const STAGE_MAGIC = 0x5344334e;
+/** The version of the stage layout that the tool writes. */
+export const STAGE_VERSION = 1;
+/** The kind of a stage that holds a level's triangles, one list for each of a mesh's primitives. */
+export const STAGE_LEVELS = 0;
+/** The words of a stage file's header: its magic number, its version, its kind and its list count. */
+export const STAGE_HEADER_SIZE = 4;
+
+/**
+ * A stage file: its header, then for each triangle list its index count, the number of bytes of
+ * each index, and its indices padded to a whole word. The lists follow the order of a mesh's
+ * primitives. Every number counts little-endian, as the engine reads it.
+ *
+ * @param {Uint32Array[]} lists
+ * @returns {Uint8Array}
+ */
+export function stageFile(lists) {
+	const placed = lists.map((indices) => {
+		const size = indices.some((index) => index > 0xffff) ? 4 : 2;
+		return { indices, size, bytes: Math.ceil((indices.length * size) / 4) * 4 };
+	});
+	const length = STAGE_HEADER_SIZE * 4 + placed.reduce((sum, list) => sum + 8 + list.bytes, 0);
+	const out = new Uint8Array(length);
+	const view = new DataView(out.buffer);
+	view.setUint32(0, STAGE_MAGIC, true);
+	view.setUint32(4, STAGE_VERSION, true);
+	view.setUint32(8, STAGE_LEVELS, true);
+	view.setUint32(12, lists.length, true);
+	let at = STAGE_HEADER_SIZE * 4;
+	for (const { indices, size, bytes } of placed) {
+		view.setUint32(at, indices.length, true);
+		view.setUint32(at + 4, size, true);
+		const array = size === 2 ? new Uint16Array(bytes / 2) : new Uint32Array(bytes / 4);
+		array.set(indices);
+		out.set(new Uint8Array(array.buffer), at + 8);
+		at += 8 + bytes;
+	}
+	return out;
+}
+
+/**
+ * A mesh's level as a new accessor of its triangles, in the type that holds its vertex count.
+ *
+ * @param {Document} doc
+ * @param {Accessor} positions
+ * @param {Uint32Array} indices
+ * @param {Buffer} buffer
+ */
+function indicesAccessor(doc, positions, indices, buffer) {
+	const count = positions.getCount();
+	return doc
+		.createAccessor()
+		.setType('SCALAR')
+		.setArray(count <= 0xffff ? Uint16Array.from(indices) : Uint32Array.from(indices))
+		.setBuffer(buffer);
+}
+
+/**
+ * A level's triangle lists as index arrays, one for each of the mesh's primitives.
+ *
+ * @param {MeshLevels['levels'][number]} level
+ * @returns {Uint32Array[]}
+ */
+function levelIndices(level) {
+	return level.indices.map((indices) => /** @type {Uint32Array} */ (indices));
+}
+
+/**
+ * Stores the planned levels as separate downloads, for a model that draws its coarse level first:
+ * each mesh's own triangles become its coarsest level, and each finer level goes into a stage file
+ * of its own beside the model. Every node that draws the mesh names its stages in
+ * `NULL3D_stages`, with the error of each level, so the engine downloads them from the coarsest
+ * down and draws each as it arrives.
+ *
+ * A mesh whose levels hold positions of their own, such as a level of cards, cannot share its
+ * vertices with a stage, so its levels stay in the file as `MSFT_lod` gives them. A mesh with one
+ * level has nothing to stream, and keeps its levels in the file too.
+ *
+ * @param {Document} doc
+ * @param {Map<Mesh, MeshLevels>} plans
+ * @param {Map<string, Uint8Array>} stages The stage files by their address beside the model.
+ * @param {string} prefix The model's name, which the stages' names start with.
+ * @returns {{ meshes: number, files: number, bytes: number, levels: number }} The staged meshes.
+ */
+export function storeStages(doc, plans, stages, prefix) {
+	const extension = doc.createExtension(MSFTLod);
+	const buffer = doc.getRoot().listBuffers()[0] ?? doc.createBuffer();
+	const summary = { meshes: 0, files: 0, bytes: 0, levels: 0 };
+	const meshes = doc.getRoot().listMeshes();
+	plans.forEach((plan, mesh) => {
+		const { prims, levels } = plan;
+		const shared = levels.every((level) => level.positions.every((p) => p === undefined));
+		if (!shared || levels.length < 2) {
+			storeLevels(doc, new Map([[mesh, plan]]), extension);
+			return;
+		}
+		const own = prims.map((prim) => prim.getIndices()?.getArray());
+		if (own.some((values) => values === undefined)) {
+			storeLevels(doc, new Map([[mesh, plan]]), extension);
+			return;
+		}
+		const index = meshes.indexOf(mesh);
+		/** @type {{ url: string, bytes: number, error: number }[]} */
+		const names = [];
+		/**
+		 * Puts the triangles of one level, or of the mesh itself, into a stage file.
+		 *
+		 * @param {Uint32Array[]} lists
+		 * @param {number} error
+		 */
+		const stage = (lists, error) => {
+			const name = `${prefix}.m${index}.lod${names.length + 1}.bin`;
+			const file = stageFile(lists);
+			stages.set(name, file);
+			summary.files += 1;
+			summary.bytes += file.byteLength;
+			summary.levels += 1;
+			names.push({ url: name, bytes: file.byteLength, error });
+		};
+		// The file keeps the coarsest level. The stages follow from the next coarsest down to the
+		// mesh itself, so each one refines the triangles that the one before it drew, and the
+		// finest picture is the full mesh.
+		const coarsest = /** @type {MeshLevels['levels'][number]} */ (levels[levels.length - 1]);
+		prims.forEach((prim, p) => {
+			const positions = /** @type {Accessor} */ (prim.getAttribute('POSITION'));
+			prim.setIndices(
+				indicesAccessor(doc, positions, /** @type {Uint32Array} */ (coarsest.indices[p]), buffer),
+			);
+		});
+		for (let k = levels.length - 2; k >= 0; k--) {
+			const level = /** @type {MeshLevels['levels'][number]} */ (levels[k]);
+			stage(levelIndices(level), level.error);
+		}
+		stage(
+			own.map((indices) => Uint32Array.from(/** @type {Uint16Array | Uint32Array} */ (indices))),
+			0,
+		);
+		const staged = { error: coarsest.error, levels: names };
+		for (const node of mesh.listParents().filter((p) => p.propertyType === 'Node')) {
+			const base = /** @type {Node} */ (node);
+			base.setExtras({ ...base.getExtras(), NULL3D_stages: staged });
+		}
+		summary.meshes += 1;
+	});
+	// The extension stays only when some mesh keeps its levels in the file.
+	if (
+		!doc
+			.getRoot()
+			.listExtensionsUsed()
+			.some((e) => e.extensionName === MSFT_LOD)
+	)
+		extension.dispose();
+	return summary;
+}
+
+/**
  * Stores the planned levels in the document, as MSFT_lod gives them: a mesh for each level, whose
  * triangle lists share the mesh's vertex streams and materials, and a node for each level beside
  * each node that draws the mesh, with that node's transform, skin and instances. A list of cards
@@ -797,10 +956,12 @@ function positionAccessor(doc, base, values, buffer) {
  *
  * @param {Document} doc
  * @param {Map<Mesh, MeshLevels>} plans
+ * @param {MSFTLod} [own] The extension to use, where a caller stores some meshes as downloads and
+ *   keeps others in the file.
  */
-export function storeLevels(doc, plans) {
+export function storeLevels(doc, plans, own) {
 	if (plans.size === 0) return;
-	const extension = doc.createExtension(MSFTLod);
+	const extension = own ?? doc.createExtension(MSFTLod);
 	const buffer = doc.getRoot().listBuffers()[0] ?? doc.createBuffer();
 	for (const [mesh, { prims, side, levels }] of plans) {
 		const meshes = levels.map((level, k) => {

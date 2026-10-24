@@ -30,7 +30,10 @@ interface OcclusionResult {
  * On 20 October 2026 a shard's run reached the limit without reporting, so the wait leaves room for
  * a slower shard too.
  */
-const RESULT_MS = 180_000;
+// The software renderer draws this page slower than any other: the page had not answered in 180
+// seconds on 24 October 2026, where its GPU paths answer in tens. A run that still fails at twice
+// that needs the page looked at rather than a longer wait.
+const RESULT_MS = 360_000;
 
 for (const tier of ['webgl2', 'webgpu'] as const)
 	test(`software occlusion culling hides what the buildings block on ${tier}`, async ({ page }) => {

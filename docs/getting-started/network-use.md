@@ -33,6 +33,7 @@ The engine downloads only the addresses that you give it:
 - `assets.loadTexture`, `assets.loadGltf`, `assets.loadBinary`, `assets.loadJson` and `assets.loadImageBitmap` download the address that you pass.
 - A glTF file names more addresses inside it, for its buffers, images and extensions. The engine downloads those too. They may be on another origin, which must allow the page to read them.
 - `preload` downloads the features that you list, when you call it.
+- `@null3d/splats` downloads the SPZ file that you pass, and no other address.
 
 A service worker can keep these files for a later visit. [Hosting](hosting.md#offline-play) shows how.
 
