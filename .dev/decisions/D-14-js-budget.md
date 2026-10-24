@@ -914,3 +914,19 @@ The trim now owed is to load the compute pass's option checks and the instance d
 their first use, as the cluster levels' shader trim already asks, so a page that adds neither
 downloads neither. Until then this is the second rise in two days, and M3-T1's target of 160 KB
 stays far away.
+
+## The start's budget rises to 188 KB, 24 October 2026
+
+The half-float helpers that several of the start's own modules read became a file of their own, which
+every page loads, and the line rose to 187 KB for them. Later the same day the video textures' page
+support and the day's other landings put a production page build at 191,594 bytes after Brotli in
+pipelined WebGL2 mode, 106 bytes over that line.
+
+The budget rises to 188 KB, or 192,512 bytes, leaving 918 bytes of room. The owner's rule of
+22 October allows the start's budget to rise as needed without asking. A hundred bytes is below the
+noise of one module's change, so finding them costs more than the rise does.
+
+The squeeze stands: this is the third rise in two days, and M3-T1's target of 160 KB is still far
+away. The trims that the sections above owe, the cluster levels' shader and the compute pass's
+option checks, are the next work that touches the start's size, and they come before any feature
+that wants room.
