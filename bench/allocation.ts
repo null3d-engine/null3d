@@ -202,6 +202,12 @@ const WARMUP_FRAMES = 3600;
  */
 const SWIFTSHADER_COUNT = 1000;
 /**
+ * The pixel ratio that S1 draws at on SwiftShader, which shades every pixel on the processor: half
+ * the protocol's, so a frame shades a quarter of the pixels and the warm-up reaches its frames
+ * sooner. A frame's engine code is the same at any size.
+ */
+const SWIFTSHADER_PIXEL_RATIO = 0.5;
+/**
  * On SwiftShader the browser's compilers take a function after fewer calls, so a shorter warm-up
  * reaches the code that a long one reaches. At 3,600 frames the warm-up took 8 to 18 minutes on
  * CI's machines. At 1,200 frames with the browser's own counts, the sketch's phase timer and the
@@ -792,7 +798,7 @@ async function main(): Promise<void> {
 		// `?keep` runs the scene as a timed run draws it until the page closes, with no measurement of
 		// the page's own, so no timer of the page's runs and the engine never stops before the samples
 		// end. A demo would add the playable controls and the stats overlay of S5 and S6.
-		const query = `keep&n=${n}${counts}${chosen.map((choice) => choice.query).join('')}${swiftShader ? '&frames' : ''}`;
+		const query = `keep&n=${n}${counts}${chosen.map((choice) => choice.query).join('')}${swiftShader ? `&frames&maxPixelRatio=${SWIFTSHADER_PIXEL_RATIO}` : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts
