@@ -91,3 +91,22 @@ holds. Two gaps in the guard and one in the page were closed:
 
 The guard fails on an added call in any shipped file. A call added to `packages/terrain/src/index.ts`
 made the repository check report both the call and its host, and the file was then restored.
+
+## Addendum, 25 October 2026: the controls package ports three.js
+
+The audit found one package that carried no notices file. The controls package ports three.js's
+controls. Its source says that the camera math follows three.js's OrbitControls and MapControls
+step for step. The fly, first-person, drag and transform controls follow three.js's controls of
+those names. The sequence and the numbers match, not only the API names. That covers the spherical
+update, the damping share, the azimuth wrap, the polar clamp, the zoom base, the pan scale and the
+turn angle.
+
+The package now ships `THIRD-PARTY-NOTICES.txt` with three.js's MIT text. Its `files` list, its
+`./package.json` export and its entry in the pack check's required files carry the notice. The
+Vite plugin finds a package's notices through that export, so the controls' text now reaches
+`null3d-third-party-notices.txt` in a production build. The notices page names the package and its
+upstream.
+
+The audit also corrected the evidence line for this task. When a call was added to a shipped file,
+one test failed, the repository check. The earlier line said that the guard's thirteen tests failed,
+which was wrong.
