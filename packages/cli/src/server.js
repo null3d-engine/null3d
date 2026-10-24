@@ -111,7 +111,8 @@ export async function startDevServer({ plugins = [] } = {}) {
  * config, into a new temporary folder, and serves the build as `vite preview` would. The project's
  * own build folder stays as it was, and closing the server deletes the temporary one. `sourcemap`
  * writes a map beside each built file, for the tools that name a frame by its source; the maps carry
- * no address in the built files, so the page loads nothing more.
+ * no address in the built files, so the page loads nothing more, and no source's text, which a build
+ * of a page with the engine's generated shaders would hold many times over.
  *
  * @param {{ sourcemap?: boolean }} [options]
  * @returns {Promise<DevServer>}
@@ -133,7 +134,14 @@ export async function startBuildServer({ sourcemap = false } = {}) {
 		await vite.build({
 			...shared,
 			define: { __NULL3D_URL_SWITCHES__: 'true' },
-			build: { outDir, emptyOutDir: true, ...(sourcemap && { sourcemap: 'hidden' }) },
+			build: {
+				outDir,
+				emptyOutDir: true,
+				...(sourcemap && {
+					sourcemap: 'hidden',
+					rollupOptions: { output: { sourcemapExcludeSources: true } },
+				}),
+			},
 		});
 	} catch (error) {
 		remove();

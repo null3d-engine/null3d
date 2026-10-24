@@ -801,6 +801,27 @@ const SAMPLED_WORKERS = ['sketch-worker', 'render-worker'];
 /** Bytes between the heap profiler's samples, small so that a few bytes per frame still show. */
 const SAMPLING_INTERVAL = 128;
 
+/**
+ * The most objects that one worker's profile may hold in one sample. The profiler records one
+ * sample for each stretch of bytes that a page allocates, so a page that allocates fast would
+ * otherwise grow a profile until the memory runs out. The gate learns the page's rate first, then
+ * widens the interval to hold this count, which keeps one sample at about 20 MB.
+ */
+export const MAX_ALLOCATION_SAMPLES = 250_000;
+
+/**
+ * The coarsest interval that the gate sets. At this interval and the count above, a sample holds
+ * any page's allocations up to a few terabytes in its window, so the count holds for every page.
+ */
+const COARSEST_SAMPLING_INTERVAL = 16 * 1024 * 1024;
+
+/**
+ * Milliseconds of the page's frames that the gate samples to learn its allocation rate, and the
+ * bytes between those samples, coarse so that the rate's own profile stays small.
+ */
+const RATE_SAMPLE_MS = 250;
+const RATE_SAMPLING_INTERVAL = 8192;
+
 /** Seconds that a page warms up before a sample, so the browser optimizes its frame code. */
 const ALLOCATION_WARMUP_SECONDS = 20;
 
@@ -952,6 +973,38 @@ export function ranAddonCode(frames, names, addon) {
 }
 
 /**
+ * The bytes between samples that keep one worker's profile under `MAX_ALLOCATION_SAMPLES`, for a
+ * page that allocates `bytesPerSecond`. A page that allocates slowly takes the finest interval, so
+ * a few bytes per frame still show; a faster page is sampled less finely, and its places are
+ * coarser.
+ *
+ * @param {number} bytesPerSecond
+ * @returns {number}
+ */
+export function samplingIntervalFor(bytesPerSecond) {
+	const wanted = Math.ceil((bytesPerSecond * ALLOCATION_SAMPLE_SECONDS) / MAX_ALLOCATION_SAMPLES);
+	return Math.min(COARSEST_SAMPLING_INTERVAL, Math.max(SAMPLING_INTERVAL, wanted));
+}
+
+/**
+ * The bytes that the page's workers allocate each second, from a short sample at a coarse interval.
+ *
+ * @param {HeapSampler} sampler
+ * @param {() => Promise<number>} frames
+ * @returns {Promise<number>}
+ */
+async function allocationRate(sampler, frames) {
+	await sampler.start(RATE_SAMPLING_INTERVAL);
+	const start = await frames();
+	await sleep(RATE_SAMPLE_MS);
+	const profiles = await sampler.stop();
+	if ((await frames()) - start <= 0) return 0;
+	let bytes = 0;
+	for (const profile of profiles.values()) bytes += totalSize(profile.head);
+	return bytes / (RATE_SAMPLE_MS / 1000);
+}
+
+/**
  * Waits until a page's frame counter reaches `target`, and throws when it stands still for a while,
  * as on a page whose engine failed.
  *
@@ -1022,6 +1075,7 @@ async function sampleAllocation({ devtools, browserPage, url, names, addon }) {
 	const addonRan = [...ran.values()].some((frames) => ranAddonCode(frames, names, addon));
 	const sampler = new HeapSampler(devtools, workers);
 	await sampler.enable();
+	const interval = samplingIntervalFor(await allocationRate(sampler, framesSoFar));
 	/** @type {Map<string, Sample[]>} */
 	const samples = new Map();
 	/** @type {Map<string, number>} */
@@ -1030,7 +1084,7 @@ async function sampleAllocation({ devtools, browserPage, url, names, addon }) {
 	const addonPlaces = new Set();
 	let frames = 0;
 	for (let sample = 0; sample < ALLOCATION_SAMPLES; sample++) {
-		await sampler.start(SAMPLING_INTERVAL);
+		await sampler.start(interval);
 		const startFrames = await framesSoFar();
 		await sleep(ALLOCATION_SAMPLE_SECONDS * 1000);
 		const profiles = await sampler.stop();

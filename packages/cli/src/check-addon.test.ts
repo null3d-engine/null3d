@@ -13,6 +13,7 @@ import {
 	budgetOf,
 	engineVersions,
 	interfaceResult,
+	MAX_ALLOCATION_SAMPLES,
 	nameProfile,
 	pageOf,
 	parseCheckAddonArgs,
@@ -20,6 +21,7 @@ import {
 	ranAddonCode,
 	readAddon,
 	run,
+	samplingIntervalFor,
 	sizeProblems,
 } from './check-addon.js';
 import { freePort } from './devtools.js';
@@ -512,6 +514,29 @@ describe('ranAddonCode', () => {
 		expect(ranAddonCode(frames, asRecorded, { folder: '/work/addon', name: '@acme/addon' })).toBe(
 			false,
 		);
+	});
+});
+
+describe('samplingIntervalFor', () => {
+	/** The samples that one worker's profile holds in a sample of the gate's length. */
+	const samplesAt = (bytesPerSecond: number) =>
+		(bytesPerSecond * 4) / samplingIntervalFor(bytesPerSecond);
+
+	it('keeps the finest interval for a page that allocates slowly', () => {
+		expect(samplingIntervalFor(0)).toBe(128);
+		// The allocating fixture: about 5.8 KB a frame at 60 frames a second.
+		expect(samplingIntervalFor(5.8 * 1024 * 60)).toBe(128);
+	});
+
+	it('widens the interval so that a fast page holds at most the stated samples', () => {
+		// Half a terabyte a second is far past any browser page, and the count still holds there.
+		for (const bytesPerSecond of [10 * 1024 ** 2, 1024 ** 3, 10 * 1024 ** 3, 512 * 1024 ** 3]) {
+			expect(samplesAt(bytesPerSecond)).toBeLessThanOrEqual(MAX_ALLOCATION_SAMPLES);
+		}
+	});
+
+	it('stops at the coarsest interval, above about a terabyte a second', () => {
+		expect(samplingIntervalFor(10 * 1024 ** 4)).toBe(16 * 1024 * 1024);
 	});
 });
 
