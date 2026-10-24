@@ -26,10 +26,12 @@ const PARTIAL: Readonly<Record<string, string>> = {
 	'M3-C1':
 		'the scene, its lanes, rain and the hero car are in; the moods, the instances demo and the device figures remain',
 	'M3-T1': 'the measured fence is in; the trim is on its branch',
+	'M3-B4':
+		'the rain streaks, the storm over any hour and the lamp-following city lights are in the Skyway demo; the wet-surface helper, the windshield drops and the particles link remain',
 };
 
 /** Tasks built on a helper branch, with nothing of them on this branch yet. */
-const ON_BRANCH = new Set(['M3-B4', 'M3-E9', 'M3-R14']);
+const ON_BRANCH = new Set(['M3-E9', 'M3-R14']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
 const INCOMPLETE = new Set([
@@ -76,7 +78,7 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-F10': 'dropped with the temporal resolve it needs (D-206); the owner may change the ruling',
 	'M3-R12': 'the build compiles only the listed permutations; the time and size are not recorded',
 	'M3-A11':
-		'measured on both paths at every preset; the resolve does not beat the presets, so TAA does not ship (D-206)',
+		'measured on both paths at every preset; it does not beat the presets, so it stays behind the internal setting and does not ship (D-206). Its black-capture and bind-group faults are fixed, its shader file still loads on first use, and that first-use case is now tested on both paths',
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
 };
 
