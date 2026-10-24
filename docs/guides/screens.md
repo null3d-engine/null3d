@@ -91,8 +91,7 @@ takes no values.
 ## Clicks on a screen
 
 A pointer hit on a mesh carries its texture coordinates. `screen.pointOf(event)` turns them into a
-point on the canvas, in the canvas's own coordinates. `screen.texelOf(event)` gives the whole texel
-under the point.
+canvas point. `screen.texelOf(event)` gives the whole texel under the point.
 
 ```ts
 screen.onClick((point) => {
