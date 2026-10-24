@@ -297,3 +297,64 @@ index. A caster, motion or pick build shades no surface, so its layout leaves th
   `docs/guides/custom-shaders.md` and the mapping's new entry.
 - **Shaders:** the copy's shaders load with the material, through the `particles` first-use file,
   which already holds them.
+
+
+## Addendum, 24 October 2026: the first user, water's soft shores
+
+Status: decided by the helper of M3-E4 on 24 October 2026, for the owner's review. The addendum
+above binds the depth behind a custom material. This one records the first user that draws it, and
+the limit that user met.
+
+Summary: A water sheet reads the copy of the opaque depth and fades its shore against the geometry
+it meets. It does so on WebGPU, compatibility mode and WebGL2. The water's depth along the view ray
+is the gap between the sheet and the opaque surface behind the pixel. The sheet tints, foams and
+loses its alpha over a band at the end of that gap. Its shoreline is then soft, rather than a
+polygon edge. A picture test holds the frame on every GPU tier and in every thread mode. The material
+that reads the copy still declares no textures of its own. A water material with the reflection
+pass's texture therefore cannot read the depth yet.
+
+### The shore
+
+| Question | Answer | Why |
+| --- | --- | --- |
+| What sets the water's depth? | The gap between the sheet and the surface behind it along the view ray | The distance from the camera to the surface behind a pixel also grows with the camera's own distance. A shore that fades over that distance would fade with the viewpoint, not with the water |
+| How is the gap found? | Convert the pixel's own depth, `input.fragCoord.z`, to a distance with `engine_frame.camera_range`, and subtract it from `sceneDistance(uv)` | `sceneDistance` already converts the copy's stored depth the same way, on a perspective and on an orthographic camera |
+| How does the shore fade? | The alpha falls to zero over a band at the end of the gap, and foam fills half of that band | A fade in alpha ends the surface before its polygon's edge, so the bed shows through it. Foam marks the water that is too thin to show |
+| What when the copy is absent? | The gap reads as the far plane, so the whole sheet draws its deep color, opaque, with no foam | The same absent case as the addendum above. The picture test therefore catches a copy that is not bound |
+
+### The test
+
+`tests/image/manifest.ts` holds `water-shores`. Its sketch, `tests/pages/sketches/water-shores-sketch.ts`,
+draws a beach, a rounded island and two stones in the shallows. The soft shore follows all four
+waterlines. The test draws every GPU tier and every thread mode, and keeps a reference in both sets.
+
+### The limit met
+
+The Creek's water material wants the scene depth beside the reflection pass's texture and its foam
+map. So does the add-on that M3-F5 builds. `materials.shader` refuses that pair, as the addendum
+above records. The first user therefore declares no textures.
+
+The refusal is `checkSceneInputs` in `packages/engine/src/scene/resources.ts`, at the
+`sceneDepth && textures > 0` branch, which throws E1217. The count behind it:
+
+- The frame group has 8 sampled textures in the fragment stage: bindings 2, 3, 4, 9, 10, 11, 12
+  and 15 of `LAYOUT_FRAME` in `packages/engine/src/gpu/webgpu/pipelines.ts`. Binding 10 holds the
+  light probe grid and binding 15 the copy of the opaque colour.
+- The maps' group has 8 sampled textures in the fragment stage: the map slots, `MAP_SLOTS = 8` in
+  `crates/null3d-gpu/src/drawlist.rs`. The displacement map is the vertex stage's alone, so it
+  does not count here. The parallax layout makes it the fragment stage's too, and would count 9.
+- WebGPU's default `maxSampledTexturesPerShaderStage` is 16. The copy of the scene's depth is the
+  17th sampled texture of a material that has both the depth and the maps. A parallax material
+  with the depth would be the 18th.
+
+The owner ruled on 24 October 2026 that this limit does not change under M3-E4. A binding-layout
+change would reach every material, and anything that would drastically alter a working engine
+waits. So the limit goes to a task of its own, M3-E4a, and M3-E4's first user stays texture-free.
+That task starts from the count above and may choose:
+
+- a frame group without the light probe grid, which the decal frame already does. A build leaves the
+  probe grid's declaration out, which frees one sampled texture for the copy;
+- a maps' group of 7 slots for materials that read the depth, which the addendum above rejected on
+  cost;
+- a shore that keeps its analytic bed depth, as the Creek does today, and no soft shore from the
+  copy.
