@@ -32,7 +32,7 @@ const GROUPS: readonly (readonly string[])[] = [
 	...packages.map((name) => [name]),
 	['bench/scenes', 'bench/pages', 'bench/lib'],
 	['tests/lib'],
-	['examples/lib', 'examples/compare', 'examples/showcase'],
+	['examples/lib', 'examples/compare', 'examples/showcase', 'examples/addons'],
 ];
 
 let failed = 0;

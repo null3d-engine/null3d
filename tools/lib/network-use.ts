@@ -48,7 +48,11 @@ export const FETCH_SITES: Readonly<Record<string, FetchSite>> = {
 	},
 	'packages/splats/src/system.ts': {
 		count: 1,
-		why: 'downloads the SPZ file that the sketch names',
+		why: "downloads the SPZ file that the sketch names, and a streamed cloud's index beside it",
+	},
+	'packages/splats/src/stream.ts': {
+		count: 1,
+		why: 'downloads only the chunk files that the view asks for, which is what makes a large cloud appear without the whole file',
 	},
 	'packages/vite-plugin/src/engine-shaders.ts': {
 		count: 2,

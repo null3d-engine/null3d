@@ -1,4 +1,4 @@
-# D-253: Car-paint glints
+# D-255: Car-paint glints
 
 Status: decided by the helper of M3-B5 on 25 October 2026, for the owner's review. Built: the model
 in `examples/addons/car-paint/`, with a shader-crate test that builds it on both paths. Owed: the

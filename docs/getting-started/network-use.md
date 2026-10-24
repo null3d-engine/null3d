@@ -36,7 +36,7 @@ The engine downloads only the addresses that you give it:
 - `assets.loadTexture`, `assets.loadGltf`, `assets.loadBinary`, `assets.loadJson` and `assets.loadImageBitmap` download the address that you pass.
 - A glTF file names more addresses inside it, for its buffers, images and extensions. The engine downloads those too. They may be on another origin, which must allow the page to read them.
 - `preload` downloads the features that you list, when you call it.
-- `@null3d/splats` downloads the SPZ file that you pass, and no other address.
+- `@null3d/splats` downloads the SPZ file that you pass. A streamed cloud is fetched as its index and then only the chunk files that the view asks for, so a large cloud appears without the whole file. No other address is contacted.
 
 A demo that loads a model makes these same calls. The file's address is the demo's choice.
 

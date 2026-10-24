@@ -33,6 +33,36 @@ three.js apps usually run everything on the main thread: DOM, input, scene updat
 | Physics libraries | `sketch.ts` | WebAssembly physics runs in workers |
 | Analytics, ads, routing | `page.ts` | Unchanged |
 
+### Porting a CSS3D example, such as the periodic table
+
+three.js's `css3d_periodictable` example is a table of DOM cells that `CSS3DRenderer` places in the scene. The sketch holds the scene and the page holds the DOM:
+
+```ts
+// sketch.ts
+const camera = scene.createPerspectiveCamera({ fov: 40, near: 1, far: 10000, position: [0, 0, 3000], target: [0, 0, 0] });
+scene.setActiveCamera(camera);
+ELEMENTS.forEach((cell, index) => {
+  const object = scene.createGroup({ position: [cell.group * 140 - 1330, -cell.period * 180 + 990, 0] });
+  ui.trackLabel(object, `cell-${index}`, { transform: 'world' });
+});
+```
+
+```ts
+// page.ts
+for (let index = 0; index < ELEMENTS.length; index++) {
+  const element = cell(index);   // The example's .element markup, 120 x 160 CSS pixels.
+  layer.append(element);
+  engine.labels.bind(`cell-${index}`, element);
+}
+```
+
+- A label element is sized in CSS pixels, which are the scene's units, so the example's camera and positions carry over unchanged.
+- The example fills the window. A port with a fixed frame gives the camera that frame's aspect ratio.
+- `createEngine`'s `maxLabels3d` holds 256 labels by default, which fits the table's 118 cells.
+- The cells' CSS goes in the page's stylesheet, and the layer that holds the elements covers the canvas.
+- The example's random start positions and tints have no held picture. Take them from the cell's place instead, as the port does with an integer hash of the index.
+- The engine hides a plane whose anchor is behind the camera or outside the near and far planes. `CSS3DRenderer` draws it there, mirrored.
+
 ## 2. Messages between page and sketch
 
 Messages are fire-and-forget and structured-cloned, so keep them small and infrequent.

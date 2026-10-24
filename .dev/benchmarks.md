@@ -77,6 +77,7 @@ under a second (runs 38679915189 and 38683080955).
 - Compare results at the same display refresh rate. The engine measures it, and each result records it with the presented and finished frame rates and the GPU delay. Runs at 120 and at 144 frames per second differed by about 10% for both engines.
 - Time frame rates in a visible browser window, never in a headless one. On the Mac, headless Chrome on the real GPU reports a 60 Hz display. The engine then aims for 60 frames per second, and the stats overlay says it defends 60, so no figure can pass 60. On 12 October 2026, the Creek showcase was timed in headless Chrome. Every page gave exactly 60 frames per second, at full render scale. A visible window parked past the screen's edge reports 120 Hz. `launchInWindow` and `newParkedPage` in `tests/lib/app-window.ts` open one, and the comparison and showcase timing scripts use them.
 - A timing test must end on its own. The on-and-off cost tests (`tests/image/*-cost.spec.ts`) wait until the 1-minute load is under 8, through `waitForQuietLoad` in `tests/lib/cost-runs.ts`. The wait fails the test after 10 minutes, and each test has a time limit. On 12 October 2026, a cost test with no limit waited 40 minutes for a load that stayed at 11 to 13, and held a slot in the shared queue all that time. `NULL3D_COST_TRIAL=1` skips the wait, for an untimed trial. A unit test (`tests/lib/cost-runs.test.ts`) fails when a browser test turns its time limit off or reads the load itself.
+- A spec that times frames on the computer's own GPU runs only when a variable asks for it, and names that variable `NULL3D_<NAME>_COST`, such as `NULL3D_FOG_COST`, and nothing else. Playwright's global setup (`tests/lib/priority-setup.ts`) refuses a run at background priority when any variable of that name is set, so a new spec needs no other edit. `tests/lib/app-window.test.ts` fails when a spec waits for a variable of another name. Until 25 October 2026 the guard held a list of the variables, and four cost specs landed in one night without an entry. The TAA spec's `NULL3D_TAA_QUALITY` became `NULL3D_TAA_COST` then, as its runs time the resolve.
 - The Mac's own screen also changes its refresh rate by itself (ProMotion). In one parked-window run, the overlay read 60 Hz in 4 of 5 readings. So a timing script logs the display rate that the engine measured with each reading. It runs a reading again when that rate is not the one it expects.
 - The timing tools guard against both traps. Before `bench:run` opens each page, it measures the display rate in the page's new window, with `displayRateCheck` in `tests/lib/app-window.ts`. It compares that rate with the main display's highest rate, which macOS reports. A window more than a twelfth below that rate gets a warning, and its result keeps the reason as `displayProblem`. A headless window at 60 Hz on a 120 Hz screen is one such case. Run such a page again. Timing scripts of your own open their pages with `launchInWindow` and `newParkedPage`, and call `displayRateCheck` before each reading. In CI, and on machines that are not Macs, the display's rate is not known, and the check measures nothing.
 - The page switch `?fps=<n>` holds null3D's drawing at n frames per second, at most the display's rate. Use it to compare runs on displays of different rates. The three.js pages do not read it.
@@ -447,18 +448,18 @@ A run folder holds every page's full result, with frames and images, and stays o
 
 A sky map draws again only when its sun turns half a degree, a color value drifts by a fiftieth, or its clouds drift a tenth of a cell of their pattern. One last fill captures the sky exactly when its sun rests ([D-118](decisions/D-118-sky-environment.md#addendum-23-october-2026-a-map-draws-again-only-for-a-change-that-shows)). So the cost of a moving sky is the frames that record a stage, not the frames that move the sun.
 
-- `cargo test -p null3d-render --test sky_maps a_day_cycle -- --nocapture` counts them for a sun scripted to cross the sky, over scenes with a still sun, an hour-long day, a ten-minute day and a day a minute, with clouds drifting as `examples/` draws them. Each case reports the count of frames that drew a stage. The test takes about three seconds and needs no browser.
+- `cargo test -p null3d-render --test sky_maps a_day_cycle -- --nocapture` counts them, at 60 frames a second, for a sun scripted to cross the sky. The cases are a still sun with drifting clouds, an hour-long day, a ten-minute day, the showcase's 80-second day and a day a minute. Each case prints the frames that drew a stage, and one fill every 20 frames gives the fills a minute. The test takes about seven seconds and needs no browser. Its output on 25 October 2026:
+  ```text
+  sky map fills, at 60 frames a second:
+  Still sun, clouds drifting: 100 of 1800 frames drew a stage, 10 fills a minute
+  An hour a day: 100 of 1800 frames drew a stage, 10 fills a minute
+  A ten-minute day: 700 of 1800 frames drew a stage, 70 fills a minute
+  The showcase's 80-second day: 1794 of 1800 frames drew a stage, 179 fills a minute
+  A day a minute: 1796 of 1800 frames drew a stage, 179 fills a minute
+  ```
+  Before the rule, every one of those frames drew a stage.
 - `bun run --cwd tests test image/sky-step.spec.ts` weighs the steps in the picture. It sinks the sun from 8 to 6.5 degrees above the horizon, where its light changes fastest, in three half-degree steps, then fails when two captured frames lie more than 8 levels of 255 apart, when the sweep does not move the light 6 levels, or when it moves in fewer than three steps. It runs on every GPU tier, and takes about half a minute for all three. On 23 October 2026 each step measured 3 to 4 levels, and the sweep moved the light about 11 levels, on the Mac's GPU and on its software GPU.
 - A stage's own GPU time comes from `tests/pages/sky-map-cost.ts`, as [Stages by faces](decisions/D-118-sky-environment.md#stages-by-faces) gives it: about 1 ms on the Mac and about 5 ms on a software GPU.
-
-On 23 October 2026, at 60 frames a second with the built-in map's 20 stages, 1,800 frames drew these counts. Before the rule, every one of them drew a stage.
-
-| Sun | Frames that drew a stage | Fills a minute |
-| --- | --- | --- |
-| Still, clouds drifting | 100 | 12 |
-| An hour a day | 100 | 12 |
-| A ten-minute day | 700 | 70 |
-| The Auto day of `examples/lib/stage.ts`, 80 seconds | 1,794 | 180 |
 
 A sun that crosses a half-degree step faster than a fill's 20 frames keeps the map drawing in every frame, which is why the showcases' own day cycle saves nothing and a still sky saves almost all of it.
 

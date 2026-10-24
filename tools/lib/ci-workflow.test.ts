@@ -584,6 +584,16 @@ describe("CI's workflow", () => {
 		);
 	});
 
+	it('limits every transfer through the archive action to a few minutes', () => {
+		// A stalled upload otherwise holds its job, and the runs queued behind it, until the job's limit.
+		for (const [name, job] of Object.entries(jobs))
+			for (const step of job.steps ?? [])
+				if (step.uses === './.github/actions/archive') {
+					expect(step['timeout-minutes'], name).toBeGreaterThan(0);
+					expect(step['timeout-minutes'], name).toBeLessThanOrEqual(6);
+				}
+	});
+
 	it("moves the build job's files and the load builds only through the archive action", () => {
 		expect(hands(jobNamed('build'), 'page-wasm', 'upload')).toBe(true);
 		for (const [name, job] of Object.entries(jobs))

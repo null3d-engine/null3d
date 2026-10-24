@@ -48,7 +48,7 @@ import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../share
 import { VIDEO_FOLLOW, type VideoFollowMessage } from '../shared/videos';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { WGSL_UPDATE_EVENT, type WgslUpdate } from '../shared/wgsl-updates';
-import { spawnWorker } from '../shared/worker-start';
+import { spawnWorker, startedWorkerScript, watchWorkerError } from '../shared/worker-start';
 import { loadSketch } from '../sketch/define-sketch';
 import type { QualityStart, QualityUpdate } from '../sketch/quality';
 import type { SketchRunner } from '../sketch/runner';
@@ -345,6 +345,14 @@ export interface EngineOptions {
 	 * error also reaches the console.
 	 */
 	onSketchError?: (error: Error) => void;
+	/**
+	 * Called when a worker's script did not load before the worker's first message, and the engine
+	 * started a second copy of it. The fault comes and goes, so the engine recovers on its own: the
+	 * call names the worker, such as `render` or `job 2`, and the address of its script. The engine
+	 * also warns in the console. Without a second copy that loads, the start fails with E1405, which
+	 * names the worker and its script.
+	 */
+	onWorkerRetry?: (worker: string, script: string) => void;
 	/**
 	 * Cancels a start in progress, for example when the user leaves the page. `createEngine` then
 	 * stops the engine's threads and rejects with the signal's reason.
@@ -825,6 +833,8 @@ interface WorkerEvents {
 	labelSlot: LabelSlotSender;
 	/** The sketch thread asked for this many job workers, as its parallel work grew. */
 	jobsWanted(count: number): void;
+	/** A worker's script did not load, so the engine started a second copy from the same address. */
+	workerRestart?(role: string, script: string): void;
 	/** What a timed script's steps gave, after the sketch thread performed them in a hold. */
 	holdScript?(result: HoldScriptResult | undefined): void;
 }
@@ -838,9 +848,6 @@ export function gpuFailure(thread: string, outOfMemory: boolean, message: string
 		? new EngineError('E1304', `${thread}'s GPU ran out of memory: ${message}.`)
 		: new EngineError('E1305', `${thread}'s GPU rejected a command: ${message}.`);
 }
-
-/** What a worker's error event says when its script, or a file that the script imports, did not load. */
-const NO_SCRIPT = 'its script or a file it imports did not load';
 
 /**
  * A worker whose replies are routed: events to the page's handlers, answers to the oldest request.
@@ -868,10 +875,17 @@ export class EngineWorker {
 	private stoppedCleanly = false;
 	/** Settles the wait for the worker's answer to a stop of its drawing. */
 	private answerStop: (() => void) | undefined;
+	/** Removes the current worker's error listener, for a copy or for a worker that the page keeps. */
+	private unwatch: (() => void) | undefined;
 
 	constructor(
 		worker: Worker,
 		private readonly role: string,
+		/**
+		 * The script that the worker runs, which a failure to start names in its error. Absent for a
+		 * worker that started for an engine before, whose script did not load this time.
+		 */
+		private readonly script: URL | string | undefined,
 		events: WorkerEvents,
 		/**
 		 * Starts another copy of the worker, for the one retry of a script that did not load. Absent
@@ -968,28 +982,59 @@ export class EngineWorker {
 				if (reply.type === 'error') pending.reject(startError(reply.role, reply.message));
 				else pending.resolve(reply);
 			};
-			worker.onerror = (event) => {
-				// A browser sends an error event without a message when the worker's script, or a
-				// file that the script imports, did not load. That fault comes and goes, so a worker
-				// whose script has not run gets one more copy before the page reports it.
-				if (!event.message && !this.scriptLoaded && this.restart && !this.retried) {
+			this.unwatch?.();
+			this.unwatch = watchWorkerError(worker, (message) => {
+				// A worker whose script, or a file that the script imports, did not load fails before
+				// it reports its first step. That fault comes and goes, so the worker gets one more
+				// copy before the page reports it, whatever the browser's message says. A failure
+				// that the engine already named, such as a policy that blocks the script, would fail
+				// the copy the same way, so it is reported at once.
+				if (!this.scriptLoaded && this.restart && !this.retried && !errorOfMessage(message)) {
 					this.retried = true;
 					worker.terminate();
 					try {
 						const copy = this.restart();
 						this.worker = copy;
 						listen(copy);
+						events.workerRestart?.(this.role, this.script === undefined ? '' : String(this.script));
 						return;
 					} catch {
 						// The browser refused the copy too, so the page reports the first failure.
 					}
 				}
 				markStopped();
-				failed(event.message || NO_SCRIPT);
+				// A worker that ran its script fails with its own message; one that never ran names
+				// its script, which a wrong path or a host that does not serve it makes wrong.
+				failed(this.scriptLoaded ? message || 'its script failed' : this.startFailure(message));
 				this.answerStop?.();
-			};
+			});
 		};
 		listen(worker);
+	}
+
+	/**
+	 * What the page reports for a worker that did not start. The message names the worker's script,
+	 * so a page that loads the engine's files from a wrong path, or a host that does not serve them,
+	 * shows which file failed.
+	 */
+	private startFailure(message: string): string {
+		const script = this.script === undefined ? '' : String(this.script);
+		if (message)
+			return script ? `${message} (the ${this.role} worker's script is ${script})` : message;
+		const at = script
+			? `its script at ${script}, or a file that it imports, did not load`
+			: 'its script, or a file that it imports, did not load';
+		return this.retried ? `${at}, and a second copy failed too` : at;
+	}
+
+	/**
+	 * Drops the handlers that reach this engine, so a worker that the page keeps, such as a drawing
+	 * worker parked with its canvas, holds none of the engine or its shared memory alive.
+	 */
+	detach(): void {
+		this.unwatch?.();
+		this.unwatch = undefined;
+		this.worker.onmessage = null;
 	}
 
 	/**
@@ -1235,8 +1280,13 @@ function startJobWorker(
 			name: `null3d-job-${index}`,
 		});
 	try {
-		const job = new EngineWorker(startEngineWorker(start), `job ${index}`, events, () =>
-			startEngineWorker(start),
+		const first = startEngineWorker(start);
+		const job = new EngineWorker(
+			first.worker,
+			`job ${index}`,
+			first.script,
+			events,
+			() => startEngineWorker(start).worker,
 		);
 		job.ready().then(
 			() => started(index),
@@ -1253,8 +1303,9 @@ function startJobWorker(
  * Starts an engine worker from a start function, with the engine's own error codes for a failure
  * of a worker's bootstrap from another origin.
  */
-function startEngineWorker(start: () => Worker): Worker {
-	return spawnWorker(start, (code, message) => new EngineError(code, message));
+function startEngineWorker(start: () => Worker): { worker: Worker; script: URL | undefined } {
+	const worker = spawnWorker(start, (code, message) => new EngineError(code, message));
+	return { worker, script: startedWorkerScript() };
 }
 
 /**
@@ -1280,19 +1331,22 @@ function startWorkers(
 	 */
 	const kept = (start: () => Worker) => {
 		const first = startEngineWorker(start);
-		made.push(first);
+		made.push(first.worker);
 		return {
-			worker: first,
+			worker: first.worker,
+			script: first.script,
 			restart: () => {
 				const copy = startEngineWorker(start);
-				made.push(copy);
-				return copy;
+				made.push(copy.worker);
+				return copy.worker;
 			},
 		};
 	};
 	/** A worker that ran for an engine before keeps its script: there is nothing to load again. */
 	const keptBefore = (role: DrawingRole) =>
-		reused?.role === role ? { worker: reused.worker, restart: undefined } : undefined;
+		reused?.role === role
+			? { worker: reused.worker, script: undefined, restart: undefined }
+			: undefined;
 	try {
 		const sketchStart = sketchWorker
 			? (keptBefore('sketch') ??
@@ -1315,10 +1369,22 @@ function startWorkers(
 				))
 			: undefined;
 		const sketch = sketchStart
-			? new EngineWorker(sketchStart.worker, 'sketch', events, sketchStart.restart)
+			? new EngineWorker(
+					sketchStart.worker,
+					'sketch',
+					sketchStart.script,
+					events,
+					sketchStart.restart,
+				)
 			: undefined;
 		const render = renderStart
-			? new EngineWorker(renderStart.worker, 'render', events, renderStart.restart)
+			? new EngineWorker(
+					renderStart.worker,
+					'render',
+					renderStart.script,
+					events,
+					renderStart.restart,
+				)
 			: undefined;
 		return { sketch, render, jobs: [] };
 	} catch (thrown) {
@@ -1621,6 +1687,14 @@ async function startEngine(
 		jobsWanted: (count) => growJobs?.(count),
 		holdScript: (result) => {
 			scriptResult = result;
+		},
+		// A recovered worker is not a failure, so the page hears it here and in the console, never
+		// through onFailure.
+		workerRestart: (role, script) => {
+			console.warn(
+				`null3D: the ${role} worker did not load its script at ${script}, so the engine started a second copy.`,
+			);
+			options.onWorkerRetry?.(role, script);
 		},
 	};
 	/** Starts job workers up to a count, once the core is ready to hand them. */
@@ -1934,6 +2008,7 @@ async function startEngine(
 			return;
 		}
 		canvasWorker.send({ type: 'park' } satisfies RendererRequest);
+		canvasWorker.detach();
 		parkWorker(options.canvas, canvasHold, canvasWorker.handle, canvasHold.movedTo);
 	};
 	try {

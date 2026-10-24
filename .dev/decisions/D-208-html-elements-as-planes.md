@@ -80,3 +80,27 @@ A 3D element hides by the same rules as a screen element. It hides when its obje
 - The control buffer's label header holds each parity's camera, 57 words before the tables.
 - The develop skill's recipe 7 shows a label that is a plane, and the 3D labels demo turns a ring of cards.
 - `tests/image/labels-3d.spec.ts` compares an element's box with three.js's `CSS3DRenderer` and follows the frame on screen.
+
+## Addendum, 25 October 2026: three.js's periodic table example is ported and compared
+
+K4's line asks that `CSS3DRenderer`'s examples port. The label system shipped with a test that
+compares one card's element with `CSS3DRenderer`, but no example was ported. The gap closes with
+three.js's `css3d_periodictable` example:
+
+- `tests/pages/lib/css3d-periodictable.ts` holds the example's 118 cells, its camera, its table
+  layout and a fixed tint per cell. The example tints each cell with `Math.random()`, which a held
+  picture cannot repeat. The port takes the tint from an integer hash of the cell's place, and the
+  three.js twin uses the same function.
+- `tests/pages/sketches/css3d-periodictable-sketch.ts` is the null3D port: one object for each
+  cell, placed by the example's formula, and a label with `transform: 'world'`. The page binds the
+  example's cell markup to each label, so the cells are the example's own HTML and CSS.
+- `tests/pages/css3d-periodictable.ts` draws two stages: the null3D port, and a three.js
+  `CSS3DRenderer` rendition of the same scene. Both stages are a fixed 960 x 540. The example draws
+  to the window, so a held stage must fix the size and the camera's aspect.
+- `tests/image/css3d-periodictable.spec.ts` compares the two pictures. Both come from the same
+  browser in one run, so the comparison is a DOM comparison and not a stored reference. On the Mac's
+  GPU the two stages drew with no differing pixel. The test allows a thousandth of the picture to
+  differ, the limit of the reference images.
+- The port draws the table layout, the example's first settled state. The example's other three
+  layouts and their transitions are not part of this test. The label system supports them, since
+  the sketch moves the objects that carry the labels.
