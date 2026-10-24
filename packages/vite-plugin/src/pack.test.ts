@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { availableParallelism, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { wgslModules } from '../../../tools/lib/wgsl-modules';
+import { moduleShare, wgslModules } from '../../../tools/lib/wgsl-modules';
 import { CompilerPool } from './compile-pool';
 import { LOAD_BUILDS, ShaderPack, UNPACK } from './pack';
 import { ShaderCache, shaderCacheOff } from './shader-cache';
@@ -136,6 +136,15 @@ describe('ShaderPack', () => {
  */
 const COMPILES = process.env.NULL3D_SHADER_COMPILER !== undefined;
 
+/**
+ * The share of the repository's modules that this run compiles, `k/n` for part k of n, as CI's
+ * parts of the test take them, or every module without it.
+ */
+const SHARE = process.env.NULL3D_PACK_SHARE || undefined;
+
+/** The parts that the modules split into, 1 without a share. */
+const PARTS = SHARE ? Number(SHARE.split('/')[1]) : 1;
+
 /** The time that compiling every module of the repository may take on a CI runner. */
 const COMPILE_ALL_MS = 600_000;
 
@@ -166,7 +175,9 @@ describe.skipIf(!COMPILES)('ShaderPack with the compiler', () => {
 		"gives back every byte of each compiled shader in the repository's modules",
 		async () => {
 			const modules = await Promise.all(
-				wgslModules(root).map((file) => compiledShaders(join(root, file), compiler)),
+				moduleShare(wgslModules(root), SHARE).map((file) =>
+					compiledShaders(join(root, file), compiler),
+				),
 			);
 			let full = 0;
 			let packed = 0;
@@ -180,7 +191,7 @@ describe.skipIf(!COMPILES)('ShaderPack with the compiler', () => {
 				packed += module.length;
 				shaders += values.length;
 			}
-			expect(shaders).toBeGreaterThan(30);
+			expect(shaders).toBeGreaterThan(Math.floor(30 / PARTS));
 			console.log(
 				`${shaders} compiled shaders: ${(full / 1e6).toFixed(1)} MB in full, ${(packed / 1e6).toFixed(1)} MB packed`,
 			);
