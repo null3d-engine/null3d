@@ -351,3 +351,7 @@ An add-on's compute pass writes one storage texture at a fixed binding of the pa
 **Rejected: declared storage bindings.** The pass would declare each binding by name, kind, format and access, and the engine would build the layout. That covers a ping-pong pair or a storage buffer in one pass. It also makes the shader download and the layout depend on the add-on, gives every page the code for a surface that it may not use, and turns one fixed thing to test into a set. A pass that needs two textures uses two passes and swaps its target.
 
 **Consequences.** A ping-pong pair is two passes. A storage buffer waits for the first user that needs one, and M3-E9's GPU-written count buffer reuses this surface rather than bringing a second one. The target's default format is `rgba16float`. The call refuses on WebGL2, which has no compute, and the docs give the full-screen fallback.
+
+## Addendum, 24 October 2026: vegetation is the eleventh foundation
+
+The owner made vegetation a foundation add-on ([D-241](D-241-vegetation-foundation.md)). It passes ruling 4's test, because many kinds of project use plants and other developers' style packs build on it. It holds the species generator, the scatter, the grass, the leaf material, the wind and the hand-off to impostors. Themed species packs stay content for other developers, as the "vegetation styles" of the owner's answer of 14 October. Rule 13 in AGENTS.md lists it. H2's GPU-written draws gain a second user that needs the shadow views: the near grass, which casts shadows (M3-E9).
