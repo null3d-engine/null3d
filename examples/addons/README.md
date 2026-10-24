@@ -23,6 +23,14 @@ Each add-on is a folder named after it, and it is shaped like a package:
   that page alone.
 - It draws on both GPU paths, or its README states its fallback.
 - Its demo lives in `examples/`, and the demo's image test draws it on every GPU tier.
+- No package imports an example add-on. An example is never published, so a package that took one
+  would not pack.
+
+## The check
+
+`bun run check` holds the shape. It refuses a folder without the entry, the shader and its
+declaration, or the README's licence section. It also refuses a package that imports a file under
+`examples/`. A test reads the real folders, so an add-on joins the layout by existing in it.
 
 The folders here are `traffic-lanes` and `lens-kit`, and the ones that later tasks add: facades,
 screens, weather and car paint.
