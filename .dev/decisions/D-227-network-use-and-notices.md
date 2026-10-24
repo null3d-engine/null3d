@@ -1,7 +1,8 @@
 # D-227: Network use and third-party notices
 
-Status: decided by the helper of M3-R18 on 23 October 2026, for the owner's review. Built: the two
-docs pages, the guard test and the three notices files. Date: 2026-10-23. Task: M3-R18.
+Status: decided by the helper of M3-R18 on 23 October 2026, for the owner's review, with an
+addendum from the audit on 24 October 2026. Built: the two docs pages, the guard test and the
+three notices files. Date: 2026-10-23. Task: M3-R18.
 
 Summary: The engine, its loader and its add-ons contact no server of their own. A unit test records
 every `fetch` call site and every absolute address in shipped code. A new call fails until the
@@ -73,3 +74,20 @@ gaps are closed in the same branch.
 - The notices of `@null3d/engine`, `@null3d/cli` and `@null3d/vite-plugin` list their upstreams.
   `@null3d/geometry` already did. The other add-ons ship only their own code.
 - No engine code path changes, so the network behavior is the same as before this branch.
+
+## Addendum, 24 October 2026: two guard gaps and an add-on that the page left out
+
+The audit ran again over the same folders. It found no new call site, so the statement still
+holds. Two gaps in the guard and one in the page were closed:
+
+- The guard now counts `fetch` reached through the global object, such as `globalThis.fetch`,
+  `window.fetch` and `self.fetch`. A method that another object names `fetch` still does not
+  count, so a local interface that offers one keeps its recorded count.
+- The guard refuses `importScripts`, and it checks the host of a `ws://` or `wss://` address as
+  well as an `https://` one.
+- The third-party notices page now names `@null3d/splats` among the add-ons that ship only their
+  own code. Its SPZ reader follows Niantic's published format and copies none of Niantic's code,
+  so the package needs no notices file.
+
+The guard fails on an added call in any shipped file. A call added to `packages/terrain/src/index.ts`
+made the repository check report both the call and its host, and the file was then restored.
