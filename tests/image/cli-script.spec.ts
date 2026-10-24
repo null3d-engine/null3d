@@ -1,7 +1,7 @@
-// The shot command's timed script, run as a developer runs it: in a copy of the fixture project,
-// where the script drives the project through three states with a key, the pointer and a property
-// write. Each state's image must match its reference, the command must print what the script
-// dumped, and no step may fail.
+// The shot command's timed script, run as a developer runs it. The first part runs it in a copy of
+// the fixture project, where a script drives the sketch through three states with a key, the
+// pointer and a property write. The second part drives the input demo through three states, and
+// each state's image must match its reference.
 import {
 	cpSync,
 	mkdirSync,
@@ -21,9 +21,11 @@ import { REPO_ROOT } from '../lib/server.ts';
 import { SCRIPT_RUNS, SCRIPT_STATES, SCRIPT_TIER } from './script-runs.ts';
 
 const FIXTURE = join(REPO_ROOT, 'tests/fixtures/project');
+/** The fixture's three states, which its script names. */
+const FIXTURE_STATES = ['start', 'forward', 'parked'] as const;
 
-// Each test starts the project's dev server and a browser, and draws three frames, which takes
-// longer than Playwright's default minute on a busy machine.
+// Each test starts a dev server and a browser, and draws three frames, which takes longer than
+// Playwright's default minute on a busy machine.
 test.describe.configure({ timeout: 240_000 });
 
 /** The copy of the fixture that the tests run in, removed after them. */
@@ -65,7 +67,7 @@ test.afterAll(() => {
 	rmSync(project, { recursive: true, force: true });
 });
 
-for (const state of SCRIPT_STATES)
+for (const state of FIXTURE_STATES)
 	test(`project-script-${state} on ${SCRIPT_TIER}`, async () => {
 		const out = test.info().outputPath('tour.png');
 		const { code, output } = await runCli(project, [
@@ -96,10 +98,57 @@ for (const state of SCRIPT_STATES)
 		expect(output).toContain('Drew parked at 3 s, frame 181, on webgl2: 320 x 180 pixels.');
 		expect(output).toContain('Dump at 2.5 s: "ball" position is');
 		expect(output).not.toContain('failed:');
-		const run = SCRIPT_RUNS.find((one) => one.test.endsWith(state));
-		expect(run).toBeDefined();
-		const place = { environment: environmentNamed(test.info().project.name) };
-		clearCandidate(run!, place);
-		const image = readPng(test.info().outputPath(`tour-${state}.png`));
-		expect(compareWithReference(run!, place, image)).toEqual([]);
+		// The states come from the script: each image differs from the ones before it. The demo's
+		// images below compare with references instead.
+		const images = FIXTURE_STATES.map((one) =>
+			readFileSync(test.info().outputPath(`tour-${one}.png`)),
+		);
+		expect(images[0]?.equals(images[1] as Buffer)).toBe(false);
+		expect(images[1]?.equals(images[2] as Buffer)).toBe(false);
 	});
+
+test.describe('a script drives the input demo', () => {
+	/** The folder that the command writes its images into, removed after the tests. */
+	let drawn = '';
+	/** What the command printed, which each test checks its own state against. */
+	let output = '';
+	let code: number | null = null;
+
+	// One run draws all three states, and each test compares one of its images with its reference.
+	test.beforeAll(async () => {
+		mkdirSync(join(REPO_ROOT, 'target'), { recursive: true });
+		drawn = mkdtempSync(join(REPO_ROOT, 'target/cli-script-demo-'));
+		const run = await runCli(REPO_ROOT, [
+			'shot',
+			'--script',
+			join(REPO_ROOT, 'tests/image/demo-input.script'),
+			'--page',
+			'/tests/pages/image.html?sketch=/examples/input/sketch.ts&size=640x360&preset=high',
+			'--size',
+			'640x360',
+			'--gpu',
+			SCRIPT_TIER,
+			'--out',
+			join(drawn, 'demo.png'),
+		]);
+		code = run.code;
+		output = run.output;
+	});
+
+	test.afterAll(() => {
+		rmSync(drawn, { recursive: true, force: true });
+	});
+
+	for (const state of SCRIPT_STATES)
+		test(`script-demo-${state} on ${SCRIPT_TIER}`, async () => {
+			expect(code, output).toBe(0);
+			expect(output).toContain(`Drew ${state} at `);
+			expect(output).not.toContain('failed:');
+			const run = SCRIPT_RUNS.find((one) => one.test === `script-demo-${state}`);
+			expect(run).toBeDefined();
+			const place = { environment: environmentNamed(test.info().project.name) };
+			clearCandidate(run!, place);
+			const image = readPng(join(drawn, `demo-${state}.png`));
+			expect(compareWithReference(run!, place, image)).toEqual([]);
+		});
+});
