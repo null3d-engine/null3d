@@ -29,6 +29,7 @@ import {
 	SHADER_COMPILER_URL,
 	type ShaderCompiler,
 	type ShaderSource,
+	type SkyLayerResult,
 } from './shader-compiler.ts';
 
 /** The cache's folder in a project, beside the asset tool's cache. */
@@ -177,6 +178,10 @@ export class ShaderCache implements ShaderCompiler {
 
 	effect(effect: MaterialSource): Promise<EffectResult> {
 		return this.run('effect', effect, () => this.inner.effect(effect));
+	}
+
+	skyLayer(layer: MaterialSource): Promise<SkyLayerResult> {
+		return this.run('skyLayer', layer, () => this.inner.skyLayer(layer));
 	}
 
 	/**

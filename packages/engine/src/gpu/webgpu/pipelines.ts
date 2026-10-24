@@ -13,6 +13,7 @@ import {
 	LAYOUT_AO_DEPTH_MS,
 	LAYOUT_ATMOSPHERE,
 	LAYOUT_BACKGROUND,
+	LAYOUT_BACKGROUND_LAYER,
 	LAYOUT_BLOOM,
 	LAYOUT_CLUSTER_CULL,
 	LAYOUT_COMPUTE_INSTANCE_BUFFERS,
@@ -994,6 +995,11 @@ export class Pipelines {
 			{ binding: 1, visibility: fragment, texture: { viewDimension: 'cube' } },
 			{ binding: 2, visibility: fragment, sampler: {} },
 		]);
+		// A sky layer's values: its uniform block alone, which its template's fragment stage
+		// reads.
+		this.defineLayout(LAYOUT_BACKGROUND_LAYER, 'background layer', [
+			{ binding: 0, visibility: fragment, buffer: { type: 'uniform' } },
+		]);
 		// The physical sky's group: its values, its three tables, which it reads with a linear
 		// filter, a sampler that clamps and one that repeats across the width.
 		this.defineLayout(LAYOUT_ATMOSPHERE, 'atmosphere', [
@@ -1556,6 +1562,18 @@ export class Pipelines {
 		const { kind } = shader;
 		if (kind === 'compute') {
 			this.computeTemplates.set(id, { shader: shader.variants });
+			return;
+		}
+		// A sky layer draws the template's box around the camera, with the frame's group and its
+		// own values in the background layer's group.
+		if (kind === 'skyLayer') {
+			this.defineTemplate(id, {
+				label: `sky layer ${id}`,
+				shader: shader.variants,
+				pipeline: 'main',
+				layouts: [LAYOUT_FRAME, LAYOUT_BACKGROUND_LAYER],
+				vertexBuffers: [],
+			});
 			return;
 		}
 		if (kind !== undefined) {
