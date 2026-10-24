@@ -60,6 +60,14 @@ After you clone, run `bun install`. After a branch switch or a pull, the hooks w
 
 ### Builds
 
+One Cargo job at a time per worktree. Two Cargo processes in one checkout take the machine's package
+cache and that checkout's target folder in an order that can deadlock, and the pair then waits at zero
+processor time while every other build queues behind them. On 24 October 2026 that happened three
+times in an evening, once with seven stalled processes across five worktrees. When a build sits at
+zero processor time, do not kill it on the number alone: sample it with `sample <pid> 1` and read
+what it waits on, then tell the coordinator which lock it is. A build that is compiling shows
+processor time, and one in a lock shows none.
+
 A build compiles the Rust crates for two WebAssembly variants and the build tools, writes the shader
 modules for every feature, and then builds the test page for the size report. It is the longest step
 in a landing, so keep the count down. Every build cache lives under one root, `null3d` under
