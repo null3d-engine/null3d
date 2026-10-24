@@ -7,6 +7,7 @@
 // switches choose the path and the preset.
 import { DEMOS } from '../../examples/demos';
 import { startDemo } from '../../examples/lib/run';
+import { overlayCount, overlayFigure, overlayMemory, waitForOverlay } from './lib/overlay-figures';
 import { progress, run } from './lib/result';
 
 const params = new URLSearchParams(location.search);
@@ -14,43 +15,11 @@ const params = new URLSearchParams(location.search);
 /** The seconds that the page measures after the first frame. */
 const SECONDS = Number(params.get('seconds') ?? 5);
 /**
- * How long the page waits for the overlay's figures after it shows the overlay. The figures need
- * about half a second of frames, and on WebGPU the count of the triangles comes back from the GPU
- * on one frame in eleven.
- */
-const OVERLAY_WAIT_MS = 30_000;
-/**
  * How long the page waits for the first frame before it reports what it has. A page that waits
  * without a limit holds a cloud session, and a device that cannot draw the scene would never
  * report why.
  */
 const FIRST_FRAME_LIMIT_MS = 600_000;
-
-/**
- * A figure that the overlay shows, read through its shadow root, or null when the overlay hides the
- * figure because it has no value.
- */
-function overlayFigure(name: string): string | null {
-	const root = document.querySelector<HTMLElement>('[data-null3d-stats]')?.shadowRoot;
-	const node = root?.querySelector<HTMLElement>(`[data-figure="${name}"]`);
-	if (!node || node.closest('[hidden]')) return null;
-	const text = node.textContent?.trim() ?? '';
-	return text.length > 0 ? text : null;
-}
-
-/** Bytes from a figure that the overlay wrote in mebibytes, or null. The overlay rounds to 0.1. */
-function overlayMiB(text: string | null): number | null {
-	const value = text?.match(/([\d.]+)\s*MiB/);
-	return value?.[1] ? Math.round(Number(value[1]) * 1024 * 1024) : null;
-}
-
-/** A count from a figure that the overlay wrote, such as `12.4 k` or `2.31 M`, or null. */
-function overlayCount(text: string | null): number | null {
-	const value = text?.match(/([\d.]+)\s*([kM])?/);
-	if (!value?.[1]) return null;
-	const factor = value[2] === 'k' ? 1000 : value[2] === 'M' ? 1_000_000 : 1;
-	return Math.round(Number(value[1]) * factor);
-}
 
 /**
  * Notes a step of the page's work in its trail, and posts it to the dev server under a name of its
@@ -71,19 +40,6 @@ function note(step: string): void {
 		method: 'POST',
 		body: JSON.stringify({ at: new Date().toISOString(), step }),
 	}).catch(() => undefined);
-}
-
-/**
- * Waits for the overlay to show a count above zero, up to a time limit. The figures read zero until
- * the engine has a window of sampled frames, so a page that reads at once gets no count at all.
- */
-async function waitForOverlay(name: string): Promise<boolean> {
-	const deadline = performance.now() + OVERLAY_WAIT_MS;
-	while (performance.now() < deadline) {
-		if ((overlayCount(overlayFigure(name)) ?? 0) > 0) return true;
-		await new Promise((resolve) => setTimeout(resolve, 100));
-	}
-	return false;
 }
 
 /**
@@ -152,15 +108,7 @@ run('demo-device', async () => {
 	const triangles = overlayCount(overlayFigure('triangles'));
 	const objects = overlayCount(overlayFigure('objects'));
 	const draws = overlayCount(overlayFigure('draws'));
-	const memory = {
-		// The overlay writes each figure in mebibytes, rounded to 0.1.
-		engineBytes: overlayMiB(overlayFigure('engine-memory')),
-		gpuTextureBytes: overlayMiB(overlayFigure('gpu-textures')),
-		gpuBufferBytes: overlayMiB(overlayFigure('gpu-buffers')),
-		jsHeapBytes: overlayMiB(overlayFigure('js-heap')),
-		totalBytes: overlayMiB(overlayFigure('memory')),
-		wasmBytes: metrics.memory.wasmBytes,
-	};
+	const memory = overlayMemory(metrics.memory.wasmBytes);
 	const { tier } = engine.capabilities;
 	const mode = { ...engine.mode };
 	engine.stats(false);

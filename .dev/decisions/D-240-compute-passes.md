@@ -215,3 +215,23 @@ shadows of a scene without compute passes keep their order.
 and checks the cascade's step comes after the pass. The `compute-vertex-offset` image test draws a
 box that a vertex offset moves by the pass's output, in the main view and its shadow, on both
 paths, and the motion spec reads the plane's motion back from the debug view.
+
+## Addendum: the compute path's cost and memory (25 October 2026)
+
+M3-V3's section asks for the GPU time and the memory of the compute path on the Mac, an iPad and a
+phone-class device. None was recorded when the task first landed.
+
+**How it is measured.** The effect cost page, `tests/pages/effect-cost.ts`, gains a `compute` case.
+Its sketch, `tests/pages/sketches/compute-cost-sketch.ts`, draws a field of quads whose vertex
+offset reads a 512 by 512 texture that a compute pass writes in the same frame, so the pass and the
+vertex reads belong to the feature. The page times the scene with the pass off and on in turns: off
+shows the same quads with the standard material and runs no pass, and on shows the material whose
+offset reads the pass. Both sides fix the render scale with the governor off. After the timing, the
+page shows the engine's stats overlay and reads the memory of each side from it: the GPU textures,
+the GPU buffers, the engine's tables and the wasm file. The spec `tests/image/compute-cost.spec.ts`
+runs the page on each GPU path and scale when `NULL3D_COMPUTE_COST` is set, and the device plan
+`compute` runs it on a device.
+
+**The figures.** Each device class's row is recorded here when its run finishes: the GPU time with
+the pass off and on, and the GPU textures, GPU buffers and wasm of each side.
+
