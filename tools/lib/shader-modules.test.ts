@@ -284,9 +284,18 @@ describe('the shader modules', () => {
 });
 
 describe('a shard of the shader entries', () => {
-	// The stub stands in for the shader build: it stores one new entry in the folder it is given.
-	const storeOne =
-		'while [ $# -gt 0 ]; do if [ "$1" = --cache ]; then mkdir -p "$2"; echo {} > "$2/lit.new.json"; fi; shift; done';
+	// The stub cargo notes each build in the checkout's target folder, and builds a stand-in for the
+	// shader build, which stores one new entry in the folder it is given.
+	const buildsProgram = `
+if [ "$1" = build ]; then
+	mkdir -p "$CARGO_TARGET_DIR/shader"
+	echo build >> "$CARGO_TARGET_DIR/cargo-builds"
+	cat > "$CARGO_TARGET_DIR/shader/shader-build" <<'EOF'
+#!/bin/sh
+while [ $# -gt 0 ]; do if [ "$1" = --cache ]; then mkdir -p "$2"; echo {} > "$2/lit.new.json"; fi; shift; done
+EOF
+	chmod 755 "$CARGO_TARGET_DIR/shader/shader-build"
+fi`;
 
 	it('copies the entries that it stored, and none that the cache held before', () => {
 		withScratchCaches(
@@ -296,12 +305,32 @@ describe('a shard of the shader entries', () => {
 				mkdirSync(folder, { recursive: true });
 				writeFileSync(join(folder, 'pick.old.json'), '{}');
 				const out = join(root, 'target', 'shader-entries');
-				expect(buildEntriesShard(root, '0/2', out)).toEqual(['lit.new.json']);
+				expect(buildEntriesShard(root, '1/2', out)).toEqual(['lit.new.json']);
 				expect(readdirSync(out)).toEqual(['lit.new.json']);
-				expect(readdirSync(folder).sort()).toEqual(['lit.new.json', 'pick.old.json']);
+				expect(readdirSync(folder).sort()).toEqual(['lit.new.json', 'pick.old.json', 'program']);
 			},
 			0,
-			storeOne,
+			buildsProgram,
+		);
+	});
+
+	it("keeps the program under its compiler's stamp, and the first shard hands it over", () => {
+		withScratchCaches(
+			() => {
+				const root = repository();
+				const out = join(root, 'target', 'shader-entries');
+				buildEntriesShard(root, '0/2', out);
+				expect(readdirSync(out).sort()).toEqual(['lit.new.json', 'program']);
+				expect(readdirSync(join(out, 'program'))).toEqual(['shader-build']);
+				// Another checkout of the same compiler runs the kept program, and cargo builds nothing.
+				const other = repository();
+				rmSync(join(entryCacheDir(), compilerStamp(root), 'lit.new.json'));
+				expect(buildEntriesShard(other, '1/2')).toEqual(['lit.new.json']);
+				expect(readFileSync(join(root, 'target', 'cargo-builds'), 'utf8')).toBe('build\n');
+				expect(existsSync(join(other, 'target', 'cargo-builds'))).toBe(false);
+			},
+			0,
+			buildsProgram,
 		);
 	});
 
