@@ -1221,6 +1221,9 @@ export function effectPlan(
 		clouds: [
 			['-32', ['steps=32']],
 			['-16', ['steps=16']],
+			// Temporary stress item: the march's cost is linear in its steps, so a GPU-bound run
+			// at four times the steps bounds the tier's cost at 32 where the device has no timer.
+			['-stress', ['steps=64', 'heavy']],
 		],
 	};
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
