@@ -23,6 +23,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'Raycast and pick hits carry `uv`: `packages/engine/src/scene/queries.ts`, `docs/api/raycast.md`',
 	'M3-A10':
 		"The `sharpen` value runs the RCAS pass at render scale 1: `packages/engine/src/scene/post.ts`; D-205's cost table, measured 24 October 2026: it adds 0.393 ms on WebGPU, 0.459 in compatibility mode and 0.382 on WebGL2 at full scale, and nothing at half scale",
+	'M3-A11':
+		'D-206 records the measurement: the resolve fails shimmer, smear, sharpness and error against the presets at every tier on both paths, so it does not ship; `tests/image/taa-quality.spec.ts` repeats the figures',
 	'M3-A2':
 		"`textures.fromCanvas` and `texture.refresh(rect)` in `packages/engine/src/scene/textures.ts`; `tests/image/canvas-texture.spec.ts` holds a 1024² canvas's 256² refresh inside the upload budget on both paths; D-204",
 	'M3-A5':
