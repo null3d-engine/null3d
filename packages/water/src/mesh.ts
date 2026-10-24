@@ -150,8 +150,9 @@ function riverMesh(
 	}
 	for (let i = 0; i + 1 < list.length; i++)
 		for (let j = 0; j < across; j++) {
-			const a = j * list.length + i;
-			b.indices.push(a, a + list.length, a + 1, a + 1, a + list.length, a + list.length + 1);
+			// The vertices run along the river first, then across it, and each triangle faces up.
+			const a = i * rows + j;
+			b.indices.push(a, a + 1, a + rows, a + 1, a + rows + 1, a + rows);
 		}
 	return arrays(b);
 }
