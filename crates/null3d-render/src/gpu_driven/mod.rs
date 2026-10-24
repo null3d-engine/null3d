@@ -137,6 +137,7 @@ mod clusters;
 mod copies;
 mod cull;
 mod direct;
+mod feature_rows;
 mod layout;
 mod lights;
 mod motion;
@@ -200,6 +201,7 @@ use crate::view_copy::ViewCopyIds;
 use crate::weighted::WeightedIds;
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES, Phase};
 use direct::Direct;
+use feature_rows::FeatureRows;
 use layout::{Drawn, Layout};
 use lights::LightClusters;
 use opaque::{Bundle, FrameInputs};
@@ -458,19 +460,26 @@ mod ids {
     pub const STILL_SETTINGS: u32 = ACCUMULATE + 1;
     /// The uniform buffer of temporal anti-aliasing's resolve.
     pub const TAA: u32 = STILL_SETTINGS + 1;
-    /// Each feature-instance draw's per-instance buffer, then its count word, from
-    /// `FEATURE_INSTANCES + 2 * (id - 1)`.
+    /// Each feature-instance draw's per-instance world rows, the camera-relative rows that the
+    /// draw reads and its count word, three ids from `FEATURE_INSTANCES + 3 * (id - 1)`.
     pub const FEATURE_INSTANCES: u32 = TAA + 1;
 
     pub const fn feature_instances(id: u32) -> u32 {
-        FEATURE_INSTANCES + 2 * (id - 1)
+        FEATURE_INSTANCES + 3 * (id - 1)
     }
-    pub const fn feature_count(id: u32) -> u32 {
+    pub const fn feature_relative(id: u32) -> u32 {
         feature_instances(id) + 1
     }
+    pub const fn feature_count(id: u32) -> u32 {
+        feature_instances(id) + 2
+    }
+
+    /// The uniform buffer of the conversion's block: the camera's absolute world position.
+    pub const FEATURE_ROWS_BLOCK: u32 =
+        FEATURE_INSTANCES + 3 * crate::feature_instances::MAX_FEATURE_INSTANCES;
 
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = FEATURE_INSTANCES + 2 * crate::feature_instances::MAX_FEATURE_INSTANCES;
+    pub const PAGES: u32 = FEATURE_ROWS_BLOCK + 1;
 
     /// The blank texture array that frame groups bind while the scene has no probe and no area
     /// light. The probes own the frame group's shared array, which holds the light tables' layers
@@ -623,6 +632,8 @@ mod ids {
     pub const EXPOSURE_ADAPT: u32 = 13;
     /// The motion view's culling pipeline.
     pub const CULL_MOTION: u32 = 14;
+    /// The conversion of feature-instance rows to camera-relative rows.
+    pub const FEATURE_ROWS: u32 = 15;
 
     /// Each view's bind groups: the frame group of its render pipelines, its culling group, and
     /// the group of the pipelines that read their instances by index.
@@ -733,9 +744,17 @@ mod ids {
     /// Group 0 of each compute pass, from this id on, by its view's place, after the parallax
     /// frame groups.
     pub const COMPUTE_GROUPS: u32 = PARALLAX_FRAME_GROUPS + MAX_VIEW_IDS as u32;
-    /// The bind groups of temporal anti-aliasing's resolve and copy, after the compute passes'
-    /// groups.
-    pub const TAA_GROUPS: u32 = COMPUTE_GROUPS + MAX_VIEWS as u32;
+    /// The conversion's group for each feature-instance draw, from this id on by the draw's id
+    /// less one, after the compute passes' groups.
+    pub const FEATURE_ROWS_GROUPS: u32 = COMPUTE_GROUPS + MAX_VIEWS as u32;
+
+    pub const fn feature_rows_group(id: u32) -> u32 {
+        FEATURE_ROWS_GROUPS + id - 1
+    }
+
+    /// The bind groups of temporal anti-aliasing's resolve and copy, after the conversions'.
+    pub const TAA_GROUPS: u32 =
+        FEATURE_ROWS_GROUPS + crate::feature_instances::MAX_FEATURE_INSTANCES;
     /// The bind groups of materials' maps, after temporal anti-aliasing's.
     pub const TEXTURE_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
 
@@ -758,10 +777,16 @@ mod ids {
     }
 }
 
-/// The ids of a feature-instance draw's per-instance buffer and its count word, which the frame
-/// makes and the draw binds and copies from.
+/// The ids of a feature-instance draw's world-rows buffer and its count word, which the frame
+/// makes and the page or the add-on's compute fills.
 pub fn feature_buffer_ids(id: u32) -> (u32, u32) {
     (ids::feature_instances(id), ids::feature_count(id))
+}
+
+/// The id of the buffer that a feature-instance draw reads: the camera-relative rows that the
+/// frame's conversion writes from the world rows, which the page and the add-on's compute fill.
+pub fn feature_relative_buffer(id: u32) -> u32 {
+    ids::feature_relative(id)
 }
 
 /// The id of a view's buffer of indirect draws, whose instance counts the frame copies a
@@ -963,6 +988,8 @@ pub struct GpuDrivenRenderer {
     /// The capacity that each feature-instance draw's buffers were made for, by id from 1, or 0
     /// before they exist.
     feature_capacity: Vec<u32>,
+    /// The conversion of feature-instance rows to the camera-relative rows that the draws read.
+    feature_rows: FeatureRows,
 }
 
 /// The builder's scene settings from `config`: meshes in shared buffers, each page within one
@@ -1198,6 +1225,7 @@ impl GpuDrivenRenderer {
             copy_views: Vec::new(),
             copy_offsets: crate::frame::CellOffsets::default(),
             feature_capacity: vec![0; crate::feature_instances::MAX_FEATURE_INSTANCES as usize],
+            feature_rows: FeatureRows::default(),
             dfg_pending: false,
             bound_environment: ids::BLANK_ENVIRONMENT,
             bound_probe_grid: ids::BLANK_PROBE_GRID,
@@ -1667,6 +1695,9 @@ impl GpuDrivenRenderer {
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
         let mut created_pipelines = !self.created;
+        created_pipelines |= self
+            .feature_rows
+            .request_pipeline(list, self.settings.feature_instances())?;
         let occlusion = self.graph.occlusion();
         if !self.created {
             if !self.config.direct_draws {
@@ -2156,6 +2187,14 @@ impl GpuDrivenRenderer {
         // A feature-instance draw's buffers exist before any bundle names them, and their contents
         // reach them here, after the frame's arena is set aside.
         self.feature_buffers(list, arena)?;
+        // The conversion of the world rows to the camera-relative rows that the draws read, whose
+        // dispatches the graph records once all compute steps have ended.
+        let camera_world = camera.as_ref().map_or([0.0; 4], |camera| {
+            let [x, y, z] = camera.camera.absolute().map(|v| v as f32);
+            [x, y, z, 0.0]
+        });
+        self.feature_rows
+            .prepare(list, arena, self.settings.feature_instances(), camera_world)?;
         // The motion view draws while a pass reads the motion and the device draws its target. Its
         // bundles and culling groups name the copies of the last frame's data, which can grow.
         let motion_on = motion && self.graph.motion_draws();
@@ -2749,7 +2788,7 @@ impl GpuDrivenRenderer {
         self.lines
             .upload(list, arena, &input.lines, camera.map(|frame| &frame.camera))?;
         // The culling reset zeroed the indirect draws, so the page's counts reach them from here,
-        // and every compute step copies the add-on's own counts over them before the pass.
+        // and the frame copies the add-on's own counts over them once every compute step ended.
         self.copy_feature_counts(list, input.scene.world(parity).radii())?;
 
         let (layout, casters, culling, lines) =
@@ -2830,6 +2869,7 @@ impl GpuDrivenRenderer {
         let feature_layout = &self.layout;
         let feature_table = self.settings.feature_instances();
         let feature_radii = input.scene.world(parity).radii();
+        let feature_rows = &self.feature_rows;
         self.graph.record(
             list,
             |view| settings.clear_color_of(view),
@@ -2986,9 +3026,15 @@ impl GpuDrivenRenderer {
                 ),
                 _ => Ok(()),
             },
-            // A feature's compute pass writes its count word before the pass that draws it, so
-            // the word reaches the indirect draws once the compute step ends.
-            |list| copy_feature_counts(list, feature_layout, feature_table, feature_radii),
+            // The feature draws' reads wait for the frame's one conversion point below, which is
+            // the only place a compute write is certainly final for the pass that reads it.
+            |_| Ok(()),
+            // Every compute write is final before the first render pass: the frame converts the
+            // feature-instance rows, then copies each count word into the indirect draws.
+            |list| {
+                feature_rows.record(list, feature_table)?;
+                copy_feature_counts(list, feature_layout, feature_table, feature_radii)
+            },
             |list| {
                 if motion_on {
                     motion_state.finish(list, parity, layout, skinning)?;
@@ -3078,7 +3124,17 @@ impl GpuDrivenRenderer {
                 &[
                     ids::feature_instances(id),
                     capacity * crate::feature_instances::INSTANCE_BYTES,
-                    usage::VERTEX | usage::STORAGE | usage::COPY_DST,
+                    usage::STORAGE | usage::COPY_DST,
+                ],
+            )?;
+            // The rows that the draw reads: the conversion writes them from the world rows each
+            // frame, so the camera can move without an upload of the page's rows.
+            list.push(
+                Op::CreateBuffer,
+                &[
+                    ids::feature_relative(id),
+                    capacity * crate::feature_instances::INSTANCE_BYTES,
+                    usage::VERTEX | usage::STORAGE,
                 ],
             )?;
             list.push(
@@ -3372,6 +3428,9 @@ impl GpuDrivenRenderer {
             + shadows
             + sorted
             + particles
+            // The page's rows that this frame uploads, then the camera that the conversion reads.
+            + self.settings.feature_instances().pending_bytes()
+            + FeatureRows::UPLOAD_BYTES
             + self.graph.upload_bound()
             + BackgroundPass::UPLOAD_BYTES
             + PhysicalSkyPass::UPLOAD_BYTES
@@ -3525,6 +3584,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.pipelines.forget();
         // The add-on's buffers went with the old device, so the next frame makes them again.
         self.feature_capacity.fill(0);
+        self.feature_rows.reset_gpu();
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
         self.settings.light_tables_mut().reset_gpu();
@@ -3579,7 +3639,7 @@ impl FrameBuilder for GpuDrivenRenderer {
 
 /// The add-on's count words of the feature-instance draws, copied into the main view's indirect
 /// draws. A feature's compute pass writes each word before the pass that draws it, so the frame
-/// copies the word again after every compute step.
+/// copies the word again once every compute step has ended and before the first render step.
 fn copy_feature_counts(
     list: &mut DrawList,
     layout: &Layout,

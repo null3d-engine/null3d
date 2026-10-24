@@ -5113,6 +5113,10 @@ impl FrameGraph {
     /// earlier frames drew. The words that differ between a frame that blends a still view and one
     /// that does not are noted for [`FrameGraph::word_marks`]: the accumulation's steps, the
     /// two-step pass's first step and the commands of the final pass or its still build.
+    ///
+    /// `after_compute` records commands after each compute step, and `after_all_compute` records
+    /// them once, when the plan leaves its compute steps for the first render step. That is the
+    /// place for a buffer that every compute pass may write and every render pass reads.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn record(
         &mut self,
@@ -5121,6 +5125,7 @@ impl FrameGraph {
         skips: impl Fn(Role) -> bool,
         mut record: impl FnMut(&mut DrawList, Role) -> Result<(), RecordError>,
         mut after_compute: impl FnMut(&mut DrawList) -> Result<(), RecordError>,
+        mut after_all_compute: impl FnMut(&mut DrawList) -> Result<(), RecordError>,
         finish: impl FnOnce(&mut DrawList) -> Result<(), RecordError>,
     ) -> Result<(), RecordError> {
         let mut marks = std::mem::take(&mut self.word_marks);
@@ -5131,6 +5136,7 @@ impl FrameGraph {
             skips,
             &mut record,
             &mut after_compute,
+            &mut after_all_compute,
             finish,
             &mut marks,
         );
@@ -5162,6 +5168,7 @@ impl FrameGraph {
         skips: impl Fn(Role) -> bool,
         record: &mut impl FnMut(&mut DrawList, Role) -> Result<(), RecordError>,
         after_compute: &mut impl FnMut(&mut DrawList) -> Result<(), RecordError>,
+        after_all_compute: &mut impl FnMut(&mut DrawList) -> Result<(), RecordError>,
         finish: impl FnOnce(&mut DrawList) -> Result<(), RecordError>,
         marks: &mut Vec<Range<usize>>,
     ) -> Result<(), RecordError> {
@@ -5172,6 +5179,7 @@ impl FrameGraph {
         // The camera's passes read the capture views' targets, so the plan orders every capture
         // pass before them, and the probe's filter runs between.
         let mut filter = self.probe_filter;
+        let mut all_compute_done = false;
         for step in plan.steps() {
             match step.kind {
                 StepKind::Compute => {
@@ -5204,6 +5212,12 @@ impl FrameGraph {
                     }
                 }
                 StepKind::Render { size, .. } => {
+                    // Every compute write is final here, and no render pass has begun: the frame
+                    // records a buffer's conversion once, before the first pass that reads it.
+                    if !all_compute_done {
+                        after_all_compute(list)?;
+                        all_compute_done = true;
+                    }
                     let passes = plan.passes(step);
                     if passes.iter().all(|&pass| {
                         let role = self.roles[pass.index()];
@@ -6009,10 +6023,71 @@ mod tests {
                 |_: &mut DrawList, _: Role| Ok(()),
                 |_| Ok(()),
                 |_| Ok(()),
+                |_| Ok(()),
             )
             .unwrap();
         assert_eq!(operands(&list, Op::BeginComputePass).len(), 1);
         assert_eq!(operands(&list, Op::Dispatch).len(), 1);
+    }
+
+    #[test]
+    fn the_all_compute_hook_runs_once_after_every_compute_step_and_before_the_first_render_step() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        frames.sync(&[View::default(), compute_buffers()]);
+        let mut list = DrawList::with_capacity(256);
+        frames
+            .prepare(&mut list, (64, 48), RenderScale::FULL)
+            .unwrap();
+        let mut arena = UploadArena::default();
+        arena.reset(frames.upload_bound());
+        list.clear();
+        frames
+            .upload(&mut list, &mut arena, Output::default(), Grading::default())
+            .unwrap();
+        // The final pass asks for its pipeline before it records, as the thread that draws does.
+        frames.request_pipelines(&mut PipelineCache::default(), 0);
+        let mut calls = Vec::new();
+        list.clear();
+        frames
+            .record(
+                &mut list,
+                |_| [0.0; 4],
+                |_| false,
+                |_: &mut DrawList, _: Role| Ok(()),
+                |_| Ok(()),
+                |list| {
+                    calls.push(list.len());
+                    Ok(())
+                },
+                |_| Ok(()),
+            )
+            .unwrap();
+        assert_eq!(calls.len(), 1, "the hook records once in a frame");
+        let at = calls[0];
+        // The compute step's commands are all before the hook, and the first render pass is after
+        // it: it is the one place where every compute write is final for every reader.
+        let commands: Vec<_> = null3d_gpu::drawlist::decode(list.words())
+            .map(|command| command.unwrap())
+            .collect();
+        let mut word_of = 0usize;
+        let mut last_end = None;
+        let mut first_render = None;
+        for command in &commands {
+            if command.op == Op::EndComputePass && word_of < at {
+                last_end = Some(word_of);
+            }
+            if command.op == Op::BeginRenderPass && first_render.is_none() {
+                first_render = Some(word_of);
+            }
+            word_of += command.operands.len() + 1;
+        }
+        let last_end = last_end.expect("the compute step ends before the hook");
+        assert!(last_end < at, "the hook follows every compute step");
+        let first_render = first_render.expect("the frame draws");
+        assert!(
+            at <= first_render,
+            "the hook records before the first render pass"
+        );
     }
 
     #[test]
@@ -6074,6 +6149,7 @@ mod tests {
                 |_| [0.0; 4],
                 |_| true,
                 |_: &mut DrawList, _: Role| Ok(()),
+                |_| Ok(()),
                 |_| Ok(()),
                 |_| Ok(()),
             )
@@ -6913,6 +6989,7 @@ mod tests {
                 |_, _| Ok(()),
                 |_| Ok(()),
                 |_| Ok(()),
+                |_| Ok(()),
             )
             .unwrap();
         let passes = operands(&list, Op::BeginRenderPass);
@@ -6988,6 +7065,7 @@ mod tests {
                 |_| [0.0; 4],
                 |_| false,
                 |_, _| Ok(()),
+                |_| Ok(()),
                 |_| Ok(()),
                 |_| Ok(()),
             )
@@ -7218,6 +7296,7 @@ mod tests {
                     |_| [0.0; 4],
                     |_| false,
                     |_, _| Ok(()),
+                    |_| Ok(()),
                     |_| Ok(()),
                     |_| Ok(()),
                 )
@@ -7620,6 +7699,7 @@ mod tests {
                     |_, _| Ok(()),
                     |_| Ok(()),
                     |_| Ok(()),
+                    |_| Ok(()),
                 )
                 .unwrap();
             null3d_gpu::drawlist::decode(list.words())
@@ -7859,6 +7939,7 @@ mod tests {
                 |_, _| Ok(()),
                 |_| Ok(()),
                 |_| Ok(()),
+                |_| Ok(()),
             )
             .unwrap();
         assert!(
@@ -8057,6 +8138,7 @@ mod tests {
                     |_, _| Ok(()),
                     |_| Ok(()),
                     |_| Ok(()),
+                    |_| Ok(()),
                 )
                 .unwrap();
             let passes = operands(&list, Op::BeginRenderPass);
@@ -8237,6 +8319,7 @@ mod tests {
                     |_, _| Ok(()),
                     |_| Ok(()),
                     |_| Ok(()),
+                    |_| Ok(()),
                 )
                 .unwrap();
             let viewports = operands(&list, Op::SetViewport);
@@ -8411,6 +8494,7 @@ mod tests {
                     |_| [0.0; 4],
                     |_| false,
                     |_, _| Ok(()),
+                    |_| Ok(()),
                     |_| Ok(()),
                     |_| Ok(()),
                 )
@@ -8745,6 +8829,7 @@ mod tests {
                 |_, _| Ok(()),
                 |_| Ok(()),
                 |_| Ok(()),
+                |_| Ok(()),
             )
             .unwrap();
         let skin_light = frames.sampled_id(SKIN_LIGHT).unwrap();
@@ -8874,6 +8959,7 @@ mod tests {
                     |_| [0.5; 4],
                     |_| false,
                     |_, _| Ok(()),
+                    |_| Ok(()),
                     |_| Ok(()),
                     |_| Ok(()),
                 )
@@ -9016,6 +9102,7 @@ mod tests {
                     |_| [0.0; 4],
                     |_| false,
                     |_, _| Ok(()),
+                    |_| Ok(()),
                     |_| Ok(()),
                     |_| Ok(()),
                 )

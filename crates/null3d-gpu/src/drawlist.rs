@@ -720,6 +720,11 @@ pub mod layout {
     /// block of uniforms, then the draw's count word and its per-instance rows, which the shader
     /// reads and writes as storage. A pass of this layout has no storage texture.
     pub const COMPUTE_INSTANCE_BUFFERS: u32 = 56;
+    /// Group 0 of the compute pipeline that converts a feature-instance draw's world rows to the
+    /// camera-relative rows that the engine's vertex shaders read: its block of uniforms, which
+    /// holds the camera's world position, then the draw's count word, its world rows and the rows
+    /// that it writes.
+    pub const FEATURE_ROWS: u32 = 59;
     /// Group 0 of the cluster levels' compute pipeline: the dispatch's parameters at a dynamic
     /// offset, then the scene's patches and mesh records, its tree indices, the view's compacted
     /// instances, and the view's counts, offsets, index list and indirect draws.
@@ -2062,6 +2067,11 @@ pub mod template {
     /// Temporal anti-aliasing's copy of the resolve's target into the history of the frame's
     /// parity, one texel per pixel. It binds as the copy of a view's image does.
     pub const TAA_COPY: u32 = 82;
+    /// The conversion of a feature-instance draw's world rows to camera-relative rows: one
+    /// dispatch for each draw in each frame, whose count bounds the instances it converts. The
+    /// engine's vertex shaders read rows relative to their view's camera, and a page writes world
+    /// rows (D-229). WebGPU only.
+    pub const FEATURE_ROWS: u32 = 83;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -2069,7 +2079,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 81] = [
+    pub const NAMES: [(&str, u32); 82] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2150,6 +2160,7 @@ pub mod template {
         ("TAA_RESOLVE", TAA_RESOLVE),
         ("TAA_RESOLVE_MS", TAA_RESOLVE_MS),
         ("TAA_COPY", TAA_COPY),
+        ("FEATURE_ROWS", FEATURE_ROWS),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2256,6 +2267,7 @@ pub mod groups {
         (template::TAA_RESOLVE, own!(layout::TAA)),
         (template::TAA_RESOLVE_MS, own!(layout::TAA_MS)),
         (template::TAA_COPY, own!(layout::VIEW_COPY)),
+        (template::FEATURE_ROWS, own!(layout::FEATURE_ROWS)),
         (template::LIGHT_COUNT, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_PLACE, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_WRITE, own!(layout::LIGHT_CLUSTERS)),
@@ -2535,6 +2547,7 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("COMPUTE_R32_FLOAT", layout::COMPUTE_R32_FLOAT),
     ("COMPUTE_RGBA8_UNORM", layout::COMPUTE_RGBA8_UNORM),
     ("COMPUTE_INSTANCE_BUFFERS", layout::COMPUTE_INSTANCE_BUFFERS),
+    ("FEATURE_ROWS", layout::FEATURE_ROWS),
     ("DEPTH_PYRAMID", layout::DEPTH_PYRAMID),
     ("AO_DEPTH", layout::AO_DEPTH),
     ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
