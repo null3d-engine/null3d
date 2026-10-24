@@ -2,7 +2,7 @@
 
 Status: decided. Date: 2026-10-23. Task: M3-A9. The cost figures below come from the hero cost spec on the Mac's own GPU, run once the feature was complete.
 
-Summary: A directional light can name one object as its hero. That object's shadow draws into the last tile of the existing shadow atlas, in a box fitted tightly to its bounding sphere along the light, and receivers inside that box read the tile before the cascades. At the default sizes the hero's texels are about eight times smaller than the first cascade's for a car-sized object, and the feature costs one extra tile draw in the frames where the object moves.
+Summary: A directional light can name one object as its hero, which adds one draw when it moves. Its shadow draws into a tightly fitted tile of the shadow atlas, which receivers in the box read before the cascades. The tile is about eight times finer than the first cascade for a 1.8 m object, and three times for the demo's 4.4 m car.
 
 ## Question
 
@@ -41,7 +41,7 @@ Texel sizes in meters at the default sizes, for an object whose bounding sphere 
 | First cascade, 3 cascades over 200 m, 65% lean | 2,048 | 0.0137 |
 | Hero tile | 1,024 | 0.0018 |
 
-That is 7.8 times the first cascade's density at 10 m, and a 4.5 m object still reaches 4 times. The Rust test `the_hero_s_tile_holds_four_times_the_first_cascade_s_texels_at_ten_metres` checks the ratio.
+That is 7.8 times the first cascade's density at 10 m for a bounding sphere of radius 0.9 m. The ratio falls as the object grows: the demo car's sphere, 4.4 m across, gets about 3.2 times. The Rust test `the_hero_s_tile_holds_four_times_the_first_cascade_s_texels_at_ten_metres` checks the ratio for the smaller object.
 
 ## Cost
 
@@ -60,7 +60,7 @@ The hero cost spec (`tests/image/hero-cost.spec.ts`) times the hero demo's car a
 - On WebGL2 the hero lowers the frame's GPU time by about 0.27 ms, both still and moving. A receiver in the box reads the atlas tile through the comparison sampler, and that read costs less than the cascades' per-texel reads.
 - The CPU time changed by no more than 0.01 ms.
 - With no hero the atlas holds no layer, and the frame draws the passes it drew before. The Rust test `the_hero_draws_its_own_tile` checks the layer count, the two cascade passes and the zeroed values.
-- The tile takes the preset's tile size, 512 texels at Medium and 1,024 at High. It adds one layer beyond the preset's tiles, 1 MiB or 4 MiB. The atlas then takes at most 9 MiB at Medium and 68 MiB at High, against the preset table's 8 MiB and 64 MiB.
+- The tile takes the preset's tile size, 512 texels at Medium and 1,024 at High. It adds one layer beyond the preset's tiles, 1 MiB or 4 MiB. The atlas then takes at most 9 MiB at Medium and 68 MiB at High, as the preset table counts. A scene with no hero spends 8 MiB or 64 MiB.
 
 ## Consequences
 
