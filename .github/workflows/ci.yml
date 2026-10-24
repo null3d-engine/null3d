@@ -440,15 +440,16 @@ jobs:
       - run: bun install --frozen-lockfile
       - id: entry-keys
         run: bun tools/shaders.ts --cache-keys | tee -a "$GITHUB_OUTPUT"
-      # The entries that the shader-entries jobs compiled, into the per-entry cache under the
-      # compiler's stamp. A run whose caches held every entry has none to download.
+      # The entries that the shader-entries jobs compiled, into the per-entry cache, each in the
+      # folder that held it in its job: an earlier stamp's folder when the compiler's program has the
+      # bytes that wrote it. A run whose caches held every entry has none to download.
       - uses: ./.github/actions/archive
         continue-on-error: true
         with:
           mode: download
           name: shader-entries
           pattern: shader-entries-*
-          root: ${{ steps.entry-keys.outputs.entries-dir }}/${{ steps.entry-keys.outputs.stamp }}
+          root: ${{ steps.entry-keys.outputs.entries-dir }}
       # The WebAssembly files and the tools' modules, which the build script keeps under a key of
       # every input: the core's Rust sources, the flags, the toolchain and the wasm-bindgen and
       # wasm-opt releases. A run that changed none of them copies every file in place and runs no

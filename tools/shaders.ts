@@ -23,10 +23,12 @@
 // the shader build program's bytes choose. A run that starts with an empty cache, as each CI job
 // does, writes the folder that `stamp` names. An entry that costs more than an even share goes to the shards in parts,
 // which the cache keeps beside the entry's key and a later build joins. It writes no module. With `--entries-out <folder>`, it also copies the
-// entries that it stored there, and none that the cache held before, so each of several CI jobs can
-// upload its own new entries, and the job that builds the modules can put them all back into that
-// folder first and compile none of them. Shard 0 also copies the shader build's program, which the
-// cache keeps beside its compiler's entries, so that job runs it without compiling it:
+// entries that it stored there, and none that the cache held before, under the name of the cache's
+// folder that holds them. So each of several CI jobs can upload its own new entries, and the job
+// that builds the modules can put them all back into its per-entry cache first, each in the folder
+// that its build reads, and compile none of them. Shard 0 also copies the shader build's program,
+// under the stamp's folder, where a build looks for it first, so that job runs it without compiling
+// it:
 //   bun tools/shaders.ts --entries-shard 0/8 --entries-out target/shader-entries
 import { join } from 'node:path';
 import {

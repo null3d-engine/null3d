@@ -154,8 +154,10 @@ gives the reasons and the measurements.
 CI's restore falls back, after the prefixes that name a stamp, to one that names none. A source
 change that leaves the program identical therefore also restores the entries of an earlier stamp.
 The action saves the folder that the build used, and the build job passes that folder to the shader
-tests. When a shard wrote new entries into an earlier folder, the build job compiles those few
-entries again; the unchanged set is still reused. The figures below are from before this rule.
+tests. A shard hands over its new entries under the name of the folder that holds them, and the
+build job unpacks them into its cache by that name, so a shard that filled an earlier stamp's
+folder fills the folder that the build reads. The program goes under the current stamp's folder,
+where a build looks for it first. The figures below are from before this rule.
 
 On the Mac on 14 October 2026, all 54 entries from cold took 442 s. A
 second run with nothing changed took 10.6 s and compiled none. A change to the one file that the two
