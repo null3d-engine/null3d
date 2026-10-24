@@ -69,14 +69,22 @@ jobs:
     #   code, the add-ons, the core's crates, and the benchmark pages and the check's tools.
     # - sketches: a docs-only pull request that is no draft changes the skills' or the cookbook's
     #   Markdown, whose complete sketches the browser tests draw. The skill-sketches job draws them.
+    # Every other job waits for this one, so a push to a pull request first waits 3 minutes here,
+    # and a newer push in that time cancels the run before any other job starts. Landings come in
+    # bursts: of 44 pull request runs cancelled by a newer push on 24 October 2026, 27 went within
+    # 3 minutes, and each had cost about 21 job-minutes, 922 in all against 376 for the 7 that ran
+    # to their end.
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     outputs:
       code: ${{ steps.paths.outputs.code }}
       full: ${{ steps.paths.outputs.full }}
       allocation: ${{ steps.paths.outputs.allocation }}
       sketches: ${{ steps.paths.outputs.sketches }}
     steps:
+      - name: Wait for a newer push to this pull request
+        if: github.event_name == 'pull_request' && github.event.action == 'synchronize'
+        run: sleep 180
       - uses: actions/checkout@v5
         if: github.event_name == 'pull_request'
         with:
@@ -187,6 +195,7 @@ jobs:
     # The commit messages and their trailers, which the commit hooks check locally: on a push, every
     # commit after main's commit before the push; on a pull request, every commit of its branch. A
     # push that starts a branch, or replaces its history, has no commit before, and checks nothing.
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -353,6 +362,7 @@ jobs:
     # uploads only the entries and parts it compiled, and never saves the Actions cache: the build
     # job saves the whole set.
     name: shader-entries (${{ matrix.shard }} of ${{ strategy.job-total }})
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
