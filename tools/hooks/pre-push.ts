@@ -136,6 +136,11 @@ export function plan(
 			lane: 'QUICK',
 			command: ['bun', 'tools/hooks/check-merges.ts', range],
 		},
+		{
+			why: 'two decision records must not share a number, which a merge can bring together',
+			lane: 'QUICK',
+			command: ['bun', 'tools/decisions.ts', '--check'],
+		},
 	];
 	if (!touchesRust([...files])) return steps;
 	steps.push({
