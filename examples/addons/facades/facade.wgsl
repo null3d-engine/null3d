@@ -148,8 +148,9 @@ fn surface(input: SurfaceInput) -> Surface {
     let instance_lit = clamp(object.values.x, 0.0, 1.0);
     let lit = select(step(pick, material.litShare), instance_lit, !facade);
 
-    // The power-on wave: its arrival at this window, and the spring that follows it.
-    let reach = length(place.xz - vec2f(material.waveOriginX, material.waveOriginZ));
+    // The power-on wave: its arrival at this point, and the spring that follows it. The point is the
+    // pixel's own place on the ground, so a single wall lights window by window as well as a batch.
+    let reach = length(input.worldPosition.xz - vec2f(material.waveOriginX, material.waveOriginZ));
     let arrival = material.waveStart + reach / max(material.waveSpeed, 0.001);
     let age = max(frame.time - arrival, 0.0);
     let rise = 1.0 - exp(-material.waveDamping * age) * cos(material.waveRise * age);
