@@ -247,9 +247,9 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			mesh: geometry.fromArrays(
 				bodyMesh(
 					(Array.isArray(options.shapes) ? options.shapes[index] : options.shapes) as WaterShape,
+					body,
 					level,
 					options.mesh ?? {},
-					(x, z) => body.contains(x, z),
 				),
 			),
 			material,
