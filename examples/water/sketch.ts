@@ -56,7 +56,7 @@ export default defineSketch(async (ctx) => {
 	});
 	scene.setActiveCamera(camera);
 	const target: [number, number, number] = [-12, 0, 1];
-	interact(ctx, camera, { target });
+	const view = interact(ctx, camera, { target });
 
 	const layers = terrainTextures(textures, { seed: 5 });
 	const terrain = createTerrain(ctx, {
@@ -126,11 +126,14 @@ export default defineSketch(async (ctx) => {
 			travel += dt * 0.9;
 			if (travel > TO + 40) travel = FROM + 20;
 			const x = travel;
-			const z = middleZ(x) + 2.2 * Math.sin(t * 0.11);
-			camera.setPosition(x - 26, 1.5 + 1.6 * Math.sin(t * 0.15), z + 9);
 			target[0] = x;
 			target[2] = middleZ(x);
-			camera.lookAt(target[0], target[1], target[2]);
+			if (!view.userCamera) {
+				const z = middleZ(x) + 2.2 * Math.sin(t * 0.11);
+				camera.setPosition(x - 26, 1.5 + 1.6 * Math.sin(t * 0.15), z + 9);
+				camera.lookAt(target[0], target[1], target[2]);
+			}
+			view.update(dt);
 			camera.getPosition(at);
 			underwater.update(t, air, caustics);
 			terrain.update(at);
