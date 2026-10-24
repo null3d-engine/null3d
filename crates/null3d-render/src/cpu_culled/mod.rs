@@ -2833,7 +2833,17 @@ impl FrameBuilder for CpuCulledRenderer {
                 None,
                 None,
             )
-            .map_err(|_| out_of_memory(&self.scattering))
+            .map_err(|_| out_of_memory(&self.scattering))?;
+        // The staged levels' watches read the levels that the camera's view picked.
+        if self.settings.watches_stages() {
+            let cull = self.culling.culled_in(input.frame, ViewId::CAMERA);
+            self.layout.note_stage_picks(
+                cull,
+                self.settings.stage_watches_mut(),
+                u64::from(input.frame),
+            );
+        }
+        Ok(())
     }
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {

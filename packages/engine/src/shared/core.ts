@@ -406,6 +406,19 @@ export interface CoreGlue extends CoreErrors {
 	 * band. With `count` 0 the mesh loses its levels. 0 for success.
 	 */
 	setMeshLevels(base: number, count: number, fades: number): number;
+	/**
+	 * Watches the levels that the views pick for the mesh `base`, from the frame that the renderer
+	 * began last on, in place of a watch that the mesh had. The loader of a model with staged levels
+	 * waits on the watch before it downloads the next stage.
+	 */
+	watchStageLevels(base: number): number;
+	/**
+	 * The levels of the mesh `base` that a view picked since its watch began, one bit each, bit 0
+	 * for the mesh itself. 0 for a mesh that no loader watches.
+	 */
+	stageLevelPicks(base: number): number;
+	/** The frames that drew the mesh `base` since its watch began, 0 for a mesh that no watch has. */
+	stageFrames(base: number): number;
 	/** The GPU bytes of every mesh: the mesh pages' buffers and the texture of morph deltas. */
 	meshMemoryBytes(): number;
 	/**
@@ -1229,6 +1242,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'updateVertices',
 	'destroyMeshes',
 	'setMeshLevels',
+	'watchStageLevels',
+	'stageLevelPicks',
+	'stageFrames',
 	'meshMemoryBytes',
 	'createMaterial',
 	'setMaterialValue',
