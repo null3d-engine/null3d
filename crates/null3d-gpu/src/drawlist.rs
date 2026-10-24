@@ -708,6 +708,18 @@ pub mod layout {
     /// view's parameters, the scene's tables, its compacted instances and indirect draws, then its
     /// depth pyramid or a placeholder, the cell offsets texture and the skin firsts texture.
     pub const CULL: u32 = 1;
+    /// Group 0 of an add-on's compute pipeline: its block of uniforms, then the storage texture
+    /// that it fills, as 16-bit floats. The storage texture's format is part of the layout, so a
+    /// pass of another format takes the layout of that format.
+    pub const COMPUTE_RGBA16_FLOAT: u32 = 53;
+    /// [`COMPUTE_RGBA16_FLOAT`] for a target of 32-bit floats.
+    pub const COMPUTE_R32_FLOAT: u32 = 54;
+    /// [`COMPUTE_RGBA16_FLOAT`] for a target of 8-bit color.
+    pub const COMPUTE_RGBA8_UNORM: u32 = 55;
+    /// Group 0 of an add-on's compute pipeline that writes the two buffers of an instance draw: its
+    /// block of uniforms, then the draw's count word and its per-instance rows, which the shader
+    /// reads and writes as storage. A pass of this layout has no storage texture.
+    pub const COMPUTE_INSTANCE_BUFFERS: u32 = 56;
     /// Group 0 of the cluster levels' compute pipeline: the dispatch's parameters at a dynamic
     /// offset, then the scene's patches and mesh records, its tree indices, the view's compacted
     /// instances, and the view's counts, offsets, index list and indirect draws.
@@ -2572,6 +2584,10 @@ pub fn typescript_constants() -> String {
                 ("FINAL_BLOOM", layout::FINAL_BLOOM),
                 ("JOINTS", layout::JOINTS),
                 ("SKIN", layout::SKIN),
+                ("COMPUTE_RGBA16_FLOAT", layout::COMPUTE_RGBA16_FLOAT),
+                ("COMPUTE_R32_FLOAT", layout::COMPUTE_R32_FLOAT),
+                ("COMPUTE_RGBA8_UNORM", layout::COMPUTE_RGBA8_UNORM),
+                ("COMPUTE_INSTANCE_BUFFERS", layout::COMPUTE_INSTANCE_BUFFERS),
                 ("DEPTH_PYRAMID", layout::DEPTH_PYRAMID),
                 ("AO_DEPTH", layout::AO_DEPTH),
                 ("AO_DEPTH_MS", layout::AO_DEPTH_MS),

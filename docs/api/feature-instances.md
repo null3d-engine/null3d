@@ -8,7 +8,7 @@ summary: "scene.addFeatureInstances draws a capacity of instances from your own 
 
 # Add-on instance draws
 
-> Roadmap step 0.3. The API is experimental, so it can still change between versions. A draw records in the main view alone, at the opaque point.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A draw records in the main view alone, at the opaque point.
 
 ```mermaid
 flowchart LR
@@ -22,7 +22,7 @@ flowchart LR
     call --> batch["WebGL2<br/>an instance batch the CPU fills"]
 ```
 
-`scene.addFeatureInstances` draws one shape once for each live instance. On WebGPU the live count comes from GPU memory. On WebGL2 the page gives it. Use it for a large set that a compute pass culls, sorts or expands, such as splats. The add-on's compute writes the count word and the per-instance rows, and the engine draws exactly that many instances.
+`scene.addFeatureInstances` draws one shape once for each live instance. On WebGPU the live count comes from GPU memory. On WebGL2 the page gives it. Use it for a large set whose count a compute pass writes each frame, such as foliage that the pass places and culls. The add-on's compute writes the count word and the per-instance rows, and the engine draws exactly that many instances.
 
 This is the adapter for a [feature description](features.md) with `kind: 'draw'` and `frame: 'opaque'`. The description places the draw; the options give the shape, the shader and the capacity.
 
@@ -58,7 +58,7 @@ fn fs(in: Varyings) -> @location(0) vec4f {
 export default defineSketch(async ({ scene }) => {
   scene.setActiveCamera(scene.createPerspectiveCamera({ position: [0, 0, 9] }));
   const description = defineFeature({
-    name: 'splats',
+    name: 'foliage',
     frame: 'opaque',
     kind: 'draw',
     views: ['main'],
@@ -142,3 +142,5 @@ On WebGL2, each row's matrix is split into a position, a rotation and a scale th
 - The engine does not bound the count. Keep the add-on's count at or under `capacity`. Past it, the GPU reads past the end of the buffer.
 - A shadow view draws `draw.setCount`'s count, because the add-on's compute writes the main view's count alone.
 - The feature description's `reads`, `writes`, `outputs` and `provides` stay with the [feature registry](features.md).
+
+[The API reference](reference/feature-instances.md) lists every export of this page with its type and description. The engine's doc comments make it.

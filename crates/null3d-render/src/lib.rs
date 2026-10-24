@@ -10,6 +10,8 @@
 //! - `camera`: perspective and orthographic lenses with reversed depth, and view matrices
 //! - `cells`: grid-cell culling, which both frame builders share: still objects in cell order, a
 //!   box per cell, and the cells each view can see
+//! - `compute`: compute passes, which run a sketch's WGSL into a storage texture that materials,
+//!   effects and passes sample in the same frame
 //! - `cpu_culled`: the WebGL2 frame builder, with culling on the job workers and an index list per
 //!   view
 //! - `debug_lines`: the lines that a sketch draws for one frame, and the pass that draws them
@@ -69,6 +71,7 @@ pub mod background;
 pub mod bloom;
 pub mod camera;
 mod cells;
+pub mod compute;
 pub mod cpu_culled;
 mod data_texture;
 pub mod debug_lines;

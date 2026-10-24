@@ -1400,12 +1400,15 @@ impl SceneSettings {
             resolve_maps(textures, &mut effect.maps, &mut effect.values);
         }
         for view in &mut self.views {
-            let Some(pass) = view.fullscreen_pass_mut() else {
-                continue;
-            };
-            resolve_maps(textures, &mut pass.maps, &mut pass.values);
-            let reads = pass.maps.views;
-            view.target_mut().reads = reads;
+            if let Some(pass) = view.fullscreen_pass_mut() {
+                resolve_maps(textures, &mut pass.maps, &mut pass.values);
+                let reads = pass.maps.views;
+                view.target_mut().reads = reads;
+            } else if let Some(pass) = view.compute_pass_mut() {
+                resolve_maps(textures, &mut pass.maps, &mut pass.values);
+                let reads = pass.maps.views;
+                view.target_mut().reads = reads;
+            }
         }
     }
 
@@ -1419,6 +1422,8 @@ impl SceneSettings {
         }
         for view in &mut self.views {
             if let Some(pass) = view.fullscreen_pass_mut() {
+                write_layers(textures, &pass.maps, &mut pass.values);
+            } else if let Some(pass) = view.compute_pass_mut() {
                 write_layers(textures, &pass.maps, &mut pass.values);
             }
         }
@@ -2758,8 +2763,28 @@ impl SceneSettings {
             || self.views.get(view.index()).is_some_and(|view| {
                 view.mirrored().is_some()
                     || view.captured_face().is_some()
-                    || (view.fullscreen_pass().is_none() && view.target().clear.is_none())
+                    || (view.fullscreen_pass().is_none()
+                        && view.compute_pass().is_none()
+                        && view.target().clear.is_none())
             })
+    }
+
+    /// Gives the compute pass of a view new values and textures, from the next frame on. A view of
+    /// another kind, or a removed one, keeps what it has.
+    pub fn set_compute_values(
+        &mut self,
+        view: ViewId,
+        values: &[f32; EFFECT_FLOATS],
+        textures: &[Handle; MAX_TEXTURES],
+    ) {
+        if let Some(pass) = self
+            .views
+            .get_mut(view.index())
+            .and_then(View::compute_pass_mut)
+        {
+            pass.values = *values;
+            pass.maps.textures = *textures;
+        }
     }
 
     /// Gives the full-screen pass of a view new values and textures, from the next frame on. A view

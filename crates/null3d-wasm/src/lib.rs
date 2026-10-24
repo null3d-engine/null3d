@@ -86,7 +86,8 @@ use null3d_render::ssr::Ssr;
 use null3d_render::subsurface;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::{
-    CanvasRect, Fullscreen, MAX_VIEWS, PassSource, View, ViewId, ViewNames, ViewTarget,
+    CanvasRect, Compute, ComputeBuffers, Fullscreen, MAX_VIEWS, PassSource, View, ViewId,
+    ViewNames, ViewTarget,
 };
 use wasm_bindgen::prelude::*;
 
@@ -3049,6 +3050,103 @@ pub fn add_fullscreen_pass(
         target_name,
         "",
     )
+}
+
+/// Adds a compute pass, through a pass that the render graph names `pass`, which runs the compiled
+/// WGSL of compute pipeline template `template` over the whole of a target that it names `target`:
+/// of `width` x `height` texels, or with a width of 0, of `scale` of the render size each way, 1,
+/// 0.5 or 0.25. It writes the target as a storage texture of `format`, a draw list format code,
+/// over a workgroup of `workgroup` invocations, packed one axis to a byte, and dispatches `counts`
+/// workgroups along each axis, packed the same way, or covers the target when every count is 0. It
+/// reads its uniforms at `effectValues`
+/// and its textures at `effectTextures`, in one frame of every `every`. With `afterScene` it
+/// records after the camera's passes, which it reads the scene color of. Returns the view's place,
+/// from 1, or 0 as `addPass` does.
+#[wasm_bindgen(js_name = addComputePass)]
+#[allow(clippy::too_many_arguments)]
+pub fn add_compute_pass(
+    pass: &str,
+    target_name: &str,
+    width: u32,
+    height: u32,
+    scale: f32,
+    every: u32,
+    template: u32,
+    format: u32,
+    workgroup: u32,
+    counts: u32,
+    after_scene: u32,
+    counts_buffer: u32,
+    instances_buffer: u32,
+    instances_bytes: u32,
+) -> u32 {
+    let target = ViewTarget {
+        size: (width > 0).then_some((width, height.max(1))),
+        halvings: halvings_of(scale),
+        every: every.max(1),
+        ..ViewTarget::default()
+    };
+    // The numbers arrive packed, one axis to a byte: the workgroup's three axes, and the three
+    // workgroup counts, which all read 0 when the pass covers its target.
+    let axis = |packed: u32, k: usize| (packed >> (8 * k)) & 0xff;
+    let workgroup = [axis(workgroup, 0), axis(workgroup, 1), axis(workgroup, 2)].map(|n| n.max(1));
+    let raw = [axis(counts, 0), axis(counts, 1), axis(counts, 2)];
+    let dispatch = (raw != [0, 0, 0]).then(|| raw.map(|n| n.max(1)));
+    add_view_of(
+        |e| {
+            let content = Compute {
+                template,
+                workgroup,
+                dispatch,
+                format,
+                after_scene: after_scene != 0,
+                values: *e.effect_values,
+                maps: effect_maps(e),
+                // A pass that writes an instance draw names its count word and its rows; a pass
+                // that writes a texture names neither.
+                buffers: (counts_buffer != 0).then_some(ComputeBuffers {
+                    counts: counts_buffer,
+                    instances: instances_buffer,
+                    instances_bytes,
+                }),
+            };
+            View::compute(content, target)
+        },
+        pass,
+        target_name,
+        "",
+    )
+}
+
+/// Gives the compute pass of view place `place`, from 1, the uniforms at `effectValues` and the
+/// textures at `effectTextures`, from the next frame on. A texture that shows the pass's own
+/// target, or closes a loop of passes, fails with the render graph's error, and the pass keeps
+/// what it had.
+#[wasm_bindgen(js_name = setComputeValues)]
+pub fn set_compute_values(place: u32) -> u32 {
+    with_engine(|e| {
+        let view = ViewId::from_place(place as usize);
+        let textures = e.effect_textures.map(Handle::from_raw);
+        let values = *e.effect_values;
+        let settings = e.renderer.settings_mut();
+        let Some(kept) = settings
+            .views()
+            .get(view.index())
+            .and_then(View::compute_pass)
+            .copied()
+        else {
+            return 0;
+        };
+        settings.set_compute_values(view, &values, &textures);
+        if let Err(error) = e.renderer.check_graph() {
+            let code = graph_failure(e, error);
+            let settings = e.renderer.settings_mut();
+            settings.set_compute_values(view, &kept.values, &kept.maps.textures);
+            let _ = e.renderer.check_graph();
+            return code;
+        }
+        0
+    })
 }
 
 /// Gives the full-screen pass of view place `place`, from 1, the uniforms at `effectValues` and

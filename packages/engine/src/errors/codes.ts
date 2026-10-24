@@ -206,7 +206,7 @@ const DOCS = {
 	E1220: {
 		title: 'Invalid render pass',
 		cause:
-			'render.addPass() got options that it does not take: an unknown kind or option, no camera, a size outside 1 to the largest texture, both a size and a scale, an input image it does not know, or a texture name or pass name that another pass has. Or the sketch added more passes than draw at once: 31. Or textures.fromPass(), render.setPassEnabled(), render.setPassUniform() or render.removePass() got something that is not a render pass, or render.setPassUniform() got a pass that is not a full-screen pass.',
+			'render.addPass() got options that it does not take: an unknown kind or option, no camera, a size outside 1 to the largest texture, both a size and a scale, an input image it does not know, a workgroup size or dispatch that a device cannot run, a format that a compute pass does not write, a compute pass on WebGL2 with no fallback, or a texture name or pass name that another pass has. Or the sketch added more passes than draw at once: 31. Or textures.fromPass(), render.setPassEnabled(), render.setPassUniform(), render.setPassUniforms() or render.removePass() got something that is not a render pass, render.setPassUniform() got a pass that is not a full-screen pass, or render.setPassUniforms() got a pass that is not a compute pass.',
 		example:
 			'E1220: render.addPass() got writes "minimap", which the pass "minimap" writes already. Give each pass a texture name of its own.',
 		since: '0.2',
@@ -230,7 +230,7 @@ const DOCS = {
 	E1223: {
 		title: 'Invalid feature description',
 		cause:
-			'defineFeature(), FeatureRegistry.add() or addFeatureDraw() got a description that it cannot take: an unknown option, a name that is empty or longer than 64 characters, a frame point or kind that does not exist or does not go together, an order outside its band, an unknown resource, lighting slot or view, a resource or view without a frame point, an output with no neutral default, a feature name or output name that another feature has, a lighting slot that another feature provides, or a draw at a frame point, view or alpha mode that the draw adapter does not place.',
+			'defineFeature(), FeatureRegistry.add(), addFeatureDraw() or a compute pass of render.addPass() got a description that it cannot take: an unknown option, a name that is empty or longer than 64 characters, a frame point or kind that does not exist or does not go together, an order outside its band, an unknown resource, lighting slot or view, a resource or view without a frame point, an output with no neutral default, a feature name or output name that another feature has, a lighting slot that another feature provides, or a draw at a frame point, view or alpha mode that the draw adapter does not place, or a compute pass at a frame point, view, scene resource read or output that the compute adapter does not place.',
 		example:
 			"E1223: FeatureRegistry.add() got the slot 'ao', which the feature 'ambient-occlusion' provides already. One feature provides each lighting slot.",
 		since: '0.3',
