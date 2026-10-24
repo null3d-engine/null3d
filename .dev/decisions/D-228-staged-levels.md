@@ -74,6 +74,6 @@ How the data was produced: `bun packages/cli/src/assets/staged-fixture.ts`, whic
 - The loader (`packages/engine/src/scene/gltf.ts`) downloads stages after `loadGltf` returns. `prefab.destroy()` stops them, and frees every level that arrived.
 - The engine core gains `replace_indices`, an internal call. A mesh with an edge list, morph targets, a split part or a level of its own refuses it, and its stages stop.
 - The `--stages` option needs `--lod`. The tool's report does not list the stage files' bytes yet.
-- The Vite plugin does not pass `stages` yet, so a project that imports an optimized model keeps its levels in the file. Its option and the serving of the stage files come with the first project that wants them.
+- The Vite plugin's `assets` option passes `stages` too: it writes the stage files into the model's cache folder, lists them by reading `NULL3D_stages` back from the model, and serves and emits them beside it. So a project that imports an optimized model gets the same chain that a page loads by address.
 - Reader-facing docs: [Levels of detail](../../docs/concepts/lod.md), [The asset pipeline](../../docs/guides/assets-pipeline.md#levels-as-separate-downloads) and [Assets](../../docs/api/assets.md). The develop skill's quick reference shows `maxLevels`.
 - A commit that changes `NULL3D_stages` must change the engine's reader and the tool's writer together; the format's version word guards the pair.
