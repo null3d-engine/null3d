@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { SHADING_CUSTOM_FIRST } from '../../generated/core';
 import * as G from '../../generated/gpu';
 import type { DeviceShaders } from '../../generated/shaders';
+import { ImageTable } from '../../shared/images';
 import { MemoryViews } from '../../shared/memory-views';
 import { ReadSink } from '../readback';
 import { WebGPUBackend } from './backend';
@@ -245,6 +247,42 @@ describe('WebGPUBackend', () => {
 		await settle();
 		replayFrom(backend, words, from);
 		expect(log.filter((entry) => entry.startsWith('dispatch'))).toEqual(['dispatch 2 x 1 x 1']);
+		expect(backend.counts.dispatches).toBe(1);
+	});
+
+	it('skips an add-on compute pass’s dispatches while its pipeline is pending, as it does a built-in pass’s', async () => {
+		const { device, log } = fakeDevice();
+		// An add-on's pass brings a whole WGSL module of its own, under a template id of its own.
+		const images = new ImageTable();
+		images.setShader(SHADING_CUSTOM_FIRST, {
+			kind: 'compute',
+			variants: {
+				compute: {
+					permutation: 0,
+					wgsl: { source: '@compute @workgroup_size(1) fn main() {}', pipelines: {} },
+					glsl: null,
+				},
+			},
+			locations: [],
+			textures: 0,
+		});
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS, undefined, images);
+		await settle();
+		log.length = 0;
+		const words = drawList(
+			[G.OP_CREATE_COMPUTE_PIPELINE, 1, SHADING_CUSTOM_FIRST, G.FORMAT_RGBA16_FLOAT],
+			[G.OP_BEGIN_COMPUTE_PASS],
+			[G.OP_SET_COMPUTE_PIPELINE, 1],
+			[G.OP_DISPATCH, 3, 1, 1],
+			[G.OP_END_COMPUTE_PASS],
+		);
+		const from = backend.prepare(words, 0, words.length);
+		replayFrom(backend, words, from);
+		expect(log.filter((entry) => entry.startsWith('dispatch'))).toEqual([]);
+		expect(backend.counts.dispatches).toBe(0);
+		await settle();
+		replayFrom(backend, words, from);
+		expect(log.filter((entry) => entry.startsWith('dispatch'))).toEqual(['dispatch 3 x 1 x 1']);
 		expect(backend.counts.dispatches).toBe(1);
 	});
 
