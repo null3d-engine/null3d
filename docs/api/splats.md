@@ -93,10 +93,13 @@ cover the most surface. A prefix of a chunk is a coarser level of it: all of it,
 and an eighth.
 
 `update` writes the camera's position and asks a job worker, through `runTask`, which prefix each
-chunk draws. A chunk nearer the camera keeps more of its splats, and the budget stops the total. The
-task sorts the chunks by distance in the worker, so a large scene costs the sketch's thread nothing.
-A change of the camera or of the budget starts a new selection; the sketch packs the chosen rows
-once the answer arrives, between two frames.
+chunk draws. Every chunk the budget reaches keeps an eighth of itself first. The budget then
+gives the nearest chunks a finer prefix, up to the level that their distance asks for. So a budget
+too small for every level thins the whole cloud. A chunk nearer the camera still keeps more of its
+splats than a far one. The budget stops the total. The task sorts the chunks by distance in the
+worker, so a large scene costs the sketch's thread nothing. A change of the camera or of the budget
+starts a new selection; the sketch packs the chosen rows once the answer arrives, between two
+frames.
 
 The budget follows the quality preset. On each preset the add-on draws at most:
 

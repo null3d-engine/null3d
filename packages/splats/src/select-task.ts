@@ -1,8 +1,8 @@
 // The task that chooses which splats draw, which the engine runs in a job worker beside the frames.
 // The sketch writes each chunk's centre, radius and four level counts into a shared buffer with the
-// camera and the budget, and the task writes the count that each chunk draws: the level that its
-// distance asks for, lowered where the budget runs out, and nothing for the chunks that the budget
-// cannot reach. Sorting the chunks by distance takes the work off the sketch's thread.
+// camera and the budget, and the task writes the count that each chunk draws: a coarsest prefix for
+// every chunk the budget reaches, then a finer prefix for the nearest chunks, up to the level that
+// their distance asks for. Sorting the chunks by distance takes the work off the sketch's thread.
 //
 // The module runs on its own in the worker, so it imports nothing.
 //
@@ -89,17 +89,30 @@ export function run(input: unknown): { output: boolean } {
 	for (let i = 0; i < chunks; i++) view[countsAt + i] = 0;
 	let left = budget;
 	let total = 0;
+	// The base level: each chunk, nearest first, keeps its coarsest prefix while the budget lasts.
+	// A budget too small for every level then thins the whole cloud rather than dropping its far
+	// parts, and a stream still fetches only the chunks that the budget reaches.
 	for (const i of order) {
 		if (left <= 0) break;
-		const at = HEADER + i * STRIDE;
-		let level = levels[i] as number;
-		// The level's count if it fits, else a coarser one; the coarsest takes what is left.
-		while (level < LEVELS - 1 && (view[at + 4 + level] as number) > left) level++;
-		const available = view[at + 4 + level] as number;
-		const chosen = available < left ? available : left;
+		const base = view[HEADER + i * STRIDE + 4 + (LEVELS - 1)] as number;
+		const chosen = base < left ? base : left;
 		view[countsAt + i] = chosen;
 		left -= chosen;
 		total += chosen;
+	}
+	// The rest of the budget refines the nearest chunks first, up to the level that each one's
+	// distance asks for, so a near chunk is denser than a far one of the same size.
+	for (const i of order) {
+		if (left <= 0) break;
+		const at = HEADER + i * STRIDE;
+		const target = view[at + 4 + (levels[i] as number)] as number;
+		const chosen = view[countsAt + i] as number;
+		if (chosen >= target) continue;
+		const rest = target - chosen;
+		const more = rest < left ? rest : left;
+		view[countsAt + i] = chosen + more;
+		left -= more;
+		total += more;
 	}
 	view[TOTAL] = total;
 	return { output: true };

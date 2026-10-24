@@ -1,5 +1,5 @@
-// The selection task: the level that each chunk's distance asks for, the budget that lowers it, and
-// the order in which the nearest chunks take the budget first. The test writes the buffer that the
+// The selection task: a coarsest prefix for every chunk the budget reaches, then a finer one for the
+// nearest chunks, up to the level that their distance asks for. The test writes the buffer that the
 // sketch writes, and reads the answer that the worker gives.
 import { describe, expect, it } from 'bun:test';
 import { BUDGET, CHUNK_COUNT, EYE, HEADER, run, STRIDE, TOTAL } from './select-task';
@@ -45,20 +45,30 @@ describe('the splat selection task', () => {
 		expect(view[TOTAL]).toBe(126);
 	});
 
-	it('lowers a level where the budget runs out, nearest first', () => {
+	it('keeps every chunk when the budget covers their coarsest level', () => {
+		const view = buffer(LEVELS);
+		view[BUDGET] = 39;
+		run({ view });
+		// Each chunk keeps an eighth of itself, so the whole cloud draws thinly.
+		expect(countsOf(view, 3)).toEqual([13, 13, 13]);
+		expect(view[TOTAL]).toBe(39);
+	});
+
+	it('spends what is left on the nearest chunk', () => {
 		const view = buffer(LEVELS);
 		view[BUDGET] = 120;
 		run({ view });
-		expect(countsOf(view, 3)).toEqual([100, 13, 7]);
+		// The bases take 39, and the nearest chunk takes the remaining 81 of its full count.
+		expect(countsOf(view, 3)).toEqual([94, 13, 13]);
 		expect(view[TOTAL]).toBe(120);
 	});
 
-	it('takes a coarser level of the near chunk before the far chunks', () => {
+	it('keeps every chunk even when the budget is short', () => {
 		const view = buffer(LEVELS);
 		view[BUDGET] = 60;
 		run({ view });
-		// The nearest chunk halves instead of leaving the far chunks nothing.
-		expect(countsOf(view, 3)).toEqual([50, 10, 0]);
+		// The far chunks keep their eighth instead of losing every splat to the near one.
+		expect(countsOf(view, 3)).toEqual([34, 13, 13]);
 		expect(view[TOTAL]).toBe(60);
 	});
 
@@ -78,7 +88,7 @@ describe('the splat selection task', () => {
 		const second = buffer(LEVELS);
 		second[BUDGET] = 60;
 		run({ view: second });
-		expect(countsOf(second, 3)).toEqual([50, 10, 0]);
+		expect(countsOf(second, 3)).toEqual([34, 13, 13]);
 		expect(second[TOTAL]).toBe(60);
 	});
 });
