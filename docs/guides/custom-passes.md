@@ -92,7 +92,7 @@ Declare uniforms as `struct Uniforms`, and read them as `uniforms.name`. The rul
 
 ### Textures
 
-An effect can read textures, as a custom material does. Declare each as `var name: texture_2d<f32>;`, and give it with the `textures` option: a texture from a file or from data, or a pass's texture from `textures.fromPass`. The engine declares its sampler as `nameSampler`.
+An effect can read textures, as a custom material does. Declare each as `var name: texture_2d<f32>;`, or as `var name: texture_2d_array<f32>;` for a texture array whose layers the WGSL picks, and give it with the `textures` option: a texture from a file or from data, or a pass's texture from `textures.fromPass`. The engine declares its sampler as `nameSampler`.
 
 ```ts
 const vignetteFromImage = /* wgsl */ `
