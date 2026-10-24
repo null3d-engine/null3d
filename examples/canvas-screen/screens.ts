@@ -175,9 +175,9 @@ function consolePanel(ctx: SketchContext): Panel {
 	screen.mesh.setRotationEuler(-0.3, 0, 0);
 	const body = ctx.materials.standard({ color: '#141c24', roughness: 0.45, metalness: 0.5 });
 	const shell = ctx.scene.createMesh({
-		mesh: ctx.geometry.box({ width: 1.74, height: 1.02, depth: 0.08 }),
+		mesh: ctx.geometry.box({ width: 1.74, height: 1.02, depth: 0.06 }),
 		material: body,
-		position: [0, -1.25, 2.56],
+		position: [0, -1.25, 2.54],
 	});
 	shell.setRotationEuler(-0.3, 0, 0);
 	ctx.scene.createMesh({
