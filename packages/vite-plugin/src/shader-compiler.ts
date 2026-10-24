@@ -188,6 +188,21 @@ export type EffectResult =
 	  }
 	| { readonly ok: false; readonly problems: readonly ShaderProblem[] };
 
+/** A sky layer, built into every variant of the engine's sky-layer template. */
+export interface SkyLayerBuild {
+	/** The template's variants with the WGSL, by name. */
+	readonly variants: Readonly<Record<string, ShaderVariant>>;
+}
+
+/** The result of a sky layer's compile, with its warnings when it succeeds. */
+export type SkyLayerResult =
+	| {
+			readonly ok: true;
+			readonly layer: SkyLayerBuild;
+			readonly warnings: readonly ShaderProblem[];
+	  }
+	| { readonly ok: false; readonly problems: readonly ShaderProblem[] };
+
 /**
  * Builds a custom effect's WGSL into every variant of the engine's effect template, or a custom
  * tone curve's into every variant of its final pass. Problems in the WGSL name its own lines.
@@ -200,6 +215,21 @@ export function compileEffect(effect: MaterialSource): EffectResult {
 export function effectResult(response: Response<EffectBuild>): EffectResult {
 	return response.ok
 		? { ok: true, effect: response.output, warnings: response.warnings ?? [] }
+		: response;
+}
+
+/**
+ * Builds a sky layer's WGSL into every variant of the engine's sky-layer template. Problems in the
+ * WGSL name its own lines.
+ */
+export function compileSkyLayer(layer: MaterialSource): SkyLayerResult {
+	return skyLayerResult(call<SkyLayerBuild>('compile_sky_layer', layer));
+}
+
+/** A sky layer's result from the module's response. */
+export function skyLayerResult(response: Response<SkyLayerBuild>): SkyLayerResult {
+	return response.ok
+		? { ok: true, layer: response.output, warnings: response.warnings ?? [] }
 		: response;
 }
 
@@ -248,6 +278,7 @@ export interface ShaderCompiler {
 	shader(shader: ShaderSource): Promise<CompileResult>;
 	material(material: MaterialSource): Promise<MaterialResult>;
 	effect(effect: MaterialSource): Promise<EffectResult>;
+	skyLayer(layer: MaterialSource): Promise<SkyLayerResult>;
 }
 
 /** Compiles on this thread. */
@@ -255,6 +286,7 @@ export const compileHere: ShaderCompiler = {
 	shader: async (shader) => compileShader(shader),
 	material: async (material) => compileMaterial(material),
 	effect: async (effect) => compileEffect(effect),
+	skyLayer: async (layer) => compileSkyLayer(layer),
 };
 
 /** A shader manifest and every WGSL file beside it, as `bun run shaders` reads them. */
@@ -329,6 +361,7 @@ export type CallName =
 	| 'compile'
 	| 'compile_material'
 	| 'compile_effect'
+	| 'compile_sky_layer'
 	| 'build'
 	| 'prepare_modules'
 	| 'module';

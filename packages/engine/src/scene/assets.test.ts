@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { jpegHeader, pngHeader } from '../../../../tests/pages/lib/image-headers';
 import { EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
@@ -7,8 +9,16 @@ import { stopHelperWorkers } from '../shared/helper-workers';
 import { GENERATORS_PRELOAD } from '../shared/images';
 import { Assets, type ModelMakers } from './assets';
 import { Environment } from './environment';
+import { LightProbeGridData } from './light-probes';
 import { ShaderPreloads } from './shader-preloads';
-import type { Texture, TextureOptions, TextureReloader, Textures } from './textures';
+import type {
+	Texture,
+	TextureData,
+	TextureDataArray,
+	TextureOptions,
+	TextureReloader,
+	Textures,
+} from './textures';
 
 const PAGE = 'https://game.example/levels/one.html';
 
@@ -45,11 +55,28 @@ function fakeTextures() {
 	const made: [ImageBitmap, TextureOptions, number][] = [];
 	const reloads: TextureReloader[] = [];
 	const set: [Texture, ImageBitmap, number][] = [];
+	const datas: TextureData[] = [];
+	const volumes: [number, number, number, string, TextureDataArray, string][] = [];
 	const textures = {
 		maxSize: 4096,
 		fromImage(image: ImageBitmap, options: TextureOptions, premultiplied: number) {
 			made.push([image, options, premultiplied]);
 			return { width: image.width } as Texture;
+		},
+		fromData(texture: TextureData) {
+			datas.push(texture);
+			return { width: texture.width, height: texture.height } as Texture;
+		},
+		fromVolumeData(
+			width: number,
+			height: number,
+			depth: number,
+			format: string,
+			texels: TextureDataArray,
+			call: string,
+		) {
+			volumes.push([width, height, depth, format, texels, call]);
+			return { width, height } as Texture;
 		},
 		reloadsFrom(_texture: Texture, reload: TextureReloader) {
 			reloads.push(reload);
@@ -58,7 +85,7 @@ function fakeTextures() {
 			set.push([texture, image, premultiplied]);
 		},
 	} as unknown as Textures;
-	return { textures, made, reloads, set };
+	return { textures, made, reloads, set, datas, volumes };
 }
 
 beforeEach(() => {
@@ -451,5 +478,117 @@ describe('loads of a texture again', () => {
 		await new Assets(textures, PAGE).loadTexture('brick.png');
 		answers['https://game.example/levels/brick.png'] = 404;
 		await expect(reloads[0]?.(1, { width: 2, height: 1 } as Texture)).rejects.toThrow('E1411');
+	});
+});
+
+describe('baked light files', () => {
+	/** The baked light files that the tests serve, which a tool outside the engine wrote. */
+	const LIGHT = join(import.meta.dir, '../../../../tests/pages/assets/light');
+	const fixture = (name: string) => readFileSync(join(LIGHT, `${name}.json`), 'utf8');
+
+	test('loads a probe grid baked outside the engine into the setter’s options', async () => {
+		serve({ 'https://game.example/light/probe-grid.json': fixture('probe-grid') });
+		const { textures, volumes } = fakeTextures();
+		const grid = await new Assets(textures, PAGE).loadLightProbeGrid('/light/probe-grid.json');
+		expect(Array.from(grid.origin)).toEqual([0, 1, 0]);
+		expect(Array.from(grid.spacing)).toEqual([1, 1, 1]);
+		expect(grid.counts).toEqual([2, 2, 2]);
+		// The texture is a 3D texture of half floats: one sub-volume of L1 for each of three.
+		expect(volumes.map(([w, h, d, format]) => [w, h, d, format])).toEqual([
+			[2, 2, 12, 'rgba16float'],
+		]);
+	});
+
+	test('loads a light map baked outside the engine as a linear-light texture', async () => {
+		serve({ 'https://game.example/light/light-map.json': fixture('light-map') });
+		const { textures, datas } = fakeTextures();
+		const map = await new Assets(textures, PAGE).loadLightMap('/light/light-map.json');
+		expect([map.width, map.height]).toEqual([2, 2]);
+		expect(datas[0]).toMatchObject({ width: 2, height: 2, colorSpace: 'srgb' });
+		// The three radiance bytes of each texel gain an opaque alpha.
+		expect(Array.from(datas[0]?.data ?? [])).toEqual([
+			255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+		]);
+		expect(Array.from(map.direction ?? [])).toEqual([0, 127, 0, 127, 0, 0, 0, 0, 127, -127, 0, 0]);
+	});
+
+	test('loads an rgba16float light map as a linear texture of half floats', async () => {
+		const halves = new Uint16Array([0x3c00, 0x3800, 0x3400, 0x3c00]);
+		const radiance = btoa(String.fromCharCode(...new Uint8Array(halves.buffer)));
+		serve({
+			'https://game.example/light/hdr.json': `{
+  "format": "null3d.baked-light",
+  "version": 1,
+  "kind": "light-map",
+  "width": 1,
+  "height": 1,
+  "encoding": "rgba16float",
+  "radiance": "${radiance}"
+}
+`,
+		});
+		const { textures, datas } = fakeTextures();
+		const map = await new Assets(textures, PAGE).loadLightMap('/light/hdr.json');
+		expect([map.width, map.height]).toEqual([1, 1]);
+		expect(datas[0]).toMatchObject({ width: 1, height: 1, format: 'rgba16float' });
+		expect(datas[0]?.colorSpace).toBe('linear');
+		const data = datas[0]?.data;
+		if (!data) throw new Error('the light map made no texture');
+		expect((data as Uint16Array).length).toBe(4);
+		expect(map.direction).toBeUndefined();
+	});
+
+	test('refuses a broken file with E1434, and names the fault', async () => {
+		serve({
+			'https://game.example/light/version.json':
+				'{"format":"null3d.baked-light","version":2,"kind":"probe-grid"}',
+			'https://game.example/light/count.json':
+				'{"format":"null3d.baked-light","version":1,"kind":"probe-grid","origin":[0,0,0],"spacing":[1,1,1],"counts":[2,2,2],"coefficients":"AAAA"}',
+			'https://game.example/light/cut.json': fixture('light-map').slice(0, 60),
+		});
+		const assets = new Assets(fakeTextures().textures, PAGE);
+		expect(await codeOf(assets.loadLightProbeGrid('/light/version.json'))).toBe(
+			'E1434: assets.loadLightProbeGrid() could not read https://game.example/light/version.json: its version is 2, and this engine reads version 1.',
+		);
+		expect(await codeOf(assets.loadLightProbeGrid('/light/count.json'))).toBe(
+			'E1434: assets.loadLightProbeGrid() could not read https://game.example/light/count.json: its coefficients hold 3 bytes, not a whole number of 4-byte floats.',
+		);
+		expect(await codeOf(assets.loadLightMap('/light/cut.json'))).toBe(
+			'E1434: assets.loadLightMap() could not read https://game.example/light/cut.json: its text stops before its JSON is complete, so the file is cut short.',
+		);
+	});
+
+	test('refuses a file of the other kind, and names both kinds', async () => {
+		serve({ 'https://game.example/light/light-map.json': fixture('light-map') });
+		const assets = new Assets(fakeTextures().textures, PAGE);
+		expect(await codeOf(assets.loadLightProbeGrid('/light/light-map.json'))).toBe(
+			'E1434: assets.loadLightProbeGrid() could not read https://game.example/light/light-map.json: its kind is "light-map", and this call reads a "probe-grid" file.',
+		);
+	});
+
+	test('writes the same file that the fixture holds', async () => {
+		const coefficients = new Float32Array(96);
+		for (let at = 0; at < coefficients.length; at++) coefficients[at] = at * 0.125;
+		const grid = new LightProbeGridData(
+			new Float32Array([0, 1, 0]),
+			new Float32Array([1, 1, 1]),
+			[2, 2, 2],
+			coefficients,
+		);
+		const bytes = await new Assets(fakeTextures().textures, PAGE).lightProbeGridFile(grid);
+		expect(new TextDecoder().decode(bytes)).toBe(fixture('probe-grid'));
+	});
+
+	test('refuses to write a grid whose coefficients do not match its counts', async () => {
+		const grid = new LightProbeGridData(
+			new Float32Array([0, 0, 0]),
+			new Float32Array([1, 1, 1]),
+			[2, 2, 2],
+			new Float32Array(3),
+		);
+		const assets = new Assets(fakeTextures().textures, PAGE);
+		expect(await codeOf(assets.lightProbeGridFile(grid))).toBe(
+			'E1108: assets.lightProbeGridFile() got a grid whose coefficients hold 3 numbers, and 8 probes of 12 need 96.',
+		);
 	});
 });

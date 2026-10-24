@@ -35,7 +35,7 @@ use null3d_gpu::drawlist::{
 
 use crate::ao::{self, Ao, Contact};
 use crate::area_shading::AreaShading;
-use crate::background::{Background, BackgroundSource};
+use crate::background::{Background, BackgroundSource, SkyLayer};
 use crate::bloom::{Bloom, ChainFrame};
 use crate::camera::{Lens, Mat4, multiply};
 use crate::debug_lines::DebugLines;
@@ -968,6 +968,8 @@ pub struct SceneSettings {
     used_materials: Vec<bool>,
     /// What the camera's view draws behind every object, over the background color.
     background: Option<Background>,
+    /// The layer that an add-on draws over the background, from the template the page sent.
+    sky_layer: Option<SkyLayer>,
     /// The CPU model of the physical sky's air, once the scene drew a physical sky.
     air: Option<AirModel>,
     /// True while the quality settings draw the physical sky, else the analytic sky stands in.
@@ -1114,6 +1116,9 @@ pub struct SceneSettings {
     feature_instances: FeatureInstanceTable,
     /// The meshes with levels of detail.
     levels: Levels,
+    /// The meshes whose finer levels a loader still waits on, and the levels that the views picked
+    /// since each watch began.
+    stage_watches: crate::levels::StageWatches,
     /// The meshes' trees of cluster patches, which large static meshes draw instead of their whole
     /// triangle lists.
     patches: crate::patches::PatchStorage,
@@ -1172,6 +1177,7 @@ impl SceneSettings {
             shared_map_units: 0,
             used_materials: Vec::new(),
             background: None,
+            sky_layer: None,
             air: None,
             physical_sky: true,
             stand_in: None,
@@ -1251,6 +1257,7 @@ impl SceneSettings {
             vertex_draws: VertexDrawTable::default(),
             feature_instances: FeatureInstanceTable::default(),
             levels: Levels::default(),
+            stage_watches: crate::levels::StageWatches::default(),
             patches: crate::patches::PatchStorage::default(),
             level_quality: LevelQuality::default(),
             level_scale: RenderScale::FULL,
@@ -2289,11 +2296,48 @@ impl SceneSettings {
     }
 
     /// Takes the levels away from the meshes that are no longer live, and from the meshes whose
-    /// levels name one.
+    /// levels name one, and stops the watches of the staged levels that are gone.
     pub(crate) fn forget_removed_levels(&mut self) {
         let meshes = &self.meshes;
-        self.levels
-            .forget_removed(|mesh| mesh.checked_sub(1).and_then(|id| meshes.mesh(id)).is_some());
+        let live = |mesh: u32| mesh.checked_sub(1).and_then(|id| meshes.mesh(id)).is_some();
+        self.levels.forget_removed(live);
+        self.stage_watches.forget(live);
+    }
+
+    /// The engine's frame number, as the clock holds it: the frame that the renderer began last,
+    /// or 0 before its first frame.
+    fn frame(&self) -> u32 {
+        f32::to_bits(self.clock[2])
+    }
+
+    /// Watches the levels that the views pick for `mesh` from the frame that the renderer began
+    /// last on, in place of a watch that the mesh had. A loader calls it before it waits for the
+    /// next stage of the mesh's levels.
+    pub fn watch_stage_levels(&mut self, mesh: u32) {
+        if mesh != 0 {
+            self.stage_watches.watch(mesh, u64::from(self.frame()));
+        }
+    }
+
+    /// The levels of `mesh` that a view picked since its watch began, one bit each, bit 0 for the
+    /// mesh itself. 0 for a mesh that no loader watches.
+    pub fn stage_level_picks(&self, mesh: u32) -> u32 {
+        self.stage_watches.picks(mesh)
+    }
+
+    /// The frames that drew `mesh` since its watch began, 0 for a mesh that no loader watches.
+    pub fn stage_frames(&self, mesh: u32) -> u32 {
+        self.stage_watches.frames(mesh, u64::from(self.frame()))
+    }
+
+    /// The watches of the staged levels, which a frame's builder notes its picks in.
+    pub(crate) fn stage_watches_mut(&mut self) -> &mut crate::levels::StageWatches {
+        &mut self.stage_watches
+    }
+
+    /// True while a loader waits for a stage, so a frame with none pays almost nothing.
+    pub(crate) fn watches_stages(&self) -> bool {
+        !self.stage_watches.is_empty()
     }
 
     /// Takes the trees of cluster patches away from the removed meshes.
@@ -2447,17 +2491,35 @@ impl SceneSettings {
 
     /// Draws `background` behind every object in the camera's view, or only the background color
     /// with none.
-    pub fn set_background_source(&mut self, background: Option<Background>) {
+    pub fn set_background_source(&mut self, mut background: Option<Background>) {
+        if let Some(background) = background.as_mut() {
+            background.sun_visibility = self.sun_visibility();
+        }
         self.background = background;
         self.update_sky();
     }
 
-    /// Sets what of the sun the sky draws, from 0 for none to 1 for all of it, as a sky layer
-    /// covers the disc. It scales the disc and its glow, never the lights that a page set.
-    pub fn set_sun_visibility(&mut self, visibility: f32) {
+    /// Draws `layer` over the background from the next frame on, or nothing with `None`. A layer
+    /// dims the share of the sun that it hides, from the disc that the core sky draws.
+    pub fn set_sky_layer(&mut self, layer: Option<SkyLayer>) {
+        self.sky_layer = layer;
+        let visibility = self.sun_visibility();
         if let Some(background) = self.background.as_mut() {
-            background.sun_visibility = visibility.clamp(0.0, 1.0);
+            background.sun_visibility = visibility;
         }
+    }
+
+    /// What of the sun the core sky draws: 1 while no layer hides any of it.
+    fn sun_visibility(&self) -> f32 {
+        1.0 - self
+            .sky_layer
+            .map_or(0.0, |layer| layer.sun.clamp(0.0, 1.0))
+    }
+
+    /// The layer that an add-on draws over the background, or none without a background to draw
+    /// over or in a debug view, which draws no background.
+    pub fn sky_layer(&self) -> Option<SkyLayer> {
+        self.sky_layer.filter(|_| self.background().is_some())
     }
 
     /// Draws the physical sky while `on`, else the analytic sky in its place, as the quality

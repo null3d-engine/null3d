@@ -60,8 +60,8 @@ export interface RunOptions {
 	 */
 	antialias: 'none' | 'fxaa' | 'msaa' | null;
 	/**
-	 * `?maxPixelRatio=`: the highest pixel ratio that a null3D page which fills the window draws at,
-	 * in place of the preset's cap, or null for the preset's.
+	 * `?maxPixelRatio=`: the highest pixel ratio that a null3D page draws at, in place of the preset's
+	 * cap on a page that fills the window and the protocol's on one that does not, or null for those.
 	 */
 	maxPixelRatio: number | null;
 	/**

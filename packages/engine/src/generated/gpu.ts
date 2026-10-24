@@ -142,6 +142,7 @@ export const LAYOUT_EFFECT = 21;
 export const LAYOUT_EFFECT_DEPTH_MS = 22;
 export const LAYOUT_EFFECT_BLOOM = 50;
 export const LAYOUT_EFFECT_BLOOM_DEPTH_MS = 51;
+export const LAYOUT_BACKGROUND_LAYER = 59;
 export const LAYOUT_FINAL_EFFECTS = 23;
 export const LAYOUT_FINAL_EFFECTS_DEPTH_MS = 24;
 export const LAYOUT_VIEW_COPY = 25;

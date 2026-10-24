@@ -37,7 +37,7 @@ export class CompilerCalls {
 	 * with the engine: `build` writes the first piece and `build_next` each piece after it, until a
 	 * piece comes back empty. This joins them, so a caller of `call` sees one response either way.
 	 *
-	 * @param {'compile' | 'compile_material' | 'compile_effect' | 'build'} name
+	 * @param {'compile' | 'compile_material' | 'compile_effect' | 'compile_sky_layer' | 'build'} name
 	 * @param {string} request
 	 * @returns {string}
 	 */

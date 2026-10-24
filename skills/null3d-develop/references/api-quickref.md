@@ -137,6 +137,7 @@ export default defineSketch(async (ctx) => {
 | `scene.setBackground('#rrggbb')` or `scene.setBackground(texture)` | | Any color input (section 20), or a texture that fills the view behind every object, as three.js's `scene.background` |
 | `scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, mieCoefficient, mieDirectionalG, cloudCoverage, time } })` (0.2) | | three.js's `Sky`, with its uniforms' names and defaults. Clouds move with `time`; `cloudCoverage: 0` draws none. Lights nothing by itself: `assets.skyEnvironment()` lights with it |
 | `scene.setBackground({ atmosphere: { sunPosition, sunIntensity, haze, aerialPerspective, metersPerUnit, moonPosition, moonIntensity, stars, cloudCoverage, time } })` (0.2) | | The physical sky: Rayleigh, Mie and ozone, twilight, moon and stars. Its air also hazes distant objects (`aerialPerspective: 0` turns that off). The sun's light is in a directional light's units. The Low preset draws the analytic sky in its place |
+| `scene.setSkyLayer({ wgsl, opacity, sun })` (0.3) | `SkyLayer` | An add-on's own layer over the sky: auroras, a second layer of clouds, a space backdrop. The WGSL declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer`; the input holds the view ray, the core sky's clouds, the time and the share of the sun that the layer hides. Draws after the background on every path, lights nothing. `layer.set({ opacity, sun })`, `scene.clearSkyLayer()` |
 | `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment`, `assets.builtinEnvironment('room')` or `assets.skyEnvironment()`, or `null`. `rotation` is Euler radians, as three.js's `environmentRotation`. Allocates nothing, so it can turn every frame |
 | `scene.setLightProbeGrid({ texture, origin, spacing, counts, intensity, environmentWeight })` (0.2) | | a grid of irradiance probes from an `rgba16float` 3D texture. Its light replaces the environment's diffuse light, so colored bounce and sky occlusion reach every surface. Pass `null` to remove it |
 | `scene.createReflectionProbe({ box: { min, max }, position, blend, intensity, boxProjection, refresh, layers, priority })` (0.2) | `ReflectionProbe` | Lights the surfaces in `box` with the scene around `position` (default: the box's center), in place of the environment, with box-projected reflections. At most 16. `refresh: 'once'` (default) or `'always'`. `probe.set(options)`, `probe.capture()`, `probe.destroy()`. Throws E1430 past 16 probes |
@@ -455,7 +456,7 @@ const bitmap = await assets.loadImageBitmap('/ui/logo.png', { colorSpace, flipY,
 // relative addresses resolve against the page; errors: E1411 download, E1412 decode, E1413 CORS
 const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
 const upload = await assets.loadGltf(userFile, { rewriteUrl: (a) => (a.origin === location.origin ? a : null) }); // (0.2) check the addresses a user's model names
-const coarseOnly = await assets.loadGltf('/forest.glb', { maxLevels: 1 }); // (0.3) a --stages model: 1 draws only the level in the file and skips the finer downloads
+const coarseOnly = await assets.loadGltf('/forest.glb', { maxLevels: 1 }); // (0.3) a --stages model: 1 draws only the level in the file; the loader also skips a level the camera never draws
 const stop = assets.registerGltfExtension({                     // (0.3) an add-on draws a glTF extension's primitives; the parts join the model
   extensions: ['KHR_gaussian_splatting'],                       // load(data, makers) returns { mesh, material } or a list, from makers.geometry and makers.materials
   load: (data, makers) => ({ mesh: makers.geometry.box(), material: makers.materials.unlit({ color: [1, 1, 1] }) }),
@@ -471,6 +472,9 @@ const room = await assets.builtinEnvironment('room');          // (0.2) three.js
 const skyLight = await assets.skyEnvironment();                 // (0.2) the light of setBackground({ sky }); follows the sun, drawing again each half degree it turns, then once more when it stops
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2) square faces in three.js's order, for scene.setBackground
 const lut = await assets.loadLut('/grade.cube');                // (0.2) .cube or .3dl; lut.size, lut.title, lut.destroy()
+const baked = await assets.loadLightProbeGrid('/light/grid.json');  // (0.3) a grid baked elsewhere, ready for scene.setLightProbeGrid
+const map = await assets.loadLightMap('/light/wall.json');      // (0.3) { texture, direction? }; texture goes to materials.standard({ lightMap })
+const file = await assets.lightProbeGridFile(grid);              // (0.3) the same file format, from a grid that bakeProbes made
 const made = await assets.lutFromData({ size: 17, data });      // (0.2) 3 or 4 floats (0-1) per texel, red fastest as in .cube; domainMin, domainMax, title
 ship.destroy();   // (0.2) frees its meshes, materials, textures, skeleton and clips; destroy its copies first, else E1111
 ```

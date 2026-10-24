@@ -382,6 +382,15 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-assets.js', module: 'scene/assets.ts', loadedBy: 'page-sketch-runner.js' },
+	{ name: 'page-baked-light.js', module: 'scene/baked-light.ts', loadedBy: 'page-assets.js' },
+	// The half-float helpers are read by several of the start's own modules, so the bundler writes
+	// them to a file of their own that every page loads: a part of the start, not a first-use file.
+	{
+		name: 'page-half-float.js',
+		module: 'scene/half-float.ts',
+		loadedBy: 'page-assets.js',
+		alsoInStart: true,
+	},
 	// Modules that both the page's start and the file loader carry, which the bundler puts in files
 	// of their own that every page loads: they are parts of the start, not first-use files.
 	{ name: 'page-shader-features.js', module: 'generated/shader-features.ts', loadedBy: 'page.js' },
@@ -459,6 +468,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-gltf.js', module: 'scene/gltf.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-assets.js', module: 'scene/assets.ts', loadedBy: 'sketch-worker.js' },
+	{
+		name: 'sketch-worker-baked-light.js',
+		module: 'scene/baked-light.ts',
+		loadedBy: 'sketch-worker-assets.js',
+	},
 	{
 		name: 'sketch-worker-shader-features.js',
 		module: 'generated/shader-features.ts',
@@ -773,6 +787,7 @@ export const DOWNLOADS: readonly Download[] = THREAD_MODES.flatMap(({ mode, part
 			'page-core.js',
 			'page-shader-features.js',
 			'page-control.js',
+			'page-half-float.js',
 			`${drawing}-${path.part}.js`,
 			`${drawing}-gpu-shared.js`,
 		],
