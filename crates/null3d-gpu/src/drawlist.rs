@@ -816,9 +816,10 @@ pub mod layout {
     pub const EFFECT_BLOOM_DEPTH_MS: u32 = 51;
     /// Group 1 of a sky layer's draw, an add-on's layer over the core sky: its uniform block alone.
     /// The core sky's cloud settings, the share of the sun that the layer hides and the layer's own
-    /// opacity reach it, so a layer obeys the settings the core sky obeys (see
-    /// [`template::BACKGROUND_LAYER`](super::template::BACKGROUND_LAYER)).
-    pub const BACKGROUND_LAYER: u32 = 53;
+    /// opacity reach it, so a layer obeys the settings the core sky obeys. A layer's pipeline takes
+    /// a template of the page's own, as a custom effect's does, because the page's WGSL completes
+    /// the engine's sky-layer template.
+    pub const BACKGROUND_LAYER: u32 = 59;
     /// Group 0 of temporal anti-aliasing's resolve: its uniform block, the scene color, the scene's
     /// depth, the motion target and the two histories at bindings 1 to 5, and the linear sampler
     /// of the histories at 6. The scene color, the depth and the motion read with `textureLoad`;
@@ -1894,11 +1895,6 @@ pub mod template {
     /// three.js's analytic sky behind every object, drawn as [`BACKGROUND_CUBE`] is, from the
     /// values of the background's uniform block alone.
     pub const BACKGROUND_SKY: u32 = 36;
-    /// A sky layer that an add-on draws over the core sky, right after the background's own draw:
-    /// [`BACKGROUND_CUBE`]'s box around the camera at the far plane, whose fragments call the
-    /// layer's own `skyLayer` function. The bind group of index 0 is the frame's, and that of index
-    /// 1 the layer's, of layout [`BACKGROUND_LAYER`](super::layout::BACKGROUND_LAYER).
-    pub const BACKGROUND_LAYER: u32 = 79;
     /// The depth of a masked shadow caster: [`SHADOW_DEPTH`]'s vertices, with each fragment of the
     /// caster's material tested as its shading tests it, by the material's opacity and vertex
     /// alpha, so masked surfaces cut holes in their shadows. It binds as the depth template does.
@@ -2549,6 +2545,7 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
     ("EFFECT_BLOOM", layout::EFFECT_BLOOM),
     ("EFFECT_BLOOM_DEPTH_MS", layout::EFFECT_BLOOM_DEPTH_MS),
+    ("BACKGROUND_LAYER", layout::BACKGROUND_LAYER),
     ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
     ("FINAL_EFFECTS_DEPTH_MS", layout::FINAL_EFFECTS_DEPTH_MS),
     ("VIEW_COPY", layout::VIEW_COPY),

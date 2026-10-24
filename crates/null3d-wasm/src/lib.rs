@@ -44,7 +44,7 @@ use null3d_gpu::drawlist::vertex::{self, Type};
 use null3d_gpu::drawlist::{format, sizes};
 use null3d_render::ao::Ao;
 use null3d_render::arrays::{ArrayName, ArraysError, Data, MeshArrays, Values, from_arrays};
-use null3d_render::background::{Background, BackgroundSource, Sky};
+use null3d_render::background::{Background, BackgroundSource, Sky, SkyLayer};
 use null3d_render::bloom::{self, Blend as BloomBlend, Bloom};
 use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
@@ -4526,6 +4526,22 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
             rotation,
             sun_visibility: 1.0,
         }));
+        0
+    })
+}
+
+/// Draws layer `template` over the background from the next frame on, with its share of the sun
+/// that it hides and its opacity, or removes the layer for `template` 0. The TypeScript API checks
+/// the values.
+#[wasm_bindgen(js_name = setSkyLayer)]
+pub fn set_sky_layer(template: u32, sun: f32, opacity: f32) -> u32 {
+    with_engine(|e| {
+        let layer = (template != 0).then_some(SkyLayer {
+            template,
+            opacity: opacity.clamp(0.0, 1.0),
+            sun: sun.clamp(0.0, 1.0),
+        });
+        e.renderer.settings_mut().set_sky_layer(layer);
         0
     })
 }
