@@ -56,8 +56,6 @@ const INCOMPLETE = new Set([
 	'M3-A10',
 	'M3-A11',
 	'M3-B5',
-	'M3-B6',
-	'M3-E10',
 	'M3-D7',
 	'M3-D8',
 	'M3-R1',
@@ -83,8 +81,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"splats' budget follows the preset and reaches the overlay; water's reflection cadence, the other first user, is not on the branch",
 	'M3-E8':
 		"the compute pass and its WebGL2 fragment form are built and tested; the first-user outcome waits on M3-F9's ocean, because the splats add-on cannot take the hook",
-	'M3-E10':
-		"the template, the call and the aurora add-on are in and unit-tested; the demo and its six picture references are owed and land together, because a picture test with no reference turns every helper's limits check red",
 	'M3-B1':
 		'the pictures hold every lens mark now, and the streak and grain ones were tightened after they proved nothing at the default threshold: each mark moves about 2.8 per cent of the pixels against a half per cent limit. The cost per preset is still owed — it needs a machine idle enough for a quiet timing run, and the fleet has not given one since this morning',
 	'M3-D9':
