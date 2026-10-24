@@ -112,8 +112,9 @@ The hull takes a detail. `full` keeps every face on its own vertices, and `light
 between the faces that meet at it. The light hull draws the same triangles from a third of the
 vertices, so a car's outline does not move; its normals are averaged across the faces that share a
 vertex, so its body lights as one smooth shell instead of faceted panels. Skyway asks for the light
-hull, and the hero car, the instances demo's traffic and any scene that keeps the default keep the
-full one.
+hull at Low, the preset a phone runs, and keeps the full one at Medium and above, so the close
+pictures and the desktop look do not change. The hero car, the instances demo's traffic and any
+scene that keeps the default keep the full hull too.
 
 That takes 0.73 ms from the WebGPU frame and 1.71 ms from the WebGL2 frame, about a fifth and a
 quarter of the frame. The look changes in one way: the lanes' cars shade smooth instead of faceted.
@@ -128,10 +129,13 @@ The cars stay at 30,000 on Low, and the lanes stay 2,400 m long, so the traffic 
 
 - `createVehicleHull()` takes `HullDetail` as its third argument, and the add-on's README gives the
   two hulls' vertices and the reason a scene with many vehicles asks for `light`.
-- Skyway's `traffic.ts` builds the light hull. `examples/showcase/skyway/hero.ts` and
+- Skyway's `traffic.ts` builds the light hull at Low and the full one above, and builds the lanes
+  again when a preset crosses between them. `examples/showcase/skyway/hero.ts` and
   `examples/instances/traffic.ts` keep the full hull.
-- The demo's three software-renderer references are redrawn for the smooth shading; the Mac's three
-  keep their references, which the change stays within.
+- The demo's three software-renderer references are redrawn for the smooth shading, which is the
+  only thing that moved them: their pixels are that of the same city, pose and traffic, with a
+  car's body shaded smooth instead of faceted. The Mac's three keep their references, because the
+  preset they draw keeps the full hull.
 - The screen-space reflections are now the largest single cost on WebGL2, about 1.55 ms of 5.38 ms.
   Eight of the frame's passes are theirs: the depth copy, six reduce steps and the trace. On WebGL2
   a pass costs about 0.19 ms whatever its size, so the chain's fixed cost is most of the figure. A

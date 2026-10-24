@@ -30,12 +30,14 @@
 			"null3d-source": "./src/index.ts",
 			"types": "./lib/index.d.ts",
 			"default": "./lib/index.js"
-		}
+		},
+		"./package.json": "./package.json"
 	},
 	"files": [
 		"lib",
 		"LICENSE-MIT",
-		"LICENSE-APACHE"
+		"LICENSE-APACHE",
+		"THIRD-PARTY-NOTICES.txt"
 	],
 	"publishConfig": {
 		"access": "public",

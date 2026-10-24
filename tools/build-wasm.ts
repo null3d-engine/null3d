@@ -60,9 +60,10 @@
 // The size check's base is a build of main, or on main and in the merge queue of the commit before:
 // tools/lib/size-check.ts picks the commit, and the check builds it in a worktree under
 // target/ with that commit's own build script. It keeps the sizes of each base commit it built and
-// reuses them. Every mode that measures writes the sizes to target/size-report.json, so CI can keep
-// a commit's sizes as the base of later checks; a part writes only its own share, and the step that
-// judges the parts writes the whole record.
+// reuses them. A base build whose worktree is gone or damaged, because something removed it while
+// the build ran, makes the tree again and builds once more. Every mode that measures writes the sizes
+// to target/size-report.json, so CI can keep a commit's sizes as the base of later checks; a part
+// writes only its own share, and the step that judges the parts writes the whole record.
 //
 // Almost all of the check's time goes into compressing the engine test page's files at the highest
 // levels, one file after another, and the first-use shader files hold nearly all of their bytes. So
@@ -1247,9 +1248,44 @@ function seedBuildFolders(tree: string): void {
 }
 
 /**
+ * True when the base worktree cannot build as it stands: its checkout is gone, or a tracked file is
+ * missing or changed. A tidy-up of worktrees, or a clean of the checkout's target folder, removes
+ * the tree wherever it stands, and a removal that stops part way leaves a tree without its files.
+ */
+export function baseTreeDamaged(tree: string): boolean {
+	if (!existsSync(join(tree, '.git'))) return true;
+	const status = spawnSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+		cwd: tree,
+		encoding: 'utf8',
+	});
+	return status.status !== 0 || status.stdout.trim() !== '';
+}
+
+/** Builds the base commit in the base worktree and keeps its sizes in `kept`. */
+function buildBase(sha: string, kept: string, tree: string): void {
+	console.log(`\nbuilding the base, ${sha.slice(0, 8)}, in ${BASE_TREE}`);
+	if (checkoutBaseTree(tree, sha)) seedBuildFolders(tree);
+	run('bun', ['install', '--frozen-lockfile'], { HUSKY: '0' }, tree);
+	const committed = existsSync(join(tree, COMMITTED_RECORD));
+	// The base builds into the worktree's own target, seeded from this checkout, so it never
+	// writes this checkout's build folder or the shared cache's staging folder.
+	run(
+		'bun',
+		['tools/build-wasm.ts', committed ? '--update-size' : '--sizes-only'],
+		// The base runs inside this process's lock, so it must not wait for that same lock.
+		{ NULL3D_CARGO_TARGET: 'local', NULL3D_BUILD_LOCK_HELD: '1' },
+		tree,
+	);
+	mkdirSync(dirname(kept), { recursive: true });
+	copyFileSync(join(tree, committed ? COMMITTED_RECORD : SIZE_RECORD), kept);
+}
+
+/**
  * The base commit's sizes. The check keeps them by commit and reuses them. Otherwise it builds the
  * commit in the base worktree with the commit's own build script, so the base has that commit's
- * flags, toolchain and list of parts.
+ * flags, toolchain and list of parts. A build whose worktree is gone or damaged, because something
+ * removed it while the build ran, makes the tree again and builds once more. A failure beside a
+ * worktree whose checkout is whole is thrown as it comes.
  */
 function baseSizes(sha: string): Record<string, Pick<SizeEntry, 'brotli'>> {
 	const kept = join(root, BASE_DIR, `${sha}.json`);
@@ -1262,21 +1298,17 @@ function baseSizes(sha: string): Record<string, Pick<SizeEntry, 'brotli'>> {
 	const group = process.env.GITHUB_ACTIONS === 'true';
 	if (group) console.log(`::group::the base build of ${sha.slice(0, 8)}`);
 	try {
-		console.log(`\nbuilding the base, ${sha.slice(0, 8)}, in ${BASE_TREE}`);
-		if (checkoutBaseTree(tree, sha)) seedBuildFolders(tree);
-		run('bun', ['install', '--frozen-lockfile'], { HUSKY: '0' }, tree);
-		const committed = existsSync(join(tree, COMMITTED_RECORD));
-		// The base builds into the worktree's own target, seeded from this checkout, so it never
-		// writes this checkout's build folder or the shared cache's staging folder.
-		run(
-			'bun',
-			['tools/build-wasm.ts', committed ? '--update-size' : '--sizes-only'],
-			// The base runs inside this process's lock, so it must not wait for that same lock.
-			{ NULL3D_CARGO_TARGET: 'local', NULL3D_BUILD_LOCK_HELD: '1' },
-			tree,
-		);
-		mkdirSync(dirname(kept), { recursive: true });
-		copyFileSync(join(tree, committed ? COMMITTED_RECORD : SIZE_RECORD), kept);
+		for (let attempt = 1; ; attempt++) {
+			try {
+				buildBase(sha, kept, tree);
+				break;
+			} catch (error) {
+				if (attempt > 1 || !baseTreeDamaged(tree)) throw error;
+				console.warn(
+					`\nthe base worktree is gone or damaged, so the check makes it again and builds the base once more`,
+				);
+			}
+		}
 	} finally {
 		if (group) console.log('::endgroup::');
 	}

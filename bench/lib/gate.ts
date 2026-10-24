@@ -215,18 +215,24 @@ interface BrowserJobs {
 /** The prefix of the browser job's shard jobs, which split the manifest by count. */
 const SHARD_PREFIX = 'browser (shard';
 
+/**
+ * The prefix of the browser-heavy job's shard jobs, which draw the demos' and the environments'
+ * pictures and the other heavy tests one at a time, so the browser job's shards leave them out.
+ */
+const HEAVY_PREFIX = 'browser (heavy tests';
+
 /** The browser job that draws S6's pictures, which load the city. */
 const CITY_JOB = 'browser (the city)';
 
 /** Whether a job draws part of the image test manifest on Linux SwiftShader. */
 function drawsManifest({ name }: WorkflowJob): boolean {
-	return name.startsWith(SHARD_PREFIX) || name === CITY_JOB;
+	return name.startsWith(SHARD_PREFIX) || name.startsWith(HEAVY_PREFIX) || name === CITY_JOB;
 }
 
 /**
  * Judges the image test manifest as the commit's CI browser jobs drew it on Linux SwiftShader. Every
- * shard job and the city job must have passed, and a run that skipped them, or that has not made
- * them yet, proves nothing.
+ * shard job, every heavy-test job and the city job must have passed, and a run that skipped them, or
+ * that has not made them yet, proves nothing.
  */
 export function browserPictures(output: string): StepResult {
 	let parsed: BrowserJobs | null;
@@ -244,7 +250,9 @@ export function browserPictures(output: string): StepResult {
 	const where = `CI run ${run.databaseId} (${run.event})`;
 	const jobs = (parsed?.jobs ?? []).filter(drawsManifest);
 	const shards = jobs.filter((job) => job.name.startsWith(SHARD_PREFIX));
+	const heavy = jobs.filter((job) => job.name.startsWith(HEAVY_PREFIX));
 	const missing = shards.length === 0 ? ['browser shard job'] : [];
+	if (heavy.length === 0) missing.push('heavy-test job');
 	if (!jobs.some((job) => job.name === CITY_JOB)) missing.push('city job');
 	if (missing.length > 0)
 		return {
@@ -261,7 +269,7 @@ export function browserPictures(output: string): StepResult {
 				.join(', ')}`,
 			verdict: 'fail',
 		};
-	const draws = `${shards.length} browser shard${shards.length === 1 ? '' : 's'} and the city job`;
+	const draws = `${shards.length} browser shard${shards.length === 1 ? '' : 's'}, ${heavy.length} heavy-test shard${heavy.length === 1 ? '' : 's'} and the city job`;
 	return { figure: `${where}: ${draws} passed`, verdict: 'pass' };
 }
 
