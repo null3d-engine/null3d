@@ -50,8 +50,24 @@ setting does, and the one cut-correlated setting with a plausible mechanism, the
 shadow map, is already excluded by pass 8. What remains in the engine is a short list of settings
 that change with the preset and have no named mechanism.
 
-The next step is therefore a capture of the frame on a device, not another cloud session: WebKit's
-WebGPU inspector needs a Mac running Safari's Develop menu over a cable.
+**What compatibility mode narrows it to, 24 October 2026.** Compatibility mode wedges too. So the
+fault is not in a core WebGPU feature, such as a texture format, a higher limit or a query. It lies
+in what both modes share: WebKit's WebGPU on iOS and iPadOS, and the path that presents a canvas a
+worker draws.
+
+The preset cut then reads best as pacing rather than content. Low and Medium present fast frames.
+High presents slow ones, and every piece that the bisect removed made the frames faster without
+lifting the wedge. Two facts say that pace alone is not enough. The forest demo at Low presents 60
+frames a second on the same iPad and runs, and Creek at High runs with the same passes. So Creek's
+own frame carries something that meets the pace.
+
+The test that this hypothesis names, before a capture, is cheap. Run the Low page with `?fps=15`,
+which caps the rate that the drawing thread holds. If a capped frame rate runs, the fault
+follows the pace of presentation. If it still wedges, pace is out.
+
+The next step is therefore that test and then a capture of the frame on a device, not another
+bisect in the cloud. WebKit's WebGPU inspector needs a Mac running Safari's Develop menu over a
+cable.
 
 ## Safari 27.0: `atomicCompareExchangeWeak` does not compile
 
