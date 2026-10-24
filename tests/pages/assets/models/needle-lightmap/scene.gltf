@@ -1,0 +1,847 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "null3D fixture, reduced from a Needle lightmap sample"
+ },
+ "extensionsUsed": [
+  "KHR_texture_transform",
+  "NEEDLE_components",
+  "NEEDLE_gameobject_data",
+  "NEEDLE_lightmaps"
+ ],
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "scene": 0,
+ "nodes": [
+  {
+   "name": "Base",
+   "children": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "extensions": {
+    "NEEDLE_gameobject_data": {
+     "static": true,
+     "guid": "282561183248325374"
+    }
+   }
+  },
+  {
+   "mesh": 0,
+   "scale": [
+    0.25,
+    7.6,
+    0.25
+   ],
+   "translation": [
+    -5.0,
+    3.8,
+    5.0
+   ],
+   "name": "pillar_01",
+   "extensions": {
+    "NEEDLE_components": {
+     "builtin_components": [
+      {
+       "name": "MeshRenderer",
+       "guid": "286810361424649133",
+       "enabled": true,
+       "shadowCastingMode": 1,
+       "receiveShadows": true,
+       "reflectionProbeUsage": 1,
+       "allowOcclusionWhenDynamic": true,
+       "probeAnchor": null,
+       "lightmapIndex": 0,
+       "lightmapScaleOffset": {
+        "x": 0.059030436,
+        "y": 0.059030436,
+        "z": 0.913736939,
+        "w": 0.247483984
+       },
+       "sharedMaterials": [
+        "/materials/0"
+       ],
+       "enableInstancing": [
+        false
+       ],
+       "renderOrder": [
+        0
+       ]
+      }
+     ]
+    },
+    "NEEDLE_gameobject_data": {
+     "static": true,
+     "guid": "286810361424649132"
+    }
+   },
+   "extras": {
+    "guid": "286810361424649132"
+   }
+  },
+  {
+   "mesh": 0,
+   "scale": [
+    0.25,
+    3.6,
+    0.25
+   ],
+   "translation": [
+    -5.0,
+    1.8,
+    3.0
+   ],
+   "name": "pillar_02",
+   "extensions": {
+    "NEEDLE_components": {
+     "builtin_components": [
+      {
+       "name": "MeshRenderer",
+       "guid": "264000317942414822",
+       "enabled": true,
+       "shadowCastingMode": 1,
+       "receiveShadows": true,
+       "reflectionProbeUsage": 1,
+       "allowOcclusionWhenDynamic": true,
+       "probeAnchor": null,
+       "lightmapIndex": 0,
+       "lightmapScaleOffset": {
+        "x": 0.0408293866,
+        "y": 0.0408293866,
+        "z": 0.36302954,
+        "w": 0.8855215
+       },
+       "sharedMaterials": [
+        "/materials/0"
+       ],
+       "enableInstancing": [
+        false
+       ],
+       "renderOrder": [
+        0
+       ]
+      }
+     ]
+    },
+    "NEEDLE_gameobject_data": {
+     "static": true,
+     "guid": "285142639471140638"
+    }
+   },
+   "extras": {
+    "guid": "285142639471140638"
+   }
+  },
+  {
+   "mesh": 0,
+   "scale": [
+    0.2499999,
+    9.4,
+    0.2499999
+   ],
+   "translation": [
+    -5.0,
+    4.7,
+    -1.0
+   ],
+   "name": "pillar_03",
+   "extensions": {
+    "NEEDLE_components": {
+     "builtin_components": [
+      {
+       "name": "MeshRenderer",
+       "guid": "263502581430612966",
+       "enabled": true,
+       "shadowCastingMode": 1,
+       "receiveShadows": true,
+       "reflectionProbeUsage": 1,
+       "allowOcclusionWhenDynamic": true,
+       "probeAnchor": null,
+       "lightmapIndex": 0,
+       "lightmapScaleOffset": {
+        "x": 0.0654254,
+        "y": 0.0654254,
+        "z": 0.3746485,
+        "w": 0.247458056
+       },
+       "sharedMaterials": [
+        "/materials/0"
+       ],
+       "enableInstancing": [
+        false
+       ],
+       "renderOrder": [
+        0
+       ]
+      }
+     ]
+    },
+    "NEEDLE_gameobject_data": {
+     "static": true,
+     "guid": "285000403036319140"
+    }
+   },
+   "extras": {
+    "guid": "285000403036319140"
+   }
+  },
+  {
+   "mesh": 1,
+   "rotation": [
+    0.0,
+    0.7071068,
+    0.0,
+    0.7071068
+   ],
+   "scale": [
+    2.0,
+    1.7,
+    0.100000009
+   ],
+   "translation": [
+    0.975,
+    6.975,
+    0.0
+   ],
+   "name": "3f_wall_10",
+   "extensions": {
+    "NEEDLE_components": {
+     "builtin_components": [
+      {
+       "name": "MeshRenderer",
+       "guid": "286810362170858721",
+       "enabled": true,
+       "shadowCastingMode": 1,
+       "receiveShadows": true,
+       "reflectionProbeUsage": 1,
+       "allowOcclusionWhenDynamic": true,
+       "probeAnchor": null,
+       "lightmapIndex": 0,
+       "lightmapScaleOffset": {
+        "x": 0.03125,
+        "y": 0.03125,
+        "z": 0.8286133,
+        "w": 0.120117188
+       },
+       "sharedMaterials": [
+        "/materials/1"
+       ],
+       "enableInstancing": [
+        false
+       ],
+       "renderOrder": [
+        0
+       ]
+      },
+      {
+       "name": "MeshCollider",
+       "guid": "286810362170858720",
+       "sharedMesh": "/meshes/13",
+       "convex": false,
+       "attachedRigidbody": null,
+       "isTrigger": false,
+       "sharedMaterial": null
+      }
+     ]
+    },
+    "NEEDLE_gameobject_data": {
+     "static": true,
+     "guid": "286810362170858727"
+    }
+   },
+   "extras": {
+    "guid": "286810362170858727"
+   }
+  },
+  {
+   "mesh": 2,
+   "scale": [
+    10.0,
+    0.1,
+    3.0
+   ],
+   "translation": [
+    0.0,
+    8.675,
+    2.2
+   ],
+   "name": "roof_floor",
+   "extensions": {
+    "NEEDLE_components": {
+     "builtin_components": [
+      {
+       "name": "BoxCollider",
+       "guid": "221651152590625610",
+       "center": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+       },
+       "size": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+       },
+       "attachedRigidbody": null,
+       "isTrigger": false,
+       "sharedMaterial": null
+      },
+      {
+       "name": "MeshRenderer",
+       "guid": "265207872206065232",
+       "enabled": true,
+       "shadowCastingMode": 1,
+       "receiveShadows": true,
+       "reflectionProbeUsage": 1,
+       "allowOcclusionWhenDynamic": true,
+       "probeAnchor": null,
+       "lightmapIndex": 0,
+       "lightmapScaleOffset": {
+        "x": 0.168236747,
+        "y": 0.168236747,
+        "z": 0.572071552,
+        "w": -0.000682328944
+       },
+       "sharedMaterials": [
+        "/materials/1"
+       ],
+       "enableInstancing": [
+        false
+       ],
+       "renderOrder": [
+        0
+       ]
+      }
+     ]
+    },
+    "NEEDLE_gameobject_data": {
+     "static": true,
+     "guid": "285317563481162384"
+    }
+   },
+   "extras": {
+    "guid": "285317563481162384"
+   }
+  },
+  {
+   "mesh": 3,
+   "scale": [
+    2.0,
+    1.9,
+    0.02
+   ],
+   "translation": [
+    4.0,
+    8.2,
+    -1.0
+   ],
+   "name": "3f_grass_5",
+   "extensions": {
+    "NEEDLE_components": {
+     "builtin_components": [
+      {
+       "name": "MeshRenderer",
+       "guid": "265403591262635504",
+       "enabled": true,
+       "shadowCastingMode": 1,
+       "receiveShadows": true,
+       "reflectionProbeUsage": 1,
+       "allowOcclusionWhenDynamic": true,
+       "probeAnchor": null,
+       "lightmapIndex": 0,
+       "lightmapScaleOffset": {
+        "x": 0.059030436,
+        "y": 0.059030436,
+        "z": 0.7848307,
+        "w": 0.247483984
+       },
+       "sharedMaterials": [
+        "/materials/2"
+       ],
+       "enableInstancing": [
+        false
+       ],
+       "renderOrder": [
+        0
+       ]
+      }
+     ]
+    },
+    "NEEDLE_gameobject_data": {
+     "static": true,
+     "guid": "285149360331206952"
+    }
+   },
+   "extras": {
+    "guid": "285149360331206952"
+   }
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TANGENT": 2,
+      "TEXCOORD_0": 3,
+      "TEXCOORD_1": 4
+     },
+     "indices": 5,
+     "material": 0
+    }
+   ],
+   "name": "pillar_01"
+  },
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 6,
+      "NORMAL": 7,
+      "TANGENT": 8,
+      "TEXCOORD_0": 9
+     },
+     "indices": 10,
+     "material": 1
+    }
+   ],
+   "name": "1f_wall_21"
+  },
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TANGENT": 2,
+      "TEXCOORD_0": 3,
+      "TEXCOORD_1": 4
+     },
+     "indices": 5,
+     "material": 1
+    }
+   ],
+   "name": "1f_wall_02"
+  },
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TANGENT": 2,
+      "TEXCOORD_0": 3,
+      "TEXCOORD_1": 4
+     },
+     "indices": 5,
+     "material": 2
+    }
+   ],
+   "name": "1f_grass"
+  }
+ ],
+ "materials": [
+  {
+   "pbrMetallicRoughness": {
+    "baseColorFactor": [
+     0.214041144,
+     0.214041144,
+     0.214041144,
+     1.0
+    ],
+    "baseColorTexture": {
+     "index": 0,
+     "extensions": {
+      "KHR_texture_transform": {}
+     }
+    },
+    "metallicFactor": 0.0,
+    "roughnessFactor": 0.5
+   },
+   "normalTexture": {
+    "index": 1,
+    "extensions": {
+     "KHR_texture_transform": {}
+    }
+   },
+   "name": "mat_base"
+  },
+  {
+   "pbrMetallicRoughness": {
+    "baseColorFactor": [
+     0.5271152,
+     0.5271152,
+     0.5271152,
+     1.0
+    ],
+    "baseColorTexture": {
+     "index": 2,
+     "extensions": {
+      "KHR_texture_transform": {}
+     }
+    },
+    "metallicFactor": 0.0,
+    "roughnessFactor": 0.5
+   },
+   "normalTexture": {
+    "index": 3,
+    "extensions": {
+     "KHR_texture_transform": {}
+    }
+   },
+   "name": "mat_kabe1"
+  },
+  {
+   "pbrMetallicRoughness": {
+    "baseColorFactor": [
+     0.1635765,
+     0.1635765,
+     0.1635765,
+     0.297
+    ],
+    "metallicFactor": 0.0,
+    "roughnessFactor": 0.7849999964237213
+   },
+   "alphaMode": "BLEND",
+   "name": "mat_grass"
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "source": 0,
+   "name": "Plaster03_col(white)",
+   "extras": {
+    "guid": "2800000_d8e11be0a19e25e44a4e0b2279fc0a45"
+   }
+  },
+  {
+   "sampler": 0,
+   "source": 1,
+   "name": "Plaster03_nrm",
+   "extras": {
+    "guid": "2800000_1dc908d8971e92e4fbe65208b423372b"
+   }
+  },
+  {
+   "sampler": 0,
+   "source": 2,
+   "name": "WoodFloor07_disp",
+   "extras": {
+    "guid": "2800000_95b9b7f966127c5449cffb8de4937c84"
+   }
+  },
+  {
+   "sampler": 0,
+   "source": 3,
+   "name": "WoodFloor07_nrm",
+   "extras": {
+    "guid": "2800000_a0698bcec2eba89458b0bb9cbbdc148f"
+   }
+  },
+  {
+   "sampler": 1,
+   "source": 4,
+   "name": "Lightmap-0"
+  }
+ ],
+ "images": [
+  {
+   "uri": "plaster_col.jpg"
+  },
+  {
+   "uri": "plaster_nrm.jpg"
+  },
+  {
+   "uri": "wood_disp.jpg"
+  },
+  {
+   "uri": "wood_nrm.jpg"
+  },
+  {
+   "uri": "lightmap.png"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 24,
+   "type": "VEC3",
+   "max": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    -0.5,
+    -0.5,
+    -0.5
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 24,
+   "type": "VEC3",
+   "max": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "min": [
+    -1.0,
+    -1.0,
+    -1.0
+   ]
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 24,
+   "type": "VEC4",
+   "max": [
+    1.0,
+    0.0,
+    1.0,
+    1.0
+   ],
+   "min": [
+    0.0,
+    0.0,
+    -1.0,
+    1.0
+   ]
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5126,
+   "count": 24,
+   "type": "VEC2",
+   "max": [
+    1.0,
+    1.0
+   ],
+   "min": [
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "bufferView": 4,
+   "componentType": 5126,
+   "count": 24,
+   "type": "VEC2",
+   "max": [
+    0.9966580867767334,
+    0.9959442615509033
+   ],
+   "min": [
+    0.004055766388773918,
+    0.3471641540527344
+   ]
+  },
+  {
+   "bufferView": 5,
+   "componentType": 5121,
+   "count": 36,
+   "type": "SCALAR",
+   "max": [
+    23.0
+   ],
+   "min": [
+    0.0
+   ]
+  },
+  {
+   "bufferView": 6,
+   "componentType": 5126,
+   "count": 4,
+   "type": "VEC3",
+   "max": [
+    0.5,
+    0.5,
+    3.0616168005906746e-17
+   ],
+   "min": [
+    -0.5,
+    -0.5,
+    -3.0616168005906746e-17
+   ]
+  },
+  {
+   "bufferView": 7,
+   "componentType": 5126,
+   "count": 4,
+   "type": "VEC3",
+   "max": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "min": [
+    0.0,
+    0.0,
+    -1.0
+   ]
+  },
+  {
+   "bufferView": 8,
+   "componentType": 5126,
+   "count": 4,
+   "type": "VEC4",
+   "max": [
+    -1.0,
+    0.0,
+    0.0,
+    1.0
+   ],
+   "min": [
+    -1.0,
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "bufferView": 9,
+   "componentType": 5126,
+   "count": 4,
+   "type": "VEC2",
+   "max": [
+    1.0,
+    1.0
+   ],
+   "min": [
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "bufferView": 10,
+   "componentType": 5121,
+   "count": 6,
+   "type": "SCALAR",
+   "max": [
+    3.0
+   ],
+   "min": [
+    0.0
+   ]
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 288,
+   "byteStride": 12,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 288,
+   "byteLength": 288,
+   "byteStride": 12,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 576,
+   "byteLength": 384,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 960,
+   "byteLength": 192,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 1152,
+   "byteLength": 192,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 1344,
+   "byteLength": 36,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 1380,
+   "byteLength": 48,
+   "byteStride": 12,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 1428,
+   "byteLength": 48,
+   "byteStride": 12,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 1476,
+   "byteLength": 64,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 1540,
+   "byteLength": 32,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 1572,
+   "byteLength": 8,
+   "target": 34963
+  }
+ ],
+ "buffers": [
+  {
+   "uri": "scene.bin",
+   "byteLength": 28804
+  }
+ ],
+ "samplers": [
+  {
+   "minFilter": 9987
+  },
+  {
+   "minFilter": 9987,
+   "wrapS": 33071,
+   "wrapT": 33071
+  },
+  {
+   "minFilter": 9729,
+   "wrapS": 33071,
+   "wrapT": 33071
+  }
+ ],
+ "extensions": {
+  "NEEDLE_lightmaps": {
+   "textures": [
+    {
+     "pointer": "/textures/4",
+     "type": 0,
+     "index": 0
+    }
+   ]
+  }
+ }
+}
