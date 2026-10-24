@@ -5,9 +5,10 @@
 // From the repository root:
 //   bun tests/check-references.ts
 import { IMAGE_RUNS } from './image/manifest.ts';
+import { SCRIPT_RUNS } from './image/script-runs.ts';
 import { referenceProblemsOnDisk } from './lib/images.ts';
 
-const { files, problems } = referenceProblemsOnDisk(IMAGE_RUNS);
+const { files, problems } = referenceProblemsOnDisk([...IMAGE_RUNS, ...SCRIPT_RUNS]);
 if (problems.length > 0) {
 	console.error(
 		`The image test references do not match the manifest (.dev/image-tests.md, "Adding a test"):\n${problems.map((problem) => `  ${problem}`).join('\n')}`,

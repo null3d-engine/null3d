@@ -5,12 +5,12 @@
 import { performance } from 'node:perf_hooks';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { defaultEnvironment, launchBrowser } from './browser.js';
-import { holdPath, readHold, watchConsole } from './page.js';
+import { HOLD_SCRIPT_GLOBAL, holdPath, readHold, watchConsole } from './page.js';
 import { startBuildServer, startDevServer } from './server.js';
 
 /** @import { Browser, Page } from 'playwright-core' */
 /** @import { Environment } from './browser.js' */
-/** @import { HoldFailure, HoldReport, Tier } from './page.js' */
+/** @import { HoldFailure, HoldReport, HoldScript, Tier } from './page.js' */
 /** @import { PluginOption } from 'vite' */
 /** @import { DevServer } from './server.js' */
 
@@ -32,6 +32,7 @@ import { startBuildServer, startDevServer } from './server.js';
  * @property {readonly [number, number]} size The browser window's size in CSS pixels, at one
  *   device pixel per CSS pixel.
  * @property {number} timeoutMs How long the page may take to publish the held frame.
+ * @property {HoldScript} [script] A timed script for the engine to perform as it holds.
  */
 
 /**
@@ -104,12 +105,13 @@ export const failure = (error) => ({ ok: false, code: null, error });
  *
  * @template T
  * @param {Runner} runner
- * @param {{ path: string, size: readonly [number, number], timeoutMs: number }} options The page
- *   with its switches, the window's size in CSS pixels, and how long the page may take.
+ * @param {{ path: string, size: readonly [number, number], timeoutMs: number, script?: HoldScript }} options The page
+ *   with its switches, the window's size in CSS pixels, how long the page may take, and the timed
+ *   script that the engine performs in hold mode.
  * @param {(page: Page, errors: readonly string[], url: string, timeoutMs: number) => Promise<T>} visit
  * @returns {Promise<VisitedPage<T>>}
  */
-export async function visitPage({ server, browser }, { path, size, timeoutMs }, visit) {
+export async function visitPage({ server, browser }, { path, size, timeoutMs, script }, visit) {
 	const url = new URL(path, server.url);
 	// Vite answers an address that has no file with the project's main page, so a mistyped page
 	// would draw that page instead.
@@ -127,6 +129,15 @@ export async function visitPage({ server, browser }, { path, size, timeoutMs }, 
 		deviceScaleFactor: 1,
 		ignoreHTTPSErrors: true,
 	});
+	// The engine reads the script from the page's global as it starts in hold mode. A page's own
+	// scripts run after this one, so the global is there before the engine looks for it.
+	if (script !== undefined)
+		await context.addInitScript(
+			({ key, value }) => {
+				/** @type {Record<string, unknown>} */ (globalThis)[key] = value;
+			},
+			{ key: HOLD_SCRIPT_GLOBAL, value: script },
+		);
 	const serverErrors = server.errors.length;
 	// Stacks name the server's address, whose port changes on every run: paths from its root stay.
 	const fromRoot = (/** @type {string} */ text) => text.replaceAll(url.origin, '');
@@ -156,8 +167,12 @@ export async function visitPage({ server, browser }, { path, size, timeoutMs }, 
  * @param {HoldOptions} options
  * @returns {Promise<HeldPage>}
  */
-export function holdPage(runner, { path, time, gpu, size, timeoutMs }) {
-	return visitPage(runner, { path: holdPath(path, { time, gpu }), size, timeoutMs }, waitForHold);
+export function holdPage(runner, { path, time, gpu, size, timeoutMs, script }) {
+	return visitPage(
+		runner,
+		{ path: holdPath(path, { time, gpu }), size, timeoutMs, script },
+		waitForHold,
+	);
 }
 
 /**

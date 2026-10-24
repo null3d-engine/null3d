@@ -1010,8 +1010,13 @@ export function downloadSizes(
  * It went to 188 KB on 24 October 2026: WebGL2's pipelined start reached 191,594 bytes, 106 bytes
  * over the old line, after that day's landings. A hundred bytes is below the noise of one module's
  * change, so the raise costs less than finding them, and the trims owed above still pay it back.
+ *
+ * It went to 190 KB on 24 October 2026: WebGL2's pipelined start reached 193,396 bytes, 884 bytes
+ * over the old line, for the timed script that hold mode performs. The script's steps and the scene
+ * property reads and writes that they use are in the sketch runner, and the page and a script share
+ * one writer of input records. The rise leaves 1,164 bytes of room.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 188 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 190 * 1024 };
 
 /**
  * The budget for each part that loads after the start. The Brotli figure rose on 22 October 2026,
