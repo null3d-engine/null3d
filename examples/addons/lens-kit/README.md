@@ -34,7 +34,8 @@ lens.set({ vignette: false });
   final pass reads. The kit keeps no table of its own. A look that must show a material's own color
   passes `grading: false`.
 - The effect runs on linear HDR color after the exposure and before the tone curve. Each of its
-  four values is off at 0, and a look with all four at 0 adds no effect at all.
+  four values is off at 0, and a look with all four at 0 adds no effect at all. A later `set` that
+  raises a mark builds the effect then, and one that lowers every mark to 0 drops it again.
 - The streak reads a level of bloom's chain with `effectBloom`, so the chain holds the light that
   passed bloom's threshold, already blurred. The effect spreads that light sideways instead of
   blurring the picture again. Bloom must be on, or the streak reads black.
@@ -46,9 +47,26 @@ lens.set({ vignette: false });
 
 ## Costs and limits
 
-- The core's sharpening, the vignette and the grading table cost the frame nothing extra: they run
-  in the final pass. The effect costs one full-screen pass with about 18 taps where all four of its
-  values are above 0; a look that leaves one at 0 skips its taps.
+- The grading table, the vignette and the sharpening run in the final pass, so the grade and the
+  vignette cost the frame nothing extra. The sharpening value draws the final pass in its two steps
+  at the whole canvas's render scale, which adds one full-screen pass there.
+- The effect costs one full-screen pass with about 18 taps where all four of its values are above
+  0; a look that leaves one at 0 skips its taps.
+- The whole look's cost, as GPU time per frame in milliseconds, measured on a MacBook Pro with an
+  Apple M5 Max in Chrome at 1920 x 1080, with the governor off and a render scale of 1. The scene
+  holds a wall of lit boxes under bloom, and the same scene runs with the look and without it in
+  turns, three times each; each figure is the median with the look less the median without it.
+
+  | Path | Low | Medium | High | Ultra |
+  | --- | --- | --- | --- | --- |
+  | WebGPU | owed | owed | owed | owed |
+  | Compatibility mode | owed | owed | owed | owed |
+  | WebGL2 | owed | owed | owed | owed |
+
+  Compatibility mode draws no custom effect, so its figure is the core's grade, vignette and
+  sharpening alone. Bloom stays on for both sides, so it is no part of any figure. The figures are
+  owed: the timing run needs a quiet computer, and the machine that drew the picture tests was too
+  busy to measure.
 - The lens draws no depth of field. The scene keeps the engine's own `dof` setting, which turns on
   from the Post tab.
 - The effect needs HDR color, as bloom does. On a device without a float target it stays off, and
