@@ -45,7 +45,8 @@ traffic.update(eye, time.now);
   vertex between the faces that meet at it, so the same silhouette and the same lights take 24
   vertices and the same 36 triangles, and the body lights as one smooth shell. The vertex work is
   what a lane of tens of thousands of cars pays for in every pass that draws it, so a scene that
-  draws many vehicles at once asks for `light`.
+  draws many vehicles at once asks for `light` where its detail matters least, such as the preset
+  that phones run. Skyway does that at Low and keeps `full` above it.
 - The rows take four values each, which the shader reads as `object.values`: the start offset, the
   speed, the lane's length and the tint. Use one material for the same heading; the add-on makes
   four, one for each.
