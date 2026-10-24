@@ -133,13 +133,19 @@ function planTasks(): { id: string; name: string }[] {
 function description(): string {
 	const tasks = planTasks();
 	const landed = landedTasks();
+	const done = ({ id }: { id: string }) =>
+		landed.has(id) &&
+		!PARTIAL[id] &&
+		!ON_BRANCH.has(id) &&
+		!INCOMPLETE.has(id) &&
+		id in TASK_EVIDENCE;
 	const open = tasks.filter(({ id }) => !landed.has(id) && !PARTIAL[id] && !ON_BRANCH.has(id));
 	const lines = [
 		'One pull request for the whole of the milestone that ships 0.2.0. It is not merged until every task below is done, so the list moves as the work lands.',
 		'',
 		'**How to read the marks:** `[x]` done and on this branch. `[ ]` not done, with its state in the note after the name: part landed, on a helper branch, or not started.',
 		'',
-		`The milestone holds ${tasks.length} tasks. ${tasks.filter(({ id }) => landed.has(id) && !PARTIAL[id]).length} are landed, ${Object.keys(PARTIAL).length} are part landed, ${ON_BRANCH.size} are in progress on a branch, and ${open.length} are open.`,
+		`The milestone holds ${tasks.length} tasks. ${tasks.filter(done).length} are done and ticked below, ${tasks.filter(({ id }) => landed.has(id) && !done({ id }) && !PARTIAL[id] && !ON_BRANCH.has(id)).length} have their work on the branch but not the evidence a tick needs, ${Object.keys(PARTIAL).length} are part landed, ${ON_BRANCH.size} are in progress on a branch, and ${open.length} are open.`,
 		'',
 	];
 	for (const [title, letters] of GROUPS) {
