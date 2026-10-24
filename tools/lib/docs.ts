@@ -150,6 +150,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'guides/multiple-views', title: 'Multiple views', since: '0.3', summary: 'Split screens and picture in picture with scene.createView: a camera and a rectangle of the canvas, drawn after the camera\'s view in the same frame; per-view culling; the cost of each view.' },
 	{ id: 'guides/assets-pipeline', title: 'The asset pipeline (the `assets` command)', since: '0.2', summary: 'optimize, env, convert; LODs; texture compression; budget reports.' },
 	{ id: 'guides/testing', title: 'Testing your sketch', since: '0.1', summary: 'Hold mode; image tests; reading results; frames that stay the same on every run.' },
+	{ id: 'guides/add-ons', title: 'Building an add-on', since: '0.3', summary: 'One package with one entry; the namespace and the plugin interface range; public imports; shaders on both paths; first-use sizes; a page; the check.' },
 	{ id: 'guides/debugging', title: 'Debugging', since: '0.1', summary: 'Error codes; the inspector; the MCP server; the render-graph dump; common failures.' },
 	{ id: 'guides/deploying', title: 'Deploying', since: '0.3', summary: 'Headers on common hosts; asset caching; size budgets.' },
 	{ id: 'guides/agents', title: 'Working with AI agents', since: '0.1', summary: 'Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the test loop; the MCP server and AGENTS.md in templates (0.3).' },
