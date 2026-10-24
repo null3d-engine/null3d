@@ -6,6 +6,7 @@ import { EngineError } from '../errors/engine-error';
 import type { ErrorCode } from '../errors/fixes';
 import { messageOf } from '../errors/message';
 import type { Tier } from '../render/renderer';
+import type { ReplayResult } from '../shared/recording';
 import type { FrameSummary } from './frame-stats';
 
 /** The most sketch time hold mode steps through, in seconds: 36,000 steps. */
@@ -165,6 +166,8 @@ export interface HeldFrame {
 	 * A step that failed stops no hold: the tool that gave the script decides what a failure means.
 	 */
 	script?: HoldScriptResult;
+	/** What a replay gave, when the held frame is the last frame of a recording. */
+	replay?: ReplayResult;
 }
 
 /**

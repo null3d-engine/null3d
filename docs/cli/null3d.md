@@ -59,6 +59,7 @@ bunx @null3d/cli shot --out shot.png --time 1.5 --size 1280x720 --gpu webgl2
 | `--out <file.png>` | The image to write. The JSON file beside it takes its name, such as `shot.json` | `shot.png` |
 | `--time <seconds>` | The sketch time of the frame, from 0 to 600 | The `hold` option of `createEngine`, or 0 |
 | `--script <file>` | A [timed script](#timed-scripts) that drives the page. Each of its shot steps writes its own image, such as `shot-start.png` | No script: one frame at `--time` |
+| `--replay <file>` | A [recording](#replay-a-recording) that the page replays, and the last frame draws | No recording: a hold at `--time` |
 | `--size <width>x<height>` | The browser window's size in CSS pixels. Each CSS pixel is one pixel of the image | `1280x720` |
 | `--gpu <tier>` | Forces a GPU tier: `webgpu`, `compat` or `webgl2` | The engine picks the tier |
 | `--page <path>` | The page to open, from the dev server's root, with any query of its own | `/` |
@@ -106,6 +107,18 @@ When no frame is drawn, `shot` says why, saves the JSON file and exits with 1. I
 - The project has no HTML file at the `--page` path. Vite would answer that address with your main page.
 
 A page must start the engine as it loads. A page that waits for a click never starts the hold, so `shot` gives up after `--timeout` seconds.
+
+## Replay a recording
+
+A page that opens with `?record` records each frame's step and the input that the sketch read, from the page's first frame, and shows a **Save recording** button. Its recording replays on another machine with `?replay=<file>`, or from the command line with a file anywhere on the computer:
+
+```sh
+bunx @null3d/cli shot --replay bug.n3dr --out bug.png
+```
+
+The command serves the file to the page, runs the recording's frames in order with their recorded steps and input, and draws the last one. It reads no live input, and `--time` and `--script` cannot be given with it: the recording sets every frame's time. The summary names the frames, the final sketch time and the sketch that recorded them.
+
+A recording stops at 600 seconds of sketch time, and its file says so. A sketch that reads the quality preset or the device's capabilities can draw differently on a replay, because the replay picks this computer's own preset. [Testing your sketch](../guides/testing.md#record-a-session-that-went-wrong) gives the whole workflow.
 
 ## Timed scripts
 
