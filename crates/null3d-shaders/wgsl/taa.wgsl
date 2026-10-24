@@ -33,6 +33,8 @@ struct Block {
     depth: vec4f,
     /// The sub-pixel jitter of this frame's projection, in clip space.
     jitter: vec4f,
+    /// The sub-pixel jitter that the last frame's projection had, in clip space.
+    last_jitter: vec4f,
     /// x: the share of the history that a pixel keeps, where nothing rejects it. y: 1 while the
     /// histories hold no frame. z: 1 for a perspective camera. w: unused.
     settings: vec4f,
@@ -157,8 +159,11 @@ fn resolve(@builtin(position) at: vec4f) -> @location(0) vec4f {
         let then = last.xy / last.w;
         let last_uv = vec2f(then.x * 0.5 + 0.5, 0.5 - then.y * 0.5);
         let motion_uv = textureLoad(motion, texel, 0).xy;
-        // Where the surface, which moved by `motion_uv` since the last frame, showed then.
-        let history_uv = last_uv - motion_uv;
+        // Where the surface, which moved by `motion_uv` since the last frame, showed then. The
+        // history's pixels hold the surfaces that the last frame's offset put there, so the
+        // sample moves by that offset across the image, whose y counts down.
+        let last_offset = vec2f(block.last_jitter.x, -block.last_jitter.y) * 0.5;
+        let history_uv = last_uv - motion_uv + last_offset;
         if (
             history_uv.x >= 0.0
                 && history_uv.x <= 1.0

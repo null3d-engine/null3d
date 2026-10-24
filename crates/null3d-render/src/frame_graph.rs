@@ -7521,6 +7521,7 @@ mod tests {
                 size: canvas,
                 projection: identity,
                 jitter: [0.0; 2],
+                last_jitter: [0.0; 2],
                 reproject: identity,
                 reset: true,
                 parity: 1,
