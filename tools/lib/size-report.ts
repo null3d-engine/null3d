@@ -383,7 +383,14 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-assets.js', module: 'scene/assets.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-baked-light.js', module: 'scene/baked-light.ts', loadedBy: 'page-assets.js' },
-	{ name: 'page-half-float.js', module: 'scene/half-float.ts', loadedBy: 'page-assets.js' },
+	// The half-float helpers are read by several of the start's own modules, so the bundler keeps
+	// their code inline and writes this file only for the threads that load it on demand.
+	{
+		name: 'page-half-float.js',
+		module: 'scene/half-float.ts',
+		loadedBy: 'page-assets.js',
+		alsoInStart: true,
+	},
 	// Modules that both the page's start and the file loader carry, which the bundler puts in files
 	// of their own that every page loads: they are parts of the start, not first-use files.
 	{ name: 'page-shader-features.js', module: 'generated/shader-features.ts', loadedBy: 'page.js' },
