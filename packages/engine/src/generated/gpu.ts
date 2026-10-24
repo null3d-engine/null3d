@@ -132,6 +132,7 @@ export const LAYOUT_COMPUTE_RGBA16_FLOAT = 53;
 export const LAYOUT_COMPUTE_R32_FLOAT = 54;
 export const LAYOUT_COMPUTE_RGBA8_UNORM = 55;
 export const LAYOUT_COMPUTE_INSTANCE_BUFFERS = 56;
+export const LAYOUT_FEATURE_ROWS = 59;
 export const LAYOUT_DEPTH_PYRAMID = 14;
 export const LAYOUT_AO_DEPTH = 16;
 export const LAYOUT_AO_DEPTH_MS = 17;
@@ -321,6 +322,7 @@ export const TEMPLATE_CLUSTER = 78;
 export const TEMPLATE_TAA_RESOLVE = 80;
 export const TEMPLATE_TAA_RESOLVE_MS = 81;
 export const TEMPLATE_TAA_COPY = 82;
+export const TEMPLATE_FEATURE_ROWS = 83;
 export const TEMPLATE_CUSTOM_FIRST = 128;
 
 export const BUFFER_USAGE_MAP_READ = 1;
