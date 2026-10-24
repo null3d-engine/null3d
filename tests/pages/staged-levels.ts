@@ -4,7 +4,8 @@
 // for every stage, and captures the picture again: the spec holds the stage files back until the
 // page says it captured the first, so the coarse picture is the one that the file holds. `?max=1`
 // loads no stage at all, and gives the picture that a page which never shows the finest level
-// draws.
+// draws. `?far` stands the camera where only the file's own level draws: the loader drops the
+// stages that would never draw, so one stage arrives and the finer ones are never asked for.
 import { createEngine } from '@null3d/engine';
 import { run, toBase64 } from './lib/result';
 
@@ -53,7 +54,9 @@ run('staged-levels', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL('./sketches/staged-levels-sketch.ts', import.meta.url);
+	const far = params.has('far');
 	if (params.has('max')) sketch.search = `?max=${params.get('max')}`;
+	else if (far) sketch.search = '?far=1';
 	const expected = await stageCount(MODEL);
 	const engine = await createEngine({ canvas, sketch });
 	const failures: string[] = [];
@@ -79,12 +82,19 @@ run('staged-levels', async () => {
 	const coarse = await engine.captureFrame();
 	window.__stagedCoarse = true;
 	// Without a level limit the loader draws the file's level and then every stage, so the page waits
-	// for the mesh to carry them all. With a limit it downloads no stage, and the count stays.
+	// for the mesh to carry them all. With a limit it downloads no stage, and the count stays. The
+	// far camera draws only the file's own level, so the loader brings one stage and drops the rest.
 	const staged = !params.has('max') && expected > 0;
+	const arriving = far ? 1 : expected;
 	let levels = loaded.levels;
-	while (staged && levels < expected) {
+	while (staged && levels < arriving) {
 		const next = (await message('levels')) as { levels: number };
 		levels = next.levels;
+	}
+	if (far) {
+		// A stage that the camera would wrongly pick is asked for within a frame or two of the
+		// first stage's arrival. Wait a few seconds, so the test would see that request.
+		await new Promise((resolve) => setTimeout(resolve, 3_000));
 	}
 	// The thread that draws keeps frames queued ahead of a change, so its capture can answer with the
 	// frame it drew before the stage's upload landed. The picture after the stages is therefore the
@@ -92,7 +102,9 @@ run('staged-levels', async () => {
 	// can differ, and a page on a slow runner waits as long as the drawing takes.
 	const waitStart = performance.now();
 	let fine = await engine.captureFrame();
-	while (staged && changed(coarse.pixels, fine.pixels).changed === 0) {
+	// The far camera draws the same level before and after the stage that arrives, so its pictures
+	// never differ where the others' must.
+	while (staged && !far && changed(coarse.pixels, fine.pixels).changed === 0) {
 		if (performance.now() - waitStart > 10_000)
 			throw new Error(
 				'no frame drawn after the stages arrived differs from the picture before them',

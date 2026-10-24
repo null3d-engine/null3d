@@ -417,8 +417,17 @@ function lensKitTests(): ImageTest[] {
 			swiftShaderTolerance: { threshold: 0.1, maxDiffRatio: 0.005 },
 		},
 		test('aberration', 'aberration', ['webgpu', 'webgl2']),
-		test('streak', 'streak', ['webgpu', 'webgl2']),
-		test('grain', 'grain', ['webgpu', 'webgl2']),
+		// The streak and the grain move a pixel by a few steps, which the default threshold does
+		// not count: a picture that lost either mark would still match. The threshold is tight
+		// enough to count the mark, and the software GPU rounds the same pixels within a step.
+		{
+			...test('streak', 'streak', ['webgpu', 'webgl2']),
+			tolerance: { threshold: 0.02, maxDiffRatio: 0.005 },
+		},
+		{
+			...test('grain', 'grain', ['webgpu', 'webgl2']),
+			tolerance: { threshold: 0.02, maxDiffRatio: 0.005 },
+		},
 		test('speed-blur', 'speed', ['webgpu', 'webgl2']),
 	];
 }
@@ -1320,6 +1329,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [320, 180],
 		hold: 0,
 		tiers: ['webgpu', 'webgl2'],
+		modes: ALL_MODES,
+	},
+	// A beach and a pond whose water meets a bed that rises to the surface, an island and two stones.
+	// The surface function reads the copy of the opaque scene's depth and fades the water over a band
+	// at the end of its gap to the geometry behind it, so each shoreline is soft rather than a hard
+	// polygon edge. Without the copy the water draws its deep color with no foam line. Every GPU tier
+	// must bind the copy the same way.
+	{
+		name: 'water-shores',
+		sketch: 'tests/pages/sketches/water-shores-sketch.ts',
+		hold: 0,
 		modes: ALL_MODES,
 	},
 	// A box that fixed steps move at 50 steps per second, and a camera that follows it from the late

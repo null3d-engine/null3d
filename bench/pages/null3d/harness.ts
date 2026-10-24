@@ -204,14 +204,14 @@ export function runNull3dPage(
 		}
 
 		// A bare `?hold` holds at the scene's hold time, which the page passes as the engine's option.
-		// A page that fills the window leaves the pixel ratio's cap to the quality preset, unless
-		// `?maxPixelRatio=` names one.
+		// `?maxPixelRatio=` caps the pixel ratio. Without it, a page that fills the window leaves the
+		// cap to the quality preset, and a page of the protocol's size draws at its pixel ratio.
+		const maxPixelRatio = options.maxPixelRatio ?? (filled ? undefined : CANVAS.pixelRatio);
 		const engine = await createEngine({
 			...pageOptions.engine,
 			canvas,
 			sketch: sketchUrl,
-			...(!filled && { maxPixelRatio: CANVAS.pixelRatio }),
-			...(filled && options.maxPixelRatio !== null && { maxPixelRatio: options.maxPixelRatio }),
+			...(maxPixelRatio !== undefined && { maxPixelRatio }),
 			antialias: options.antialias ?? undefined,
 			shadowCascades: options.shadowCascades ?? undefined,
 			shadowMapSize: options.shadowMapSize ?? undefined,

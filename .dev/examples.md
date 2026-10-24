@@ -590,9 +590,10 @@ and a hero car with two screens.
   picture tests in `tests/image/manifest.ts` draw each part alone, one look to a test:
   `lens-grade`, `lens-vignette`, `lens-sharpen`, `lens-aberration`, `lens-streak`, `lens-grain`
   and `lens-speed-blur`. The marks are custom effects, so their four tests keep the two HDR tiers;
-  the core's parts draw on all three. A later `set` that raises a mark builds the effect then. One
-  that lowers every mark to 0 drops it again. Before 24 October 2026, a kit made with every mark at
-  0 never drew a mark that a later call set.
+  the core's parts draw on all three. The streak and the grain move a pixel by a few steps. Their
+  two pictures use a tighter threshold, because the default would not see either mark. A later
+  `set` that raises a mark builds the effect then. One that lowers every mark to 0 drops it again.
+  Before 24 October 2026, a kit made with every mark at 0 never drew a mark that a later call set.
 - **The lens's cost.** The add-on's README holds the look's cost per preset. The cost test times
   the whole look against the same scene without it. It draws at 1920 x 1080 with a render scale of
   1, and runs as `NULL3D_LENS_COST=1 bun run test:browser -- lens-cost.spec.ts`. Its figures are

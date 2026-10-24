@@ -196,6 +196,8 @@ Over the 213 models of four Kenney city kits, `--lod` gives levels to 162. The 4
 
 The engine downloads the stages in order, from the next coarsest down to the finest, and draws each as it arrives. A copy that a page already made refines in place, with no new object and no flicker. A stage holds indices alone, because every level names the mesh's own vertices. A mesh whose levels hold positions of their own, such as a level of cards, keeps its levels in the file, as `MSFT_lod` gives them. So does a mesh with one level.
 
+The loader skips a stage that the camera never shows. The stage after the file's own level always arrives. Each later stage waits until a view has drawn the level that the mesh has now, during a warm-up of about two seconds. A level that never draws cannot lead to a finer one. So the loader drops it and the finer stages, and asks for none of their files.
+
 The loader's `maxLevels` option stops the downloads after that many levels, the file's own counted first. A page whose camera never comes close enough to show the finest level sets it to 1, or to the number of levels that show. Other glTF readers draw the coarsest level, since the finer ones are not in the file.
 
 ### Cluster levels

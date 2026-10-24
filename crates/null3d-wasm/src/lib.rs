@@ -3807,6 +3807,32 @@ pub fn set_mesh_levels(base: u32, count: u32, fades: u32) -> u32 {
     })
 }
 
+/// Watches the levels that the views pick for the mesh `mesh`, from the frame that the renderer
+/// began last on, in place of a watch that the mesh had. The loader of a model with staged levels
+/// calls it before it waits for the next stage, so a level that the camera never picks costs no
+/// download. 0 for success.
+#[wasm_bindgen(js_name = watchStageLevels)]
+pub fn watch_stage_levels(mesh: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().watch_stage_levels(mesh);
+        0
+    })
+}
+
+/// The levels of the mesh `mesh` that a view picked since its watch began, one bit each, bit 0 for
+/// the mesh itself. 0 for a mesh that no loader watches.
+#[wasm_bindgen(js_name = stageLevelPicks)]
+pub fn stage_level_picks(mesh: u32) -> u32 {
+    value_with_engine(|e| Ok(e.renderer.settings().stage_level_picks(mesh)))
+}
+
+/// The frames that drew the mesh `mesh` since its watch began: 0 for a mesh that no loader
+/// watches.
+#[wasm_bindgen(js_name = stageFrames)]
+pub fn stage_frames(mesh: u32) -> u32 {
+    value_with_engine(|e| Ok(e.renderer.settings().stage_frames(mesh)))
+}
+
 /// How objects and batches pick their meshes' levels of detail, from the next frame on. The call
 /// values give the error in pixels under which a coarser level draws, 0 for none, and what shadow
 /// views multiply it by. `bands` says whether a source's distance band fades at each edge.

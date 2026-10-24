@@ -180,6 +180,9 @@ pub(super) struct Bucket {
     /// Its draws, one per part of its mesh: `draws` of the layout's draws from `first_draw` on.
     pub(super) first_draw: u32,
     pub(super) draws: u32,
+    /// The mesh field of its bucket key: the mesh's engine id, or a level key. The staged levels'
+    /// watches read it to tell which mesh and level a bucket draws.
+    pub(super) mesh_key: u32,
     /// The local sphere that culls its sources.
     pub(super) center: [f32; 3],
     pub(super) radius: f32,
@@ -1216,6 +1219,7 @@ impl Layout {
                 capacity: count,
                 first_draw,
                 draws: parts.len() as u32,
+                mesh_key: key.3,
                 center,
                 radius,
                 skins,
