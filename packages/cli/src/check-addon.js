@@ -13,6 +13,7 @@ import { readArguments, UsageError } from './args.js';
 import { measurePage } from './bench.js';
 import { WEBGPU_DEVELOPER_FEATURES } from './browser.js';
 import { holdPath, holdResult, switchedPath } from './page.js';
+import { MEASURE_SECONDS, WARMUP_SECONDS } from './protocol.js';
 import { startRunner, visitPage } from './runner.js';
 import { outcomeText, summaryLine } from './test.js';
 import { readTestConfig } from './test-config.js';
@@ -317,16 +318,17 @@ function callArgument(text, callee) {
  * `declareAddonNamespace({ ... })` registration.
  *
  * @param {string} text
- * @returns {{ name?: string, min?: string, max?: string } | undefined}
+ * @returns {{ form: 'call' | 'namespace', name?: string, min?: string, max?: string } | undefined}
  */
 function declarationOf(text) {
 	const call = INTERFACE_CALL.exec(text);
-	if (call !== null) return { name: call[1], min: call[2], max: call[3] };
+	if (call !== null) return { form: 'call', name: call[1], min: call[2], max: call[3] };
 	const args = callArgument(text, 'declareAddonNamespace');
 	if (args === undefined) return undefined;
+	// The namespace's name is the add-on's own short name, not its package name.
 	const name = /name:\s*['"]([^'"]+)['"]/.exec(args)?.[1];
 	const field = /pluginInterface:\s*\{/.exec(args);
-	if (field === null) return { name };
+	if (field === null) return { form: 'namespace', name };
 	// The field's own object, to its closing brace.
 	let depth = 0;
 	/** @type {number | undefined} */
@@ -341,11 +343,11 @@ function declarationOf(text) {
 			}
 		}
 	}
-	if (end === undefined) return { name };
+	if (end === undefined) return { form: 'namespace', name };
 	const inner = args.slice(field.index + field[0].length, end);
 	const read = (/** @type {string} */ key) =>
 		new RegExp(`\\b${key}:\\s*(\\d+|PLUGIN_INTERFACE_VERSION)`).exec(inner)?.[1];
-	return { name, min: read('min'), max: read('max') };
+	return { form: 'namespace', name, min: read('min'), max: read('max') };
 }
 
 /**
@@ -377,8 +379,8 @@ export function interfaceResult(name, entry, engine) {
 			problem: `declares no plugin interface range: call checkPluginInterface('${name}', { min, max }), or add pluginInterface: { min, max } to declareAddonNamespace(), as the module loads`,
 			text: '',
 		};
-	const called = declaration.name ?? '';
-	if (called !== name)
+	const called = declaration.name ?? name;
+	if (declaration.form === 'call' && called !== name)
 		return { problem: `checks itself as "${called}", and its package is ${name}`, text: '' };
 	const read = (/** @type {string} */ value) =>
 		value === 'PLUGIN_INTERFACE_VERSION' ? engine.pluginInterface : Number(value);
@@ -491,6 +493,22 @@ export async function buildAddon(folder, entry) {
 
 /** A size in KB, to one decimal place. */
 const kb = (/** @type {number} */ bytes) => `${(bytes / 1024).toFixed(1)} KB`;
+
+/**
+ * The budget problems of the files that a build wrote: one for each column of a file over its
+ * budget, and none when every file holds to it.
+ *
+ * @param {readonly BuiltFileSize[]} files
+ * @returns {string[]}
+ */
+export function sizeProblems(files) {
+	return files.flatMap((file) =>
+		COLUMNS.filter((column) => file[column] > ADDON_FILE_BUDGET[column]).map(
+			(column) =>
+				`${file.name} is ${kb(file[column])} ${column}, over its ${kb(ADDON_FILE_BUDGET[column])} budget`,
+		),
+	);
+}
 
 /** How many more lines than `SHOWN_LINES` a message printed, as a note, or nothing. */
 function moreLines(/** @type {string[]} */ lines) {
@@ -689,9 +707,10 @@ async function costGate(runner, page) {
 		try {
 			const browserPage = await context.newPage();
 			const url = new URL(switchedPath(page, { bench: '', preset }), runner.server.url).href;
+			// The bench command's own protocol: a short one drew no frame on a cold browser.
 			const run = await measurePage(browserPage, url, 60_000, {
-				warmupSeconds: 2,
-				measureSeconds: 4,
+				warmupSeconds: WARMUP_SECONDS,
+				measureSeconds: MEASURE_SECONDS,
 			});
 			if (!('ok' in run) || run.ok !== true)
 				return {
@@ -791,12 +810,7 @@ export async function run(args) {
 			status: 'PASS',
 			text: `shaders: ${counted(files.length, 'file')} built with WGSL for WebGPU and WebGL2`,
 		});
-		const over = files.flatMap((file) =>
-			COLUMNS.filter((column) => file[column] > ADDON_FILE_BUDGET[column]).map(
-				(column) =>
-					`${file.name} is ${kb(file[column])} ${column}, over its ${kb(ADDON_FILE_BUDGET[column])} budget`,
-			),
-		);
+		const over = sizeProblems(files);
 		const largest = (/** @type {'raw' | 'gzip' | 'brotli'} */ column) =>
 			Math.max(0, ...files.map((file) => file[column]));
 		print(

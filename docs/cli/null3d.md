@@ -255,7 +255,7 @@ When a run fails, `bench` says why after the figures of its path, and exits with
 
 ## check-addon
 
-`check-addon` runs the engine's gates on one add-on package. An add-on's author runs it before a release, and a listing runs it before it publishes the add-on. It prints one line for each gate, and exits with 1 when a gate fails.
+`check-addon` runs the engine's gates on one add-on package. An add-on's author runs it before a release, and a listing runs it before it publishes the add-on. It prints one line for each gate, and exits with 1 when a gate fails. [Building an add-on](../guides/add-ons.md) gives the rules that the gates check.
 
 ```sh
 bunx @null3d/cli check-addon addons/splats
