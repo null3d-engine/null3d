@@ -216,12 +216,13 @@ function progress(stage: string): void {
 
 /**
  * Opens the night town's HUD as a visitor finds it, once the engine has drawn its first frame, and
- * watches the page for problems from the start. Gives the list of problems, which each test checks
- * last.
+ * watches the page for problems from the start, in a window of `size` when given. Gives the list of
+ * problems, which each test checks last.
  */
-async function openHud(page: Page): Promise<string[]> {
+async function openHud(page: Page, size?: { width: number; height: number }): Promise<string[]> {
 	const errors = watchPageProblems(page);
 	opened = performance.now();
+	if (size) await page.setViewportSize(size);
 	// A fresh page, the light preset, so CI's software GPU draws it quickly. The demo builds its own
 	// look from code, so the toast text does not depend on the preset. `bench` publishes the demo's
 	// engine on the page, which is how these tests read the canvas's frames.
@@ -317,10 +318,17 @@ test('the showcase HUD shows its toasts at the top centre', ALONE, async ({ page
 	expect(errors).toEqual([]);
 });
 
-// The sky and the fog each take about 8 minutes to go off and on again on CI's software GPU, so
+/**
+ * The window of the tests that turn a part of the look off and on. They judge the canvas's frames,
+ * and CI's software GPU spends most of each frame on its pixels, so a quarter of the default
+ * window's pixels makes each frame they wait for cheaper. The HUD's layout stays the toast test's.
+ */
+const PART_WINDOW = { width: 640, height: 360 };
+
+// The sky and the fog each take about 2 minutes to go off and on again on CI's software GPU, so
 // each has a test, and a machine, of its own.
 test('the showcase HUD keeps the sky off until it turns on', ALONE, async ({ page }) => {
-	const errors = await openHud(page);
+	const errors = await openHud(page, PART_WINDOW);
 	await holdForSwitches(page);
 
 	await switchPart(page, 'Sky', 'Atmosphere', 'atmosphere');
@@ -329,7 +337,7 @@ test('the showcase HUD keeps the sky off until it turns on', ALONE, async ({ pag
 });
 
 test('the showcase HUD keeps the fog off until it turns on', ALONE, async ({ page }) => {
-	const errors = await openHud(page);
+	const errors = await openHud(page, PART_WINDOW);
 	await holdForSwitches(page);
 
 	// The fog starts off, so it is turned on before the part that checks it goes off and on.
@@ -343,7 +351,7 @@ test(
 	'the showcase HUD keeps the environment light off until it turns on',
 	ALONE,
 	async ({ page }) => {
-		const errors = await openHud(page);
+		const errors = await openHud(page, PART_WINDOW);
 		await holdForSwitches(page);
 
 		// The fog starts off. It goes on first, so the environment light is checked with the sky and
