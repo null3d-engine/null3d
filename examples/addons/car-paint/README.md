@@ -64,7 +64,7 @@ panel.
 ## Cost
 
 The paint pays for the clear coat's lobe. The flakes cost the footprint's derivatives and one hash
-for each pixel, and the lobe adds two hashes and a short series of arithmetic terms for each pixel
+for each pixel, and the lobe adds two hashes and a short sum of terms for each pixel
 of the main light. The seams cost a few derivatives for each pixel. The weave adds its own pattern,
 slope and roughness change.
 
