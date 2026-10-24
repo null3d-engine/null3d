@@ -202,7 +202,7 @@ function paint(ctx: SketchContext): Material {
 		color: '#9e0b16',
 		metalness: 0.72,
 		roughness: 0.34,
-		flakes: { cells: [120, 210], tilt: 0.25, spread: 0.18 },
+		flakes: { cells: [120, 210], tilt: 0.25 },
 		// Door gaps at intervals along the body, and no seam around it.
 		seams: { spacing: [0.34, 0], width: 0.0022, shade: 0.85 },
 		clearcoat: 1,

@@ -982,3 +982,14 @@ fn a_lobe_with_another_signature_is_refused_at_its_name() {
         "{problem}"
     );
 }
+
+/// The car-paint add-on's WGSL, as the repository ships it.
+const CAR_PAINT: &str = include_str!("../../../examples/addons/car-paint/paint.wgsl");
+
+#[test]
+fn the_car_paints_glint_model_builds_on_both_paths() {
+    let built = compile(CAR_PAINT).expect("the car paint builds");
+    assert_eq!(built.functions, ["surface", "lobe"]);
+    assert!(built.variants["webgpu"].wgsl.is_some());
+    assert!(built.variants["webgl2"].glsl.is_some());
+}
