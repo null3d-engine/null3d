@@ -260,6 +260,7 @@ export const TEMPLATE_LIGHT_PLACE = 18;
 export const TEMPLATE_LIGHT_WRITE = 19;
 export const TEMPLATE_SKIN = 20;
 export const TEMPLATE_OUTLINE_MASK = 21;
+export const TEMPLATE_TONE_MASK = 79;
 export const TEMPLATE_SPRITE = 22;
 export const TEMPLATE_SPRITE_MAP = 23;
 export const TEMPLATE_OCCLUSION_EARLY = 24;

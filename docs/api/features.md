@@ -155,25 +155,28 @@ The default is `['main']`.
 
 ## Namespaces
 
-An add-on claims a namespace as its module loads, beside `checkAddonVersion`. The namespace gives it a name, a shader library, an error-code range and quality keys. The engine's names and the other add-ons' names stay with their owners, so two add-ons cannot give one name two meanings.
+An add-on claims a namespace as its module loads, beside `checkAddonVersion`. The namespace gives it a name, a package, a shader library, an error-code range and quality keys. The engine's names and the other add-ons' names stay with their owners, so two add-ons cannot give one name two meanings.
 
 ```ts
 import { declareAddonNamespace } from '@null3d/engine';
 
 export const NAMESPACE = declareAddonNamespace({
   name: 'water',                 // The add-on's name in errors.
-  shaderLibrary: 'water',        // The prefix of its WGSL modules: #import water::waves. It defaults to name.
+  package: '@acme/water',        // The package that owns the add-on. A reload gives the same value.
+  shaderLibrary: 'water',        // The library name that the engine reserves for the add-on. It defaults to name.
   errorCodes: [2100, 2199],      // The codes of the add-on's own errors.
   qualityKeys: [],               // Keys that it adds to the quality settings that a sketch reads.
   pluginInterface: { min: 1, max: 1 }, // The plugin interface versions it was built for. An engine add-on leaves this out.
 });
 ```
 
-A name takes 1 to 32 lowercase letters, digits or underscore characters, and it starts with a letter. The engine reserves `null3d` for both the name and the shader library. The engine's own error codes lie below 2000. An add-on's range therefore lies from 2000 to 9999, and two add-ons' ranges do not overlap. A quality key must not be a key of the engine's [quality table](../concepts/quality-presets.md#the-settings-of-each-preset) or another add-on's.
+A name takes 1 to 32 lowercase letters, digits or underscore characters, and it starts with a letter. The package takes 1 to 128 characters with no spaces. The engine reserves `null3d` for both the name and the shader library. The engine's own error codes lie below 2000. An add-on's range therefore lies from 2000 to 9999, and two add-ons' ranges do not overlap. A quality key must not be a key of the engine's [quality table](../concepts/quality-presets.md#the-settings-of-each-preset) or another add-on's.
 
 `FeatureHost` takes the namespace. A feature that the host registers exports its name, its outputs and its lighting slots to the whole thread. A second add-on that registers one of them is refused. The host's budgets carry the add-on's name too, so two add-ons keep their own budgets. A host refuses a namespace that the thread's registry does not hold.
 
-Each refusal is an [E1225](../errors/E1225.md) that names both owners. A page and its sketches have one thread each, and the add-ons of one thread share one registry. A module that loads again, as a development reload does, gets the same namespace when it declares the same names.
+Each refusal is an [E1225](../errors/E1225.md) that names both owners. A page and its sketches have one thread each, and the add-ons of one thread share one registry. A module that loads again, as a development reload does, gets the same namespace when it declares the same names under the same package. A second add-on that takes the name is refused, even when its other fields match, and the error names both packages.
+
+The shader library name belongs to the add-on, so no other add-on can take it. The shader build resolves the engine's own library under `null3d::`, and an add-on's WGSL imports that library as any other shader does.
 
 An add-on from another developer also declares the range of plugin interfaces that it was built for. A page whose engine lies outside the range stops with [E1433](../errors/E1433.md), which names the add-on and both versions. An add-on that ships with the engine leaves the range out and keeps its exact version pin through `checkAddonVersion`.
 

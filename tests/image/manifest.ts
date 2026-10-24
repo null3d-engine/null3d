@@ -1458,10 +1458,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	...toneMappingTests(),
 	// One bright unlit color on two panels, the left with toneMapped: false. The 8-bit path applies
-	// the output transform in each material's shader, so it keeps that panel's color as the display
-	// shows it and tone maps the other: the panels differ. The HDR path tone maps the whole image in
-	// its final pass, which carries no per-material flag, so both panels draw alike (D-200). The
-	// spec reads the panels on every tier and checks each path's promise.
+	// the output transform in each material's shader. The HDR path's final pass reads the mask of the
+	// surfaces that keep their display color and skips the curve for those pixels. So each path keeps
+	// that panel's color as the display shows it and tone maps the other: the panels differ. The spec
+	// reads the panels on every tier and checks each path's promise.
 	{ name: 'tone-mapped', sketch: TONE_MAPPED_SKETCH, hold: 0 },
 	// The same scene forced onto the 8-bit path on both backends. Compatibility mode covers the
 	// WebGPU build of the material shaders, and WebGL2 uses the build that naga writes instead, so

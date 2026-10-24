@@ -235,6 +235,9 @@ pub(crate) struct FinalInputs {
     pub(crate) bloom: Option<BloomInputs>,
     pub(crate) grading: Grading,
     pub(crate) outline: Option<OutlineInputs>,
+    /// The mask's texture while it marks surfaces that keep their display color, whose pixels skip
+    /// the tone curve.
+    pub(crate) tone_mask: Option<u32>,
     pub(crate) fold: Option<FoldInputs>,
     pub(crate) exposure: Option<u32>,
 }
@@ -493,8 +496,11 @@ impl FinalPass {
                 settings.outline = outline.uniform();
                 mask
             }
-            None => ids.blank_outline,
+            None => inputs.tone_mask.unwrap_or(ids.blank_outline),
         };
+        if inputs.tone_mask.is_some() {
+            settings.output.flags |= OutputUniform::UNMAPPED;
+        }
         let exposure = match inputs.exposure {
             Some(texel) => {
                 settings.output.flags |= OutputUniform::AUTO_EXPOSURE;
@@ -749,6 +755,7 @@ mod tests {
             bloom: None,
             grading,
             outline: None,
+            tone_mask: None,
             fold: None,
             exposure: None,
         }

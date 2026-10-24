@@ -1980,6 +1980,19 @@ impl SceneSettings {
         self.subsurface_taps() > 0 && self.materials.any_scatters()
     }
 
+    /// True when the material, by engine id, keeps its color as the display shows it.
+    pub fn keeps_display_color(&self, material: u32) -> bool {
+        material
+            .checked_sub(1)
+            .is_some_and(|id| self.materials.keeps_display_color(id))
+    }
+
+    /// True while some live material keeps its color as the display shows it, so the HDR path's
+    /// final pass needs the mask of the pixels that skip the tone curve.
+    pub fn any_keeps_display_color(&self) -> bool {
+        self.materials.any_keeps_display_color()
+    }
+
     /// The camera's projection for a canvas of `canvas` pixels, and its inverse, or `None` without
     /// a camera.
     pub(crate) fn camera_projection(&self, canvas: (u32, u32)) -> Option<(Mat4, Mat4)> {

@@ -12,11 +12,16 @@ export { readbackWebGL2, readbackWebGPU } from './gpu/readback';
 export { WebGL2Backend } from './gpu/webgl2/backend';
 export { DEPTH_SETUPS } from './gpu/webgl2/depth';
 export {
+	checkStageUnits,
 	declaresUniform,
 	type GlslTemplate,
 	METAL_FAULT,
+	type Program,
+	prepareProgram,
 	programHost,
 	RELINK_TAIL,
+	stageTextureUnits,
+	stageUnitCount,
 } from './gpu/webgl2/programs';
 export { WebGPUBackend } from './gpu/webgpu/backend';
 export type { RenderTemplate } from './gpu/webgpu/pipelines';

@@ -1,13 +1,11 @@
 // The per-material tone mapping flag on both GPU paths (D-200). One bright unlit color draws on
 // two panels, the left with toneMapped: false. The 8-bit path applies the output transform in each
-// material's shader, so it keeps that panel's color as the display shows it, and tone maps the
-// right panel with AgX's punchy curve: the panels differ. The HDR path tone maps the whole image in
-// its final pass, which carries no per-material flag, so there the curve maps both panels and they
-// draw alike. The test reads the mean color inside each panel, away from their edges, and checks
-// each path's promise: the 8-bit path's flagged panel shows the material's own sRGB color, and the
-// HDR path's panels match each other and stand away from that color. A copy with the switch that
-// turns HDR color off checks the 8-bit path on WebGPU and WebGL2, whose shaders come from another
-// build.
+// material's shader, and the HDR path's final pass reads the mask of the surfaces that keep their
+// display color, so each path keeps that panel's color as the display shows it and tone maps the
+// right panel with AgX's punchy curve: the panels differ. The test reads the mean color inside each
+// panel, away from their edges, and checks that the flagged panel shows the material's own sRGB
+// color and that the two panels stand apart. A copy with the switch that turns HDR color off checks
+// the 8-bit path on WebGPU and WebGL2, whose shaders come from another build.
 import { expect, type Page, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 import { CAMERA, PANEL, PANEL_SRGB, SIZE } from '../pages/lib/tone-mapped.ts';
@@ -35,8 +33,6 @@ const BLOCK = 7;
  * dither, which the mean takes out, and a step of the path's rounding.
  */
 const EXACT = 3;
-/** How far the panels may differ on the HDR path, where the flag changes nothing. */
-const SAME = 2;
 /**
  * How far the flagged panel's color must stand from its tone-mapped value, so a flag that does
  * nothing fails. AgX's punchy curve moves this color's brightest channel by about 57 steps.
@@ -123,21 +119,13 @@ for (const { test: name, tier, forced } of CASES)
 			if (tier === 'compat') expect(image.hdr, 'compatibility mode draws 8-bit color').toBe(false);
 		}
 		const [flagged, mapped] = POINTS.map((point) => meanAt(image, point));
-		const gap = gapOf(flagged ?? [], mapped ?? []);
-		if (image.hdr) {
-			expect
-				.soft(gap, `the panels differ although the HDR path maps both: ${flagged}, ${mapped}`)
-				.toBeLessThanOrEqual(SAME);
-			for (const color of [flagged, mapped])
-				expect
-					.soft(gapOf(color ?? [], PANEL_SRGB), `a panel shows the display color on the HDR path`)
-					.toBeGreaterThanOrEqual(DIFFERENT);
-			return;
-		}
 		expect
 			.soft(gapOf(flagged ?? [], PANEL_SRGB), `the flagged panel keeps its display color`)
 			.toBeLessThanOrEqual(EXACT);
 		expect
-			.soft(gap, `the flag leaves the two panels alike: ${flagged}, ${mapped}`)
+			.soft(
+				gapOf(flagged ?? [], mapped ?? []),
+				`the flag leaves the panels apart: ${flagged}, ${mapped}`,
+			)
 			.toBeGreaterThanOrEqual(DIFFERENT);
 	});

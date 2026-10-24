@@ -1,7 +1,7 @@
 // Two rows of the same bright colors on a display in a dark gallery. The top row sets
-// toneMapped: false, so the 8-bit path keeps each color exactly as the display shows it. The bottom
-// row takes AgX's punchy curve, which darkens and desaturates each color. The demo starts on the
-// 8-bit path, where each material's shader applies the output transform, so the rows differ.
+// toneMapped: false, so the engine keeps each color exactly as the display shows it. The bottom row
+// takes AgX's punchy curve, which darkens and desaturates each color. The demo starts on the 8-bit
+// path, where each material's shader applies the output transform, so the rows differ.
 import { defineSketch } from '@null3d/engine';
 import { interact } from '../lib/interact';
 

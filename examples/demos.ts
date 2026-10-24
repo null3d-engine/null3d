@@ -44,7 +44,8 @@ export interface Demo {
 	largeWorld?: boolean;
 	/**
 	 * False starts the engine on the 8-bit path, where a material with `toneMapped: false` keeps its
-	 * color as the display shows it. The image test adds the page's switch that takes the same path.
+	 * color as the display shows it, as it does on the HDR path. The image test adds the page's
+	 * switch that takes the same path.
 	 */
 	hdr?: boolean;
 	/**
@@ -446,7 +447,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Tone mapping opt-out',
 		scene: 'Display color chart',
 		summary:
-			"Two rows of the same seven bright colors on a display in a dark gallery. The top row keeps each color exactly as the display shows it, with toneMapped: false. The bottom row takes AgX's punchy curve, which darkens and desaturates it. The demo draws on the 8-bit path, where the flag works.",
+			"Two rows of the same seven bright colors on a display in a dark gallery. The top row keeps each color exactly as the display shows it, with toneMapped: false. The bottom row takes AgX's punchy curve, which darkens and desaturates it. The demo draws on the 8-bit path.",
 		hdr: false,
 		hold: 0.5,
 		timeoutSeconds: 60,

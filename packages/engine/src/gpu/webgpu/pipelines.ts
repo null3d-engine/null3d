@@ -170,6 +170,7 @@ import {
 	TEMPLATE_TAA_COPY,
 	TEMPLATE_TAA_RESOLVE,
 	TEMPLATE_TAA_RESOLVE_MS,
+	TEMPLATE_TONE_MASK,
 	TEMPLATE_TRANSMISSION_COPY,
 	TEMPLATE_VIEW_COPY,
 	TEMPLATE_WEIGHTED_COMPOSITE,
@@ -1212,6 +1213,7 @@ export class Pipelines {
 				[LAYOUT_DEPTH, LAYOUT_TEXTURES],
 			],
 			[TEMPLATE_OUTLINE_MASK, 'outline mask', shaders.outline_mask, [0, 1], [LAYOUT_DEPTH]],
+			[TEMPLATE_TONE_MASK, 'tone mask', shaders.tone_mask, [0, 1], [LAYOUT_DEPTH]],
 			[TEMPLATE_SUBSURFACE, 'subsurface', shaders.subsurface, [0, 1], [LAYOUT_FRAME]],
 			[
 				TEMPLATE_SUBSURFACE_MAPS,

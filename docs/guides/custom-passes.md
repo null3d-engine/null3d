@@ -495,7 +495,7 @@ const glow = render.addPass({ kind: 'fullscreen', wgsl: glowFromMask, writes: 'g
 post.addEffect({ wgsl: addGlow, textures: { glow: textures.fromPass(glow) } });
 ```
 
-- `width: 0` draws the outline mask without the crisp line. The mask's red channel holds each outlined object's coverage, and its green channel the parts that nothing hides, for a glow that differs behind walls.
+- `width: 0` draws the outline mask without the crisp line. The mask's red channel holds each outlined object's coverage, and its green channel the parts that nothing hides, for a glow that differs behind walls. Read those two channels alone: the engine writes the blue channel for surfaces that keep their display color.
 - The pass blurs at half size, which shades a quarter of the pixels and blurs further for the same reads.
 - The effect adds the glow before the tone curve and bloom, on HDR color, so a bright glow also blooms.
 
