@@ -4,10 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
 	benchFolder,
+	browserPictures,
 	budgetLines,
 	checkFigure,
 	commandText,
 	comparisonFigure,
+	countedRun,
 	desktopTarget,
 	type GateRecord,
 	gateMarkdown,
@@ -137,6 +139,93 @@ describe('the gate steps', () => {
 		expect(workflowResult('not json').verdict).toBe('fail');
 	});
 
+	test("judge the commit's software-renderer pictures by its CI browser jobs", () => {
+		const run = {
+			databaseId: 42,
+			workflowName: 'CI',
+			event: 'push',
+			status: 'completed',
+			conclusion: 'success',
+		};
+		const job = (name: string, status = 'completed', conclusion = 'success') => ({
+			name,
+			status,
+			conclusion,
+		});
+		const pictures = (jobs: object[], counted: object | null = run) =>
+			browserPictures(JSON.stringify({ run: counted, jobs }));
+		const shard = (n: number, of = 2, conclusion = 'success') =>
+			job(`browser (shard ${n} of ${of})`, 'completed', conclusion);
+
+		expect(pictures([shard(1), shard(2), job('browser (the city)')])).toEqual({
+			figure: 'CI run 42 (push): 2 browser shards and the city job passed',
+			verdict: 'pass',
+		});
+		// The manifest jobs decide the step. CI's own workflow step judges every other job.
+		expect(
+			pictures([
+				shard(1),
+				shard(2),
+				job('browser (the city)'),
+				job('browser (the production build, engine)', 'completed', 'failure'),
+			]).verdict,
+		).toBe('pass');
+		expect(pictures([shard(1, 2, 'failure'), shard(2), job('browser (the city)')])).toEqual({
+			figure: 'CI run 42 (push): 1 of 3 manifest jobs did not pass: browser (shard 1 of 2) failure',
+			verdict: 'fail',
+		});
+		// A job that has not finished is no evidence.
+		expect(
+			pictures([
+				shard(1),
+				job('browser (shard 2 of 2)', 'in_progress', ''),
+				job('browser (the city)'),
+			]).verdict,
+		).toBe('fail');
+		// A docs-only run skips every job that draws the manifest, with the matrix left unread.
+		expect(
+			pictures([
+				job(
+					// biome-ignore lint/suspicious/noTemplateCurlyInString: CI reports a skipped job's matrix unread
+					'browser (shard ${{ matrix.shard }} of ${{ strategy.job-total }})',
+					'completed',
+					'skipped',
+				),
+				job('browser (the city)', 'completed', 'skipped'),
+			]).verdict,
+		).toBe('fail');
+		expect(pictures([], null)).toEqual({
+			figure: 'no CI run of the commit from a push or a run started by hand',
+			verdict: 'fail',
+		});
+		expect(pictures([job('browser-caches')])).toEqual({
+			figure: 'CI run 42 (push) ran no browser shard job and no city job for the manifest: success',
+			verdict: 'fail',
+		});
+		expect(pictures([shard(1)]).figure).toContain('ran no city job');
+		expect(browserPictures('not json').verdict).toBe('fail');
+		// An output with no jobs field is no evidence either.
+		expect(browserPictures('null').verdict).toBe('fail');
+		expect(browserPictures(JSON.stringify({ run })).figure).toContain(
+			'ran no browser shard job and no city job',
+		);
+	});
+
+	test('count a CI run of a push or a run started by hand, and no pull request run', () => {
+		const run = {
+			databaseId: 42,
+			workflowName: 'CI',
+			event: 'push',
+			status: 'completed',
+			conclusion: 'success',
+		};
+		const events = ['push', 'workflow_dispatch'];
+		expect(countedRun([{ ...run, event: 'pull_request' }], { name: 'CI', events })).toBeNull();
+		expect(
+			countedRun([{ ...run, event: 'pull_request', databaseId: 41 }, run], { name: 'CI', events }),
+		).toEqual(run);
+	});
+
 	test('judge the desktop target by own work against three.js', () => {
 		// Own work 2.54 - 2.38 = 0.16 ms against three.js's faster 3.2 - 2.4 = 0.8 ms: 20%.
 		const pass = desktopTarget(s1Rows(2.54, 2.38));
@@ -180,7 +269,7 @@ describe('the gate steps', () => {
 			.map((s) => s.id);
 		// The allocation check keeps its warm-up, which the browser's optimizer needs.
 		expect(changed).toEqual(['desktop-target', 'scenes', 'soak-s4', 'startup']);
-		expect(commandText(step('images-swiftshader'))).toBe('CI=1 bun run test:images');
+		expect(commandText(step('images-swiftshader'))).toBe('bun bench/ci-browser-jobs.ts abc');
 	});
 
 	test('write a row for each step, and name the failed ones', () => {
