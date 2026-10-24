@@ -40,7 +40,7 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'Version check in each foundation add-on (`packages/engine/src/shared/version.ts`); `packages/cli/src/upgrade.js`',
 	'M3-D3': "E1417's message names the add-on: `packages/engine/src/errors/codes.ts:417`",
 	'M3-D4': "The particle buffer's record layout and limits: `docs/concepts/particle-buffer.md`",
-	'M3-D5': '`examples/addons/README.md` and the four add-ons in that layout',
+	'M3-D5': '`examples/addons/README.md` and the six add-ons in that layout',
 	'M3-D6': 'The plugin interface version check: `packages/engine/src/shared/version.ts`',
 	'M3-D9':
 		"`bunx @null3d/cli check-addon` runs the engine's gates on one add-on: `packages/cli/src/check-addon.js`, which refuses `tests/fixtures/d9-addon-internal` for importing `@null3d/engine/internal`; D-225 records the run over every foundation add-on and the fixture's page and cost gates",
