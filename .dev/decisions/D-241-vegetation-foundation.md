@@ -324,10 +324,11 @@ still looked like a leaf, because a leaf that is too wide is still a leaf. A cro
 merged into slabs, and no outline could be seen. Each cell's leaves covered each other into one blob,
 whatever the family drew. The aspect now scales the half width, so every silhouette draws at the size
 that its shape means. Whoever changes a painter should check it on a repeated card as well as on one
-cell, since one cell hides this fault. A unit test now counts the separate leaves of a cell and needs
-at least four, which a painter of too-wide leaves cannot reach.
+cell, since one cell hides this fault. A unit test now holds each cluster cell's cover between 0.35
+and 0.8 of its square, which a painter of too-wide leaves cannot reach.
 
-**What a cell holds now.** A family sets each leaf's outline. That outline has a width profile along
+**What a cell holds now.** A cluster cell carries 20 to 24 leaves, so a card presents leaves over
+most of its square. A family sets each leaf's outline. That outline has a width profile along
 the midrib and teeth along the edges. A family may also give the lobes of an oak or a hosta, and the
 veins. Each leaf of a card then draws its own numbers from its seed. These cover its profile and
 aspect, and its tooth count and depth. They also cover its lobe depth, vein count and strength, a bow
@@ -348,18 +349,28 @@ leaf lies near 128.
 
 **What takes no leaf.** A texel that no leaf covers takes its cell's mean leaf colour and mean height.
 Mip levels average colour without weighting by alpha. A background of its own would therefore pull a
-distant crown's hue toward it. A height of its own would bend the normal at every silhouette. A
-cluster cell covers 0.35 to 0.40 of its box, and a cell paints at least four separate leaves. The
-coverage test reads 0.406, 0.416 and 0.415 of a card's box at 12, 24 and 48 metres, on all three GPU
-paths. That share is higher than the 0.34 of the first atlas, because a cell now holds more leaves.
-The property that the test checks is unchanged: a card keeps its share as it shrinks.
+distant crown's hue toward it. A height of its own would bend the normal at every silhouette.
+
+**A card's fill is what closes a crown.** The first atlas filled 0.34 of a card's square. The
+`vegetation-versus-creek` picture showed the result: cards of leaf with sky between them, so a crown
+read as several bunches rather than one crown. The card count was not the cause. The oak generator
+places 960 cards of 0.8 by 0.72 metres for the crown. Creek's painted oak holds about 4,550 leaf
+quads over a crown of 9 by 7 by 10 metres. In leaf area the generated crown already carried more
+than the painted one. At a fill of 0.46, with 20 to 24 leaves of their own size in each cell, the
+same crown closes. A fill of 0.62 closes it no further, and it cost the leaves their own shapes.
+Growing every leaf until it neared the card's rim made each card read as one huge leaf, which is the
+same fault at another scale. So the fill comes from more leaves, never from longer ones.
+
+**The coverage property holds.** A cluster cell now covers 0.45 to 0.48 of its square, against 0.34
+before. The coverage test reads 0.490, 0.496 and 0.498 of a card's box at 12, 24 and 48 metres, on
+all three GPU paths. A card therefore keeps its share as it shrinks, as it did before.
 
 **The bake's time.** `paintLeaf` takes about 230 ms, and `paintBark` about 160 ms, on an Apple M5 Max
 laptop under load. The figures were about 300 ms and 136 ms before the change. The leaf's cost fell
 because each leaf now rejects a texel outside a box around its outline, before working out the outline.
 
 **What the pictures show.** The `vegetation-atlas` picture draws the change plainly. Its leaf card was
-one large leaf with a midrib, and it is now a twig of eleven lobed leaves. The `vegetation-versus-creek`
+one large leaf with a midrib, and it is now a twig of lobed leaves that fills its square. The `vegetation-versus-creek`
 picture shows the generated oak beside Creek's painted one, and the leaves there now have outlines,
 veins and tones of their own. That picture still shows a gap: the generated crown is paler and flatter
 than Creek's. The atlas is a map that multiplies a species' colour. The crown is lit by one uniform

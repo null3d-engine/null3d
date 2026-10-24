@@ -1,7 +1,7 @@
 // The atlases' pixels and cells: that each leaf shape has a cell of its own, that a species picks
-// the cell of its kind, that a cell holds several leaves which differ in colour, and that the
-// painters make an atlas a material can use. Every pixel comes from integer hashes, so a test can
-// compare two paintings of one atlas byte for byte.
+// the cell of its kind, that a cell fills with leaves which differ in colour, and that the painters
+// make an atlas a material can use. Every pixel comes from integer hashes, so a test can compare two
+// paintings of one atlas byte for byte.
 import { describe, expect, it } from 'bun:test';
 import { LEAF_CELLS_BY_KIND, leafCellFor } from './atlas';
 import {
@@ -33,41 +33,6 @@ function cellCoverage(surface: { width: number; data: Uint8Array }, index: numbe
 	for (const texel of cellTexels(surface.width, index))
 		if ((surface.data[texel * 4 + 2] ?? 0) > 90) drawn += 1;
 	return drawn / (LEAF_CELL * LEAF_CELL);
-}
-
-/** How many separate leaves one cell paints, each a patch of at least a leaf's worth of texels. */
-function leafPatches(surface: { width: number; data: Uint8Array }, index: number): number {
-	const drawn = new Uint8Array(LEAF_CELL * LEAF_CELL);
-	const texels = cellTexels(surface.width, index);
-	for (const [at, texel] of texels.entries())
-		drawn[at] = (surface.data[texel * 4 + 2] ?? 0) > 90 ? 1 : 0;
-	let patches = 0;
-	const stack: number[] = [];
-	for (let start = 0; start < drawn.length; start++) {
-		if (!drawn[start]) continue;
-		let area = 0;
-		stack.push(start);
-		drawn[start] = 0;
-		while (stack.length > 0) {
-			const at = stack.pop() as number;
-			area += 1;
-			const x = at % LEAF_CELL;
-			const y = Math.floor(at / LEAF_CELL);
-			const neighbours = [
-				x > 0 ? at - 1 : -1,
-				x < LEAF_CELL - 1 ? at + 1 : -1,
-				y > 0 ? at - LEAF_CELL : -1,
-				y < LEAF_CELL - 1 ? at + LEAF_CELL : -1,
-			];
-			for (const next of neighbours)
-				if (next >= 0 && drawn[next]) {
-					drawn[next] = 0;
-					stack.push(next);
-				}
-		}
-		if (area >= 30) patches += 1;
-	}
-	return patches;
 }
 
 /** The mean, the spread and the darkest texel of one cell's colour map. */
@@ -154,19 +119,25 @@ describe('the atlas blocks', () => {
 });
 
 describe('the painted leaves', () => {
-	it('covers about half of a cluster cell, and nothing at its rim', () => {
+	it('fills most of a cluster cell with leaves, and nothing at its rim', () => {
 		const surface = paintLeaf().surface;
 		const share = cellCoverage(surface, 0);
-		expect(share).toBeGreaterThan(0.15);
-		expect(share).toBeLessThan(0.75);
+		// A card that shows leaves over much less of its square reads as a bunch, with sky between one
+		// card and the next. One that covers all of it is a slab with no leaf edge at all.
+		expect(share).toBeGreaterThan(0.35);
+		expect(share).toBeLessThan(0.8);
 		// The card's own rim holds no leaf, so a card's edge draws nothing.
 		const topLeft = surface.data[2] ?? 0;
 		expect(topLeft).toBeLessThan(40);
 	});
 
-	it('draws several separate leaves in the cells of a cluster', () => {
+	it('covers every cluster cell, as a painted card does', () => {
 		const surface = paintLeaf().surface;
-		for (const index of [0, 1, 2, 3]) expect(leafPatches(surface, index)).toBeGreaterThan(3);
+		for (const index of [0, 1, 2, 3]) {
+			const share = cellCoverage(surface, index);
+			expect(share).toBeGreaterThan(0.35);
+			expect(share).toBeLessThan(0.8);
+		}
 	});
 
 	it('spreads the colour across the leaves of one cell', () => {
