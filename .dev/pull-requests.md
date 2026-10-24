@@ -56,7 +56,7 @@ Never commit a generated file, unless [D-105](decisions/D-105-generated-files-ou
 
 Every command that reads the shader modules builds them first: the build, the type check, the unit tests, the dev server and the browser tests. The docs generator reads the engine's types, which import the shader modules. Without them, the engine's API reference leaves out the shader features, and `bun tools/generate.ts` says so. Run it again after `bun run shaders` or `bun run build`.
 
-After you clone, run `bun install`. After a branch switch or a pull, the hooks write the generated files again. When a hook did not run, as in a worktree before its first `bun install`, run `bun install`.
+After you clone, run `bun install`. After a branch switch or a pull, the hooks write the generated files again. When a hook did not run, as in a worktree before its first `bun install`, run `bun install`. A branch that adds a workspace package needs it before its type check can pass, and until then the pre-commit hook refuses every commit without naming the package: four commits on the night of 24 October appeared to fail for their own content and were only missing the install.
 
 ### Builds
 
