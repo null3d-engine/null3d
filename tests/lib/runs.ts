@@ -529,6 +529,14 @@ export interface WaitOptions<Check = unknown> {
 	 * there, and says whether it opened. Without it, a handover ends the runner's turn.
 	 */
 	onHandover?: (runner: string, from: number) => boolean;
+	/**
+	 * Reports, once the wait ends, each runner's longest time between two writes of one runner page,
+	 * in milliseconds, and the page it was on: the longest silence after which a runner page wrote
+	 * again.
+	 * A silence that a new runner page ended is left out. It shows how long a working runner page
+	 * goes without a heartbeat, which the quiet time must exceed.
+	 */
+	onSilence?: (runner: string, ms: number, item: string | undefined) => void;
 }
 
 /**
@@ -548,6 +556,7 @@ export async function waitForRunners<Check>(
 		startMs,
 		onNoStart = () => {},
 		onHandover = () => false,
+		onSilence,
 	}: WaitOptions<Check> = {},
 ): Promise<string[]> {
 	const startedAt = Date.now();
@@ -558,9 +567,31 @@ export async function waitForRunners<Check>(
 	const reopenedAt = new Map<string, number>();
 	/** For each runner, the plan items at which its runner pages handed the run over. */
 	const handled = new Map<string, Set<number>>();
+	/** For each runner, its last write, the page it was on then, and its longest silence. */
+	const silences = new Map<string, { written: number; at?: string; ms: number; item?: string }>();
+	const noteWrite = (runner: string, written: number) => {
+		const silence = silences.get(runner);
+		const at = currentItem(plan, runner)?.item.id;
+		if (!silence) {
+			silences.set(runner, { written, at, ms: 0 });
+			return;
+		}
+		if (written > silence.written) {
+			const ms = written - silence.written;
+			// A new runner page ended the silence, so it was the old page's stop, not a working gap.
+			const reopened = (reopenedAt.get(runner) ?? 0) > silence.written;
+			if (!reopened && ms > silence.ms) {
+				silence.ms = ms;
+				silence.item = silence.at;
+			}
+			silence.written = written;
+		}
+		silence.at = at;
+	};
 	while (waiting.size > 0 && Date.now() < deadline) {
 		for (const runner of waiting) {
 			const written = lastWrite(plan.run, runner);
+			if (written !== undefined) noteWrite(runner, written);
 			const last =
 				written === undefined ? undefined : Math.max(written, reopenedAt.get(runner) ?? 0);
 			if (written !== undefined && endTurn(runner)) {
@@ -602,5 +633,6 @@ export async function waitForRunners<Check>(
 		}
 		if (waiting.size > 0) await new Promise((resolve) => setTimeout(resolve, 500));
 	}
+	if (onSilence) for (const [runner, { ms, item }] of silences) onSilence(runner, ms, item);
 	return done;
 }
