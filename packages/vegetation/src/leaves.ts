@@ -70,8 +70,13 @@ export function leafCards(
 	const leaf = species.leaf;
 	if (!leaf) return [];
 	const cards: LeafCard[] = [];
+	// The last two branch levels carry leaves: the twigs at full count and the branches above
+	// them at half, so a crown fills from its inside rather than only at its tips.
+	const lastLevel = Math.max(0, species.branchLevels.length - 1);
 	for (const [branchIndex, branch] of skeleton.branches.entries()) {
-		if (branch.children.length > 0) continue;
+		const terminal = branch.children.length === 0;
+		if (!terminal && branch.level !== lastLevel - 1) continue;
+		const perBranch = terminal ? leaf.cards : Math.max(1, Math.round(leaf.cards * 0.5));
 		const stiffness = Math.round(
 			Math.min(
 				1,
@@ -82,12 +87,12 @@ export function leafCards(
 			) * 255,
 		);
 		const samples = branch.points.length / 3;
-		for (let k = 0; k < leaf.cards; k++) {
+		for (let k = 0; k < perBranch; k++) {
 			const key = branchIndex * 0x1f + k + 1;
 			const share =
 				leaf.start +
 				(leaf.end - leaf.start) *
-					((k + 0.5 + (unitAt(seed, 1, variant, key, KEY_AT) - 0.5) * 0.5) / leaf.cards);
+					((k + 0.5 + (unitAt(seed, 1, variant, key, KEY_AT) - 0.5) * 0.5) / perBranch);
 			const sample = Math.min(samples - 1, Math.max(0, Math.round(share * (samples - 1))));
 			const { point, tangent } = pointAndTangent(branch, sample);
 			// The outward direction is horizontal, away from the plant's axis.
