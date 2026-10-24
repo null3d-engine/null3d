@@ -34,8 +34,9 @@ traffic.update(eye, time.now);
 
 - `fit(preset)` draws the preset's count. `setCount(n)` picks any count. Both thin every lane alike,
   because the rows were shuffled once.
-- `update(eye, time)` moves the real lights to the nearest vehicles, four times a second. It looks
-  at a share of the rows, so its cost does not follow the count. Give no `realLights` for none.
+- `update(eye, time)` moves the real lights to the nearest vehicles, four times a second. It skips
+  each lane whose line runs out of range before it reads a row, so its cost follows the lanes near
+  the camera, not the whole count. Give no `realLights` for none.
 - `dispose()` removes the batches, their materials and the real lights. A scene that draws another
   hull at another preset builds the lanes again around it, and drops the old ones with this call.
 - `createVehicleHull(ctx, size)` builds a vehicle that fits the surface: its nose along local +Z,
@@ -57,7 +58,9 @@ traffic.update(eye, time.now);
 
 ## Costs and limits
 
-- A frame's CPU work is the same at 30,000 and at 100,000 vehicles: everything moves on the GPU.
+- A frame's CPU work is nearly the same at 30,000 and at 100,000 vehicles: everything moves on the
+  GPU. The real-light search reads the rows of the lanes near the camera four times a second, so
+  its cost follows those lanes, not the whole scene.
   The draws are four, and the rows are 100,000 small hulls. The Skyway demo's figures, and the
   phone expectation, are in the [examples guide](../../../.dev/examples.md#skyway-m3-c1-22-october-2026).
 - The lanes are straight and axis-aligned. A curved lane needs a route the vertex shader can
