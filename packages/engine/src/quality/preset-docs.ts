@@ -99,6 +99,12 @@ export const SETTING_DOCS: {
 			({ 0: 'off', 0.25: 'quarter resolution', 0.5: 'half resolution' })[Number(value)] ?? '',
 	},
 	ssrSteps: { label: 'Screen-space reflection steps per ray' },
+	bounceScale: {
+		label: 'Screen-space bounce light',
+		print: (value) =>
+			({ 0: 'off', 0.25: 'quarter resolution', 0.5: 'half resolution' })[Number(value)] ?? '',
+	},
+	bounceSteps: { label: 'Bounce light steps per ray' },
 	exposureMeter: {
 		label: "Automatic exposure's meter",
 		print: (value) =>

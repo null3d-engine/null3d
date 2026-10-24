@@ -215,6 +215,23 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [16, 24, 32, 48, 64],
 	},
+	// The size of screen-space bounce light's targets, as a share of the render size each way: 0 on
+	// Low and Medium, which phones, tablets, WebGL2 and compatibility mode draw, and half on High
+	// and Ultra. A share above 0 draws a corner of the same targets, so it changes during play with
+	// no new GPU object; a change to or from 0 adds or removes the bounce's passes.
+	bounceScale: {
+		presets: [0, 0, 0.5, 0.5],
+		changes: 'live',
+		values: [0, 0.25, 0.5],
+	},
+	// The steps of each of the bounce's rays. A step crosses a longer part of the ray at a farther
+	// distance, so a shorter reach needs fewer. They live in a uniform block, so a change makes no
+	// GPU object.
+	bounceSteps: {
+		presets: [12, 12, 12, 16],
+		changes: 'live',
+		values: { min: 4, max: 24, whole: true },
+	},
 	// How automatic exposure meters the scene while a sketch turns it on: `histogram` bins a grid of
 	// 128 samples on the short side in compute shaders, on WebGPU; `downsample` draws 16 x 16 cells
 	// and meters them in one texel, on every GPU path. WebGL2 has no compute shaders, so it always
@@ -552,6 +569,18 @@ export interface QualitySettings {
 	 * farther objects and cost more. It changes during play.
 	 */
 	ssrSteps: 16 | 24 | 32 | 48 | 64;
+	/**
+	 * The size of screen-space bounce light's targets, as a share of the render size each way: 0.5,
+	 * 0.25, or 0, which draws no bounce light even when `post.set` turns it on. A smaller share
+	 * costs less, with blockier bounce. It changes during play: 0.5 and 0.25 make no GPU object, and
+	 * a change to or from 0 adds or removes the bounce's passes.
+	 */
+	bounceScale: 0 | 0.25 | 0.5;
+	/**
+	 * The steps of each of the bounce's rays, from 4 to 24: more steps let a ray find nearer
+	 * surfaces and cost more. It changes during play.
+	 */
+	bounceSteps: number;
 	/**
 	 * How automatic exposure meters the scene's brightness while `post.set` turns it on:
 	 * `histogram` bins a grid of samples in compute shaders, on WebGPU, and `downsample` averages

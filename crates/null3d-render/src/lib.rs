@@ -69,6 +69,7 @@ pub mod area_shading;
 pub mod arrays;
 pub mod background;
 pub mod bloom;
+pub mod bounce;
 pub mod camera;
 mod cells;
 pub mod compute;

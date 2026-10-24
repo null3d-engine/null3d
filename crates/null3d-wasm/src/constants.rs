@@ -274,8 +274,12 @@ pub mod post_value {
     pub const SSR_MAX_ROUGHNESS: u32 = 62;
     /// The sharpening's strength, from 0 to 1.
     pub const SHARPEN: u32 = 63;
+    /// Screen-space bounce light's intensity, most distance, thickness, in this order.
+    pub const BOUNCE_INTENSITY: u32 = 64;
+    pub const BOUNCE_DISTANCE: u32 = 65;
+    pub const BOUNCE_THICKNESS: u32 = 66;
     /// The values in the block.
-    pub const COUNT: u32 = 64;
+    pub const COUNT: u32 = 68;
 }
 
 /// The block of numbers that `callValues` gives: 64-bit floats that TypeScript writes before a
@@ -1290,6 +1294,9 @@ pub fn typescript() -> String {
                 ("SSR_THICKNESS", post_value::SSR_THICKNESS),
                 ("SSR_MAX_ROUGHNESS", post_value::SSR_MAX_ROUGHNESS),
                 ("SHARPEN", post_value::SHARPEN),
+                ("BOUNCE_INTENSITY", post_value::BOUNCE_INTENSITY),
+                ("BOUNCE_DISTANCE", post_value::BOUNCE_DISTANCE),
+                ("BOUNCE_THICKNESS", post_value::BOUNCE_THICKNESS),
                 ("COUNT", post_value::COUNT),
             ],
         ),

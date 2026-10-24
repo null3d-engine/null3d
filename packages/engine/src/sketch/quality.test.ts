@@ -243,6 +243,8 @@ describe('SketchQuality.lower', () => {
 			subsurfaceSamples: low.subsurfaceSamples,
 			ssrScale: low.ssrScale,
 			ssrSteps: low.ssrSteps,
+			bounceScale: low.bounceScale,
+			bounceSteps: low.bounceSteps,
 			exposureMeter: low.exposureMeter,
 			fogSlices: low.fogSlices,
 			reflectionScale: low.reflectionScale,
@@ -333,6 +335,8 @@ describe('SketchQuality.setPreset', () => {
 			'aoScale',
 			'contactShadowSteps',
 			'subsurfaceSamples',
+			'bounceScale',
+			'bounceSteps',
 			'softwareOcclusion',
 			'governor',
 		];

@@ -46,6 +46,7 @@ use null3d_render::ao::Ao;
 use null3d_render::arrays::{ArrayName, ArraysError, Data, MeshArrays, Values, from_arrays};
 use null3d_render::background::{Background, BackgroundSource, Sky};
 use null3d_render::bloom::{self, Blend as BloomBlend, Bloom};
+use null3d_render::bounce::Bounce;
 use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
@@ -285,13 +286,14 @@ struct Engine {
 /// exposure's percentile mean between 10% and 90%, center weight of 0.5, speeds of 3 and 1 stops
 /// per second, range of 4 stops either way and no compensation, then screen-space reflections'
 /// full intensity, most distance of 100, thickness of 0.5 and most roughness of 0.5, then no
-/// sharpening.
+/// sharpening, then screen-space bounce light's full intensity, most distance of 12 and thickness
+/// of 1.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
     let mut values = [
         1.0, 0.15, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
         16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
         0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.1, 0.9, 0.5,
-        3.0, 1.0, -4.0, 4.0, 0.0, 1.0, 100.0, 0.5, 0.5, 0.0,
+        3.0, 1.0, -4.0, 4.0, 0.0, 1.0, 100.0, 0.5, 0.5, 0.0, 1.0, 12.0, 1.0, 0.0,
     ];
     let mut level = 0;
     while level < bloom::LEVELS {
@@ -4243,6 +4245,36 @@ pub fn set_ssr_quality(thousandths: u32, steps: u32) -> u32 {
         let settings = e.renderer.settings_mut();
         settings.set_ssr_scale(thousandths as f32 / 1000.0);
         settings.set_ssr_steps(steps);
+        0
+    })
+}
+
+/// Turns screen-space bounce light on with its intensity, most distance and thickness from the
+/// post-processing values, or off, from the next frame on. The TypeScript API checks the values.
+#[wasm_bindgen(js_name = setBounce)]
+pub fn set_bounce(on: bool) -> u32 {
+    with_engine(|e| {
+        let value = |place| e.post_value(place);
+        use constants::post_value as v;
+        let bounce = on.then(|| Bounce {
+            intensity: value(v::BOUNCE_INTENSITY),
+            distance: value(v::BOUNCE_DISTANCE),
+            thickness: value(v::BOUNCE_THICKNESS),
+        });
+        e.renderer.settings_mut().set_bounce(bounce);
+        0
+    })
+}
+
+/// Sets the size of screen-space bounce light's targets, in thousandths of the render size each
+/// way, and the steps of each of its rays, which the quality settings set, from the next frame on:
+/// a size of 0 draws none.
+#[wasm_bindgen(js_name = setBounceQuality)]
+pub fn set_bounce_quality(thousandths: u32, steps: u32) -> u32 {
+    with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        settings.set_bounce_scale(thousandths as f32 / 1000.0);
+        settings.set_bounce_steps(steps);
         0
     })
 }

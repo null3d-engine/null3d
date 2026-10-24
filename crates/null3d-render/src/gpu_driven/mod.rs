@@ -158,6 +158,7 @@ use crate::accumulate::AccumulateIds;
 use crate::ao::{self, AoIds};
 use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
+use crate::bounce::BounceIds;
 use crate::cells::CellCulling;
 use crate::compute::ComputePassIds;
 use crate::data_texture::DataTexture;
@@ -456,6 +457,8 @@ mod ids {
     pub const STILL_SETTINGS: u32 = ACCUMULATE + 1;
     /// The uniform buffer of temporal anti-aliasing's resolve.
     pub const TAA: u32 = STILL_SETTINGS + 1;
+    /// The uniform buffer of screen-space bounce light's steps.
+    pub const BOUNCE: u32 = TAA + 1;
     /// Each feature-instance draw's per-instance buffer, then its count word, from
     /// `FEATURE_INSTANCES + 2 * (id - 1)`.
     pub const FEATURE_INSTANCES: u32 = TAA + 1;
@@ -732,8 +735,10 @@ mod ids {
     /// The bind groups of temporal anti-aliasing's resolve and copy, after the compute passes'
     /// groups.
     pub const TAA_GROUPS: u32 = COMPUTE_GROUPS + MAX_VIEWS as u32;
-    /// The bind groups of materials' maps, after temporal anti-aliasing's.
-    pub const TEXTURE_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
+    /// The bind groups of screen-space bounce light's steps, after temporal anti-aliasing's.
+    pub const BOUNCE_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
+    /// The bind groups of materials' maps, after the bounce's.
+    pub const TEXTURE_GROUPS: u32 = BOUNCE_GROUPS + 3;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -1090,6 +1095,10 @@ impl GpuDrivenRenderer {
                             sampler: ids::TAA_SAMPLER,
                             first_group: ids::TAA_GROUPS,
                         },
+                        bounce: BounceIds {
+                            buffer: ids::BOUNCE,
+                            first_group: ids::BOUNCE_GROUPS,
+                        },
                         transmission: TransmissionIds {
                             group: ids::TRANSMISSION_GROUP,
                             blank: ids::BLANK_TRANSMISSION,
@@ -1417,6 +1426,8 @@ impl GpuDrivenRenderer {
         );
         self.graph
             .set_ssr(settings.ssr_frame(input.canvas), settings.ssr_scale());
+        self.graph
+            .set_bounce(settings.bounce_frame(input.canvas), settings.bounce_scale());
         let waiting = (self.layout.waiting().iter())
             .chain(self.casters.waiting())
             .chain(self.sorted.waiting())

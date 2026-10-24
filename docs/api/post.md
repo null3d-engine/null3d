@@ -219,6 +219,49 @@ export default defineSketch(({ scene, geometry, materials, post, quality }) => {
 - `post.set` allocates nothing. Turning them on or off adds or removes passes, which takes a few frames, and their shaders download the first time.
 
 
+## Screen-space bounce light
+
+Screen-space bounce light adds one bounce of the light that the screen shows to the surfaces that the camera sees: a red wall tints the floor beside it, and neon tints a wet street. It is off by default.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials, post, quality }) => {
+  quality.set({ bounceScale: 0.5 });
+  post.set({ bounce: { intensity: 1, distance: 12 } });
+  scene.createAmbientLight({ intensity: 0.6 });
+  scene.createDirectionalLight({ direction: [-1, -2, -1] });
+  scene.createMesh({
+    mesh: geometry.box({ width: 0.3, height: 4, depth: 8 }),
+    material: materials.standard({ color: '#c01818' }),
+    position: [2, 2, 0],
+  });
+  const floor = scene.createMesh({
+    mesh: geometry.plane({ width: 16, height: 16 }),
+    material: materials.standard({ color: '#c8c8c4' }),
+  });
+  floor.setRotationEuler(-Math.PI / 2, 0, 0);
+  return {};
+});
+```
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `bounce` | Its settings to turn it on, or `false` to turn it off. | Off |
+| `bounce.intensity` | The share of the gathered light that reaches the scene: a number from 0 to 1. | 1 |
+| `bounce.distance` | How far a ray travels, in world units: above 0. The light fades over the last third. | 12 |
+| `bounce.thickness` | How far behind a surface a ray may pass and still take its color, in world units: above 0. | 1 |
+
+- The gathered light is added to the scene's lit color, weighted by each pixel's own color as its albedo, before the custom effects, the volumetric fog, depth of field, bloom, the grading and the tone mapping. So the bounce acts on light, and not as a tint over the finished picture.
+- It reads only what the screen shows. Objects off the screen and lights that the camera cannot see send no bounce, and a surface near the screen's edge takes less.
+- The gather's noise is blurred along each surface by a denoise step. A held frame draws the same rays every time, so a picture does not change from frame to frame.
+- It needs HDR color, as bloom does. On a device without an HDR target it stays off, and development builds warn once.
+- It draws where the quality setting `bounceScale` is above 0: half the render size on High and Ultra. On Low and Medium, which phones, tablets, WebGL2 and compatibility mode run, the scale is 0. `bounceSteps` sets the steps of each ray.
+- It turns the depth prepass on while it draws.
+- A setting that a call leaves out keeps its value, also while it is off. `post.set({ bounce: {} })` turns it on with the values it had.
+- `post.set` allocates nothing. Turning it on or off adds or removes passes, which takes a few frames, and its shaders download the first time.
+
+
 ## Depth of field
 
 Depth of field blurs what lies in front of and behind the focus distance, as a camera lens does. It is off by default. The camera's focal length frames the shot, and the aperture and the focus set the blur:

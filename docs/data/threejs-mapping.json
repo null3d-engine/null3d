@@ -1725,9 +1725,9 @@
       "three": "SSGINode / ssgi() (bounce light from the screen) / VXGINode",
       "status": "changed",
       "since": "0.2",
-      "target": "A light probe grid for bounce light (scene.setLightProbeGrid), with ambient occlusion (post.set({ ao }))",
-      "notes": "null3D has no bounce light from the screen and no voxel cone tracing. The probe grid gives colored bounce light everywhere, from objects off the screen too, at a fixed cost per pixel. Light from moving objects reaches it only when the sketch bakes it again.",
-      "docs": "api/scene",
+      "target": "post.set({ bounce: { intensity, distance, thickness } }) for one bounce from the screen, or scene.setLightProbeGrid for bounce light from all around",
+      "notes": "ssgi() maps to screen-space bounce light, which draws where the quality setting bounceScale is above 0: on High and Ultra, or after quality.set({ bounceScale: 0.5 }). It traces a few short rays at half resolution and adds their color to the lit scene before the tone mapping. It reaches only what the screen shows, so use scene.setLightProbeGrid for light from objects off the screen. null3D has no voxel cone tracing.",
+      "docs": "concepts/post-processing",
       "detect": "\\b(SSGI|VXGI)Node\\b|\\bssgi\\s*\\("
     },
     {

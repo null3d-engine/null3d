@@ -24,6 +24,9 @@ import {
 	TEMPLATE_BACKGROUND_CUBE,
 	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
+	TEMPLATE_BOUNCE_ADD,
+	TEMPLATE_BOUNCE_DENOISE,
+	TEMPLATE_BOUNCE_GATHER,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_DEBUG_VIEW,
 	TEMPLATE_DECAL,
@@ -330,6 +333,10 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_AO_DEPTH] = { shader: shaders.ao, pipeline: 'depth' };
 	templates[TEMPLATE_AO] = { shader: shaders.ao, pipeline: 'horizon' };
 	templates[TEMPLATE_AO_DENOISE] = { shader: shaders.ao, pipeline: 'denoise' };
+	// Screen-space bounce light's steps read the same one-sample copy of the depth.
+	templates[TEMPLATE_BOUNCE_GATHER] = { shader: shaders.bounce, pipeline: 'gather' };
+	templates[TEMPLATE_BOUNCE_DENOISE] = { shader: shaders.bounce, pipeline: 'denoise' };
+	templates[TEMPLATE_BOUNCE_ADD] = { shader: shaders.bounce, pipeline: 'add' };
 	// Depth of field's steps read the same one-sample copy of the depth.
 	templates[TEMPLATE_DOF_SETUP] = { shader: shaders.dof, pipeline: 'setup' };
 	templates[TEMPLATE_DOF_BLUR] = { shader: shaders.dof, pipeline: 'gather' };

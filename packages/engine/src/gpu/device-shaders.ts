@@ -37,6 +37,7 @@ const RUN_BITS = PERMUTATION_DRAW_INDEX | PERMUTATION_HALF;
  */
 const HDR_FEATURES: ReadonlySet<string> = new Set([
 	'bloom',
+	'bounce',
 	'dof',
 	'exposure',
 	'fog_volume',

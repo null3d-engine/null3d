@@ -37,6 +37,7 @@ use crate::ao::{self, Ao, Contact};
 use crate::area_shading::AreaShading;
 use crate::background::{Background, BackgroundSource};
 use crate::bloom::{Bloom, ChainFrame};
+use crate::bounce::{self, Bounce, BounceFrame};
 use crate::camera::{Lens, Mat4, multiply};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
@@ -1018,6 +1019,13 @@ pub struct SceneSettings {
     ssr_scale: f32,
     /// The most steps of screen-space reflections' march, which the quality settings set.
     ssr_steps: u32,
+    /// Screen-space bounce light's settings while the sketch turns it on.
+    bounce: Option<Bounce>,
+    /// The size of the bounce's targets, as a share of the render size each way, which the quality
+    /// settings set: 0 draws none.
+    bounce_scale: f32,
+    /// The steps of each of the bounce's rays, which the quality settings set.
+    bounce_steps: u32,
     /// The automatic exposure's settings while the sketch turns it on.
     auto_exposure: Option<AutoExposure>,
     /// The meter of automatic exposure, which the quality settings set.
@@ -1207,6 +1215,9 @@ impl SceneSettings {
             ssr: None,
             ssr_scale: ao::MAX_SCALE,
             ssr_steps: ssr::DEFAULT_STEPS,
+            bounce: None,
+            bounce_scale: bounce::MAX_SCALE,
+            bounce_steps: bounce::DEFAULT_STEPS,
             auto_exposure: None,
             exposure_meter: Meter::default(),
             fog_volume: None,
@@ -1630,6 +1641,49 @@ impl SceneSettings {
     /// the next recorded frame on. It changes only the trace's block, so it makes no GPU object.
     pub fn set_ssr_steps(&mut self, steps: u32) {
         self.ssr_steps = steps.clamp(1, ssr::MAX_STEPS);
+    }
+
+    /// Screen-space bounce light's settings while it draws: while the sketch turns it on, its
+    /// scale is above 0, and no debug view draws.
+    pub fn bounce(&self) -> Option<Bounce> {
+        self.bounce
+            .filter(|_| self.bounce_scale > 0.0 && !self.debug_view.is_debug())
+    }
+
+    /// Turns screen-space bounce light on with its settings, or off with `None`, from the next
+    /// recorded frame on.
+    pub fn set_bounce(&mut self, bounce: Option<Bounce>) {
+        self.bounce = bounce;
+    }
+
+    /// The size of the bounce's targets, as a share of the render size each way.
+    pub fn bounce_scale(&self) -> f32 {
+        self.bounce_scale
+    }
+
+    /// Sets the size of the bounce's targets, from 0, which draws none, to
+    /// [`bounce::MAX_SCALE`], from the next recorded frame on. A scale above 0 draws a corner of the
+    /// same targets, so it makes no GPU object.
+    pub fn set_bounce_scale(&mut self, scale: f32) {
+        self.bounce_scale = scale.clamp(0.0, bounce::MAX_SCALE);
+    }
+
+    /// Sets the steps of each of the bounce's rays, from 1 to [`bounce::MAX_STEPS`], from the next
+    /// recorded frame on. It changes only the steps' block, so it makes no GPU object.
+    pub fn set_bounce_steps(&mut self, steps: u32) {
+        self.bounce_steps = steps.clamp(1, bounce::MAX_STEPS);
+    }
+
+    /// What the bounce draws with in a frame of a canvas of `canvas` pixels, or `None` while it
+    /// draws nothing or without a camera.
+    pub(crate) fn bounce_frame(&self, canvas: (u32, u32)) -> Option<BounceFrame> {
+        let settings = self.bounce()?;
+        let (projection, inverse) = self.camera_projection(canvas)?;
+        Some(BounceFrame {
+            settings,
+            projection: (projection, inverse),
+            steps: self.bounce_steps,
+        })
     }
 
     /// What screen-space reflections' trace draws with in a frame of a canvas of `canvas` pixels,

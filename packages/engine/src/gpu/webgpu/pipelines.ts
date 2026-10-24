@@ -14,6 +14,8 @@ import {
 	LAYOUT_ATMOSPHERE,
 	LAYOUT_BACKGROUND,
 	LAYOUT_BLOOM,
+	LAYOUT_BOUNCE,
+	LAYOUT_BOUNCE_MS,
 	LAYOUT_CLUSTER_CULL,
 	LAYOUT_COMPUTE_INSTANCE_BUFFERS,
 	LAYOUT_COMPUTE_R32_FLOAT,
@@ -101,6 +103,10 @@ import {
 	TEMPLATE_BACKGROUND_CUBE,
 	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
+	TEMPLATE_BOUNCE_ADD,
+	TEMPLATE_BOUNCE_DENOISE,
+	TEMPLATE_BOUNCE_GATHER,
+	TEMPLATE_BOUNCE_GATHER_MS,
 	TEMPLATE_CLUSTER,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
@@ -979,6 +985,15 @@ export class Pipelines {
 		this.defineLayout(LAYOUT_AO_DEPTH, 'ao depth', [aoSettings, unfiltered(1)]);
 		this.defineLayout(LAYOUT_AO_DEPTH_MS, 'ao depth ms', [aoSettings, unfiltered(1, true)]);
 		this.defineLayout(LAYOUT_AO, 'ao', [aoSettings, unfiltered(1), unfiltered(2), unfiltered(3)]);
+		// Screen-space bounce light's steps read both textures with textureLoad: the gather the
+		// scene depth first and the scene color second, the other steps the gathered light and the
+		// color that they add it to.
+		this.defineLayout(LAYOUT_BOUNCE, 'bounce', [aoSettings, unfiltered(1), unfiltered(2)]);
+		this.defineLayout(LAYOUT_BOUNCE_MS, 'bounce ms', [
+			aoSettings,
+			unfiltered(1, true),
+			unfiltered(2),
+		]);
 		// Screen-space reflections' steps read every texture with textureLoad too: a level of the
 		// depth pyramid reads the level below it, and the trace ambient occlusion's depth copy and
 		// the pyramid's six levels above it.
@@ -1286,6 +1301,16 @@ export class Pipelines {
 			[TEMPLATE_AO_DEPTH_MS, 'ao depth ms', shaders.ao_ms, 'depth', LAYOUT_AO_DEPTH_MS],
 			[TEMPLATE_AO, 'ao horizon', shaders.ao, 'horizon', LAYOUT_AO],
 			[TEMPLATE_AO_DENOISE, 'ao denoise', shaders.ao, 'denoise', LAYOUT_AO],
+			[TEMPLATE_BOUNCE_GATHER, 'bounce gather', shaders.bounce, 'gather', LAYOUT_BOUNCE],
+			[
+				TEMPLATE_BOUNCE_GATHER_MS,
+				'bounce gather ms',
+				shaders.bounce_ms,
+				'gather',
+				LAYOUT_BOUNCE_MS,
+			],
+			[TEMPLATE_BOUNCE_DENOISE, 'bounce denoise', shaders.bounce, 'denoise', LAYOUT_BOUNCE],
+			[TEMPLATE_BOUNCE_ADD, 'bounce add', shaders.bounce, 'add', LAYOUT_BOUNCE],
 			[TEMPLATE_SSR_REDUCE, 'ssr reduce', shaders.ssr_reduce, 'reduce', LAYOUT_SSR_REDUCE],
 			[TEMPLATE_SSR_TRACE, 'ssr trace', shaders.ssr, 'trace', LAYOUT_SSR_TRACE],
 			[

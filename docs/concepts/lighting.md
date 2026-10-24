@@ -325,6 +325,8 @@ Each probe holds L1 spherical harmonics of the light that arrives there: four RG
 
 `bakeProbes` bakes a grid in the browser. Each probe casts directions with `scene.raycastBatch`. A direction that reaches the sky takes the environment's light. A direction that hits a surface takes that surface's colour once, as a matte bounce. The bake counts no lamps, so the grid holds the sky's light, the scene's occlusion of it, and one coloured bounce. `step` bakes a few probes a frame, so a loading screen can show progress. `finish` bakes the rest at once.
 
+A grid takes one bake per change, and it reaches objects off the screen. Where the light moves with the scene, screen-space bounce light ([The post-processing chain](post-processing.md#screen-space-bounce-light)) finds the colours that the screen shows each frame, at half the render size, without a bake.
+
 ### What takes the grid's light
 
 A mesh draws with the grid's light unless it uses one of these features, which the grid's shaders leave out to keep the download small:

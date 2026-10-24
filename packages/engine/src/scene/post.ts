@@ -1,7 +1,8 @@
 // The post-processing settings that a sketch sets through `ctx.post`: the exposure and the tone
 // mapping, which the engine applies to the scene's color on its way to the canvas, bloom, ambient
 // occlusion, which darkens the ambient light of the camera's opaque objects, screen-space
-// reflections, which reflect what the screen shows in their shiny surfaces, outlines, the
+// reflections, which reflect what the screen shows in their shiny surfaces, screen-space bounce
+// light, which adds one bounce of what the screen shows to the lit color, outlines, the
 // vignette, which the final pass applies before the tone mapping, the color grading table, which
 // it applies after, the grading controls, whose values a job worker bakes into a table, the
 // sharpening, which sharpens display color at the whole canvas's render scale, depth of field,
@@ -76,6 +77,7 @@ const SETTINGS = [
 	'outline',
 	'dof',
 	'ssr',
+	'bounce',
 	'autoExposure',
 	'sharpen',
 	'taa',
@@ -101,6 +103,8 @@ const MAX_AO_SAMPLES = 64;
  * intensity's on.
  */
 const SSR_SETTINGS = ['intensity', 'maxDistance', 'thickness', 'maxRoughness'] as const;
+/** Screen-space bounce light's settings, in the order of their places in the core's block. */
+const BOUNCE_SETTINGS = ['intensity', 'distance', 'thickness'] as const;
 /**
  * The vignette's settings: its intensity and size have places in the core's block from the
  * intensity's on, and its falloff and roundness from the falloff's on.
@@ -261,6 +265,31 @@ export interface SsrSettings {
 	 * blur more on rougher surfaces.
 	 */
 	maxRoughness?: number;
+}
+
+/**
+ * Screen-space bounce light's settings. It traces a few short rays from each half-size texel into
+ * the hemisphere around the surface's normal, takes the color of the surfaces that they hit, and
+ * adds it to the scene's lit color before the effects and the tone mapping. A setting that a call
+ * leaves out keeps its value.
+ *
+ * @category api/post
+ */
+export interface BounceSettings {
+	/**
+	 * From 0 to 1: the share of the gathered light that reaches the scene, and 1 by default.
+	 */
+	intensity?: number;
+	/**
+	 * How far a ray travels, in world units: above 0, and 12 by default. The light fades over the
+	 * last third of it.
+	 */
+	distance?: number;
+	/**
+	 * How far behind a surface a ray may pass and still take its color, in world units: above 0,
+	 * and 1 by default. A thin object needs a small value, or objects behind it bounce its color.
+	 */
+	thickness?: number;
 }
 
 /**
@@ -512,6 +541,15 @@ export interface PostSettings {
 	 */
 	ssr?: SsrSettings | false;
 	/**
+	 * Screen-space bounce light: one bounce of the light that the screen shows, added to the lit
+	 * color before the effects and the tone mapping, so a colored wall tints the floor beside it.
+	 * It reads the frame's depth and color, traces a few short rays at half the render size, and
+	 * denoises them along each surface. Settings turn it on, `{}` with the values it had, and
+	 * `false` turns it off. It is off by default, draws only where the quality setting
+	 * `bounceScale` is above 0, and needs HDR color, as bloom does.
+	 */
+	bounce?: BounceSettings | false;
+	/**
 	 * Automatic exposure: the picture adapts to the scene's brightness over time, as an eye does,
 	 * so a dark hall brightens after a sunny street. The engine meters each frame on the GPU, and
 	 * the final pass multiplies the color by the adapted exposure before the tone mapping. The
@@ -582,6 +620,8 @@ export class Post implements ViewHolder {
 	private warnedNoDof = false;
 	private ssr = false;
 	private warnedNoSsr = false;
+	private bounce = false;
+	private warnedNoBounce = false;
 	private autoExposure = false;
 	private warnedNoExposure = false;
 	/** True while the sketch sharpens the picture. */
@@ -699,6 +739,7 @@ export class Post implements ViewHolder {
 			outline,
 			dof,
 			ssr,
+			bounce,
 			autoExposure,
 			sharpen,
 		} = settings;
@@ -754,6 +795,7 @@ export class Post implements ViewHolder {
 		}
 		if (ao !== undefined) this.setAo(ao, values);
 		if (ssr !== undefined) this.setSsr(ssr, values);
+		if (bounce !== undefined) this.setBounce(bounce, values);
 		if (dof !== undefined) this.setDof(dof, values);
 		if (autoExposure !== undefined) this.setAutoExposure(autoExposure, values);
 		if (sharpen !== undefined) {
@@ -979,6 +1021,26 @@ export class Post implements ViewHolder {
 		this.core.check(this.core.glue.setSsr(on), 'post.set', undefined, true);
 	}
 
+	/** Turns screen-space bounce light on with the settings that `bounce` gives, or off. */
+	private setBounce(bounce: BounceSettings | false, values: Float32Array): void {
+		this.bounce = bounce !== false;
+		if (bounce !== false) {
+			const { intensity, distance, thickness } = bounce;
+			writeNumber(values, C.POST_VALUE_BOUNCE_INTENSITY, intensity);
+			writeNumber(values, C.POST_VALUE_BOUNCE_DISTANCE, distance);
+			writeNumber(values, C.POST_VALUE_BOUNCE_THICKNESS, thickness);
+		}
+		const on = this.bounce && this.hdrEffects;
+		if (on) this.shaders.need('bounce');
+		if (DEV && this.bounce && !this.hdrEffects && !this.warnedNoBounce) {
+			this.warnedNoBounce = true;
+			console.warn(
+				'null3D: screen-space bounce light stays off on this device: it needs HDR color, and the device has no HDR target. See the post-processing concepts page.',
+			);
+		}
+		this.core.check(this.core.glue.setBounce(on), 'post.set', undefined, true);
+	}
+
 	/** The core's block of post-processing values, through a view made again after the memory grew. */
 	private block(): Float32Array {
 		const { core } = this;
@@ -1001,6 +1063,7 @@ export class Post implements ViewHolder {
 	get needsHdr(): boolean {
 		return (
 			this.bloom ||
+			this.bounce ||
 			this.dof ||
 			this.taa ||
 			this.autoExposure ||
@@ -1074,7 +1137,7 @@ function checkSettings(settings: PostSettings): void {
 		if (!(SETTINGS as readonly string[]).includes(key))
 			throw new EngineError(
 				'E1213',
-				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, grading, vignette, outline, dof, ssr, autoExposure and sharpen.`,
+				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, grading, vignette, outline, dof, ssr, bounce, autoExposure and sharpen.`,
 			);
 	const {
 		toneMapping,
@@ -1089,6 +1152,7 @@ function checkSettings(settings: PostSettings): void {
 		outline,
 		dof,
 		ssr,
+		bounce,
 		sharpen,
 	} = settings;
 	checkDof(dof);
@@ -1102,6 +1166,16 @@ function checkSettings(settings: PostSettings): void {
 			throw new EngineError('E1213', 'post.set() got 0 for ssr.maxDistance, which is above 0.');
 		checkNumber('ssr.thickness', ssr.thickness);
 		checkNumber('ssr.maxRoughness', ssr.maxRoughness, 1);
+	}
+	checkGroup('bounce', bounce, BOUNCE_SETTINGS, 'intensity, distance and thickness');
+	if (bounce) {
+		checkNumber('bounce.intensity', bounce.intensity, 1);
+		checkNumber('bounce.distance', bounce.distance);
+		if (bounce.distance === 0)
+			throw new EngineError('E1213', 'post.set() got 0 for bounce.distance, which is above 0.');
+		checkNumber('bounce.thickness', bounce.thickness);
+		if (bounce.thickness === 0)
+			throw new EngineError('E1213', 'post.set() got 0 for bounce.thickness, which is above 0.');
 	}
 	checkAutoExposure(settings.autoExposure);
 	checkGroup(

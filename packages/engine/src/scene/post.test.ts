@@ -26,6 +26,7 @@ function post(
 	vignettes: [boolean, ...number[]][];
 	outlines: number[][];
 	ssrs: [boolean, ...number[]][];
+	bounces: [boolean, ...number[]][];
 	sharpens: [boolean, number][];
 	reads: () => number;
 } {
@@ -37,6 +38,7 @@ function post(
 	const outlines: number[][] = [];
 	const dofs: [boolean, ...number[]][] = [];
 	const ssrs: [boolean, ...number[]][] = [];
+	const bounces: [boolean, ...number[]][] = [];
 	const exposures: [boolean, ...number[]][] = [];
 	const sharpens: [boolean, number][] = [];
 	const needs: string[] = [];
@@ -50,6 +52,7 @@ function post(
 		...[1, 0.1, 0.9, 0.5, 3, 1, -4, 4, 0],
 		...[1, 100, 0.5, 0.5],
 		...[0],
+		...[1, 12, 1, 0],
 	);
 	expect(block.length).toBe(C.POST_VALUE_COUNT);
 	let views = 0;
@@ -124,6 +127,10 @@ function post(
 				ssrs.push([on, ...[0, 1, 2, 3].map((k) => at(C.POST_VALUE_SSR_INTENSITY + k))]);
 				return 0;
 			},
+			setBounce(on: boolean) {
+				bounces.push([on, ...[0, 1, 2].map((k) => at(C.POST_VALUE_BOUNCE_INTENSITY + k))]);
+				return 0;
+			},
 			setSharpen(on: boolean) {
 				sharpens.push([on, at(C.POST_VALUE_SHARPEN)]);
 				return 0;
@@ -145,6 +152,7 @@ function post(
 		vignettes,
 		outlines,
 		ssrs,
+		bounces,
 		sharpens,
 		reads: () => views,
 	};
@@ -407,6 +415,54 @@ describe('post.set', () => {
 		expect(bad({ ssr: { intensity: 2 } })).toThrow('E1213');
 		expect(bad({ ssr: { maxRoughness: -0.1 } })).toThrow('E1213');
 		expect(bad({ ssr: { thickness: Number.NaN } })).toThrow('E1203');
+	});
+
+	it('turns the bounce on with its defaults and the values given, keeps them while off, and loads its shaders only when on', () => {
+		const { post: output, bounces, needs } = post();
+		output.set({ bounce: false });
+		expect(needs).toEqual([]);
+		output.set({ bounce: {} });
+		output.set({ bounce: { intensity: 0.5, distance: 30, thickness: 0.6 } });
+		output.set({ bounce: false });
+		output.set({ bounce: { thickness: 2 } });
+		// The values pass through 32-bit floats.
+		const thickness = Math.fround(0.6);
+		expect(bounces).toEqual([
+			[false, 1, 12, 1],
+			[true, 1, 12, 1],
+			[true, 0.5, 30, thickness],
+			[false, 0.5, 30, thickness],
+			[true, 0.5, 30, 2],
+		]);
+		expect(needs).toContain('bounce');
+		expect(output.needsHdr).toBe(true);
+	});
+
+	it('refuses bounce settings it does not know and values out of range', () => {
+		const { post: output } = post();
+		const bad = (settings: unknown) => () => output.set(settings as PostSettings);
+		expect(bad({ bounce: { blur: 1 } })).toThrow('E1213');
+		expect(bad({ bounce: { distance: 0 } })).toThrow('E1213');
+		expect(bad({ bounce: { intensity: 2 } })).toThrow('E1213');
+		expect(bad({ bounce: { thickness: 0 } })).toThrow('E1213');
+		expect(bad({ bounce: { distance: Number.NaN } })).toThrow('E1203');
+	});
+
+	it('warns once where the device has no HDR target, and keeps the bounce off', () => {
+		const { post: output, bounces, needs } = post(false);
+		const warnings: unknown[] = [];
+		const warn = console.warn;
+		console.warn = (message: unknown) => warnings.push(message);
+		try {
+			output.set({ bounce: {} });
+			output.set({ bounce: { intensity: 0.5 } });
+		} finally {
+			console.warn = warn;
+		}
+		expect(warnings).toHaveLength(1);
+		expect(String(warnings[0])).toContain('bounce light');
+		expect(bounces.map(([on]) => on)).toEqual([false, false]);
+		expect(needs).toEqual([]);
 	});
 
 	it('warns once where the device has no float targets, and keeps screen-space reflections off', () => {

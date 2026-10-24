@@ -777,6 +777,34 @@ function ssrTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the bounce light tests: a neutral floor and column beside a red wall. */
+export const BOUNCE_SKETCH = 'tests/pages/sketches/bounce-sketch.ts';
+
+/**
+ * Screen-space bounce light on a neutral floor beside a red wall, on every tier: off, on, with a
+ * longer reach, at a quarter of the render size, at half the render scale, and with more steps per
+ * ray. The bounce spec checks that the floor near the wall gains red where the bounce draws and
+ * keeps its color where it does not.
+ */
+function bounceTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${BOUNCE_SKETCH}${query}`,
+		hold: 1,
+		size: [480, 270],
+		// The bounce needs HDR color, which compatibility mode's 8-bit path lacks.
+		tiers: ['webgpu', 'webgl2'],
+	});
+	return [
+		test('bounce-off', ''),
+		test('bounce-default', '?bounce'),
+		test('bounce-wide', '?bounce&wide'),
+		test('bounce-quarter', '?bounce&bouncescale=0.25'),
+		test('bounce-scale-50', '?bounce&scale=0.5'),
+		test('bounce-steps-24', '?bounce&steps=24'),
+	];
+}
+
 /** The sketch of weighted blending's crossing panes and overlapping puffs. */
 const WEIGHTED_SKETCH = 'tests/pages/sketches/weighted-sketch.ts';
 /** The sketch of the reflection probe tests: a room of glowing walls over a mirror floor. */
@@ -1458,6 +1486,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...minimapTests(),
 	...reflectionTests(),
 	...ssrTests(),
+	...bounceTests(),
 	...probeTests(),
 	...fullscreenTests(),
 	...occlusionTests(),

@@ -960,6 +960,8 @@ export class SketchRunner {
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
 			glue.setSsrQuality(governor.ssrScale, this.ssrStepSetting) !== 0 ||
+			glue.setBounceQuality(Math.round(settings.bounceScale * FULL_SCALE), settings.bounceSteps) !==
+				0 ||
 			glue.setContactSteps(governor.contactSteps) !== 0 ||
 			glue.setDofTaps(settings.dofSamples) !== 0 ||
 			glue.setSubsurfaceTaps(settings.subsurfaceSamples) !== 0 ||

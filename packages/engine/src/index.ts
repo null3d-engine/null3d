@@ -192,6 +192,7 @@ export type {
 	AutoExposureSettings,
 	BloomBlend,
 	BloomSettings,
+	BounceSettings,
 	DofSettings,
 	ExposureMetering,
 	GradingSettings,

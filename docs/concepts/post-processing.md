@@ -3,12 +3,12 @@ id: concepts/post-processing
 title: The post-processing chain
 status: experimental
 since: "0.2"
-summary: "HDR scene color, ambient occlusion and screen-space reflections at half size, custom effects, depth of field with near and far fields, bloom through a chain of mip levels, automatic exposure from a meter on the GPU, an outline mask, and the final pass for the vignette, tone mapping, FXAA, outlines, color grading and dithering, in two steps once the render scale can drop below the whole canvas; still views that blend and then rest the GPU."
+summary: "HDR scene color, ambient occlusion, screen-space reflections and bounce light at half size, custom effects, depth of field with near and far fields, bloom through a chain of mip levels, automatic exposure from a meter on the GPU, an outline mask, and the final pass for the vignette, tone mapping, FXAA, outlines, color grading and dithering, in two steps once the render scale can drop below the whole canvas; still views that blend and then rest the GPU."
 ---
 
 # The post-processing chain
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, screen-space reflections, custom effects, depth of field, bloom, automatic exposure and outlines. The final pass adds color grading, the vignette, sharpening and custom tone curves. A still view blends and then rests the GPU.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, screen-space reflections, screen-space bounce light, custom effects, depth of field, bloom, automatic exposure and outlines. The final pass adds color grading, the vignette, sharpening and custom tone curves. A still view blends and then rests the GPU.
 
 ```mermaid
 flowchart LR
@@ -17,7 +17,8 @@ flowchart LR
     ao --> scene
     ssr --> scene
     copy["The frame before's<br/>opaque colors"] --> scene
-    scene["Scene passes:<br/>linear HDR color"] --> fog["Volumetric fog:<br/>adds the light in the fog"]
+    scene["Scene passes:<br/>linear HDR color"] --> bounce["Screen-space bounce light:<br/>gather, denoise and add<br/>at half size"]
+    bounce --> fog["Volumetric fog:<br/>adds the light in the fog"]
     fog --> custom["Custom effects:<br/>joined into few passes"]
     custom --> dof["Depth of field:<br/>three steps at half size,<br/>then a composite"]
     dof --> down["Bloom's steps down:<br/>each level half the size<br/>of the one before"]
@@ -310,6 +311,38 @@ The engine's benchmark scene of 100,000 boxes over a polished floor ran on a Mac
 - The trace's targets follow the render scale, and a new scale makes no new target. The pyramid takes about 5 bytes per texel of the grid, and the trace 8.
 - When frames take too long, the frame-budget governor lowers `ssrScale` to a quarter, in the step after ambient occlusion's.
 
+
+## Screen-space bounce light
+
+Screen-space bounce light adds one bounce of the light that the screen shows to the surfaces that the camera sees. A red wall sends red light onto the floor beside it, and a white column in a neon alley takes the colors around it. It works in three steps, the first two at half the render size:
+
+1. The depth prepass draws the opaque objects' depth. The gather reads it with the scene's color. From each texel it traces a few short rays into the hemisphere around the surface's normal, and each ray takes the color of the first surface that it passes behind, within `thickness`. Each texel's rays take directions from a hash of its place, so their noise spreads over the screen.
+2. The denoise blurs each texel over its neighbours. It keeps the neighbours whose distance matches the texel's own, so one object's bounce does not bleed onto another.
+3. The add step draws at the render size. It adds the gathered light to the scene's lit color, weighted by each pixel's own color as its albedo: a dark surface sends back less than a bright one, and a colored surface tints what it sends. The result flows through the custom effects, the volumetric fog, depth of field, bloom, the grading and the tone mapping, so the bounce acts on light rather than tinting the finished picture.
+
+```ts
+quality.set({ bounceScale: 0.5 });
+post.set({ bounce: { intensity: 1, distance: 12, thickness: 1 } });
+```
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `intensity` | From 0 to 1: the share of the gathered light that reaches the scene. | 1 |
+| `distance` | How far a ray travels, in world units: above 0. The light fades over the last third of it. | 12 |
+| `thickness` | How far behind a surface a ray may pass and still take its color, in world units: above 0. | 1 |
+
+- The bounce takes the color of what the screen shows, so it reaches no object off the screen and no light that the camera cannot see. A surface near the screen's edge takes less light, and the environment's light fills the rest.
+- Blended objects and particles show in the gathered color, but the depth that finds a hit holds the opaque surface behind them. So a surface that lets light through bounces the color of what lies behind it.
+- The rays are not jittered from frame to frame, so a held frame draws the same picture every time. A still view blends its frames as it does for the rest of the image, which averages the gather's noise along with any edge.
+- The bounce needs HDR color, as bloom does. On a device without an HDR target it stays off, and development builds warn once in the console.
+
+### Where screen-space bounce light draws
+
+The quality setting `bounceScale` sets the size of the gather's and the denoise's targets, as a share of the render size each way. High and Ultra draw at half size, and Low and Medium set 0. So phones and tablets keep it off unless the sketch sets the scale itself. WebGL2 and compatibility mode stop at Medium, so their presets never turn it on. `bounceSteps` sets the steps of each ray's march: 12 on Low, Medium and High, and 16 on Ultra. A longer `distance` needs more steps to find the surfaces along a ray.
+
+### Cost
+
+The bounce adds the depth prepass, two passes at half the render size and one pass at the render size. While it is off, the frame has none of these passes or targets, and its shaders download only when a sketch first turns it on. The gather's and the denoise's targets take 8 bytes per texel each, and the add step's target takes the same bytes as the scene color.
 
 ## Outlines
 

@@ -802,6 +802,13 @@ export interface CoreGlue extends CoreErrors {
 	 * steps of their march, from the next frame on: a size of 0 draws none.
 	 */
 	setSsrQuality(thousandths: number, steps: number): number;
+	/** Turns screen-space bounce light on with the post-processing values' settings, or off. */
+	setBounce(on: boolean): number;
+	/**
+	 * The size of screen-space bounce light's targets in thousandths of the render size, and the
+	 * steps of each of its rays, from the next frame on: a size of 0 draws none.
+	 */
+	setBounceQuality(thousandths: number, steps: number): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
 	/**
@@ -1310,6 +1317,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setSsr',
 	'readsLastFrame',
 	'setSsrQuality',
+	'setBounce',
+	'setBounceQuality',
 	'setAutoExposure',
 	'setExposureMeter',
 	'createParticles',

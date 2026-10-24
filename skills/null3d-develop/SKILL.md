@@ -188,6 +188,7 @@ Effects:
 | Outlines around chosen meshes | `post.set({ outline: { color, width } })` and `mesh.setOutlined(true)` (0.2) | `api/post`, `api/objects` |
 | Ambient occlusion | `post.set({ ao: { radius, intensity } })` (0.2), with `quality.set({ aoScale: 0.5 })` on phones and tablets | `api/post`, `concepts/post-processing` |
 | Wet streets, polished floors and metal that reflect the scene | `post.set({ ssr: { maxDistance, thickness } })` (0.2) with smooth materials; `ssrScale` 0 on Low; an environment shows where rays miss. A flat mirror: a reflection pass | `api/post`, `concepts/post-processing` |
+| Light that bounces off the screen onto nearby surfaces | `post.set({ bounce: { intensity, distance } })` (0.2); `bounceScale` 0 below High; needs HDR color | `api/post`, `concepts/post-processing` |
 | Depth of field, a camera's lens | `camera.setFocalLength(mm)` and `post.set({ dof: { aperture, focusDistance or focusPoint } })` (0.2); quality setting `dofSamples`, 0 on Low | `api/post`, `api/cameras`, `concepts/post-processing` |
 | An eye that adapts from bright to dark places, automatic exposure | `post.set({ autoExposure: { minEv, maxEv, speedUp, speedDown, compensation } })` (0.2), from the camera's `exposure` or `ev100`; quality setting `exposureMeter` | `api/post`, `concepts/post-processing` |
 | Crisper edges and fine detail | `post.set({ sharpen })`, 0 to 1; 0.5 is a good start (0.2) | `api/post` |

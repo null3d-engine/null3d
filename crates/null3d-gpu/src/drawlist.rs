@@ -827,6 +827,14 @@ pub mod layout {
     /// [`TAA`] with a multisampled scene depth, whose samples the resolve reads. Only WebGPU has
     /// it.
     pub const TAA_MS: u32 = 58;
+    /// Group 0 of screen-space bounce light's steps: its uniform block at binding 0, then two
+    /// textures at bindings 1 and 2, which the steps read with `textureLoad` as unfilterable
+    /// floats. The gather binds the scene depth first and the scene color second, the denoise the
+    /// gather's target at both, and the add the denoised light first and the lit color second.
+    pub const BOUNCE: u32 = 59;
+    /// [`BOUNCE`] with a multisampled scene depth, whose sample 0 the gather reads. Only WebGPU
+    /// has it.
+    pub const BOUNCE_MS: u32 = 60;
     /// The final pass with custom effects folded into it: [`FINAL`]'s bindings, then the effects'
     /// uniform buffer at binding 4 and the scene's depth, or a blank texture, at binding 5, as
     /// plain floats.
@@ -2066,6 +2074,20 @@ pub mod template {
     /// Temporal anti-aliasing's copy of the resolve's target into the history of the frame's
     /// parity, one texel per pixel. It binds as the copy of a view's image does.
     pub const TAA_COPY: u32 = 82;
+    /// Screen-space bounce light's gather: one triangle over a target at a fraction of the render
+    /// size, which traces a few short rays from each texel's surface through the scene depth. It
+    /// binds as [`BOUNCE`](super::layout::BOUNCE), or [`BOUNCE_MS`](super::layout::BOUNCE_MS) from
+    /// a multisampled scene depth.
+    pub const BOUNCE_GATHER: u32 = 83;
+    /// [`BOUNCE_GATHER`] from a multisampled scene depth, whose sample 0 it reads. WebGPU only.
+    pub const BOUNCE_GATHER_MS: u32 = 84;
+    /// Screen-space bounce light's denoise: an edge-aware blur over the gather's target. It binds
+    /// as [`BOUNCE`](super::layout::BOUNCE).
+    pub const BOUNCE_DENOISE: u32 = 85;
+    /// Screen-space bounce light's add step: one triangle over a target of the render size, which
+    /// adds the gathered light to the scene's lit color. It binds as
+    /// [`BOUNCE`](super::layout::BOUNCE) does.
+    pub const BOUNCE_ADD: u32 = 86;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -2073,7 +2095,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 81] = [
+    pub const NAMES: [(&str, u32); 85] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2154,6 +2176,10 @@ pub mod template {
         ("TAA_RESOLVE", TAA_RESOLVE),
         ("TAA_RESOLVE_MS", TAA_RESOLVE_MS),
         ("TAA_COPY", TAA_COPY),
+        ("BOUNCE_GATHER", BOUNCE_GATHER),
+        ("BOUNCE_GATHER_MS", BOUNCE_GATHER_MS),
+        ("BOUNCE_DENOISE", BOUNCE_DENOISE),
+        ("BOUNCE_ADD", BOUNCE_ADD),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2260,6 +2286,10 @@ pub mod groups {
         (template::TAA_RESOLVE, own!(layout::TAA)),
         (template::TAA_RESOLVE_MS, own!(layout::TAA_MS)),
         (template::TAA_COPY, own!(layout::VIEW_COPY)),
+        (template::BOUNCE_GATHER, own!(layout::BOUNCE)),
+        (template::BOUNCE_GATHER_MS, own!(layout::BOUNCE_MS)),
+        (template::BOUNCE_DENOISE, own!(layout::BOUNCE)),
+        (template::BOUNCE_ADD, own!(layout::BOUNCE)),
         (template::LIGHT_COUNT, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_PLACE, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_WRITE, own!(layout::LIGHT_CLUSTERS)),
@@ -2564,6 +2594,8 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("CLUSTER_CULL", layout::CLUSTER_CULL),
     ("TAA", layout::TAA),
     ("TAA_MS", layout::TAA_MS),
+    ("BOUNCE", layout::BOUNCE),
+    ("BOUNCE_MS", layout::BOUNCE_MS),
     ("SUBSURFACE_BLUR", layout::SUBSURFACE_BLUR),
     ("SUBSURFACE_COMPOSITE", layout::SUBSURFACE_COMPOSITE),
     ("SUBSURFACE_COMPOSITE_MS", layout::SUBSURFACE_COMPOSITE_MS),

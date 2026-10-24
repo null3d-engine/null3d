@@ -170,6 +170,7 @@ use null3d_gpu::drawlist::{
 use crate::accumulate::{self, AccumulateIds, AccumulatePass};
 use crate::ao::{self, Ao, AoIds, AoPass, Contact, StepSources};
 use crate::bloom::{self, Bloom, BloomIds, BloomPass, ChainFrame, LEVELS, STEPS};
+use crate::bounce::{self, BounceFrame, BounceIds, BouncePass};
 use crate::camera::Mat4;
 use crate::compute::{ComputePassIds, ComputePasses};
 use crate::dof::{self, DofFrame, DofIds, DofPass, DofSources};
@@ -230,6 +231,8 @@ pub(crate) struct GraphIds {
     pub(crate) present_group: u32,
     pub(crate) bloom: BloomIds,
     pub(crate) ao: AoIds,
+    /// Screen-space bounce light's GPU objects.
+    pub(crate) bounce: BounceIds,
     pub(crate) effects: EffectIds,
     pub(crate) fullscreen: FullscreenIds,
     /// The GPU objects of the compute passes.
@@ -436,6 +439,11 @@ const PICK_RESOLVED: &str = "pickResolved";
 /// the denoise, whose target the camera's opaque pass reads.
 const AO_PASSES: [&str; ao::STEPS] = ["AoDepth", "AoHorizon", "AoDenoise"];
 const AO_TARGETS: [&str; ao::STEPS] = ["aoDepth", "aoHorizon", "aoResult"];
+/// Each step of screen-space bounce light and the target it creates: the gather, the denoise, and
+/// the add step's target, which the custom effects, the volumetric fog, depth of field, bloom and
+/// the final pass read in place of the scene color.
+const BOUNCE_PASSES: [&str; bounce::STEPS] = ["BounceGather", "BounceDenoise", "BounceAdd"];
+const BOUNCE_TARGETS: [&str; bounce::STEPS] = ["bounceGather", "bounceDenoise", "bounceColor"];
 /// The motion view's culling pass on WebGPU, and the buffer of its compacted instances and
 /// indirect draws.
 const MOTION_CULLING: &str = "MotionCulling";
@@ -578,6 +586,9 @@ pub(crate) enum Role {
     /// A step of screen-space reflections, by its place: a level of the depth pyramid, then the
     /// trace. The graph records it itself.
     Ssr(u8),
+    /// A step of screen-space bounce light, by its place: the gather, the denoise and the add.
+    /// The graph records it itself.
+    Bounce(u8),
     /// A pass of the custom effects, a lone effect or a group, by its place among the effects'
     /// passes. The graph records it itself.
     Effect(u8),
@@ -735,6 +746,7 @@ enum BuiltGroup {
     Weighted,
     ParticleDepth,
     Taa,
+    Bounce,
 }
 
 /// The render graph of a frame builder's passes, the textures its draw lists made for the compiled
@@ -996,6 +1008,20 @@ pub(crate) struct FrameGraph {
     /// The camera's view in the frame whose color copy the next frame's reflections read, with the
     /// copy's texture as that frame made it, or `None` before a frame copied for them.
     last_view: Option<(LastView, MadeTexture)>,
+    /// Screen-space bounce light's steps and their GPU objects, once they first draw.
+    bounce_pass: Option<BouncePass>,
+    /// The GPU objects that the bounce's steps take.
+    bounce_ids: BounceIds,
+    /// What the bounce draws with in the frame, while the sketch turns it on.
+    bounce: Option<BounceFrame>,
+    /// The size of the bounce's targets as a share of the render size.
+    bounce_scale: f32,
+    /// True once the bounce's pipelines draw: built, after the frame whose list created them.
+    bounce_built: bool,
+    /// True when the declared passes hold the bounce's steps.
+    bounce_declared: bool,
+    /// The textures that its steps read, found once for each compile of the graph.
+    bounce_textures: CompileCache<bounce::StepSources>,
     /// The number of views the declarations cover.
     views: usize,
     /// The debug lines pass, once the passes are declared.
@@ -1258,6 +1284,13 @@ impl FrameGraph {
             ssr_scale: ao::MAX_SCALE,
             ssr_built: false,
             last_view: None,
+            bounce_pass: None,
+            bounce_ids: ids.bounce,
+            bounce: None,
+            bounce_scale: bounce::MAX_SCALE,
+            bounce_built: false,
+            bounce_declared: false,
+            bounce_textures: CompileCache::default(),
             views: 0,
             debug_lines: None,
             transparent: Vec::new(),
@@ -1364,6 +1397,12 @@ impl FrameGraph {
         self.fog_built = false;
         self.taa_pass = None;
         self.taa_built = false;
+        // The bounce needs HDR color, and the gather reads the depth's samples.
+        self.bounce_pass = None;
+        self.bounce_built = false;
+        if !scene_color.is_hdr() {
+            self.bounce = None;
+        }
         // The copy's target takes the scene color's format, which its pipeline draws into, and the
         // depth copy reads the depth's samples.
         self.transmission_built = false;
@@ -1422,7 +1461,7 @@ impl FrameGraph {
     /// True when each view has a depth prepass: from the builder's start, or while ambient
     /// occlusion's steps run or screen-space reflections draw, as they read the prepass's depth.
     pub(crate) fn depth_prepass(&self) -> bool {
-        self.prepass || self.screen_steps() || self.ssr.is_some()
+        self.prepass || self.screen_steps() || self.ssr.is_some() || self.bounce.is_some()
     }
 
     /// True while ambient occlusion's steps run: while ambient occlusion or contact shadows draw.
@@ -1513,6 +1552,31 @@ impl FrameGraph {
     /// are built. Until then the prepass runs, so its pipelines build too.
     pub(crate) fn ssr_draws(&self) -> bool {
         self.ssr.is_some() && self.ssr_built
+    }
+
+    /// Turns screen-space bounce light on with what the frame draws it with, and the size of its
+    /// targets as a share of the render size, or off with `None`, for the next frames. The passes
+    /// are declared again only when it turns on or off, or when the scene color stops holding
+    /// high dynamic range color.
+    pub(crate) fn set_bounce(&mut self, frame: Option<BounceFrame>, scale: f32) {
+        let was = self.bounce_wanted();
+        self.bounce = frame.filter(|_| self.scene_color.is_hdr());
+        self.bounce_scale = scale.clamp(0.0, bounce::MAX_SCALE);
+        if self.bounce_wanted() != was {
+            self.declared = false;
+        }
+    }
+
+    /// True while the sketch turns the bounce on and the scene color holds high dynamic range
+    /// color.
+    fn bounce_wanted(&self) -> bool {
+        self.bounce.is_some()
+    }
+
+    /// True while the bounce draws: on, on the HDR path, and its pipelines are built. Until then
+    /// the depth prepass runs, so its pipelines build too.
+    pub(crate) fn bounce_draws(&self) -> bool {
+        self.bounce_wanted() && self.bounce_built
     }
 
     /// True while the frame copies the camera's opaque color: for surfaces that let light through,
@@ -1757,6 +1821,11 @@ impl FrameGraph {
         } else {
             0
         };
+        let bounce = if self.bounce.is_some() {
+            BouncePass::UPLOAD_BYTES
+        } else {
+            0
+        };
         FinalPass::UPLOAD_BYTES
             + still
             + if self.two_step_declared {
@@ -1776,6 +1845,7 @@ impl FrameGraph {
             + compute
             + exposure
             + taa
+            + bounce
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
@@ -2039,13 +2109,25 @@ impl FrameGraph {
         }
     }
 
+    /// The resource that holds the scene's lit color and the bounce light that the screen adds:
+    /// the bounce's add step's target while its passes are declared, or else [`Self::lit_output`].
+    /// The volumetric fog's apply step and the custom effects read it.
+    fn bounce_output(&self) -> &'static str {
+        if self.bounce_declared {
+            BOUNCE_TARGETS[bounce::STEPS - 1]
+        } else {
+            self.lit_output()
+        }
+    }
+
     /// The resource that holds the scene's color before the custom effects: the volumetric fog's
-    /// target while its steps are declared, or else the lit color. The custom effects read it.
+    /// target while its steps are declared, or else the bounce's output. The custom effects read
+    /// it.
     fn scene_output(&self) -> &'static str {
         if self.fog_declared > 0 {
             FOG_COLOR
         } else {
-            self.lit_output()
+            self.bounce_output()
         }
     }
 
@@ -3038,6 +3120,10 @@ impl FrameGraph {
         if self.taa_declared {
             self.declare_taa();
         }
+        self.bounce_declared = self.bounce_draws() && !views.is_empty();
+        if self.bounce_declared {
+            self.declare_bounce();
+        }
         if self.fog_declared > 0 {
             self.declare_fog(self.fog_declared);
         }
@@ -3428,6 +3514,30 @@ impl FrameGraph {
         }
     }
 
+    /// Declares screen-space bounce light's steps: the gather reads the scene depth and color as
+    /// the scene's passes leave them, the denoise reads the gather's target, and the add step reads
+    /// the lit color and the denoised light and creates the target that the chain after it reads
+    /// in place of the scene color.
+    fn declare_bounce(&mut self) {
+        let gather = Pass::new(BOUNCE_PASSES[0], PassKind::Fullscreen)
+            .size(bounce::SIZE)
+            .reads(SCENE_DEPTH)
+            .reads(self.lit_output())
+            .creates(BOUNCE_TARGETS[0], Target::color(bounce::FORMAT));
+        self.add(gather, Role::Bounce(0));
+        let denoise = Pass::new(BOUNCE_PASSES[1], PassKind::Fullscreen)
+            .size(bounce::SIZE)
+            .reads(BOUNCE_TARGETS[0])
+            .creates(BOUNCE_TARGETS[1], Target::color(bounce::FORMAT));
+        self.add(denoise, Role::Bounce(1));
+        let add = Pass::new(BOUNCE_PASSES[2], PassKind::Fullscreen)
+            .size(Size::Full)
+            .reads(self.lit_output())
+            .reads(BOUNCE_TARGETS[1])
+            .creates(BOUNCE_TARGETS[2], Target::color(self.scene_color.format()));
+        self.add(add, Role::Bounce(2));
+    }
+
     /// Declares the volumetric fog's steps for a grid of `slices` slices: the two light steps, each
     /// into a kept light texture that it reads the other one of, then the block step, which reads
     /// both, the sum, which reads the block step's target, and the apply step, which reads the
@@ -3470,7 +3580,7 @@ impl FrameGraph {
             .creates(FOG_SUMMED, grid);
         self.add(sum, Role::FogSum);
         let apply = Pass::new(FOG_APPLY_PASS, PassKind::Fullscreen)
-            .reads(self.lit_output())
+            .reads(self.bounce_output())
             .reads(SCENE_DEPTH)
             .reads(FOG_SUMMED)
             .creates(FOG_COLOR, Target::color(fog_volume::FORMAT));
@@ -3650,6 +3760,16 @@ impl FrameGraph {
     fn ssr_steps(&mut self) -> &mut SsrPass {
         let ids = self.ssr_ids;
         self.ssr_pass.get_or_insert_with(|| SsrPass::new(ids))
+    }
+
+    /// Screen-space bounce light's steps, made for the scene depth's samples when first asked for.
+    fn bounce_steps(&mut self) -> &mut BouncePass {
+        // WebGL2 has no multisampled textures: its backend gives the gather a copy of one sample.
+        let samples = if self.gpu_culling { self.samples } else { 1 };
+        let format = self.scene_color.format();
+        let ids = self.bounce_ids;
+        self.bounce_pass
+            .get_or_insert_with(|| BouncePass::new(ids, samples, format))
     }
 
     /// Ambient occlusion's steps, made for the scene depth's samples when first asked for.
@@ -3906,6 +4026,7 @@ impl FrameGraph {
             BuiltGroup::Weighted => self.weighted_built,
             BuiltGroup::ParticleDepth => self.particle_depth_built,
             BuiltGroup::Taa => self.taa_built,
+            BuiltGroup::Bounce => self.bounce_built,
         }
     }
 
@@ -3921,6 +4042,7 @@ impl FrameGraph {
             BuiltGroup::Weighted => self.weighted_draws(),
             BuiltGroup::ParticleDepth => self.particle_depth_draws(),
             BuiltGroup::Taa => self.taa_draws(),
+            BuiltGroup::Bounce => self.bounce_draws(),
         }
     }
 
@@ -3947,6 +4069,7 @@ impl FrameGraph {
             BuiltGroup::Weighted => self.weighted_built = built,
             BuiltGroup::ParticleDepth => self.particle_depth_built = built,
             BuiltGroup::Taa => self.taa_built = built,
+            BuiltGroup::Bounce => self.bounce_built = built,
         }
         if self.built_draws(group) != drew {
             again(self);
@@ -4036,6 +4159,12 @@ impl FrameGraph {
             pipelines.all_built(steps.pipeline_ids(), pipelines_built)
         };
         self.note_built(BuiltGroup::Taa, taa_built, FrameGraph::declare_again);
+        let bounce_built = self.bounce.is_some() && {
+            let steps = self.bounce_steps();
+            steps.request_pipelines(pipelines);
+            pipelines.all_built(steps.pipeline_ids(), pipelines_built)
+        };
+        self.note_built(BuiltGroup::Bounce, bounce_built, FrameGraph::declare_again);
         let fog_built = self.fog.is_some() && {
             let steps = self.fog_steps();
             steps.request_pipelines(pipelines);
@@ -4218,6 +4347,7 @@ impl FrameGraph {
         self.upload_compute(list, arena)?;
         self.upload_dof(list, arena)?;
         self.upload_taa(list, arena)?;
+        self.upload_bounce(list, arena)?;
         self.upload_accumulate(list, arena)?;
         let exposure = self.upload_exposure(list, arena)?;
         self.upload_fog(list, arena)?;
@@ -4793,6 +4923,49 @@ impl FrameGraph {
             .prepare(list, arena, frame_size, frame, sources, made)
     }
 
+    /// Records screen-space bounce light's objects and block while its steps are declared, and
+    /// binds each step to the textures it reads, found by name once for each compile of the graph.
+    fn upload_bounce(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        let Some(frame) = self.bounce.filter(|_| self.bounce_declared) else {
+            return Ok(());
+        };
+        let lit = self.lit_output();
+        let mut found = self.bounce_textures;
+        let sources = found.get_or(self.graph.compiles(), || {
+            let id = |name: &str| {
+                self.sampled_id(name)
+                    .expect("each step of the bounce reads a planned texture")
+            };
+            let gather = id(BOUNCE_TARGETS[0]);
+            let denoise = id(BOUNCE_TARGETS[1]);
+            let color = id(lit);
+            [[id(SCENE_DEPTH), color], [gather, gather], [denoise, color]]
+        });
+        self.bounce_textures = found;
+        let (canvas, scale, bounce_scale, made) = (
+            self.canvas,
+            self.scale,
+            self.bounce_scale,
+            self.textures_made,
+        );
+        self.bounce_steps().prepare(
+            list,
+            arena,
+            frame.settings,
+            frame.projection,
+            canvas,
+            scale,
+            bounce_scale,
+            frame.steps,
+            &sources,
+            made,
+        )
+    }
+
     /// Records the volumetric fog's objects and block while its steps are declared, and binds the
     /// steps to the textures they read, found by name once for each compile of the graph.
     fn upload_fog(
@@ -5304,6 +5477,18 @@ impl FrameGraph {
                                     .expect("screen-space reflections' passes run once declared")
                                     .record(list, step, corner)?
                             }
+                            Role::Bounce(step) => {
+                                let step = usize::from(step);
+                                let corner = if step < bounce::STEPS - 1 {
+                                    bounce::corner(self.canvas, self.scale, self.bounce_scale)
+                                } else {
+                                    Size::Full.viewport(self.canvas, self.scale)
+                                };
+                                self.bounce_pass
+                                    .as_ref()
+                                    .expect("the bounce's passes run once declared")
+                                    .record(list, step, corner)?
+                            }
                             Role::Effect(index) => {
                                 let unit = self.effect_units[usize::from(index)];
                                 self.effect_pass
@@ -5626,6 +5811,9 @@ impl FrameGraph {
         }
         if let Some(taa) = self.taa_pass.as_mut() {
             taa.reset_gpu();
+        }
+        if let Some(bounce) = self.bounce_pass.as_mut() {
+            bounce.reset_gpu();
         }
         if let Some(copies) = self.view_copies.as_mut() {
             copies.reset_gpu();
@@ -6332,6 +6520,10 @@ mod tests {
             buffer: 19,
             sampler: 17,
             first_group: 140,
+        },
+        bounce: BounceIds {
+            buffer: 24,
+            first_group: 230,
         },
         view_copy: Some(ViewCopyIds { first_group: 60 }),
         transmission: TransmissionIds {

@@ -352,7 +352,7 @@ export interface EngineOptions {
 	 * Features whose shaders load before the first frame, for a game that must fetch nothing while
 	 * it plays. Each feature's shaders otherwise download the first time the sketch uses it:
 	 * `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh,
-	 * `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first
+	 * `'bloom'`, `'ao'` and `'bounce'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first
 	 * batch, `'background'` with a texture, environment or cube map background, `'sky'` with the
 	 * sky, `'coverage'` with the first masked material that MSAA smooths, `'hash'` with the first
 	 * hashed material, `'cutout'` with the first masked object that casts shadows, which casts none

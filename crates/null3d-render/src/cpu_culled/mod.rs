@@ -113,6 +113,7 @@ use crate::accumulate::AccumulateIds;
 use crate::ao::{self, AoIds};
 use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
+use crate::bounce::BounceIds;
 use crate::cells::CellCulling;
 use crate::compute::ComputePassIds;
 use crate::debug_lines::LinesPass;
@@ -232,6 +233,8 @@ mod ids {
     pub const STILL_SETTINGS: u32 = ACCUMULATE + 1;
     /// The uniform buffer of temporal anti-aliasing's resolve.
     pub const TAA: u32 = STILL_SETTINGS + 1;
+    /// The uniform buffer of screen-space bounce light's steps.
+    pub const BOUNCE: u32 = TAA + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = TAA + 1;
 
@@ -462,8 +465,10 @@ mod ids {
     pub const COMPUTE_GROUPS: u32 = MOTION_FRAME_GROUPS + 2 * RING;
     /// The bind groups of temporal anti-aliasing's resolve and copy, after the compute passes'.
     pub const TAA_GROUPS: u32 = COMPUTE_GROUPS + MAX_VIEWS as u32;
-    /// The bind groups of materials' maps, after temporal anti-aliasing's.
-    pub const TEXTURE_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
+    /// The bind groups of screen-space bounce light's steps, after temporal anti-aliasing's.
+    pub const BOUNCE_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
+    /// The bind groups of materials' maps, after the bounce's.
+    pub const TEXTURE_GROUPS: u32 = BOUNCE_GROUPS + 3;
 }
 
 /// The group index of the decal pass's scene depth in the decal templates on WebGL2: after the
@@ -764,6 +769,10 @@ impl CpuCulledRenderer {
                             buffer: ids::TAA,
                             sampler: ids::TAA_SAMPLER,
                             first_group: ids::TAA_GROUPS,
+                        },
+                        bounce: BounceIds {
+                            buffer: ids::BOUNCE,
+                            first_group: ids::BOUNCE_GROUPS,
                         },
                         view_copy: None,
                         transmission: TransmissionIds {
@@ -2671,6 +2680,8 @@ impl FrameBuilder for CpuCulledRenderer {
         );
         self.graph
             .set_ssr(settings.ssr_frame(canvas), settings.ssr_scale());
+        self.graph
+            .set_bounce(settings.bounce_frame(canvas), settings.bounce_scale());
         let prepass_changed = self.graph.depth_prepass() != self.layout_prepass;
         // A pick that waits declares the pick's passes, and builds the layout again with their
         // pipelines, so the frame draws them with the camera's culling. The passes stay declared

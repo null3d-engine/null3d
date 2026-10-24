@@ -1,5 +1,6 @@
 // Post effects: crates at the dead end of a neon alley at night, on wet asphalt that mirrors the
-// neon, and the camera sways in front of them. Bloom spreads the neon past its edges, ambient
+// neon, and the camera sways in front of them. Bloom spreads the neon past its edges, screen-space
+// bounce light lets the pink and cyan neon tint the asphalt and the crates around it, ambient
 // occlusion darkens the corner, an outline marks one crate, depth of field focuses on that crate,
 // a vignette darkens the edges, and a light sharpening keeps the crate edges crisp. A lens grade
 // splits red from blue toward the edges and adds film grain, and a second effect reads a level of
@@ -61,6 +62,9 @@ export default defineSketch(async (ctx) => {
 		vignette: { intensity: 0.9, size: 1.1 },
 		dof: { aperture: 1.4, focusPoint: [-0.3, 0.35, -1.45] },
 		ssr: { maxDistance: 24, thickness: 0.6 },
+		// The preset turns the bounce on at High and Ultra, where the neon's color reaches the
+		// asphalt and the crates.
+		bounce: { intensity: 1, distance: 10, thickness: 1 },
 		sharpen: 0.5,
 	});
 	// The lens effect keeps the color fringes and the grain. The streak comes from bloom's chain.

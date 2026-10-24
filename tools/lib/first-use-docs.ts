@@ -17,6 +17,7 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 		"with the first morphed mesh, or as soon as the sketch reads a glTF file with morph targets. WebGPU morphs in the skinning pass, so there `'morph'` downloads the skinning shaders",
 	bloom: 'when `post.set` turns bloom on',
 	ao: 'when `post.set` turns ambient occlusion on',
+	bounce: 'when `post.set` turns screen-space bounce light on',
 	dof: 'when `post.set` turns depth of field on',
 	exposure:
 		'when `post.set` turns automatic exposure on. The camera keeps its own exposure until the meter is built',

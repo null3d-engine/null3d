@@ -1,4 +1,5 @@
 // Measures what an effect costs on this device: ?effect=bloom (the default), ?effect=ao,
+// ?effect=bounce,
 // ?effect=dof, ?effect=subsurface, ?effect=exposure, ?effect=fog, ?effect=contact (the sun's contact
 // shadows, with ?steps= steps per march, 8 by default), ?effect=sky, ?effect=effects, ?effect=tone,
 // ?effect=vignette, ?effect=sharpen, ?effect=lens or ?effect=motion names it. The effects effect adds ?count=
@@ -50,6 +51,7 @@ import { run } from './lib/result';
 const SKETCHES = {
 	bloom: './sketches/bloom-sketch.ts',
 	ao: './sketches/ao-sketch.ts',
+	bounce: './sketches/bounce-sketch.ts',
 	tone: './sketches/bloom-sketch.ts',
 	dof: './sketches/dof-sketch.ts',
 	subsurface: './sketches/subsurface-sketch.ts',
