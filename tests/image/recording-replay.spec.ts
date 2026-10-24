@@ -2,9 +2,12 @@
 // `record-phone` publishes the session's frame lines and its recording file; this test reads that
 // result, serves the file to the same sketch on this computer, and compares the lines one for one:
 // the frame number, the sketch time, the step, the key, the pointer and a seeded number, every
-// frame, including the session's long frame. It runs only when NULL3D_RECORDING names the result.
+// frame, including the session's long frame. The phone's result is kept as a fixture, so every run
+// checks it; NULL3D_RECORDING replays another run's result instead.
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
+import { REPO_ROOT } from '../lib/server.ts';
 
 /** What the device run's result holds for the test. */
 interface DeviceResult {
@@ -41,13 +44,15 @@ async function settledLog(page: Page): Promise<string[]> {
 	return page.evaluate(() => (globalThis as RecordingPage).recordingLog?.slice() ?? []);
 }
 
-const RESULT = process.env.NULL3D_RECORDING;
+/** The phone's run, kept as a fixture; the environment may name another run's result instead. */
+const RESULT =
+	process.env.NULL3D_RECORDING ??
+	join(REPO_ROOT, 'tests/fixtures/recordings/galaxy-s24-record.json');
 
 test.describe.configure({ timeout: 120_000 });
 
 test('a recording from a device replays here to the same frames', async ({ page }) => {
-	test.skip(RESULT === undefined, 'NULL3D_RECORDING names a device run result to replay');
-	const result = JSON.parse(readFileSync(RESULT as string, 'utf8')) as DeviceResult;
+	const result = JSON.parse(readFileSync(RESULT, 'utf8')) as DeviceResult;
 	expect(result.ok, result.error).toBe(true);
 	expect(result.log.length).toBe(result.frames);
 	expect(result.longestStep).toBeGreaterThanOrEqual(0.2);

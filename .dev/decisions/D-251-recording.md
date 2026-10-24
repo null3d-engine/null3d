@@ -89,8 +89,9 @@ A Galaxy S24 on Chrome 152, through BrowserStack, recorded a session of 20 frame
 step was 0.25 seconds, with a key and a touch. The file replayed on the Mac, and every one of the
 20 frame lines matched the phone's: the frame number, the sketch time, the step, the key state, the
 pointer position and the seeded number. The long step is part of what matched, so the replay
-carries a hitch instead of smoothing it. The run is in `.dev/tested-devices/`, and
-`tests/image/recording-replay.spec.ts` repeats the comparison from a device run's result.
+carries a hitch instead of smoothing it. The run is in `.dev/tested-devices/`, its recording is kept in
+`tests/fixtures/recordings/`, and `tests/image/recording-replay.spec.ts` repeats the comparison on
+every run.
 
 ## Consequences
 
