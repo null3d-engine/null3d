@@ -355,3 +355,34 @@ An add-on's compute pass writes one storage texture at a fixed binding of the pa
 ## Addendum, 24 October 2026: vegetation is the eleventh foundation
 
 The owner made vegetation a foundation add-on ([D-241](D-241-vegetation-foundation.md)). It passes ruling 4's test, because many kinds of project use plants and other developers' style packs build on it. It holds the species generator, the scatter, the grass, the leaf material, the wind and the hand-off to impostors. Themed species packs stay content for other developers, as the "vegetation styles" of the owner's answer of 14 October. Rule 13 in AGENTS.md lists it. H2's GPU-written draws gain a second user that needs the shadow views: the near grass, which casts shadows (M3-E9).
+
+## Addendum, 25 October 2026: what M3-E2's line covers
+
+M3-E2's plan line read "splat sorting runs on the job workers on WebGL2 through it". An audit read
+"splat sorting" as the per-splat depth sort, which left the task unmet. That sort is not the hook's,
+and the hook cannot honestly carry it.
+
+- An answer reaches the thread that queued the task between two frames, as the contract above says.
+  The transparent pass needs the rows' order inside the frame that draws them, so an order that a
+  task returns can only reach a later frame.
+- The engine's transparent pass culls and sorts every blended batch's rows back to front on the job
+  workers, inside the frame's own job chunks (`crates/null3d-core/src/depth_sort.rs`). The batch
+  takes rows, a count and dirty marks, and no order that a caller gives: the pass's sort replaces
+  any order in which the rows arrived ([D-54](D-54-addon-modules.md)).
+- So a second sort in the add-on would be discarded by the engine's sort. To keep it, the add-on
+  would also re-upload every row in the new order in every frame, and the engine would still sort
+  them again. That duplicates the one place that orders blended draws, which D-54 rejects.
+
+What runs through the hook is the add-on's selection. The task sorts the cloud's chunks by their
+distance to the camera, lowers their detail levels where the budget runs out, and answers each
+chunk's prefix; the sketch packs those rows between two frames. The engine's transparent pass then
+sorts the chosen rows back to front on its job workers, on both GPU paths, as it does for every
+blended draw. The allocation check covers the whole path
+([Benchmarks](../benchmarks.md#allocation-and-profiling)).
+
+The line, as M3-E2 should read: "the splats add-on's selection, which splats draw and each chunk's
+prefix, nearest first, runs on the job workers on WebGL2 through the hook, the engine's transparent
+pass sorts the chosen rows there, and the allocation check covers the path."
+
+H5's table row above says "Splat sorting" as the first user, and this addendum reads that as the
+add-on's selection. [Tasks on the job workers](../../docs/api/tasks.md) now says the same.
