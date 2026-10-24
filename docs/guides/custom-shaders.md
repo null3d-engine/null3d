@@ -40,7 +40,7 @@ fn surface(input: SurfaceInput) -> Surface {
 const red = materials.shader({ wgsl: rings, color: '#e04040', roughness: 0.5 });
 ```
 
-The WGSL can declare uniforms as `struct Uniforms`, which `set()` changes at any time. It can declare textures as `var name: texture_2d<f32>;`, or texture arrays whose layers the shader picks as `var name: texture_2d_array<f32>;`, which the `textures` option gives. A vertex offset, `fn vertexOffset`, moves the mesh's vertices. [Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record, `defaultSurface`, uniforms, textures and vertex offsets. [Built-in shader inputs](../shaders/builtins.md) lists the values that every custom material reads, such as `frame.time`.
+The WGSL can declare uniforms as `struct Uniforms`, which `set()` changes at any time. It can declare textures as `var name: texture_2d<f32>;`, or texture arrays whose layers the shader picks as `var name: texture_2d_array<f32>;`, which the `textures` option gives. A vertex offset, `fn vertexOffset`, moves the mesh's vertices. A lobe, `fn lobe`, adds specular for the main directional light beside the base lobe. [Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record, `defaultSurface`, uniforms, textures, vertex offsets and lobes. [Built-in shader inputs](../shaders/builtins.md) lists the values that every custom material reads, such as `frame.time`.
 
 ## Full shaders
 

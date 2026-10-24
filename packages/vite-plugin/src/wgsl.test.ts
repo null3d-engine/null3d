@@ -438,6 +438,14 @@ fn surface(input: SurfaceInput) -> Surface {
 		expect(built.variants.webgpu?.wgsl?.source).toContain('fn vertexOffset(');
 	});
 
+	it('builds a lobe alone as a custom material', async () => {
+		const sparkle =
+			'fn lobe(input: LobeInput) -> vec3f {\n    return input.specular * input.values.z;\n}\n';
+		const built = material(await compileWgsl('src/sparkle.wgsl', sparkle, HINT));
+		expect(built.functions).toEqual(['lobe']);
+		expect(built.variants.webgpu?.wgsl?.source).toContain('fn lobe(');
+	});
+
 	it('builds a mesh shader of its own as a full shader of a custom material', async () => {
 		const full = `#import null3d::mesh::{InstanceIn, clip_position, find_instance, finish}
 

@@ -673,6 +673,8 @@ const red = materials.shader({ wgsl: rings, color: '#e04040', roughness: 0.5 });
 red.set({ roughness: 0.2 });
 ```
 
+A material can add its own specular lobe for the main directional light with `fn lobe(input: LobeInput) -> vec3f`. The engine adds the color it returns to that light's specular. Point, spot and area lights draw with the base lobe only. [Surface functions](../shaders/surface-functions.md#a-materials-own-lobe) describes the lobe input.
+
 The WGSL can declare uniforms as the fields of `struct Uniforms`. The `uniforms` option gives their first values, and `set` changes them with the standard values:
 
 ```ts
