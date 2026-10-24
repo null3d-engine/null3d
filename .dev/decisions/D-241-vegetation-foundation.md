@@ -164,8 +164,8 @@ Medium it takes 163.9 and 537.5 MiB. Forest Low on WebGPU takes 30.9 to 57.4 MiB
 34.4 MiB of buffers, and its WebAssembly memory grows to 328.8 MiB. At Ultra it reaches 864 MiB.
 
 **Tree generation.** A worker built a stand-in parametric tree in the style of Weber and Penn. It ran at
-each preset's detail, for four species and six seeds each. The set of 24 variants took 14 to 22 ms
-on the iPhone and the iPad. It took 31 to 45 ms on the S24, and 44 to 84 ms on the tablet. The arrays take
+each preset's detail, for four species and six seeds each. The set of 24 variants took 14 to 23 ms
+on the iPhone and the iPad. It took 33 to 47 ms on the S24, and 49 to 94 ms on the tablet. The arrays take
 7.0 MB at Low and 22.7 MB at Ultra, and the triangles run from 123,876 to 474,096. The slowest
 single variant was an oak at Ultra on the tablet: 5.42 ms for 27,090 triangles. This is a stand-in;
 M3-V4's generator replaces it, and its figures set the shape of the budget.

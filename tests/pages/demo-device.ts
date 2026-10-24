@@ -237,6 +237,10 @@ run('demo-device', async () => {
 	const overlayFps = OVERLAY
 		? Number(/([\d.]+)\s*fps/.exec(overlayFigure('fps') ?? '')?.[1] ?? 0)
 		: pageFrames.count / DRAW_SECONDS;
+	// A frame that the engine drew without its GPU still counts, so a run that lost its device must
+	// fail: its figures describe a scene that the GPU never drew, as the tablet's compatibility run
+	// of 24 October 2026 did.
+	if (failures.length > 0) throw new Error(`the engine failed: ${failures.join('; ')}`);
 	if (metrics && !(metrics.presentedFps > 0))
 		throw new Error(
 			`the measure drew no frame in ${metrics.seconds.toFixed(1)} s, and the first frame finished at ${metrics.load.firstFrameDoneMs} ms`,
