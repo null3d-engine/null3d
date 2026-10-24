@@ -532,18 +532,35 @@ and a hero car with two screens.
 - **Post starts on.** Bloom, the vignette and ambient occlusion start on, where the other showcase
   scenes start them off (D-171). A night city of neon and lit windows reads flat without the glow
   of its lights. The owner has not reviewed the look yet.
-- **Time of day.** The scene takes its sky, sun, fog and exposure from the shared stage, which
-  eases between looks and writes them every frame (`examples/lib/stage.ts`). Dusk and Night are the
-  stage's own moods. Storm is the scene's variation on the night: full cloud, a dimmed moon, fog
-  2.4 times as dense and rain 1.8 times as heavy. The stage writes the scene's lit fog with every
-  mood, through its `volumetric` option. It gained three scales for a scene whose own lights carry
-  it: the exposure, the environment light and the brightness of the sky. Skyway sets them to 4.5,
-  2.2 and 2.6, and lowers the cloud cover to 0.45. The HUD keeps Camera, Time of day, Atmosphere
-  (Fog, Rain), Lighting (AO, Environment), Post, Traffic and Quality.
-- **The moods were drawn and looked at.** The image test draws Night. Dusk warms the towers and
-  lifts the sky. Storm fills the sky with cloud, dims the moon, thickens the fog and drives the
-  rain. The physical sky is darker than the analytic night the scene drew before. The
-  references therefore moved in both sets by about 20% of their pixels.
+- **Time of day.** The scene takes its full time of day from the shared stage, as the other
+  showcases do: the same hour dial, with Auto and Studio, over the whole day. The physical sky
+  draws the real sun by day and the moon at night, and Auto moves them across the sky. The scene
+  sets the stage's three scales for a scene lit by its own lamps: the exposure to 4.5, the
+  environment light to 2.2 and the brightness of the sky to 2.6, and lowers the cloud cover to
+  0.45. The scales hold through the whole day, because the physical model's own exposure already
+  falls by day and rises at night; scaling them again by the hour made midday darker than dawn. The
+  stage writes the scene's lit fog with every hour, through its `volumetric` option.
+- **The city's lights follow the hour.** The stage reports the share of a town's own lights that
+  the sun allows (`stage.lamps`). The scene gives it to the facades' windows and shop fronts, the
+  street lamps and their heads, the searchlights and the signs. Every lamp's light and every
+  searchlight fades with the share, and a sign keeps nearly half its light by day, as a lit sign
+  does. At Night the share is 1 exactly, so the held frame's picture is the one the scene had.
+- **Storm is weather, not an hour.** The Atmosphere group's Storm button calls the stage's
+  `setWeather`: full cloud, fog 2.4 times as dense, a sky and light cut to a third and to a half,
+  and rain 1.8 times as heavy. The weather clears when the button turns off. It works at any hour,
+  so a storm at dawn is a storm under a dawn sky. A held frame has no buttons, so its address takes
+  `?storm` as well as the hour.
+- **The HUD** keeps Camera, Time of day, Atmosphere (Fog, Rain, Storm), Lighting (AO, Environment),
+  Post, Traffic and Quality. The scene's own controls reach the shared router through its `own` and
+  `extra` options: the lens kit owns the vignette, the scene's lens owns the depth of field, and the
+  Traffic group stands before Quality.
+- **The hours were drawn and looked at.** The image test draws Night, whose reference did not move:
+  at night the light share is 1 and every scale is the value it always had. Dawn, Midday, Golden,
+  Dusk and Storm were drawn and reviewed. Midday reads as an overcast city that the fog still
+  layers; Golden warms the towers and the sky; Storm drives the rain through a city of visible
+  lamps. The light power uniform moved SwiftShader's WebGL2 picture by 0.10 per cent, at the bright
+  edges of signs and lamps, so that reference was drawn again. The Mac's picture still matches its
+  own reference.
 - **Figures.** A run in Chrome on the Mac measured these, with the shared stage, the traffic-lanes
   add-on and its six real lights, and the lens kit in the scene. The Mac has an Apple M5 Max and a
   120 Hz display. The frame-budget governor was on, and the window was parked past the screen's

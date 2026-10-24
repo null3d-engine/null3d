@@ -1,33 +1,23 @@
-// Skyway: flying a hover car through a rainy megacity at night. Sky lanes carry tens of thousands
-// of hover cars above the streets, and the towers around them are windows, shop fronts and signs
-// drawn in the shader. The wet roads mirror the light, rain falls through everything, and the hero
-// car leads the camera down the canyons.
+// Skyway: flying a hover car through a rainy megacity. Sky lanes carry tens of thousands of hover
+// cars above the streets, and the towers around them are windows, shop fronts and signs drawn in
+// the shader. The wet roads mirror the light, rain falls through everything, and the hero car leads
+// the camera down the canyons.
 //
 // The camera runs a cinematic route made for this scene (see SHOTS), the same way the other
 // showcase scenes do: `c` switches between Auto, which flies the route, and Manual, which hands the
-// camera to the user. The HUD's Traffic buttons change how many cars fly, and the Quality buttons
-// change the preset. The stats overlay is on from the first frame.
-import {
-	defineSketch,
-	type GradingSettings,
-	type QualityPreset,
-	timeOfDay,
-	vec3,
-} from '@null3d/engine';
+// camera to the user. The time of day runs the full day, as it does in the other showcases: the dial
+// holds any hour, Auto moves the sun and the moon, and Studio opens its own light. The city's own
+// lights follow the hour, so its windows and street lamps go out by day and light it at night. The
+// HUD's Traffic buttons change how many cars fly, and the Quality buttons change the preset. The
+// stats overlay is on from the first frame.
+import { defineSketch, type GradingSettings, type QualityPreset, vec3 } from '@null3d/engine';
 import { createLensKit } from '../../addons/lens-kit/index';
 import { type CameraBounds, type Cinematic, createCinematic, type Shot } from '../../lib/cinematic';
-import {
-	ATMOSPHERE,
-	type HudGroup,
-	LIGHTING,
-	POST,
-	QUALITY,
-	radioGroup,
-	toggleGroup,
-} from '../../lib/controls';
+import { type HudGroup, radioGroup } from '../../lib/controls';
 import { EFFECT_LAYER } from '../../lib/layers';
+import { createShowcaseEffects } from '../../lib/showcase-effects';
 import { enableReflections } from '../../lib/ssr';
-import { createMoods } from '../../lib/stage';
+import { createMoods, isMood } from '../../lib/stage';
 import { createCity } from './city';
 import { createFacades } from './facades';
 import { createHero } from './hero';
@@ -39,32 +29,22 @@ import { CARS, createTraffic } from './traffic';
 const FOV = 58;
 /** The bearing of the moon and the sky's light about +Y. */
 const HEADING = 2.1;
-/** The fog's density in the ordinary moods, and the lit fog the sun and the lamps show through. */
+/** The fog's density in the ordinary weather, and the lit fog that the sun and the lamps show. */
 const FOG_DENSITY = 0.0042;
 const FOG_LIT = { intensity: 1.5, anisotropy: 0.42, distance: 430 };
-/** How much denser the storm's fog is, and how much denser its rain. */
+/** How much denser the storm's fog is, and how much heavier its rain. */
 const STORM_FOG = 2.4;
 const STORM_RAIN = 1.8;
-
-/** The looks that the scene's Time of day buttons offer. Storm is the scene's own variation. */
-const MOODS = ['Dusk', 'Night', 'Storm'] as const;
-type SkywayMood = (typeof MOODS)[number];
-/** The stage mood that each look takes: the storm is the night, under heavier cloud and rain. */
-const STAGE_MOOD: Record<SkywayMood, 'Dusk' | 'Night'> = {
-	Dusk: 'Dusk',
-	Night: 'Night',
-	Storm: 'Night',
-};
-const MOOD_OPTIONS = [
-	{ id: 'Dusk', label: 'Dusk', tip: 'The sun has just set, and the city lights are coming on.' },
-	{ id: 'Night', label: 'Night', tip: 'The city after dark, with the moon behind cloud.' },
-	{ id: 'Storm', label: 'Storm', tip: 'A storm: heavy cloud, dense fog and driving rain.' },
-] as const;
-const isSkywayMood = (name: unknown): name is SkywayMood => MOODS.includes(name as SkywayMood);
+/** The storm's weather over the hour: full cloud, thick fog, and a sky and light cut by cloud. */
+const STORM_WEATHER = { fog: STORM_FOG, cloud: 1, light: 0.35, sky: 0.5 };
+/** The ordinary weather, which the Storm button gives back. */
+const CLEAR_WEATHER = { fog: 1, light: 1, sky: 1 };
+/** The lens's vignette, which the lens kit writes. */
+const VIGNETTE = { intensity: 0.55, size: 1.05, falloff: 2.2 };
 /** The point that the lens focuses on, kept up to date by the route. */
 const TARGET: [number, number, number] = [-525, 90, 560];
 
-/** The night grade: a little contrast, cool shadows, warm highlights and a little more color. */
+/** The warm, cool-shadowed grade that a rainy city at every hour keeps. */
 const NIGHT_GRADE: GradingSettings = {
 	lift: [-0.02, -0.02, -0.02],
 	gain: [1.05, 1.05, 1.05],
@@ -136,14 +116,13 @@ const TRAFFIC_OPTIONS = [
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, quality, page, time, debug } = ctx;
 	page.post('loading', 'Opening the skyway');
-	// The sky, the sun, the fog and the exposure follow the shared stage, which eases between moods
+	// The sky, the sun, the fog and the exposure follow the shared stage, which eases between hours
 	// and lights the scene from the sky. The scene gives the stage its lit fog, so the lamps and the
 	// searchlights stay visible through the air in every mood.
 	const [skyLight, room] = await Promise.all([
 		assets.skyEnvironment(),
 		assets.builtinEnvironment('room'),
 	]);
-	const night = timeOfDay('night', { heading: HEADING, model: 'physical' });
 	const sun = scene.createDirectionalLight({
 		direction: [-0.32, -0.62, 0.42],
 		color: '#a8c0ee',
@@ -156,39 +135,18 @@ export default defineSketch(async (ctx) => {
 		cloudCoverage: 0.45,
 		backdrop: [0.01, 0.012, 0.02],
 		volumetric: FOG_LIT,
-		// The city's own lights carry it: the physical night alone leaves the streets black.
+		// The city's own lights carry it: the physical night alone leaves the streets black. The
+		// scales hold at every hour, as the physical model's own exposure already falls by day.
 		exposureScale: 4.5,
-		// The sky's own light on the wet streets and the tower sides.
 		environmentScale: 2.2,
-		// A brighter sky than the night gives, so the towers stand against it.
 		skyScale: 2.6,
 	});
-	// The storm's own sky: the physical night under full cloud, with the moon dimmed by it.
-	const storm = {
-		atmosphere: {
-			sunPosition: night.atmosphere.sunPosition,
-			sunIntensity: 0,
-			moonPosition: night.atmosphere.moonPosition,
-			moonIntensity: (night.atmosphere.moonIntensity as number) * 0.35,
-			stars: 0,
-			cloudCoverage: 1,
-			time: 0,
-		},
-	};
-	const stormSky = { intensity: (night.skyIntensity as number) * 0.5 };
-	/** The storm's fog, which the scene writes while the storm runs. */
-	const stormFog = {
-		color: [0.03, 0.035, 0.06] as [number, number, number],
-		density: FOG_DENSITY * STORM_FOG,
-		heightFalloff: 0.013,
-		volumetric: FOG_LIT,
-	};
-	let mood: SkywayMood = 'Night';
 	const params = new URL(import.meta.url).searchParams;
-	const lensOff = params.get('lens') === 'off';
 	const start = params.get('mood');
-	if (isSkywayMood(start)) mood = start;
-	stage.set(STAGE_MOOD[mood]);
+	// A held frame has no buttons, so its address may ask for the storm as well as the hour.
+	const storm = params.has('storm');
+	stage.set(isMood(start) ? start : 'Night');
+	const lensOff = params.get('lens') === 'off';
 
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
@@ -208,7 +166,7 @@ export default defineSketch(async (ctx) => {
 	// marks: the fringes, the streak on the brightest light, grain and a little speed blur.
 	const lensKit = createLensKit(ctx, {
 		sharpen: 0.35,
-		vignette: { intensity: 0.55, size: 1.05, falloff: 2.2 },
+		vignette: VIGNETTE,
 		grading: NIGHT_GRADE,
 		aberration: lensOff ? 0 : 0.8,
 		streak: lensOff ? 0 : 0.45,
@@ -241,135 +199,98 @@ export default defineSketch(async (ctx) => {
 	fit();
 	quality.onChange(fit);
 
-	/** The state of each switch that the HUD offers. */
-	const on: Record<string, boolean> = {
-		fog: true,
-		rain: true,
-		ao: true,
-		environment: true,
-		bloom: true,
-		dof: false,
-		exposure: false,
-		vignette: true,
+	/** The share of the city's own lights already in the scene, so a settled hour writes none again. */
+	let lit = Number.NaN;
+	/** Turns the city's windows, signs and street lamps to the share that the hour gives them. */
+	const showLights = (share: number): void => {
+		// The stage eases its lamps in small steps through dusk and dawn. Below a step nothing
+		// visible changes, so a settled hour writes none of them again.
+		if (Math.abs(share - lit) < 0.002) return;
+		lit = share;
+		facades.power(share);
+		city.power(share);
 	};
-	/** The level of detail the Quality tab keeps, as the other showcases do. */
-	let lodThreshold = quality.settings.lodThreshold || 1;
-
-	/**
-	 * Writes the storm's own sky and fog over the stage's night. A held frame runs no update, so
-	 * the setup writes it once too.
-	 */
-	const writeStorm = (t: number): void => {
-		storm.atmosphere.time = t;
-		scene.setBackground(storm, stormSky);
-		if (!on.fog) return;
-		const air = stage.airColor;
-		stormFog.color[0] = air[0] as number;
-		stormFog.color[1] = air[1] as number;
-		stormFog.color[2] = air[2] as number;
-		scene.setFog(stormFog);
-	};
-	if (mood === 'Storm') writeStorm(0);
-
-	const groups = (): readonly HudGroup[] => [
-		radioGroup('mood', 'Time of day', MOOD_OPTIONS, mood),
-		toggleGroup('atmosphere', 'Atmosphere', ATMOSPHERE, ['fog', 'rain'], (id) => on[id] ?? false),
-		toggleGroup('lighting', 'Lighting', LIGHTING, ['ao', 'environment'], (id) => on[id] ?? false),
-		toggleGroup(
-			'post',
-			'Post',
-			POST,
-			['bloom', 'dof', 'exposure', 'vignette'],
-			(id) => on[id] ?? false,
-		),
-		radioGroup('traffic', 'Traffic', TRAFFIC_OPTIONS, String(traffic.count)),
-		{
-			...radioGroup('quality', 'Quality', QUALITY, quality.preset),
-			extras: [
-				{
-					id: 'lod',
-					label: 'LOD',
-					tip: 'Draw simpler meshes in the distance. Off draws every mesh at its fullest.',
-					active: quality.settings.lodThreshold > 0,
-				},
-			],
-		},
-	];
-	let film: Cinematic;
+	// The held frame runs no update, so the city already holds the hour's light.
+	showLights(stage.lamps);
 
 	/** The lens's settings, which follow the point the route looks at. */
 	const lens = { aperture: 1.8, maxBlur: 0.025, focusPoint: TARGET };
 	/** The post settings of the lens while it is on, written once so a frame allocates nothing. */
 	const lensSettings = { dof: lens };
+	let film: Cinematic;
 
-	/** Turns one of the scene's own switches on or off. */
-	const set = (id: string, lit: boolean): void => {
-		on[id] = lit;
-		switch (id) {
-			case 'fog':
-				stage.show('fog', lit);
-				break;
-			case 'rain':
-				rain.setVisible(lit);
-				break;
-			case 'ao':
-				post.set({ ao: lit ? { radius: 1.4 } : false });
-				break;
-			case 'environment':
-				stage.show('environment', lit);
-				break;
-			case 'bloom':
-				post.set({ bloom: lit ? { intensity: 0.55, threshold: 1 } : false });
-				break;
-			case 'dof':
-				post.set(lit ? lensSettings : { dof: false });
-				break;
-			case 'exposure':
-				post.set({ autoExposure: lit ? {} : false });
-				break;
-			case 'vignette':
-				lensKit.set({ vignette: lit ? { intensity: 0.55, size: 1.05, falloff: 2.2 } : false });
-				break;
-		}
-	};
-	/** Takes one of the scene's looks: the stage for Dusk and Night, its own heavy weather for Storm. */
-	const setMood = (next: SkywayMood): void => {
-		mood = next;
-		stage.set(STAGE_MOOD[next]);
-		rain.setStrength(next === 'Storm' ? STORM_RAIN : 1);
-	};
-	rain.setStrength(mood === 'Storm' ? STORM_RAIN : 1);
-
-	page.onMessage((name, value) => {
-		const picked = String(value);
-		if (name === 'camera') film.select(picked);
-		else if (name === 'mood' && isSkywayMood(value)) {
-			setMood(value);
-			film.refresh();
-		} else if (name === 'atmosphere' || name === 'lighting' || name === 'post') {
-			set(picked, !(on[picked] ?? false));
-			film.refresh();
-		} else if (name === 'traffic') {
-			traffic.setCount(Number(value));
-			film.refresh();
-		} else if (name === 'quality') {
-			const lod = quality.settings.lodThreshold > 0;
-			if (picked === 'lod') {
-				if (lod) lodThreshold = quality.settings.lodThreshold;
-				void quality.set({ lodThreshold: lod ? 0 : lodThreshold });
-			} else {
-				void quality.setPreset(picked as QualityPreset);
-				lodThreshold = quality.settings.lodThreshold || lodThreshold;
-				if (!lod) void quality.set({ lodThreshold: 0 });
+	// The scene's controls: the same time of day dial, Auto and Studio as the other showcase scenes,
+	// and its own rain, storm, traffic and ambient occlusion.
+	const controls = createShowcaseEffects(ctx, {
+		camera,
+		sun,
+		stage,
+		start: {
+			sky: true,
+			fog: true,
+			rain: true,
+			storm,
+			ao: true,
+			environment: true,
+			bloom: true,
+			dof: false,
+			exposure: false,
+			vignette: true,
+		},
+		supported: {
+			atmosphere: ['sky', 'fog', 'rain', 'storm'],
+			lighting: ['ao', 'environment'],
+			post: ['bloom', 'dof', 'exposure', 'vignette'],
+		},
+		// The lens kit owns the vignette, and the scene's own lens owns the depth of field, so their
+		// switches answer here rather than through the shared post cases.
+		own: ['dof', 'vignette'],
+		apply(id, on) {
+			switch (id) {
+				case 'rain':
+					rain.setVisible(on);
+					break;
+				case 'storm':
+					stage.setWeather(on ? STORM_WEATHER : CLEAR_WEATHER);
+					rain.setStrength(on ? STORM_RAIN : 1);
+					break;
+				case 'ao':
+					post.set({ ao: on ? { radius: 1.4 } : false });
+					break;
+				case 'bloom':
+					post.set({ bloom: on ? { intensity: 0.55, threshold: 1 } : false });
+					break;
+				case 'dof':
+					post.set(on ? lensSettings : { dof: false });
+					break;
+				case 'vignette':
+					lensKit.set({ vignette: on ? VIGNETTE : false });
+					break;
 			}
-			film.refresh();
-		}
+		},
+		mood: (next) => stage.set(next),
+		hour: (hours) => stage.setHour(hours),
+		film: () => film,
+		fov: FOV,
+		focalLength: FOV,
+		focus: TARGET,
+		extra: (): readonly HudGroup[] => [
+			radioGroup('traffic', 'Traffic', TRAFFIC_OPTIONS, String(traffic.count)),
+		],
+	});
+	// The held frame's storm, which the address asked for, reaches the same switch that the HUD posts.
+	if (storm) controls.set('storm', true);
+	// The Traffic buttons are the scene's own, so they answer here; the shared controls own the rest.
+	page.onMessage((name, value) => {
+		if (name !== 'traffic') return;
+		traffic.setCount(Number(value));
+		film.refresh();
 	});
 
 	film = createCinematic(ctx, camera, {
 		shots: SHOTS,
 		target: TARGET,
-		groups,
+		groups: controls.groups,
 		bounds: { ...BOUNDS, ground: () => 0 },
 	});
 
@@ -382,6 +303,7 @@ export default defineSketch(async (ctx) => {
 		onUpdate(dt) {
 			const t = time.now;
 			stage.update(dt);
+			showLights(stage.lamps);
 			camera.getWorldPosition(eyeForSpeed);
 			const travel = Math.hypot(
 				(eyeForSpeed[0] as number) - (was[0] as number),
@@ -395,16 +317,14 @@ export default defineSketch(async (ctx) => {
 				smear + (travel / Math.max(dt, 1e-3) / 900 - smear) * Math.min(1, dt * 6),
 			);
 			lensKit.set({ speedBlur: smear });
-			// The storm is the scene's own weather over the stage's night: a sky under full cloud,
-			// and fog thick enough to hide the far towers.
-			if (mood === 'Storm') writeStorm(t);
 			film.update(dt);
 			city.update(t);
 			hero.update(dt, t, film.mode === 'auto');
 			rain.follow(camera);
 			camera.getWorldPosition(eye);
 			traffic.update(eye, t);
-			if (on.dof) post.set(lensSettings);
+			if (controls.on.dof) post.set(lensSettings);
+			controls.update(t);
 		},
 	};
 });
