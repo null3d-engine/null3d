@@ -3,7 +3,8 @@
 // helper saves its work on its own branch, and the coordinator lands it. The landing's push runs
 // the guards that read the whole repository, which a merge can break with no conflict: the decision
 // records' numbers, and the unit tests that hold the release guide, the shipped network calls and
-// the timing specs' switches to every package and spec in the tree. They take seconds, where the
+// the timing specs' switches to every package and spec in the tree, and the repository's quick
+// check, with the lint, the picture references and the add-on checks. They take seconds, where the
 // unit suite takes minutes, and without them each such fault showed only a CI run later. A landing
 // that changes Rust also runs the tests of the crates it changes, in the queue's CPU lane. Any other
 // branch only saves work, so the hook runs nothing for it. A push to main runs those guards too,
@@ -167,6 +168,11 @@ export function guardSteps(): Step[] {
 			why: 'two decision records must not share a number, which a merge can bring together',
 			lane: 'DIRECT',
 			command: ['bun', 'tools/decisions.ts', '--check'],
+		},
+		{
+			why: 'a merge can add a picture test without its references, or code that the lint and the add-on checks refuse',
+			lane: 'DIRECT',
+			command: ['bun', 'run', 'check'],
 		},
 		{
 			why: 'a merge can add a package, a network call or a timing spec that a repository-wide guard must know',

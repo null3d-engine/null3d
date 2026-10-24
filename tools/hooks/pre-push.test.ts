@@ -155,6 +155,7 @@ describe('guardSteps', () => {
 	it('checks the decision records and runs the tests that read every package and spec', () => {
 		expect(guardSteps().map((step) => [step.lane, step.command.join(' ')])).toEqual([
 			['DIRECT', 'bun tools/decisions.ts --check'],
+			['DIRECT', 'bun run check'],
 			['DIRECT', `bun test ${GUARD_TESTS.join(' ')}`],
 		]);
 		for (const file of GUARD_TESTS) expect(existsSync(file), file).toBe(true);
@@ -199,6 +200,7 @@ describe('plan', () => {
 			['QUICK', 'bun tools/hooks/check-trailers.ts b2..a1'],
 			['QUICK', 'bun tools/hooks/check-merges.ts b2..a1'],
 			['DIRECT', 'bun tools/decisions.ts --check'],
+			['DIRECT', 'bun run check'],
 			[
 				'DIRECT',
 				'bun test tools/lib/release.test.ts tools/lib/cdn.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts tools/lib/ci-workflow.test.ts',
@@ -212,6 +214,7 @@ describe('plan', () => {
 			['QUICK', 'bun tools/hooks/check-trailers.ts b2..a1'],
 			['QUICK', 'bun tools/hooks/check-merges.ts b2..a1'],
 			['DIRECT', 'bun tools/decisions.ts --check'],
+			['DIRECT', 'bun run check'],
 			[
 				'DIRECT',
 				'bun test tools/lib/release.test.ts tools/lib/cdn.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts tools/lib/ci-workflow.test.ts',
@@ -229,7 +232,7 @@ describe('plan', () => {
 	});
 
 	it('compiles the workspace for a Rust file outside the crates, with no crate to test', () => {
-		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs'])).toHaveLength(6);
+		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs'])).toHaveLength(7);
 		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs']).at(-1)?.[1]).toBe(
 			'cargo check --workspace',
 		);
