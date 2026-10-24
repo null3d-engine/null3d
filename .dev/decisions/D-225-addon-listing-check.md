@@ -204,10 +204,43 @@ Then it sums the places whose source file is the add-on's own: in the add-on's f
 under `node_modules`. It prints the page's own figure beside it. A page that runs the add-on and
 allocates nothing reports zero.
 
-**Why the build carries source maps.** A production build's frames name bundled chunks, so without
-maps the gate could not tell the add-on's code from the engine's. The check builds with
-`sourcemap: 'hidden'`, which writes the maps and adds no address to a built file, so the page loads
-nothing more. The cost gate measures the same build.
+**Why the build carries source maps, and no source text.** A production build's frames name bundled
+chunks, so without maps the gate could not tell the add-on's code from the engine's. The check builds
+with `sourcemap: 'hidden'`, which writes the maps and adds no address to a built file, so the page
+loads nothing more. The maps carry little source text: a page that imports the engine from source
+holds the generated shaders, hundreds of megabytes of it, and a map that embeds its sources copies
+them again. With that text in the maps, the build of the fixture's page held 9.6 GB before the
+sampling began, and one run of the check on 24 October 2026 reached 16.7 GB, which took a build from
+another job on the same machine. The check sets `sourcemapExcludeSources`, so a map holds the
+mappings and the source paths, which are all that the gate reads. A few maps that the plugin writes
+itself keep their text, and the maps of the build made 10 MB in all. The cost gate measures the same
+build.
+
+**The memory of a run.** The check's peak is its page build, not the profiler. Measured on the
+fixture's page on 24 October 2026:
+
+| Build | Peak during the build | Held after it |
+| --- | --- | --- |
+| maps that carried each source's text | 16.7 GB, in the run that the coordinator measured | 9.6 GB |
+| maps that carry no source text | 10.5 GB | 7.3 GB |
+| no maps | not measured | 7.5 GB |
+
+Without maps the build held about the same as with maps that carry no source text, so the maps were
+not its main cost: the page build holds the engine's generated shader modules, which a checkout
+resolves from source.
+
+The profiles themselves are small: a sample of the allocating fixture held 1,544 objects in the
+sketch worker and 410 in the render worker. The page build of a checkout resolves the engine to its
+source and holds the generated shaders, so it costs several gigabytes whatever the profiler does. A
+page of a project that installs the published engine holds far less.
+
+The profiler records one sample for each stretch of bytes that a page allocates, so a page that
+allocates fast would grow a profile until the memory ran out. The gate first samples 250 ms at a
+coarse interval to learn the page's rate, then sets the interval so that one worker's profile holds
+at most 250,000 objects in a sample, which is about 20 MB. A page that allocates faster than any
+browser page is sampled less finely, and its places are coarser. The command's page states the
+figure, and the heavy check `packages/cli/src/add-on-page-build.test.ts` builds the fixture's page
+under a ceiling of 12,288 MiB and holds its maps under 64 MB, so both figures are stated.
 
 **The verdict, and why it has no threshold.** The gate prints figures and passes once it has
 measured them. It fails only when it cannot measure. That covers no production build, no answer on
@@ -245,10 +278,10 @@ The budget of the engine's own check would have failed that first probe's figure
 page calls the add-on's step in every frame, and the step makes objects there. The gate printed:
 
 ```text
-PASS  allocation per preset: low 5.8 KB, medium 5.8 KB, high 5.8 KB, ultra 5.8 KB per frame in the add-on's own code, on Chrome 155.0.8059.85
-      low: 5.8 KB per frame in trail src/index.ts (sketch-worker)
-      medium: 5.8 KB per frame in trail src/index.ts (sketch-worker)
-      high: 5.8 KB per frame in trail src/index.ts (sketch-worker)
+PASS  allocation per preset: low 5.9 KB, medium 6.0 KB, high 5.9 KB, ultra 5.8 KB per frame in the add-on's own code, on Chrome 155.0.8059.85
+      low: 5.9 KB per frame in trail src/index.ts (sketch-worker)
+      medium: 6.0 KB per frame in trail src/index.ts (sketch-worker)
+      high: 5.9 KB per frame in trail src/index.ts (sketch-worker)
       ultra: 5.8 KB per frame in trail src/index.ts (sketch-worker)
 ```
 
