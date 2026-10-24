@@ -83,6 +83,8 @@ simpler light of the panorama costs nothing that a viewer can see.
 
 ## Consequences
 
+- The noise field is made on the first frame that the tier draws, before the sky maps record,
+  because a sky map can refresh from the scene's sky while an environment background draws.
 - A page on Low or Medium downloads no cloud shader and makes no noise field. The engine test that
   a page which uses no feature that loads on first use downloads none of their files covers the
   family.
