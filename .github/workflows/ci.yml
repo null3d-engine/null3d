@@ -1570,9 +1570,12 @@ jobs:
         timeout-minutes: 6
         with: *page-wasm
       - uses: ./.github/actions/samples
+      # A runner page that sends nothing for 90 s counts as stopped, and a new one takes over. A
+      # healthy runner page went at most 36 s without writing in CI, and a stop otherwise waited out
+      # the page's whole time limit, up to 235 s on a shaders page.
       - &real-browser-run
         name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of ${{ matrix.shards }}
-        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu ${{ matrix.browser == 'Safari' && '--shaders sampled' || '' }} --prebuilt ${{ env.PREBUILT }} --shard ${{ matrix.shard }}/${{ matrix.shards }} ${{ matrix.browser }}
+        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu ${{ matrix.browser == 'Safari' && '--shaders sampled' || '' }} --prebuilt ${{ env.PREBUILT }} --quiet-cap 90 --shard ${{ matrix.shard }}/${{ matrix.shards }} ${{ matrix.browser }}
       # Every shard keeps its runs, whose page times set the shards' model of each page's time, and a
       # failed shard's candidates beside them.
       - &real-browser-runs
