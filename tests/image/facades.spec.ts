@@ -67,12 +67,12 @@ test('facades: the furniture, the blinds and the wave change the image', async (
 		// some windows, and the wave leaves the windows that it has not reached dark. Each changes a
 		// fair share of the image, which a shader that skipped it would not. The WebGPU tier measures
 		// the furniture at 0.00423 mean and 0.02367 of the channels changing by more than 8 steps,
-		// and the blinds at 0.00653 and 0.05196. Each floor is half of that, and a skipped part
-		// would draw the plain wall, so it fails by the whole floor.
+		// the blinds at 0.00653 and 0.05196, and the wave at 0.01910 and 0.10037. Each floor is half
+		// of that, and a skipped part would draw the plain wall, so it fails by the whole floor.
 		const parts = [
 			['furniture', plain.furniture, 0.002, 0.011],
 			['blinds', plain.blinds, 0.003, 0.026],
-			['wave', plain.wave, 0.004, 0.01],
+			['wave', plain.wave, 0.009, 0.05],
 		] as const;
 		console.log(
 			[
