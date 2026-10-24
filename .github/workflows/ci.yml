@@ -340,7 +340,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     env:
       HUSKY: "0"
     steps:
@@ -349,15 +349,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      # The same keys and branch scope as .github/actions/shaders reads and writes.
+      # The same keys as .github/actions/shaders reads and writes.
       - id: keys
-        run: |
-          bun tools/shaders.ts --cache-keys | tee -a "$GITHUB_OUTPUT"
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            echo "scope=" >> "$GITHUB_OUTPUT"
-          else
-            echo "scope=branch-${{ github.ref_name }}-" >> "$GITHUB_OUTPUT"
-          fi
+        run: bun tools/shaders.ts --cache-keys | tee -a "$GITHUB_OUTPUT"
       - name: Find the whole module set of these inputs
         id: whole
         uses: actions/cache/restore@v4
@@ -365,7 +359,7 @@ jobs:
           path: |
             ${{ steps.keys.outputs.modules-dir }}
             ${{ steps.keys.outputs.entries-dir }}
-          key: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.scope }}${{ steps.keys.outputs.inputs }}
+          key: ${{ steps.keys.outputs.key }}
           lookup-only: true
       - name: Restore the entries that earlier runs compiled
         if: steps.whole.outputs.cache-hit != 'true'
@@ -374,10 +368,10 @@ jobs:
           path: |
             ${{ steps.keys.outputs.modules-dir }}
             ${{ steps.keys.outputs.entries-dir }}
-          key: shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.scope }}${{ steps.keys.outputs.inputs }}
+          key: ${{ steps.keys.outputs.key }}
           restore-keys: |
-            shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-${{ steps.keys.outputs.scope }}
-            shaders-${{ runner.os }}-${{ steps.keys.outputs.stamp }}-
+            ${{ steps.keys.outputs.branch-keys }}
+            ${{ steps.keys.outputs.stamp-keys }}
       - name: Install the pinned Rust toolchain
         if: steps.whole.outputs.cache-hit != 'true'
         run: rustup toolchain install
@@ -388,14 +382,18 @@ jobs:
           save-if: false
       - name: Compile this shard's shader entries into the per-entry cache
         if: steps.whole.outputs.cache-hit != 'true'
-        run: bun tools/shaders.ts --entries-shard $(( ${{ matrix.shard }} - 1 ))/${{ strategy.job-total }} --entries-out target/shader-entries
-      - uses: actions/upload-artifact@v4
+        run: |
+          mkdir -p target/shader-entries
+          bun tools/shaders.ts --entries-shard $(( ${{ matrix.shard }} - 1 ))/${{ strategy.job-total }} --entries-out target/shader-entries
+      # The entries repeat much of their text, so one archive of them all packs far smaller than
+      # the artifact's own zip, which compresses each file alone (D-235).
+      - uses: ./.github/actions/archive
         if: steps.whole.outputs.cache-hit != 'true'
         with:
+          mode: upload
           name: shader-entries-${{ matrix.shard }}
-          path: target/shader-entries/
-          if-no-files-found: ignore
-          retention-days: 1
+          root: target/shader-entries
+          paths: .
 
   browser-caches:
     # Fills the caches of Playwright's browser and of the sample content when they miss, once, so
@@ -441,6 +439,12 @@ jobs:
     outputs:
       # The size parts of this run, for the size-parts matrix below.
       size-parts: ${{ steps.size-parts.outputs.parts }}
+      # The Actions cache key and folders of the shader entries that this job saves, from which the
+      # shader-compiler shards read the native build.
+      shader-key: ${{ steps.entry-keys.outputs.key }}
+      shader-modules-dir: ${{ steps.entry-keys.outputs.modules-dir }}
+      shader-entries-dir: ${{ steps.entry-keys.outputs.entries-dir }}
+      shader-stamp: ${{ steps.entry-keys.outputs.stamp }}
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
@@ -460,12 +464,13 @@ jobs:
         run: bun tools/shaders.ts --cache-keys | tee -a "$GITHUB_OUTPUT"
       # The entries that the shader-entries jobs compiled, into the per-entry cache under the
       # compiler's stamp. A run whose caches held every entry has none to download.
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/archive
         continue-on-error: true
         with:
+          mode: download
+          name: shader-entries
           pattern: shader-entries-*
-          merge-multiple: true
-          path: ${{ steps.entry-keys.outputs.entries-dir }}/${{ steps.entry-keys.outputs.stamp }}
+          root: ${{ steps.entry-keys.outputs.entries-dir }}/${{ steps.entry-keys.outputs.stamp }}
       # The WebAssembly files and the tools' modules, which the build script keeps under a key of
       # every input: the core's Rust sources, the flags, the toolchain and the wasm-bindgen and
       # wasm-opt releases. A run that changed none of them copies every file in place and runs no
@@ -698,12 +703,12 @@ jobs:
   shader-compiler:
     # The shader crate's build tests again through the build job's shader compiler, which must give
     # the native build's results. The test that builds every shader splits into shards by build
-    # cost, and each shard builds its share natively, runs every check that reads that build, then
-    # builds the same share through the compiler on every core and compares the two. No other job
-    # runs those checks, so no other job builds the share natively. The first shard also runs the
-    # build file's other tests. The Vite plugin's compiler tests run in a job of their own below, so
-    # no shard runs them after its share. A shard whose inputs passed in an earlier run passes again
-    # without building, as the shader parts of rust-tests do.
+    # cost, and each shard reads its share's native build from the entries that the shader-entries
+    # jobs compiled, runs every check that reads that build, then builds the same share through the
+    # compiler on every core and compares the two. No other job runs those checks. The first shard
+    # also runs the build file's other tests. The Vite plugin's compiler tests run in a job of their
+    # own below, so no shard runs them after its share. A shard whose inputs passed in an earlier run
+    # passes again without building, as the shader parts of rust-tests do.
     name: shader-compiler (${{ matrix.part }} of ${{ strategy.job-total }})
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
@@ -769,13 +774,27 @@ jobs:
         with:
           mode: download
           name: page-wasm
+      # The native build that a shard compares the compiler's with. The shader-entries jobs compiled
+      # every entry natively, and the build job saved them in the Actions cache, so the test reads
+      # its share there and builds only through the compiler (tests/build.rs). A miss leaves the
+      # test to compile its share natively, as before.
+      - uses: actions/cache/restore@v4
+        if: steps.passed.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ${{ needs.build.outputs.shader-modules-dir }}
+            ${{ needs.build.outputs.shader-entries-dir }}
+          key: ${{ needs.build.outputs.shader-key }}
       - name: The shader compiler gives the native shader build's results
         if: steps.passed.outputs.cache-hit != 'true' && matrix.part == 1
+        env:
+          NULL3D_SHADER_ENTRIES: ${{ needs.build.outputs.shader-entries-dir }}/${{ needs.build.outputs.shader-stamp }}
         run: bun run test:shader-compiler:build
       - name: The shader compiler gives the native shader build's results, for this shard's entries
         if: steps.passed.outputs.cache-hit != 'true' && matrix.part != 1
         env:
           NULL3D_SHADER_COMPILER: "1"
+          NULL3D_SHADER_ENTRIES: ${{ needs.build.outputs.shader-entries-dir }}/${{ needs.build.outputs.shader-stamp }}
         run: cargo test -p null3d-shaders --test build -- --exact the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule
       - name: Record this shard's pass of these inputs
         if: steps.passed.outputs.cache-hit != 'true'

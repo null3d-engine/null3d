@@ -49,5 +49,6 @@ How the data was produced: the first table from the job logs of run 40004372878;
 ## Consequences
 
 - The full picture set on the Mac passed at the head that landed: 1,448 pictures, every tier, against unchanged references, in 14.4 minutes with none failing.
+- The GPU check on the Mac (`bun run bench:gpu-check`) compared with the merge base with main, 9369b1380. It judged nothing, since the benchmark pages differ between the two commits. S4 drew faster at both presets, by 1.9% at Medium and 12.2% at High. S6 read +2.5% at Medium and +50.1% at High. But its baseline at High alone ran from 4.95 to 12.81 ms between rounds, a spread of 92%. No round took a quality step, so the render scale held, and that reading is noise between rounds.
 - The first frame that lets the scale drop, or turns the sharpening on, now makes the second step's pipeline and draws at the whole scale; the next frame draws the two steps. `tests/render_scale.rs` and `tests/sharpen.rs` check that frame.
 - `.dev/image-tests.md` tells how to time a change on CI's software GPU.
