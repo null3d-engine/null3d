@@ -3,7 +3,7 @@ id: api/assets
 title: Assets
 status: experimental
 since: "0.1"
-summary: "loadGltf, registerGltfExtension, loadTexture, loadImageBitmap, loadLut, lutFromData, loadEnvironment, builtinEnvironment, skyEnvironment, loadCubemap, loadJson, loadBinary, preload, onProgress."
+summary: "loadGltf, registerGltfExtension, loadTexture, loadImageBitmap, loadLut, lutFromData, loadEnvironment, builtinEnvironment, skyEnvironment, loadCubemap, loadLightProbeGrid, loadLightMap, lightProbeGridFile, loadJson, loadBinary, preload, onProgress."
 ---
 
 # Assets
@@ -39,6 +39,9 @@ export default defineSketch(async ({ assets, page }) => {
 | `builtinEnvironment('room')` | The built-in room, the scene of three.js's `RoomEnvironment`, as an `Environment` |
 | `skyEnvironment()` | The light of the scene's sky, as an `Environment` that follows the sky background |
 | `loadCubemap(urls)` | A `Cubemap` of six images, a sky box for `scene.setBackground`. [Cube maps](#cube-maps) says what it reads |
+| `loadLightProbeGrid(url)` | A probe grid baked outside the engine, as the options that `scene.setLightProbeGrid` takes. [Baked light](#baked-light) says what it reads |
+| `loadLightMap(url)` | A light map baked outside the engine, as a texture for a material's `lightMap` and the light's direction at each texel |
+| `lightProbeGridFile(grid)` | The bytes of the baked light file of a grid that `bakeProbes` made |
 | `loadJson(url)` | The file parsed as JSON |
 | `loadBinary(url)` | The file's bytes, as an `ArrayBuffer` |
 | `preload(urls)` | Nothing: it downloads the files ahead of their loads |
@@ -262,6 +265,25 @@ export default defineSketch(async ({ scene, assets }) => {
 - A cube map does not light the scene, and it does not blur. For both, load an environment from an HDR or EXR image with `loadEnvironment`.
 - Faces that are not square, or not of one size, fail with E1412. So does an image that does not decode. A list that does not hold six addresses fails with E1208.
 
+## Baked light
+
+`loadLightProbeGrid` reads a probe grid that a tool outside the engine baked. It gives the texture and the three placement values that [`scene.setLightProbeGrid`](scene.md#the-light-probe-grid) takes. `loadLightMap` reads a light map. It gives a texture for a material's `lightMap`, and the light's direction at each texel. `lightProbeGridFile` writes the file of a grid that `bakeProbes` made. The engine's own bake and a bake elsewhere therefore give one format.
+
+Both readers take the same JSON format, which [Baked light data](../guides/baked-light-data.md) describes with a complete file of each kind. Its base64 payloads hold the texels, so a bake tool in any language can write it.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets, materials }) => {
+  scene.setLightProbeGrid(await assets.loadLightProbeGrid('/light/probe-grid.json'));
+  const map = await assets.loadLightMap('/light/light-map.json');
+  materials.standard({ lightMap: map.texture });
+  return {};
+});
+```
+
+The first load of either kind loads the reader, about 2 KB after Brotli. A file that the engine cannot read rejects with [E1434](../errors/E1434.md), and the message names the fault.
+
 ## Addresses
 
 A relative address resolves against the page's address, in every thread mode, as it would in a page's own script. So `assets.loadTexture('tex/bricks.png')` on `https://example.com/game/` loads `https://example.com/game/tex/bricks.png`. An address from `new URL('./bricks.png', import.meta.url)` resolves against the sketch module instead, and Vite then ships the file with the build.
@@ -297,7 +319,8 @@ Each call rejects with an engine error that says how to fix the problem:
 | [E1416](../errors/E1416.md) | `loadGltf` got a file that is not a glTF 2.0 model it can read: broken JSON, an offset or a count past the data, a missing buffer or image, or a loop of nodes. Or its Draco data does not decode to what its accessors say. Or the file passes a limit on what one file may decode to, as [Assets and prefabs](../concepts/assets.md#limits-on-each-file) lists |
 | [E1109](../errors/E1109.md) | `loadGltf` made a mesh too large for engine memory |
 | [E1417](../errors/E1417.md) | `loadGltf` got a file that requires an extension the engine does not read |
-| [E1406](../errors/E1406.md) | The files of the KTX2 transcoder, the glTF loader or its decoders, the table makers or the environment map reader did not download, when the first such file or table loads |
+| [E1434](../errors/E1434.md) | `loadLightProbeGrid` or `loadLightMap` got a file that is not a baked light file that the engine reads: a wrong version, a count that does not match its payload, or text that stopped early |
+| [E1406](../errors/E1406.md) | The files of the KTX2 transcoder, the glTF loader or its decoders, the table makers, the environment map reader or the baked light reader did not download, when the first such file, table or grid loads |
 | [E1213](../errors/E1213.md) | `builtinEnvironment` got a name that no built-in environment has |
 | [E1413](../errors/E1413.md) | A file from another origin, whose server did not allow the page to read it |
 | [E1208](../errors/E1208.md) | A texture option that the engine does not know, or one that a KTX2 file cannot take. Also numbers that `lutFromData` cannot make a table from |
