@@ -1190,7 +1190,7 @@ impl MockBackend {
             Op::SkyMapStep => {
                 self.generate_texture(op, o)?;
                 self.texture(op, o[0])?;
-                check(o.len() == 20, op, "a sky map's stage takes 20 words")?;
+                check(o.len() == 22, op, "a sky map's stage takes 22 words")?;
                 if o[3] != 0 {
                     self.texture(op, o[3])?;
                 }

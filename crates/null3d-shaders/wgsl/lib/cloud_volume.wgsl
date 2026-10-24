@@ -98,7 +98,7 @@ fn cloud_march(
         let t = bottom + travelled;
         let height = travelled / thickness;
         // The cloud thins at the slab's floor and ceiling, so its base and top show a soft edge.
-        let profile = smoothstep(0.0, 0.22, height) * smoothstep(1.0, 0.72, height);
+        let profile = smoothstep(0.0, 0.22, height) * (1.0 - smoothstep(0.72, 1.0, height));
         if profile > 0.0 {
             let across = d.xz * t * scale * 14400.0 + vec2f(drift);
             let vertical = height * 16.0 + drift * 0.15;

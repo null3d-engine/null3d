@@ -215,16 +215,13 @@ impl BackdropUniform {
                     sky.mie_coefficient,
                     sky.mie_directional_g,
                 ];
-                // On the volumetric tier the flat layer gives way to the cloud march, which the
-                // same settings drive, and the block carries the march's step count.
+                // The block carries the page's cloud settings and the march's step count. The sky's
+                // shader leaves its flat layer out while the count is above 0, and the cloud shader
+                // marches with the same coverage.
                 uniform.clouds = [
                     sky.cloud_scale,
                     sky.cloud_speed,
-                    if cloud_steps > 0 {
-                        0.0
-                    } else {
-                        sky.cloud_coverage
-                    },
+                    sky.cloud_coverage,
                     sky.cloud_density,
                 ];
                 uniform.layer[1] = cloud_steps as f32;
@@ -709,9 +706,10 @@ mod tests {
     }
 
     #[test]
-    fn the_cloud_tier_takes_the_flat_layers_coverage_and_carries_its_step_count() {
+    fn the_cloud_tier_keeps_the_coverage_and_carries_its_step_count() {
         let sky = Sky {
             cloud_coverage: 0.6,
+            cloud_density: 0.7,
             ..Sky::default()
         };
         let flat = BackdropUniform::of(&background(BackgroundSource::Sky(sky)), 1, 0);
@@ -721,15 +719,9 @@ mod tests {
         );
         assert_eq!(flat.layer[1], 0.0, "no cloud march draws");
         let volume = BackdropUniform::of(&background(BackgroundSource::Sky(sky)), 1, 32);
-        assert_eq!(
-            volume.clouds[2], 0.0,
-            "the march draws in place of the flat layer"
-        );
-        assert_eq!(volume.layer[1], 32.0);
-        assert_eq!(
-            volume.clouds[3], sky.cloud_density,
-            "the march keeps the density"
-        );
+        assert_eq!(volume.layer[1], 32.0, "the block carries the step count");
+        assert_eq!(volume.clouds[2], 0.6, "the march reads the same coverage");
+        assert_eq!(volume.clouds[3], 0.7, "the march reads the same density");
     }
 
     #[test]

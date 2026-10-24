@@ -212,16 +212,13 @@ impl SkyUniform {
                 if a.sun_disc { 1.0 } else { 0.0 },
                 a.stars,
             ],
-            // On the volumetric tier the flat layer gives way to the cloud march, which the same
-            // settings drive; the spare view value carries the march's step count.
+            // The block carries the page's cloud settings and the march's step count, in the spare
+            // view value. The physical sky's shaders leave the flat layer out while the count is
+            // above 0, and the cloud shader marches with the same coverage.
             clouds: [
                 a.cloud_scale,
                 a.cloud_speed,
-                if cloud_steps > 0 {
-                    0.0
-                } else {
-                    a.cloud_coverage
-                },
+                a.cloud_coverage,
                 a.cloud_density,
             ],
             cloud_place: [a.cloud_elevation, a.time, 0.0, 0.0],
