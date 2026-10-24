@@ -87,8 +87,13 @@ What the shape of the figures already shows:
 The light tiles are those that `shadowTiles` allows, and the frame draws only those that the visible
 spot and point lights fill, so a scene with fewer such lights takes less. The demo names no spot or
 point light that casts, so its atlas is the hero's layer alone. The largest case, Ultra with 24
-spot or point tiles, takes 1.6 GiB, which is why Ultra stays a desktop preset and the governor does
-not lower the tile size: a reallocation mid-play is the worse look (see the addendum).
+spot or point tiles, takes 1.6 GiB: Ultra is a desktop preset, and a scene there with a hero and
+that many shadow tiles is the one to watch.
+
+The renderer refuses an atlas above 1 GiB. It fails the frame with E1501 before the GPU is asked,
+and the message gives the megabytes the atlas would take and the two settings that fix it: a smaller
+`heroTileSize` or fewer `shadowTiles`. The canvas keeps the last whole frame. A device that still
+runs out of room for it reports E1304 on WebGPU, and the drawing goes on.
 
 ## Consequences
 

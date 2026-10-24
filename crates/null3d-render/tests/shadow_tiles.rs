@@ -15,7 +15,7 @@ use null3d_core::scene::{Command, flags};
 use null3d_gpu::drawlist::{NO_TARGET, Op, format, template, view};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
-use null3d_render::frame::{FrameBuilder, NO_MESH};
+use null3d_render::frame::{FrameBuilder, NO_MESH, RecordError};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::light_grid::LightGrid;
 use null3d_render::shadow_tiles::{AtlasShape, MAX_REDRAWS, ShadowTiles, TileSettings};
@@ -300,6 +300,46 @@ fn a_hero_tile_sizes_every_layer<B: Tiles>(renderer: B) {
             size: 256
         })
     );
+}
+
+/// A hero tile that makes the atlas larger than the engine allows fails the frame, on either
+/// builder, with the atlas's bytes, rather than asking a device for a texture it cannot hold.
+fn too_large_an_atlas_fails_the_frame<B: Tiles>(renderer: B) {
+    let settings = TileSettings {
+        tiles: 24,
+        size: 512,
+        point_shadows: false,
+    };
+    let mut world = world(renderer, settings);
+    let hero = world.objects[0];
+    let (_, sun) = world.add_sun(2);
+    let table = world.light_table.as_mut().unwrap();
+    table.set_hero(sun, hero).unwrap();
+    table.set_value(sun, value::HERO_SIZE, 4096.0).unwrap();
+    for k in 0..24 {
+        world.add_spot([k as f32 - 12.0, 4.0, 0.0], 6.0);
+    }
+    world.frame = 1;
+    match world.try_record(true) {
+        Err(RecordError::ShadowAtlasTooLarge { megabytes }) => assert_eq!(megabytes, 1600),
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn webgpu_too_large_an_atlas_fails_the_frame() {
+    too_large_an_atlas_fails_the_frame(GpuDrivenRenderer::new(Default::default()));
+}
+
+#[test]
+fn webgl2_too_large_an_atlas_fails_the_frame() {
+    for multi_draw in [true, false] {
+        let config = CpuCulledConfig {
+            multi_draw,
+            ..CpuCulledConfig::default()
+        };
+        too_large_an_atlas_fails_the_frame(CpuCulledRenderer::new(config));
+    }
 }
 
 #[test]
