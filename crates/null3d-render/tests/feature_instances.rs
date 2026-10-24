@@ -10,26 +10,23 @@ use null3d_gpu::drawlist::{Op, buffer_usage as usage_flags};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::feature_instances::{INSTANCE_BYTES, INSTANCE_FLOATS};
 use null3d_render::frame::FrameBuilder;
-use null3d_render::gpu_driven::{feature_buffer_ids, view_indirect_buffer};
+use null3d_render::gpu_driven::{RendererConfig, feature_buffer_ids, view_indirect_buffer};
 use null3d_render::view::ViewId;
 
 /// A world whose first object draws a feature-instance draw of `capacity` instances, with `count`
-/// as the page's count, as its first frame records.
-fn with_feature_draw(capacity: u32, count: u32) -> (World, u32, u32) {
-    let mut world = World::new();
+/// as the page's count, as its first frame records. `bounds` are the object's bounds flags, as the
+/// adapter sets them.
+fn with_feature_draw(capacity: u32, count: u32, bounds: u32) -> (World, u32, u32) {
+    feature_draw_on(World::new(), capacity, count, bounds)
+}
+
+/// The same draw on `world`, whose first frame records and whose commands it replays.
+fn feature_draw_on(mut world: World, capacity: u32, count: u32, bounds: u32) -> (World, u32, u32) {
     let handle = world.objects[0];
-    // Bounds of its own give the object a bucket of its own, as the adapter's bounds do.
     world.scene.set_local_radius(handle, 1.0).unwrap();
     world
         .scene
-        .apply_commands(
-            &[Command::set_flags(
-                handle,
-                flags::CUSTOM_BOUNDS,
-                flags::CUSTOM_BOUNDS,
-            )],
-            1,
-        )
+        .apply_commands(&[Command::set_flags(handle, flags::BOUNDS, bounds)], 1)
         .unwrap();
     let slot = world.scene.resolve(handle).unwrap();
     let table = world.renderer.settings_mut().feature_instances_mut();
@@ -45,7 +42,7 @@ fn with_feature_draw(capacity: u32, count: u32) -> (World, u32, u32) {
 
 #[test]
 fn the_frame_makes_the_add_ons_buffers_and_copies_the_page_count_into_the_draw() {
-    let (world, instances, counts) = with_feature_draw(128, 7);
+    let (world, instances, counts) = with_feature_draw(128, 7, flags::CUSTOM_BOUNDS);
     let commands = world.commands();
     let created = |id: u32| {
         commands
@@ -86,8 +83,58 @@ fn the_frame_makes_the_add_ons_buffers_and_copies_the_page_count_into_the_draw()
 }
 
 #[test]
+fn a_device_that_chose_the_direct_path_draws_a_feature_draw_indirectly() {
+    // The direct path counts every draw on the CPU and creates no indirect buffer, so a draw whose
+    // count the GPU writes takes the indirect path for the whole session. The frame then makes the
+    // camera's indirect buffer and copies the count into it, and it replays without a missing
+    // buffer.
+    let direct = RendererConfig {
+        direct_draws: true,
+        ..RendererConfig::default()
+    };
+    let (world, _instances, counts) =
+        feature_draw_on(World::with_config(direct), 16, 5, flags::UNCULLED);
+    let commands = world.commands();
+    assert!(
+        commands
+            .iter()
+            .any(|(op, o)| *op == Op::CreateBuffer && o[0] == view_indirect_buffer(ViewId::CAMERA)),
+        "the camera's indirect buffer exists"
+    );
+    assert!(
+        commands
+            .iter()
+            .any(|(op, o)| *op == Op::CopyBufferToBuffer && o[0] == counts),
+        "the count reaches the indirect draw"
+    );
+}
+
+#[test]
+fn an_unculled_draw_reads_its_own_buffer_and_draws_its_count() {
+    // The adapter marks its object unculled, and a mesh made from arrays carries no bounds of its
+    // own. The bucket must still name the draw, so the pass reads the add-on's rows and the count
+    // that the frame copies into the indirect entry.
+    let (world, instances, counts) = with_feature_draw(16, 5, flags::UNCULLED);
+    let commands = world.commands();
+    assert!(
+        commands
+            .iter()
+            .any(|(op, o)| *op == Op::SetVertexBuffer && o[0] == 1 && o[1] == instances),
+        "the draw reads the add-on's rows, not the view's compacted instances"
+    );
+    let copy = commands
+        .iter()
+        .find(|(op, o)| *op == Op::CopyBufferToBuffer && o[0] == counts)
+        .expect("the count reaches the indirect draw");
+    let entry = copy.1[3] - 4;
+    assert!(commands.iter().any(|(op, o)| *op == Op::DrawIndexedIndirect
+        && o[0] == view_indirect_buffer(ViewId::CAMERA)
+        && o[1] == entry));
+}
+
+#[test]
 fn the_count_reaches_the_draw_after_the_compute_step() {
-    let (world, _instances, counts) = with_feature_draw(64, 3);
+    let (world, _instances, counts) = with_feature_draw(64, 3, flags::CUSTOM_BOUNDS);
     let commands = world.commands();
     let at = |op: Op| -> Vec<usize> {
         commands

@@ -422,6 +422,15 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. 
 
 The galaxy's sketch time is the loop that turns every star and writes its row. It grows with the count, so Low draws 30,000 stars. No phone or tablet has run the five demos yet.
 
+## The aurora demo (M3-E10, 24 October 2026)
+
+`aurora: A frozen lake at night` shows the sky-layer hook: the aurora example add-on draws one WGSL function over the core sky, under the moon and the stars, in the camera's view, in scene passes and in reflections.
+
+- The layer lights nothing: the sky's environment map and its diffuse light come from the core sky alone, and the demo adds one dim ambient light in the aurora's color so the ice and the snow read under it. A sketch that a layer must light gives it a light of its own, as this one does.
+- The layer reads the core sky's cloud coverage and density, so the demo keeps the physical sky's thin clouds: they hide the aurora where they thicken, as they hide the stars.
+- The curtains are flat in the sky and have no parallax. The camera stays at eye height over the ice, so the layer reads as a sky and not as a wall.
+- The image test holds the demo at 1.5 seconds, where the aurora's swell has moved the layer by less than a step.
+
 ## The automatic exposure demo (M2-EX31, 11 October 2026)
 
 `auto-exposure: Courtyard and hall` shows automatic exposure ([D-148](decisions/D-148-automatic-exposure.md)). The camera walks from a sunny courtyard into a dark stone hall, turns round, and walks out again, in a loop of 20 seconds. The eye opens in the hall, and closes again when the camera faces the bright door. E turns automatic exposure off and on, so a visitor can see the fixed exposure that the camera would have.
@@ -513,7 +522,7 @@ and a hero car with two screens.
   Medium and above. At Low, at the pixel size of a cloud phone's screen, that took the frame from
   3.79 to 3.06 ms of GPU time on WebGPU and from 7.09 to 5.38 ms on WebGL2, and the traffic's own
   share from 1.33 to 0.64 ms and from 2.81 to 1.11 ms
-  ([D-244](decisions/D-244-skyway-vehicle-vertices.md)).
+  ([D-246](decisions/D-246-skyway-vehicle-vertices.md)).
 - **A moved row needs a larger bounding sphere.** The engine culls each row by its mesh's bounding
   sphere. A vertex offset carries a car up to the lane's length from its row's origin. Each batch
   therefore gives its rows a radius that covers the lane, with `batch.setBoundingRadius(span)`
@@ -591,7 +600,7 @@ and a hero car with two screens.
   These rows draw the full hull, which the demo keeps at Medium and above. At Low it draws the light
   hull, measured on the same Mac at a canvas of 618 x 1372 device pixels, the size that a cloud
   phone's screen gives the demo: that took the WebGPU frame from 3.79 to 3.06 ms and the WebGL2
-  frame from 7.09 to 5.38 ms ([D-244](decisions/D-244-skyway-vehicle-vertices.md)).
+  frame from 7.09 to 5.38 ms ([D-246](decisions/D-246-skyway-vehicle-vertices.md)).
 - **The lens.** The picture's grade, its sharpening, its vignette and the camera's own marks come
   from the lens-kit example add-on (`examples/addons/lens-kit/`). The grade, the sharpening and the
   vignette are the core's own settings, which the kit sets from one look: the grade is the core's

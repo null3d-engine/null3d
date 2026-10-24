@@ -380,9 +380,11 @@ mod ids {
     pub const MOTION_RECORDS: u32 = MOTION_BUCKETS + 1;
     /// The uniform buffer of the background's values.
     pub const BACKGROUND: u32 = MOTION_RECORDS + 1;
+    /// The uniform buffer of a sky layer's values.
+    pub const BACKGROUND_LAYER: u32 = BACKGROUND + 1;
     /// Each camera view's buffers of occlusion culling: its depth pyramid and the pyramid's level
     /// parameters, two ids from `OCCLUSION + 2 * view`.
-    const OCCLUSION: u32 = BACKGROUND + 1;
+    const OCCLUSION: u32 = BACKGROUND_LAYER + 1;
 
     pub const fn pyramid(view: ViewId) -> u32 {
         OCCLUSION + 2 * view.index() as u32
@@ -657,13 +659,15 @@ mod ids {
     pub const AO_GROUPS: u32 = JOINTS_GROUP + 1;
     /// The background's bind group, after ambient occlusion's.
     pub const BACKGROUND_GROUP: u32 = AO_GROUPS + AO_STEPS as u32;
-    /// Each camera view's group of its depth pyramid, after the background's.
+    /// The bind group of a sky layer's values, after the background's.
+    pub const BACKGROUND_LAYER_GROUP: u32 = BACKGROUND_GROUP + 1;
+    /// Each camera view's group of its depth pyramid, after the layer's.
     pub const fn pyramid_group(view: ViewId) -> u32 {
-        BACKGROUND_GROUP + 1 + view.index() as u32
+        BACKGROUND_LAYER_GROUP + 1 + view.index() as u32
     }
     /// The bind group of each custom effect, and of each group of joined effects, after the depth
     /// pyramids'.
-    pub const EFFECT_GROUPS: u32 = BACKGROUND_GROUP + 1 + MAX_VIEWS as u32;
+    pub const EFFECT_GROUPS: u32 = BACKGROUND_LAYER_GROUP + 1 + MAX_VIEWS as u32;
     /// The bind group of the copy of each view's image into its target, after the effects'.
     pub const VIEW_COPY_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
     /// The bind group of each step of depth of field, after the copies'.
@@ -1160,6 +1164,8 @@ impl GpuDrivenRenderer {
             background: BackgroundPass::new(BackgroundIds {
                 buffer: ids::BACKGROUND,
                 group: ids::BACKGROUND_GROUP,
+                layer_buffer: ids::BACKGROUND_LAYER,
+                layer_group: ids::BACKGROUND_LAYER_GROUP,
                 blank_cube: ids::BLANK_ENVIRONMENT,
                 sampler: ids::ENVIRONMENT_SAMPLER,
             }),
@@ -1367,6 +1373,12 @@ impl GpuDrivenRenderer {
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<bool, RecordError> {
+        // A draw whose count the GPU writes needs the indirect path: the direct path reads every
+        // count on the CPU and creates no indirect buffer for the frame's count copy. The first
+        // frame picks the builder's path, so a scene that holds such a draw takes the indirect one.
+        if !self.created && !self.settings.feature_instances().is_empty() {
+            self.config.direct_draws = false;
+        }
         let parity = input.parity();
         let shadow = self.settings.shadow_frame(input);
         let camera = self.settings.view_frame(

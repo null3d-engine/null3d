@@ -36,6 +36,8 @@ traffic.update(eye, time.now);
   because the rows were shuffled once.
 - `update(eye, time)` moves the real lights to the nearest vehicles, four times a second. It looks
   at a share of the rows, so its cost does not follow the count. Give no `realLights` for none.
+- `dispose()` removes the batches, their materials and the real lights. A scene that draws another
+  hull at another preset builds the lanes again around it, and drops the old ones with this call.
 - `createVehicleHull(ctx, size)` builds a vehicle that fits the surface: its nose along local +Z,
   its belly just above y = 0. `look.size` gives its half width, its height and its half length,
   which place the tail bars, the nose lamps and the skirt. A hull of your own may replace it, as

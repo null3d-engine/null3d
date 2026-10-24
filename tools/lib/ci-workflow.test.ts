@@ -179,6 +179,21 @@ describe("CI's workflow", () => {
 		expect(gated).toEqual(others);
 	});
 
+	it('starts every job after the changes job, which waits on a push to a pull request', () => {
+		// A newer push in the wait cancels the run before any job but that one has started.
+		const waits = (name: string, seen = new Set<string>()): boolean =>
+			needsOf(jobs[name]).some(
+				(need) => need === 'changes' || (!seen.has(need) && waits(need, seen.add(need))),
+			);
+		const early = Object.keys(jobs).filter((name) => name !== 'changes' && !waits(name));
+		expect(early).toEqual([]);
+		const wait = jobNamed('changes').steps?.[0];
+		expect(wait?.if).toBe(
+			"github.event_name == 'pull_request' && github.event.action == 'synchronize'",
+		);
+		expect(wait?.run).toMatch(/^sleep \d+$/);
+	});
+
 	it("lets a job skip only on the changes job's answer that ci-passed allows", () => {
 		const step = jobNamed('ci-passed').steps?.find(({ name }) => name === 'Every job passed');
 		const gate = Object.fromEntries(

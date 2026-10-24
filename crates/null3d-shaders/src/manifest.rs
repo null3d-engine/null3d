@@ -94,6 +94,10 @@ pub struct Shader {
     /// pass, which their pieces build with.
     #[serde(default)]
     pub effect_fold_host: bool,
+    /// True for the template that sky layers build with their own WGSL added. It is a template
+    /// only: the build checks it and writes no module of it.
+    #[serde(default)]
+    pub sky_layers: bool,
 }
 
 /// The entry points of one render pipeline.

@@ -74,6 +74,7 @@ import {
 import { MEMORY_AREA_COUNT } from '../shared/memory-area';
 import { MemoryViews } from '../shared/memory-views';
 import { Counter, FrameRecorder, MemoryFigure, Phase, Role } from '../shared/metrics';
+import { VIDEO_FRAME, type VideoFrameMessage } from '../shared/videos';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import { FixedClock, FrameClock, holdSteps } from './clock';
@@ -480,6 +481,7 @@ export class SketchRunner {
 			device.webgl2,
 			device.textureCache,
 			() => this.quality.own('textureMemoryMiB'),
+			post,
 		);
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
@@ -782,8 +784,15 @@ export class SketchRunner {
 		this.restoreRandom = undefined;
 	}
 
-	/** Delivers a message the page sent with engine.postToSketch. It arrives between frames. */
+	/**
+	 * Delivers a message the page sent with engine.postToSketch. It arrives between frames. A
+	 * video's frame goes to the texture that follows the video, and never to the sketch's handlers.
+	 */
 	receive(type: string, data: unknown): void {
+		if (type === VIDEO_FRAME) {
+			this.context.textures.receiveVideoFrame(data as VideoFrameMessage);
+			return;
+		}
 		for (const handler of this.messageHandlers) handler(type, data);
 	}
 

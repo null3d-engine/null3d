@@ -297,3 +297,71 @@ The add-on draws from both file kinds: an SPZ file whose cloud a sketch writes i
 ### Not the first user of a GPU-written instance count
 
 M3-E9 plans a draw whose instance count the GPU writes. The splats add-on is not its first user. The splats draw is the engine's instance batch: the transparent pass culls and sorts its rows back to front on the job workers, and a GPU-written count would skip that sorted list, so the splats would blend in the wrong order. The count is also no per-frame problem here. It changes when the camera or the budget crosses a threshold, and the sketch then packs the chosen rows once between two frames. E9 therefore needs another first user, such as vegetation or hair, or a hook that keeps the engine's sorted rows.
+
+## Addendum, 24 October 2026: a splat count does not describe what a page pays
+
+Status: open, for the owner's ruling on the budget. Date: 2026-10-24. Task: M3-F2.
+
+The budget above is a count of splats. The device runs and a control show that a count says little
+about what a page pays. The cost follows how much of the screen each splat's card covers, and the
+count says nothing about that.
+
+### What was measured
+
+The streaming check drew a 400,000-splat cloud whose cards are about 0.05 m wide, at 4 to 6 m from
+the camera. On the cloud devices, at the preset's own budget:
+
+| Device and path | Preset | Drawn | Presented fps | Display |
+| --- | --- | --- | --- | --- |
+| iPad Pro 13, WebGPU | Low | 100,000 | 1.07 | 60 Hz |
+| iPad Pro 13, WebGL2 | Low | 50,000 | 3.29 | 60 Hz |
+| Galaxy S24, WebGL2 | Low, governor at 75% | 37,500 | 12.4 | 30 Hz |
+
+A control ran the same page on the Mac's GPU at the iPad's own pixel count. The canvas was 1032 by
+1376 at 2x, so 11.4 million pixels, with the budget pinned:
+
+| Drawn | Presented fps | Frame interval | GPU ms per frame |
+| --- | --- | --- | --- |
+| 1 | 60 at the display's cap | 16.7 ms | 0.72 |
+| 25,000 | 11.67 | 83.3 ms | 142.9 |
+| 50,000 | 7.29 | 133.3 ms | 241.9 |
+| 100,000 | 4.26 | 233.3 ms | 497.7 |
+
+Three readings follow:
+
+- Everything that is not the splats costs 0.72 ms of GPU time, under 1% of each frame. On the
+  screen's schedule that part is at most one 60 Hz frame. Counting it so, the splats take 80%, 88%
+  and 93% of the frame at 25,000, 50,000 and 100,000.
+- The count alone does not set the cost. At 50,000 the same page drew 6.2 frames a second at 11.4
+  million pixels, against 24.0 at 0.9 million. The cards covered about 12 times the pixels for 3.9
+  times the frame time.
+- A quarter of the count still misses a usable rate at the iPad's pixels: 11.67 frames a second for
+  25,000 splats.
+
+The test cloud is the worst case for coverage. At 11.4 million pixels each card covers tens of
+thousands of pixels, so 100,000 of them cover the screen hundreds of times over. A scan's splats
+are usually far smaller on screen at the same distance, so the same count costs far less fill.
+
+### The two options
+
+1. **Keep the count**. Document that the budget is a cap on the drawn splats, not a promise of a
+   frame rate. A page whose cards cover a lot tunes the count itself, through `setBudget`,
+   `capacity`, the camera or a lower preset. A real scan pays nothing: it draws its full count, and
+   its small cards leave room in the frame. A close camera or a scene of large cards still stalls,
+   and the engine gives no warning and no guard. This costs no code and no memory.
+2. **Add a coverage budget**.
+
+   The budget becomes a pixel allowance beside the count. The selection already has each chunk's
+   radius and its distance. It can estimate the screen area the prefix covers, and keep the total
+   under the allowance. A real scan would lose splats only when its
+   cards cover more than the allowance. That is when they are large on screen, so the look can turn
+   coarser where the camera is close. In exchange the page holds its frame target without tuning.
+   This costs a setting per preset and GPU path, a coverage term in the selection task, and tuning
+   on the phones and the iPad. It also needs a test scene whose coverage is known. The batch's
+   memory still follows the count, unless the count is lowered too.
+
+Neither option is taken here. The count and the budget stay as they are until the owner rules. One
+test scene whose cards cover the screen many times over must not tune the engine.
+
+The runs are the two 24 October 2026 records for [the cloud iPad](../tested-devices/ipad-pro-13-safari/20261024-074806-splats.md)
+and [the Galaxy S24](../tested-devices/galaxy-s24-sm-s921b-chrome/20261024-074630-splats.md).
