@@ -162,7 +162,7 @@ If item 1 or item 3 fails, feature work stops. Fix the cause, then run the gate 
 
 | Item | Rule | Measured by |
 | --- | --- | --- |
-| 1. Image tests | Every test in the image test manifest matches its references. This holds in CI on SwiftShader and in Chrome on the Mac's GPU, on all three tiers. It holds through the device runner in Safari and Firefox on the Mac, Safari on the iPad, and Chrome on the S24+. | Steps `images-gpu`, `images-swiftshader` and `workflows`. The device runner, through `bun run test:real-browsers Safari Firefox` and `bun run devices` |
+| 1. Image tests | Every test in the image test manifest matches its references. This holds in CI on SwiftShader, which the gate reads for the gate commit, and in Chrome on the Mac's GPU, on all three tiers. It holds through the device runner in Safari and Firefox on the Mac, Safari on the iPad, and Chrome on the S24+. | Steps `images-gpu`, `images-swiftshader` and `workflows`. The device runner, through `bun run test:real-browsers Safari Firefox` and `bun run devices` |
 | 2. Parity | The parity scenes match their three.js twins on core WebGPU and on WebGL2, within three.js's threshold. The shadow scenes match within 0.5%. | Step `parity` |
 | 3. Speed | The CI benchmark job passes on the gate commit. S1's own work on the busiest thread is at most 50% of three.js's, in Chrome on the Mac on WebGPU. S1 at phone scale is at most 100% of three.js on the S24+ and the iPad. S4 holds its preset's target frame rate in at least 95% of the seconds of a 10-minute run on both devices. S3 and S1-cells are measured against three.js on the three devices. | Steps `workflows`, `desktop-target` and `scenes`. Benchmark runs and the governor plan on the devices |
 | 4. Budgets | Each WebAssembly build stays within 600 KB after Brotli, and the engine's JavaScript within 100 KB in each thread mode. `bun run bench:allocation` passes on S4 on both GPU paths. `bun run bench:soak` passes on S4 in Chrome on the Mac and in Safari on the iPad. | Steps `budgets`, `allocation-s4-webgpu`, `allocation-s4-webgl2` and `soak-s4`. The soak plan on the iPad |
@@ -170,6 +170,8 @@ If item 1 or item 3 fails, feature work stops. Fix the cause, then run the gate 
 | 6. Docs | Every docs page with `since: "0.1"` is `experimental` or `stable`, or has moved to a later version with a written reason. The docs and skills checks pass, and the release script prints 0.1.0. | Steps `docs`, `docs-style`, `skills` and `release` |
 
 Item 6's release step makes no release. It prints the version that a `minor` release would take, 0.1.0, and it passes only while no docs page with `since: "0.1"` is still `planned`.
+
+Step `images-swiftshader` reads the gate commit's CI browser jobs, the shard jobs and the city job, which draw the manifest on Linux SwiftShader. It does not draw the SwiftShader pictures again on the Mac, whose text rasterisation and speed differ from CI's machines ([D-238](decisions/D-238-gate-pictures-from-ci.md)). It fails when the commit has no CI run from a push or a run started by hand. It fails too when any of those jobs did not pass. Start a full CI run by hand on a branch before the gate. The step's log holds the run's jobs.
 
 The iPad's S4 run is judged at its Low preset, by the owner's decision of 3 October 2026 (#215).
 
