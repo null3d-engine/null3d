@@ -3,6 +3,6 @@
 	"compilerOptions": {
 		"types": ["@webgpu/types"]
 	},
-	"include": ["src/**/*.ts"],
+	"include": ["src/**/*.ts", "page/**/*.ts"],
 	"exclude": ["src/**/*.test.ts"]
 }

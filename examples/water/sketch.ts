@@ -117,7 +117,7 @@ export default defineSketch(async (ctx) => {
 	water.setCaustics(caustics);
 	const air: [number, number, number] = [0.72, 0.84, 1];
 	const at = [0, 0, 0] as [number, number, number];
-	let travel = FROM + 60;
+	let travel = 0;
 
 	return {
 		onUpdate(dt) {
