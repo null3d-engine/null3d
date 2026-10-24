@@ -388,6 +388,41 @@ function effectsTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the lens kit's looks: a wall of fine detail under bloom, with bright bars. */
+const LENS_KIT_SKETCH = 'tests/pages/sketches/lens-kit-sketch.ts';
+
+/**
+ * The lens kit's looks, one picture each: the grade, the vignette and the sharpening that the kit
+ * takes from the core, and the add-on's own color fringes, anamorphic streak, grain and speed blur.
+ * Each picture turns one part of the look on and leaves the others off. The marks are custom
+ * effects, which the 8-bit path does not draw, so those four keep the two HDR tiers; the core's
+ * parts draw on every tier.
+ */
+function lensKitTests(): ImageTest[] {
+	const test = (name: string, look: string, tiers?: readonly Tier[]): ImageTest => ({
+		name: `lens-${name}`,
+		sketch: `${LENS_KIT_SKETCH}?look=${look}`,
+		hold: 0,
+		...(tiers && { tiers }),
+	});
+	return [
+		test('grade', 'grade'),
+		test('vignette', 'vignette'),
+		// The sharpening moves an edge by about 10 steps, which the default threshold would not
+		// count: a picture that lost it must fail. CI's software GPU rounds the same edge another
+		// way, so there a step of 10 may move more pixels than the tight limit allows.
+		{
+			...test('sharpen', 'sharpen'),
+			tolerance: { threshold: 0.02, maxDiffRatio: 0.002 },
+			swiftShaderTolerance: { threshold: 0.1, maxDiffRatio: 0.005 },
+		},
+		test('aberration', 'aberration', ['webgpu', 'webgl2']),
+		test('streak', 'streak', ['webgpu', 'webgl2']),
+		test('grain', 'grain', ['webgpu', 'webgl2']),
+		test('speed-blur', 'speed', ['webgpu', 'webgl2']),
+	];
+}
+
 /** The sketch of the HDR limit tests: light past the largest 16-bit float. */
 export const HDR_LIMIT_SKETCH = 'tests/pages/sketches/hdr-limit-sketch.ts';
 
@@ -1413,6 +1448,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...exposureTests(),
 	...fogVolumeTests(),
 	...effectsTests(),
+	...lensKitTests(),
 	...hdrLimitTests(),
 	...realUnitsTests(),
 	...aoTests(),
