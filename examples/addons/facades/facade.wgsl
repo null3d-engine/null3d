@@ -83,14 +83,6 @@ fn room_tint(warmth: f32, cool: f32) -> vec3f {
     return select(mix(amber, soft, warmth), vec3f(0.45, 0.66, 1.0), cool > 0.5);
 }
 
-fn finish_surface(s: Surface, base: vec3f, roughness: f32, metalness: f32, emissive: vec3f) -> Surface {
-    var result = s;
-    result.baseColor = base;
-    result.roughness = roughness;
-    result.metalness = metalness;
-    result.emissive = emissive;
-    return result;
-}
 
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
@@ -102,7 +94,7 @@ fn surface(input: SurfaceInput) -> Surface {
     // The cell's coordinates: its bay along the wall and its floor up it. A window batch's own
     // coordinates span one cell. The cell's derivatives stand here, in the entry point's uniform
     // control flow, and every texture read below uses them.
-    let along = select(input.worldPosition.z, input.worldPosition.x, abs(n.x) > abs(n.z));
+    let along = select(input.worldPosition.x, input.worldPosition.z, abs(n.x) > abs(n.z));
     let world_cell = vec2f(
         along / max(material.cellWidth, 0.01),
         (input.worldPosition.y - material.sill) / max(material.floorHeight, 0.01),
@@ -112,6 +104,18 @@ fn surface(input: SurfaceInput) -> Surface {
     let covered = max(fwidth(cell.x), fwidth(cell.y));
     let far = smoothstep(material.farFade, max(material.farFull, material.farFade + 0.01), covered);
 
+    // A box building's top face is a roof deck, not a wall: a dark tarred surface that keeps the
+    // city's own faint glow and none of the windows below.
+    if (facade && abs(n.y) > 0.5) {
+        var roof = s;
+        let grain = random2(floor(input.worldPosition.xz * 2.0));
+        roof.baseColor = vec3f(0.03, 0.032, 0.038) * (0.7 + 0.6 * seed) * (0.82 + 0.36 * grain);
+        roof.metalness = 0.15;
+        roof.roughness = 0.82;
+        roof.emissive = vec3f(0.008, 0.008, 0.011) * material.power;
+        return roof;
+    }
+
     // The wall finish: a look's own tile, or one that each building's seed picks.
     let picked = floor(random2(vec2f(seed * 71.3, 11.7)) * 3.999);
     let index = select(material.wallTile, picked, material.wallTile < 0.0);
@@ -119,8 +123,11 @@ fn surface(input: SurfaceInput) -> Surface {
     let atlas_uv = (tile + f) * 0.5;
     let dx = dpdx(atlas_uv);
     let dy = dpdy(atlas_uv);
-    let wall = textureSampleGrad(wallMap, wallMapSampler, atlas_uv, dx, dy);
-    let orm = textureSampleGrad(wallOrm, wallOrmSampler, atlas_uv, dx, dy);
+    // Far away the cell repeats faster than a pixel, so the wall reads its page's coarser levels:
+    // the pattern fades to the page's average instead of drawing a moire over the skyline.
+    let blur = 1.0 + far * 10.0;
+    let wall = textureSampleGrad(wallMap, wallMapSampler, atlas_uv, dx * blur, dy * blur);
+    let orm = textureSampleGrad(wallOrm, wallOrmSampler, atlas_uv, dx * blur, dy * blur);
 
     // The window's place, and whether the point shows glass.
     let in_x = step(material.glassX0, f.x) * step(f.x, material.glassX1);
@@ -174,13 +181,13 @@ fn surface(input: SurfaceInput) -> Surface {
     // The lamp: a pool of light on the room's back wall, at the height that the code gives it.
     let lamp_y = mix(-hh * 0.35, hh * 0.45, fract(code.a * 3.7));
     let to_lamp = length(hit - vec3f(0.0, lamp_y, -depth));
-    let pool = exp(-to_lamp * to_lamp / (depth * depth * 0.7));
+    let pool = exp(-to_lamp * to_lamp / (depth * depth * 0.09));
     let mask_back = back * (1.0 - side) * (1.0 - ceiling) * (1.0 - floor_hit);
     let shade = max(
-        mask_back * (0.42 + 0.7 * pool) +
-        side * (0.26 + 0.3 * pool) +
-        ceiling * (0.5 + 0.5 * pool) +
-        floor_hit * (0.16 + 0.62 * pool),
+        mask_back * (0.12 + 1.5 * pool) +
+        side * (0.1 + 0.5 * pool) +
+        ceiling * (0.2 + 0.8 * pool) +
+        floor_hit * (0.06 + 1.0 * pool),
         0.02,
     );
 
@@ -198,7 +205,7 @@ fn surface(input: SurfaceInput) -> Surface {
     // through in bands. A curtain darkens one side of some rooms.
     let blind_share = code.b * material.blinds;
     let covered_top = step(1.0 - blind_share, wy) * step(0.12, blind_share);
-    let slat = mix(0.34, 1.0, step(0.45, fract(wy * 18.0)));
+    let slat = mix(0.46, 1.0, step(0.45, fract(wy * 18.0)));
     let curtain_side = fract(code.a * 17.3);
     let edge = select(1.0 - smoothstep(0.26, 0.33, wx), smoothstep(0.67, 0.74, wx), curtain_side >= 0.5);
     let curtain = mix(1.0, 0.42 + 0.58 * edge, step(curtain_side, 0.24));
@@ -211,15 +218,16 @@ fn surface(input: SurfaceInput) -> Surface {
     let flicker = mix(1.0, select(candle, television, code.a > 0.9), material.flicker);
 
     let cool = select(0.0, object.values.w, !facade);
-    let tint = room_tint(code.r, cool);
+    let warmth = select(code.r, mix(code.r, object.values.y, 0.6), !facade);
+    let tint = room_tint(warmth, cool);
     let level = mix(0.45, 1.2, code.g) * mix(0.6, 1.15, fract(pick * 7.0));
     let room = tint * material.roomLight * level * room_shade * flicker;
     var emissive = room * lit * on * glass;
 
     // Far away a cell is smaller than a few pixels: the wall page's own average, whose alpha holds
     // the window's share of light, replaces the rooms and the grid.
-    let average = vec3f(0.92, 0.72, 0.5) * (0.2 + 0.8 * material.litShare) * wall.a;
-    emissive = mix(emissive, average * on * material.roomLight * 0.5, far);
+    let average = vec3f(0.95, 0.72, 0.46) * material.litShare * wall.a;
+    emissive = mix(emissive, average * on * material.roomLight * 0.9, far);
 
     // The wall itself, and the glass as a dark pane that mirrors the street. The window's light is
     // emitted, so it adds over the pane.
@@ -236,18 +244,23 @@ fn surface(input: SurfaceInput) -> Surface {
     if (shops > 0.5 && facade) {
         let shop_f = vec2f(fract(along / 11.0), clamp(input.worldPosition.y / material.shopHeight, 0.0, 1.0));
         let shop_glass = step(0.05, shop_f.x) * step(shop_f.x, 0.95) * step(0.08, shop_f.y);
-        let shop_pick = random2(vec2f(shop_f.x * 37.0 + seed * 91.0, seed * 13.0));
+        let shop_cell = floor(along / 11.0);
+        let shop_pick = random2(vec2f(shop_cell * 1.7 + seed * 91.0, seed * 13.0));
         let hue = 0.5 + 0.5 * cos(6.28318 * (shop_pick + vec3f(0.0, 0.33, 0.67)));
         base = mix(vec3f(0.03, 0.033, 0.04), vec3f(0.008, 0.01, 0.016), shop_glass);
         roughness = mix(0.72, 0.1, shop_glass);
         metalness = mix(0.06, 0.85, shop_glass);
-        emissive = hue * shop_glass * on * (0.9 + 1.5 * shop_f.y);
-        return finish_surface(s, base, roughness, metalness, emissive);
+        s.baseColor = base;
+        s.roughness = roughness;
+        s.metalness = metalness;
+        s.emissive = hue * shop_glass * on * (0.9 + 1.5 * shop_f.y);
+        return s;
     }
 
     // Far away the wall keeps a flat tone, which no grid of texels can crawl over.
-    base = mix(base, vec3f(0.02, 0.022, 0.026), far * 0.6);
-    roughness = mix(roughness, 0.7, far);
-    metalness = mix(metalness, 0.2, far);
-    return finish_surface(s, base, roughness, metalness, emissive);
+    s.baseColor = mix(base, vec3f(0.02, 0.022, 0.026), far * 0.6);
+    s.roughness = mix(roughness, 0.7, far);
+    s.metalness = mix(metalness, 0.2, far);
+    s.emissive = emissive;
+    return s;
 }
