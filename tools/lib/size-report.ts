@@ -1036,8 +1036,14 @@ export function downloadSizes(
  * over the old line, for the timed script that hold mode performs. The script's steps and the scene
  * property reads and writes that they use are in the sketch runner, and the page and a script share
  * one writer of input records. The rise leaves 1,164 bytes of room.
+ *
+ * It went to 191 KB on 25 October 2026: the recording and its replay added 722 bytes after Brotli
+ * to the start, for the page's replay switch, the download and check of a recording, and the offer
+ * to save one. The day's other landings had already filled most of the room: the base reached
+ * 194,126 bytes of the 194,560 line, so the feature landed 288 bytes over. The rise leaves 736
+ * bytes.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 190 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 191 * 1024 };
 
 /**
  * The budget for each part that loads after the start. The Brotli figure rose on 22 October 2026,
