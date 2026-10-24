@@ -34,7 +34,6 @@ const ON_BRANCH = new Set(['M3-A3', 'M3-B4', 'M3-E9', 'M3-R14']);
 /** A task that a commit names, but that the audit of the branch found unfinished. */
 const INCOMPLETE = new Set([
 	'M3-A9',
-	'M3-A11',
 	'M3-B1',
 	'M3-D9',
 	'M3-E2',
@@ -55,8 +54,6 @@ const INCOMPLETE = new Set([
 const NOTES: Readonly<Record<string, string>> = {
 	'M3-A9':
 		"the hero shadow and its tile are in; D-219's cost table is still empty, and the measured figures sit on the unlanded `m3-a9-hero-cost` branch",
-	'M3-A11':
-		"D-206 fixes the capture and the engine paths and rules the resolve unshipped for 0.1.0; D-129's shimmer, smear and sharpness figures are still unmeasured, so the ruling can still change",
 	'M3-E2':
 		"the task hook and the splats add-on's distance selection run on the job workers on both paths; the allocation check the task asks for is missing",
 	'M3-E4':
@@ -83,6 +80,8 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-R12': 'the build compiles only the listed permutations; the time and size are not recorded',
 	'M3-R13': 'the fallbacks exist; no test names the three checks the task asks for',
 	'M3-R17': 'the develop skill has neither section the task asks for',
+	'M3-A11':
+		'measured on both paths at every preset; the resolve does not beat the presets, so TAA does not ship (D-206)',
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
 };
 
