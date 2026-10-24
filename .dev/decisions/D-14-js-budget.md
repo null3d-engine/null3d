@@ -955,3 +955,15 @@ The budget rises to 190 KB, or 194,560 bytes, leaving 1,164 bytes of room. The o
 22 October allows the start's budget to rise as needed without asking. A trim that pays for the
 script means loading its performer on hold mode's first use, which is work of its own rather than a
 few names to cut; the trims owed above still stand as the next work that touches the start's size.
+
+## The start's budget rises to 191 KB, 25 October 2026
+
+The recording and replay of M3-R15 (D-251) put the page's replay switch, the download and check of
+a recording, and the offer to save one into the start: 722 bytes after Brotli across the page and
+the sketch runner. The day's other landings had already filled most of the room, so the base
+reached 194,126 bytes of the 194,560 line, and the feature landed 288 bytes over at 194,848.
+
+The budget rises to 191 KB, or 195,584 bytes, leaving 736 bytes of room. The owner's rule of
+22 October allows the start's budget to rise as needed without asking. The recording's own code,
+the format and the save button, loads only for a page that records or replays, and each has its own
+first-call budget; the trims owed above still stand as the next work that touches the start's size.
