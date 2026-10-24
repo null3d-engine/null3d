@@ -192,6 +192,12 @@ The rules that the reworked demos follow, and why:
   | WebGL2 | 120, 119, 119, 120 fps | 4.5, 5.2, 5.0, 5.0 ms |
 
   The traffic added at most 0.6 ms to the GPU time and no error to the scene's updates.
+- The real lights went to a fixed share of the rows, one row in 7 at 30,000 cars and one in 24 at
+  100,000, so the nearest car often had no light (25 October 2026, M3-B6). The search now reads every
+  row of the lanes near the camera. It skips a lane whose line across the way runs farther from the
+  eye than the light's range, before it reads a row, so its cost follows those lanes and not the
+  count. `examples/addons/traffic-lanes/lights.test.ts` compares it with a full search at 30,000 and
+  100,000 rows and checks that the nearest car has a light.
 - The instances demo gained lanes of hover cars on 18 October 2026 (M2-EX43, [D-172](decisions/D-172-neon-harbour-follow-ups.md)). Four lanes cross the sky at 17 to 22 m, on lines 45 to 75 m from the field's center, so the traffic stays a distant layer above the horizon and no car passes near the lens. Each car is a row of a body batch and a tail light batch, which blooms. The sketch writes every row from the time alone, so a held frame draws the same cars. The lanes moved to `traffic.ts` beside the sketch, which stays under 150 lines. Against the old pictures the drawn ones differ in 1.44% to 1.49% of their pixels, against the limit of 0.1%. The references moved in both sets.
 
 ### Frame rates on the Mac
