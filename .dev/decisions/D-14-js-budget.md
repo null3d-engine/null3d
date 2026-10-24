@@ -930,3 +930,15 @@ The squeeze stands: this is the third rise in two days, and M3-T1's target of 16
 away. The trims that the sections above owe, the cluster levels' shader and the compute pass's
 option checks, are the next work that touches the start's size, and they come before any feature
 that wants room.
+
+## The 160 KB target is closed, 24 October 2026
+
+M3-T1 asked for every start mode at or under 155 KB after Brotli, with the line set back to 160 KB. Its
+target was written before the owner's ruling of 22 October that the start's budget may rise as needed,
+and the trims it named were measured: the fence is in, and the trim that moved the fog write, the picks
+and the events out of the start cost more bytes than it saved and was reverted, as the section above
+records.
+
+The owner closed the task as superseded on 24 October 2026. The line stands at 188 KB, and the raises
+are recorded above. Two trims still pay the line back: the cluster levels' shader and the compute pass's
+option checks. Both stay named here as work rather than as a milestone task.

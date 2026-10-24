@@ -8,16 +8,23 @@ import { UsageError } from './args.js';
 import {
 	ADDON_FILE_BUDGET,
 	ADDON_SHADER_BUDGET,
+	allocationGate,
+	allocationOutcome,
 	budgetOf,
 	engineVersions,
 	interfaceResult,
+	nameProfile,
 	pageOf,
 	parseCheckAddonArgs,
 	publicApiProblems,
+	ranAddonCode,
 	readAddon,
 	run,
 	sizeProblems,
 } from './check-addon.js';
+import { freePort } from './devtools.js';
+import type { CallFrame, ProfileNode } from './heap-profile.js';
+import type { Runner } from './runner.js';
 
 /** The engine that these tests declare an add-on against. */
 const ENGINE = { version: '0.3.0', pluginInterface: 2 };
@@ -433,6 +440,168 @@ describe('sizeProblems', () => {
 	});
 });
 
+describe('nameProfile', () => {
+	/** A node of a profile, at the frame that a build's source maps name. */
+	const node = (
+		id: number,
+		functionName: string,
+		url: string,
+		children: ProfileNode[] = [],
+	): ProfileNode => ({ callFrame: { functionName, url }, id, selfSize: 16, children });
+
+	/** A namer that leaves each frame as the build wrote it. */
+	const asBuilt = { name: (frame: CallFrame) => frame };
+
+	it("collects the places of the add-on's own source files, and no others", () => {
+		const folder = '/work/addon';
+		const head = node(1, '(root)', '', [
+			node(2, 'onUpdate', `http://page${folder}/sketch.ts`),
+			node(3, 'draw', 'http://page/packages/engine/src/render/loop.ts'),
+			node(4, 'trail', `http://page${folder}/src/index.ts`),
+			// A folder whose name starts the same way is another add-on's code.
+			node(5, 'step', `http://page${folder}-other/step.ts`),
+			node(6, 'then', ''),
+		]);
+		const into = new Set<string>();
+		nameProfile(head, asBuilt, { folder, name: '@acme/addon' }, into);
+		expect([...into]).toEqual(['onUpdate addon/sketch.ts', 'trail src/index.ts']);
+	});
+
+	it("collects the add-on's copy that a page imports from node_modules, and no other package", () => {
+		const head = node(1, '(root)', '', [
+			node(2, 'addonStep', 'http://page/node_modules/@acme/addon/src/index.ts'),
+			node(3, 'otherStep', 'http://page/node_modules/@acme/other/src/index.ts'),
+		]);
+		const into = new Set<string>();
+		nameProfile(head, asBuilt, { folder: '/work/addon', name: '@acme/addon' }, into);
+		expect([...into]).toEqual(['addonStep src/index.ts']);
+	});
+
+	it("names the functions through the build's maps before it reads their files", () => {
+		const folder = '/work/addon';
+		const head = node(1, '(root)', 'http://page/assets/index-abc.js', [
+			node(2, 'n', 'http://page/assets/index-abc.js'),
+		]);
+		const names = {
+			name: (frame: CallFrame) => ({
+				...frame,
+				functionName: 'onUpdate',
+				url: `http://page${folder}/sketch.ts`,
+			}),
+		};
+		const into = new Set<string>();
+		nameProfile(head, names, { folder, name: '@acme/addon' }, into);
+		expect([...into]).toEqual(['onUpdate addon/sketch.ts']);
+	});
+});
+
+describe('ranAddonCode', () => {
+	/** A namer that leaves each frame as it was recorded. */
+	const asRecorded = { name: (frame: CallFrame) => frame };
+
+	it('sees the add-on code that ran, whichever worker ran it', () => {
+		const frames: CallFrame[] = [
+			{ functionName: 'draw', url: 'http://page/packages/engine/src/render/loop.ts' },
+			{ functionName: 'trail', url: 'http://page/work/addon/src/index.ts' },
+			{ functionName: 'then', url: '' },
+		];
+		expect(ranAddonCode(frames, asRecorded, { folder: '/work/addon', name: '@acme/addon' })).toBe(
+			true,
+		);
+	});
+
+	it('sees none when the page ran no code of the add-on', () => {
+		const frames: CallFrame[] = [
+			{ functionName: 'draw', url: 'http://page/packages/engine/src/render/loop.ts' },
+			{ functionName: 'then', url: '' },
+		];
+		expect(ranAddonCode(frames, asRecorded, { folder: '/work/addon', name: '@acme/addon' })).toBe(
+			false,
+		);
+	});
+});
+
+describe('allocationOutcome', () => {
+	it('prints the bytes per frame of the add-on code on each preset', () => {
+		const outcome = allocationOutcome(
+			[
+				{ preset: 'low', addonBytes: 0, pageBytes: 1536, addonRan: true, places: [] },
+				{
+					preset: 'medium',
+					addonBytes: 12,
+					pageBytes: 2048,
+					addonRan: true,
+					places: [{ worker: 'sketch-worker', place: 'onUpdate addon/sketch.ts', perFrame: 12 }],
+				},
+			],
+			'Chrome 155.0.8059.85',
+		);
+		expect(outcome.status).toBe('PASS');
+		expect(outcome.text).toBe(
+			"allocation per preset: low 0 bytes, medium 12 bytes per frame in the add-on's own code, on Chrome 155.0.8059.85",
+		);
+		expect(outcome.details).toEqual([
+			"low: 1.5 KB per frame in the page's threads, 0 bytes of it in the add-on's own code",
+			"medium: 2.0 KB per frame in the page's threads, 12 bytes of it in the add-on's own code",
+			'medium: 12 bytes per frame in onUpdate addon/sketch.ts (sketch-worker)',
+		]);
+	});
+
+	it('shows kilobytes for the figures above one', () => {
+		expect(
+			allocationOutcome(
+				[{ preset: 'high', addonBytes: 2560, pageBytes: 4096, addonRan: true, places: [] }],
+				'Chrome 1',
+			).text,
+		).toBe("allocation per preset: high 2.5 KB per frame in the add-on's own code, on Chrome 1");
+	});
+});
+
+describe('allocationGate', () => {
+	it('fails when the project has no production build', async () => {
+		const runner = { server: { buildDir: undefined } } as unknown as Runner;
+		expect(
+			await allocationGate(
+				runner,
+				{ page: '/index.html', folder: fixture({}), name: '@acme/x' },
+				1,
+			),
+		).toEqual({
+			status: 'FAIL',
+			text: 'allocation: the project has no production build',
+		});
+	});
+
+	it('fails, with the reason, when the browser does not answer on its debugging socket', async () => {
+		const folder = fixture({});
+		const build = fixture({ 'index.html': '<!doctype html>' });
+		const runner = {
+			server: {
+				buildDir: build,
+				url: 'http://127.0.0.1:1/',
+				errors: [],
+				hasFile: () => true,
+				close: async () => {},
+			},
+			browser: {},
+			environment: 'chrome-real-gpu',
+			browserName: 'Chrome 1',
+			close: async () => {},
+		} as unknown as Runner;
+		const port = await freePort();
+		const outcome = await allocationGate(
+			runner,
+			{ page: '/index.html', folder, name: '@acme/x' },
+			port,
+			20,
+		);
+		expect(outcome.status).toBe('FAIL');
+		expect(outcome.text).toStartWith(
+			"allocation: the gate could not reach the browser's debugging socket: ",
+		);
+	});
+});
+
 describe('run', () => {
 	const log = spyOn(console, 'log').mockImplementation(() => {});
 	afterEach(() => log.mockClear());
@@ -475,5 +644,28 @@ describe('run', () => {
 	it('prints the help without checking anything', async () => {
 		expect(await run(['--help'])).toBe(0);
 		expect(printed()).toStartWith('Usage: bunx @null3d/cli check-addon [folder] [options]');
+	});
+
+	it('skips each page gate with its reason when the add-on names no page', async () => {
+		const folder = fixture({
+			'package.json': JSON.stringify({ name: '@acme/splats' }),
+			'src/index.ts': 'export const ok = 1;\n',
+		});
+		expect(await run([folder])).toBe(0);
+		expect(printed()).toContain('SKIP  page: the folder has no null3d.json');
+		expect(printed()).toContain('SKIP  cost: there is no page to measure');
+		expect(printed()).toContain('SKIP  allocation: there is no page to sample');
+	});
+
+	it('skips each page gate when --skip-browser runs none of them', async () => {
+		const folder = fixture({
+			'package.json': JSON.stringify({ name: '@acme/splats' }),
+			'src/index.ts': 'export const ok = 1;\n',
+		});
+		expect(await run([folder, '--skip-browser'])).toBe(0);
+		expect(printed()).toContain('SKIP  page: --skip-browser runs no gate that opens a browser');
+		expect(printed()).toContain(
+			'SKIP  allocation: --skip-browser runs no gate that opens a browser',
+		);
 	});
 });
