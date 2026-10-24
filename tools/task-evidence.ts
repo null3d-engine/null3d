@@ -3,6 +3,8 @@
 // file names the evidence, so a tick always means the work is here and something checks it.
 // The entries come from read-only audits of the branch on 23 October 2026.
 export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
+	'M3-R13':
+		'Three checks, each with a test seen to fail without it: the `ktx2-etc2` picture stands in for an ETC2-only device and failed with E1412 when the format was mislabelled; the shared replay skips a pending compute pass for an add-on shader too, in `packages/engine/src/gpu/webgpu/backend.test.ts`; the skinning pass checks the device limit, from b3187c44b',
 	'M3-R2':
 		'The governor undoes a step that does not pay: `governor.ts` with `LOWER_TRIAL_MS` and `LOWER_LOSS_PERCENT`, 6 new tests in `governor.test.ts` including a replay of the resize page, 57 of 57; D-237',
 	'M3-R21':

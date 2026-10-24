@@ -45,7 +45,6 @@ const INCOMPLETE = new Set([
 	'M3-L3',
 	'M3-L4',
 	'M3-R12',
-	'M3-R13',
 ]);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
@@ -76,7 +75,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		'dropped with the temporal resolve it waited on (D-206); the owner may change the ruling',
 	'M3-F10': 'dropped with the temporal resolve it needs (D-206); the owner may change the ruling',
 	'M3-R12': 'the build compiles only the listed permutations; the time and size are not recorded',
-	'M3-R13': 'the fallbacks exist; no test names the three checks the task asks for',
 	'M3-A11':
 		'measured on both paths at every preset; the resolve does not beat the presets, so TAA does not ship (D-206)',
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
