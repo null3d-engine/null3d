@@ -197,6 +197,7 @@ describe("CI's workflow", () => {
 		for (const [name, key] of [
 			['browser', 'shard'],
 			['browser-alone', 'shard'],
+			['browser-heavy', 'shard'],
 			['real-browsers', 'shard'],
 			['shader-entries', 'shard'],
 		] as const) {
@@ -209,10 +210,23 @@ describe("CI's workflow", () => {
 	});
 
 	it('gives each browser shard one weight', () => {
-		const weights = jobNamed('browser')
-			.steps?.map(({ env }) => env?.PWTEST_SHARD_WEIGHTS)
-			.find(Boolean);
-		expect(weights?.split(':').length).toBe((matrixOf('browser').shard as number[]).length);
+		for (const name of ['browser', 'browser-heavy']) {
+			const weights = jobNamed(name)
+				.steps?.map(({ env }) => env?.PWTEST_SHARD_WEIGHTS)
+				.find(Boolean);
+			expect(weights?.split(':').length, name).toBe((matrixOf(name).shard as number[]).length);
+		}
+	});
+
+	it('runs the heavy browser tests one at a time in a job of their own, which the shards leave out', () => {
+		const env = (workflow as { env?: Record<string, unknown> }).env ?? {};
+		expect(String(env.HEAVY_TESTS ?? '')).not.toBe('');
+		const run = (name: string) =>
+			(jobNamed(name).steps ?? []).find(({ run }) => run?.includes('bun run test:browser'))?.run ??
+			'';
+		expect(run('browser')).toMatch(/--grep-invert "[^"]*\$HEAVY_TESTS[^"]*"/);
+		expect(run('browser-heavy')).toContain('--grep "$HEAVY_TESTS"');
+		expect(run('browser-heavy')).toContain('--workers=1');
 	});
 
 	it("splits the benchmark pages' parity tests into shards that each run once", () => {
@@ -252,6 +266,24 @@ describe("CI's workflow", () => {
 		const shards = (matrixOf('shader-compiler').include ?? []).map(({ shard }) => String(shard));
 		const count = Number(shards[0]?.split('/')[1]);
 		expect(shards).toEqual(Array.from({ length: count }, (_, i) => `${i}/${count}`));
+	});
+
+	it('runs each share of the packing test once, with a pass and a cache of its own', () => {
+		const shares = (matrixOf('shader-compiler-plugin').include ?? [])
+			.filter(({ script }) => script === 'test:shader-compiler:pack')
+			.map(({ share }) => String(share).split('/').map(Number));
+		const count = shares[0]?.[1] ?? 0;
+		expect(count).toBeGreaterThan(1);
+		expect(shares.map(([part]) => part)).toEqual(oneTo(count));
+		expect(shares.every(([, total]) => total === count)).toBe(true);
+		const steps = jobNamed('shader-compiler-plugin').steps ?? [];
+		const pass = steps.find(({ name }) => name === "The key of this part's inputs")?.run ?? '';
+		const cache = steps.find(
+			({ with: given }) => given?.path === 'node_modules/.cache/null3d-shaders',
+		);
+		expect(pass).toContain('matrix.share');
+		expect(String(cache?.with?.key)).toContain('matrix.share');
+		expect(String(cache?.with?.['restore-keys'])).toContain('matrix.share');
 	});
 
 	it('runs each shard of each sharded Rust test part once', () => {
@@ -529,13 +561,19 @@ describe("CI's workflow", () => {
 		// The pushes after it run in the pull request's own group, so they never cancel it.
 		expect(group).toContain("github.event.action == 'ready_for_review'");
 		expect(group).toContain("format('pr-{0}{1}'");
-		// A later full run waits for it, so it ends with a result.
+	});
+
+	it('cancels a run in progress only on a push to main, so every other run that starts ends', () => {
+		// Cancelling a started pull request run threw its work away: its landings come in bursts,
+		// and a later run waits instead, while GitHub drops an older waiting run before it starts.
 		const cancel = String(
 			(workflow as { concurrency?: { 'cancel-in-progress'?: string } }).concurrency?.[
 				'cancel-in-progress'
 			],
 		);
-		expect(cancel).toContain("github.event.action != 'ready_for_review'");
+		expect(cancel).toMatch(
+			/^\$\{\{ github\.event_name == 'push' && github\.ref == 'refs\/heads\/main' \}\}$/,
+		);
 	});
 
 	it("moves the build job's files and the load builds only through the archive action", () => {

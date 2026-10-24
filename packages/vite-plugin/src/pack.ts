@@ -70,10 +70,10 @@ export class ShaderPack {
 	 * The JavaScript expression that takes the place of a compiled shader in the module: a call of
 	 * the function with the shader's records as JSON text, each WGSL source as its number and each
 	 * GLSL source as -1 less its number. `hot` is the key of the shader's hot updates on the dev
-	 * server. `builds` is a custom material's place among the module's materials whose builds load
-	 * on first use, which the shader's `builds` function imports through the module's function.
+	 * server. `builds` is a shader's place among the module's shaders of its `kind` whose builds
+	 * load on first use, which the shader's `builds` function imports through the module's function.
 	 */
-	value(shader: object, hot?: string, builds?: number): string {
+	value(shader: object, hot?: string, builds?: number, kind?: string): string {
 		this.used = true;
 		const { wgsl, glsl } = this;
 		const packed = JSON.stringify(shader, function (this: object, key: string, value: unknown) {
@@ -83,7 +83,7 @@ export class ShaderPack {
 		const args = [JSON.stringify(packed)];
 		if (hot !== undefined || builds !== undefined)
 			args.push(hot === undefined ? 'undefined' : JSON.stringify(hot));
-		if (builds !== undefined) args.push(`${LOAD_BUILDS}, ${builds}`);
+		if (builds !== undefined) args.push(`${LOAD_BUILDS}, ${builds}, ${JSON.stringify(kind ?? '')}`);
 		return `${UNPACK}(${args.join(', ')})`;
 	}
 
@@ -95,7 +95,7 @@ export class ShaderPack {
 	unpacker(): string {
 		const tables = `[${tablesOf(this.wgsl)}, ${tablesOf(this.glsl)}]`;
 		return `
-function ${UNPACK}(text, hot, load, index) {
+function ${UNPACK}(text, hot, load, index, kind) {
 	const paths = ${UNPACK}.paths || (${UNPACK}.paths = ${tables}.map((json) => ({ json })));
 	const sourceOf = (n) => {
 		const path = paths[n < 0 ? 1 : 0];
@@ -114,7 +114,7 @@ function ${UNPACK}(text, hot, load, index) {
 	walk(shader);
 	if (hot !== undefined) shader.hot = hot;
 	if (load !== undefined)
-		shader.builds = (target, set) => load(target, set).then((module) => module.default[index] || {});
+		shader.builds = (target, set) => load(kind, target, set).then((module) => module.default[index] || {});
 	return shader;
 }
 `;

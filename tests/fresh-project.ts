@@ -630,13 +630,27 @@ async function main(): Promise<void> {
 		);
 		if (cores.length !== 2)
 			throw new Error(`the production build holds ${cores.length} engine cores, not 2`);
-		// The engine's notices come first, then the geometry package's.
+		// The notices of every package that a page ships, the engine's first and each add-on's by
+		// name after it. The tools' notices stay out, since a page ships none of their code.
 		const notices = join(project, 'dist', NOTICES_FILE);
-		const own = (name: string) =>
-			readFileSync(join(ROOT, `packages/${name}/THIRD-PARTY-NOTICES.txt`), 'utf8').trimEnd();
-		const expected = `${own('engine')}\n\n${own('geometry')}\n`;
-		if (!existsSync(notices) || readFileSync(notices, 'utf8') !== expected)
-			throw new Error(`the production build lacks the packages' notices in ${NOTICES_FILE}`);
+		const expected = packed
+			.filter(
+				({ folder, name }) =>
+					!DEV_DEPENDENCIES.includes(name) &&
+					existsSync(join(ROOT, `packages/${folder}`, 'THIRD-PARTY-NOTICES.txt')),
+			)
+			.sort(
+				(a, b) =>
+					Number(b.name === '@null3d/engine') - Number(a.name === '@null3d/engine') ||
+					(a.name < b.name ? -1 : 1),
+			)
+			.map(({ folder }) =>
+				readFileSync(join(ROOT, `packages/${folder}`, 'THIRD-PARTY-NOTICES.txt'), 'utf8').trimEnd(),
+			)
+			.join('\n\n');
+		if (!existsSync(notices)) throw new Error(`the production build writes no ${NOTICES_FILE}`);
+		if (readFileSync(notices, 'utf8') !== `${expected}\n`)
+			throw new Error(`the production build's ${NOTICES_FILE} differs from the packages' notices`);
 		site = startSiteBuild(project);
 		await startsUnderStrictPolicy(join(project, 'dist'));
 		await playsOffline(join(project, 'dist'));

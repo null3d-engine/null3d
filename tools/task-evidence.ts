@@ -9,6 +9,10 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'The governor undoes a step that does not pay: `governor.ts` with `LOWER_TRIAL_MS` and `LOWER_LOSS_PERCENT`, 6 new tests in `governor.test.ts` including a replay of the resize page, 57 of 57; D-237',
 	'M3-R21':
 		"The gate reads its software-renderer pictures from the commit's own CI browser jobs: `bench/ci-browser-jobs.ts`, 12 tests in `bench/lib/gate.test.ts`; D-238",
+	'M3-R20':
+		'Two clauses were missing and are built: a page that draws under about two frames a second is now judged at its gap, and a software renderer stays off the two-step path after a step fails. `governor.ts` compares the longest busy frame with half the gap and closes the whole scale below a failed step, `shared/software.ts` holds the one name test for a CPU renderer; the trap page `tests/image/governor-trap.spec.ts` passes 10 of 10 on the Mac software renderer over every thread mode and both paths, and the stress test settles at scale 0.55 with no change of direction and holds 90% of 60 fps in 15 of 15 seconds on WebGL2. 64 of 64 governor tests pass, each new test failing without its fix; D-237',
+	'M3-R19':
+		"The two-step pass's second step read per pass on the cloud iPad at High with the governor on, three runs: D-236's addendum holds the table — the six earlier passes cost 0.7 to 3.4 ms each and the frame's last pass, which draws the second step, cost 20.5 to 34.9 ms; the run is recorded under `.dev/tested-devices/ipad-pro-13-safari/`. The earlier 0.5-scale pair could not be reproduced, and the record says so",
 	'M3-R17':
 		"The develop skill's intake section and its `Search before you hand-roll` table over all eleven foundation add-ons, mirrored in the starter template's AGENTS.md, with three evaluation cases; 22 of 22 skill checks pass",
 	'M3-R3':
@@ -50,10 +54,28 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-D7': 'The WebGL2 texture-unit allocator: `packages/engine/src/gpu/webgl2/`',
 	'M3-D8':
 		"Namespaces for an add-on's shader library, error codes and quality keys: `packages/engine/src/scene/namespaces.ts`",
+	'M3-D9':
+		"`bunx @null3d/cli check-addon` runs the engine's gates on one add-on: `packages/cli/src/check-addon.js`, which refuses `tests/fixtures/d9-addon-internal` for importing `@null3d/engine/internal`; D-225 records the run over every foundation add-on and the fixture's page and cost gates",
 	'M3-E1':
 		"Splats draw through `scene.addFeatureInstances` (`packages/engine/src/scene/feature-instances.ts`); the `splats`, `splats-budget` and `splats-gltf` pictures on both paths; the draw's size in `tools/lib/size-report.ts`",
+	'M3-F6':
+		"Video textures: `engine.registerVideo` and `textures.fromVideo`, held by `tests/pages/video-texture.ts`, which passes on both GPU paths in Chrome on the Mac, on the software renderer, and in Safari 26.6.2 and Firefox 158 — a 512 by 288 frame uploads 577 KiB against the Low preset's 2 MiB budget, upright, within two steps of a data texture; the page's video support loads at its first call; the guide `guides/video-textures` and the mapping entry",
+	'M3-V1':
+		"Four real devices measured, one session each: `.dev/tested-devices.md` with its nine run files holds Creek's and the forest demo's frames, GPU time per pass, triangles and memory at fixed presets and paths, tree generation timed in a worker, and the splats at a quarter count on the iPad; D-241's addendum turns them into the budgets the later vegetation tasks take. The Creek-on-WebGPU stall on an Apple device is in `.dev/driver-bugs.md`",
+	'M3-R4':
+		"The offset allocator, measured against today's placement and not adopted: D-247 holds the comparison — the new allocator places in 8.46 microseconds and moves nothing where today's placement moves 1,727.7 MiB in 40.94 ms across 384 operations, but it retains 21.08 MB against 16.86 MB at the peak. The workload page is `tests/pages/mesh-churn-cost.ts`, and the record explains that a single removal costs about 0.24 ms",
+	'M3-B5':
+		'The car-paint add-on in `examples/addons/car-paint/`: `createCarPaint` with flakes that tilt the base normal cell by cell and fade as a cell drops below a pixel, `fwidth`-width seams and a 2 x 2 twill weave, used by the coat-and-sheen demo. The four pictures `car-paint`, `car-paint-no-flakes`, `car-paint-no-seams` and `car-paint-weave` hold each part on every tier in both sets, and `car-paint.spec.ts` measures their contribution; the GPU cost per preset is owed',
+	'M3-F7':
+		"The three-compat add-on in `packages/three-compat/`: Reinhard and Cineon as named tone curves through the core's tone-curve setting, and the outline pass's glow, pulse and blurred edge, with `tone-reinhard` and the outline pictures on every tier and strict comparisons against three.js's formulas",
+	'M3-E10':
+		"The sky-layer template and the compiler that joins an add-on's `skyLayer` to it: `crates/null3d-shaders/tests/sky_layer.rs`, `crates/null3d-render/tests/background.rs` (`a_sky_layer_draws_after_the_background_*`); `scene.setSkyLayer` in `packages/engine/src/scene/background.ts`, with `packages/engine/src/scene/scene.test.ts`; the aurora example add-on in `examples/addons/aurora/`; D-242. The demo and its six picture references land as their own change once the frames are drawn",
 	'M3-E3':
 		"`registerGltfExtension` in `packages/engine/src/scene/gltf-extensions.ts`; the `splats-gltf` picture, and E1417's hint for `KHR_gaussian_splatting` in `gltf-extensions.test.ts`",
+	'M3-E4':
+		"Water's soft shores read the scene depth on every path: the `water-shores` picture on WebGPU, compatibility mode and WebGL2, in both reference sets, shows the pale band and foam where the water meets the sand and the island's base; without the depth copy the sheet draws its deep colour everywhere. D-202's addendum names M3-E4a for the case of depth beside textures",
+	'M3-L4':
+		'Staged loading, coarse first: `StageWatches` in `crates/null3d-render/src/levels.rs` holds each stage until a view has picked the level the mesh draws over a 120-frame warm-up, and sets it and every finer stage aside when none is picked; a look every 1500 ms brings them back when the camera comes close, through `unwatchStageLevels`; `tests/image/staged-levels.spec.ts` passes 8 of 8, its `?far` test shows a level that never draws is never downloaded, and its `?near` test shows a stage set aside arrives once the camera comes close; D-228',
 	'M3-F2':
 		"Streaming within budget on a cloud phone and an iPad: `tests/pages/splats-stream.ts` and the `splats` plan in `tests/lib/plans.ts`, with the runs in `.dev/tested-devices/` — the Galaxy S24 held 37,500 of Low's 50,000 and the iPad Pro 13 drew 100,000 on WebGPU and 50,000 on WebGL2, every draw inside the budget",
 	'M3-E5':

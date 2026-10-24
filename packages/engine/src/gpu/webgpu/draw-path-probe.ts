@@ -18,6 +18,8 @@
 // script, not a file that loads on demand: every page starts that worker, so a file of its own
 // would load on every page and count outside the start's budget.
 
+import { softwareRendererName } from '../../shared/software';
+
 /** The draws of each arm: enough that a per-draw cost of a few microseconds shows over the noise. */
 const DRAWS = 512;
 /** Frames of each arm in one timing run. */
@@ -55,8 +57,8 @@ export async function probeDirectDraws(
 ): Promise<boolean> {
 	// Compose the words that name a software renderer. Its slow indirect draws say nothing about
 	// the per-draw GPU cost that the direct path removes, and its pictures must not change.
-	const words = [info.vendor, info.architecture, info.device, info.description].join(' ');
-	if (/swiftshader|llvmpipe|software/i.test(words)) return false;
+	const words = [info.vendor, info.architecture, info.device, info.description];
+	if (softwareRendererName(...words)) return false;
 	try {
 		return await measure(device, own);
 	} catch {

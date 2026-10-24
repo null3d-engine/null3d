@@ -515,11 +515,11 @@ impl Draws<'_> {
             // A bucket whose material reads the scene's depth binds the group after its maps.
             let scene = if own && bucket.scene_depth { scene } else { 0 };
             groups.set(list, maps, scene, bucket.skins, index)?;
-            // A feature-instance draw reads the add-on's own buffer, which its compute pass fills,
-            // from the buffer's first instance on.
+            // A feature-instance draw reads the rows that the frame's conversion wrote from the
+            // add-on's world rows, from the buffer's first instance on.
             let (instances, offset, bytes) = if bucket.feature != 0 {
                 (
-                    ids::feature_instances(bucket.feature),
+                    ids::feature_relative(bucket.feature),
                     0,
                     bucket.feature_capacity.max(1) * sizes::INSTANCE_STRIDE,
                 )

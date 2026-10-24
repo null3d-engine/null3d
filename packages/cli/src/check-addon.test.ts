@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { MATERIAL_BUILDS_ADDRESS } from '../../../packages/vite-plugin/src/material-builds.ts';
 import { fixture } from '../../../tools/lib/fixture';
-import { LATER_BUDGET } from '../../../tools/lib/size-report.ts';
+import { FIRST_USE_SHADER_BUDGET, LATER_BUDGET } from '../../../tools/lib/size-report.ts';
 import { UsageError } from './args.js';
 import {
 	ADDON_FILE_BUDGET,
+	ADDON_SHADER_BUDGET,
+	budgetOf,
 	engineVersions,
 	interfaceResult,
 	pageOf,
@@ -125,6 +128,14 @@ describe('publicApiProblems', () => {
 			'src/index.ts':
 				"import { internals } from '@null3d/engine/internal';\nexport { internals };\n",
 		});
+		expect(publicApiProblems(folder)).toEqual({
+			problems: ['src/index.ts imports @null3d/engine/internal, which is not a public entry point'],
+			files: 1,
+		});
+	});
+
+	it('refuses the fixture add-on that imports the engine internal entry', () => {
+		const folder = join(import.meta.dirname, '../../../tests/fixtures/d9-addon-internal');
 		expect(publicApiProblems(folder)).toEqual({
 			problems: ['src/index.ts imports @null3d/engine/internal, which is not a public entry point'],
 			files: 1,
@@ -357,6 +368,32 @@ describe('the add-on budgets', () => {
 	it("hold to the engine's budget for a file that loads after the start", () => {
 		expect(ADDON_FILE_BUDGET).toEqual(LATER_BUDGET);
 	});
+
+	it("hold to the engine's budget for a first-use file of shader builds", () => {
+		expect(ADDON_SHADER_BUDGET).toEqual(FIRST_USE_SHADER_BUDGET);
+	});
+
+	it('take the shader budget for every set of builds that the plugin emits', () => {
+		const prefix = '\0virtual:null3d/builds/';
+		for (const target of ['wgsl', 'glsl']) {
+			for (const bits of [0, 1, 2, 3, 64, 65, 66, 67]) {
+				const id = `${prefix}material-${target}-${bits}-0123456789abcdef`;
+				expect(MATERIAL_BUILDS_ADDRESS.test(id)).toBe(true);
+				// The build writes the set to a file named after the module, with a hash of its own.
+				expect(budgetOf(`${id.slice(prefix.length)}-AbC123xy.js`)).toBe(ADDON_SHADER_BUDGET);
+			}
+			for (const kind of ['effect', 'curve']) {
+				const id = `${prefix}${kind}-${target}-0-0123456789abcdef`;
+				expect(MATERIAL_BUILDS_ADDRESS.test(id)).toBe(true);
+				expect(budgetOf(`${id.slice(prefix.length)}-AbC123xy.js`)).toBe(ADDON_SHADER_BUDGET);
+			}
+		}
+	});
+
+	it('keep the code budget for a file that holds no builds', () => {
+		expect(budgetOf('addon.js')).toBe(ADDON_FILE_BUDGET);
+		expect(budgetOf('material.js')).toBe(ADDON_FILE_BUDGET);
+	});
 });
 
 describe('sizeProblems', () => {
@@ -385,6 +422,14 @@ describe('sizeProblems', () => {
 				{ name: 'large.js', raw: 65 * KB, gzip: KB, brotli: KB },
 			]),
 		).toEqual(['large.js is 65.0 KB raw, over its 64.0 KB budget']);
+	});
+
+	it('holds a file of shader builds to the first-use shader budget', () => {
+		const name = 'material-glsl-3-4147f7f033096b80-DAeZ5SYm.js';
+		expect(sizeProblems([{ name, raw: 900 * KB, gzip: 160 * KB, brotli: 45 * KB }])).toEqual([]);
+		expect(sizeProblems([{ name, raw: 900 * KB, gzip: 160 * KB, brotli: 53 * KB }])).toEqual([
+			`${name} is 53.0 KB brotli, over its 52.0 KB budget`,
+		]);
 	});
 });
 

@@ -64,9 +64,14 @@ export interface ShaderVariant<Pipeline extends string = string> {
  * WGSL from a project's modules, compiled by the null3D Vite plugin: a `.wgsl` file that a module
  * imports, or a template literal that a `wgsl` block comment tags. WGSL with entry points is a
  * whole shader. WGSL without entry points holds the functions of a custom material, the function
- * of a custom effect, or a custom tone curve.
+ * of a custom effect, a custom tone curve, or a sky layer.
  */
-export type CompiledWgsl = CompiledShader | CompiledMaterial | CompiledEffect | CompiledToneCurve;
+export type CompiledWgsl =
+	| CompiledShader
+	| CompiledMaterial
+	| CompiledEffect
+	| CompiledToneCurve
+	| CompiledSkyLayer;
 
 /**
  * A whole shader from a project's modules. It has one render pipeline for each `@fragment` entry
@@ -236,8 +241,20 @@ export interface CompiledEffect<
 	/** The textures that the WGSL declares as `var name: texture_2d<f32>;` or
 	 * `var name: texture_2d_array<f32>;`, in order. */
 	readonly textures: readonly CompiledTexture<Textures>[];
-	/** The effect template's variants with the WGSL, by name. */
+	/**
+	 * The effect template's variants with the WGSL, by name. A module's value holds none: they load
+	 * on first use, through `builds`.
+	 */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
+	/**
+	 * Imports an effect's builds for one GPU path, which load on first use. The engine imports them
+	 * when it first uses the effect. The set is 0, as an effect's build takes no permutation bit
+	 * that picks a set.
+	 */
+	readonly builds?: (
+		target: 'wgsl' | 'glsl',
+		set: number,
+	) => Promise<Readonly<Record<string, ShaderVariant>>>;
 	/** The pieces that the engine joins into its hosts: none for an effect with textures. */
 	readonly pieces: EffectPieces;
 }
@@ -250,8 +267,32 @@ export interface CompiledEffect<
 export interface CompiledToneCurve {
 	/** Marks the WGSL of a custom tone curve. */
 	readonly kind: 'toneCurve';
-	/** The final pass's variants with the WGSL, by name. */
+	/**
+	 * The final pass's variants with the WGSL, by name. A module's value holds none: they load on
+	 * first use, through `builds`.
+	 */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
+	/**
+	 * Imports a tone curve's builds for one GPU path, which load on first use. The engine imports
+	 * them when it first uses the curve. The set is 0, as a curve's build takes no permutation bit
+	 * that picks a set.
+	 */
+	readonly builds?: (
+		target: 'wgsl' | 'glsl',
+		set: number,
+	) => Promise<Readonly<Record<string, ShaderVariant>>>;
 	/** The pieces that the engine folds into the final pass. */
 	readonly pieces: EffectPieces;
+}
+
+/**
+ * A sky layer from a project's modules, which `scene.setSkyLayer` draws over the background: WGSL
+ * that declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer`, built into every variant of the
+ * engine's sky-layer template.
+ */
+export interface CompiledSkyLayer {
+	/** Marks the WGSL of a sky layer. */
+	readonly kind: 'skyLayer';
+	/** The sky-layer template's variants with the WGSL, by name. */
+	readonly variants: Readonly<Record<string, ShaderVariant>>;
 }

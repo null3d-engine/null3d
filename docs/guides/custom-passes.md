@@ -416,7 +416,7 @@ surface.setRotationEuler(-Math.PI / 2, 0, 0);
 - `ripple` sets how far the waves tilt the normal. The tilt bends the reflection and the sun's highlights.
 - The foam hides the reflection where it lies, through the reflection's share in `a`.
 - The water is opaque, so the bed does not show through it. The shallow tint stands in for the bed's color.
-- Without a height map of the bed, a blended sheet reads the depth of the opaque scene behind it with `sceneInputs: ['sceneDepth']` and `sceneDistance(uv)`. That gives the shallow tint and the foam of soft shores, as [Materials](../api/materials.md#the-scene-behind-a-surface) shows.
+- Without a height map of the bed, a blended sheet reads the depth of the opaque scene behind it with `sceneInputs: ['sceneDepth']`. The water's depth along the view ray is the gap between the sheet and the geometry behind the pixel. Convert the pixel's own depth to a distance with the camera's range in `engine_frame.camera_range`, then subtract it from `sceneDistance(uv)`. Fade the water's alpha to zero over the last centimeters of the gap. The water then thins and foams against the bank, so its shore ends softly. Such a sheet declares no textures of its own, so this recipe's mirror cannot join it. [Materials](../api/materials.md#the-scene-behind-a-surface) shows the options.
 - Waves that move the surface's vertices need `setBounds`, as [Culling](../concepts/culling.md) explains. The reflection's plane stays flat, which suits small waves.
 
 ## Full-screen passes
@@ -460,9 +460,11 @@ The engine runs the scene pass, then the full-screen pass, then the camera's pas
 
 A pass that reads only textures runs before the passes that read its texture, within the frame. A pass that reads the scene color, the outline mask or the depth runs after the camera's passes: the scene must be drawn first. An effect that reads its texture still sees the image of the same frame. A material that shows its texture shows the image of the frame before, as a security monitor that shows the screen would.
 
+A pass that names no input image is placed before the camera's passes. A chain of passes that starts from the scene color or the outline mask names that image as the input of each pass in the chain, or the graph reports a cycle (E1504). The pass that names the image reads its own texture through the `textures` option as usual. A pass may name the scene color without reading it.
+
 ### A soft outline glow
 
-three.js's `OutlinePass` draws a soft glow around outlined objects. null3D's outline draws a crisp line ([Outlines](../api/post.md#outlines)), and a full-screen pass and an effect draw the glow:
+three.js's `OutlinePass` draws a soft glow around outlined objects. null3D's outline draws a crisp line ([Outlines](../api/post.md#outlines)), and a full-screen pass and an effect draw the glow. `@null3d/three-compat`'s `createOutlinePass` builds this shape, with three.js's glow, pulse and blur settings ([three.js compatibility](../api/three-compat.md)); the recipe below shows what it does.
 
 ```ts
 const glowFromMask = /* wgsl */ `

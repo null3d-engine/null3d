@@ -54,3 +54,122 @@ five minutes while the device cools, and reports the frames presented.
 The device holds its target on every scene but S5, and S5 has lost frames on both paths since the gate
 commit. The engine's own threads use 3.1 ms of a 33 ms frame there, so the loss is on the graphics side.
 The rows were read from `target/runs/20261023-002748-showcase/bsipadpro13-safari` in the gate checkout.
+
+## Vegetation on four cloud devices, 24 October 2026
+
+Creek and the forest demo ran for M3-V1 ([D-241](decisions/D-241-vegetation-foundation.md)) on the
+cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet. The runs took one
+BrowserStack Automate session at a time. Each page fixed its GPU path and its preset. It also set
+the quality governor's target at 1 frame a second, so the render scale stayed at 1 and each
+preset's own cost shows.
+
+WebGL2 and compatibility mode cap the preset at Medium ([the chooser](../packages/engine/src/quality/chooser.ts)).
+So High and Ultra ran on core WebGPU only. Creek at Low on WebGPU stalls an Apple device's page
+after its first frame ([Driver bug reports](driver-bugs.md)), so Creek has no WebGPU row here.
+
+The tables give the frames per second and the frame interval. They give the busiest thread's CPU
+time per frame, and the GPU time where the device has a timer. They also give the triangles drawn,
+the draw calls, and the memory of the GPU textures, the GPU buffers and the engine's WebAssembly.
+
+### iPhone 17, Safari 26.6, iOS 26
+
+| Demo and preset | Path | FPS | Frame ms | CPU ms | GPU ms | Triangles | Draws | Textures MiB | Buffers MiB | wasm MiB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Creek Low | WebGL2 | 59.5 | 15.7 | 8.7 | n/a | 2,687,000 | 118 | 60.8 | 14.7 | 68.4 |
+| Creek Medium | WebGL2 | 22.5 | 43.9 | 23.6 | n/a | 6,152,100 | 129 | 163.9 | 18.4 | 79.6 |
+| Forest Low | WebGPU | 50.7 | 15.6 | 3.5 | 6.6 | 13,760,000 | 88 | 30.9 | 34.4 | 328.8 |
+| Forest Low | Compatibility | 60.0 | 15.6 | 3.5 | 6.4 | 12,040,000 | 88 | 30.9 | 34.4 | 328.8 |
+| Forest Low | WebGL2 | 59.7 | 15.5 | 2.8 | n/a | 3,483,900 | 44 | 60.5 | 11.0 | 69.5 |
+| Forest Medium | WebGPU | 15.7 | 62.1 | 14.3 | 53.7 | 110,690,000 | 116 | 87.8 | 57.0 | 462.3 |
+| Forest Medium | Compatibility | 31.1 | 30.1 | 6.2 | 25.9 | 33,850,000 | 116 | 58.3 | 57.0 | 462.4 |
+| Forest Medium | WebGL2 | 18.2 | 60.6 | 5.8 | n/a | 23,140,000 | 53 | 151.6 | 12.0 | 75.1 |
+| Forest High | WebGPU | 15.9 | 62.5 | 14.2 | 54.5 | 61,640,000 | 144 | 93.1 | 57.0 | 667.9 |
+| Forest Ultra | WebGPU | 9.8 | 99.0 | 11.2 | 87.5 | 29,030,000 | 170 | 250.4 | 63.7 | 864.0 |
+
+The run: [20261024-105923-vegetation](tested-devices/iphone-17-safari/20261024-105923-vegetation.md).
+Ten pages passed, and none was skipped.
+
+### iPad Pro 13 2025, Safari 26.6.1, iPadOS 26
+
+| Demo and preset | Path | FPS | Frame ms | CPU ms | GPU ms | Triangles | Draws | Textures MiB | Buffers MiB | wasm MiB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Creek Low | WebGL2 | 32.0 | 30.8 | 28.3 | n/a | 2,748,900 | 139 | 120.6 | 14.7 | 71.3 |
+| Creek Medium | WebGL2 | 10.8 | 90.8 | 85.2 | n/a | 6,364,500 | 153 | 537.5 | 18.4 | 79.6 |
+| Forest Low | WebGPU | 60.0 | 15.6 | 1.9 | 6.9 | 7,160,900 | 88 | 57.4 | 34.4 | 328.8 |
+| Forest Low | Compatibility | 59.6 | 15.6 | 1.9 | 6.9 | 6,962,000 | 88 | 57.4 | 34.4 | 328.8 |
+| Forest Low | WebGL2 | 60.1 | 15.5 | 1.5 | n/a | 4,839,200 | 35 | 95.8 | 11.0 | 69.5 |
+| Forest Medium | WebGPU | 17.8 | 54.8 | 3.4 | 45.4 | 51,510,000 | 118 | 246.8 | 56.7 | 462.1 |
+| Forest Medium | Compatibility | 28.5 | 33.8 | 3.5 | 23.9 | 101,890,000 | 118 | 107.4 | 56.7 | 462.3 |
+| Forest Medium | WebGL2 | 19.6 | 46.6 | 1.1 | n/a | 34,880,000 | 43 | 424.3 | 12.0 | 75.1 |
+| Forest High | WebGPU | 14.8 | 67.1 | 3.5 | 58.3 | 297,100,000 | 146 | 271.7 | 56.7 | 667.7 |
+| Forest Ultra | WebGPU | 13.9 | 71.1 | 3.6 | 63.2 | 107,530,000 | 158 | 355.8 | 63.6 | 864.0 |
+
+The run: [20261024-105210-vegetation](tested-devices/ipad-pro-13-safari/20261024-105210-vegetation.md).
+Ten pages passed, and none was skipped.
+
+The forest's GPU time at High and Ultra goes into the last render pass, which draws the far cards.
+Its triangle count is higher at High than at Ultra, because each preset picks its own levels.
+
+### Galaxy S24 (SM-S921B), Chrome 152, Android 16
+
+| Demo and preset | Path | FPS | Frame ms | CPU ms | GPU ms | Triangles | Draws | Textures MiB | Buffers MiB | wasm MiB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Creek Low | WebGL2 | 28.9 | 33.3 | 18.4 | n/a | 2,660,400 | 136 | 55.9 | 14.7 | 69.2 |
+| Creek Medium | WebGL2 | 20.6 | 33.3 | 33.2 | n/a | 6,268,600 | 129 | 147.6 | 18.4 | 78.0 |
+| Forest Low | WebGL2 | 29.6 | 33.3 | 15.7 | n/a | 3,382,200 | 49 | 58.7 | 11.0 | 69.5 |
+| Forest Medium | WebGL2 | 22.7 | 33.3 | 13.4 | n/a | 21,860,000 | 53 | 137.7 | 12.0 | 75.1 |
+
+The run: [20261024-110636-vegetation](tested-devices/galaxy-s24-sm-s921b-chrome/20261024-110636-vegetation.md).
+Four pages passed, and none was skipped. The display ran at 30 Hz, so every frame interval is
+33.3 ms and the CPU time says more. The run marks its timing figures unreliable for that reason.
+
+### Galaxy Tab A9 Plus (SM-X216B), Chrome 152, Android 14
+
+| Demo and preset | Path | FPS | Frame ms | CPU ms | GPU ms | Triangles | Draws | Textures MiB | Buffers MiB | wasm MiB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Creek Low | WebGL2 | 0.8 | 1,268.5 | 121.4 | n/a | 3,494,300 | 122 | 94.1 | 14.7 | 62.2 |
+| Forest Low | WebGL2 | 2.6 | 385.2 | 5.5 | n/a | 4,681,100 | 34 | 80.9 | 11.0 | 67.4 |
+| Forest Medium | WebGL2 | 0.5 | 1,820.8 | 105.5 | n/a | 38,690,000 | 47 | 210.2 | 11.8 | 86.3 |
+
+The run: [20261024-111020-vegetation](tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261024-111020-vegetation.md).
+Four pages passed, three were skipped, and one failed. The device offers no compatibility mode, so
+its compatibility pages were skipped. Creek at Medium failed: its first frame took 42 s, and then
+the measure drew no frame in 5.5 s. The tablet is the slowest measured device: it draws Creek at
+Low under one frame a second, and the forest at Medium under one frame a second.
+
+### Tree generation, all four devices
+
+The page generated the stand-in parametric tree of `tests/pages/lib/tree-generator.ts` in a worker:
+oak, beech, birch and pine at each preset's detail, six seeds each. Each figure is the median of
+the six generations inside the worker.
+
+| Device | Low | Medium | High | Ultra |
+| --- | --- | --- | --- | --- |
+| iPhone 17 | 22 ms | 14 ms | 17 ms | 15 ms |
+| iPad Pro 13 | 16 ms | 15 ms | 16 ms | 14 ms |
+| Galaxy S24 | 40 ms | 31 ms | 31 ms | 45 ms |
+| Galaxy Tab A9 Plus | 54 ms | 44 ms | 57 ms | 84 ms |
+
+Each row is a set of 24 variants: four species, six each. The furthest triangle counts are 123,876
+at Low and 474,096 at Ultra, and the arrays take 7.0 MB and 22.7 MB. The slowest single variant on
+the tablet was an oak at Ultra: 5.42 ms for 27,090 triangles. The tablet's runs:
+[20261024-111904-tree-generation](tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261024-111904-tree-generation.md).
+The other three are in their folders: the iPhone and the iPad at 20261024-084032, and the S24 at
+20261024-084231.
+
+### The splats add-on at a quarter of its count, iPad Pro 13
+
+The splats streaming page drew 100,000 splats at the same pixel count as its full run of 400,000
+([its plan](devices.md#the-splats-plan)).
+
+| Path | Drawn | Budget | FPS | First frame |
+| --- | --- | --- | --- | --- |
+| WebGPU | 100,000 | 250,000 | 2.84 | 26.5 s |
+| WebGL2 | 25,003 | 37,500 | 6.88 | 26.3 s |
+
+The full count drew 1.07 frames a second on WebGPU and 3.29 on WebGL2 in the same cloud, earlier
+that day. So a quarter of the count gave between two and three times the rate, and not four times.
+The cards' fill sets much of the cost, and the work of each splat sets the rest. The budgets differ
+between the two runs, because each session's preset check settled at its own count.
+
+The run: [20261024-111706-splats](tested-devices/ipad-pro-13-safari/20261024-111706-splats.md).

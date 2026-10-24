@@ -17,7 +17,8 @@ flowchart LR
     vertices["Your shape"] --> call
     call --> buffers["Your count and instance buffers"]
     buffers --> compute["Your compute pass<br/>writes the count and the instances"]
-    compute --> list["The frame's draw list<br/>the count copied into the indirect draw"]
+    compute --> convert["The engine's conversion<br/>world rows to camera-relative rows"]
+    convert --> list["The frame's draw list<br/>the count copied into the indirect draw"]
     list --> gpu["WebGPU<br/>the GPU's count drawn"]
     call --> batch["WebGL2<br/>an instance batch the CPU fills"]
 ```
@@ -42,7 +43,7 @@ struct Varyings {
 
 @vertex
 fn vs(@location(0) position: vec3f, i: InstanceIn) -> Varyings {
-  const found = find_instance(i);
+  let found = find_instance(i);
   var out: Varyings;
   out.clip = clip_position(found, mesh_position(position) * 0.1);
   out.color = vec4f(1.0, 0.6, 0.2, 1.0);
@@ -108,6 +109,8 @@ The draw's material is opaque. The options take the material's other values, suc
 - `draw.instances` holds `capacity` rows of 16 floats each. Each row is three world-matrix rows, with the translation in each row's `w`, then the ids. The engine's instance buffers hold the same shape. The vertex shader reads a row by `instance_index` through `find_instance`.
 - `draw.counts` holds one 32-bit word: the count that the draw renders.
 
+The engine's vertex shaders read an instance matrix relative to the camera. On WebGPU the engine converts the world rows to that space on the GPU, once for each draw in each frame, before the pass that draws them. The rows that you write stay world rows, so a camera that moves costs no upload. The engine keeps a second buffer of `capacity` rows for the converted rows, which doubles the memory that the draw's instances take.
+
 ```ts
 render.addPass({
   kind: 'compute',
@@ -140,7 +143,9 @@ On WebGL2, each row's matrix is split into a position, a rotation and a scale th
 - The draw records in the main view alone, at the opaque point. A transparent instance draw, and one in a reflection or a scene pass, arrives with the add-on that first needs it.
 - The engine does not cull the draw by the camera's frustum or layers. Your compute's cull, or your count, decides what draws. `draw.setVisible(false)` stops it, and so does a hidden parent.
 - The engine does not bound the count. Keep the add-on's count at or under `capacity`. Past it, the GPU reads past the end of the buffer.
-- A shadow view draws `draw.setCount`'s count, because the add-on's compute writes the main view's count alone.
+- The engine keeps two buffers of `capacity` rows: the world rows that you fill and the camera-relative rows that it converts them into each frame. A large capacity therefore takes twice the instance memory.
+- The conversion uses the main view's camera. A shadow view draws `draw.setCount`'s count, because the add-on's compute writes the main view's count alone, and it reads the rows converted for the main view's camera.
+- The add-on's compute pass must run before the scene draws: use `band: 'before'`, as the example does. Rows that it writes after the scene are too late for that frame's opaque pass.
 - The feature description's `reads`, `writes`, `outputs` and `provides` stay with the [feature registry](features.md).
 
 [The API reference](reference/feature-instances.md) lists every export of this page with its type and description. The engine's doc comments make it.

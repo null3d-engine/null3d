@@ -168,7 +168,7 @@ const DOCS = {
 	E1215: {
 		title: 'Invalid custom WGSL',
 		cause:
-			'materials.shader(), post.addEffect() or post.set() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function or a vertex offset. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh. An effect declares fn effect, and a tone curve fn toneCurve.',
+			'materials.shader(), post.addEffect(), post.set() or scene.setSkyLayer() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function or a vertex offset. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh. An effect declares fn effect, a tone curve fn toneCurve, and a sky layer fn skyLayer.',
 		example:
 			'E1215: materials.shader() got WGSL as text, which the null3D Vite plugin did not compile.',
 		since: '0.1',
@@ -470,11 +470,11 @@ const DOCS = {
 		since: '0.2',
 	},
 	E1424: {
-		title: 'Custom material builds not downloaded',
+		title: 'Custom shader builds not downloaded',
 		cause:
-			"A set of a custom material's builds did not download. The null3D Vite plugin builds each custom material for every GPU path, and puts the builds in files of their own beside the sketch's files, named material-*.js: one for each GPU path, each kind of device, and the builds that skin. A page downloads its device's file when the sketch first uses the material, and another file when a pipeline needs it, such as the builds that skin for the first skinned mesh. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off. The engine then draws no new frames.",
+			"A set of a custom shader's builds did not download. The null3D Vite plugin builds each custom material, effect and tone curve for every GPU path, and puts the builds in files of their own beside the sketch's files. A material's files are named material-*.js: one for each GPU path, each kind of device, and the builds that skin. An effect's and a tone curve's are named effect-*.js and curve-*.js: one for each GPU path. A page downloads its device's file when the sketch first uses the shader, and another material file when a pipeline needs it, such as the builds that skin for the first skinned mesh. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off. The engine then draws no new frames.",
 		example:
-			'E1424: the builds of a custom material did not load: Failed to fetch dynamically imported module: https://example.com/assets/material-glsl-3-4c1d2e9a5b6f7081-Bx3kQ9.js.',
+			'E1424: the builds of a custom shader did not load: Failed to fetch dynamically imported module: https://example.com/assets/material-glsl-3-4c1d2e9a5b6f7081-Bx3kQ9.js.',
 		since: '0.2',
 	},
 	E1425: {

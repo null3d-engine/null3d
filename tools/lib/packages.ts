@@ -120,6 +120,14 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 	},
 	// The surface function lives in a .wgsl file, which the pack compiles into a module of its own.
 	terrain: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	// Its tone curves and outline passes compile from .wgsl files into modules of their own.
+	'three-compat': {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine'],
+		required: ['THIRD-PARTY-NOTICES.txt'],
+	},
 	// Its task module is built as the JavaScript that the job workers import, and its two shaders
 	// compile into modules of their own.
 	splats: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
@@ -373,7 +381,7 @@ export function compileShaders(root: string, dir: string): void {
 		const builds = new ModuleBuilds();
 		const pack = new ShaderPack();
 		const value = builds.value(pack, compiled.shader);
-		const sets = buildSets(builds.materials);
+		const sets = buildSets(builds.sources);
 		const name = path.slice('src/'.length);
 		const base = posix.basename(name);
 		const to = join(dir, LIB_DIR, `${name}.js`);

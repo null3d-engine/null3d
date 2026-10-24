@@ -32,5 +32,5 @@ Each add-on is a folder named after it, and it is shaped like a package:
 declaration, or the README's licence section. It also refuses a package that imports a file under
 `examples/`. A test reads the real folders, so an add-on joins the layout by existing in it.
 
-The folders here are `traffic-lanes` and `lens-kit`, and the ones that later tasks add: facades,
-screens, weather and car paint.
+The folders here are `traffic-lanes`, `lens-kit`, `aurora` and `car-paint`, and the ones that
+later tasks add: facades, screens and weather.

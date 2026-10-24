@@ -59,6 +59,23 @@ const VERSION_CALL = /checkAddonVersion\(\s*['"]([^'"]+)['"]\s*,\s*VERSION\s*\)/
 /** The budget of each column for a file that an add-on loads after the start (D-14). */
 export const ADDON_FILE_BUDGET = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 17 * 1024 };
 
+/**
+ * The budget of each column for a built file that holds compiled shader builds (D-14, D-215). The
+ * plugin puts custom materials' builds in files of their own, which a page loads on the material's
+ * first use. They are shader data, so they take the first-use shader budget rather than the code
+ * budget above. The engine's size report keeps the same figures for its own first-use shader files,
+ * and a test keeps these equal to that report's.
+ */
+export const ADDON_SHADER_BUDGET = { raw: 1792 * 1024, gzip: 320 * 1024, brotli: 52 * 1024 };
+
+/**
+ * A built file that holds compiled shader builds: the plugin names each set after its kind, its
+ * GPU path and permutation bits, and the build adds a hash to the name. A material's set names the
+ * bits that pick it; an effect's and a tone curve's take one set for each GPU path alone.
+ */
+const SHADER_BUILDS_FILE =
+	/^(?:material|effect|curve)-(?:wgsl|glsl)-\d+-[0-9a-f]+(?:-[A-Za-z0-9_-]+)?\.js$/;
+
 /** The columns that a size report shows. */
 const COLUMNS = /** @type {const} */ (['raw', 'gzip', 'brotli']);
 
@@ -495,6 +512,17 @@ export async function buildAddon(folder, entry) {
 const kb = (/** @type {number} */ bytes) => `${(bytes / 1024).toFixed(1)} KB`;
 
 /**
+ * The budget that a built file answers: the first-use shader budget for a file of compiled shader
+ * builds, and the later-file budget for code.
+ *
+ * @param {string} name
+ * @returns {{ raw: number, gzip: number, brotli: number }}
+ */
+export function budgetOf(name) {
+	return SHADER_BUILDS_FILE.test(name) ? ADDON_SHADER_BUDGET : ADDON_FILE_BUDGET;
+}
+
+/**
  * The budget problems of the files that a build wrote: one for each column of a file over its
  * budget, and none when every file holds to it.
  *
@@ -502,12 +530,25 @@ const kb = (/** @type {number} */ bytes) => `${(bytes / 1024).toFixed(1)} KB`;
  * @returns {string[]}
  */
 export function sizeProblems(files) {
-	return files.flatMap((file) =>
-		COLUMNS.filter((column) => file[column] > ADDON_FILE_BUDGET[column]).map(
+	return files.flatMap((file) => {
+		const budget = budgetOf(file.name);
+		return COLUMNS.filter((column) => file[column] > budget[column]).map(
 			(column) =>
-				`${file.name} is ${kb(file[column])} ${column}, over its ${kb(ADDON_FILE_BUDGET[column])} budget`,
-		),
-	);
+				`${file.name} is ${kb(file[column])} ${column}, over its ${kb(budget[column])} budget`,
+		);
+	});
+}
+
+/**
+ * The size of a group of built files, as its largest in each column.
+ *
+ * @param {readonly BuiltFileSize[]} files
+ * @returns {string}
+ */
+function largestSizes(files) {
+	const largest = (/** @type {'raw' | 'gzip' | 'brotli'} */ column) =>
+		Math.max(0, ...files.map((file) => file[column]));
+	return `${kb(largest('raw'))} raw, ${kb(largest('gzip'))} gzip, ${kb(largest('brotli'))} brotli`;
 }
 
 /** How many more lines than `SHOWN_LINES` a message printed, as a note, or nothing. */
@@ -811,13 +852,16 @@ export async function run(args) {
 			text: `shaders: ${counted(files.length, 'file')} built with WGSL for WebGPU and WebGL2`,
 		});
 		const over = sizeProblems(files);
-		const largest = (/** @type {'raw' | 'gzip' | 'brotli'} */ column) =>
-			Math.max(0, ...files.map((file) => file[column]));
+		const shaderBuilds = files.filter((file) => budgetOf(file.name) === ADDON_SHADER_BUDGET);
+		const code = files.filter((file) => budgetOf(file.name) === ADDON_FILE_BUDGET);
 		print(
 			over.length === 0
 				? {
 						status: 'PASS',
-						text: `sizes: the largest file is ${kb(largest('raw'))} raw, ${kb(largest('gzip'))} gzip, ${kb(largest('brotli'))} brotli, within budget`,
+						text:
+							shaderBuilds.length === 0
+								? `sizes: the largest file is ${largestSizes(files)}, within budget`
+								: `sizes: ${counted(files.length, 'file')} within budget, the largest code file at ${largestSizes(code)}, and the largest shader build at ${largestSizes(shaderBuilds)}`,
 					}
 				: {
 						status: 'FAIL',

@@ -68,6 +68,7 @@ await engine.firstFrame;                 // the GPU finished the first frame: re
 engine.postToSketch('difficulty', { level: 2 });            // an optional third argument lists transferables
 const off = engine.onSketchMessage((type, data) => { /* ... */ }); // the first handler also gets earlier messages
 off();                                   // every on... call returns a function that removes its handler
+const stopFrames = engine.registerVideo(video, { name: 'intro', maxSize: 512 }); // (0.3) the sketch follows it with textures.fromVideo('intro'); stopFrames() stops the frames
 engine.detach();                         // single-page apps: canvas off the page, engine paused, scene kept
 engine.attach(container);                // canvas back on the page; the engine resumes with no new start
 engine.setPaused(true);                  // the first step after resuming counts no time
@@ -137,6 +138,7 @@ export default defineSketch(async (ctx) => {
 | `scene.setBackground('#rrggbb')` or `scene.setBackground(texture)` | | Any color input (section 20), or a texture that fills the view behind every object, as three.js's `scene.background` |
 | `scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, mieCoefficient, mieDirectionalG, cloudCoverage, time } })` (0.2) | | three.js's `Sky`, with its uniforms' names and defaults. Clouds move with `time`; `cloudCoverage: 0` draws none. Lights nothing by itself: `assets.skyEnvironment()` lights with it |
 | `scene.setBackground({ atmosphere: { sunPosition, sunIntensity, haze, aerialPerspective, metersPerUnit, moonPosition, moonIntensity, stars, cloudCoverage, time } })` (0.2) | | The physical sky: Rayleigh, Mie and ozone, twilight, moon and stars. Its air also hazes distant objects (`aerialPerspective: 0` turns that off). The sun's light is in a directional light's units. The Low preset draws the analytic sky in its place |
+| `scene.setSkyLayer({ wgsl, opacity, sun })` (0.3) | `SkyLayer` | An add-on's own layer over the sky: auroras, a second layer of clouds, a space backdrop. The WGSL declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer`; the input holds the view ray, the core sky's clouds, the time and the share of the sun that the layer hides. Draws after the background on every path, lights nothing. `layer.set({ opacity, sun })`, `scene.clearSkyLayer()` |
 | `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment`, `assets.builtinEnvironment('room')` or `assets.skyEnvironment()`, or `null`. `rotation` is Euler radians, as three.js's `environmentRotation`. Allocates nothing, so it can turn every frame |
 | `scene.setLightProbeGrid({ texture, origin, spacing, counts, intensity, environmentWeight })` (0.2) | | a grid of irradiance probes from an `rgba16float` 3D texture. Its light replaces the environment's diffuse light, so colored bounce and sky occlusion reach every surface. Pass `null` to remove it |
 | `scene.createReflectionProbe({ box: { min, max }, position, blend, intensity, boxProjection, refresh, layers, priority })` (0.2) | `ReflectionProbe` | Lights the surfaces in `box` with the scene around `position` (default: the box's center), in place of the environment, with box-projected reflections. At most 16. `refresh: 'once'` (default) or `'always'`. `probe.set(options)`, `probe.capture()`, `probe.destroy()`. Throws E1430 past 16 probes |
@@ -427,6 +429,8 @@ textures.fromImageBitmap(await createImageBitmap(offscreenCanvas, { imageOrienta
 const context = canvas.getContext('2d', { willReadFrequently: true })!;
 const screen = textures.fromCanvas(canvas, { refreshHz: 30 });  // the canvas stands upright on a plane
 screen.refresh({ x, y, width, height });  // uploads only that rectangle; screen.refresh() reads all of it
+// A video element on the page (0.3): engine.registerVideo(video, { name, maxSize }) there, then
+const video = textures.fromVideo('intro', { mipmaps: false });  // the page sends each frame it presents
 tex.update(bitmap);        // a new size is fine; or tex.update(data) of the same size
 tex.width; tex.height; tex.bytes;   // size and GPU memory
 tex.droppedLevels;         // (0.2) largest mip levels the memory budget dropped, 0 to 3; width and height stay
@@ -439,6 +443,7 @@ textures.memoryBytes; textures.maxSize;  // GPU bytes of every texture; the larg
 - `scene.setBackground(tex)` shows a texture behind every object. The color set before it shows until its texels are on the GPU.
 - `textures.fromPass(pass)` (0.2) gives the texture of a scene or reflection pass from `render.addPass` (section 16).
 - `textures.fromCanvas(canvas, { refreshHz })` (0.2) follows an `OffscreenCanvas`. Give the rectangle of the refresh in the canvas's coordinates. A 256 x 256 rectangle is 256 KiB, so a 30 Hz screen stays within the upload budget. The rectangle must lie inside the canvas.
+- `textures.fromVideo(name)` (0.3) follows the video that `engine.registerVideo(video, { name })` registered on the page. The page scales each frame to `maxSize`, 512 texels by default, and sends one image per presented frame; a paused video costs nothing. Keep a frame within the upload budget: 512 x 288 is 576 KiB. A cross-origin video needs `crossOrigin = 'anonymous'` and CORS headers.
 - Cube maps come from `assets.loadCubemap` (0.2), section 11.
 
 Use KTX2 for large textures, above all on phones: a compressed texel takes a quarter or an eighth of the GPU memory of RGBA8. Encode mip levels into the file (`basisu -mipmap`), since the GPU cannot make them for compressed texels. UASTC keeps more detail, and ETC1S makes smaller files. The first KTX2 file downloads the transcoder, about 365 KB after Brotli. A page without KTX2 files downloads none of it. The engine keeps transcoded textures in the browser's Cache Storage (0.2), so a repeat visit skips the transcoder; nothing to set up (`api/assets`). A texture from a KTX2 file takes no `update`.
@@ -455,7 +460,7 @@ const bitmap = await assets.loadImageBitmap('/ui/logo.png', { colorSpace, flipY,
 // relative addresses resolve against the page; errors: E1411 download, E1412 decode, E1413 CORS
 const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
 const upload = await assets.loadGltf(userFile, { rewriteUrl: (a) => (a.origin === location.origin ? a : null) }); // (0.2) check the addresses a user's model names
-const coarseOnly = await assets.loadGltf('/forest.glb', { maxLevels: 1 }); // (0.3) a --stages model: 1 draws only the level in the file and skips the finer downloads
+const coarseOnly = await assets.loadGltf('/forest.glb', { maxLevels: 1 }); // (0.3) a --stages model: 1 draws only the level in the file; the loader holds back a level the camera never draws, and fetches it once the camera comes close
 const stop = assets.registerGltfExtension({                     // (0.3) an add-on draws a glTF extension's primitives; the parts join the model
   extensions: ['KHR_gaussian_splatting'],                       // load(data, makers) returns { mesh, material } or a list, from makers.geometry and makers.materials
   load: (data, makers) => ({ mesh: makers.geometry.box(), material: makers.materials.unlit({ color: [1, 1, 1] }) }),

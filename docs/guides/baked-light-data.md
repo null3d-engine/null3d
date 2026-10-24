@@ -30,7 +30,7 @@ A file is JSON. Three members come first:
 | `version` | The whole number `1`. A reader refuses any other version |
 | `kind` | `probe-grid` or `light-map` |
 
-The rest of the file depends on its kind. A reader ignores members that it does not know, so a later version adds members without breaking a reader that predates them.
+The rest of the file depends on its kind. A reader ignores members that it does not know, so version 1 can gain members before the format is frozen, and a file written with them still reads in an engine that predates them. A file that names a different version is refused: the number changes only when a reader that predates the file would read it wrongly.
 
 The large values are base64. Decode them as bytes, not as text.
 
@@ -103,7 +103,7 @@ export default defineSketch(async ({ scene, assets, materials }) => {
 
 `loadLightProbeGrid` gives the texture and the three placement values, so its result goes straight to `scene.setLightProbeGrid`. The grid replaces the environment's diffuse light, as a grid that `bakeProbes` made does.
 
-`loadLightMap` gives a texture for a material's `lightMap`. It also gives the direction bytes, if the file holds them. The texture is a `rgb8` texture in sRGB, or an `rgba16float` texture in linear light. The first load of either kind loads the reader, which is about 2 KB after Brotli. A page that reads no baked light file downloads none of it.
+`loadLightMap` gives a texture for a material's `lightMap`. It also gives the direction bytes, if the file holds them. The texture is an `rgba8unorm` texture in sRGB, or an `rgba16float` texture in linear light. The file's three colour bytes become three channels and an opaque fourth, because the engine has no three-channel texture format. The first load of either kind loads the reader, which is about 2 KB after Brotli. A page that reads no baked light file downloads none of it.
 
 Both calls throw [E1434](../errors/E1434.md) for a file that the engine cannot read. The message names the fault. It may name a version that the engine does not read, or a payload that does not hold the count that the file gives. It may also name a file that a download cut short.
 
@@ -141,6 +141,6 @@ A reader refuses a file whose contents do not agree with its own members. Each f
 
 ## Limits
 
-- A grid takes at most 256 probes along x, 256 along y and 83 along z. Its texture holds one sub-volume for each direction of L1.
+- A grid takes at most 256 probes along x, 256 along y and 83 along z. Its texture is cut into sub-volumes that hold the coefficients: the first holds the probe's own colour and one direction's red, and the others hold the rest of the directions. The z side carries a padding slice at either end of every sub-volume.
 - A light map's side is at most 4,096 texels, and one payload is at most 256 MiB, as every texture file is.
-- The grid's texture takes 24 bytes of GPU memory for each probe. A light map's texture takes 4 bytes for each texel from `rgb8`, and 8 from `rgba16float`.
+- The grid's texture takes 24 bytes of GPU memory for each probe, plus the padding slices, so a grid of 24 x 8 x 24 probes takes about 117 KiB. A light map's texture takes 4 bytes for each texel from `rgb8`, and 8 from `rgba16float`.

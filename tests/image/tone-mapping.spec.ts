@@ -1,12 +1,14 @@
 // null3D's tone mappings against three.js's: the bright scene drawn by three.js's WebGLRenderer
-// with ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping and LinearToneMapping, and by
-// null3D with each matching tone mapping on each GPU tier, at both exposures of the image tests,
-// and on the 8-bit path too at an exposure of 1. Each tile's color must match. The spec compares a
-// patch at the center of each tile, so the engines' antialiasing at the edges does not count, and
-// the dithering averages out.
+// with ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping and LinearToneMapping, and with the
+// ReinhardToneMapping and CineonToneMapping that @null3d/three-compat gives null3D, and by null3D
+// with each matching tone mapping on each GPU tier, at both exposures of the image tests, and on
+// the 8-bit path too at an exposure of 1. Each tile's color must match. The spec compares a patch
+// at the center of each tile, so the engines' antialiasing at the edges does not count, and the
+// dithering averages out.
 import { expect, type Page, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 import {
+	ADDON_TONE_MAPPINGS,
 	exposureOf,
 	SIZE,
 	STOPS,
@@ -61,7 +63,7 @@ function tileColors(pixels: Uint8Array): number[][] {
 	});
 }
 
-for (const tone of TONE_MAPPINGS)
+for (const tone of [...TONE_MAPPINGS, ...ADDON_TONE_MAPPINGS])
 	for (const stops of STOPS) {
 		const exposure = exposureOf(stops);
 		test(`${tone} tone mapping at exposure ${exposure} matches three.js on every path`, async ({
@@ -70,9 +72,15 @@ for (const tone of TONE_MAPPINGS)
 			const three = tileColors(
 				await frameOf(page, `/bench/pages/threejs/tone-mapping.html?tone=${tone}&stops=${stops}`),
 			);
-			const tests = [toneMappingTest(tone, stops), ...(stops === 0 ? [eightBitTest(tone)] : [])];
+			// A custom curve moves compatibility mode to HDR color, so it draws on every tier. It has
+			// no 8-bit copy, because the 8-bit path keeps the built-in curve.
+			const builtIn = (TONE_MAPPINGS as readonly string[]).includes(tone);
+			const tests = [
+				toneMappingTest(tone, stops),
+				...(stops === 0 && builtIn ? [eightBitTest(tone)] : []),
+			];
 			const runs = IMAGE_RUNS.filter((run) => tests.includes(run.test));
-			expect(runs.length).toBe(stops === 0 ? 5 : 3);
+			expect(runs.length).toBe(!builtIn ? 3 : stops === 0 ? 5 : 3);
 			for (const run of runs) {
 				const null3d = tileColors(await frameOf(page, run.path));
 				const worst = null3d.map((color, tile) =>

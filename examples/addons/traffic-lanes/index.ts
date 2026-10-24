@@ -35,6 +35,13 @@ export interface VehicleSize {
 export const DEFAULT_VEHICLE: VehicleSize = { halfWidth: 0.96, height: 1.1, halfLength: 2.0 };
 
 /**
+ * The detail of a vehicle's hull. `full` gives every face its own vertices, so the hull reads as
+ * faceted panels. `light` shares each vertex between the faces that meet at it, so the same
+ * silhouette takes a third of the vertex work and lights as one smooth body.
+ */
+export type HullDetail = 'full' | 'light';
+
+/**
  * Builds a low hover vehicle: a hull lofted through four sections with a low canopy. Its nose
  * points along local +Z, its belly sits just above y = 0, and its canopy rises to `height`. The
  * add-on's surface paints its lights from that space, and `VehicleLook.size` takes the same three
@@ -43,6 +50,7 @@ export const DEFAULT_VEHICLE: VehicleSize = { halfWidth: 0.96, height: 1.1, half
 export function createVehicleHull(
 	ctx: SketchContext,
 	size: VehicleSize = DEFAULT_VEHICLE,
+	detail: HullDetail = 'full',
 ): MeshGeometry {
 	const { geometry } = ctx;
 	const sx = size.halfWidth / DEFAULT_VEHICLE.halfWidth;
@@ -61,6 +69,10 @@ export function createVehicleHull(
 		positions.push(...a, ...b, ...c, ...d);
 		indices.push(first, first + 1, first + 2, first, first + 2, first + 3);
 	};
+	/** Adds a quad as two triangles from four places already in the vertices. */
+	const quadAt = (a: number, b: number, c: number, d: number) => {
+		indices.push(a, b, c, a, c, d);
+	};
 	// The hull is a loft through four sections: a narrow tail, a wide middle, a wide front and a
 	// narrow nose. Each section is a rectangle from the belly to its own roofline.
 	const sections = [
@@ -76,23 +88,57 @@ export function createVehicleHull(
 		[s.half, s.top, s.z],
 		[-s.half, s.top, s.z],
 	];
-	for (let k = 0; k < sections.length - 1; k++) {
-		const a = corners(sections[k] as (typeof sections)[number]);
-		const b = corners(sections[k + 1] as (typeof sections)[number]);
-		quad(a[0] as number[], a[1] as number[], b[1] as number[], b[0] as number[]);
-		quad(a[3] as number[], b[3] as number[], b[2] as number[], a[2] as number[]);
-		quad(a[0] as number[], b[0] as number[], b[3] as number[], a[3] as number[]);
-		quad(a[1] as number[], a[2] as number[], b[2] as number[], b[1] as number[]);
+	// The canopy: a low ridge from the windshield back to the rear deck, in its eight places.
+	const canopy = [
+		[-0.42, 0.84, 1.0],
+		[0.42, 0.84, 1.0],
+		[-0.34, 1.1, 0.1],
+		[0.34, 1.1, 0.1],
+		[-0.36, 1.05, -0.9],
+		[0.36, 1.05, -0.9],
+		[-0.44, 0.8, -1.0],
+		[0.44, 0.8, -1.0],
+	] as const;
+	if (detail === 'full') {
+		for (let k = 0; k < sections.length - 1; k++) {
+			const a = corners(sections[k] as (typeof sections)[number]);
+			const b = corners(sections[k + 1] as (typeof sections)[number]);
+			quad(a[0] as number[], a[1] as number[], b[1] as number[], b[0] as number[]);
+			quad(a[3] as number[], b[3] as number[], b[2] as number[], a[2] as number[]);
+			quad(a[0] as number[], b[0] as number[], b[3] as number[], a[3] as number[]);
+			quad(a[1] as number[], a[2] as number[], b[2] as number[], b[1] as number[]);
+		}
+		const tail = corners(sections[0] as (typeof sections)[number]);
+		const nose = corners(sections[sections.length - 1] as (typeof sections)[number]);
+		quad(tail[0] as number[], tail[3] as number[], tail[2] as number[], tail[1] as number[]);
+		quad(nose[0] as number[], nose[1] as number[], nose[2] as number[], nose[3] as number[]);
+		quad(canopy[0], canopy[1], canopy[3], canopy[2]);
+		quad(canopy[2], canopy[3], canopy[5], canopy[4]);
+		quad(canopy[0], canopy[2], canopy[4], canopy[6]);
+		quad(canopy[1], canopy[7], canopy[5], canopy[3]);
+	} else {
+		// The sections hold one ring of four vertices each, which the faces between them share.
+		for (const section of sections) {
+			for (const corner of corners(section)) positions.push(...corner);
+		}
+		for (let k = 0; k < sections.length - 1; k++) {
+			const a = k * 4;
+			const b = (k + 1) * 4;
+			quadAt(a, a + 1, b + 1, b);
+			quadAt(a + 3, b + 3, b + 2, a + 2);
+			quadAt(a, b, b + 3, a + 3);
+			quadAt(a + 1, a + 2, b + 2, b + 1);
+		}
+		const last = (sections.length - 1) * 4;
+		quadAt(0, 3, 2, 1);
+		quadAt(last, last + 1, last + 2, last + 3);
+		const base = positions.length / 3;
+		for (const place of canopy) positions.push(...place);
+		quadAt(base, base + 1, base + 3, base + 2);
+		quadAt(base + 2, base + 3, base + 5, base + 4);
+		quadAt(base, base + 2, base + 4, base + 6);
+		quadAt(base + 1, base + 7, base + 5, base + 3);
 	}
-	const tail = corners(sections[0] as (typeof sections)[number]);
-	const nose = corners(sections[sections.length - 1] as (typeof sections)[number]);
-	quad(tail[0] as number[], tail[3] as number[], tail[2] as number[], tail[1] as number[]);
-	quad(nose[0] as number[], nose[1] as number[], nose[2] as number[], nose[3] as number[]);
-	// The canopy: a low ridge from the windshield back to the rear deck.
-	quad([-0.42, 0.84, 1.0], [0.42, 0.84, 1.0], [0.34, 1.1, 0.1], [-0.34, 1.1, 0.1]);
-	quad([-0.34, 1.1, 0.1], [0.34, 1.1, 0.1], [0.36, 1.05, -0.9], [-0.36, 1.05, -0.9]);
-	quad([-0.42, 0.84, 1.0], [-0.34, 1.1, 0.1], [-0.36, 1.05, -0.9], [-0.44, 0.8, -1.0]);
-	quad([0.42, 0.84, 1.0], [0.44, 0.8, -1.0], [0.36, 1.05, -0.9], [0.34, 1.1, 0.1]);
 	// A material with a surface function draws only a mesh that has texture coordinates, whatever
 	// the function reads, so the hull carries a simple pair along its side and its height.
 	const uvs = new Float32Array((positions.length / 3) * 2);
@@ -179,6 +225,11 @@ export interface TrafficLanes {
 	 * second.
 	 */
 	update(eye: Vec3Like, time: number): void;
+	/**
+	 * Removes the batches, their materials and the real lights, so a scene can build the lanes
+	 * again around another hull. Destroy the hull the scene gave after this call.
+	 */
+	dispose(): void;
 }
 
 /** The four headings, as the yaw that turns a vehicle's nose from +Z onto its lane. */
@@ -292,7 +343,7 @@ export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptio
 		// A row travels the whole lane from its origin, so its own sphere must cover the lane, or
 		// the engine culls it while it is still on the screen.
 		batch.setBoundingRadius(span);
-		return { yaw: lane.yaw, batch, active: rows.length, total: rows.length };
+		return { yaw: lane.yaw, batch, material, active: rows.length, total: rows.length };
 	});
 
 	// The real lights: a pool that each search moves to the nearest vehicles.
@@ -333,6 +384,13 @@ export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptio
 		setCount,
 		get count() {
 			return drawn;
+		},
+		dispose() {
+			for (const entry of batches) {
+				entry.batch.destroy();
+				entry.material.destroy();
+			}
+			for (const light of lights) light.destroy();
 		},
 		update(eye, time) {
 			if (realLights === 0 || time - searchedAt < LIGHT_SECONDS) return;

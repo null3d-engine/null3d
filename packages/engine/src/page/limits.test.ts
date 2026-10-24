@@ -33,6 +33,7 @@ const MIB = 1024 * 1024;
 /** A WebGPU device with this storage binding. */
 const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	webgl2: false,
+	softwareRenderer: false,
 	storageBindingBytes,
 	capabilities: 0,
 	maxTextureSize: 0,
@@ -384,6 +385,32 @@ describe('coreDevice on WebGL2', () => {
 		expect(coreDevice('webgpu', report({}), { ...PLAIN, direct: 'on' }).directDraws).toBe(true);
 		expect(coreDevice('webgpu', probed, { ...PLAIN, direct: 'off' }).directDraws).toBe(false);
 		expect(coreDevice('webgl2', probed, { ...PLAIN, direct: 'on' }).directDraws).toBe(false);
+	});
+
+	it('marks the devices whose reported names say they draw on the CPU', () => {
+		const software = report({ renderer: 'Google SwiftShader' });
+		expect(coreDevice('webgl2', software, PLAIN).softwareRenderer).toBe(true);
+		expect(
+			coreDevice('webgl2', report({ renderer: 'ANGLE (Apple, M1)' }), PLAIN).softwareRenderer,
+		).toBe(false);
+		const adapter = report({});
+		adapter.webgpu.adapterInfo = {
+			vendor: 'google',
+			architecture: 'swiftshader',
+			device: '',
+			description: '',
+		};
+		expect(coreDevice('webgpu', adapter, PLAIN).softwareRenderer).toBe(true);
+		const real = report({});
+		real.webgpu.adapterInfo = {
+			vendor: 'apple',
+			architecture: 'apple-m1',
+			device: '',
+			description: '',
+		};
+		expect(coreDevice('webgpu', real, PLAIN).softwareRenderer).toBe(false);
+		// A device that reports no name is no software renderer, which rule 14 needs.
+		expect(coreDevice('webgpu', report({}), PLAIN).softwareRenderer).toBe(false);
 	});
 
 	it('culls in two phases on WebGPU where the options ask for it', () => {

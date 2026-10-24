@@ -55,7 +55,12 @@ import {
 	type Tier,
 	tiersOf,
 } from '../lib/images.ts';
-import { STOPS, TONE_MAPPINGS, toneMappingTest } from '../pages/lib/bright-scene.ts';
+import {
+	ADDON_TONE_MAPPINGS,
+	STOPS,
+	TONE_MAPPINGS,
+	toneMappingTest,
+} from '../pages/lib/bright-scene.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 import { MOTION_HOLD } from '../pages/lib/motion-vectors.ts';
 
@@ -102,10 +107,12 @@ const EIGHT_BIT_TOLERANCE = { maxDiffRatio: 0.03 };
 /**
  * The bright scene under each tone mapping, at an exposure of 1 and of 0.5. The 8-bit path, whose
  * shaders tone map themselves, must draw the HDR path's image at an exposure of 1. AgX's punchy
- * look, which three.js lacks, joins the curves that three.js shares here.
+ * look, which three.js lacks, joins the curves that three.js shares here. The two curves of
+ * `@null3d/three-compat` draw on every tier, as the effects do: compatibility mode moves to HDR
+ * color with FXAA for a custom curve.
  */
 function toneMappingTests(): ImageTest[] {
-	return [...TONE_MAPPINGS, 'agx-punchy'].flatMap((tone): ImageTest[] => [
+	const builtIn = [...TONE_MAPPINGS, 'agx-punchy'].flatMap((tone): ImageTest[] => [
 		...STOPS.map(
 			(stops): ImageTest => ({
 				name: toneMappingTest(tone, stops),
@@ -125,6 +132,14 @@ function toneMappingTests(): ImageTest[] {
 			deviceTolerance: EIGHT_BIT_TOLERANCE,
 		},
 	]);
+	const curves = ADDON_TONE_MAPPINGS.flatMap((tone): ImageTest[] =>
+		STOPS.map((stops) => ({
+			name: toneMappingTest(tone, stops),
+			sketch: `${BRIGHT_SKETCH}?tone=${tone}&stops=${stops}`,
+			hold: 0,
+		})),
+	);
+	return [...builtIn, ...curves];
 }
 
 /**
@@ -417,8 +432,17 @@ function lensKitTests(): ImageTest[] {
 			swiftShaderTolerance: { threshold: 0.1, maxDiffRatio: 0.005 },
 		},
 		test('aberration', 'aberration', ['webgpu', 'webgl2']),
-		test('streak', 'streak', ['webgpu', 'webgl2']),
-		test('grain', 'grain', ['webgpu', 'webgl2']),
+		// The streak and the grain move a pixel by a few steps, which the default threshold does
+		// not count: a picture that lost either mark would still match. The threshold is tight
+		// enough to count the mark, and the software GPU rounds the same pixels within a step.
+		{
+			...test('streak', 'streak', ['webgpu', 'webgl2']),
+			tolerance: { threshold: 0.02, maxDiffRatio: 0.005 },
+		},
+		{
+			...test('grain', 'grain', ['webgpu', 'webgl2']),
+			tolerance: { threshold: 0.02, maxDiffRatio: 0.005 },
+		},
 		test('speed-blur', 'speed', ['webgpu', 'webgl2']),
 	];
 }
@@ -632,7 +656,9 @@ const OUTLINE_SKETCH = 'tests/pages/sketches/outline-sketch.ts';
  * in the open. At half the render scale, the mask draws into the corner of its target, and the
  * line keeps its width on the canvas. Compatibility mode keeps the 8-bit path with MSAA. The
  * page's switch that turns HDR off puts the other tiers on that path too. The parity test compares
- * both outlines with the same line drawn from the mask of three.js's OutlinePass.
+ * both outlines with the same line drawn from the mask of three.js's OutlinePass. The two
+ * compatibility tests draw the soft outline of `@null3d/three-compat`: one with its glow, and one
+ * with its pulse held half a period in, where the edge shows the pulse's dimmest point.
  */
 function outlineTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -651,6 +677,8 @@ function outlineTests(): ImageTest[] {
 			switches: ['hdr=off'],
 			expect: { hdr: false },
 		},
+		{ ...test('outline-compat-glow', '?compat=glow'), hold: 0.1 },
+		{ ...test('outline-compat-pulse', '?compat=pulse'), hold: 0.5 },
 	];
 }
 
@@ -831,6 +859,8 @@ const TRANSLUCENCY_SKETCH = 'tests/pages/sketches/translucency-sketch.ts';
 const SUBSURFACE_SKETCH = 'tests/pages/sketches/subsurface-sketch.ts';
 /** The sketch of the clear coats and sheens. */
 const COAT_SHEEN_SKETCH = 'tests/pages/sketches/coat-sheen-sketch.ts';
+/** The sketch of the car paint, its flakes, its seams and its carbon weave. */
+const CAR_PAINT_SKETCH = 'tests/pages/sketches/car-paint-sketch.ts';
 /** The sketch of decals on a stone yard. */
 const DECALS_SKETCH = 'tests/pages/sketches/decals-sketch.ts';
 
@@ -1320,6 +1350,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [320, 180],
 		hold: 0,
 		tiers: ['webgpu', 'webgl2'],
+		modes: ALL_MODES,
+	},
+	// A beach and a pond whose water meets a bed that rises to the surface, an island and two stones.
+	// The surface function reads the copy of the opaque scene's depth and fades the water over a band
+	// at the end of its gap to the geometry behind it, so each shoreline is soft rather than a hard
+	// polygon edge. Without the copy the water draws its deep color with no foam line. Every GPU tier
+	// must bind the copy the same way.
+	{
+		name: 'water-shores',
+		sketch: 'tests/pages/sketches/water-shores-sketch.ts',
+		hold: 0,
 		modes: ALL_MODES,
 	},
 	// A box that fixed steps move at 50 steps per second, and a camera that follows it from the late
@@ -2885,6 +2926,29 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		reference: 'coat-sheen',
 		timeoutSeconds: 60,
+	},
+	// Car paint: a metallic body with filtered flakes and panel seams, and the same body with each
+	// part left out or with a carbon weave whose tows stretch their highlight. The paint spec
+	// checks that each part changes the image. A software GPU builds a custom shader and the room
+	// slowly.
+	{ name: 'car-paint', sketch: CAR_PAINT_SKETCH, hold: 0, timeoutSeconds: 120 },
+	{
+		name: 'car-paint-no-flakes',
+		sketch: `${CAR_PAINT_SKETCH}?flakes=off`,
+		hold: 0,
+		timeoutSeconds: 120,
+	},
+	{
+		name: 'car-paint-no-seams',
+		sketch: `${CAR_PAINT_SKETCH}?seams=off`,
+		hold: 0,
+		timeoutSeconds: 120,
+	},
+	{
+		name: 'car-paint-weave',
+		sketch: `${CAR_PAINT_SKETCH}?weave=on`,
+		hold: 0,
+		timeoutSeconds: 120,
 	},
 	// Weighted blending: crossing panes of glass and overlapping puffs blend in any order in the
 	// camera's weighted layer, over a pane of normal blending.

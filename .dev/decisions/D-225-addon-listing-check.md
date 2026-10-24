@@ -22,6 +22,7 @@ An add-on from another developer goes into a listing. What does the listing run 
 - The null3D Vite plugin compiles a project's WGSL for WebGPU and for WebGL2 in the same build, and packs the result into the add-on's files. A build of the add-on's entry therefore answers the shader gate and gives the files that the size gate measures.
 - The `test` command already reads `null3d.json`, which names a page for an image test. The `bench` and `shot` commands open a page from the project's root. The check takes the same page and the same runner.
 - The size budget for a file that loads after the start is [D-14](D-14-js-budget.md)'s (`tools/lib/size-report.ts`, `LATER_BUDGET`). The command carries the same figures for the add-on's own files, and a test keeps them equal.
+- A file of compiled shader builds is shader data, and D-14 gives such a file its own budget (`FIRST_USE_SHADER_BUDGET`). The plugin writes a custom material's builds to files of their own, which a page loads on the material's first use, so the command holds them to that budget. A test keeps its figures equal to the size report's too.
 - The engine's allocation check is not a wrapper: it drives Chrome's debug protocol, attaches to the sketch and render workers, samples their heaps for many seconds and profiles each sample by function. That harness is about 350 lines in `bench/lib/devtools.ts` and `bench/lib/allocation.ts`, and it is not part of the command-line tool.
 
 ## Decision
@@ -36,7 +37,7 @@ An add-on from another developer goes into a listing. What does the listing run 
 | public API | scans the shipped source for imports of any engine entry point other than `@null3d/engine` and `@null3d/engine/stats`, and of the engine's source | FAIL |
 | interface | reads the entry's `checkPluginInterface(name, { min, max })`, or the `pluginInterface` field of its `declareAddonNamespace({ ... })` registration, and holds the range to the engine's interface version; a `@null3d/...` package must call `checkAddonVersion(name, VERSION)` instead | SKIP when no engine sits beside the add-on |
 | shaders | builds the entry with the add-on's own Vite and null3D plugin, which compiles every WGSL import for both GPU paths | SKIP when either is not installed |
-| sizes | holds each built file to the budget for a file after the start | SKIP with the build |
+| sizes | holds each built file to its budget: the later-file budget for code, and the first-use shader budget for a file of compiled shader builds | SKIP with the build |
 | page | starts the page from another origin under the strict policy, once threaded and once single-threaded | SKIP without a page, or with `--skip-browser` |
 | cost | measures the production build of the page on each quality preset, and prints the GPU time per frame, or the CPU time where the device times no GPU work | SKIP without a page |
 
@@ -51,8 +52,117 @@ An add-on from another developer goes into a listing. What does the listing run 
 - M3-D8 gives an add-on one registration call, `declareAddonNamespace`, and its record carries an optional `pluginInterface` range. The namespace's claim runs `checkPluginInterface`, so the static gate reads either form and the two checks cannot disagree. The namespace's name is the add-on's own short name, so only the standalone call's name must equal the package name. The D8 record was numbered D-224 while this one was in flight, so this record is D-225.
 - The page gates need a browser and a GPU, so their tests run after the machine's gate window and with the engine's browser rules.
 
+## Recorded run, 24 October 2026
+
+The command ran over every foundation add-on that has a package, from a fresh worktree after
+`bun install` and `bun run build`. Each run exited 0.
+
+| Add-on | package | public API | interface | shaders | sizes | page and cost |
+| --- | --- | --- | --- | --- | --- | --- |
+| `@null3d/controls` | PASS | PASS | PASS | PASS | PASS | SKIP |
+| `@null3d/geometry` | PASS | PASS | PASS | PASS | PASS | SKIP |
+| `@null3d/impostors` | PASS | PASS | PASS | PASS | PASS | SKIP |
+| `@null3d/particles` | PASS | PASS | PASS | PASS | PASS | SKIP |
+| `@null3d/splats` | PASS | PASS | PASS | PASS | PASS | SKIP |
+| `@null3d/terrain` | PASS | PASS | PASS | PASS | PASS | SKIP |
+
+Every run skipped the page and cost gates with the command's reason: a foundation add-on's package
+carries no `null3d.json`, because its page is a demo in `examples/`. The five foundations that no
+package holds yet have no run: physics, MSDF text, water, `three-compat` and vegetation
+([D-173](D-173-addon-hooks.md) ruling 4; [D-241](D-241-vegetation-foundation.md)).
+
+`tests/fixtures/d9-addon` gave the page and cost gates their run. All seven gates passed on it:
+
+```text
+PASS  page: the page starts from another origin under the strict policy, threaded and single-threaded
+PASS  cost per preset: low 0.31 ms of GPU time, medium 0.25 ms of GPU time, high 0.25 ms of GPU time, ultra 0.25 ms of GPU time per frame, on Chrome 155.0.8059.85
+```
+
+`tests/fixtures/d9-addon-internal` gave the refusal its run: a package whose entry imports
+`@null3d/engine/internal`. The command exited 1.
+
+```text
+FAIL  public API: 1 import reaches past the engine's public entry points
+      src/index.ts imports @null3d/engine/internal, which is not a public entry point
+FAIL  shaders: the build failed, so its WGSL compiled for neither GPU path
+      "./internal" is not exported under the conditions ["module", "browser", "production", "import"]
+```
+
+### The two faults that the run found
+
+**The size gate held shader builds to the code budget.** The first run failed on impostors,
+splats and terrain, each with 36 files named `material-glsl-*` and `material-wgsl-*`, from 175 KB
+to 907 KB raw. These are the compiled builds of a custom material, which the plugin writes to
+files that a page loads on the material's first use. They are shader data, so
+[D-14](D-14-js-budget.md) gives them the first-use shader budget, `FIRST_USE_SHADER_BUDGET` in
+`tools/lib/size-report.ts`. The largest is 907.5 KB raw and 45.0 KB after Brotli, and every one
+passes that budget. The command now takes that budget for a file of compiled shader builds, and
+the later-file budget for code. A test keeps both sets of figures equal to the size report's.
+
+**The fixture's page drew no frames.** The cost gate failed with "the engine on webgpu drew no
+frame while it was measured". The fixture's sketch never changed the scene, and the engine rests a
+still view: once its frames converge it stops submitting draws, so the measurement sees no drawn
+frame. The sketch now turns its box, as the project fixtures' sketches animate. The same page then
+measured every preset.
+
 ## Not in this task
 
 The allocation gate is not built. Porting the engine's profiler harness into the command-line tool is most of a task of its own. It also measures a page that an outside add-on may not ship.
 
 The coordinator moved it to M3-D9a on 23 October 2026, with the profiler port named, so it stays tracked work rather than a silent deferral. M3-D9a decides between a port of the harness and a public form of its sampling.
+
+## Addendum, 24 October 2026: the three-compat add-on
+
+[M3-F7](../../.dev/decisions/D-179-technique-rulings-2026-10-15.md) landed `@null3d/three-compat` as a
+foundation that holds a package, after the run above. The foundations that no package holds are now
+physics, MSDF text, water and vegetation.
+
+The command ran over it the same evening, and it is the first add-on the size gate has failed:
+
+| Add-on | package | public API | interface | shaders | sizes | page and cost |
+| --- | --- | --- | --- | --- | --- | --- |
+| `@null3d/three-compat` | PASS | PASS | PASS | PASS | FAIL | SKIP |
+
+```text
+FAIL  sizes: 2 files load more than the budget for a file after the start
+      addon.js is 181.9 KB raw, over its 64.0 KB budget
+      addon.js is 24.8 KB gzip, over its 24.0 KB gzip budget
+```
+
+The package's own sources are 24 KB, so the entry is mostly something else, most likely the compiled
+shader builds of its two tone curves and its outline passes. That is the shape that
+[D-56](D-56-first-use-shader-files.md) moved out of code for the engine: shader text belongs in a
+file that loads on the feature's first use, under the shader budget, not inside the add-on's entry.
+The gate did its job: three-compat shipped over budget because nothing had measured it.
+
+## Fixed, 24 October 2026: three-compat's first-use builds
+
+The failure above measured the add-on's entry, and the entry held the compiled builds of its
+shaders. Through the plugin's own packing, the five `.wgsl` files of the entry make 184.5 KB, and
+the entry itself was 181.9 KB. The two tone curves are 125.6 KB of that (69%), and the three
+outline effects 59.0 KB (32%). The add-on's own code is the remaining few KB.
+
+The fix takes the shape that [D-56](D-56-first-use-shader-files.md) gave the engine's own shaders.
+A custom effect's and a custom tone curve's builds load on first use, in a set for each GPU path,
+as a custom material's already did. The plugin keeps none of their builds in the module. It writes
+each set to a file of its own, named `effect-<path>-0-<hash>.js` or `curve-<path>-0-<hash>.js`.
+The engine imports a shader's set when the sketch first uses it, and waits for it as it waits for a
+custom material's. A caller that imports only the tone curves downloads only their code. It then
+downloads the curve's builds for its GPU path when it first sets one. A caller that never imports
+the add-on downloads nothing. The outline's builds load when `createOutlinePass` first uses them.
+
+The gate's budget did not change. Its list of compiled-shader-build files now names the effect and
+tone-curve sets that the plugin writes, beside the material sets, because all three are the same
+kind of file: shader data that a page loads on first use.
+
+The rebuilt add-on passes every size gate. Its 12 files include:
+
+| File | Raw | Gzip | Brotli |
+| --- | --- | --- | --- |
+| `addon.js` | 27.8 KB | 4.3 KB | 3.7 KB |
+| largest curve set | 31.5 KB | 5.7 KB | 4.9 KB |
+| largest effect set | 9.2 KB | 2.7 KB | 2.4 KB |
+
+The checks that hold a set file to the shader budget and the plugin's virtual-module names now
+cover the effect and tone-curve kinds. [E1424](../../docs/errors/E1424.md) names all three kinds of
+build file.
