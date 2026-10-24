@@ -7,6 +7,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 		'The governor undoes a step that does not pay: `governor.ts` with `LOWER_TRIAL_MS` and `LOWER_LOSS_PERCENT`, 6 new tests in `governor.test.ts` including a replay of the resize page, 57 of 57; D-237',
 	'M3-R21':
 		"The gate reads its software-renderer pictures from the commit's own CI browser jobs: `bench/ci-browser-jobs.ts`, 12 tests in `bench/lib/gate.test.ts`; D-238",
+	'M3-R17':
+		"The develop skill's intake section and its `Search before you hand-roll` table over all eleven foundation add-ons, mirrored in the starter template's AGENTS.md, with three evaluation cases; 22 of 22 skill checks pass",
 	'M3-R3':
 		"The memory register: `crates/null3d-core/src/memory.rs`, the overlay's `Memory by system` rows in `packages/engine/src/debug/overlay-look.ts`, and D-233's Battle figures, which match D-130 to the byte",
 	'M3-A4':
@@ -77,5 +79,5 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-R16':
 		'The starter template and the agent hook it ships: `packages/cli/src/create.js`, `packages/cli/templates/empty/AGENTS.md`, `docs/getting-started/project-structure.md`',
 	'M3-R18':
-		'What ships contacts no server of its own: `docs/getting-started/network-use.md`, the guard `tools/lib/network-use.ts` and `docs/getting-started/third-party-notices.md`',
+		"What ships contacts no server of its own: `docs/getting-started/network-use.md`, the guard `tools/lib/network-use.ts` and `docs/getting-started/third-party-notices.md`. The guard's 13 tests were seen failing on an added `globalThis.fetch`, and D-227's addendum records the audit",
 };
