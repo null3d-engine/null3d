@@ -1,9 +1,11 @@
 // Starts the engine on a canvas that CSS sizes to half the window, with the pixel ratio cap that
 // ?maxPixelRatio= sets, then keeps it running. With ?css=none no CSS sizes the canvas, and with
 // ?css=<width>x<height> CSS gives it that size in CSS pixels. The page offers `canvasSize()` on the
-// window: the canvas's CSS size, and the size of its drawing buffer as the engine's capture reads
-// it. A test resizes the window and asks again. `setMaxPixelRatio(ratio)` on the window has the
-// sketch change its cap through `ctx.quality`, and resolves once the sketch has heard of the change.
+// window: the canvas's CSS size, and the size of its drawing buffer as the engine sets it.
+// `capturedSize()` returns the same reading from a captured frame, which draws and reads a frame
+// back, so a test asks for it once a pass rather than in a poll. A test resizes the window and
+// asks again. `setMaxPixelRatio(ratio)` on the window has the sketch change its cap through
+// `ctx.quality`, and resolves once the sketch has heard of the change.
 // The page keeps the whole render scale and the governor off, as the benchmark scenes do: no render
 // scale changes the drawing buffer's size, which is what the page checks.
 // `maxDrawingSize(gpu)` gives the largest drawing buffer of the GPU path that the ?gpu= switch
@@ -21,6 +23,7 @@ interface CanvasSize {
 declare global {
 	interface Window {
 		canvasSize?: () => Promise<CanvasSize>;
+		capturedSize?: () => Promise<CanvasSize>;
 		setMaxPixelRatio?: (ratio: number) => Promise<void>;
 		maxDrawingSize?: (gpu: string) => Promise<number>;
 		maxCanvasSize?: number;
@@ -65,6 +68,16 @@ run('resize', async () => {
 	await setSettings({ minRenderScale: 1, governor: false });
 	window.maxCanvasSize = engine.capabilities.maxCanvasSize;
 	window.canvasSize = async () => {
+		const box = canvas.getBoundingClientRect();
+		return {
+			css: { width: box.width, height: box.height },
+			buffer: { width: canvas.width, height: canvas.height },
+		};
+	};
+	// The same size as a capture of the frame reads it, which proves that the thread that draws
+	// draws at the buffer the engine set. A capture draws and reads a frame back, so a test asks
+	// for it once a pass rather than in its poll.
+	window.capturedSize = async () => {
 		const { width, height } = await engine.captureFrame();
 		const box = canvas.getBoundingClientRect();
 		return { css: { width: box.width, height: box.height }, buffer: { width, height } };
