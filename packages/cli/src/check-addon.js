@@ -123,6 +123,8 @@ Options:
   --page <path>       The page to open, from the project's root, such as /demo.html, instead of
                       the config's
   --skip-browser      Run no gate that opens a browser
+  --skip-cost         Leave out the cost gate alone, for a machine whose load would show in its
+                      figures; the page and allocation gates still run
   --help              Print this help`;
 
 /**
