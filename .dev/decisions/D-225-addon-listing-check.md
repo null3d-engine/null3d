@@ -288,3 +288,67 @@ PASS  allocation per preset: low 5.9 KB, medium 6.0 KB, high 5.9 KB, ultra 5.8 K
 The place is the add-on's own step, in the sketch worker, and the page's other threads allocate the
 rest. The gate passes with those figures rather than failing, as its verdict says. A listing that
 wants a budget for the add-on's own code adds one; the gate's figures are what such a budget reads.
+
+## Addendum, 25 October 2026: the page build links the engine's shader files
+
+The heavy check that reads the page's source maps peaked at 12,930 MiB and 13,120 MiB on CI's 16 GB
+runners. Its ceiling had risen to 14,336 MiB. The owner ruled that the page build stops building the
+engine inside the add-on check's page process.
+
+**What the peak was.** The engine's shader set. The engine's generated TypeScript modules are about
+3 MB, and the shader compile runs in the shader build. The set is about 6,000 files and 2.8 GB. It
+holds a device module for each GPU path, each value of the device's fixed bits and each feature. It
+also holds tables of shared paragraphs. A page loads a few of those files at run time, and the
+bundler never holds their code. Vite's asset handling read every file and wrote a hashed copy into
+the build. It did that for the page and again for each worker. A finished page of the fixture held
+2.8 GB of files, all of them shader files, and the build held them before it wrote them.
+
+**The change.** `packages/cli/src/shader-files.js` is a Vite plugin that the add-on check's page
+build runs, for the page and for each worker. It marks each shader address of an engine module with
+Vite's ignore marker, so Vite leaves the address as it is rather than reading the file. After the
+build it links the shader files that the shader build wrote beside each script that names one. A
+page then fetches the same file at the same relative address that the bundle would have written.
+The set stays one copy in the machine's cache, and the build folder holds links to it. The option
+that turns this on is `linkedShaders`, which the page gates of `check-addon` set.
+
+**The figures.** Measured on the fixture's page in a checkout on 25 October 2026, with
+`/usr/bin/time -l`:
+
+| Build | Peak | Time |
+| --- | --- | --- |
+| the page build before the change | 10,520 MiB here, and 12,930 to 13,120 MiB on CI | minutes |
+| the page build after the change | 790 MiB | 8 s |
+
+The check's ceiling falls from 14,336 MiB to 1,536 MiB. Runs of the changed build measured 720 to
+792 MiB.
+
+**What it keeps.** The page is built from the project's own sources with the same Vite config, and
+the same page runs in the same gates. The `page` gate still starts it from another origin under the
+strict policy, in both thread modes. The `cost` and `allocation` gates still measure it on every
+preset, and the allocation gate still names the add-on's own code through the build's source maps.
+The `public API`, `interface` and `shaders` gates do not change, so a refused add-on fails with the
+same lines that name it. The run on the fixture on 25 October 2026 passed the page gate in both
+thread modes, cost at 0.32, 0.26, 0.26 and 0.20 ms of GPU time per frame, and 0 bytes per frame in
+the add-on's own code. The `shaders` and `sizes` gates skipped in that run for the reason below.
+Run with `bun packages/cli/bin/null3d.js`, they pass: the add-on built with WGSL for both GPU paths,
+and its file within budget. The wrongly packed fixture still failed the public-API gate and the
+shader-build gate, with the same lines that name it, and exited 1.
+
+**The one difference in an address.** A shader file keeps the name that the shader build gave it, so
+its address loses the content-hash suffix that Vite added. The file's bytes, its folder, its origin
+and the way a script names it stay as they were. The suffix exists only because Vite reads the file
+to hash it, which is the cost that this change removes. A check of the build holds a script's shader
+address and the file that sits beside it.
+
+**A fault that this change found, and did not fix.** `bunx @null3d/cli check-addon` runs the
+command under Node, as the command's `node` line asks. In a checkout the plugin sits there as
+TypeScript source, and Node cannot load it, so the `shaders` and `sizes` gates skip with a reason.
+A project that installs the packages from npm has the plugin's built files, so its run takes both
+gates. A run of the repository uses `bun packages/cli/bin/null3d.js`, which loads the source. This
+fault is older than this change, and it touches neither the page build nor the gates that this
+change moves.
+
+**What it does not do.** The repository's production test pages, the examples and a project's own
+`vite build` still write their own copies of the shader set. Those builds are meant to be what a
+project ships, and this change is scoped to the page that the check measures. The same lever could
+serve them, and that is a change of its own with its own measurements.
