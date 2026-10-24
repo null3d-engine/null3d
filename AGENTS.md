@@ -241,7 +241,7 @@ Before each commit:
 - Every command in `package.json` is in the table under "Commands", and every command that this file, the README and the guides in `.dev/` run with `bun run` exists.
 - Every decision record starts with its title, then a `Status:` and a `Summary:` paragraph, and no two records share a number.
 
-Before each push to main (`tools/hooks/pre-push.ts`; a push to another branch runs nothing):
+Before each push to main (`tools/hooks/pre-push.ts`):
 
 - The messages and trailers of every commit that the push adds to main, as CI's `commits` job checks them: commitlint, then the trailer check. The merge check runs over them too, so a merge commit that carries new work is refused.
 - When the push changes Rust code or Cargo settings: `cargo check --workspace`, then the tests of each crate that it changes, with `--no-fail-fast`. The test that builds every shader runs in CI only. The diff that this reads runs from main's commit before the push to the pushed commit, so a merge that changes Rust counts.
@@ -249,6 +249,8 @@ Before each push to main (`tools/hooks/pre-push.ts`; a push to another branch ru
 - On a machine whose git setting `null3d.jobQueue` names a job queue script, the steps run through that queue.
 - git holds the connection to the remote, saying nothing, for the whole check, and a peer closes a quiet connection after about six minutes. So the check refuses a push to main over ssh when nothing keeps that connection alive. A machine that pushes to main names `ServerAliveInterval` for the host ([Branches and parallel work](.dev/pull-requests.md#commit-messages-and-pushes)).
 - Only in an emergency, a `Push-Check-Skipped: <reason>` trailer on a commit of the push skips the check. The owner approved the check on 15 October 2026 ([D-157](.dev/decisions/D-157-direct-pushes-to-main.md)).
+
+The hook refuses a push to the milestone branch, unless the coordinator's landing session sets `NULL3D_MILESTONE_LANDING=1`. A helper saves its work on its own branch, and the coordinator lands it. A push to any other branch runs nothing.
 
 On each commit message:
 
