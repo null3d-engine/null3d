@@ -69,6 +69,35 @@ Creek's per-pixel test, wobble, caustics and absorption.
 stone foam map. Its bisect switches keep working: `without=water` leaves the water out, and
 `reflect=always` and `reflection-scale` feed the add-on's cadence and its reflection size. `water.ts` and `underwater.ts` go, and its route test reads `waveHeight` from the add-on.
 
+### Addendum: the cadence through the feature host, 25 October 2026
+
+M3-E6's water first user. The cadence no longer follows the preset with a handler of the add-on's
+own. It is a feature setting, `reflectionEvery`, with the row 2, 2, 1, 1, declared to
+`defineFeature` and resolved by `FeatureHost` for the preset in use. The setting declares the
+governor `double`, so each step of the frame-budget governor's steps doubles the wait, up to every
+16th frame. The caller's `reflectionEvery` merges into the row before the host reads it, so the
+bisect switches still name their own cadence and the governor still steps that cadence.
+
+The feature's budget takes the reflection's measured cost from D-120's phone check, 3.4 ms for the
+pass on the S25, halved on the presets whose cadence draws every other frame: 1.7 ms on Low and
+Medium and 3.4 ms on High and Ultra. These are not new measurements. The budget's `min` is 0.25, so
+the governor stops at every 16th frame.
+
+The stats overlay gives the feature a row named `water`, which shows its cadence and its budget:
+`water  gpu not measured  reflectionEvery 2  budget 1.7 of 1.7 ms`. The engine measures no GPU scope
+for the feature, because the water records through the reflection pass kind, and the add-on owns no
+buffer or texture of its own to report, so `gpuMs` and `bytes` stay empty. The pass's own time stays
+in the frame's parts.
+
+The add-on declares one feature per page, as the splats add-on does, so a page makes its water with
+one call and gives that call every body. A page that never imports the add-on downloads none of this
+code, and the water row goes when the water is destroyed. `packages/water/src/cadence.test.ts` proves
+the preset moves the cadence and the overlay figure, the governor's steps double it, a caller's row
+is stepped too, and a page with no water has no row.
+
+The record is D-257 because the milestone's tip gave D-251 to the recording and replay of a session
+while this work was in flight.
+
 ## Consequences
 
 - The add-on's material sets are 53.3 KB after Brotli, so D-14's first-use shader budget rose to

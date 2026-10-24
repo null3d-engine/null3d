@@ -3,18 +3,37 @@
 // reads the scene's own depth, and a mirror of the banks and the sky that redraws as often as the
 // quality preset affords. The same material draws from below, so a camera that dips under the water
 // keeps its surface.
-import type { QualityPreset, ShaderOptions, SketchContext, Texture } from '@null3d/engine';
+import {
+	declareAddonNamespace,
+	defineFeature,
+	FeatureHost,
+	type QualityPreset,
+	type ShaderOptions,
+	type SketchContext,
+	type Texture,
+} from '@null3d/engine';
 import { bodyMesh, type MeshDetail } from './mesh';
 import { type WaterBody, type WaterShape, waterBody } from './shape';
 import waterShader from './water.wgsl';
 
-/** The frames between two draws of the reflection at each preset, before the add-on's own cap. */
-const REFLECT_EVERY: Readonly<Record<QualityPreset, number>> = {
-	low: 2,
-	medium: 2,
-	high: 1,
-	ultra: 1,
-};
+/** The add-on's names, claimed once as the sketch's module loads. */
+const NAMESPACE = declareAddonNamespace({
+	name: 'water',
+	package: '@null3d/water',
+	errorCodes: [2200, 2299],
+});
+
+/** The presets in the order that a setting's row gives them. */
+const PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
+/** The frames between two draws of the reflection at each preset, before the governor's steps. */
+const REFLECT_EVERY = [2, 2, 1, 1] as const;
+/** The most frames between two reflection draws that the governor may reach. */
+const REFLECT_EVERY_MAX = 16;
+/**
+ * The reflection pass's time at full quality, per frame, on each preset: the shared figure from
+ * the S25's check of planar reflections, halved where the cadence draws every other frame.
+ */
+const REFLECT_MS: readonly [number, number, number, number] = [1.7, 1.7, 3.4, 3.4];
 
 /** The ripple strength that the water takes when the caller gives none. */
 const RIPPLE = 1;
@@ -79,7 +98,8 @@ export interface WaterOptions {
 	readonly softness?: number;
 	/**
 	 * The frames between two draws of the reflection at each preset, which replaces the add-on's
-	 * own cadence for the presets that it names. It is 2 on Low and Medium and 1 on High and Ultra.
+	 * own cadence for the presets that it names. The frame-budget governor may still double it while
+	 * frames take too long. It is 2 on Low and Medium and 1 on High and Ultra.
 	 */
 	readonly reflectionEvery?: Partial<Record<QualityPreset, number>>;
 	/**
@@ -142,15 +162,23 @@ function bodyList(shapes: WaterShape | readonly WaterShape[]): WaterBody[] {
 	return list.map((shape) => waterBody(shape));
 }
 
-/** The frames between two draws of the reflection, from the preset and the caller's cadence. */
-function everyOf(
-	preset: QualityPreset,
+/**
+ * The cadence that each preset takes, with the caller's own cadence where it names one. It is the
+ * row that the feature host resolves for the preset in use.
+ */
+function cadenceRow(
 	cadence: Partial<Record<QualityPreset, number>> | undefined,
-): number {
-	const every = cadence?.[preset] ?? REFLECT_EVERY[preset];
-	if (!Number.isFinite(every) || every < 1)
-		throw new Error(`@null3d/water: a reflection cadence must be 1 or more, and it is ${every}`);
-	return Math.round(every);
+): [number, number, number, number] {
+	const row = PRESETS.map((preset, index) => {
+		const given = cadence?.[preset];
+		const every = Math.round(given ?? (REFLECT_EVERY[index] as number));
+		if (!Number.isFinite(every) || every < 1 || every > REFLECT_EVERY_MAX)
+			throw new Error(
+				`@null3d/water: a reflection cadence must be from 1 to ${REFLECT_EVERY_MAX} frames, and it is ${given}`,
+			);
+		return every;
+	});
+	return row as [number, number, number, number];
 }
 
 /**
@@ -257,10 +285,32 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			receiveShadows: true,
 		}),
 	);
-	let every = everyOf(quality.preset, options.reflectionEvery);
-	const stop = quality.onChange(() => {
-		every = everyOf(quality.preset, options.reflectionEvery);
+	// The feature carries the cadence through the sketch's quality: the preset gives the row, and
+	// the frame-budget governor doubles it while frames take too long. The stats overlay reads the
+	// cadence and the pass's share of a frame from the host's figures.
+	let every = 1;
+	const host = new FeatureHost({
+		quality,
+		tier: ctx.engine.capabilities.tier,
+		page: ctx.page,
+		namespace: NAMESPACE,
 	});
+	host.add(
+		defineFeature({
+			name: 'water',
+			settings: {
+				reflectionEvery: {
+					presets: cadenceRow(options.reflectionEvery),
+					values: { min: 1, max: REFLECT_EVERY_MAX, whole: true },
+					governor: 'double',
+				},
+			},
+			budget: { presets: REFLECT_MS, min: 0.25 },
+			quality: (_preset, _settings, own) => {
+				every = own.settings.reflectionEvery as number;
+			},
+		}),
+	);
 	let frame = 0;
 	const current: [number, number] = [0, 0];
 	const causticLight: [number, number, number] = [0, 0, 0];
@@ -309,7 +359,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			material.set({ caustics: causticLight });
 		},
 		destroy() {
-			stop();
+			host.destroy();
 			for (const mesh of meshes) mesh.destroy();
 			render.removePass(pass);
 			material.destroy();

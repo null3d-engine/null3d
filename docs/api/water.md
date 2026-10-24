@@ -99,7 +99,7 @@ the water reaches, the depth of the bed at a point, and the current there.
 | `foam` | A `FoamMap` | None | The map of the foam around what breaks the surface. `foamMap(ctx, obstacles, { origin, size })` makes one |
 | `ripple` | A number from 0 | 1 | The height of the ripples, as a factor of their base height |
 | `softness` | A number above 0, in meters | 0.12 | The gap to the bed over which the water fades at a shore |
-| `reflectionEvery` | A frame count from 1 for each preset | 2 on Low and Medium, 1 on High and Ultra | The frames between two draws of the reflection |
+| `reflectionEvery` | A frame count from 1 to 16 for each preset | 2 on Low and Medium, 1 on High and Ultra | The frames between two draws of the reflection. The frame-budget governor doubles it while frames take too long |
 | `layers` | A 32-bit mask | The camera's layers | The layers that the reflection draws. Leave out what lies on or under the water |
 | `reflectionScale` | `1`, `0.5` or `0.25` | 1 | The reflection's size as a share of the render size each way |
 | `mesh` | `{ step, across, cell }` | 2, 16 and 2 | The meters between two cross sections along a river, the sections across it, and a lake's grid cell |
@@ -148,14 +148,19 @@ window overhead, and turns the light back past that window's edge.
   engine gives a depth-reading material room for its own maps; an engine that refuses the pair stops
   the call with E1217. The depth gives the water its depth behind each pixel, so a shore fades
   against the bank.
-- **The reflection.** The pass draws the scene a second time. Its cadence follows the preset, and
-  `reflectionEvery` replaces it. The pass costs no pipeline of its own, and its texture goes with
-  `destroy`.
+- **The reflection.** The pass draws the scene a second time. It draws every other frame on Low and
+  Medium, so it costs half as much on average there, and every frame on High and Ultra. When frames
+  take too long, the frame-budget governor doubles the wait, up to every 16th frame. The stats
+  overlay shows the cadence as `reflectionEvery` and the pass's share of a frame as the water row's
+  budget. `reflectionEvery` replaces the preset's cadence. The pass costs no pipeline of its own,
+  and its texture goes with `destroy`.
 - **Transmission.** The surface lets light through, so the engine copies the scene's colors in the
   frame that the water draws. The water draws both faces.
 - **Nothing before its first use.** A page that never creates water downloads none of the add-on.
 - **One place per feature.** This package owns all water. A scene makes water with it, not with a
   hand-written custom material, so there is one way to make water.
+- **One water a page.** The add-on registers one water feature, so a page makes its water with one
+  `createWater` call. Give that call every body that shares the surface and the reflection.
 
 [The API reference](reference/water.md) lists every export of this page with its type and
 description. The engine's doc comments make it.
