@@ -3418,10 +3418,7 @@ impl SceneSettings {
             // The mask's bits come from the shading's, so the caster asks only for the builds that
             // the material's WGSL has.
             let mask = if cuts {
-                pipeline.permutation
-                    & (permutation::ALPHA_MASK
-                        | permutation::VERTEX_COLOR
-                        | permutation::ALPHA_HASH)
+                mask_bits(pipeline.permutation)
             } else {
                 0
             };
@@ -4159,6 +4156,12 @@ pub const fn tests_alpha_its_way(shading: Shading) -> bool {
         shading,
         Shading::TexCoords | Shading::Line | Shading::LineLit
     )
+}
+
+/// The bits of a mask's test that a caster or a motion build takes from the shading's permutation:
+/// the mask, the vertex color that can carry its alpha, and the alpha hash.
+pub(crate) const fn mask_bits(permutation: u32) -> u32 {
+    permutation & (permutation::ALPHA_MASK | permutation::VERTEX_COLOR | permutation::ALPHA_HASH)
 }
 
 /// The size to create a buffer at when it must hold `needed` bytes: room to grow, so a slowly
