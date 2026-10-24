@@ -19,7 +19,6 @@ import {
 	cpSync,
 	existsSync,
 	mkdirSync,
-	readdirSync,
 	readFileSync,
 	rmSync,
 	statSync,
@@ -137,14 +136,8 @@ export function missingCdnSources(root: string): string[] {
 }
 
 /** Every file under `dir`, relative to it, with its size. */
-function filesUnder(dir: string, relative = ''): CdnFile[] {
-	const out: CdnFile[] = [];
-	for (const entry of readdirSync(join(dir, relative), { withFileTypes: true })) {
-		const path = relative === '' ? entry.name : `${relative}/${entry.name}`;
-		if (entry.isDirectory()) out.push(...filesUnder(dir, path));
-		else out.push({ path, bytes: statSync(join(dir, path)).size });
-	}
-	return out;
+function filesUnder(dir: string): CdnFile[] {
+	return walkFiles(dir, '').map((path) => ({ path, bytes: statSync(join(dir, path)).size }));
 }
 
 /**
