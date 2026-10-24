@@ -944,7 +944,7 @@ jobs:
     # Every run but a draft's or a docs-only pull request's, as the bench and real-browsers jobs.
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    # A shard's tests take about 10 minutes, with the median times that the weights come from, and
+    # A shard's tests take about 8 minutes, with the median times that the weights come from, and
     # its setup about 1. A shard that meets a slow machine runs its tests up to twice as slowly as
     # the median, so the limit leaves room for that rather than for a hang. In run 39306888159 a
     # shard modelled at 11 minutes ran 71 of its 74 tests in 19.6.
@@ -952,7 +952,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       # Its tests read no production build, so the run builds none (tests/playwright.config.ts).
@@ -983,7 +983,7 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "85:56:14:235:184:237:337:205:167:89:48:38:63:31:35:192:34:207:128:100:107:94:99:99:21"
+          PWTEST_SHARD_WEIGHTS: "85:56:93:79:140:213:273:241:175:124:97:76:29:43:62:24:20:83:141:4:41:168:57:115:60:91:78:91:88:68"
         run: bun run test:browser --grep-invert "@alone|$CITY_TESTS" --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
