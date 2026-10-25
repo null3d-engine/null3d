@@ -327,10 +327,11 @@ var<private> pixel_material: u32;
 /// The values of the material that lets light through, which the fragment shader reads once.
 var<private> transmission_row: MaterialTransmission;
 
-/// Which family of maps the material keeps in the light map's and the specular maps' slots: 2 when
-/// they hold its transmission and thickness maps, so `with_maps` reads them instead of the
-/// specular maps.
-var<private> layer_maps_kind: u32;
+/// Which family of maps the material keeps in each group of shared slots, two bits each: the light
+/// map's, the specular intensity map's and the specular color map's. A material that lets light
+/// through names 2 for the slots that hold its transmission and thickness maps, so `with_maps`
+/// reads them instead of the specular maps.
+var<private> layer_maps_kinds: u32;
 
 /// The diffuse light that `light_surface` gathers, of which the light through the surface takes
 /// the transmission's share.
@@ -1170,34 +1171,47 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     }
     specular_texel = vec4f(1.0);
 #ifdef COAT_SHEEN
-    // A layered material's slots 5 to 7 hold the maps of one family of layers, which the row's
-    // kind names: the clear coat's, the coat normal's and the sheen's, or iridescence's and its
-    // thickness with the anisotropy's.
-    if u32(anisotropy_row.z) == 1u {
-        if map_ready(m.more_maps.y) {
-            let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
+    // A material with layers keeps one family's maps in slots 5 to 7, and one that lets light
+    // through keeps its transmission and thickness maps in the two specular slots beside the layer
+    // map of the light slot. The row names each group's family apart: the clear coat's or
+    // iridescence's for the light slot, and either of those or the transmission's and the
+    // thickness's for a specular slot.
+    let kinds = u32(anisotropy_row.z);
+    let layer_kind = kinds & 3u;
+    let intensity_kind = (kinds >> 2u) & 3u;
+    let color_kind = (kinds >> 4u) & 3u;
+    if map_ready(m.more_maps.y) {
+        let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
+        if layer_kind == 1u {
             s.iridescence *= texel.r;
-        }
-        if map_ready(m.more_maps.z) {
-            let texel = specular_intensity_texel(m.more_maps.z, map_uv(flags, 6u, first, second));
-            s.iridescenceThickness = mix(film_row.z, film_row.w, texel.g);
-        }
-    } else {
-        if map_ready(m.more_maps.y) {
-            let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
+        } else {
             s.clearcoat *= select(1.0, texel.r, (flags & COAT_MAP) != 0u);
             s.clearcoatRoughness *= select(1.0, texel.g, (flags & COAT_ROUGHNESS_MAP) != 0u);
         }
-        if map_ready(m.more_maps.z) {
-            let at = map_uv(flags, 6u, first, second);
-            let texel = specular_intensity_texel(m.more_maps.z, at);
+    }
+    if map_ready(m.more_maps.z) {
+        let at = map_uv(flags, 6u, first, second);
+        let texel = specular_intensity_texel(m.more_maps.z, at);
+        if intensity_kind == 1u {
+            s.iridescenceThickness = mix(film_row.z, film_row.w, texel.g);
+#ifdef TRANSMISSION
+        } else if intensity_kind == 2u {
+            s.transmission *= texel.r;
+#endif
+        } else {
             let scale = coat_sheen_row.coat.zw;
             s.clearcoatNormal = bent_normal(texel, scale, at, input, position_dx, position_dy);
         }
-        if map_ready(m.more_maps.w) {
-            let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
+    }
+    if map_ready(m.more_maps.w) {
+        let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
+        if color_kind == 0u {
             s.sheenColor *= select(vec3f(1.0), texel.rgb, (flags & SHEEN_COLOR_MAP) != 0u);
             s.sheenRoughness *= select(1.0, texel.a, (flags & SHEEN_ROUGHNESS_MAP) != 0u);
+#ifdef TRANSMISSION
+        } else if color_kind == 2u {
+            s.thickness *= texel.g;
+#endif
         }
     }
 #else
@@ -1214,7 +1228,7 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
 #else ifdef TRANSMISSION
         // A material that lets light through keeps its transmission and thickness maps there
         // instead, whose red and green scale the transmission and the volume.
-        if layer_maps_kind == 2u {
+        if ((layer_maps_kinds >> 2u) & 3u) == 2u {
             s.transmission *= texel.r;
         } else {
             specular_texel.a = texel.a;
@@ -1228,7 +1242,7 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
 #ifdef TRANSLUCENCY
         s.diffuseTransmissionColor *= texel.rgb;
 #else ifdef TRANSMISSION
-        if layer_maps_kind == 2u {
+        if ((layer_maps_kinds >> 4u) & 3u) == 2u {
             s.thickness *= texel.g;
         } else {
             specular_texel = vec4f(texel.rgb, specular_texel.a);
@@ -1273,9 +1287,9 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let frame = tangent_frame(input, frame_at, position_dx, position_dy);
         s.anisotropyTangent = frame[0];
         s.anisotropyBitangent = frame[1];
-        // Its map takes the specular color map's slot in the iridescence family, which the row's
-        // kind names.
-        if u32(anisotropy_row.z) == 1u && map_ready(m.more_maps.w) {
+        // Its map takes the specular color map's slot in the iridescence family, which the row
+        // names by that slot's kind.
+        if color_kind == 1u && map_ready(m.more_maps.w) {
             let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
             s.anisotropyDirection = texel.rg;
             s.anisotropyMapStrength = texel.b;
@@ -2198,7 +2212,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #ifdef TRANSMISSION
     transmission_row = material_transmission(in.material);
-    layer_maps_kind = layer_maps_kind_of(in.material);
+    layer_maps_kinds = layer_maps_kind_of(in.material);
     object_scale = in.scale;
 #else ifdef TRANSLUCENCY
     translucency_row = material_translucency(in.material);

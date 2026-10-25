@@ -7,6 +7,7 @@
 // ?blend adds a blended pane in front of the balls, which draws in the same pass as they do.
 // ?maps varies the transmission and the thickness across each ball with the two maps that take the
 // specular maps' slots: bands of the transmission map's red, and bands of the thickness map's green.
+// ?coat gives the balls a clear coat, whose value leaves the specular slots free for those maps.
 // ?tone=none turns the tone mapping off, as the parity test's three.js twin draws.
 import { defineSketch } from '@null3d/engine';
 import {
@@ -91,6 +92,7 @@ export default defineSketch(({ scene, materials, geometry, post, textures }) => 
 	const ball = geometry.sphere({ radius: BALL_RADIUS, widthSegments, heightSegments });
 	const balls = params.has('empty') ? [] : TRANSMISSION_BALLS;
 	const thin = params.has('thin');
+	const coat = params.has('coat') ? { clearcoat: 1, clearcoatRoughness: 0.2 } : {};
 	for (const { position: center, roughness, thickness, attenuation } of balls) {
 		const options = {
 			color: '#ffffff',
@@ -99,6 +101,7 @@ export default defineSketch(({ scene, materials, geometry, post, textures }) => 
 			ior: BALL_IOR,
 			transmission: 1,
 			thickness: thin ? 0 : thickness,
+			...coat,
 			...(attenuation
 				? { attenuationColor: attenuation.color, attenuationDistance: attenuation.distance }
 				: {}),
