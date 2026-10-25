@@ -256,8 +256,10 @@ export function analyticVelocity(
 	vx += ((front - back) / (2 * step)) * state.swirl * height;
 	vz -= ((right - left) / (2 * step)) * state.swirl * height;
 
-	// The pushes: a vortex around each, turning more slowly as it ages away.
-	for (const push of pushes) {
+	// The pushes: a vortex around each, turning more slowly as it ages away. An index walks the ring,
+	// as every per-frame loop over a small array does here: a `for … of` makes an iterator per call.
+	for (let i = 0; i < pushes.length; i++) {
+		const push = pushes[i];
 		if (!push || push.strength === 0) continue;
 		const age = t - push.born;
 		if (age < 0 || age > PUSH_LIFE) continue;

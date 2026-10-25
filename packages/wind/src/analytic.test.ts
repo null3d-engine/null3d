@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import {
 	analyticVelocity,
 	createPushRing,
@@ -203,5 +204,46 @@ describe('the analytic field', () => {
 		const one = still({ swirl: 2, seed: 0 });
 		const two = still({ swirl: 2, seed: 11 });
 		expect(at(one, 3, 4, 3, 1)[2]).not.toBeCloseTo(at(two, 3, 4, 3, 1)[2], 3);
+	});
+});
+
+/** One top-level function of `analytic.ts`, without its comment lines. */
+function bodyOf(name: string): string {
+	const source = readFileSync(new URL('./analytic.ts', import.meta.url), 'utf8');
+	const start = source.indexOf(`function ${name}(`);
+	expect(start, `analytic.ts declares ${name}`).toBeGreaterThanOrEqual(0);
+	const end = source.indexOf('\n}', start);
+	expect(end, `${name} closes`).toBeGreaterThan(start);
+	return source
+		.slice(start, end)
+		.split('\n')
+		.filter((line) => !line.trimStart().startsWith('//'))
+		.join('\n');
+}
+
+describe('the functions that a frame calls', () => {
+	test('make no object, no closure and no iterator', () => {
+		// A sample reads the noise four times and the pushes four times, so one object per function
+		// call is about seventy in a frame. These forms are what made them: a tuple returned from
+		// the hash, a closure made per call, and a `for … of` over the pushes. This reads the source
+		// because the allocation gate measures the page, and the page never calls `sample`.
+		for (const name of [
+			'lattice',
+			'toUnit',
+			'fade',
+			'blend',
+			'corner',
+			'value3',
+			'profile',
+			'stream',
+			'analyticVelocity',
+		]) {
+			const body = bodyOf(name);
+			expect(body, `${name} makes a closure`).not.toContain('=>');
+			expect(body, `${name} walks with an iterator`).not.toContain(' of ');
+			expect(body, `${name} returns a tuple`).not.toContain('return [');
+			expect(body, `${name} makes an object`).not.toContain('new ');
+			expect(body, `${name} calls back`).not.toMatch(/\.(map|filter|forEach|reduce)\(/);
+		}
 	});
 });
