@@ -170,12 +170,20 @@ describe('landingSteps', () => {
 			step.command.join(' '),
 		]);
 
-	it('runs only the guards unless the crate tests are asked for', () => {
+	// The next two tests leave out the commit range, which a real landing always passes, to judge the
+	// guards and the crate tests alone; the commit checks come first, as the test after them shows.
+	it('adds no crate tests to the guards unless they are asked for', () => {
 		const guards = guardSteps().map((step) => [step.lane, step.command.join(' ')]);
 		expect(lanes(['crates/null3d-render/src/textures.rs'], false)).toEqual(guards);
 		expect(landingSteps(['crates/null3d-render/src/textures.rs'], CRATES, true)).toEqual(
 			guardSteps(),
 		);
+	});
+
+	it('adds no crate tests to the guards for a landing that changes no Rust', () => {
+		const guards = guardSteps().map((step) => [step.lane, step.command.join(' ')]);
+		expect(lanes(['.dev/x.md'])).toEqual(guards);
+		expect(lanes(['packages/engine/src/index.ts', 'tests/lib/x.test.ts'])).toEqual(guards);
 	});
 
 	it("checks a landing's messages from where its branch left main, and the commits it adds", () => {
@@ -207,12 +215,6 @@ describe('landingSteps', () => {
 		const first = { ...landing, remoteSha: ZERO };
 		expect(landingRefusal(first, 'a1', false, 'm0')).toBeUndefined();
 		expect(landingRefusal(first, 'a1', false, undefined)).toContain('git fetch origin main');
-	});
-
-	it('runs only the guards for a landing that changes no Rust', () => {
-		const guards = guardSteps().map((step) => [step.lane, step.command.join(' ')]);
-		expect(lanes(['.dev/x.md'])).toEqual(guards);
-		expect(lanes(['packages/engine/src/index.ts', 'tests/lib/x.test.ts'])).toEqual(guards);
 	});
 
 	it('tests the crates that a landing changes, in the CPU lane, and checks no whole workspace', () => {

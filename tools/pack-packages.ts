@@ -1,10 +1,10 @@
 // Packs every public package as the publish job does, with `bun pm pack`, and checks each tarball:
 // public with provenance, no `workspace:` versions, and every file that its manifest names or that
-// its code loads by address (tools/lib/packages.ts). Run `bun run build` first, for the WebAssembly
+// its code loads by address (tools/lib/pack.ts). Run `bun run build` first, for the WebAssembly
 // files. Run from the repository root:
 //   bun tools/pack-packages.ts [--out <folder>]    the folder defaults to target/packages
 import { join, resolve } from 'node:path';
-import { DEFAULT_PACK_DIR, packPackages } from './lib/packages';
+import { DEFAULT_PACK_DIR, packPackages } from './lib/pack';
 
 try {
 	const args = process.argv.slice(2);
