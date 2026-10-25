@@ -212,7 +212,9 @@ export function environmentGenerator(
 			sky,
 			panorama,
 			feedback,
-			units: { cube: host.unit(sky, 0, 1), panorama: host.unit(panorama, 0, 3) },
+			// The capture sums the light by sampling the chain, as the engine's own cube draws do,
+			// so its program names the cube's unit. The sky and panorama programs name theirs.
+			units: { cube: host.unit(feedback, 0, 1), panorama: host.unit(panorama, 0, 3) },
 		};
 		kept.layers.set(layer, made);
 		return made;

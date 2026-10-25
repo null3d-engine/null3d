@@ -26,6 +26,7 @@ struct SkyLayerValues {
     /// The core sky's cloud coverage, cloud density, cloud elevation and cloud scale.
     clouds: vec4f,
     /// The share of the sun that the layer hides, then the layer's own opacity, then the clock that
-    /// the layer moves with, then a spare value.
+    /// a map's fill reads, then the background's intensity, which the box that draws over the
+    /// background multiplies into the layer's color.
     view: vec4f,
 }
