@@ -31,6 +31,7 @@ import {
 	filesIn,
 	hashFiles,
 	hashOf,
+	liveLockHolder,
 	pruneCacheLocked,
 	runCargo,
 	touchCacheEntry,
@@ -329,6 +330,9 @@ function staleSetMessage(root: string): string {
 	);
 }
 
+/** The machine-wide lock of shader builds. */
+const shaderLock = () => join(cacheRoot(), 'shader-modules.lock');
+
 /**
  * Runs the work while this process holds the lock. A process that finds the lock waits for its
  * holder, and takes over a lock whose holder has stopped. The lock lives in the shared cache, not
@@ -336,7 +340,7 @@ function staleSetMessage(root: string): string {
  * zero processor time and neither finishes.
  */
 function withLock(work: () => void): void {
-	const release = acquireLock(join(cacheRoot(), 'shader-modules.lock'));
+	const release = acquireLock(shaderLock());
 	try {
 		work();
 	} finally {
@@ -354,6 +358,29 @@ export function announceColdBuild(entries: string): void {
 	console.error(
 		`The shader modules are not built in this checkout yet. The first build compiles every shader and can take a few minutes; it shows how far it has got. Later builds use the cache in ${entryCacheDir()}, and a change to one shader rebuilds only that shader.`,
 	);
+}
+
+/**
+ * Brings the shader modules up to date as `ensureShaderModules` does, unless that needs a build
+ * while another process holds the machine's shader lock and this checkout already holds a whole
+ * set. It then keeps that set, which does not match the sources, says so, and returns false; it
+ * returns true when the modules match. A commit's type check takes this path, so that it does not
+ * wait for another checkout's shader build, which can hold the lock for many minutes: on 25 October
+ * 2026 a landing's commit waited 8 minutes behind a helper's build, at no processor time.
+ */
+export function shaderModulesUnlessBusy(root: string): boolean {
+	const inputs = inputHash(root);
+	if (isFresh(root, inputs) || restoreFromCache(root, inputs)) return true;
+	const holder = freshShadersRequired() ? undefined : liveLockHolder(shaderLock());
+	if (holder !== undefined && folderIsComplete(join(root, MODULE_DIR))) {
+		const who = holder > 0 ? `process ${holder}` : 'another process';
+		console.error(
+			`The shader modules in ${MODULE_DIR} do not match this checkout's shader sources, and ${who} holds the machine's shader lock for a build of its own, so this check reads the modules in place instead of waiting.`,
+		);
+		return false;
+	}
+	ensureShaderModules(root);
+	return true;
 }
 
 /** The program that writes the modules, as cargo names it on this system. */
