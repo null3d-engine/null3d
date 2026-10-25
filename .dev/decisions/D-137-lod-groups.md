@@ -489,3 +489,47 @@ staged loader could then send 1,952 bytes, not 19,600, before the first coarse d
 vertex bytes, and it is a streaming and cache gain only. The levels already copy no vertices, so no
 total memory and no picture changes. It gains nothing for the 40,000-pine scene, whose procedural
 levels are meshes of their own. M3-L4's staged loading is the user that would spend the step.
+
+## Addendum: the levels' cost on an iPad and a phone (25 October 2026, M3-L2)
+
+The level-of-detail section asks each of its tasks for the GPU time and memory on the Mac, an iPad
+and an S24-class phone. The Mac's GPU time is in this record's table of 11 October. The copy lists'
+memory is in the addendum above. This addendum adds the two devices.
+
+The `lod-cost` page draws 40,000 pines, four levels each. It times the forest with every tree at its
+base mesh. It then times it with each tree at the level that its size on the screen picks. The two
+sides take turns, two seconds at a time, three times over, at Low and at High. After the timing the
+page reports each side's GPU buffer bytes from the stats overlay.
+
+The owner's rule of 25 October 2026 splits the rows. Memory is read exactly, so a cloud iPad's
+memory stands. A GPU time is a timing, so an iPad's absolute figure comes from the owner's own iPad.
+The cloud iPad's figure stands beside it as the comparison. Phones keep the cloud-first rule, so
+the Galaxy S24 gives both of its rows.
+
+| Device | Path | Preset | GPU off, on (ms) | GPU buffers off, on (MiB) |
+| --- | --- | --- | --- | --- |
+| iPad Pro 13, cloud | WebGPU | Low | 10.95, 5.28 | 22.0, 22.0 |
+| iPad Pro 13, cloud | WebGPU | High | 42.38, 32.12 | 25.6, 25.6 |
+| iPad Pro 13, cloud | compatibility | Low | 11.00, 5.40 | 22.0, 22.0 |
+| iPad Pro 13, cloud | compatibility | High | 31.36, 26.41 | 25.6, 25.6 |
+| iPad Pro 13, cloud | WebGL2 | Low | no timer | 6.1, 6.1 |
+| iPad Pro 13, cloud | WebGL2 | High | no timer | 6.2, 6.2 |
+| Galaxy S24, cloud | WebGL2 | Low | no timer | 6.1, 6.1 |
+| Galaxy S24, cloud | WebGL2 | High | no timer | 6.2, 6.2 |
+
+The cloud iPad ran Safari 26.6.1 on iOS 26 at 59 Hz. Its window was 1,032 by 1,264 CSS pixels at
+2x. Its levels cut the GPU time by 52% at Low on both WebGPU paths. They cut it by 24% at High on
+core WebGPU. Its GPU buffer bytes do not change between the two sides. The copy lists therefore
+follow what draws on the device as they do on the Mac. The lists take one copy per source. They do
+not take a slice per level per view. The Mac's table above holds the same finding: 2.6 MB in the
+main view and 13 MB with four cascades, against 20.5 MB and 61 MB before.
+
+The Galaxy S24 ran Chrome 152 on Android 16 with no WebGPU adapter, so only its WebGL2 rows ran.
+Chrome on Android reports no WebGL2 GPU timer. The cloud display ran at 30 Hz, so its frame interval
+sits at its 33.3 ms limit and hides any saving. The runner marks its timings unreliable. Its GPU
+buffer bytes also do not change, at 6.1 MiB at Low and 6.2 MiB at High. Its CPU time rises with the
+levels on, by 1.78 ms at Low and 1.35 ms at High. That is the level picks and the fade pairs.
+
+The owner's own iPad row is still owed. It takes the same page on that device with
+`bun tests/real-browsers.ts --plan lod-cost --lan ipad-safari`, with the dev server running and the
+runner page open in Safari. The cloud tablet's GPU times above stand beside it as the comparison.
