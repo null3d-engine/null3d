@@ -123,7 +123,7 @@ for (const [k, knight] of knights.entries()) {
 
 ## Property animation
 
-A clip can move values other than bones and morph weights. A glTF file with `KHR_animation_pointer` moves a material's color or opacity, where its maps sit on the texture coordinates, a light's intensity or color, or a node's visibility. These tracks follow the clip's time, speed, fades and weights. A sketch starts the same kind of animation in code with `scene.animateProperty`.
+A clip can move values other than bones and morph weights. A glTF file with `KHR_animation_pointer` moves a material's color or opacity, and where its maps sit on the texture coordinates. It also moves a light's intensity or color, or a node's visibility. These tracks follow the clip's time, speed, fades and weights. A sketch starts the same kind of animation in code with `scene.animateProperty`.
 
 ```ts
 const pulse = scene.animateProperty(lamp, 'light.intensity', {
