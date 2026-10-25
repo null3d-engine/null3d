@@ -559,6 +559,12 @@ the Galaxy S24 gives both of its rows.
 | iPad Pro 13, cloud | WebGL2 | High | no timer | 6.2, 6.2 |
 | Galaxy S24, cloud | WebGL2 | Low | no timer | 6.1, 6.1 |
 | Galaxy S24, cloud | WebGL2 | High | no timer | 6.2, 6.2 |
+| Galaxy S25, cloud, stand-in | WebGPU | Low | 22.81, 7.08 | 25.8, 25.8 |
+| Galaxy S25, cloud, stand-in | WebGPU | High | 54.33, 34.80 | 27.6, 27.6 |
+| Galaxy S25, cloud, stand-in | compatibility | Low | 23.72, 7.21 | 25.8, 25.8 |
+| Galaxy S25, cloud, stand-in | compatibility | High | 25.69, 25.36 | 27.6, 27.6 |
+| Galaxy S25, cloud, stand-in | WebGL2 | Low | no timer | 6.2, 6.2 |
+| Galaxy S25, cloud, stand-in | WebGL2 | High | no timer | 6.2, 6.2 |
 | Mac, Chrome | WebGPU | Low | 5.43, 3.70 | 19.8, 19.8 |
 | Mac, Chrome | WebGPU | High | 9.54, 5.68 | 23.7, 23.7 |
 | Mac, Chrome | compatibility | Low | 5.90, 3.74 | 19.8, 19.8 |
@@ -592,6 +598,16 @@ Chrome on Android reports no WebGL2 GPU timer. The cloud display ran at 30 Hz, s
 sits at its 33.3 ms limit and hides any saving. The runner marks its timings unreliable. Its GPU
 buffer bytes also do not change, at 6.1 MiB at Low and 6.2 MiB at High. Its CPU time rises with the
 levels on, by 1.78 ms at Low and 1.35 ms at High. That is the level picks and the fade pairs.
+
+The Galaxy S25 stands in for the S24 class, because the S24 times no GPU on either path. It ran
+Chrome 152 on Android 15, on Qualcomm's Adreno 830. That is a faster GPU of another make than the
+S24's Samsung Xclipse 940, so its row is the stand-in and not the S24's own figure. Its levels cut
+the GPU time by 69% at Low and 36% at High on core WebGPU, and by 70% at Low in compatibility mode.
+High on compatibility mode was flat. Its display ran at 30 Hz, so the runner marks its timings
+unreliable. Every interval sits at the display's 33.3 ms cap apart from High on core WebGPU, where
+the base-meshes side missed the cap at 66.6 ms. That interval fall is the cap, not the levels'
+doing, so it is no saving. Its GPU buffer bytes do not change, at 25.8 MiB at Low and 27.6 MiB at
+High, and 6.2 MiB on WebGL2.
 
 The Mac ran the page in Chrome on 25 October: six pages in 3.9 minutes, each measured at a
 one-minute load between 6.1 and 7.9. Every path held the display's 16.67 ms interval. The levels cut
