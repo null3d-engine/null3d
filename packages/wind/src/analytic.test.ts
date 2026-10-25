@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import ts from 'typescript';
 import {
 	analyticVelocity,
 	createPushRing,
@@ -207,43 +208,52 @@ describe('the analytic field', () => {
 	});
 });
 
-/** One top-level function of `analytic.ts`, without its comment lines. */
-function bodyOf(name: string): string {
+/** The forms that make an object, a closure or an iterator in a function that runs each frame. */
+const ALLOCATING: readonly (readonly [string, (node: ts.Node) => boolean])[] = [
+	['an object literal', ts.isObjectLiteralExpression],
+	['an array literal', ts.isArrayLiteralExpression],
+	['a function expression', (node) => ts.isFunctionExpression(node) || ts.isArrowFunction(node)],
+	['a for-of', ts.isForOfStatement],
+	['a new expression', ts.isNewExpression],
+];
+
+/** The forms that allocate, anywhere in the functions of `analytic.ts` that a frame calls. */
+function allocatingForms(): string[] {
 	const source = readFileSync(new URL('./analytic.ts', import.meta.url), 'utf8');
-	const start = source.indexOf(`function ${name}(`);
-	expect(start, `analytic.ts declares ${name}`).toBeGreaterThanOrEqual(0);
-	const end = source.indexOf('\n}', start);
-	expect(end, `${name} closes`).toBeGreaterThan(start);
-	return source
-		.slice(start, end)
-		.split('\n')
-		.filter((line) => !line.trimStart().startsWith('//'))
-		.join('\n');
+	const file = ts.createSourceFile('analytic.ts', source, ts.ScriptTarget.ESNext, true);
+	const wanted = new Set([
+		'lattice',
+		'toUnit',
+		'fade',
+		'blend',
+		'corner',
+		'value3',
+		'profile',
+		'stream',
+		'analyticVelocity',
+	]);
+	const found: string[] = [];
+	const walk = (node: ts.Node, name: string): void => {
+		for (const [what, matches] of ALLOCATING)
+			if (matches(node)) found.push(`${name}: ${what} at ${node.getText(file).slice(0, 40)}`);
+		node.forEachChild((child) => walk(child, name));
+	};
+	file.forEachChild((node) => {
+		if (!ts.isFunctionDeclaration(node) || !node.name || !wanted.delete(node.name.text)) return;
+		walk(node, node.name.text);
+	});
+	// A renamed or removed function would otherwise leave its rule unchecked.
+	expect([...wanted]).toEqual([]);
+	return found;
 }
 
 describe('the functions that a frame calls', () => {
-	test('make no object, no closure and no iterator', () => {
-		// A sample reads the noise four times and the pushes four times, so one object per function
-		// call is about seventy in a frame. These forms are what made them: a tuple returned from
-		// the hash, a closure made per call, and a `for … of` over the pushes. This reads the source
-		// because the allocation gate measures the page, and the page never calls `sample`.
-		for (const name of [
-			'lattice',
-			'toUnit',
-			'fade',
-			'blend',
-			'corner',
-			'value3',
-			'profile',
-			'stream',
-			'analyticVelocity',
-		]) {
-			const body = bodyOf(name);
-			expect(body, `${name} makes a closure`).not.toContain('=>');
-			expect(body, `${name} walks with an iterator`).not.toContain(' of ');
-			expect(body, `${name} returns a tuple`).not.toContain('return [');
-			expect(body, `${name} makes an object`).not.toContain('new ');
-			expect(body, `${name} calls back`).not.toMatch(/\.(map|filter|forEach|reduce)\(/);
-		}
+	test('hold none of the forms that allocate', () => {
+		// A sample reads the noise four times and the pushes four times, so one object per call is
+		// about seventy in a frame. The forms that made them are an object, an array, a function
+		// expression, a for-of and a `new`, and the test reads the syntax tree for all five rather
+		// than the text, which a form it did not name would pass. This is the only instrument that
+		// sees it: the allocation gate reads the page, and the page never calls `sample`.
+		expect(allocatingForms()).toEqual([]);
 	});
 });
