@@ -70,7 +70,21 @@ object, is recorded with the names that are close and fails the command.
   a hold, and `page.js` holds the program's types.
 - The engine's `page/hold.ts` holds the program's types, and `sketch/runner.ts` performs it.
   `scene/scene.ts` gives the property reads and writes, and the closest names for a message.
-- The docs page for the command describes the steps. The fixture project carries a script that
-  drives three states, and an image test compares each state with its reference.
+- The docs page for the command describes the steps. The addendum of 25 October 2026 below says
+  which demo the image tests drive and what those tests compare.
 - M3-R15's input and frame-time recorder can feed this format later, so a recording from a phone
   becomes a script.
+
+## Addendum, 25 October 2026: the three-state demo and the image tests
+
+The task's Done-when names a showcase. The image tests drive `examples/input`, a basic demo in the
+"Motion and interaction" group. A showcase sketch reads no input: its scene and camera move on
+their own, so a key or pointer step has nothing to act on. The input demo reads the keys and
+pointer that the script sends, and its three states show the robot standing, walking and jumping.
+
+`tests/image/cli-script.spec.ts` runs a script in two places. In the fixture project it checks that
+the three images differ from one another; those images have no references. The input demo's three
+images come from `tests/image/demo-input.script`. Each matches a run of the same name in
+`tests/image/script-runs.ts`: `script-demo-input` at `start`, `walking` and `jumping`. Each has a
+reference in both sets. The engine's unit tests run in CI's `passes` job, which is green; this
+machine did not run them.
