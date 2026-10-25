@@ -292,16 +292,16 @@ Levels of the displayed color, on the Mac's GPU in Chrome 155. Each row compares
 | Measure | WebGPU | WebGL2 |
 | --- | --- | --- |
 | Exposure: the resolved frame's mean against the reference's | 91.3 against 80.6, error 10.7; one run landed a frame earlier, at 59.3, error -21.2 | 91.6 against 80.8, error 10.7 |
-| The scene's alpha: error with the mask, without it | 9.5, 24.1 | 9.7, 24.1 |
+| The scene's alpha: error with the mask, without it | 9.5, 24.1 | 13.2, 24.1 |
 | The opaque-only copy, on the `alpha` scene: error with the signal, without it | 24.4, 24.1 | 24.4, 24.1 |
-| The phone path against the full one: mean distance | 2.84 | 2.86 |
-| Thin rain: frame-to-frame change without the resolve, with it | 2.620, 13.573 | 2.583, 13.605 |
+| The phone path against the full one: mean distance | 2.84 | 2.85 |
+| Thin rain: frame-to-frame change without the resolve, with it | 2.631, 13.589 | 2.727, 13.205 |
 | The volumetric fog: frame-to-frame change without the resolve, with it | 0.421, 0.456 | 0.671, 0.742 |
 
 What the figures say:
 
 - **The exposure ratio.** With the ratio, a resolved frame holds the scene at the doubled exposure. The resolve's smoothing moves its mean about a tenth above the plain frame's, which the tone curve makes visible on fine noise. One capture landed a frame earlier, where the history still held part of the old exposure, and its mean sat about a quarter low. Without the ratio the same frames would keep half the old exposure, about 36 levels below. The test therefore holds the resolved mean above 60% of the reference's and the error within 30 levels, which a history without the ratio fails.
-- **The scene's alpha.** The alpha signal cuts the background that a blended square keeps in its history from 24.1 levels to 9.5. It works on both paths.
+- **The scene's alpha.** The alpha signal cuts the background that a blended square keeps in its history from 24.1 levels to 9.5, and to 13.2 on WebGL2. It works on both paths.
 - **The opaque-only copy.** The signal does not change the transparent-canvas scene: 24.4 levels against 24.1. The copy's place, before the blended pass, and its bind group are held by a unit test, but the comparison's effect is not measured here. This is owed.
 - **The phone path.** It draws the full path's picture within 3 levels.
 - **Thin rain.** The resolve makes the frame-to-frame change five times larger. The streaks are a blended draw with no motion target, so the resolve reads their history from the wrong place.
