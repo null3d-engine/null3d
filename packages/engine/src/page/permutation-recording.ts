@@ -1,23 +1,23 @@
-// A recording run of a page: the permutation words that each thread's pipelines asked for, gathered
-// until every thread that draws has answered, then published on the page where the tool that writes
-// a narrowed build's list reads them. A thread that never answers publishes nothing, so the tool
-// refuses to write a partial list rather than let a page fail at run time.
+// A recording run of a page: the permutation words that the thread that draws asked for, gathered
+// from its start until the held frame is drawn, then published on the page where the tool that
+// writes a narrowed build's list reads them. A thread that never answers publishes nothing, so the
+// tool refuses to write a partial list rather than let a page fail at run time.
 
 /** The thread that draws in this mode: a worker, the sketch worker, or the page itself. */
 export type DrawingThread = 'render' | 'sketch' | 'page';
 
-/** How long the page's own drawing may take to ask for its words, in ms, before they are read. */
-const PAGE_RECORD_MS = 2000;
+/** How long a live page may take to ask for its words after it starts, in ms, before they are read. */
+const LIVE_RECORD_MS = 5000;
 
 /** Where a recording publishes its words. */
 declare global {
 	interface Window {
-		/** The recorded permutation words, once every drawing thread has answered. */
+		/** The recorded permutation words, once the drawing thread has answered. */
 		__null3dPermutations?: number[];
 	}
 }
 
-/** Gathers the words of the threads that draw, and publishes them once all of them answered. */
+/** Gathers the words of the thread that draws, and publishes them once it answers. */
 export class PermutationRecording {
 	private readonly words = new Set<number>();
 	/** True once the words are published, so a later answer changes nothing. */
@@ -26,24 +26,21 @@ export class PermutationRecording {
 	constructor(private readonly drawing: DrawingThread) {}
 
 	/**
-	 * Takes one thread's words. The words publish once the drawing thread answers, since a thread
-	 * that does not draw asks no pipelines for a variant.
+	 * Takes the drawing thread's words, which publishes them. Another thread that does not draw asks
+	 * no pipelines for a variant, so its words wait for the drawing thread.
 	 */
-	answered(role: 'sketch' | 'render' | 'job', words: readonly number[]): void {
+	answered(role: 'sketch' | 'render' | 'page', words: readonly number[]): void {
 		for (const word of words) this.words.add(word >>> 0);
 		if (role === this.drawing) this.publish();
 	}
 
 	/**
-	 * Reads the page's own words after its first frames, when the page draws, and publishes them.
-	 * The read is a timer rather than a frame callback so that a page that draws nothing still
-	 * publishes what it has asked for.
+	 * Ends a live page's recording after its first frames, since a live page has no held frame to
+	 * say when the scene's pipelines exist. The page's own drawing answers at once, and a worker
+	 * answers the request that `stop` sends it.
 	 */
-	expectPage(read: () => number[]): void {
-		setTimeout(() => {
-			for (const word of read()) this.words.add(word >>> 0);
-			this.publish();
-		}, PAGE_RECORD_MS);
+	live(stop: () => void): void {
+		setTimeout(stop, LIVE_RECORD_MS);
 	}
 
 	/** Publishes the words gathered so far, once. */

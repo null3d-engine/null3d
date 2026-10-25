@@ -115,9 +115,10 @@ pub struct Inputs {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub parts: BTreeMap<String, Part>,
     /// The permutation words to build, as a production build lists the ones its scenes use, or
-    /// empty to build every word. A word that a variant cannot make builds nothing there, so one
-    /// list serves every template: each build takes the word it is asked for, and a template
-    /// without some of the word's bits builds the word that remains.
+    /// empty to build every word. The list holds each word without the bits that a device fixes,
+    /// so one list serves every device module. A variant builds each word it can make, which is
+    /// the build whose own bits equal the listed word once those device bits are cleared. A word
+    /// that a variant cannot make builds nothing there, so one list serves every template.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub only: BTreeSet<u32>,
 }
@@ -551,7 +552,12 @@ fn planned_builds<'a>(
     let mut place = 0;
     for (name, variant) in variants {
         for build in variant.builds(name) {
-            let listed = only.is_empty() || only.contains(&build.permutation);
+            // A recording lists the words without the bits that a device fixes, so one list holds
+            // the words of every device module. A build matches its word with those bits cleared.
+            let word = build.permutation;
+            let listed = only.is_empty()
+                || only.contains(&word)
+                || only.contains(&(word & !permutation::DEVICE));
             if listed && keep(place, variant, build.permutation) {
                 planned.push((variant, build));
             }

@@ -189,9 +189,16 @@ function permutationListText(): Buffer {
 	return file === undefined ? Buffer.alloc(0) : readFileSync(file);
 }
 
-/** A hash of every input of the build of `crate`, the shader build's by default. */
+/**
+ * A hash of every input of the build of `crate`, the shader build's by default. A permutation list
+ * joins the shader build's hash, so a changed list builds again. Without a list the hash stays the
+ * one that every full build records, so a full set that a build before this one wrote is reused.
+ * The list never joins another crate's hash, such as the engine core's source stamp.
+ */
 export function inputHash(root: string, crate = SHADER_CRATE): string {
-	return hashOf(hashFiles(root, inputFiles(root, crate)), permutationListText());
+	const files = hashFiles(root, inputFiles(root, crate));
+	const list = crate === SHADER_CRATE ? permutationListText() : Buffer.alloc(0);
+	return list.length === 0 ? files : hashOf(files, list);
 }
 
 /**
