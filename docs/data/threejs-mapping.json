@@ -913,7 +913,7 @@
       "status": "changed",
       "since": "0.3",
       "target": "materials.standard({ anisotropy, anisotropyRotation, anisotropyMap })",
-      "notes": "The same anisotropic GGX lobe with three.js's formulas, and glTF's KHR_materials_anisotropy loads into it. A material draws with or without a map: the stretch's direction comes from the mesh's tangents, else the texture coordinates, as three.js builds it, and a surface with neither takes a frame square to itself. It takes no lightMap, specularIntensityMap or specularColorMap, and no clear coat's or sheen's maps. Rectangles and tubes of light shade it as three.js does, without the stretch.",
+      "notes": "The same anisotropic GGX lobe with three.js's formulas, and glTF's KHR_materials_anisotropy loads into it. Leave the map out and the stretch still draws: its direction comes from the mesh's tangents, else the texture coordinates, as three.js builds the frame, and a surface with neither takes a steady direction of its own. It takes no lightMap, specularIntensityMap or specularColorMap, and no clear coat's or sheen's maps. Rectangles and tubes of light shade it as three.js does, without the stretch.",
       "docs": "api/materials",
       "detect": "\\banisotropy(Strength|Rotation|Map)\\b|[{,]\\s*anisotropy\\s*:"
     },
