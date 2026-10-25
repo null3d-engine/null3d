@@ -47,7 +47,6 @@ const INCOMPLETE = new Set([
 	'M3-D7',
 	'M3-D9',
 	'M3-F2',
-	'M3-G1',
 	'M3-R16',
 	'M3-R17',
 	'M3-R20',
@@ -141,8 +140,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
-	'M3-G1':
-		"the engine keeps one texture transform per material, so a clip that moves a base colour or emissive map also moves that material's still maps, where three.js keeps a transform per texture; the comparison passes because it reads the animator's sampled values and never the material",
 	'M3-G2': 'no Khronos iridescence sample is tested',
 	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',
 	'M3-R2': 'the stress test has not run on an iPad or a phone-class device since the change',
