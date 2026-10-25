@@ -158,9 +158,18 @@ GPU-Checked: 668b7a423..113de653a passed: s4 medium 4.28 to 4.23 ms (-0.9%); s6 
 ```
 
 The comparison ran on the Mac's GPU at both presets, medium and high, with 120 Hz on every page.
-The load was 39 before the run and 4 after it. No page is slower by the tool's rule. S6 reads higher
-at both presets, inside the run's own spread of 4.4 and 14.8 per cent, so the rise is not separable
-from the machine. The check dropped one baseline run, s4 at high round 1, which measured 124 Hz.
+The load was 39 before the run and 4 after it. The 39 was the prepare's own build decaying: the
+timed part began 47 seconds after the prepare ended, and the load fell to 4. No page is slower by
+the tool's rule. The check dropped one baseline run, s4 at high round 1, which measured 124 Hz.
+
+The millisecond pair in the line is each build's median GPU time per frame. The percentage is the
+judged change: the median, over the rounds, of each round's ratio of the new build to the baseline.
+The two differ because a ratio of two medians is not the median of ratios, and the rounds spread
+widely. The verdict rests on the percentage and on its noise, the standard error of that median
+ratio. A page fails only when the change exceeds its threshold in percent and in milliseconds, and
+twice its noise. For GPU time those thresholds are 25 per cent and 0.3 ms. S6 at high reads +5.7
+per cent against a 14.8 per cent noise, so its wider medians are not separable from the machine. No
+benchmark scene installs a sky layer, so the checked pages never run the changed path.
 
 The base, `668b7a423`, is a milestone commit whose benchmark pages are identical to the branch's:
 `git diff` names no file under `bench/pages` or `bench/scenes`, so the tool judged the comparison.
