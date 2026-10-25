@@ -102,6 +102,8 @@ describe('no-sleep', () => {
 			"sh -lc 'sleep 2'",
 			'bun run build | tee build.log; sleep 3',
 			'sleep 1 2>/dev/null',
+			'bash <<EOF\nsleep 5\nEOF',
+			"sh -s <<'EOF'\nsleep 5\nEOF",
 		]) {
 			expect(commandRule(command)).toBe('no-sleep');
 		}
@@ -117,6 +119,7 @@ describe('no-sleep', () => {
 			'echo "a | b"',
 			'bun run build # sleep 1',
 			"cat > note.txt <<'EOF'\nsleep 1 in prose\nEOF",
+			'bash <<EOF\necho hello\nEOF',
 			'bash -c "echo hello"',
 			'grep -n sleep dev.log',
 		]) {
@@ -136,7 +139,11 @@ describe('no-kill-by-name', () => {
 			'kill',
 			'kill -9 $(pgrep vite)',
 			'kill $(pidof vite)',
-			'xargs kill',
+			'kill -- -1234',
+			'pkill -P 1234',
+			'pgrep vite | xargs kill',
+			'pidof vite | xargs kill',
+			'ps aux | grep vite | xargs kill',
 			'bash -c "killall node"',
 		]) {
 			expect(commandRule(command)).toBe('no-kill-by-name');
@@ -161,6 +168,12 @@ describe('no-kill-by-name', () => {
 			'kill -0 $$',
 			'kill -l',
 			'kill $(ps -o pid= -p $$)',
+			'kill $' + '{PIDS[@]}',
+			'kill $' + '{PID:-0}',
+			'kill -- 1234',
+			'cat .vite.pid | xargs kill',
+			'lsof -ti:5173 | xargs kill',
+			'xargs kill < pids.txt',
 			'xargs kill 1234 < pids.txt',
 			'command -v kill',
 		]) {
