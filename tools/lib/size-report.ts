@@ -1089,8 +1089,15 @@ export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotl
  * map slots and their loader notes: it went from 14,737 to 16,832 bytes after Brotli (D-215). The
  * figure is the cap of every file that loads after the start, so the raise loosens each of them by
  * the same kilobyte; no other file is near it.
+ *
+ * It rose again on 25 October 2026, from 17 KB to 18 KB, on the owner's word. The glTF worker had
+ * 67 bytes spare at 17,341, and mapping the glTF texture-transform pointers that three.js moves
+ * takes it about 57 bytes past that line. The only way under the old figure was to drop the
+ * loader's checks for a malformed transform and for a material that moves two of them, which is a
+ * worse trade than the kilobyte. This is headroom, not a new target: the first trim that wins bytes
+ * back still takes them, and the glTF worker stays the only file that needs it.
  */
-export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 17 * 1024 };
+export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 18 * 1024 };
 
 /**
  * The budget for a generated combination table, whose name holds `-combos`: the list of module
