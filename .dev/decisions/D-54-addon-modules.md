@@ -510,7 +510,7 @@ behind the frames that draw, and each arrival repacks the rows, so the cloud fil
 
 The test cloud of 400,000 splats is 27 chunks of 5,682,650 bytes. At Low's 50,000, Medium's 250,000
 and the counts between, the selection wants all 27 chunks. The first view now waits for 5 of them,
-930,851 bytes, or 16 per cent of the cloud; before, it waited for all of it.
+930,524 bytes served, or 16 per cent of the cloud; before, it waited for all of it.
 
 - The first view can miss the chunks whose files lie beyond the megabyte. The previous addendum's
   rule was that it has no hole, and this addendum gives that up on purpose: a blank screen for the
