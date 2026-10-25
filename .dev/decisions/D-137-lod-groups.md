@@ -487,30 +487,35 @@ The eye comes from the frame's camera, so the cards have no per-frame call. `upd
 and with it the origin that the sprite batch needed: the engine draws everything relative to the
 camera, so world positions keep their precision far from the world's origin.
 
-## Addendum: the vertices of a file's levels are shared, but not ordered by level (25 October 2026, M3-L2)
+## Addendum: a file's levels read their vertices from the start of the buffer (25 October 2026, M3-L2)
 
 The plan asked for a file's levels to draw ranges of the base mesh's indices. Those indices name the
 base's own vertices. The vertices were to come in coarsest-level-first order, as meshoptimizer's
-README advises. The first part is built. A level the asset tool writes names the base's accessors.
-The loader therefore stores the level over the base's vertices. The level costs its indices alone.
-The second part is not built. It is a recorded choice rather than a gap.
+README advises. Both parts are built.
 
-Coarsest-first order is a new step in the tool's pipeline. `reorderMeshes` runs before the levels are
-planned. It orders the vertices for the GPU's vertex cache, not by level. Ordering by level needs
-a reorder after `planLevels`. That step remaps every vertex stream and every level's indices. The
-task's coordinator decided on 25 October 2026 not to build it, because the index ranges work without
-it. Its gain is stated in bytes below for whoever needs streaming later.
+A level the asset tool writes names the base's accessors. The loader therefore stores the level over
+the base's vertices. The level costs its indices alone. After the levels are planned, the tool orders
+each mesh's vertices. The coarsest level's come first, then each finer level's new ones, then the
+base mesh's own. Any vertex that no triangle uses comes last. Every vertex stream moves with them.
+The base's indices and every level's indices are remapped. The step runs only for the meshes whose
+levels the tool plans; a file's own levels keep their order.
 
-What the ordering would gain is the share of the vertex buffer that a coarse level must have
-resident. Without it, a level's indices point across almost the whole buffer. The tool's test ball
-has a base of 1,225 vertices of 16 bytes. Its coarsest level names 122 vertices. Those vertices span
-1,201 slots, 98% of the array. A draw of that level therefore needs almost the whole 19,600-byte
-vertex buffer. In coarsest-first order the same 122 vertices would sit in the first 1,952 bytes. A
-staged loader could then send 1,952 bytes, not 19,600, before the first coarse draw. That holds back
-17,648 bytes, 90% of the vertex buffer, until a finer level arrives. The gain scales with the base's
-vertex bytes, and it is a streaming and cache gain only. The levels already copy no vertices, so no
-total memory and no picture changes. It gains nothing for the 40,000-pine scene, whose procedural
-levels are meshes of their own. M3-L4's staged loading is the user that would spend the step.
+The order leaves each level at the start of the buffer. On the tool's staged terrain the coarsest
+level names 515 vertices and its largest index is 514. Each finer stage's largest index is one less
+than the vertices it uses, up to the finest stage's 16,641. A staged loader can therefore send the
+coarsest level's part of the buffer first and add each finer part as it arrives.
+
+The gain is the share of the buffer that a coarse level no longer needs resident. On the tool's test
+ball the coarsest level names 122 of 1,225 vertices of 16 bytes. Before the step they spread over
+98% of the array, so a draw needed almost the whole 19,600-byte vertex buffer. The order puts them in
+the first 1,952 bytes. That holds back 17,648 bytes, 90% of the buffer, until a finer level arrives.
+The gain scales with the base's vertex bytes, and it is a streaming and cache gain only. The levels
+already copy no vertices, so no total memory and no picture changes. It gains nothing for the
+40,000-pine scene, whose procedural levels are meshes of their own. M3-L4's staged loading is the
+user that spends it.
+
+`packages/cli/src/assets/levels.test.ts` holds two facts. Each level and every coarser level share
+one prefix of the new numbering. Every triangle keeps the positions it drew before the reorder.
 
 ## Addendum: the levels' cost on an iPad and a phone (25 October 2026, M3-L2)
 
