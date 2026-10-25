@@ -2,7 +2,7 @@
 
 Status: decided. Date: 22 October 2026. Task: M3-A8.
 
-Summary: `post.set({ grading })` takes white balance, lift, gamma, gain, saturation and split toning. A job worker bakes them into a table of 32 texels a side. The final pass reads that table after the tone mapping on both GPU paths. A strong grade matches the analytic reference to under 0.65 of an 8-bit step, and a change of the values costs the frames no work.
+Summary: `post.set({ grading })` takes white balance, lift, gamma, gain, saturation and split toning. A job worker bakes them into a table of 32 texels a side. The final pass reads that table after the tone mapping on both GPU paths. A strong grade matches an analytic reference to 0.96 of an 8-bit step on a 17-point grid. At a saturated yellow it misses by 2.03 steps, so the one-step tolerance is the owner's decision. A change stalls no frame, and one frame uploads the table.
 
 ## Question
 
@@ -14,13 +14,15 @@ The baked table must match the analytic grade within one step of an 8-bit canvas
 
 ## Data
 
-The bake writes four half floats per texel. Its lookup takes the color's square root first, which places the texels closer together toward black. The analytic reference is `gradeColor` in `packages/engine/src/scene/grading.ts`, which the bake calls for each texel.
+The bake writes four half floats per texel. Its lookup takes the color's square root first, which places the texels closer together toward black. The first figures compared each table with `gradeColor` in `packages/engine/src/scene/grading.ts`, which the bake calls for each texel, and the table below is that comparison. The addendum below gives the figures from a reference written in the test file.
 
-| Measure | Display-space 32³, square root lookup | Display-space 32³, linear lookup |
+| Measure, a strong grade (warm balance, lifted toe, 0.8 and 1.2 gamma, a split tone), 17 colors an axis | Display-space 32³, square root lookup | Display-space 32³, linear lookup |
 | --- | --- | --- |
-| Worst error, a strong grade (warm balance, lifted toe, 0.8 and 1.2 gamma, a split tone), 17 colors an axis | 0.65 of an 8-bit step | 4.4 steps |
+| Worst error, against the bake's own function | 0.65 of an 8-bit step | 4.4 steps |
 
-How the data was produced: `bun` over `bakeGrade` and `gradeColor` in the engine package on 22 October 2026, which `grading.test.ts` repeats as a unit test. Half floats matter. An 8-bit or clipped table pushed a channel that crosses white inside a texel's cell to 4.4 steps. Linear interpolation across the clip does not follow the reference.
+How the data was produced: `bun` over `bakeGrade` and `gradeColor` in the engine package on 22 October 2026. Half floats matter. An 8-bit or clipped table pushed a channel that crosses white inside a texel's cell to 4.4 steps. Linear interpolation across the clip does not follow the reference.
+
+These figures show the table's resolution against the function that the bake calls. They do not show that the function is the grade the docs describe, and the unit test that repeated them was removed for that reason. The addendum below gives the figures from a reference written in the test file. On the same grid it gives 0.91 of a step, and the worst in the cube is 2.03 steps.
 
 ## Decision
 
@@ -121,3 +123,88 @@ Rule 40 decides for the display table:
 - `?grading=hdr` and `?grading=display` pick the design, and `display` is the default. A ruling for
   one of them deletes the other's bake, shader module and switch.
 
+## Addendum, 26 October 2026: the analytic check and the cost of a change
+
+Status: decided, with the owner's design ruling still open above.
+
+The first figures compared each table with the function that the bake calls for every texel. That
+shows the table's resolution, not that the function is the grade the docs describe. The tests now
+hold a reference written in the test file. It has a closed form for each control, and the
+composite grade in its documented order. The reference function calls nothing of the engine. The
+test still takes three things from it. The white-balance factors' tint and luma are pinned in
+closed form. The log code's round trip is checked. The sRGB transfer applies to both sides of the
+comparison, so it cancels.
+
+| Measure, of an 8-bit step | Display table | Light table |
+| --- | --- | --- |
+| Worst error, 17 points an axis | 0.91 | 5.40 |
+| The same, refined between the points | 0.96 | not refined |
+| Worst error, 49 points an axis | 1.71 | 7.19 |
+| The same, refined between the points | 1.80 | not refined |
+| The worst anywhere in the cube, by a search around the best grid colors | 2.03 | not searched |
+| Channel samples over one step, 49 points an axis | 11 of 352,947 | 36,829 of 352,947 |
+
+The display table's worst is 2.03 steps, at red and green near white with blue at zero. The grade
+clamps the blue channel at zero there, and the table holds 0.008 against a reference of 0.000. The
+grid alone understates it: 49 points an axis give 1.71, and refining one point gives 1.80. The
+light table misses by five times as much on the same grid, at 10.4% of channel samples, so its
+ranking is safe.
+
+So the display table does not meet the rule's one step everywhere. It meets it on the grid the
+record's figure came from and misses it at that saturated yellow. A tetrahedral read was built and
+measured for this record, and it is worse. At 49 points it misses by 2.23 steps against 1.80, and
+17 channel samples are over one step against 11. Its mean error is 0.049 against 0.043. The pass
+therefore keeps its sampler's linear filter, and the one-step clause is the owner's decision.
+
+The gamma description was wrong, and the demos prove it. The docs said that values below 1
+brighten the shadows. The bake raises a channel to the power of one over its gamma, as color tools
+do, so values above 1 brighten. The post effects demo's "warmer whites" only read warm that way:
+its red gamma is above 1 and its blue below it. Both doc sentences now say above 1.
+
+### The cost of a change
+
+A change runs one bake of the table, 7.8 ms of one core here, in a job worker. The answer reaches
+the sketch worker as a message. That thread then writes 131,072 texels as half floats, which takes
+0.8 ms, and the render worker's next frame uploads 262,144 bytes. So a change costs a frame
+one texture upload, and no bake, shader build or pipeline build. Until that upload the frames draw
+the previous table, because the write replaces the texture's texels in place, so no frame loses its
+grade. A second change drops the first change's answer when it lands, so a stale table never shows.
+
+The figures come from Bun on this Mac on 26 October 2026 at a load near 110, so they are upper
+bounds. The browser test `grading-switch` measures the frames themselves, on this Mac's GPU in
+Chrome 155. It measures steady play, and one change with the window that lands it and the window
+after it. It then changes a value in every frame for two seconds.
+
+| On this Mac, 26 October 2026 | WebGPU | Compatibility | WebGL2 |
+| --- | --- | --- | --- |
+| The display's refresh rate, Hz | 60 | 60 | 60 |
+| Steady frames: interval median and 99th percentile, ms | 16.665 and 16.670 | 16.665 and 16.670 | 16.665 and 16.670 |
+| The window that lands one change: frames | 30 | 29 | 29 |
+| Its interval median and 99th percentile, ms | 16.665 and 16.670 | 16.665 and 16.670 | 16.665 and 16.670 |
+| Its uploaded bytes per frame | 9,948 | 10,230 | 9,842 |
+| The window after it: interval median and 99th percentile, ms | 16.665 and 16.670 | 16.665 and 16.670 | 16.665 and 16.670 |
+| Its uploaded bytes per frame | 1,492 | 1,492 | 1,104 |
+| Presented frames per second, every window | 60.002 | 60.002 | 60.002 |
+| GPU objects and pipelines, every window | 0 and 0 | 0 and 0 | 0 and 0 |
+| Draws that a frame skipped, every window | 0 | 0 | 0 |
+| A value that changes in every frame: frames | 119 | 119 | 120 |
+| Its interval median and 99th percentile, ms | 16.665 and 16.670 | 16.665 and 16.670 | 16.665 and 16.670 |
+| Its uploaded bytes per frame | 259,267 | 259,267 | 258,879 |
+
+The window that lands a change holds about thirty frames, so its 99th percentile is its longest
+frame or the one before it. That figure is the display's own period on all three paths. So the
+frame that the change lands in is no slower than a steady one, and neither are the frames after it.
+Its uploaded bytes rise by about 253,000 over steady play, which is one table, so exactly one frame
+carried the bake. No frame was skipped: the presented rate held at 60.002, and no draw was skipped.
+A value that changes in every frame carried a table on 99% of frames and kept the same intervals.
+
+The change travels through a worker. The page started two job workers beside the sketch, the render
+and its probe workers. The sketch worker's CPU time per frame stayed between 0.10 and 0.24 ms in
+every window. A 7.8 ms bake on that thread would show. The render thread's frames kept the
+display's period, which a bake there would not. The job workers' CPU does not reach the frame
+figures, because their records count frame work and the bake is a task. The 7.8 ms above is the
+bake's own time in Bun, not a thread's time in the page.
+
+That frame keeps its grade: the texture's texels change in place, so a frame draws the old table or
+the new one, never neither. A change that a newer one replaces is dropped when it lands, so a stale
+table never shows.
