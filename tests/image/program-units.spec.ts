@@ -31,9 +31,10 @@ test('a stage past the device’s texture units gets E1209 before the link resul
 	expect(result.units[1]).toBeGreaterThanOrEqual(16);
 	expect(result.declared).toBe(result.units[1] + 1);
 	expect(result.counted).toBe(result.declared);
-	// A stage with more active samplers than the device has units fails to link, so the engine's
-	// count must have run first. A device that links it anyway still owes the same error.
-	expect(result.driverLinked, 'the driver refused the over-limit program').toBe(false);
+	// Most devices fail to link more samplers than a stage has units, so the engine's count must
+	// have run first. A software device can report more units than the engine hands out, and then
+	// link the program by itself. The engine still owes the same error, so the code and the count
+	// in its message decide the test, not the link result.
 	expect(result.code).toBe('E1209');
 	expect(result.message).toContain(
 		`reads ${result.declared} textures in its fragment stage, and a stage has ${result.units[1]} units`,
