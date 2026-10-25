@@ -514,8 +514,6 @@ describe('the artifact cache', () => {
 });
 
 describe('buildLog', () => {
-	// The two commands take well under a second alone. On a machine loaded several times past its
-	// cores, starting a process and reading its end took longer than the default 30 seconds.
 	it("prints each line at once with the build's name, keeps it, and names a command that failed", async () => {
 		const printed: [string, boolean][] = [];
 		const log = buildLog('tools', (line, stderr) => printed.push([line, stderr]));
@@ -537,7 +535,7 @@ describe('buildLog', () => {
 		expect(log.text()).toBe(
 			`${printed.map(([line]) => line.slice('[tools] '.length)).join('\n')}\n`,
 		);
-	}, 120_000);
+	});
 });
 
 describe('baseTreeDamaged', () => {
