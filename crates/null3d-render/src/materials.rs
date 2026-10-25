@@ -2348,8 +2348,8 @@ mod tests {
             LayerMap::Thickness.kind(),
             "the color slot holds the thickness"
         );
-        // The three kinds sit in the row's last `vec4f`, which the shaders already read.
-        assert_eq!(param::LAYER_MAPS_KIND / 4, MATERIAL_FLOATS / 4 - 1);
+        // The three kinds sit in the anisotropy `vec4f`, which the shaders already read.
+        assert_eq!(param::LAYER_MAPS_KIND / 4, param::ANISOTROPY / 4);
     }
 
     #[test]
