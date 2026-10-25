@@ -32,7 +32,7 @@ const PARTIAL: Readonly<Record<string, string>> = {
 };
 
 /** Tasks built on a helper branch, with nothing of them on this branch yet. */
-const ON_BRANCH = new Set(['M3-E9', 'M3-R14', 'M3-V2']);
+const ON_BRANCH = new Set(['M3-E9', 'M3-V2']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
 // An audit of the branch on 24 October 2026 read every ticked task against its own "Done when" and
