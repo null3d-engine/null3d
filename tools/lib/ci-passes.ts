@@ -5,12 +5,13 @@
 // looks each key up in the Actions cache. A job whose every part passed then starts no runner at
 // all: each part used to take a runner of its own to find its pass, 30 of them in a run that
 // changed no Rust or shader file. A job that runs reads its parts' keys from this job's answer, so
-// each key has one source. The key formats are the ones that the jobs wrote before, so their passes
-// still count.
+// each key has one source. Each key also ends with a hash of its job's definition, as the workflow
+// file parses, so a change to a part's commands, tools or steps runs it again, and a YAML comment
+// does not. The workflow's top-level settings are not in it.
 //   bun tools/lib/ci-passes.ts    prints keys=, passed= and modules= lines, for $GITHUB_OUTPUT
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { hashFiles } from './build-cache';
+import { hashFiles, hashOf } from './build-cache';
 import { ghAsync } from './gh';
 import { moduleShare, wgslModules } from './wgsl-modules';
 
@@ -58,15 +59,89 @@ export const PASS_KEYED: Readonly<Record<string, PassKeyed>> = {
 	},
 };
 
-/** The parts of each pass-keyed job, as the workflow lists them. */
-export function workflowMatrices(root: string): Record<string, MatrixEntry[]> {
+/** A step of a job or of a composite action, as far as the pass keys read it. */
+interface Step {
+	readonly uses?: string;
+}
+
+/** A job of the workflow, as far as the pass keys read it. */
+interface WorkflowJob {
+	readonly strategy?: { readonly matrix?: { readonly include?: MatrixEntry[] } };
+	readonly steps?: readonly Step[];
+}
+
+/** The workflow's jobs, by name. */
+export function workflowJobs(root: string): Readonly<Record<string, WorkflowJob>> {
 	const workflow = Bun.YAML.parse(readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8')) as {
-		jobs: Record<string, { strategy?: { matrix?: { include?: MatrixEntry[] } } }>;
+		jobs: Record<string, WorkflowJob>;
 	};
+	return workflow.jobs;
+}
+
+/** The parts of each pass-keyed job, as the workflow lists them. */
+export function workflowMatrices(
+	root: string,
+	jobs: Readonly<Record<string, WorkflowJob>> = workflowJobs(root),
+): Record<string, MatrixEntry[]> {
+	return Object.fromEntries(
+		Object.keys(PASS_KEYED).map((job) => [job, jobs[job]?.strategy?.matrix?.include ?? []]),
+	);
+}
+
+/** Hex digits of a job definition's hash that a key keeps: enough to tell definitions apart. */
+const DEFINITION_DIGITS = 16;
+
+/** The folders of the repository's own actions that `steps` use, such as `.github/actions/archive`. */
+const localActions = (steps: readonly Step[] | undefined): string[] =>
+	(steps ?? []).flatMap(({ uses }) => (uses?.startsWith('./') ? [uses.slice(2)] : []));
+
+/** An action's own file in its folder, which the workflow's runner reads. */
+const ACTION_FILE = 'action.yml';
+
+/**
+ * What every repository action that `job` uses holds, with the actions that those actions use in
+ * turn: each action's definition as it parses, so its comments do not count, and the bytes of the
+ * other files in its folder, such as a script that it runs.
+ */
+function actionContents(root: string, job: WorkflowJob | undefined): string[] {
+	const actions = new Map<string, { runs?: { steps?: readonly Step[] } }>();
+	const visit = (steps: readonly Step[] | undefined) => {
+		for (const folder of localActions(steps)) {
+			if (actions.has(folder)) continue;
+			const action = Bun.YAML.parse(readFileSync(join(root, folder, ACTION_FILE), 'utf8')) as {
+				runs?: { steps?: readonly Step[] };
+			};
+			actions.set(folder, action);
+			visit(action.runs?.steps);
+		}
+	};
+	visit(job?.steps);
+	return [...actions.keys()].sort().flatMap((folder) => {
+		const others = readdirSync(join(root, folder), { recursive: true, encoding: 'utf8' })
+			.filter((file) => file !== ACTION_FILE)
+			.map((file) => join(folder, file))
+			.filter((file) => statSync(join(root, file)).isFile())
+			.sort();
+		return [folder, JSON.stringify(actions.get(folder)), hashFiles(root, others)];
+	});
+}
+
+/**
+ * A hash of each pass-keyed job's definition: its steps, commands, tools, settings and matrix, as
+ * the workflow file parses, so its comments and layout do not count, and what the repository's own
+ * actions that it runs hold.
+ */
+export function jobDefinitions(
+	root: string,
+	jobs: Readonly<Record<string, WorkflowJob>> = workflowJobs(root),
+): Record<string, string> {
 	return Object.fromEntries(
 		Object.keys(PASS_KEYED).map((job) => [
 			job,
-			workflow.jobs[job]?.strategy?.matrix?.include ?? [],
+			hashOf(JSON.stringify(jobs[job] ?? null), ...actionContents(root, jobs[job])).slice(
+				0,
+				DEFINITION_DIGITS,
+			),
 		]),
 	);
 }
@@ -84,22 +159,31 @@ export function moduleHashes(
 	);
 }
 
-/** Each pass-keyed job's parts, by name, with their keys. */
+/**
+ * Each pass-keyed job's parts, by name, with their keys: the hashes of the files that each part
+ * reads, then the hash of its job's definition.
+ */
 export function passKeys(
 	matrices: Readonly<Record<string, readonly MatrixEntry[]>>,
 	hashes: InputHashes,
 	modules: InputHashes,
+	definitions: Readonly<Record<string, string>>,
 ): Record<string, Record<string, string>> {
 	return Object.fromEntries(
 		Object.entries(PASS_KEYED).map(([job, keyed]) => {
 			for (const name of keyed.hashes)
 				if (hashes[name] === undefined) throw new Error(`no hash named ${name} for ${job}`);
+			const definition = definitions[job];
+			if (definition === undefined) throw new Error(`no definition of ${job}`);
 			const entries = matrices[job] ?? [];
 			if (entries.length === 0) throw new Error(`the workflow lists no parts of ${job}`);
 			return [
 				job,
 				Object.fromEntries(
-					entries.map((entry) => [keyed.part(entry), keyed.key(entry, hashes, modules)]),
+					entries.map((entry) => [
+						keyed.part(entry),
+						`${keyed.key(entry, hashes, modules)}-${definition}`,
+					]),
 				),
 			];
 		}),
@@ -167,9 +251,10 @@ if (import.meta.main) {
 	const { GITHUB_REPOSITORY, GITHUB_REF, DEFAULT_BRANCH, HASHES } = process.env;
 	if (!GITHUB_REPOSITORY || !GITHUB_REF || !DEFAULT_BRANCH || !HASHES)
 		throw new Error('set GITHUB_REPOSITORY, GITHUB_REF, DEFAULT_BRANCH and HASHES, as CI does');
-	const matrices = workflowMatrices(root);
+	const jobs = workflowJobs(root);
+	const matrices = workflowMatrices(root, jobs);
 	const modules = moduleHashes(root, matrices['shader-compiler-plugin'] ?? []);
-	const keys = passKeys(matrices, JSON.parse(HASHES), modules);
+	const keys = passKeys(matrices, JSON.parse(HASHES), modules, jobDefinitions(root, jobs));
 	// A run restores the entries of its own ref and of the default branch.
 	const refs = [GITHUB_REF, `refs/heads/${DEFAULT_BRANCH}`];
 	const all = Object.values(keys).flatMap((parts) => Object.values(parts));
