@@ -93,17 +93,21 @@ for (const gpu of GPUS) {
 
 	test(`the opaque-only copy lowers the history on ${gpu}`, async ({ page }) => {
 		test.setTimeout(600_000);
-		// The transparent canvas makes the opaque-only copy differ from the composited color where a
-		// blended surface draws, so this measures the signal itself, apart from the alpha signal.
-		const off = await ghost(page, gpu, 'alpha', 'off');
-		const on = await ghost(page, gpu, 'alpha', 'opaque');
+		// The square is blended over an opaque wall, so the scene's alpha stays at one and only the
+		// opaque-only copy can find the surface that moved.
+		const off = await ghost(page, gpu, 'opaque', 'off');
+		const on = await ghost(page, gpu, 'opaque', 'opaque');
 		console.log(
 			`TAAFIX opaque on ${gpu}: error ${on.error.toFixed(1)} levels with the mask, ${off.error.toFixed(1)} without; captured ${on.frameLeft.toFixed(1)} left and ${on.frameRight.toFixed(1)} right, reference ${on.referenceArrived.toFixed(1)} arrived and ${on.referenceRight.toFixed(1)} right`,
 		);
 		expect(off.level, 'the square drew nothing').toBeGreaterThan(4);
-		// The comparison's effect on this scene is recorded, not required: the run shows whether the
-		// history moved at all, and the record says what it measured.
-		expect(Number.isFinite(on.error) && Number.isFinite(off.error)).toBe(true);
+		// The copy holds the wall where the square arrived, and this frame's color holds the square,
+		// so the comparison drops that history. Without the signal the wall stays in the square's
+		// history, which the figure shows.
+		expect(
+			on.error,
+			`the mask left ${on.error.toFixed(1)} levels of the wall against ${off.error.toFixed(1)}`,
+		).toBeLessThan(Math.max(1.5, off.error * 0.8));
 	});
 
 	test(`the phone path draws the full path's picture on ${gpu}`, async ({ page }) => {

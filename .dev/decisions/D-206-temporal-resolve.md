@@ -312,6 +312,12 @@ What the figures say:
 
 `bun run bench:gpu-check` compared the branch with main's merge base, commit 9369b1380, in Chrome on the Mac's GPU. It did not judge the comparison, because the benchmark pages differ between the two commits. Its figures: S4 at medium 4.26 to 4.28 ms (+0.6%), S6 at medium 4.74 to 4.52 ms (-4.9%), S4 at high 4.44 to 4.44 ms (-2.3%) and S6 at high 4.79 to 5.14 ms (+7.3%). The resolve is off on every preset, so a page draws it only where a sketch turns it on, which no benchmark scene does. The figures are therefore noise in the comparison rather than the resolve's cost, and all four sit under the 25% GPU gate.
 
+### The silent stand-in
+
+The resolve binds a stand-in texture when the opaque-only copy has no planned id. `crates/null3d-render/src/frame_graph.rs:4966` takes the copy's sampled id and falls back to zero, and `crates/null3d-render/src/taa.rs:385-391` binds the parity-0 history in its place. The shader compares the composited color with whatever sits at binding 7, and `wgsl/taa.wgsl:243` reads only the signal bits, so a missing copy does not fail: the resolve quietly compares the frame with its own history and returns a small, plausible figure. The block's second signal field was meant to report whether the copy is bound, but `crates/null3d-render/src/taa.rs:464` writes it as one and no shader reads it.
+
+The copy is declared whenever the resolve draws (`frame_graph.rs:3035`), so its id should exist on every frame that reads it. The stand-in is a leftover from when the copy depended on a blended surface drawing, and the comment above it still says so. It should refuse to draw rather than substitute: `upload_taa` should fail when the signals ask for the comparison and no copy is planned, because a figure taken from a fallback is exactly the failure that the rules against silent failures exist to prevent. The third of a level that the transparent scene moved may be such a figure, and the opaque-wall test decides.
+
 ### The decision
 
 The 21 October ruling stands: the resolve does not ship for 0.1.0, TAA is dropped rather than deferred, and the many-lights prototype (M3-F3) and the temporal upscaler (M3-F10) stay dropped with it. These fixes do not change that ruling. They answer the D-129 faults and make a later attempt cheaper to measure. The ruling rests on cost first: the WebGL2 path costs several times what a phone can pay in a busy scene, and this addendum adds one more cost it does not measure, the phone path's own GPU time, which stays the open figure.
