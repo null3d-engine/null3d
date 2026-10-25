@@ -45,10 +45,11 @@ The cost waits for a quiet machine, because a figure from a loaded one would say
 one fragment, and the plain and directional builds swap in turns for three rounds each. Before the
 timing the page draws one frame of each side and compares them, so a direction that the engine
 dropped fails the run instead of reporting no cost. On 25 October 2026 the machine stayed above the
-guide's load ceiling all day, and the untimed trial at a load of 84 read 0.99 ms plain against
-1.08 ms directional on WebGPU, with 55.71% of the pixels moved by the direction. That trial is not
-a figure. [Benchmarks](../benchmarks.md#directional-light-maps) gives the command for a quiet run,
-whose medians go into the table above.
+guide's load ceiling all day. Untimed trials at a load of about 100 read the directional side 0.06
+ms slower on every path: 0.99 against 1.05 ms on WebGPU, 1.00 against 1.06 in compatibility mode,
+and 1.48 against 1.54 on WebGL2, with about 55.5% of the pixels moved by the direction. A trial is
+not a figure. [Benchmarks](../benchmarks.md#directional-light-maps) gives the command for a quiet
+run, whose medians are added to the table above.
 
 ## Decision
 
