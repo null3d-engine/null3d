@@ -124,9 +124,10 @@ the image manifest's showcase tests do.
 
 The real GPU's references are on the branch. The software GPU's two references are not: only a CI
 run of the pushed branch draws them. That run saves the two missing images as candidates.
-Accepting them with `bun run images:review --ci <run> --accept` makes them references. Each test
-then compares against the picture that the same run drew, and the next run on the branch is the
-green one for that set. The branch keeps no local-reference note, because neither software picture
+Accepting them with `bun run images:review --ci <run> --accept` makes them references. Run
+40223500231 drew them on `33122b8eb`; the later `e30cd473c` changed only documentation and the
+remake command, so they still apply to the scene. Each test then compares against the picture that
+the same run drew, and the next run on the branch is the green one for that set. The branch keeps no local-reference note, because neither software picture
 is kept from a local drawing.
 
 The earlier version of this addendum drove `examples/input`, a basic demo, because a showcase was
