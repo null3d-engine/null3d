@@ -334,7 +334,7 @@ M2-E1 reserved the opcode numbers that other M2 tasks need, so lanes that work a
 ## Shaders in a packed add-on
 
 - A package's WGSL is compiled while the package is built, not in the project that installs it. `tools/lib/packages.ts` compiles each `.wgsl` file in a package's `src/` and writes `lib/<file>.wgsl.js`, in the shape that the Vite plugin gives a project's own WGSL: the shader's records, with its text in tables that it reads on first use, and a module for each set of a custom material's builds, which a device loads when it first needs one ([D-54](decisions/D-54-addon-modules.md)).
-- The compile runs on the calling thread, through `compileWgslSync` in the plugin, so the pack keeps its order. A shader that does not compile stops the pack with its file, line and column. The raw file stays out of the tarball, and the pack check refuses it and requires the compiled module.
+- The compile runs through the plugin's compiler pool, on worker threads. The add-ons build at the same time, once the engine and the plugin have. A shader that does not compile stops the pack with its file, line and column. The raw file stays out of the tarball, and the pack check refuses it and requires the compiled module.
 
 ## Loading WebAssembly under a strict policy
 
