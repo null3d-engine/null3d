@@ -23,7 +23,7 @@ const FILES = {
  */
 const THRESHOLD = 16;
 
-/** The tree's bias: about four times nearer, where the crown fills the picture. */
+/** The tree's bias: about four times nearer, where the crown spans about 100 of the 640 pixels. */
 const TREE_BIAS = 4;
 
 export default defineSketch(async ({ scene, assets, post, quality }) => {

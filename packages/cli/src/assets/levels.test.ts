@@ -347,10 +347,10 @@ describe('the coarsest-first vertex order', () => {
 
 describe('texture coordinates in the levels error', () => {
 	// The picture `asset-bent-grid` covers this weight: its grid's coarsest level switches about
-	// 3.2 m out, so a finer level draws near the camera, and without the weight that level draws
-	// with its texture scrambled. The test below reads the error itself: with the shipped weight of
-	// one sixty-fourth of the grid's longest side, the bent grid reports a coarsest error above
-	// 0.11 units. D-137 gives the picture's figures.
+	// 4.8 m out, so a finer level draws near the camera, and without the weight the coarsest level
+	// draws there with its texture scrambled. The test below reads the error itself: with the
+	// shipped weight of one sixty-fourth of the grid's longest side, the bent grid reports a
+	// coarsest error above 0.11 units. D-137 gives the picture's figures.
 	it('counts a texture that would slide, where a flat surface otherwise simplifies free', async () => {
 		// A flat grid simplifies to a few triangles with no geometric error. Texture coordinates
 		// that repeat across it keep the simplifier from sliding them, so a level's error grows.

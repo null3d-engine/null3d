@@ -393,13 +393,16 @@ Blender without levels still gets them (follow-up 5).
   error, so the switch lies far out. The picture sets the threshold to 16 pixels, the most that the
   setting takes, and gives the tree a bias of 4. At a 640 by 360 picture and a 40-degree lens, the
   rule's factor is 30.9. The level's error of 0.424 m then switches it 13 m out. The bias divides
-  that to 3.3 m, and the camera's nearest point lies at 3.8 m. Without the step the tool plans no
-  level for the crown at all. Every edge of a card is an open border, which the simplifier keeps, so
-  the crown's triangles never fall. The picture then draws all 40 cards at their own size, and 0.9
-  percent of its pixels differed from the reference, against the picture tests' limit of 0.1
-  percent. The unit tests hold the step's own rules: `keeps a share of the cards at each level,
-  grown about their middles`, `writes each card level its own positions, and shares the wood
-  stream`, and `treats a card folded along its middle as a card, as Creek makes its leaves`.
+  that to 3.3 m, and the camera's nearest point lies at 3.8 m. The crown spans about 100 of the
+  picture's 640 pixels. The fixture has a second card level, which keeps 10 cards at an error of
+  0.636 m: with the bias of 4 it switches at 4.9 m, past the camera, so the picture draws the first
+  one. Without the step the tool plans no level for the crown at all. Every edge of a card is an
+  open border, which the simplifier keeps, so the crown's triangles never fall. The picture then
+  draws all 40 cards at their own size, and 0.9 percent of its pixels differed from the reference,
+  against the picture tests' limit of 0.1 percent. The unit tests hold the step's own rules:
+  `keeps a share of the cards at each level, grown about their middles`, `writes each card level
+  its own positions, and shares the wood stream`, and `treats a card folded along its middle as a
+  card, as Creek makes its leaves`.
 
 ## Addendum: texture coordinates in the level error (22 October 2026, M3-L2)
 
