@@ -171,6 +171,13 @@ webgpu, compatibility mode and webgl2 on SwiftShader, and the light reaches the 
 levels. The run took 8 to 9 seconds on each tier, at the Mac's load of 82 to 90 on 18 cores. The
 fault was never the machine: it was the destroyed buffer, and it happened at every load.
 
+Two figures in the runs need their true reading. The scene suite passed 870 of 870 when it ran on a
+quieter machine; the checker, under load, measured 868 of the same 870, where two tests stopped at
+their time limit in files that this branch does not touch. And the back ends import only
+`environment-words`, while the two generator modules still import the steps module. Those modules
+load on first use, so a page that uses no feature downloads neither, and the download test passes
+10 of 10.
+
 ### The cost
 
 | Measure | Cost |
