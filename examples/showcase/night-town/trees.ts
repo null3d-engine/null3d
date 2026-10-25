@@ -248,7 +248,8 @@ export async function createTrees(
 	pines.object.setCastShadows(true);
 	pines.object.setReceiveShadows(true);
 	// WebGL2 has no compute pass, so the page's count draws the pines there. On WebGPU the pass
-	// writes the count word every frame, and the frame draws that.
+	// writes the count word every frame, and the frame draws that: the page leaves its own count at
+	// the capacity, so the pines on screen can only be the ones that the GPU counted.
 	const pineCount =
 		engine.capabilities.tier === 'webgl2'
 			? undefined
@@ -333,9 +334,11 @@ export async function createTrees(
 	return {
 		fit(preset) {
 			const drawn = Math.min(PINES[preset], spots.length);
-			// The page's count draws the pines on WebGL2, and the compute pass writes it on WebGPU.
-			pines.setCount(drawn);
-			if (pineCount !== undefined) render.setPassUniforms(pineCount, [drawn]);
+			// On WebGL2 the page's count draws the pines. On WebGPU only the pass's count does: the
+			// page's stays at the capacity, so a picture that shows the preset's pines shows that the
+			// GPU's count reached the draw.
+			if (pineCount === undefined) pines.setCount(drawn);
+			else render.setPassUniforms(pineCount, [drawn]);
 		},
 	};
 }

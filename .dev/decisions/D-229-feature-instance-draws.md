@@ -358,15 +358,26 @@ the town, each casting shadows. Until now the page set their count for the quali
 
 The pines now record through the hook. The page writes each pine's world matrix once with
 `setInstances`. A compute pass writes the count word for the current preset, and
-`render.setPassUniforms` changes the pass's values when the preset changes. Their material is a surface function that
-returns `defaultSurface`, so the lighting is the standard material's, and the draw casts and
-receives shadows as the batch did. On WebGL2, which has no compute pass, the page's count draws the
-pines, as this record's WebGL2 path describes.
+`render.setPassUniforms` changes the pass's values when the preset changes. Their material is a
+surface function that returns `defaultSurface`, so the lighting is the standard material's, and the
+draw casts and receives shadows as the batch did.
 
-What it proved: `demo-night-town` draws the same frame as before on WebGPU, in compatibility mode
-and on WebGL2, against the references the demo already had. So the hook's rows, its count word, the
-conversion and the shadow views' count draw what a plain instance batch drew. A surface-function
-material on an instance draw needs nothing new in the engine.
+On WebGL2 the hook is not exercised: that path has no compute pass, so the page's count draws the
+pines, as this record's WebGL2 path describes. The claims below are about the WebGPU path.
+
+Two measurements, because one alone proves too little. The picture is the first. `demo-night-town`
+draws the same frame as before on WebGPU, in compatibility mode and on WebGL2, against the
+references the demo already had. So the hook's rows, its count word, the conversion and the shadow
+views' count draw what a plain instance batch drew. A surface-function material on an instance draw
+needs nothing new in the engine.
+
+A picture that matches alone cannot show that the hook drew it. A page that ignored the hook and
+drew from its own count would match just as well. So the demo leaves the page's count at the
+pines' capacity on the WebGPU path, and the pass's word is the only one that thins them.
+The second measurement then sets that word to two values: `tests/image/pine-count.spec.ts` holds the
+demo's frame at Low and at Ultra, and compares the pixels. Two frames at Low moved 0.00 per cent
+between them, and Low against Ultra moved 53.14 per cent, on the Mac's GPU on 26 October 2026. With
+the page's count at the capacity in both, only the pass's count can make that difference.
 
 One limit belongs to the author's machine, not to the hook. The demo's software-GPU picture times
 out at 180 s there, and the unchanged demo times out the same way. That reference therefore comes
