@@ -9,8 +9,9 @@ Task: M3-R7.
 
 Summary: On S4 at the Low preset, the wide shadow filter is compiled but never taken. That build
 measured 4.084 ms of GPU time per frame, and the build without it measured 4.004 ms. The 0.08 ms
-difference is about two per cent, and it sits inside the run's scatter. It is also seven times below
-the cost that made the study's engine remove its own branch. The wide path stays in every build.
+difference is about two per cent, and it sits inside the run's scatter. It is also about nine times
+below the cost that made the study's engine remove its own branch. The wide path stays in every
+build.
 
 ## Question
 
@@ -48,11 +49,12 @@ Apple M5 Max.
 | Without it (d4abe39) | 1.614, 4.004, 4.152 | 4.004 |
 
 Round by round, the build without the wide path against the one with it: -3.5%, -3.2% and +1.7%. The
-comparison's median change is -3.2%, or -0.080 ms. Its reported noise, 0.4%, comes from the median
-absolute deviation. That figure sets aside the one round that disagrees. Read the scatter of all
-three rounds instead, about 2.5% each way. Two rounds put the build without the wide path about 3%
-faster, and one puts it 1.7% slower. So the run does not resolve a difference of this size. The
-benchmark's own GPU rule calls the page "same", since the change is below 0.3 ms.
+median of the three rounds' changes is -3.2 per cent. The medians themselves differ by 0.080 ms, or
+2.0 per cent. The comparison's reported noise, 0.4%, comes from the median absolute deviation. That
+figure sets aside the one round that disagrees. Read the scatter of all three rounds instead, about
+2.5% each way. Two rounds put the build without the wide path about 3% faster, and one puts it 1.7%
+slower. So the run does not resolve a difference of this size. The benchmark's own GPU rule calls the
+page "same", since the change is below 0.3 ms.
 
 The machine and what it means for the figure. The run went directly, not through the job queue. The
 queue kept recreating a drain marker that held the job back while the machine sat idle. The run's
