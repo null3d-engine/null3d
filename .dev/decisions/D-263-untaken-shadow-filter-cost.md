@@ -56,7 +56,7 @@ Apple M5 Max.
 | Without it (d4abe39) | 1.614, 4.004, 4.152 | 4.004 |
 
 Round by round, the build without the wide path against the one with it: -3.5%, -3.2% and +1.7%. In
-milliseconds those differences are -0.059, -0.130 and +0.068. The median of the three rounds' changes
+milliseconds those differences are -0.059, -0.131 and +0.068. The median of the three rounds' changes
 is -3.2 per cent. The medians themselves differ by 0.080 ms, or 2.0 per cent. The comparison's
 reported noise, 0.4%, comes from the median absolute deviation. That figure sets aside the one round
 that disagrees. Read the scatter of all three rounds instead, about 2.5% each way. Two rounds put the
