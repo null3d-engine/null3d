@@ -11,11 +11,16 @@ import {
 	baseTreeDamaged,
 	buildCodeHash,
 	buildLog,
+	cargoHomeRemap,
 	cargoTargetBase,
 	checkHeapStart,
+	checkNoMachineFolders,
+	compilerOptions,
 	currentArtifactKeys,
 	keepOnlyArtifacts,
+	librarySourceRemap,
 	lockedVersion,
+	machineFolders,
 	parseOptions,
 	readArtifacts,
 	releaseTarget,
@@ -219,6 +224,73 @@ describe('checkHeapStart', () => {
 	it('fails on any other count, which would move the heap onto its pages', () => {
 		expect(() => checkHeapStart(withMemory(17), withMemory(17))).toThrow('BINDGEN_PAGES');
 		expect(() => checkHeapStart(withMemory(17), withMemory(19))).toThrow('19 pages');
+	});
+});
+
+describe('librarySourceRemap', () => {
+	const sysroot = '/Users/someone/.rustup/toolchains/nightly-2026-09-26-aarch64-apple-darwin';
+
+	it("names the library source by the toolchain's own fixed path", () => {
+		const version = 'rustc 1.92.0-nightly\nbinary: rustc\ncommit-hash: 5ceaf6608eb3\nhost: x\n';
+		expect(librarySourceRemap(sysroot, version)).toBe(
+			`--remap-path-prefix=${sysroot}/lib/rustlib/src/rust=/rustc/5ceaf6608eb3`,
+		);
+	});
+
+	it('fails when the compiler names no commit, rather than build bytes that differ by machine', () => {
+		expect(() => librarySourceRemap(sysroot, 'rustc 1.92.0\ncommit-hash: unknown\n')).toThrow(
+			'no commit hash',
+		);
+	});
+});
+
+describe('cargoHomeRemap', () => {
+	it("names cargo's home, where the downloaded crates' sources live, by a fixed path", () => {
+		expect(cargoHomeRemap('/home/runner/.cargo')).toBe(
+			'--remap-path-prefix=/home/runner/.cargo=/cargo',
+		);
+	});
+});
+
+describe('machineFolders', () => {
+	it('gives each folder one trailing slash, so a path inside it matches', () => {
+		expect(machineFolders(['/home/runner/.cargo/', '/home/runner//', '/srv/null3d'])).toEqual([
+			'/home/runner/.cargo/',
+			'/home/runner/',
+			'/srv/null3d/',
+		]);
+	});
+
+	it('leaves out the root folder, which starts every absolute path', () => {
+		expect(machineFolders(['/', '/home/runner'])).toEqual(['/home/runner/']);
+	});
+});
+
+describe('compilerOptions', () => {
+	it("hands cargo a variant's options in order, then the added ones, each whole", () => {
+		const added = ['--remap-path-prefix=/Users/some one/.cargo=/cargo'];
+		const options = compilerOptions(VARIANTS[1]!.rustflags, added).CARGO_ENCODED_RUSTFLAGS;
+		expect(options?.split('\x1f')).toEqual([...VARIANTS[1]!.rustflags.split(' '), ...added]);
+		expect(compilerOptions(VARIANTS[0]!.rustflags, []).CARGO_ENCODED_RUSTFLAGS).toBe(
+			VARIANTS[0]!.rustflags.split(' ').join('\x1f'),
+		);
+	});
+});
+
+describe('checkNoMachineFolders', () => {
+	const folders = ['/home/runner/.rustup/toolchains/x/', '/home/runner/'];
+	const module = (text: string) => new TextEncoder().encode(`\0asm${text}`);
+
+	it('passes a module whose paths are all fixed or relative', () => {
+		const paths = '/rustc/5ceaf66/library/core/src/str.rs crates/null3d-render/src/taa.rs';
+		expect(() => checkNoMachineFolders(module(paths), folders, 'the core')).not.toThrow();
+	});
+
+	it('names each folder of the build machine that the module holds', () => {
+		const path = '/home/runner/.rustup/toolchains/x/lib/rustlib/src/rust/library/core/src/str.rs';
+		expect(() => checkNoMachineFolders(module(path), folders, 'the core')).toThrow(
+			"the core holds the build machine's folder /home/runner/.rustup/toolchains/x/ and /home/runner/",
+		);
 	});
 });
 
@@ -442,6 +514,8 @@ describe('the artifact cache', () => {
 });
 
 describe('buildLog', () => {
+	// The two commands take well under a second alone. On a machine loaded several times past its
+	// cores, starting a process and reading its end took longer than the default 30 seconds.
 	it("prints each line at once with the build's name, keeps it, and names a command that failed", async () => {
 		const printed: [string, boolean][] = [];
 		const log = buildLog('tools', (line, stderr) => printed.push([line, stderr]));
@@ -463,7 +537,7 @@ describe('buildLog', () => {
 		expect(log.text()).toBe(
 			`${printed.map(([line]) => line.slice('[tools] '.length)).join('\n')}\n`,
 		);
-	});
+	}, 120_000);
 });
 
 describe('baseTreeDamaged', () => {
