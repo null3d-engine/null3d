@@ -1,6 +1,6 @@
 # D-241: A vegetation foundation add-on, with GPU grass, generated plants and wind on custom materials
 
-Status: decided by the owner on 24 October 2026. Not built yet: planned as M3-V1 to M3-V12. Open: which wind method trees use by default, per vertex or by branch poses, which M3-V10 measures for the owner's ruling. Date: 2026-10-24.
+Status: decided by the owner on 24 October 2026. Not built yet: planned as M3-V1 to M3-V12. Open: which wind method trees use by default, per vertex or by branch poses, which M3-V10 measures for the owner's ruling. On 25 October 2026 the wind field moved to an add-on of its own, which the plants read (see the addendum on fluid wind). Date: 2026-10-24.
 
 Summary: Vegetation becomes the eleventh foundation add-on. It grows trees, shrubs, ferns, flowers and grass from a few numbers per species at first use, and places them by ecological rules. It draws grass on the GPU, moves every plant in one wind field and hands far trees to impostors. Creek is its first user and drops its Blender plant models, about 3.1 MB. Wind stays in custom materials' vertex offsets. Custom materials gain the standard material's alpha to coverage, alpha hash, level and band fades and cut-out shadows.
 
@@ -393,14 +393,40 @@ light with no crown occlusion, so the leaves differ by their own paint alone. Cr
 painted shadowing as well. The rest of that gap belongs to M3-V7, not to the atlas. That task adds the
 leaf material with crown-bent normals, a tint for each tree and crown occlusion.
 
-## Addendum: fluid wind lives in the vegetation add-on, 25 October 2026
+## Addendum: fluid wind is an add-on of its own, 25 October 2026
 
 The owner asked for the M3 plan to measure proper fluid-simulation wind, settable by preset and
-adjusted by the governor, and ruled the same day: "Keep it in the vegetation add-on, not its own".
-The wind therefore adds no add-on package of its own. Its field, its presets and its governor
-steps belong to the vegetation add-on, and the engine changes it needs are made there.
+adjusted by the governor. The first ruling that day was "Keep it in the vegetation add-on, not its
+own". The owner then asked whether the wind should be an add-on of its own, and approved the move
+later the same day. The reasons:
 
-The plan's new tasks carry the work: M3-V13 (compute passes that keep their state between frames),
-M3-V14 (measure fluid wind on devices and set its budgets), M3-V15 (the wind field in the vegetation
-add-on), M3-V16 (preset settings and governor steps) and M3-V17 (plants, grass and floating leaves
-answer the air).
+- Plants are not the wind's only readers. The plan also gives the field to dust, smoke and rain in
+  the particles add-on (M3-V17), and to flags and water surfaces, which M3-V14 times. The battle
+  demo's flags read it too, because M3-V12 moves each demo's own wind formula to the field. So do
+  Creek's floating leaves.
+- It passes [D-173](D-173-addon-hooks.md) ruling 4's test, because other add-ons build on it.
+- A page pays nothing for a feature that it does not use ([D-54](D-54-addon-modules.md)). A game
+  with flags and smoke but no plants must not need the vegetation add-on to get wind.
+- No wind code exists yet, so the move changes only the plan and these records. After the API
+  freezes at 0.3.0, in M4, the same move would break pages.
+
+The cost is one more package to publish, version and document. Vegetation also becomes the first
+add-on that depends on another add-on. D-173's addendum of the same day gives the rule for that.
+
+| The wind add-on, working name `@null3d/wind` | The vegetation add-on |
+| --- | --- |
+| The analytic field of place and time. It is the whole field on the lowest tier, and the far field and the grid's inflow on every tier | Wind per vertex (M3-V7), and branch poses with their springs (M3-V10) |
+| The grid that follows the camera, the solver and the fixed step | The grass's compute pass, which reads the field (M3-V8) |
+| The base wind, gusts and pushes at a point | The wind bytes in each plant's vertex colors, and the branch records |
+| The one sampling function, in the wind add-on's own WGSL namespace (M3-D8) | The scatter's grid of canopy cover, which it gives the wind as a drag input |
+| Its feature's settings, budgets, governor steps and overlay row. Its budget is its own, not a share of the vegetation add-on's | The falling and drifting leaves, which ride the field (M3-V17) |
+
+- Vegetation lists the wind add-on as a dependency, so one install still gives plants that move.
+- Other readers take a plain input in the plan: the wind texture and its box. Examples are the
+  particles add-on (M3-V17), water ripples and a flag. The page connects the two. A sample
+  is one texture read through the box, so they need no code from the wind add-on and no dependency
+  on it. M3-V14 times that read.
+- The engine changes stay engine hooks that any add-on may use, such as M3-V13's compute passes that
+  keep their state between frames.
+- The task IDs stay. M3-V15 builds the wind add-on, and M3-V16 declares the wind's feature in it.
+  M3-V13, M3-V14 and M3-V17 keep their scope.

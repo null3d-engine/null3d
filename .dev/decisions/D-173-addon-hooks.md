@@ -394,3 +394,22 @@ pass sorts the chosen rows there, and the allocation check covers the path."
 
 H5's table row above says "Splat sorting" as the first user, and this addendum reads that as the
 add-on's selection. [Tasks on the job workers](../../docs/api/tasks.md) now says the same.
+
+## Addendum, 25 October 2026: wind is the twelfth foundation, and one add-on may build on another
+
+The owner made the fluid wind an add-on of its own, working name `@null3d/wind`
+([D-241](D-241-vegetation-foundation.md), the addendum on fluid wind). It passes ruling 4's test:
+vegetation, particles and water read the field, and so would later add-ons for hair or weather.
+Rule 13 in AGENTS.md lists it.
+
+Vegetation is the first foundation that depends on another add-on. The rule for that:
+
+- An add-on imports another add-on only by its package name, or by a sub-path that the package
+  exports. It never imports a relative path into the other add-on's folder.
+- It lists the other add-on as a dependency at the exact version. Every foundation pins the exact
+  engine version and releases with the engine, so the two always release in step.
+- It never copies the other add-on's code. Each feature lives in one place, as rule 11 says.
+
+`tools/check-addon-imports.ts` checks only the engine's entry points today. M3-V15 extends it with
+the wind add-on. It then refuses a relative import from one package into another package's folder.
+It also refuses an import of a sub-path that the other package does not export.
