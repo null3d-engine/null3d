@@ -8,8 +8,14 @@ in `node_modules/@null3d/engine/docs/`. They match the installed version.
 
 ## Before you build a feature
 
-A request may need a capability that null3D has not built. Settle its state before you design the
-scene.
+A request may need a capability that null3D has not built. A user who asks for such a feature brings
+three things:
+
+- What they want to see on screen, with a reference picture or the effect in another engine.
+- The devices and browsers it must run on, such as a mid-range Android phone.
+- The cost it may take, in milliseconds per frame or lowest frame rate.
+
+Settle its state before you design the scene.
 
 1. Read the docs page for the feature. Its status says whether the call exists. A `planned` page or
    a part marked "not built yet" is not in this version: tell the user, and use the workaround the
@@ -34,7 +40,8 @@ scene.
 | Rigid bodies, joints and character movement | the physics add-on | not built yet; run Rapier or cannon-es in the sketch worker |
 | Text in the scene | the MSDF text add-on | not built yet; use HTML labels |
 | A river or a lake, with waves, foam and soft shores | `@null3d/water` | built; see the docs page api/water |
-| Trees, shrubs, grass and wind | the vegetation add-on | not built yet |
+| Trees, shrubs, ferns, grass and their placement by ecological rules | `@null3d/vegetation` | built (generator, scatter and atlases; grass and materials not built yet) |
+| Wind on plants, flags, cloth and smoke | `@null3d/wind` | not built yet; move each thing with your own noise |
 | three.js look modes for a port | `@null3d/three-compat` | built |
 
 ## Rules

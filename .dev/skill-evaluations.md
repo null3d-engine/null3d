@@ -3,35 +3,38 @@
 The plan asks for an evaluation of each skill. Its cases run with and without the skill, and the
 run records the expectation pass rate, the time and the tokens. A set of trigger queries tests
 whether the skill's description finds the requests that it should. This page records the run of
-25 October 2026 for `skills/null3d-develop`, after it gained the feature-intake section and the
-"search before you hand-roll" table.
+26 October 2026 for `skills/null3d-develop`, on the final form of its feature-intake section and
+its "search before you hand-roll" table.
 
-Result: with the skill, 55 of 60 graded expectations passed. Without it, 51 of 60 passed. The
-trigger queries selected the right skill for 20 of 20. The skill's advantage is small, and five of
-the ten cases scored the same either way.
+Result: with the skill, 55 of 60 graded expectations passed, 92%. Without it, 49 of 60 passed,
+82%. The trigger queries selected the right skill for 20 of 20. The skill therefore meets the
+90% expectation and trigger gates that section 12.6 proposes for release 0.3.
 
 ## What ran
 
 | Item | Value |
 | --- | --- |
-| Skill | `skills/null3d-develop/SKILL.md`, SHA-256 `668505f56da6a33766dde59fbf76701fe373a15b6896ce3ce720f85b1c67727e`, 256 lines |
+| Skill | `skills/null3d-develop/SKILL.md`, SHA-256 `8a46af24c8205da19ccc0248b0c7e0746c71f617cf2f7c0f809f19acf28f663e`, 260 lines |
 | Cases | `skills/null3d-develop/evals/evals.json`, 10 cases and 60 expectations |
 | Trigger queries | `skills/null3d-develop/evals/trigger-queries.json`, 20 queries |
-| Date | 25 October 2026, on the milestone branch |
-| Model | the account's default model through the Claude Code command line (deepseek-flash, one million tokens of context) |
-| Tools the runs held | read, file search and directory listing; no file writes, so every answer is the run's final message |
+| Date | 26 October 2026, on the milestone branch |
+| Model | deepseek-flash[1m] through the Claude Code command line |
+| Tools | read, file search and directory listing; no file writes, so every answer is the run's final message |
 
 ## Method
 
 Two conditions for every case, one run each:
 
 - **With the skill.** The run reads `skills/null3d-develop/SKILL.md` first and follows it and the
-  files that it points to. Every one of the ten runs read the skill file.
-- **Without it.** The run is told that the skill is not installed, and it may read nothing under
-  `skills/` or `.claude/skills/`. It keeps the engine's docs under `docs/`, which a project that
-  installs the engine has. No baseline run read a file under `skills/`; the transcripts show it.
+  files that it points to. Every one of the ten runs read the skill file, and each read 2 to 11
+  more files under `skills/`.
+- **Without it.** The run is told that the skill is not installed, and that it may read nothing
+  under `skills/` or `.claude/skills/`. It keeps the engine's docs under `docs/`. No baseline run
+  read a file under either folder; the session transcripts show it.
 
 The repository is the project in both conditions, so both runs see the engine's source and docs.
+Case 2's input file was copied outside `skills/` for both conditions, so the baseline could read it
+without breaking the rule above.
 
 Grading is blind per case. A separate model call receives the case's request, its expectations and
 both answers as A and B. The order swaps by case, and the judge is told to ignore any sentence about
@@ -50,21 +53,17 @@ counts the context that the harness read from its cache.
 
 | Case | Expectations | With the skill | Without it | With: run | With: tokens | Without: run | Without: tokens |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | 8 | 7 | 7 | 357 s, 39 turns | 116,019 in, 1,938,944 cached, 22,620 out | 250 s, 37 turns | 107,207 in, 1,633,536 cached, 42,878 out |
-| 2 | 7 | 7 | 6 | 129 s, 21 turns | 91,604 in, 1,218,048 cached, 19,570 out | 102 s, 15 turns | 64,278 in, 464,384 cached, 15,845 out |
-| 3 | 7 | 6 | 6 | 229 s, 41 turns | 94,130 in, 1,938,048 cached, 35,608 out | 130 s, 28 turns | 75,987 in, 815,872 cached, 21,438 out |
-| 4 | 6 | 4 | 5 | 125 s, 35 turns | 80,918 in, 1,471,232 cached, 16,693 out | 241 s, 31 turns | 73,586 in, 1,342,208 cached, 18,050 out |
-| 5 | 6 | 5 | 4 | 212 s, 32 turns | 63,239 in, 838,784 cached, 15,071 out | 99 s, 27 turns | 76,115 in, 406,528 cached, 13,951 out |
-| 6 | 4 | 4 | 4 | 163 s, 20 turns | 82,802 in, 1,164,160 cached, 24,601 out | 167 s, 32 turns | 99,896 in, 1,609,984 cached, 23,566 out |
-| 7 | 4 | 4 | 4 | 108 s, 30 turns | 74,734 in, 1,126,528 cached, 14,483 out | 116 s, 19 turns | 71,980 in, 726,528 cached, 17,754 out |
-| 8 | 6 | 6 | 6 | 6 s, 2 turns [^1] | 61,656 in, 1,132,160 cached, 13,596 out | 55 s, 15 turns | 47,159 in, 357,248 cached, 7,432 out |
-| 9 | 6 | 6 | 4 | 7 s, 2 turns [^1] | 47,642 in, 479,744 cached, 9,477 out | 7 s, 2 turns [^1] | 47,952 in, 497,280 cached, 9,245 out |
-| 10 | 6 | 6 | 5 | 174 s, 26 turns | 67,849 in, 845,696 cached, 25,229 out | 233 s, 42 turns | 83,789 in, 1,937,024 cached, 34,734 out |
-| **All** | **60** | **55** | **51** | | | | |
-
-[^1]: Two runs ended with a background step, which the command line reports apart from the main
-    turn. Its time and turn count cover the last step only; the run took minutes in wall time. Each
-    answer is the full text from its transcript.
+| 1 | 8 | 7 | 8 | 18 turns, 111 s | 143,925 in, 917,888 cached, 16,921 out | 35 turns, 189 s | 110,239 in, 1,500,928 cached, 31,985 out |
+| 2 | 7 | 7 | 6 | 23 turns, 123 s | 75,471 in, 772,992 cached, 18,261 out | 29 turns, 118 s | 65,535 in, 866,816 cached, 18,335 out |
+| 3 | 7 | 7 | 6 | 35 turns, 199 s | 88,993 in, 1,652,096 cached, 32,026 out | 26 turns, 144 s | 77,426 in, 753,280 cached, 24,752 out |
+| 4 | 6 | 5 | 3 | 37 turns, 96 s | 66,305 in, 1,254,528 cached, 13,404 out | 33 turns, 101 s | 98,298 in, 1,526,656 cached, 15,098 out |
+| 5 | 6 | 4 | 3 | 30 turns, 85 s | 90,064 in, 1,079,040 cached, 11,982 out | 19 turns, 65 s | 57,721 in, 541,056 cached, 8,230 out |
+| 6 | 4 | 4 | 3 | 27 turns, 130 s | 79,084 in, 979,712 cached, 20,191 out | 32 turns, 77 s | 62,595 in, 1,031,808 cached, 9,247 out |
+| 7 | 4 | 4 | 4 | 30 turns, 118 s | 63,223 in, 1,116,544 cached, 18,065 out | 18 turns, 66 s | 51,576 in, 430,720 cached, 9,917 out |
+| 8 | 6 | 6 | 6 | 23 turns, 62 s | 74,410 in, 806,912 cached, 8,461 out | 12 turns, 35 s | 70,602 in, 244,992 cached, 4,195 out |
+| 9 | 6 | 5 | 5 | 27 turns, 90 s | 43,467 in, 865,792 cached, 13,028 out | 17 turns, 55 s | 40,968 in, 360,320 cached, 7,428 out |
+| 10 | 6 | 6 | 5 | 19 turns, 105 s | 90,877 in, 764,928 cached, 14,226 out | 31 turns, 174 s | 60,618 in, 816,896 cached, 25,836 out |
+| **All** | **60** | **55** | **49** | | | | |
 
 The trigger queries: 20 of 20 selected the right skill. The ten develop queries all chose
 `null3d-develop`, the two port queries chose `null3d-port-threejs`, and the eight queries for other
@@ -72,31 +71,34 @@ tools and engines chose none.
 
 ## What the misses show
 
-- **Case 4, selecting a unit, the skill's one loss.** Neither answer limits the pick to a layer
-  mask. The skill's answer also uses an object's click handler without showing `scene.raycast`,
-  where the baseline shows both paths. The skill's intake table sends ray picking to the engine
-  page; that page does not say that a mask keeps the pick off scenery. The skill can close this.
-- **Case 1, the shadow catcher, both conditions.** Both answers light the floor and cast the light's
-  shadow. The skill's answer only suggests `materials.shadowCatcher` as an option, with no color,
-  and the baseline builds no catcher floor.
-- **Case 3, the water's bounds, the skill.** The skill's answer does not widen the mesh's bounds, so
-  a crest that moves past the original sphere could be culled. The baseline misses a different
-  expectation: it does not suggest checking the WebGL2 path.
+- **Cases 2 and 10, the baseline.** Neither answer suggests checking the WebGL2 path, and the
+  skill's answers do.
+- **Case 4, the pick mask, both conditions.** Neither answer limits picking to a layer mask. The
+  skill gives the mask only as an aside on the raycast path. The baseline offers `scene.pick`
+  instead of `scene.raycast`, and sends health on every call.
 - **Case 5, Safari's COEP mode, both conditions.** Neither answer says that Safari does not support
-  COEP `credentialless`.
-- **Case 2, the Android GPU path.** The baseline suggests the WebGL2 switch but does not say that
-  many Android phones run that path. The skill's answer gives both.
-- **Case 10, the second GPU path.** The baseline does not suggest checking the WebGL2 path at all;
-  the skill's answer does.
+  COEP `credentialless`. Neither points to `getting-started/hosting`; both name error and debugging
+  pages instead.
+- **Case 1, the skill's one loss.** The answer names `bunx @null3d/cli assets optimize` without the
+  (0.2) marker that the case asks for. The baseline marks it.
+- **Case 6, the baseline.** It weighs the tap count of a wide blur, but gives no phone cost.
+- **Case 9, the skill.** It names the physics add-on as planned for 0.3. It does not call its
+  sketch-worker physics a temporary workaround. The baseline leaves out the library's own per-call
+  allocations.
 
 ## Limits of this run
 
 - This is one run per case and condition. A model's answers vary between runs, so a one-point
-  difference is not a trend. The plan's 90% gate for skill evaluations is a proposal for release
-  0.3, and this run does not reach it.
+  difference is not a trend.
 - The time and token figures come from the command line's own report. The cache figures cover the
   context that the harness re-reads on each turn, so they are not a price.
 - The judge is one model call per case, so a judgement is not cross-checked. Every answer and every
   verdict is kept out of git, in the helper's report folder, for a person who wants to re-check one.
 - The baseline keeps the engine's docs. The comparison therefore measures what the skill adds on
   top of the docs, not against a model with no material about null3D.
+- Case 3 changed before the run above. Its old request asked for a water surface, which
+  `@null3d/water` now answers. A baseline answer that chose the add-on therefore lost five
+  expectations, and the case rewarded a hand-rolled surface that the new table warns against. The
+  request now asks for a liquid-mercury surface, which the add-on does not cover. The first pass
+  gave 7 of 7 with the skill and 2 of 7 without it. The second gave 7 of 7 and 6 of 7. The result
+  above uses the second run.
