@@ -116,8 +116,8 @@ The composer leaves its own marker in the name of an overriding function, such a
   function. `docs/guides/car-paint.md` and the add-on's README describe the glints under each light.
 - Pictures: `tests/image/car-paint.spec.ts` measures pixels that grow brighter with the flakes than
   without them, so the glints draw. Its second test turns the main light out, and counts 182
-  brighter pixels under the point light, 171 under the spot light and 182 under the lamp at the eye,
-  the same on WebGPU, compatibility mode and WebGL2. The paint's references moved, and
+  brighter pixels under the point light, 171 under the spot light and 166 to 168 under the lamp at
+  the eye, the same on WebGPU, compatibility mode and WebGL2. The paint's references moved, and
   [image tests](../image-tests.md#references) records the shares and the commands.
 - Next: M3-B5 declares the lobe for its flakes, as D-255 records. M3-B5's own cost per preset is
   still owed.
