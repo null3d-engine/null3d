@@ -9,6 +9,7 @@ import {
 	Vector2,
 	Vector3,
 } from 'three';
+import { boxPrimitive, GltfBuilder } from '../../../../tests/pages/lib/gltf-files';
 import type { EngineError } from '../errors/engine-error';
 import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
@@ -19,12 +20,20 @@ import { controlLabels, controlViews, createControlBuffer, Slot } from '../share
 import type { CoreGlue } from '../shared/core';
 import { type LabelRegion, labelSequence, presentLabels } from '../shared/labels';
 import { Ui } from '../sketch/ui';
+import { PropertyPlayer } from './animation';
 import { Cubemap } from './background';
 import { Environment } from './environment';
 import { withCallValues } from './fake-call-values';
 import { FrameCameras } from './frame-cameras';
+import { propertyAnimation } from './gltf';
+import { parseGltf, readContainer } from './gltf-parse';
 import { CoreMemory } from './memory';
-import { PROPERTY_MATERIAL, PropertyAnimation, type PropertyBinding } from './property-animation';
+import {
+	PROPERTY_MATERIAL,
+	PropertyAnimation,
+	type PropertyBinding,
+	type SlotSource,
+} from './property-animation';
 import { Material, MeshGeometry } from './resources';
 import { type Object3D, Scene } from './scene';
 import { Texture, type Textures } from './textures';
@@ -618,6 +627,114 @@ describe('hold script property paths', () => {
 		expect(scene.readScriptPath(camera, 'fov')).toEqual([60]);
 		expect(scene.nearNames('cr')).toEqual(['crate']);
 		expect(scene.nearNames('zzz')).toEqual(['car', 'crate']);
+	});
+});
+
+describe("a model's clip that moves two maps", () => {
+	/** The animation table's sample slots, which the job workers advance. */
+	class Slots implements SlotSource {
+		readonly sources = new Uint32Array(C.ANIMATION_MAX_BLEND).fill(C.ANIMATION_NO_SOURCE);
+		readonly times = new Float32Array(C.ANIMATION_MAX_BLEND);
+		readonly weights = new Float32Array(C.ANIMATION_MAX_BLEND);
+
+		slotSources(): Uint32Array {
+			return this.sources;
+		}
+		slotTimes(): Float32Array {
+			return this.times;
+		}
+		slotWeights(): Float32Array {
+			return this.weights;
+		}
+		/** Plays `clip` in `slot` at `time` seconds, with `weight`. */
+		play(slot: number, clip: number, time: number, weight: number): void {
+			this.sources[slot] = clip;
+			this.times[slot] = time;
+			this.weights[slot] = weight;
+		}
+	}
+
+	/**
+	 * A file whose clip moves a base color map's offset from its first key to `base`, and an emissive
+	 * map's from its own first key to `emissive`, so a time between the keys gives each a value.
+	 */
+	function movingFile(base: readonly number[], emissive: readonly number[]): Uint8Array {
+		const b = new GltfBuilder().uses('KHR_animation_pointer').uses('KHR_texture_transform');
+		b.json.images = [{ uri: 'tex/base.png' }];
+		b.json.textures = [{ source: 0 }];
+		b.json.materials = [
+			{
+				pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+				emissiveTexture: { index: 0 },
+			},
+		];
+		b.node({ name: 'Box', mesh: b.mesh([boxPrimitive(b, 0)], 'box') });
+		const at = b.accessor(new Float32Array([0, 1]), 1, { min: [0], max: [1] });
+		const pairs = (values: readonly number[]) => b.accessor(new Float32Array(values), 2);
+		const pointer = (path: string) => ({
+			path: 'pointer',
+			extensions: { KHR_animation_pointer: { pointer: path } },
+		});
+		const offset = (texture: string) =>
+			pointer(`/materials/0/${texture}/extensions/KHR_texture_transform/offset`);
+		b.json.animations = [
+			{
+				name: 'Move',
+				samplers: [
+					{ input: at, output: pairs([0, 0, ...base]) },
+					{ input: at, output: pairs([2, 2, ...emissive]) },
+				],
+				channels: [
+					{ sampler: 0, target: offset('pbrMetallicRoughness/baseColorTexture') },
+					{ sampler: 1, target: offset('emissiveTexture') },
+				],
+			},
+		];
+		return b.glb();
+	}
+
+	/** The row that the material `id` last sent for parameter `param`, from its offsets on. */
+	const writtenRow = (materialValues: number[][], id: number, param: number) =>
+		materialValues
+			.filter((values) => values[0] === id && values[1] === param)
+			.at(-1)
+			// A zero turn gives -0 in one row, which is a zero.
+			?.slice(2)
+			.map((value) => value || 0);
+
+	test("writes each map's own offset to the rows of its own transform", () => {
+		const { core, scene, materialValues } = fakeCore();
+		const url = 'https://example.com/models/two-maps.glb';
+		// The base color map's offset runs from 0 to 1, and the emissive map's from 2 to 4.
+		const data = parseGltf(readContainer(movingFile([1, 1], [4, 4]), url), new Map(), url);
+		// The material that the file's primitives draw, which both maps' tracks write.
+		const both = new Material(2, core, 'materials.standard.set');
+		const made = propertyAnimation(
+			data,
+			{ variants: () => [both] } as unknown as Parameters<typeof propertyAnimation>[1],
+			[],
+			[],
+			{ clips: new Map([['Move', 1]]) } as unknown as Parameters<typeof propertyAnimation>[4],
+			data.notes,
+		);
+		if (!made) throw new Error('the file made no property tracks');
+		const slots = new Slots();
+		const system = scene.propertySystem();
+		system.addPlayer(
+			new PropertyPlayer(slots, 0, made.bindings, made.clips, made.targets, made.keys),
+		);
+		// Halfway between the keys, the base color map sits at 0.5 and the emissive map at 3. The
+		// first clip's id is 1, and the sample table names a clip by its id less one.
+		slots.play(0, 0, 0.5, 1);
+		system.step(0);
+		const emissive =
+			C.MATERIAL_PARAM_MAP_UV + (C.MAP_SLOT_EMISSIVE - 1) * C.MATERIAL_PARAM_MAP_UV_STRIDE;
+		// The base color map's two rows carry its own offset.
+		expect(writtenRow(materialValues, 2, C.MATERIAL_PARAM_UV_U)).toEqual([1, 0, 0.5]);
+		expect(writtenRow(materialValues, 2, C.MATERIAL_PARAM_UV_V)).toEqual([0, 1, 0.5]);
+		// The emissive map's two rows carry its own offset, which differs.
+		expect(writtenRow(materialValues, 2, emissive)).toEqual([1, 0, 3]);
+		expect(writtenRow(materialValues, 2, emissive + 4)).toEqual([0, 1, 3]);
 	});
 });
 
