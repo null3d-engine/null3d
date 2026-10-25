@@ -4173,14 +4173,17 @@ pub fn set_auto_exposure(on: bool) -> u32 {
 }
 
 /// Turns temporal anti-aliasing on, a prototype, or off with a `feedback` of 0, from the next
-/// frame on. `feedback` is the history's share in thousandths, and `jitter` moves the camera by
-/// the sequence's sub-pixel offsets.
+/// frame on. `feedback` is the history's share in thousandths, `jitter` moves the camera by the
+/// sequence's sub-pixel offsets, `phone` picks the path whose reads cost less per pixel, and
+/// `reactive` names the transparency signals that lower the history, as bits.
 #[wasm_bindgen(js_name = setTaa)]
-pub fn set_taa(feedback: u32, jitter: bool) -> u32 {
+pub fn set_taa(feedback: u32, jitter: bool, phone: bool, reactive: u32) -> u32 {
     with_engine(|e| {
         let taa = (feedback > 0).then(|| null3d_render::taa::Taa {
             feedback: feedback.min(990) as f32 / 1000.0,
             jitter,
+            phone,
+            reactive: null3d_render::taa::Reactive(reactive as u8),
         });
         e.renderer.settings_mut().set_taa(taa);
         0

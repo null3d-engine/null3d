@@ -541,7 +541,20 @@ export interface TaaPrototypeSettings {
 	feedback?: number;
 	/** False keeps the camera still, so the resolve only blends frames. True by default. */
 	jitter?: boolean;
+	/**
+	 * True for the path that costs less per pixel: one depth sample, four taps of the history, and
+	 * no transparency mask or brightness weighting.
+	 */
+	phone?: boolean;
+	/**
+	 * The transparency signals that lower the history: `'both'` by default, `'alpha'` for the
+	 * scene's alpha alone, `'opaque'` for the opaque-only comparison alone, and `'off'` for none.
+	 */
+	reactive?: 'both' | 'alpha' | 'opaque' | 'off';
 }
+
+/** The bits that name each transparency signal, as the core takes them. */
+const REACTIVE_CODES = { off: 0, alpha: 1, opaque: 2, both: 3 } as const;
 
 /**
  * Writes `value` into the post-processing values at `place` when the call gives it as a number, and
@@ -939,7 +952,12 @@ export class Post implements ViewHolder {
 		const feedback = this.taa ? Math.round(Math.min(settings.feedback ?? 0.9, 0.99) * 1000) : 0;
 		if (this.taa && this.hdrEffects) this.shaders.need('taa');
 		this.core.check(
-			this.core.glue.setTaa(Math.max(feedback, this.taa ? 1 : 0), settings.jitter !== false),
+			this.core.glue.setTaa(
+				Math.max(feedback, this.taa ? 1 : 0),
+				settings.jitter !== false,
+				settings.phone === true,
+				REACTIVE_CODES[settings.reactive ?? 'both'],
+			),
 			'post.set',
 			undefined,
 			true,

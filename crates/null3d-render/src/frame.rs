@@ -1048,6 +1048,8 @@ pub struct SceneSettings {
     /// The frames that temporal anti-aliasing has resolved since it turned on, which keep its
     /// history out of the frame until both halves hold a frame.
     taa_frames: u32,
+    /// The exposure that the last frame that temporal anti-aliasing drew resolved at.
+    taa_exposure: f32,
     /// The color grading table while the sketch sets one.
     lut: Option<Lut>,
     /// The built-in grading table's texture while the sketch sets grading values. A job worker
@@ -1238,6 +1240,7 @@ impl SceneSettings {
             taa_last: None,
             taa_jitter: [0.0; 2],
             taa_frames: 0,
+            taa_exposure: 1.0,
             lut: None,
             grade: None,
             grade_hdr: false,
@@ -1890,6 +1893,7 @@ impl SceneSettings {
             self.taa_last = None;
             self.taa_jitter = [0.0; 2];
             self.taa_frames = 0;
+            self.taa_exposure = 1.0;
         }
         self.taa = taa;
     }
@@ -1909,6 +1913,7 @@ impl SceneSettings {
             self.taa_last = None;
             self.taa_jitter = [0.0; 2];
             self.taa_frames = 0;
+            self.taa_exposure = 1.0;
             return None;
         };
         let view = self.views.first()?;
@@ -1930,6 +1935,15 @@ impl SceneSettings {
         // either is trusted.
         let reset = previous.is_none() || self.taa_frames < 2;
         self.taa_frames = self.taa_frames.saturating_add(1);
+        // The history holds the colors that the frame before wrote, under the exposure it drew
+        // with. A frame that changes the exposure scales the history into its own before blending.
+        let exposure = self.drawn_output().exposure;
+        let last_exposure = std::mem::replace(&mut self.taa_exposure, exposure);
+        let exposure_ratio = if reset || last_exposure <= 0.0 || exposure <= 0.0 {
+            1.0
+        } else {
+            exposure / last_exposure
+        };
         let mut identity = [0.0; 16];
         for k in 0..4 {
             identity[k * 5] = 1.0;
@@ -1954,6 +1968,7 @@ impl SceneSettings {
             reproject: previous
                 .and_then(|last| taa::reprojection(&camera.view_proj, at, &last))
                 .unwrap_or(identity),
+            exposure_ratio,
             reset,
             parity: (self.clock[2].to_bits() & 1) as u8,
         })

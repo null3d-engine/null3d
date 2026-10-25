@@ -19,7 +19,8 @@ enable draw_index;
 // Group 1 (group 3 on WebGL2) is the base color map's group, or a blank map's for a material
 // without one.
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, relative_position}
-#import null3d::motion::{last_transform, motion_block, surface_motion}
+#import null3d::motion::{last_transform, motion_block}
+#import null3d::motion_math::surface_motion
 #import null3d::vertex::{mesh_position, transform_point}
 #ifndef WEBGL2
 #import null3d::motion::{LastIn}
