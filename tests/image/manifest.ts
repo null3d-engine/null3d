@@ -1204,8 +1204,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// The asset tool's leaf-card step: a tree from a file whose crown is a list of separate leaf
 	// cards. The first lower level keeps half of the cards and grows them about their middles, and
-	// a bias brings that switch near the camera, where the crown fills the picture. Without the
-	// step the tool plans no level at all, because every card's edges are borders, which stay.
+	// a bias brings that switch near the camera, where the crown spans about 100 of the 640 pixels.
+	// Without the step the tool plans no level for the crown, because every card's edges are
+	// borders, which stay.
 	{
 		name: 'asset-card-level',
 		sketch: 'tests/pages/sketches/asset-levels-sketch.ts?scene=tree',
