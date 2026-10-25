@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SHADER_COMPILER_URL } from '../../packages/vite-plugin/src/shader-compiler';
+import { scaledBudget } from '../../tests/lib/run-budget.ts';
 import {
 	builtAddress,
 	compileShaders,
@@ -24,7 +25,7 @@ import { MODULE_DIR } from './shader-modules';
 const COMPILES = existsSync(fileURLToPath(SHADER_COMPILER_URL));
 
 /** A custom material compiles every build of the standard material, which takes seconds. */
-const COMPILE_MS = 60_000;
+const COMPILE_MS = scaledBudget(60_000);
 
 /** The built files of a small package, by path in `lib/`. */
 const BUILT = new Set([

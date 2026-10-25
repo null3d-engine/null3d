@@ -1,13 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { scaledBudget } from '../../tests/lib/run-budget.ts';
 import { fixture } from './fixture.ts';
 import { allowedHost, FETCH_SITES, networkProblems } from './network-use.ts';
 
 const ROOT = join(import.meta.dir, '../..');
 
 /** The scan reads every shipped source file, which a loaded machine does slowly past the 5 s default. */
-const REPOSITORY_SCAN_MS = 60_000;
+const REPOSITORY_SCAN_MS = scaledBudget(60_000);
 
 describe('allowedHost', () => {
 	test('accepts a recorded host and its subdomains', () => {
