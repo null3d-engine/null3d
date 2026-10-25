@@ -85,8 +85,6 @@ const INCOMPLETE = new Set([
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
-	'M3-V15':
-		'not built: the records put the fluid wind in an add-on of its own, and no wind package exists on the branch yet, so there is nothing for a branch check to read',
 	'M3-A9':
 		'the hero tile and its cost figures are in: a still hero adds no pass, a moving one adds a depth pass of 0.028 to 0.037 ms, and WebGL2 reads the tile for 0.27 ms less than the cascades (D-219)',
 	'M3-E6':
@@ -121,6 +119,10 @@ const NOTES: Readonly<Record<string, string>> = {
  * above, because both describe the same task and only one of them can be true.
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
+	'M3-R14':
+		"unticked by the round 19 audit: the script causes one change and then reverts it, since the opening is the demo's own held frame with no step, the camera route has already moved two fifths of a leg by the second state, and the third only undoes the lens. The showcase reads keys, so one state reached by key or pointer steps alone would meet the plain reading of the plan. Its software claim is also wrong: the four passing tests compared against Mac-drawn pictures that live on a commit on no branch, and the committed CI-drawn references have never been compared in a passing run",
+	'M3-V15':
+		'unticked by the round 18 audit: the finish line names an allocation run that shows no bytes per frame from the wind, and a passing check-addon, and the evidence owes both, with the sizes gate failing at 89.5 KB against 64 for the plugin chunking that M3-R25 owns. The task also lists the solver among its work, and the record defers the field state to M3-V13 without naming who ruled that. The field itself is proven: the cards gust on all three tiers and stop when frozen, and the run and import checks pass',
 	'M3-L2':
 		"unticked by the round 18 audit: two asset-tool items have no picture, the leaf-card step and the texture-coordinate weight, and the weight exemption is the coordinator's rather than the owner's; the picture its record called impossible is feasible, because a large level bias brings the card level to where the tree is about 280 pixels tall; the grown-size fault the plan names is still open at frame.rs:4217, where a list needing more than the binding limit gets a buffer larger than it; and the level-bias doc comment says a bias above one pushes switches farther away while the core, the concepts page and the test say nearer",
 	'M3-E7':

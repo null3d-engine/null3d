@@ -2709,6 +2709,32 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 1,
 		size: [640, 360],
 	},
+	// The wind add-on's own page: a field of cards that reads the air at each vertex. A gust
+	// crosses the field between the first hold and the second, so the pairs change where the gust
+	// has reached. The wake test holds one body still, so its trail stays put. The part test draws
+	// the same page with the gust and the swirl taken out, from the drawings it makes itself.
+	{
+		name: 'wind-cards',
+		sketch: 'packages/wind/page/sketch.ts?camera=still',
+		hold: 1,
+		size: [480, 270],
+		// The cards cast shadows that sway with them, and the software GPU takes its time with them.
+		timeoutSeconds: 180,
+	},
+	{
+		name: 'wind-cards-later',
+		sketch: 'packages/wind/page/sketch.ts?camera=still',
+		hold: 1.6,
+		size: [480, 270],
+		timeoutSeconds: 180,
+	},
+	{
+		name: 'wind-wake',
+		sketch: 'packages/wind/page/sketch.ts?still=1',
+		hold: 1.2,
+		size: [480, 270],
+		timeoutSeconds: 180,
+	},
 	// Impostors of the impostors add-on: cards far from the world's origin, each blending the three
 	// atlas views nearest its direction to the eye and lit by the sun from the normal the surface
 	// atlas stores, and a merged row of a plain, a turned and a mirrored panel, which draws only

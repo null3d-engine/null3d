@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
 	chooseBase,
 	compareSizes,
+	failingSize,
 	grownFiles,
 	growthLines,
 	growthOf,
@@ -9,6 +10,8 @@ import {
 	growthSummary,
 	growthText,
 	MIN_GROWTH_BYTES,
+	nearLimit,
+	nearLimitWarnings,
 	overLimit,
 } from './size-check';
 
@@ -198,5 +201,32 @@ describe('chooseBase', () => {
 			branch: 'main',
 			why: 'the merge base with origin/main',
 		});
+	});
+});
+
+describe('nearLimitWarnings', () => {
+	it('names a file that grew to just under the limit, as CI can fail it', () => {
+		// The render worker's WebGL2 file on 26 October 2026: 22 bytes under the limit on the Mac,
+		// and over it in CI's build of the same commit.
+		const changes = compareSizes(
+			record({ 'js/render-worker-webgl2.js': 14_138 }),
+			record({ 'js/render-worker-webgl2.js': 14_399 }),
+		);
+		expect(failingSize(14_138)).toBe(14_421);
+		expect(nearLimitWarnings(changes, new Map())).toEqual([
+			"js/render-worker-webgl2.js grew +1.8% after Brotli, to 14,399 bytes, 22 under the limit, and another machine's build can differ by up to 64: CI may fail it unless a Size-Growth trailer names it",
+		]);
+		expect(nearLimitWarnings(changes, new Map([['js/render-worker-webgl2.js', 'abc']]))).toEqual(
+			[],
+		);
+	});
+
+	it('leaves out a file far under the limit, a file over it and a small file', () => {
+		const changes = compareSizes(
+			record({ 'js/page.js': 28_000, 'js/over.js': 14_000, 'js/early-core.js': 231 }),
+			record({ 'js/page.js': 28_200, 'js/over.js': 14_400, 'js/early-core.js': 290 }),
+		);
+		expect(changes.filter(nearLimit)).toEqual([]);
+		expect(nearLimitWarnings(changes, new Map())).toEqual([]);
 	});
 });
