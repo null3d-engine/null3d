@@ -270,7 +270,7 @@ The quality figures of the previous addendum were taken before these five fixes.
 | `tests/image/taa-fixes.spec.ts`, `a history follows a change of the exposure` | A resolved frame holds the scene at a doubled exposure |
 | `tests/image/taa-fixes.spec.ts`, `the scene's alpha lowers the history` | The alpha signal keeps the background out of a blended surface's history |
 | `tests/image/taa-fixes.spec.ts`, `the opaque-only copy lowers the history` | The opaque-only comparison's figure on the transparent-canvas scene, recorded rather than required |
-| `tests/image/taa-fixes.spec.ts`, `the phone path draws the full path's picture` | The phone path draws the same still image |
+| `tests/image/taa-fixes.spec.ts`, `the phone path draws the full path's picture` | The phone path draws the same still image, and the mask setting changes it by 0.00 levels, which proves the skip |
 | `tests/image/taa-fixes.spec.ts`, `the resolve over rain` and `over fog` | The frame-to-frame change of each effect with the resolve off and on |
 
 ### How the figures were made
