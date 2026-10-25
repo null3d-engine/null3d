@@ -1,8 +1,9 @@
 # D-258: Directional light maps, and reading Needle's light maps
 
 Status: decided by the helper of M3-F4 on 25 October 2026, for the owner's review. Built: the
-second texture, the shader weighting, the glTF reader, the picture test, the memory figure and the
-page that measures the cost, as the consequences list. Date: 2026-10-25. Task: M3-F4.
+second texture, the shader weighting, the glTF reader, the picture test, the memory figure, and the
+page that measures the cost and the figure it took, as the consequences list. Date: 2026-10-25.
+Task: M3-F4.
 
 Summary: A directional light map carries the light's direction in a second texture of the
 radiance's own size, format and color space, so both share one texture array, one binding and one
@@ -34,26 +35,28 @@ map must draw exactly as it did.
 | GPU bytes, 1,024 x 1,024, `rgb8` radiance uploaded as RGBA8 | 4,194,304 (4 MiB) | 8,388,608 (8 MiB) | none |
 | GPU bytes, 1,024 x 1,024, `rgba16float` radiance | 8,388,608 (8 MiB) | 16,777,216 (16 MiB) | none |
 | Ratio | 1.00 | 2.00 | none |
+| GPU time per frame, 1600 x 900, WebGPU | 0.99 ms | 1.05 ms | Chrome on this Mac, 25 October 2026 |
+| GPU time per frame, 1600 x 900, compatibility mode | 1.11 ms | 1.26 ms | Chrome on this Mac, 25 October 2026 |
+| GPU time per frame, 1600 x 900, WebGL2 | 1.48 ms | 1.58 ms | Chrome on this Mac, 25 October 2026 |
 
 The GPU figures count the one level that `assets.loadLightMap` makes, which holds no mip chain for
 either encoding, at 4 bytes for each texel of an `rgb8` radiance and 8 for one of `rgba16float`.
 They are what the texture store holds for a texture of that size and format, not an estimate
 from the file.
 
-The cost is owed. The `lightmap-cost` page measures it. The page draws 24 lit quads that fill a
-1600 by 900 view once, so every pixel shades one fragment. The plain and directional builds swap in
-turns for four rounds each. The order reverses on alternate rounds, so a clock that drifts through
-the run does not favour either side. Before the timing the page draws one frame of each side and
-compares them, so a direction that the engine dropped fails the run instead of reporting no cost.
-On 25 October 2026 the Mac's 1-minute load read between 34 and 162. The spec refuses to measure
-above 8, so the run waits for a quiet window and then takes about a minute:
-`NULL3D_LIGHTMAP_COST=1 bun run test:browser -- lightmap-cost.spec.ts --workers=1`. Its medians go
-into the table above. The trials so far are preliminary and not figures. At a load of 84, before
-the sides alternated, the directional side read 1.08 ms against 0.99 ms on WebGPU. With alternating
-rounds at a load of about 100, it read 1.05 against 0.99 in compatibility mode and 1.55 against
-1.48 on WebGL2, while WebGPU read 1.04 against 1.26. That last figure shows what a loaded machine
-does to the order, and why the figure waits. About 55.5% of the pixels moved on every path.
-[Benchmarks](../benchmarks.md#directional-light-maps) gives the paths and the queue form.
+The `lightmap-cost` page measured the cost on 25 October 2026, in Chrome on this Mac's GPU. The
+page draws 24 lit quads that fill a 1600 by 900 view once, so every pixel shades one fragment. The
+plain and directional builds swap in turns for four rounds each, and the order reverses on alternate
+rounds. Before the timing the page draws one frame of each side and compares them. On WebGPU 55.71%
+of the pixels moved, so the direction reached the shader. The direction costs about a tenth of a
+millisecond on every path: 0.06 ms on WebGPU, 0.15 ms in compatibility mode and 0.10 ms on WebGL2.
+
+Three facts bound how far those figures can be trusted. The gate reads the load once, before each
+path's page, and not again during the four rounds. The three readings were 7.5, 7.9 and 7.5. WebGPU
+and WebGL2 then measured while the load drifted upward, to 9.9 and 9.2 by the end of the path.
+Compatibility took 4.6 minutes, most of it waiting for its quiet minute with the indexer between
+180% and 280%, and its plain time is 0.12 ms above the trial's. That path is the one to measure
+again first if a quieter window appears. [Benchmarks](../benchmarks.md#directional-light-maps) gives the command.
 
 ## Decision
 
