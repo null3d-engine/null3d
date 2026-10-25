@@ -1,9 +1,8 @@
-// The full-screen feature adapter draws its pass on both GPU paths, and it draws nothing while the
-// feature is not ready. The sketch declares a depth of field with a feature description and places
-// it with post.addFeatureEffect. Each test compares the held frames of one browser, so it needs no
-// reference picture: a path whose pass is missing or wrong fails here even on a device whose
-// pictures were never saved. A picture that the two paths share is not required, because each GPU
-// path draws its own edges and each tier keeps its own references.
+// The full-screen feature adapter draws its pass on both GPU paths, and it keeps the pass out of
+// the chain while the feature is not ready. The sketch declares a depth of field with a feature
+// description and places it with post.addFeatureEffect. The first test compares held frames of one
+// browser, so it needs no reference picture. The second reads the adapter's own answer, because a
+// not-ready pass at 0 taps would leave the picture unchanged even if it ran.
 import { expect, type Page, test } from '@playwright/test';
 import { differentShare } from '../lib/images.ts';
 
@@ -29,9 +28,6 @@ function addressOf(gpu: string, preset: string, switches = ''): string {
  * with the other path's and with the record.
  */
 const MIN_EFFECT_DIFF = 0.02;
-
-/** Held frames at Low must match, because the preset's dofSamples is 0 and the pass does not draw. */
-const MAX_NOT_READY_DIFF = 0.0005;
 
 /** A held frame, as the image page publishes it. */
 interface HeldFrame {
@@ -103,16 +99,31 @@ test('the pass changes the frame on both GPU paths', async ({ page: browserPage 
 	}
 });
 
-test('a not-ready feature changes nothing, so it costs nothing', async ({ page: browserPage }) => {
+test('the adapter keeps a not-ready feature out of the chain', async ({ page: browserPage }) => {
 	test.setTimeout(600_000);
-	// Low's dofSamples is 0, so the description's ready callback keeps the effect out of the chain.
-	for (const tier of TIERS) {
-		const drawn = await held(browserPage, addressOf(tier, 'low'));
-		const plain = await held(browserPage, addressOf(tier, 'low', '?dof=off'));
-		expect(drawn.ok, drawn.error).toBe(true);
-		expect(plain.ok, plain.error).toBe(true);
-		const idle = share(drawn, plain);
-		console.log(`feature-effect: on ${tier} at Low the feature changes ${percent(idle)}`);
-		expect(idle).toBeLessThan(MAX_NOT_READY_DIFF);
-	}
+	// The picture cannot carry this check. A pass whose tap count is 0 returns its input unchanged,
+	// so a frame that ran the pass anyway would match one that did not, pixel for pixel. The sketch
+	// publishes the adapter's own answer instead, and runs on the page so the spec can read it.
+	const read = async (preset: string) => {
+		await browserPage.goto(`${addressOf('webgpu', preset)}&sketch-thread=main`);
+		await browserPage.waitForFunction('globalThis.__null3dHold !== undefined', undefined, {
+			timeout: 120_000,
+		});
+		return browserPage.evaluate(
+			() =>
+				(globalThis as { __null3dFeature?: { draws: boolean; samples: number } }).__null3dFeature,
+		);
+	};
+	// Low's dofSamples is 0, so the description's ready callback must keep the effect out of the
+	// chain. The adapter ignoring ready would answer true here, whatever the pixels show.
+	const low = await read('low');
+	expect(low?.samples).toBe(0);
+	expect(low?.draws).toBe(false);
+	// Medium draws the pass, so the same answer turned false is not a stub that never draws.
+	const medium = await read('medium');
+	expect(medium?.samples).toBe(22);
+	expect(medium?.draws).toBe(true);
+	console.log(
+		`feature-effect: the adapter draws at Medium (samples ${medium?.samples}) and not at Low (samples ${low?.samples})`,
+	);
 });
