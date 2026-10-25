@@ -503,7 +503,7 @@ A page without relief pays nothing for it. The first material with a bump map lo
 
 ## Texture coordinate transform
 
-`uvTransform` places every map of a material on the texture coordinates: `offset`, `repeat` and `rotation` in radians. They act as three.js's texture `offset`, `repeat` and `rotation` with the default `center`. A transform that leaves a value out takes its default. `set` changes the transform at any time. `mapUvTransforms` places one map by its option name, such as `emissiveMap`, where it differs from the others. A map without one keeps the transform that `uvTransform` gives it. A glTF file keeps a transform for each of its textures, so the loader places each map with its own.
+`uvTransform` places every map of a material on the texture coordinates: `offset`, `repeat` and `rotation` in radians. They act as three.js's texture `offset`, `repeat` and `rotation` with the default `center`. A transform that leaves a value out takes its default. `set` changes the transform at any time. `mapUvTransforms` places one map by its option name, such as `emissiveMap`, where it differs from the others. A map without one keeps the transform that `uvTransform` gives it. Two maps that share a slot, as a sheen map and an anisotropy map do, share one transform too. A glTF file keeps a transform for each of its textures, so the loader places each map with its own.
 
 ## Color
 
