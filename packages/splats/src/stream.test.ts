@@ -5,7 +5,13 @@ import { describe, expect, it } from 'bun:test';
 import type { SplatData } from './format';
 import { decodeSpz } from './spz';
 import { encodeSpz } from './spz-write';
-import { parseStreamIndex, SplatStreamLoader, startsStreamIndex } from './stream';
+import {
+	FIRST_VIEW_BYTES,
+	firstViewCount,
+	parseStreamIndex,
+	SplatStreamLoader,
+	startsStreamIndex,
+} from './stream';
 
 /** A cloud of `count` splats, all at the origin, which the test writes as a chunk file. */
 function cloud(count: number): SplatData {
@@ -96,6 +102,25 @@ describe('parseStreamIndex', () => {
 	it('knows a stream index from an SPZ file', () => {
 		expect(startsStreamIndex(new TextEncoder().encode('  {"format":'))).toBe(true);
 		expect(startsStreamIndex(new Uint8Array([0x1f, 0x8b, 0x08]))).toBe(false);
+	});
+});
+
+describe('firstViewCount', () => {
+	/** The sizes of ten chunk files, of which the nearest order names three. */
+	const sizes = [0, 0, 0, 0, 300_000, 0, 0, 0, 0, 500_000];
+	/** The nearest first: two chunks with sizes, and one whose file the index does not size. */
+	const order = [4, 9, 2];
+
+	it('takes the nearest chunks whose files fit in the limit', () => {
+		expect(firstViewCount(order, sizes)).toBe(2);
+		expect(firstViewCount(order, sizes, 1_000_000)).toBe(2);
+		expect(firstViewCount(order, sizes, 100)).toBe(1);
+		expect(firstViewCount([], sizes)).toBe(0);
+	});
+
+	it('takes the nearest chunk alone when the index gives no sizes', () => {
+		expect(firstViewCount(order, [])).toBe(1);
+		expect(FIRST_VIEW_BYTES).toBeGreaterThan(0);
 	});
 });
 
@@ -232,6 +257,19 @@ describe('SplatStreamLoader', () => {
 		await waitFor(() => loaded.length === 1);
 		await waitFor(() => idle() > 0);
 		expect(loader.idle).toBe(true);
+		loader.abort();
+	});
+
+	it('settles a chunk that loads and one that stays unreachable, and no other', async () => {
+		const { loader, loaded, failed } = await setup(async (url) =>
+			url.endsWith('chunk-1.spz') ? new Response(null, { status: 404 }) : OK,
+		);
+		expect(loader.settled(0)).toBe(false);
+		loader.load([0, 1]);
+		await waitFor(() => loaded.length === 1 && failed.length === 1);
+		expect(loader.settled(0)).toBe(true);
+		expect(loader.settled(1)).toBe(true);
+		expect(loader.settled(2)).toBe(false);
 		loader.abort();
 	});
 

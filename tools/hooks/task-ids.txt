@@ -339,6 +339,8 @@ M3-G1
 M3-G2
 M3-G3
 M3-G4
+M3-G5
+M3-G6
 M3-K1
 M3-K2
 M3-K3
@@ -372,6 +374,8 @@ M3-R19
 M3-R20
 M3-R21
 M3-R22
+M3-R23
+M3-R24
 M3-T1
 M3-V1
 M3-V2
@@ -390,6 +394,12 @@ M3-V14
 M3-V15
 M3-V16
 M3-V17
+M4-O1
+M4-O2
+M4-O3
+M4-O4
+M4-O5
+M4-O6
 
 # Process labels, accepted on 15 October 2026, that no plan file names.
 M2-process

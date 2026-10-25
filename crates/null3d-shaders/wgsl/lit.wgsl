@@ -207,6 +207,7 @@ fn pick_color(key: u32) -> vec4f {
 #ifdef MAPS
 #import null3d::mesh::{map_layer, map_ready, map_unit, straight_texel, world_direction}
 #import null3d::mesh::{material_light_map_direction, material_light_map_uv}
+#import null3d::mesh::{MapUvRows, material_map_uv}
 #else ifdef TRANSMISSION
 #import null3d::mesh::{world_direction}
 #else ifdef DECAL
@@ -288,6 +289,8 @@ const LIGHT_MAP_RGBM: u32 = 16777216u;
 var<private> material_row: Material;
 
 #ifdef MAPS
+/// The material that the pixel shows, which names the transforms that its row keeps for its maps.
+var<private> map_material: u32;
 /// The scale of the light map's texture coordinates along u and v, then their offset along u and
 /// v, which the fragment shader reads once.
 var<private> light_map_uv: vec4f;
@@ -327,10 +330,11 @@ var<private> pixel_material: u32;
 /// The values of the material that lets light through, which the fragment shader reads once.
 var<private> transmission_row: MaterialTransmission;
 
-/// Which family of maps the material keeps in the light map's and the specular maps' slots: 2 when
-/// they hold its transmission and thickness maps, so `with_maps` reads them instead of the
-/// specular maps.
-var<private> layer_maps_kind: u32;
+/// Which family of maps the material keeps in each group of shared slots, two bits each: the light
+/// map's, the specular intensity map's and the specular color map's. A material that lets light
+/// through names 2 for the slots that hold its transmission and thickness maps, so `with_maps`
+/// reads them instead of the specular maps.
+var<private> layer_maps_kinds: u32;
 
 /// The diffuse light that `light_surface` gathers, of which the light through the surface takes
 /// the transmission's share.
@@ -470,25 +474,67 @@ struct MapUv {
     dy: vec2f,
 }
 
-/// The coordinates of the map of `slot`: the second set where the flags say so, else the first.
-fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
-    if (flags & (SECOND_UV << slot)) != 0u {
-        return second;
-    }
-    return first;
+/// A surface's two texture coordinate sets before any map's own transform, and how each changes
+/// across a pixel and up a row. The derivatives come from uniform control flow, so each map
+/// transforms them through its own matrix rather than taking derivatives of its own coordinates.
+#ifdef MAPS
+struct RawUv {
+    uv: vec2f,
+    uv1: vec2f,
+    dx: vec2f,
+    dy: vec2f,
+    dx1: vec2f,
+    dy1: vec2f,
 }
 
-/// Texture coordinates through the material's transform, with their derivatives.
-fn transformed_uv(uv: vec2f, uv_u: vec4f, uv_v: vec4f) -> MapUv {
-    let at = vec2f(dot(uv_u.xyz, vec3f(uv, 1.0)), dot(uv_v.xyz, vec3f(uv, 1.0)));
-#ifdef DECAL
-    let dx = vec2f(dot(uv_u.xy, decal_uv_dx), dot(uv_v.xy, decal_uv_dx));
-    let dy = vec2f(dot(uv_u.xy, decal_uv_dy), dot(uv_v.xy, decal_uv_dy));
-    return MapUv(at, dx, dy);
-#else
-    return MapUv(at, dpdx(at), dpdy(at));
-#endif
+/// The map slot that holds a material's normal map, and the bump or displacement map that takes
+/// its place in the builds that read a height.
+const NORMAL_SLOT: u32 = 2u;
+
+/// The transform of the map that the pixel shows in `slot`: the base color map's two rows, which
+/// the values that every shader reads hold, or the two rows that the row keeps for another slot.
+fn slot_uv_rows(slot: u32) -> MapUvRows {
+    if slot == 0u {
+        return MapUvRows(material_row.uv_u, material_row.uv_v);
+    }
+    return material_map_uv(map_material, slot);
 }
+
+/// Texture coordinates through a map's transform, with their derivatives.
+fn transform_uv(rows: MapUvRows, uv: vec2f, dx: vec2f, dy: vec2f) -> MapUv {
+    let at = vec2f(dot(rows.u.xyz, vec3f(uv, 1.0)), dot(rows.v.xyz, vec3f(uv, 1.0)));
+    return MapUv(
+        at,
+        vec2f(dot(rows.u.xy, dx), dot(rows.v.xy, dx)),
+        vec2f(dot(rows.u.xy, dy), dot(rows.v.xy, dy)),
+    );
+}
+
+/// The coordinates of the map of `slot` through that map's own transform, with their derivatives:
+/// the second set where the flags say so, else the first.
+fn map_uv(flags: u32, slot: u32, raw: RawUv) -> MapUv {
+    let rows = slot_uv_rows(slot);
+    if (flags & (SECOND_UV << slot)) != 0u {
+        return transform_uv(rows, raw.uv1, raw.dx1, raw.dy1);
+    }
+    return transform_uv(rows, raw.uv, raw.dx, raw.dy);
+}
+
+/// The shift of the raw texture coordinates that moves a map with `rows` by `shift` in its own
+/// coordinates: the inverse of the matrix's linear part, which the transform applies to the raw
+/// coordinates. A matrix with no inverse, as a zero scale makes, shifts nothing.
+fn raw_shift(rows: MapUvRows, shift: vec2f) -> vec2f {
+    let a = rows.u.x;
+    let b = rows.u.y;
+    let c = rows.v.x;
+    let d = rows.v.y;
+    let det = a * d - b * c;
+    if abs(det) < 1e-20 {
+        return vec2f(0.0);
+    }
+    return vec2f((d * shift.x - b * shift.y) / det, (a * shift.y - c * shift.x) / det);
+}
+#endif
 
 #ifdef WEBGL2
 /// The texel of a map whose layer, as the row holds it, is `layer`, at `at`. The layer also names
@@ -628,8 +674,8 @@ fn sceneDistance(uv: vec2f) -> f32 {
 #ifdef MAPS
 /// Where a height map in the normal map's slot reads. Rows count upward on both paths, so a bump
 /// map compares the pixel with the one above it, as three.js's renderers both do.
-fn height_uv(flags: u32, first: MapUv, second: MapUv) -> MapUv {
-    let picked = map_uv(flags, 2u, first, second);
+fn height_uv(flags: u32, raw: RawUv) -> MapUv {
+    let picked = map_uv(flags, NORMAL_SLOT, raw);
     return MapUv(picked.uv, picked.dx, picked.dy * ROWS_UP);
 }
 
@@ -1122,99 +1168,121 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     let m = material_row;
     let flags = u32(m.strengths.z);
     var s = surface;
-    // The coordinates' derivatives come first, where every pixel of the quad runs them; each map
-    // then samples with them inside its branch.
-    var first = transformed_uv(input.uv, m.uv_u, m.uv_v);
-    var second = transformed_uv(input.uv1, m.uv_u, m.uv_v);
+    // The coordinates and their changes come first, where every pixel of the quad runs them; each
+    // map then takes them through its own transform inside its branch.
+#ifdef DECAL
+    var raw = RawUv(input.uv, input.uv1, decal_uv_dx, decal_uv_dy, decal_uv_dx, decal_uv_dy);
+#else
+    var raw = RawUv(
+        input.uv, input.uv1,
+        dpdx(input.uv), dpdy(input.uv), dpdx(input.uv1), dpdy(input.uv1),
+    );
+#endif
     let position_dy = dpdy(input.relativePosition) * ROWS_UP;
     let position_dx = dpdx(input.relativePosition);
 #ifdef PARALLAX
-    // Parallax shifts every map's coordinates of the set that the displacement map reads, where
-    // the view ray meets its relief.
+    // Parallax shifts the coordinates of the set that the displacement map reads, where the view
+    // ray meets its relief. The march works in that map's own coordinates, so its shift comes back
+    // through the map's scale and turn, and each map then takes it through its own transform.
     let values = custom_value(pixel_material, 0u);
     let pixel_layer = custom_value(pixel_material, 2u).w;
     if map_ready(pixel_layer) {
+        let rows = slot_uv_rows(NORMAL_SLOT);
         let on_second = values.w != 0.0;
-        var at = first;
+        var at = transform_uv(rows, raw.uv, raw.dx, raw.dy);
         if on_second {
-            at = second;
+            at = transform_uv(rows, raw.uv1, raw.dx1, raw.dy1);
         }
         let along_y = position_dy * ROWS_UP;
         let shift = parallax_shift(
             pixel_layer, at, input.normal, input.viewDirection, position_dx, along_y,
             height_scale, surface_height,
         );
+        let moved = raw_shift(rows, shift);
         if on_second {
-            second.uv += shift;
+            raw.uv1 += moved;
         } else {
-            first.uv += shift;
+            raw.uv += moved;
         }
     }
 #endif
     if map_ready(m.maps.x) {
-        let texel = straight_texel(m, base_color_texel(m.maps.x, map_uv(flags, 0u, first, second)));
+        let texel = straight_texel(m, base_color_texel(m.maps.x, map_uv(flags, 0u, raw)));
         s.baseColor *= texel.rgb;
         s.alpha *= texel.a;
     }
     if map_ready(m.maps.y) {
-        let texel = metal_rough_texel(m.maps.y, map_uv(flags, 1u, first, second));
+        let texel = metal_rough_texel(m.maps.y, map_uv(flags, 1u, raw));
         s.roughness *= texel.g;
         s.metalness *= texel.b;
     }
     if map_ready(m.maps.w) {
-        let texel = occlusion_texel(m.maps.w, map_uv(flags, 3u, first, second));
+        let texel = occlusion_texel(m.maps.w, map_uv(flags, 3u, raw));
         s.occlusion = (texel.r - 1.0) * m.strengths.x + 1.0;
     }
     if map_ready(m.more_maps.x) {
-        s.emissive *= emissive_texel(m.more_maps.x, map_uv(flags, 4u, first, second)).rgb;
+        s.emissive *= emissive_texel(m.more_maps.x, map_uv(flags, 4u, raw)).rgb;
     }
     specular_texel = vec4f(1.0);
 #ifdef COAT_SHEEN
-    // A layered material's slots 5 to 7 hold the maps of one family of layers, which the row's
-    // kind names: the clear coat's, the coat normal's and the sheen's, or iridescence's and its
-    // thickness with the anisotropy's.
-    if u32(anisotropy_row.z) == 1u {
-        if map_ready(m.more_maps.y) {
-            let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
+    // A material with layers keeps one family's maps in slots 5 to 7, and one that lets light
+    // through keeps its transmission and thickness maps in the two specular slots beside the layer
+    // map of the light slot. The row names each group's family apart: the clear coat's or
+    // iridescence's for the light slot, and either of those or the transmission's and the
+    // thickness's for a specular slot.
+    let kinds = u32(anisotropy_row.z);
+    let layer_kind = kinds & 3u;
+    let intensity_kind = (kinds >> 2u) & 3u;
+    let color_kind = (kinds >> 4u) & 3u;
+    if map_ready(m.more_maps.y) {
+        let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, raw));
+        if layer_kind == 1u {
             s.iridescence *= texel.r;
-        }
-        if map_ready(m.more_maps.z) {
-            let texel = specular_intensity_texel(m.more_maps.z, map_uv(flags, 6u, first, second));
-            s.iridescenceThickness = mix(film_row.z, film_row.w, texel.g);
-        }
-    } else {
-        if map_ready(m.more_maps.y) {
-            let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
+        } else {
             s.clearcoat *= select(1.0, texel.r, (flags & COAT_MAP) != 0u);
             s.clearcoatRoughness *= select(1.0, texel.g, (flags & COAT_ROUGHNESS_MAP) != 0u);
         }
-        if map_ready(m.more_maps.z) {
-            let at = map_uv(flags, 6u, first, second);
-            let texel = specular_intensity_texel(m.more_maps.z, at);
+    }
+    if map_ready(m.more_maps.z) {
+        let at = map_uv(flags, 6u, raw);
+        let texel = specular_intensity_texel(m.more_maps.z, at);
+        if intensity_kind == 1u {
+            s.iridescenceThickness = mix(film_row.z, film_row.w, texel.g);
+#ifdef TRANSMISSION
+        } else if intensity_kind == 2u {
+            s.transmission *= texel.r;
+#endif
+        } else {
             let scale = coat_sheen_row.coat.zw;
             s.clearcoatNormal = bent_normal(texel, scale, at, input, position_dx, position_dy);
         }
-        if map_ready(m.more_maps.w) {
-            let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
+    }
+    if map_ready(m.more_maps.w) {
+        let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, raw));
+        if color_kind == 0u {
             s.sheenColor *= select(vec3f(1.0), texel.rgb, (flags & SHEEN_COLOR_MAP) != 0u);
             s.sheenRoughness *= select(1.0, texel.a, (flags & SHEEN_ROUGHNESS_MAP) != 0u);
+#ifdef TRANSMISSION
+        } else if color_kind == 2u {
+            s.thickness *= texel.g;
+#endif
         }
     }
 #else
     if map_ready(m.more_maps.y) {
-        let texel = light_map_texel(m.more_maps.y, light_map_at(map_uv(flags, 5u, first, second)));
+        let texel = light_map_texel(m.more_maps.y, light_map_at(map_uv(flags, 5u, raw)));
         s.irradiance = texel.rgb * m.strengths.y;
     }
     // A material that lets light through a thin surface keeps its diffuse transmission maps in
     // the specular maps' slots, which read the same channels.
     if map_ready(m.more_maps.z) {
-        let texel = specular_intensity_texel(m.more_maps.z, map_uv(flags, 6u, first, second));
+        let texel = specular_intensity_texel(m.more_maps.z, map_uv(flags, 6u, raw));
 #ifdef TRANSLUCENCY
         s.diffuseTransmission *= texel.a;
 #else ifdef TRANSMISSION
         // A material that lets light through keeps its transmission and thickness maps there
         // instead, whose red and green scale the transmission and the volume.
-        if layer_maps_kind == 2u {
+        if ((layer_maps_kinds >> 2u) & 3u) == 2u {
             s.transmission *= texel.r;
         } else {
             specular_texel.a = texel.a;
@@ -1224,11 +1292,11 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
 #endif
     }
     if map_ready(m.more_maps.w) {
-        let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
+        let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, raw));
 #ifdef TRANSLUCENCY
         s.diffuseTransmissionColor *= texel.rgb;
 #else ifdef TRANSMISSION
-        if layer_maps_kind == 2u {
+        if ((layer_maps_kinds >> 4u) & 3u) == 2u {
             s.thickness *= texel.g;
         } else {
             specular_texel = vec4f(texel.rgb, specular_texel.a);
@@ -1243,20 +1311,20 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     let heights = flags & (BUMP_MAP | HEIGHT_NORMALS);
 #ifdef BUMP
     if heights == BUMP_MAP && map_ready(m.maps.z) {
-        let change = height_change(m.maps.z, height_uv(flags, first, second)) * m.surface.z;
+        let change = height_change(m.maps.z, height_uv(flags, raw)) * m.surface.z;
         let facing = select(-1.0, 1.0, input.frontFacing);
         s.normal = bent_by_height(input.normal, normalize(position_dx), normalize(position_dy), change, facing);
     }
 #endif
 #ifdef DISPLACEMENT
     if heights == HEIGHT_NORMALS && map_ready(m.maps.z) {
-        let change = height_slope_change(m.maps.z, height_uv(flags, first, second)) * height_scale;
+        let change = height_slope_change(m.maps.z, height_uv(flags, raw)) * height_scale;
         let facing = select(-1.0, 1.0, input.frontFacing);
         s.normal = bent_by_height(input.normal, position_dx, position_dy, change, facing);
     }
 #endif
     if heights == 0u && map_ready(m.maps.z) {
-        let at = map_uv(flags, 2u, first, second);
+        let at = map_uv(flags, NORMAL_SLOT, raw);
         let texel = normal_texel(m.maps.z, at);
         s.normal = bent_normal(texel, m.surface.zw, at, input, position_dx, position_dy);
     }
@@ -1266,17 +1334,17 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         // The anisotropy's axes come from the surface's tangent frame, which three.js builds from
         // the normal map's coordinates where the material has a normal map, and from the first
         // coordinates otherwise.
-        var frame_at = first;
+        var frame_at = map_uv(flags, 0u, raw);
         if heights == 0u && map_ready(m.maps.z) {
-            frame_at = map_uv(flags, 2u, first, second);
+            frame_at = map_uv(flags, NORMAL_SLOT, raw);
         }
         let frame = tangent_frame(input, frame_at, position_dx, position_dy);
         s.anisotropyTangent = frame[0];
         s.anisotropyBitangent = frame[1];
-        // Its map takes the specular color map's slot in the iridescence family, which the row's
-        // kind names.
-        if u32(anisotropy_row.z) == 1u && map_ready(m.more_maps.w) {
-            let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
+        // Its map takes the specular color map's slot in the iridescence family, which the row
+        // names by that slot's kind.
+        if color_kind == 1u && map_ready(m.more_maps.w) {
+            let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, raw));
             s.anisotropyDirection = texel.rg;
             s.anisotropyMapStrength = texel.b;
         }
@@ -1290,7 +1358,7 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     // did keeps its light; the bake's term is clamped so a surface that faces away from the light
     // does not blow up.
     if map_ready(light_map_direction) {
-        let at = light_map_at(map_uv(flags, 5u, first, second));
+        let at = light_map_at(map_uv(flags, 5u, raw));
         let direction = normalize(light_texel(light_map_direction, at).rgb * 2.0 - 1.0);
         let toward = dot(s.normal, direction);
         let baked = dot(input.normal, direction);
@@ -2187,6 +2255,9 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #else
     material_row = material_of(in.material);
 #ifdef MAPS
+    map_material = in.material;
+#endif
+#ifdef MAPS
     // Only a light-mapped material reads the light map's transform and direction layer.
     if map_ready(material_row.more_maps.y) {
         light_map_uv = material_light_map_uv(in.material);
@@ -2198,7 +2269,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #ifdef TRANSMISSION
     transmission_row = material_transmission(in.material);
-    layer_maps_kind = layer_maps_kind_of(in.material);
+    layer_maps_kinds = layer_maps_kind_of(in.material);
     object_scale = in.scale;
 #else ifdef TRANSLUCENCY
     translucency_row = material_translucency(in.material);
@@ -2377,6 +2448,9 @@ fn decal_ramp(low: f32, high: f32, x: f32) -> f32 {
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4f {
     material_row = material_of(in.material);
+#ifdef MAPS
+    map_material = in.material;
+#endif
 #ifdef MAPS
     // Only a light-mapped material reads the light map's transform and direction layer.
     if map_ready(material_row.more_maps.y) {

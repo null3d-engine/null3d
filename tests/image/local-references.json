@@ -1,0 +1,92 @@
+{
+	"chromium-swiftshader/compat/gltf-clearcoat-car-paint.png": {
+		"test": "gltf-clearcoat-car-paint",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/gltf-sheen-chair.png": {
+		"test": "gltf-sheen-chair",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/gltf-sheen-cloth.png": {
+		"test": "gltf-sheen-cloth",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/gltf-texture-transform.png": {
+		"test": "gltf-texture-transform",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/gltf-toy-car.png": {
+		"test": "gltf-toy-car",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/gltf-clearcoat-car-paint.png": {
+		"test": "gltf-clearcoat-car-paint",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/gltf-sheen-chair.png": {
+		"test": "gltf-sheen-chair",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/gltf-sheen-cloth.png": {
+		"test": "gltf-sheen-cloth",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/gltf-texture-transform.png": {
+		"test": "gltf-texture-transform",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/gltf-toy-car.png": {
+		"test": "gltf-toy-car",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
+		"test": "gltf-clearcoat-car-paint",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/gltf-sheen-chair.png": {
+		"test": "gltf-sheen-chair",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/gltf-sheen-cloth.png": {
+		"test": "gltf-sheen-cloth",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/gltf-texture-transform.png": {
+		"test": "gltf-texture-transform",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/gltf-toy-car.png": {
+		"test": "gltf-toy-car",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	}
+}

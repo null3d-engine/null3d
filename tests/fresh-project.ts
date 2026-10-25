@@ -41,12 +41,8 @@ import {
 } from '../packages/vite-plugin/src/index.ts';
 import { shaderCacheFolder } from '../packages/vite-plugin/src/shader-cache.ts';
 import { cacheDir, cacheOff, pruneCacheLocked, secondsSince } from '../tools/lib/build-cache.ts';
-import {
-	DEFAULT_PACK_DIR,
-	PACKAGES,
-	type PackedPackage,
-	packPackages,
-} from '../tools/lib/packages.ts';
+import { DEFAULT_PACK_DIR, packPackages } from '../tools/lib/pack.ts';
+import { PACKAGES, type PackedPackage } from '../tools/lib/packages.ts';
 import { ASSET_SCENE } from './lib/asset-scene.ts';
 import { STRICT_POLICY } from './lib/content-security-policy.ts';
 
@@ -586,7 +582,7 @@ async function startsSiteDemos(project: string, build: BackgroundStep): Promise<
 async function main(): Promise<void> {
 	const keep = process.argv.includes('--keep');
 	console.log('Packing the public packages');
-	const packed = packPackages(ROOT, join(ROOT, DEFAULT_PACK_DIR));
+	const packed = await packPackages(ROOT, join(ROOT, DEFAULT_PACK_DIR));
 	for (const { name, version, tarball } of packed) console.log(`  ${name}@${version}: ${tarball}`);
 
 	const project = mkdtempSync(join(tmpdir(), 'null3d-fresh-project-'));

@@ -1,4 +1,5 @@
-// The npm packages: what each one's pack step builds, and the checks of a packed tarball.
+// The npm packages: what each one's library build makes, and the checks of a packed tarball. The
+// pack, with what a tarball holds besides the library, is in tools/lib/pack.ts.
 //
 // In the repository, each package's `exports` give its TypeScript source under the `null3d-source`
 // condition, which the repository's tsconfig files and Vite configs set. A project that installs
@@ -9,10 +10,9 @@
 // file it wrote, so each address resolves under Node's own module rules. null3D supports one
 // bundler, Vite with the null3D plugin (D-54). The plugin builds the workers as ES modules, so that
 // they share the shader files instead of each taking in all of them.
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
 	copyFileSync,
-	cpSync,
 	existsSync,
 	mkdirSync,
 	readdirSync,
@@ -20,8 +20,9 @@ import {
 	rmSync,
 	writeFileSync,
 } from 'node:fs';
-import { dirname, join, posix, relative, resolve } from 'node:path';
+import { dirname, join, posix, relative } from 'node:path';
 import ts from 'typescript';
+import { CompilerPool } from '../../packages/vite-plugin/src/compile-pool.ts';
 import { CORE_FILES } from '../../packages/vite-plugin/src/index.ts';
 import {
 	buildSets,
@@ -30,10 +31,12 @@ import {
 	setModule,
 } from '../../packages/vite-plugin/src/material-builds.ts';
 import { ShaderPack } from '../../packages/vite-plugin/src/pack.ts';
-import { compileWgslFileSync } from '../../packages/vite-plugin/src/wgsl.ts';
+import {
+	compileHere,
+	type ShaderCompiler,
+} from '../../packages/vite-plugin/src/shader-compiler.ts';
+import { compileWgslFile } from '../../packages/vite-plugin/src/wgsl.ts';
 import { secondsSince } from './build-cache.ts';
-import { refuseStaleCore } from './core-sources.ts';
-import { generateDocs, writeGeneratedDocs } from './docs.ts';
 import { walkFiles } from './files.ts';
 import { ensureShaderModules, isShaderModule, MODULE_DIR } from './shader-modules.ts';
 import { SOURCE_CONDITION } from './source-condition.ts';
@@ -41,17 +44,11 @@ import { SOURCE_CONDITION } from './source-condition.ts';
 /** The folder of a package's built JavaScript and type declarations. */
 export const LIB_DIR = 'lib';
 
-/** The folder that the packed tarballs go to by default. */
-export const DEFAULT_PACK_DIR = 'target/packages';
-
-/** The license files that every package carries, copied from the repository's root. */
-const LICENSES = ['LICENSE-MIT', 'LICENSE-APACHE'];
-
 /**
  * The record of a release's shader set. The release writes it into the engine's `lib/` before the
  * packages are packed, and the pack keeps it while the build replaces the other built files.
  */
-const SHADER_ARTIFACT = `${LIB_DIR}/shader-artifact.json`;
+export const SHADER_ARTIFACT = `${LIB_DIR}/shader-artifact.json`;
 
 /** What a package's pack step makes, besides its license copies. */
 export interface PackageBuild {
@@ -115,7 +112,13 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		needs: ['engine'],
 		required: ['THIRD-PARTY-NOTICES.txt'],
 	},
-	impostors: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	impostors: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine', 'vite-plugin'],
+		required: [],
+	},
 	particles: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
 	geometry: {
 		compile: true,
@@ -125,21 +128,45 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		required: ['THIRD-PARTY-NOTICES.txt'],
 	},
 	// The surface function lives in a .wgsl file, which the pack compiles into a module of its own.
-	terrain: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
-	vegetation: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	terrain: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine', 'vite-plugin'],
+		required: [],
+	},
+	vegetation: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine', 'vite-plugin'],
+		required: [],
+	},
 	// Its tone curves and outline passes compile from .wgsl files into modules of their own.
 	'three-compat': {
 		compile: true,
 		shaders: false,
 		docs: false,
-		needs: ['engine'],
+		needs: ['engine', 'vite-plugin'],
 		required: ['THIRD-PARTY-NOTICES.txt'],
 	},
 	// Its task module is built as the JavaScript that the job workers import, and its two shaders
 	// compile into modules of their own.
-	splats: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	splats: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine', 'vite-plugin'],
+		required: [],
+	},
 	// Its surface and underwater WGSL compile into modules of their own.
-	water: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	water: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine', 'vite-plugin'],
+		required: [],
+	},
 	cli: {
 		compile: false,
 		shaders: false,
@@ -166,7 +193,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 };
 
 /** A package's build, or an error that lists the packages. */
-function packageBuild(name: string): PackageBuild {
+export function packageBuild(name: string): PackageBuild {
 	const build = PACKAGES[name];
 	if (!build)
 		throw new Error(
@@ -347,13 +374,45 @@ export function protectedConstructors(declarations: string, classes: ReadonlySet
 }
 
 /** Runs a command in `cwd`, and fails with its output when it fails. */
-function run(command: string, args: readonly string[], cwd: string): string {
+export function run(command: string, args: readonly string[], cwd: string): string {
 	const result = spawnSync(command, args, { cwd, encoding: 'utf8' });
 	if (result.status !== 0)
 		throw new Error(
 			`${command} ${args.join(' ')} failed with status ${result.status}:\n${result.stdout}${result.stderr}`,
 		);
 	return result.stdout;
+}
+
+/**
+ * Runs a command in `cwd` as `run` does, without blocking this process. It works under Node as
+ * well as Bun, because a browser test builds the add-ons from inside the test runner.
+ */
+function runAsync(command: string, args: readonly string[], cwd: string): Promise<string> {
+	const child = spawn(command, args, { cwd });
+	let stdout = '';
+	let stderr = '';
+	child.stdout.setEncoding('utf8');
+	child.stderr.setEncoding('utf8');
+	child.stdout.on('data', (chunk: string) => {
+		stdout += chunk;
+	});
+	child.stderr.on('data', (chunk: string) => {
+		stderr += chunk;
+	});
+	return new Promise((resolve, reject) => {
+		child.on('error', reject);
+		child.on('close', (status, signal) => {
+			if (status !== 0)
+				reject(
+					new Error(
+						`${command} ${args.join(' ')} failed with ${
+							status === null ? `signal ${signal}` : `status ${status}`
+						}:\n${stdout}${stderr}`,
+					),
+				);
+			else resolve(stdout);
+		});
+	});
 }
 
 /** The WGSL files in a package's `src/`, as paths from its folder. */
@@ -380,12 +439,22 @@ export function shaderFiles(
  * shader, and a module for each set of a custom material's builds. A project that installs the
  * package takes the compiled form as it is, so its build never compiles the shader, and a page
  * that loads the package from a CDN can load it too. The raw file stays out of `lib/`. A shader
- * that does not compile fails the pack with a message that names the file.
+ * that does not compile fails the pack with a message that names the file. The files compile at
+ * once, through `compiler`, which compiles on this thread unless it is given a worker pool.
  */
-export function compileShaders(root: string, dir: string): void {
-	for (const path of shaderSources(dir)) {
-		const named = posix.join(relative(root, dir), path);
-		const compiled = compileWgslFileSync(named, named, readFileSync(join(dir, path), 'utf8'));
+export async function compileShaders(
+	root: string,
+	dir: string,
+	compiler: ShaderCompiler = compileHere,
+): Promise<void> {
+	const results = await Promise.all(
+		shaderSources(dir).map(async (path) => {
+			const named = posix.join(relative(root, dir), path);
+			const text = readFileSync(join(dir, path), 'utf8');
+			return { path, compiled: await compileWgslFile(named, named, text, compiler) };
+		}),
+	);
+	for (const { path, compiled } of results) {
 		if ('error' in compiled) throw new Error(compiled.error.message);
 		for (const warning of compiled.warnings) console.warn(warning);
 		const builds = new ModuleBuilds();
@@ -409,10 +478,17 @@ export function compileShaders(root: string, dir: string): void {
 /**
  * Builds a package's `src/` into `lib/`: TypeScript writes the JavaScript and the declarations,
  * the build copies the JavaScript and declaration files that `src/` holds as they are, compiles
- * the WGSL files, and then rewrites every relative address to the built file. Fails when an import
- * answers no built file.
+ * the WGSL files, and then rewrites each relative address to the built file. The shader build's
+ * own JavaScript is copied only with `shaderJs`, and never rewritten, since its addresses already
+ * name the files. Fails when an import answers no built file.
  */
-function compile(root: string, dir: string, build: PackageBuild): void {
+async function compile(
+	root: string,
+	dir: string,
+	build: PackageBuild,
+	compiler: ShaderCompiler,
+	shaderJs: boolean,
+): Promise<void> {
 	const lib = join(dir, LIB_DIR);
 	// A release writes the shader set's record into the engine's `lib/` before the pack runs. Any
 	// package that needs the engine compiles it again, and the pack order is not the order of the
@@ -421,7 +497,7 @@ function compile(root: string, dir: string, build: PackageBuild): void {
 	const keptArtifact = existsSync(artifact) ? readFileSync(artifact) : null;
 	rmSync(lib, { recursive: true, force: true });
 	const tsc = join(root, 'node_modules/typescript/bin/tsc');
-	run(
+	await runAsync(
 		process.execPath,
 		[
 			tsc,
@@ -444,12 +520,23 @@ function compile(root: string, dir: string, build: PackageBuild): void {
 		],
 		root,
 	);
-	for (const path of walkFiles(dir, 'src', (path) => COPIED_FILE.test(path))) {
-		const to = join(lib, path.slice('src/'.length));
+	const copied = walkFiles(join(dir, 'src'), '.', (path) => COPIED_FILE.test(path));
+	// The shader build writes most of the engine's shader modules as JavaScript, gigabytes of them,
+	// whose addresses already name the files. The build never parses them, and copies them only for
+	// a build that ships them: the npm package leaves them out, since the Vite plugin supplies them.
+	const generated = relative(join(dir, 'src'), join(root, MODULE_DIR));
+	const generatedJs = new Set(
+		copied.filter(
+			(path) => posix.dirname(path) === generated && isShaderModule(posix.basename(path)),
+		),
+	);
+	for (const path of copied) {
+		if (generatedJs.has(path) && !shaderJs) continue;
+		const to = join(lib, path);
 		mkdirSync(dirname(to), { recursive: true });
-		copyFileSync(join(dir, path), to);
+		copyFileSync(join(dir, 'src', path), to);
 	}
-	compileShaders(root, dir);
+	await compileShaders(root, dir, compiler);
 	for (const path of walkFiles(dir, 'src', (path) => /(?<!\.test|\.d)\.ts$/.test(path))) {
 		const classes = internalConstructorClasses(readFileSync(join(dir, path), 'utf8'));
 		if (classes.length === 0) continue;
@@ -462,9 +549,10 @@ function compile(root: string, dir: string, build: PackageBuild): void {
 	// A packaged module that imports a repository-only entry point then answers no built file, and
 	// the rewrite below fails on it.
 	for (const file of repositoryOnlyFiles(build)) rmSync(join(dir, file), { force: true });
-	const exists = (path: string) => existsSync(join(lib, path));
+	const exists = (path: string) => generatedJs.has(path) || existsSync(join(lib, path));
 	const problems: string[] = [];
 	for (const path of walkFiles(lib, '.', (path) => BUILT_FILE.test(path))) {
+		if (generatedJs.has(path)) continue;
 		const file = join(lib, path);
 		const before = readFileSync(file, 'utf8');
 		const { text, unresolved } = rewriteAddresses(posix.normalize(path), before, exists);
@@ -480,76 +568,68 @@ function compile(root: string, dir: string, build: PackageBuild): void {
 }
 
 /** Builds one package's own library: the shader modules when its source imports them, then `lib/`. */
-function buildLibrary(root: string, name: string): void {
+async function buildLibrary(
+	root: string,
+	name: string,
+	compiler: ShaderCompiler,
+	shaderJs: boolean,
+): Promise<void> {
 	const build = packageBuild(name);
 	if (build.shaders) ensureShaderModules(root);
-	if (build.compile) compile(root, join(root, 'packages', name), build);
+	if (build.compile) await compile(root, join(root, 'packages', name), build, compiler, shaderJs);
 }
 
 /**
- * Builds a package's JavaScript and declarations into its `lib/`, after the libraries of the
- * packages that it needs, and the shader modules that its source imports. It writes nothing else
- * that a tarball holds, such as the docs copy, so a tool that only needs files a browser runs, such
- * as the CDN build, calls this.
+ * Builds the libraries of the packages named, each one once, and prints each package's time. A
+ * package builds as soon as the packages that it needs have built, so the add-ons build at the
+ * same time once the engine and, for those whose WGSL declares the plugin's types, the Vite plugin
+ * have. Their WGSL shares one pool of compiler threads. Writes
+ * nothing else that a tarball holds, so a tool that only needs files a browser runs, such as the
+ * CDN build, calls this. With `shaderJs`, the engine's library also holds the shader modules that
+ * the shader build wrote as JavaScript, which a page with no bundler loads and the npm package
+ * leaves out.
  */
-export function buildPackageLibrary(root: string, name: string): void {
-	for (const needed of [...packageBuild(name).needs, name]) buildLibrary(root, needed);
-}
-
-/**
- * Writes what a tarball holds beside the library and the WebAssembly builds: the license copies,
- * and the engine's docs with their generated pages and sections, which read the shader modules.
- */
-function writePackageFiles(root: string, name: string): void {
-	const dir = join(root, 'packages', name);
-	for (const file of LICENSES) copyFileSync(join(root, file), join(dir, file));
-	if (packageBuild(name).docs) {
-		// Git keeps no generated docs, so the pack writes them first.
-		writeGeneratedDocs(root, generateDocs(root));
-		rmSync(join(dir, 'docs'), { recursive: true, force: true });
-		cpSync(join(root, 'docs'), join(dir, 'docs'), { recursive: true });
-	}
-}
-
-/**
- * Makes everything that a package's tarball holds besides the files git keeps and the WebAssembly
- * builds: the license copies, the built JavaScript and declarations, and the engine's shader
- * modules and docs with their generated pages and sections. Each package's `prepack` script runs
- * this, so `bun pm pack` and `npm pack` of one package pack a complete package.
- */
-export function buildPackage(root: string, name: string): void {
-	buildPackageLibrary(root, name);
-	writePackageFiles(root, name);
-}
-
-/**
- * Builds the packages named in `names` as their `prepack` scripts do, but each package's library
- * once: the packages that one needs build before it, and a package that several others need is
- * not compiled again for each of them. Through the prepack scripts, a pack of every package
- * compiled the engine once for itself and once more for each add-on that needs it. Prints each
- * package's time, so a long build shows where it is.
- */
-export function buildPackages(root: string, names: readonly string[]): void {
-	buildPackageLibraries(root, names);
-	for (const name of names) writePackageFiles(root, name);
-}
-
-/**
- * Builds the libraries of the packages named, each one once, and prints each package's time: the
- * packages that one needs build before it, and a package that several others need is not compiled
- * again for each of them. Writes nothing else that a tarball holds.
- */
-export function buildPackageLibraries(root: string, names: readonly string[]): void {
-	const built = new Set<string>();
-	const library = (name: string): void => {
-		if (built.has(name)) return;
-		for (const needed of packageBuild(name).needs) library(needed);
-		const started = performance.now();
-		buildLibrary(root, name);
-		built.add(name);
-		console.log(`  built ${name} in ${secondsSince(started)} s`);
+export async function buildPackageLibraries(
+	root: string,
+	names: readonly string[],
+	{ shaderJs = false }: { shaderJs?: boolean } = {},
+): Promise<void> {
+	const pool = new CompilerPool();
+	const builds = new Map<string, Promise<void>>();
+	const library = (name: string): Promise<void> => {
+		let built = builds.get(name);
+		if (!built) {
+			built = (async () => {
+				// Every build that this one needs settles before this one starts or fails, so a failed
+				// need never leaves another still writing into its `lib/`.
+				const needs = await Promise.allSettled(packageBuild(name).needs.map(library));
+				const failed = needs.find((need) => need.status === 'rejected');
+				if (failed) throw failed.reason;
+				const started = performance.now();
+				await buildLibrary(root, name, pool, shaderJs);
+				console.log(`  built ${name} in ${secondsSince(started)} s`);
+			})();
+			builds.set(name, built);
+		}
+		return built;
 	};
-	for (const name of names) library(name);
+	try {
+		// Every build ends before a failure is thrown, so no build still writes into a `lib/` that the
+		// caller removes. Each failure of every build started, the needs among them, is named once:
+		// a failed need fails each package that needs it with the same error.
+		await Promise.allSettled(names.map(library));
+		const outcomes = await Promise.allSettled(builds.values());
+		const reasons = [
+			...new Set(
+				outcomes.flatMap((outcome) => (outcome.status === 'rejected' ? [outcome.reason] : [])),
+			),
+		];
+		if (reasons.length === 1) throw reasons[0];
+		if (reasons.length > 1)
+			throw new Error(reasons.map((reason) => (reason as Error).message).join('\n\n'));
+	} finally {
+		await pool.close();
+	}
 }
 
 /** The fields of a package manifest that the checks read. */
@@ -665,66 +745,4 @@ export function shaderModuleJsFiles(root: string): string[] {
 		.filter(isShaderModule)
 		.map((name) => `${folder}/${name.replace(/\.ts$/, '.js')}`)
 		.sort();
-}
-
-/**
- * Packs every public package into `out`: it builds each package once (buildPackages), then packs
- * it with `bun pm pack`, which writes the real version in place of each `workspace:` one, without
- * the `prepack` script, whose build is done. Then checks each tarball, and fails with every
- * problem. The WebAssembly builds must exist first (`bun run build`). Afterwards it deletes each
- * `lib/` that the build wrote, so no check in the repository can read built files in place of the
- * source.
- */
-export function packPackages(root: string, out: string): PackedPackage[] {
-	refuseStaleCore(root);
-	rmSync(out, { recursive: true, force: true });
-	mkdirSync(out, { recursive: true });
-	const folders = publicPackages(root);
-	try {
-		buildPackages(root, folders);
-		return packEach(root, out, folders);
-	} finally {
-		for (const folder of folders)
-			rmSync(join(root, 'packages', folder, LIB_DIR), { recursive: true, force: true });
-	}
-}
-
-/** Packs each package in `folders` into `out` and checks each tarball. */
-function packEach(root: string, out: string, folders: readonly string[]): PackedPackage[] {
-	const packed: PackedPackage[] = [];
-	const problems: string[] = [];
-	for (const folder of folders) {
-		const dir = join(root, 'packages', folder);
-		const started = performance.now();
-		const printed = run(
-			'bun',
-			['pm', 'pack', '--ignore-scripts', '--quiet', '--destination', out],
-			dir,
-		);
-		console.log(`  packed ${folder} in ${secondsSince(started)} s`);
-		const tarball = resolve(out, printed.trim().split('\n').at(-1) ?? '');
-		const manifest = JSON.parse(run('tar', ['-xOzf', tarball, 'package/package.json'], root));
-		const files = new Set(
-			run('tar', ['-tzf', tarball], root)
-				.split('\n')
-				.filter((line) => line.startsWith('package/') && !line.endsWith('/'))
-				.map((line) => line.slice('package/'.length)),
-		);
-		const shaders = shaderFiles(root, folder);
-		const required = [...(PACKAGES[folder]?.required ?? []), ...shaders.required];
-		const forbidden = repositoryOnlyFiles(packageBuild(folder));
-		if (PACKAGES[folder]?.shaders) {
-			required.push(...shaderDeclarationFiles(root));
-			forbidden.push(...shaderModuleJsFiles(root));
-			// A release's package carries the address, the file name and the hash of its shader set.
-			if (existsSync(join(root, 'packages', folder, SHADER_ARTIFACT)))
-				required.push(SHADER_ARTIFACT);
-		}
-		for (const problem of packageProblems(manifest, files, required, forbidden, shaders.forbidden))
-			problems.push(`${manifest.name}: ${problem}`);
-		packed.push({ folder, name: manifest.name, version: manifest.version, tarball });
-	}
-	if (problems.length > 0)
-		throw new Error(`the packed packages have problems:\n  ${problems.join('\n  ')}`);
-	return packed;
 }
