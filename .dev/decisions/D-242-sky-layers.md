@@ -205,9 +205,9 @@ The aurora demo's six pictures were redrawn on 25 October 2026, in the form [ima
 tests](../image-tests.md#references) records. The old ones were drawn on 24 October, before the
 layer reached the map, and they still held the demo's stand-in ambient light, which the demo no
 longer has. Against them the drawn picture differs in 48.9 per cent of its pixels by more than ten
-levels, and the ice's mean green falls from 22.5 to 6.6. The manifest's tolerance weighs a pixel's
-colour distance rather than its levels, so those pixels passed it, and a passing comparison alone
-did not mean the same picture. The Mac's GPU drew that set, and CI's software GPU draws the other.
+levels. The new picture's ice has a mean green of 6.6, where the old one's was 22.5. The manifest's
+tolerance weighs a pixel's colour distance rather than its levels, so those pixels passed it, and a
+passing comparison alone did not mean the same picture. The Mac's GPU drew that set, and CI's software GPU draws the other.
 
 `sky-layer-light` keeps no pictures: it reads the spheres' colours, so it needs no reference.
 
@@ -225,12 +225,15 @@ engine mode and in the production build, and it asserts the E1223 refusal in a r
 The held frame's map may hold no aurora, and that is an inference. The checker measured the ice's
 green excess fall from +7.7 to -0.8 against the sky above, which is a blue sky with no curtains.
 The draw thread shows the map's build of the layer's shader present at every stage, and the light
-capture running; on a loaded machine the light read landed 3.2 seconds after its fill, once the held
-frames had been drawn. The checker's mechanism is that a layer installed during setup arrives after
-the first fill, and hold mode draws no later frame for the retry fill that would bring it in. That
-needs a proof, and one page can give it: install the layer during setup and read the ice on the
-first frames, blue first and green only after the next fill, or read one sky-map texel where the
-layer is bright. Until then it stays an inference.
+capture running. Its light can still miss a held frame: a held frame is drawn once, and the capture
+replays that drawing, so a light that lands after the frame's list is recorded cannot enter the
+picture. On a loaded machine the light read was queued at 0.87 seconds and landed at 4.1, while the
+capture answered at 5.65. The reflections are a separate question, and the checker's mechanism for
+them is that a layer installed during setup arrives after the first fill, and hold mode draws no
+later frame for the retry fill that would bring it in. That needs a proof, and one page can give it:
+install the layer during setup and read the ice on the first frames, blue first and green only after
+the next fill, or read one sky-map texel where the layer is bright. Until then it stays an
+inference.
 
 The demo's cloud coverage does not suppress the layer. The aurora's brightness scales by the clear
 fraction, about 0.96 at the demo's settings (`examples/addons/aurora/aurora.wgsl`), not by the
