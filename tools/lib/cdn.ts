@@ -207,7 +207,7 @@ export async function buildCdn(root: string, out: string): Promise<CdnBuild> {
 		const bytes = files.reduce((total, file) => total + file.bytes, 0);
 		return { out, files, bytes, reused: true };
 	}
-	await buildPackageLibraries(root, ['engine', ...CDN_ADDONS]);
+	await buildPackageLibraries(root, ['engine', ...CDN_ADDONS], { shaderJs: true });
 	const missing = missingCdnSources(root);
 	if (missing.length > 0)
 		throw new Error(
