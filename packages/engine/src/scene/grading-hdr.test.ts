@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import { linearToSrgb } from '../math/color';
-import { bakeGrade, GRADE_SIZE, type GradeValues, type Rgb, resolveGradingGains } from './grading';
+import {
+	bakeGrade,
+	GRADE_SIZE,
+	type GradeValues,
+	type Rgb,
+	resolveGradingGains,
+	whiteBalanceGains,
+} from './grading';
 import { bakeGradeHdr, decodeLogC, encodeLogC, GRADE_HDR_MAX, gradeHdrColor } from './grading-hdr';
 
 /** A strong grade, of the kind a colorist sets: a warm balance, a lifted toe and a split tone. */
@@ -139,5 +146,104 @@ describe('the table over high dynamic range light', () => {
 
 	it('uses a display-space table for the design that grades after the curve', () => {
 		expect(bakeGrade(WARM).length).toBe(GRADE_SIZE ** 3 * 4);
+	});
+});
+
+/** The luma weights of Rec. 709, written here from the definition that the controls share. */
+const WEIGHTS = [0.2126, 0.7152, 0.0722] as const;
+
+const lumaOf = (c: Rgb): number => WEIGHTS[0] * c[0] + WEIGHTS[1] * c[1] + WEIGHTS[2] * c[2];
+
+const clamped = (value: number): number => Math.min(Math.max(value, 0), 1);
+
+/** A color's chroma: its channels with their luma removed, which is what a tint adds. */
+function chromaOf(c: Rgb): Rgb {
+	const level = lumaOf(c);
+	return [c[0] - level, c[1] - level, c[2] - level];
+}
+
+/** The highlights' share of a split tone at a graded code, from the balance and its smoothstep. */
+function highlightShare(level: number, balance: number): number {
+	const mid = 0.5 + 0.4 * balance;
+	const t = clamped((level - (mid - 0.25)) / 0.5);
+	return t * t * (3 - 2 * t);
+}
+
+/**
+ * The graded light that the controls define for light `c`, written here from their documented
+ * order on the LogC codes: white balance, saturation around the luma, lift and gamma and gain per
+ * channel, then the split tone. The log code and its inverse are the engine's, and their own test
+ * covers them.
+ */
+function referenceHdr(c: Rgb, values: GradeValues, whiteBalance: Rgb): Rgb {
+	const codes: Rgb = [0, 1, 2].map((channel) =>
+		encodeLogC(Math.max(c[channel] as number, 0) * (whiteBalance[channel] as number)),
+	) as unknown as Rgb;
+	const level = lumaOf(codes);
+	const colored: Rgb = [0, 1, 2].map(
+		(channel) => level + ((codes[channel] as number) - level) * values.saturation,
+	) as unknown as Rgb;
+	const toned: Rgb = [0, 1, 2].map(
+		(channel) =>
+			Math.max((colored[channel] as number) + (values.lift[channel] as number), 0) **
+				(1 / (values.gamma[channel] as number)) *
+			(values.gain[channel] as number),
+	) as unknown as Rgb;
+	const share = values.strength * highlightShare(lumaOf(toned), values.balance);
+	const shadows = chromaOf(values.shadows);
+	const highlights = chromaOf(values.highlights);
+	const graded: Rgb = [0, 1, 2].map((channel) =>
+		clamped(
+			(toned[channel] as number) +
+				(shadows[channel] as number) * (values.strength - share) +
+				(highlights[channel] as number) * share,
+		),
+	) as unknown as Rgb;
+	return [0, 1, 2].map((channel) => decodeLogC(graded[channel] as number)) as unknown as Rgb;
+}
+
+describe('the light table against an analytic reference', () => {
+	it('holds the closed form of a gain on its texels', () => {
+		const table = bakeGradeHdr({ ...NEUTRAL, gain: [1.2, 1, 0.8] });
+		for (const code of [0, 0.25, 0.5, 0.75, 1]) {
+			const at = Math.round(code * (GRADE_SIZE - 1));
+			const texel = 4 * (at + GRADE_SIZE * at + GRADE_SIZE * GRADE_SIZE * at);
+			// The texel's code names its light, the gain acts on that code, and the light is the
+			// code's inverse, which stops at black.
+			const light = Math.max(decodeLogC(at / (GRADE_SIZE - 1)), 0);
+			const want = [1.2, 1, 0.8].map((gain) =>
+				Math.max(decodeLogC(clamped(encodeLogC(light) * gain)), 0),
+			);
+			for (let channel = 0; channel < 3; channel++)
+				expect(table[texel + channel] as number).toBeCloseTo(want[channel] as number, 5);
+		}
+	});
+
+	it('misses its analytic reference by under eight steps over the whole domain', () => {
+		// The recorded figure of 4.80 came from 17 points an axis against the bake's own function. A
+		// fine grid against this reference finds 7.2 steps, and 10% of colors outside one step. The
+		// domain gives the darkest light about two texels, and the error sits there.
+		const table = bakeGradeHdr(WARM);
+		const gains = whiteBalanceGains(WARM.whiteBalance[0], WARM.whiteBalance[1]);
+		let worst = 0;
+		const steps = 48;
+		for (let blue = 0; blue <= steps; blue++)
+			for (let green = 0; green <= steps; green++)
+				for (let red = 0; red <= steps; red++) {
+					const light = [red, green, blue].map((code) =>
+						decodeLogC(code / steps),
+					) as unknown as Rgb;
+					const want = referenceHdr(light, WARM, gains);
+					const got = lookUp(table, light);
+					for (let channel = 0; channel < 3; channel++)
+						worst = Math.max(
+							worst,
+							Math.abs(
+								linearToSrgb(clamped(got[channel] as number)) -
+									linearToSrgb(clamped(want[channel] as number)),
+							) * 255,
+						);
+				}
+		expect(worst).toBeLessThan(8);
 	});
 });
