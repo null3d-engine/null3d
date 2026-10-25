@@ -41,10 +41,11 @@ const MAX_BODY_LINES = 500;
  * October 2026, after the screen-space reflections rows, so the translucency and skin-blur rows
  * raised it by a hundred words, which is about 130 tokens. The sharpening row raised it by 22 words
  * on 21 October 2026, about 29 tokens. The feature-intake section and the foundation add-on table
- * raised it by 54 words on 24 October 2026, about 70 tokens, after they replaced six duplicated
- * table rows and the asset rule's step list. A body that outgrows it trims, or raises this figure
- * with its reason beside it. The wind add-on's table row raised it by 28 words on 26 October 2026,
- * about 36 tokens: the twelfth foundation add-on belongs in the table that names them.
+ * added 357 words to the body on 24 October 2026, after they replaced six duplicated table rows and
+ * the asset rule's step list, and the budget rose by 70 to 4,000, about 91 tokens. A body that
+ * outgrows it trims, or raises this figure with its reason beside it. The wind add-on's table row
+ * added 28 words to the body on 26 October 2026, and the budget rose by 25 to 4,025, about 32
+ * tokens: the twelfth foundation add-on belongs in the table that names them.
  */
 const BODY_WORD_BUDGET = 4025;
 
