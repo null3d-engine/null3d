@@ -1472,9 +1472,12 @@ const LIGHT_PROPERTIES: ReadonlyMap<string, number> = new Map([
  * The properties that a model's clips move, as the prefab's copies play them: one binding for each
  * property, with the value that the file gave it, and the tracks of each clip by its id in the
  * core. Returns undefined when no clip moves a property, and notes the tracks that name a target
- * the copy does not have.
+ * the copy does not have. A material keeps one transform for all its maps, so a clip that moves two
+ * of them plays the first.
+ *
+ * @internal
  */
-function propertyAnimation(
+export function propertyAnimation(
 	data: GltfData,
 	materials: FileMaterials,
 	placed: readonly number[],
