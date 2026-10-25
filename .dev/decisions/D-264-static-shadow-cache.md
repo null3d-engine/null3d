@@ -6,7 +6,7 @@ frame time that decides the rule is not measured, because Creek's page drifts be
 
 Summary: Do not build a cache of the still casters now. A cache could keep its layers in 75% to 98%
 of the frames of the engine's own scenes, so the keep rate passes. The measured saving at Creek's
-best pose for a cache is 0.26 ms, which clears 3% only where Creek's frame is under about 8.75 ms.
+best pose for a cache is 0.26 ms, which clears 3% only where Creek's frame is under about 8.5 ms.
 No such frame has been measured, and Creek's page cannot be made to yield one until its draw calls
 stop swinging between runs.
 
@@ -162,7 +162,7 @@ lowest share measured is Creek's 75%.
 
 Where nothing in a cascade moves, a plain rest rule keeps the same frames with no second array. The
 rule skips a cascade's pass while its box holds, the sun holds and no caster in it moved. That takes
-the whole of forest's 98% and most of the time-of-day demo's 50%.
+the whole of forest's 98% and most of the time-of-day demo's 80%.
 
 A cache earns its own cost only in the frames that a rest rule cannot take: the ones where a caster
 moved. The cache keeps the still casters and draws the movers over them. Creek may be that case,
@@ -206,10 +206,10 @@ all of its shadow cost.
 | Second cascade | 0.379, 0.374, 0.381 ms | 0.371, 0.350, 0.347 ms |
 | Draw calls | 191.5, 190.5, 225 | 185, 185, 150 |
 
-The grass costs about 0.01 ms in either cascade at this pose. The second cascade costs 0.37 ms, so
-almost all of it stands still: `S2` is about 0.37 ms. This is close to the best pose for a cache,
-because the opening wide shot barely puts the grass in the cascades. The route's low passes over the
-water would show more.
+The grass costs about 0.01 to 0.02 ms in either cascade at this pose. The second cascade costs about
+0.38 ms with the grass casting, and 0.35 to 0.37 ms without it. So about 0.36 ms of it stands still:
+`S2` is about 0.36 ms. This is close to the best pose for a cache, because the opening wide shot
+barely puts the grass in the cascades. The route's low passes over the water would show more.
 
 The page still drifts over a longer sitting. The third measurement of each group read 225 and 150
 draw calls against the others' 190 and 185. Only the first two measurements of each group are
@@ -218,20 +218,20 @@ comparable. The frame times of these runs were not recorded.
 ### What the figures say
 
 A cache saves, in each frame it keeps, the still casters' draw less the restore. Over a frame of
-Creek at its 75% keep rate, with `S2` of 0.37 ms:
+Creek at its 75% keep rate, with `S2` of 0.36 ms:
 
-    saving = 0.75 x (0.10 + 0.37) - 2 x 0.045 = 0.26 ms
+    saving = 0.75 x (0.10 + 0.36) - 2 x 0.045 = 0.26 ms
 
 The restore is D-16's 0.045 ms a layer, for Creek's two.
 
-So the saving is 0.26 ms. It reaches 3% of Creek's frame only where that frame is under about
-8.75 ms. No frame time for Creek has been measured that low, and the frame times of the run that
+So the saving is about 0.26 ms. It reaches 3% of Creek's frame only where that frame is under about
+8.5 ms. No frame time for Creek has been measured that low, and the frame times of the run that
 produced this saving were not recorded. The rule is therefore not met by any figure this record
 holds.
 
-The time-of-day demo cannot pay for a cache at all. Its two measured cascades total 0.142 and
-0.167 ms. At its 80% keep rate those save about 0.12 ms, and its three layers' restore takes
-0.135 ms.
+The time-of-day demo cannot pay for a cache. Its two measured cascades total 0.142 and 0.167 ms. At
+its 80% keep rate those save 0.11 and 0.13 ms. Its three layers' restore takes 0.135 ms, which
+cancels the saving.
 
 The rest rule takes a different set of frames. It fires only where nothing in a cascade moved. In
 Creek the grass and the leaves move in every frame, so there it never fires. In forest, whose
@@ -278,7 +278,7 @@ no pixel.
 
 ## What would change the answer
 
-One figure: a quiet-machine frame for Creek under about 8.75 ms. At that frame, the measured saving
+One figure: a quiet-machine frame for Creek under about 8.5 ms. At that frame, the measured saving
 of 0.26 ms reaches 3%. A phone figure is needed too, because the rule asks for both.
 
 That figure needs a page where two runs of one configuration draw the same work. Creek's cannot be
@@ -293,7 +293,7 @@ cache better than Creek does. Skyway casts no shadows at all, so it cannot be a 
 
 Do not build a cache of the still casters now. The keep rate passes, at 75% in Creek and up to 98%
 in the scenes whose sun stands still. The saving at Creek's best pose for a cache is 0.26 ms, and it
-reaches 3% of the frame only below 8.75 ms. No frame time that low has been measured, and the only
+reaches 3% of the frame only below 8.5 ms. No frame time that low has been measured, and the only
 frame times this record holds came from the moving route, so they are unusable.
 
 The cache is worth building when its saving clears 3% of a measured frame on this computer and on a
