@@ -133,13 +133,13 @@ interface Samplers {
 	panorama: WebGLSampler;
 }
 
-interface Units {
+export interface Units {
 	cube: number;
 	panorama: number;
 }
 
 /** The programs that a page's sky layer builds: its draws and the capture of the map's light. */
-interface LayerPrograms {
+export interface LayerPrograms {
 	sky: WebGLProgram;
 	panorama: WebGLProgram;
 	feedback: WebGLProgram;
@@ -149,6 +149,25 @@ interface LayerPrograms {
 /** The texture units from which the programs read the cube source and the panorama. */
 function unitsOf(host: ProgramHost, programs: Record<Pipeline, WebGLProgram>): Units {
 	return { cube: host.unit(programs.blur, 0, 1), panorama: host.unit(programs.panorama, 0, 3) };
+}
+
+/**
+ * A page's sky layer programs, and the texture units they read. A unit comes from the program that
+ * samples the texture, since a stage that samples none of it drops its uniform: the capture of the
+ * map's light sums the cube, and a draw samples the panorama in place of the analytic sky. A layer's
+ * own draw of the sky samples no cube, so the cube's unit is the capture's.
+ */
+export function buildLayer(host: ProgramHost, layer: ShaderVariant<Pipeline>): LayerPrograms {
+	const shader = { webgl2: layer };
+	const sky = host.program({ shader, pipeline: 'sky' });
+	const panorama = host.program({ shader, pipeline: 'panorama' });
+	const feedback = host.program({ shader, pipeline: 'feedback' });
+	return {
+		sky,
+		panorama,
+		feedback,
+		units: { cube: host.unit(feedback, 0, 1), panorama: host.unit(panorama, 0, 3) },
+	};
 }
 
 /** The generator of environment maps, from the environment shader's GLSL build. */
@@ -203,18 +222,10 @@ export function environmentGenerator(
 		layer: ShaderVariant<Pipeline>,
 	): LayerPrograms => {
 		let made = kept.layers.get(layer);
-		if (made) return made;
-		const shader = { webgl2: layer };
-		const sky = host.program({ shader, pipeline: 'sky' });
-		const panorama = host.program({ shader, pipeline: 'panorama' });
-		const feedback = host.program({ shader, pipeline: 'feedback' });
-		made = {
-			sky,
-			panorama,
-			feedback,
-			units: { cube: host.unit(sky, 0, 1), panorama: host.unit(panorama, 0, 3) },
-		};
-		kept.layers.set(layer, made);
+		if (!made) {
+			made = buildLayer(host, layer);
+			kept.layers.set(layer, made);
+		}
 		return made;
 	};
 	const prepare = (host: ProgramHost): Promise<void> => {

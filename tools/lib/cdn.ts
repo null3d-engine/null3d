@@ -57,6 +57,7 @@ export const CDN_ADDONS: readonly string[] = [
 	'three-compat',
 	'vegetation',
 	'water',
+	'wind',
 ];
 
 /** The engine files that an add-on's code imports by package name, and their place in the build. */
