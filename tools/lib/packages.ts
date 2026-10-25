@@ -9,7 +9,7 @@
 // file it wrote, so each address resolves under Node's own module rules. null3D supports one
 // bundler, Vite with the null3D plugin (D-54). The plugin builds the workers as ES modules, so that
 // they share the shader files instead of each taking in all of them.
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
 	copyFileSync,
 	cpSync,
@@ -391,19 +391,36 @@ function run(command: string, args: readonly string[], cwd: string): string {
 	return result.stdout;
 }
 
-/** Runs a command in `cwd` as `run` does, without blocking this process. */
-async function runAsync(command: string, args: readonly string[], cwd: string): Promise<string> {
-	const child = Bun.spawn([command, ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
-	const [stdout, stderr, status] = await Promise.all([
-		new Response(child.stdout).text(),
-		new Response(child.stderr).text(),
-		child.exited,
-	]);
-	if (status !== 0)
-		throw new Error(
-			`${command} ${args.join(' ')} failed with status ${status}:\n${stdout}${stderr}`,
-		);
-	return stdout;
+/**
+ * Runs a command in `cwd` as `run` does, without blocking this process. It works under Node as
+ * well as Bun, because a browser test builds the add-ons from inside the test runner.
+ */
+function runAsync(command: string, args: readonly string[], cwd: string): Promise<string> {
+	const child = spawn(command, args, { cwd });
+	let stdout = '';
+	let stderr = '';
+	child.stdout.setEncoding('utf8');
+	child.stderr.setEncoding('utf8');
+	child.stdout.on('data', (chunk: string) => {
+		stdout += chunk;
+	});
+	child.stderr.on('data', (chunk: string) => {
+		stderr += chunk;
+	});
+	return new Promise((resolve, reject) => {
+		child.on('error', reject);
+		child.on('close', (status, signal) => {
+			if (status !== 0)
+				reject(
+					new Error(
+						`${command} ${args.join(' ')} failed with ${
+							status === null ? `signal ${signal}` : `status ${status}`
+						}:\n${stdout}${stderr}`,
+					),
+				);
+			else resolve(stdout);
+		});
+	});
 }
 
 /** The WGSL files in a package's `src/`, as paths from its folder. */
