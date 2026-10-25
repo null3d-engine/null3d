@@ -40,16 +40,17 @@ either encoding, at 4 bytes for each texel of an `rgb8` radiance and 8 for one o
 They are what the texture store holds for a texture of that size and format, not an estimate
 from the file.
 
-The cost waits for a quiet machine, because a figure from a loaded one would say nothing. The
-`lightmap-cost` page measures it: 24 lit quads fill a 1600 by 900 view once, so every pixel shades
-one fragment, and the plain and directional builds swap in turns for three rounds each. Before the
-timing the page draws one frame of each side and compares them, so a direction that the engine
-dropped fails the run instead of reporting no cost. On 25 October 2026 the machine stayed above the
-guide's load ceiling all day. Untimed trials at a load of about 100 read the directional side 0.06
-ms slower on every path: 0.99 against 1.05 ms on WebGPU, 1.00 against 1.06 in compatibility mode,
-and 1.48 against 1.54 on WebGL2, with about 55.5% of the pixels moved by the direction. A trial is
-not a figure. [Benchmarks](../benchmarks.md#directional-light-maps) gives the command for a quiet
-run, whose medians are added to the table above.
+The cost is owed. The `lightmap-cost` page measures it. The page draws 24 lit quads that fill a
+1600 by 900 view once, so every pixel shades one fragment. The plain and directional builds swap in
+turns for three rounds each. Before the timing the page draws one frame of each side and compares
+them, so a direction that the engine dropped fails the run instead of reporting no cost. On
+25 October 2026 the Mac's 1-minute load read between 34 and 156. The spec refuses to measure above
+8, so the run waits for a quiet window and then takes about thirty seconds:
+`NULL3D_LIGHTMAP_COST=1 bun run test:browser -- lightmap-cost.spec.ts`. Its medians go into the
+table above. The trials so far are preliminary and not figures. At a load of 84 the directional
+side read 1.08 ms against 0.99 ms on WebGPU. At a load of about 100 it read 0.06 ms more on every
+path, with about 55.5% of the pixels moved by the direction.
+[Benchmarks](../benchmarks.md#directional-light-maps) gives the paths and the queue form.
 
 ## Decision
 

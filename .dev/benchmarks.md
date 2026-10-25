@@ -428,6 +428,7 @@ A run folder holds every page's full result, with frames and images, and stays o
 - Before the timing, the page draws one frame of each side and publishes the share of pixels that moved past four steps. A direction texture that the engine dropped leaves the light map plain. That happens when the direction belongs to another texture array than the radiance's, and the share is then zero. So the test refuses a figure of nothing.
 - The page sets `?prepass=off`, so no side is skipped by a depth already in the target, and `?preset=high`.
 - Run it on the Mac in a quiet window: `NULL3D_LIGHTMAP_COST=1 bun run test:browser -- lightmap-cost.spec.ts`. `NULL3D_LIGHTMAP_GPUS` narrows the run to some paths, as a list. The spec waits for the computer's load to fall below the quiet limit. It prints the load beside its figures.
+- The figure is owed. On 25 October 2026 the Mac's 1-minute load read between 34 and 156, and the spec measures nothing above 8. A run takes about thirty seconds once the load is below 8. The trials so far are preliminary and not figures. At a load of 84 the directional side read 1.08 ms against 0.99 ms on WebGPU. At a load of about 100 it read 0.06 ms more on every path: 1.05 against 0.99 on WebGPU, 1.06 against 1.00 in compatibility mode and 1.54 against 1.48 on WebGL2, with about 55.5% of the pixels moved by the direction.
 
 ## A tree of cluster patches
 
