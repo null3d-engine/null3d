@@ -370,6 +370,7 @@ function figuresOf(
 		name: feature.name,
 		settings: Object.freeze({ ...settings }),
 		gpuMs: null,
+		scope: feature.gpu?.passes ?? Object.freeze([]),
 		bytes: memory === undefined ? null : memory(),
 		budgetMs: feature.budget === undefined ? null : budgetMs,
 		allowedMs: feature.budget === undefined ? null : allowedMs,

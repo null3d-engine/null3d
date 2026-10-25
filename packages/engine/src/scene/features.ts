@@ -175,6 +175,35 @@ export interface FeatureQuality {
 }
 
 /**
+ * One render pass that carries a feature's frame work. The engine adds up the GPU time of the
+ * feature's passes, so the stats overlay shows what the feature costs. The add-on gives the pass
+ * that it made, such as the reflection pass that its water draws the scene into.
+ *
+ * @category api/features
+ */
+export interface FeatureGpuPass {
+	/** The pass's name in the render graph. */
+	readonly name: string;
+	/**
+	 * @internal The pass's place in the sketch's `render`, which the engine matches against the
+	 * passes that it times.
+	 */
+	readonly place: number;
+}
+
+/**
+ * Where a feature's GPU time comes from: the render passes that carry its frame work. A feature
+ * that records inside a pass of the engine's own, such as a draw among the transparent objects,
+ * gives no scope, and the overlay then reads `gpu not measured` for it.
+ *
+ * @category api/features
+ */
+export interface FeatureGpu {
+	/** The passes whose GPU time, added up, is the feature's own GPU time. */
+	readonly passes: readonly FeatureGpuPass[];
+}
+
+/**
  * One feature's figures, as the stats overlay shows them beside the engine's own. A feature that
  * records frame work has one GPU timing scope, and `gpuMs` is that scope's time.
  *
@@ -187,9 +216,16 @@ export interface FeatureStats {
 	readonly settings: Readonly<Record<string, FeatureValue>>;
 	/**
 	 * The GPU time per frame of the feature's scope, in ms, or null until the engine times a frame
-	 * that records the feature's work.
+	 * that records the feature's work. The page fills it from the frame's GPU timings, because only
+	 * the page reads them; the copy that `FeatureHost.stats` gives the sketch holds null. A pass
+	 * that draws in some frames only keeps the figure of the window that last timed it.
 	 */
 	readonly gpuMs: number | null;
+	/**
+	 * The render passes that carry the feature's frame work, as its description gave them, or an
+	 * empty list for a feature with no scope.
+	 */
+	readonly scope: readonly FeatureGpuPass[];
 	/** The GPU bytes that the feature's own objects hold, or null where it reports none. */
 	readonly bytes: number | null;
 	/** The time in ms that the feature may take in each frame at full quality, or null without a budget. */
@@ -326,6 +362,12 @@ export interface FeatureDescription {
 	 */
 	readonly budget?: FeatureBudget;
 	/**
+	 * Where the feature's GPU time comes from: the render passes that carry its frame work. The
+	 * stats overlay shows the sum of their GPU time as the feature's own. Leave it out for a
+	 * feature whose work records inside a pass of the engine's own.
+	 */
+	readonly gpu?: FeatureGpu;
+	/**
 	 * Returns the GPU bytes that the feature's own objects hold now, which the stats overlay shows
 	 * beside the engine's own memory. The engine calls it when a figure of the feature changes, never
 	 * in a frame.
@@ -423,6 +465,7 @@ const TAKES: ReadonlySet<string> = new Set([
 	'ready',
 	'settings',
 	'budget',
+	'gpu',
 	'memory',
 	'quality',
 	'resize',
@@ -444,6 +487,9 @@ const NO_OUTPUTS: Readonly<Record<string, FeatureOutput>> = Object.freeze(Object
 
 /** The settings of a feature that declares none. */
 const NO_SETTINGS: Readonly<Record<string, FeatureSetting>> = Object.freeze(Object.create(null));
+
+/** The passes of a feature that declares no GPU scope. */
+const NO_PASSES: readonly FeatureGpuPass[] = Object.freeze([]);
 
 /** E1223 for a description that the engine cannot take. */
 function invalid(call: string, detail: string): EngineError {
@@ -734,6 +780,42 @@ function checkSettings(
 	return Object.freeze(out);
 }
 
+/** The GPU scope that `value` declares, or throws E1223. */
+function checkGpu(value: unknown, call: string): FeatureGpu {
+	if (value === undefined) return Object.freeze({ passes: NO_PASSES });
+	if (typeof value !== 'object' || value === null || Array.isArray(value))
+		throw invalid(
+			call,
+			`got the gpu ${JSON.stringify(value)}; give it { passes: [pass] } with the passes that render.addPass() returned.`,
+		);
+	const unknown = Object.keys(value).find((key) => key !== 'passes');
+	if (unknown !== undefined)
+		throw invalid(call, `got the gpu option '${unknown}'; a gpu takes passes alone.`);
+	const passes = (value as { passes?: unknown }).passes;
+	if (!Array.isArray(passes))
+		throw invalid(
+			call,
+			`got the gpu passes ${JSON.stringify(passes)}; give an array of the passes that render.addPass() returned.`,
+		);
+	const out: FeatureGpuPass[] = [];
+	for (const pass of passes) {
+		const entry = pass as { name?: unknown; place?: unknown } | null;
+		if (typeof entry !== 'object' || entry === null)
+			throw invalid(
+				call,
+				`got ${JSON.stringify(pass)} in the gpu passes; give the pass that render.addPass() returned.`,
+			);
+		const name = checkName(entry.name, call, 'name of a gpu pass');
+		if (!Number.isInteger(entry.place) || (entry.place as number) < 1)
+			throw invalid(
+				call,
+				`got the gpu pass '${name}' with the place ${JSON.stringify(entry.place)}; give the pass that render.addPass() returned.`,
+			);
+		out.push(Object.freeze({ name, place: entry.place as number }));
+	}
+	return Object.freeze({ passes: Object.freeze(out) });
+}
+
 /** The budget that `value` declares, or throws E1223. */
 function checkBudget(value: unknown, call: string): FeatureBudget | undefined {
 	if (value === undefined) return undefined;
@@ -778,6 +860,7 @@ type NormalizedFeature = FeatureDescription & {
 	readonly debugViews: readonly FeatureDebugView[];
 	readonly views: readonly FeatureView[];
 	readonly settings: Readonly<Record<string, FeatureSetting>>;
+	readonly gpu: FeatureGpu;
 };
 
 /**
@@ -810,6 +893,7 @@ function normalize(description: FeatureDescription, call: string): NormalizedFea
 	const outputs = checkOutputs(description.outputs, call);
 	const budget = checkBudget(description.budget, call);
 	const settings = checkSettings(description.settings, call, budget !== undefined);
+	const gpu = checkGpu(description.gpu, call);
 	checkCallback(description.ready, call, 'ready');
 	checkCallback(description.quality, call, 'quality');
 	checkCallback(description.memory, call, 'memory');
@@ -867,6 +951,7 @@ function normalize(description: FeatureDescription, call: string): NormalizedFea
 		provides,
 		debugViews,
 		settings,
+		gpu,
 		...(budget === undefined ? {} : { budget }),
 		...(description.ready === undefined ? {} : { ready: description.ready }),
 		...(description.quality === undefined ? {} : { quality: description.quality }),
@@ -896,8 +981,8 @@ function normalize(description: FeatureDescription, call: string): NormalizedFea
  * Throws E1223 for an option that a description does not take, a name that is empty or longer than
  * 64 characters, a frame point or kind that does not exist or does not go together, an order
  * outside its band, an unknown resource, slot or view, an output with no neutral default, a setting
- * with a value outside its own range or a governor without a budget, or a budget whose presets are
- * not four times above 0.
+ * with a value outside its own range or a governor without a budget, a budget whose presets are
+ * not four times above 0, or a GPU scope pass that `render.addPass` did not return.
  *
  * @category api/features
  */

@@ -222,6 +222,7 @@ The header stays in the corner when the card opens, and the card opens under it,
 | Whole page | The memory of the whole page and its workers, as the browser counts it |
 | Counts | Draw calls, triangles and objects per frame |
 | `Add-ons` | One row for each add-on feature that reports figures: its GPU time, its settings, its budget and its memory. The section shows only while a feature reports figures |
+| `GPU steps` | One row for each pass of the frame that the GPU timed, such as `opaque` or `bloom 2`, with its GPU time per frame. The section shows only where the GPU path times passes one by one |
 | Last line | The GPU path, the quality preset and the render scale |
 
 **The target.** The overlay judges each frame against the engine's own [target frame rate](../concepts/quality-presets.md#the-target-frame-rate): the one that the preset check and the quality governor defend. It is the display's refresh rate, at most 60 frames a second, unless the page's `targetFps` option asks for more. The `?fps=` switch caps it too. The engine still draws at the display's full rate when the GPU allows it. So on a 120 Hz display the card reads `120 Hz ≥60 fps · 16.7 ms`: the engine draws up to 120 frames per second and defends 60. With `targetFps: 'display'`, the same card reads `120 fps · 8.3 ms`. The display symbol is a button whose tooltip explains the figures, as the mode's symbol does.
@@ -246,7 +247,7 @@ A bar stacks parts only where the parts add up to the time beside it. A thread's
 
 **Held back by.** While the frame rate is below 90% of the target, a line under the GPU bar names the bar furthest past the target's mark: `Held back by: GPU`, `Drawing`, `Sketch`, `Sketch + drawing`, `Jobs` or `Page`. When no bar passes the mark, it reads `Held back by: outside the engine`. The rest of the page's code, or the browser, then holds the frame back.
 
-**The add-ons' rows.** A feature that an add-on declares with `settings`, `budget` or `memory` gets one row under the counts, such as `splats  gpu 0.42 ms  budgetSplats 500000  budget 3.0 of 4.0 ms  memory 12.0 MiB`. The row names the feature, its one GPU timing scope, its own settings, its budget and the memory that it reports. The budget shows now and at full quality. A feature's GPU scope reads `gpu not measured` until the engine records and times its work. [Add-on feature descriptions](features.md#stats) explains the figures.
+**The add-ons' rows.** A feature that an add-on declares with `settings`, `budget`, `gpu` or `memory` gets one row under the counts, such as `splats  gpu 0.42 ms  budgetSplats 500000  budget 3.0 of 4.0 ms  memory 12.0 MiB`. The row names the feature, its one GPU timing scope, its own settings, its budget and the memory that it reports. The budget shows now and at full quality. A feature names its GPU scope with the render passes that carry its work, and the overlay adds up their time. A feature whose work records inside a pass of the engine's own reads `gpu not measured`. On WebGL2 no pass is timed alone, so every feature reads that. [Add-on feature descriptions](features.md#stats) explains the figures.
 
 **Figures that the browser gives.** The frame rate, the work bars, the engine's and the GPU's memory and the counts show in every browser that runs the engine. The page's JavaScript heap comes from `performance.memory`, and the whole page's memory from `performance.measureUserAgentSpecificMemory`. Some browsers have neither. Where the browser lacks one, the overlay leaves it out, and the memory total adds up what it lists. Where the GPU path has no timer queries, the GPU bar reads `not measured` and stays empty.
 
@@ -278,6 +279,7 @@ export default defineSketch(({ debug, page, time }) => {
 | `threads` | Each engine thread's name, its CPU time per frame, and the time of each phase, as `engine.measure` names them |
 | `gpuMs` | GPU time per frame in milliseconds, from one frame in eleven, or null without timer queries. It is the latest pass end less the earliest pass begin, because a tile GPU overlaps the passes |
 | `gpuStepMs` | The step between the GPU's timestamps in milliseconds, when the browser rounds them, or null when they look exact. It is the greatest common divisor of the offsets that the timer reads back |
+| `gpuSteps` | The GPU time per frame of each pass that the GPU timed one by one, in the frame's order, each with the step's name and its time. A pass after the last one timed adds its time to it, and its name then ends in `and later`. Empty on WebGL2, which times the whole frame alone |
 | `drawCalls`, `uploadBytes` | Draw calls and bytes uploaded to the GPU, per frame |
 | `triangles`, `objects` | Triangles and objects drawn per frame, over every pass |
 | `wasmBytes` | The size of the engine's WebAssembly memory |

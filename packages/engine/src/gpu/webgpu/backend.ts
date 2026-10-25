@@ -108,13 +108,15 @@ function lookUp<T>(table: (T | undefined)[], code: number, what: string): T {
 }
 
 /**
- * A pass command's label, which follows the optional second color target. A list that names no
- * label, as a hand-made one may, gives 0 for the timer to leave the pass unnamed.
+ * A pass command's label and scope. The label follows the second color target, and takes its place
+ * in a list that omits the target. The scope follows the label. A list that names neither, as a
+ * hand-made one may, gives 0 for both, and the timer leaves the pass unnamed.
  */
-function passLabel(a: number, length: number, words: Uint32Array): number {
-	if (length > 11) return words[a + 10] as number;
-	if (length === 11) return words[a + 9] as number;
-	return 0;
+function passWords(a: number, length: number, words: Uint32Array): [number, number] {
+	if (length > 12) return [words[a + 10] as number, words[a + 11] as number];
+	if (length > 11) return [words[a + 10] as number, 0];
+	if (length > 10) return [words[a + 9] as number, 0];
+	return [0, 0];
 }
 
 /** The views, bind groups and pass descriptors that make the mip levels of one layer of a texture. */
@@ -1248,10 +1250,11 @@ export class WebGPUBackend {
 						floats,
 						a + 3,
 					);
-					// The weighted layer's pass names a second color target after the flags, and
-					// every pass names its label last.
-					const hasSecond = length > 11;
-					setup.setSecondColor(hasSecond ? this.targetView(words[a + 9] as number) : undefined);
+					// The weighted layer's pass names a second color target after the flags, then
+					// its label and its scope. A list that names no target gives NO_TARGET, and a
+					// shorter list that names only a label leaves the target out.
+					const second = length > 11 ? (words[a + 9] as number) : G.NO_TARGET;
+					setup.setSecondColor(second === G.NO_TARGET ? undefined : this.targetView(second));
 					setup.setDepth(
 						this.targetView(words[a + 2] as number),
 						(flags & G.PASS_CLEAR_DEPTH) !== 0,
@@ -1259,7 +1262,8 @@ export class WebGPUBackend {
 						floats,
 						a + 7,
 					);
-					setup.setTimestampWrites(this.timer?.passWrites(true, passLabel(a, length, words)));
+					const [label, scope] = passWords(a, length, words);
+					setup.setTimestampWrites(this.timer?.passWrites(true, label, scope));
 					this.indirect.begin(words, i + length, end, this.bundles, this.buffers, this.openEncoder);
 					pass = this.commandEncoder().beginRenderPass(setup.descriptor);
 					this.skipDraws = false;
@@ -1318,9 +1322,11 @@ export class WebGPUBackend {
 					break;
 				}
 				case G.OP_BEGIN_COMPUTE_PASS:
+					// The pass names its label, then its scope.
 					this.computePass.timestampWrites = this.timer?.passWrites(
 						false,
-						length > 1 ? (words[a] as number) : 0,
+						length > 0 ? (words[a] as number) : 0,
+						length > 1 ? (words[a + 1] as number) : 0,
 					);
 					computePass = this.commandEncoder().beginComputePass(this.computePass);
 					this.skipDispatches = false;
