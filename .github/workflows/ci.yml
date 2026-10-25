@@ -1751,8 +1751,10 @@ jobs:
     # generated file added, since main keeps none (D-105). Links that must work on GitHub point
     # there, such as the docs link in each engine error message. Only this job writes to the
     # repository, and main's rules cover only main. Each push replaces the branch's one commit.
+    # GitHub's default condition needs every job before ci-passed to have passed, and a pass-keyed
+    # job that passed in an earlier run is skipped, so this job reads ci-passed's own result.
     needs: ci-passed
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: ${{ !cancelled() && needs.ci-passed.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
