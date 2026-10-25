@@ -307,6 +307,10 @@ What the figures say:
 - **Thin rain.** The resolve makes the frame-to-frame change five times larger. The streaks are a blended draw with no motion target, so the resolve reads their history from the wrong place.
 - **The volumetric fog.** The resolve changes almost nothing: the fog's own grid offset moves too little for the resolve to help or hurt.
 
+### The GPU time
+
+`bun run bench:gpu-check` compared the merged branch with main's merge base, commit 9369b1380, in Chrome on the Mac's GPU. It did not judge the comparison, because the benchmark pages differ between the two commits. Its figures: S4 at medium 4.24 to 4.27 ms (-0.8%), S6 at medium 4.73 to 4.84 ms (+2.2%), S4 at high 4.77 to 4.41 ms (-7.5%) and S6 at high 5.29 to 6.25 ms (+18.6%). The resolve is off on every preset, so a page draws it only where a sketch turns it on, which no benchmark scene does. The S6 figure is therefore noise in the comparison rather than the resolve's cost.
+
 ### What a later attempt still needs
 
 The fixes answer the faults of the prototype. They do not answer the three that the previous addendum named: motion for a vertex-shader wind, a rejection that keeps sub-pixel edges, and a sharper resolve. The figures of this addendum also do not include phones, and the resolve is still off on every preset.
