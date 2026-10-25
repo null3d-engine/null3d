@@ -292,6 +292,7 @@ describe('environments', () => {
 			addSkyMap(
 				_: Texture,
 				_stages: number,
+				_capture: number,
 				call: string,
 				defaults: (values: Float32Array) => void,
 			) {
