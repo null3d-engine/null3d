@@ -77,6 +77,12 @@ rest of the gap is the aurora being brighter at one azimuth than the other. What
 is the shape of the answer: the lake takes the aurora, and the ice shows a share of it that its own
 reflectance allows, which the owner's dark mirror replaces with a surface that shows the sky.
 
+The frame itself, looked at rather than read as pixels: the left half carries the curtains' own
+shapes into the water, with their folds and rays repeated from the horizon to the bottom of the
+frame, and the right half is a smooth, even green-teal with none of that structure, darkening toward
+the camera. The join is a straight vertical edge at the middle of the frame. On the left the lake is
+a second sky; on the right it is a dim surface with the sky's colour in it and none of its detail.
+
 ## Decision
 
 The plane's fault is ruled out, one explanation at a time. Its normal and winding are right: the
