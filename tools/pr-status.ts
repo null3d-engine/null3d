@@ -141,8 +141,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
 	'M3-E10':
 		'the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the work is built on a helper branch and not yet on this branch, and the aurora references and the new picture have not been made',
-	'M3-R1':
-		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
 	'M3-G2': 'no Khronos iridescence sample is tested',
 	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',

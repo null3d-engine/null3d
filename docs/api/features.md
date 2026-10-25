@@ -8,7 +8,7 @@ summary: "One description for an add-on's render work: the frame point, the read
 
 # Add-on feature descriptions
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A description with `kind: 'draw'` can become a draw with [`scene.addFeatureDraw`](feature-draws.md). A description with `kind: 'compute'` can become a compute pass with [`render.addPass`](render.md#compute-passes). The full-screen kind does not reach the frame yet: it arrives with the add-on hook that first uses it. Until then, a registration checks the shape and changes nothing that draws. A feature's preset settings, budget and stats work today. Its GPU time reads as not measured until the engine records its frame work.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A description with `kind: 'draw'` can become a draw with [`scene.addFeatureDraw`](feature-draws.md). A description with `kind: 'fullscreen'` can become a pass over the scene's color with [`post.addFeatureEffect`](feature-effects.md). A description with `kind: 'compute'` can become a compute pass with [`render.addPass`](render.md#compute-passes). A registration checks the shape, and the adapters place the work that each kind declares. A feature's preset settings, budget and stats work today. Its GPU time reads as not measured until the engine records its frame work.
 
 ```mermaid
 flowchart LR
@@ -16,8 +16,9 @@ flowchart LR
     registry --> outputs[("published outputs<br/>a neutral value for readers")]
     registry --> slots["lighting slots<br/>one provider each"]
     registry --> draw["scene.addFeatureDraw<br/>a draw feature"]
+    registry --> effect["post.addFeatureEffect<br/>a full-screen feature"]
     draw --> frame["The frame's draw list"]
-    registry -.-> graph["The render graph<br/>other hooks are not built yet"]
+    effect --> chain["The chain of custom effects"]
     registry --> host["FeatureHost<br/>preset values, budget, figures"]
     host --> overlay["The stats overlay<br/>one row for each feature"]
 ```
@@ -249,10 +250,11 @@ A feature has one GPU timing scope. The engine times the feature's work in the f
 
 ## Adapters
 
-Adapters turn a checked description into work in the frame. Four exist:
+Adapters turn a checked description into work in the frame. Five exist:
 
 - **Draws:** [`scene.addFeatureDraw(description, options)`](feature-draws.md) draws the add-on's WGSL over its own vertices, with its uniforms, at the description's frame point. The band and order place a blended draw among the transparent pass's objects. The adapter places the main view alone.
 - **Instance draws:** [`scene.addComputeInstances(description, options)`](feature-instances.md) draws a capacity of instances from the add-on's own buffer. The count comes from the GPU on WebGPU, and from the page on WebGL2. The adapter places the main view alone, at the opaque point.
+- **Full-screen effects:** [`post.addFeatureEffect(description, options)`](feature-effects.md) runs the add-on's WGSL over the whole image, at the `'resolve'` point. The pass reads the scene's color, and its depth when the description declares it, and writes the color. The adapter draws it only while the feature is ready, and asks `ready` again when the quality changes.
 - **Compute passes:** [`render.addPass({ kind: 'compute', description, ... })`](render.md#compute-passes) runs the add-on's compute shader over a storage texture, which materials, effects and passes sample in the same frame. The adapter places the main view alone, binds no scene resource, and publishes the description's one output. A WebGL2 page runs the pass's fragment form, or the call throws.
 - **Sky layers:** [`scene.setSkyLayer(description, options)`](scene.md#sky-layers) draws the add-on's WGSL over the background, at the `'background'` point as a `'draw'`, with the `'sky'` slot and the three views. The engine places it itself, because the background draws it before the opaque objects. Its function reads the core sky's values (D-242).
 
@@ -261,7 +263,7 @@ The other hooks still need their own payload, and they arrive with the add-on th
 | Hook | What the description does not yet give it |
 | --- | --- |
 | Material lobes, baked-data formats and glTF extension handlers | They are not frame features, so each needs its own hook. |
-| Scene inputs, presets and stats | Each needs its own declaration: a depth input behind a material, or a GPU timing scope. |
+| An effect after the tone curve, a pass in another view, and the normals, motion, history or shadow reads | The adapters refuse them until a hook needs each one. |
 
 ## Checks
 

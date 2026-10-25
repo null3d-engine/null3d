@@ -630,6 +630,7 @@ post.set({
 post.set({ toneMapping: curveWgsl });   // (0.2) WGSL with fn toneCurve(color: vec3f) -> vec3f in place of a built-in curve
 const fx = post.addEffect({ wgsl, uniforms: { size: 4 }, order: 0 });  // (0.2) WGSL with fn effect(input: EffectInput) -> vec4f; per-pixel effects join into one pass, at most 8
 post.addEffect({ wgsl: streakWgsl, bloomLevel: 2 });  // (0.3) WGSL that calls effectBloom(input.uv) reads that level of bloom's chain: a streak or a glare without its own blur; draws in a pass of its own
+const dof = await post.addFeatureEffect(description, { wgsl, uniforms: { focus: 8 } });  // (0.3) an add-on's full-screen pass from a feature description at the 'resolve' point, reading the scene's color and depth and writing the color; it draws only while the description's ready() is true
 post.setEffectUniform(fx, 'size', 8);   // (0.2) allocates nothing
 post.removeEffect(fx);                  // (0.2)
 ```

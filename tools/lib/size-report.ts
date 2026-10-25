@@ -449,6 +449,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		loadedBy: 'page-sketch-runner.js',
 	},
 	{
+		name: 'page-feature-effects.js',
+		module: 'scene/feature-effects.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
+	{
 		name: 'page-feature-instances.js',
 		module: 'scene/feature-instances.ts',
 		loadedBy: 'page-sketch-runner.js',
@@ -563,6 +568,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'sketch-worker-feature-draws.js',
 		module: 'scene/feature-draws.ts',
+		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'sketch-worker-feature-effects.js',
+		module: 'scene/feature-effects.ts',
 		loadedBy: 'sketch-worker.js',
 	},
 	{
