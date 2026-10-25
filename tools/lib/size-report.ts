@@ -900,10 +900,14 @@ export function findEngineParts(
 	};
 	const direct = (loader: BuiltFile) => new Set(mentions.get(loader.file) ?? []);
 	// Of several unclaimed files that hold a part's module, a part takes one that its loader names
-	// itself, then the one with the fewest engine modules, then the smaller, then the first by name.
-	// A worker that bundles a copy of the module usually holds more modules than the module's own
-	// file, though not always, so the file that the loader names comes first. The choice does not
+	// itself, then the one that holds the fewest modules of other parts, then the one with the fewest
+	// engine modules, then the smaller, then the first by name. A worker that bundles a copy of the
+	// module holds its own part's module too, and may hold fewer modules in all than the module's own
+	// file, so the count of all modules comes after the count of other parts. The choice does not
 	// follow the order in which the build lists its files, which differs from Linux to macOS.
+	const partModules = new Set(parts.map((part) => posix.join(ENGINE_SOURCE, part.module)));
+	const otherParts = (file: BuiltFile, own: string) =>
+		file.sources.filter((source) => partModules.has(source) && source !== own).length;
 	const engineModules = (file: BuiltFile) =>
 		file.sources.filter((source) => source.startsWith(ENGINE_SOURCE)).length;
 	const claim = (part: EnginePart, reach: (loader: BuiltFile) => ReadonlySet<string>): boolean => {
@@ -913,11 +917,13 @@ export function findEngineParts(
 		const claimed = new Set(found.values());
 		const reached = reach(loader);
 		const near = direct(loader);
+		const own = posix.join(ENGINE_SOURCE, part.module);
 		const [file] = files
 			.filter((f) => !claimed.has(f) && reached.has(f.file) && holds(f, part.module))
 			.sort(
 				(a, b) =>
 					Number(near.has(b.file)) - Number(near.has(a.file)) ||
+					otherParts(a, own) - otherParts(b, own) ||
 					engineModules(a) - engineModules(b) ||
 					a.text.length - b.text.length ||
 					(a.file < b.file ? -1 : a.file > b.file ? 1 : 0),
