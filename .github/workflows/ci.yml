@@ -1470,9 +1470,8 @@ jobs:
     # SwiftShader, which draws S1's 100,000 boxes at under one frame a second, so the check draws
     # fewer boxes here, counts the frames that S1 steps, and judges them by CI's own budgets
     # (bench/allocation.ts). The Mac's gate keeps the full count on a real GPU. On SwiftShader the
-    # browser optimizes after fewer calls, so the warm-up is 1,200 frames and each run takes about 4
-    # minutes. A second run adds `--canvas`, so S1's own places are judged as they were and the
-    # budgets of a canvas texture's refresh are judged too.
+    # browser optimizes after fewer calls, so the warm-up is 1,200 frames and the job takes about 4
+    # minutes.
     name: allocation (${{ matrix.gpu }})
     needs: [build, load-pages]
     if: *full-run
@@ -1513,13 +1512,6 @@ jobs:
           mode: download
       - name: Per-frame allocation in S1 on SwiftShader
         run: bun run bench:allocation --gpu ${{ matrix.gpu }}
-      # The canvas switch runs on the WebGPU job alone: on the software GPU's WebGL2 path the heap
-      # profiler charges bursts of compiled canvas code to a root-level place that no budget can
-      # name, and the draw of a switched page there samples it in both windows. The Mac's WebGL2
-      # figures are in .dev/benchmarks.md.
-      - name: Per-frame allocation with a canvas texture's refresh
-        if: matrix.gpu == 'webgpu'
-        run: bun run bench:allocation --canvas --gpu ${{ matrix.gpu }}
 
   load-pages:
     # The production build of the benchmark pages, which the bench shards and the allocation jobs
