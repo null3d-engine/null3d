@@ -29,7 +29,9 @@
 // sample of area lights.
 // The `effects` switch adds two custom effects, one of which reads the scene's depth, and
 // changes a color uniform of each every frame through an array changed in place, for the
-// allocation sample of post.setEffectUniform and the effects' passes. The `dof` switch turns depth
+// allocation sample of post.setEffectUniform and the effects' passes. The `canvas` switch follows
+// an OffscreenCanvas with a texture and refreshes a rectangle of it every frame, for the allocation
+// sample of the browser's image data and the upload. The `dof` switch turns depth
 // of field on, focused on a point that sweeps through the swarm every frame, for the allocation
 // sample of post.set's focus point and depth of field's steps. The `exposure` switch turns automatic
 // exposure on, and changes its compensation every frame, for the allocation sample of post.set's
@@ -148,6 +150,7 @@ export default defineSketch(async (context) => {
 		: undefined;
 	const morph = createMorphedRow(context, readMorphed(import.meta.url));
 	createLabels(context, Number(switches.get('labels') ?? 0));
+	const refreshCanvas = switches.has('canvas') ? createCanvasRefresh(context) : undefined;
 	const grading = switches.has('grading');
 	const outlined = switches.has('outline');
 	if (outlined) createOutlined(context);
@@ -333,6 +336,7 @@ export default defineSketch(async (context) => {
 			setValues?.();
 			makeCalls?.();
 			moveDay?.();
+			refreshCanvas?.();
 			for (let k = 0; k < particles.length; k++) particles[k]?.update();
 		},
 	};
@@ -996,6 +1000,31 @@ function createLabels({ scene, ui }: SketchContext, count: number): void {
 		});
 		ui.trackLabel(anchor, `label-${k}`, { offset: [0, 1, 0] });
 	}
+}
+
+/**
+ * A screen that follows an OffscreenCanvas and refreshes one rectangle of it in every frame, for
+ * the allocation sample of a canvas texture's refresh. The texture is never drawn: the sample is
+ * of the read and the upload, which run whatever material would show it.
+ */
+function createCanvasRefresh({ textures }: SketchContext): () => void {
+	const size = 1024;
+	const marker = 256;
+	const canvas = new OffscreenCanvas(size, size);
+	const context = canvas.getContext('2d', { willReadFrequently: true });
+	if (!context) throw new Error('the canvas has no 2D context');
+	context.fillStyle = '#101820';
+	context.fillRect(0, 0, size, size);
+	const screen = textures.fromCanvas(canvas);
+	let step = 0;
+	return () => {
+		step++;
+		const x = (step * 11) % (size - marker);
+		const y = (step * 7) % (size - marker);
+		context.fillStyle = '#e04040';
+		context.fillRect(x, y, marker, marker);
+		screen.refresh({ x, y, width: marker, height: marker });
+	};
 }
 
 /** Adds a small unlit box at the swarm's center, whose material writes depth or not. */
