@@ -310,7 +310,7 @@ What the figures say:
 
 ### The GPU time
 
-`bun run bench:gpu-check` compared the merged branch with main's merge base, commit 9369b1380, in Chrome on the Mac's GPU. It did not judge the comparison, because the benchmark pages differ between the two commits. Its figures: S4 at medium 4.24 to 4.27 ms (-0.8%), S6 at medium 4.73 to 4.84 ms (+2.2%), S4 at high 4.77 to 4.41 ms (-7.5%) and S6 at high 5.29 to 6.25 ms (+18.6%). The resolve is off on every preset, so a page draws it only where a sketch turns it on, which no benchmark scene does. The S6 figure is therefore noise in the comparison rather than the resolve's cost.
+`bun run bench:gpu-check` compared the branch with main's merge base, commit 9369b1380, in Chrome on the Mac's GPU. It did not judge the comparison, because the benchmark pages differ between the two commits. Its figures: S4 at medium 4.26 to 4.28 ms (+0.6%), S6 at medium 4.74 to 4.52 ms (-4.9%), S4 at high 4.44 to 4.44 ms (-2.3%) and S6 at high 4.79 to 5.14 ms (+7.3%). The resolve is off on every preset, so a page draws it only where a sketch turns it on, which no benchmark scene does. The figures are therefore noise in the comparison rather than the resolve's cost, and all four sit under the 25% GPU gate.
 
 ### The decision
 
