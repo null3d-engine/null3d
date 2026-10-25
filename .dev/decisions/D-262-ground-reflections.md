@@ -167,4 +167,7 @@ held 120 Hz.
 A judged comparison needs a control build whose benchmark pages are the branch's own. That control
 is this branch without the two cost-bearing parts of the fix: the layer's exposure in the box
 template, and the intensity in its uniform. The pages stay the same under `bench/pages` and
-`bench/scenes`, so the tool would judge that comparison. Such a run has not been made.
+`bench/scenes`, so the tool judges that comparison.
+
+The GPU check is therefore owed. The line above records a run that judged no time, and it is not
+the check that this branch needs. The judged line from the control replaces it here when it runs.
