@@ -227,3 +227,90 @@ These scenes are light, and their WebGL2 figures vary with the passes that write
 2. A rejection that does not drop the history at sub-pixel edges, so still thin lines settle. The neighborhood clamp alone holds them better, but the depth rejection that replaces it is what crawls.
 3. A sharper resolve: the grass loses a fifth of its sharpness, and the preset's MSAA is already sharp.
 4. Figures from phones, where the WebGL2 cost is the worry.
+
+## Addendum, 25 October 2026: the study's six fixes are built and tested
+
+[D-199](D-199-m4-features-and-study-tasks-in-m3.md) made the study's answers to the D-129 faults into this task's test cases. A review of the branch found one of the six built, five missing, and neither of the jittered effects tested. This addendum records each fix, how it is built, its test, and the figures.
+
+### The six fixes
+
+| Fix | Before | Built in | Test |
+| --- | --- | --- | --- |
+| Per-object motion exactly 0 for still content | Built by M2-EX25, with no exact proof | `lib/motion_math.wgsl`, `surface_motion` | The shader library's `motion_math::surface_motion` cases, which compare the bits with an exact reference |
+| A variance box widened to hold the centre pixel, against banding | Missing | `lib/temporal.wgsl`, `temporal_widen` | The shader library's `temporal::temporal_widen` cases, which require the centre to lie inside the box |
+| The history rescaled by the exposure ratio | Missing | `crates/null3d-render/src/frame.rs`, `taa_frame`, and `taa.wgsl` | `tests/image/taa-fixes.spec.ts`, the `exposure` case |
+| A reactive mask from the transparent alpha | Missing | `taa.wgsl`, from the scene color's alpha, with `Reactive`'s bits | `taa-fixes.spec.ts`, the `alpha` case |
+| An opaque-only color target for the transparency mask | Missing | The `TaaOpaque` copy pass in `crates/null3d-render/src/frame_graph.rs` | `taa-fixes.spec.ts`, the `opaque` case |
+| A separate phone variant | Missing | The phone path of `taa.wgsl`, `Taa::phone`, which `post.set({ taa: { phone } })` picks | `taa-fixes.spec.ts`, the `phone` case |
+
+Why each fix is right:
+
+- **Exact zero motion.** A still surface computes this frame's image place less the same place of the last frame, which is zero bit for bit. The motion target clears to zero and the cull keeps only the objects that moved, so a still surface draws nothing at all. Without this, a resolve smears every still pixel.
+- **The widened box.** The history is clamped to a box around the neighborhood's mean and spread, inside its smallest and largest values. That box can leave out the pixel's own color, and the clamp then pulls the history away from this frame each frame, which shows as banding on a lit gradient. The box now grows to hold the centre color, and no edge moves otherwise.
+- **The exposure ratio.** The lit pass scales every color by the camera's exposure, so a history written under one exposure holds other numbers than this frame's colors. The frame now carries this frame's exposure over the last frame's, and the resolve scales the history by it before the blend.
+- **The transparent alpha.** The scene color's alpha holds a blended surface where the canvas shows through. The resolve lowers the history there, shaped as FSR2 shapes it: the history's share falls by the mask's value.
+- **The opaque-only copy.** A blended surface over an opaque one leaves the scene alpha at one, so the alpha carries nothing. A copy of the scene color after the opaque pass, and before the blended pass, gives the comparison that finds it: where the composited color differs from the copy beyond a small threshold, a blended surface drew, and the history falls. The copy draws whenever the resolve does, not only while a scene blends, so the texture that the resolve reads is always the copy. A unit test (`the_resolve_copies_the_opaque_color_before_a_blend_draws`) holds the copy before the blended pass and the resolve after it.
+- **The phone path.** It reads one depth sample where the scene depth is multisampled, samples the history with four `textureLoad` taps rather than the linear sampler, and skips both transparency signals and the brightness weighting. It keeps the same pipelines, so turning it on builds nothing of its own. The prototype turns it on with a setting. A shipping version would pick it at the Low preset that a phone's measured speed selects, never from a device name (hard rule 14).
+
+null3D keeps one scene color target. The study's engine writes a transparent surface's alpha into a second attachment, which null3D does not have. The two transparency signals here therefore read the alpha where the canvas shows through and the opaque-only copy everywhere else. The two tests cover the two signals apart.
+
+### Fog jitter and thin rain
+
+Both effects already exist. The volumetric fog moves its grid by a sub-pixel offset each frame, and the rain's streaks are thinner than a pixel. Neither had a test with the resolve. `tests/pages/sketches/taa-fixes-sketch.ts` draws both at 320x180, and `taa-fixes.spec.ts` measures the frame-to-frame change with the resolve off and on. The figures are below.
+
+The quality figures of the previous addendum were taken before these five fixes. They still describe the prototype as it stood, and the fixes may move them, most of all the still camera's crawl and the grass's smear. The decision stands, because it rests on the cost of the WebGL2 path and on the resolve losing on shimmer, smear and sharpness before these fixes were in.
+
+### The tests
+
+| Test | What it proves |
+| --- | --- |
+| `tests/lib/shader-library.test.ts` | The numbered cases, the variants and the references agree |
+| `tests/image/shader-library.spec.ts`, on WebGPU, compatibility mode and WebGL2 | `motion_math::surface_motion` gives exactly zero for a still surface, and `temporal_widen` holds the centre pixel |
+| `tests/image/taa-fixes.spec.ts`, `a history follows a change of the exposure` | A resolved frame holds the scene at a doubled exposure |
+| `tests/image/taa-fixes.spec.ts`, `the scene's alpha lowers the history` | The alpha signal keeps the background out of a blended surface's history |
+| `tests/image/taa-fixes.spec.ts`, `the opaque-only copy lowers the history` | The opaque-only comparison does the same over an opaque surface |
+| `tests/image/taa-fixes.spec.ts`, `the phone path draws the full path's picture` | The phone path draws the same still image |
+| `tests/image/taa-fixes.spec.ts`, `the resolve over rain` and `over fog` | The frame-to-frame change of each effect with the resolve off and on |
+
+### How the figures were made
+
+`tests/pages/sketches/taa-fixes-sketch.ts` draws six scenes at 320 x 180, with one world unit per pixel:
+
+- `exposure`: fine noise across the view, lit by one ambient light. The camera is still and the resolve runs with its offsets. The page lets the history settle at an exposure of 1, then doubles it and captures the next frame. The same scene with the resolve off, at the doubled exposure, is the reference.
+- `alpha`: a transparent canvas with no background, and a blended noise plane at half opacity. A blended noise square jumps from one side of the view to the other.
+- `opaque`: the same square over an opaque noise plane, on an opaque canvas.
+- `phone`: a still textured scene, drawn once by the full path and once by the phone path, both with no offsets.
+- `rain`: 6,000 thin additive streaks, thinner than a pixel.
+- `fog`: a volumetric fog over towers, whose grid the engine moves by a sub-pixel offset each frame.
+
+Each figure is the mean over the whole frame, or over a stated region, in 8-bit levels of the displayed color's luma. The exposure error is the resolved frame's mean less the reference's. The transparency figures are the mean distance from the reference over the square's new place, so a history that kept the background shows as a large figure. The phone figure is the mean distance between the two paths. The effect figures are the mean frame-to-frame change over 16 consecutive frames, each drawn by its own capture.
+
+### Figures
+
+Levels of the displayed color, on the Mac's GPU in Chrome 155. Each row compares one setting with its own baseline.
+
+| Measure | WebGPU | WebGL2 |
+| --- | --- | --- |
+| Exposure: the resolved frame's mean against the reference's | 91.3 against 80.6, error 10.7 | 91.6 against 80.8, error 10.8 |
+| The scene's alpha: error with the mask, without it | 9.5, 24.1 | 9.7, 24.1 |
+| The opaque-only copy: error with the signal, without it | 24.4, 24.1 | 24.4, 24.1 |
+| The phone path against the full one: mean distance | 2.84 | 2.86 |
+| Thin rain: frame-to-frame change without the resolve, with it | 2.620, 13.573 | 2.583, 13.605 |
+| The volumetric fog: frame-to-frame change without the resolve, with it | 0.421, 0.456 | 0.671, 0.742 |
+
+What the figures say:
+
+- **The exposure ratio.** With the ratio, a resolved frame holds the scene at the doubled exposure. The resolve's smoothing moves its mean about a tenth above the plain frame's, which the tone curve makes visible on fine noise. Without the ratio the same frame would keep half the old exposure, about 36 levels below.
+- **The scene's alpha.** The alpha signal cuts the background that a blended square keeps in its history from 24.1 levels to 9.5. It works on both paths.
+- **The opaque-only copy.** The signal does not change this scene: 24.4 levels against 24.1. The copy's place, before the blended pass, and its bind group are held by a unit test, but the comparison's effect is not measured here. This is owed.
+- **The phone path.** It draws the full path's picture within 3 levels.
+- **Thin rain.** The resolve makes the frame-to-frame change five times larger. The streaks are a blended draw with no motion target, so the resolve reads their history from the wrong place.
+- **The volumetric fog.** The resolve changes almost nothing: the fog's own grid offset moves too little for the resolve to help or hurt.
+
+### What a later attempt still needs
+
+The fixes answer the faults of the prototype. They do not answer the three that the previous addendum named: motion for a vertex-shader wind, a rejection that keeps sub-pixel edges, and a sharper resolve. The figures of this addendum also do not include phones, and the resolve is still off on every preset.
+
+Two things are owed here. The opaque-only comparison's effect is not measured: its test records the figure and asserts only that the run drew the scene. The copy's order and its bind group are held by a unit test, so the remaining work is a scene in which the comparison's effect shows. The rain also needs motion for a blended draw before a resolve can help it.
+
+A later attempt starts from the measured figures above and from these items.
