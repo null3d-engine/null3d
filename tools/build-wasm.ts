@@ -119,10 +119,12 @@ import {
 	type BaseChoice,
 	chooseBase,
 	compareSizes,
-	grownFiles,
 	growthLines,
 	growthProblems,
 	growthSummary,
+	nearLimit,
+	nearLimitWarnings,
+	overLimit,
 } from './lib/size-check';
 import {
 	keepSizeMemo,
@@ -1083,17 +1085,15 @@ async function buildToolModules(
 	}
 	const targetDir = `${CARGO_TARGET_BASE}/wasm-shaders`;
 	log.say("building the shader compiler and the asset tool's formats");
-	await log.cargo(
-		[
-			'build',
-			...TOOL_MODULES.flatMap(({ crate }) => ['-p', crate]),
-			'--release',
-			'--target',
-			'wasm32-unknown-unknown',
-		],
-		compilerOptions('-Cstrip=symbols'),
-		targetDir,
-	);
+	// Each module builds in a cargo call of its own. One call over both merges the features of the
+	// dependencies they share, so each module's bytes would follow what else the call builds: with
+	// the shader compiler beside it, the asset module's `half` and `libm` gained features.
+	for (const { crate } of TOOL_MODULES)
+		await log.cargo(
+			['build', '-p', crate, '--release', '--target', 'wasm32-unknown-unknown'],
+			compilerOptions('-Cstrip=symbols'),
+			targetDir,
+		);
 	const built = (crate: string) =>
 		`${targetDir}/wasm32-unknown-unknown/release/${crate.replace(/-/g, '_')}.wasm`;
 	for (const { crate } of TOOL_MODULES)
@@ -1454,14 +1454,16 @@ function baseSizes(sha: string): Record<string, Pick<SizeEntry, 'brotli'>> {
 function checkGrowth(sizes: Record<string, SizeEntry>, ref: string | undefined): string[] {
 	const base = resolveBase(chooseBase(ref, process.env));
 	const changes = compareSizes(baseSizes(base.sha), sizes);
-	const grown = grownFiles(changes).map(({ file }) => file);
-	const explainedBy = explainedFiles(keptCommits(`${base.sha}..HEAD`, root), grown);
+	const watched = changes.filter((c) => overLimit(c) || nearLimit(c)).map(({ file }) => file);
+	const explainedBy = explainedFiles(keptCommits(`${base.sha}..HEAD`, root), watched);
 	const short = base.sha.slice(0, 8);
 	console.log(`\ngrowth after Brotli against the base, ${short} "${base.subject}", ${base.why}`);
 	for (const line of growthLines(changes, explainedBy)) console.log(line);
 	const summary = process.env.GITHUB_STEP_SUMMARY;
 	if (summary)
 		appendFileSync(summary, growthSummary(changes, explainedBy, `\`${short}\`, ${base.why}`));
+	for (const warning of nearLimitWarnings(changes, explainedBy))
+		console.warn(`warning: ${warning}`);
 	return growthProblems(changes, explainedBy);
 }
 
