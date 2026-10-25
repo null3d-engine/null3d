@@ -919,8 +919,8 @@ pub struct ShadowFrame {
     /// The frame's clock, as the camera's view has it, which the vertex offsets of custom
     /// materials' casters read.
     pub clock: [f32; 4],
-    /// The camera that the materials shade for, which a masked custom material's caster reads to
-    /// place its fragment in the camera's pixel.
+    /// The scene camera, which a masked custom material's surface reads where its caster runs:
+    /// the matrices, planes, place and target size that the built-in values give.
     pub shading: ShadingCamera,
     /// The object whose shadow the light draws into a tile of its own, while it names one.
     pub hero: Option<HeroShadow>,
