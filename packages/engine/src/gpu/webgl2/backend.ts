@@ -26,7 +26,12 @@ import { DEV } from '../../shared/dev';
 import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
-import { LAYER_WORD, LIGHT_BUFFER_WORD } from '../environment-words';
+import {
+	CLOUD_FIELD_WORD,
+	CLOUD_STEPS_WORD,
+	LAYER_WORD,
+	LIGHT_BUFFER_WORD,
+} from '../environment-steps';
 import { floatOfBits } from '../float-bits';
 import { GpuMemory, textureBytes } from '../memory';
 import type { ReadSink } from '../readback';
@@ -1801,6 +1806,11 @@ export class WebGL2Backend {
 		if (op === G.OP_SKY_MAP_STEP) {
 			const from = words[a + 3] as number;
 			const panorama = from === 0 ? null : (this.textureOf(from).texture as WebGLTexture);
+			// The cloud tier's noise field exists once the tier's first frame made it, and the
+			// generator reads it only while the tier draws.
+			const cloudSteps = words[a + CLOUD_STEPS_WORD] as number;
+			const field = words[a + CLOUD_FIELD_WORD] as number;
+			const noise = cloudSteps > 0 && field !== 0 ? this.textureOf(field).texture : null;
 			const host = this.programHost;
 			// The page's sky layer, once its shader is here: the map's texels then hold the layer
 			// that the background shows, and so do the reflections and the light taken from them.
@@ -1826,6 +1836,7 @@ export class WebGL2Backend {
 				panorama,
 				layer,
 				readback,
+				noise,
 			);
 		} else code.run(this.programHost, target, width, mips, this.images.generator(id)[0]);
 		this.afterGenerator();

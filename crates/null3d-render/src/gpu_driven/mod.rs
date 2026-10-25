@@ -160,6 +160,7 @@ use crate::ao::{self, AoIds};
 use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
+use crate::cloud_noise;
 use crate::compute::ComputePassIds;
 use crate::data_texture::DataTexture;
 use crate::debug_lines::LinesPass;
@@ -530,9 +531,11 @@ mod ids {
     pub const BLANK_SCENE_DEPTH: u32 = BLANK_PARTICLE_DEPTH + 1;
     /// The physical sky's tables and panorama.
     pub const SKY_TABLES: u32 = BLANK_SCENE_DEPTH + 1;
+    /// The noise field of the volumetric cloud tier, which the renderer makes at its first use.
+    pub const CLOUD_NOISE: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
     /// The texel that a full-screen pass without an input image reads, and the one that it binds
     /// in place of the scene's depth when it reads none.
-    pub const BLANK_PASS_COLOR: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
+    pub const BLANK_PASS_COLOR: u32 = CLOUD_NOISE + 1;
     pub const BLANK_PASS_DEPTH: u32 = BLANK_PASS_COLOR + 1;
     /// The first joint of the skin of each scene slot that the vertex shaders skin, which the
     /// culling pass copies into the instances of buckets that such objects share.
@@ -614,8 +617,10 @@ mod ids {
     pub const STILL_LUT_SAMPLER: u32 = OUTPUT_LUT_SAMPLER + 1;
     /// The linear sampler of temporal anti-aliasing's history.
     pub const TAA_SAMPLER: u32 = STILL_LUT_SAMPLER + 1;
+    /// The repeating linear sampler of the volumetric cloud tier's noise field.
+    pub const CLOUD_SAMPLER: u32 = TAA_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = TAA_SAMPLER + 1;
+    pub const SAMPLERS: u32 = CLOUD_SAMPLER + 1;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -677,13 +682,15 @@ mod ids {
     pub const BACKGROUND_GROUP: u32 = AO_GROUPS + AO_STEPS as u32;
     /// The bind group of a sky layer's values, after the background's.
     pub const BACKGROUND_LAYER_GROUP: u32 = BACKGROUND_GROUP + 1;
-    /// Each camera view's group of its depth pyramid, after the layer's.
+    /// The bind group of the analytic sky's volumetric cloud draw, after the layer's.
+    pub const CLOUD_GROUP: u32 = BACKGROUND_LAYER_GROUP + 1;
+    /// Each camera view's group of its depth pyramid, after the cloud draw's.
     pub const fn pyramid_group(view: ViewId) -> u32 {
-        BACKGROUND_LAYER_GROUP + 1 + view.index() as u32
+        CLOUD_GROUP + 1 + view.index() as u32
     }
     /// The bind group of each custom effect, and of each group of joined effects, after the depth
     /// pyramids'.
-    pub const EFFECT_GROUPS: u32 = BACKGROUND_LAYER_GROUP + 1 + MAX_VIEWS as u32;
+    pub const EFFECT_GROUPS: u32 = CLOUD_GROUP + 1 + MAX_VIEWS as u32;
     /// The bind group of the copy of each view's image into its target, after the effects'.
     pub const VIEW_COPY_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
     /// The bind group of each step of depth of field, after the copies'.
@@ -951,6 +958,8 @@ pub struct GpuDrivenRenderer {
     particles: ParticlePass,
     /// The physical sky's tables.
     physical_sky: PhysicalSkyPass,
+    /// True once the volumetric cloud tier's noise field is on the GPU.
+    cloud_noise_made: bool,
     /// The point and spot lights of each camera view.
     lights: LightGrids,
     /// The camera views whose light buffers exist, as a mask of view places.
@@ -1212,6 +1221,9 @@ impl GpuDrivenRenderer {
                 layer_group: ids::BACKGROUND_LAYER_GROUP,
                 blank_cube: ids::BLANK_ENVIRONMENT,
                 sampler: ids::ENVIRONMENT_SAMPLER,
+                noise: ids::CLOUD_NOISE,
+                noise_sampler: ids::CLOUD_SAMPLER,
+                cloud_group: ids::CLOUD_GROUP,
             }),
             particles: ParticlePass::new(ParticleIds {
                 buffers: ids::PARTICLE_BUFFERS,
@@ -1224,7 +1236,10 @@ impl GpuDrivenRenderer {
                 textures: ids::SKY_TABLES,
                 samplers: ids::SKY_SAMPLERS,
                 groups: ids::SKY_GROUPS,
+                noise: ids::CLOUD_NOISE,
+                noise_sampler: ids::CLOUD_SAMPLER,
             }),
+            cloud_noise_made: false,
             lights: LightGrids::new(config.light_limits, true),
             lights_made: 0,
             light_clusters: LightClusters::default(),
@@ -2113,6 +2128,18 @@ impl GpuDrivenRenderer {
             Some(Some(frame)) => frame.uniform.camera_world[1],
             _ => 0.0,
         };
+        // The field is made whenever the tier draws: a sky map can refresh from the scene's sky
+        // while another background draws, and its steps bind the field.
+        let clouds = self.settings.cloud_steps() > 0;
+        if clouds {
+            cloud_noise::prepare(
+                list,
+                arena,
+                ids::CLOUD_NOISE,
+                ids::CLOUD_SAMPLER,
+                &mut self.cloud_noise_made,
+            )?;
+        }
         physical_sky::record_frame(
             &mut self.physical_sky,
             &mut self.settings,
@@ -2121,9 +2148,14 @@ impl GpuDrivenRenderer {
             list,
             arena,
         )?;
-        let groups_remade =
-            self.settings
-                .record_materials(input, list, arena, table, &self.physical_sky)?;
+        let groups_remade = self.settings.record_materials(
+            input,
+            list,
+            arena,
+            table,
+            &self.physical_sky,
+            ids::CLOUD_NOISE,
+        )?;
         self.graph.set_probe_filter(self.settings.probes().filter());
         // The frame's texture work made the passes' targets and uploads ready, so the textures
         // of the effects and the full-screen passes sample from this frame on.
@@ -2184,8 +2216,14 @@ impl GpuDrivenRenderer {
             self.settings.grading(),
         )?;
         self.bind_decal_groups(list)?;
-        self.background
-            .prepare(list, arena, &self.settings, self.physical_sky.group())?;
+        self.background.prepare(
+            list,
+            arena,
+            &self.settings,
+            self.physical_sky.group(),
+            self.physical_sky.cloud_group(),
+            (&self.pipelines, input.pipelines_built),
+        )?;
         let binding_bytes = self.config.storage_binding_bytes;
         // Each level's slice holds the copies that this frame's views draw, rather than the room
         // for every source. It comes before the layouts are applied and the views' bundles are
@@ -3573,6 +3611,7 @@ impl GpuDrivenRenderer {
             + self.graph.upload_bound()
             + BackgroundPass::UPLOAD_BYTES
             + PhysicalSkyPass::UPLOAD_BYTES
+            + cloud_noise::upload_bytes(self.cloud_noise_made, self.settings.cloud_steps())
     }
 }
 
@@ -3700,6 +3739,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.background.reset_gpu();
         self.particles.reset_gpu();
         self.physical_sky.reset_gpu();
+        self.cloud_noise_made = false;
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
         self.layout.forget_gpu();

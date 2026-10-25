@@ -131,6 +131,10 @@ export const SETTING_DOCS: {
 		label: 'Physical sky',
 		print: (value) => (value ? 'from its tables' : 'the analytic sky stands in'),
 	},
+	cloudSteps: {
+		label: 'Cloud march steps',
+		print: (value) => (Number(value) === 0 ? 'flat layer' : String(value)),
+	},
 	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
 	gpuOcclusion: { label: 'GPU occlusion culling (WebGPU)', print: yesNo },

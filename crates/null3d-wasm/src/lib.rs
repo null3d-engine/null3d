@@ -4703,6 +4703,16 @@ pub fn set_physical_sky(on: bool) -> u32 {
     })
 }
 
+/// Sets the steps of each ray of the sky's volumetric cloud tier, from the next frame on: 0 draws
+/// the flat layer, as the lighter presets do.
+#[wasm_bindgen(js_name = setCloudSteps)]
+pub fn set_cloud_steps(steps: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_cloud_steps(steps);
+        0
+    })
+}
+
 // Makes cube texture `texture`, which a generator fills, a sky map: an environment map of the
 // scene's sky, which fills in the first frame after the generator ran and refreshes over the next
 // frames, one of its `stages` stages a frame, whenever the sky moves past a step that shows: half

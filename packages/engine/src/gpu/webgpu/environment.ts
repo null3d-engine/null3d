@@ -20,6 +20,9 @@ import {
 	CAPTURE_BYTES,
 	CAPTURE_FACE,
 	CAPTURE_TEXELS,
+	CLOUD_FIELD_WORD,
+	CLOUD_STEPS_WORD,
+	type CloudShaders,
 	chainLevels,
 	environmentSteps,
 	LAYER_BYTES,
@@ -75,6 +78,7 @@ export interface CubeGenerator {
 		panorama: GPUTexture | undefined,
 		layer: ShaderVariant<Pipeline> | undefined,
 		readback: GPUBuffer | undefined,
+		noise: GPUTexture | undefined,
 	): void;
 	/**
 	 * Frees what the sky map in `target` keeps between its stages, if it is one, and takes its
@@ -99,11 +103,22 @@ interface Kept {
 		layerSky: GPUBindGroupLayout;
 		/** The panorama's group and the layer's values. */
 		layerPanorama: GPUBindGroupLayout;
+		cloudSky: GPUBindGroupLayout;
+		cloudPanorama: GPUBindGroupLayout;
+		cloudNoise: GPUBindGroupLayout;
 	};
 	pipelines: Record<Pipeline, GPURenderPipeline>;
-	samplers: { cube: GPUSampler; panorama: GPUSampler };
+	samplers: { cube: GPUSampler; panorama: GPUSampler; noise: GPUSampler };
 	/** The layer's own pipelines, by the shader that the page sent. */
 	layers: Map<ShaderVariant<Pipeline>, LayerKept>;
+	/**
+	 * The volumetric cloud tier's pipelines, from the modules that the page loaded for it, or
+	 * none when the page's tier draws the flat layer.
+	 */
+	clouds?: {
+		sky: GPURenderPipeline | undefined;
+		panorama: GPURenderPipeline | undefined;
+	};
 }
 
 /** What a page's sky layer builds on the device: its module and the pipelines that a map uses. */
@@ -117,6 +132,7 @@ interface LayerKept {
 export function environmentGenerator(
 	shader: ShaderVariant<Pipeline>,
 	skyFilter: SkyFilter = SKY_FILTER,
+	cloudShaders?: CloudShaders,
 ): CubeGenerator {
 	const wgsl = shader.wgsl;
 	if (!wgsl) throw new Error('the environment shader has no WebGPU build');
@@ -184,6 +200,39 @@ export function environmentGenerator(
 				entries: [uniforms, panoramaTexture, panoramaSampler, layer],
 			}),
 		};
+		const cloudLayouts = {
+			cloudSky: device.createBindGroupLayout({
+				label: 'environment clouds sky',
+				entries: [
+					uniforms,
+					{
+						binding: 5,
+						visibility: fragment,
+						buffer: { type: 'uniform', minBindingSize: SKY_BYTES },
+					},
+				],
+			}),
+			cloudPanorama: device.createBindGroupLayout({
+				label: 'environment clouds panorama',
+				entries: [
+					uniforms,
+					{ binding: 3, visibility: fragment, texture: {} },
+					{ binding: 4, visibility: fragment, sampler: {} },
+					{
+						binding: 5,
+						visibility: fragment,
+						buffer: { type: 'uniform', minBindingSize: SKY_BYTES },
+					},
+				],
+			}),
+			cloudNoise: device.createBindGroupLayout({
+				label: 'environment clouds noise',
+				entries: [
+					{ binding: 6, visibility: fragment, texture: { viewDimension: '3d' } },
+					{ binding: 7, visibility: fragment, sampler: {} },
+				],
+			}),
+		};
 		const module = device.createShaderModule({ label: 'environment', code: wgsl.source });
 		const pipelineLayouts = {
 			cube: device.createPipelineLayout({ bindGroupLayouts: [layouts.cube] }),
@@ -204,15 +253,56 @@ export function environmentGenerator(
 		});
 		const linear = { magFilter: 'linear', minFilter: 'linear' } as const;
 		const made: Kept = {
-			layouts,
+			layouts: { ...layouts, ...cloudLayouts },
 			pipelines: {} as Record<Pipeline, GPURenderPipeline>,
 			layers: new Map(),
 			samplers: {
 				cube: device.createSampler({ ...linear, mipmapFilter: 'linear' }),
 				// The panorama wraps around across its width and stops at its top and bottom rows.
 				panorama: device.createSampler({ ...linear, addressModeU: 'repeat' }),
+				// The cloud field repeats in every direction, so its march wraps without a seam.
+				noise: device.createSampler({
+					...linear,
+					addressModeU: 'repeat',
+					addressModeV: 'repeat',
+					addressModeW: 'repeat',
+				}),
 			},
 		};
+		const cloudPipeline = <P extends 'sky' | 'panorama'>(
+			variant: ShaderVariant<P>,
+			name: P,
+			layout: GPUBindGroupLayout,
+		): GPURenderPipeline => {
+			const build = variant.wgsl;
+			if (!build) throw new Error('the cloud shader has no WebGPU build');
+			const cloudModule = device.createShaderModule({
+				label: `environment clouds ${name}`,
+				code: build.source,
+			});
+			return device.createRenderPipeline({
+				label: `environment clouds ${name}`,
+				layout: device.createPipelineLayout({
+					bindGroupLayouts: [layout, cloudLayouts.cloudNoise],
+				}),
+				vertex: { module: cloudModule, entryPoint: build.pipelines[name].vertex },
+				fragment: {
+					module: cloudModule,
+					entryPoint: build.pipelines[name].fragment,
+					targets: [{ format: 'rgba8unorm' }],
+				},
+			});
+		};
+		if (cloudShaders) {
+			made.clouds = {
+				sky: cloudShaders.sky
+					? cloudPipeline(cloudShaders.sky, 'sky', cloudLayouts.cloudSky)
+					: undefined,
+				panorama: cloudShaders.panorama
+					? cloudPipeline(cloudShaders.panorama, 'panorama', cloudLayouts.cloudPanorama)
+					: undefined,
+			};
+		}
 		const names: Pipeline[] = ['trace', 'blur', 'half', 'prefilter', 'panorama', 'sky'];
 		if (!background) {
 			for (const name of names) made.pipelines[name] = device.createRenderPipeline(describe(name));
@@ -380,6 +470,7 @@ export function environmentGenerator(
 		panorama,
 		layer,
 		readback,
+		noise,
 	) => {
 		let map = skyMaps.get(target);
 		if (!map) {
@@ -398,6 +489,8 @@ export function environmentGenerator(
 			values: floats,
 			valuesAt: at + LAYER_VALUES,
 			readback: words[at + LIGHT_BUFFER_WORD] === 0 ? undefined : readback,
+			noise: words[at + CLOUD_FIELD_WORD] === 0 ? undefined : noise,
+			cloudSteps: words[at + CLOUD_STEPS_WORD] as number,
 		});
 	};
 	const release = (target: GPUTexture, memory: GpuMemory) => {
@@ -430,6 +523,10 @@ interface SkyStage {
 	readonly valuesAt: number;
 	/** The buffer that this stage sums the map's light into, when it draws a layer's light. */
 	readonly readback: GPUBuffer | undefined;
+	/** The volumetric cloud tier's noise field, while the page's tier draws the march. */
+	readonly noise: GPUTexture | undefined;
+	/** The steps of each ray of the volumetric cloud tier: 0 draws the flat layer. */
+	readonly cloudSteps: number;
 }
 
 /** What a sky map keeps between its stages, and how it records each. */
@@ -446,7 +543,7 @@ interface SkyMap {
  * keeps, once, so that its stages allocate nothing.
  */
 function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: SkyFilter): SkyMap {
-	const { layouts, pipelines, samplers } = kept;
+	const { layouts, pipelines, samplers, clouds } = kept;
 	const size = target.width;
 	const levels = target.mipLevelCount;
 	const [steps, values] = skySteps(size, levels, ALIGNMENT, filter);
@@ -481,6 +578,7 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 	const layerValues = buffer('sky layer values', LAYER_BYTES, uniform);
 	const layerBinding = { binding: 6, resource: { buffer: layerValues } };
 	const block = { binding: 0, resource: { buffer: uniforms, size: STEP_BYTES } };
+	const skyEntry = { binding: 5, resource: { buffer: sky } };
 	/**
 	 * The group that draws the analytic sky with the layer over it, made at the first stage that
 	 * draws one.
@@ -496,7 +594,7 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 	const groups: Partial<Record<StepSource, GPUBindGroup>> = {
 		sky: device.createBindGroup({
 			layout: layouts.sky,
-			entries: [block, { binding: 5, resource: { buffer: sky } }],
+			entries: [block, skyEntry],
 		}),
 		chain: device.createBindGroup({
 			layout: layouts.cube,
@@ -510,12 +608,50 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 	const pass: GPURenderPassDescriptor = {
 		colorAttachments: [{ view: staging.createView(), loadOp: 'clear', storeOp: 'store' }],
 	};
+	// The cloud tier's groups: the analytic sky's settings, the panorama with the same settings,
+	// and one group for the noise field of each texture that the generator is given.
+	const cloudSkyGroup = clouds
+		? device.createBindGroup({ layout: layouts.cloudSky, entries: [block, skyEntry] })
+		: undefined;
+	/** The noise field's group, by the texture that it binds. */
+	const noiseGroups = new WeakMap<GPUTexture, GPUBindGroup>();
+	const noiseGroup = (field: GPUTexture): GPUBindGroup => {
+		let group = noiseGroups.get(field);
+		if (!group) {
+			group = device.createBindGroup({
+				layout: layouts.cloudNoise,
+				entries: [
+					{ binding: 6, resource: field.createView({ dimension: '3d' }) },
+					{ binding: 7, resource: samplers.noise },
+				],
+			});
+			noiseGroups.set(field, group);
+		}
+		return group;
+	};
 	/**
 	 * The group that reads the physical sky's panorama in place of the sky's settings, and the
 	 * panorama it binds, made again only when the panorama changes.
 	 */
 	let panoramaGroup: GPUBindGroup | undefined;
 	let layerPanoramaGroup: GPUBindGroup | undefined;
+	let cloudPanoramaGroup: GPUBindGroup | undefined;
+	let cloudPanoramaBound: GPUTexture | undefined;
+	const readCloudPanorama = (panorama: GPUTexture): GPUBindGroup => {
+		if (cloudPanoramaBound !== panorama || !cloudPanoramaGroup) {
+			cloudPanoramaGroup = device.createBindGroup({
+				layout: layouts.cloudPanorama,
+				entries: [
+					block,
+					{ binding: 3, resource: panorama.createView() },
+					{ binding: 4, resource: samplers.panorama },
+					skyEntry,
+				],
+			});
+			cloudPanoramaBound = panorama;
+		}
+		return cloudPanoramaGroup;
+	};
 	let panoramaBound: GPUTexture | undefined;
 	const readPanorama = (panorama: GPUTexture, layer: boolean): GPUBindGroup => {
 		if (panoramaBound !== panorama) {
@@ -604,8 +740,11 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 		parts: readonly SkyPart[],
 		panorama: GPUTexture | undefined,
 		layer: LayerBuilds | undefined,
+		noise: GPUTexture | undefined,
+		cloudSteps: number,
 	) => {
 		const render = encoder.beginRenderPass(pass);
+		const clouded = cloudSteps > 0 && clouds !== undefined && noise !== undefined;
 		for (let p = 0; p < parts.length; p++) {
 			const { step: k, first, faces } = parts[p] as SkyPart;
 			const step = steps[k] as Step;
@@ -614,18 +753,42 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 			// and of the panorama that the physical sky draws.
 			const drawn = layer !== undefined && step.source === 'sky';
 			render.setViewport(first * step.size, step.row, faces * step.size, step.size, 0, 1);
-			render.setPipeline(
-				drawn
-					? layer.pipeline(reread ? 'panorama' : 'sky')
-					: pipelines[reread ? 'panorama' : step.pipeline],
-			);
 			dynamicOffset[0] = k * ALIGNMENT;
-			const group = reread
-				? readPanorama(panorama, drawn)
-				: drawn
-					? layerSky()
-					: (groups[step.source] as GPUBindGroup);
-			render.setBindGroup(0, group, dynamicOffset, 0, 1);
+			// The cloud tier draws the sky's own base and the march together, from the cloud shader
+			// of the sky kind that this step shows. A layer's build draws the flat layer instead,
+			// because one stage draws one shader.
+			const cloud =
+				clouded && !drawn && noise !== undefined
+					? reread
+						? clouds?.panorama
+						: step.source === 'sky'
+							? clouds?.sky
+							: undefined
+					: undefined;
+			if (cloud && noise !== undefined) {
+				device.queue.writeBuffer(uniforms, k * ALIGNMENT + 24, Float32Array.of(cloudSteps));
+				render.setPipeline(cloud);
+				render.setBindGroup(
+					0,
+					reread ? readCloudPanorama(panorama as GPUTexture) : (cloudSkyGroup as GPUBindGroup),
+					dynamicOffset,
+					0,
+					1,
+				);
+				render.setBindGroup(1, noiseGroup(noise));
+			} else {
+				render.setPipeline(
+					drawn
+						? layer.pipeline(reread ? 'panorama' : 'sky')
+						: pipelines[reread ? 'panorama' : step.pipeline],
+				);
+				const group = reread
+					? readPanorama(panorama, drawn)
+					: drawn
+						? layerSky()
+						: (groups[step.source] as GPUBindGroup);
+				render.setBindGroup(0, group, dynamicOffset, 0, 1);
+			}
 			render.draw(3);
 		}
 		render.end();
@@ -684,7 +847,10 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 		textureBytes: 4 * (texels + 6 * size * skyRows(size)),
 		bufferBytes:
 			strip.size + finished.size + uniforms.size + sky.size + layerValues.size + captureStep.size,
-		stage(encoder, { stage, settings, at, panorama, layer, values, valuesAt, readback }) {
+		stage(
+			encoder,
+			{ stage, settings, at, panorama, layer, values, valuesAt, readback, noise, cloudSteps },
+		) {
 			const parts = stages[stage] as readonly SkyPart[];
 			if (stage === 0) {
 				device.queue.writeBuffer(sky, 0, settings, at, SKY_BYTES / 4);
@@ -694,7 +860,7 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 					device.queue.writeBuffer(layerValues, 0, values, valuesAt, (LAYER_BYTES - 4) / 4);
 				}
 			}
-			if (parts.length > 0) draw(encoder, parts, panorama, layer);
+			if (parts.length > 0) draw(encoder, parts, panorama, layer, noise, cloudSteps);
 			else {
 				for (let level = 0; level < levels; level++)
 					copyFaces(encoder, finished, offsets[level] as number, target, level, 0, 6);

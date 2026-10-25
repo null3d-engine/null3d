@@ -66,6 +66,7 @@ const SKETCHES = {
 	sharpen: './sketches/sharpen-cost-sketch.ts',
 	lens: './sketches/lens-cost-sketch.ts',
 	compute: './sketches/compute-cost-sketch.ts',
+	clouds: './sketches/clouds-cost-sketch.ts',
 } as const;
 
 type Effect = keyof typeof SKETCHES;

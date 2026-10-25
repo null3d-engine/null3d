@@ -737,6 +737,8 @@ export interface CoreGlue extends CoreErrors {
 	removeLightImage(light: number): number;
 	/** Draws the physical sky from its tables while `on`, else the analytic sky in its place. */
 	setPhysicalSky(on: boolean): number;
+	/** Sets the steps of each ray of the sky's volumetric cloud tier: 0 draws the flat layer. */
+	setCloudSteps(steps: number): number;
 	/** Removes the scene pass of a view place, or fails with the render graph's error. */
 	removeScenePass(place: number): number;
 	/** Switches the scene pass of a view place on or off. */
@@ -1329,6 +1331,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'finishLightImage',
 	'removeLightImage',
 	'setPhysicalSky',
+	'setCloudSteps',
 	'removeScenePass',
 	'setScenePassEnabled',
 	'createPassTexture',

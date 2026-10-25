@@ -316,6 +316,13 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
 			module: 'gpu/environment-steps.ts',
 			loadedBy: drawing,
 		},
+		{
+			// Both paths' texture generators, which load with the first generator that a sketch
+			// asks for, in the file beside the steps that they share.
+			name: `${prefix}-environment-generators.js`,
+			module: 'gpu/webgl2/environment.ts',
+			loadedBy: drawing,
+		},
 		{ name: `${prefix}-effect-joiner.js`, module: 'gpu/effect-joiner.ts', loadedBy: shared },
 	];
 }

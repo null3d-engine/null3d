@@ -251,6 +251,12 @@ const CASES: Record<string, Case> = {
 			},
 		};
 	},
+	// The volumetric cloud tier draws over the sky, which ?cloudSteps=32 turns on for every GPU
+	// path: the presets of WebGL2 and of compatibility mode stop at Medium, which draws the flat
+	// layer.
+	clouds: ({ scene }) => {
+		scene.setBackground({ sky: { cloudCoverage: 0.5, cloudDensity: 0.5, time: 4 } });
+	},
 	// The page's ?occlusion=on switch runs GPU occlusion culling, which a marked occluder starts.
 	occlusion: ({ scene, geometry, materials }) => {
 		scene.createMesh({

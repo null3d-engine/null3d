@@ -241,6 +241,15 @@ export interface EngineOptions {
 	 */
 	morphTargets?: number;
 	/**
+	 * The steps of each ray of the sky's volumetric cloud tier when the engine starts, a whole
+	 * number from 0 to 64. Above 0 the sky and its environment map draw volumetric clouds in place
+	 * of the flat layer, from the same cloud settings; 0 draws the flat layer. Without it, the
+	 * quality preset sets it: 0 on Low and Medium, 32 on High and 48 on Ultra. It lets a page on
+	 * WebGL2 or in compatibility mode, whose presets stop at Medium, draw the tier. A sketch can
+	 * change it during play with `quality.set`. Another value fails with E1213.
+	 */
+	cloudSteps?: number;
+	/**
 	 * True to run software occlusion culling on WebGL2: objects that `setOccluder(true)` marks hide
 	 * the objects that lie wholly behind them, so the GPU skips those. False turns it off. Without
 	 * it, the quality preset decides, and a sketch can change it during play with `quality.set`.
@@ -1674,6 +1683,7 @@ async function startEngine(
 		depthPrepass: switches.prepass ?? options.depthPrepass,
 		gpuOcclusion: switches.occlusion ?? options.gpuOcclusion,
 		morphTargets: options.morphTargets,
+		cloudSteps: options.cloudSteps,
 		softwareOcclusion: switches.occlusion ?? options.softwareOcclusion,
 		textureMemoryMiB: options.textureMemoryMiB,
 	};
@@ -2236,6 +2246,7 @@ async function startEngine(
 			hold: hold !== undefined,
 			glTiming: switches.glTiming,
 			preload: options.preload,
+			cloudSteps: quality.settings.cloudSteps,
 		};
 
 		const device = coreDevice(tier, report, {

@@ -214,7 +214,7 @@ const _: () =
 
 impl BackdropUniform {
     /// The values of `background`, whose cube texture, if it reads one, has `levels` mip levels.
-    fn of(background: &Background, levels: u32) -> Self {
+    fn of(background: &Background, levels: u32, cloud_steps: u32) -> Self {
         let mut uniform = Self {
             rotation: inverse_rotation(background.rotation),
             params: [
@@ -244,12 +244,16 @@ impl BackdropUniform {
                     sky.mie_coefficient,
                     sky.mie_directional_g,
                 ];
+                // The block carries the page's cloud settings and the march's step count. The sky's
+                // shader leaves its flat layer out while the count is above 0, and the cloud shader
+                // marches with the same coverage.
                 uniform.clouds = [
                     sky.cloud_scale,
                     sky.cloud_speed,
                     sky.cloud_coverage,
                     sky.cloud_density,
                 ];
+                uniform.layer[1] = cloud_steps as f32;
                 let [heading, elevation] = sky.second_angles();
                 uniform.cloud_place = [sky.cloud_elevation, sky.time, heading, elevation];
                 uniform.params[3] = sky.second_sky_weight;
@@ -331,6 +335,11 @@ pub(crate) struct BackgroundIds {
     pub layer_buffer: u32,
     /// The bind group of the layer's buffer.
     pub layer_group: u32,
+    /// The noise field of the volumetric cloud tier, its sampler, and the bind group of the
+    /// analytic sky's cloud draw.
+    pub noise: u32,
+    pub noise_sampler: u32,
+    pub cloud_group: u32,
 }
 
 /// The index at which the texture background binds the texture's group, after the frame's group.
@@ -431,6 +440,24 @@ pub(crate) struct BackgroundPass {
     layer: LayerPass,
     /// True when this frame's background drew and its layer's bindings are ready.
     layer_ready: bool,
+    /// The volumetric cloud tier's pipeline, 0 while the tier draws the flat layer or the
+    /// background is no sky.
+    cloud_pipeline: u32,
+    /// Where the cloud tier's draw goes, as the background's place.
+    cloud_place: Place,
+    /// The frame's cloud draw: its bind group, which the analytic sky's background makes or the
+    /// physical sky's pass hands in.
+    cloud: Option<CloudDraw>,
+    /// True once the analytic sky's cloud bind group is made.
+    cloud_group_made: bool,
+}
+
+/// One frame's draw of the volumetric cloud tier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CloudDraw {
+    /// The bind group of the cloud shader's own group.
+    group: u32,
+    place: Place,
 }
 
 impl BackgroundPass {
@@ -452,6 +479,10 @@ impl BackgroundPass {
                 group: ids.layer_group,
             }),
             layer_ready: false,
+            cloud_pipeline: 0,
+            cloud_place: Place::Last,
+            cloud: None,
+            cloud_group_made: false,
         }
     }
 
@@ -513,6 +544,25 @@ impl BackgroundPass {
             };
             pipelines.id(key.in_pass(targets.tone_map_only()))
         });
+        self.cloud_place = place;
+        self.cloud_pipeline = 0;
+        if settings.cloud_steps() > 0 {
+            let cloud = match settings.background().map(|b| b.source) {
+                Some(BackgroundSource::Sky(_)) => template::BACKGROUND_CLOUDS,
+                Some(BackgroundSource::Atmosphere(_)) => template::BACKGROUND_CLOUDS_ATMOSPHERE,
+                _ => 0,
+            };
+            if cloud != 0 {
+                let key = DrawKey {
+                    template: cloud,
+                    permutation: 0,
+                    vertex_format: 0,
+                    state: place.depth_state() | state_flags::CULL_NONE | state_flags::BLEND_NORMAL,
+                    bias: DepthBias::NONE,
+                };
+                self.cloud_pipeline = pipelines.id(key.in_pass(targets.tone_map_only()));
+            }
+        }
     }
 
     /// Finds the frame's draw once the frame recorded its texture work, and makes what it binds:
@@ -525,9 +575,12 @@ impl BackgroundPass {
         arena: &mut UploadArena,
         settings: &SceneSettings,
         sky_group: Option<u32>,
+        sky_cloud_group: Option<u32>,
+        pipelines: (&PipelineCache, u32),
     ) -> Result<(), RecordError> {
         self.draw = None;
         self.layer_ready = false;
+        self.cloud = None;
         if self.pipeline == 0 {
             return Ok(());
         }
@@ -535,14 +588,24 @@ impl BackgroundPass {
             settings.background().map(|b| b.source),
             Some(BackgroundSource::Atmosphere(_))
         ) {
-            self.draw = sky_group.map(|group| Draw {
+            let Some(group) = sky_group else {
+                return Ok(());
+            };
+            self.draw = Some(Draw {
                 pipeline: self.pipeline,
                 shape: Shape::Physical { group },
                 place: self.place,
             });
-            if self.draw.is_some() {
-                self.prepare_layer(list, arena, settings)?;
+            if self.cloud_pipeline != 0
+                && pipelines.0.built(self.cloud_pipeline, pipelines.1)
+                && let Some(clouds) = sky_cloud_group
+            {
+                self.cloud = Some(CloudDraw {
+                    group: clouds,
+                    place: self.cloud_place,
+                });
             }
+            self.prepare_layer(list, arena, settings)?;
             return Ok(());
         }
         let textures = settings.textures();
@@ -568,7 +631,11 @@ impl BackgroundPass {
                         (Shape::Box, blank, 1)
                     }
                 };
-                (shape, cube, BackdropUniform::of(&background, levels))
+                (
+                    shape,
+                    cube,
+                    BackdropUniform::of(&background, levels, settings.cloud_steps()),
+                )
             }
             None => match settings.shaded_background_color() {
                 Some(color) => (Shape::Box, blank, BackdropUniform::color(color)),
@@ -623,6 +690,45 @@ impl BackgroundPass {
             shape,
             place: self.place,
         });
+        // The analytic sky's cloud draw reads the background's own block and the noise field.
+        if self.cloud_pipeline != 0
+            && matches!(
+                settings.background().map(|b| b.source),
+                Some(BackgroundSource::Sky(_))
+            )
+            && pipelines.0.built(self.cloud_pipeline, pipelines.1)
+        {
+            if !self.cloud_group_made {
+                list.push(
+                    Op::CreateBindGroup,
+                    &[
+                        ids.cloud_group,
+                        bind_layout::CLOUDS,
+                        3,
+                        0,
+                        resource_kind::BUFFER,
+                        ids.buffer,
+                        0,
+                        sizes::BACKGROUND_UNIFORM_BYTES,
+                        6,
+                        resource_kind::TEXTURE,
+                        ids.noise,
+                        0,
+                        0,
+                        7,
+                        resource_kind::SAMPLER,
+                        ids.noise_sampler,
+                        0,
+                        0,
+                    ],
+                )?;
+                self.cloud_group_made = true;
+            }
+            self.cloud = Some(CloudDraw {
+                group: ids.cloud_group,
+                place: self.cloud_place,
+            });
+        }
         self.prepare_layer(list, arena, settings)?;
         Ok(())
     }
@@ -712,6 +818,14 @@ impl BackgroundPass {
                 list.push(Op::Draw, &[36, 1, 0, 0])?;
             }
         }
+        // The volumetric clouds blend over the sky in the same place and depth state, before an
+        // add-on's sky layer draws over them.
+        if let Some(cloud) = self.cloud.filter(|cloud| cloud.place == place) {
+            list.push(Op::SetPipeline, &[self.cloud_pipeline])?;
+            bind_frame_group(list, frame_group, offsets)?;
+            list.push(Op::SetBindGroup, &[1, cloud.group, 0])?;
+            list.push(Op::Draw, &[36, 1, 0, 0])?;
+        }
         if self.layer_ready {
             list.push(Op::SetPipeline, &[self.layer.pipeline])?;
             bind_frame_group(list, frame_group, offsets)?;
@@ -729,6 +843,8 @@ impl BackgroundPass {
         self.layer.created = false;
         self.layer.written = None;
         self.layer_ready = false;
+        self.cloud = None;
+        self.cloud_group_made = false;
     }
 }
 
@@ -748,15 +864,19 @@ mod tests {
 
     #[test]
     fn an_environment_takes_its_blur_and_its_last_level() {
-        let uniform =
-            BackdropUniform::of(&background(BackgroundSource::Environment(Handle::NONE)), 9);
+        let uniform = BackdropUniform::of(
+            &background(BackgroundSource::Environment(Handle::NONE)),
+            9,
+            0,
+        );
         assert_eq!(uniform.params, [2.0, 0.5, 8.0, 0.0]);
         assert_eq!(uniform.rotation[0], [1.0, 0.0, 0.0, 0.0]);
     }
 
     #[test]
     fn a_cube_map_reads_mirrored_across_x_and_takes_no_blur() {
-        let uniform = BackdropUniform::of(&background(BackgroundSource::Cubemap(Handle::NONE)), 1);
+        let uniform =
+            BackdropUniform::of(&background(BackgroundSource::Cubemap(Handle::NONE)), 1, 0);
         assert_eq!(uniform.params, [2.0, 0.0, 0.0, 0.0]);
         assert_eq!(uniform.rotation[0], [-1.0, 0.0, 0.0, 0.0]);
         assert_eq!(uniform.rotation[1], [0.0, 1.0, 0.0, 0.0]);
@@ -768,7 +888,7 @@ mod tests {
         let uniform = BackdropUniform::color([0.25, 0.5, 2.0]);
         assert_eq!(uniform.color, [0.25, 0.5, 2.0, 1.0]);
         assert_eq!(uniform.params, [0.0; 4]);
-        let cube = BackdropUniform::of(&background(BackgroundSource::Cubemap(Handle::NONE)), 1);
+        let cube = BackdropUniform::of(&background(BackgroundSource::Cubemap(Handle::NONE)), 1, 0);
         assert_eq!(cube.color[3], 0.0, "a cube map reads its texture");
     }
 
@@ -780,12 +900,31 @@ mod tests {
             time: 7.0,
             ..Sky::default()
         };
-        let uniform = BackdropUniform::of(&background(BackgroundSource::Sky(sky)), 1);
+        let uniform = BackdropUniform::of(&background(BackgroundSource::Sky(sky)), 1, 0);
         assert_eq!(uniform.sun, [1.0, 2.0, 3.0, 0.0]);
         assert_eq!(uniform.scattering, [2.0, 1.0, 0.005, 0.8]);
         assert_eq!(uniform.clouds, [0.0002, 0.00002, 0.4, 0.4]);
         assert_eq!(uniform.cloud_place, [0.5, 7.0, 0.0, 0.0]);
         assert_eq!(uniform.params[1], 0.0, "only environments blur");
+    }
+
+    #[test]
+    fn the_cloud_tier_keeps_the_coverage_and_carries_its_step_count() {
+        let sky = Sky {
+            cloud_coverage: 0.6,
+            cloud_density: 0.7,
+            ..Sky::default()
+        };
+        let flat = BackdropUniform::of(&background(BackgroundSource::Sky(sky)), 1, 0);
+        assert_eq!(
+            flat.clouds[2], 0.6,
+            "the flat layer keeps the page's coverage"
+        );
+        assert_eq!(flat.layer[1], 0.0, "no cloud march draws");
+        let volume = BackdropUniform::of(&background(BackgroundSource::Sky(sky)), 1, 32);
+        assert_eq!(volume.layer[1], 32.0, "the block carries the step count");
+        assert_eq!(volume.clouds[2], 0.6, "the march reads the same coverage");
+        assert_eq!(volume.clouds[3], 0.7, "the march reads the same density");
     }
 
     #[test]
@@ -795,7 +934,7 @@ mod tests {
             second_sky_weight: 3.0,
             ..Sky::default()
         };
-        let uniform = BackdropUniform::of(&background(BackgroundSource::Sky(sky)), 1);
+        let uniform = BackdropUniform::of(&background(BackgroundSource::Sky(sky)), 1, 0);
         assert_eq!(uniform.params[3], 3.0);
         let [heading, elevation] = [uniform.cloud_place[2], uniform.cloud_place[3]];
         assert!((heading - std::f32::consts::FRAC_PI_2).abs() < 1e-6);

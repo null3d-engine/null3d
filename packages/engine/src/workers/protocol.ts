@@ -60,6 +60,11 @@ export interface RendererSetup extends FramePacing {
 	glTiming?: GlTimingMode;
 	/** The features whose shader files load before the first frame, as `createEngine` lists them. */
 	preload?: readonly string[];
+	/**
+	 * The steps of each ray of the sky's volumetric cloud tier at the page's start: above 0, the
+	 * thread that draws loads the tier's shaders with the first generator that it runs.
+	 */
+	cloudSteps?: number;
 }
 
 export type SketchWorkerInit = CoreHandoff & {

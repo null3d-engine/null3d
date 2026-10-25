@@ -1002,6 +1002,49 @@ variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 [first_use.sky]
 shaders = ["sky"]
 
+# The analytic sky's volumetric cloud tier: a second draw over the sky, blended, that the High
+# preset and above draw in place of the flat layer. The build imports null3d::cloud_volume, so the
+# noise field and this build load on the tier's first use, and a page that draws the flat layer
+# downloads neither.
+[shaders.sky_volume]
+file = "sky_volume.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
+
+# The physical sky's volumetric clouds, drawn as the analytic sky's are, from the physical sky's
+# own values and tables.
+[shaders.sky_volume_physical]
+file = "sky_volume_physical.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
+
+# The analytic sky map's cloud tier: the environment generator's sky step, which draws the clear sky
+# and the volumetric clouds over it, packed as the other steps pack their texels.
+[shaders.sky_volume_env]
+file = "sky_volume_env.wgsl"
+first_use = true
+pipelines.sky = { vertex = "vs_main", fragment = "fs_sky" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# The physical sky map's cloud tier: the generator's panorama step, which adds the volumetric
+# clouds to the sky that the physical pass filled without its flat layer.
+[shaders.sky_volume_panorama]
+file = "sky_volume_panorama.wgsl"
+first_use = true
+pipelines.panorama = { vertex = "vs_main", fragment = "fs_panorama" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# A page downloads the volumetric cloud tier with the first frame that draws it, with the noise
+# field that the renderer makes then.
+[first_use.clouds]
+shaders = ["sky_volume", "sky_volume_physical"]
+
 # The physical sky's lookup tables and its panorama for the sky's environment (see
 # sky_tables.wgsl): one shader, whose draw's first vertex names the table it draws.
 [shaders.sky_tables]

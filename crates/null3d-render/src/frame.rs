@@ -983,6 +983,9 @@ pub struct SceneSettings {
     air: Option<AirModel>,
     /// True while the quality settings draw the physical sky, else the analytic sky stands in.
     physical_sky: bool,
+    /// The steps of each ray of the sky's volumetric cloud tier, which the quality settings set: 0
+    /// draws the flat layer.
+    cloud_steps: u32,
     /// The analytic sky that stands in for the physical sky, and the factor of its light, while the
     /// quality settings turn the physical sky off.
     stand_in: Option<(crate::background::Sky, f32)>,
@@ -1196,6 +1199,7 @@ impl SceneSettings {
             sky_light_slot: 0,
             air: None,
             physical_sky: true,
+            cloud_steps: 0,
             stand_in: None,
             views: vec![View::default()],
             view_names: vec![ViewNames::default()],
@@ -2609,6 +2613,17 @@ impl SceneSettings {
         }
     }
 
+    /// Sets the steps of each ray of the sky's volumetric cloud tier: 0 draws the flat layer, and a
+    /// number greater than 0 the volumetric clouds, at that many steps.
+    pub fn set_cloud_steps(&mut self, steps: u32) {
+        self.cloud_steps = steps;
+    }
+
+    /// The steps of each ray of the sky's volumetric cloud tier: 0 draws the flat layer.
+    pub fn cloud_steps(&self) -> u32 {
+        self.cloud_steps
+    }
+
     /// The physical sky's settings while the scene's background is one, whichever sky draws.
     fn atmosphere(&self) -> Option<&Atmosphere> {
         match &self.background {
@@ -2687,6 +2702,7 @@ impl SceneSettings {
         arena: &mut UploadArena,
         table: MaterialStorage,
         sky: &PhysicalSkyPass,
+        noise: u32,
     ) -> Result<bool, RecordError> {
         let frame = input.frame;
         if self.textures.needs_estimate()
@@ -2706,6 +2722,7 @@ impl SceneSettings {
         // whose first frame makes it, fills it too.
         self.sky_maps.set_clock(self.clock_seconds()[0]);
         let drawn = self.sky_maps.wants_panorama(&self.textures) && sky.record_panorama(list)?;
+        let cloud_steps = self.cloud_steps;
         self.sky_maps.record(
             &self.textures,
             list,
@@ -2716,6 +2733,8 @@ impl SceneSettings {
                 buffers: self.sky_light_buffers,
                 slot: self.sky_light_slot,
             },
+            cloud_steps,
+            noise,
         )?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
