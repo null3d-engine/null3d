@@ -62,9 +62,10 @@ land. The checker is never the author, and never the session that pushes that br
   already holds. A merge of a branch from before a history rewrite brings such copies back. The 14
   pairs that the branch took before the rule pass by their ids, so the copy check lets the branch
   land on main. Each of the two checks has its tests.
-- The merge check already refuses 9 merges on the milestone branch, from before this decision. A
-  push of the branch onto main runs it over every such merge, and so does a first push of a branch.
-  The owner rules on those merges before the milestone lands on main.
+- The merge check refused 9 merges on the milestone branch, from before this decision. A push of
+  the branch onto main runs it over every merge. The owner ruled the same day that the 9 stay, named
+  as known in `tools/hooks/check-merges.ts`, and that the rule holds for every other merge. Their
+  content is on the branch, and rewriting them would risk more than it fixes.
 - The GPU check's and the Mac references' trailers are read over the whole range. An earlier commit
   of the branch may carry the trailer that a later one needs, so the hook reads the messages over the
   whole branch. Read over their own commits alone, recent landings that CI passed failed
