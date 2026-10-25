@@ -66,7 +66,11 @@ function fakeContext(start: QualityPreset = 'medium') {
 			fromPass: () => ({ destroy() {} }),
 			fromData: () => ({ destroy() {} }),
 		},
-		render: { addPass: () => ({}), setPassEnabled() {}, removePass() {} },
+		render: {
+			addPass: () => ({ name: 'water', writes: 'water', place: 1 }),
+			setPassEnabled() {},
+			removePass() {},
+		},
 		debug: {
 			box(min: readonly number[], max: readonly number[], color: string) {
 				boxes.push([min, max, color]);
@@ -181,8 +185,9 @@ describe('the water’s figures in the stats overlay', () => {
 		expect(figure?.settings).toEqual({ reflectionEvery: 2 });
 		expect(figure?.budgetMs).toBe(1.7);
 		expect(figure?.allowedMs).toBe(1.7);
-		// The pass draws through the engine's own reflection kind, so the engine times no scope of
-		// the feature, and the add-on owns no buffer or texture of its own to report.
+		// The overlay adds up the GPU time of the reflection pass that the add-on made, which is the
+		// feature's scope. The add-on owns no buffer or texture of its own to report.
+		expect(figure?.scope).toEqual([{ name: 'water', place: 1 }]);
 		expect(figure?.gpuMs).toBeNull();
 		expect(figure?.bytes).toBeNull();
 		context.step(1);

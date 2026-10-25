@@ -31,11 +31,14 @@ import {
 	count,
 	featureLine,
 	type StatsFigures,
+	type StatsGpuStep,
 	type StatsMemoryArea,
 	type StatsThread,
 } from './stats-text';
 
 const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+/** The GPU time per frame under which the card leaves a step out. */
+const SHOWN_STEP_MS = 0.005;
 
 const CSS = `
 .panel {
@@ -174,6 +177,11 @@ h3 span { text-transform: none; letter-spacing: 0; font-weight: 500; }
 .features { display: grid; gap: 4px; padding-top: 10px; border-top: 1px solid #dfe3e8; }
 .features h3 { font-size: 10px; }
 .feature { font-size: 11px; color: #3b4450; }
+.steps { display: grid; gap: 2px; padding-top: 10px; border-top: 1px solid #dfe3e8; }
+.steps h3 { font-size: 10px; margin-bottom: 2px; }
+.step { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: #3b4450; }
+.step .name { font-weight: 500; }
+.step .value { text-align: right; white-space: nowrap; }
 .register { display: grid; gap: 4px; padding-top: 10px; border-top: 1px solid #dfe3e8; }
 .register h3 { font-size: 10px; }
 .areas { display: grid; grid-template-columns: 1fr auto auto auto; gap: 2px 8px; font-size: 11px; color: #3b4450; }
@@ -747,6 +755,9 @@ export class StatsCard {
 	private readonly featureList: HTMLElement;
 	/** The text of each feature's row, by the feature's name. */
 	private readonly featureRows = new Map<string, Text>();
+	private readonly stepSection: HTMLElement;
+	/** The rows of the frame's GPU steps, one for each place in its list. */
+	private readonly stepRows: { row: HTMLElement; name: Text; value: Text }[] = [];
 	private readonly registerSection: HTMLElement;
 	private readonly areaList: HTMLElement;
 	/** Each memory area's three figures, by the area's name. */
@@ -805,6 +816,11 @@ export class StatsCard {
 		this.featureList = element('div', '', features);
 		this.featureSection = features;
 		features.hidden = true;
+		const steps = element('div', 'steps', card);
+		const stepsTitle = element('h3', '', steps);
+		stepsTitle.append('GPU steps');
+		this.stepSection = steps;
+		steps.hidden = true;
 		const register = element('div', 'register', card);
 		const registerTitle = element('h3', '', register);
 		registerTitle.append('Memory by system');
@@ -869,7 +885,33 @@ export class StatsCard {
 		setText(this.triangles, count(figures.triangles));
 		setText(this.objects, count(figures.objects));
 		this.updateFeatures(figures.features ?? []);
+		this.updateGpuSteps(figures.gpuSteps ?? []);
 		this.updateAreas(figures.memoryAreas);
+	}
+
+	/**
+	 * The frame's GPU steps: one line for each pass that the GPU timed one by one, with the step's
+	 * name and its time per frame. The section hides where the GPU path times the frame alone.
+	 */
+	private updateGpuSteps(steps: readonly StatsGpuStep[]): void {
+		const shown = steps.filter((step) => step.ms >= SHOWN_STEP_MS);
+		this.stepSection.hidden = shown.length === 0;
+		for (let k = 0; k < shown.length; k++) {
+			let entry = this.stepRows[k];
+			if (!entry) {
+				const row = element('div', 'step', this.stepSection);
+				const name = figure('span', `gpu-step:${k}`, row, 'name').text;
+				const value = figure('span', `gpu-step:${k}:ms`, row, 'value').text;
+				entry = { row, name, value };
+				this.stepRows.push(entry);
+			}
+			const step = shown[k] as StatsGpuStep;
+			entry.row.hidden = false;
+			setText(entry.name, step.name);
+			setText(entry.value, `${step.ms.toFixed(2)} ms`);
+		}
+		for (let k = shown.length; k < this.stepRows.length; k++)
+			(this.stepRows[k] as { row: HTMLElement }).row.hidden = true;
 	}
 
 	/**

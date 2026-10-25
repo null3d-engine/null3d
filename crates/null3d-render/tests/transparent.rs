@@ -20,6 +20,7 @@ use null3d_render::debug_view::DebugView;
 use null3d_render::frame::FrameBuilder;
 use null3d_render::geometry::box_geometry;
 use null3d_render::materials::feature;
+use null3d_render::scope;
 
 /// The pipelines' state flags, by pipeline id, which the lists create.
 #[derive(Default)]
@@ -341,4 +342,40 @@ fn a_runs_front_faces_reuse_the_records_of_its_back_faces_on_webgl2() {
         "the near box's two draws share their records"
     );
     assert_ne!(offsets[1], offsets[2], "each run has records of its own");
+}
+
+/// Each recorded pass carries the scope of the step that it records, which the page names in the
+/// stats overlay and a feature adds up.
+#[test]
+fn each_pass_names_the_step_that_it_records() {
+    let mut world = World::new();
+    add_scene(&mut world);
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(1).words())
+        .unwrap();
+    let commands = world.commands();
+    let render: Vec<u32> = commands
+        .iter()
+        .filter(|(op, _)| *op == Op::BeginRenderPass)
+        .map(|(_, o)| o[11])
+        .collect();
+    // The scene's opaque and blended objects share one GPU render pass, which is the opaque step.
+    assert!(
+        render.contains(&scope::of(scope::OPAQUE, 0)),
+        "an opaque pass: {render:?}"
+    );
+    let compute: Vec<u32> = commands
+        .iter()
+        .filter(|(op, _)| *op == Op::BeginComputePass)
+        .map(|(_, o)| o[1])
+        .collect();
+    // The frame's compute work shares one pass, which the first step names.
+    assert!(
+        !compute.is_empty(),
+        "a frame with GPU culling draws a compute pass"
+    );
+    // Every pass names a step: none is left unattributed in a frame of one view.
+    assert!(render.iter().all(|&id| id != scope::NONE), "{render:?}");
+    assert!(compute.iter().all(|&id| id != scope::NONE), "{compute:?}");
 }

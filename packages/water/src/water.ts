@@ -300,6 +300,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 	host.add(
 		defineFeature({
 			name: 'water',
+			gpu: { passes: [pass] },
 			settings: {
 				reflectionEvery: {
 					presets: cadenceRow(options.reflectionEvery),

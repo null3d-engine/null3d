@@ -14,7 +14,6 @@
 import {
 	checkAddonVersion,
 	declareAddonNamespace,
-	defineFeature,
 	type FeatureHandle,
 	FeatureHost,
 	type InstanceBatch,
@@ -23,6 +22,7 @@ import {
 	type Vec3Like,
 } from '@null3d/engine';
 import { chunkSplats, type SplatChunk } from './chunks';
+import { splatsFeature } from './feature';
 import { checkSplats, type SplatData, splatsError } from './format';
 // The module registers the glTF extension as the add-on loads.
 import './gltf';
@@ -46,12 +46,6 @@ const NAMESPACE = declareAddonNamespace({
 	package: '@null3d/splats',
 	errorCodes: [2100, 2199],
 });
-
-/** The splats that draw at full quality on each preset, from Low to Ultra. */
-const PRESET_SPLATS = [100_000, 250_000, 500_000, 800_000] as const;
-
-/** The WebGL2 presets, which sort and upload the same splats with fewer threads in reach. */
-const WEBGL2_SPLATS = [50_000, 120_000, 250_000, 400_000] as const;
 
 /** The bytes of one batch row: its place, rotation, scales and color. */
 const ROW_BYTES = (3 + 4 + 3 + 4) * 4;
@@ -219,22 +213,7 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 	// The rows that the batch holds, which the preset and the GPU path decide once the host has
 	// resolved them: a phone then pays for the splats that it may draw, not for the Ultra count.
 	let capacity = 1;
-	const description = defineFeature({
-		name: 'splats',
-		frame: 'transparent',
-		kind: 'draw',
-		views: ['main'],
-		settings: {
-			drawn: {
-				presets: PRESET_SPLATS,
-				webgl2: WEBGL2_SPLATS,
-				values: { min: 0, max: 8_000_000, whole: true },
-				governor: 'scale',
-			},
-		},
-		budget: { presets: [2, 3, 4, 6], min: 0.2 },
-		memory: () => capacity * ROW_BYTES + QUAD.positions.byteLength * 4,
-	});
+	const description = splatsFeature(() => capacity * ROW_BYTES + QUAD.positions.byteLength * 4);
 	const host = new FeatureHost({
 		quality: ctx.quality,
 		tier: ctx.engine.capabilities.tier,
