@@ -136,15 +136,16 @@ pictures moved, so both reference sets were drawn again from this branch. They a
 and the toy car scale their normal map by 3. The sheen chair places its normal map apart from its
 base color map. The sheen cloth scales its sheen maps by 30 and leaves its occlusion map at 1.
 
-The shares of pixels that differ by any amount, over the three tiers, are 4.8% to 38.8% for the
+Both sets were drawn again because that measurement showed the move, not because a test failed. The
+share of pixels that differ by any amount at all, over the three tiers, is 4.8% to 38.8% for the
 texture transform model, 6.7% to 6.8% for the car paint, 8.5% to 8.8% for the sheen chair, 4.9% to
 5.1% for the sheen cloth and 3.3% to 3.4% for the toy car. Those figures come from a comparison at a
-zero threshold, so they count a pixel that differs by one step. The texture transform model's maps
-all keep the base color map's transform, so its move is a rounding of the map's changes across a
-pixel, which the map's own matrix now takes. Each of the five passed the test before the redraw as
-well: the test counts only a pixel that differs by a noticeable amount, and at most 0.1% of a
-picture may do so. `TextureTransformMultiTest` is not one of the manifest's models, and the test of
-`AnimationPointerUVs` reads values and not pixels.
+zero threshold, so a pixel counts when it differs by one step. They are not a failure rate: the test
+counts a pixel only when a channel moves by about 13 steps, and it allows 0.1% of a picture to differ
+so. Each of the five passed it before the redraw. The texture transform model's maps all keep the
+base color map's transform, so its move is a rounding of the map's changes across a pixel, which the
+map's own matrix now takes. `TextureTransformMultiTest` is not one of the manifest's models, and the
+test of `AnimationPointerUVs` reads values and not pixels.
 
 The parity comparison against three.js passes on all three tiers of all five. The share of pixels
 that differ, over the tiers, is:
