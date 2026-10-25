@@ -119,6 +119,8 @@ const NOTES: Readonly<Record<string, string>> = {
  * above, because both describe the same task and only one of them can be true.
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
+	'M3-R14':
+		"unticked by the round 19 audit: the script causes one change and then reverts it, since the opening is the demo's own held frame with no step, the camera route has already moved two fifths of a leg by the second state, and the third only undoes the lens. The showcase reads keys, so one state reached by key or pointer steps alone would meet the plain reading of the plan. Its software claim is also wrong: the four passing tests compared against Mac-drawn pictures that live on a commit on no branch, and the committed CI-drawn references have never been compared in a passing run",
 	'M3-V15':
 		'unticked by the round 18 audit: the finish line names an allocation run that shows no bytes per frame from the wind, and a passing check-addon, and the evidence owes both, with the sizes gate failing at 89.5 KB against 64 for the plugin chunking that M3-R25 owns. The task also lists the solver among its work, and the record defers the field state to M3-V13 without naming who ruled that. The field itself is proven: the cards gust on all three tiers and stop when frozen, and the run and import checks pass',
 	'M3-L2':
