@@ -47,7 +47,6 @@ const INCOMPLETE = new Set([
 	'M3-D7',
 	'M3-D9',
 	'M3-F2',
-	'M3-G4',
 	'M3-K4',
 	'M3-R16',
 	'M3-R17',
@@ -165,8 +164,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'no record shows the listing check passing on vegetation, and its one run skipped the shader and size checks',
 	'M3-F2':
 		'a 100,000-splat cloud becomes one chunk and cannot stream, and the streaming test fails in CI',
-	'M3-G4':
-		"a material with clear coat, sheen, iridescence or anisotropy cannot take the transmission or thickness maps on any path, and D-52's rule that a gap is a bug makes that a bug",
 	'M3-K4': "one of three.js r186's seven CSS3D examples is ported, and only its first layout",
 	'M3-R16': 'no project made from the template is installed, built and used with the hook on',
 	'M3-R17':
