@@ -23,6 +23,7 @@ import { softwareRenderer } from '../shared/software';
 import type {
 	CompressionFamily,
 	DepthMode,
+	PrepassColor,
 	ShadowDepthBits,
 	SkinningSwitch,
 	Switches,
@@ -45,6 +46,13 @@ const ANTIALIAS_CODES: Record<AntialiasMode, number> = {
 	none: C.ANTIALIAS_NONE,
 	fxaa: C.ANTIALIAS_FXAA,
 	msaa: C.ANTIALIAS_MSAA,
+};
+
+/** The core's code of each way that a prepass starts its stand-in color, and the default. */
+const PREPASS_COLOR_CODES: Record<PrepassColor, number> = {
+	load: C.PREPASS_COLOR_LOAD,
+	clear: C.PREPASS_COLOR_CLEAR,
+	none: C.PREPASS_COLOR_NONE,
 };
 
 /** The parts of the capability report that decide how the engine uses the device. */
@@ -168,6 +176,11 @@ export interface CoreDevice {
 	 */
 	depthPrepass: boolean;
 	/**
+	 * How a depth prepass that a screen step splits from the opaque pass starts the stand-in color
+	 * that it never draws, from the ?prepass-color= switch (`PREPASS_COLOR_*`).
+	 */
+	prepassColor: number;
+	/**
 	 * The core's code of WebGPU's skinning mode: the vertex shader of each pass, or the skinning
 	 * pass, with or without its savings.
 	 */
@@ -250,6 +263,7 @@ export type DeviceOptions = Pick<
 	| 'cells'
 	| 'join'
 	| 'grading'
+	| 'prepassColor'
 	| 'skinning'
 	| 'indexInstances'
 	| 'direct'
@@ -263,6 +277,8 @@ export type DeviceOptions = Pick<
 	transparent: boolean;
 	/** True to draw the opaque objects' depth in a depth prepass. */
 	depthPrepass: boolean;
+	/** How a prepass that a screen step splits from the opaque pass starts its stand-in color. */
+	prepassColor: PrepassColor | undefined;
 	/** True for positions that keep their precision at any distance from the origin. */
 	largeWorld: boolean;
 	/** The objects that the scene starts with room for, or 0 for the core's default. */
@@ -459,6 +475,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		joinEffects: options.join,
 		gradingHdr: options.grading === 'hdr',
 		depthPrepass: options.depthPrepass,
+		prepassColor: PREPASS_COLOR_CODES[options.prepassColor ?? 'load'],
 		skinning: SKINNING_CODES[options.skinning],
 		shadowDepthBits: options.shadowDepthBits,
 		largeWorld: options.largeWorld,

@@ -4,6 +4,8 @@
 // set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count,
 // ?memory= for the shared memory's maximum, ?queue= for the frames that may wait on the GPU,
 // ?cells=off for culling without grid cells, ?prepass=on or off for the depth prepass,
+// ?prepass-color= for how a prepass that a screen step splits from the opaque pass starts the
+// stand-in color that it never draws,
 // ?occlusion=on or off for occlusion culling, ?occlusion-buffer= for the size of software occlusion
 // culling's buffer, such as 384x216, ?skinning= for how WebGPU skins (compute for the skinning
 // pass, or full, skip or narrow for the pass with fewer of its savings), ?instances=index for
@@ -23,6 +25,13 @@ import type { TargetFps } from '../quality/check';
 import { QUALITY_PRESETS, QUALITY_SETTINGS, type QualityPreset } from '../quality/presets';
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
+/**
+ * How a depth prepass that a screen step splits from the opaque pass starts the stand-in color
+ * that it never draws, which ?prepass-color= picks: `load` starts it from what the texture holds
+ * and then invalidates it, `clear` clears it first, and `none` attaches no color at all. All three
+ * draw the same image.
+ */
+export type PrepassColor = 'load' | 'clear' | 'none';
 /**
  * How the WebGL2 path times its calls for benchmarks: each call alone, or each call followed by a
  * call that waits for the browser's GPU process, so a wait there counts toward the call that
@@ -191,6 +200,15 @@ export interface Switches {
 	 * undefined to leave it to the page's option and the quality preset.
 	 */
 	prepass: boolean | undefined;
+	/**
+	 * How a depth prepass that a screen step splits from the opaque pass starts the stand-in color
+	 * that it never draws, which ?prepass-color= picks: `load` starts it from what the texture
+	 * holds and then invalidates it, `clear` clears it first, and `none` gives the prepass a
+	 * depth-only framebuffer. Undefined takes the engine's default. Device runs measure the three
+	 * against each other, as binding an unwritten color costs Safari's WebGL2 path time that
+	 * follows the target's size (WebKit bug 328158).
+	 */
+	prepassColor: PrepassColor | undefined;
 	/**
 	 * True when ?occlusion=on turns occlusion culling on, false when ?occlusion=off turns it off,
 	 * and undefined to leave it to the page's options and the quality preset. It sets GPU occlusion
@@ -392,6 +410,7 @@ export function parseSwitches(search: string): Switches {
 		join: params.get('join') !== 'off',
 		grading: oneOf(params.get('grading'), ['display', 'hdr'] as const) ?? 'display',
 		prepass: onOff(params.get('prepass')),
+		prepassColor: oneOf(params.get('prepass-color'), ['load', 'clear', 'none'] as const),
 		occlusion: onOff(params.get('occlusion')),
 		occlusionBuffer: pixelsOf(params.get('occlusion-buffer')),
 		skinning:
