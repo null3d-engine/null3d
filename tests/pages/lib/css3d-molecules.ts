@@ -3,8 +3,13 @@
 // the example's own PDB file, centred on the atoms' bounding box as the example centres it. The
 // example loads any of sixteen molecules from files and tints a white ball image per element; this
 // port keeps the example's default molecule and draws the balls in code, so a held picture repeats
-// without files.
+// without files. One atom's object is hidden, as the example's picker hides the objects of a view
+// that it leaves out, so the port shows that a hidden object hides its element.
 import { type Quat, quat, type Vec3 } from '@null3d/engine';
+import { ATOMS, type Atom } from './css3d-molecules-data';
+
+export type { Atom, Vec } from './css3d-molecules-data';
+export { ATOMS, HIDDEN_ATOM } from './css3d-molecules-data';
 
 /** The example's camera: its lens, and the distance of its place on the z axis. */
 export const CAMERA = { fov: 70, near: 1, far: 5000, distance: 1000 };
@@ -12,43 +17,9 @@ export const CAMERA = { fov: 70, near: 1, far: 5000, distance: 1000 };
 /** World units per Ångström, which the example multiplies each atom's place by. */
 export const ATOM_SCALE = 75;
 
-/** The root's turn at sketch time `time`, in radians: the example's own two rates. */
-export const rootTurn = (time: number): [number, number] => [time, time * 0.7];
-
-/** One atom: its element's symbol, its place from the molecule's centre, and its CPK color. */
-export interface Atom {
-	readonly element: string;
-	readonly position: Vec3;
-	readonly color: string;
-}
-
-/** Caffeine's atoms, in the example's PDB order. */
-export const ATOMS: readonly Atom[] = [
-	{ element: 'c', position: [-2.06, 1.11, 0], color: '#909090' },
-	{ element: 'c', position: [-2.76, -1.3, 0], color: '#909090' },
-	{ element: 'c', position: [2.03, 2.48, 0], color: '#909090' },
-	{ element: 'c', position: [2.74, -2.31, 0], color: '#909090' },
-	{ element: 'o', position: [0.07, -2.56, 0], color: '#ff0d0d' },
-	{ element: 'o', position: [3.49, 0.24, 0], color: '#ff0d0d' },
-	{ element: 'c', position: [0.49, -1.42, 0], color: '#909090' },
-	{ element: 'c', position: [2.29, 0.06, 0], color: '#909090' },
-	{ element: 'c', position: [-0.41, -0.33, 0], color: '#909090' },
-	{ element: 'c', position: [0.1, 0.95, 0], color: '#909090' },
-	{ element: 'n', position: [-0.94, 1.79, 0], color: '#3050f8' },
-	{ element: 'n', position: [1.47, 1.13, 0], color: '#3050f8' },
-	{ element: 'n', position: [1.81, -1.18, 0], color: '#3050f8' },
-	{ element: 'n', position: [-1.78, -0.2, 0], color: '#3050f8' },
-	{ element: 'h', position: [-3.05, 1.54, 0], color: '#ffffff' },
-	{ element: 'h', position: [-3, -1.57, 1.02], color: '#ffffff' },
-	{ element: 'h', position: [-3.66, -0.98, -0.51], color: '#ffffff' },
-	{ element: 'h', position: [-2.33, -2.16, -0.51], color: '#ffffff' },
-	{ element: 'h', position: [2.17, 2.82, 1.02], color: '#ffffff' },
-	{ element: 'h', position: [2.99, 2.48, -0.51], color: '#ffffff' },
-	{ element: 'h', position: [1.35, 3.16, -0.51], color: '#ffffff' },
-	{ element: 'h', position: [2.97, -2.59, -1.02], color: '#ffffff' },
-	{ element: 'h', position: [3.66, -2.02, 0.51], color: '#ffffff' },
-	{ element: 'h', position: [2.29, -3.16, 0.51], color: '#ffffff' },
-];
+/** The root's turn at sketch time `time`, in radians: the example's 0.4 radians a second about x,
+ * and 0.28 about y. */
+export const rootTurn = (time: number): [number, number] => [time * 0.4, time * 0.28];
 
 /** The example's bonds, as pairs of indices into `ATOMS`. */
 export const BONDS: readonly (readonly [number, number])[] = [

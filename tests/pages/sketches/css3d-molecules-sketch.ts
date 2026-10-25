@@ -3,7 +3,14 @@
 // are bars that turn with a joint, as CSS3DObjects are. The root turns with the sketch's clock, so
 // a held frame stands at a time that both engines can draw.
 import { defineSketch, quat } from '@null3d/engine';
-import { ATOM_SCALE, ATOMS, BOND_SHAPES, CAMERA, rootTurn } from '../lib/css3d-molecules';
+import {
+	ATOM_SCALE,
+	ATOMS,
+	BOND_SHAPES,
+	CAMERA,
+	HIDDEN_ATOM,
+	rootTurn,
+} from '../lib/css3d-molecules';
 
 export default defineSketch(({ scene, ui, time }) => {
 	const camera = scene.createPerspectiveCamera({
@@ -24,6 +31,9 @@ export default defineSketch(({ scene, ui, time }) => {
 				atom.position[2] * ATOM_SCALE,
 			],
 		});
+		// The example's picker hides the objects of a view that it leaves out; this port hides one
+		// atom, so the element of a hidden object must not show.
+		if (index === HIDDEN_ATOM) object.setVisible(false);
 		ui.trackLabel(object, `atom-${index}`, { transform: 'billboard' });
 	});
 	BOND_SHAPES.forEach((bond, index) => {

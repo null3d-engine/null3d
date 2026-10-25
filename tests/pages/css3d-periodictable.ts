@@ -6,15 +6,15 @@
 import { createEngine } from '@null3d/engine';
 import * as THREE from 'three';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
+import { frames } from './lib/css3d-example';
 import {
 	CAMERA,
 	cellPosition,
 	cellTint,
 	ELEMENTS,
 	type ElementCell,
-	STAGE,
 } from './lib/css3d-periodictable';
-import { frames } from './lib/css3d-shared';
+import { STAGE } from './lib/css3d-shared';
 import { run } from './lib/result';
 
 /** The cell elements of one engine's stage, in the table's order. */

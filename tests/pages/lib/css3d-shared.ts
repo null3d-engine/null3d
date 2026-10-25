@@ -1,17 +1,11 @@
-// The parts of the CSS3D ports that both the page and the sketch use, which touch no browser API:
-// the stage's size, a frame wait, and the integer hash that keeps a scattered scene repeatable. The
-// page's stages, which use the DOM and three.js, live in css3d-example.ts.
+// The parts of the CSS3D ports that both the page and the sketch use, and that a test can read too:
+// the stage's size and the integer hash that keeps a scattered scene repeatable. Nothing here
+// touches a browser API or the engine. The page's stages, which use the DOM and three.js, live in
+// css3d-example.ts.
 
 /** The size of every port's stage, in CSS pixels. The examples draw to the window, so a held picture
  * fixes the size and the camera's aspect. */
 export const STAGE = { width: 960, height: 540 };
-
-/** Resolves after `count` animation frames. */
-export const frames = (count: number): Promise<void> =>
-	new Promise((resolve) => {
-		const step = () => (--count <= 0 ? resolve() : requestAnimationFrame(step));
-		requestAnimationFrame(step);
-	});
 
 /**
  * A number from 0 up to 1, from an integer hash of `index` and `salt`. The examples that scatter

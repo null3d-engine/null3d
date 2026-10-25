@@ -1,7 +1,8 @@
 // three.js's CSS3D molecules example (examples/css3d_molecules.html, r186) drawn twice on one page:
 // by null3D, with each atom as a billboard label and each bond as a world label, and by three.js's
-// CSS3DRenderer from the same data, camera and turn. A picture test compares the two stages'
-// elements. The engine draws no pixels of its own here, so the eye is the elements alone.
+// CSS3DRenderer from the same data, camera and turn. One atom's object is hidden in both stages, so
+// the page also shows that a hidden object hides its element. A picture test compares the two
+// stages' elements. The engine draws no pixels of its own here, so the eye is the elements alone.
 import * as THREE from 'three';
 import { CSS3DObject, CSS3DSprite } from 'three/addons/renderers/CSS3DRenderer.js';
 import { css3dTwin, runPort, twinCamera } from './lib/css3d-example';
@@ -12,6 +13,7 @@ import {
 	BOND_SHAPES,
 	bondElement,
 	CAMERA,
+	HIDDEN_ATOM,
 	rootTurn,
 } from './lib/css3d-molecules';
 
@@ -47,7 +49,7 @@ runPort({
 		root.rotation.set(x, y, 0);
 		scene.add(root);
 		const elements: HTMLElement[] = [];
-		ATOMS.forEach((atom) => {
+		ATOMS.forEach((atom, index) => {
 			const element = atomElement(atom);
 			const sprite = new CSS3DSprite(element);
 			sprite.position.set(
@@ -55,6 +57,8 @@ runPort({
 				atom.position[1] * ATOM_SCALE,
 				atom.position[2] * ATOM_SCALE,
 			);
+			// The engine hides the element of a hidden object, and CSS3DRenderer does the same.
+			sprite.visible = index !== HIDDEN_ATOM;
 			root.add(sprite);
 			elements.push(element);
 		});

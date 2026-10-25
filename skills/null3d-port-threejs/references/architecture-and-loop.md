@@ -63,7 +63,7 @@ for (let index = 0; index < ELEMENTS.length; index++) {
 - The example's random start positions and tints have no held picture. Take them from the cell's place instead, as the port does with an integer hash of the index.
 - The engine hides a plane whose anchor is behind the camera or outside the near and far planes. `CSS3DRenderer` draws it there, mirrored.
 - A billboard label also takes the object's scale, so a sprite that grows and shrinks ports as it is. `rotation` is the sprite's `rotation2D`.
-- A hidden object hides its element. A scene that shows only some of its objects therefore needs no extra call, as the molecules example shows with its atoms and its bonds.
+- A hidden object hides its element. A scene that shows only some of its objects therefore needs no extra call, as the molecules port shows by hiding one atom.
 - An element can hold an iframe or any other markup. Give it `pointer-events: auto` for the clicks that `CSS3DRenderer` gives its elements.
 - An orthographic camera carries the planes too. Give `scene.createOrthographicCamera` the height, or the four edges, that the example's camera uses.
 
