@@ -64,7 +64,6 @@ const INCOMPLETE = new Set([
 	'M3-L3',
 	'M3-R12',
 	'M3-R22',
-	'M3-L2',
 	'M3-L4',
 	'M3-A2',
 	'M3-A8',
@@ -124,8 +123,6 @@ const NOTES: Readonly<Record<string, string>> = {
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-K4':
 		"unticked by the tick audit of 26 October, and the tick before it was wrong: the mixed port leaves out the example's depth-writing cut-out plane, so room edges and two strips about ten pixels wide draw across the embedded page; the comparison hides both 3D canvases before it compares, so it can only see the HTML layers; and the engine has no depth-only material, which the fix needs",
-	'M3-L2':
-		"the file's levels now share their vertices and are ordered coarsest first, so a coarse level names a prefix of the buffer, proved on the staged terrain where the coarsest level's largest index is one less than the vertices it uses; what remains is a phone-class GPU row, because the S24 has no WebGPU adapter and no WebGL2 GPU timer, and that row waits on a phone that can time its GPU",
 	'M3-L4':
 		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
 	'M3-A2':
