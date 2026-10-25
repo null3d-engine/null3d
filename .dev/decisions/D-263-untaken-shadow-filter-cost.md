@@ -1,16 +1,17 @@
 # D-263: What the untaken wide shadow filter costs
 
 Status: measured on 25 October 2026 for M3-R7, in one direct run on the Mac. The wide path stays in
-every build. At the Low preset the filter's square is 3, so the wide path never runs there. The build
-that compiles it measured 4.084 ms of GPU time per frame. A build without it measured 4.004 ms. The
-round-by-round differences change sign, so the run does not tell a gap of 0.08 ms from its own
-scatter. Date: 2026-10-25. Task: M3-R7.
+every build. At the Low preset the filter's square is 3, so the wide path never runs there. The
+comparison's paired change is -3.2 per cent for the build without the wide path. Its two medians are
+4.004 ms and 4.084 ms of GPU time per frame. The rounds' differences change sign, and the run
+resolves 0.15 to 0.25 ms. Its 1-minute load was 11.1, falling to 9.1, above the guide's 8. Date:
+2026-10-25. Task: M3-R7.
 
-Summary: On S4 at the Low preset on WebGPU, the wide shadow filter is compiled but never taken. That
-build measured 4.084 ms of GPU time per frame, and the build without it measured 4.004 ms. The
-0.08 ms difference is about two per cent, and it sits inside the run's scatter. The study's 0.75 ms
-figure is an unconfirmed code comment, so it gives order-of-magnitude context only. The wide path
-stays.
+Summary: On S4 at the Low preset on WebGPU, the comparison's paired change is -3.2 per cent for the
+build without the wide shadow filter. Its reported noise is 0.4 per cent, and the rounds spread
+about 2.5 per cent each way. The medians are 4.004 ms against 4.084 ms, a gap of 0.08 ms. The run
+resolves 0.15 to 0.25 ms, under a load above the benchmark guide's limit. Any cost is therefore a few
+per cent at most, and the 0.75 ms the study claims is ruled out. The wide path stays.
 
 ## Question
 
@@ -55,29 +56,32 @@ Apple M5 Max.
 | With the wide path (1c76d6c) | 1.673, 4.135, 4.084 | 4.084 |
 | Without it (d4abe39) | 1.614, 4.004, 4.152 | 4.004 |
 
-Round by round, the build without the wide path against the one with it: -3.5%, -3.2% and +1.7%. In
-milliseconds those differences are -0.059, -0.130 and +0.068. The median of the three rounds' changes
-is -3.2 per cent. The medians themselves differ by 0.080 ms, or 2.0 per cent. The comparison's
-reported noise, 0.4%, comes from the median absolute deviation. That figure sets aside the one round
-that disagrees. Read the scatter of all three rounds instead, about 2.5% each way. Two rounds put the
-build without the wide path about 3% faster, and one puts it 1.7% slower. So the round-by-round
-differences change sign, and the run does not resolve a difference of this size. The benchmark's own
-GPU rule allows a quarter of the baseline's 4.084 ms here, 1.02 ms, with a 0.3 ms floor and twice the
-noise. It calls the page "same".
+The comparison's paired change is -3.2 per cent, with a reported noise of 0.4 per cent. That noise
+comes from the median absolute deviation, which sets aside the one round that disagrees. Round by
+round, the build without the wide path against the one with it: -3.5%, -3.2% and +1.7%, or -0.059,
+-0.130 and +0.068 ms. The medians themselves differ by 0.080 ms, or 2.0 per cent.
+
+Read the scatter of all three rounds rather than the single noise figure, about 2.5% each way. Two
+rounds put the build without the wide path about 3% faster, and one puts it 1.7% slower. So the
+round-by-round differences change sign, and the run does not resolve a difference of this size. Any
+cost is a few per cent at most.
+
+The run's resolution. Each run took 55 GPU-timed frames, and those frames fall into two speeds, about
+1.6 and 4.1 ms. A different mix of the two moves a median by 0.1 to 0.2 ms on its own. So the run
+resolves 0.15 to 0.25 ms, which is four to six per cent of the 4.084 ms frame. The study's 0.75 ms
+is three to five times that resolution, so a cost of that size would have shown.
 
 The machine and what it means for the figure. The run went directly, not through the job queue. The
-queue kept recreating a drain marker that held the job back. Other work kept the 1-minute load above
-the 8 that a queued timing run waits for. The wrapper printed the load with
-`sysctl -n vm.loadavg`: `load start: { 11.13 21.70 26.83 } 23:00:17` and
-`load end: { 9.12 18.51 25.15 } 23:01:39`. The archived record keeps the runs alone, with no load
-figures. The 1-minute load was therefore 11.1 at the start and 9.1 at the end. The 5-minute load was
-21.7 and then 18.5. The first round read about 1.6 ms in both builds, against about 4.1 ms in the
-later rounds. So the machine and the GPU had not settled when it ran. The run's resolution is
-therefore about 0.1 ms, or 2.5% of the frame.
+queue kept recreating a drain marker that held the job back, and other work kept the load up. The
+wrapper printed the load with `sysctl -n vm.loadavg`: `load start: { 11.13 21.70 26.83 } 23:00:17`
+and `load end: { 9.12 18.51 25.15 } 23:01:39`. The archived record keeps the runs alone, with no load
+figures. The 1-minute load was therefore 11.1 at the start and 9.1 at the end.
 
-That leaves the question answerable. The two builds ran in the same rounds, so a change of the
-machine's speed reaches both alike. The study's claimed figure, if real, is 0.75 ms, far larger than
-this run's resolution.
+The benchmark guide times a run under a 1-minute load of 8. This run started at 11.1 and ended at
+9.1, so it came from a machine busier than the guide allows. That is the figure's main weakness. Two
+things limit the harm. The first round read about 1.6 ms in both builds, against about 4.1 ms later,
+so the GPU had not settled at the start. The builds also ran in the same rounds, so a change of the
+machine's speed reaches both alike.
 
 What removing the wide path would save in shader size. The build's size report gives the same twelve
 files in both builds. They hold the engine's shaders for each GPU path and each value of the device
@@ -107,11 +111,11 @@ the look of Medium and above does not change ([hard rule 40](../../AGENTS.md#har
 
 ## Decision
 
-The wide path stays in the build at every preset. Its untaken cost at Low is 0.08 ms, or about two
-per cent, and the round-by-round differences change sign. That is inside the run's scatter, so the
-run does not establish a cost. The study's comment puts its own engine's untaken branch at about
-0.75 ms. That is an order of magnitude above the figure here, and the study itself calls the number
-unconfirmed. It is context, not evidence about this engine.
+The wide path stays in the build at every preset. The comparison's paired change is -3.2 per cent, and
+the round-by-round differences change sign. The run resolves 0.15 to 0.25 ms, and any cost is a few
+per cent at most. The study's comment puts its own engine's untaken branch at about 0.75 ms, and the
+study itself calls that number unconfirmed. A cost of that size is three to five times this run's
+resolution, so this run would have shown it.
 
 A removal would need a second shader variant for each filter width. `shadowFilter` is live on every
 preset, and the governor lowers it. The 5.34 KiB after Brotli that the removal would save does not
