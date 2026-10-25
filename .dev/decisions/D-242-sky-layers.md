@@ -177,6 +177,31 @@ both places lack it together rather than one of them; the next fill that any cha
 it in. The page sends a layer's shader when the sketch installs it, so a fill in the same frame
 normally has it.
 
+## Addendum, 26 October 2026: the cube's texture unit on WebGL2
+
+A layer's map asked the WebGL2 backend for the texture units of its programs. It asked the wrong
+program for the chain's cube: the unit belongs to the capture of the map's light, whose fragment
+sums the chain. The program that draws a layer's sky samples no cube at all, whether it draws over
+the analytic sky or over a panorama. A stage that samples no texture at a binding loses that
+uniform, so the backend's lookup refused the request. The message was "a WebGL2 program reads no
+texture at group 0, binding 1". The frame reported that refusal as E1408, and every WebGL2 page with
+a layer stopped before its first map fill.
+
+`demo-aurora` was the page that showed it, in Chrome, Safari and Firefox (CI runs 40163662542 and
+40222451866). WebGPU was not affected: a bind group names every binding of its layout, so a program
+that reads no cube still has one bound.
+
+The generator now asks the capture for that unit, which is its only use. The unit test
+`packages/engine/src/gpu/webgl2/environment.test.ts` answers both lookups from the generated shader
+build. It refuses with the same message when the unit is asked of a program that samples no cube.
+
+The fault came with the layer's reach into the map on 25 October 2026 (`1441b441d`). It is not a
+fault of the per-map transform work, which touched other files.
+
+`demo-aurora` passes on all three tiers now, on the Mac's GPU (3 of 3) and on the software GPU (3
+of 3). Both runs compared against the 24 October 2026 references, the WebGL2 tier among them, so no
+picture moved with the fix.
+
 ### The task line
 
 "H8, sky layers: an add-on draws over the background and dims the sun, and the layer reaches the

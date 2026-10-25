@@ -133,7 +133,7 @@ interface Samplers {
 	panorama: WebGLSampler;
 }
 
-interface Units {
+export interface Units {
 	cube: number;
 	panorama: number;
 }
@@ -149,6 +149,19 @@ interface LayerPrograms {
 /** The texture units from which the programs read the cube source and the panorama. */
 function unitsOf(host: ProgramHost, programs: Record<Pipeline, WebGLProgram>): Units {
 	return { cube: host.unit(programs.blur, 0, 1), panorama: host.unit(programs.panorama, 0, 3) };
+}
+
+/**
+ * The texture units of a page's layer programs. A unit comes from the program that reads the
+ * texture, since a stage that samples none of it drops its uniform: the capture of the map's light
+ * sums the cube, and a draw samples the panorama in place of the analytic sky. A layer's own draw
+ * of the sky samples no cube, so its unit is the capture's.
+ */
+export function layerUnits(
+	host: ProgramHost,
+	programs: { feedback: WebGLProgram; panorama: WebGLProgram },
+): Units {
+	return { cube: host.unit(programs.feedback, 0, 1), panorama: host.unit(programs.panorama, 0, 3) };
 }
 
 /** The generator of environment maps, from the environment shader's GLSL build. */
@@ -212,7 +225,7 @@ export function environmentGenerator(
 			sky,
 			panorama,
 			feedback,
-			units: { cube: host.unit(sky, 0, 1), panorama: host.unit(panorama, 0, 3) },
+			units: layerUnits(host, { feedback, panorama }),
 		};
 		kept.layers.set(layer, made);
 		return made;
