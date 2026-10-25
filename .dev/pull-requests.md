@@ -89,6 +89,14 @@ every compile is idle and the server's own CPU time does not move, stop the serv
 one, and the queued compiles finish. The heavy lane now leaves the wrapper out unless a job asks for
 it with `NULL3D_SCCACHE=1`, because a stalled cache costs more than a shared crate saves.
 
+That "leaves the wrapper out" needs one care. `~/.cargo/config.toml` sets
+`[build] rustc-wrapper = "sccache"` for every checkout, and unsetting `RUSTC_WRAPPER` does not
+override a Cargo config file. So a job that wants no wrapper must set an empty one:
+`RUSTC_WRAPPER= cargo ...`, or `CARGO_BUILD_RUSTC_WRAPPER=` in the job's environment, since Cargo
+treats an empty value as no wrapper. On 25 October 2026 four jobs sat at zero processor time for
+twenty to forty minutes behind one wedged server for exactly this reason, and each held its target
+directory's lock while it waited, so the next job in that checkout waited behind it too.
+
 A queue job runs at normal priority. The clamp to background priority stays for one case only: while
 a timing run measures. The owner ruled it on 25 October 2026, after nine queued jobs sat frozen with
 seconds of processor time in up to an hour while one shader rebuild used thirteen of the machine's
