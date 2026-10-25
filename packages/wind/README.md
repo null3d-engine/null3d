@@ -48,8 +48,8 @@ blue channels hold the wind across the ground. Its green channel holds the wind'
 zero while the field is flat. Its alpha holds how fast the air moves there.
 
 A reader samples it with one texture read at each vertex. The shader build resolves only the
-engine's library, so a reader's WGSL holds a copy of the sampling function. `src/field.wgsl` holds
-the canonical copy. A test compares the copies that ship.
+engine's library, so a reader's WGSL holds a copy of the sampling function. The add-on's docs page,
+`api/wind`, shows the copy to take, and a test keeps the add-on's own copy equal to it.
 
 `sample(x, y, z, out)` gives the same air on the CPU, from the same rule, for a page's own motion.
 
