@@ -507,6 +507,28 @@ export function liveLockHolder(path: string): number | undefined {
 	return lockHolder(path);
 }
 
+/** The command line of process `pid`, cut to `width` characters, or nothing when it has gone. */
+function commandOf(pid: number, width = 80): string {
+	const ps = spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' });
+	return ps.status === 0 ? ps.stdout.trim().slice(0, width) : '';
+}
+
+/**
+ * Who holds a lock taken at `takenMs` by `holder`, for a waiter's first line: the process, what it
+ * runs and since when. A wait inside a commit hook prints nothing else for minutes, and looks hung.
+ */
+export function holderText(
+	holder: number,
+	takenMs: number,
+	command = commandOf(holder),
+	now = Date.now(),
+): string {
+	if (holder <= 0) return 'taken by a process that named no id';
+	const since = new Date(takenMs).toTimeString().slice(0, 8);
+	const running = command ? ` (${command})` : '';
+	return `held by pid ${holder}${running} since ${since}, ${Math.round((now - takenMs) / 1000)} s ago`;
+}
+
 /** The process that holds the lock at `path`, or 0 when it names none. */
 function lockHolder(path: string): number {
 	try {
@@ -620,7 +642,7 @@ function waitForLock(path: string, marker: string | undefined, watch?: HolderWat
 			// minutes. Say who holds it: without this a build that waits prints nothing and looks
 			// hung. When the holder is an orphaned build, or one whose work has already landed, kill
 			// it and the lock moves.
-			const who = holder > 0 ? `held by pid ${holder}` : 'taken by a process that named no id';
+			const who = holderText(holder, takenMs);
 			const free = marker ? "; this job's slot of the job queue counts as free while it waits" : '';
 			console.log(`waiting for the lock at ${path}, ${who}${free}`);
 		}
