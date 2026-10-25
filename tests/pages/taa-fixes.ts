@@ -224,7 +224,8 @@ run('taa-fixes', async () => {
 
 	if (CASE === 'phone') {
 		// Both paths settle on a still scene with no jitter: they hold the same picture, and the
-		// phone path reads less of it.
+		// phone path reads less of it. The phone path draws the same picture with the transparency
+		// signals off and on, because it reads neither.
 		const full = await scene(
 			`case=phone&gpu=${GPU}&taa=1&jitter=0&phone=0`,
 			async (engine, heard) => {
@@ -233,18 +234,37 @@ run('taa-fixes', async () => {
 			},
 		);
 		const phone = await scene(
-			`case=phone&gpu=${GPU}&taa=1&jitter=0&phone=1`,
+			`case=phone&gpu=${GPU}&taa=1&jitter=0&phone=1&reactive=off`,
 			async (engine, heard) => {
 				await advance(heard, 8);
 				return capture(engine);
 			},
 		);
-		return { case: CASE, gpu: GPU, distance: distance(full, phone), mean: mean(phone) };
+		const masked = await scene(
+			`case=phone&gpu=${GPU}&taa=1&jitter=0&phone=1&reactive=both`,
+			async (engine, heard) => {
+				await advance(heard, 8);
+				return capture(engine);
+			},
+		);
+		return {
+			case: CASE,
+			gpu: GPU,
+			distance: distance(full, phone),
+			skip: distance(phone, masked),
+			mean: mean(phone),
+		};
 	}
 
 	// The jittered effects: the same scene with the resolve off and on, and the frame-to-frame
-	// change of each, which is what a temporal resolve is meant to lower.
+	// change of each, which is what a temporal resolve is meant to lower. The resolve off draws
+	// the scene with and without the offset request, which the frame applies only while the
+	// resolve draws, so the two says whether the offsets alone change the picture.
 	const off = await scene(`case=${CASE}&gpu=${GPU}&taa=0&jitter=0`, async (engine, heard) => {
+		await advance(heard, 6);
+		return sequence(engine, 16);
+	});
+	const offJitter = await scene(`case=${CASE}&gpu=${GPU}&taa=0&jitter=1`, async (engine, heard) => {
 		await advance(heard, 6);
 		return sequence(engine, 16);
 	});
@@ -256,6 +276,7 @@ run('taa-fixes', async () => {
 		case: CASE,
 		gpu: GPU,
 		off: change(off),
+		offJitter: change(offJitter),
 		on: change(on),
 		offMean: mean(off[0] as Frame),
 		onMean: mean(on[0] as Frame),

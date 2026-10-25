@@ -1,6 +1,6 @@
 # D-206: The temporal resolve's second look, and the techniques that waited on it
 
-Status: decided on 21 October 2026 by task M3-A11 from its own measurements, and amended on 24 October 2026. The two faults that refused the resolve are fixed, and the engine's own paths pass on both GPU paths with MSAA and one sample. The quality bar of D-129 was then measured on both paths at each preset, and the resolve did not beat the presets, so it does not ship. [D-179](D-179-technique-rulings-2026-10-15.md) leaves TAA to this task, and leaves the many-lights prototype (M3-F3) and the temporal upscaler (M3-F10) to the same answer. The owner may change the ruling. Date: 2026-10-21, amended 2026-10-24. Task: M3-A11, then the capture fix, then the quality measurement.
+Status: decided on 21 October 2026 by task M3-A11 from its own measurements, amended on 24 October 2026 and again on 25 October 2026. The two faults that refused the resolve are fixed, and the engine's own paths pass on both GPU paths with MSAA and one sample. The quality bar of D-129 was then measured on both paths at each preset, and the resolve did not beat the presets, so it does not ship. [D-179](D-179-technique-rulings-2026-10-15.md) leaves TAA to this task, and leaves the many-lights prototype (M3-F3) and the temporal upscaler (M3-F10) to the same answer. The owner may change the ruling. Date: 2026-10-21, amended 2026-10-24 and 2026-10-25. Task: M3-A11, then the capture fix, then the quality measurement.
 
 Summary: The temporal resolve does not ship for 0.1.0. Its two engine-path faults are fixed: a captured frame holds the live image, and the setting turns off and on while the engine runs. The quality bar of D-129 is now measured on both GPU paths at every preset. The resolve adds temporal noise to still thin lines, smears grass that moves by itself, and draws softer and farther from a 64-sample reference than the presets. It costs about 1 ms on WebGPU in light scenes, and 9.1 ms in the Creek on WebGL2. TAA is dropped, not deferred, and with it the shipping of many lights and the temporal upscaler.
 
@@ -250,7 +250,7 @@ Why each fix is right:
 - **The exposure ratio.** The lit pass scales every color by the camera's exposure, so a history written under one exposure holds other numbers than this frame's colors. The frame now carries this frame's exposure over the last frame's, and the resolve scales the history by it before the blend.
 - **The transparent alpha.** The scene color's alpha holds a blended surface where the canvas shows through. The resolve lowers the history there, shaped as FSR2 shapes it: the history's share falls by the mask's value.
 - **The opaque-only copy.** A blended surface over an opaque one leaves the scene alpha at one, so the alpha carries nothing. A copy of the scene color after the opaque pass, and before the blended pass, gives the comparison that finds it: where the composited color differs from the copy beyond a small threshold, a blended surface drew, and the history falls. The copy draws whenever the resolve does, not only while a scene blends, so the texture that the resolve reads is always the copy. A unit test (`the_resolve_copies_the_opaque_color_before_a_blend_draws`) holds the copy before the blended pass and the resolve after it.
-- **The phone path.** It reads one depth sample where the scene depth is multisampled, samples the history with four `textureLoad` taps rather than the linear sampler, and skips both transparency signals and the brightness weighting. It keeps the same pipelines, so turning it on builds nothing of its own. The prototype turns it on with a setting. A shipping version would pick it at the Low preset that a phone's measured speed selects, never from a device name (hard rule 14).
+- **The phone path.** It reads one depth sample where the scene depth is multisampled, samples the history with four `textureLoad` taps rather than the linear sampler, and skips both transparency signals and the brightness weighting: the shader masks the signal bits with the phone flag. It keeps the same pipelines, so turning it on builds nothing of its own. The prototype turns it on with a setting. A shipping version would pick it at the Low preset that a phone's measured speed selects, never from a device name (hard rule 14). The phone test proves the skip: it draws the phone path with the masks off and on, and requires the same picture.
 
 null3D keeps one scene color target. The study's engine writes a transparent surface's alpha into a second attachment, which null3D does not have. The two transparency signals here therefore read the alpha where the canvas shows through and the opaque-only copy everywhere else. The two tests cover the two signals apart.
 
@@ -264,6 +264,7 @@ The quality figures of the previous addendum were taken before these five fixes.
 
 | Test | What it proves |
 | --- | --- |
+| `cargo test -p null3d-render` | The crate's own tests pass: 463 in the lib unit target, 2 of them ignored, and 915 across its 61 test binaries |
 | `tests/lib/shader-library.test.ts` | The numbered cases, the variants and the references agree |
 | `tests/image/shader-library.spec.ts`, on WebGPU, compatibility mode and WebGL2 | `motion_math::surface_motion` gives exactly zero for a still surface, and `temporal_widen` holds the center pixel |
 | `tests/image/taa-fixes.spec.ts`, `a history follows a change of the exposure` | A resolved frame holds the scene at a doubled exposure |
@@ -291,25 +292,29 @@ Levels of the displayed color, on the Mac's GPU in Chrome 155. Each row compares
 
 | Measure | WebGPU | WebGL2 |
 | --- | --- | --- |
-| Exposure: the resolved frame's mean against the reference's | 91.3 against 80.6, error 10.7; one run landed a frame earlier, at 59.3, error -21.2 | 91.6 against 80.8, error 10.7 |
-| The scene's alpha: error with the mask, without it | 9.5, 24.1 | 13.2, 24.1 |
-| The opaque-only copy, on the `alpha` scene: error with the signal, without it | 24.4, 24.1 | 24.4, 24.1 |
-| The phone path against the full one: mean distance | 2.84 | 2.85 |
-| Thin rain: frame-to-frame change without the resolve, with it | 2.631, 13.589 | 2.727, 13.205 |
+| Exposure: the resolved frame's mean against the reference's | 91.3 against 80.6, error 10.7 | 91.6 against 80.8, error 10.7 |
+| The scene's alpha: error with the mask, without it | 9.5, 24.1 | 9.7, 24.1 |
+| The opaque-only copy, on the `alpha` scene: error with the signal, without it | 24.4, 24.1 | 24.4, 24.2 |
+| The phone path against the full one: mean distance | 2.84 | 3.00 |
+| Thin rain: frame-to-frame change without the resolve, with it | 2.617, 13.575 | 2.606, 13.702 |
 | The volumetric fog: frame-to-frame change without the resolve, with it | 0.421, 0.456 | 0.671, 0.742 |
 
 What the figures say:
 
-- **The exposure ratio.** With the ratio, a resolved frame holds the scene at the doubled exposure. The resolve's smoothing moves its mean about a tenth above the plain frame's, which the tone curve makes visible on fine noise. One capture landed a frame earlier, where the history still held part of the old exposure, and its mean sat about a quarter low. Without the ratio the same frames would keep half the old exposure, about 36 levels below. The test therefore holds the resolved mean above 60% of the reference's and the error within 30 levels, which a history without the ratio fails.
-- **The scene's alpha.** The alpha signal cuts the background that a blended square keeps in its history from 24.1 levels to 9.5, and to 13.2 on WebGL2. It works on both paths.
+- **The exposure ratio.** With the ratio, a resolved frame holds the scene at the doubled exposure. The resolve's smoothing moves its mean about a tenth above the plain frame's, which the tone curve makes visible on fine noise. The figure moves with the frame that a capture lands on, so the test holds the resolved mean above 60% of the reference's and the error within 30 levels. Arithmetic puts a history without the ratio at about half the old exposure, about 36 levels low here; that figure is arithmetic, not a run, because the resolve has no switch that turns the ratio off.
+- **The scene's alpha.** The alpha signal cuts the background that a blended square keeps in its history from 24.1 levels to 9.5, and to 9.7 on WebGL2. It works on both paths.
 - **The opaque-only copy.** The signal does not change the transparent-canvas scene: 24.4 levels against 24.1. The copy's place, before the blended pass, and its bind group are held by a unit test, but the comparison's effect is not measured here. This is owed.
-- **The phone path.** It draws the full path's picture within 3 levels.
-- **Thin rain.** The resolve makes the frame-to-frame change five times larger. The streaks are a blended draw with no motion target, so the resolve reads their history from the wrong place.
-- **The volumetric fog.** The resolve changes almost nothing: the fog's own grid offset moves too little for the resolve to help or hurt.
+- **The phone path.** It draws the full path's picture within 3 levels, and the mask setting changes its picture by 0.00 levels on both paths, because it reads neither transparency signal.
+- **Thin rain.** The resolve makes the frame-to-frame change five times larger. The streaks are a blended draw with no motion target, so the resolve reads their history from the wrong place. The comparison is not confounded by the offsets: the engine jitters the camera only while the resolve draws, and the page runs the resolve off with the offset request on as well, whose figure matches the off run within a hundredth of a level (the test asserts it).
+- **The volumetric fog.** The resolve changes almost nothing: the fog's own grid offset moves too little for the resolve to help or hurt. The fog's figure is a recorded observation; the test does not require its direction.
 
 ### The GPU time
 
 `bun run bench:gpu-check` compared the merged branch with main's merge base, commit 9369b1380, in Chrome on the Mac's GPU. It did not judge the comparison, because the benchmark pages differ between the two commits. Its figures: S4 at medium 4.24 to 4.27 ms (-0.8%), S6 at medium 4.73 to 4.84 ms (+2.2%), S4 at high 4.77 to 4.41 ms (-7.5%) and S6 at high 5.29 to 6.25 ms (+18.6%). The resolve is off on every preset, so a page draws it only where a sketch turns it on, which no benchmark scene does. The S6 figure is therefore noise in the comparison rather than the resolve's cost.
+
+### The decision
+
+The 21 October ruling stands: the resolve does not ship for 0.1.0, TAA is dropped rather than deferred, and the many-lights prototype (M3-F3) and the temporal upscaler (M3-F10) stay dropped with it. These fixes do not change that ruling. They answer the D-129 faults and make a later attempt cheaper to measure. The ruling rests on cost first: the WebGL2 path costs several times what a phone can pay in a busy scene, and this addendum adds one more cost it does not measure, the phone path's own GPU time, which stays the open figure.
 
 ### What a later attempt still needs
 

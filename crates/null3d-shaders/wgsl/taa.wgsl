@@ -238,8 +238,9 @@ fn resolve(@builtin(position) at: vec4f) -> @location(0) vec4f {
             );
             // Where a blended surface moved, this frame's color replaces the history. The scene's
             // alpha holds the surface where the canvas shows through, and the opaque-only copy
-            // shows the color that a blended surface changed over an opaque one.
-            let signals = u32(block.reactive.x + 0.5);
+            // shows the color that a blended surface changed over an opaque one. The phone path
+            // reads neither signal: it trades that history for the reads it saves.
+            let signals = select(0u, u32(block.reactive.x + 0.5), !phone);
             var reactive = 0.0;
             if ((signals & 1u) != 0u && current.a < 0.999) {
                 reactive = saturate(current.a);
