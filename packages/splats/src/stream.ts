@@ -175,6 +175,35 @@ function isVector(value: unknown): value is [number, number, number] {
 	);
 }
 
+/**
+ * The bytes of chunk files that a stream waits for before it draws its first view. A cloud that is
+ * larger than this keeps loading behind the frames that draw.
+ */
+export const FIRST_VIEW_BYTES = 1_000_000;
+
+/**
+ * The number of chunks at the start of a nearest-first list that a stream's first view waits for:
+ * the chunks whose files fit in `limit` bytes, and at least the nearest one. A chunk whose size the
+ * index does not give makes the first view the nearest chunk alone, because nothing says how long
+ * the rest would take.
+ */
+export function firstViewCount(
+	nearestFirst: ArrayLike<number>,
+	bytes: ArrayLike<number>,
+	limit = FIRST_VIEW_BYTES,
+): number {
+	const total = nearestFirst.length;
+	let taken = 0;
+	let count = 0;
+	while (count < total) {
+		const size = bytes[nearestFirst[count] as number] ?? 0;
+		if (count > 0 && (size === 0 || taken + size > limit)) break;
+		taken += size;
+		count++;
+	}
+	return count;
+}
+
 /** The calls that the loader makes, which a test replaces. */
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -261,6 +290,12 @@ export class SplatStreamLoader {
 	/** True when no request is in flight and no wanted chunk waits. */
 	get idle(): boolean {
 		return this.inFlight === 0 && this.queue.length === 0;
+	}
+
+	/** True when a chunk has loaded or stayed unreachable, so no answer about it waits. */
+	settled(index: number): boolean {
+		const state = this.states[index] as number;
+		return state === LOADED || state === FAILED;
 	}
 
 	/**
