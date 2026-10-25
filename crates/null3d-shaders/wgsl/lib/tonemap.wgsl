@@ -7,6 +7,7 @@
 #import null3d::color::{tone_map_neutral}
 #endif
 #import null3d::color::{limit_hdr}
+#import null3d::grade::{Grade, grade_hdr}
 #import null3d::noise
 
 // The output transform: tone mapping, sRGB encoding and dithering. The final pass applies it to
@@ -40,6 +41,22 @@ struct Output {
     tone_mapping: u32,
     flags: u32,
     render_size: u32,
+    /// The grading controls that the 8-bit path's scene shaders apply before the tone curve, and
+    /// that the final pass applies for a custom tone curve (see `null3d::grade`).
+    grade: Grade,
+}
+
+/// The output flag that grades high dynamic range light before the tone curve. The 8-bit path's
+/// scene shaders read it from the frame, and the HDR path's final pass reads it from its settings.
+const GRADE_HDR: u32 = 1024u;
+
+/// Exposed linear light `c` after the grading that `settings` turns on, which the tone curve then
+/// maps. The grade leaves the light as it is while its flag is clear.
+fn graded_light(c: vec3f, settings: Output) -> vec3f {
+    if (settings.flags & GRADE_HDR) == 0u {
+        return c;
+    }
+    return grade_hdr(c, settings.grade);
 }
 
 /// Exposed linear scene color after the tone mapping: linear color from 0 to 1. Without tone
@@ -105,7 +122,8 @@ fn vignette(pixel: vec2f, size: vec2f, shape: vec4f) -> f32 {
 fn finish(c: vec3f, pixel: vec2f, settings: Output, size: vec2f, shape: vec4f) -> vec4f {
     let limited = limit_hdr(c);
 #ifdef TONE_MAP
-    return vec4f(encode(tone_map(limited * vignette(pixel, size, shape), settings), pixel), 1.0);
+    let shaded = limited * vignette(pixel, size, shape);
+    return vec4f(encode(tone_map(graded_light(shaded, settings), settings), pixel), 1.0);
 #else
     return vec4f(limited, 1.0);
 #endif

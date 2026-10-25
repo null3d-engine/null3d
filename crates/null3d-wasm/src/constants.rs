@@ -276,8 +276,17 @@ pub mod post_value {
     pub const SSR_MAX_ROUGHNESS: u32 = 62;
     /// The sharpening's strength, from 0 to 1.
     pub const SHARPEN: u32 = 63;
+    /// The grading controls' white balance factors and the saturation, the lift, the gamma and
+    /// the gain of each channel, and the split toning's two chromas with its balance and its
+    /// strength, in this order. The 8-bit path's shaders apply them before their tone curve.
+    pub const GRADE_WHITE_BALANCE: u32 = 64;
+    pub const GRADE_LIFT: u32 = 68;
+    pub const GRADE_GAMMA: u32 = 72;
+    pub const GRADE_GAIN: u32 = 76;
+    pub const GRADE_SHADOWS: u32 = 80;
+    pub const GRADE_HIGHLIGHTS: u32 = 84;
     /// The values in the block.
-    pub const COUNT: u32 = 64;
+    pub const COUNT: u32 = 88;
 }
 
 /// The block of numbers that `callValues` gives: 64-bit floats that TypeScript writes before a
@@ -1297,6 +1306,12 @@ pub fn typescript() -> String {
                 ("SSR_THICKNESS", post_value::SSR_THICKNESS),
                 ("SSR_MAX_ROUGHNESS", post_value::SSR_MAX_ROUGHNESS),
                 ("SHARPEN", post_value::SHARPEN),
+                ("GRADE_WHITE_BALANCE", post_value::GRADE_WHITE_BALANCE),
+                ("GRADE_LIFT", post_value::GRADE_LIFT),
+                ("GRADE_GAMMA", post_value::GRADE_GAMMA),
+                ("GRADE_GAIN", post_value::GRADE_GAIN),
+                ("GRADE_SHADOWS", post_value::GRADE_SHADOWS),
+                ("GRADE_HIGHLIGHTS", post_value::GRADE_HIGHLIGHTS),
                 ("COUNT", post_value::COUNT),
             ],
         ),
