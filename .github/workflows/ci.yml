@@ -120,18 +120,29 @@ jobs:
           path: target/typecheck
           key: typecheck-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: typecheck-${{ runner.os }}-
-      - run: bun run typecheck
+      # The unit tests run one group at a time, in one process, so they keep about one of the
+      # runner's cores busy. The type check runs its projects on the others, beside them: it starts
+      # here, and the step after the tests waits for it, prints what it printed and fails with it.
+      - name: Start the type check beside the unit tests
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-      - uses: actions/cache/save@v4
-        if: "!cancelled() && env.SAVE_CACHES == 'true' && hashFiles('target/typecheck/*.tsbuildinfo') != ''"
-        with:
-          path: target/typecheck
-          key: typecheck-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          (bun run typecheck > "$RUNNER_TEMP/typecheck.log" 2>&1; echo $? > "$RUNNER_TEMP/typecheck.status") &
       # The meshopt unit tests read the Khronos test file and build test files from the samples.
       - uses: ./.github/actions/samples
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
       - run: bun run test
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+      - name: The type check
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          while [ ! -f "$RUNNER_TEMP/typecheck.status" ]; do sleep 2; done
+          cat "$RUNNER_TEMP/typecheck.log"
+          exit "$(cat "$RUNNER_TEMP/typecheck.status")"
+      - uses: actions/cache/save@v4
+        if: "!cancelled() && env.SAVE_CACHES == 'true' && hashFiles('target/typecheck/*.tsbuildinfo') != ''"
+        with:
+          path: target/typecheck
+          key: typecheck-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
 
   heavy-checks:
     # The checks that hold gigabytes, each in a process of its own: the generated shader set beside
