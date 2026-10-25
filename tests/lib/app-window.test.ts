@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { spawn, spawnSync } from 'node:child_process';
+import { availableParallelism, loadavg } from 'node:os';
 import type { Page } from '@playwright/test';
 import { REFRESH_MEASURE, refreshRate } from '../pages/lib/refresh-rate.ts';
 import { parseArgs, timesOnThisMachine } from '../real-browsers.ts';
@@ -169,6 +170,17 @@ describe('the display rate guard', () => {
 
 describe('the background priority guard', () => {
 	const mac = process.platform === 'darwin';
+	// A process at background priority gets almost no processor time while the machine runs more
+	// work than it has cores: on 25 October 2026, at a load of 60 to 100, such a child printed nothing
+	// in 30 s. The two tests below that wait for what such a child prints cannot then tell the
+	// guard's refusal from a start that never ran, so they skip, and say so. The rule is tested at any
+	// load, and so is the priority that taskpolicy gives a child, which needs no time to read.
+	const load = loadavg()[0] ?? 0;
+	const starved = mac && load > availableParallelism();
+	if (starved)
+		console.warn(
+			`the background priority guard: the two tests that wait for a background process skip, since the load of ${load.toFixed(0)} is over the ${availableParallelism()} cores, so the guard's refusal goes unproven in this run`,
+		);
 
 	it('refuses background priority and accepts any higher one', () => {
 		expect(priorityProblem(BACKGROUND_PRIORITY)).toContain('macOS background priority (4)');
@@ -201,9 +213,9 @@ try { await ${call}; console.log('WENT ON'); } catch (e) { console.log(e.message
 		}).stdout;
 	};
 
-	// The spawned bun pays its own start-up and imports, which under load outlast bun's 5 s default
-	// and leave stdout empty; the spawn's own limit is 30 s, so let each test reach it.
-	it.skipIf(!mac)(
+	// The spawned bun pays its own start-up and imports, which under some load outlast bun's 5 s
+	// default and leave stdout empty; the spawn's own limit is 30 s, so let each test reach it.
+	it.skipIf(!mac || starved)(
 		'stops a script at background priority before it starts a browser',
 		() => {
 			const stdout = atBackgroundPriority('./app-window.ts', 'tool.launchInWindow()');
@@ -213,7 +225,7 @@ try { await ${call}; console.log('WENT ON'); } catch (e) { console.log(e.message
 		30_000,
 	);
 
-	it.skipIf(!mac)(
+	it.skipIf(!mac || starved)(
 		"stops Playwright's runs that time frames at background priority, and lets the others start",
 		() => {
 			const stdout = atBackgroundPriority('./priority-setup.ts', 'tool.default()');

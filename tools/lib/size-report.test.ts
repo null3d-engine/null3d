@@ -275,6 +275,61 @@ describe('findEngineParts', () => {
 		);
 	});
 
+	it("gives each part the same file in any order, and not a worker's bundled copy", () => {
+		// The reader and the worker are listed before the files that load them, as in the engine's
+		// list. The assets file names the reader and a panorama file, and the panorama file names a
+		// worker that bundles a copy of the reader, two steps down from the assets file. Linux and
+		// macOS list the build's files in different orders, and the reader once took the worker.
+		const ordered = [
+			{ name: 'page.js', module: 'page/engine.ts' },
+			{ name: 'page-reader.js', module: 'scene/reader.ts', loadedBy: 'page-assets.js' },
+			{ name: 'page-assets.js', module: 'scene/assets.ts', loadedBy: 'page.js' },
+			{ name: 'page-worker.js', module: 'workers/worker.ts', loadedBy: 'page-panorama.js' },
+			{ name: 'page-panorama.js', module: 'scene/panorama.ts', loadedBy: 'page-assets.js' },
+		];
+		const start = built('src-A1.js', ['page/engine.ts'], 'import("./assets-B2.js")');
+		const assets = built(
+			'assets-B2.js',
+			['scene/assets.ts'],
+			'"./reader-C3.js","./panorama-E5.js"',
+		);
+		const panorama = built('panorama-E5.js', ['scene/panorama.ts'], 'new URL("./worker-D4.js")');
+		const reader = built('reader-C3.js', ['scene/reader.ts']);
+		const worker = built('worker-D4.js', ['workers/worker.ts', 'scene/reader.ts', 'math/vec.ts']);
+		const files = [start, worker, assets, panorama, reader];
+		for (const order of [files, [...files].reverse()]) {
+			const found = findEngineParts(order, ordered);
+			expect(found.get('page-reader.js')?.file).toBe('reader-C3.js');
+			expect(found.get('page-worker.js')?.file).toBe('worker-D4.js');
+		}
+	});
+
+	it('takes the file that a loader names over a smaller bundle further down', () => {
+		// The feature's loader is found through the wider search. Its reader's own file holds two
+		// helpers beside the reader, and a worker two steps down holds the reader and one module.
+		const nested = [
+			{ name: 'page.js', module: 'page/engine.ts' },
+			{ name: 'page-mid.js', module: 'scene/mid.ts', loadedBy: 'page.js' },
+			{ name: 'page-feature.js', module: 'scene/feature.ts', loadedBy: 'page.js' },
+			{ name: 'page-reader.js', module: 'scene/reader.ts', loadedBy: 'page-feature.js' },
+			{ name: 'page-worker.js', module: 'workers/worker.ts', loadedBy: 'page-sub.js' },
+			{ name: 'page-sub.js', module: 'scene/sub.ts', loadedBy: 'page-feature.js' },
+		];
+		const files = [
+			built('engine-A1.js', ['page/engine.ts'], '"./mid-B2.js"'),
+			built('mid-B2.js', ['scene/mid.ts'], '"./feature-C3.js"'),
+			built('feature-C3.js', ['scene/feature.ts'], '"./reader-D4.js","./sub-E5.js"'),
+			built('reader-D4.js', ['scene/reader.ts', 'scene/one.ts', 'scene/two.ts']),
+			built('sub-E5.js', ['scene/sub.ts'], '"./worker-F6.js"'),
+			built('worker-F6.js', ['workers/worker.ts', 'scene/reader.ts']),
+		];
+		for (const order of [files, [...files].reverse()]) {
+			const found = findEngineParts(order, nested);
+			expect(found.get('page-reader.js')?.file).toBe('reader-D4.js');
+			expect(found.get('page-worker.js')?.file).toBe('worker-F6.js');
+		}
+	});
+
 	it("names a vendored script of the engine package by its path from the engine's source", () => {
 		const vendored = {
 			name: 'worker-vendor.js',
@@ -445,6 +500,15 @@ describe('DOWNLOADS', () => {
 	});
 });
 
+describe('ENGINE_PARTS', () => {
+	it('names each part once', () => {
+		// The report keeps each part that it finds by name, and skips a part whose name it already
+		// holds, so a second part of one name is never looked for.
+		const names = ENGINE_PARTS.map(({ name }) => name);
+		expect(names.filter((name, at) => names.indexOf(name) !== at)).toEqual([]);
+	});
+});
+
 describe('LATER_PARTS', () => {
 	it('holds the parts that load on first use or after the first frame, and no part of a start', () => {
 		const names = LATER_PARTS.map(({ name }) => name);
@@ -485,7 +549,7 @@ describe('budgetProblems', () => {
 
 	it("passes a start and a later part at their budgets, with the owner's Brotli figures", () => {
 		// The owner raised the start's Brotli budget so the milestone's work fits.
-		expect(START_BUDGET.brotli).toBe(194 * 1024);
+		expect(START_BUDGET.brotli).toBe(256 * 1024);
 		expect(LATER_BUDGET.brotli).toBe(17 * 1024);
 		expect(budgetProblems(sizes(START_BUDGET, LATER_BUDGET), downloads, later)).toEqual([]);
 	});

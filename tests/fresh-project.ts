@@ -586,7 +586,7 @@ async function startsSiteDemos(project: string, build: BackgroundStep): Promise<
 async function main(): Promise<void> {
 	const keep = process.argv.includes('--keep');
 	console.log('Packing the public packages');
-	const packed = packPackages(ROOT, join(ROOT, DEFAULT_PACK_DIR));
+	const packed = await packPackages(ROOT, join(ROOT, DEFAULT_PACK_DIR));
 	for (const { name, version, tarball } of packed) console.log(`  ${name}@${version}: ${tarball}`);
 
 	const project = mkdtempSync(join(tmpdir(), 'null3d-fresh-project-'));
