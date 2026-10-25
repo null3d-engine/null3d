@@ -703,73 +703,35 @@ mod tests {
         serde_json::to_vec(&serde_json::json!({ "entries": entries })).unwrap()
     }
 
-    /// The entries whose builds between them make one module of every kind that a build writes:
-    /// the list that the shader crate's determinism check builds (`DETERMINISM_ENTRIES` in its
-    /// build tests), which explains how each entry makes its kinds.
-    const EVERY_KIND_ENTRIES: &[&str] = &["lit", "environment", "pick", "timer_mark"];
+    /// The entries of a small build that still makes several modules. The exports hand every
+    /// module's name to the library's module set in the same way, whatever its kind, so a few
+    /// modules check them. The shader crate's build tests render every kind of module through
+    /// that set, on a build of the entries that make each kind.
+    const SMALL_ENTRIES: &[&str] = &["pick", "timer_mark"];
 
-    /// A kind of module, by the name that a failure gives it, and the test that its file names pass.
-    type ModuleKind = (&'static str, fn(&str) -> bool);
-
-    /// A call prepares a build of the engine's entries without rendering it, and the next renders
-    /// one module, whose text is the set's for that module. The entries are the few that make one
-    /// module of every kind, so the test checks each kind without the cost of the whole build.
+    /// A call prepares a build of the engine's entries without rendering it, and each later call
+    /// renders one module, whose text is the set's for that module.
     #[test]
-    fn prepare_modules_lists_every_module_and_module_renders_one() {
-        let prepared = call(prepare_modules, &entries_request(EVERY_KIND_ENTRIES));
+    fn prepare_modules_lists_every_module_and_module_renders_each() {
+        let prepared = call(prepare_modules, &entries_request(SMALL_ENTRIES));
         assert_eq!(prepared["ok"], true, "{}", prepared["problems"]);
         let names: Vec<String> = serde_json::from_value(prepared["output"].clone()).unwrap();
-        MODULES.with_borrow(|slot| {
+        let expected: Vec<String> = MODULES.with_borrow(|slot| {
             let set = &slot.as_ref().expect("the prepared build").set;
             assert_eq!(
                 names,
                 set.names().map(str::to_owned).collect::<Vec<String>>()
             );
+            names
+                .iter()
+                .map(|name| set.text(name).expect("the build makes the module"))
+                .collect()
         });
-        // The first module of each kind, by the file names that the shader crate's determinism
-        // check reads. Every kind must be there, or the list no longer covers it.
-        let kinds: [ModuleKind; 6] = [
-            ("the main module", |name| name == "shaders.ts"),
-            ("the features module", |name| name == "shader-features.ts"),
-            ("a device module", |name| {
-                name.starts_with("shaders-") && name.ends_with(".js")
-            }),
-            ("a shared-paragraph table", |name| {
-                name.starts_with("shader-paragraphs-") && name.ends_with(".js")
-            }),
-            ("a whole-shader first-use module", |name| {
-                name.starts_with("shaders-")
-                    && (name.ends_with("-wgsl.ts") || name.ends_with("-glsl.ts"))
-            }),
-            ("a combined loader table", |name| {
-                name.starts_with("shaders-") && name.contains("-combos") && name.ends_with(".ts")
-            }),
-        ];
-        let mut chosen = Vec::new();
-        let mut missing = Vec::new();
-        for (kind, holds) in kinds {
-            match names.iter().find(|name| holds(name)) {
-                Some(name) => chosen.push(name.clone()),
-                None => missing.push(kind),
-            }
-        }
-        assert!(
-            missing.is_empty(),
-            "the build makes no {}",
-            missing.join(", no ")
-        );
-        for name in chosen {
-            let expected = MODULES.with_borrow(|slot| {
-                slot.as_ref()
-                    .expect("the prepared build")
-                    .set
-                    .text(&name)
-                    .expect("the build makes the module")
-            });
-            let answer = call(module, &module_request(&name));
+        for (name, text) in names.iter().zip(expected) {
+            let answer = call(module, &module_request(name));
             assert_eq!(answer["ok"], true, "{}", answer["problems"]);
-            assert_eq!(answer["output"]["path"], name);
-            assert_eq!(answer["output"]["text"], expected, "`{name}`");
+            assert_eq!(answer["output"]["path"], name.as_str());
+            assert_eq!(answer["output"]["text"], text, "`{name}`");
         }
         let answer = call(module, &module_request("not-a-module.ts"));
         assert_eq!(answer["ok"], false);
