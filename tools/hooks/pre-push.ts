@@ -52,6 +52,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { exactTestPath } from '../../tests/lib/test-paths';
 import { touchesRust } from './check-rust';
 import { keptCommits } from './check-trailers';
 
@@ -200,7 +201,7 @@ export function guardSteps(): Step[] {
 		{
 			why: 'a merge can add a package, a network call or a timing spec that a repository-wide guard must know',
 			lane: 'DIRECT',
-			command: ['bun', 'test', ...GUARD_TESTS],
+			command: ['bun', 'test', ...GUARD_TESTS.map(exactTestPath)],
 		},
 	];
 }

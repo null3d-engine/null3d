@@ -13,6 +13,7 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { HEAVY_CHECKS, ignorePatternOf } from './lib/heavy-checks.ts';
 import { budgetNote, checkTimeoutMs } from './lib/run-budget.ts';
+import { exactTestPath } from './lib/test-paths.ts';
 
 /** The repository, which the groups' paths are relative to. */
 const ROOT = join(import.meta.dirname, '..');
@@ -49,7 +50,7 @@ for (const paths of GROUPS) {
 		'--conditions=null3d-source',
 	];
 	for (const { file } of HEAVY_CHECKS) args.push(`--path-ignore-patterns=${ignorePatternOf(file)}`);
-	args.push(...paths);
+	args.push(...paths.map(exactTestPath));
 	const started = Date.now();
 	const result = spawnSync('bun', args, {
 		cwd: ROOT,
