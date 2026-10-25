@@ -128,7 +128,9 @@ use crate::frame::{
     RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, drawn_rows, joined_rows,
     settled,
 };
-use crate::frame_graph::{DrawnViews, FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
+use crate::frame_graph::{
+    DrawnViews, FrameGraph, GraphIds, PrepassColor, Role, ShadowPasses, TilePasses,
+};
 use crate::fullscreen::FullscreenIds;
 use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{LightGrid, LightGrids, LightLimits};
@@ -499,6 +501,9 @@ pub struct CpuCulledConfig {
     /// True to draw each camera view's opaque objects' depth in a depth prepass, before the opaque
     /// pass shades them.
     pub depth_prepass: bool,
+    /// How a depth prepass that a screen step splits from the opaque pass starts the stand-in
+    /// color that it never draws.
+    pub prepass_color: PrepassColor,
     /// How the shadow cascades store depth.
     pub cascade_depth: CascadeDepth,
     /// True when the device draws into one-sample targets of 16-bit floats, which the camera's
@@ -518,6 +523,7 @@ impl Default for CpuCulledConfig {
             cell_culling: true,
             light_limits: LightLimits::default(),
             depth_prepass: false,
+            prepass_color: PrepassColor::Load,
             cascade_depth: CascadeDepth::default(),
             float16_targets: true,
         }
@@ -822,6 +828,7 @@ impl CpuCulledRenderer {
                 graph.bind_shadow_map(config.cascade_depth);
                 graph.set_weighted_targets(config.float16_targets);
                 graph.set_depth_prepass(config.depth_prepass);
+                graph.set_prepass_color(config.prepass_color);
                 graph
             },
             layout: Layout::new(Drawn::Scene),

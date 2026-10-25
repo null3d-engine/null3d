@@ -286,6 +286,7 @@ async function start(
 				joinEffects: true,
 				gradingHdr: false,
 				depthPrepass: false,
+				prepassColor: C.PREPASS_COLOR_LOAD,
 				skinning: C.SKINNING_VERTEX,
 				indexInstances: false,
 				shadowDepthBits: 16,
