@@ -365,7 +365,7 @@ bunx @null3d/cli check-addon addons/splats
 | public API | the add-on's shipped code imports only `@null3d/engine` and `@null3d/engine/stats` |
 | interface | the entry declares the plugin interface range that it works with, or, for a `@null3d/...` package, pins the exact engine version |
 | shaders | a build compiles the add-on's WGSL for WebGPU and WebGL2 |
-| sizes | each file that the add-on loads after the start holds to its budget |
+| sizes | each file that the add-on loads after the start holds to its budget: its own code to the budget for code, and the compiled WGSL that the build inlined in it to the budget for shader builds |
 | page | the page starts from another origin under the strict policy, and its cost is measured per quality preset |
 | allocation | the bytes per frame that the add-on's own code allocates, on each quality preset |
 
