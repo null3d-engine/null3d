@@ -192,3 +192,13 @@ So the direct path helps the phone as far as the clamp reaches, and the phone's 
 ## What this changes
 
 The engine has the start-up probe and the direct-draw path, and `engine.capabilities.directDraws` reports the choice. `?direct=on|off` forces either path for a test. GPU occlusion culling and `?instances=index` do not run on the direct path, which needs the instance counts that the GPU culls. The probe and the Mac comparisons above ran on the Mac, and the same pages ran on a cloud iPhone 17 and Galaxy S25.
+
+## Addendum 26 October 2026: the instance buffer follows the largest buffer
+
+The direct path's compacted instance buffer takes the vertex and copy-destination usages and no storage usage. It binds at vertex slot 1 and no group reads it. So the device's largest buffer bounds it. The engine asks a device for at least 256 MiB of that, and for as much as its largest storage binding where that is bigger.
+
+The frame builder sized that buffer by the largest storage binding instead, as it must for the buffers that a group binds. On a device whose binding is 128 MiB, a compacted layout past that size failed every frame with E1501. The same scene drew before. The rows went up in small writes, and their destination offsets lay past 128 MiB. A batch of about 1.05 million rows that draws inside a distance band, or with levels that fade, takes a fading bucket beside its bucket. That doubles its rows, so its compacted layout passes 128 MiB at about half that many.
+
+`crates/null3d-render/src/frame.rs` sizes such a buffer with two functions. `unbound_buffer_bytes` gives the largest buffer of a path, the larger of the storage binding and 256 MiB. That is the floor of the device's largest buffer, not the largest request that the engine makes. `grown_size_within` grows a buffer inside that figure, and refuses the frame when the need passes it. The direct path's instance buffer uses them.
+
+Two tests hold this. One records a frame whose compacted layout passes its binding: `the_direct_path_sizes_its_instance_buffer_past_the_storage_binding` in `crates/null3d-render/tests/gpu_driven.rs`. The other covers both branches of the figure and the sizing within it: `a_buffer_that_no_group_binds_grows_to_the_device_s_largest_buffer` in `crates/null3d-render/src/frame.rs`. Last, a test in `packages/engine/src/render/renderer.test.ts` ties the figure to the maximum buffer size that the page asks a device for. A smaller request fails it.

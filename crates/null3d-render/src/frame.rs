@@ -4241,6 +4241,21 @@ pub fn grown_size_any(needed: u32) -> u32 {
     grown_size(needed, u32::MAX).expect("every size fits a limit of u32::MAX")
 }
 
+/// The largest buffer that the engine may ask a device for, where no bind group reads the buffer,
+/// such as a vertex buffer that the engine fills each frame. The engine asks a device for at least
+/// [`MAX_BUFFER_BYTES`], and for as much as its largest storage binding where that is bigger.
+/// `None` names a path that binds no storage buffer, such as the WebGL2 one.
+pub fn unbound_buffer_bytes(binding_bytes: Option<u32>) -> u32 {
+    let floor = MAX_BUFFER_BYTES as u32;
+    binding_bytes.map_or(floor, |bytes| bytes.max(floor))
+}
+
+/// [`grown_size`] for a buffer whose device limit is `limit` bytes, so a need past the limit
+/// refuses the frame rather than ask for a buffer the device rejects.
+pub fn grown_size_within(needed: u32, limit: u32) -> Result<u32, RecordError> {
+    grown_size(needed, limit).ok_or(RecordError::BufferFull { bytes: limit })
+}
+
 /// Encodes a linear color channel as sRGB.
 pub fn linear_to_srgb(c: f32) -> f32 {
     if c <= 0.003_130_8 {
@@ -4268,6 +4283,27 @@ mod tests {
         let second = arena.memory_use();
         assert_eq!(second.peak, 300);
         assert_eq!(second.used, 100);
+    }
+
+    /// A buffer that no bind group reads follows the device's largest buffer: the portable buffer
+    /// limit where the storage binding is smaller, and the binding where that is larger. A path
+    /// that binds no storage buffer takes the portable limit alone.
+    #[test]
+    fn a_buffer_that_no_group_binds_grows_to_the_device_s_largest_buffer() {
+        let portable = MAX_BUFFER_BYTES as u32;
+        // A device whose largest storage binding is half the portable buffer limit still holds a
+        // buffer of the full portable size, and a path without storage bindings holds that size.
+        assert_eq!(unbound_buffer_bytes(Some(portable / 2)), portable);
+        assert_eq!(unbound_buffer_bytes(None), portable);
+        // A device with a larger binding holds a buffer up to that binding.
+        let large = portable + 1024 * 1024;
+        assert_eq!(unbound_buffer_bytes(Some(large)), large);
+        // A buffer grows with room within its limit, and a need past the limit fails, naming it.
+        assert_eq!(grown_size_within(portable, portable), Ok(portable));
+        assert_eq!(
+            grown_size_within(large + 1, large),
+            Err(RecordError::BufferFull { bytes: large })
+        );
     }
 
     /// A pair of drawings that differ only in their template: a textured mesh keeps its maps'
