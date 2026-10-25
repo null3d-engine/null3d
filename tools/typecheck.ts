@@ -13,6 +13,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
+import { refuseInQuietWindow } from './lib/quiet-window';
 import { ensureShaderModules, shaderModulesUnlessBusy } from './lib/shader-modules';
 
 const ROOT = join(import.meta.dirname, '..');
@@ -136,6 +137,7 @@ function report(result: Checked): void {
  * again. Returns the results that it printed.
  */
 async function main(shaders: boolean): Promise<Checked[]> {
+	refuseInQuietWindow('The type check');
 	const shadersMatch = !shaders || shaderModulesUnlessBusy(ROOT);
 	if (shaders && shadersMatch) console.log('The shader modules match their sources.');
 	const results = await checkAll(PROJECTS, undefined, shadersMatch ? report : undefined);

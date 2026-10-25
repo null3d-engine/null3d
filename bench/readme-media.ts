@@ -10,6 +10,7 @@ import { applyPalette, GIFEncoder, quantize } from 'gifenc';
 import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { REPO_ROOT, startServer } from '../tests/lib/server.ts';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { pagePath } from './lib/parity';
 
 /** Where the README takes the animation from. */
@@ -103,6 +104,7 @@ function shrink(frame: Frame, width: number): Frame {
 }
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The README media capture');
 	const server = await startServer();
 	const browser = await launchInWindow({ channel: 'chrome' });
 	const frames: Frame[] = [];

@@ -77,6 +77,7 @@ import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
 import { pageResult, watchPageProblems } from '../tests/lib/page-result.ts';
 import { readShard, runName, SHARD_FORMAT, type Shard } from '../tests/lib/runs.ts';
 import { type DevServer, HTTP_PORT, REPO_ROOT } from '../tests/lib/server.ts';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import {
 	type PreparedBaseline,
 	preparedPages,
@@ -699,6 +700,7 @@ async function runInBrowser(options: BenchOptions, dir: string): Promise<string>
 }
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The benchmark run');
 	const options = parseBenchArgs(process.argv.slice(2));
 	const kind =
 		options.compare || options.merge

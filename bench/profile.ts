@@ -15,6 +15,7 @@
 import { forwardPort, phoneModel } from '../tests/lib/adb.ts';
 import { keepingFocus, launchInWindow, parkChromeWindow } from '../tests/lib/app-window.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import {
 	attachWorkers,
 	type CallFrame,
@@ -206,6 +207,7 @@ function report({ scene, result, split }: SceneProfile, name: ThreadName): strin
 }
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The profile');
 	const options = parseArgs(process.argv.slice(2));
 	const server = await serveBenchPages({ dev: options.dev });
 	const stops: (() => Promise<void> | void)[] = [() => server.stop()];
