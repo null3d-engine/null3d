@@ -132,9 +132,12 @@ test('car-paint: each part changes the image', async ({ page }) => {
 test('car-paint: the flakes glint under each clustered light', async ({ page }) => {
 	const runs = IMAGE_RUNS.filter((run) => run.test === 'car-paint');
 	expect(runs.length).toBe(3);
-	// Three positions, each with the flakes and without them, on every tier. The lamp at the eye
-	// puts each surface's light direction exactly opposite its view, where the half vector has no
-	// direction: a lobe that divides by it draws nothing at all.
+	// Three positions, each with the flakes and without them, on every tier: a bulb to the side, a
+	// cone onto the body, and a bulb at the camera. The lamp at the camera sends its light back
+	// along the view, so the lobe reads a half vector equal to the view, which is the grazing end of
+	// the range. A light on the far side of the body is the case the half-vector guard exists for,
+	// and no picture can show it: the two directions cancel exactly only along one line, which meets
+	// a convex body at one point, and the engine's own base specular would draw a NaN there too.
 	const lamps = ['point', 'spot', 'eye'];
 	test.setTimeout(runs.length * lamps.length * 2 * PAGE_MS);
 	for (const run of runs) {

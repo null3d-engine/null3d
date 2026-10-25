@@ -86,6 +86,30 @@ The composer leaves its own marker in the name of an overriding function, such a
 (`crates/null3d-shaders/src/names.rs`), so the emitted WGSL and GLSL name the function
 `custom_lobe`.
 
+## The half vector of a light behind the surface
+
+The lobe reads a half vector, which the engine works out from the light and view directions. Those
+two directions cancel when a light lies on the far side of the surface, on the eye's own line. Then
+the sum has no direction, and `normalize` of it gives a NaN. `lobe_half` in `lit.wgsl` uses the
+surface's normal in that case, so the lobe draws a finite color.
+
+No picture on this branch proves that guard. The cancellation holds exactly along one line, and that
+line meets a convex body at one point, so no pixel is sure to land on it. The test page's body shows
+the margin: on the line the sum is zero, and five millimetres off it the sum is 2.7e-3, where the
+guard waits for 1e-4. A lamp at the camera is the other direction and not this case, because its
+light and the view then point one way.
+
+An orthographic camera and a flat panel would make the whole panel cancel, with a light along the
+view. That picture cannot separate the guard either. The engine's own specular works out the same
+half vector without a guard, so the panel would draw a NaN with the guard and without it.
+
+The engine's own specular paths therefore keep their raw `normalize`: `brdf_ggx` and
+`brdf_ggx_physical` in `lib/lighting.wgsl`, and the coat and sheen of `lib/coat_sheen.wgsl`. The
+anisotropic branch of `brdf_ggx_physical` also passes its tangent and bitangent cosines without
+`saturate`, where the cosine of the normal takes it. Repairing those reaches every lit picture in
+the repository, so it is not a change for this task. The engine's owner list holds the fault, with
+the lobe guarded and these paths not, and this section gives the arithmetic behind that entry.
+
 ## Cost
 
 - A material that declares no lobe pays nothing: no call, no record and no build.
@@ -108,9 +132,9 @@ The composer leaves its own marker in the name of an overriding function, such a
   It refuses a wrong signature, and builds the car paint's shipped WGSL on WebGPU and WebGL2.
   `packages/vite-plugin/src/wgsl.test.ts` builds a lobe on its own.
   `tests/image/car-paint.spec.ts` measures glints with the main light out, under a point light,
-  under a spot light and under a lamp at the eye, on every GPU tier. The lamp at the eye makes each
-  surface's light direction exactly opposite its view, which is where a half vector from the raw
-  sum would divide by zero.
+  under a spot light and under a lamp at the camera, which the sketch calls `lamp=eye`. That lamp
+  sends its light back along the view, so the lobe reads a half vector equal to the view. It is the
+  grazing end of the range, not the guard's case, which the next section records as unproven.
 - Docs: `docs/shaders/surface-functions.md` holds the lobe's section, with the input table and the
   limit. `docs/api/materials.md`, `docs/guides/custom-shaders.md` and the develop skill name the
   function. `docs/guides/car-paint.md` and the add-on's README describe the glints under each light.
@@ -146,7 +170,11 @@ task does not touch.
 No CI run holds this code yet. The first run of the branch checks the SwiftShader picture set,
 which this Mac drew.
 
-The GPU check's line for the hook is the one recorded by commit dd2bcab87, taken on 25 October 2026:
+The branch needs a `GPU-Checked:` line of its own, and the landing gate has not taken one on the tip
+`c07dc10ea`. The line below is the hook's from before the task's own commits, so it cannot stand for
+them. This record gives no line it did not measure.
+
+The earlier line is the one recorded by commit dd2bcab87, taken on 25 October 2026:
 
 `GPU-Checked: 9369b1380..c307ddad6 not judged: s4 medium 4.24 to 4.20 ms (+3.0%); s6 medium 4.69 to 4.61 ms (-4.3%); s4 high 4.54 to 2.24 ms (-38.1%); s6 high 6.51 to 6.70 ms (+10.3%); the benchmark pages changed between the commits`
 

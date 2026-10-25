@@ -1142,9 +1142,10 @@ struct LobeInput {
     values: vec4f,
 }
 
-/// The unit half vector between a light and the eye, as the material's lobe reads it. A light
-/// exactly behind the eye sums the two directions to nothing, and then no half vector exists: the
-/// surface's normal stands in for it, so the lobe draws a finite color rather than a NaN.
+/// The unit half vector between a light and the eye, as the material's lobe reads it. A light on
+/// the far side of the surface from the eye sums the two directions to nothing, and then no half
+/// vector exists: the surface's normal stands in for it, so the lobe draws a finite color rather
+/// than a NaN. A light at the eye is not that case, because both directions then point one way.
 fn lobe_half(to_light: vec3f, to_view: vec3f, normal: vec3f) -> vec3f {
     let sum = to_light + to_view;
     let straight = dot(sum, sum);

@@ -2,8 +2,8 @@
 // and a sun. ?flakes=off leaves the metal flakes out, ?seams=off the panel seams, and ?weave=on
 // gives the body a carbon weave whose tows stretch their highlight. ?sun=off draws without the
 // main light, and ?lamp=spot or ?lamp=eye moves the clustered light: a cone onto the body, or a
-// bare bulb at the camera, where each surface's light direction is exactly opposite its view. The
-// paint spec checks that each part changes the image, and that the flakes glint under each light.
+// bare bulb at the camera, whose light returns along the view. The paint spec checks that each part
+// changes the image, and that the flakes glint under each light.
 import { defineSketch } from '@null3d/engine';
 import { createCarPaint } from '../../../examples/addons/car-paint';
 
