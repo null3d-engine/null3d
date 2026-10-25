@@ -234,7 +234,7 @@ The `quality` callback runs once when the feature is added, and again whenever t
 
 ## Stats
 
-The stats overlay shows a row for each feature, under the engine's own figures. A row names the feature, its GPU time, its settings, its budget and the memory that it reports, such as `splats  gpu 0.42 ms  budgetSplats 500000  budget 3.0 of 4.0 ms  memory 12.0 MiB`.
+The stats overlay shows a row for each feature, under the engine's own figures. A row names the feature, its GPU time, its settings, its budget and the memory that it reports, such as `water  gpu 0.42 ms  reflectionEvery 1  budget 1.7 of 1.7 ms`.
 
 A feature has one GPU timing scope. Its `gpu` option names the render passes that carry its work, and the overlay shows their GPU time added up as the feature's own. A pass comes from `render.addPass`, such as the reflection pass that draws a mirrored scene:
 
