@@ -18,22 +18,25 @@ function pcg(v: number): number {
 	return ((word >>> 22) ^ word) >>> 0;
 }
 
-/** The three-value hash of `null3d::noise`'s `pcg3d`. */
-function pcg3d(x: number, y: number, z: number): [number, number, number] {
+/**
+ * The first value of `null3d::noise`'s `pcg3d` hash. The library returns three, but value noise
+ * reads only the first, and this form makes no tuple and no closure, so a field sample allocates
+ * nothing.
+ */
+function lattice(x: number, y: number, z: number): number {
 	let px = (Math.imul(x, 1664525) + 1013904223) >>> 0;
 	let py = (Math.imul(y, 1664525) + 1013904223) >>> 0;
 	let pz = (Math.imul(z, 1664525) + 1013904223) >>> 0;
-	const mix = (): void => {
-		px = (px + Math.imul(py, pz)) >>> 0;
-		py = (py + Math.imul(pz, px)) >>> 0;
-		pz = (pz + Math.imul(px, py)) >>> 0;
-	};
-	mix();
+	px = (px + Math.imul(py, pz)) >>> 0;
+	py = (py + Math.imul(pz, px)) >>> 0;
+	pz = (pz + Math.imul(px, py)) >>> 0;
 	px = (px ^ (px >>> 16)) >>> 0;
 	py = (py ^ (py >>> 16)) >>> 0;
 	pz = (pz ^ (pz >>> 16)) >>> 0;
-	mix();
-	return [px, py, pz];
+	px = (px + Math.imul(py, pz)) >>> 0;
+	py = (py + Math.imul(pz, px)) >>> 0;
+	pz = (pz + Math.imul(px, py)) >>> 0;
+	return px;
 }
 
 /** A number from 0 up to 1 made from the top 24 bits of a hash. */
@@ -46,6 +49,16 @@ function fade(t: number): number {
 	return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
+/** A blend of two numbers, written out so that a sample makes no closure. */
+function blend(a: number, b: number, t: number): number {
+	return a + (b - a) * t;
+}
+
+/** A value noise corner's number: the hash's first value, from 0 up to 1. */
+function corner(x: number, y: number, z: number): number {
+	return toUnit(lattice(x, y, z));
+}
+
 /** `null3d::noise`'s value noise in 3D, from 0 to 1. */
 export function value3(px: number, py: number, pz: number): number {
 	const fx = Math.floor(px);
@@ -54,14 +67,20 @@ export function value3(px: number, py: number, pz: number): number {
 	const u = fade(px - fx);
 	const v = fade(py - fy);
 	const w = fade(pz - fz);
-	const at = (dx: number, dy: number, dz: number): number =>
-		toUnit(pcg3d(fx + dx, fy + dy, fz + dz)[0]);
-	const mix = (a: number, b: number, t: number): number => a + (b - a) * t;
-	return mix(
-		mix(mix(at(0, 0, 0), at(1, 0, 0), u), mix(at(0, 1, 0), at(1, 1, 0), u), v),
-		mix(mix(at(0, 0, 1), at(1, 0, 1), u), mix(at(0, 1, 1), at(1, 1, 1), u), v),
+	const near = blend(
+		blend(
+			blend(corner(fx, fy, fz), corner(fx + 1, fy, fz), u),
+			blend(corner(fx, fy + 1, fz), corner(fx + 1, fy + 1, fz), u),
+			v,
+		),
+		blend(
+			blend(corner(fx, fy, fz + 1), corner(fx + 1, fy, fz + 1), u),
+			blend(corner(fx, fy + 1, fz + 1), corner(fx + 1, fy + 1, fz + 1), u),
+			v,
+		),
 		w,
 	);
+	return near;
 }
 
 /** A push that a page made: a vortex at a place, which fades as it ages. */
