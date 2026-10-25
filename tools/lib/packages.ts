@@ -611,7 +611,8 @@ export async function buildPackages(root: string, names: readonly string[]): Pro
 /**
  * Builds the libraries of the packages named, each one once, and prints each package's time. A
  * package builds as soon as the packages that it needs have built, so the add-ons build at the
- * same time once the engine has, and their WGSL shares one pool of compiler threads. Writes
+ * same time once the engine and, for those whose WGSL declares the plugin's types, the Vite plugin
+ * have. Their WGSL shares one pool of compiler threads. Writes
  * nothing else that a tarball holds, so a tool that only needs files a browser runs, such as the
  * CDN build, calls this. With `shaderJs`, the engine's library also holds the shader modules that
  * the shader build wrote as JavaScript, which a page with no bundler loads and the npm package
@@ -643,9 +644,10 @@ export async function buildPackageLibraries(
 	};
 	try {
 		// Every build ends before a failure is thrown, so no build still writes into a `lib/` that the
-		// caller removes. A failed need fails each package that needs it with the same error, which
-		// is named once, beside any other failure.
-		const outcomes = await Promise.allSettled(names.map(library));
+		// caller removes. Each failure of every build started, the needs among them, is named once:
+		// a failed need fails each package that needs it with the same error.
+		await Promise.allSettled(names.map(library));
+		const outcomes = await Promise.allSettled(builds.values());
 		const reasons = [
 			...new Set(
 				outcomes.flatMap((outcome) => (outcome.status === 'rejected' ? [outcome.reason] : [])),
