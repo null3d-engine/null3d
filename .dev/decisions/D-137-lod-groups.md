@@ -559,11 +559,12 @@ stand beside it as the comparison rather than in its place.
 
 
 The cloud iPad ran Safari 26.6.1 on iOS 26 at 59 Hz. Its window was 1,032 by 1,264 CSS pixels at
-2x. Its levels cut the GPU time by 52% at Low on both WebGPU paths. They cut it by 24% at High on
-core WebGPU. Its GPU buffer bytes do not change between the two sides. The copy lists therefore
-follow what draws on the device as they do on the Mac. The lists take one copy per source. They do
-not take a slice per level per view. The Mac's table above holds the same finding: 2.6 MB in the
-main view and 2.6 MB in the casters' list, against 20.5 MB and 10.2 MB from the removed rule.
+2x. Its levels cut the GPU time by 52% at Low on core WebGPU, and by 51% in compatibility mode. They
+cut it by 24% at High on core WebGPU. Its GPU buffer bytes do not change between the two sides. The
+copy lists therefore follow what draws on the device as they do on the Mac. The lists take one copy
+per source. They do not take a slice per level per view. The Mac's table above holds the same
+finding: 2.6 MB in the main view and 2.6 MB in the casters' list, against 20.5 MB and 10.2 MB from
+the removed rule.
 
 The Galaxy S24 ran Chrome 152 on Android 16 with no WebGPU adapter, so only its WebGL2 rows ran.
 Chrome on Android reports no WebGL2 GPU timer. The cloud display ran at 30 Hz, so its frame interval
