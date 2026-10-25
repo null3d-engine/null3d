@@ -1119,3 +1119,16 @@ about two of the features that follow.
   bundler keeps it in the start for them. Its pieces cannot simply move, because the constants that
   both halves read would then sit in the start instead, so the split needs three modules for under a
   kilobyte. This is the next trim worth taking if the room runs out again.
+
+## The start's budget rises to 194 KB, 25 October 2026
+
+The grading work's branch measured WebGL2's pipelined start at 197,411 bytes after Brotli in a local
+build, 803 bytes over the 192 KB line. Its own addition is small. It holds the switch that picks
+where the grading table takes its input, the values that the 8-bit path's shaders read, and the code
+that routes the grade to each path. The day's other landings had already filled the room.
+
+The budget rises to 194 KB, or 198,656 bytes, leaving 1,245 bytes of room. The owner's rule of
+22 October allows the start's budget to rise as needed without asking, reaffirmed on 25 October. The
+second grading design's bake loads only in the grade task's worker file, which has its own budget.
+A page that never grades therefore pays nothing for it. The trims owed above still stand as the next
+work that touches the start's size.

@@ -132,9 +132,33 @@ impl Output {
             tone_mapping: self.tone_mapping.code(),
             flags: 0,
             render_size: 0,
+            grade: GradeUniform::default(),
         }
     }
 }
+
+/// The grading controls that the 8-bit path's shaders apply before their tone curve, on the light's
+/// ARRI LogC codes (see `null3d::grade`). Each channel of the light takes the white balance's
+/// factor, then the lift, the gamma and the gain, and the picture takes the split toning's two
+/// chromas by the weight that its luma gives them.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct GradeUniform {
+    /// The white balance's factors for red, green and blue, then the saturation.
+    pub white_balance: [f32; 4],
+    /// The lift that each channel takes before its curve.
+    pub lift: [f32; 4],
+    /// The power that each channel's value is raised to.
+    pub gamma: [f32; 4],
+    /// The factor that each channel takes after its curve.
+    pub gain: [f32; 4],
+    /// The chroma that tints the shadows, then the split's balance.
+    pub shadows: [f32; 4],
+    /// The chroma that tints the highlights, then the split's strength.
+    pub highlights: [f32; 4],
+}
+
+const _: () = assert!(std::mem::size_of::<GradeUniform>() == 96);
 
 /// The output settings as the shaders' `Output` block lays them out. Scene shaders read the
 /// exposure, which they multiply into the colors of materials and textures, and the tone mapping.
@@ -146,12 +170,16 @@ pub struct OutputUniform {
     pub tone_mapping: u32,
     /// Flags that only the final pass reads: [`OutputUniform::DISPLAY_COLOR`],
     /// [`OutputUniform::VIGNETTE`], [`OutputUniform::LUT`], [`OutputUniform::GRADE`],
-    /// [`OutputUniform::OUTLINE`], [`OutputUniform::AUTO_EXPOSURE`],
-    /// [`OutputUniform::SHARPEN`] and [`OutputUniform::UNMAPPED`].
+    /// [`OutputUniform::GRADE_HDR`], [`OutputUniform::OUTLINE`],
+    /// [`OutputUniform::AUTO_EXPOSURE`], [`OutputUniform::SHARPEN`] and
+    /// [`OutputUniform::UNMAPPED`].
     pub flags: u32,
     /// The part of the scene color that the scene drew, from its top-left corner: the width in
     /// pixels in the low 16 bits, and the height in the high 16 bits.
     pub render_size: u32,
+    /// The grading controls that the 8-bit path's shaders apply before their tone curve. Zeros
+    /// while the grade is off.
+    pub grade: GradeUniform,
 }
 
 const _: () = assert!(std::mem::size_of::<OutputUniform>() == OUTPUT_UNIFORM_BYTES as usize);
@@ -184,6 +212,8 @@ impl OutputUniform {
     /// The flag that makes the pass leave the tone curve off each pixel whose surface keeps its
     /// display color, which the mask's blue channel marks.
     pub const UNMAPPED: u32 = 512;
+    /// The flag that grades high dynamic range light with the built-in table before the tone curve.
+    pub const GRADE_HDR: u32 = 1024;
 
     /// Sets the size the scene drew at, in pixels. Each side keeps its low 16 bits, which hold any
     /// texture size a GPU makes.

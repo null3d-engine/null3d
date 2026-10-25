@@ -159,6 +159,11 @@ export interface CoreDevice {
 	/** False when each custom effect draws in a pass of its own, with none joined or folded. */
 	joinEffects: boolean;
 	/**
+	 * True while the built-in grading table holds the grade over high dynamic range light, which
+	 * the pass reads before the tone curve, instead of display color.
+	 */
+	gradingHdr: boolean;
+	/**
 	 * True when each camera view draws its opaque objects' depth before it shades them.
 	 */
 	depthPrepass: boolean;
@@ -244,6 +249,7 @@ export type DeviceOptions = Pick<
 	| 'compression'
 	| 'cells'
 	| 'join'
+	| 'grading'
 	| 'skinning'
 	| 'indexInstances'
 	| 'direct'
@@ -451,6 +457,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		transparent: options.transparent,
 		cellCulling: options.cells,
 		joinEffects: options.join,
+		gradingHdr: options.grading === 'hdr',
 		depthPrepass: options.depthPrepass,
 		skinning: SKINNING_CODES[options.skinning],
 		shadowDepthBits: options.shadowDepthBits,
