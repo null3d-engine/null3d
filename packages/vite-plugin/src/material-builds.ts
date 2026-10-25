@@ -18,9 +18,6 @@ import { createHash } from 'node:crypto';
 import { LOAD_BUILDS, ShaderPack } from './pack.ts';
 import type { CompiledWgsl, ShaderVariant } from './shader-types.ts';
 
-/** The pieces of a shader that joins no host, which a module keeps none of. */
-const EMPTY_PIECES = { group: {}, fold: {} } as const;
-
 /** The prefix of the virtual modules that hold sets of custom materials' builds. */
 export const MATERIAL_BUILDS = 'virtual:null3d/builds/';
 
@@ -144,19 +141,11 @@ export class ModuleBuilds {
 		const index = this.counts.get(kind as BuildKind) ?? 0;
 		this.counts.set(kind as BuildKind, index + 1);
 		this.sources.push({ kind: kind as BuildKind, variants });
-		// A custom effect that does not join the effect before it draws a pass of its own, so its
-		// pieces never reach a host. The module keeps none of them, as it keeps none of its builds.
-		const pieces =
-			kind === 'effect' && (shader as { readonly joins?: boolean }).joins === false
-				? EMPTY_PIECES
-				: (shader as { readonly pieces?: object }).pieces;
+		// An effect's pieces reach the thread that draws. An effect that reads the pixels beside its
+		// own joins a host as the first member of a group or of the fold. The shader build gives no
+		// pieces to an effect that declares textures or reads bloom's chain, which draws its own pass.
 		return pack.value(
-			{
-				...shader,
-				variants: {},
-				permutations: permutationsOf(variants),
-				...(pieces && { pieces }),
-			},
+			{ ...shader, variants: {}, permutations: permutationsOf(variants) },
 			hot,
 			index,
 			kind as BuildKind,
