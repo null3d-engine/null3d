@@ -145,3 +145,12 @@ pixel, which the map's own matrix now takes. Each of the five passed the test be
 well: the test counts only a pixel that differs by a noticeable amount, and at most 0.1% of a
 picture may do so. `TextureTransformMultiTest` is not one of the manifest's models, and the test of
 `AnimationPointerUVs` reads values and not pixels.
+
+The parity comparison against three.js passes on all three tiers of all five. The share of pixels
+that differ, over the tiers, is:
+
+- 0.000% to 0.024% for the texture transform model;
+- 0.026% to 0.036% for the car paint;
+- 0.008% to 0.011% for the sheen chair;
+- 0.003% to 0.004% for the sheen cloth;
+- 0.273% to 0.297% for the toy car, whose own limit is 0.32%.
