@@ -36,7 +36,7 @@ map must draw exactly as it did.
 | GPU bytes, 1,024 x 1,024, `rgba16float` radiance | 8,388,608 (8 MiB) | 16,777,216 (16 MiB) | none |
 | Ratio | 1.00 | 2.00 | none |
 | GPU time per frame, 1600 x 900, WebGPU | 0.99 ms | 1.05 ms | Chrome on this Mac, 25 October 2026 |
-| GPU time per frame, 1600 x 900, compatibility mode | 1.11 ms | 1.26 ms | Chrome on this Mac, 25 October 2026 |
+| GPU time per frame, 1600 x 900, compatibility mode | 1.11 ms | 1.26 ms | Chrome on this Mac, 25 October 2026; another job ran in its span (below) |
 | GPU time per frame, 1600 x 900, WebGL2 | 1.48 ms | 1.58 ms | Chrome on this Mac, 25 October 2026 |
 
 The GPU figures count the one level that `assets.loadLightMap` makes, which holds no mip chain for
@@ -51,12 +51,14 @@ rounds. Before the timing the page draws one frame of each side and compares the
 of the pixels moved, so the direction reached the shader. The direction costs about a tenth of a
 millisecond on every path: 0.06 ms on WebGPU, 0.15 ms in compatibility mode and 0.10 ms on WebGL2.
 
-Three facts bound how far those figures can be trusted. The gate reads the load once, before each
-path's page, and not again during the four rounds. The three readings were 7.5, 7.9 and 7.5. WebGPU
-and WebGL2 then measured while the load drifted upward, to 9.9 and 9.2 by the end of the path.
-Compatibility took 4.6 minutes, most of it waiting for its quiet minute with the indexer between
-180% and 280%, and its plain time is 0.12 ms above the trial's. That path is the one to measure
-again first if a quieter window appears. [Benchmarks](../benchmarks.md#directional-light-maps) gives the command.
+The run took its slot at 22:39:45. Three facts bound how far the figures can be trusted. The gate
+reads the load once, before each path's page, and not again during the rounds. The three readings
+were 7.5, 7.9 and 7.5. WebGPU and WebGL2 then measured while the load drifted upward, to 9.9 and
+9.2 by the end of each path. The compatibility path ran from 22:41 to 22:46. That span contained
+the push session's commit hook and shader-set copy from 22:43:45 to 22:44:06, about twenty seconds
+of another job's work. Its 1.11 ms plain time and its 0.15 ms difference carry that doubt, and it
+is the row to take again first in a quiet window.
+[Benchmarks](../benchmarks.md#directional-light-maps) gives the command.
 
 ## Decision
 
