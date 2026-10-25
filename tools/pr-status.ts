@@ -47,6 +47,7 @@ const INCOMPLETE = new Set([
 	'M3-D7',
 	'M3-D9',
 	'M3-F2',
+	'M3-G1',
 	'M3-K4',
 	'M3-R16',
 	'M3-R17',
@@ -109,7 +110,8 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-F3':
 		'dropped with the temporal resolve it waited on (D-206); the owner may change the ruling',
 	'M3-F10': 'dropped with the temporal resolve it needs (D-206); the owner may change the ruling',
-	'M3-R12': 'the build compiles only the listed permutations; the time and size are not recorded',
+	'M3-R12':
+		'the narrowing is not on the branch at all. It exists only on an unlanded branch from 23 October, and there it stops recording before the scene builds its own pipelines, strips the device bits the build compares, and drops the empty word that compute and full-screen passes need. Whatever the list then holds is not the set the pages draw with, so a narrowed build fails at the first pipeline it lacks rather than compiling the wrong thing quietly. A helper is proving each fault, and no time or size figure exists yet',
 	'M3-A11':
 		'measured on both paths at every preset; it does not beat the presets, so it stays behind the internal setting and does not ship (D-206). Its black-capture and bind-group faults are fixed, its shader file still loads on first use, and that first-use case is now tested on both paths',
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
@@ -122,7 +124,7 @@ const NOTES: Readonly<Record<string, string>> = {
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-L2':
-		'the memory figure is a 40,000-ball test on the main view alone, and no GPU time was taken on the Mac, an iPad or a phone-class device',
+		"the file's levels now share their vertices and are ordered coarsest first, so a coarse level names a prefix of the buffer, proved on the staged terrain where the coarsest level's largest index is one less than the vertices it uses; what remains is a phone-class GPU row, because the S24 has no WebGPU adapter and no WebGL2 GPU timer, and that row waits on a phone that can time its GPU",
 	'M3-L4':
 		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
 	'M3-A2': "the refresh's cost rows are all owed, the Mac's included",
@@ -137,6 +139,8 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
+	'M3-G1':
+		"the engine keeps one texture transform per material, so a clip that moves a base colour or emissive map also moves that material's still maps, where three.js keeps a transform per texture; the comparison passes because it reads the animator's sampled values and never the material",
 	'M3-G2': 'no Khronos iridescence sample is tested',
 	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',
 	'M3-R2': 'the stress test has not run on an iPad or a phone-class device since the change',
@@ -151,9 +155,9 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-B3':
 		"the Showroom tablet the task names is M3-C2's work, which is not built, and the screen demo's software-GPU pictures fail CI",
 	'M3-B5':
-		"the flakes draw nothing: no pixel in the six references is brighter than the picture without them, and the paint's own flakes test fails on all three paths in CI",
+		'the glints draw and are tested in both sets; its cost per preset is owed (D-255), which needs a quiet GPU',
 	'M3-E7':
-		"its finish line needs the car paint's glints to use the lobes, and the glints draw nothing",
+		"its finish line needs the car paint's glints to use the lobes; the glints draw now (D-255), and the record does not yet say whether the hook needs a general lobe form rather than the add-on's own",
 	'M3-V4':
 		'no device has timed the new generator, so the device figures are of the stand-in it replaced; no Mac, iPad or S24 GPU or memory figure exists, no check-addon run is recorded, and the software-GPU species pictures fail in CI',
 	'M3-D7':
