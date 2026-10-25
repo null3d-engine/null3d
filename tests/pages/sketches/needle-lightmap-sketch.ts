@@ -5,9 +5,8 @@
 // own bake with a scale and an offset on the second texture coordinates. The picture frames the
 // plaster wall and the grass panel. The wall has one set of texture coordinates, so it exercises
 // the rule that reads the first set. The grass panel has two sets, and its own scale and offset
-// place its bake. On WebGPU the wall covers 7,476 pixels at a mean of 30.6 of 255, with 63.8% of
-// them above eight steps, and the grass 9,764 pixels at 34.6, with 91.7% above. The rest of the
-// frame is dark, so a wrong decode changes those two regions and a wrong placement smears them.
+// place its bake. The rest of the frame is dark, so a wrong decode changes those two regions and a
+// wrong placement smears them.
 import { defineSketch } from '@null3d/engine';
 
 export default defineSketch(async ({ scene, assets }) => {

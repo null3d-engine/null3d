@@ -75,14 +75,15 @@ bundle and scene file are identified by commit and bytes in the run record.
 holds the capture, made in Chrome on this Mac on 26 October 2026 with the load and the browser
 recorded there.
 
-The frame is the viewer drawing the scene's light-mapped wall, floor and grass. It is the full
-sample scene under the viewer's own camera, not the reduced file in this repository, so it shows
-that the viewer applies the bake. It is not a pixel-for-pixel match with the reduced file's picture;
-the two are compared by content.
+The frame is the viewer's side only: it shows the viewer drawing its sample scene under its own
+camera, the light-mapped wall, floor and grass. It is the full sample scene, not the reduced file in
+this repository. No engine-to-viewer comparison is recorded, so the done clause is owed: a
+`NEEDLE_lightmaps` file drawing as Needle's viewer shows it has not been shown. The clause waits for
+a comparison or the owner's ruling.
 
-What the loader proves beside that frame: a unit test parses the reduced file's fields, the light
-map kind, each node's map index, and its scale and offset. The picture shows the wall and the grass
-lit and placed, so a wrong decode, coordinate set or offset changes those two regions.
+What the loader proves on its own: a unit test parses the reduced file's fields, the light map kind,
+each node's map index, and its scale and offset. The picture shows the wall and the grass lit and
+placed, so a wrong decode, coordinate set or offset changes those two regions.
 
 ## Decision
 
@@ -136,8 +137,6 @@ lit and placed, so a wrong decode, coordinate set or offset changes those two re
 - `NEEDLE_lightmaps` and `NEEDLE_components` join the extensions that the loader reads, and the
   [assets page](../../docs/api/assets.md) names what each gives.
 - The guards: the picture test `needle-lightmap` frames the plaster wall, the only mesh with a
-  single set of texture coordinates, and the grass panel, which has both sets. On WebGPU the wall
-  covers 7,476 pixels at a mean of 30.6 of 255, with 63.8% above eight steps, and the grass 9,764
-  pixels at 34.6, with 91.7% above. A unit test parses the reduced real sample's fields, the texture
-  store drops a direction that is not in the radiance's array, and a material test covers each
-  option's refusal.
+  single set of texture coordinates, and the grass panel, which has both sets. A unit test parses
+  the reduced real sample's fields, the texture store drops a direction that is not in the
+  radiance's array, and a material test covers each option's refusal.
