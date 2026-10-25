@@ -140,9 +140,13 @@ test is compared with the engine's own.
 | --- | --- | --- | --- | --- |
 | Forest | flies at 3.6 m a second | still | 98%, 99%, 100% | 100%, 33%, 34% |
 | Security camera | fixed pole, sweeps at 18 degrees a second | still | 84%, 82%, 82% | 100%, 40%, 40% |
-| Creek, its slowest glide | 1.7 m a second | 4.5 degrees a second, a day of 80 s | 75% | 100%, 33%, 34% |
-| Time-of-day demo | at rest | 9 degrees a second, a day of 40 s | 50% | 100%, 33%, 34% |
-| A camera at rest | at rest | 0.6 degrees a second, a day of 10 minutes | 96% | 100%, 33%, 34% |
+| Creek, its slowest glide | 1.7 m a second | 4.5 degrees a second, a day of 80 s | 75% and 75% | 100%, 33% |
+| Time-of-day demo | at rest | steps of 0.75 degree, a day of 40 s | 80%, 80%, 80% | 100%, 33%, 34% |
+| A camera at rest | at rest | 0.6 degrees a second, a day of 10 minutes | 96%, 96%, 96% | 100%, 33%, 34% |
+
+Creek draws two cascades, because its light names two. The time-of-day demo computes its sun from an
+hour rounded to three minutes, so the sun holds between steps and then jumps. A smooth turn of the
+same speed would give 50%; the steps give 80%.
 
 Two things follow. The camera matters little: forest's flight keeps 98% of its frames. The sun
 decides: a quarter-degree step comes every four frames in an 80-second day and every two in a
@@ -152,8 +156,8 @@ The `Drawn today` column is the schedule with no moving caster in the scene. It 
 what these scenes draw. Creek has two kinds of mover, its swaying grass and its floating leaves, and
 either one makes every cascade draw in every frame. Its true `Drawn today` is 100% in each cascade.
 
-The rule's condition that a cache keep at least half the frames therefore holds, but only just. The
-fastest day that the engine ships gave 50%.
+The rule's condition that a cache keep at least half the frames therefore holds everywhere. The
+lowest share measured is Creek's 75%.
 
 ### A second way to take the same frames
 
@@ -185,21 +189,20 @@ ruling number. The measurement below replaces them.
 ### The measured cost
 
 The demos ran on the Mac in Chrome on WebGPU at Medium, from the development pages. Each figure is
-from two runs.
+from two runs. The [run file](../tested-devices/macbook-pro-chrome/20261025-235300-shadow-cascade-cost.md)
+holds the commands, the loads and the medians.
 
 | Scene | Frame GPU time | First cascade | Second cascade | The other passes |
 | --- | --- | --- | --- | --- |
 | The time-of-day demo | 2.74 and 2.96 ms | 0.048 and 0.042 ms | 0.094 and 0.125 ms | 1.15 to 1.79 ms |
 | Creek | 11.96 and 10.56 ms | 0.288 and 0.340 ms | 0.531 and 0.490 ms | 4.35 to 6.10 ms |
 
-Two cautions belong with that table:
+Creek's light names two cascades, so those two passes are all of Creek's shadow cost. Nothing is
+left out of the report.
 
-- Creek's frame was inflated by the machine's load, which read 69. Its frame time on a quiet machine
-  is smaller, so one saving is a larger share of a quiet frame than of this one. Trust the absolute
-  pass times.
-- The third cascade never reaches the report. A far cascade draws once in three frames, and a pass
-  that appears in only some timed frames is left out. So 0.29 and 0.53 ms are a floor for Creek's
-  shadow cost, not the whole of it.
+One caution belongs with the table. Creek's frame was inflated by the machine's load, which read 69.
+Its frame time on a quiet machine is smaller, so one saving is a larger share of a quiet frame than
+of this one. Trust the absolute pass times.
 
 ### How much of that the movers take
 
@@ -227,20 +230,23 @@ shadow work from this difference, and that does not follow.
 ### What the figures say so far
 
 A cache saves, in each frame it keeps, the still casters' draw less the restore. Over a frame of
-Creek at a 75% keep rate, with `S2` for the still casters' share of the second cascade:
+Creek at its 75% keep rate, with `S2` for the still casters' share of the second cascade:
 
-    saving = 0.75 x (0.29 + S2) - 3 x 0.045 ms
+    saving = 0.75 x (0.29 + S2) - 2 x 0.045 ms
 
 The first cascade's 0.29 ms stands still, so it counts in full. The restore is D-16's 0.045 ms a
-layer, for three layers.
+layer, for Creek's two layers, so 0.09 ms.
 
-The saving reaches 3% of Creek's inflated 11 ms frame at an `S2` of about 0.33 ms. That 3% is
-0.33 ms. On a quiet frame the same saving is a larger share, so the bar there is lower. `S2` is the
+The saving reaches 3% of Creek's inflated 11 ms frame, which is 0.33 ms, at an `S2` of about
+0.27 ms. On a quiet frame the same saving is a larger share, so the bar there is lower. `S2` is the
 figure the record lacks.
 
+The second cascade's whole cost is 0.53 ms, so `S2` lies between 0 and 0.53. The answer therefore
+turns on whether more than about half of that cascade stands still.
+
 The time-of-day demo cannot pay for a cache whatever `S2` is. Its two measured cascades total 0.142
-and 0.167 ms, and one layer's restore is 0.045 ms, so three restores take 0.135 ms of that. What is
-left is a few hundredths of a millisecond.
+and 0.167 ms. At its 80% keep rate those save about 0.12 ms, and its three layers' restore takes
+0.135 ms. The cache costs more there than it saves.
 
 The rest rule takes a different set of frames. It fires only where nothing in a cascade moved. In
 Creek the grass and the leaves move in every frame, so there it never fires. In forest, whose
@@ -288,9 +294,11 @@ no pixel.
 ## What would change the answer
 
 For the cache, a scene would have to hold many more still casters than moving ones. They would also
-need to reach 3% of the frame after the restore's cost. That means a still casters' pass of several
-milliseconds, with movers confined to a small part of each cascade. No scene that the engine ships
-is close. Creek, its heaviest shadow scene, puts its movers first.
+need to reach 3% of the frame after the restore's cost. Creek may already be such a scene, and the
+measurement above cannot say whether it is.
+
+Two shipped scenes that cast shadows were never measured. Night town is one, and its lights and
+casters are unlike Creek's. Skyway casts no shadows at all, so it cannot be a candidate.
 
 For the rest rule, the change is a shipped scene whose shadowed casters are mostly still. Forest is
 the nearest case today, and its cascade cost is not measured. One measurement there would decide
@@ -300,8 +308,8 @@ whether the rule is worth building.
 
 Pending the split of Creek's second cascade. The keep rate passes at 75% in Creek, and reaches 98%
 in the scenes whose sun stands still. The rule then turns on one figure. Do the still casters of
-Creek's second cascade cost about a third of a millisecond or more? That is where the saving reaches
-3% of Creek's frame.
+Creek's second cascade cost about a quarter of a millisecond or more in still casters? That is where
+the saving reaches 3% of Creek's frame.
 
 The measurement that settles it draws every cascade in every frame, so no pass drops out of the
 report. It runs with the grass casting and then with it not casting. Then each cascade's still share
