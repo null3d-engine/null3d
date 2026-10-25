@@ -379,6 +379,10 @@ const brick = materials.standard({   // maps are fixed at creation; the mesh nee
                                               // parallax occlusion mapping from the same map
   emissiveMap: glow, emissive: '#ffffff',    // sRGB; multiplies emissive times emissiveIntensity
   lightMap: baked, lightMapIntensity: 1,     // baked light; load it with uvSet: 1
+  lightMapDirection: bakedDirection,         // (0.3) a directional bake's light direction at each
+                                              // texel: bends the baked light with the normal map
+  lightMapOffset: [0, 0], lightMapRepeat: [1, 1],  // (0.3) a bake's own placement of the light map
+  lightMapDecode: 'rgbm',                    // (0.3) Needle's light maps: color times alpha times 8
   specularIntensityMap: spec, specularColorMap: tint,  // (0.2) linear alpha; sRGB color, as three.js's physical material
   envIntensity: 1,                   // (0.2) the scene environment's light on this material
   uvTransform: { repeat: [4, 2], offset: [0, 0], rotation: 0 },  // every map shares it; set() changes it
@@ -483,7 +487,7 @@ const skyLight = await assets.skyEnvironment();                 // (0.2) the lig
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2) square faces in three.js's order, for scene.setBackground
 const lut = await assets.loadLut('/grade.cube');                // (0.2) .cube or .3dl; lut.size, lut.title, lut.destroy()
 const baked = await assets.loadLightProbeGrid('/light/grid.json');  // (0.3) a grid baked elsewhere, ready for scene.setLightProbeGrid
-const map = await assets.loadLightMap('/light/wall.json');      // (0.3) { texture, direction? }; texture goes to materials.standard({ lightMap })
+const map = await assets.loadLightMap('/light/wall.json');      // (0.3) { texture, direction, directionTexture }; texture goes to materials.standard({ lightMap }), and a directional map's directionTexture to its lightMapDirection
 const file = await assets.lightProbeGridFile(grid);              // (0.3) the same file format, from a grid that bakeProbes made
 const made = await assets.lutFromData({ size: 17, data });      // (0.2) 3 or 4 floats (0-1) per texel, red fastest as in .cube; domainMin, domainMax, title
 ship.destroy();   // (0.2) frees its meshes, materials, textures, skeleton and clips; destroy its copies first, else E1111

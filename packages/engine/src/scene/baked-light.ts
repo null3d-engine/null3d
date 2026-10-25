@@ -79,6 +79,13 @@ export interface LightMapData {
 	 * direction.
 	 */
 	readonly direction: Int8Array | undefined;
+	/**
+	 * The direction at each texel, in linear color: its red, green and blue map the direction's
+	 * x, y and z from -1 to 1. It has the radiance's size, format and color space, so the engine
+	 * reads it through the light map's own texture binding; give it to a material beside the
+	 * radiance as `lightMapDirection`. It is undefined for a light map without a direction.
+	 */
+	readonly directionTexture: Texture | undefined;
 }
 
 /** The bytes of each texel of a light map's radiance, by encoding. */

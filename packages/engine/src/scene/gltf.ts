@@ -797,6 +797,8 @@ async function buildPrefab(
 		return lower;
 	};
 	const lights = data.lights.map(lightTemplate);
+	/** Each light map that the file's `NEEDLE_lightmaps` registers, or undefined where it failed. */
+	const lightMaps = data.lightMaps.map((use) => (use < 0 ? undefined : textures[use]));
 	const rig = await makeRig(context, data, address, call);
 	if (rig) made.rig = rig;
 	const template: TemplateNode[] = [
@@ -867,10 +869,11 @@ async function buildPrefab(
 				error: n.stages.error,
 				stages: n.stages.levels,
 			});
+		const lightMap = nodeLightMap(n.lightMap, lightMaps);
 		const parts = [
 			...(mesh?.primitives ?? []).map((p, k) => ({
 				mesh: made[k] as MeshGeometry,
-				material: materials.of(p),
+				material: materials.of(p, lightMap),
 				...morphOf(mesh as MeshData, p, n),
 				// The asset tool marks the primitives that block the view, as `setOccluder` does.
 				...(p.occluder && { flags: FLAG_VISIBLE | FLAG_OCCLUDER }),
@@ -1223,6 +1226,49 @@ function storePatches(core: CoreMemory, mesh: number, patches: PatchesData, call
 }
 
 /**
+ * The light map that a node's Needle `MeshRenderer` names, with the texture that the file's
+ * `NEEDLE_lightmaps` registers at its index and the scale and offset of its coordinates. `key`
+ * names the assignment, so that nodes which place the same map alike share a material.
+ */
+interface NodeLightMap {
+	texture: Texture;
+	scale: readonly [number, number];
+	offset: readonly [number, number];
+	key: string;
+}
+
+/**
+ * The material options of a node's light map: its texture, the scale and offset that place the
+ * bake on the mesh, and Needle's RGBM decode. Needle's offset counts rows from the top, so the
+ * vertical one flips here.
+ */
+function lightMapOptions(lightMap: NodeLightMap | undefined): StandardOptions {
+	if (!lightMap) return {};
+	return {
+		lightMap: lightMap.texture,
+		lightMapRepeat: lightMap.scale,
+		lightMapOffset: [lightMap.offset[0], 1 - lightMap.scale[1] - lightMap.offset[1]],
+		lightMapDecode: 'rgbm',
+	};
+}
+
+/** The light map of a node, or undefined when the node has none or its texture did not load. */
+function nodeLightMap(
+	held: NodeData['lightMap'],
+	maps: readonly (Texture | undefined)[],
+): NodeLightMap | undefined {
+	if (!held) return undefined;
+	const texture = maps[held.index];
+	if (!texture) return undefined;
+	return {
+		texture,
+		scale: held.scale,
+		offset: held.offset,
+		key: `${held.index} ${held.scale.join(',')} ${held.offset.join(',')}`,
+	};
+}
+
+/**
  * The engine's materials of a file: one for each of its materials, and one for each other way a
  * primitive draws it, as three.js's GLTFLoader makes them. A primitive with vertex colors turns
  * them on, one without normals shades flat, and one without tangents turns its normal map's
@@ -1280,9 +1326,15 @@ class FileMaterials {
 		this.extra.length = 0;
 	}
 
-	/** The material that draws a primitive. */
-	of(p: PrimitiveData): Material {
-		return this.variant(p.material, p.colors !== undefined, !p.normals, p.tangents !== undefined);
+	/** The material that draws a primitive, with the light map that the primitive's node names. */
+	of(p: PrimitiveData, lightMap?: NodeLightMap): Material {
+		return this.variant(
+			p.material,
+			p.colors !== undefined,
+			!p.normals,
+			p.tangents !== undefined,
+			lightMap,
+		);
 	}
 
 	/**
@@ -1293,11 +1345,17 @@ class FileMaterials {
 		return material < 0 ? undefined : this.variant(material, false, false, true);
 	}
 
-	private variant(k: number, vertexColors: boolean, flat: boolean, tangents: boolean): Material {
-		const key = `${k} ${vertexColors} ${flat} ${tangents}`;
+	private variant(
+		k: number,
+		vertexColors: boolean,
+		flat: boolean,
+		tangents: boolean,
+		lightMap?: NodeLightMap,
+	): Material {
+		const key = `${k} ${vertexColors} ${flat} ${tangents}${lightMap ? ` ${lightMap.key}` : ''}`;
 		let material = this.made.get(key);
 		if (!material) {
-			material = this.create(this.data.materials[k], vertexColors, flat, tangents);
+			material = this.create(this.data.materials[k], vertexColors, flat, tangents, lightMap);
 			this.made.set(key, material);
 		}
 		return material;
@@ -1308,9 +1366,18 @@ class FileMaterials {
 		vertexColors: boolean,
 		flatShading: boolean,
 		tangents: boolean,
+		lightMap?: NodeLightMap,
 	): Material {
 		const { materials } = this.context;
-		if (!m) return materials.standard({ metalness: 1, roughness: 1, vertexColors, flatShading });
+		const baked = lightMapOptions(lightMap);
+		if (!m)
+			return materials.standard({
+				metalness: 1,
+				roughness: 1,
+				vertexColors,
+				flatShading,
+				...baked,
+			});
 		const map = (k: number | undefined) => (k === undefined ? undefined : this.textures[k]);
 		const common: UnlitOptions = {
 			color: m.color,
@@ -1364,6 +1431,7 @@ class FileMaterials {
 			options.subsurfaceColor = m.scatter.color;
 		}
 		const layers = m.layers;
+		Object.assign(options, baked);
 		if (layers) {
 			const scale = layers.clearcoatNormalScale;
 			options.clearcoat = layers.clearcoat;
