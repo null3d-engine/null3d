@@ -10,7 +10,7 @@ import { DEV } from '../../shared/dev';
 import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
-import { LAYER_WORD, LIGHT_BUFFER_WORD } from '../environment-steps';
+import { LAYER_WORD, LIGHT_BUFFER_WORD } from '../environment-words';
 import { floatOfBits } from '../float-bits';
 import { GpuMemory, textureBytes } from '../memory';
 import type { ReadSink } from '../readback';
