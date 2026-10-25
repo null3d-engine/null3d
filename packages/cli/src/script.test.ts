@@ -154,9 +154,11 @@ describe('scriptProgram', () => {
 
 describe('scriptReadTimes', () => {
 	it('lists the times of the shot and dump steps, once each and in order', () => {
+		// The parser refuses a step that falls back in time, so the list is reversed here: the
+		// function must still read the earliest time first, whatever order it is given.
 		const steps = parseScript(
 			['0 shot first', '1 dump car', '1.5 key KeyW down', '2 dump car', '2 shot second'].join('\n'),
-		);
+		).reverse();
 		expect(scriptReadTimes(steps)).toEqual([0, 1, 2]);
 	});
 });

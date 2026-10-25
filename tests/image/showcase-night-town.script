@@ -1,0 +1,10 @@
+# Drive the night town showcase through three states, and draw each one.
+# The first state is the route's opening view, which the scene holds still at its start.
+0.5 shot opening
+# The active camera takes a wider lens at the same pose, for the second state.
+2 set #camera.fov=60
+2 dump #camera.fov
+2 shot wide
+# The scene's own lens returns, and the route carries the camera into the square.
+30 set #camera.fov=45
+30 shot square
