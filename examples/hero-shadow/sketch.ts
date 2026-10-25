@@ -1,8 +1,9 @@
 // A hero shadow: a launch yard in the low evening sun, with a car on the pad and a few stone
 // blocks around it. The sun's cascades hold the blocks' long shadows at a few centimeters per
 // texel, while the car's own shadow map fits it tightly and holds its shadow several times finer.
-// Every 3 seconds the car's hero shadow turns off and on again, so the difference shows. All of it
-// is made in code.
+// The quality preset chooses the tile's size, and this page may name one with `?heroTile=`. Every
+// 3 seconds the car's hero shadow turns off and on again, so the difference shows. All of it is
+// made in code.
 import { defineSketch, math, timeOfDay, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
 import { car } from './car';
@@ -15,6 +16,12 @@ const HEADING = -2.1;
 /** What the camera looks at, and where it stands on a wide screen. */
 const TARGET = [0, 0.6, 0] as const;
 const EYE = [4.2, 2.4, 6.4] as const;
+/** The hero tile size that the image tests name (`?heroTile=`), or 0 for the preset's default. */
+const TILE = Number(new URL(import.meta.url).searchParams.get('heroTile')) as
+	| 0
+	| 1024
+	| 2048
+	| 4096;
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, post, time } = ctx;
@@ -50,12 +57,13 @@ export default defineSketch(async (ctx) => {
 	scene.setActiveCamera(camera);
 	const view = interact(ctx, camera, { target, groundY: 0, bounds: [-8, 0, -8, 8, 0, 8] });
 
-	// The sun keeps the hour's height, with its heading across the yard.
+	// The sun keeps the hour's height, with its heading across the yard. The image tests name a tile
+	// size to draw the same car at each, and a page names none, which takes the preset's.
 	const sun = scene.createDirectionalLight({
 		...day.light,
 		direction: [-sky.sunPosition[0], -rise, -sky.sunPosition[2]],
 		castShadows: true,
-		shadow: { distance: 60 },
+		shadow: { distance: 60, ...(TILE ? { heroTileSize: TILE } : {}) },
 	});
 
 	const yard = materials.standard({ color: '#9a958c', roughness: 0.85 });

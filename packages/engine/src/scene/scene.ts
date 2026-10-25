@@ -648,9 +648,18 @@ export interface DirectionalShadowOptions {
 	 * cascades, or `null` for none. The tile fits the object's bounds along the light, and surfaces
 	 * near the object read it in place of the coarser cascades, so a car, a character or a product
 	 * keeps a sharp shadow. The object must cast shadows. The tile takes a layer of the shadow
-	 * atlas, which the point and spot lights share. The default is none.
+	 * atlas, which the point and spot lights share, and every layer of the atlas takes the tile's
+	 * size. The default is none.
 	 */
 	hero?: Object3D | null;
+	/**
+	 * Texels on each side of the hero's tile: 1,024, 2,048 or 4,096. The default is the quality
+	 * preset's `heroTileSize`. The tile's texels are finer as the number grows. A larger object
+	 * needs a larger number to keep the ratio of its shadow's detail to the cascades'. The atlas
+	 * holds the tile, so a larger number takes more memory for every tile of the atlas, and a hero
+	 * that moves draws the larger tile again in every frame.
+	 */
+	heroTileSize?: 1024 | 2048 | 4096;
 }
 
 /**
@@ -894,6 +903,7 @@ const LIGHT_LIMITS: Record<number, readonly [string, number, number, string]> = 
 		'above 0',
 	],
 	[C.LIGHT_VALUE_SHADOW_CONTACT]: ['contact shadow distance', 0, Number.MAX_VALUE, 'at least 0'],
+	[C.LIGHT_VALUE_HERO_SIZE]: ['hero shadow tile size', 1024, 4096, '1,024, 2,048 or 4,096'],
 	[C.LIGHT_VALUE_WIDTH]: ['width or length', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
 	[C.LIGHT_VALUE_HEIGHT]: ['height', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
 	[C.LIGHT_VALUE_RADIUS]: ['radius', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
@@ -907,6 +917,7 @@ const SHADOW_NUMBERS = [
 	['normalBias', C.LIGHT_VALUE_SHADOW_NORMAL_BIAS],
 	['distance', C.LIGHT_VALUE_SHADOW_DISTANCE],
 	['contactDistance', C.LIGHT_VALUE_SHADOW_CONTACT],
+	['heroTileSize', C.LIGHT_VALUE_HERO_SIZE],
 ] as const;
 
 /** The direction a new directional or spot light points: straight down. */
@@ -2211,11 +2222,12 @@ export class Light extends Object3D {
 			if (typeof value === 'number') checkNumber(call, limits[0], value, this);
 			// The shadow distance 0 is 'auto', and it stands in for the default.
 			const auto = which === C.LIGHT_VALUE_SHADOW_DISTANCE && value === 0;
-			// Cascades are whole, and map sizes are powers of two.
+			// Cascades are whole, and map and tile sizes are powers of two.
 			const whole =
 				which === C.LIGHT_VALUE_SHADOW_CASCADES
 					? Number.isInteger(value)
-					: which !== C.LIGHT_VALUE_SHADOW_MAP_SIZE || (value & (value - 1)) === 0;
+					: (which !== C.LIGHT_VALUE_SHADOW_MAP_SIZE && which !== C.LIGHT_VALUE_HERO_SIZE) ||
+						(value & (value - 1)) === 0;
 			if (!auto && !(value !== undefined && value >= limits[1] && value <= limits[2] && whole))
 				throw new EngineError(
 					'E1108',
@@ -2275,8 +2287,11 @@ export class DirectionalLight extends Light {
 	 * shadow atlas, fitted tightly to the object along the light, so its shadow keeps far finer
 	 * texels than the cascades give it. Surfaces near the object read that tile in place of the
 	 * cascades. The object casts shadows; its light is this light.
+	 *
+	 * `tileSize` gives the tile's texels on each side, 1,024, 2,048 or 4,096. Leaving it out keeps
+	 * the light's value, which starts as the quality preset's `heroTileSize`.
 	 */
-	setHeroShadow(hero: Object3D | null): void {
+	setHeroShadow(hero: Object3D | null, tileSize?: 1024 | 2048 | 4096): void {
 		if (DEV) {
 			checkLive('setHeroShadow', this);
 			if (hero !== null) {
@@ -2288,6 +2303,7 @@ export class DirectionalLight extends Light {
 				checkLive('setHeroShadow', hero, true);
 			}
 		}
+		if (tileSize !== undefined) this.writeValue('setHeroShadow', C.LIGHT_VALUE_HERO_SIZE, tileSize);
 		const { core } = this.scene;
 		const object = hero === null ? 0 : hero.handle >>> 0;
 		// The core's light setters report nothing the page can act on, like every other one here.

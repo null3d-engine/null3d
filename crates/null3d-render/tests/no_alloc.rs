@@ -98,6 +98,7 @@ fn shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
         contact: 0.0,
         layers: 1,
         hero: None,
+        hero_size: 0,
     };
     world.renderer.settings_mut().set_sun_shadow(Some(shadow));
     world.record(true);
@@ -212,6 +213,7 @@ fn skinning_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
         contact: 0.0,
         layers: 1,
         hero: None,
+        hero_size: 0,
     };
     world.renderer.settings_mut().set_sun_shadow(Some(shadow));
     world.record(true);

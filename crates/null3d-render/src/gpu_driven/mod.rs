@@ -1447,7 +1447,7 @@ impl GpuDrivenRenderer {
             settings.meshes(),
             &sways,
             shadow.and_then(|shadow| shadow.hero),
-        );
+        )?;
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
         // casters draw into the passes of each.
         let passes = CasterPasses {

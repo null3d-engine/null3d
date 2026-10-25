@@ -74,6 +74,7 @@ export const SETTING_DOCS: {
 	},
 	shadowTiles: { label: 'Spot and point light shadow tiles' },
 	shadowTileSize: { label: 'Shadow tile size in texels' },
+	heroTileSize: { label: 'Hero shadow tile size in texels' },
 	pointLightShadows: { label: 'Point light shadows', print: yesNo },
 	bloomSize: { label: "Bloom's largest level in texels on the short side" },
 	aoScale: {

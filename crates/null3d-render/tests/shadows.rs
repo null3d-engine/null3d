@@ -37,6 +37,7 @@ const SUN: SunShadow = SunShadow {
     contact: 0.0,
     layers: DEFAULT_LAYERS,
     hero: None,
+    hero_size: 0,
 };
 
 /// The common world with the sun casting `shadow`. The lit box and the lit ball cast shadows and
