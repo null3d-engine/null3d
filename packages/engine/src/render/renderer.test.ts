@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import {
+	LIMIT_MAX_USEFUL_BINDING_BYTES,
 	LIMIT_PORTABLE_BUFFER_BYTES,
 	LIMIT_PORTABLE_STORAGE_BINDING_BYTES,
 } from '../generated/core';
@@ -185,27 +186,28 @@ describe('the WebGPU renderer', () => {
 
 	/**
 	 * The engine's own buffers follow the device's largest buffer, and the engine asks for that
-	 * largest buffer here. A smaller request than the portable limit would leave the engine's
-	 * vertex buffers with a cap the device cannot hold.
+	 * largest buffer here: the portable limit at least, and the storage binding where a device
+	 * offers more. A request that stopped at the portable limit would leave a device with a larger
+	 * binding holding buffers it rejects.
 	 */
-	it('asks for a largest buffer of at least the portable buffer limit', async () => {
-		const { requests, limits, restore } = fakeGpu(['core-features-and-limits']);
-		try {
-			const options = {
-				tier: 'webgpu' as const,
-				device: {
-					capabilities: 0,
-					storageBindingBytes: LIMIT_PORTABLE_STORAGE_BINDING_BYTES,
-				} as CoreDevice,
-			};
-			await expect(createRenderer(fakeCanvas().canvas, options)).rejects.toThrow(
-				'the fake adapter makes no device',
-			);
-			expect(requests).toHaveLength(1);
-			expect(limits[0]?.maxBufferSize).toBeGreaterThanOrEqual(LIMIT_PORTABLE_BUFFER_BYTES);
-			expect(limits[0]?.maxBufferSize).toBeGreaterThanOrEqual(LIMIT_PORTABLE_STORAGE_BINDING_BYTES);
-		} finally {
-			restore();
+	it('asks for a largest buffer of at least the engine sizes', async () => {
+		for (const binding of [LIMIT_PORTABLE_STORAGE_BINDING_BYTES, LIMIT_MAX_USEFUL_BINDING_BYTES]) {
+			const { requests, limits, restore } = fakeGpu(['core-features-and-limits']);
+			try {
+				const options = {
+					tier: 'webgpu' as const,
+					device: { capabilities: 0, storageBindingBytes: binding } as CoreDevice,
+				};
+				await expect(createRenderer(fakeCanvas().canvas, options)).rejects.toThrow(
+					'the fake adapter makes no device',
+				);
+				expect(requests).toHaveLength(1);
+				expect(limits[0]?.maxBufferSize).toBeGreaterThanOrEqual(
+					Math.max(binding, LIMIT_PORTABLE_BUFFER_BYTES),
+				);
+			} finally {
+				restore();
+			}
 		}
 	});
 
