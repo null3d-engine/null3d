@@ -240,12 +240,15 @@ For a pixel-exact pick, use `scene.pick`. It tests the pixel that the camera dra
 ```ts
 if (input.wasPressed('Mouse0')) {
   void scene.pick(input.pointer.x, input.pointer.y).then((hit) => {
-    if (hit?.object === target) { /* the click landed on the target's pixels */ }
+    if (hit?.object !== target || !hit.hasUv || !hit.uv) return;
+    // The mesh's own texture coordinates, as a raycast on the same point gives them.
+    const u = hit.uv[0] as number;
+    const v = hit.uv[1] as number;
   });
 }
 ```
 
-A scene with a whole shader of your own answers its picks with a raycast instead. So does a scene with a blended or transmissive material, or a sprite, point or line. A raycast tests triangles, so it ignores masks. Docs: `api/raycast#pixel-exact-picking`.
+The hit carries `uv` and `hasUv` as a raycast's hit does. Repeated textures give values past 1, and a material's `uvTransform` leaves them alone. A scene with a whole shader of your own answers its picks with a raycast instead. So does a scene with a blended or transmissive material, or a sprite, point or line. A raycast tests triangles, so it ignores masks. Docs: `api/raycast#pixel-exact-picking`.
 
 ## 7. HTML labels above objects (0.2)
 
