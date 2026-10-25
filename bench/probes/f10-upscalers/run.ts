@@ -15,6 +15,9 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { launchChromium } from '../../../packages/cli/src/browser.js';
+import { refuseInQuietWindow } from '../../../tools/lib/quiet-window.ts';
+
+refuseInQuietWindow('The upscaler probe');
 
 interface ProbeResult {
 	config: Record<string, unknown>;

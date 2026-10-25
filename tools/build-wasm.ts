@@ -113,6 +113,7 @@ import {
 	writeFolderAtomic,
 } from './lib/build-cache';
 import { coreSourcesStamp, stampGlue } from './lib/core-sources';
+import { refuseInQuietWindow } from './lib/quiet-window';
 import { ensureShaderModules, inputHash } from './lib/shader-modules';
 import {
 	type BaseChoice,
@@ -1493,6 +1494,7 @@ async function main(): Promise<void> {
 		console.log(`removed ${removed.length} cache entries that this build does not write`);
 		return;
 	}
+	refuseInQuietWindow(options.checkSize ? 'The size check' : 'The WebAssembly build');
 	// Only a size check takes the lock: it also builds the base commit with that commit's own build
 	// script, which may stage into the shared target folder. Ordinary builds overlap, because each one
 	// stages in a folder of its own and Cargo locks the target folder that builds share. The lock is
