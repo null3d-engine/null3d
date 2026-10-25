@@ -2411,10 +2411,12 @@ export class SpotLight extends Light {
 	 * Projects a picture over the light's cone, such as a window frame or a gobo pattern, or `null`
 	 * to go back to one color. The color and intensity tint it. The picture fills the square around
 	 * the cone: a circle in its middle lands on the cone's edge, where the light ends. The picture's
-	 * top row lies along the world's up, as three.js aims a spot light's map. The engine resamples it
-	 * to 128 x 128 texels, so a surface far from the light shows it blurred. Up to 32 lights show
+	 * top row lies along the world's up, as three.js aims a spot light's map. The engine keeps the
+	 * picture's detail up to 512 texels a side, so a small gobo costs less memory than a detailed
+	 * photograph. A surface far from the light shows the picture blurred. Up to 32 lights show
 	 * pictures at once, and rectangle and spot lights share those places. A new picture allocates
-	 * and takes a few milliseconds, so set it at setup or now and then, not in every frame.
+	 * and takes up to a few tens of milliseconds, so set it at setup or now and then, not in every
+	 * frame.
 	 */
 	setMap(map: LightImagePixels | null): void {
 		const call = 'setMap';
@@ -2512,9 +2514,10 @@ export class RectAreaLight extends Light {
 	 * to one color. The color and intensity tint it. The light gives out its intensity times the
 	 * picture's average color, so a mostly dark picture lights little around it. The picture's top
 	 * row lies along the light's +Y axis, and it reads the right way round from the lit side. The
-	 * engine resamples it to 128 x 128 texels, so shiny surfaces show it sharp and rough ones
-	 * blurred. Up to 32 lights show pictures at once. A new picture allocates and takes a few milliseconds, so set it at setup or
-	 * now and then, not in every frame.
+	 * engine keeps the picture's detail up to 512 texels a side, so shiny surfaces show it sharp
+	 * and rough ones blurred. Up to 32 lights show pictures at once. A new picture allocates and
+	 * takes up to a few tens of milliseconds, so set it at setup or now and then, not in every
+	 * frame.
 	 */
 	setImage(image: LightImagePixels | null): void {
 		const call = 'setImage';
@@ -2553,10 +2556,11 @@ function writeLightImage(light: Light, image: LightImagePixels | null, call: str
 	}
 	const id = light.id;
 	scene.queueImage(
-		import('./light-images').then(({ LIGHT_IMAGE_HALVES, prepareLightImage }) => {
+		import('./light-images').then(({ lightImageSize, lightImageHalves, prepareLightImage }) => {
 			if (light.id !== id || light.pendingImage !== image) return;
-			const at = core.checkGrowth(core.glue.lightImage(id), call, light.label);
-			prepareLightImage(image, core.view(Uint16Array, at, LIGHT_IMAGE_HALVES));
+			const size = lightImageSize(image.width, image.height);
+			const at = core.checkGrowth(core.glue.lightImage(id, size), call, light.label);
+			prepareLightImage(image, core.view(Uint16Array, at, lightImageHalves(size)), size);
 			core.check(core.glue.finishLightImage(id), call, light.label, true);
 		}),
 	);

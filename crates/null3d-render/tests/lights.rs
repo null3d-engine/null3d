@@ -18,7 +18,7 @@ use null3d_render::frame::{FrameBuilder, NO_MESH};
 use null3d_render::frame_data::FrameUniform;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::graph::RenderScale;
-use null3d_render::light_tables::FIRST_IMAGE_LAYER;
+use null3d_render::light_tables::{FIRST_IMAGE_LAYER, IMAGE_SIZE};
 use null3d_render::mirror::Mirror;
 use null3d_render::output::{Output, ToneMapping};
 use null3d_render::probes;
@@ -455,10 +455,10 @@ fn a_light_image_makes_the_array_again_and_the_frame_groups_bind_it<B: FrameBuil
     // One image gives the array room for four, and the mip levels that the images need.
     let probe_layers = world.renderer.settings().probes().probe_layers();
     let tables = world.renderer.settings_mut().light_tables_mut();
-    assert!(tables.image_texels_mut(1).is_some());
+    assert!(tables.image_texels_mut(1, IMAGE_SIZE).is_some());
     assert_eq!(
         tables.finish_image(1, probe_layers),
-        Some(FIRST_IMAGE_LAYER)
+        Some((FIRST_IMAGE_LAYER + 1) as f32)
     );
     let second = record_commands(&mut world, false);
     let new = shared_array(&second, FIRST_IMAGE_LAYER + 4);

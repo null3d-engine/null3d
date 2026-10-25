@@ -77,8 +77,19 @@ export default defineSketch(({ scene, materials, geometry }) => {
 - The picture fills the square that bounds the cone: a circle in the middle of the picture lands on the cone's edge, where the light ends.
 - The picture's top row lies along the world's up, as three.js aims the camera that projects a spot light's map. Aim the light first: turning the light turns the picture with it, and rolling the light about its own axis leaves the picture as it is.
 - The color and intensity tint the picture: a dark part of it gives less light, and a red part gives red light. `setMap(null)` goes back to one color.
-- The engine resamples the picture to 128 x 128 texels with every mip level, so a surface far from the light shows it blurred and a surface near the light shows it sharp. Up to 32 lights show pictures at once, and rectangle and spot lights share those places. A new picture allocates, so set it at setup or now and then.
+- The engine keeps the picture's detail up to 512 texels a side, in every mip level. A small gobo therefore costs less memory than a detailed photograph of the same light. A surface far from the light shows the picture blurred and a surface near the light shows it sharp. Up to 32 lights show pictures at once, and rectangle and spot lights share those places. A new picture allocates and takes up to a few tens of milliseconds, so set it at setup or now and then.
+- A picture of 128 x 128 texels a side takes about 0.2 MB with its mip levels. One of 512 x 512 takes about 2.8 MB. The engine keeps room for four pictures once a scene has one. A scene with one detailed picture therefore takes about 11 MB.
 - Spot light maps light every GPU path in the same way: WebGPU, WebGPU's compatibility mode and WebGL2. They add no texture to the lit shaders, because the lights' pictures share a table that every lit surface already reads.
+
+A picture from an image file becomes pixels in two steps: decode it, then read its rows.
+
+```ts
+const bitmap = await assets.loadImageBitmap('/gobo.png', { flipY: false });
+const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+const context = canvas.getContext('2d')!;
+context.drawImage(bitmap, 0, 0);
+light.setMap(context.getImageData(0, 0, bitmap.width, bitmap.height));
+```
 
 ## Color, intensity and units
 
@@ -146,7 +157,7 @@ export default defineSketch(({ scene, materials, geometry }) => {
 - A rectangle light's light leaves the side that its -Z axis points to. Surfaces behind it get none. `width` runs along its X axis and `height` along its Y axis, and both default to 1 meter.
 - A tube light shines all around. `length` runs along its -Z axis, and defaults to 1 meter. `radius` defaults to 0.025 meters, a thin neon tube. The ends of the tube add no light, which a thin tube does not show.
 - Area lights need a `range`, as point and spot lights do. The light fades to nothing at the range from the light's middle. three.js's `RectAreaLight` has no range: pick the distance where the light no longer matters.
-- A rectangle light can show a picture over its area, such as a shop window or a screen. The `image` option and `setImage({ width, height, data })` take sRGB pixels, four bytes each, top row first. The light then varies over its area: a puddle shows the picture, and a rough wall gets its blurred colors. The color and intensity tint the picture. The light gives out its intensity times the picture's average color, in linear light. A mostly dark picture, such as thin neon tubes on black, lights little around it. Keep the intensity at the tubes' brightness, and paint a faint glow around the tubes to light more. The engine resamples it to 128 x 128 texels with every mip level. Up to 32 lights show pictures at once, and `setImage(null)` goes back to one color. A new picture allocates, so set it at setup or now and then.
+- A rectangle light can show a picture over its area, such as a shop window or a screen. The `image` option and `setImage({ width, height, data })` take sRGB pixels, four bytes each, top row first. The light then varies over its area: a puddle shows the picture, and a rough wall gets its blurred colors. The color and intensity tint the picture. The light gives out its intensity times the picture's average color, in linear light. A mostly dark picture, such as thin neon tubes on black, lights little around it. Keep the intensity at the tubes' brightness, and paint a faint glow around the tubes to light more. The engine keeps the picture's detail up to 512 texels a side, in every mip level. Up to 32 lights show pictures at once, and `setImage(null)` goes back to one color. A new picture allocates and takes up to a few tens of milliseconds, so set it at setup or now and then.
 - `setSize`, `setRange`, `setDirection` and `setIntensity` take effect in the next frame and allocate nothing.
 - Area lights cast no shadows. Use a spot light beside one for a shadow.
 - An area light costs each surface it reaches several times what a point light costs. The quality preset's `areaLights` caps how many one frame shades.

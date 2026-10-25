@@ -595,6 +595,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'spot-cookies',
+		group: 'Light, materials and effects',
+		sketch: new URL('./spot-cookies/sketch.ts', import.meta.url),
+		code: 'spot-cookies/',
+		title: 'Spot-light cookies',
+		scene: 'Stained glass in a dark hall',
+		summary:
+			'Two spot lights throw pictures over their cones: a rose window of stained glass whose lead lines stay fine at 512 texels a side, and a lit window frame across the floor. Each picture wraps over the plinths and spheres in its beam, and the haze catches the light in the air.',
+		hold: 1,
+		timeoutSeconds: 90,
+	},
+	{
 		name: 'character',
 		group: 'Motion and interaction',
 		sketch: new URL('./character/sketch.ts', import.meta.url),

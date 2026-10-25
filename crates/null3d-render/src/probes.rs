@@ -414,6 +414,15 @@ impl Probes {
         };
         let wanted = (light.size, light.layers, levels);
         if Some(wanted) != self.made {
+            // A map holds its probe's light only at the size that the probe captured it. A copy
+            // from another size would leave part of a map in a corner, so a bigger or smaller
+            // array makes every probe capture again.
+            if self.made.is_some_and(|(size, _, _)| size != wanted.0) {
+                for probe in self.probes.iter_mut().flatten() {
+                    probe.ready = false;
+                    probe.due = true;
+                }
+            }
             let old = self.made.map(|made| (textures.pair(self.pair).0, made));
             if self.made.is_some() {
                 self.retired = Some(self.pair);
@@ -839,6 +848,27 @@ mod tests {
             !asks_to_capture(&mut probes),
             "a capture with every pipeline built ends it"
         );
+    }
+
+    #[test]
+    fn a_light_image_that_resizes_the_array_makes_every_probe_capture_again() {
+        let mut probes = Probes::default();
+        probes.set_textures(TEXTURES);
+        probes.set_generator(3);
+        let mut list = DrawList::with_capacity(1024);
+        probes.set(0, probe_at(0.0)).unwrap();
+        frame(&mut probes, &mut list);
+        assert!(!probes.waiting(), "the probe captured");
+        // A light image larger than the probe's map makes the array larger. A map captured at
+        // the old size would show in a corner of its layer, so the probe captures again.
+        probes.set_size(512);
+        frame(&mut probes, &mut list);
+        assert!(
+            probes.waiting(),
+            "the larger array makes the probe capture again"
+        );
+        frame(&mut probes, &mut list);
+        assert!(!probes.waiting(), "and it captures at the new size");
     }
 
     #[test]

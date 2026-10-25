@@ -795,8 +795,10 @@ export interface CoreGlue extends CoreErrors {
 	areaLightTables(): number;
 	/** Marks the area lights' tables as written, so frames light with area lights. */
 	finishAreaLightTables(): number;
-	/** Makes room for a light's image; the address of its half floats, or 0. */
-	lightImage(light: number): number;
+	/**
+	 * Makes room for a light's image of `size` texels a side; the address of its half floats, or 0.
+	 */
+	lightImage(light: number, size: number): number;
 	/** Marks a light's image as written, so frames show it. */
 	finishLightImage(light: number): number;
 	/** Takes a light's image away. */

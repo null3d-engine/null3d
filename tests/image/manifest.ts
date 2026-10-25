@@ -2400,6 +2400,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// The same light with a larger picture, and a reflection probe made after the picture is in the
+	// light tables. The probe's layers come before the pictures', so the picture moves along the
+	// array: a picture or a light record that stays behind reads a probe's map instead, and the
+	// grid below breaks into a reflection.
+	{
+		name: 'spot-map-probe',
+		sketch: 'tests/pages/sketches/spot-map-probe-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	// The hemisphere light as two halves, one turned upside down with its colors swapped, which take
 	// their intensities and colors in every frame. The frame sums them to the single light, so the
 	// test borrows its references.

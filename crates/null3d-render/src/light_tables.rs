@@ -13,9 +13,10 @@
 //!   arrive both layers hold zeros, and the core lists no area light
 //!   ([`null3d_core::lights::LightTable::set_area_ready`]).
 //! - The reflection probes' maps take the layers from [`FIRST_IMAGE_LAYER`] on, one each.
-//! - Each layer after the probes holds a light's image, 128 x 128 texels with every mip level, in
-//!   linear light, in its corner: the picture that a rectangle light shows over its area, or the
-//!   map that a spot light projects over its cone.
+//! - Each layer after the probes holds a light's image in linear light, in its corner: the
+//!   picture that a rectangle light shows over its area, or the map that a spot light projects
+//!   over its cone. An image keeps the detail of its picture up to [`MAX_IMAGE_SIZE`] texels a
+//!   side, with every mip level; its record names the size along with its layer.
 //!
 //! The texture starts at 64 x 64 texels and 3 layers with one level, and grows on demand: a probe
 //! or a light's first image makes it again at the size and layers that both need. A regrow copies
@@ -37,16 +38,53 @@ pub const TABLE_SIZE: u32 = 64;
 pub const AREA_LAYER: u32 = 1;
 /// Half floats in the two area tables: four per texel.
 pub const AREA_HALVES: usize = (4 * TABLE_SIZE * TABLE_SIZE * 2) as usize;
-/// Texels along each side of a light's image.
+/// The fewest texels along each side of a light's image: a small picture keeps this detail.
 pub const IMAGE_SIZE: u32 = 128;
-/// Mip levels of a light's image, down to one texel.
+/// The most texels along each side of a light's image: a detailed picture keeps this detail.
+pub const MAX_IMAGE_SIZE: u32 = 512;
+/// Mip levels of an image at [`IMAGE_SIZE`], down to one texel.
 pub const IMAGE_LEVELS: u32 = 8;
-/// Half floats of one image with every level: four per texel.
-pub const IMAGE_HALVES: usize = 4 * (4usize.pow(IMAGE_LEVELS) - 1) / 3;
+/// Half floats of an image at [`IMAGE_SIZE`] with every level: four per texel.
+pub const IMAGE_HALVES: usize = halves(IMAGE_SIZE);
 /// The first layer of the probes' maps, and so of the images that follow them.
 pub const FIRST_IMAGE_LAYER: u32 = 3;
 /// The most lights with images at once.
 pub const MAX_IMAGES: usize = 32;
+
+/// The mip levels of an image of `size` texels a side: every level down to one texel.
+pub const fn levels_of(size: u32) -> u32 {
+    size.ilog2() + 1
+}
+
+/// The half floats of an image of `size` texels a side, with every level: four per texel.
+pub const fn halves(size: u32) -> usize {
+    let mut total = 0;
+    let mut side = size as usize;
+    let mut level = 0;
+    while level < levels_of(size) {
+        total += 4 * side * side;
+        side >>= 1;
+        level += 1;
+    }
+    total
+}
+
+/// The number that a light's record keeps for its image's size, or `None` for a size that an
+/// image cannot take: a power of two from [`IMAGE_SIZE`] to [`MAX_IMAGE_SIZE`]. The record packs
+/// it above the image's layer, so the two travel in one float.
+pub fn size_index(size: u32) -> Option<u32> {
+    (size.is_power_of_two() && (IMAGE_SIZE..=MAX_IMAGE_SIZE).contains(&size))
+        .then(|| size.ilog2() - IMAGE_SIZE.ilog2())
+}
+
+/// The texels across a side of an image whose record keeps `index` above its layer.
+pub const fn size_of_index(index: u32) -> u32 {
+    IMAGE_SIZE << index
+}
+
+/// Bits of a light's record that hold its image's layer, above the bits that hold the size's
+/// number. The record holds the layer plus one, so 0 names an image that the light lacks.
+pub const IMAGE_LAYER_BITS: u32 = 6;
 
 /// The size, layers and mip levels that the light tables need of the shared texture, beside the
 /// probes' maps.
@@ -65,6 +103,8 @@ pub struct Shape {
 struct Image {
     /// The light's row in the light table, or 0 for a free place.
     light: u32,
+    /// The texels across a side of the image's largest level.
+    size: u32,
     /// The half floats of every level, the largest first.
     texels: Vec<u16>,
     /// True while the texture lacks the image's texels.
@@ -112,9 +152,11 @@ impl LightTables {
         self.ready
     }
 
-    /// The half floats of light `light`'s image, for the sketch thread to fill: its own place, or
-    /// a free one. Returns `None` when every place is taken or memory cannot grow.
-    pub fn image_texels_mut(&mut self, light: u32) -> Option<&mut [u16]> {
+    /// The half floats of light `light`'s image of `size` texels a side, for the sketch thread to
+    /// fill: its own place, or a free one. A new size makes the image's memory again. Returns
+    /// `None` when every place is taken or memory cannot grow.
+    pub fn image_texels_mut(&mut self, light: u32, size: u32) -> Option<&mut [u16]> {
+        let halves = halves(size);
         let place = match self.place_of(light) {
             Some(place) => place,
             None => {
@@ -123,12 +165,10 @@ impl LightTables {
                     Some(place) => place,
                     None if self.images.len() < MAX_IMAGES => {
                         self.images.try_reserve(1).ok()?;
-                        let mut texels = Vec::new();
-                        texels.try_reserve_exact(IMAGE_HALVES).ok()?;
-                        texels.resize(IMAGE_HALVES, 0);
                         self.images.push(Image {
                             light: 0,
-                            texels,
+                            size,
+                            texels: Vec::new(),
                             pending: false,
                         });
                         self.images.len() - 1
@@ -139,16 +179,61 @@ impl LightTables {
                 place
             }
         };
-        Some(&mut self.images[place].texels)
+        let image = &mut self.images[place];
+        image.size = size;
+        if image.texels.len() != halves {
+            image.texels.try_reserve_exact(halves).ok()?;
+            image.texels.resize(halves, 0);
+        }
+        Some(&mut image.texels)
     }
 
-    /// Marks light `light`'s image as filled, so the next frame uploads it, and returns its layer
-    /// in the shared array, or `None` when the light has no image. The images follow the probe
-    /// layers, which `probe_layers` gives.
-    pub fn finish_image(&mut self, light: u32, probe_layers: u32) -> Option<u32> {
+    /// Marks light `light`'s image as filled, so the next frame uploads it, and returns the number
+    /// that the light's record keeps for it: its layer in the shared array, and the number of its
+    /// size above that (see [`size_index`]). The images follow the probe layers, which
+    /// `probe_layers` gives. Returns `None` when the light has no image.
+    pub fn finish_image(&mut self, light: u32, probe_layers: u32) -> Option<f32> {
         let place = self.place_of(light)?;
-        self.images[place].pending = true;
-        Some(FIRST_IMAGE_LAYER + probe_layers + place as u32)
+        let image = &mut self.images[place];
+        image.pending = true;
+        let layer = FIRST_IMAGE_LAYER + probe_layers + place as u32;
+        let index = size_index(image.size)?;
+        Some(((layer + 1) | (index << IMAGE_LAYER_BITS)) as f32)
+    }
+
+    /// The texels across a side of the largest image, or [`IMAGE_SIZE`] while no light has one.
+    pub fn image_size(&self) -> u32 {
+        self.images
+            .iter()
+            .filter(|image| image.light != 0)
+            .map(|image| image.size)
+            .max()
+            .unwrap_or(IMAGE_SIZE)
+    }
+
+    /// The record that each light with an image needs once the array holds `probe_layers` probe
+    /// layers: its layer in the shared array, and the number of its size above that (see
+    /// [`size_index`]). A probe's layers come before the images', so a probe that a scene adds or
+    /// removes moves every image, and the light records name the new place.
+    pub fn image_records(&self, probe_layers: u32) -> impl Iterator<Item = (u32, f32)> + '_ {
+        self.images
+            .iter()
+            .enumerate()
+            .filter(|(_, image)| image.light != 0)
+            .filter_map(move |(place, image)| {
+                let layer = FIRST_IMAGE_LAYER + probe_layers + place as u32;
+                let index = size_index(image.size)?;
+                Some((
+                    image.light,
+                    ((layer + 1) | (index << IMAGE_LAYER_BITS)) as f32,
+                ))
+            })
+    }
+
+    /// True when the images moved to another place in the array since the last frame recorded
+    /// them, so their lights need the records that [`LightTables::image_records`] gives.
+    pub fn image_layers_moved(&self, probe_layers: u32) -> bool {
+        self.probe_layers != probe_layers && self.images.iter().any(|image| image.light != 0)
     }
 
     /// Frees light `light`'s image's place for another light. The array keeps its layers.
@@ -180,17 +265,18 @@ impl LightTables {
     /// probes and the images, and the levels the images need.
     pub fn shape(&self, probe_size: u32, probe_layers: u32) -> Shape {
         let images = self.image_room();
+        let image = self.image_size();
         let size = if probe_layers > 0 {
-            probe_size.max(IMAGE_SIZE)
+            probe_size.max(image)
         } else if images > 0 {
-            IMAGE_SIZE
+            image
         } else {
             TABLE_SIZE
         };
         Shape {
             size,
             layers: FIRST_IMAGE_LAYER + probe_layers + images,
-            levels: if images > 0 { IMAGE_LEVELS } else { 1 },
+            levels: if images > 0 { levels_of(image) } else { 1 },
         }
     }
 
@@ -211,7 +297,15 @@ impl LightTables {
         array: u32,
         probe_layers: u32,
     ) -> Result<bool, RecordError> {
-        let changed = self.probe_layers != probe_layers
+        let moved = self.probe_layers != probe_layers;
+        // A probe's layers come before the images', so an image whose place moved uploads again
+        // into its new layer.
+        if moved {
+            for image in &mut self.images {
+                image.pending = image.light != 0;
+            }
+        }
+        let changed = moved
             || self
                 .images
                 .iter()
@@ -242,8 +336,8 @@ impl LightTables {
             }
             let layer = FIRST_IMAGE_LAYER + probe_layers + place as u32;
             let mut from = 0;
-            for level in 0..IMAGE_LEVELS {
-                let side = IMAGE_SIZE >> level;
+            for level in 0..levels_of(image.size) {
+                let side = image.size >> level;
                 let halves = (4 * side * side) as usize;
                 let bytes = halves_as_bytes(&image.texels[from..from + halves]);
                 list.push(
@@ -305,10 +399,11 @@ mod tests {
             }
         );
         assert_eq!(
-            tables.image_texels_mut(7).map(|t| t.len()),
+            tables.image_texels_mut(7, IMAGE_SIZE).map(|t| t.len()),
             Some(IMAGE_HALVES)
         );
-        assert_eq!(tables.finish_image(7, 4), Some(FIRST_IMAGE_LAYER + 4));
+        let first = (FIRST_IMAGE_LAYER + 4 + 1) as f32;
+        assert_eq!(tables.finish_image(7, 4), Some(first));
         assert_eq!(tables.finish_image(8, 4), None);
         assert_eq!(
             tables.shape(256, 4),
@@ -319,20 +414,92 @@ mod tests {
             }
         );
         // A light keeps its place for a new image, and a freed place goes to the next light.
-        tables.image_texels_mut(9).unwrap();
-        assert_eq!(tables.finish_image(9, 4), Some(FIRST_IMAGE_LAYER + 5));
-        tables.image_texels_mut(7).unwrap();
-        assert_eq!(tables.finish_image(7, 4), Some(FIRST_IMAGE_LAYER + 4));
+        tables.image_texels_mut(9, IMAGE_SIZE).unwrap();
+        assert_eq!(tables.finish_image(9, 4), Some(first + 1.0));
+        tables.image_texels_mut(7, IMAGE_SIZE).unwrap();
+        assert_eq!(tables.finish_image(7, 4), Some(first));
         tables.remove_image(7);
-        tables.image_texels_mut(11).unwrap();
-        assert_eq!(tables.finish_image(11, 4), Some(FIRST_IMAGE_LAYER + 4));
+        tables.image_texels_mut(11, IMAGE_SIZE).unwrap();
+        assert_eq!(tables.finish_image(11, 4), Some(first));
         for light in 20..(20 + MAX_IMAGES as u32 - 2) {
-            assert!(tables.image_texels_mut(light).is_some());
+            assert!(tables.image_texels_mut(light, IMAGE_SIZE).is_some());
         }
-        assert!(tables.image_texels_mut(99).is_none());
+        assert!(tables.image_texels_mut(99, IMAGE_SIZE).is_none());
         assert_eq!(
             tables.shape(128, 2).layers,
             FIRST_IMAGE_LAYER + 2 + MAX_IMAGES as u32
+        );
+    }
+
+    #[test]
+    fn an_image_keeps_its_own_size_and_its_record_names_it() {
+        let mut tables = LightTables::default();
+        tables.image_texels_mut(3, IMAGE_SIZE).unwrap();
+        let layer = FIRST_IMAGE_LAYER;
+        let small = tables.finish_image(3, 0).unwrap();
+        // The smallest image's record holds its layer alone, as a light without one holds 0.
+        assert_eq!(small, (layer + 1) as f32);
+        assert_eq!(tables.image_size(), IMAGE_SIZE);
+        assert_eq!(tables.shape(128, 0).size, IMAGE_SIZE);
+        assert_eq!(tables.shape(128, 0).levels, levels_of(IMAGE_SIZE));
+
+        // A larger image sets the array's size, and its record packs the number of its size above
+        // the layer's bits.
+        tables.image_texels_mut(4, MAX_IMAGE_SIZE).unwrap();
+        let big = tables.finish_image(4, 0).unwrap();
+        assert_eq!(tables.image_size(), MAX_IMAGE_SIZE);
+        let index = size_index(MAX_IMAGE_SIZE).unwrap();
+        assert_eq!(big, ((layer + 1 + 1) | (index << IMAGE_LAYER_BITS)) as f32);
+        assert_eq!((big as u32) & ((1 << IMAGE_LAYER_BITS) - 1), layer + 2);
+        assert_eq!(
+            size_of_index((big as u32) >> IMAGE_LAYER_BITS),
+            MAX_IMAGE_SIZE
+        );
+        // The smaller image keeps its own size, so the shader reads each one at its own detail.
+        assert_eq!(
+            size_of_index((small as u32) >> IMAGE_LAYER_BITS),
+            IMAGE_SIZE
+        );
+    }
+
+    #[test]
+    fn an_image_size_is_a_power_of_two_from_the_smallest_to_the_largest() {
+        assert_eq!(size_index(IMAGE_SIZE), Some(0));
+        assert_eq!(size_index(256), Some(1));
+        assert_eq!(size_index(MAX_IMAGE_SIZE), Some(2));
+        for bad in [0, 1, 100, 192, MAX_IMAGE_SIZE * 2] {
+            assert_eq!(size_index(bad), None, "{bad} is not an image size");
+        }
+        assert_eq!(halves(IMAGE_SIZE), IMAGE_HALVES);
+        assert_eq!(halves(256), 4 * (4usize.pow(9) - 1) / 3);
+        assert_eq!(halves(MAX_IMAGE_SIZE), 4 * (4usize.pow(10) - 1) / 3);
+    }
+
+    #[test]
+    fn a_probe_moves_the_images_and_their_records() {
+        let mut tables = LightTables::default();
+        tables.image_texels_mut(4, 256).unwrap();
+        let before = tables.finish_image(4, 0).unwrap();
+        assert_eq!((before as u32) & 63, FIRST_IMAGE_LAYER + 1);
+        // Two probe layers arrive, so the image moves two layers along and uploads again.
+        assert!(tables.image_layers_moved(2));
+        let records: Vec<(u32, f32)> = tables.image_records(2).collect();
+        assert_eq!(records.len(), 1);
+        let (light, after) = records[0];
+        assert_eq!(light, 4);
+        assert_eq!((after as u32) & 63, FIRST_IMAGE_LAYER + 2 + 1);
+        assert_eq!((after as u32) >> IMAGE_LAYER_BITS, size_index(256).unwrap());
+
+        let mut list = DrawList::with_capacity(1024);
+        tables.record(&mut list, 7, 2).unwrap();
+        // The frame's list writes every level of the image into its new layer.
+        let writes = null3d_gpu::drawlist::decode(list.words())
+            .filter(|command| command.as_ref().map(|c| c.op) == Ok(Op::WriteTexture))
+            .count();
+        assert_eq!(writes, levels_of(256) as usize);
+        assert!(
+            !tables.image_layers_moved(2),
+            "the records now name the layers"
         );
     }
 
@@ -341,8 +508,12 @@ mod tests {
         let tables = include_str!("../../null3d-shaders/wgsl/lib/tables.wgsl");
         for line in [
             format!("const AREA_SIZE: u32 = {TABLE_SIZE}u;"),
-            format!("const IMAGE_SIZE: u32 = {IMAGE_SIZE}u;"),
-            format!("const IMAGE_LEVELS: f32 = {IMAGE_LEVELS}.0;"),
+            format!("const IMAGE_SIZE: f32 = {IMAGE_SIZE}.0;"),
+            format!(
+                "const IMAGE_BASE_LEVELS: f32 = {}.0;",
+                levels_of(IMAGE_SIZE)
+            ),
+            format!("const IMAGE_LAYER_BITS: u32 = {IMAGE_LAYER_BITS}u;"),
             "@group(0) @binding(3) var light_tables: texture_2d_array<f32>;".to_string(),
             format!("table({AREA_LAYER}, uv), table({}, uv).xy", AREA_LAYER + 1),
         ] {

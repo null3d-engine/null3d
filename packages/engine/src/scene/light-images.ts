@@ -1,22 +1,46 @@
 // The images of lights: a picture that a rectangle light shows over its area, such as a shop
 // window or a screen, or that a spot light projects over its cone, such as a gobo pattern (decision
-// record D-145). The engine keeps each image as a layer of the light tables' texture, 128 x 128
-// texels of linear half floats with every mip level, so the shaders read a sharp image in a
-// mirror-like reflection and a blurred one in a rough surface. This module turns the sketch's sRGB
-// pixels into those texels.
+// record D-145). The engine keeps each image as a layer of the light tables' texture, in linear
+// half floats with every mip level, so the shaders read a sharp image in a mirror-like reflection
+// and a blurred one in a rough surface. A picture keeps its detail up to the largest image size,
+// and a smaller one costs less memory. This module turns the sketch's sRGB pixels into those
+// texels.
 
 import { toHalfFloat } from './half-float';
 
-/** Texels along each side of a light's image. */
+/** The fewest texels along each side of a light's image. */
 export const LIGHT_IMAGE_SIZE = 128;
-/** Mip levels of a light's image, down to one texel. */
-export const LIGHT_IMAGE_LEVELS = 8;
-/** Half floats of one image with all its levels: four per texel. */
-export const LIGHT_IMAGE_HALVES = 4 * ((4 ** LIGHT_IMAGE_LEVELS - 1) / 3);
+/** The most texels along each side of a light's image. */
+export const LIGHT_IMAGE_MAX_SIZE = 512;
+
+/**
+ * The texels along each side of the image for a picture of `width` by `height` pixels: a power of
+ * two that keeps the picture's detail, from the fewest to the most. The engine resamples the
+ * picture to a square, so its longer side picks the size.
+ */
+export function lightImageSize(width: number, height: number): number {
+	let size = LIGHT_IMAGE_SIZE;
+	const side = Math.max(width, height);
+	while (size < Math.min(side, LIGHT_IMAGE_MAX_SIZE)) size <<= 1;
+	return Math.min(size, LIGHT_IMAGE_MAX_SIZE);
+}
+
+/** The mip levels of an image of `size` texels a side, down to one texel. */
+export function lightImageLevels(size: number): number {
+	return Math.log2(size) + 1;
+}
+
+/** Half floats of an image of `size` texels a side, with every level: four per texel. */
+export function lightImageHalves(size: number): number {
+	let halves = 0;
+	for (let side = size; side >= 1; side >>= 1) halves += side * side * 4;
+	return halves;
+}
 
 /**
  * Pixels of a picture that a light shows, for `RectAreaLight.setImage` and `SpotLight.setMap`:
- * rows from the top, four sRGB bytes per pixel.
+ * rows from the top, four sRGB bytes per pixel. The engine keeps the picture's detail up to 512
+ * texels a side, and a larger picture is resampled down to that.
  *
  * @category api/lights
  */
@@ -37,13 +61,16 @@ const LINEAR = Float32Array.from({ length: 256 }, (_, k) => {
 });
 
 /**
- * Writes `pixels` into `out` as a light's image: level 0 resampled to 128 x 128 texels with a box
- * filter, then each level the average of four texels of the one before, as linear half floats.
- * The image's top row lands at the top of the light, along its +Y axis.
+ * Writes `pixels` into `out` as a light's image of `size` texels a side: the largest level
+ * resampled with a box filter, then each level the average of four texels of the one before, as
+ * linear half floats. The picture's top row lands at the top of the light, along its +Y axis.
  */
-export function prepareLightImage(pixels: LightImagePixels, out: Uint16Array): void {
+export function prepareLightImage(
+	pixels: LightImagePixels,
+	out: Uint16Array,
+	size: number = LIGHT_IMAGE_SIZE,
+): void {
 	const { width, height, data } = pixels;
-	const size = LIGHT_IMAGE_SIZE;
 	let level = new Float32Array(size * size * 4);
 	// Each texel averages a grid of points that covers its share of the pixels.
 	const taps = [Math.max(1, Math.ceil(width / size)), Math.max(1, Math.ceil(height / size))];

@@ -162,3 +162,11 @@ A loop that tests no kind reads a rectangle's record as a point light. It takes 
 Rejected: giving those templates the area lights' builds. That doubles the pipelines that a page with a decal, a particle or a sprite builds. Each of those builds carries the tables' code, so it costs start time and first-use bytes for light that a decal rarely needs. Skipping the kinds costs one comparison per light.
 
 The guard is a unit test in the render crate, `the_light_loops_leave_out_the_area_lights_that_they_cannot_shade`, which reads the two shader files and refuses a loop with one arm. It is a shape check over the source, not a build. The build of one variant costs more than the whole crate's tests.
+
+## Addendum, 2026-10-26: a picture keeps its detail
+
+A rectangle light's picture takes the same resampler as a spot light's map. The two features share
+the light tables' layers, as [D-179](D-179-technique-rulings-2026-10-15.md)'s addendum of 26
+October 2026 says. The picture therefore keeps its detail up to 512 texels a side. The first build
+resampled every picture to 128. That addendum gives the rule that picks the size, and what a
+picture costs. A tube light shows no picture, so it pays nothing.
