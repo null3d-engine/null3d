@@ -57,7 +57,7 @@ const description = defineFeature({ name: 'splats', frame: 'opaque', kind: 'draw
 const draw = await scene.addComputeInstances(description, { shader, vertices, capacity, count });
 draw.counts     // the engine's one-word count buffer, for the add-on's compute pass
 draw.instances  // the engine's capacity of 16-float instance rows, for the same pass
-draw.setCount(n);                        // the page's count, and a shadow view's count
+draw.setCount(n);                        // the count word's start, and the CPU path's count
 draw.setInstances(rows, n);              // the CPU fill, on WebGL2 and before compute
 ```
 
@@ -248,3 +248,31 @@ dispatch for each draw in each frame, so a camera that moves costs no upload of 
   block, the count word, the world rows and the rows it writes.
 - The image tests draw the two instance sketches on every tier and thread mode, and a test forces
   the direct-draw path to prove that the routing to the indirect path draws the same frame.
+
+## Addendum, 25 October 2026: the shadow views take the GPU's count
+
+The section above, and the Status's summary, said that shadow views draw the page's `setCount`
+count until M3-F2 confirmed that the splats cast no shadows. D-241 changed that: the vegetation
+add-on's GPU grass is a second user, near grass casts shadows, and its shadows must follow the
+count that the GPU wrote. The first version's fallback is therefore gone.
+
+The rule now: the frame copies each draw's count word into the bucket's reserved indirect entries
+of the camera's own view **and of every shadow view that draws in the frame**, once every compute
+step has ended and before the first render step, as it already did for the camera. A cascade and a
+tile each own a copy of the casters' indirect buffer, so the copy reaches one of them per drawn
+view. The casters' indirect template stays at the reset's zero: a shadow view that the copy does not
+reach draws nothing rather than a stale page count. The page's count still fills the templates of
+the views the copy does not reach: the camera's mirrors, probes and canvas views, and the outline,
+skin and motion views.
+
+Consequences:
+
+- `feature_shadow_count` is removed: the CPU cannot read a GPU-written count, and no API reports it.
+- A hidden draw copies nothing into any view, so it casts no shadow either.
+- The render test `a_shadow_view_draws_the_count_that_the_gpu_writes` checks that each cascade's
+  indirect buffer takes the count word after the last compute dispatch and before the first render
+  pass. The limits unit test (`pipelines.test.ts`) now counts the two layouts this hook adds: the
+  conversion's (`LAYOUT_FEATURE_ROWS`) and the add-on compute pass's
+  (`LAYOUT_COMPUTE_INSTANCE_BUFFERS`).
+- The per-frame cost is one 4-byte copy for each draw entry of each drawn shadow view, beside the
+  camera's.
