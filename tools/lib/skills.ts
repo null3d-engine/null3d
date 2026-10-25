@@ -43,9 +43,10 @@ const MAX_BODY_LINES = 500;
  * on 21 October 2026, about 29 tokens. The feature-intake section and the foundation add-on table
  * raised it by 54 words on 24 October 2026, about 70 tokens, after they replaced six duplicated
  * table rows and the asset rule's step list. A body that outgrows it trims, or raises this figure
- * with its reason beside it.
+ * with its reason beside it. The wind add-on's table row raised it by 28 words on 26 October 2026,
+ * about 36 tokens: the twelfth foundation add-on belongs in the table that names them.
  */
-const BODY_WORD_BUDGET = 4000;
+const BODY_WORD_BUDGET = 4025;
 
 export function skillNames(root: string): string[] {
 	const dir = join(root, SKILLS_DIR);

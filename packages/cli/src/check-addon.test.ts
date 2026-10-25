@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MATERIAL_BUILDS_ADDRESS } from '../../../packages/vite-plugin/src/material-builds.ts';
 import { fixture } from '../../../tools/lib/fixture';
@@ -121,6 +121,18 @@ describe('readAddon', () => {
 		expect(readAddon(fixture({ 'package.json': '{"name":"a"}' })).problems[0] ?? '').toStartWith(
 			'no entry file: ',
 		);
+	});
+});
+
+describe('the build tools', () => {
+	it('finds the Vite plugin through the manifest that the plugin exports', () => {
+		// The gates that compile WGSL and measure the build resolve `@null3d/vite-plugin/package.json`.
+		// Node refuses a sub-path that a package's `exports` does not name, and the two gates then
+		// skip, so the entry below is what keeps them running under the command's own node.
+		const manifest = JSON.parse(
+			readFileSync(join(import.meta.dirname, '../../vite-plugin/package.json'), 'utf8'),
+		) as { exports?: Record<string, unknown> };
+		expect(manifest.exports?.['./package.json']).toBe('./package.json');
 	});
 });
 

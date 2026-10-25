@@ -135,6 +135,7 @@ Check this table before you write a generator, control, effect or loader of your
 | Text in the scene, sharp at any distance | the MSDF text add-on | none yet | not built yet; use HTML labels with `ui.trackLabel` |
 | A river or a lake, with waves, foam, soft shores and a surface seen from below | `@null3d/water` | `api/water` | built |
 | Trees, shrubs, ferns, hostas and grass, with detail levels, wind data and ecological placement | `@null3d/vegetation` | `api/vegetation` | built (generator and scatter; materials and textures not built yet) |
+| Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | `api/wind` | built (the field carries no state between frames yet) |
 | three.js look modes for a port: Reinhard and Cineon tone curves, and a soft outline with a glow and a pulse | `@null3d/three-compat` | `api/three-compat` | built |
 
 Drawing:
