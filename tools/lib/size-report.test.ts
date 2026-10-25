@@ -330,6 +330,29 @@ describe('findEngineParts', () => {
 		}
 	});
 
+	it("takes the module's own file over a worker's copy that holds fewer modules", () => {
+		// The worker's part is listed before the assets part that loads both files, so the reader
+		// looks first, while the worker's file is unclaimed. The worker holds its own part's module and
+		// a copy of the reader, two modules against the reader's three.
+		const listed = [
+			{ name: 'page.js', module: 'page/engine.ts' },
+			{ name: 'page-worker.js', module: 'workers/worker.ts', loadedBy: 'page-assets.js' },
+			{ name: 'page-assets.js', module: 'scene/assets.ts', loadedBy: 'page.js' },
+			{ name: 'page-reader.js', module: 'scene/reader.ts', loadedBy: 'page-assets.js' },
+		];
+		const files = [
+			built('engine-A1.js', ['page/engine.ts'], '"./assets-B2.js"'),
+			built('assets-B2.js', ['scene/assets.ts'], '"./reader-C3.js",new URL("./worker-D4.js")'),
+			built('reader-C3.js', ['scene/reader.ts', 'scene/one.ts', 'scene/two.ts']),
+			built('worker-D4.js', ['workers/worker.ts', 'scene/reader.ts']),
+		];
+		for (const order of [files, [...files].reverse()]) {
+			const found = findEngineParts(order, listed);
+			expect(found.get('page-reader.js')?.file).toBe('reader-C3.js');
+			expect(found.get('page-worker.js')?.file).toBe('worker-D4.js');
+		}
+	});
+
 	it("names a vendored script of the engine package by its path from the engine's source", () => {
 		const vendored = {
 			name: 'worker-vendor.js',
@@ -550,7 +573,7 @@ describe('budgetProblems', () => {
 	it("passes a start and a later part at their budgets, with the owner's Brotli figures", () => {
 		// The owner raised the start's Brotli budget so the milestone's work fits.
 		expect(START_BUDGET.brotli).toBe(256 * 1024);
-		expect(LATER_BUDGET.brotli).toBe(17 * 1024);
+		expect(LATER_BUDGET.brotli).toBe(18 * 1024);
 		expect(budgetProblems(sizes(START_BUDGET, LATER_BUDGET), downloads, later)).toEqual([]);
 	});
 

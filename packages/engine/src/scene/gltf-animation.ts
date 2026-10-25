@@ -106,7 +106,7 @@ export interface RigTrack {
  * lights, or the visibility of one of its nodes. The indices are the file's own lists.
  */
 export type RigPropertyTarget =
-	| { kind: 'material'; index: number; value: string }
+	| { kind: 'material'; index: number; value: string; key?: string }
 	| { kind: 'light'; index: number; value: string }
 	| { kind: 'node'; index: number; value: 'visible' };
 
@@ -265,6 +265,24 @@ function pointerTarget(
 		const value = POINTER_MATERIAL_VALUES.get(tail);
 		if (value !== undefined)
 			return { kind: 'property', target: { kind: 'material', index, value }, colorSplit: false };
+		// The offset and scale of a base color or emissive map's transform, which three.js's
+		// animation-pointer plugin also moves. Every map of a material shares its transform.
+		const part = tail.endsWith('KHR_texture_transform/offset')
+			? 'Offset'
+			: tail.endsWith('KHR_texture_transform/scale')
+				? 'Scale'
+				: '';
+		const slot = tail.includes('baseColorTexture/')
+			? 'baseColor'
+			: tail.includes('emissiveTexture/')
+				? 'emissive'
+				: '';
+		if (part && slot)
+			return {
+				kind: 'property',
+				target: { kind: 'material', index, value: `uv${part}`, key: `${slot}${part}` },
+				colorSplit: false,
+			};
 		notes.push(`${what} moves a material's ${tail}, which the engine does not animate`);
 		return undefined;
 	}
@@ -813,6 +831,12 @@ function parseClip(
 			// floats when glTF allows one.
 			perKey = output.components;
 			if (perKey === 0 || perKey > 4) broken(`${where}'s output holds ${perKey} values per key`);
+			// A texture transform gives a texture coordinate pair, so its keys hold two numbers.
+			const value = property.target.value;
+			if ((value === 'uvOffset' || value === 'uvScale') && perKey !== 2)
+				broken(
+					`${where}'s output holds ${perKey} numbers per key, and a texture transform takes two`,
+				);
 		} else perKey = nodePath === 'rotation' ? 4 : 3;
 		if (perKey === 3 && !property && nodePath === 'weights') {
 			const mesh = (nodes[node] as NodeData).mesh;

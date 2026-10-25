@@ -628,11 +628,15 @@ pub mod param {
     pub const ANISOTROPY: usize = 64;
     /// The direction along which the lobe stretches, in radians from the tangent.
     pub const ANISOTROPY_ROTATION: usize = 65;
-    /// Which family's maps the light map's and the specular maps' slots hold, as
-    /// [`LayerMap::kind`] gives it: 0 for a clear coat's and a sheen's, 1 for iridescence's and
-    /// the anisotropy's, and 2 for the transmission and thickness maps' of a material that lets
-    /// light through. The core sets it as it sets each layer map, so a shader reads the maps
-    /// that the material gave.
+    /// Which family's maps each group of shared slots holds, as [`LayerMap::kind`] gives it, packed
+    /// two bits each: bits 0 and 1 for the light map's slot, bits 2 and 3 for the specular intensity
+    /// map's, and bits 4 and 5 for the specular color map's. 0 is a clear coat's and a sheen's, 1 is
+    /// iridescence's and the anisotropy's, and 2 is the transmission and thickness maps' of a
+    /// material that lets light through. The core sets each group's bits as it sets a layer map that
+    /// fills that group's slot, so a shader reads the maps that the material gave. A material with
+    /// layers may keep its transmission and thickness maps in the specular slots beside a layer map
+    /// of the light slot, and each specular slot names its own family, since one may hold a layer map
+    /// while the other holds a transmission or a thickness map.
     pub const LAYER_MAPS_KIND: usize = 66;
     /// How a light map's texture coordinates stretch along u and along v: 2 floats. The scale is
     /// 1 by default, which leaves the coordinates alone.
@@ -795,18 +799,18 @@ impl LayerMap {
         LayerMap::Thickness,
     ];
 
-    /// Which family of maps the light map's and the specular maps' slots hold, as a row looks it
-    /// up: 0 for a clear coat's and a sheen's, 1 for iridescence's and the anisotropy's, and 2 for
-    /// the transmission and thickness maps' of a material that lets light through.
-    pub const fn kind(self) -> f32 {
+    /// Which family of maps the slot that holds it belongs to: 0 for a clear coat's and a sheen's,
+    /// 1 for iridescence's and the anisotropy's, and 2 for the transmission and thickness maps' of
+    /// a material that lets light through.
+    pub const fn kind(self) -> u32 {
         match self {
             LayerMap::Coat
             | LayerMap::CoatRoughness
             | LayerMap::CoatNormal
             | LayerMap::SheenColor
-            | LayerMap::SheenRoughness => 0.0,
-            LayerMap::Iridescence | LayerMap::IridescenceThickness | LayerMap::Anisotropy => 1.0,
-            LayerMap::Transmission | LayerMap::Thickness => 2.0,
+            | LayerMap::SheenRoughness => 0,
+            LayerMap::Iridescence | LayerMap::IridescenceThickness | LayerMap::Anisotropy => 1,
+            LayerMap::Transmission | LayerMap::Thickness => 2,
         }
     }
 
@@ -821,6 +825,17 @@ impl LayerMap {
             | LayerMap::SheenRoughness
             | LayerMap::Anisotropy
             | LayerMap::Thickness => MapSlot::SpecularColor,
+        }
+    }
+
+    /// The bit of the row's kinds at which this map's slot names its family
+    /// ([`param::LAYER_MAPS_KIND`]).
+    pub const fn kind_shift(self) -> u32 {
+        match self.slot() {
+            MapSlot::Light => 0,
+            MapSlot::SpecularIntensity => 2,
+            MapSlot::SpecularColor => 4,
+            _ => 0,
         }
     }
 
@@ -1557,11 +1572,17 @@ impl MaterialTable {
         let bit = map.flag();
         let on = if texture.is_none() { 0 } else { bit };
         *flags = ((*flags as u32 & !bit) | on) as f32;
-        // A live map names the family whose maps the slots hold, so the shader reads the maps that
-        // the material gave: the coat's and the sheen's, iridescence's and the anisotropy's, or the
-        // transmission and thickness maps'.
+        // A live map names the family whose slot it fills, so the shader reads the maps that the
+        // material gave: the coat's and the sheen's, iridescence's and the anisotropy's, or the
+        // transmission and thickness maps'. Each group of slots names its family apart, since a
+        // material with layers may keep the transmission and thickness maps in the specular slots
+        // beside a layer map of the light slot, and one specular slot may hold a layer map while
+        // the other holds one of those two maps.
         if !texture.is_none() {
-            self.rows[id as usize * MATERIAL_FLOATS + param::LAYER_MAPS_KIND] = map.kind();
+            let at = id as usize * MATERIAL_FLOATS + param::LAYER_MAPS_KIND;
+            let shift = map.kind_shift();
+            let kinds = self.rows[at] as u32;
+            self.rows[at] = ((kinds & !(3 << shift)) | (map.kind() << shift)) as f32;
         }
         Ok(())
     }
@@ -2163,8 +2184,8 @@ mod tests {
         let coat = table
             .create(Shading::Lit, feature::COAT_SHEEN, [1.0; 4])
             .unwrap();
-        // A material's layer maps say which family fills the light map's and the specular maps'
-        // slots, so a shader reads a coat map as a coat map and a film map as a film map.
+        // A material's layer maps name the family that fills the slot each takes, so a shader
+        // reads a coat map as a coat map and a film map as a film map.
         table
             .set_layer_map(id, LayerMap::Iridescence, Handle::from_raw(5), false)
             .unwrap();
@@ -2179,9 +2200,17 @@ mod tests {
         table
             .set_layer_map(id, LayerMap::Anisotropy, Handle::from_raw(7), false)
             .unwrap();
+        let kinds = row(&table, id)[param::LAYER_MAPS_KIND] as u32;
+        assert_eq!(kinds & 3, 1, "the light map's slot holds the film");
         assert_eq!(
-            row(&table, id)[param::LAYER_MAPS_KIND],
-            LayerMap::Iridescence.kind()
+            (kinds >> 2) & 3,
+            1,
+            "the specular intensity slot holds the film's thickness"
+        );
+        assert_eq!(
+            (kinds >> 4) & 3,
+            1,
+            "the specular color slot holds the stretch"
         );
         assert_eq!(row(&table, coat)[param::LAYER_MAPS_KIND], 0.0);
         assert_eq!(table.map(id, MapSlot::Light), Handle::from_raw(5));
@@ -2210,16 +2239,29 @@ mod tests {
             .create(Shading::Lit, feature::TRANSMISSION, [1.0; 4])
             .unwrap();
         // A material that lets light through keeps its transmission map in the specular intensity
-        // map's slot and its thickness map in the specular color map's, and its kind says so.
+        // map's slot and its thickness map in the specular color map's, and each of those slots
+        // names its family while the light slot's stays free.
         table
             .set_layer_map(id, LayerMap::Transmission, Handle::from_raw(5), false)
             .unwrap();
         table
             .set_layer_map(id, LayerMap::Thickness, Handle::from_raw(6), true)
             .unwrap();
+        let kinds = row(&table, id)[param::LAYER_MAPS_KIND] as u32;
         assert_eq!(
-            row(&table, id)[param::LAYER_MAPS_KIND],
-            LayerMap::Transmission.kind()
+            (kinds >> 2) & 3,
+            2,
+            "the intensity slot holds the map of the light through"
+        );
+        assert_eq!(
+            (kinds >> 4) & 3,
+            2,
+            "the color slot holds the thickness map"
+        );
+        assert_eq!(
+            kinds & 3,
+            0,
+            "the transmission maps leave the light map's slot alone"
         );
         assert_eq!(
             table.map(id, MapSlot::SpecularIntensity),
@@ -2244,6 +2286,70 @@ mod tests {
         assert_eq!(LayerMap::ALL.len(), 10);
         assert_eq!(LayerMap::Transmission as u32, 8);
         assert_eq!(LayerMap::Thickness as u32, 9);
+    }
+
+    #[test]
+    fn a_layer_map_and_the_volume_maps_name_each_slots_family_apart() {
+        let mut table = MaterialTable::with_capacity(2);
+        let id = table
+            .create(
+                Shading::Lit,
+                feature::COAT_SHEEN | feature::TRANSMISSION,
+                [1.0; 4],
+            )
+            .unwrap();
+        let normal = table
+            .create(
+                Shading::Lit,
+                feature::COAT_SHEEN | feature::TRANSMISSION,
+                [1.0; 4],
+            )
+            .unwrap();
+        // A coated glass keeps its coat map in the light map's slot and the transmission and
+        // thickness maps in the specular slots: one family fills the first slot and another the
+        // last two, so each group of slots names its own family.
+        table
+            .set_layer_map(id, LayerMap::Coat, Handle::from_raw(5), false)
+            .unwrap();
+        table
+            .set_layer_map(id, LayerMap::Transmission, Handle::from_raw(6), false)
+            .unwrap();
+        table
+            .set_layer_map(id, LayerMap::Thickness, Handle::from_raw(7), false)
+            .unwrap();
+        let kinds = row(&table, id)[param::LAYER_MAPS_KIND] as u32;
+        assert_eq!(kinds & 3, LayerMap::Coat.kind());
+        assert_eq!((kinds >> 2) & 3, LayerMap::Transmission.kind());
+        assert_eq!((kinds >> 4) & 3, LayerMap::Thickness.kind());
+        assert_eq!(table.map(id, MapSlot::Light), Handle::from_raw(5));
+        assert_eq!(
+            table.map(id, MapSlot::SpecularIntensity),
+            Handle::from_raw(6)
+        );
+        assert_eq!(table.map(id, MapSlot::SpecularColor), Handle::from_raw(7));
+        // One specular slot may hold a layer map while the other holds a volume map: a coat normal
+        // map keeps the specular intensity slot as the coat's family, and the thickness map names
+        // the specular color slot as the volume's.
+        table
+            .set_layer_map(normal, LayerMap::CoatNormal, Handle::from_raw(6), false)
+            .unwrap();
+        table
+            .set_layer_map(normal, LayerMap::Thickness, Handle::from_raw(7), false)
+            .unwrap();
+        let mixed = row(&table, normal)[param::LAYER_MAPS_KIND] as u32;
+        assert_eq!(mixed & 3, 0, "no layer map fills the light map's slot");
+        assert_eq!(
+            (mixed >> 2) & 3,
+            LayerMap::CoatNormal.kind(),
+            "the intensity slot holds the coat's normals"
+        );
+        assert_eq!(
+            (mixed >> 4) & 3,
+            LayerMap::Thickness.kind(),
+            "the color slot holds the thickness"
+        );
+        // The three kinds sit in the anisotropy `vec4f`, which the shaders already read.
+        assert_eq!(param::LAYER_MAPS_KIND / 4, param::ANISOTROPY / 4);
     }
 
     #[test]

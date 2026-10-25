@@ -126,4 +126,29 @@ The refusal covers every GPU path, not WebGPU alone, and the reason is the shape
 
 The glTF loader keeps the specular textures and notes that it leaves the transmission and thickness textures out, as it does for the diffuse transmission maps. A file that carries both cannot be refused without failing the whole model. A layered material, whose maps take the slots above the specular ones, leaves these two out as well: `checkLayerMaps` refuses them and the loader notes them.
 
-Cost: the material row keeps its seventeen `vec4f`s and every map slot its binding, so neither path's text, bindings nor memory grows. A build that lets light through and reads maps loads one more texel of its material's row per fragment. That texel holds the family float, in a row that the build already reads.
+Cost: the material row kept its size and every map slot its binding, so neither path's text, bindings nor memory grew. A build that lets light through and reads maps loads one more texel of its material's row per fragment. That texel holds the family float, in a row that the build already reads.
+
+## Addendum, 25 October 2026: the two maps beside the layers
+
+The 23 October addendum said that the layers' conflict rule would gain the transmission and thickness maps when the work landed. It has, and it is narrower than "a layered material takes neither map". A layered material gives up the specular slots only where one of its own layer maps fills the slot that a transmission or a thickness map takes:
+
+| Slot | The map of a material that lets light through | The layer maps that fill it |
+| --- | --- | --- |
+| Specular intensity | `transmissionMap` | `clearcoatNormalMap`, `iridescenceThicknessMap` |
+| Specular color | `thicknessMap` | `sheenColorMap`, `sheenRoughnessMap`, `anisotropyMap` |
+
+So the stained-glass lamp's glass, which packs a clear coat and a transmission in one texture, keeps both its `clearcoatMap` and its `transmissionTexture`. A coat normal texture or a sheen texture beside the transmission maps still leaves one of them out. Development builds refuse the clash with E1217 naming both maps. The refusal stays on both GPU paths: a material is made before any device exists, and both paths keep one map table.
+
+A row named the light map's slot and the specular slots with one float, in the anisotropy `vec4f`'s third position. That float could not say that the light slot holds the coat while one specular slot holds the transmission and the other the thickness. The row now names each group of slots apart there: two bits for the light map's slot, two for the specular intensity map's, and two for the specular color map's. Two bits suffice, since each group names one family. The families are the coat's and the sheen's, iridescence's and the anisotropy's, and the transmission's and the thickness's. The specular slots need their own bits rather than one between them, because one may hold a layer map while the other holds a volume map. A clear coated glass with a coat normal map keeps that map in the specular intensity slot, and its thickness map in the specular color slot. `LayerMap::kind` names the same three families, `set_layer_map` writes the bits of the slot that a map fills, and the lit shader decodes the three where it samples each slot. The change adds no float to the row, every map slot keeps its binding, and neither GPU path's text, bindings or memory grows.
+
+The lit shader reads each slot by its group's family. The light slot holds the coat map or the film. The specular intensity slot holds the coat's normals, the film's thickness or the transmission. The specular color slot holds the sheen, the anisotropy or the thickness. A build that holds `TRANSMISSION` with `COAT_SHEEN` reads the transmission and thickness maps, and that pair of builds already existed for coated glass.
+
+The glTF loader keeps each volume texture where its slot stays free. It notes the one that a layer map displaces, which `material 1's transmissionTexture, which it leaves out where the clear coat's normal texture fills the same slot` shows. The note before it named both textures at once.
+
+Tests: `materials.rs` checks that a coat map and the volume maps name their families apart. It also checks that the kinds float sits in the anisotropy `vec4f`, which the shaders read. `materials.test.ts` checks that a clear coat's and a sheen's values keep the two maps while their maps displace one each. `gltf-parse.test.ts` checks a coated glass that keeps both textures, and a coat normal texture that displaces the transmission texture. `transmission.spec.ts` draws the glass twice, with and without the maps beside a clear coat, and the two pictures differ on every tier. The coat therefore hides the maps no longer.
+
+The `gltf-ktx2` test, which draws the lamp, matched its references on all three tiers of the Mac's set with the maps drawn. The lamp's transmission texture leaves that picture within the comparison's limit, so no reference moved. CI's own drawing still judges the software-GPU set. The scene's parity check passes on the three tiers at 0.253%, 0.265% and 0.276% of the pixels, against its limit of 0.5%, where three.js's two renderers differ by 0.093%.
+
+The GPU check reports `not judged`, because the benchmark pages changed between main's commit and this branch. Its figures are s4 Medium 4.24 to 4.20 ms, s6 Medium 4.69 to 4.61 ms, s4 High 4.54 to 2.24 ms and s6 High 6.51 to 6.70 ms. Neither scene draws a material with a clear coat and transmission, so the change adds nothing to their work.
+
+The merge from m3-start made the shader build compile 39 of its 80 entries and reuse 41, in 23 minutes of wall time and 77 minutes of processor time at about three cores, at a machine load of 100 to 175.

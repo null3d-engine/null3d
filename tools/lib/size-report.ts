@@ -900,10 +900,14 @@ export function findEngineParts(
 	};
 	const direct = (loader: BuiltFile) => new Set(mentions.get(loader.file) ?? []);
 	// Of several unclaimed files that hold a part's module, a part takes one that its loader names
-	// itself, then the one with the fewest engine modules, then the smaller, then the first by name.
-	// A worker that bundles a copy of the module usually holds more modules than the module's own
-	// file, though not always, so the file that the loader names comes first. The choice does not
+	// itself, then the one that holds the fewest modules of other parts, then the one with the fewest
+	// engine modules, then the smaller, then the first by name. A worker that bundles a copy of the
+	// module holds its own part's module too, and may hold fewer modules in all than the module's own
+	// file, so the count of all modules comes after the count of other parts. The choice does not
 	// follow the order in which the build lists its files, which differs from Linux to macOS.
+	const partModules = new Set(parts.map((part) => posix.join(ENGINE_SOURCE, part.module)));
+	const otherParts = (file: BuiltFile, own: string) =>
+		file.sources.filter((source) => partModules.has(source) && source !== own).length;
 	const engineModules = (file: BuiltFile) =>
 		file.sources.filter((source) => source.startsWith(ENGINE_SOURCE)).length;
 	const claim = (part: EnginePart, reach: (loader: BuiltFile) => ReadonlySet<string>): boolean => {
@@ -913,11 +917,13 @@ export function findEngineParts(
 		const claimed = new Set(found.values());
 		const reached = reach(loader);
 		const near = direct(loader);
+		const own = posix.join(ENGINE_SOURCE, part.module);
 		const [file] = files
 			.filter((f) => !claimed.has(f) && reached.has(f.file) && holds(f, part.module))
 			.sort(
 				(a, b) =>
 					Number(near.has(b.file)) - Number(near.has(a.file)) ||
+					otherParts(a, own) - otherParts(b, own) ||
 					engineModules(a) - engineModules(b) ||
 					a.text.length - b.text.length ||
 					(a.file < b.file ? -1 : a.file > b.file ? 1 : 0),
@@ -1089,8 +1095,15 @@ export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotl
  * map slots and their loader notes: it went from 14,737 to 16,832 bytes after Brotli (D-215). The
  * figure is the cap of every file that loads after the start, so the raise loosens each of them by
  * the same kilobyte; no other file is near it.
+ *
+ * It rose again on 25 October 2026, from 17 KB to 18 KB, on the owner's word. The glTF worker had
+ * 67 bytes spare at 17,341, and mapping the glTF texture-transform pointers that three.js moves
+ * takes it about 57 bytes past that line. The only way under the old figure was to drop the
+ * loader's checks for a malformed transform and for a material that moves two of them, which is a
+ * worse trade than the kilobyte. This is headroom, not a new target: the first trim that wins bytes
+ * back still takes them, and the glTF worker stays the only file that needs it.
  */
-export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 17 * 1024 };
+export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 18 * 1024 };
 
 /**
  * The budget for a generated combination table, whose name holds `-combos`: the list of module

@@ -83,3 +83,7 @@ Results, on the owner's Mac on 11 October 2026, Chrome 155:
 - The old check held the window for 6.6 to 14.3 minutes in the logs of 8 October above. No new run of it was made: it would have held the quiet window for its builds while the queue waited.
 - The first `--prepare` took 30 minutes in the CPU lane, at background priority and a load of 12 to 14. The cache was empty, so the builder worktree installed and built main from nothing. A later check on the same commit of main finds the baseline in the cache and builds only its own checkout and pages. A new commit of main rebuilds only what changed in the builder.
 - The cache held 127 MB for the baseline and 1.4 GB for the builder worktree. One builder replaces a 1.3 GB base worktree per copy of the repository.
+
+## Addendum, 2026-10-25: the trailer on any commit
+
+The trailer check reads the `GPU-Checked:` trailer from every commit of the range except merges. So the trailer may go on any of them. The decision put it on the last commit that changes the files above, or on a later one, and the check does not ask that. One measurement of the branch's build answers for the whole range. Run the check once the code is final. Run it again after a later change to those files, so that the line measures the code that lands. [Branches and parallel work](../pull-requests.md#the-gpu-check) gives the steps.
