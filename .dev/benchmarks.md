@@ -422,6 +422,13 @@ A run folder holds every page's full result, with frames and images, and stays o
 - On 23 October 2026 the masked side was no slower than the opaque one in Chrome on any path, and 0.29 ms slower at most in Safari with MSAA, for a screen of about 1.5 million pixels. So a scene whose masked areas cover much of the view pays under a third of a millisecond for them on this Mac.
 - In a real scene the prepass draws the opaque objects and leaves the masked ones out, so the two builds are not equal work there: masked surfaces shade their hidden layers on the paths that keep the prepass. [D-226](decisions/D-226-alpha-masked-lit-fragments-under-msaa.md) gives the figures and what they mean.
 
+## Directional light maps
+
+- The `lightmap-cost` page draws a 6 by 4 grid of lit quads that fills the view once, with no overlap. So every pixel shades one fragment. Each quad reads a normal map whose ridges turn the normal across it, and a light map. The page swaps every quad between the plain light map's build of the standard material and the directional one. The directional build reads a second texture of the bake's own size and weights the baked light by the surface normal. The two sides shade the same pixels with the same radiance. So their difference is the direction texture's read and the arithmetic that follows it ([D-258](decisions/D-258-directional-light-maps.md)).
+- Before the timing, the page draws one frame of each side and publishes the share of pixels that moved past four steps. A direction texture that the engine dropped leaves the light map plain. That happens when the direction belongs to another texture array than the radiance's, and the share is then zero. So the test refuses a figure of nothing.
+- The page sets `?prepass=off`, so no side is skipped by a depth already in the target, and `?preset=high`.
+- Run it on the Mac in a quiet window: `NULL3D_LIGHTMAP_COST=1 bun run test:browser -- lightmap-cost.spec.ts`. `NULL3D_LIGHTMAP_GPUS` narrows the run to some paths, as a list. The spec waits for the computer's load to fall below the quiet limit. It prints the load beside its figures.
+
 ## A tree of cluster patches
 
 - The `cluster-cost` page draws `tests/pages/assets/models/cluster-terrain.glb`, a heightfield of 32,768 triangles that the asset tool cut into a tree of 511 patches, with one directional light and one ambient light. It stands the camera 12, 30 and 80 meters from the middle of the ground and times two seconds at each distance after two seconds of warm-up, so the near patches draw at full detail and the far ones coarser ([D-231](decisions/D-231-cluster-levels-cost.md)).
