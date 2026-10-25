@@ -5,8 +5,8 @@
 // unit tests, which Bun runs, passed. This test follows those imports and refuses a module they
 // reach that uses Bun's API, so the fault shows in every run, not only in a full one.
 import { describe, expect, it } from 'bun:test';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { withImports } from '../../tools/lib/script-imports.ts';
 
 const ROOT = join(import.meta.dirname, '../..');
@@ -20,7 +20,7 @@ const GENERATED = 'packages/engine/src/generated/';
  */
 const WALK_MS = 30_000;
 
-/** Every file that Node loads first: the Playwright and Vite configs, and the Playwright specs. */
+/** Every file that Node loads first: the Playwright and Vite configs, the files they name, and the Playwright specs. */
 function nodeEntries(): string[] {
 	const specs = ['tests', 'bench'].flatMap((folder) =>
 		readdirSync(join(ROOT, folder), { recursive: true, encoding: 'utf8' })
@@ -41,7 +41,13 @@ function nodeEntries(): string[] {
 				}
 			}),
 	];
-	return [...specs, ...configs];
+	// Files that a config names by path rather than imports, such as Playwright's global setups.
+	const named = configs.flatMap((config) =>
+		[...readFileSync(join(ROOT, config), 'utf8').matchAll(/['"]([\w./-]+\.ts)['"]/g)]
+			.map(([, path]) => join(dirname(config), path as string))
+			.filter((path) => existsSync(join(ROOT, path))),
+	);
+	return [...specs, ...configs, ...named];
 }
 
 /**
