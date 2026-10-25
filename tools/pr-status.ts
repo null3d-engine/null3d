@@ -42,7 +42,6 @@ const INCOMPLETE = new Set([
 	'M3-B2',
 	'M3-B3',
 	'M3-B5',
-	'M3-E7',
 	'M3-V4',
 	'M3-D7',
 	'M3-D9',
@@ -158,8 +157,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"the Showroom tablet the task names is M3-C2's work, which is not built; the screen demo's software-GPU pictures were redrawn from CI on 25 October and no longer stand in the way",
 	'M3-B5':
 		'the glints draw and are tested in both sets; its cost per preset is owed (D-255), which needs a quiet GPU',
-	'M3-E7':
-		"its finish line needs the car paint's glints to use the lobes; the glints draw now (D-255), and the record does not yet say whether the hook needs a general lobe form rather than the add-on's own",
 	'M3-V4':
 		'no device has timed the new generator, so the device figures are of the stand-in it replaced; no Mac, iPad or S24 GPU or memory figure exists, and no check-addon run is recorded',
 	'M3-D7':
