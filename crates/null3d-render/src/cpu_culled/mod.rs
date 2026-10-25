@@ -523,7 +523,7 @@ impl Default for CpuCulledConfig {
             cell_culling: true,
             light_limits: LightLimits::default(),
             depth_prepass: false,
-            prepass_color: PrepassColor::Load,
+            prepass_color: PrepassColor::default(),
             cascade_depth: CascadeDepth::default(),
             float16_targets: true,
         }

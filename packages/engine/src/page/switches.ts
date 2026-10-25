@@ -29,7 +29,7 @@ export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
  * How a depth prepass that a screen step splits from the opaque pass starts the stand-in color
  * that it never draws, which ?prepass-color= picks: `load` starts it from what the texture holds
  * and then invalidates it, `clear` clears it first, and `none` attaches no color at all. All three
- * draw the same image.
+ * draw the same image. `none` is the engine's default, and the other two serve measurements.
  */
 export type PrepassColor = 'load' | 'clear' | 'none';
 /**

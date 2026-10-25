@@ -496,17 +496,21 @@ const PARTICLE_DEPTH: &str = "particleDepth";
 const PREPASS_COLOR: &str = "prepassColor";
 
 /// How the depth prepass starts the stand-in color that it draws into and never writes, while a
-/// screen step splits it from the opaque pass. Binding a framebuffer whose color was never written
-/// and then invalidating that color costs Safari's WebGL2 path time that follows the texture's
-/// size (WebKit bug 328158). All three ways draw the same image.
+/// screen step splits it from the opaque pass. A framebuffer that holds such a color and invalidates
+/// it costs Safari's WebGL2 path time that follows the texture's size (WebKit bug 328158). All three
+/// ways draw the same image, and the device run chose the depth-only framebuffer: keeping the color
+/// and clearing it paid the whole charge, while no attachment at all paid a fifth of a millisecond
+/// (D-265).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PrepassColor {
     /// Keeps the color attachment and starts it from what the texture holds, then invalidates it.
-    #[default]
+    /// The engine started this way before the device run, and a benchmark page measures it.
     Load,
-    /// Keeps the color attachment and clears it, which makes the invalidate cheap.
+    /// Keeps the color attachment and clears it. The run shows that the clear does not remove the
+    /// charge, so the engine does not draw this way.
     Clear,
     /// Gives the prepass a depth-only framebuffer, with no color attachment at all.
+    #[default]
     None,
 }
 
@@ -515,9 +519,9 @@ impl PrepassColor {
     /// takes the default.
     pub const fn from_code(code: u32) -> Self {
         match code {
+            0 => PrepassColor::Load,
             1 => PrepassColor::Clear,
-            2 => PrepassColor::None,
-            _ => PrepassColor::Load,
+            _ => PrepassColor::None,
         }
     }
 }
@@ -1196,7 +1200,7 @@ impl FrameGraph {
             roles: Vec::new(),
             opaque: Vec::new(),
             prepass: false,
-            prepass_color: PrepassColor::Load,
+            prepass_color: PrepassColor::default(),
             skinning: false,
             prepasses: Vec::new(),
             occlusion: false,
@@ -8593,10 +8597,16 @@ mod tests {
                     .iter()
                     .any(|step| step[..] == ["DepthPrepass1", "Opaque1"])
             );
-            // The prepass stores the depth that the depth step reads and the opaque pass loads,
-            // and drops its stand-in color. WebGL2 need not clear that color, which nothing reads.
+            // The prepass stores the depth that the depth step reads and the opaque pass loads. On
+            // WebGL2 it attaches no color, so it never holds one that it does not write (D-265).
+            // WebGPU keeps its clear, which is cheap there.
             let plan = frames.graph().plan().unwrap();
             let attachments = plan.attachments(&plan.steps()[prepass]);
+            assert_eq!(
+                attachments.iter().filter(|a| !a.depth).count(),
+                usize::from(gpu_culling),
+                "the prepass attaches a color only on WebGPU"
+            );
             for attachment in attachments {
                 let store = if attachment.depth {
                     StoreOp::Store
@@ -8604,23 +8614,20 @@ mod tests {
                     StoreOp::Discard
                 };
                 assert_eq!(attachment.store, store);
-                let load = if attachment.depth || gpu_culling {
-                    LoadOp::Clear
-                } else {
-                    LoadOp::Load
-                };
-                assert_eq!(attachment.load, load, "the prepass's attachments start");
+                assert_eq!(
+                    attachment.load,
+                    LoadOp::Clear,
+                    "the prepass's attachments start"
+                );
             }
             let attachments = plan.attachments(&plan.steps()[opaque]);
             let depth = attachments.iter().find(|a| a.depth).unwrap();
             assert_eq!(depth.load, LoadOp::Load);
             // Three targets of half the size, and the camera's depth readable, which no longer
-            // shares a texture with the side view's depth, whose usage differs. With one sample
-            // of HDR color, the prepass's stand-in color takes a texture of its own too: the
-            // scene color, which it would share, is sampled, and the side view's color is kept.
-            let stand_in =
-                usize::from(format == format::RGBA16_FLOAT && antialias == Antialias::Fxaa);
-            assert_eq!(plan.textures().len(), without + 4 + stand_in);
+            // shares a texture with the side view's depth, whose usage differs. The prepass adds
+            // no texture of its own: on WebGL2 it attaches no color, and on WebGPU its stand-in
+            // color shares the scene color where it can.
+            assert_eq!(plan.textures().len(), without + 4);
             let texture = |name: &str| plan.texture_of(frames.graph().find_resource(name).unwrap());
             let depth = texture(SCENE_DEPTH).unwrap();
             let Surface::Texture(index) = depth else {
@@ -8793,6 +8800,22 @@ mod tests {
                 has_color,
                 "{mode:?}: the prepass's render pass names a color"
             );
+            // The prepass's stand-in color is the only color in the frame that a pass starts from
+            // what the texture holds and then discards, which is the cost that Safari charges. A
+            // later pass that brings the cost back fails here.
+            for (at, other) in plan.steps().iter().enumerate() {
+                if at == step {
+                    continue;
+                }
+                for attachment in plan.attachments(other) {
+                    assert!(
+                        attachment.depth
+                            || attachment.load != LoadOp::Load
+                            || attachment.store != StoreOp::Discard,
+                        "{mode:?}: another pass loads a color and discards it"
+                    );
+                }
+            }
         }
     }
 

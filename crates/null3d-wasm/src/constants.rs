@@ -447,11 +447,12 @@ pub mod camera_target {
 
 /// How a depth prepass that a screen step splits from the opaque pass starts the stand-in color
 /// that it never draws, in `initEngine`'s `prepass_color`. A benchmark page picks it with
-/// ?prepass-color=.
+/// ?prepass-color=. `NONE` is the default that the device run chose (D-265).
 pub mod prepass_color {
-    /// Starts it from what the texture holds, then invalidates it.
+    /// Starts it from what the texture holds, then invalidates it. The engine's behavior before the
+    /// device run, kept for measurement.
     pub const LOAD: u32 = 0;
-    /// Clears it, which makes the invalidate cheap.
+    /// Clears it. The device run showed that the clear does not remove the charge.
     pub const CLEAR: u32 = 1;
     /// Gives the prepass a depth-only framebuffer, with no color attachment.
     pub const NONE: u32 = 2;

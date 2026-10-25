@@ -335,7 +335,7 @@ describe('coreDevice on WebGL2', () => {
 	it('passes the way the prepass starts its stand-in color, and the default without a switch', () => {
 		const code = (prepassColor: DeviceOptions['prepassColor']) =>
 			coreDevice('webgl2', report({}), { ...PLAIN, prepassColor }).prepassColor;
-		expect(code(undefined)).toBe(C.PREPASS_COLOR_LOAD);
+		expect(code(undefined)).toBe(C.PREPASS_COLOR_NONE);
 		expect(code('load')).toBe(C.PREPASS_COLOR_LOAD);
 		expect(code('clear')).toBe(C.PREPASS_COLOR_CLEAR);
 		expect(code('none')).toBe(C.PREPASS_COLOR_NONE);

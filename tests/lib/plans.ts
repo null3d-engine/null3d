@@ -1187,8 +1187,8 @@ export const EFFECT_SCALES = [1, 0.5] as const;
 
 /**
  * The way each plan item makes a depth prepass start the stand-in color that it never draws, for
- * the ambient occlusion cost page: M3-R23's two candidate fixes and the load that the engine makes
- * without a switch. The page tells them apart by their rise with ambient occlusion on.
+ * the ambient occlusion cost page: the two candidate fixes and the load that the engine made before
+ * the run chose one. The page tells them apart by their rise with ambient occlusion on.
  */
 const PREPASS_COLOR_VARIANTS = ['load', 'clear', 'none'] as const;
 

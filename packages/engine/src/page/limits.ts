@@ -475,7 +475,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		joinEffects: options.join,
 		gradingHdr: options.grading === 'hdr',
 		depthPrepass: options.depthPrepass,
-		prepassColor: PREPASS_COLOR_CODES[options.prepassColor ?? 'load'],
+		prepassColor: PREPASS_COLOR_CODES[options.prepassColor ?? 'none'],
 		skinning: SKINNING_CODES[options.skinning],
 		shadowDepthBits: options.shadowDepthBits,
 		largeWorld: options.largeWorld,
