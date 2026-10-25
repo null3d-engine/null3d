@@ -21,7 +21,7 @@ use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, index_format, si
 
 use super::ids;
 use super::skin::{DrawGroups, SkinnedPart, Skinning};
-use crate::frame::{MeshBuffers, RecordError, SceneSettings, UploadArena, grown_size, put_u32};
+use crate::frame::{MeshBuffers, RecordError, SceneSettings, UploadArena, grown_size_any, put_u32};
 use crate::particles::ParticlePass;
 use crate::sorted::{SortedLayout, SortedRows, SortedSource, SortedView};
 use crate::view::{ViewFrame, ViewId};
@@ -97,7 +97,7 @@ impl Transparent {
         let needed = layout.rows() * sizes::INSTANCE_STRIDE;
         for (index, made) in self.buffers.iter_mut().enumerate().take(views) {
             if *made < needed {
-                *made = grown_size(needed, u32::MAX);
+                *made = grown_size_any(needed);
                 list.push(
                     Op::CreateBuffer,
                     &[

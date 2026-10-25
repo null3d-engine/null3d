@@ -1578,7 +1578,9 @@ impl Layout {
         let mut recreated = false;
         for ((id, size), made) in needed.into_iter().zip(&mut self.buffer_sizes) {
             if size > 0 && *made < size {
-                *made = grown_size(size, binding_bytes);
+                *made = grown_size(size, binding_bytes).ok_or(RecordError::BufferFull {
+                    bytes: binding_bytes,
+                })?;
                 // The motion pass copies the matrices into its last frame's copies.
                 let flags = if id == ids::MATRICES {
                     usage::STORAGE | usage::COPY_DST | usage::COPY_SRC

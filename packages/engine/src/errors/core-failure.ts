@@ -58,6 +58,8 @@ const RENDER_LIMITS: Record<number, string | ((value: string) => string)> = {
 	// The ceiling is `MAX_ATLAS_BYTES` in crates/null3d-render/src/shadow_tiles.rs.
 	18: (megabytes) =>
 		`the shadow atlas would need ${megabytes} MB, more than the 1,024 MB it may take; name a smaller heroTileSize or fewer shadowTiles`,
+	19: (bytes) =>
+		`a list of the frame needs more than the ${bytes} bytes that one GPU buffer may take on this device`,
 };
 
 /** What the renderer ran out of, for the details `limit` and `value` of E1501. */

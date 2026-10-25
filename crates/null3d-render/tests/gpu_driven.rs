@@ -534,12 +534,15 @@ fn the_source_limit_follows_the_device_storage_binding() {
         one_dispatch * sizes::INSTANCE_STRIDE,
         MAX_USEFUL_BINDING_BYTES
     );
-    // Buffers grow with room to spare, but never past the binding, and never below the need.
-    assert_eq!(grown_size(1000, portable), 1536);
+    // Buffers grow with room to spare, but never past the binding.
+    assert_eq!(grown_size(1000, portable), Some(1536));
     for binding in [portable, MAX_USEFUL_BINDING_BYTES] {
         let full = max_sources(binding) * sizes::INSTANCE_STRIDE;
-        assert_eq!(grown_size(full, binding), binding);
-        assert_eq!(grown_size(full - 1000, binding), binding);
+        assert_eq!(grown_size(full, binding), Some(binding));
+        assert_eq!(grown_size(full - 1000, binding), Some(binding));
+        // A need past the binding is refused, never rounded up into a buffer the device cannot
+        // bind.
+        assert_eq!(grown_size(full + 256, binding), None);
     }
 }
 
