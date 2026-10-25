@@ -405,9 +405,21 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-assets.js', module: 'scene/assets.ts', loadedBy: 'page-sketch-runner.js' },
-	// The built-in environments' descriptions load on first use: a sketch that names no built-in
-	// environment, as most do not, downloads none of them.
-	{ name: 'environment.js', module: 'scene/builtin-environments.ts', onFirstCall: true },
+	// The built-in environments' descriptions load on first use, and the page and the sketch worker
+	// each bundle their own copy: a sketch that names no built-in environment, as most do not,
+	// downloads neither.
+	{
+		name: 'page-environment.js',
+		module: 'scene/builtin-environments.ts',
+		loadedBy: 'page-assets.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'sketch-worker-environment.js',
+		module: 'scene/builtin-environments.ts',
+		loadedBy: 'sketch-worker-assets.js',
+		onFirstCall: true,
+	},
 	{ name: 'page-baked-light.js', module: 'scene/baked-light.ts', loadedBy: 'page-assets.js' },
 	// The half-float helpers are read by several of the start's own modules, so the bundler writes
 	// them to a file of their own that every page loads: a part of the start, not a first-use file.
