@@ -126,8 +126,8 @@ function fakeCore(largeWorld = false) {
 			failure = { code: 1101, details: [texture & SLOT_MASK, FRAME] };
 			return failure.code;
 		},
-		setSkyLayer: (template: number, sun: number, opacity: number) => {
-			skyLayers.push([template, sun, opacity]);
+		setSkyLayer: (template: number, map: number, sun: number, opacity: number) => {
+			skyLayers.push([template, sun, opacity, map]);
 			return 0;
 		},
 		setOverrideMaterial: (material: number) => overrides.push(material) && 0,
@@ -605,6 +605,7 @@ describe('scene.setSkyLayer', () => {
 	const layer = {
 		kind: 'skyLayer',
 		variants: {},
+		map: {},
 	} as unknown as Parameters<Scene['setSkyLayer']>[1]['wgsl'];
 	/** The description that places a sky layer. */
 	const placed = {
@@ -620,13 +621,15 @@ describe('scene.setSkyLayer', () => {
 		const installed = scene.setSkyLayer(placed, { wgsl: layer, sun: 0.25 });
 		const first = skyLayers[0] as number[];
 		expect(first[0]).toBeGreaterThanOrEqual(C.SHADING_CUSTOM_FIRST);
-		expect(first.slice(1)).toEqual([0.25, 1]);
+		expect(first.slice(1, 3)).toEqual([0.25, 1]);
+		// The map's build of the layer takes the template after the layer's own.
+		expect(first[3]).toBe((first[0] as number) + 1);
 		installed.set({ opacity: 0.5 });
-		expect((skyLayers[1] as number[]).slice(1)).toEqual([0.25, 0.5]);
+		expect((skyLayers[1] as number[]).slice(1, 3)).toEqual([0.25, 0.5]);
 		installed.set({ sun: 0.75 });
-		expect((skyLayers[2] as number[]).slice(1)).toEqual([0.75, 0.5]);
+		expect((skyLayers[2] as number[]).slice(1, 3)).toEqual([0.75, 0.5]);
 		scene.clearSkyLayer();
-		expect(skyLayers[3]).toEqual([0, 0, 1]);
+		expect((skyLayers[3] as number[]).slice(0, 3)).toEqual([0, 0, 1]);
 		// A second clear sends nothing: no layer is installed.
 		scene.clearSkyLayer();
 		expect(skyLayers).toHaveLength(4);
@@ -635,10 +638,11 @@ describe('scene.setSkyLayer', () => {
 	test('a second install replaces the layer with a template of its own', () => {
 		const { scene, skyLayers } = fakeCore();
 		scene.setSkyLayer(placed, { wgsl: layer });
-		const other = { kind: 'skyLayer', variants: {} } as unknown as typeof layer;
+		const other = { kind: 'skyLayer', variants: {}, map: {} } as unknown as typeof layer;
 		scene.setSkyLayer(placed, { wgsl: other });
-		expect((skyLayers[1] as number[])[0]).toBe(((skyLayers[0] as number[])[0] as number) + 1);
-		expect((skyLayers[1] as number[]).slice(1)).toEqual([0, 1]);
+		// Each layer takes two templates: its box, and the sky map's draws with it.
+		expect((skyLayers[1] as number[])[0]).toBe(((skyLayers[0] as number[])[0] as number) + 2);
+		expect((skyLayers[1] as number[]).slice(1, 3)).toEqual([0, 1]);
 	});
 
 	test('a description that the engine cannot place throws E1223', () => {

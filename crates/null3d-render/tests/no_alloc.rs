@@ -1444,21 +1444,31 @@ fn sky_layer_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
         rotation: [0.0; 3],
         sun_visibility: 1.0,
     }));
-    settings.set_sky_layer(Some(SkyLayer {
-        template: template::CUSTOM_FIRST,
-        opacity: 1.0,
-        sun: 0.0,
-    }));
+    settings.set_sky_layer(
+        Some(SkyLayer {
+            template: template::CUSTOM_FIRST,
+            map: 0,
+            opacity: 1.0,
+            sun: 0.0,
+            refresh: 0.0,
+        }),
+        0,
+    );
     feature_allocations(
         &mut world,
         "the sky layer",
         &[template::BACKGROUND_SKY, template::CUSTOM_FIRST],
         |world, frame| {
-            world.renderer.settings_mut().set_sky_layer(Some(SkyLayer {
-                template: template::CUSTOM_FIRST,
-                opacity: 1.0,
-                sun: (frame as f32 * 0.01) % 1.0,
-            }));
+            world.renderer.settings_mut().set_sky_layer(
+                Some(SkyLayer {
+                    template: template::CUSTOM_FIRST,
+                    map: 0,
+                    opacity: 1.0,
+                    sun: (frame as f32 * 0.01) % 1.0,
+                    refresh: 0.0,
+                }),
+                0,
+            );
         },
     )
 }
