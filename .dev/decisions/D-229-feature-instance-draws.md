@@ -5,16 +5,17 @@ opaque main-view path on WebGPU and the CPU-filled batch on WebGL2, with the cou
 indirect draw after each compute step; the compute pass that binds the two buffers (M3-E8), drawn
 by the `feature-instances-compute` picture on WebGPU and in compatibility mode; the conversion of
 the world rows to camera-relative rows; and the count in the shadow views (the addendum below).
-Not built yet: the transparent path and the shadow-many path. The task also waits for its first
-real user, since the splats add-on cannot take the hook. Date: 2026-10-23. Task: M3-E9.
+Not built yet: the transparent path; the shadow views need no conversion of their own. The task
+also waits for its first real user, since the splats add-on cannot take the hook. Date: 2026-10-23.
+Task: M3-E9.
 
 Summary: An add-on's instance draw reserves one indirect entry in each view's existing draw buffer,
 and the engine copies the add-on's count word into that entry after every compute step and before
 the pass. The count word and the per-instance buffer are engine-created buffers of the draw, so the
 add-on's compute pass writes them like any other storage and the engine adds no second compute
 surface. WebGL2 has no compute, so the draw is an unculled instance batch that the page fills, and
-the same shader reads the same rows on both paths. The first version draws at the opaque point in
-the main view alone, and shadow views draw the page's count.
+the same shader reads the same rows on both paths. The draw records at the opaque point in the main
+view alone; the shadow views read the same converted rows and the same GPU-written count.
 
 ## Question
 
@@ -234,9 +235,9 @@ dispatch for each draw in each frame, so a camera that moves costs no upload of 
 ### Limits
 
 - The conversion uses the main view's camera. A shadow cascade or a tile reads the same
-  camera-relative rows with its own light's view projection, so a feature-instance draw that casts
-  shadows draws them from the main camera's rows. D-229's first version already draws such a draw
-  in the main view alone; a later version can convert for each view if the shadows are needed.
+  camera-relative rows with its own light's view projection, and its view frame carries that same
+  camera, so one conversion serves every view. A per-view conversion would subtract the same
+  position in each view; see the addendum of 26 October 2026.
 - The add-on's compute pass must run before the first render step, as a pass of `band: 'before'`
   does. A pass after the scene writes rows too late for the opaque pass to read them.
 
@@ -297,27 +298,26 @@ recorded commands: the ready frame copies the count word and draws the reserved 
 the unready frame does neither. The adapter's tests check that the page's `ready` reaches the core
 once per change, and that the WebGL2 batch draws none of its rows while unready.
 
-## Known gap, 26 October 2026: a casting instance draw's shadow falls in the wrong place
+## Addendum, 26 October 2026: the shadow side, proved by a picture, and a wrong cause withdrawn
 
-The count now reaches every shadow view, and a render test proves the cascade draws the reserved
-entry. The geometry does not follow yet. The conversion subtracts the **main camera's** world
-position, so the rows that a shadow view reads are relative to a camera that the view does not use.
-The caster's vertex shader multiplies them by the light's own view-projection, so the instances land
-off by the distance from the main camera to the light's camera, which for a cascade is tens of
-meters: they fall outside the cascade and cast no shadow. The engine's own casters are unaffected,
-because each view's culling writes its compacted rows relative to that view's camera.
+The count reaches every drawn shadow view. A render test proves it: each cascade's indirect buffer
+takes the add-on's word into the reserved entry that its pass draws. That copy comes after the last
+compute step and before the first render step
+(`a_shadow_view_draws_the_count_that_the_gpu_writes`).
 
-A drawn test showed it. A compute-filled field of 42 discs lay above a ground with the sun casting,
-and a standard box set beside the field cast a shadow while the discs cast none, on WebGPU and in
-compatibility mode.
+The picture test `feature-instances-shadow` proves the geometry. A compute pass fills a field of
+standing discs over the whole capacity and counts six rows of seven. The page sets the count to the
+whole capacity. The sun's shadows on the ground show the counted rows alone: the rows past the count
+throw no shadow. A post beside the field casts a shadow of its own, so the picture names this draw's
+shadow and not only a shadow in general.
 
-The fix is the per-view conversion that this record's "shadow-many path" deferred: each view that
-draws a casting instance draw needs its own buffer of rows, converted with that view's camera, and
-the draw's instance binding in that view must name it. The count copy and the readiness gate above
-are unaffected by it.
-
-Until it lands, a page should keep its instance draw out of the shadow views, or expect its shadow
-in the wrong place. The M3-V8 grass, whose near blades must cast (D-241), waits on this fix.
+An earlier note in this record gave a wrong cause for a shadow that a diagnostic did not show. It
+said that the conversion subtracts the main camera's position, while a shadow view reads rows
+relative to its own camera. That is false. A cascade's view frame carries the main camera
+(`crates/null3d-render/src/shadows.rs`, `ShadowFrame::view_frame`), and every shadow matrix takes
+positions relative to that camera. So the frame's one conversion is the conversion that every view
+needs, and a per-view conversion would subtract the same position in each view. A shadow atlas's
+tiles are fitted the same way. The conversion therefore stays one per frame.
 
 ## Addendum, 26 October 2026: what the allocation proof found, and a fault left open
 

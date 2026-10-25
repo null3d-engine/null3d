@@ -2775,6 +2775,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		tiers: ['webgpu', 'compat'],
 	},
+	// The shadow-side proof of an instance draw: the compute shader fills the whole capacity of
+	// discs and counts 42, the page sets the count to the capacity, and the ground's shadows show
+	// 42 discs. A shadow view that drew the page's count would fill the empty corner too.
+	{
+		name: 'feature-instances-shadow',
+		sketch: 'tests/pages/sketches/feature-instances-shadow-sketch.ts',
+		hold: 0,
+		tiers: ['webgpu', 'compat'],
+	},
 	// A compute pass's storage texture, which a material samples in the same frame: four colored
 	// quadrants. WebGPU runs the compute shader, and WebGL2 its fragment form, so the two paths
 	// must draw the same picture.
