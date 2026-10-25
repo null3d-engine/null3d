@@ -64,9 +64,17 @@ const LAYER_VALUES: usize = 21;
 /// The word that holds the id of the buffer that a light capture lands in, or 0 for no capture.
 const LIGHT_BUFFER_WORD: usize = 28;
 
-/// The nine coefficients of the light that a capture sums, red, green and blue each, as words in
-/// engine memory and as float bits in the target that the GPU draws them into.
-const LIGHT_WORDS: usize = 27;
+/// The coefficients of the light that a capture sums: nine bands of the spherical harmonics, red,
+/// green and blue each.
+const LIGHT_COEFFICIENTS: usize = 9;
+
+/// The words of a capture's target that one coefficient takes: its red, green and blue, and the
+/// padding word that fills the rest of its texel.
+const LIGHT_TEXEL: usize = 4;
+
+/// The words of a capture's target that the coefficients occupy, which the engine compares to tell
+/// whether a capture landed. The texels after them are unused, so they never change.
+const LIGHT_SPAN: usize = LIGHT_COEFFICIENTS * LIGHT_TEXEL;
 
 /// The bytes of a capture's target: sixteen words a row, of which the first nine hold the
 /// coefficients. A row of a texel copy starts on this boundary.
@@ -416,7 +424,7 @@ impl LightCapture {
     /// three words of texel `k`.
     fn coefficients(&self) -> Sh {
         let word = |k: usize| {
-            let at = k * 4;
+            let at = k * LIGHT_TEXEL;
             f32::from_le_bytes([
                 self.words[at],
                 self.words[at + 1],
@@ -424,14 +432,14 @@ impl LightCapture {
                 self.words[at + 3],
             ])
         };
-        std::array::from_fn(|k| std::array::from_fn(|c| word(k * 4 + c)))
+        std::array::from_fn(|k| std::array::from_fn(|c| word(k * LIGHT_TEXEL + c)))
     }
 
     /// Takes the coefficients of a capture that landed since the frame before. A capture that wrote
     /// nothing, as one does before the page's layer reached the thread that draws, leaves the words
     /// as they were: the map then keeps the CPU's model of the core sky for its light.
     fn take(&mut self) -> Option<Sh> {
-        let length = LIGHT_WORDS * 4;
+        let length = LIGHT_SPAN * 4;
         if self.words[..length] == self.before[..length] {
             return None;
         }
@@ -841,4 +849,40 @@ fn push_stage(
         list.push(Op::ReadBuffer, &[buffer, 0, LIGHT_BYTES, destination, slot])?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The word of the last coefficient's blue, which is the last word that the coefficients occupy
+    /// in the target.
+    const LAST: usize = (LIGHT_COEFFICIENTS - 1) * LIGHT_TEXEL + 2;
+
+    /// Puts a float at a word of a capture's target, as the GPU writes it.
+    fn write_word(capture: &mut LightCapture, word: usize, value: f32) {
+        capture.words[word * 4..][..4].copy_from_slice(&value.to_le_bytes());
+    }
+
+    /// A capture that moved only its last coefficient still lands. The change test covers every
+    /// word that the coefficients occupy, so the map takes the light that the capture summed.
+    #[test]
+    fn a_capture_that_moves_only_the_last_coefficient_lands() {
+        let mut capture = LightCapture::new();
+        write_word(&mut capture, LAST, 1.5);
+        let light = capture.take().expect("the capture landed");
+        assert_eq!(light[LIGHT_COEFFICIENTS - 1][2], 1.5);
+        assert_eq!(light[0][0], 0.0);
+    }
+
+    /// A capture whose words match the frame before did not land, and the light that landed stays.
+    #[test]
+    fn a_capture_that_writes_nothing_new_does_not_land() {
+        let mut capture = LightCapture::new();
+        write_word(&mut capture, LAST, 1.5);
+        assert!(capture.take().is_some());
+        assert!(capture.take().is_none());
+        let light = capture.light().expect("the light that landed");
+        assert_eq!(light[LIGHT_COEFFICIENTS - 1][2], 1.5);
+    }
 }
