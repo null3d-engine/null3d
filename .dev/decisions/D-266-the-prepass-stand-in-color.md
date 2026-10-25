@@ -102,9 +102,15 @@ The iPad 10 pays only a small part of the charge in the engine's own frame. The 
 framebuffer took its rise from 0.65 to 0.52 ms at render scale 1. At 0.5 it went from 0.34 to
 0.29 ms. Both changes are inside that page's noise. The stand-alone page's 3.26 ms on this device does not transfer
 to the engine's frame there. So the bar of under 0.5 ms is met on the iPhone 18 Pro at both scales.
-On the iPad 10 it is met at scale 0.5, and the scale 1 rise reads 0.52 and 0.64 ms in the two runs.
-That page's noise holds the answer at scale 1. It does not keep the display's rate with ambient
-occlusion on, and Safari's WebGL2 path has no GPU timer there.
+On the iPad 10 it is met at scale 0.5.
+
+At scale 1 that page is GPU-bound, not CPU-bound and not held at the display's rate. With ambient
+occlusion on it drew at 37 frames a second, against 46 with the effect off, and its busiest thread
+used 1.46 ms of the 27.24 ms frame. That is 5 per cent of the frame, and 60 Hz would be 16.7 ms.
+The frame waits on the GPU. The render worker's figure rose 0.64 ms while the interval grew 5.48 ms,
+so the figure covers only part of the GPU time there. It reads 0.52 and 0.64 ms in the two runs, and
+the three ways spread 0.48 to 0.65 ms in one run. So that figure does not resolve the bar either way,
+and this record does not judge the fix by it.
 
 ## Consequences
 
