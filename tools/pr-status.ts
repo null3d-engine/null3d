@@ -177,7 +177,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-E4':
 		"whether the approved hook table stands against hard rule 8 is the owner's to decide, and the tick waits on that",
 	'M3-K3':
-		'the task asks for image tests on every path, and there are none: no cookie picture is in the manifest and no cookie page among the sketches. Whether the 128 by 128 pixels-only cookie looks good enough is a second question, which the better-look rule raises',
+		"the spot-map picture covers the cookie on every path and passes; what remains is the owner's call on whether a 128 by 128 pixels-only cookie looks good enough, which the better-look rule raises",
 	'M3-A10':
 		"the finish line asks for the S24+, and the S24 run gives only a frame time held at its 30 Hz limit, which its own run file marks unreliable; the S25 is a faster GPU of another make on a path the S24+ lacks, so whether it closes the line is the owner's call. CI's five software sharpen references also show no sharpening at all, so the picture does not hold the effect it claims",
 	'M3-V6':
