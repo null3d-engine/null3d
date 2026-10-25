@@ -212,10 +212,13 @@ did not mean the same picture. The Mac's GPU drew that set, and CI's software GP
 `sky-layer-light` keeps no pictures: it reads the spheres' colours, so it needs no reference.
 
 The held frame does hold the layer in its map. In hold mode the map's build of the layer's shader is
-present at every stage, and the light capture runs: the ice stays blue because the add-on scales its
-colour by the sky's cloud coverage, which the demo keeps at 0.06, and the ice's own colour is blue
-(D-118's `sky-layer-light` page measures the layer at full strength). So the blue ice is the demo's
-look, not a layer that missed its map.
+present at every stage, and the light capture runs. Its light can still miss the held frame: the
+map's coefficients land through an asynchronous read, and on a loaded machine that read landed 3.2
+seconds after its fill, when the held frames had been drawn and the picture taken. The ground then
+keeps the core sky's blue light while the background shows the green layer, which is what the
+checker saw. A live page applies the light from the frame in which the read lands, as the sky layer
+light page measures. The ice's own colour is blue, so it stays blue either way. A held frame of a
+layer demo therefore moves with the GPU's queue, not only with the demo's look.
 
 ### The map's light and a layer that never arrives
 
