@@ -81,17 +81,18 @@ test('car-paint: each part changes the image', async ({ page }) => {
 		// The flakes glint where the sun's band crosses the body, the seams darken their grooves,
 		// and the weave draws its twill with a highlight along the tows. Each changes a fair share
 		// of the image, which a shader that skipped it would not. The flakes must also brighten
-		// pixels: a model that only takes the smooth highlight away leaves every one of them
-		// darker, which is the fault the glints were drawn to fix. Every GPU path of both sets
-		// measures the flakes a mean channel difference of 0.00262 to 0.00267 and 0.01630 to
-		// 0.01653 of the channels changing by more than 8 steps, with 217 to 232 pixels brighter,
-		// the seams 0.00070 and 0.00343 to 0.00345, and the weave 0.01491 to 0.01504 and 0.12928
-		// to 0.13030. Each floor is half the smallest of those figures, and a skipped part would
-		// draw the plain body, so it fails by the whole floor.
+		// pixels. That count is the only guard against a lobe that darkens without sparkling: the
+		// mean and share floors below pass such a paint.
+		// Each set's picture pairs measure the flakes a mean channel difference of 0.00262 to
+		// 0.00267 and 0.01607 to 0.01631 of the channels changing by more than 8 steps, with 216 to
+		// 232 pixels brighter, the seams 0.00070 and 0.00339 to 0.00341, and the weave 0.01491 to
+		// 0.01504 and 0.12667 to 0.12770. The part test's own runs measure the same to within a
+		// step. Each floor is half the smallest of those figures, and a skipped part would draw the
+		// plain body, so it fails by the whole floor.
 		const parts = [
-			['flakes', plain.flakes, 0.0013, 0.0081],
-			['seams', plain.seams, 0.00035, 0.0017],
-			['weave', plain.weave, 0.0074, 0.064],
+			['flakes', plain.flakes, 0.0013, 0.008],
+			['seams', plain.seams, 0.00035, 0.0016],
+			['weave', plain.weave, 0.0074, 0.063],
 		] as const;
 		console.log(
 			[
