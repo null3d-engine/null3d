@@ -45,7 +45,7 @@ The cost is owed. The `lightmap-cost` page measures it. The page draws 24 lit qu
 turns for four rounds each. The order reverses on alternate rounds, so a clock that drifts through
 the run does not favour either side. Before the timing the page draws one frame of each side and
 compares them, so a direction that the engine dropped fails the run instead of reporting no cost.
-On 25 October 2026 the Mac's 1-minute load read between 34 and 156. The spec refuses to measure
+On 25 October 2026 the Mac's 1-minute load read between 34 and 162. The spec refuses to measure
 above 8, so the run waits for a quiet window and then takes about a minute:
 `NULL3D_LIGHTMAP_COST=1 bun run test:browser -- lightmap-cost.spec.ts --workers=1`. Its medians go
 into the table above. The trials so far are preliminary and not figures. At a load of 84, before
