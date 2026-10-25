@@ -81,8 +81,8 @@ say so.
   `flakes.angle` and `flakes.max` in place of `flakes.spread`.
 - Tests: `crates/null3d-shaders/tests/material.rs` builds the shipped WGSL on both paths. The
   add-on's pictures are redrawn, and the paint spec measures each part against the body without it.
-- Owed: the picture references on every tier and in both sets, and the cost per preset. The machine
-  ran near a load of 100 on 25 October 2026, where neither run measures anything.
+- Owed: the cost per preset, which needs a quiet GPU. The machine ran near a load of 100 on
+  25 October 2026, where a timing run measures nothing.
 - The guide `docs/guides/car-paint.md` and the add-on README describe the model, its options and its
   limit.
 
@@ -96,7 +96,7 @@ or too dim to show.
 
 So the paint with its flakes and the paint without them differed only where the count takes the
 smooth highlight away. Across all six references no pixel grew brighter than one step. The highlight
-fell by up to 76 steps over about 1,100 pixels. The sparkle the model describes had not drawn at
+fell by 76 to 77 steps over about 1,100 pixels. The sparkle the model describes had not drawn at
 all. A test that only compared the two pictures would have passed such a paint.
 
 The default now names 0.25 radians, a softbox 28.6 degrees across. That is what the option's text
@@ -105,8 +105,8 @@ claimed before it.
 Measured on the Mac's GPU with the paint test's own body, the pixels that grew brighter than 8 steps
 were none at 0.02 radians. They were 14 at 0.08, 49 at 0.15, 161 at 0.25 and 442 at 0.4, with the
 cells the sketch drew then. The brightest glint fell from 154 to 103 to 58 steps over that range.
-The default takes the middle. There the sparkle is many flakes, each with a strong contrast: 228
-pixels on that body, the brightest 103 steps above it. The test sketch's flake cells now cover the
+The default is the fourth of the five sizes tried. There the sparkle is many flakes, each with a
+strong contrast: 228 pixels on that body, the brightest 103 steps above it. The test sketch's flake cells now cover the
 same distance along each texture coordinate. A glint therefore draws as a 2 by 2 pixel dot rather
 than a six to one dash. The dash was the cell's shape on screen, not the flake's. The paint spec also
 checks that the flakes brighten pixels, so a model that only removes the highlight fails it.
@@ -123,8 +123,11 @@ correction.
 
 ## Runs
 
-The addendum's figures come from the two reference sets' picture pairs, and these runs measured the
-same to within a step. Each ran on the Mac that holds this checkout:
+The light-size sweep above is a live measurement on the Mac's GPU. It was taken at 15:44 on
+25 October 2026 by a probe spec that was not kept. The addendum's other figures are the two
+reference sets' picture pairs. The runs below measure the flakes' share at 0.01630 to 0.01653 and
+the weave's at 0.12952 to 0.13030. Both sit a little above the pairs' 0.01607 to 0.01631 and 0.12667
+to 0.12770. Each ran on the Mac that holds this checkout:
 
 - On the Mac's GPU, `images.spec.ts car-paint.spec.ts -g car-paint`, 25 October 2026, 15:49:08 to
   15:49:43: 7 passed and 9 failed (31.6 s). The failures were the nine paint pictures against the
