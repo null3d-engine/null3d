@@ -117,3 +117,5 @@ occlusion on, and Safari's WebGL2 path has no GPU timer there.
 - The engine's docs name the exception that a target is not cleared at its first write, which D-193
   gives. They also give the reason: on Safari's WebGL2 path an unwritten color costs time that
   follows its size.
+- Three commits on the branch carry `Task: M3-R23` from queue and tooling work that came before the
+  fix. They deliver no part of it, so a reader should not count them as the fix.
