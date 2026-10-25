@@ -459,6 +459,7 @@ post.set({ toneMapping: reinhard });
 - An effect samples a texture as `textureSampleLevel(name, nameSampler, uv, 0.0)`. A render pass's texture holds its bottom row first: sample it at `effectPassUv(input.uv)`. The textures are fixed when the effect is added, and an effect with textures draws in a pass of its own.
 - Effects and custom curves need HDR color. On a device without it they stay off, and development builds warn once.
 - [Custom passes](../guides/custom-passes.md) lists what an effect reads, and what effects cost.
+- An add-on's effect takes a [feature description](features.md) instead, through [`post.addFeatureEffect`](feature-effects.md). The description places the pass at the resolve point and says whether it draws.
 
 ## Still views
 

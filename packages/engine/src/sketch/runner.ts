@@ -648,6 +648,7 @@ export class SketchRunner {
 			device.joinEffects,
 			new GradeTable(textures),
 			device.gradingHdr,
+			this.quality,
 		);
 		this.render = new Render(
 			this.core,
