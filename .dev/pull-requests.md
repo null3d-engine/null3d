@@ -108,6 +108,14 @@ The queue sets a job's priority when it starts, so a job that was already waitin
 began with: restart it after a change of rule. The page-build lock still refuses to be taken at
 background priority, so a job that lands clamped that way says so rather than hanging.
 
+One flag, `PRIORITY=1`, sorts a job ahead of every other waiting job in its lane. The gate that checks
+and pushes a landing may set it for its own checks only. Those are the unit suite, the heavy checks,
+the size check, the limits report, the type check and the Rust compile check, on every range that
+gate handles. The gate reports each use to the landing session for the status log. A helper never
+sets it, and nobody sets it for a helper's build, picture run or measurement. It is never used while
+a timing window is open. On 25 October 2026 the gate's heavy checks moved from sixth in the lane to
+first this way, at a load of 77. The five jobs behind them kept their order.
+
 A build compiles the Rust crates for two WebAssembly variants and the build tools, writes the shader
 modules for every feature, and then builds the test page for the size report. It is the longest step
 in a landing, so keep the count down. Every build cache lives under one root, `null3d` under
