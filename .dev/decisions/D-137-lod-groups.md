@@ -185,7 +185,7 @@ The review found five weak points in what this record describes:
 
 - The fade goes where it shows least. The asset tool's levels change the picture by less than a pixel at the switch. D-91 found no wider change at 502 of 518 switches. Yet they pay for the double draw, the discard and the fade lists. Hand-made levels, such as Creek's leaf-card trees, change the picture far more. On Low, which turns the fade off, they pop. The fade becomes a choice per level. It is off for a measured error, and on for a level given by distance or by a hand-set error, on Low too.
 - The rule measures to the center of the bounds. An object whose radius is half its distance then shows twice the allowed error on its near side. The rule moves to the nearest point of the bounds, as meshoptimizer, Godot and `clusterlod.h` do.
-- Each level and each fade list reserves room for every copy, in every view. Read from the code, 40,000 copies with 4 levels and 4 cascades take about 61 MB of copy lists, plus growth room. One list per view would take about 13 MB. The main view's list passes WebGPU's default 128 MiB binding limit near 260,000 copies with four fading levels. These are estimates to measure. The lists will follow what draws.
+- Each level and each fade list reserved room for every copy, in every view. Read from the code, 40,000 copies with 4 levels and 4 cascades were estimated at about 61 MB of copy lists, and one list per view at about 13 MB. The measured figures in this record's addendum of 22 October correct those estimates. The casters' list is one list that every cascade draws, so the cascade count does not multiply it. The lists now follow what draws.
 - Every copy uses the same 4 × 4 pattern, so neighbouring copies line up into one grid. The pattern will differ per copy.
 - A distance or a screen coverage becomes an error for a screen 1,080 pixels high. So on a screen 2,160 pixels high, the level switches at twice the distance. Levels can then be picked by distance or by coverage beside error.
 
@@ -271,13 +271,21 @@ it may pick. So a slice never falls short of the shader's writes, whatever the l
 shared distance come to. The buckets without levels keep the slices of the build. A scene without
 levels runs no count.
 
-| Copies of four levels, with fading bands | Before | After |
+| Copies of four levels, with fading bands | Before, the removed rule's arithmetic | After, measured |
 | --- | --- | --- |
 | 40,000 copies, the main view | 20.5 MB | 2.6 MB |
-| 40,000 copies, the main view and four cascades | 61 MB | 13 MB |
+| 40,000 copies, the four cascades' casters list | 20.5 MB | 2.6 MB |
+| Both lists together | 41.0 MB | 5.1 MB |
 
-`crates/null3d-render/tests/levels.rs` measures the figures from the frame's own copy lists. A
-band adds about a tenth more, for the sources inside it, which take a copy in each of two fade
+`crates/null3d-render/tests/levels.rs` measures the after figures from the frame's own copy lists.
+`forty_thousand_copies_of_four_levels_take_one_copy_each` reads the main view, and
+`forty_thousand_casters_of_four_cascades_take_one_copy_each` reads the casters' layout with four
+cascades. The four cascades draw one copy list, so the list takes one copy for each of the 40,000
+trees, and the levels add nothing to it. The before figures are arithmetic from the removed rule:
+eight slices, one for each of four levels and its fading band, at 64 bytes a copy. The earlier
+estimate of 61 MB counted a list for each cascade, which the code does not keep.
+
+A band adds about a tenth more, for the sources inside it, which take a copy in each of two fade
 buckets.
 
 The culling shader cannot size these slices itself. A draw reads its bucket's copies from a vertex
@@ -368,6 +376,17 @@ Blender without levels still gets them (follow-up 5).
   predictable. An author who wants earlier thinning gives the level its own error.
 - The card step runs only for a mesh that a skin does not pose, because a posed list's positions
   are in the scene's units and the level's stored positions are in the mesh's.
+- No picture test shows this step. The level's error is a card's size, so the level switches where
+  the tree stands a few pixels tall. The tool's own test tree has a 1.7-unit tree with cards of 0.28
+  to 0.42 units. Its levels get errors from 5,926 to 13,333 integer steps, which is 0.61 to 1.38
+  units. At a 360-pixel picture and a 35-degree lens the nearest switch lies about 349 m out, where
+  the tree stands about 4 pixels tall. A crown's cover cannot be read at that size. A picture at a
+  useful size would need the file's errors set for the camera's distance. That shows the engine
+  drawing the thinned cards, but not the tool's error rule. The unit tests hold the step:
+  `keeps a share of the cards at each level, grown about their middles`,
+  `writes each card level its own positions, and shares the wood stream`, and `treats a card folded
+  along its middle as a card, as Creek makes its leaves`. The `vegetation-leaf-cards` picture holds
+  the cards' coverage at three distances.
 
 ## Addendum: texture coordinates in the level error (22 October 2026, M3-L2)
 
@@ -477,7 +496,8 @@ The second part is not built. It is a recorded choice rather than a gap.
 Coarsest-first order is a new step in the tool's pipeline. `reorderMeshes` runs before the levels are
 planned. It orders the vertices for the GPU's vertex cache, not by level. Ordering by level needs
 a reorder after `planLevels`. That step remaps every vertex stream and every level's indices. The
-owner's ruling of 25 October 2026 holds it back until its gain is stated in bytes.
+task's coordinator decided on 25 October 2026 not to build it, because the index ranges work without
+it. Its gain is stated in bytes below for whoever needs streaming later.
 
 What the ordering would gain is the share of the vertex buffer that a coarse level must have
 resident. Without it, a level's indices point across almost the whole buffer. The tool's test ball
@@ -541,7 +561,7 @@ The cloud iPad ran Safari 26.6.1 on iOS 26 at 59 Hz. Its window was 1,032 by 1,2
 core WebGPU. Its GPU buffer bytes do not change between the two sides. The copy lists therefore
 follow what draws on the device as they do on the Mac. The lists take one copy per source. They do
 not take a slice per level per view. The Mac's table above holds the same finding: 2.6 MB in the
-main view and 13 MB with four cascades, against 20.5 MB and 61 MB before.
+main view and 2.6 MB in the casters' list, against 20.5 MB each from the removed rule.
 
 The Galaxy S24 ran Chrome 152 on Android 16 with no WebGPU adapter, so only its WebGL2 rows ran.
 Chrome on Android reports no WebGL2 GPU timer. The cloud display ran at 30 Hz, so its frame interval
