@@ -418,9 +418,11 @@ spec proves two separate things, and no single number carries both:
 - **The ready gate.** The sketch publishes the adapter's own `draws` answer, and the spec requires
   false at Low, where `dofSamples` is 0, and true at Medium, where it is 22. The picture cannot carry
   this check. A pass whose tap count is 0 returns its input unchanged, so a frame that ran the pass
-  anyway would match one that did not. A unit test holds the same rule without a GPU: `keeps the
-  effect of a feature that is not ready out of the chain` asserts that the effect chain received no
-  effect.
+  anyway would match one that did not. The check runs on WebGPU alone, and that is enough. The gate is
+  TypeScript in the adapter, and the same code runs for every rendering path. The test also requires
+  the run's held frame, so a page that failed to draw cannot pass it silently. A unit test holds the
+  same rule without a GPU: `keeps the effect of a feature that is not ready out of the chain` asserts
+  that the effect chain received no effect.
 
 The runs are at Medium, a preset that both paths run. WebGL2 caps its preset at Medium, so a run
 at High would compare WebGPU's High against WebGL2's Medium.

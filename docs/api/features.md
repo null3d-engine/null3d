@@ -257,7 +257,7 @@ Not every callback has a caller yet, and the page says which do:
 | Callback | Who calls it today |
 | --- | --- |
 | `quality` | `FeatureHost`, when the preset or its settings change |
-| `ready` | The full-screen adapter, when it places a feature and on each quality change. The draw, instance, compute and sky-layer adapters do not ask it yet. |
+| `ready` | The full-screen adapter, when it places a feature and on each quality change, and `effect.refresh()` when the add-on calls it. The draw, instance, compute and sky-layer adapters do not ask it yet. |
 | `resize`, `reset` | Nothing yet. An add-on that keeps targets or history keeps its own size and reset state. |
 | `destroy` | The full-screen adapter's handle, when the add-on destroys it. Otherwise the owner of the feature calls it. |
 

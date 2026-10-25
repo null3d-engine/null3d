@@ -109,21 +109,27 @@ test('the adapter keeps a not-ready feature out of the chain', async ({ page: br
 		await browserPage.waitForFunction('globalThis.__null3dHold !== undefined', undefined, {
 			timeout: 120_000,
 		});
-		return browserPage.evaluate(
-			() =>
-				(globalThis as { __null3dFeature?: { draws: boolean; samples: number } }).__null3dFeature,
-		);
+		return browserPage.evaluate(() => {
+			const globe = globalThis as {
+				__null3dHold?: { ok: boolean; error?: string };
+				__null3dFeature?: { draws: boolean; samples: number };
+			};
+			const hold = globe.__null3dHold;
+			return { ok: hold?.ok === true, error: hold?.error, feature: globe.__null3dFeature };
+		});
 	};
 	// Low's dofSamples is 0, so the description's ready callback must keep the effect out of the
 	// chain. The adapter ignoring ready would answer true here, whatever the pixels show.
 	const low = await read('low');
-	expect(low?.samples).toBe(0);
-	expect(low?.draws).toBe(false);
+	expect(low.ok, low.error).toBe(true);
+	expect(low.feature?.samples).toBe(0);
+	expect(low.feature?.draws).toBe(false);
 	// Medium draws the pass, so the same answer turned false is not a stub that never draws.
 	const medium = await read('medium');
-	expect(medium?.samples).toBe(22);
-	expect(medium?.draws).toBe(true);
+	expect(medium.ok, medium.error).toBe(true);
+	expect(medium.feature?.samples).toBe(22);
+	expect(medium.feature?.draws).toBe(true);
 	console.log(
-		`feature-effect: the adapter draws at Medium (samples ${medium?.samples}) and not at Low (samples ${low?.samples})`,
+		`feature-effect: the adapter draws at Medium (samples ${medium.feature?.samples}) and not at Low (samples ${low.feature?.samples})`,
 	);
 });
