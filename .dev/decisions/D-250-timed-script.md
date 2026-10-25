@@ -136,6 +136,6 @@ input demo's script and references are therefore gone, and the fixture project s
 key and pointer steps.
 
 The engine's unit tests run in CI's `docs-and-tools` job, which runs `bun run test`. The branch is
-pushed. This Mac ran the suite on 26 October 2026 while the machine was loaded, and it reported
-4,279 tests across 357 files, with 41 tests skipped. The command-line tool's script tests pass,
-11 of 11.
+pushed. This Mac ran the suite on 26 October 2026 while the machine was loaded. It reported 4,279
+tests across 357 files, with 41 tests skipped. The command-line tool's script tests pass, 11 of
+11.
