@@ -31,6 +31,7 @@ interface PhoneResult {
 	case: string;
 	gpu: string;
 	distance: number;
+	skip: number;
 	mean: number;
 }
 
@@ -38,6 +39,7 @@ interface EffectResult {
 	case: string;
 	gpu: string;
 	off: number;
+	offJitter: number;
 	on: number;
 	offMean: number;
 	onMean: number;
@@ -102,13 +104,19 @@ for (const gpu of GPUS) {
 		await page.goto(`taa-fixes.html?case=phone&gpu=${gpu}`);
 		const result = await pageResult<PhoneResult>(page, 180_000);
 		console.log(
-			`TAAFIX phone on ${result.gpu}: the two paths differ by ${result.distance.toFixed(2)} levels, mean ${result.mean.toFixed(1)}`,
+			`TAAFIX phone on ${result.gpu}: the two paths differ by ${result.distance.toFixed(2)} levels, the mask changes the phone path by ${result.skip.toFixed(2)} levels, mean ${result.mean.toFixed(1)}`,
 		);
 		expect(result.mean, 'the phone path drew nothing').toBeGreaterThan(4);
 		expect(
 			result.distance,
 			`the two paths differ by ${result.distance.toFixed(2)} levels`,
 		).toBeLessThan(8);
+		// The phone path reads neither transparency signal, so the mask's setting draws the same
+		// picture.
+		expect(
+			result.skip,
+			`the mask changed the phone path by ${result.skip.toFixed(2)} levels`,
+		).toBeLessThan(0.5);
 	});
 
 	for (const effect of ['rain', 'fog'] as const) {
@@ -121,6 +129,16 @@ for (const gpu of GPUS) {
 			expect(result.onMean, `the ${effect} drew nothing with the resolve`).toBeGreaterThan(1);
 			expect(Number.isFinite(result.off) && result.off >= 0).toBe(true);
 			expect(Number.isFinite(result.on) && result.on >= 0).toBe(true);
+			// The offset request draws nothing while the resolve is off, so the same scene gives the
+			// same change either way.
+			expect(
+				Math.abs(result.offJitter - result.off),
+				`the offset request alone changed the figure by ${Math.abs(result.offJitter - result.off).toFixed(3)}`,
+			).toBeLessThan(0.1);
+			// Thin rain is a blended draw with no motion target, so the resolve reads its history
+			// from the wrong place and the streaks change more from frame to frame.
+			if (effect === 'rain')
+				expect(result.on, `the resolve lowered the rain's change`).toBeGreaterThan(result.off);
 			// The figures go into the decision record, which says what each effect did.
 			console.log(
 				`TAAFIX ${effect} on ${result.gpu}: frame-to-frame change ${result.off.toFixed(3)} without the resolve, ${result.on.toFixed(3)} with it`,
