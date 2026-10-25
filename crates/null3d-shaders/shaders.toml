@@ -56,6 +56,11 @@
 #              build checks that it builds, with a layer that draws nothing, and writes no module
 #              of it. The shader compiler adds a layer's WGSL after its last line, and builds every
 #              variant with the shader def SKY_LAYER.
+#   sky_layer_maps True for the one shader that draws a sky map's cube faces with a layer. It is
+#              not a template of its own: the shader compiler builds it a second time for each
+#              layer, with the layer's WGSL after its last line and the shader def SKY_LAYER, and
+#              the map's texels then hold the layer that the background shows. The engine's own
+#              build of it draws no layer.
 #
 # Names of shaders, variants and pipelines use letters, digits and underscores and do not start
 # with a digit, because they become TypeScript property names.
@@ -924,12 +929,14 @@ variants.webgl2 = { targets = ["glsl"] }
 [shaders.environment]
 file = "environment.wgsl"
 first_use = true
+sky_layer_maps = true
 pipelines.trace = { vertex = "vs_main", fragment = "fs_trace" }
 pipelines.blur = { vertex = "vs_main", fragment = "fs_blur" }
 pipelines.half = { vertex = "vs_main", fragment = "fs_half" }
 pipelines.prefilter = { vertex = "vs_main", fragment = "fs_prefilter" }
 pipelines.panorama = { vertex = "vs_main", fragment = "fs_panorama" }
 pipelines.sky = { vertex = "vs_main", fragment = "fs_sky" }
+pipelines.feedback = { vertex = "vs_main", fragment = "fs_feedback" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 

@@ -343,8 +343,10 @@ mod ids {
     pub const PICK_BUFFERS: u32 = BLANK_LAST + 1;
     /// The bind group of GPU picking's resolve pass.
     pub const PICK_GROUP: u32 = PICK_BUFFERS + crate::pick::RING as u32;
+    /// The buffers of the sky maps' light captures, one for each read that may wait for the GPU.
+    pub const SKY_LIGHT_BUFFERS: u32 = PICK_GROUP + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = PICK_GROUP + 1;
+    pub const TARGETS: u32 = SKY_LIGHT_BUFFERS + crate::sky_maps::LIGHT_RING as u32;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The uniform buffer of the compute passes' blocks. WebGL2 runs no compute pass, so nothing
@@ -698,6 +700,7 @@ impl CpuCulledRenderer {
             config.cascade_depth,
         );
         settings.share_map_units(sizes::SHARED_MAP_UNITS as usize);
+        settings.place_sky_light_buffers(ids::SKY_LIGHT_BUFFERS);
         Self {
             config,
             settings,
@@ -2788,7 +2791,7 @@ impl FrameBuilder for CpuCulledRenderer {
             settings.meshes(),
             &sways,
             self.shadow.and_then(|shadow| shadow.hero),
-        );
+        )?;
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
         // casters draw into the passes of each.
         let cascades = self.settings.cascade_depth().targets();

@@ -269,16 +269,23 @@ impl BackdropUniform {
 }
 
 /// A layer that an add-on draws over the background, from the template that its compiled WGSL gave
-/// the page (see the shader's `background_layer.wgsl`).
+/// the page (see the shader's `background_layer.wgsl`), and the template of the same WGSL built
+/// into the shader that fills the sky's environment map (`environment.wgsl`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SkyLayer {
     /// The render pipeline template of the layer's shader, which the page sent.
     pub template: u32,
+    /// The template of the same WGSL built into the sky map's shader, or 0 while the page sent
+    /// none. The map's cube faces then hold the layer, so its reflections and its light do too.
+    pub map: u32,
     /// The layer's opacity, from 0 to 1.
     pub opacity: f32,
     /// The share of the sun that the layer hides, from 0 to 1, which dims the disc that the core
     /// sky draws.
     pub sun: f32,
+    /// The seconds between the sky map's captures of a layer that its clock moves, or 0 for a
+    /// layer that stands still and leaves its map to fill when the sky or its values change.
+    pub refresh: f32,
 }
 
 /// The layer's uniform block, laid out as the sky-layer template's `Layer` reads it.
@@ -460,18 +467,17 @@ impl BackgroundPass {
         place: Place,
     ) {
         let live = |texture| settings.textures().is_live(texture);
-        let template = match settings.background().map(|b| b.source) {
-            Some(BackgroundSource::Texture(texture)) if live(texture) => template::BACKGROUND,
-            Some(BackgroundSource::Environment(texture) | BackgroundSource::Cubemap(texture))
-                if live(texture) =>
-            {
-                template::BACKGROUND_CUBE
-            }
-            Some(BackgroundSource::Sky(_)) => template::BACKGROUND_SKY,
-            Some(BackgroundSource::Atmosphere(_)) => template::BACKGROUND_ATMOSPHERE,
-            None if settings.vignetted_background_color().is_some() => template::BACKGROUND_CUBE,
-            _ => 0,
-        };
+        let template =
+            match settings.background().map(|b| b.source) {
+                Some(BackgroundSource::Texture(texture)) if live(texture) => template::BACKGROUND,
+                Some(
+                    BackgroundSource::Environment(texture) | BackgroundSource::Cubemap(texture),
+                ) if live(texture) => template::BACKGROUND_CUBE,
+                Some(BackgroundSource::Sky(_)) => template::BACKGROUND_SKY,
+                Some(BackgroundSource::Atmosphere(_)) => template::BACKGROUND_ATMOSPHERE,
+                None if settings.shaded_background_color().is_some() => template::BACKGROUND_CUBE,
+                _ => 0,
+            };
         self.place = place;
         self.pipeline = if template == 0 {
             0
@@ -564,7 +570,7 @@ impl BackgroundPass {
                 };
                 (shape, cube, BackdropUniform::of(&background, levels))
             }
-            None => match settings.vignetted_background_color() {
+            None => match settings.shaded_background_color() {
                 Some(color) => (Shape::Box, blank, BackdropUniform::color(color)),
                 None => return Ok(()),
             },

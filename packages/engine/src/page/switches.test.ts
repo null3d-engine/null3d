@@ -35,6 +35,7 @@ describe('parseSwitches', () => {
 			queue: undefined,
 			jobs: undefined,
 			join: true,
+			grading: 'display',
 			memoryMiB: undefined,
 			preset: undefined,
 			hold: undefined,
@@ -46,6 +47,13 @@ describe('parseSwitches', () => {
 			glTiming: undefined,
 			replayDelay: undefined,
 		});
+	});
+
+	it('picks where the grading table takes its input with ?grading=', () => {
+		expect(parseSwitches('?grading=hdr').grading).toBe('hdr');
+		expect(parseSwitches('?grading=display').grading).toBe('display');
+		for (const bad of ['HDR', 'light', '', 'hdrx'])
+			expect(parseSwitches(`?grading=${bad}`).grading).toBe('display');
 	});
 
 	it('sizes the software occlusion buffer with ?occlusion-buffer=, and leaves it to the core otherwise', () => {

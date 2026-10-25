@@ -439,11 +439,12 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. 
 
 The galaxy's sketch time is the loop that turns every star and writes its row. It grows with the count, so Low draws 30,000 stars. No phone or tablet has run the five demos yet.
 
-## The aurora demo (M3-E10, 24 October 2026)
+## The aurora demo (M3-E10, 24 October 2026, widened 25 October)
 
 `aurora: A frozen lake at night` shows the sky-layer hook: the aurora example add-on draws one WGSL function over the core sky, under the moon and the stars, in the camera's view, in scene passes and in reflections.
 
-- The layer lights nothing: the sky's environment map and its diffuse light come from the core sky alone, and the demo adds one dim ambient light in the aurora's color so the ice and the snow read under it. A sketch that a layer must light gives it a light of its own, as this one does.
+- The layer reaches both places that a sky is seen. Its WGSL is built into the shader that fills the sky's environment map, so the ice mirrors the curtains, and the map's own texels give the scene its diffuse light, so the ice and the snow read green from above. The demo needs no ambient light of its own for the aurora, and has none.
+- The aurora drifts, so the demo asks the map to capture it twice a second with `refresh: 0.5`. The map's light follows each capture within a couple of frames, which the demo's slow clouds hide.
 - The layer reads the core sky's cloud coverage and density, so the demo keeps the physical sky's thin clouds: they hide the aurora where they thicken, as they hide the stars.
 - The curtains are flat in the sky and have no parallax. The camera stays at eye height over the ice, so the layer reads as a sky and not as a wall.
 - The image test holds the demo at 1.5 seconds, where the aurora's swell has moved the layer by less than a step.
@@ -780,7 +781,7 @@ Creek is a small stream in a grassy valley (M2-EX8). The first phase, on 10 Octo
 
 **The water is the add-on's.** M3-F5's water add-on, `@null3d/water`, took the Creek's river with its view from under the water. The Creek draws its water through the add-on, and its `water.ts` and `underwater.ts` are gone, so the scene keeps no water code of its own. The add-on takes the scene's analytic middle line and half width as its river shape, and its stone foam map (owner, 20 October 2026, [D-173](decisions/D-173-addon-hooks.md); [D-257](decisions/D-257-water-addon.md)).
 
-**The plant code and models are temporary.** The vegetation add-on of M3-V4 to M3-V9 grows Creek's trees, ferns, hostas, shrubs, flowers and grass at first use. It places them over the whole valley by ecological rules and moves them all in one wind field. Once it exists, Creek draws its plants through it (M3-V11). Its Blender plant models, their script and their files of about 3.1 MB are deleted. So is the scene's own plant code: `grass.ts`, `models.ts` and the plant parts of `flora.ts`. The floating leaves and the fireflies stay (owner, 24 October 2026, [D-241](decisions/D-241-vegetation-foundation.md)).
+**The plant code and models are temporary.** The vegetation add-on of M3-V4 to M3-V9 grows Creek's trees, ferns, hostas, shrubs, flowers and grass at first use. It places them over the whole valley by ecological rules and moves them all in one wind field, which the wind add-on provides. Once it exists, Creek draws its plants through it (M3-V11). Its Blender plant models, their script and their files of about 3.1 MB are deleted. So is the scene's own plant code: `grass.ts`, `models.ts` and the plant parts of `flora.ts`. The floating leaves and the fireflies stay (owner, 24 October 2026, [D-241](decisions/D-241-vegetation-foundation.md)).
 
 The choices, and why:
 

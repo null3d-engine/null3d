@@ -112,7 +112,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 ### Which lights get tiles
 
-The quality preset's `shadowTiles` setting caps the tiles, and `shadowTileSize` sets the texels on each side of each tile. [Quality presets](quality-presets.md) lists their values. The atlas grows to as many tiles as the lights that cast shadows can fill, and one more while the sun names a [hero shadow](#a-hero-shadow). It keeps them when a light stops casting, so a light whose shadows turn off and on again does not make the atlas again. It goes when no light casts shadows and no light names a hero.
+The quality preset's `shadowTiles` setting caps the tiles, and `shadowTileSize` sets the texels on each side of each tile. [Quality presets](quality-presets.md) lists their values. The atlas grows to as many tiles as the lights that cast shadows can fill, and one more while the sun names a [hero shadow](#a-hero-shadow). A hero's tile size above `shadowTileSize` sets the size of every layer. It keeps them when a light stops casting, so a light whose shadows turn off and on again does not make the atlas again. It goes when no light casts shadows and no light names a hero.
 
 Each frame, the spot and point lights in the camera's view compete for the tiles. A light's size on screen is its range over its distance from the camera, and the largest lights get tiles first. A point light needs six free tiles, so a smaller spot light can take the last tile that a point light cannot use. A light keeps its tile from frame to frame while it still gets one. The other lights cast no shadows in that frame, and they still light surfaces.
 
@@ -147,6 +147,7 @@ The `shadow` option of `createDirectionalLight` and the light's `setShadow` call
 | `normalBias` | 0.02 | How far each receiving surface moves along its normal before its test, in meters, up to one texel of its cascade, scaled by its angle to the light. |
 | `contactDistance` | 0.3 | How far [contact shadows](#contact-shadows) reach from each surface toward the light, in meters. 0 turns them off for this light. |
 | `hero` | None | The object that gets a [hero shadow](#a-hero-shadow) of its own, or `null` for none. |
+| `heroTileSize` | The preset's `heroTileSize` | Texels on each side of the hero's tile: 1,024, 2,048 or 4,096. A larger tile keeps a larger object's shadow sharp. |
 
 The quality preset gives the default cascade count and map size: the lighter presets draw fewer cascades and smaller maps ([Quality presets](quality-presets.md#the-settings-of-each-preset)). A light that names its own keeps them on every preset. So leave both out, unless your scene needs other values on every device.
 
@@ -375,8 +376,8 @@ const sun = scene.createDirectionalLight({
   castShadows: true,
   shadow: { hero: car },
 });
-// Later, or for another object.
-sun.setHeroShadow(car);
+// Later, or for another object. The second number is the tile size, which this one raises.
+sun.setHeroShadow(car, 4096);
 // Back to the cascades alone.
 sun.setHeroShadow(null);
 ```
@@ -387,9 +388,10 @@ It follows these rules:
 - The object casts shadows (`castShadows: true`) and the light shares its layers. A hero that does not cast draws an empty tile.
 - The box fits the object's bounding sphere. A mesh takes its mesh's bounds; a group has none of its own, so give it a `setBounds` sphere. An object with no bounds draws no hero shadow.
 - The tile is square across the light around the object's bounding sphere, and reaches past it along the light by sixteen times the sphere's radius, where its shadow lands. A surface of the object, or one within that distance below it, reads the tile. Further out, the cascades shadow it.
-- The tile's texels are the atlas's tile size spread over the object's bounds, so a smaller object gets finer shadows. An object 1.8 m across gets about eight times the first cascade's texel density at the default map sizes. A 4.4 m object, such as the demo's car, gets about three times.
+- The tile spreads its texels over the object's bounds. A larger tile gives a larger object finer shadows. `heroTileSize` sets the size. The preset chooses the default: 1,024 on Low, 2,048 on Medium and High, and 4,096 on Ultra. At those defaults the demo's 4.4 m car gets at least four times the texel density of the cascade that holds 10 m, on every preset. A bigger object needs a bigger tile for the same ratio, and a page can name one.
 - The tile comes from `shadowTiles`, the atlas that point and spot lights share. Naming a hero adds a layer to the atlas for it, so the lights keep their tiles; only an atlas already at its limit of 24 layers gives one up, to the light that looks smallest. A hero makes the atlas while no spot or point light casts.
-- The tile draws when the light, the object or a caster that touches its box moves, and rests otherwise. A tile holds 4 bytes per texel: 4 MiB at 1,024 texels on each side.
+- Every layer of a texture array takes the same size, so the tile sets the atlas's size. A tile larger than the preset's `shadowTileSize` makes every tile of the atlas that size, which takes more memory and draws each light's tile with more texels. An atlas above 1 GiB fails the frame with [E1501](../errors/E1501.md), which names the megabytes it would take; name a smaller `heroTileSize` or fewer `shadowTiles`.
+- The tile draws when the light, the object or a caster that touches its box moves, and rests otherwise. A tile holds 4 bytes per texel: 4 MiB at 1,024 texels on each side, 16 MiB at 2,048 and 64 MiB at 4,096.
 - The object's own shadow uses the light's `bias` and `normalBias`, capped by the tile's small texels, so it sits close to its caster.
 - The shadow distance does not cut it, and it does not fade: the light names the object, so its shadow shows wherever the box goes.
 

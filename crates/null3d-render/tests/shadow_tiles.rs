@@ -15,7 +15,7 @@ use null3d_core::scene::{Command, flags};
 use null3d_gpu::drawlist::{NO_TARGET, Op, format, template, view};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
-use null3d_render::frame::{FrameBuilder, NO_MESH};
+use null3d_render::frame::{FrameBuilder, NO_MESH, RecordError};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::light_grid::LightGrid;
 use null3d_render::shadow_tiles::{AtlasShape, MAX_REDRAWS, ShadowTiles, TileSettings};
@@ -180,12 +180,10 @@ fn the_hero_draws_its_own_tile<B: Tiles>(renderer: B) {
         panic!("four objects")
     };
     let (_, sun) = world.add_sun(2);
-    world
-        .light_table
-        .as_mut()
-        .unwrap()
-        .set_hero(sun, hero)
-        .unwrap();
+    let table = world.light_table.as_mut().unwrap();
+    table.set_hero(sun, hero).unwrap();
+    // The hero's tile takes its own size, which the preset sets in a page and the atlas holds.
+    table.set_value(sun, value::HERO_SIZE, 256.0).unwrap();
     let mut mock = MockBackend::default();
     world.frame = 0;
     let first = step(&mut world, &mut mock, true);
@@ -206,8 +204,7 @@ fn the_hero_draws_its_own_tile<B: Tiles>(renderer: B) {
         1 + 2,
         "the hero's tile and two cascades"
     );
-    // Receivers read the tile's layer plus one, and the object's own texel size. The hero's
-    // filter comes from the tiles' block, which this frame writes while no light has a tile.
+    // Receivers read the tile's layer plus one, and the object's own texel size.
     let kernel = world.renderer.tiles().uniform().kernel;
     assert_eq!(kernel, [256.0, 1.0 / 256.0, 3.0, 0.0]);
     let read = world.renderer.tiles().hero_uniform().params;
@@ -253,6 +250,114 @@ fn the_hero_draws_its_own_tile<B: Tiles>(renderer: B) {
     assert_eq!(world.renderer.tiles().drawn(), 0);
     assert_eq!(depth_passes(&off), 2);
     assert_eq!(world.renderer.tiles().hero_uniform().params[3], 0.0);
+}
+
+/// A hero tile finer than the preset's spot and point tiles sets the size of every atlas layer, on
+/// either builder, and a light keeps its layer while the hero changes the size.
+fn a_hero_tile_sizes_every_layer<B: Tiles>(renderer: B) {
+    let mut world = world(renderer, TWO_TILES);
+    let hero = world.objects[0];
+    let (_, sun) = world.add_sun(2);
+    world.add_spot([-3.0, 4.0, 0.0], 6.0);
+    world
+        .light_table
+        .as_mut()
+        .unwrap()
+        .set_hero(sun, hero)
+        .unwrap();
+    world
+        .light_table
+        .as_mut()
+        .unwrap()
+        .set_value(sun, value::HERO_SIZE, 512.0)
+        .unwrap();
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    step(&mut world, &mut mock, true);
+    // One spot tile and the hero's, both as large as the hero's tile asks: an array texture has
+    // one size for every layer.
+    assert_eq!(
+        world.renderer.tiles().shape(),
+        Some(AtlasShape {
+            layers: 2,
+            size: 512
+        })
+    );
+    assert_eq!(world.renderer.tiles().drawn(), 2);
+
+    // The hero's size falls back below the preset's tile size: the preset's size holds.
+    world
+        .light_table
+        .as_mut()
+        .unwrap()
+        .set_value(sun, value::HERO_SIZE, 256.0)
+        .unwrap();
+    step(&mut world, &mut mock, false);
+    assert_eq!(
+        world.renderer.tiles().shape(),
+        Some(AtlasShape {
+            layers: 2,
+            size: 256
+        })
+    );
+}
+
+/// A hero tile that makes the atlas larger than the engine allows fails the frame, on either
+/// builder, with the atlas's bytes, rather than asking a device for a texture it cannot hold.
+fn too_large_an_atlas_fails_the_frame<B: Tiles>(renderer: B) {
+    let settings = TileSettings {
+        tiles: 24,
+        size: 512,
+        point_shadows: false,
+    };
+    let mut world = world(renderer, settings);
+    let hero = world.objects[0];
+    let (_, sun) = world.add_sun(2);
+    let table = world.light_table.as_mut().unwrap();
+    table.set_hero(sun, hero).unwrap();
+    table.set_value(sun, value::HERO_SIZE, 4096.0).unwrap();
+    for k in 0..24 {
+        world.add_spot([k as f32 - 12.0, 4.0, 0.0], 6.0);
+    }
+    world.frame = 1;
+    // The atlas keeps one of its layers for the hero, so 23 light tiles and the hero's tile take
+    // 24 layers of 64 MiB: 1,536 MiB, past the 1 GiB ceiling.
+    match world.try_record(true) {
+        Err(RecordError::ShadowAtlasTooLarge { megabytes }) => assert_eq!(megabytes, 1536),
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn webgpu_too_large_an_atlas_fails_the_frame() {
+    too_large_an_atlas_fails_the_frame(GpuDrivenRenderer::new(Default::default()));
+}
+
+#[test]
+fn webgl2_too_large_an_atlas_fails_the_frame() {
+    for multi_draw in [true, false] {
+        let config = CpuCulledConfig {
+            multi_draw,
+            ..CpuCulledConfig::default()
+        };
+        too_large_an_atlas_fails_the_frame(CpuCulledRenderer::new(config));
+    }
+}
+
+#[test]
+fn webgpu_a_hero_tile_sizes_every_layer() {
+    a_hero_tile_sizes_every_layer(GpuDrivenRenderer::new(Default::default()));
+}
+
+#[test]
+fn webgl2_a_hero_tile_sizes_every_layer() {
+    for multi_draw in [true, false] {
+        let config = CpuCulledConfig {
+            multi_draw,
+            ..CpuCulledConfig::default()
+        };
+        a_hero_tile_sizes_every_layer(CpuCulledRenderer::new(config));
+    }
 }
 
 #[test]

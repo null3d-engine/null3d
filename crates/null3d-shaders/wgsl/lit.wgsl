@@ -129,6 +129,7 @@ enable draw_index;
 #import null3d::lighting::{direct_light, indirect_diffuse}
 #endif
 #import null3d::builtins::{camera, fill_builtins, frame, object}
+#import null3d::color::srgb_to_linear
 #import null3d::globals::{Material}
 #ifdef SCENE_DEPTH
 #import null3d::depth::{linear_depth, orthographic_depth_to_view_z}
@@ -205,6 +206,7 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
 #ifdef MAPS
 #import null3d::mesh::{map_layer, map_ready, map_unit, straight_texel, world_direction}
+#import null3d::mesh::{material_light_map_direction, material_light_map_uv}
 #else ifdef TRANSMISSION
 #import null3d::mesh::{world_direction}
 #else ifdef DECAL
@@ -224,7 +226,7 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::refraction::{transmitted_light}
 #ifdef TONE_MAP
 #import null3d::fog::{fog_factor}
-#import null3d::tonemap::{encode, tone_map, vignette}
+#import null3d::tonemap::{encode, graded_light, tone_map, vignette}
 #endif
 #endif
 #ifdef TRANSLUCENCY
@@ -279,8 +281,19 @@ const BUMP_MAP: u32 = 32u;
 const HEIGHT_NORMALS: u32 = 64u;
 #endif
 
+/// The bit of a material's flags that says its light map holds RGBM texels.
+const LIGHT_MAP_RGBM: u32 = 16777216u;
+
 /// The row of the material that the pixel shows, which the fragment shader reads once.
 var<private> material_row: Material;
+
+#ifdef MAPS
+/// The scale of the light map's texture coordinates along u and v, then their offset along u and
+/// v, which the fragment shader reads once.
+var<private> light_map_uv: vec4f;
+/// The layer of the light map's direction map, or a negative value without one.
+var<private> light_map_direction: f32;
+#endif
 
 #ifdef ALPHA_HASH
 /// The pixel's position in the mesh's own space, where the alpha hash finds its pattern.
@@ -1086,6 +1099,24 @@ struct LobeInput {
 #endif
 
 #ifdef MAPS
+/// The light map's coordinates through the material's light map transform, with their
+/// derivatives: a bake places a light map on a mesh with its own scale and offset, apart from the
+/// other maps'.
+fn light_map_at(at: MapUv) -> MapUv {
+    let scale = light_map_uv.xy;
+    return MapUv(at.uv * scale + light_map_uv.zw, at.dx * scale, at.dy * scale);
+}
+
+/// The light map's texel of layer `layer` at `at`, decoded from RGBM where the material says so:
+/// each color is multiplied by the texel's alpha times 8, and the sRGB transfer turns it linear.
+fn light_map_texel(layer: f32, at: MapUv) -> vec4f {
+    let texel = light_texel(layer, at);
+    if (u32(material_row.strengths.z) & LIGHT_MAP_RGBM) != 0u {
+        return vec4f(srgb_to_linear(texel.rgb * texel.a * 8.0), 1.0);
+    }
+    return texel;
+}
+
 /// The surface with the material's texture maps: each map that has an image multiplies or
 /// replaces the values that it holds, and the normal map bends the normal last.
 fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
@@ -1185,7 +1216,7 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     }
 #else
     if map_ready(m.more_maps.y) {
-        let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
+        let texel = light_map_texel(m.more_maps.y, light_map_at(map_uv(flags, 5u, first, second)));
         s.irradiance = texel.rgb * m.strengths.y;
     }
     // A material that lets light through a thin surface keeps its diffuse transmission maps in
@@ -1266,6 +1297,20 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     }
 #endif
 #endif
+    // A light map that stores its light's direction weights its light by how far the shaded normal
+    // turns toward that direction from the mesh's own normal, so a normal map's relief shows in
+    // the baked light. A light map without a direction lights the surface evenly. The weight is
+    // the surface's own half-Lambert term against the bake's, so a surface that faces as the bake
+    // did keeps its light; the bake's term is clamped so a surface that faces away from the light
+    // does not blow up.
+    if map_ready(light_map_direction) {
+        let at = light_map_at(map_uv(flags, 5u, first, second));
+        let direction = normalize(light_texel(light_map_direction, at).rgb * 2.0 - 1.0);
+        let toward = dot(s.normal, direction);
+        let baked = dot(input.normal, direction);
+        let weight = (0.5 + 0.5 * toward) / max(0.5 + 0.5 * baked, 0.25);
+        s.irradiance *= min(weight, 2.5);
+    }
     return s;
 }
 
@@ -2102,7 +2147,11 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let shade = vignette(pixel.xy, engine_frame.target_size.xy, engine_frame.vignette);
     let shaded = fogged(layered, input.relativePosition, material_row) * shade;
     let keeps = keeps_display_color(material_row);
-    let toned = select(tone_map(shaded, engine_frame.output), saturate(shaded), keeps);
+    let toned = select(
+        tone_map(graded_light(shaded, engine_frame.output), engine_frame.output),
+        saturate(shaded),
+        keeps,
+    );
 #ifdef COAT_SHEEN
     let display = toned + through * share * (1.0 - fog) * coat_transmittance(input.viewDirection);
 #else
@@ -2151,6 +2200,16 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     return pick_color(in.key);
 #else
     material_row = material_of(in.material);
+#ifdef MAPS
+    // Only a light-mapped material reads the light map's transform and direction layer.
+    if map_ready(material_row.more_maps.y) {
+        light_map_uv = material_light_map_uv(in.material);
+        light_map_direction = material_light_map_direction(in.material);
+    } else {
+        light_map_uv = vec4f(1.0, 1.0, 0.0, 0.0);
+        light_map_direction = -1.0;
+    }
+#endif
 #ifdef TRANSMISSION
     transmission_row = material_transmission(in.material);
     layer_maps_kinds = layer_maps_kind_of(in.material);
@@ -2332,6 +2391,16 @@ fn decal_ramp(low: f32, high: f32, x: f32) -> f32 {
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4f {
     material_row = material_of(in.material);
+#ifdef MAPS
+    // Only a light-mapped material reads the light map's transform and direction layer.
+    if map_ready(material_row.more_maps.y) {
+        light_map_uv = material_light_map_uv(in.material);
+        light_map_direction = material_light_map_direction(in.material);
+    } else {
+        light_map_uv = vec4f(1.0, 1.0, 0.0, 0.0);
+        light_map_direction = -1.0;
+    }
+#endif
     // The derivatives come first, while every pixel of the quad runs.
     let step_x = dpdx(in.relative);
     let step_y = dpdy(in.relative);

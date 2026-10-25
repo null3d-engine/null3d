@@ -1,6 +1,6 @@
 # D-241: A vegetation foundation add-on, with GPU grass, generated plants and wind on custom materials
 
-Status: decided by the owner on 24 October 2026. Not built yet: planned as M3-V1 to M3-V12. Open: which wind method trees use by default, per vertex or by branch poses, which M3-V10 measures for the owner's ruling. Date: 2026-10-24.
+Status: decided by the owner on 24 October 2026. Not built yet: planned as M3-V1 to M3-V12. Open: which wind method trees use by default, per vertex or by branch poses, which M3-V10 measures for the owner's ruling. On 25 October 2026 the wind field moved to an add-on of its own, which the plants read (see the addendum on fluid wind). Date: 2026-10-24.
 
 Summary: Vegetation becomes the eleventh foundation add-on. It grows trees, shrubs, ferns, flowers and grass from a few numbers per species at first use, and places them by ecological rules. It draws grass on the GPU, moves every plant in one wind field and hands far trees to impostors. Creek is its first user and drops its Blender plant models, about 3.1 MB. Wind stays in custom materials' vertex offsets. Custom materials gain the standard material's alpha to coverage, alpha hash, level and band fades and cut-out shadows.
 
@@ -325,3 +325,108 @@ atlas, at 12, 24 and 48 metres from one camera, cover the same share of their ow
 **Owed.** The paint's time on each device, which the device record keeps, and the owner's judgement
 of the generated leaves beside Creek's painted textures, which the `vegetation-versus-creek` picture
 shows side by side.
+
+## Addendum: the leaf cells, redrawn so that each holds leaves
+
+The first atlas passed its coverage test and still looked wrong. Each cell held one smooth outline
+repeated along a twig, and the leaves of a cell merged into a slab. The cells' colour also sat near
+white, so a crown read as a pale tiled pattern. Creek's painted oak holds many leaves that differ in
+tone, shape and edge. That gap is what M3-V5's judgement asked about.
+
+**The fault.** The painter never multiplied a leaf's half width by the leaf's aspect. Every leaf
+painted between three and twenty times too wide for the shape its family described. A single cell
+still looked like a leaf, because a leaf that is too wide is still a leaf. A crown did not: its cards
+merged into slabs, and no outline could be seen. Each cell's leaves covered each other into one blob,
+whatever the family drew. The aspect now scales the half width, so every silhouette draws at the size
+that its shape means. Whoever changes a painter should check it on a repeated card as well as on one
+cell, since one cell hides this fault. A unit test now holds each cluster cell's cover between 0.35
+and 0.8 of its square, which a painter of too-wide leaves cannot reach.
+
+**What a cell holds now.** A cluster cell carries 20 to 24 leaves, so a card presents leaves over
+most of its square. A family sets each leaf's outline. That outline has a width profile along
+the midrib and teeth along the edges. A family may also give the lobes of an oak or a hosta, and the
+veins. Each leaf of a card then draws its own numbers from its seed. These cover its profile and
+aspect, and its tooth count and depth. They also cover its lobe depth, vein count and strength, a bow
+of its midrib and a narrower side. Its brightness and its lean to yellow come from them too. One leaf
+in five has a round bite out of an edge, so a crown never reads as a pattern. The cells keep their
+eight kinds. Four are broadleaf sprays: an oak's lobes, a beech's fine teeth, a birch's small teeth
+and a willow's narrow blade. The fifth is a conifer spray of needle pairs, and the sixth a fern's
+frond of lobed pinnae. The seventh is a clump of eleven grass blades. The eighth is a broad hosta
+leaf, with a smaller one behind it.
+
+**The colour map.** A leaf runs from darker at its base to lighter at its tip. A slow blotch mottles
+its blade, its veins take a line of shade or light, and its rim darkens by half. That rim lets two
+overlapping leaves read apart, as a painted card's dark edges do. A leaf also darkens where another
+leaf lies over it, as a pile of leaves shades itself. The channels are scaled so that the brightest
+one stays under white. A warm leaf then shows its hue instead of clipping to a pale pink or blue.
+Across a cell, the green channel spreads with a standard deviation of 22 to 26 of 255. The darkest
+leaf lies near 128.
+
+**What takes no leaf.** A texel that no leaf covers takes its cell's mean leaf colour and mean height.
+Mip levels average colour without weighting by alpha. A background of its own would therefore pull a
+distant crown's hue toward it. A height of its own would bend the normal at every silhouette.
+
+**A card's fill is what closes a crown.** The first atlas filled 0.34 of a card's square. The
+`vegetation-versus-creek` picture showed the result: cards of leaf with sky between them, so a crown
+read as several bunches rather than one crown. The card count was not the cause. The oak generator
+places 960 cards of 0.8 by 0.72 metres for the crown. Creek's painted oak holds about 4,550 leaf
+quads over a crown of 9 by 7 by 10 metres. In leaf area the generated crown already carried more
+than the painted one. At a fill of 0.46, with 20 to 24 leaves of their own size in each cell, the
+same crown closes. A fill of 0.62 closes it no further, and it cost the leaves their own shapes.
+Growing every leaf until it neared the card's rim made each card read as one huge leaf, which is the
+same fault at another scale. So the fill comes from more leaves, never from longer ones.
+
+**The coverage property holds.** A cluster cell now covers 0.45 to 0.48 of its square, against 0.34
+before. The coverage test reads 0.490, 0.496 and 0.498 of a card's box at 12, 24 and 48 metres, on
+all three GPU paths. A card therefore keeps its share as it shrinks, as it did before.
+
+**The bake's time.** `paintLeaf` takes about 230 ms, and `paintBark` about 160 ms, on an Apple M5 Max
+laptop under load. The figures were about 300 ms and 136 ms before the change. The leaf's cost fell
+because each leaf now rejects a texel outside a box around its outline, before working out the outline.
+
+**What the pictures show.** The `vegetation-atlas` picture draws the change plainly. Its leaf card was
+one large leaf with a midrib, and it is now a twig of lobed leaves that fills its square. The `vegetation-versus-creek`
+picture shows the generated oak beside Creek's painted one, and the leaves there now have outlines,
+veins and tones of their own. That picture still shows a gap: the generated crown is paler and flatter
+than Creek's. The atlas is a map that multiplies a species' colour. The crown is lit by one uniform
+light with no crown occlusion, so the leaves differ by their own paint alone. Creek's texture carries
+painted shadowing as well. The rest of that gap belongs to M3-V7, not to the atlas. That task adds the
+leaf material with crown-bent normals, a tint for each tree and crown occlusion.
+
+## Addendum: fluid wind is an add-on of its own, 25 October 2026
+
+The owner asked for the M3 plan to measure proper fluid-simulation wind, settable by preset and
+adjusted by the governor. The first ruling that day was "Keep it in the vegetation add-on, not its
+own". The owner then asked whether the wind should be an add-on of its own, and approved the move
+later the same day. The reasons:
+
+- Plants are not the wind's only readers. The plan also gives the field to dust, smoke and rain in
+  the particles add-on (M3-V17), and to flags and water surfaces, which M3-V14 times. The battle
+  demo's flags read it too, because M3-V12 moves each demo's own wind formula to the field. So do
+  Creek's floating leaves.
+- It passes [D-173](D-173-addon-hooks.md) ruling 4's test, because other add-ons build on it.
+- A page pays nothing for a feature that it does not use ([D-54](D-54-addon-modules.md)). A game
+  with flags and smoke but no plants must not need the vegetation add-on to get wind.
+- No wind code exists yet, so the move changes only the plan and these records. After the API
+  freezes at 0.3.0, in M4, the same move would break pages.
+
+The cost is one more package to publish, version and document. Vegetation also becomes the first
+add-on that depends on another add-on. D-173's addendum of the same day gives the rule for that.
+
+| The wind add-on, working name `@null3d/wind` | The vegetation add-on |
+| --- | --- |
+| The analytic field of place and time. It is the whole field on the lowest tier, and the far field and the grid's inflow on every tier | Wind per vertex (M3-V7), and branch poses with their springs (M3-V10) |
+| The grid that follows the camera, the solver and the fixed step | The grass's compute pass, which reads the field (M3-V8) |
+| The base wind, gusts and pushes at a point | The wind bytes in each plant's vertex colors, and the branch records |
+| The one sampling function, in the wind add-on's own WGSL namespace (M3-D8) | The scatter's grid of canopy cover, which it gives the wind as a drag input |
+| Its feature's settings, budgets, governor steps and overlay row. Its budget is its own, not a share of the vegetation add-on's | The falling and drifting leaves, which ride the field (M3-V17) |
+
+- Vegetation lists the wind add-on as a dependency, so one install still gives plants that move.
+- Other readers take a plain input in the plan: the wind texture and its box. Examples are the
+  particles add-on (M3-V17), water ripples and a flag. The page connects the two. A sample
+  is one texture read through the box, so they need no code from the wind add-on and no dependency
+  on it. M3-V14 times that read.
+- The engine changes stay engine hooks that any add-on may use, such as M3-V13's compute passes that
+  keep their state between frames.
+- The task IDs stay. M3-V15 builds the wind add-on, and M3-V16 declares the wind's feature in it.
+  M3-V13, M3-V14 and M3-V17 keep their scope.

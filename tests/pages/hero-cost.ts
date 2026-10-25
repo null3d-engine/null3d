@@ -13,12 +13,13 @@ import { run } from './lib/result';
 const params = new URLSearchParams(location.search);
 const moving = params.has('moving');
 const scale = params.get('scale') ?? '1';
+const tile = params.get('tile') ?? '';
 
 run('hero-cost', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL('./sketches/hero-cost-sketch.ts', import.meta.url);
-	sketch.search = `?fixed&scale=${scale}${moving ? '&moving' : ''}`;
+	sketch.search = `?fixed&scale=${scale}${moving ? '&moving' : ''}${tile ? `&tile=${tile}` : ''}`;
 	const engine = await createEngine({ canvas, sketch });
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
@@ -48,6 +49,7 @@ run('hero-cost', async () => {
 	return {
 		tier: engine.capabilities.tier,
 		preset,
+		tile: tile ? Number(tile) : 0,
 		moving,
 		scale: Number(scale),
 		window: [innerWidth, innerHeight],

@@ -73,7 +73,7 @@ use null3d_render::meshes::{MeshError, MeshSlot, UpdateError};
 use null3d_render::mirror::Mirror;
 use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
 use null3d_render::outline::Outline;
-use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
+use null3d_render::output::{Antialias, GradeUniform, Output, SceneColor, ToneMapping};
 use null3d_render::patches::{PatchError, PatchTree};
 use null3d_render::physical_sky::Atmosphere;
 use null3d_render::pipelines::DepthBias;
@@ -129,6 +129,9 @@ extern "C" {
 
 /// Upload ranges one frame can list before it uploads everything instead.
 const UPLOAD_RANGES: u32 = 4096;
+
+/// The frame that a pick's answer names when no pick has landed yet.
+const NO_PICK_FRAME: u32 = u32::MAX;
 
 /// The objects the scene has room for at the start when the page gives no expected count: few, so a
 /// small scene keeps small tables. A growth from a size this small takes a small fraction of a
@@ -192,6 +195,8 @@ mod render_detail {
     pub const BAD_LEVELS: u32 = 15;
     /// A light probe grid's texture that is not a 3D texture.
     pub const NOT_A_VOLUME: u32 = 17;
+    /// The second detail is the bytes that the shadow atlas would take, in mebibytes.
+    pub const SHADOW_ATLAS_TOO_LARGE: u32 = 18;
 }
 
 struct Engine {
@@ -246,6 +251,9 @@ struct Engine {
     /// True when that frame's id pass drew every source of the scene. The sketch reads it to decide
     /// whether a landed answer is the GPU's or needs a ray, after later frames moved the layout on.
     pick_covered: bool,
+    /// The engine frame that drew the pick whose answer landed, or `NO_PICK_FRAME`. The sketch casts
+    /// a ray from that frame's camera to find the texture coordinates of the picked pixel.
+    pick_frame: u32,
 
     /// The world matrix that `worldMatrix` copies last, which TypeScript reads in place, so a read
     /// passes no array across and allocates nothing.
@@ -292,6 +300,10 @@ const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
         16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
         0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.1, 0.9, 0.5,
         3.0, 1.0, -4.0, 4.0, 0.0, 1.0, 100.0, 0.5, 0.5, 0.0,
+        // The grading controls: unit white balance factors and saturation, no lift, unit gamma
+        // and gain, and no split toning.
+        1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
     ];
     let mut level = 0;
     while level < bloom::LEVELS {
@@ -315,6 +327,11 @@ impl Engine {
 
     /// Three post-processing values from `place` on.
     fn post_values3(&self, place: u32) -> [f32; 3] {
+        std::array::from_fn(|k| self.post_value(place + k as u32))
+    }
+
+    /// Four post-processing values from `place` on.
+    fn post_values4(&self, place: u32) -> [f32; 4] {
         std::array::from_fn(|k| self.post_value(place + k as u32))
     }
 }
@@ -398,6 +415,9 @@ fn record_failure(error: RecordError) -> u32 {
         }
         RecordError::SkinnedPagesFull { limit } => (render_detail::SKINNED_PAGES_FULL, limit),
         RecordError::UploadsFull => (render_detail::UPLOADS_FULL, 0),
+        RecordError::ShadowAtlasTooLarge { megabytes } => {
+            (render_detail::SHADOW_ATLAS_TOO_LARGE, megabytes)
+        }
         RecordError::OutOfMemory { bytes } => {
             return core_failure(CoreError::OutOfMemory { bytes });
         }
@@ -637,6 +657,7 @@ pub fn init_engine(
         pick_results: Box::new([0; null3d_render::pick::RING * null3d_render::pick::RESULT_WORDS]),
         pick_recorded: false,
         pick_covered: false,
+        pick_frame: NO_PICK_FRAME,
 
         post_values: Box::new(POST_DEFAULTS),
         environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
@@ -1153,6 +1174,7 @@ pub fn record_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32)
             // The answer stays until the next read: the sketch may poll frames after the one that
             // copied it, and those frames would otherwise overwrite it.
             e.pick_covered = pick_covered;
+            e.pick_frame = frame;
         }
         match recorded {
             Ok(rebuilt) => {
@@ -2504,12 +2526,15 @@ pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) 
     // two slots of their own.
     let raw = slot;
     let height = raw == map_slot::BUMP || raw == map_slot::DISPLACEMENT;
+    let direction = raw == map_slot::LIGHT_MAP_DIRECTION;
     let slot = raw as usize;
     let layer = slot
         .checked_sub(MapSlot::ALL.len())
         .map(|k| LayerMap::ALL.get(k));
     let (slot, layer) = if height {
         (MapSlot::Normal, None)
+    } else if direction {
+        (MapSlot::Light, None)
     } else {
         match (MapSlot::ALL.get(slot), layer) {
             (Some(&slot), _) => (slot, None),
@@ -2529,6 +2554,7 @@ pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) 
         let set = match raw {
             map_slot::BUMP => table.set_bump_map(id, map, second_uv),
             map_slot::DISPLACEMENT => table.set_displacement_map(id, map, second_uv),
+            map_slot::LIGHT_MAP_DIRECTION => table.set_light_map_direction(id, map),
             _ => match layer {
                 Some(layer) => table.set_layer_map(id, layer, map, second_uv),
                 None => table.set_map(id, slot, map, second_uv),
@@ -4324,16 +4350,37 @@ pub fn set_lut(texture: u32) -> u32 {
 
 /// Grades the canvas color with the built-in grading table in 3D texture `texture`, or with none
 /// when `texture` is 0, from the next frame on. A job worker baked the sketch's grading values into
-/// the table's texels. The TypeScript API checks the values. Fails for a texture that is not live.
+/// the table's texels. `hdr` says the table holds the grade over high dynamic range light, which
+/// the pass reads before the tone curve. The TypeScript API checks the values. Fails for a texture
+/// that is not live.
 #[wasm_bindgen(js_name = setGrade)]
-pub fn set_grade(texture: u32) -> u32 {
+pub fn set_grade(texture: u32, hdr: bool) -> u32 {
     with_engine(|e| {
         let settings = e.renderer.settings_mut();
         let texture = match texture_or_none(settings, texture) {
             Ok(texture) => texture,
             Err(failure) => return failure,
         };
-        settings.set_grade((!texture.is_none()).then_some(texture));
+        settings.set_grade((!texture.is_none()).then_some(texture), hdr);
+        0
+    })
+}
+
+/// Sets the grading controls that the 8-bit path's shaders apply before their tone curve, from the
+/// post-processing values, or clears them with `on` false, from the next frame on. The TypeScript
+/// API checks the values.
+#[wasm_bindgen(js_name = setGradeValues)]
+pub fn set_grade_values(on: bool) -> u32 {
+    with_engine(|e| {
+        let values = on.then(|| GradeUniform {
+            white_balance: e.post_values4(constants::post_value::GRADE_WHITE_BALANCE),
+            lift: e.post_values4(constants::post_value::GRADE_LIFT),
+            gamma: e.post_values4(constants::post_value::GRADE_GAMMA),
+            gain: e.post_values4(constants::post_value::GRADE_GAIN),
+            shadows: e.post_values4(constants::post_value::GRADE_SHADOWS),
+            highlights: e.post_values4(constants::post_value::GRADE_HIGHLIGHTS),
+        });
+        e.renderer.settings_mut().set_grade_values(values);
         0
     })
 }
@@ -4569,17 +4616,28 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
 }
 
 /// Draws layer `template` over the background from the next frame on, with its share of the sun
-/// that it hides and its opacity, or removes the layer for `template` 0. The TypeScript API checks
-/// the values.
+/// that it hides, its opacity, and the seconds `refresh` between the captures that the sky's
+/// environment map makes of it. `map` is the same WGSL built into the shader that fills that map's
+/// cube faces, so its reflections and the light taken from it hold the layer too. Removes the layer
+/// for `template` 0. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setSkyLayer)]
-pub fn set_sky_layer(template: u32, sun: f32, opacity: f32) -> u32 {
+pub fn set_sky_layer(
+    template: u32,
+    map: u32,
+    sun: f32,
+    opacity: f32,
+    refresh: f32,
+    slot: u32,
+) -> u32 {
     with_engine(|e| {
         let layer = (template != 0).then_some(SkyLayer {
             template,
+            map,
             opacity: opacity.clamp(0.0, 1.0),
             sun: sun.clamp(0.0, 1.0),
+            refresh: refresh.max(0.0),
         });
-        e.renderer.settings_mut().set_sky_layer(layer);
+        e.renderer.settings_mut().set_sky_layer(layer, slot);
         0
     })
 }
@@ -4652,9 +4710,11 @@ pub fn set_physical_sky(on: bool) -> u32 {
 // comes to rest fills once more, exactly. Before the scene's first sky background, the maps show
 // the sky of the background's values, which TypeScript writes first. Fails for a texture that is
 // not live.
-/// Makes a generated cube texture a map of the scene's sky.
+/// Makes a generated cube texture a map of the scene's sky. `capture` is the stage at which the map
+/// captures the light that a sky layer over it gives, which the page places a stage or two before
+/// the last, so that the read lands before the levels that the last stage publishes.
 #[wasm_bindgen(js_name = addSkyMap)]
-pub fn add_sky_map(texture: u32, stages: u32) -> u32 {
+pub fn add_sky_map(texture: u32, stages: u32, capture: u32) -> u32 {
     with_engine(|e| {
         let sky = sky_of(&e.background_values[..]);
         let settings = e.renderer.settings_mut();
@@ -4669,7 +4729,7 @@ pub fn add_sky_map(texture: u32, stages: u32) -> u32 {
         if maps.sky().is_none() {
             maps.set_sky(MapSky::analytic(sky));
         }
-        maps.add(texture, stages);
+        maps.add(texture, stages, capture);
         0
     })
 }
@@ -5614,6 +5674,15 @@ pub fn pick_result_address() -> u32 {
 #[wasm_bindgen(js_name = pickCoversScene)]
 pub fn pick_covers_scene() -> u32 {
     value_with_engine(|e| Ok(u32::from(e.pick_covered)))
+}
+
+/// The engine frame that recorded the landed pick, or -1 when no pick has landed. A ray from that
+/// frame's camera finds the texture coordinates of the pixel that the pick tested.
+#[wasm_bindgen(js_name = pickFrame)]
+pub fn pick_frame() -> i32 {
+    // The stored value names no frame with the largest unsigned number, which reads as -1 here and
+    // matches the frame numbers that rung before the first. Engine frames never reach that number.
+    value_with_engine(|e| Ok(e.pick_frame)) as i32
 }
 
 /// The object or batch id that a pick's source key names, or 0 for a key that names nothing, such

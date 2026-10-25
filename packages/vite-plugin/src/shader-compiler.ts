@@ -188,10 +188,12 @@ export type EffectResult =
 	  }
 	| { readonly ok: false; readonly problems: readonly ShaderProblem[] };
 
-/** A sky layer, built into every variant of the engine's sky-layer template. */
+/** A sky layer, built into every variant of the engine's two sky-layer templates. */
 export interface SkyLayerBuild {
-	/** The template's variants with the WGSL, by name. */
+	/** The sky-layer template's variants with the WGSL, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
+	/** The sky-map shader's variants with the WGSL, by name. */
+	readonly map: Readonly<Record<string, ShaderVariant>>;
 }
 
 /** The result of a sky layer's compile, with its warnings when it succeeds. */

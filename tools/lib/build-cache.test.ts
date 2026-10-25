@@ -24,6 +24,7 @@ import {
 	HEAVY_SLOT_ENV,
 	hashFiles,
 	hashOf,
+	liveLockHolder,
 	pruneCache,
 	runByLine,
 	runCargo,
@@ -218,6 +219,32 @@ describe('pruneCache', () => {
 			entry(folder, 'other', 600, old);
 			// The touched entry is the newer one now, so the other goes first.
 			expect(pruneCache(folder, 1024)).toEqual(['other']);
+		});
+	});
+});
+
+describe('liveLockHolder', () => {
+	it('names a live holder, and nobody for a free lock or one whose holder has stopped', () => {
+		withFolder((folder) => {
+			const lock = join(folder, 'build.lock');
+			expect(liveLockHolder(lock)).toBeUndefined();
+			const release = acquireLock(lock);
+			expect(liveLockHolder(lock)).toBe(process.pid);
+			release();
+			mkdirSync(lock);
+			writeFileSync(join(lock, 'pid'), '999999999');
+			expect(liveLockHolder(lock)).toBeUndefined();
+		});
+	});
+
+	it('counts a recent lock that names no process as held, and an old one as left', () => {
+		withFolder((folder) => {
+			const lock = join(folder, 'build.lock');
+			mkdirSync(lock);
+			expect(liveLockHolder(lock)).toBe(0);
+			const old = new Date(Date.now() - 5 * 60 * 1000);
+			utimesSync(lock, old, old);
+			expect(liveLockHolder(lock)).toBeUndefined();
 		});
 	});
 });

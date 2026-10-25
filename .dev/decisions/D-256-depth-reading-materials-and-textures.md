@@ -71,6 +71,16 @@ maps' group, which already varies per material, so the draw path is untouched.
 The cost: a material that reads the depth takes at most seven textures. That is a limit the engine
 can name and check, and the water add-on that needs the feature wants two.
 
+Bind groups bound a second limit that the counts above did not show. WebGPU gives a pipeline four by
+default. A custom material with textures that reads the copy binds the frame's, the maps', the
+copy's and, when the mesh skins in the vertex shader, the joint texture's: four. The instance-index
+group of a build that reads its instances from storage buffers would be the fifth, but the renderer
+adds it only to the engine's own mesh templates (`DrawKey::reads_index` in
+`crates/null3d-render/src/pipelines.rs`), and the material compiler leaves that build out of a
+custom material, so no build of a custom material needs a fifth group. On WebGL2 the view binds the
+copy once for its whole pass, so a pass that draws a depth-reading material beside a mesh template
+carries the copy's layout at that group too; `drawlist::groups` records it there.
+
 ## Consequences
 
 - **Code:** `MATERIAL_MAPS_SCENE` in `crates/null3d-gpu/src/drawlist.rs` with its layout in

@@ -271,6 +271,11 @@ export type Check =
 	/** The sky refresh page: the frames from a sun move until the sky's light follows it. */
 	| { kind: 'sky-refresh'; tier: Tier }
 	/**
+	 * The sky layer light page: a green layer's arrival in the reflections and in the light that the
+	 * sky's map gives the scene, and its departure.
+	 */
+	| { kind: 'sky-layer'; tier: Tier }
+	/**
 	 * The room light page: an environment asked for during play, the built-in room or an HDR file,
 	 * whose every frame must show its light; it times the load.
 	 */
@@ -1425,6 +1430,31 @@ export function alphaMaskPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * A canvas screen's refresh cost on each GPU path: a 1024 x 1024 OffscreenCanvas whose 256 x 256
+ * rectangle refreshes at 30 Hz. The page times the refresh in the sketch and reports the frame's
+ * GPU and CPU time with refreshes and without them. D-204 records the figures.
+ */
+export function canvasCostPlan(): PlanItem<Check>[] {
+	// The measured windows double up to half a minute on a slow GPU, and a second window then draws
+	// the same frames without the refresh.
+	const timeoutSeconds = 120;
+	return [
+		pageItem(
+			'canvas-texture-webgpu',
+			'canvas-texture',
+			{ kind: 'probe', tier: 'webgpu' },
+			{ switches: ['gpu=webgpu', 'preset=high'], timeoutSeconds },
+		),
+		pageItem(
+			'canvas-texture-webgl2',
+			'canvas-texture',
+			{ kind: 'probe', tier: 'webgl2' },
+			{ switches: ['gpu=webgl2', 'preset=high'], timeoutSeconds },
+		),
+	];
+}
+
+/**
  * What a tree of cluster patches costs: the heightfield of the cluster-cost page, timed at three
  * camera distances on one GPU path, so the figures show both the saving that coarse patches make
  * and the cost of the pass that picks them. D-213 records the results.
@@ -1697,6 +1727,14 @@ export function skyPlan(): PlanItem<Check>[] {
 				'sky-refresh',
 				{ kind: 'sky-refresh', tier },
 				{ switches: [`gpu=${path}`, 'fps=20'], timeoutSeconds: 90 },
+			),
+		),
+		...SKY_PATHS.map(([path, tier]) =>
+			pageItem(
+				`sky-layer-light-${path}`,
+				'sky-layer-light',
+				{ kind: 'sky-layer', tier },
+				{ switches: [`gpu=${path}`, 'fps=20'], timeoutSeconds: 120 },
 			),
 		),
 	];
@@ -2218,6 +2256,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	vegetation: vegetationPlan,
 	'tree-generation': treeGenerationPlan,
 	'vegetation-scatter': vegetationScatterPlan,
+	'canvas-cost': canvasCostPlan,
 	'webgpu-stall': webgpuStallPlan,
 	reflection: reflectionPlan,
 	occlusion: occlusionPlan,
@@ -2386,8 +2425,44 @@ interface SkyRefreshResult {
 	frames: { since: number; mirror: number[]; rough: number[] }[];
 }
 
+/** The captures of the sky layer light page, by the stretch that they belong to. */
+interface SkyLayerResult {
+	frames: { stretch: number; frame: number; mirror: number[]; rough: number[] }[];
+}
+
 /** How far a color may stray from the new sky's, in levels of 255, to count as the new light. */
 const SKY_NEAR = 4;
+
+/** How green a color of the sky layer light page is: its green above red and blue, in levels of 255. */
+const skyLayerGreen = (color: number[]): number =>
+	(color[1] as number) - ((color[0] as number) + (color[2] as number)) / 2;
+
+/** The change of the sky layer light page that counts as the layer's, in levels of 255. */
+const SKY_LAYER_CHANGE = 15;
+
+/**
+ * The sky layer light page's two places, the reflections and the light the map gives the scene: the
+ * green that each gained from the layer, and the frames between the two taking it.
+ */
+function skyLayerReport(result: SkyLayerResult): { line: string; problems: string[] } {
+	const place = (stretch: number, at: 'mirror' | 'rough') => {
+		const frames = result.frames.filter((frame) => frame.stretch === stretch).slice(-4);
+		const greens = frames.map((frame) => skyLayerGreen(frame[at]));
+		if (greens.length === 0) return Number.NaN;
+		return greens.reduce((sum, value) => sum + value, 0) / greens.length;
+	};
+	const gained = {
+		mirror: place(1, 'mirror') - place(0, 'mirror'),
+		rough: place(1, 'rough') - place(0, 'rough'),
+	};
+	const problems = (['mirror', 'rough'] as const)
+		.filter((at) => !(gained[at] > SKY_LAYER_CHANGE))
+		.map((at) => `the ${at} gained ${gained[at].toFixed(1)} of the layer's green`);
+	return {
+		line: `the layer's green reached the reflections by ${gained.mirror.toFixed(1)} and the light by ${gained.rough.toFixed(1)}`,
+		problems,
+	};
+}
 
 /**
  * The frames from a sun move until both spheres show the new sky's light: the first capture after
@@ -3144,6 +3219,11 @@ export function judge(
 		}
 		case 'sky-refresh': {
 			const { line, problems } = skyRefreshReport(result as ItemResult & SkyRefreshResult);
+			if (problems.length === 0) context?.note?.(line);
+			return problems;
+		}
+		case 'sky-layer': {
+			const { line, problems } = skyLayerReport(result as ItemResult & SkyLayerResult);
 			if (problems.length === 0) context?.note?.(line);
 			return problems;
 		}

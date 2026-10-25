@@ -329,6 +329,10 @@ fn effect(input: EffectInput) -> vec4f {
 			'webgpu_tone_map',
 		]);
 		expect(result.shader.variants.webgpu?.wgsl?.source).toContain('skyLayer');
+		// The same WGSL builds into the shader that fills the sky map's cube faces, which makes the
+		// reflections and the light that the scene takes from them.
+		expect(Object.keys(result.shader.map).sort()).toEqual(['webgl2', 'webgpu']);
+		expect(result.shader.map.webgpu?.wgsl?.source).toContain('fn skyLayer');
 		// A layer with uniforms is refused: its values come from the template's own block.
 		const bad =
 			'struct Uniforms { tint: vec3f }\nfn skyLayer(input: SkyLayerInput) -> SkyLayer {\n    return SkyLayer(vec3f(0.0), 0.0);\n}\n';

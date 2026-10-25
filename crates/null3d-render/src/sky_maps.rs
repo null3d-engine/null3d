@@ -23,6 +23,15 @@
 //! starts. Frames take it in the frame of the last stage, with the map's new levels, so the diffuse
 //! light and the reflections change together.
 //!
+//! A sky layer that an add-on draws over the background reaches a map too: its WGSL is built into
+//! the shader that draws the sky into the map's cube faces, so the map's texels hold the layer that
+//! the background shows. The layer's own light then comes from those texels rather than from the
+//! CPU's model of the core sky: the map's last stage sums a level of them onto the nine spherical
+//! harmonics coefficients, and the GPU's read of that small target lands them in engine memory a
+//! frame or two later. So the light a layer gives costs one small draw and one read for each fill,
+//! never a frame, and it matches the reflections because it is measured from them. Until the first
+//! read lands, the map keeps the CPU's model of the core sky, so no frame loses its light.
+//!
 //! A map of the physical sky (D-143) reads the physical sky's panorama in place of the analytic
 //! sky's model: its stages name the panorama's texture. Its fill starts only in a frame whose
 //! physical sky pass drew the panorama for the sky as it is then, so the faces that later frames
@@ -30,18 +39,51 @@
 //! ([`crate::physical_sky_light`]).
 
 use null3d_core::handle::Handle;
-use null3d_gpu::drawlist::{DrawList, Op};
+use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage};
 
-use crate::background::Sky;
-use crate::frame::RecordError;
+use crate::background::{Sky, SkyLayer};
+use crate::frame::{RecordError, address};
 use crate::physical_sky::{Atmosphere, BOTTOM_RADIUS};
 use crate::physical_sky_light::AirModel;
 use crate::sky_light::{Sh, sky_sh};
 use crate::textures::TextureStore;
 
-/// Words of a stage's command: the texture, the generator, the stage, the panorama and the sky's
-/// 16 values.
-const STEP_WORDS: usize = 20;
+/// Words of a stage's command: the texture, the generator, the stage, the panorama, the sky's 16
+/// values, the layer's template, the core sky's four cloud values that the layer obeys, the share
+/// of the sun that it hides, its opacity, its clock and the light capture's buffer.
+const STEP_WORDS: usize = 29;
+
+/// The word of a stage's command that holds the template of the layer's build of the sky map's
+/// shader, or 0 for a map that draws no layer.
+const LAYER_WORD: usize = 20;
+
+/// The word that first holds the layer's values: the four cloud values, the share of the sun, the
+/// opacity and the clock.
+const LAYER_VALUES: usize = 21;
+
+/// The word that holds the id of the buffer that a light capture lands in, or 0 for no capture.
+const LIGHT_BUFFER_WORD: usize = 28;
+
+/// The nine coefficients of the light that a capture sums, red, green and blue each, as words in
+/// engine memory and as float bits in the target that the GPU draws them into.
+const LIGHT_WORDS: usize = 27;
+
+/// The bytes of a capture's target: sixteen words a row, of which the first nine hold the
+/// coefficients. A row of a texel copy starts on this boundary.
+const LIGHT_BYTES: u32 = 256;
+
+/// The fills that a map makes for a layer whose light has not landed, before it holds the levels it
+/// has: two more than the one that came with the layer's install.
+const LAYER_RETRIES: u8 = 3;
+
+/// The frames that a map waits after a fill with a layer before it fills again for a light that has
+/// not landed. A capture lands a frame or two after the fill's last stage, so a map that works never
+/// waits this long.
+const LAYER_GRACE: u8 = 4;
+
+/// The captures that one map may have in flight. A map fills at most once every few frames, so
+/// three buffers leave a capture waiting for the GPU without ever stopping the next one.
+pub const LIGHT_RING: usize = 3;
 
 /// The least turn of a sun, in radians, that a map draws again for: half a degree. A sun that
 /// turns less darkens or brightens the light it gives a surface by far less than a level of 255.
@@ -74,6 +116,25 @@ impl MapSky {
     /// The analytic sky as it is.
     pub fn analytic(sky: Sky) -> Self {
         Self::Analytic { sky, gain: 1.0 }
+    }
+
+    /// The core sky's cloud coverage, cloud density, cloud elevation and cloud scale, which a
+    /// layer over it obeys.
+    fn clouds(&self) -> [f32; 4] {
+        match self {
+            Self::Analytic { sky, .. } => [
+                sky.cloud_coverage,
+                sky.cloud_density,
+                sky.cloud_elevation,
+                sky.cloud_scale,
+            ],
+            Self::Physical { atmosphere, .. } => [
+                atmosphere.cloud_coverage,
+                atmosphere.cloud_density,
+                atmosphere.cloud_elevation,
+                atmosphere.cloud_scale,
+            ],
+        }
     }
 
     /// The factor of the light that frames take from a map of this sky.
@@ -262,16 +323,163 @@ fn start_fill(shown: &MapSky, sky: &MapSky, settled: bool) -> bool {
     !shown.near(sky) || (settled && !shown.same(sky))
 }
 
+/// True when a map that shows `shown` starts a fill for the layer `layer`, which it showed as
+/// `shown_layer`: the layer is another one, its values changed, or its own clock has moved by the
+/// time that it asks the map to follow.
+fn start_layer_fill(
+    shown_layer: Option<SkyLayer>,
+    filled_at: f32,
+    clock: f32,
+    layer: Option<SkyLayer>,
+) -> bool {
+    let (Some(shown), Some(layer)) = (shown_layer, layer) else {
+        return shown_layer != layer;
+    };
+    if shown != layer {
+        return true;
+    }
+    // A layer whose own clock moves changes the map's texels between two frames, and the engine
+    // cannot tell how fast: the layer says how often its map should capture it. A layer of 0 holds
+    // still, and leaves the map to fill when the sky or its values change.
+    layer.refresh > 0.0 && (clock - filled_at).abs() >= layer.refresh
+}
+
 /// One sky map.
 #[derive(Clone, Copy, Debug)]
 struct SkyMap {
     texture: Handle,
     /// Its stages, the copy included.
     stages: u32,
-    /// The sky of the levels that frames draw with, and its diffuse light, once the map is full.
-    shown: Option<(MapSky, Sh)>,
-    /// The fill under way: the next stage to record, and the sky and diffuse light that it makes.
-    fill: Option<(u32, MapSky, Sh)>,
+    /// The stage at which the map captures its light, which the page places a stage or two before
+    /// the copy so that the read lands before the levels that frame publishes.
+    capture: u32,
+    /// The sky and the layer of the levels that frames draw with, and its diffuse light, once the
+    /// map is full.
+    shown: Option<(MapSky, Option<SkyLayer>, Sh)>,
+    /// The fill under way: the next stage to record, and the sky, the layer and the diffuse light
+    /// that it makes.
+    fill: Option<(u32, MapSky, Option<SkyLayer>, Sh)>,
+    /// The place of this map's light capture among [`SkyMaps::lights`].
+    light: usize,
+    /// The frame's clock when the shown fill started, which a layer's refresh counts from.
+    filled_at: f32,
+    /// The fills that a layer's light has not yet answered since it last landed, up to
+    /// [`LAYER_RETRIES`], and the frames since the shown fill ended, up to [`LAYER_GRACE`].
+    retries: u8,
+    since: u8,
+}
+
+/// The coefficients of the light that a map's fills capture on the GPU, when an add-on draws a sky
+/// layer over it: one read a fill, which lands in engine memory a few frames later.
+#[derive(Debug)]
+struct LightCapture {
+    /// The next buffer of the ring to write, and whether the GPU has the ring.
+    next: usize,
+    made: bool,
+    /// Where a capture lands, as the bytes that the GPU writes, and the values that the frame
+    /// before read from it: a difference means that a capture landed since.
+    words: Box<[u8; LIGHT_BYTES as usize]>,
+    before: [u8; LIGHT_BYTES as usize],
+    /// True once a capture's coefficients are in `words`, and false until one lands and after the
+    /// GPU is replaced.
+    valid: bool,
+}
+
+/// Where a map's light capture reads back to: the first GPU id of its ring of buffers, and the
+/// control slot that a landed capture raises.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LightTarget {
+    /// The first GPU id of the ring, or 0 while the builder placed none.
+    pub buffers: u32,
+    /// The control slot that a landed capture raises by one.
+    pub slot: u32,
+}
+
+impl LightCapture {
+    fn new() -> Self {
+        Self {
+            next: 0,
+            made: false,
+            words: Box::new([0; LIGHT_BYTES as usize]),
+            before: [0; LIGHT_BYTES as usize],
+            valid: false,
+        }
+    }
+
+    /// The address in engine memory that a capture lands at.
+    fn destination(&self) -> u32 {
+        address(&self.words[..])
+    }
+
+    /// The coefficients that a capture wrote, as the light that a map gives a surface.
+    fn coefficients(&self) -> Sh {
+        let word = |k: usize| {
+            let at = k * 4;
+            f32::from_le_bytes([
+                self.words[at],
+                self.words[at + 1],
+                self.words[at + 2],
+                self.words[at + 3],
+            ])
+        };
+        std::array::from_fn(|k| std::array::from_fn(|c| word(k * 3 + c)))
+    }
+
+    /// Takes the coefficients of a capture that landed since the frame before. A capture that wrote
+    /// nothing, as one does before the page's layer reached the thread that draws, leaves the words
+    /// as they were: the map then keeps the CPU's model of the core sky for its light.
+    fn take(&mut self) -> Option<Sh> {
+        let length = LIGHT_WORDS * 4;
+        if self.words[..length] == self.before[..length] {
+            return None;
+        }
+        self.before[..length].copy_from_slice(&self.words[..length]);
+        self.valid = true;
+        Some(self.coefficients())
+    }
+
+    /// The light of the newest capture, once one has landed.
+    fn light(&self) -> Option<Sh> {
+        self.valid.then(|| self.coefficients())
+    }
+
+    /// Records the buffer that the GPU writes this capture into: makes the ring the first time,
+    /// and returns the buffer, the address that its bytes land at and the slot that they raise.
+    fn next_read(
+        &mut self,
+        list: &mut DrawList,
+        target: LightTarget,
+    ) -> Result<Option<(u32, u32, u32)>, RecordError> {
+        // A builder that placed no ring, or a page that gave no slot, captures nothing: slot 0 is
+        // the frame counter, which a read must never raise.
+        if target.buffers == 0 || target.slot == 0 {
+            return Ok(None);
+        }
+        if !self.made {
+            for k in 0..LIGHT_RING as u32 {
+                list.push(
+                    Op::CreateBuffer,
+                    &[
+                        target.buffers + k,
+                        LIGHT_BYTES,
+                        usage::MAP_READ | usage::COPY_DST,
+                    ],
+                )?;
+            }
+            self.made = true;
+        }
+        let buffer = target.buffers + self.next as u32;
+        self.next = (self.next + 1) % LIGHT_RING;
+        Ok(Some((buffer, self.destination(), target.slot)))
+    }
+
+    /// Forgets the GPU's objects after a device was lost, and the coefficients that it wrote.
+    fn reset_gpu(&mut self) {
+        self.made = false;
+        self.valid = false;
+        self.before = [0; LIGHT_BYTES as usize];
+        *self.words = [0; LIGHT_BYTES as usize];
+    }
 }
 
 /// The scene's sky maps, and the sky that they show.
@@ -282,7 +490,13 @@ pub struct SkyMaps {
     sky: Option<MapSky>,
     /// The sky of the frame before the last recorded one, to tell when the sky has come to rest.
     before: Option<MapSky>,
+    /// The layer that the scene draws over its background, which every map shows.
+    layer: Option<SkyLayer>,
+    /// The frame's clock in seconds, which a layer's shader reads and its refresh counts by.
+    clock: f32,
     maps: Vec<SkyMap>,
+    /// The light capture of each map, by the place that the map names.
+    lights: Vec<LightCapture>,
 }
 
 impl SkyMaps {
@@ -294,6 +508,19 @@ impl SkyMaps {
     /// Makes the maps show `sky` from the next recorded frame on, in stages.
     pub fn set_sky(&mut self, sky: MapSky) {
         self.sky = Some(sky);
+    }
+
+    /// Makes the maps show the layer that the scene draws over its background, or none, from the
+    /// next recorded frame on. A map whose layer is another one, or whose layer's values changed,
+    /// fills again.
+    pub fn set_layer(&mut self, layer: Option<SkyLayer>) {
+        self.layer = layer;
+    }
+
+    /// Sets the frame's clock in seconds, which a layer over the sky reads as `SkyLayerInput.time`
+    /// and which its refresh counts between captures.
+    pub fn set_clock(&mut self, clock: f32) {
+        self.clock = clock;
     }
 
     /// Sets the height above the ground, in kilometers, from which a map of the physical sky sees
@@ -324,22 +551,30 @@ impl SkyMaps {
         self.maps.iter().any(|map| {
             map.fill.is_none()
                 && textures.generated_cube(map.texture).is_some()
-                && map
-                    .shown
-                    .is_none_or(|(shown, _)| start_fill(&shown, sky, settled))
+                && map.shown.is_none_or(|(shown, shown_layer, _)| {
+                    start_fill(&shown, sky, settled)
+                        || start_layer_fill(shown_layer, map.filled_at, self.clock, self.layer)
+                })
         })
     }
 
     /// Makes cube texture `texture` a sky map of `stages` stages, at least 1, which fills in the
     /// first frame after its generator made it ready. A texture that is a sky map already stays one.
-    pub fn add(&mut self, texture: Handle, stages: u32) {
+    pub fn add(&mut self, texture: Handle, stages: u32, capture: u32) {
         if self.maps.iter().all(|map| map.texture != texture) {
+            let stages = stages.max(1);
             self.maps.push(SkyMap {
                 texture,
-                stages: stages.max(1),
+                stages,
+                capture: capture.min(stages - 1),
                 shown: None,
                 fill: None,
+                light: self.lights.len(),
+                filled_at: 0.0,
+                retries: 0,
+                since: 0,
             });
+            self.lights.push(LightCapture::new());
         }
     }
 
@@ -350,10 +585,22 @@ impl SkyMaps {
     }
 
     /// The diffuse light of the sky map in `texture` and the factor of its light, once frames draw
-    /// with its levels, or none for a texture that is not a full sky map.
+    /// with its levels, or none for a texture that is not a full sky map. A map that a sky layer
+    /// drew takes the light that its own texels gave, once a capture landed: the layer's light is
+    /// part of the map, so the light and the reflections hold the same sky.
     pub fn light(&self, texture: Handle) -> Option<(Sh, f32)> {
         let map = self.maps.iter().find(|map| map.texture == texture)?;
-        map.shown.map(|(sky, sh)| (sh, sky.gain()))
+        map.shown.map(|(sky, layer, sh)| {
+            let light = match layer {
+                Some(_) => self
+                    .lights
+                    .get(map.light)
+                    .and_then(LightCapture::light)
+                    .unwrap_or(sh),
+                None => sh,
+            };
+            (light, sky.gain())
+        })
     }
 
     /// Forgets every map's levels after the thread that draws replaced the GPU: each map fills
@@ -363,6 +610,24 @@ impl SkyMaps {
             map.shown = None;
             map.fill = None;
         }
+        for light in &mut self.lights {
+            light.reset_gpu();
+        }
+    }
+
+    /// Keeps one capture for each map, in the maps' order, after the maps that were destroyed.
+    fn compact_lights(&mut self) {
+        if self.lights.len() == self.maps.len() {
+            return;
+        }
+        for k in 0..self.maps.len() {
+            let from = self.maps[k].light;
+            if from != k {
+                self.lights.swap(k, from);
+                self.maps[k].light = k;
+            }
+        }
+        self.lights.truncate(self.maps.len());
     }
 
     /// Records the frame's stages of each map whose texture is ready: every stage of a map that
@@ -377,39 +642,122 @@ impl SkyMaps {
         panorama_drawn: bool,
         panorama: u32,
         model: Option<&AirModel>,
+        target: LightTarget,
     ) -> Result<(), RecordError> {
         self.maps.retain(|map| textures.is_live(map.texture));
+        self.compact_lights();
         let settled = self.settled();
         self.before = self.sky;
         let Some(sky) = self.sky else {
             return Ok(());
         };
+        let layer = self.layer;
+        let clock = self.clock;
+        // The captures leave the maps while they record, since a capture lands in a field of the
+        // maps that a map's own borrow would hide.
+        let mut lights = std::mem::take(&mut self.lights);
+        let recorded = self.record_maps(
+            textures,
+            list,
+            panorama_drawn,
+            panorama,
+            model,
+            sky,
+            layer,
+            &mut lights,
+            target,
+            settled,
+            clock,
+        );
+        self.lights = lights;
+        recorded
+    }
+
+    /// Records each map's stages, with the captures in `lights`.
+    #[allow(clippy::too_many_arguments)]
+    fn record_maps(
+        &mut self,
+        textures: &TextureStore,
+        list: &mut DrawList,
+        panorama_drawn: bool,
+        panorama: u32,
+        model: Option<&AirModel>,
+        sky: MapSky,
+        layer: Option<SkyLayer>,
+        lights: &mut [LightCapture],
+        target: LightTarget,
+        settled: bool,
+        clock: f32,
+    ) -> Result<(), RecordError> {
         for map in &mut self.maps {
+            let Some(light) = lights.get_mut(map.light) else {
+                continue;
+            };
+            // A capture that landed since the frame before becomes the map's light, whether or not
+            // this frame fills it.
+            light.take();
+            if light.valid {
+                map.retries = 0;
+            }
             let Some((id, _, generator)) = textures.generated_cube(map.texture) else {
                 map.shown = None;
                 map.fill = None;
                 continue;
             };
-            let start = map
-                .shown
-                .is_none_or(|(shown, _)| start_fill(&shown, &sky, settled));
-            let (first, sky, sh) = match map.fill {
+            let due = map.shown.is_none_or(|(shown, shown_layer, _)| {
+                start_fill(&shown, &sky, settled)
+                    || start_layer_fill(shown_layer, map.filled_at, clock, layer)
+            });
+            if map.fill.is_none() {
+                map.since = map.since.saturating_add(1);
+            }
+            // A layer whose light has not landed may not have reached the thread that draws: the
+            // page sends its shader as it installs it, and a fill that starts the same frame can
+            // find it still on its way. A fill or two more bring it in, and three stop retrying, so
+            // a layer whose light is genuinely zero costs no more.
+            let retry = !due
+                && !light.valid
+                && map.since >= LAYER_GRACE
+                && map.retries < LAYER_RETRIES
+                && layer.is_some_and(|layer| layer.map != 0)
+                && map
+                    .shown
+                    .is_some_and(|(_, shown_layer, _)| shown_layer.is_some());
+            if retry {
+                map.retries += 1;
+            }
+            let start = due || retry;
+            let (first, sky, layer, sh) = match map.fill {
                 Some(fill) => fill,
                 None if !start => continue,
                 None if matches!(sky, MapSky::Physical { .. }) && !panorama_drawn => continue,
-                None => (0, sky, sky.sh(model)),
+                None => (0, sky, layer, sky.sh(model)),
             };
+            map.since = 0;
             // A map that frames do not draw with yet fills whole at once.
             let copy = map.stages - 1;
             let last = if map.shown.is_none() { copy } else { first };
+            // A layer's light is the map's own texels, summed on the GPU once the fill has drawn
+            // every face of the chain and read back over the next frames. The capture runs a stage
+            // or two before the copy, so that the light this frame takes for the map is ready by
+            // the frame whose levels publish: no frame draws a map that the core sky's light alone
+            // explains.
+            let captured = layer.is_some_and(|layer| layer.map != 0);
             for stage in first..=last {
-                push_stage(list, id, generator, stage, &sky, panorama)?;
+                let capture = match captured && stage == map.capture {
+                    true => Some(&mut *light),
+                    false => None,
+                };
+                push_stage(
+                    list, id, generator, stage, &sky, layer, clock, panorama, capture, target,
+                )?;
             }
             map.fill = if last == copy {
-                map.shown = Some((sky, sh));
+                map.shown = Some((sky, layer, sh));
+                map.filled_at = clock;
                 None
             } else {
-                Some((last + 1, sky, sh))
+                Some((last + 1, sky, layer, sh))
             };
         }
         Ok(())
@@ -417,48 +765,78 @@ impl SkyMaps {
 }
 
 /// Records stage `stage` of the sky map in cube texture `id`, which generator `generator` holds:
-/// of the analytic sky's settings, or of the physical sky's panorama in texture `panorama`.
+/// of the analytic sky's settings, or of the physical sky's panorama in texture `panorama`. A stage
+/// with `capture` sums the map's light into the buffer that it names, once the fill has drawn every
+/// face of every level of the chain.
+#[allow(clippy::too_many_arguments)]
 fn push_stage(
     list: &mut DrawList,
     id: u32,
     generator: u32,
     stage: u32,
     sky: &MapSky,
+    layer: Option<SkyLayer>,
+    clock: f32,
     panorama: u32,
+    capture: Option<&mut LightCapture>,
+    target: LightTarget,
 ) -> Result<(), RecordError> {
     let mut words = [0u32; STEP_WORDS];
     words[..3].copy_from_slice(&[id, generator, stage]);
-    let sky = match sky {
-        MapSky::Analytic { sky, .. } => sky,
-        MapSky::Physical { .. } => {
-            words[3] = panorama;
-            list.push(Op::SkyMapStep, &words)?;
-            return Ok(());
+    match sky {
+        MapSky::Analytic { sky, .. } => {
+            let [x, y, z] = sky.sun_position;
+            let [heading, elevation] = sky.second_angles();
+            let values = [
+                x,
+                y,
+                z,
+                sky.second_sky_weight,
+                sky.turbidity,
+                sky.rayleigh,
+                sky.mie_coefficient,
+                sky.mie_directional_g,
+                sky.cloud_scale,
+                sky.cloud_speed,
+                sky.cloud_coverage,
+                sky.cloud_density,
+                sky.cloud_elevation,
+                sky.time,
+                heading,
+                elevation,
+            ];
+            for (word, value) in words[4..20].iter_mut().zip(values) {
+                *word = value.to_bits();
+            }
         }
+        MapSky::Physical { .. } => words[3] = panorama,
+    }
+    if let Some(layer) = layer {
+        words[LAYER_WORD] = layer.map;
+        let [coverage, density, elevation, scale] = sky.clouds();
+        let values = [
+            coverage,
+            density,
+            elevation,
+            scale,
+            layer.sun.clamp(0.0, 1.0),
+            layer.opacity.clamp(0.0, 1.0),
+            clock,
+        ];
+        for (word, value) in words[LAYER_VALUES..].iter_mut().zip(values) {
+            *word = value.to_bits();
+        }
+    }
+    let read = match capture {
+        Some(light) => light.next_read(list, target)?,
+        None => None,
     };
-    let [x, y, z] = sky.sun_position;
-    let [heading, elevation] = sky.second_angles();
-    let values = [
-        x,
-        y,
-        z,
-        sky.second_sky_weight,
-        sky.turbidity,
-        sky.rayleigh,
-        sky.mie_coefficient,
-        sky.mie_directional_g,
-        sky.cloud_scale,
-        sky.cloud_speed,
-        sky.cloud_coverage,
-        sky.cloud_density,
-        sky.cloud_elevation,
-        sky.time,
-        heading,
-        elevation,
-    ];
-    for (word, value) in words[4..].iter_mut().zip(values) {
-        *word = value.to_bits();
+    if let Some((buffer, _, _)) = read {
+        words[LIGHT_BUFFER_WORD] = buffer;
     }
     list.push(Op::SkyMapStep, &words)?;
+    if let Some((buffer, destination, slot)) = read {
+        list.push(Op::ReadBuffer, &[buffer, 0, LIGHT_BYTES, destination, slot])?;
+    }
     Ok(())
 }

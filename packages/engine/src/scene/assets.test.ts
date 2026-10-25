@@ -8,6 +8,7 @@ import { BACKGROUND_VALUE_COUNT, BACKGROUND_VALUE_SUN_POSITION } from '../genera
 import { stopHelperWorkers } from '../shared/helper-workers';
 import { GENERATORS_PRELOAD } from '../shared/images';
 import { Assets, type ModelMakers } from './assets';
+import { SKY_MAP } from './builtin-environments';
 import { Environment } from './environment';
 import { LightProbeGridData } from './light-probes';
 import { ShaderPreloads } from './shader-preloads';
@@ -292,6 +293,7 @@ describe('environments', () => {
 			addSkyMap(
 				_: Texture,
 				_stages: number,
+				capture: number,
 				call: string,
 				defaults: (values: Float32Array) => void,
 			) {
@@ -302,10 +304,11 @@ describe('environments', () => {
 					Array.from(
 						values.subarray(BACKGROUND_VALUE_SUN_POSITION, BACKGROUND_VALUE_SUN_POSITION + 3),
 					),
+					capture,
 				]);
 			},
 		} as unknown as Textures;
-		const skyMaps: [string, number[]][] = [];
+		const skyMaps: [string, number[], number][] = [];
 		return { textures, cubes, skyMaps };
 	}
 
@@ -316,9 +319,11 @@ describe('environments', () => {
 		expect([sky.size, sky.levels, sky.format]).toEqual([256, 6, 'rgb9e5ufloat']);
 		expect(cubes).toEqual([[256, 6, 'rgb9e5ufloat', 'sky']]);
 		// With no sky background yet, the map shows the default sky of three.js's example.
-		const [[call, sun] = ['', []]] = skyMaps;
+		const [[call, sun, capture] = ['', [], 0]] = skyMaps;
 		expect(call).toBe('assets.skyEnvironment');
 		expect(sun.map((c) => Math.round(c * 1e4) / 1e4)).toEqual([0, 0.0349, -0.9994]);
+		// The map captures the sky's light at the stage that the generator names.
+		expect(capture).toBe(SKY_MAP.capture);
 	});
 
 	test("load the asset tool's files into cube maps, and make the built-in room on the GPU", async () => {
@@ -510,6 +515,21 @@ describe('baked light files', () => {
 			255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
 		]);
 		expect(Array.from(map.direction ?? [])).toEqual([0, 127, 0, 127, 0, 0, 0, 0, 127, -127, 0, 0]);
+		// The direction takes a texture of its own, in the radiance's own format: both share one
+		// texture array, so a shader reads the direction through the light map's binding. Its
+		// sRGB bytes are the ones that decode closest to the axes' values, +1, 0 and -1, and so on.
+		expect(datas[1]).toMatchObject({ width: 2, height: 2, colorSpace: 'srgb' });
+		const direction = datas[1]?.data as Uint8Array;
+		expect(direction.length).toBe(16);
+		const decode = (byte: number) => {
+			const c = byte / 255;
+			return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+		};
+		const axes = [0, 1, 2].map((c) => decode(direction[c] as number) * 2 - 1);
+		// The closest sRGB byte lands within a step of the value it encodes.
+		[0, 1, 0].forEach((wanted, c) => {
+			expect(Math.abs((axes[c] as number) - wanted)).toBeLessThan(0.01);
+		});
 	});
 
 	test('loads an rgba16float light map as a linear texture of half floats', async () => {
@@ -536,6 +556,9 @@ describe('baked light files', () => {
 		if (!data) throw new Error('the light map made no texture');
 		expect((data as Uint16Array).length).toBe(4);
 		expect(map.direction).toBeUndefined();
+		expect(map.directionTexture).toBeUndefined();
+		// A light map without a direction makes one texture, so a plain map costs half as much.
+		expect(datas).toHaveLength(1);
 	});
 
 	test('refuses a broken file with E1434, and names the fault', async () => {

@@ -679,7 +679,7 @@ export class Textures {
 		const row = width * 4;
 		const rows = new Uint8Array(row * height);
 		rows.set(image.data);
-		turnRows(rows, row, height);
+		turnRows(rows, 0, row, height);
 		return rows;
 	}
 
@@ -696,10 +696,23 @@ export class Textures {
 				call,
 				'got a texture that does not follow a canvas. Make it with textures.fromCanvas.',
 			);
-		// The rectangle of the canvas that changed, in the canvas's coordinates.
-		let [left, top, right, bottom] = rect
-			? [rect.x, rect.y, rect.x + rect.width, rect.y + rect.height]
-			: [0, 0, source.width, source.height];
+		// The rectangle of the canvas that changed, in the canvas's coordinates, as four numbers: a
+		// refresh in every frame makes no array for them.
+		let left: number;
+		let top: number;
+		let right: number;
+		let bottom: number;
+		if (rect) {
+			left = rect.x;
+			top = rect.y;
+			right = rect.x + rect.width;
+			bottom = rect.y + rect.height;
+		} else {
+			left = 0;
+			top = 0;
+			right = source.width;
+			bottom = source.height;
+		}
 		if (DEV) {
 			const whole =
 				Number.isInteger(left) &&
@@ -825,10 +838,12 @@ export class Textures {
 		}
 		core.refresh();
 		const row = width * 4;
-		const view = core.view(Uint8Array, address, row * height);
+		// A view of the whole memory, which the engine makes again when the memory grows: a refresh
+		// in every frame writes through the same view, so the copy allocates none of its own.
+		const view = core.heap(Uint8Array);
 		const image = source.context.getImageData(x, top, width, height);
-		view.set(image.data);
-		turnRows(view, row, height);
+		view.set(image.data, address);
+		turnRows(view, address, row, height);
 		return true;
 	}
 
@@ -1053,12 +1068,13 @@ export class Textures {
 	addSkyMap(
 		texture: Texture,
 		stages: number,
+		capture: number,
 		call: string,
 		defaults: (values: Float32Array) => void,
 	): void {
 		const { core } = this;
 		defaults(core.f32(core.glue.backgroundValues(), BACKGROUND_VALUE_COUNT));
-		core.check(core.glue.addSkyMap(texture.handle, stages), call, 'a texture', true);
+		core.check(core.glue.addSkyMap(texture.handle, stages, capture), call, 'a texture', true);
 	}
 
 	/**
@@ -1395,13 +1411,14 @@ function invalid(call: string, detail: string): EngineError {
 const quote = (value: unknown) => (typeof value === 'string' ? `'${value}'` : String(value));
 
 /**
- * Turns a rectangle's rows over in place, so that its last row comes first. A canvas counts rows
- * from its top, and a texture counts them from v = 0, the bottom of a plane.
+ * Turns the rows of a rectangle over in place, so that its last row comes first. A canvas counts
+ * rows from its top, and a texture counts them from v = 0, the bottom of a plane. The rectangle
+ * starts `offset` bytes into `rows`, which may be a view of the whole memory.
  */
-function turnRows(rows: Uint8Array, row: number, height: number): void {
+function turnRows(rows: Uint8Array, offset: number, row: number, height: number): void {
 	for (let top = 0, bottom = height - 1; top < bottom; top++, bottom--) {
-		const a = top * row;
-		const b = bottom * row;
+		const a = offset + top * row;
+		const b = offset + bottom * row;
 		for (let k = 0; k < row; k++) {
 			const texel = rows[a + k] as number;
 			rows[a + k] = rows[b + k] as number;

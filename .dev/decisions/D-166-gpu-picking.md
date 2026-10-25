@@ -129,3 +129,37 @@ addendum asks for.
   Mac, the iPad and an Adreno phone. The pick template's WebGL2 path asserts the test with the
   bias. The browser image test draws a thin and a masked object on both GPU paths in Chrome. The
   prototype G7 on the iPad and the cloud S25 follows.
+
+## Addendum, 25 October 2026: a pick's texture coordinates
+
+M3-A1 gives `scene.pick` the `uv` and `hasUv` fields that a raycast and a pointer event already
+carry. A page that clicks an in-world screen then needs no plane math of its own.
+
+The id target holds the source key of a pixel and nothing else. A key names the object or the
+instance row, not the triangle under the pixel, so the pick cannot read the coordinates from the
+target. Two ways were open:
+
+- A second target that the pick pass writes the coordinates into, in four bytes a pixel. It costs
+  about 41 MB at 1080p with four samples, plus the single-sample copy of the pixel that a read
+  takes, and a second resolve. A pick that today costs one draw and a read of four bytes would cost
+  far more memory in every page that picks at all.
+- A raycast through the same point, from the camera of the frame that recorded the pick. The core
+  already blends a triangle's first texture coordinates for a raycast, so nothing new computes
+  them. The ray costs one CPU query per pick, which is a user interaction, and no GPU memory.
+
+The second way wins. The core records the engine frame that drew the landed pick, and `pickFrame`
+gives it to the sketch. `FrameCameras.frameRay` then casts the ray with that frame's camera. So the
+coordinates match the frame that produced the object answer. The sketch keeps the id target's
+answer as the source. A ray that meets another source, or none, leaves `hasUv` false. It never
+names a triangle that the pixel did not show.
+
+The coordinates stay the mesh's own, as a raycast's do. A repeated texture reports values past 1,
+and a material's `uvTransform` does not move them. A skinned or morphed character, and a custom
+material that offsets vertices, draws a shape that the ray does not test. Their coordinates
+describe the mesh's own triangle, and can differ from the drawn pose. The API page says so.
+
+Tests: `packages/engine/src/scene/picks.test.ts` checks the queue's decoding with the ray's frame,
+a pick that names no frame, another source and a mesh without coordinates.
+`tests/image/pick-uv.spec.ts` compares a pick with a raycast and with the geometry on both GPU
+paths. It covers a repeated set, a texture transform, a batch of rows that differ in scale, and a
+mesh with no coordinates.

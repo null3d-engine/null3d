@@ -63,7 +63,7 @@ test.beforeAll(async () => {
 	test.setTimeout(15 * 60_000);
 	// No other step makes this build, so the test makes it here, or finds the one that an earlier run
 	// made up to date.
-	buildCdn(REPO_ROOT, BUILD);
+	await buildCdn(REPO_ROOT, BUILD);
 	// One server answers for both hosts on one port, so the page and the CDN differ in their origin
 	// as they do on the web.
 	server = createServer((request, response) => {

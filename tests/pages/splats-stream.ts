@@ -90,7 +90,7 @@ run('splats-stream', async () => {
 		);
 	if (drawn.drawn > drawn.budget)
 		throw new Error(`the draw took ${drawn.drawn} splats, over its budget of ${drawn.budget}`);
-	if (!(metrics.presentedFps > 0))
+	if (metrics.frames === 0)
 		throw new Error(
 			`the measure drew no frame in ${metrics.seconds.toFixed(1)} s, and the first frame finished at ${metrics.load.firstFrameDoneMs} ms`,
 		);

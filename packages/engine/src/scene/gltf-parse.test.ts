@@ -20,7 +20,9 @@ import {
 	GltfError,
 	MAX_ACCESSOR_BYTES,
 	type MaterialData,
+	needleLightMap,
 	parseGltf,
+	parseNeedleLightMaps,
 	readContainer,
 } from './gltf-parse';
 
@@ -1806,5 +1808,88 @@ describe("the asset tool's staged levels", () => {
 		wrong.json.nodes[0].extras = { NULL3D_stages: { levels: [{ url: 'a', bytes: 1, error: 1 }] } };
 		const hull = parse(wrong.glb()).nodes.find((node) => node.name === 'Hull');
 		expect(hull?.stages).toBeUndefined();
+	});
+});
+
+describe('the Needle light maps', () => {
+	/** Parses the reduced Needle sample beside the test pages, with its buffer beside it. */
+	function parseSample(): GltfData {
+		const folder = join(import.meta.dir, '../../../../tests/pages/assets/models/needle-lightmap');
+		const file = new Uint8Array(readFileSync(join(folder, 'scene.gltf')));
+		const buffer = new Uint8Array(readFileSync(join(folder, 'scene.bin')));
+		return parseGltf(
+			readContainer(file, 'https://example.com/needle/scene.gltf'),
+			new Map([[0, buffer]]),
+			'https://example.com/needle/scene.gltf',
+		);
+	}
+
+	test("a real Needle file gives each node its light map and its coordinates' scale and offset", () => {
+		const data = parseSample();
+		// The extension registers one light map, and every mesh reads it in linear color at the
+		// second texture coordinates, as Needle's viewer does before it decodes the RGBM texels.
+		expect(data.lightMaps).toHaveLength(1);
+		const use = data.textures[data.lightMaps[0] as number];
+		expect(use).toMatchObject({ colorSpace: 'linear', uvSet: 1 });
+		const pillars = data.nodes.filter((node) => node.lightMap);
+		expect(pillars).toHaveLength(data.nodes.filter((node) => node.mesh >= 0).length);
+		expect(data.nodes[1]?.lightMap).toEqual({
+			index: 0,
+			scale: [0.059030436, 0.059030436],
+			offset: [0.913736939, 0.247483984],
+		});
+	});
+
+	test('reads a light map entry and leaves out the other kinds and other pointers', () => {
+		const uses: unknown[] = [];
+		const maps = parseNeedleLightMaps(
+			{
+				extensions: {
+					NEEDLE_lightmaps: {
+						textures: [
+							{ pointer: '/textures/3', type: 0, index: 0 },
+							{ pointer: 'textures/4', type: 0, index: 1 },
+							{ pointer: '/textures/5', type: 1, index: 0 },
+							{ pointer: '/textures/6', type: 2, index: 0 },
+							{ pointer: 'skybox.exr', type: 0, index: 2 },
+							{ pointer: '/textures/7', type: 0, index: 3 },
+						],
+					},
+				},
+			} as never,
+			(info, colorSpace) => {
+				uses.push([info, colorSpace]);
+				return { use: uses.length - 1 };
+			},
+		);
+		expect(uses).toEqual([
+			[{ index: 3, texCoord: 1 }, 'linear'],
+			[{ index: 4, texCoord: 1 }, 'linear'],
+			[{ index: 7, texCoord: 1 }, 'linear'],
+		]);
+		// The skybox, the reflection and the file pointer are left out, so the map at index 2 has
+		// no texture.
+		expect(maps).toEqual([0, 1, -1, 2]);
+	});
+
+	test('a MeshRenderer without a light map, or without scale and offset, gives none or the identity', () => {
+		const node = (component: Record<string, unknown>) => ({
+			builtin_components: [{ name: 'MeshRenderer', ...component }],
+		});
+		expect(needleLightMap({ NEEDLE_components: node({ lightmapIndex: -1 }) })).toBeUndefined();
+		expect(needleLightMap({})).toBeUndefined();
+		expect(needleLightMap({ NEEDLE_components: node({ lightmapIndex: 2 }) })).toEqual({
+			index: 2,
+			scale: [1, 1],
+			offset: [0, 0],
+		});
+		expect(
+			needleLightMap({
+				NEEDLE_components: node({
+					lightmapIndex: 1,
+					lightmapScaleOffset: { x: 0.5, y: 0.25, z: 0.125, w: 0.75 },
+				}),
+			}),
+		).toEqual({ index: 1, scale: [0.5, 0.25], offset: [0.125, 0.75] });
 	});
 });

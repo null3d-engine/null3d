@@ -94,7 +94,7 @@ export interface CustomShader {
 	 * buffer and the scene's depth too. A shader without a kind draws a custom material's meshes.
 	 * A compute shader fills a storage texture of a pass of its own. A sky layer draws the box
 	 * around the camera that its template makes, with the background's frame group and its own
-	 * values.
+	 * values, and a sky layer map draws the texels of the sky's environment map.
 	 */
 	readonly kind?:
 		| 'effect'
@@ -103,7 +103,8 @@ export interface CustomShader {
 		| 'effectGroup'
 		| 'effectFold'
 		| 'compute'
-		| 'skyLayer';
+		| 'skyLayer'
+		| 'skyLayerMap';
 	/**
 	 * True for an effect whose WGSL reads a level of bloom's chain, so it draws in a pass of its
 	 * own and binds that level.

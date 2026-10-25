@@ -55,7 +55,10 @@ export interface PlantAtlas {
 export interface PlantAtlases {
 	/** The bark: one tiling cell, stretched up the trunk. */
 	readonly bark: PlantAtlas;
-	/** The leaves: four cluster shapes, a needle spray, a frond, a blade and a broad leaf. */
+	/**
+	 * The leaves: four cluster shapes, a needle spray, a frond, a blade and a broad leaf, each cell a
+	 * spray of leaves that differ in outline, colour and veins.
+	 */
 	readonly leaf: PlantAtlas;
 }
 
