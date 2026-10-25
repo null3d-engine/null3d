@@ -306,6 +306,22 @@ function isRunning(pid: number): boolean {
 	}
 }
 
+/** True when the lock at `path`, taken at `takenMs`, has no live holder: it was left by one that stopped. */
+function lockStopped(path: string, takenMs: number): boolean {
+	const holder = lockHolder(path);
+	return holder > 0 ? !isRunning(holder) : Date.now() - takenMs > UNNAMED_LOCK_MS;
+}
+
+/**
+ * The live process that holds the lock at `path`: its id, or 0 for a recent lock that names none.
+ * Undefined when no live process holds it, so a caller that must not wait can tell whether it would.
+ */
+export function liveLockHolder(path: string): number | undefined {
+	const takenMs = statSync(path, { throwIfNoEntry: false })?.mtimeMs;
+	if (takenMs === undefined || lockStopped(path, takenMs)) return undefined;
+	return lockHolder(path);
+}
+
 /** The process that holds the lock at `path`, or 0 when it names none. */
 function lockHolder(path: string): number {
 	try {
@@ -389,8 +405,7 @@ function waitForLock(path: string, marker: string | undefined): boolean {
 		// The lock went away between the two calls, so this process is next in line.
 		if (takenMs === undefined) continue;
 		const holder = lockHolder(path);
-		const stopped = holder > 0 ? !isRunning(holder) : Date.now() - takenMs > UNNAMED_LOCK_MS;
-		if (stopped) {
+		if (lockStopped(path, takenMs)) {
 			breakLock(path);
 			continue;
 		}
