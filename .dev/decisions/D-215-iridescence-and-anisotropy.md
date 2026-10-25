@@ -114,9 +114,10 @@ Status: decided by the helper of M3-G2 on 2026-10-26, for the owner's review. Ta
 The audit of 24 October found that no Khronos iridescence sample was tested. The in-code scene
 compares the film's values. It reads no file that Khronos publishes. Two scenes now load the
 Khronos sphere grids. The first varies the base index of refraction, the film's thickness and the
-film's index. The second replaces the base index with the base color. A neutral studio lights the dielectric grid at 0.35 of full intensity. The metal grid takes
-0.15, because it has no diffuse term and its reflections show the film at less light. Both draw with
-no tone mapping, as every model scene does. The camera frames each grid at a radius of 9, so the
+film's index. The second replaces the base index with the base color. A neutral studio lights the
+dielectric grid at 0.35 of full intensity. The metal grid takes 0.15, because it has no diffuse term
+and its reflections show the film at less light. Both draw with no tone mapping, as every model
+scene does. The camera frames each grid at a radius of 9, so the
 spheres fill the picture.
 
 | Scene | GPU set | webgpu | compat | webgl2 |
@@ -136,6 +137,10 @@ puts each limit just above the largest measured share. The anisotropy scene's 0.
 0.561%, and the metal-rough scene's 0.34% above 0.316%. The metal scene takes 2.7%, above its
 largest share of 2.556%. Its highlights are large and thin, so the two specular anti-aliasing
 kernels cross more pixels there than on any other scene.
+
+CI's run 40226184684 drew these tests on its Linux SwiftShader and passed. Its browser shard 5 ran
+all 98 of its tests green, with the six images that this machine drew. The two drawings are
+therefore equal.
 
 A run that dropped `KHR_materials_iridescence` in the loader changed 0.914% of the dielectric
 scene's pixels on each tier. It changed 7.55% to 7.77% of the metal scene's. Both are above the
