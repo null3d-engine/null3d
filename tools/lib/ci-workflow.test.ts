@@ -200,6 +200,17 @@ describe("CI's workflow", () => {
 		expect(gated).toEqual(others);
 	});
 
+	it("runs a job after ci-passed on ci-passed's own result", () => {
+		// GitHub's default condition needs every job before it to have passed, and a pass-keyed job
+		// that passed in an earlier run is skipped, which would skip the job after ci-passed too.
+		const after = Object.entries(jobs).filter(([, job]) => needsOf(job).includes('ci-passed'));
+		expect(after.length).toBeGreaterThan(0);
+		for (const [name, job] of after)
+			expect(String(job.if), name).toStartWith(
+				"${{ !cancelled() && needs.ci-passed.result == 'success' && ",
+			);
+	});
+
 	it("lets only the full run's jobs skip, and only in a quick run", () => {
 		const step = jobNamed('ci-passed').steps?.find(({ name }) => name === 'Every job passed');
 		const list = /\[([^\]]*)\] as \$full/.exec(step?.run ?? '')?.[1] ?? '';
