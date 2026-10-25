@@ -505,6 +505,11 @@ level names 515 vertices and its largest index is 514. Each finer stage's larges
 than the vertices it uses, up to the finest stage's 16,641. A staged loader can therefore send the
 coarsest level's part of the buffer first and add each finer part as it arrives.
 
+The step runs before the cluster planner. A mesh that takes both whole levels and a tree of patches
+therefore writes them over one vertex order, which is the layout M3-L3's patch data and its fallback
+levels share. The tool builds it once, in `packages/cli/src/assets/levels.js`, and both writers name
+the base mesh's accessors.
+
 The gain is the share of the buffer that a coarse level no longer needs resident. On the tool's test
 ball the coarsest level names 122 of 1,225 vertices of 16 bytes. Before the step they spread over
 98% of the array, so a draw needed almost the whole 19,600-byte vertex buffer. The order puts them in
@@ -516,6 +521,8 @@ user that spends it.
 
 `packages/cli/src/assets/levels.test.ts` holds two facts. Each level and every coarser level share
 one prefix of the new numbering. Every triangle keeps the positions it drew before the reorder.
+Before the step the same levels' largest index was 16,640, even for the coarsest level's 514
+vertices, so the prefix check fails without it.
 
 ## Addendum: the levels' cost on an iPad and a phone (25 October 2026, M3-L2)
 
