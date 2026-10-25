@@ -251,17 +251,20 @@ pub struct BuildCounts {
 ///
 /// Every build costs the shader build its compile time and costs a page the bytes that carry it,
 /// and a permutation bit on a lit template multiplies the count. The figures are the count on
-/// 19 October 2026, when the relief materials of M2-J4 joined the manifest after the shader build's
-/// shared tables split (D-190): their three bits make the standard material's maps builds 3.33
-/// times as many, and the split keeps that growth out of every page's start. The count also holds
-/// the translucency bit and the two subsurface templates of M2-EX36. The implementation notes give
-/// the measurement and the reason to raise a figure ([the count the manifest may not
+/// 26 October 2026, when the masked transmission of M3-G5 joined the pair that the permutation
+/// table allows: the cut-out keeps its transmission, so its three mask shapes multiply the
+/// transmission words. The predecessor figures were the count on 19 October 2026, when the relief
+/// materials of M2-J4 joined the manifest after the shader build's shared tables split (D-190):
+/// their three bits make the standard material's maps builds 3.33 times as many, and the split
+/// keeps that growth out of every page's start. The count also holds the translucency bit and the
+/// two subsurface templates of M2-EX36. The implementation notes give the measurement and the
+/// reason to raise a figure ([the count the manifest may not
 /// pass](../../../.dev/implementation-notes.md#the-count-the-manifest-may-not-pass)). A commit
 /// that adds builds on purpose raises the figure it passes and records why there. The test
 /// `the_manifests_builds_stay_within_the_recorded_figure` refuses a count past it.
 pub const BUILD_BUDGET: BuildCounts = BuildCounts {
-    glsl: 53_762,
-    wgsl: 19_227,
+    glsl: 57_484,
+    wgsl: 20_777,
 };
 
 impl Manifest {

@@ -1239,6 +1239,11 @@ of the shared paragraph tables landed first, so the extra builds stay out of eve
 The manifest then made 53,762 GLSL builds and 19,227 WGSL builds, and `BUILD_BUDGET` records those
 figures.
 
+On 26 October 2026 the masked transmission of M3-G5 joined the pair that the permutation table
+allows, so the manifest makes 57,484 GLSL builds and 20,777 WGSL builds, 78,261 in all. The cut-out
+keeps its transmission, and its three mask shapes multiply the transmission words. The shader build
+compiled 78,249 programs in the run that wrote the modules. `BUILD_BUDGET` records the two figures.
+
 A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
 a decision record. A commit that raises the figure and gives no reason is the growth that this
 guard refuses.
