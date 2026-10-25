@@ -67,7 +67,6 @@ const INCOMPLETE = new Set([
 	'M3-L3',
 	'M3-R12',
 	'M3-R22',
-	'M3-L2',
 	'M3-L4',
 	'M3-A2',
 	'M3-A8',
@@ -123,8 +122,6 @@ const NOTES: Readonly<Record<string, string>> = {
  * above, because both describe the same task and only one of them can be true.
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
-	'M3-L2':
-		"every item is on the branch with its unit and picture tests, and the copy lists' memory is measured by `forty_thousand_copies_of_four_levels_take_one_copy_each` in `crates/null3d-render/tests/levels.rs`: 2.6 MB in the main view, where a slice per level per view would take 20.5 MB. D-137's table of 22 October records 13 MB with four cascades, against 61 MB. The two cloud rows landed on 25 October and are in D-137's addendum of that day and under `.dev/tested-devices/`: the iPad Pro 13 cuts its GPU time by 16% to 52% over its three paths, and its GPU buffers stay the same with levels off and on, at 22.0 MiB on Low and 25.6 MiB on High; the Galaxy S24 has no WebGPU and no WebGL2 GPU timer, and its buffers stay at 6.1 and 6.2 MiB. The owner's own iPad GPU time is the only row still owed, by the owner's rule of 25 October; the cloud iPad's figures stand beside it. The Mac's GPU time is in D-137's table of 11 October",
 	'M3-L4':
 		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
 	'M3-A2': "the refresh's cost rows are all owed, the Mac's included",

@@ -494,7 +494,7 @@ levels are meshes of their own. M3-L4's staged loading is the user that would sp
 
 The level-of-detail section asks each of its tasks for the GPU time and memory on the Mac, an iPad
 and an S24-class phone. The Mac's GPU time is in this record's table of 11 October. The copy lists'
-memory is in the addendum above. This addendum adds the two devices.
+memory is in the addendum above. This addendum adds the owner's iPad, the cloud iPad and the phone.
 
 The `lod-cost` page draws 40,000 pines, four levels each. It times the forest with every tree at its
 base mesh. It then times it with each tree at the level that its size on the screen picks. The two
@@ -508,6 +508,12 @@ the Galaxy S24 gives both of its rows.
 
 | Device | Path | Preset | GPU off, on (ms) | GPU buffers off, on (MiB) |
 | --- | --- | --- | --- | --- |
+| iPad Pro 11-inch, owner's | WebGPU | Low | 67.36, 16.83 | 21.8, 21.8 |
+| iPad Pro 11-inch, owner's | WebGPU | High | 150.92, 53.64 | 25.6, 25.6 |
+| iPad Pro 11-inch, owner's | compatibility | Low | 67.62, 17.83 | 21.8, 21.8 |
+| iPad Pro 11-inch, owner's | compatibility | High | 97.24, 46.31 | 25.6, 25.6 |
+| iPad Pro 11-inch, owner's | WebGL2 | Low | no timer | 6.2, 6.2 |
+| iPad Pro 11-inch, owner's | WebGL2 | High | no timer | 6.3, 6.3 |
 | iPad Pro 13, cloud | WebGPU | Low | 10.95, 5.28 | 22.0, 22.0 |
 | iPad Pro 13, cloud | WebGPU | High | 42.38, 32.12 | 25.6, 25.6 |
 | iPad Pro 13, cloud | compatibility | Low | 11.00, 5.40 | 22.0, 22.0 |
@@ -516,6 +522,19 @@ the Galaxy S24 gives both of its rows.
 | iPad Pro 13, cloud | WebGL2 | High | no timer | 6.2, 6.2 |
 | Galaxy S24, cloud | WebGL2 | Low | no timer | 6.1, 6.1 |
 | Galaxy S24, cloud | WebGL2 | High | no timer | 6.2, 6.2 |
+
+The owner's iPad Pro 11-inch ran Safari 26.6.2 on iPadOS 26.7 at 59 Hz. Its window was 1,194 by
+659 CSS pixels at 2x. Its levels cut the GPU time by 75% at Low on core WebGPU, and by 64% at High.
+They cut it by 74% and 52% in compatibility mode. Its WebGL2 frame interval fell from 108.94 to
+30.16 ms at Low and from 154.44 to 77.32 ms at High. Its GPU buffer bytes do not change between the
+two sides either, at 21.8 MiB at Low and 25.6 MiB at High. The run's own files therefore hold the
+memory rows on this device too.
+
+This iPad is an older model than the cloud iPad Pro 13, so its absolute times are several times
+larger. At Low on core WebGPU its frame takes 67.36 ms with the base meshes against the Pro's
+10.95 ms. That gap is why the owner's own iPad gives the absolute row, and why the Pro's figures
+stand beside it as the comparison rather than in its place.
+
 
 The cloud iPad ran Safari 26.6.1 on iOS 26 at 59 Hz. Its window was 1,032 by 1,264 CSS pixels at
 2x. Its levels cut the GPU time by 52% at Low on both WebGPU paths. They cut it by 24% at High on
@@ -530,6 +549,6 @@ sits at its 33.3 ms limit and hides any saving. The runner marks its timings unr
 buffer bytes also do not change, at 6.1 MiB at Low and 6.2 MiB at High. Its CPU time rises with the
 levels on, by 1.78 ms at Low and 1.35 ms at High. That is the level picks and the fade pairs.
 
-The owner's own iPad row is still owed. It takes the same page on that device with
-`bun tests/real-browsers.ts --plan lod-cost --lan ipad-safari`, with the dev server running and the
-runner page open in Safari. The cloud tablet's GPU times above stand beside it as the comparison.
+The run connected only after the mkcert root was trusted on the iPad. Until then the runner page
+sat on "starting" and nothing reached the Mac. [Device sessions](../devices.md) now records that
+step. With this run every device row of the task is complete.
