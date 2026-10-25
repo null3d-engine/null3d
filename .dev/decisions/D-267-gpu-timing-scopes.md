@@ -24,6 +24,15 @@ The engine's study chapter 04 records the method of a comparable engine. It wrap
 
 The frame record holds the whole-frame time, the time of up to seven passes and their scopes. A pass after them adds its time to the last timed pass's. That step's figure then covers the rest of the frame, and its name ends in `and later`. The engine times one frame in eleven.
 
+### A timestamp inside a pass, 26 October 2026
+
+The cheap route to a feature's time inside a shared pass is a timestamp between its draws, with no split. The two paths answer it differently:
+
+- **WebGPU:** `GPUCommandEncoder.writeTimestamp` writes only outside a pass. A write inside one needs the optional `timestamp-query-inside-passes` feature, which lets a pass encoder write a query. On this Mac's Chrome (Apple GPU) the adapter reports `timestamp-query` but not `timestamp-query-inside-passes`, and the engine requests only the first. Where a device offers the feature, the timer can widen to two markers around a feature's draws. Where it does not, the pass must end and reopen, which is the split.
+- **WebGL2:** `EXT_disjoint_timer_query_webgl2` times whatever commands run between its begin and end, so a query pair may wrap a feature's draws inside a bound pass. The engine's WebGL2 timer wraps the whole replay today. Widening it means one query pair per feature per sampled frame, polled a few frames later.
+
+So the engine's timer exposes whole passes alone on both paths today. The WebGL2 half of a per-draw scope is a small widening; the WebGPU half waits on a device feature that this Mac lacks. A figure for the splats draw that holds on both paths therefore needs the pass split, which the decision below refuses.
+
 ## Look
 
 The overlay lists the frame's steps in the card's order. The work bars come first, then the add-ons' rows, then `GPU steps`. Each step above 0.005 ms takes one line. The add-ons' rows read like `water  gpu 1.70 ms  reflectionEvery 2  budget 1.7 of 1.7 ms`. Both lists sit inside the existing card, so its size and its look do not change.
@@ -39,6 +48,6 @@ The overlay lists the frame's steps in the card's order. The work bars come firs
 ## Consequences
 
 - The water add-on declares its reflection pass as its GPU scope, and the overlay shows the pass's time on the water row.
-- The splats add-on draws inside the transparent pass and reports no GPU time. A later task that needs it must split the transparent pass per feature on WebGPU only, and record what that does to the measured frame.
+- The splats add-on draws inside the transparent pass and reports no GPU time. The subsection above records the check for a timestamp inside that pass. WebGL2 could widen its timer to time the draw. WebGPU cannot without the optional feature, which this Mac's Chrome lacks.
 - `FeatureStats.scope` and `FrameStats.gpuSteps` are public. The `place` of each is internal and the docs leave it out.
 - `docs/api/features.md`, `docs/api/debug.md` and `docs/guides/debugging.md` describe the scope, the steps and the limit of seven passes.
