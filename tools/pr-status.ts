@@ -286,6 +286,7 @@ function description(): string {
 		'',
 		"- CI on this pull request is the branch's backstop, never the first reader of a change.",
 		'- Each helper commits on its own worktree branch, runs the tests its change touches, and reports before the coordinator merges it.',
+		"- A task reported done is read by a fresh checker, never by its author: the checker reads the task's own Done-when line, runs the tests it names and opens the pictures it cites, and only a cleared verdict lets a tick or a landing through.",
 		'- `bun run limits` reports each fixed limit before a push, and `bun run pr-status` rebuilds this list from the branch itself.',
 		'- A commit that can move a limit carries a `Limits-Checked:` line, and one that changes what the GPU draws carries a `GPU-Checked:` line.',
 		'- The pictures, timings and device rows live in `.dev/examples.md`, `.dev/benchmarks.md` and `.dev/tested-devices.md` beside the features they measure.',
