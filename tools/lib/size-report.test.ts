@@ -445,6 +445,17 @@ describe('DOWNLOADS', () => {
 	});
 });
 
+describe('ENGINE_PARTS', () => {
+	it('names each part once', () => {
+		// The report keeps each part that it finds by name, so a second part of the same name was
+		// never looked for, and the file it would have claimed failed as unnamed. Which of the two
+		// claimed first followed the order of the built files' hashed names, so the same commit
+		// passed on one machine and failed on CI (25 October 2026).
+		const names = ENGINE_PARTS.map(({ name }) => name);
+		expect(names.filter((name, at) => names.indexOf(name) !== at)).toEqual([]);
+	});
+});
+
 describe('LATER_PARTS', () => {
 	it('holds the parts that load on first use or after the first frame, and no part of a start', () => {
 		const names = LATER_PARTS.map(({ name }) => name);

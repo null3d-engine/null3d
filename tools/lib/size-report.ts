@@ -409,13 +409,13 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	// each bundle their own copy: a sketch that names no built-in environment, as most do not,
 	// downloads neither.
 	{
-		name: 'page-environment.js',
+		name: 'page-assets-builtin-environments.js',
 		module: 'scene/builtin-environments.ts',
 		loadedBy: 'page-assets.js',
 		onFirstCall: true,
 	},
 	{
-		name: 'sketch-worker-environment.js',
+		name: 'sketch-worker-assets-builtin-environments.js',
 		module: 'scene/builtin-environments.ts',
 		loadedBy: 'sketch-worker-assets.js',
 		onFirstCall: true,
