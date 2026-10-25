@@ -1939,11 +1939,12 @@ impl SceneSettings {
         // with. A frame that changes the exposure scales the history into its own before blending.
         let exposure = self.drawn_output().exposure;
         let last_exposure = std::mem::replace(&mut self.taa_exposure, exposure);
-        let exposure_ratio = if reset || last_exposure <= 0.0 || exposure <= 0.0 {
-            1.0
-        } else {
-            exposure / last_exposure
-        };
+        let exposure_ratio =
+            if reset || !settings.exposure || last_exposure <= 0.0 || exposure <= 0.0 {
+                1.0
+            } else {
+                exposure / last_exposure
+            };
         let mut identity = [0.0; 16];
         for k in 0..4 {
             identity[k * 5] = 1.0;
