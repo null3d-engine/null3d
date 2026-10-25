@@ -1188,8 +1188,9 @@ export interface StandardValues extends MaterialOptions {
 	 * becomes the light from behind, and the reflections stay. Roughness blurs what shows through.
 	 * Give it when you create the material, even as 0, to change it later. A material created
 	 * without it lets no light through. Such a material draws after the opaque objects, with the
-	 * blended ones, and only opaque objects show through it. It takes the `opaque` or `blend` alpha
-	 * mode. The default is 0.
+	 * blended ones, and only opaque objects show through it. It takes the `opaque`, `mask` or
+	 * `blend` alpha mode. A mask decides which pixels draw, and the light from behind fills the
+	 * pixels that remain, as three.js's `alphaTest` does. The default is 0.
 	 */
 	transmission?: number;
 	/**
@@ -2731,10 +2732,10 @@ function checkFeatures(options: StandardOptions, call: string): void {
 			'E1217',
 			`${call}() got parallax with ${transmission !== undefined ? 'transmission' : options.diffuseTransmission !== undefined ? 'diffuseTransmission' : "the alpha mode 'blend'"}; parallax takes an opaque or masked surface. Leave parallax out to keep the displacement alone.`,
 		);
-	if (transmission !== undefined && (alphaMode === 'mask' || alphaMode === 'hash'))
+	if (transmission !== undefined && alphaMode === 'hash')
 		throw new EngineError(
 			'E1217',
-			`${call}() got transmission with the alpha mode '${alphaMode}'; a material that lets light through takes 'opaque' or 'blend'.`,
+			`${call}() got transmission with the alpha mode 'hash'; a material that lets light through takes 'opaque', 'mask' or 'blend'.`,
 		);
 	if (transmission !== undefined && blending === 'weighted')
 		throw new EngineError(
