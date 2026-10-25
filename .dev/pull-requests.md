@@ -108,6 +108,14 @@ The queue sets a job's priority when it starts, so a job that was already waitin
 began with: restart it after a change of rule. The page-build lock still refuses to be taken at
 background priority, so a job that lands clamped that way says so rather than hanging.
 
+One flag sorts a job ahead of every other waiting job in its lane. The gate that checks and pushes a
+landing may set it, for its own checks only. Those are the unit suite, the heavy checks, the size
+check, the limits report and the type check. It applies to every range that gate handles, because
+every landing that night waits behind it. A helper's experiment does not. The flag is not for a
+build, a picture run or a measurement started to explore. It is not used inside a timing window,
+where those runs own the machine. On 25 October 2026 the gate's heavy checks moved from sixth in the
+lane to first this way, at a load of 77. The five jobs behind them kept their order.
+
 A build compiles the Rust crates for two WebAssembly variants and the build tools, writes the shader
 modules for every feature, and then builds the test page for the size report. It is the longest step
 in a landing, so keep the count down. Every build cache lives under one root, `null3d` under
