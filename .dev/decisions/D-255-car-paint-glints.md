@@ -88,16 +88,19 @@ say so.
 
 ## Addendum, 25 October 2026: the light's size the glints need
 
-The pictures drawn for this record showed no glint. The paint with its flakes and the paint without
-them differed only where the count takes the smooth highlight away. Across all six references no
-pixel grew brighter than one step. The highlight fell by up to 76 steps over about 1,100 pixels. The
-sparkle the model describes had not drawn at all.
+The pictures drawn for this record showed no glint, and the light's size is why. The chance that one
+flake reflects the main light is the light's solid angle over the cap of flake normals. A radius of
+0.02 radians is a light 1.1 degrees across, so about one flake in 1,400 reflected it. The count was
+almost always zero. Each caught flake added its light where the smooth highlight was already clipped
+or too dim to show.
 
-The chance that one flake reflects the light is the light's solid angle over the cap of flake
-normals. A radius of 0.02 radians is a light 1.1 degrees across. About one flake in 1,400 caught it
-in the paint's footprint. Each caught flake added its light where the smooth highlight was already
-clipped or too dim to show. The default now names 0.25 radians, a softbox 14 degrees across. That is
-what the option's text claimed before it.
+So the paint with its flakes and the paint without them differed only where the count takes the
+smooth highlight away. Across all six references no pixel grew brighter than one step. The highlight
+fell by up to 76 steps over about 1,100 pixels. The sparkle the model describes had not drawn at
+all. A test that only compared the two pictures would have passed such a paint.
+
+The default now names 0.25 radians, a softbox 14 degrees across. That is what the option's text
+claimed before it.
 
 Measured on the Mac's GPU with the paint test's own body, the pixels that grew brighter than 8 steps
 were none at 0.02 radians. They were 14 at 0.08, 49 at 0.15, 161 at 0.25 and 442 at 0.4, with the
@@ -107,3 +110,31 @@ pixels on that body, the brightest 103 steps above it. The test sketch's flake c
 same distance along each texture coordinate. A glint therefore draws as a 2 by 2 pixel dot rather
 than a six to one dash. The dash was the cell's shape on screen, not the flake's. The paint spec also
 checks that the flakes brighten pixels, so a model that only removes the highlight fails it.
+
+The Showroom demo's wide shot shows none of this sparkle, and the change leaves its picture inside
+the comparison's tolerance. Its car covers little of the frame. A flake there falls below a pixel,
+and the model smooths it, as this record intends for a distant car. That leaves the demo unable to
+show the feature. A closer camera in the demo, or coarser flake cells on its paint, would show it.
+The choice belongs to the owner's eye, and the demo keeps its settings for now.
+
+## Runs
+
+The addendum's figures come from the two reference sets' picture pairs, and these runs measured the
+same to within a step. Each ran on the Mac that holds this checkout:
+
+- `bun run --cwd tests test car-paint.spec.ts` on the Mac's GPU, 25 October 2026, 15:47 to 15:48,
+  1 passed (29.1 s): flakes mean 0.00267, share 0.01650, 228 glints.
+- The same command with `CI=1`, on SwiftShader, 15:49 to 15:51, 1 passed (53.7 s): mean 0.00267,
+  share 0.01651, 232 glints.
+- `bun run test:images` on the Mac's GPU, 15:51 to 16:18, 1,590 passed and 1 failed. `demo-aurora`
+  on webgl2 failed with E1408. That is a capture fault of the sky work, not this paint.
+  `demo-coat-and-sheen` passed on all three tiers. The new default therefore moved that picture by
+  less than the comparison's 0.1 per cent.
+- On the merged tip 383c16bde, `images.spec.ts car-paint.spec.ts -g car-paint`, 20:22 to 20:43,
+  16 passed (36.7 s) on the Mac's GPU. The same run with `CI=1`, 21:12 to 21:13, passed 16 (1.0 m)
+  against the software set that CI drew.
+- CI run 40192893324 drew that software set on 25 October 2026, and the nine paint candidates of
+  its browser shards 13 and 14 were accepted.
+
+The local runs' logs are `/tmp/paint-mac-spec.log`, `/tmp/paint-swift.log`,
+`/tmp/paint-full-mac.log`, `/tmp/paint-merged.log` and `/tmp/paint-swift-final.log` on that machine.
