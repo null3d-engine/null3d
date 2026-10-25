@@ -39,9 +39,13 @@ test('a splat stream draws before its whole cloud arrives, and carries no hole',
 	page,
 }) => {
 	test.setTimeout(180_000);
-	// A cloud of many chunks, larger than the capped budget, so the view wants only a part of it. A
-	// software GPU can take seconds for one frame of it, so the measured window there is long enough
-	// to hold one, and only the real GPU's rate is judged.
+	// A cloud of many chunks, larger than the capped budget, so the view wants only a part of it. The
+	// selection gives every chunk the budget reaches an eighth of itself before it refines the
+	// nearest, so a small budget covers several chunks, and a software GPU fills those cards far
+	// slower than a frame of the page's window allows. That run draws the same cloud in a smaller
+	// canvas: the test judges the chunks, the bytes and the budget, which a smaller canvas leaves
+	// unchanged, and only the real GPU's frame rate is judged.
+	if (softwareGpu()) await page.setViewportSize({ width: 320, height: 180 });
 	const seconds = softwareGpu() ? 20 : 2;
 	await page.goto(`splats-stream.html?gpu=webgl2&splats=400000&budget=10000&seconds=${seconds}`);
 	const result = await pageResult<StreamResult>(page, 150_000);
