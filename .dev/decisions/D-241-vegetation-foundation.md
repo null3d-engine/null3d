@@ -242,6 +242,13 @@ are the choices the task left open, and the reasons for them.
   material that names the alpha. The engine's masked caster templates do the same. Its prepass
   keeps no fragment stage, since a prepass that drops pixels is no prepass. WebGL2 needed no change: its
   depth pass always compiled the template's fragment shader.
+- **The depth and motion layouts reach the fragment stage.** A masked custom material's caster
+  and its motion build run the surface function in a fragment stage, and that function reads the
+  material's custom values, the table that holds its uniforms and its texture layers. The depth
+  layout and the motion layout showed that texture to the vertex stage alone, because only a
+  vertex offset had read it. A textured or a uniform-driven material therefore failed to build
+  its caster's pipeline with E1408 on WebGPU, while a leaf of plain values built. Both layouts
+  show the texture to the fragment stage too, where the bind group already held it.
 - **Row values keep the mask's own test.** `ROW_VALUES` is no longer kept apart from
   `ALPHA_COVERAGE` or `ALPHA_HASH` in `APART`. The frame builder also stops exempting a batch's
   rows from the mask's own test. So a batch's rows test a mask by the cutoff, by coverage or by the hash,

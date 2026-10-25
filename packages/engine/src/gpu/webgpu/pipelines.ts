@@ -659,7 +659,7 @@ export class Pipelines {
 		const fragment = GPUShaderStage.FRAGMENT;
 		// The frame's constants and the material table, which depth-only pipelines read too, then
 		// the materials' custom values, the row values of instance batches and the table of object
-		// ranges, which the vertex shaders of custom materials' shadow casters read too.
+		// ranges, which the custom material's build of a shadow caster or a motion reads too.
 		const frameEntries: GPUBindGroupLayoutEntry[] = [
 			{
 				binding: 0,
@@ -680,9 +680,11 @@ export class Pipelines {
 		};
 		this.defineLayout(LAYOUT_DEPTH, 'depth', [
 			...frameEntries,
+			// The materials' custom values, which a custom material's vertex offset reads and its
+			// masked shadow caster's fragment stage reads too, as it runs the surface function.
 			{
 				binding: 2,
-				visibility: GPUShaderStage.VERTEX,
+				visibility: GPUShaderStage.VERTEX | fragment,
 				texture: { sampleType: 'unfilterable-float' },
 			},
 			rowValues,
@@ -768,9 +770,11 @@ export class Pipelines {
 		// materials that read object ids.
 		this.defineLayout(LAYOUT_MOTION_FRAME, 'motion frame', [
 			...frameEntries,
+			// The materials' custom values, which a custom material's vertex offset reads and its
+			// masked motion build's fragment stage reads too, as it runs the surface function.
 			{
 				binding: 2,
-				visibility: GPUShaderStage.VERTEX,
+				visibility: GPUShaderStage.VERTEX | fragment,
 				texture: { sampleType: 'unfilterable-float' },
 			},
 			{ binding: 4, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
