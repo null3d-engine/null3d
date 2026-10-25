@@ -84,13 +84,13 @@ describe('networkProblems', () => {
 		expect(problems).toContain('packages/terrain/src/index.ts: uses importScripts');
 	});
 
-	test('refuses a call through a bracket key or an optional call', () => {
+	test('refuses a call through a bracket key, a cast or an optional call', () => {
 		const root = fixture({
 			'packages/engine/src/page/engine.ts':
-				'fetch(a); fetch(b); globalThis["fetch"](c); window[`fetch`](d); self?.[\'fetch\']?.(e);',
+				'fetch(a); fetch(b); globalThis["fetch"](c); window[`fetch`](d); self?.[\'fetch\']?.(e); (globalThis as any)["fetch"](f); (window as any).fetch(g); (<any>globalThis).fetch(h);',
 		});
 		const problems = networkProblems(root).problems.join('\n');
-		expect(problems).toContain('packages/engine/src/page/engine.ts: has 5 fetch calls');
+		expect(problems).toContain('packages/engine/src/page/engine.ts: has 8 fetch calls');
 	});
 
 	test('refuses a protocol-relative address, which reaches the same host with no scheme', () => {
@@ -184,7 +184,7 @@ describe('unreachedVendorProblems', () => {
 		const root = fixture({
 			'packages/engine/vendor/draco/draco_wasm_wrapper_gltf.js': 'fetch(a);',
 			'packages/engine/src/scene/gltf-draco.ts':
-				"import '../vendor/draco/draco_wasm_wrapper_gltf.js'; const module = { instantiateWasm() {} };",
+				"import '../vendor/draco/draco_wasm_wrapper_gltf.js'; const make = (options) => options; make({ instantiateWasm(imports, receive) {} });",
 		});
 		expect(unreachedVendorProblems(root)).toEqual([]);
 	});
@@ -196,7 +196,18 @@ describe('unreachedVendorProblems', () => {
 				"import '../vendor/draco/draco_wasm_wrapper_gltf.js';",
 		});
 		expect(unreachedVendorProblems(root).join('\n')).toContain(
-			'packages/engine/src/scene/gltf-draco.ts: imports vendor/draco/draco_wasm_wrapper_gltf.js without instantiateWasm or wasmBinary',
+			'packages/engine/src/scene/gltf-draco.ts: imports vendor/draco/draco_wasm_wrapper_gltf.js without passing instantiateWasm(imports, receive) or wasmBinary to the module',
+		);
+	});
+
+	test('refuses an importer that only mentions the option', () => {
+		const root = fixture({
+			'packages/engine/vendor/draco/draco_wasm_wrapper_gltf.js': 'fetch(a);',
+			'packages/engine/src/scene/gltf-draco.ts':
+				"import '../vendor/draco/draco_wasm_wrapper_gltf.js'; // instantiateWasm is the option",
+		});
+		expect(unreachedVendorProblems(root).join('\n')).toContain(
+			'without passing instantiateWasm(imports, receive) or wasmBinary',
 		);
 	});
 
@@ -204,7 +215,7 @@ describe('unreachedVendorProblems', () => {
 		const root = fixture({
 			'packages/cli/vendor/basis/basis_encoder.js': 'fetch(a);',
 			'packages/cli/src/assets/encoder.js':
-				"const glue = new URL('../../vendor/basis/basis_encoder.js', import.meta.url); const wasmBinary = readFileSync(wasmPath);",
+				"const glue = new URL('../../vendor/basis/basis_encoder.js', import.meta.url); BASIS({ wasmBinary: readFileSync(wasmPath) });",
 		});
 		expect(unreachedVendorProblems(root)).toEqual([]);
 	});
@@ -216,7 +227,7 @@ describe('unreachedVendorProblems', () => {
 				"const glue = new URL('../../vendor/basis/basis_encoder.js', import.meta.url);",
 		});
 		expect(unreachedVendorProblems(root).join('\n')).toContain(
-			'packages/cli/src/assets/encoder.js: imports vendor/basis/basis_encoder.js without instantiateWasm or wasmBinary',
+			'packages/cli/src/assets/encoder.js: imports vendor/basis/basis_encoder.js without passing instantiateWasm(imports, receive) or wasmBinary to the module',
 		);
 	});
 

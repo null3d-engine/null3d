@@ -169,13 +169,14 @@ The other findings were checked against this branch. Three were real and are clo
   October figures follow the table: 430 shipped files, 19 `fetch` calls, 13 in null3D code and six
   in vendored glue. The command-line tool's loopback request is stated too.
 - A call through a bracket key, an optional call and a protocol-relative address all passed the
-  guard. It now counts each of them, with a test for each, and the vendored check has a case for
-  the command-line tool's `wasmBinary`.
+  guard. It now counts each of them, with a test for each, and a cast form such as
+  `(globalThis as any)['fetch']` too. The vendored check now reads the option as it is passed,
+  rather than the word anywhere, and has a case for the command-line tool's `wasmBinary`.
 
 Two findings were already closed on this branch. The vendor check reads the importer of every
 vendored download path, and it covered the Draco wrapper, the Basis transcoder and the CLI encoder.
 The notices page named vegetation and wind in the first addendum of this date.
 
 Seen to fail: an added bracket-key `fetch` and a protocol-relative address in
-`packages/terrain/src/index.ts` named both forms. The 26 network tests and the 10 notices tests
-pass.
+`packages/terrain/src/index.ts` named both forms. A bare mention of `instantiateWasm` in place of
+the option failed the vendored check. The 27 network tests and the 10 notices tests pass.

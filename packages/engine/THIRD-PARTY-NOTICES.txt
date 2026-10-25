@@ -358,6 +358,8 @@ The specular anti-aliasing kernel, the anisotropic GGX highlight and the two con
 punchy look follow Filament's, from https://github.com/google/filament. The kernel and the
 highlight are in the shader library, and the punchy look is in the tone mapping shader.
 
+Copyright 2023 The Android Open Source Project.
+
 Apache License, Version 2.0, whose text the Basis Universal section above gives in full.
 
 ==============================================================================

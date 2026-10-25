@@ -125,7 +125,7 @@ export const ALLOWED_HOSTS: readonly AllowedHost[] = [
  * from pieces cannot be seen here.
  */
 const FETCH_CALL =
-	/(?:(?:globalThis|window|self)\s*(?:\?\.|\.)\s*fetch|(?:globalThis|window|self)\s*(?:\?\.)?\s*\[\s*(['"`])fetch\1\s*\]|(?<![.\w])fetch)\s*(?:\?\.)?\s*\(/g;
+	/(?:(?:globalThis|window|self)(?:\s+as\s+[^)]+)?\s*\)?\s*(?:\?\.|\.)\s*fetch|(?:globalThis|window|self)(?:\s+as\s+[^)]+)?\s*\)?\s*(?:\?\.)?\s*\[\s*(['"`])fetch\1\s*\]|(?<![.\w])fetch)\s*(?:\?\.)?\s*\(/g;
 /** An absolute address in a string, as a template or a plain literal gives it. */
 const ABSOLUTE_URL = /(https?|wss?):\/\/([^\s"'`)]+)/g;
 /** A protocol-relative address in a string, which reaches the same host with no scheme. */
@@ -275,6 +275,14 @@ export function staleUseProblems(root: string): string[] {
 }
 
 /**
+ * How a shipped file hands a vendored module its compiled WebAssembly: the glue's
+ * `instantiateWasm(imports, receive)` method, or its `wasmBinary:` option. A bare mention does not
+ * count, because only the option itself stops the glue's own download.
+ */
+const HANDS_MODULE =
+	/\binstantiateWasm\s*\(\s*[A-Za-z_$][\w$]*\s*,\s*[A-Za-z_$][\w$]*\s*\)\s*\{|\bwasmBinary\s*:\s*[A-Za-z_$[(]/;
+
+/**
  * Every vendored file whose network forms the record names, and which a shipped file imports
  * without handing it the compiled module. Such a file could reach its own download, so the promise
  * that a page contacts no server would fail. Each problem is `path: problem`.
@@ -304,10 +312,10 @@ export function unreachedVendorProblems(root: string): string[] {
 			continue;
 		}
 		for (const { file, text } of users) {
-			if (/\b(?:instantiateWasm|wasmBinary)\b/.test(text)) continue;
+			if (HANDS_MODULE.test(text)) continue;
 			const rel = relative(root, file).split(sep).join('/');
 			problems.push(
-				`${rel}: imports ${tail} without instantiateWasm or wasmBinary, so the vendored download path can run`,
+				`${rel}: imports ${tail} without passing instantiateWasm(imports, receive) or wasmBinary to the module, so the vendored download path can run`,
 			);
 		}
 	}
