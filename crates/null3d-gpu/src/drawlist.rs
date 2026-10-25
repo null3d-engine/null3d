@@ -1147,10 +1147,13 @@ pub mod permutation {
     /// A mask tests its alpha one way, by coverage or by the hash. A mesh that WebGPU skins in the
     /// vertex shader reads the culling shader's copies, so the builds that read their instances by
     /// index never skin: those builds would load with the skinning feature and double its WebGPU
-    /// files. A surface that lets light through tests no mask, and draws in the transparent pass,
-    /// which never reads instances by index. Row values come from instance batches, which neither
-    /// skin nor morph, read their instances from the culling shader's copies, and test a mask
-    /// against its cutoff; a surface that lets light through draws its rows without their values.
+    /// files. A surface that lets light through draws in the transparent pass, which never reads
+    /// instances by index, and keeps its mask: the cut-out leaves the pixels whose alpha passes, by
+    /// the cutoff or by coverage, and their light comes from behind. It takes no hash, which three.js
+    /// has no counterpart for, so the glTF files that ask for both draw with the plain mask. Row
+    /// values come from instance batches, which neither skin nor morph, read their instances from
+    /// the culling shader's copies, and test a mask against its cutoff; a surface that lets light
+    /// through draws its rows without their values.
     /// A caster's build writes depth alone, so it has none of the bits that shade or tone map.
     /// Displacement and bump builds load on first use, so the test switch's builds do without them.
     /// A bump map takes the normal map's slot, so its builds never read the mesh's tangents.
@@ -1173,8 +1176,8 @@ pub mod permutation {
     /// with neither FXAA nor bloom.
     pub const APART: [(u32, u32); 56] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
+        (TRANSMISSION, ALPHA_HASH),
         (SKIN, INSTANCE_INDEX),
-        (TRANSMISSION, ALPHA_MASK),
         (TRANSMISSION, INSTANCE_INDEX),
         (ROW_VALUES, SKIN),
         (ROW_VALUES, MORPH),

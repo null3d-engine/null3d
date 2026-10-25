@@ -306,8 +306,9 @@ pub mod feature {
     /// The surface lets light through, as three.js's `transmission` does: it draws in the
     /// transparent pass, after the opaque objects, and samples a copy of their color behind it,
     /// bent by its index of refraction and its thickness and blurred by its roughness. The
-    /// material's transmission value sets how much light passes. It takes no mask, so it wins over
-    /// [`ALPHA_MASK`].
+    /// material's transmission value sets how much light passes. It keeps its mask, which cuts the
+    /// pixels that draw nothing before the light from behind fills the rest, as three.js's
+    /// `alphaTest` draws one.
     pub const TRANSMISSION: u32 = 8192;
     /// Light that reaches the surface's back shows on its front, as glTF's diffuse transmission
     /// draws a leaf, a petal or an ear against the light. The material's diffuse transmission
@@ -406,10 +407,11 @@ pub mod feature {
     /// row holds every one of their values.
     pub const LAYERS: u32 = COAT_SHEEN | IRIDESCENCE | ANISOTROPY;
 
-    /// True for features that test alpha with the masked shader variant: a mask that neither
-    /// blends nor lets light through.
+    /// True for features that test alpha with the masked shader variant: a mask that does not
+    /// blend. A surface that lets light through keeps its mask too, and cuts its holes before the
+    /// light from behind fills the pixels that remain.
     pub const fn masks(features: u32) -> bool {
-        features & ALPHA_MASK != 0 && features & (BLEND | TRANSMISSION) == 0
+        features & ALPHA_MASK != 0 && features & BLEND == 0
     }
 
     /// True for features that draw in the camera's weighted layer: [`WEIGHTED`] with normal
@@ -2367,6 +2369,8 @@ mod tests {
         assert_eq!(row(&table, 1)[param::FLAGS], flag::BLEND as f32);
         assert!(feature::masks(hashed));
         assert!(!feature::masks(feature::ALPHA_MASK | feature::BLEND));
+        // A surface that lets light through keeps the mask that cuts its holes.
+        assert!(feature::masks(feature::ALPHA_MASK | feature::TRANSMISSION));
     }
 
     #[test]
