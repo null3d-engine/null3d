@@ -385,7 +385,8 @@ const brick = materials.standard({   // maps are fixed at creation; the mesh nee
   lightMapDecode: 'rgbm',                    // (0.3) Needle's light maps: color times alpha times 8
   specularIntensityMap: spec, specularColorMap: tint,  // (0.2) linear alpha; sRGB color, as three.js's physical material
   envIntensity: 1,                   // (0.2) the scene environment's light on this material
-  uvTransform: { repeat: [4, 2], offset: [0, 0], rotation: 0 },  // every map shares it; set() changes it
+  uvTransform: { repeat: [4, 2], offset: [0, 0], rotation: 0 },  // every map; set() changes it
+  mapUvTransforms: { emissiveMap: { repeat: [2, 2] } },  // one map's own, as a file gives it
 });
 // (0.2) A decal: a mesh of geometry.box() with this material projects it onto every opaque surface in
 // the box, lit there. The box's z axis points out of the surface; its x and y sides hold the map.

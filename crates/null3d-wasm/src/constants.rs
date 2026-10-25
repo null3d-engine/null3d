@@ -152,6 +152,18 @@ pub mod map_slot {
     pub const ANISOTROPY: u32 = layer(LayerMap::Anisotropy);
     pub const TRANSMISSION: u32 = layer(LayerMap::Transmission);
     pub const THICKNESS: u32 = layer(LayerMap::Thickness);
+    /// The row slot that holds a layer map's texture, and whose own texture coordinate transform
+    /// the shader reads. A layer map shares one of the light and specular slots.
+    pub const COAT_ROW: u32 = LayerMap::Coat.slot() as u32;
+    pub const COAT_ROUGHNESS_ROW: u32 = LayerMap::CoatRoughness.slot() as u32;
+    pub const COAT_NORMAL_ROW: u32 = LayerMap::CoatNormal.slot() as u32;
+    pub const SHEEN_COLOR_ROW: u32 = LayerMap::SheenColor.slot() as u32;
+    pub const SHEEN_ROUGHNESS_ROW: u32 = LayerMap::SheenRoughness.slot() as u32;
+    pub const IRIDESCENCE_ROW: u32 = LayerMap::Iridescence.slot() as u32;
+    pub const IRIDESCENCE_THICKNESS_ROW: u32 = LayerMap::IridescenceThickness.slot() as u32;
+    pub const ANISOTROPY_ROW: u32 = LayerMap::Anisotropy.slot() as u32;
+    pub const TRANSMISSION_ROW: u32 = LayerMap::Transmission.slot() as u32;
+    pub const THICKNESS_ROW: u32 = LayerMap::Thickness.slot() as u32;
 
     /// The number that `setMaterialMap` takes for a layer map: its place after the map slots.
     const fn layer(map: LayerMap) -> u32 {
@@ -1143,6 +1155,25 @@ pub fn typescript() -> String {
                 ("LIGHT_MAP_DIRECTION", map_slot::LIGHT_MAP_DIRECTION),
             ],
         ),
+        // The row slot that holds each map's texture, which is the slot whose own transform the
+        // shader reads: the layer maps and the maps that take the normal map's slot share one.
+        (
+            "MAP_ROW_SLOT",
+            &[
+                ("COAT", map_slot::COAT_ROW),
+                ("COAT_ROUGHNESS", map_slot::COAT_ROUGHNESS_ROW),
+                ("COAT_NORMAL", map_slot::COAT_NORMAL_ROW),
+                ("SHEEN_COLOR", map_slot::SHEEN_COLOR_ROW),
+                ("SHEEN_ROUGHNESS", map_slot::SHEEN_ROUGHNESS_ROW),
+                ("IRIDESCENCE", map_slot::IRIDESCENCE_ROW),
+                ("IRIDESCENCE_THICKNESS", map_slot::IRIDESCENCE_THICKNESS_ROW),
+                ("ANISOTROPY", map_slot::ANISOTROPY_ROW),
+                ("TRANSMISSION", map_slot::TRANSMISSION_ROW),
+                ("THICKNESS", map_slot::THICKNESS_ROW),
+                ("BUMP", map_slot::NORMAL),
+                ("DISPLACEMENT", map_slot::NORMAL),
+            ],
+        ),
         // The values that `setMaterialValue` changes, by the float where each starts in a row.
         (
             "MATERIAL_PARAM",
@@ -1160,6 +1191,8 @@ pub fn typescript() -> String {
                 ("ENV_INTENSITY", param::ENV_INTENSITY as u32),
                 ("UV_U", param::UV_U as u32),
                 ("UV_V", param::UV_V as u32),
+                ("MAP_UV", param::MAP_UV as u32),
+                ("MAP_UV_STRIDE", param::MAP_UV_STRIDE as u32),
                 ("REFLECTANCE", param::REFLECTANCE as u32),
                 ("SPECULAR_COLOR", param::SPECULAR_COLOR as u32),
                 ("SPECULAR_INTENSITY", param::SPECULAR_INTENSITY as u32),
