@@ -1132,3 +1132,22 @@ The budget rises to 194 KB, or 198,656 bytes, leaving 1,245 bytes of room. The o
 second grading design's bake loads only in the grade task's worker file, which has its own budget.
 A page that never grades therefore pays nothing for it. The trims owed above still stand as the next
 work that touches the start's size.
+
+
+## The start's budget rises to 195 KB for the cut-out builds, 25 October 2026
+
+M3-V2 gives a custom material's WGSL the standard material's cut-out features. A material whose
+WGSL sets or reads the surface's `alpha` gains the builds of alpha to coverage, the alpha hash and
+their sample mask, and its shadow caster and motion build test that alpha in a fragment stage. The
+feature's own shader builds load with the material on first use, so a page that never draws one
+downloads none of them. The material gating and the custom template's depth stage are in the start.
+
+After the second merge with the day's tip, a production page build measured 198,457 bytes after
+Brotli in pipelined WebGL2 mode, 199 bytes under the 194 KB line that the grading work set. Low
+latency measured 194,692 and drawing on the main thread 195,993. The feature's own share is about
+900 bytes: the grading section above measured the tip alone at 197,411.
+
+The budget rises to 195 KB, or 199,680 bytes, leaving 1,223 bytes of room. The owner's rule of
+22 October allows the start's budget to rise as needed without asking, reaffirmed on 25 October.
+The trims that the sections above owe, the light probes' split among them, still stand as the next
+work that touches the start's size.

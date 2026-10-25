@@ -1088,8 +1088,15 @@ export function downloadSizes(
  * WebGL2's pipelined start at 197,411 bytes, 803 bytes over the old line. The grading controls added
  * the switch that picks the table's input and the values that the 8-bit path's shaders read. The
  * rise leaves 1,245 bytes of room.
+ *
+ * It went to 195 KB on 25 October 2026, for M3-V2's cut-out builds. A custom material's WGSL that
+ * names the surface's alpha now cuts the material's own shape: its builds gain alpha to coverage,
+ * the alpha hash and their sample mask, and its caster and motion build test the alpha. The
+ * material gating and the custom template's depth stage are in the start. After the second merge
+ * with the day's tip, WebGL2's pipelined start measured 198,457 bytes, 199 bytes under the 194 KB
+ * line. The rise leaves 1,223 bytes.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 194 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 195 * 1024 };
 
 /**
  * The budget for each part that loads after the start. The Brotli figure rose on 22 October 2026,
