@@ -2,8 +2,8 @@
 
 Status: decided by the helper of M3-F4 on 25 October 2026, for the owner's review. Built: the
 second texture, the shader weighting, the glTF reader, the picture test, the memory figure, and the
-page that measures the cost and the figure it took, as the consequences list. The comparison with
-Needle's viewer is not available (below). Date: 2026-10-25. Task: M3-F4.
+page that measures the cost and the figure it took, as the consequences list. A frame from Needle's
+viewer is recorded in the run file of 26 October 2026 (below). Date: 2026-10-25. Task: M3-F4.
 
 Summary: A directional light map carries the light's direction in a second texture of the
 radiance's own size, format and color space, so both share one texture array, one binding and one
@@ -68,22 +68,21 @@ and pixel ratio 1, with the indexer quiet and the gate at 7.8 before the page an
 read 0.99 ms plain against 1.06 ms directional, so 0.07 ms, and moved 55.46% of the pixels. That
 is the compatibility figure in the table. [Benchmarks](../benchmarks.md#directional-light-maps) gives the command.
 
-A comparison with Needle's viewer is not available. The repository holds no Needle runtime, no
-viewer build and no captured frame; it pins only `@needle-tools/three-animation-pointer`. The scene
-is a reduced export with `NEEDLE_lightmaps`, `NEEDLE_components` and `NEEDLE_gameobject_data`, and
-the source project's viewer settings are not pinned. The picture test is a regression of the decode
-and the placement, not a comparison with the viewer.
+A frame from Needle's viewer is recorded. The repository itself pins no Needle runtime, but the
+sample's source project, madjin/lightmap-tests, ships the viewer build that draws the scene. Its
+bundle and scene file are identified by commit and bytes in the run record.
+[20261026-014942-needle-viewer](../tested-devices/macbook-pro-chrome/20261026-014942-needle-viewer.md)
+holds the capture, made in Chrome on this Mac on 26 October 2026 with the load and the browser
+recorded there.
 
-Two routes lead to a frame. A capture of this scene in the viewer, with its camera and settings
-named. Or a scratch project that installs the Needle runtime, loads the file and captures it. The
-owner may also rule that the evidence below meets the clause.
+The frame is the viewer drawing the scene's light-mapped wall, floor and grass. It is the full
+sample scene under the viewer's own camera, not the reduced file in this repository, so it shows
+that the viewer applies the bake. It is not a pixel-for-pixel match with the reduced file's picture;
+the two are compared by content.
 
-Without a frame the loader proves two things. A unit test parses the reduced file's fields: the
-light map kind, each node's map index, and its scale and offset. The picture shows the wall and the
-grass lit and placed, so a wrong decode, coordinate set or offset changes those two regions.
-Neither proves that Needle's viewer would draw the same pixels.
-
-This record does not claim the clause until one of those exists.
+What the loader proves beside that frame: a unit test parses the reduced file's fields, the light
+map kind, each node's map index, and its scale and offset. The picture shows the wall and the grass
+lit and placed, so a wrong decode, coordinate set or offset changes those two regions.
 
 ## Decision
 
