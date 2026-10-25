@@ -4,12 +4,11 @@ Status: decided. Date: 2026-10-26. Task: M3-V15. [D-241](D-241-vegetation-founda
 fluid wind in an add-on of its own, and [D-173](D-173-addon-hooks.md)'s addendum of 25 October 2026
 makes it the twelfth foundation.
 
-Summary: The fluid wind needs a solver that carries its state from one frame to the next, and the
-engine refuses one: a pass may not read its own texture, and two passes may not read each other's
-(E1504). That read is M3-V13, which is not built. The wind add-on therefore starts with a field that
-keeps no state: an analytic wind that is divergence-free by construction, a grid that samples it and
-folds in drag, and a short pressure projection. The API and the sampling function stay the same when
-M3-V13 replaces the core with an advected solve.
+Summary: The fluid wind needs a solver that carries its state between frames, and the engine refuses
+one (E1504). That read is M3-V13, which is not built. The wind add-on therefore starts with a field
+that keeps no state. An analytic wind, incompressible by construction, fills a grid that follows the
+camera. A page sets the base wind, sends a gust and pushes the air. The API and the sampling
+function stay the same when M3-V13 adds the advected core.
 
 ## Question
 
@@ -46,9 +45,9 @@ and timing runs. Every cost figure for the field stays owed to M3-V14.
 
 The field is built in two stages. M3-V15 builds the first.
 
-**Stage one, this task.** The analytic wind is incompressible by construction: its swirl is the curl
+**Stage one, this task.** The analytic wind is incompressible by construction. Its swirl is the curl
 of one stream function in the ground plane, a push is a vortex, and a gust turns in rings about its
-own centre. Its base flow is constant along the ground and slower near it. No pressure solve is
+own center. Its base flow is constant along the ground and slower near it. No pressure solve is
 therefore needed to keep the air's volume, and the tests check that the discrete form keeps it. A
 grid that follows the camera samples that field into one `rgba16float` texture, which a reader
 samples with one texture read. The texture holds the wind across the ground and the local speed in
@@ -78,10 +77,17 @@ wind that input (M3-V17), and the projection removes the divergence that the dra
 - **What stage one cannot do:** a gust does not spread by itself, and a wake does not outlive the
   body. The pushes' trail stands in for the wake until M3-V13 lands. A place outside the grid's box
   reads the box's edge, so the air is smooth rather than exact there.
+- **A device that cannot hold the field:** a WebGL2 device without a float render target keeps no
+  pass, so the add-on costs it nothing. Its readers sample a one-texel texture of the output's
+  neutral black, and `sample` still gives the air. The add-on reads the device's extensions to
+  decide, and a test covers both answers.
 - **The tier table waits:** the pressure steps, the field steps a second and the mixed states of the
   plan's table belong to stage two. M3-V14 measures the field that exists, and its rows are replaced
   when the core changes.
 - **Docs and skills:** the wind page states that the field carries no state yet, and that a page
   reads it the same way before and after the change.
-- **Evidence:** the add-on's tests prove the field moves a plant and that a frozen field fails those
-  tests. The allocation figure and `check-addon`'s cost gate are owed while timing runs are barred.
+- **Evidence:** the add-on's tests prove the field moves a plant card, and that a frozen field fails
+  those tests. The allocation figure and `check-addon`'s page, cost and allocation gates are owed
+  while timing runs are barred. `check-addon`'s size gate reports the entry over its code budget.
+  The water add-on fails that gate on this branch too. The plugin inlines an imported effect's
+  compiled data in the entry, and the entry without it is a seventh of the figure.
