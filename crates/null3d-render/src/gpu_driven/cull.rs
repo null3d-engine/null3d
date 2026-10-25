@@ -51,7 +51,10 @@ use super::ids;
 use super::layout::Layout;
 use super::pyramid::Levels;
 use crate::cells::{CellCulling, CellMask};
-use crate::frame::{CellOffsets, RecordError, UploadArena, grown_size, words_as_bytes};
+use crate::frame::{
+    CellOffsets, RecordError, UploadArena, grown_size, grown_size_within, unbound_buffer_bytes,
+    words_as_bytes,
+};
 use crate::view::{MAX_VIEW_IDS, ViewFrame, ViewId};
 use null3d_core::levels::LevelRule;
 
@@ -439,7 +442,9 @@ impl Culling {
         ];
         for (id, made, size, flags) in needed {
             if *made < size {
-                *made = grown_size(size, binding_bytes);
+                *made = grown_size(size, binding_bytes).ok_or(RecordError::BufferFull {
+                    bytes: binding_bytes,
+                })?;
                 list.push(Op::CreateBuffer, &[id, *made, flags])?;
                 recreated = true;
             }
@@ -449,7 +454,8 @@ impl Culling {
 
     /// Sizes a view's compacted instance buffer for the layout on the direct-draw path, which
     /// fills it from the CPU. The buffer also takes uploads, and binds no group: no culling
-    /// dispatches read or write it.
+    /// dispatches read or write it, so only the device's largest buffer bounds it, not the
+    /// largest storage binding.
     pub(super) fn apply_direct(
         &mut self,
         list: &mut DrawList,
@@ -462,7 +468,8 @@ impl Culling {
             .expect("a view's buffers exist before it culls");
         let size = layout.compacted_bytes();
         if buffers.visible < size {
-            buffers.visible = grown_size(size, binding_bytes);
+            let limit = unbound_buffer_bytes(Some(binding_bytes));
+            buffers.visible = grown_size_within(size, limit)?;
             list.push(
                 Op::CreateBuffer,
                 &[

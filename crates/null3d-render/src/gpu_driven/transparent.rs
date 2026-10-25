@@ -21,7 +21,10 @@ use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, index_format, si
 
 use super::ids;
 use super::skin::{DrawGroups, SkinnedPart, Skinning};
-use crate::frame::{MeshBuffers, RecordError, SceneSettings, UploadArena, grown_size, put_u32};
+use crate::frame::{
+    MeshBuffers, RecordError, SceneSettings, UploadArena, grown_size_within, put_u32,
+    unbound_buffer_bytes,
+};
 use crate::particles::ParticlePass;
 use crate::sorted::{SortedLayout, SortedRows, SortedSource, SortedView};
 use crate::view::{ViewFrame, ViewId};
@@ -83,21 +86,23 @@ impl Transparent {
         Ok(())
     }
 
-    /// Makes each view's instance buffer big enough for the layout's rows, with room to grow. A
-    /// scene with no blended rows needs none.
+    /// Makes each view's instance buffer big enough for the layout's rows, with room to grow, up to
+    /// the device's largest buffer. A scene with no blended rows needs none.
     pub(super) fn size(
         &mut self,
         list: &mut DrawList,
         layout: &SortedLayout,
         views: usize,
+        binding_bytes: u32,
     ) -> Result<(), RecordError> {
         if layout.rows() == 0 {
             return Ok(());
         }
         let needed = layout.rows() * sizes::INSTANCE_STRIDE;
+        let limit = unbound_buffer_bytes(Some(binding_bytes));
         for (index, made) in self.buffers.iter_mut().enumerate().take(views) {
             if *made < needed {
-                *made = grown_size(needed, u32::MAX);
+                *made = grown_size_within(needed, limit)?;
                 list.push(
                     Op::CreateBuffer,
                     &[
@@ -338,5 +343,64 @@ impl Transparent {
     /// Forgets the instance buffers, after the thread that draws replaced the GPU.
     pub(super) fn forget_gpu(&mut self) {
         self.buffers.fill(0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use null3d_gpu::drawlist::decode;
+
+    /// The size that a view's instance buffer was made with, from the frame's list.
+    fn created(list: &DrawList) -> Vec<(u32, u32)> {
+        decode(list.words())
+            .filter_map(|command| {
+                let command = command.expect("the buffer commands decode");
+                (command.op == Op::CreateBuffer).then(|| (command.operands[0], command.operands[1]))
+            })
+            .collect()
+    }
+
+    /// The rows' instance buffer is a vertex buffer that no group binds, so the device's largest
+    /// buffer bounds it and a row set past that buffer fails the frame instead of asking for one.
+    #[test]
+    fn a_sorted_instance_buffer_is_capped_at_the_device_s_largest_buffer() {
+        // The portable buffer limit is the largest buffer that this device holds, since its
+        // storage binding is smaller.
+        let binding = 128 * 1024 * 1024;
+        let device = crate::meshes::MAX_BUFFER_BYTES as u32;
+        let rows_in = |rows: u32| {
+            let mut transparent = Transparent::default();
+            transparent.buffers.push(0);
+            let mut list = DrawList::with_capacity(64);
+            let outcome = transparent.size(&mut list, &SortedLayout::with_rows(rows), 1, binding);
+            (outcome, created(&list))
+        };
+        // A scene whose rows take less than the device holds gets a buffer within it, with room
+        // to grow but no more than the device allows.
+        let rows = device / sizes::INSTANCE_STRIDE / 4;
+        let (outcome, made) = rows_in(rows);
+        outcome.expect("the rows fit the device's largest buffer");
+        let [made] = made[..] else {
+            panic!("one buffer: {made:?}");
+        };
+        assert_eq!(made.0, ids::sorted(ViewId::CAMERA));
+        assert!(
+            made.1 >= rows * sizes::INSTANCE_STRIDE,
+            "{} bytes for {rows} rows",
+            made.1
+        );
+        assert!(
+            made.1 <= device,
+            "{} bytes past the {device}-byte buffer",
+            made.1
+        );
+        // A scene whose rows take more than the device holds fails the frame, naming the limit.
+        let (outcome, made) = rows_in(device / sizes::INSTANCE_STRIDE + 1);
+        assert_eq!(
+            outcome,
+            Err(RecordError::BufferFull { bytes: device }),
+            "the frame made {made:?}"
+        );
     }
 }
