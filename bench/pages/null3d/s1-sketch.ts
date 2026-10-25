@@ -1016,6 +1016,9 @@ function createCanvasRefresh({ textures }: SketchContext): () => void {
 	context.fillStyle = '#101820';
 	context.fillRect(0, 0, size, size);
 	const screen = textures.fromCanvas(canvas);
+	// One rectangle object, changed in place, so the sample holds the engine's work and not the
+	// sketch's own garbage.
+	const rect = { x: 0, y: 0, width: marker, height: marker };
 	let step = 0;
 	return () => {
 		step++;
@@ -1023,7 +1026,9 @@ function createCanvasRefresh({ textures }: SketchContext): () => void {
 		const y = (step * 7) % (size - marker);
 		context.fillStyle = '#e04040';
 		context.fillRect(x, y, marker, marker);
-		screen.refresh({ x, y, width: marker, height: marker });
+		rect.x = x;
+		rect.y = y;
+		screen.refresh(rect);
 	};
 }
 
