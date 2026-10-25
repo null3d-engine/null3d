@@ -146,6 +146,7 @@ On WebGL2, each row's matrix is split into a position, a rotation and a scale th
 - The engine does not bound the count. Keep the add-on's count at or under `capacity`. Past it, the GPU reads past the end of the buffer.
 - The engine keeps two buffers of `capacity` rows: the world rows that you fill and the camera-relative rows that it converts them into each frame. A large capacity therefore takes twice the instance memory.
 - The conversion uses the main view's camera, so every view, the shadows included, reads the rows converted for that camera. A shadow view draws the add-on's count word too, so the instances that cast shadows are the instances that the GPU counts.
+- The shadow views cull the faces that point away from the light, as every caster does. A thin surface, such as a leaf or a standing disc, therefore casts nothing while the light reaches its back. Give such a draw `doubleSided` to cast from either side.
 - The add-on's compute pass must run before the scene draws: use `band: 'before'`, as the example does. Rows that it writes after the scene are too late for that frame's opaque pass.
 - The feature description's `reads`, `writes`, `outputs` and `provides` stay with the [feature registry](features.md).
 
