@@ -87,6 +87,8 @@ function fakeCore(largeWorld = false) {
 	const viewCalls = { added: [] as number[][], rects: [] as number[][], removed: [] as number[] };
 	/** The lens that each camera sent: its target, its handle, its layers, then its values. */
 	const lenses: number[][] = [];
+	/** Each material value that the core received: its material, its parameter and its numbers. */
+	const materialValues: number[][] = [];
 	let nextView = 1;
 	const glue = {
 		sceneCapacity: () => CAPACITY,
@@ -131,6 +133,8 @@ function fakeCore(largeWorld = false) {
 			return 0;
 		},
 		setOverrideMaterial: (material: number) => overrides.push(material) && 0,
+		setMaterialValue: (material: number, param: number, x: number, y: number, z: number) =>
+			materialValues.push([material, param, x, y, z]) && 0,
 		lastErrorCode: () => failure.code,
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
@@ -177,6 +181,8 @@ function fakeCore(largeWorld = false) {
 		box,
 		ball,
 		paint,
+		/** Each material value that the core received: its material, its parameter and its numbers. */
+		materialValues,
 		/** The override material ids that the core received, in order, with 0 for none. */
 		overrides,
 		/** Sets the world matrix that the core gives an object, from a three.js matrix. */
@@ -509,6 +515,29 @@ describe('hold script property paths', () => {
 		expect(() => scene.setScriptPath(car, 'speed', [1])).toThrow('set() got "speed"');
 		expect(() => scene.setScriptPath(car, 'position', [1])).toThrow('which takes 3');
 		expect(() => scene.readScriptPath(car, 'intensity')).toThrow('which it does not take');
+	});
+
+	test("animates a material's maps offset and scale, and keeps their other numbers", () => {
+		const { scene, paint, materialValues } = fakeCore();
+		scene.animateProperty(paint, 'uvOffset', {
+			times: [0, 1],
+			values: [0, 0, 0.5, 0.25],
+			time: 1,
+			loop: false,
+		});
+		scene.animateProperty(paint, 'uvScale', {
+			times: [0, 1],
+			values: [1, 1, 2, 3],
+			time: 1,
+			loop: false,
+		});
+		scene.propertySystem().step(0);
+		// Each write sends the matrix's two rows: their scale and turn, then the offset.
+		const [u, v] = materialValues.slice(-2);
+		// A zero turn gives -0 in one row, which is a zero.
+		const row = (values: number[] | undefined) => values?.map((value) => value || 0);
+		expect(row(u)).toEqual([1, C.MATERIAL_PARAM_UV_U, 2, 0, 0.5]);
+		expect(row(v)).toEqual([1, C.MATERIAL_PARAM_UV_V, 0, 3, 0.25]);
 	});
 
 	test('reads a camera lens, and names the objects that are close to a name', () => {
