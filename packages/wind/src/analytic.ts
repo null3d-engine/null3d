@@ -4,12 +4,12 @@
 // short-lived vortices behind a moving body.
 //
 // The field is incompressible by construction: its swirl is the curl of a stream function, a push is
-// a vortex, and a gust turns about its own centre. Its divergence is therefore zero in the
+// a vortex, and a gust turns about its own center. Its divergence is therefore zero in the
 // continuum, and the tests check that the discrete form keeps it near zero.
 //
-// `analytic.wgsl` holds the same formula for the GPU, and the noise functions mirror the engine's
-// `null3d::noise`, so both forms give the same numbers. A test reads both files and fails when they
-// drift apart.
+// The grid's compute shader and its WebGL2 form hold the same formula, and the noise functions
+// mirror the engine's `null3d::noise`, so both forms give the same numbers. A test reads the two
+// shader copies and fails when they drift apart or when a constant here changes without them.
 
 /** The whole-number hash of `null3d::noise`'s `pcg`, which gives the same bits on every GPU. */
 function pcg(v: number): number {
@@ -70,39 +70,39 @@ export interface Push {
 	readonly z: number;
 	/** How hard the body shoved the air: a positive number turns it one way, a negative the other. */
 	readonly strength: number;
-	/** The heading of the body that made it, in radians. */
-	readonly heading: number;
 	/** The sketch time of the push, in seconds. */
 	readonly born: number;
 }
 
 /** The field's settings, which a page sets once or changes at any time. */
 export interface FieldState {
-	/** The wind's speed in metres a second, at the top of the profile. */
+	/** The wind's speed in meters a second, at the top of the profile. */
 	speed: number;
 	/** The heading that the wind blows toward, in radians: 0 blows toward +x, pi/2 toward +z. */
 	heading: number;
-	/** How much slower the air is at the ground, from 0 to 1, over `GROUND_HEIGHT` metres. */
+	/** How much slower the air is at the ground, from 0 to 1, over `GROUND_HEIGHT` meters. */
 	ground: number;
-	/** The strength of the gust's turn, in metres a second. */
+	/** The strength of the gust's turn, in meters a second. */
 	gustStrength: number;
-	/** How wide the gust is, in metres. */
+	/** How wide the gust is, in meters. */
 	gustRadius: number;
 	/** How far apart the gust's turns sit, so the gust arrives as a wave rather than one eddy. */
 	gustWave: number;
-	/** How fast the gust travels, in metres a second. */
+	/** How fast the gust travels, in meters a second. */
 	gustSpeed: number;
-	/** The strength of the noise-built swirl, in metres a second. */
+	/** How wide a push turns the air, in meters. */
+	pushRadius: number;
+	/** The strength of the noise-built swirl, in meters a second. */
 	swirl: number;
 	/** The swirl's size: larger makes wider, slower eddies. */
 	swirlScale: number;
-	/** How fast the swirl's pattern drifts, in metres a second. */
+	/** How fast the swirl's pattern drifts, in meters a second. */
 	swirlDrift: number;
 	/** The seed of the swirl's pattern, so two pages may look different. */
 	seed: number;
 }
 
-/** The height over which the air slows to the ground, in metres. */
+/** The height over which the air slows to the ground, in meters. */
 export const GROUND_HEIGHT = 2;
 /** How long a push lasts before it has faded away, in seconds. */
 export const PUSH_LIFE = 3;
@@ -121,6 +121,7 @@ export function defaultFieldState(): FieldState {
 		gustRadius: 14,
 		gustWave: 2,
 		gustSpeed: 6,
+		pushRadius: 6,
 		swirl: 1.6,
 		swirlScale: 0.06,
 		swirlDrift: 0.5,
@@ -147,7 +148,7 @@ function stream(state: FieldState, x: number, y: number, z: number, t: number): 
 }
 
 /**
- * The air's velocity at a world place and a sketch time, in metres a second, written into `out` as
+ * The air's velocity at a world place and a sketch time, in meters a second, written into `out` as
  * `[x, y, z]`. It allocates nothing and reads no state that a frame changes.
  */
 export function analyticVelocity(
@@ -166,7 +167,7 @@ export function analyticVelocity(
 	let vz = sin * state.speed * height;
 
 	// The gust: a wave of turns that travels along the heading, so the air curls as it passes. The
-	// turns are rings about the gust's centre and depend only on the distance to it, so a ring of
+	// turns are rings about the gust's center and depend only on the distance to it, so a ring of
 	// air turns without piling up.
 	const travel = state.gustSpeed * t;
 	const gx = x - cos * travel;
@@ -199,10 +200,11 @@ export function analyticVelocity(
 		const fadeOut = 1 - age / PUSH_LIFE;
 		const dx = x - push.x;
 		const dz = z - push.z;
-		const turn = Math.exp(-(dx * dx + dz * dz) / (state.gustRadius * state.gustRadius));
+		const reach = state.pushRadius * state.pushRadius;
+		const turn = Math.exp(-(dx * dx + dz * dz) / reach);
 		const strength = push.strength * fadeOut * turn * height;
-		vx += (dz / state.gustRadius) * strength;
-		vz -= (dx / state.gustRadius) * strength;
+		vx += (dz / state.pushRadius) * strength;
+		vz -= (dx / state.pushRadius) * strength;
 	}
 
 	out[0] = vx;

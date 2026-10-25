@@ -154,6 +154,7 @@ This is part of making 0.1.0. npm cannot publish a package's first version throu
    npm publish target/packages/null3d-vegetation-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-three-compat-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-water-0.0.0.tgz --access public --provenance=false
+   npm publish target/packages/null3d-wind-0.0.0.tgz --access public --provenance=false
    ```
 
 5. On npmjs.com, open each of the twelve packages' settings, and add a trusted publisher: GitHub Actions, the owner `null3d-engine`, the repository `null3d` and the workflow `release.yml`.

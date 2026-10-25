@@ -124,7 +124,7 @@ describe('the analytic field', () => {
 
 	test('a gust travels through the air', () => {
 		const state = still({ gustStrength: 4, gustSpeed: 6, gustRadius: 6, gustWave: 1 });
-		// The gust's centre starts at the origin and moves along +x at 6 m a second.
+		// The gust's center starts at the origin and moves along +x at 6 m a second.
 		expect(Math.hypot(...(at(state, 0, 5, 0, 0) as [number, number, number]))).toBeGreaterThan(0.5);
 		const later = at(state, 12, 5, 0, 2);
 		expect(Math.abs(later[2]) + Math.abs(later[0] - 0)).toBeGreaterThan(0.5);
@@ -135,14 +135,14 @@ describe('the analytic field', () => {
 
 	test('a push turns the air and fades away', () => {
 		const state = still();
-		const push: Push = { x: 0, z: 0, strength: 5, heading: 0, born: 1 };
+		const push: Push = { x: 0, z: 0, strength: 5, born: 1 };
 		const near = at(state, 3, 4, 0, 1.1, [push]);
 		const base = at(state, 3, 4, 0, 1.1);
 		expect(Math.abs(near[2] - base[2])).toBeGreaterThan(0.5);
 		const old = at(state, 3, 4, 0, 1 + PUSH_LIFE + 0.1, [push]);
 		const oldBase = at(state, 3, 4, 0, 1 + PUSH_LIFE + 0.1);
 		expect(old[2]).toBeCloseTo(oldBase[2], 12);
-		// It turns about its centre: the two points either side of it are turned opposite ways.
+		// It turns about its center: the two points either side of it are turned opposite ways.
 		const above = at(state, 0, 4, 3, 1.1, [push]);
 		const aboveBase = at(state, 0, 4, 3, 1.1);
 		const below = at(state, 0, 4, -3, 1.1, [push]);
@@ -152,7 +152,7 @@ describe('the analytic field', () => {
 
 	test('keeps the air’s volume: its divergence is near zero', () => {
 		const state = defaultFieldState();
-		const push: Push = { x: 4, z: -3, strength: 6, heading: 1, born: 0.5 };
+		const push: Push = { x: 4, z: -3, strength: 6, born: 0.5 };
 		let most = 0;
 		let speed = 0;
 		for (let i = 0; i < 24; i++) {

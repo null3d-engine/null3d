@@ -12,6 +12,16 @@ function analyticBlock(file: string): string {
 	return text.slice(start + '// <analytic-field>'.length, end).trim();
 }
 
+/** The block between two markers of a file, trimmed. */
+function marked(file: URL, name: string): string {
+	const text = readFileSync(file, 'utf8');
+	const start = text.indexOf(`// <${name}>`);
+	const end = text.indexOf(`// </${name}>`);
+	expect(start).toBeGreaterThanOrEqual(0);
+	expect(end).toBeGreaterThan(start);
+	return text.slice(start + `// <${name}>`.length, end).trim();
+}
+
 describe('the shaders of the grid', () => {
 	test('the compute form and the WebGL2 fragment form hold one analytic field', () => {
 		// The shader build resolves only the engine's library, so a shader cannot import another
@@ -41,5 +51,21 @@ describe('the shaders of the grid', () => {
 		// The box arrives in the eighth value vector, and the settings in the seven before it.
 		expect(compute).toContain('let box = block.u7;');
 		expect(fallback).toContain('let box = uniforms.u7;');
+	});
+});
+
+describe('the sampling function', () => {
+	test('the page reads the field with the add-on’s one copy of it', () => {
+		// The shader build resolves only the engine's library, so a reader holds a copy. The page's
+		// card material is the first reader, and this fails when either copy is edited alone.
+		const canonical = marked(new URL('./field.wgsl', import.meta.url), 'wind-sample');
+		const page = marked(new URL('../page/sketch.ts', import.meta.url), 'wind-sample');
+		expect(page).toBe(canonical);
+	});
+
+	test('the copy names the texture and the sampler that a reader declares', () => {
+		const canonical = marked(new URL('./field.wgsl', import.meta.url), 'wind-sample');
+		expect(canonical).toContain('fn wind_sample(');
+		expect(canonical).toContain('textureSampleLevel(wind, windSampler');
 	});
 });

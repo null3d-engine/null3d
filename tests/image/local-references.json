@@ -1,0 +1,56 @@
+{
+	"chromium-swiftshader/compat/wind-cards-later.png": {
+		"test": "wind-cards-later",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/compat/wind-cards.png": {
+		"test": "wind-cards",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/compat/wind-wake.png": {
+		"test": "wind-wake",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/webgl2/wind-cards-later.png": {
+		"test": "wind-cards-later",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/webgl2/wind-cards.png": {
+		"test": "wind-cards",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/webgl2/wind-wake.png": {
+		"test": "wind-wake",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/webgpu/wind-cards-later.png": {
+		"test": "wind-cards-later",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/webgpu/wind-cards.png": {
+		"test": "wind-cards",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/webgpu/wind-wake.png": {
+		"test": "wind-wake",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	}
+}

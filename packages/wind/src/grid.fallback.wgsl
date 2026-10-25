@@ -19,12 +19,14 @@ struct Uniforms {
 }
 
 // <analytic-field>
-/// The height over which the air slows to the ground, in metres.
+/// The height over which the air slows to the ground, in meters.
 const WIND_GROUND_HEIGHT: f32 = 2.0;
 /// How long a push lasts before it has faded away, in seconds.
 const WIND_PUSH_LIFE: f32 = 3.0;
 /// The distance over which the noise's curl is measured, in noise cells.
 const WIND_CURL_STEP: f32 = 0.02;
+/// The height that the grid samples at, where the air moves at its full speed.
+const WIND_FULL_HEIGHT: f32 = 100.0;
 
 /// The field's settings and its pushes, packed into the eight vectors that a pass takes.
 struct WindAir {
@@ -34,7 +36,7 @@ struct WindAir {
     speed: f32,
     heading: f32,
     ground: f32,
-    /// The gust's strength, its radius in metres, its wave number and how fast it travels.
+    /// The gust's strength, its radius in meters, its wave number and how fast it travels.
     gustStrength: f32,
     gustRadius: f32,
     gustWave: f32,
@@ -44,7 +46,9 @@ struct WindAir {
     swirlScale: f32,
     swirlDrift: f32,
     seed: f32,
-    /// The four pushes: the place across, the place along, the strength and the age in seconds.
+    /// How wide a push turns the air, in meters.
+    pushRadius: f32,
+    /// The four pushes: the place across, the place along, the strength and the time the push was made.
     push0: vec4f,
     push1: vec4f,
     push2: vec4f,
@@ -52,7 +56,9 @@ struct WindAir {
 }
 
 /// The field's settings read from a pass's first seven value vectors.
-fn wind_air(v0: vec4f, v1: vec4f, v2: vec4f, v3: vec4f, v4: vec4f, v5: vec4f, v6: vec4f) -> WindAir {
+fn wind_air(
+    v0: vec4f, v1: vec4f, v2: vec4f, v3: vec4f, v4: vec4f, v5: vec4f, v6: vec4f, v7: vec4f,
+) -> WindAir {
     var air: WindAir;
     air.time = v0.x;
     air.speed = v0.y;
@@ -66,6 +72,7 @@ fn wind_air(v0: vec4f, v1: vec4f, v2: vec4f, v3: vec4f, v4: vec4f, v5: vec4f, v6
     air.swirlScale = v2.y;
     air.swirlDrift = v2.z;
     air.seed = v2.w;
+    air.pushRadius = v7.w;
     air.push0 = v3;
     air.push1 = v4;
     air.push2 = v5;
@@ -95,11 +102,11 @@ fn wind_push_turn(air: WindAir, push: vec4f, p: vec3f) -> f32 {
     if (age < 0.0 || age > WIND_PUSH_LIFE || push.z == 0.0) { return 0.0; }
     let dx = p.x - push.x;
     let dz = p.z - push.y;
-    let reach = air.gustRadius * air.gustRadius;
+    let reach = air.pushRadius * air.pushRadius;
     return exp(-(dx * dx + dz * dz) / reach) * (1.0 - age / WIND_PUSH_LIFE);
 }
 
-/// The air's velocity at a world place, in metres a second.
+/// The air's velocity at a world place, in meters a second.
 fn wind_analytic(air: WindAir, p: vec3f) -> vec3f {
     let height = wind_profile(air, p.y);
     let cosHeading = cos(air.heading);
@@ -107,7 +114,7 @@ fn wind_analytic(air: WindAir, p: vec3f) -> vec3f {
     var v = vec3f(cosHeading * air.speed * height, 0.0, sinHeading * air.speed * height);
 
     // The gust: a wave of turns that travels along the heading. The turns are rings about the
-    // gust's centre and depend only on the distance to it, so a ring of air turns without piling up.
+    // gust's center and depend only on the distance to it, so a ring of air turns without piling up.
     let travel = air.gustSpeed * air.time;
     let g = vec2f(p.x - cosHeading * travel, p.z - sinHeading * travel);
     let distance = length(g) / air.gustRadius;
@@ -136,8 +143,8 @@ fn wind_analytic(air: WindAir, p: vec3f) -> vec3f {
         let turn = wind_push_turn(air, push, p);
         if (turn == 0.0) { continue; }
         let strength = push.z * turn * height;
-        v.x += ((p.z - push.y) / air.gustRadius) * strength;
-        v.z -= ((p.x - push.x) / air.gustRadius) * strength;
+        v.x += ((p.z - push.y) / air.pushRadius) * strength;
+        v.z -= ((p.x - push.x) / air.pushRadius) * strength;
     }
     return v;
 }
@@ -146,12 +153,14 @@ fn wind_analytic(air: WindAir, p: vec3f) -> vec3f {
 fn effect(input: EffectInput) -> vec4f {
     let air = wind_air(
         uniforms.u0, uniforms.u1, uniforms.u2, uniforms.u3,
-        uniforms.u4, uniforms.u5, uniforms.u6,
+        uniforms.u4, uniforms.u5, uniforms.u6, uniforms.u7,
     );
     // The pass texture holds its first row at the bottom, and `input.uv` counts from the top left.
     let uv = vec2f(input.uv.x, 1.0 - input.uv.y);
+    // The box's near corner across the ground and its size, and the push radius, from the eighth
+    // vector.
     let box = uniforms.u7;
-    let place = vec3f(box.x + uv.x * box.z, box.w, box.y + uv.y * box.z);
+    let place = vec3f(box.x + uv.x * box.z, WIND_FULL_HEIGHT, box.y + uv.y * box.z);
     let v = wind_analytic(air, place);
     return vec4f(v.x, v.y, v.z, length(v));
 }
