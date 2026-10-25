@@ -679,7 +679,7 @@ export class Textures {
 		const row = width * 4;
 		const rows = new Uint8Array(row * height);
 		rows.set(image.data);
-		turnRows(rows, row, height);
+		turnRows(rows, 0, row, height);
 		return rows;
 	}
 
@@ -825,10 +825,12 @@ export class Textures {
 		}
 		core.refresh();
 		const row = width * 4;
-		const view = core.view(Uint8Array, address, row * height);
+		// A view of the whole memory, which the engine makes again when the memory grows: a refresh
+		// in every frame writes through the same view, so the copy allocates none of its own.
+		const view = core.heap(Uint8Array);
 		const image = source.context.getImageData(x, top, width, height);
-		view.set(image.data);
-		turnRows(view, row, height);
+		view.set(image.data, address);
+		turnRows(view, address, row, height);
 		return true;
 	}
 
@@ -1396,13 +1398,14 @@ function invalid(call: string, detail: string): EngineError {
 const quote = (value: unknown) => (typeof value === 'string' ? `'${value}'` : String(value));
 
 /**
- * Turns a rectangle's rows over in place, so that its last row comes first. A canvas counts rows
- * from its top, and a texture counts them from v = 0, the bottom of a plane.
+ * Turns the rows of a rectangle over in place, so that its last row comes first. A canvas counts
+ * rows from its top, and a texture counts them from v = 0, the bottom of a plane. The rectangle
+ * starts `offset` bytes into `rows`, which may be a view of the whole memory.
  */
-function turnRows(rows: Uint8Array, row: number, height: number): void {
+function turnRows(rows: Uint8Array, offset: number, row: number, height: number): void {
 	for (let top = 0, bottom = height - 1; top < bottom; top++, bottom--) {
-		const a = top * row;
-		const b = bottom * row;
+		const a = offset + top * row;
+		const b = offset + bottom * row;
 		for (let k = 0; k < row; k++) {
 			const texel = rows[a + k] as number;
 			rows[a + k] = rows[b + k] as number;
