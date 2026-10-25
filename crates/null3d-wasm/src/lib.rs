@@ -130,6 +130,9 @@ extern "C" {
 /// Upload ranges one frame can list before it uploads everything instead.
 const UPLOAD_RANGES: u32 = 4096;
 
+/// The frame that a pick's answer names when no pick has landed yet.
+const NO_PICK_FRAME: u32 = u32::MAX;
+
 /// The objects the scene has room for at the start when the page gives no expected count: few, so a
 /// small scene keeps small tables. A growth from a size this small takes a small fraction of a
 /// millisecond, so a scene that grows past it during play barely pauses.
@@ -248,6 +251,9 @@ struct Engine {
     /// True when that frame's id pass drew every source of the scene. The sketch reads it to decide
     /// whether a landed answer is the GPU's or needs a ray, after later frames moved the layout on.
     pick_covered: bool,
+    /// The engine frame that drew the pick whose answer landed, or `NO_PICK_FRAME`. The sketch casts
+    /// a ray from that frame's camera to find the texture coordinates of the picked pixel.
+    pick_frame: u32,
 
     /// The world matrix that `worldMatrix` copies last, which TypeScript reads in place, so a read
     /// passes no array across and allocates nothing.
@@ -651,6 +657,7 @@ pub fn init_engine(
         pick_results: Box::new([0; null3d_render::pick::RING * null3d_render::pick::RESULT_WORDS]),
         pick_recorded: false,
         pick_covered: false,
+        pick_frame: NO_PICK_FRAME,
 
         post_values: Box::new(POST_DEFAULTS),
         environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
@@ -1167,6 +1174,7 @@ pub fn record_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32)
             // The answer stays until the next read: the sketch may poll frames after the one that
             // copied it, and those frames would otherwise overwrite it.
             e.pick_covered = pick_covered;
+            e.pick_frame = frame;
         }
         match recorded {
             Ok(rebuilt) => {
@@ -5666,6 +5674,15 @@ pub fn pick_result_address() -> u32 {
 #[wasm_bindgen(js_name = pickCoversScene)]
 pub fn pick_covers_scene() -> u32 {
     value_with_engine(|e| Ok(u32::from(e.pick_covered)))
+}
+
+/// The engine frame that recorded the landed pick, or -1 when no pick has landed. A ray from that
+/// frame's camera finds the texture coordinates of the pixel that the pick tested.
+#[wasm_bindgen(js_name = pickFrame)]
+pub fn pick_frame() -> i32 {
+    // The stored value names no frame with the largest unsigned number, which reads as -1 here and
+    // matches the frame numbers that rung before the first. Engine frames never reach that number.
+    value_with_engine(|e| Ok(e.pick_frame)) as i32
 }
 
 /// The object or batch id that a pick's source key names, or 0 for a key that names nothing, such

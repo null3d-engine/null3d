@@ -5,7 +5,7 @@ import type { CoreGlue } from '../shared/core';
 import { PickRead0 } from '../shared/slot';
 import { CoreMemory } from './memory';
 import { type PickHit, ScenePicks } from './picks';
-import type { QueryTargets } from './queries';
+import type { QueryTarget, QueryTargets } from './queries';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
 
@@ -25,6 +25,7 @@ function fakeCore() {
 	let id = 0;
 	let row = 0xffffffff;
 	let covers = 1;
+	let frame = -1;
 	const glue = {
 		requestPick(x: number, y: number, ring: number, slot: number): number {
 			requested.push({ x, y, ring, slot });
@@ -32,6 +33,7 @@ function fakeCore() {
 		},
 		pickResultAddress: () => RESULTS,
 		pickCoversScene: () => covers,
+		pickFrame: () => frame,
 		pickTargetId: () => id,
 		pickTargetRow: () => row,
 	} as unknown as CoreGlue;
@@ -51,6 +53,9 @@ function fakeCore() {
 		cover(on: boolean) {
 			covers = on ? 1 : 0;
 		},
+		frameAt(value: number) {
+			frame = value;
+		},
 	};
 }
 
@@ -63,13 +68,28 @@ function fakeTargets(): QueryTargets {
 	} as QueryTargets;
 }
 
-/** The picks with the fake scene's targets and no ray fallback. */
-function fakePicks(core: CoreMemory, byRay: (x: number, y: number) => PickHit | null = () => null) {
+/** The picks with the fake scene's targets and a ray callback, whose calls the tests read. */
+function fakePicks(
+	core: CoreMemory,
+	byRay: (x: number, y: number, frame: number) => PickHit | null = () => null,
+	calls: { x: number; y: number; frame: number }[] = [],
+) {
 	const slots = new Int32Array(41);
-	const picks = new ScenePicks(core, fakeTargets(), byRay);
+	const picks = new ScenePicks(core, fakeTargets(), (x, y, frame) => {
+		calls.push({ x, y, frame });
+		return byRay(x, y, frame);
+	});
 	picks.attach(slots);
-	return { picks, slots };
+	return { picks, slots, calls };
 }
+
+/** An answer that names a source and no texture coordinates. */
+const noUv = (object: unknown, instance: number): PickHit => ({
+	object: object as QueryTarget,
+	instance,
+	uv: [Number.NaN, Number.NaN],
+	hasUv: false,
+});
 
 /** Raises the read's slot at `ring`, then polls: the job's promise settles on the next turn. */
 async function answer(picks: ScenePicks, slots: Int32Array, ring: number) {
@@ -97,7 +117,7 @@ describe('a pick', () => {
 		core.setKey(0, 77);
 		core.name(3, 0xffffffff);
 		await answer(picks, slots, 0);
-		expect(await answerPromise).toEqual({ object: OBJECT as never, instance: -1 });
+		expect(await answerPromise).toEqual(noUv(OBJECT, -1));
 	});
 
 	test('names the row of the batch that its key gives', async () => {
@@ -107,7 +127,7 @@ describe('a pick', () => {
 		core.name(BATCH_ID, 4);
 		core.setKey(0, 9);
 		await answer(picks, slots, 0);
-		expect(await answerPromise).toEqual({ object: BATCH as never, instance: 4 });
+		expect(await answerPromise).toEqual(noUv(BATCH, 4));
 	});
 
 	test('answers null where no object owns the pixel, and for a key that names nothing', async () => {
@@ -132,24 +152,109 @@ describe('a pick', () => {
 		core.name(3, 0xffffffff);
 		core.setKey(0, 1);
 		await answer(picks, slots, 0);
-		expect(await first).toEqual({ object: OBJECT as never, instance: -1 });
+		expect(await first).toEqual(noUv(OBJECT, -1));
 		expect(core.requested).toHaveLength(2);
 		expect(core.requested[1]).toEqual({ x: 3, y: 4, ring: 1, slot: PickRead0 + 1 });
 		core.name(3, 0xffffffff);
 		core.setKey(1, 2);
 		await answer(picks, slots, 1);
-		expect(await second).toEqual({ object: OBJECT as never, instance: -1 });
+		expect(await second).toEqual(noUv(OBJECT, -1));
+	});
+
+	test('gives the texture coordinates that a ray from the picked frame finds', async () => {
+		const core = fakeCore();
+		const calls: { x: number; y: number; frame: number }[] = [];
+		const { picks, slots } = fakePicks(
+			core.core,
+			(_x, _y, frame) =>
+				frame === 42
+					? { object: OBJECT as never, instance: -1, uv: [0.25, 1.75], hasUv: true }
+					: null,
+			calls,
+		);
+		core.frameAt(42);
+		const answerPromise = picks.pick(12, 34);
+		core.name(3, 0xffffffff);
+		core.setKey(0, 77);
+		await answer(picks, slots, 0);
+		expect(await answerPromise).toEqual({
+			object: OBJECT as never,
+			instance: -1,
+			uv: [0.25, 1.75],
+			hasUv: true,
+		});
+		// The ray asks at the pick's own point, with the camera of the frame that recorded it.
+		expect(calls).toEqual([{ x: 12, y: 34, frame: 42 }]);
+	});
+
+	test('reports no coordinates when the ray names another source than the pick', async () => {
+		const core = fakeCore();
+		// The ray meets the batch where the id target names the object: the object answer stays, and
+		// the coordinates say that they are unknown rather than take the other source's.
+		const { picks, slots } = fakePicks(core.core, () => ({
+			object: BATCH as never,
+			instance: 2,
+			uv: [0.5, 0.5],
+			hasUv: true,
+		}));
+		core.frameAt(9);
+		core.name(3, 0xffffffff);
+		core.setKey(0, 77);
+		const answerPromise = picks.pick(1, 2);
+		await answer(picks, slots, 0);
+		expect(await answerPromise).toEqual(noUv(OBJECT, -1));
+	});
+
+	test('reports no coordinates when the pick names no frame', async () => {
+		const core = fakeCore();
+		const calls: { x: number; y: number; frame: number }[] = [];
+		const { picks, slots } = fakePicks(
+			core.core,
+			() => ({ object: OBJECT as never, instance: -1, uv: [0.5, 0.5], hasUv: true }),
+			calls,
+		);
+		core.name(3, 0xffffffff);
+		core.setKey(0, 77);
+		const answerPromise = picks.pick(1, 2);
+		await answer(picks, slots, 0);
+		// A ray from a camera that did not draw the pixel would name another triangle.
+		expect(await answerPromise).toEqual(noUv(OBJECT, -1));
+		expect(calls).toEqual([]);
+	});
+
+	test('reports no coordinates for a source whose mesh has none', async () => {
+		const core = fakeCore();
+		const { picks, slots } = fakePicks(core.core, () => ({
+			object: OBJECT as never,
+			instance: -1,
+			uv: [Number.NaN, Number.NaN],
+			hasUv: false,
+		}));
+		core.frameAt(9);
+		core.name(3, 0xffffffff);
+		core.setKey(0, 77);
+		const answerPromise = picks.pick(1, 2);
+		await answer(picks, slots, 0);
+		expect(await answerPromise).toEqual(noUv(OBJECT, -1));
 	});
 
 	test('answers with a raycast where the id target holds no ids of the scene', async () => {
 		const core = fakeCore();
-		const ray = { object: BATCH as never, instance: 2 };
-		const { picks, slots } = fakePicks(core.core, () => ray);
+		const ray = {
+			object: BATCH as never,
+			instance: 2,
+			uv: [0.1, 0.9],
+			hasUv: true,
+		};
+		const calls: { x: number; y: number; frame: number }[] = [];
+		const { picks, slots } = fakePicks(core.core, () => ray, calls);
 		const answerPromise = picks.pick(5, 6);
 		core.cover(false);
 		Atomics.store(slots, PickRead0, 1);
 		picks.poll(slots);
 		expect(await answerPromise).toEqual(ray);
+		// A ray answers with the camera as it stands, which names no frame.
+		expect(calls).toEqual([{ x: 5, y: 6, frame: -1 }]);
 	});
 
 	test('fails the picks that wait when the engine stops', async () => {
