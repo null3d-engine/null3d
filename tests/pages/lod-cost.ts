@@ -40,8 +40,9 @@ run('lod-cost', async () => {
 	});
 	// The memory figures come from the overlay, which samples the GPUs' tables and the wasm file.
 	// It shows after the timing, so its sampling costs none of the frames above. With levels the
-	// copy lists take one copy per source, not one per level, so the two sides' buffer figures
-	// show the lists following what draws.
+	// copy lists take one copy per source, not one per level. The two sides' buffer figures are
+	// identical, but that does not prove the sizing: the removed rule would give the same sides
+	// too, and D-137 gives the absolute totals that rule it out.
 	const wasmBytes = (await engine.measure(0.5)).memory.wasmBytes;
 	const memory: { off?: SideMemory; on?: SideMemory } = {};
 	for (const side of ['off', 'on'] as const) {
