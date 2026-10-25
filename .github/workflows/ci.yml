@@ -266,23 +266,22 @@ jobs:
       - uses: ./.github/actions/bun-install
       # Each hash covers exactly the files that a part reads, so a part passes again only when none
       # of them changed. The Rust tests' shader part reads only the shader crates, the crate they
-      # depend on, the Cargo files, the toolchain, nextest's settings and the step that builds the
-      # shader crates optimized. Their other parts run every workspace test, which reads every crate
-      # and, outside them, the generated engine modules that two crates check, a test fixture, a
-      # test page's table, the engine's error codes, two add-ons' shaders, the test environments and
-      # the compiler's runner script. Nine landings in ten change none of those files. A file
-      # outside the crates that the crates' code names belongs in that list.
+      # depend on, the Cargo files, the toolchain and nextest's settings. Their other parts run
+      # every workspace test, which reads every crate and, outside them, the generated engine
+      # modules that two crates check, a test fixture, a test page's table, the engine's error
+      # codes, two add-ons' shaders, the test environments and the compiler's runner script. Nine
+      # landings in ten change none of those files. A file outside the crates that the crates' code
+      # names belongs in that list.
       #
       # The shader compiler's hash names the files that decide what the compiler produces and the
       # scripts that run it: the shader crates, the build tool that builds the compiler, the
       # compiler's runner script and the three files of the Vite plugin that the runner imports,
-      # which import no package. It also names the step that builds the shader crates optimized,
-      # which sets how the shards' native tests build. Not the whole of tools/lib: that folder holds
-      # the size report, the limits report and the cache's own rules, and a change to any of them
-      # used to purge this pass and rebuild every shard cold (22 October 2026). Not the whole plugin
-      # or the packages' lock either: from 23 to 24 October 2026, 12 of the 39 landings that changed
-      # the wider key changed only the plugin's other files and tests or the lock, and each such run
-      # rebuilt all the shards, about 80 job-minutes.
+      # which import no package. Not the whole of tools/lib: that folder holds the size report, the
+      # limits report and the cache's own rules, and a change to any of them used to purge this pass
+      # and rebuild every shard cold (22 October 2026). Not the whole plugin or the packages' lock
+      # either: from 23 to 24 October 2026, 12 of the 39 landings that changed the wider key changed
+      # only the plugin's other files and tests or the lock, and each such run rebuilt all the
+      # shards, about 80 job-minutes.
       #
       # The plugin's hash names the files that decide what the compiler and the shader modules
       # hold, and the plugin and test helper that its tests import. Its tests' own hash names the
@@ -292,14 +291,18 @@ jobs:
       # no WGSL passes them again. The whole folders once made a key that changed with almost every
       # push, and each part took 5.5 to 6.8 minutes each time.
       #
+      # tools/lib/ci-passes.ts ends every key with a hash of the part's job as the workflow parses,
+      # with the repository's own actions that it runs, such as the step that builds the shader
+      # crates optimized, so those need no entry in a hash here.
+      #
       # A script that a part starts, or that such a script imports, belongs in its hash, and
       # tools/lib/ci-workflow.test.ts fails on one that a hash leaves out.
       - name: The hashes of the files that each part reads
         id: hashes
         run: |
-          echo "rust-shaders=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml', '.github/actions/optimized-shader-crates/**') }}" >> "$GITHUB_OUTPUT"
-          echo "rust-workspace=${{ hashFiles('crates/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml', '.github/actions/optimized-shader-crates/**', 'packages/engine/src/generated/gpu.ts', 'packages/engine/src/generated/core.ts', 'packages/engine/src/errors/codes.ts', 'tests/fixtures/light-clusters.bin', 'tests/pages/lib/dfg-table.ts', 'tests/pages/assets/environments/**', 'examples/addons/aurora/aurora.wgsl', 'examples/addons/car-paint/paint.wgsl', 'tools/shader-compiler.ts') }}" >> "$GITHUB_OUTPUT"
-          echo "shader-compiler=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.github/actions/optimized-shader-crates/**', 'tools/build-wasm.ts', 'tools/shader-compiler.ts', 'packages/vite-plugin/src/compiler-calls.js', 'packages/vite-plugin/src/shader-compiler.ts', 'packages/vite-plugin/src/shader-types.ts', 'package.json') }}" >> "$GITHUB_OUTPUT"
+          echo "rust-shaders=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml') }}" >> "$GITHUB_OUTPUT"
+          echo "rust-workspace=${{ hashFiles('crates/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml', 'packages/engine/src/generated/gpu.ts', 'packages/engine/src/generated/core.ts', 'packages/engine/src/errors/codes.ts', 'tests/fixtures/light-clusters.bin', 'tests/pages/lib/dfg-table.ts', 'tests/pages/assets/environments/**', 'examples/addons/aurora/aurora.wgsl', 'examples/addons/car-paint/paint.wgsl', 'tools/shader-compiler.ts') }}" >> "$GITHUB_OUTPUT"
+          echo "shader-compiler=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shader-compiler.ts', 'packages/vite-plugin/src/compiler-calls.js', 'packages/vite-plugin/src/shader-compiler.ts', 'packages/vite-plugin/src/shader-types.ts', 'package.json') }}" >> "$GITHUB_OUTPUT"
           echo "plugin=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'tools/lib/wgsl-modules.ts', 'tools/lib/build-cache.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}" >> "$GITHUB_OUTPUT"
           echo "plugin-tests=${{ hashFiles('tests/fixtures/typed-uniforms/**', 'tests/pages/sketches/shaders/**') }}" >> "$GITHUB_OUTPUT"
       - name: The parts' keys, and the jobs whose every part passed
