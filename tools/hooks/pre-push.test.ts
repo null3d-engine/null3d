@@ -9,6 +9,7 @@ import {
 	guardSteps,
 	keepaliveSeconds,
 	LANDING_VARIABLE,
+	landingRefusal,
 	landingSteps,
 	MILESTONE_REF,
 	milestoneRefusal,
@@ -57,11 +58,11 @@ describe('the milestone branch', () => {
 		expect(pushToMilestone(parsePush(line('refs/heads/work')))).toBeUndefined();
 	});
 
-	it('refuses a helper its push to m3-start, and names the variable for the landing', () => {
+	it('refuses a helper its push to m3-start, and names the variable for the session that pushes', () => {
 		const message = milestoneRefusal(parsePush(line(MILESTONE_REF)), false);
 		expect(message).toContain(MILESTONE_REF);
 		expect(message).toContain(LANDING_VARIABLE);
-		expect(message).toContain('only the coordinator');
+		expect(message).toContain('only the session that checks the landings');
 	});
 
 	it('allows the same push when the coordinator sets the landing variable', () => {
@@ -177,6 +178,37 @@ describe('landingSteps', () => {
 		);
 	});
 
+	it("checks a landing's messages from where its branch left main, and the commits it adds", () => {
+		// An earlier commit of the branch may carry the GPU check's or the Mac references' trailer that a
+		// later one needs, so the messages are read over the whole branch, as CI's commits job reads them.
+		const added = { base: 'b2', head: 'a1', mainBase: 'm0' };
+		const steps = landingSteps(['.dev/x.md'], CRATES, true, false, added).map((step) => [
+			step.lane,
+			step.command.join(' '),
+		]);
+		expect(steps).toEqual([
+			['DIRECT', 'bunx commitlint --from m0 --to a1'],
+			['DIRECT', 'bun tools/hooks/check-trailers.ts m0..a1'],
+			['DIRECT', 'bun tools/hooks/check-merges.ts b2..a1'],
+			['DIRECT', 'bun tools/hooks/check-copies.ts b2..a1'],
+			...guardSteps().map((step) => [step.lane, step.command.join(' ')]),
+		]);
+	});
+
+	it('refuses a landing that this checkout cannot check, and says what to fetch or check out', () => {
+		const landing = { localRef: 'HEAD', localSha: 'a1', remoteRef: MILESTONE_REF, remoteSha: 'b2' };
+		expect(landingRefusal(landing, 'a1', true, 'm0')).toBeUndefined();
+		expect(landingRefusal(landing, 'c3', true, 'm0')).toContain(
+			'Check out the commit that you push',
+		);
+		expect(landingRefusal(landing, 'a1', false, 'm0')).toContain('git fetch origin m3-start');
+		expect(landingRefusal(landing, 'a1', true, undefined)).toContain('git fetch origin main');
+		// A first push of the branch has no commit on the remote, and is read from where it left main.
+		const first = { ...landing, remoteSha: ZERO };
+		expect(landingRefusal(first, 'a1', false, 'm0')).toBeUndefined();
+		expect(landingRefusal(first, 'a1', false, undefined)).toContain('git fetch origin main');
+	});
+
 	it('runs only the guards for a landing that changes no Rust', () => {
 		const guards = guardSteps().map((step) => [step.lane, step.command.join(' ')]);
 		expect(lanes(['.dev/x.md'])).toEqual(guards);
@@ -210,11 +242,12 @@ describe('plan', () => {
 			['QUICK', 'bunx commitlint --from b2 --to a1'],
 			['QUICK', 'bun tools/hooks/check-trailers.ts b2..a1'],
 			['QUICK', 'bun tools/hooks/check-merges.ts b2..a1'],
+			['QUICK', 'bun tools/hooks/check-copies.ts b2..a1'],
 			['DIRECT', 'bun tools/decisions.ts --check'],
 			['DIRECT', 'bun run check'],
 			[
 				'DIRECT',
-				'bun test tools/lib/release.test.ts tools/lib/cdn.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts tools/lib/ci-workflow.test.ts',
+				'bun test tools/lib/release.test.ts tools/lib/cdn.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts tools/lib/ci-workflow.test.ts tools/lib/size-report.test.ts',
 			],
 		]);
 	});
@@ -224,11 +257,12 @@ describe('plan', () => {
 			['QUICK', 'bunx commitlint --from b2 --to a1'],
 			['QUICK', 'bun tools/hooks/check-trailers.ts b2..a1'],
 			['QUICK', 'bun tools/hooks/check-merges.ts b2..a1'],
+			['QUICK', 'bun tools/hooks/check-copies.ts b2..a1'],
 			['DIRECT', 'bun tools/decisions.ts --check'],
 			['DIRECT', 'bun run check'],
 			[
 				'DIRECT',
-				'bun test tools/lib/release.test.ts tools/lib/cdn.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts tools/lib/ci-workflow.test.ts',
+				'bun test tools/lib/release.test.ts tools/lib/cdn.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts tools/lib/ci-workflow.test.ts tools/lib/size-report.test.ts',
 			],
 			['CPU_ONLY', 'cargo check --workspace'],
 			['CPU_ONLY', 'cargo nextest run --no-fail-fast --profile ci -p null3d-render'],
@@ -243,7 +277,7 @@ describe('plan', () => {
 	});
 
 	it('compiles the workspace for a Rust file outside the crates, with no crate to test', () => {
-		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs'])).toHaveLength(7);
+		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs'])).toHaveLength(8);
 		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs']).at(-1)?.[1]).toBe(
 			'cargo check --workspace',
 		);
