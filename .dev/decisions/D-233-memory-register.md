@@ -2,7 +2,7 @@
 
 Status: decided, 23 October 2026. Task: M3-R3.
 
-Summary: Each engine table and allocator reports the bytes that it reserves, uses and has used at most. The stats overlay's card lists these areas by system, in a development build. A report allocates nothing and runs only while the card shows, so a shipped page pays no frame time for it. On Battle, the four rows whose share is fixed, which D-130 measured, reproduce its per-object figures to the byte. The upload and shadow-caster rows do not, and the Decision says why. They are 263 for the scene's rows, 17 for the cells, 12 for the levels and 48 for the bucket keys.
+Summary: Each engine table and allocator reports the bytes that it reserves, uses and has used at most. The stats overlay's card lists these areas by system, in a development build. A report allocates nothing and runs only while the card shows, so a shipped page pays no frame time for it. On Battle, the four rows whose share is fixed, which D-130 measured, reproduce its per-object figures to the byte. The upload and shadow-caster rows do not, and the Decision says why. The four figures are 263 for the scene's rows, 17 for the cells, 12 for the levels and 48 for the bucket keys.
 
 ## Question
 
