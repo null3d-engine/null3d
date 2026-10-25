@@ -37,7 +37,7 @@ An add-on from another developer goes into a listing. What does the listing run 
 | public API | scans the shipped source for imports of any engine entry point other than `@null3d/engine` and `@null3d/engine/stats`, and of the engine's source | FAIL |
 | interface | reads the entry's `checkPluginInterface(name, { min, max })`, or the `pluginInterface` field of its `declareAddonNamespace({ ... })` registration, and holds the range to the engine's interface version; a `@null3d/...` package must call `checkAddonVersion(name, VERSION)` instead | SKIP when no engine sits beside the add-on |
 | shaders | builds the entry with the add-on's own Vite and null3D plugin, which compiles every WGSL import for both GPU paths | SKIP when either is not installed |
-| sizes | holds each built file to its budget: the later-file budget for code, and the first-use shader budget for a file of compiled shader builds | SKIP with the build |
+| sizes | holds each built file to its budget: the later-file budget for its own code, and the first-use shader budget for the compiled WGSL that the build inlined in it | SKIP with the build |
 | page | starts the page from another origin under the strict policy, once threaded and once single-threaded | SKIP without a page, or with `--skip-browser` |
 | cost | measures the production build of the page on each quality preset, and prints the GPU time per frame, or the CPU time where the device times no GPU work | SKIP without a page |
 
@@ -379,3 +379,36 @@ change moves.
 `vite build` still write their own copies of the shader set. Those builds are meant to be what a
 project ships, and this change is scoped to the page that the check measures. The same lever could
 serve them, and that is a change of its own with its own measurements.
+
+## Addendum, 26 October 2026: the shader data inlined in an add-on's entry (M3-R25)
+
+The sizes gate charged every built file to one budget, chosen by the file's name. Most of the wind
+add-on's entry is not its code. The plugin inlines compiled WGSL in the module that imports it.
+That is a whole shader's builds with the tables of text that they share, a sky layer's builds, and
+an effect's pieces. So the gate failed the two entries that hold the most of it, at 91,607 and
+111,802 bytes against the 64 KB budget for code.
+
+**The measurement.** `buildAddon` builds the entry twice. The first build is the shaders gate's own.
+The second answers each `.wgsl` import with an empty module. It holds the add-on's own code alone
+and compiles no shader. The difference between the two, in each column, is the shader data that the
+plugin inlined in the file. Each part answers its own budget, and the two parts add up to the file's
+size in every column. A file that the second build did not write keeps its whole size against the
+budget that its name gives. Such a file is a set of builds that the plugin writes apart.
+
+**The figures, on this branch at 78842747c.** A warm shader cache, and wind's figures repeated in
+two runs, from `bun packages/cli/bin/null3d.js check-addon <package> --skip-browser`.
+
+| Add-on | File | Raw | Code | Shader data | Share of raw |
+| --- | --- | --- | --- | --- | --- |
+| wind | `addon.js` | 91,607 | 5,015 | 86,592 | 94.5% |
+| water | `addon.js` | 111,802 | 14,479 | 97,323 | 87.0% |
+
+After Brotli the shader data is 7,029 of wind's 8,890 bytes, and 6,372 of water's 11,042. So the
+compressed columns keep most of their room, and only the uncompressed column ever failed. Both
+add-ons pass with no budget changed. The water entry's largest set of builds stays at 54.4 KB after
+Brotli against its 56 KB budget, as it was.
+
+**What guards it.** A test of `splitShaderData` holds the parts to the file's size. A test of
+`sizeProblems` fails a file whose inlined shader data is over the shader budget. A gate that stopped
+counting those bytes therefore cannot pass it. A test of `emptyShaders` holds the stand-in build to
+`.wgsl` files alone.
