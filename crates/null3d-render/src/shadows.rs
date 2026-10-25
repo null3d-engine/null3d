@@ -2208,4 +2208,204 @@ mod tests {
             }
         }
     }
+
+    /// One scene's motion, for the count of the frames that a cache of still casters could keep.
+    struct KeepCase {
+        name: &'static str,
+        cascades: u32,
+        map_size: u32,
+        distance: f32,
+        /// Meters a second that the eye travels along +x.
+        speed: f32,
+        /// Degrees a second that the camera turns about the eye.
+        turn: f32,
+        /// Degrees a second that the sun turns.
+        sun_rate: f32,
+        /// The sun's step in degrees when it steps, rather than turning smoothly.
+        sun_step: Option<f32>,
+    }
+
+    /// The direction the sun's light travels, for an azimuth and an elevation in degrees.
+    fn sun_direction(azimuth: f32, elevation: f32) -> [f32; 3] {
+        let (sa, ca) = azimuth.to_radians().sin_cos();
+        let (se, ce) = elevation.to_radians().sin_cos();
+        [ce * ca, -se, ce * sa]
+    }
+
+    /// The degrees between two sun azimuths, the short way round.
+    fn turn_between(from: f32, to: f32) -> f32 {
+        let turn = (to - from) % 360.0;
+        if turn > 180.0 {
+            360.0 - turn
+        } else if turn < -180.0 {
+            360.0 + turn
+        } else {
+            turn
+        }
+    }
+
+    /// The share of the frames, after the first, that each cascade of `case` keeps its layer,
+    /// while the sun may go stale by `step` degrees. The sun's step forces a redraw where the box
+    /// test alone would keep the layer, which is the cache's own test.
+    fn keep_shares(case: &KeepCase, step: f32, frames: u32) -> Vec<f32> {
+        let settings = ShadowSettings {
+            cascades: case.cascades,
+            map_size: case.map_size,
+            distance: case.distance,
+            ..SETTINGS
+        };
+        let lens = Lens::Perspective(Perspective {
+            fov_degrees: 60.0,
+            near: 0.05,
+            far: 2000.0,
+        });
+        let aspect = 16.0 / 9.0;
+        // Each cascade's layer: the box it holds and the sun azimuth it drew with.
+        let mut held: [Option<(CascadeBox, f32)>; MAX_CASCADES] = [None; MAX_CASCADES];
+        let mut kept = [0u32; MAX_CASCADES];
+        let mut counted = 0u32;
+        for frame in 0..frames {
+            let seconds = frame as f32 / 60.0;
+            let travelled = case.speed * seconds;
+            let heading = case.turn.to_radians() * seconds;
+            let (eye, target) = if case.turn == 0.0 {
+                (
+                    [travelled, 4.0, 0.0],
+                    [travelled + heading.cos(), 3.9, heading.sin()],
+                )
+            } else {
+                (
+                    [0.0, 4.0, 0.0],
+                    [heading.cos() * 20.0, 1.0, heading.sin() * 20.0],
+                )
+            };
+            let camera = looking(eye, target, 1.0);
+            let position = eye.map(f64::from);
+            let turned = case.sun_rate * seconds;
+            let azimuth = match case.sun_step {
+                Some(size) => (turned / size).floor() * size,
+                None => turned,
+            };
+            let sun = sun_direction(azimuth, 45.0);
+            let mut fitted = fit_cascades(&camera, position, &lens, aspect, sun, &settings);
+            for (k, cascade) in fitted.cascades.iter_mut().enumerate().take(fitted.count) {
+                // The engine's own box test, and the count's sun test, which the engine lacks.
+                let keeps = held[k].is_some_and(|(bounds, drawn)| {
+                    cascade.held_by(&bounds, position) && turn_between(drawn, azimuth).abs() <= step
+                });
+                if keeps {
+                    let (bounds, _) = held[k].expect("a held box");
+                    cascade.place(&bounds, position, case.map_size as f32);
+                    if frame > 0 {
+                        kept[k] += 1;
+                    }
+                } else {
+                    held[k] = Some((cascade.bounds, azimuth));
+                }
+            }
+            if frame > 0 {
+                counted += 1;
+            }
+        }
+        kept[..fitted_count(case)]
+            .iter()
+            .map(|&k| k as f32 / counted as f32)
+            .collect()
+    }
+
+    /// The cascades that `case` draws, within the engine's limit.
+    fn fitted_count(case: &KeepCase) -> usize {
+        (case.cascades as usize).clamp(1, MAX_CASCADES)
+    }
+
+    /// The five scenes that the still-caster cache's record counts, at their own motion.
+    fn keep_cases() -> Vec<KeepCase> {
+        vec![
+            // Forest: a flight at 3.6 m a second under a sun that holds.
+            KeepCase {
+                name: "Forest",
+                cascades: 3,
+                map_size: 2048,
+                distance: 200.0,
+                speed: 3.6,
+                turn: 0.0,
+                sun_rate: 0.0,
+                sun_step: None,
+            },
+            // A security camera on a pole, sweeping at 18 degrees a second.
+            KeepCase {
+                name: "Security camera",
+                cascades: 3,
+                map_size: 2048,
+                distance: 200.0,
+                speed: 0.0,
+                turn: 18.0,
+                sun_rate: 0.0,
+                sun_step: None,
+            },
+            // Creek at its slowest glide: 1.7 m a second, and a day of 80 seconds.
+            KeepCase {
+                name: "Creek",
+                cascades: 2,
+                map_size: 2048,
+                distance: 60.0,
+                speed: 1.7,
+                turn: 0.0,
+                sun_rate: 4.5,
+                sun_step: None,
+            },
+            // The time-of-day demo: at rest, its sun stepping, and a day of 40 seconds.
+            KeepCase {
+                name: "Time-of-day demo",
+                cascades: 3,
+                map_size: 2048,
+                distance: 200.0,
+                speed: 0.0,
+                turn: 0.0,
+                sun_rate: 9.0,
+                sun_step: Some(0.75),
+            },
+            // A camera at rest while the sun turns slowly: a day of 10 minutes.
+            KeepCase {
+                name: "Camera at rest",
+                cascades: 3,
+                map_size: 2048,
+                distance: 200.0,
+                speed: 0.0,
+                turn: 0.0,
+                sun_rate: 0.6,
+                sun_step: None,
+            },
+        ]
+    }
+
+    #[test]
+    fn the_keep_rate_of_a_still_caster_cache_is_counted() {
+        // A quarter degree is the largest sun step that a shadow's edge tolerates, and an eighth
+        // bounds a scene that needs a finer step.
+        let quarter = 0.25;
+        let eighth = 0.125;
+        for case in keep_cases() {
+            let quarter_shares = keep_shares(&case, quarter, 2400);
+            let eighth_shares = keep_shares(&case, eighth, 2400);
+            println!(
+                "{}: at a quarter degree {:?}, at an eighth {:?}",
+                case.name, quarter_shares, eighth_shares
+            );
+            for share in &quarter_shares {
+                assert!((0.0..=1.0).contains(share), "{}: {share}", case.name);
+            }
+            // A finer step can only lower a share, as it makes a layer stale sooner.
+            for (fine, coarse) in eighth_shares.iter().zip(&quarter_shares) {
+                assert!(*fine <= *coarse + 1e-6, "{}: {fine} {coarse}", case.name);
+            }
+        }
+        // A sun that steps by a quarter degree in a 40-second day, where the camera holds, keeps
+        // the four frames between its steps: 0.75 degrees every 0.083 s is a step every 5 frames.
+        let demo = &keep_cases()[3];
+        assert!((keep_shares(demo, quarter, 2400)[0] - 0.8).abs() < 0.02);
+        // A sun at 0.6 degrees a second steps a quarter degree every 25 frames, and keeps 24.
+        let still = &keep_cases()[4];
+        assert!((keep_shares(still, quarter, 2400)[0] - 0.96).abs() < 0.02);
+    }
 }
