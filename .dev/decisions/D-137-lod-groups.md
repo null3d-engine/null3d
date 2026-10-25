@@ -505,6 +505,11 @@ level names 515 vertices and its largest index is 514. Each finer stage's larges
 than the vertices it uses, up to the finest stage's 16,641. A staged loader can therefore send the
 coarsest level's part of the buffer first and add each finer part as it arrives.
 
+The step runs before the cluster planner. A mesh that takes both whole levels and a tree of patches
+therefore writes them over one vertex order, which is the layout M3-L3's patch data and its fallback
+levels share. The tool builds it once, in `packages/cli/src/assets/levels.js`, and both writers name
+the base mesh's accessors.
+
 The gain is the share of the buffer that a coarse level no longer needs resident. On the tool's test
 ball the coarsest level names 122 of 1,225 vertices of 16 bytes. Before the step they spread over
 98% of the array, so a draw needed almost the whole 19,600-byte vertex buffer. The order puts them in
@@ -516,14 +521,17 @@ user that spends it.
 
 `packages/cli/src/assets/levels.test.ts` holds two facts. Each level and every coarser level share
 one prefix of the new numbering. Every triangle keeps the positions it drew before the reorder.
+Before the step the same levels' largest index was 16,640, even for the coarsest level's 514
+vertices, so the prefix check fails without it.
 
 ## Addendum: the levels' cost on an iPad and a phone (25 October 2026, M3-L2)
 
 The level-of-detail section asks each of its tasks for the GPU time and memory on the Mac, an iPad
-and an S24-class phone. The Mac's GPU time is in this record's table of 11 October. That table
-predates the fade rule of 22 October, so its Low rows measured a Low preset with no fading bands.
-The device rows below are the first level-cost figures under the new rule. The copy lists'
-memory is in the addendum above. This addendum adds the owner's iPad, the cloud iPad and the phone.
+and an S24-class phone. The Mac's GPU time is in this record's table of 11 October, which predates
+the fade rule of 22 October: its Low rows measured a Low preset with no fading bands. The Mac ran
+the page again on 25 October under the new rule, and its rows are below with the devices'. The copy
+lists' memory is in the addendum above. This addendum adds the Mac's new rows, the owner's iPad, the
+cloud iPad and the phone.
 
 The `lod-cost` page draws 40,000 pines, four levels each. It times the forest with every tree at its
 base mesh. It then times it with each tree at the level that its size on the screen picks. The two
@@ -551,6 +559,12 @@ the Galaxy S24 gives both of its rows.
 | iPad Pro 13, cloud | WebGL2 | High | no timer | 6.2, 6.2 |
 | Galaxy S24, cloud | WebGL2 | Low | no timer | 6.1, 6.1 |
 | Galaxy S24, cloud | WebGL2 | High | no timer | 6.2, 6.2 |
+| Mac, Chrome | WebGPU | Low | 5.43, 3.70 | 19.8, 19.8 |
+| Mac, Chrome | WebGPU | High | 9.54, 5.68 | 23.7, 23.7 |
+| Mac, Chrome | compatibility | Low | 5.90, 3.74 | 19.8, 19.8 |
+| Mac, Chrome | compatibility | High | 7.33, 4.16 | 23.7, 23.7 |
+| Mac, Chrome | WebGL2 | Low | 8.25, 5.46 | 6.2, 6.2 |
+| Mac, Chrome | WebGL2 | High | 12.48, 4.23 | 6.3, 6.3 |
 
 The owner's iPad Pro 11-inch ran Safari 26.6.2 on iPadOS 26.7 at 59 Hz. Its window was 1,194 by
 659 CSS pixels at 2x. Its levels cut the GPU time by 75% at Low on core WebGPU, and by 64% at High.
@@ -578,6 +592,13 @@ Chrome on Android reports no WebGL2 GPU timer. The cloud display ran at 30 Hz, s
 sits at its 33.3 ms limit and hides any saving. The runner marks its timings unreliable. Its GPU
 buffer bytes also do not change, at 6.1 MiB at Low and 6.2 MiB at High. Its CPU time rises with the
 levels on, by 1.78 ms at Low and 1.35 ms at High. That is the level picks and the fade pairs.
+
+The Mac ran the page in Chrome on 25 October: six pages in 3.9 minutes, each measured at a
+one-minute load between 6.1 and 7.9. Every path held the display's 16.67 ms interval. The levels cut
+the GPU time by 32% at Low and 40% at High on core WebGPU, by 37% and 43% in compatibility mode, and
+by 34% and 66% on WebGL2. Its GPU buffer bytes do not change between the two sides, at 19.8 MiB at
+Low and 23.7 MiB at High, and 6.2 and 6.3 MiB on WebGL2. Chrome on the Mac times WebGL2, where the
+tablets and the phone report no timer there.
 
 The run connected only after the mkcert root was trusted on the iPad. Until then the runner page
 sat on "starting" and nothing reached the Mac. [Device sessions](../devices.md) now records that
