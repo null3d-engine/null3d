@@ -58,10 +58,25 @@ export interface ModelScene {
 	 */
 	frame?: { center: readonly [number, number, number]; radius: number };
 	/**
-	 * True when the HDR environment of the backgrounds scene lights the model too, as
-	 * `scene.environment` in three.js: a clear coat and a sheen show their reflections there.
+	 * True when an HDR environment lights the model too, as `scene.environment` in three.js: a clear
+	 * coat and a sheen show their reflections there.
 	 */
 	environment?: boolean;
+	/**
+	 * The HDR file that lights the scene, when it is not the backgrounds scene's. A material test
+	 * model takes a neutral studio, as its own viewer draws it.
+	 */
+	environmentHdr?: string;
+	/**
+	 * How strongly the environment lights the model, as three.js's `scene.environmentIntensity`. The
+	 * default is 1. A bright studio takes less, so the film's colors show rather than clip to white.
+	 */
+	environmentIntensity?: number;
+	/**
+	 * True when the environment and the dim ambient light light the model alone, without the sun.
+	 * The studio-lit material test models take this, as their own viewer draws them.
+	 */
+	ambientOnly?: boolean;
 	/**
 	 * The seconds that the scene's image test waits for its frame, when a software GPU takes longer
 	 * than the default to build its shaders, as for a clear coat or a sheen.
@@ -75,6 +90,20 @@ const LAYERS_SECONDS = 60;
 /** The HDR file of the model scenes' environment: the backgrounds scene's, at full intensity. */
 export const MODELS_HDR = sampleUrl('sources/hdri/polyhaven/venice_sunset/venice_sunset_2k.hdr');
 
+/** The neutral studio that lights a material test model, as the Khronos viewer lights it. */
+const STUDIO_HDR = sampleUrl('sources/hdri/polyhaven/studio_small_09/studio_small_09_2k.hdr');
+
+/**
+ * The Khronos iridescence dielectric sphere model, packed into one binary glTF so the model scenes'
+ * build ships it as one file. It is a temporary fixture: its durable home is the sample content,
+ * and it goes when that asset is pinned. The original is the Khronos IridescenceDielectricSpheres
+ * glTF variant, under CC0, with the same meshes, materials and texture.
+ */
+const IRIDESCENCE_DIELECTRIC = new URL(
+	'../../tests/pages/assets/models/sources/khronos/IridescenceDielectricSpheres/IridescenceDielectricSpheres.glb',
+	import.meta.url,
+).href;
+
 /**
  * The model scenes by name. Each names a feature of the loader: metal-rough materials with their
  * texture maps, texture transforms in a .gltf file whose buffers and images are files of their
@@ -87,7 +116,9 @@ export const MODELS_HDR = sampleUrl('sources/hdri/polyhaven/venice_sunset/venice
  * equivalents of four Khronos test models whose originals need an environment map, transmission or
  * lights of their own: KHR_materials_specular's factors and textures, KHR_materials_ior's indices
  * with the specular values, KHR_materials_iridescence's films, and KHR_materials_anisotropy's
- * stretched highlights. Those scenes' own lights light them. The vendor name's file is the instancing model as
+ * stretched highlights. Those scenes' own lights light them. The Khronos iridescence dielectric
+ * grid draws under a neutral studio, as its own viewer draws it, from a temporary fixture that the
+ * sample content replaces. The vendor name's file is the instancing model as
  * gltfpack compresses it (tests/lib/meshopt-fixtures.ts), which the repository keeps. The Khronos
  * name's file covers every mode and filter. The Draco scenes draw the sample content's skinned
  * Draco model, and the coordinates test model as Draco's encoder compresses it
@@ -172,6 +203,19 @@ export const MODEL_SCENES = {
 	iridescence: {
 		file: () => iridescenceBuilder().glb(),
 		ownLights: true,
+		timeoutSeconds: LAYERS_SECONDS,
+	},
+	// The Khronos iridescence dielectric sphere test model, lit by a neutral studio as its own
+	// viewer draws it. Its grid runs over the base index of refraction, the film's thickness and the
+	// film's index. The hand-made scene above keeps the film's two maps, which this file does not use.
+	'iridescence-dielectric': {
+		url: IRIDESCENCE_DIELECTRIC,
+		environment: true,
+		environmentHdr: STUDIO_HDR,
+		environmentIntensity: 0.35,
+		ambientOnly: true,
+		frame: { center: [0, 0, 0], radius: 9 },
+		view: [0.35, 0.28, 1],
 		timeoutSeconds: LAYERS_SECONDS,
 	},
 	anisotropy: {

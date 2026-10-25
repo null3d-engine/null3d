@@ -124,6 +124,7 @@ export const SPECULAR_AA_LIMITS = {
 	'gltf-specular': 0.16,
 	'gltf-ior': 0.21,
 	'gltf-iridescence': 0.3,
+	'gltf-iridescence-dielectric': 0.6,
 	'gltf-anisotropy': 0.6,
 	'gltf-toy-car': 0.32,
 } as const;
@@ -441,6 +442,7 @@ const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 	specular: SPECULAR_AA_LIMITS['gltf-specular'],
 	ior: SPECULAR_AA_LIMITS['gltf-ior'],
 	iridescence: SPECULAR_AA_LIMITS['gltf-iridescence'],
+	'iridescence-dielectric': SPECULAR_AA_LIMITS['gltf-iridescence-dielectric'],
 	anisotropy: SPECULAR_AA_LIMITS['gltf-anisotropy'],
 	'toy-car': SPECULAR_AA_LIMITS['gltf-toy-car'],
 };

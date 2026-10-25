@@ -106,3 +106,41 @@ owner may delete the whole design if the display table stands.
 
 The figure comes from a local build of the branch. CI's `wasm-checks` job measures the same files, and
 a later rise should quote its figure.
+
+## Addendum, 26 October 2026: the Khronos dielectric sphere model in the image tests
+
+Status: decided by the helper of M3-G2 on 2026-10-26, for the owner's review. Task: M3-G2.
+
+The audit of 24 October found that no Khronos iridescence sample was tested. The in-code scene
+compares the film's values, but it reads no file that Khronos publishes. The scene
+`gltf-iridescence-dielectric` loads the Khronos IridescenceDielectricSpheres model. Its grid holds
+343 dielectric spheres over three axes: the base index of refraction, the film's thickness and the
+film's index. A neutral studio lights it at 0.35 of full intensity, and it draws with no tone
+mapping as every model scene does. The camera frames the grid at a radius of 9, so the spheres fill
+the picture and the film's colors cross many pixels.
+
+| GPU set | webgpu | compat | webgl2 |
+| --- | --- | --- | --- |
+| The Mac's GPU | 0.519% | 0.527% | 0.076% |
+| SwiftShader | 0.519% | 0.518% | 0.087% |
+
+three.js's two renderers differ by 0.368% on the Mac and 0.372% under SwiftShader. The scene takes
+a `SPECULAR_AA_LIMITS` figure of 0.6%, beside the anisotropy scene's. A run that dropped
+`KHR_materials_iridescence` in the loader changed 0.914% of the pixels on each tier. That is above
+the picture test's 0.1% tolerance, so the test fails when the film goes.
+
+The loader needs no change for the texture units. D-215's slot sharing gives the iridescence maps
+the light map's and the specular maps' places, so no stage takes a new unit. The Khronos dielectric
+file uses no iridescence map, so this run drops none.
+
+The model is a temporary fixture in this repository, at
+`tests/pages/assets/models/sources/khronos/IridescenceDielectricSpheres/`. Its durable home is the
+sample content, which keeps each file with its licence and SHA-256. A prepared change for the
+sample-assets repository adds this model and the metallic sphere model, both CC0. The change is not
+pushed, because the assets and the pin are the owner's decision. When it lands, this fixture is
+deleted and the one address in `bench/scenes/gltf-models.ts` names the sample. The pin bump is owed
+until then. The metallic model has no scene before that pin.
+
+The fixture is one binary glTF of 225 KB. It packs the Khronos glTF variant's JSON, its buffer and
+its guides texture. The JSON objects, the buffer bytes and the texture bytes are identical to the
+source's. One file avoids three committed files with relative addresses, which a build renames.
