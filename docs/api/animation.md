@@ -180,7 +180,7 @@ const copy = scene.instantiate(await assets.loadGltf(url));
 copy.animator().play('Cube Animation');
 ```
 
-A pointer that the engine does not read leaves the value as the file has it. Development builds warn about each one. The names show the kind. A camera's values are left out, because the loader reads no cameras from files. So are a texture's rotation, the transforms of the other textures, and a light's inner cone angle. So are the values of extensions that the engine does not draw. A material keeps one transform for all its maps, so a file that moves two of them apart plays the first.
+A pointer that the engine does not read leaves the value as the file has it. Development builds warn about each one. The names show the kind. The engine leaves out a camera's values, because it reads no cameras from files. It leaves out a texture transform's rotation, and the transforms of every texture but a base color or an emissive one. It leaves out a light's inner cone angle. It also leaves out `normalTexture/scale`, and the pointers of `KHR_materials_ior`, `KHR_materials_volume`'s attenuation color and distance, and `KHR_materials_iridescence`'s thickness range. It leaves out the values of extensions that it does not draw. A material keeps one transform for all its maps, so a file that moves two of them apart plays the first.
 
 ## Clip weights
 
