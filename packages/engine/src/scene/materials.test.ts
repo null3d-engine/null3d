@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import {
+	MAP_ROW_SLOT_SHEEN_COLOR,
 	MAP_SLOT_ANISOTROPY,
 	MAP_SLOT_BASE_COLOR,
 	MAP_SLOT_BUMP,
@@ -11,11 +12,13 @@ import {
 	MAP_SLOT_DIFFUSE_TRANSMISSION,
 	MAP_SLOT_DIFFUSE_TRANSMISSION_COLOR,
 	MAP_SLOT_DISPLACEMENT,
+	MAP_SLOT_EMISSIVE,
 	MAP_SLOT_IRIDESCENCE,
 	MAP_SLOT_IRIDESCENCE_THICKNESS,
 	MAP_SLOT_LIGHT,
 	MAP_SLOT_LIGHT_MAP_DIRECTION,
 	MAP_SLOT_NORMAL,
+	MAP_SLOT_OCCLUSION,
 	MAP_SLOT_SHEEN_COLOR,
 	MAP_SLOT_SHEEN_ROUGHNESS,
 	MAP_SLOT_SPECULAR_COLOR,
@@ -72,6 +75,8 @@ import {
 	MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
 	MATERIAL_PARAM_LIGHT_MAP_OFFSET,
 	MATERIAL_PARAM_LIGHT_MAP_SCALE,
+	MATERIAL_PARAM_MAP_UV,
+	MATERIAL_PARAM_MAP_UV_STRIDE,
 	MATERIAL_PARAM_METALNESS,
 	MATERIAL_PARAM_NORMAL_SCALE,
 	MATERIAL_PARAM_OCCLUSION_STRENGTH,
@@ -98,6 +103,7 @@ import {
 import {
 	PERMUTATION_COAT_SHEEN,
 	PERMUTATION_TRANSLUCENCY,
+	SIZE_MAP_SLOTS,
 	SIZE_MATERIAL_BYTES,
 	TEMPLATE_CUSTOM_FIRST,
 	VERTEX_COLOR,
@@ -158,6 +164,13 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_DECAL_EDGE_FADE, 1],
 ]);
 
+// Each map of the slots from the second up keeps the two rows of its own transform.
+for (let slot = 1; slot < SIZE_MAP_SLOTS; slot++) {
+	const at = MATERIAL_PARAM_MAP_UV + (slot - 1) * MATERIAL_PARAM_MAP_UV_STRIDE;
+	WIDTHS.set(at, 3);
+	WIDTHS.set(at + 4, 3);
+}
+
 /** A texture as materials see it: its handle, and the coordinates its maps read. */
 const texture = (handle: number, uvSet: 0 | 1 = 0) => ({ handle, uvSet }) as unknown as Texture;
 
@@ -206,6 +219,14 @@ function fakeCore() {
 			row[MATERIAL_PARAM_ALPHA_CUTOFF] = 0.5;
 			row[MATERIAL_PARAM_ROUGHNESS] = 1;
 			row[MATERIAL_PARAM_EMISSIVE_INTENSITY] = 1;
+			// The identity transform of every map, as the core's row of defaults gives them.
+			row[MATERIAL_PARAM_UV_U] = 1;
+			row[MATERIAL_PARAM_UV_V + 1] = 1;
+			for (let slot = 1; slot < SIZE_MAP_SLOTS; slot++) {
+				const at = MATERIAL_PARAM_MAP_UV + (slot - 1) * MATERIAL_PARAM_MAP_UV_STRIDE;
+				row[at] = 1;
+				row[at + 5] = 1;
+			}
 			features.push(bits);
 			shadings.push(shading);
 			custom.push(new Array<number>(32).fill(0));
@@ -646,6 +667,61 @@ describe('Material.set', () => {
 		expect(row()[MATERIAL_PARAM_LIGHT_MAP_INTENSITY]).toBe(3);
 		stone.set({ envIntensity: 0.25 });
 		expect(row()[MATERIAL_PARAM_ENV_INTENSITY]).toBe(0.25);
+	});
+
+	test('places each map of a material with its own transform', () => {
+		const { table, materials } = fakeCore();
+		const emissive = MATERIAL_PARAM_MAP_UV + (MAP_SLOT_EMISSIVE - 1) * MATERIAL_PARAM_MAP_UV_STRIDE;
+		const occlusion =
+			MATERIAL_PARAM_MAP_UV + (MAP_SLOT_OCCLUSION - 1) * MATERIAL_PARAM_MAP_UV_STRIDE;
+		// A sheen map keeps its texture in the specular color map's slot, so its transform goes to
+		// that slot's rows rather than after the last map of its own.
+		const sheen =
+			MATERIAL_PARAM_MAP_UV + (MAP_ROW_SLOT_SHEEN_COLOR - 1) * MATERIAL_PARAM_MAP_UV_STRIDE;
+		const mapped = materials.standard({
+			map: texture(1),
+			emissiveMap: texture(2),
+			aoMap: texture(3),
+			sheenColorMap: texture(4),
+			mapUvTransforms: {
+				emissiveMap: { offset: [0.5, 0.25], repeat: [2, 3] },
+				sheenColorMap: { repeat: [30, -30] },
+			},
+		});
+		const row = () => table[0] as number[];
+		const at = (param: number) =>
+			row()
+				.slice(param, param + 3)
+				.map((value) => value + 0);
+		// The emissive map takes its own transform, and every other map the identity.
+		expect(at(emissive)).toEqual([2, 0, 0.5]);
+		expect(at(emissive + 4)).toEqual([0, 3, 0.25]);
+		expect(at(MATERIAL_PARAM_UV_U)).toEqual([1, 0, 0]);
+		expect(at(MATERIAL_PARAM_UV_V)).toEqual([0, 1, 0]);
+		expect(at(occlusion)).toEqual([1, 0, 0]);
+		// The sheen map's transform reached the slot that holds its texture.
+		expect(at(sheen)).toEqual([30, 0, 0]);
+		expect(at(sheen + 4)).toEqual([0, -30, 0]);
+		// A track that names one map moves that map alone, and keeps the rest of its transform.
+		mapped.writeUvPair('uvOffset', 0.75, -0.25, MAP_SLOT_EMISSIVE);
+		expect(at(emissive)).toEqual([2, 0, 0.75]);
+		expect(at(emissive + 4)).toEqual([0, 3, -0.25]);
+		expect(at(MATERIAL_PARAM_UV_U)).toEqual([1, 0, 0]);
+		expect(at(occlusion)).toEqual([1, 0, 0]);
+		// A transform that a later `set` gives is kept too, so the track changes only the offset.
+		mapped.set({
+			mapUvTransforms: { emissiveMap: { repeat: [4, 5] } },
+		});
+		expect(at(emissive)).toEqual([4, 0, 0]);
+		mapped.writeUvPair('uvOffset', 0.75, -0.25, MAP_SLOT_EMISSIVE);
+		expect(at(emissive)).toEqual([4, 0, 0.75]);
+		expect(at(emissive + 4)).toEqual([0, 5, -0.25]);
+		// A write with no slot moves every map.
+		mapped.writeUvPair('uvScale', 2, 2);
+		expect(at(emissive)).toEqual([2, 0, 0.75]);
+		expect(at(MATERIAL_PARAM_UV_U)).toEqual([2, 0, 0]);
+		expect(at(occlusion)).toEqual([2, 0, 0]);
+		expect(at(sheen)).toEqual([2, 0, 0]);
 	});
 
 	test('writes the specular values, with the reflectance that the index of refraction gives', () => {
