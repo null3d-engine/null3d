@@ -1,15 +1,14 @@
 # D-264: A cache of still casters in the directional light's cascades
 
-Status: proposed. Date: 2026-10-25, revised 2026-10-26. Task: M3-R11. The keep rate is counted and
-the cascades' costs are measured. The decision waits on one figure, the still casters' share of
-Creek's second cascade. An earlier draft ruled against the cache on a split that the measurement
-cannot support, and the checker refused it. Not built yet.
+Status: decided on 2026-10-26. Task: M3-R11. Not built now, and the record says what would make it
+worth building. The keep rate is counted and Creek's cascades are measured on a frozen page. The
+frame time that decides the rule is not measured, because Creek's page drifts between runs.
 
-Summary: Weighs two ways to stop a cascade redrawing depth that has not changed. The first is a
-rest rule, which skips a cascade's pass while nothing in it moved. The second is a second shadow map
-that holds the still casters. A cache could keep its layers in 50% to 98% of the scenes' frames, and
-the sun's step sets that share, not the camera. Whether that pays turns on how much of Creek's
-second cascade stands still, which the measurement so far cannot say.
+Summary: Do not build a cache of the still casters now. A cache could keep its layers in 75% to 98%
+of the frames of the engine's own scenes, so the keep rate passes. The measured saving at Creek's
+best pose for a cache is 0.26 ms, which clears 3% only where Creek's frame is under about 8.75 ms.
+No such frame has been measured, and Creek's page cannot be made to yield one until its draw calls
+stop swinging between runs.
 
 ## Question
 
@@ -188,65 +187,51 @@ ruling number. The measurement below replaces them.
 
 ### The measured cost
 
-The demos ran on the Mac in Chrome on WebGPU at Medium, from the development pages. Each figure is
-from two runs. The [run file](../tested-devices/macbook-pro-chrome/20261025-235300-shadow-cascade-cost.md)
-holds the commands, the loads and the medians.
+The demos ran on the Mac in Chrome on WebGPU at Medium, from the development pages. The
+[run file](../tested-devices/macbook-pro-chrome/20261025-235300-shadow-cascade-cost.md) holds the
+commands and the loads.
 
-| Scene | Frame GPU time | First cascade | Second cascade | The other passes |
-| --- | --- | --- | --- | --- |
-| The time-of-day demo | 2.74 and 2.96 ms | 0.048 and 0.042 ms | 0.094 and 0.125 ms | 1.15 to 1.79 ms |
-| Creek | 11.96 and 10.56 ms | 0.288 and 0.340 ms | 0.531 and 0.490 ms | 4.35 to 6.10 ms |
+The first attempt measured the live page, whose camera follows a route on the clock. Those figures
+are not comparable with each other and none of them is used below. Two runs of one configuration
+opened on different poses. One pass read 60% higher in one run than the other, and the draw calls
+moved from 137 to 164. Any figure from that page before the route was frozen carries the same doubt.
 
-Creek's light names two cascades, so those two passes are all of Creek's shadow cost. Nothing is
-left out of the report.
-
-One caution belongs with the table. Creek's frame was inflated by the machine's load, which read 69.
-Its frame time on a quiet machine is smaller, so one saving is a larger share of a quiet frame than
-of this one. Trust the absolute pass times.
-
-### How much of that the movers take
-
-Creek again, with its swaying grass set not to cast shadows. The grass is not Creek's only mover: the
-floating leaves cast shadows and move too.
+The second attempt replaced the route with a fixed pose at Creek's opening shot and fixed the hour.
+Both runs then reported the same two cascade passes. Creek's light names two cascades, so those are
+all of its shadow cost.
 
 | Measure | Grass casting | Grass not casting |
 | --- | --- | --- |
-| Frame GPU time | 11.96 and 10.56 ms | 8.04 and 6.39 ms |
-| Draw calls | 135 and 137 | 101 and 101 |
-| First cascade | 0.288 and 0.340 ms | 0.302 and 0.351 ms |
-| Second cascade | 0.531 and 0.490 ms | gone, and every later pass moves up one place |
+| First cascade | 0.105, 0.096, 0.099 ms | 0.111, 0.110, 0.109 ms |
+| Second cascade | 0.379, 0.374, 0.381 ms | 0.371, 0.350, 0.347 ms |
+| Draw calls | 191.5, 190.5, 225 | 185, 185, 150 |
 
-The first cascade kept its cost to within a hundredth of a millisecond, so the grass is not in it.
-The second cascade's pass vanished, and the runs cannot say why. Two things change at once: the
-grass stops casting, and every cascade stops drawing in every frame. A far cascade that keeps its
-turns appears in only some timed frames, and a pass reported by position then drops out.
+The grass costs about 0.01 ms in either cascade at this pose. The second cascade costs 0.37 ms, so
+almost all of it stands still: `S2` is about 0.37 ms. This is close to the best pose for a cache,
+because the opening wide shot barely puts the grass in the cascades. The route's low passes over the
+water would show more.
 
-So this pair of runs does not measure the still casters' share of the second cascade. It does not
-measure the grass's cost either. The 3.5 to 4 ms and the 34 draw calls are everything that changed
-between the two runs. Two things changed with them: the grass's shadows, and the far cascades' draws
-that the movers had forced in every frame. An earlier draft read the movers as the bulk of Creek's
-shadow work from this difference, and that does not follow.
+The page still drifts over a longer sitting. The third measurement of each group read 225 and 150
+draw calls against the others' 190 and 185. Only the first two measurements of each group are
+comparable. The frame times of these runs were not recorded.
 
-### What the figures say so far
+### What the figures say
 
 A cache saves, in each frame it keeps, the still casters' draw less the restore. Over a frame of
-Creek at its 75% keep rate, with `S2` for the still casters' share of the second cascade:
+Creek at its 75% keep rate, with `S2` of 0.37 ms:
 
-    saving = 0.75 x (0.29 + S2) - 2 x 0.045 ms
+    saving = 0.75 x (0.10 + 0.37) - 2 x 0.045 = 0.26 ms
 
-The first cascade's 0.29 ms stands still, so it counts in full. The restore is D-16's 0.045 ms a
-layer, for Creek's two layers, so 0.09 ms.
+The restore is D-16's 0.045 ms a layer, for Creek's two.
 
-The saving reaches 3% of Creek's inflated 11 ms frame, which is 0.33 ms, at an `S2` of about
-0.27 ms. On a quiet frame the same saving is a larger share, so the bar there is lower. `S2` is the
-figure the record lacks.
+So the saving is 0.26 ms. It reaches 3% of Creek's frame only where that frame is under about
+8.75 ms. No frame time for Creek has been measured that low, and the frame times of the run that
+produced this saving were not recorded. The rule is therefore not met by any figure this record
+holds.
 
-The second cascade's whole cost is 0.53 ms, so `S2` lies between 0 and 0.53. The answer therefore
-turns on whether more than about half of that cascade stands still.
-
-The time-of-day demo cannot pay for a cache whatever `S2` is. Its two measured cascades total 0.142
-and 0.167 ms. At its 80% keep rate those save about 0.12 ms, and its three layers' restore takes
-0.135 ms. The cache costs more there than it saves.
+The time-of-day demo cannot pay for a cache at all. Its two measured cascades total 0.142 and
+0.167 ms. At its 80% keep rate those save about 0.12 ms, and its three layers' restore takes
+0.135 ms.
 
 The rest rule takes a different set of frames. It fires only where nothing in a cascade moved. In
 Creek the grass and the leaves move in every frame, so there it never fires. In forest, whose
@@ -293,27 +278,31 @@ no pixel.
 
 ## What would change the answer
 
-For the cache, a scene would have to hold many more still casters than moving ones. They would also
-need to reach 3% of the frame after the restore's cost. Creek may already be such a scene, and the
-measurement above cannot say whether it is.
+One figure: a quiet-machine frame for Creek under about 8.75 ms. At that frame, the measured saving
+of 0.26 ms reaches 3%. A phone figure is needed too, because the rule asks for both.
 
-Two shipped scenes that cast shadows were never measured. Night town is one, and its lights and
-casters are unlike Creek's. Skyway casts no shadows at all, so it cannot be a candidate.
+That figure needs a page where two runs of one configuration draw the same work. Creek's cannot be
+that page yet, because its draw calls swing between runs with the camera, hour and cascade interval
+all pinned. A bench-style page with a procedural camera and a clock that does not drift is the work
+that would make it possible.
 
-For the rest rule, the change is a shipped scene whose shadowed casters are mostly still. Forest is
-the nearest case today, and its cascade cost is not measured. One measurement there would decide
-whether the rule is worth building.
+Night town is the shipped scene with still casters that this record never measured, and it may suit a
+cache better than Creek does. Skyway casts no shadows at all, so it cannot be a candidate.
 
 ## Decision
 
-Pending the split of Creek's second cascade. The keep rate passes at 75% in Creek, and reaches 98%
-in the scenes whose sun stands still. The rule then turns on one figure. Do the still casters of
-Creek's second cascade cost about a quarter of a millisecond or more in still casters? That is where
-the saving reaches 3% of Creek's frame.
+Do not build a cache of the still casters now. The keep rate passes, at 75% in Creek and up to 98%
+in the scenes whose sun stands still. The saving at Creek's best pose for a cache is 0.26 ms, and it
+reaches 3% of the frame only below 8.75 ms. No frame time that low has been measured, and the only
+frame times this record holds came from the moving route, so they are unusable.
 
-The measurement that settles it draws every cascade in every frame, so no pass drops out of the
-report. It runs with the grass casting and then with it not casting. Then each cascade's still share
-reads off directly.
+The cache is worth building when its saving clears 3% of a measured frame on this computer and on a
+phone. That needs a deterministic Creek page, one where two runs of one configuration draw the same
+work. It also needs a quiet machine for the frame.
+
+The obstacle stands in the way of that. It is a finding about Creek rather than about the cache. Its
+draw calls swing between runs with its camera, hour and cascade interval pinned, so the page cannot
+support a comparison. That matters to anyone measuring Creek, not only to this record.
 
 The rest rule is a different question and stays open. It costs nothing to try, it needs no
 bookkeeping, and it keeps every frame where nothing in a cascade moved. The same data says it will
