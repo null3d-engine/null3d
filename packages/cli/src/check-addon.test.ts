@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { missingCoreFiles } from '../../../packages/vite-plugin/src/index.ts';
 import { MATERIAL_BUILDS_ADDRESS } from '../../../packages/vite-plugin/src/material-builds.ts';
 import { fixture } from '../../../tools/lib/fixture';
 import { FIRST_USE_SHADER_BUDGET, LATER_BUDGET } from '../../../tools/lib/size-report.ts';
@@ -11,6 +12,7 @@ import {
 	allocationGate,
 	allocationOutcome,
 	budgetOf,
+	buildAddon,
 	emptyShaders,
 	engineVersions,
 	interfaceResult,
@@ -535,6 +537,26 @@ describe('emptyShaders', () => {
 		expect(plugin.load('/project/src/grid.wgsl')).toBe('export default {};');
 		expect(plugin.load('/project/src/grid.wgsl?raw')).toBeUndefined();
 		expect(plugin.load('/project/src/wind.ts')).toBeUndefined();
+	});
+});
+
+/** An add-on whose entry imports a compute shader, so a build of it holds shader data. */
+const ADDON_FIXTURE = join(import.meta.dirname, '../../../tests/fixtures/check-addon-split');
+
+/**
+ * True where a build of the fixture can run. It needs the engine's core files, which the build job
+ * writes, as it writes the shader modules that a compile of the WGSL reads.
+ */
+const BUILDS = (missingCoreFiles(ADDON_FIXTURE) ?? []).length === 0;
+
+describe.skipIf(!BUILDS)('buildAddon', () => {
+	it('gives the shader data that the entry holds a part of its own', async () => {
+		const built = await buildAddon(ADDON_FIXTURE, './src/index.ts');
+		expect(built.error).toBeUndefined();
+		const entry = (built.files ?? []).find((file) => file.name === 'addon.js');
+		// A build with no second pass, or a file that it did not split, leaves no shader part.
+		expect(entry?.shader?.raw ?? 0).toBeGreaterThan(0);
+		expect((entry?.code?.raw ?? 0) + (entry?.shader?.raw ?? 0)).toBe(entry?.raw ?? -1);
 	});
 });
 

@@ -387,7 +387,8 @@ file's name. Most of the wind add-on's entry is not its code. The plugin inlines
 the module that imports it. That is a whole shader's builds with the tables of text that they share,
 a sky layer's builds, and an effect's pieces. The inlined shader data is 86,592 of the wind entry's
 91,607 bytes, or 94.5%. For water it is 97,323 of 111,802, or 87.0%. The gate charged those bytes to
-the 64 KB budget for code, so it failed both entries: 91,607 and 111,802 bytes uncompressed.
+the 64 KB budget for code, so it failed both entries: 91,607 and 111,802 bytes uncompressed. This
+change moves no byte that a page downloads. It moves only the accounting for those bytes.
 
 **The measurement.** `buildAddon` builds the entry twice. The first build is the shaders gate's own.
 The second answers each `.wgsl` import with an empty module. It holds the add-on's own code alone
@@ -403,10 +404,9 @@ gzip and 18 KB after Brotli. Those are the engine's figures for a file that load
 the engine's `FIRST_USE_SHADER_BUDGET` for a first-use shader file, and a test keeps the two equal.
 The shader figures are far looser than the code budget's, because shader text shrinks more under
 compression than code does. [D-14](D-14-js-budget.md) holds the whole history. The first-use shader
-limit came on 4 October
-2026 with M2-C5, the morph builds being its first files. The owner raised the Brotli figure on
-5 October to 32 KB, and on 14 October to 48 KB. Two raises followed: 49 KB on 15 October and 56 KB
-on 24 October. The last rise paid for the water add-on. Its surface function rides every build of
+limit came on 4 October 2026 with M2-C5, the morph builds being its first files. The owner raised
+the Brotli figure on 5 October to 32 KB, and on 14 October to 48 KB. Two raises followed: 49 KB on
+15 October and 56 KB on 24 October. The last rise paid for the water add-on. Its surface function rides every build of
 the standard material. Its largest set measured 53.3 KB after Brotli. The uncompressed figure rose
 to 1,792 KB on 22 October with the coat and sheen builds. Only the owner changes a figure, in
 writing.
@@ -421,8 +421,13 @@ file. The wind entry is 14,832 bytes after gzip (14.5 KB) and 8,890 after Brotli
 is 15,916 (15.5 KB) and 11,042 (10.8 KB). Split by part, wind's code is 2,069 after gzip and 1,861
 after Brotli, and its shader data 12,763 and 7,029. For water the code is 5,307 and 4,670, and the
 shader data 10,609 and 6,372. So the shader data is 86.0% of wind's gzip figure and 79.1% of its
-Brotli figure. The compressed columns passed before this change and pass now. This change moves no
-byte that a page downloads: it moves only the accounting for those bytes.
+Brotli figure. The compressed columns passed before this change and pass now.
+
+**What the parts hold.** The shader part holds the plugin's own glue as well as the text: the
+function that rebuilds a pack and the call that holds it. In wind's entry, 1,786 bytes of the part
+is glue and the small packs, not shader text. WGSL that a module holds as a tagged literal is not
+split, so those bytes stay in the code part. That is stricter than the gate claims, and not a way
+past it.
 
 **The figures.** A warm shader cache, and wind's figures repeated in two runs, from
 `bun packages/cli/bin/null3d.js check-addon <package> --skip-browser`.
@@ -435,7 +440,9 @@ byte that a page downloads: it moves only the accounting for those bytes.
 Both add-ons pass with no budget changed. The water entry's largest set of builds stays at 54.4 KB
 after Brotli against its 56 KB budget, as it was.
 
-**What guards it.** A test of `splitShaderData` holds the parts to the file's size. A test of
-`sizeProblems` fails a file whose inlined shader data is over the shader budget. A gate that stopped
-counting those bytes therefore cannot pass it. A test of `emptyShaders` holds the stand-in build to
-`.wgsl` files alone.
+**What guards it.** A test builds a fixture add-on whose entry imports a `.wgsl` file, and requires
+a shader part in that entry's size. It fails when the second build goes, or when the build stops
+splitting. A test of `splitShaderData` holds the parts to the file's size. A test of `sizeProblems`
+fails a file whose inlined shader data is over the shader budget. A gate that stopped counting those
+bytes therefore cannot pass it. A test of `emptyShaders` holds the stand-in build to `.wgsl` files
+alone.
