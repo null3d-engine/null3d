@@ -47,6 +47,8 @@ const scripts = (
 
 /** The condition of the full run's jobs, which a push to a milestone branch skips. */
 const FULL_RUN = "github.event_name != 'push' || github.ref == 'refs/heads/main'";
+/** A value as the workflow writes it: an expression that GitHub works out when the run starts. */
+const expression = (text: string) => `\${{ ${text} }}`;
 const needsOf = (job: Job | undefined): string[] =>
 	job?.needs === undefined ? [] : Array.isArray(job.needs) ? job.needs : [job.needs];
 const oneTo = (count: number) => Array.from({ length: count }, (_, i) => i + 1);
@@ -197,7 +199,7 @@ describe("CI's workflow", () => {
 			if (!full.includes(name)) expect(jobNamed(name).if, name).toBeUndefined();
 		// The quick run that ci-passed reads is a run that the full-run condition leaves out.
 		expect(step?.env?.QUICK).toBe(
-			"${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}",
+			expression("github.event_name == 'push' && github.ref != 'refs/heads/main'"),
 		);
 	});
 
@@ -572,7 +574,7 @@ describe("CI's workflow", () => {
 		// Each pushed branch has one group, and a run started by hand a group of its own, so a push
 		// never cancels or replaces a full run.
 		expect(workflow.concurrency.group).toBe(
-			"ci-${{ github.event_name == 'push' && github.ref_name || github.run_id }}",
+			`ci-${expression("github.event_name == 'push' && github.ref_name || github.run_id")}`,
 		);
 	});
 
@@ -580,7 +582,7 @@ describe("CI's workflow", () => {
 		// Cancelling a milestone branch's started run threw its work away: its landings come in
 		// bursts, and a later run waits instead, while GitHub drops an older waiting run before it starts.
 		expect(workflow.concurrency['cancel-in-progress']).toBe(
-			"${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}",
+			expression("github.event_name == 'push' && github.ref == 'refs/heads/main'"),
 		);
 	});
 
@@ -593,7 +595,7 @@ describe("CI's workflow", () => {
 		expect(checks.length).toBeGreaterThan(0);
 		for (const step of checks)
 			expect(step.if, step.name ?? step.run ?? step.uses).toBe(
-				"${{ !cancelled() && steps.setup.outcome == 'success' }}",
+				expression("!cancelled() && steps.setup.outcome == 'success'"),
 			);
 	});
 
@@ -666,7 +668,7 @@ describe("CI's workflow", () => {
 		for (const file of filesBelow('crates').filter((path) => path.endsWith('.rs'))) {
 			const crate = file.split('/').slice(0, 2).join('/');
 			const text = readFileSync(join(ROOT, file), 'utf8');
-			for (const [, path = ''] of text.matchAll(/"\/?((?:\.\.\/)+[\w@.\/-]+)"/g))
+			for (const [, path = ''] of text.matchAll(/"\/?((?:\.\.\/)+[\w@./-]+)"/g))
 				for (const base of [dirname(file), crate]) {
 					const target = relative(ROOT, resolve(ROOT, base, path));
 					if (
