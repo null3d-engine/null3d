@@ -177,9 +177,10 @@ struct MaterialRow {
     /// nanometers.
     iridescence: vec4f,
     /// The anisotropy's strength, its rotation from the tangent in radians, the family of maps that
-    /// the light map's and the specular maps' slots hold (0 for the clear coat's and the sheen's, 1
-    /// for iridescence's and the anisotropy's, 2 for the transmission and the thickness maps'), and
-    /// a spare.
+    /// each group of shared slots holds (two bits each: 0 for the light map's slot, 2 for the
+    /// specular intensity map's and 4 for the specular color map's; 0 is the clear coat's and the
+    /// sheen's, 1 iridescence's and the anisotropy's, and 2 the transmission and thickness maps'),
+    /// and a spare.
     anisotropy: vec4f,
 }
 

@@ -1379,13 +1379,16 @@ export interface StandardMaps {
 	/**
 	 * The share of the light behind the surface that passes through it, in red, in linear color.
 	 * Its red multiplies `transmission`. Only a material created with `transmission` takes it, and
-	 * such a material takes no specular maps, since these maps take their slots.
+	 * such a material takes no specular intensity map, since these maps take its slot. A material
+	 * with layers keeps it unless a layer map fills the slot: a clear coat's normal map and
+	 * iridescence's thickness map do.
 	 */
 	transmissionMap?: Texture;
 	/**
 	 * The thickness of the volume under the surface, in green, in linear color. Its green
 	 * multiplies `thickness`. Only a material created with `transmission` takes it, and such a
-	 * material takes no specular maps, since these maps take their slots.
+	 * material takes no specular color map, since these maps take its slot. A material with layers
+	 * keeps it unless a layer map fills the slot: the sheen's maps and an anisotropy map do.
 	 */
 	thicknessMap?: Texture;
 	/**
@@ -1942,6 +1945,38 @@ const IRIDESCENCE_MAPS: readonly (keyof StandardMaps)[] = [
 	'iridescenceThicknessMap',
 ];
 
+/** The layer maps that fill the specular intensity map's slot, which a transmission map takes. */
+const SPECULAR_INTENSITY_LAYER_MAPS: readonly (keyof StandardMaps)[] = [
+	'clearcoatNormalMap',
+	'iridescenceThicknessMap',
+];
+
+/** The layer maps that fill the specular color map's slot, which a thickness map takes. */
+const SPECULAR_COLOR_LAYER_MAPS: readonly (keyof StandardMaps)[] = [
+	'sheenColorMap',
+	'sheenRoughnessMap',
+	'anisotropyMap',
+];
+
+/**
+ * The layer map that fills the slot that a transmission or a thickness map takes, or none: the
+ * transmission map shares the specular intensity map's slot and the thickness map the specular
+ * color map's. A material with layers may keep the two maps beside the one layer map of the light
+ * map's slot, so this names the clash that remains.
+ */
+function volumeSlotOwner(
+	options: StandardOptions,
+	key: keyof StandardMaps,
+): keyof StandardMaps | undefined {
+	const owners =
+		key === 'transmissionMap'
+			? SPECULAR_INTENSITY_LAYER_MAPS
+			: key === 'thicknessMap'
+				? SPECULAR_COLOR_LAYER_MAPS
+				: undefined;
+	return owners?.find((owner) => options[owner] !== undefined);
+}
+
 /** True when `options` give any map of `keys`. */
 function takesAnyMap(options: StandardOptions, keys: readonly (keyof StandardMaps)[]): boolean {
 	return keys.some((key) => options[key] !== undefined);
@@ -1975,13 +2010,10 @@ function takesAnisotropy(options: StandardOptions): boolean {
  * without the map rather than read it as another layer's.
  */
 function skipsLayerMap(options: StandardOptions, key: keyof StandardMaps): boolean {
-	if (
-		key === 'lightMap' ||
-		SPECULAR_MAPS.has(key) ||
-		TRANSLUCENCY_MAPS.has(key) ||
-		TRANSMISSION_MAPS.has(key)
-	)
-		return true;
+	if (key === 'lightMap' || SPECULAR_MAPS.has(key) || TRANSLUCENCY_MAPS.has(key)) return true;
+	// A transmission map takes the specular intensity map's slot and a thickness map the specular
+	// color map's, so each stays out only where a layer map fills that slot.
+	if (TRANSMISSION_MAPS.has(key)) return volumeSlotOwner(options, key) !== undefined;
 	if (key === 'clearcoatRoughnessMap')
 		return !!options.clearcoatMap && options.clearcoatMap !== options.clearcoatRoughnessMap;
 	if (key === 'sheenRoughnessMap')
@@ -2633,8 +2665,9 @@ function checkFeatures(options: StandardOptions, call: string): void {
 }
 
 /**
- * Throws E1217 for a layered material with a map whose slot its layers take, and for a pair of
- * layer maps that glTF packs into one texture but that are two. Call it inside `if (DEV)`.
+ * Throws E1217 for a layered material with a map whose slot its layers take, for a transmission
+ * or a thickness map beside the layer map of its own slot, and for a pair of layer maps that glTF
+ * packs into one texture but that are two. Call it inside `if (DEV)`.
  */
 function checkLayerMaps(options: StandardOptions, call: string): void {
 	const sharedSlot =
@@ -2644,16 +2677,24 @@ function checkLayerMaps(options: StandardOptions, call: string): void {
 				? 'specularIntensityMap'
 				: options.specularColorMap !== undefined
 					? 'specularColorMap'
-					: options.transmissionMap !== undefined
-						? 'transmissionMap'
-						: options.thicknessMap !== undefined
-							? 'thicknessMap'
-							: undefined;
+					: undefined;
 	if (sharedSlot)
 		throw new EngineError(
 			'E1217',
-			`${call}() got ${sharedSlot} with a clear coat, a sheen, iridescence or anisotropy, whose maps take its place. Bake its light, specular or volume values into the other maps, or use a material without layers.`,
+			`${call}() got ${sharedSlot} with a clear coat, a sheen, iridescence or anisotropy, whose maps take its place. Bake its light or specular values into the other maps, or use a material without layers.`,
 		);
+	// The transmission and thickness maps take the specular maps' slots, which a layer map fills
+	// only when the material gives one of that slot: the light map's slot stays free for its layer
+	// map beside them.
+	for (const key of TRANSMISSION_MAPS) {
+		if (options[key] === undefined) continue;
+		const owner = volumeSlotOwner(options, key);
+		if (owner)
+			throw new EngineError(
+				'E1217',
+				`${call}() got ${key} with ${owner}, which fills the same slot. Give the material one map of that slot or the other.`,
+			);
+	}
 	for (const [first, second, packed] of [
 		['clearcoatMap', 'clearcoatRoughnessMap', 'the roughness in the green of the clear coat map'],
 		['sheenColorMap', 'sheenRoughnessMap', 'the roughness in the alpha of the sheen color map'],

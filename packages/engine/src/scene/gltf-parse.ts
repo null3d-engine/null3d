@@ -1410,23 +1410,50 @@ export function parseGltf(
 		if (alphaMode !== 'OPAQUE' && alphaMode !== 'MASK' && alphaMode !== 'BLEND')
 			broken(`${what} has the alpha mode ${alphaMode}`);
 		const transmission = transmissionOf(extensions, what, alphaMode === 'MASK', notes);
-		// The transmission and thickness textures take the specular textures' slots, so a material
-		// that gives both keeps the transmission textures, which change its look more.
+		// The transmission and thickness textures take the specular textures' slots, and the loader
+		// keeps the specular textures, since the material API takes one family of the two. A layered
+		// material's specular textures stay out, and its own layer maps fill those slots instead: its
+		// transmission and thickness textures fit beside the one layer map of the light slot.
 		const transmissionExtension = extensions.KHR_materials_transmission as Entry | undefined;
-		const givesVolumeMaps =
-			transmissionExtension?.transmissionTexture !== undefined ||
-			(extensions.KHR_materials_volume as Entry | undefined)?.thicknessTexture !== undefined;
-		const specularTexture = specular.specularTexture ?? specular.specularColorTexture;
-		const takesVolumeMaps = transmission !== undefined && !layered && specularTexture === undefined;
-		if (givesVolumeMaps && transmission !== undefined && layered)
-			notes.push(
-				`${what}'s transmission and thickness textures, which the engine does not draw beside a clear coat, a sheen, iridescence or anisotropy`,
-			);
-		if (givesVolumeMaps && transmission !== undefined && !layered && specularTexture !== undefined)
-			notes.push(
-				`${what}'s transmission and thickness textures, which a material with specular textures does not take`,
-			);
 		const volume = (extensions.KHR_materials_volume ?? {}) as Entry;
+		const specularTexture = specular.specularTexture ?? specular.specularColorTexture;
+		const intensityTaken = layered
+			? (layerMaps.coatNormal ?? layerMaps.iridescenceThickness) !== undefined
+			: specularTexture !== undefined;
+		const colorTaken = layered
+			? (layerMaps.sheenColor ?? layerMaps.sheenRoughness ?? layerMaps.anisotropy) !== undefined
+			: specularTexture !== undefined;
+		const takesTransmissionMap =
+			transmission !== undefined &&
+			transmissionExtension?.transmissionTexture !== undefined &&
+			!intensityTaken;
+		const takesThicknessMap =
+			transmission !== undefined && volume.thicknessTexture !== undefined && !colorTaken;
+		// A layered material loses a volume texture only to the layer map of its slot. Another
+		// material loses both beside a specular texture, since the material API takes one family
+		// of the two.
+		const intensityOwner =
+			layerMaps.coatNormal !== undefined
+				? "the clear coat's normal texture"
+				: 'the iridescence thickness texture';
+		const colorOwner =
+			layerMaps.sheenColor !== undefined || layerMaps.sheenRoughness !== undefined
+				? "the sheen's texture"
+				: 'the anisotropy texture';
+		const intensityReason = layered
+			? `where ${intensityOwner} fills the same slot`
+			: 'beside a specular texture';
+		const colorReason = layered
+			? `where ${colorOwner} fills the same slot`
+			: 'beside a specular texture';
+		if (
+			transmission !== undefined &&
+			transmissionExtension?.transmissionTexture !== undefined &&
+			intensityTaken
+		)
+			notes.push(`${what}'s transmissionTexture, which it leaves out ${intensityReason}`);
+		if (transmission !== undefined && volume.thicknessTexture !== undefined && colorTaken)
+			notes.push(`${what}'s thicknessTexture, which it leaves out ${colorReason}`);
 		const slots = {
 			map: useTexture(pbr.baseColorTexture, 'srgb', `${what}'s baseColorTexture`),
 			metalnessRoughnessMap: useTexture(
@@ -1444,14 +1471,14 @@ export function parseGltf(
 				? undefined
 				: useTexture(specular.specularColorTexture, 'srgb', `${what}'s specularColorTexture`),
 			// The KHR_materials_transmission and KHR_materials_volume extensions give these two.
-			transmissionMap: takesVolumeMaps
+			transmissionMap: takesTransmissionMap
 				? useTexture(
 						transmissionExtension?.transmissionTexture,
 						'linear',
 						`${what}'s transmissionTexture`,
 					)
 				: undefined,
-			thicknessMap: takesVolumeMaps
+			thicknessMap: takesThicknessMap
 				? useTexture(volume.thicknessTexture, 'linear', `${what}'s thicknessTexture`)
 				: undefined,
 			clearcoatMap: useTexture(layerMaps.coat, 'linear', `${what}'s clearcoatTexture`),

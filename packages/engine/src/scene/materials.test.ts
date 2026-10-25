@@ -726,13 +726,65 @@ describe('Material.set', () => {
 		expect(leaf.message).toStartWith(
 			'E1217: materials.standard() got thicknessMap with diffuseTransmission;',
 		);
-		const painted = thrown(() =>
-			materials.standard({ transmission: 0.8, clearcoat: 1, transmissionMap: texture(5) }),
+		// A layer's values leave the specular slots free, so the maps fit beside a clear coat and a
+		// sheen. They stay out only where a layer map fills the slot that one of them takes.
+		materials.standard({
+			transmission: 0.8,
+			clearcoat: 1,
+			sheenColor: '#ffffff',
+			transmissionMap: texture(5),
+			thicknessMap: texture(6, 1),
+		});
+		expect(maps.at(-2)).toEqual([2, MAP_SLOT_TRANSMISSION, 5, 0]);
+		expect(maps.at(-1)).toEqual([2, MAP_SLOT_THICKNESS, 6, 1]);
+		const coatNormal = thrown(() =>
+			materials.standard({
+				transmission: 0.8,
+				clearcoat: 1,
+				clearcoatNormalMap: texture(7),
+				transmissionMap: texture(5),
+			}),
 		);
-		expect(painted.message).toStartWith(
-			'E1217: materials.standard() got transmissionMap with a clear coat, a sheen, iridescence or anisotropy,',
+		expect(coatNormal.message).toStartWith(
+			'E1217: materials.standard() got transmissionMap with clearcoatNormalMap,',
 		);
-		expect(table).toHaveLength(1);
+		const sheen = thrown(() =>
+			materials.standard({
+				transmission: 0.8,
+				sheenColor: '#ffffff',
+				sheenColorMap: texture(7),
+				thicknessMap: texture(5),
+			}),
+		);
+		expect(sheen.message).toStartWith(
+			'E1217: materials.standard() got thicknessMap with sheenColorMap,',
+		);
+		// The coat map of the light map's slot keeps its place beside the two.
+		materials.standard({
+			transmission: 0.8,
+			clearcoat: 1,
+			clearcoatMap: texture(7),
+			transmissionMap: texture(5),
+			thicknessMap: texture(6, 1),
+		});
+		expect(maps.slice(-3)).toEqual([
+			[3, MAP_SLOT_TRANSMISSION, 5, 0],
+			[3, MAP_SLOT_THICKNESS, 6, 1],
+			[3, MAP_SLOT_COAT, 7, 0],
+		]);
+		// One specular slot may hold a layer map while the other holds a volume map: a coat normal
+		// map fills the specular intensity slot, so only the thickness map fits beside it.
+		materials.standard({
+			transmission: 0.8,
+			clearcoat: 1,
+			clearcoatNormalMap: texture(7),
+			thicknessMap: texture(6),
+		});
+		expect(maps.slice(-2)).toEqual([
+			[4, MAP_SLOT_THICKNESS, 6, 0],
+			[4, MAP_SLOT_COAT_NORMAL, 7, 0],
+		]);
+		expect(table).toHaveLength(4);
 	});
 
 	test('refuses diffuse transmission beside layers and the weighted blending', () => {

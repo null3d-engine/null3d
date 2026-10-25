@@ -456,9 +456,12 @@ fn material_anisotropy(id: u32) -> vec4f {
 #endif
 
 #ifdef TRANSMISSION
-/// Which family of maps material `id` keeps in the light map's and the specular maps' slots: 2
-/// when they hold its transmission and thickness maps, and 0 otherwise, since a material that
-/// lets light through takes no layers.
+/// Which family of maps material `id` keeps in each group of shared slots, two bits each: bits 0
+/// and 1 for the light map's slot, bits 2 and 3 for the specular intensity map's, and bits 4 and 5
+/// for the specular color map's. 0 is a clear coat's and a sheen's, 1 is iridescence's and the
+/// anisotropy's, and 2 is the transmission and thickness maps'. A material with layers may keep its
+/// transmission and thickness maps in the specular slots, so each specular slot names its family
+/// apart from the other's and from the light slot's.
 fn layer_maps_kind_of(id: u32) -> u32 {
 #ifdef WEBGL2
     return u32(textureLoad(materials, vec2u(16u, id), 0).z);
