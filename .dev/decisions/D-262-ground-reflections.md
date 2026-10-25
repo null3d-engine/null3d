@@ -159,8 +159,18 @@ GPU-Checked: 668b7a423..113de653a passed: s4 medium 4.28 to 4.23 ms (-0.9%); s6 
 
 The comparison ran on the Mac's GPU at both presets, medium and high, with 120 Hz on every page.
 The load was 39 before the run and 4 after it. The 39 was the prepare's own build decaying: the
-timed part began 47 seconds after the prepare ended, and the load fell to 4. No page is slower by
-the tool's rule. The check dropped one baseline run, s4 at high round 1, which measured 124 Hz.
+timed part began 47 seconds after the prepare ended, and the load fell to 4.
+
+No page exceeds the rule's threshold, and that is not the same as no change. S6 reads higher at
+both presets. At high it is paired +5.7 per cent, within its 14.8 per cent spread. At medium it is
++7.8 per cent, under twice its 4.4 per cent spread. The two s4 figures are slightly faster, at
+-0.9 and -6.8 per cent. The tool's current format does not name the paired change. The wording that
+stands is `paired +5.7 per cent on the high preset, within the run's spread of 14.8 per cent,
+medians 7.21 and 9.41 ms`. The printed `passed` means no page exceeded its threshold. It does not
+mean the figures were equal.
+
+The check dropped one baseline run, s4 at high round 1, which measured 124 Hz where the page runs
+at 120 Hz. It dropped the run rather than average it in, which is the tool's guard working.
 
 The millisecond pair in the line is each build's median GPU time per frame. The percentage is the
 judged change: the median, over the rounds, of each round's ratio of the new build to the baseline.
