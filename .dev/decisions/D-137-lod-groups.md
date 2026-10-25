@@ -387,16 +387,19 @@ Blender without levels still gets them (follow-up 5).
   predictable. An author who wants earlier thinning gives the level its own error.
 - The card step runs only for a mesh that a skin does not pose, because a posed list's positions
   are in the scene's units and the level's stored positions are in the mesh's.
-- No picture test shows this step. The level's error is a card's size, so the level switches where
-  the tree stands a few pixels tall. The tool's own test tree has a 1.7-unit tree with cards of 0.28
-  to 0.42 units. Its levels get errors from 5,926 to 13,333 integer steps, which is 0.61 to 1.38
-  units. At a 360-pixel picture and a 35-degree lens the nearest switch lies about 349 m out, where
-  the tree stands about 4 pixels tall. A crown's cover cannot be read at that size. A picture at a
-  useful size would need the file's errors set for the camera's distance. That shows the engine
-  drawing the thinned cards, but not the tool's error rule. The unit tests hold the step:
-  `keeps a share of the cards at each level, grown about their middles`,
-  `writes each card level its own positions, and shares the wood stream`, and `treats a card folded
-  along its middle as a card, as Creek makes its leaves`.
+- The picture `asset-card-level` shows this step. The tool builds a tree of 40 cards of 0.3 m and a
+  trunk. The picture loads the tool's file and draws its first lower level. That level keeps 20
+  cards and grows each about its middle by the square root of two. A card's size is the level's
+  error, so the switch lies far out. The picture sets the threshold to 16 pixels, the most that the
+  setting takes, and gives the tree a bias of 4. At a 640 by 360 picture and a 40-degree lens, the
+  rule's factor is 30.9. The level's error of 0.424 m then switches it 13 m out. The bias divides
+  that to 3.3 m, and the camera's nearest point lies at 3.8 m. Without the step the tool plans no
+  level for the crown at all. Every edge of a card is an open border, which the simplifier keeps, so
+  the crown's triangles never fall. The picture then draws all 40 cards at their own size, and 0.9
+  percent of its pixels differed from the reference, against the picture tests' limit of 0.1
+  percent. The unit tests hold the step's own rules: `keeps a share of the cards at each level,
+  grown about their middles`, `writes each card level its own positions, and shares the wood
+  stream`, and `treats a card folded along its middle as a card, as Creek makes its leaves`.
 
 ## Addendum: texture coordinates in the level error (22 October 2026, M3-L2)
 
@@ -413,30 +416,29 @@ and the engine reads a level's error as a distance, so a heavy weight would make
 mesh switch levels much farther out. At a sixty-fourth, the test scene's ball keeps four levels,
 where the same scene without texture coordinates in the error has six.
 
-No picture test shows this weight. The weight enters the measured error that picks a level. It also
-changes the level's triangles, because the simplifier weighs the texture coordinates when it
-decides which vertices to collapse. A picture at the level's own switch cannot show the weight on
-its own, because its reference is built with the same weight. A picture near enough to show a slide
-draws the level where the engine does not pick it.
+The picture `asset-bent-grid` shows this weight. The tool builds a flat grid of one meter across
+and 32 by 32 cells, whose texture repeats twice across it, and the picture looks at it from about a
+meter. It sets the threshold to 16 pixels, the most that the setting takes. At a 640 by 360 picture
+and a 60-degree lens, the rule's factor is 19.5. The four lower levels report errors of 0.0055 m,
+0.011 m, 0.070 m and 0.25 m, which switch them 0.11 m, 0.22 m, 1.4 m and 4.8 m out. The camera's
+nearest point lies at 0.87 m, so the second lower level draws, and its texture moves under a
+pixel. Without the weight the four errors fall to 0.00001 m through 0.00017 m, and the coarsest
+level switches at 3 mm. It draws against the camera, and its texture scrambles: 10.0 percent of the
+pixels differed, against the picture tests' limit of 0.1 percent.
 
 The unit test's own bent grid measures the weight. It is a flat grid of one meter across, 32 by 32
 cells, whose texture coordinates repeat the texture eight times across it. With the shipped weight,
 one sixty-fourth of the longest side, its coarsest level reports an error of 0.116 units. The same
 grid with one texture coordinate everywhere reports 0.00016, so the reported error is the weight's.
 A slide of the whole texture over a one-meter mesh counts as one sixty-fourth of a unit, a small
-fraction of the mesh's size. On a 360-pixel-high picture at a
-60-degree lens, with the default one-pixel threshold, the switch factor is 311.8. That level then
-switches about 36 m out. There the whole grid spans about nine pixels. That is 74 pixels of a
-480 by 270 picture, or 0.06 percent, far under the picture tests' 0.5 percent limit. A texture slide
-on a mesh that small cannot move enough pixels for a picture test to judge it. The unit test reads
-the error itself, which is the quantity the item adds:
-`counts a texture that would slide, where a flat surface otherwise simplifies free` holds the bent
-grid's coarsest error above 0.11 units.
+fraction of the mesh's size. The unit test reads the error itself, which is the quantity the item
+adds: `counts a texture that would slide, where a flat surface otherwise simplifies free` holds the
+bent grid's coarsest error above 0.11 units.
 
-The coordinator accepted this exemption on 26 October 2026, before this record was written. The
-acceptance rests on that reason and measurement. The weight enters the error that picks the level,
-and it also changes the level's triangles. The unit test that reads the error is the right
-instrument, and it stands as the item's proof.
+The coordinator accepted the exemption from a picture for the weight on 26 October 2026, and that
+acceptance was the coordinator's alone. The owner has not ruled on it. The picture above now proves
+what the exemption covered, so the owner can confirm or drop the exemption with that proof in front
+of them.
 
 ## Addendum: the level pictures place each copy by its own distance (22 October 2026, M3-L2)
 
