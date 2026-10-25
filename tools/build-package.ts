@@ -8,7 +8,7 @@ import { buildPackage } from './lib/packages';
 const [name] = process.argv.slice(2);
 try {
 	if (!name) throw new Error('usage: bun tools/build-package.ts <package folder name>');
-	buildPackage(join(import.meta.dirname, '..'), name);
+	await buildPackage(join(import.meta.dirname, '..'), name);
 } catch (e) {
 	console.error(`error: ${(e as Error).message}`);
 	process.exit(1);
