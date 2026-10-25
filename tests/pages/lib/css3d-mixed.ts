@@ -1,8 +1,10 @@
 // The scene of three.js's CSS3D mixed example (examples/css3d_mixed.html, r186): a wireframe room,
 // a blue frame drawn by WebGL, and an embedded web page that CSS3D turns with the scene. The
 // example loads a second three.js example into its iframe; this port embeds a page made in code, so
-// a held picture needs no network and repeats. The example's room is a box of 10 by 5 by 10 faces
-// with every edge drawn; this port draws the box's twelve outer edges.
+// a held picture needs no network and repeats. The example draws the edges of a segmented box,
+// and EdgesGeometry drops the edges between flat faces, so the example shows the same twelve outer
+// edges that the port draws. An invisible plane at the page's plane writes depth alone, as the
+// example's no-blend plane does, so the room's edges and the frame's back faces stay behind it.
 import type { Vec3 } from '@null3d/engine';
 
 /** The example's camera: its lens and place. */
@@ -11,25 +13,35 @@ export const CAMERA = { fov: 50, near: 1, far: 10_000, position: [-1000, 500, 15
 /** The room's size: the example's 4000 by 2000 by 4000 box. */
 export const ROOM: Vec3 = [4000, 2000, 4000];
 
-/** The frame's opening, its border's thickness and how deep the frame reaches. */
+/** The frame's opening, its border's thickness and the depth that the border reaches. */
 export const FRAME = { width: 1024, height: 768, thickness: 50 };
 
-/** The frame's bars: their centre, size and the depth they reach from the opening's plane. */
+/** The example's hemisphere light, whose direction is its position. */
+export const LIGHT_POSITION: Vec3 = [-25, 100, 50];
+
+/** The direction of the example's hemisphere light, in unit length. */
+export const LIGHT_DIRECTION: Vec3 = ((): Vec3 => {
+	const [x, y, z] = LIGHT_POSITION;
+	const length = Math.hypot(x, y, z);
+	return [x / length, y / length, z / length];
+})();
+
+/** The frame's bars: their centre, size and depth, centred on the opening's plane. */
 export const BARS: readonly { position: Vec3; scale: Vec3 }[] = [
 	{
-		position: [0, FRAME.height / 2 + FRAME.thickness / 2, -FRAME.thickness / 2],
+		position: [0, FRAME.height / 2 + FRAME.thickness / 2, 0],
 		scale: [FRAME.width + FRAME.thickness * 2, FRAME.thickness, FRAME.thickness],
 	},
 	{
-		position: [0, -(FRAME.height / 2 + FRAME.thickness / 2), -FRAME.thickness / 2],
+		position: [0, -(FRAME.height / 2 + FRAME.thickness / 2), 0],
 		scale: [FRAME.width + FRAME.thickness * 2, FRAME.thickness, FRAME.thickness],
 	},
 	{
-		position: [-(FRAME.width / 2 + FRAME.thickness / 2), 0, -FRAME.thickness / 2],
+		position: [-(FRAME.width / 2 + FRAME.thickness / 2), 0, 0],
 		scale: [FRAME.thickness, FRAME.height, FRAME.thickness],
 	},
 	{
-		position: [FRAME.width / 2 + FRAME.thickness / 2, 0, -FRAME.thickness / 2],
+		position: [FRAME.width / 2 + FRAME.thickness / 2, 0, 0],
 		scale: [FRAME.thickness, FRAME.height, FRAME.thickness],
 	},
 ];
