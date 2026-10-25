@@ -31,6 +31,20 @@ export type {
 	PlantStats,
 	WindData,
 } from './asset';
+export type {
+	AtlasMap,
+	LeafCell,
+	PlantAtlas,
+	PlantAtlases,
+	PlantMaterialOptions,
+	PlantMaterialPart,
+} from './atlas';
+export {
+	bakePlantAtlases,
+	LEAF_CELLS_BY_KIND,
+	leafCellFor,
+	plantMaterial,
+} from './atlas';
 export type { PartArrays } from './builder';
 export {
 	ALL_SPECIES,
@@ -39,8 +53,45 @@ export {
 	CREEK_SPECIES,
 } from './builtin';
 export type { CrownData } from './crown';
+export {
+	checkRules,
+	type EcoCluster,
+	type EcoInput,
+	type EcoLayer,
+	type EcoRule,
+	LAYER_ORDER,
+	ruleScore,
+	type ToleranceCurve,
+	toleranceScore,
+} from './ecology';
 export type { GenerateOptions } from './generate';
 export { generatePlant, generateVariantSet, WIND_STRIDE } from './generate';
+export { Grid } from './grid';
+export {
+	type GroundMaps,
+	type GroundMask,
+	type GroundOptions,
+	type GroundSampler,
+	type GroundShape,
+	type GroundSource,
+	groundMaps,
+	maskValue,
+} from './ground';
+export {
+	builtinRules,
+	type SpeciesRuleFields,
+	speciesCrownRadius,
+	speciesRule,
+} from './rules';
+export {
+	EcoScatter,
+	SCATTER_LAYOUT,
+	SCATTER_STRIDE,
+	type ScatterOptions,
+	type ScatterPoints,
+	scatterChecksum,
+	scatterVegetation,
+} from './scatter';
 export type {
 	BranchLevel,
 	Crown,
@@ -61,6 +112,7 @@ export {
 	MAX_LEVELS,
 	speciesProblems,
 } from './species';
+export { type VarianceMaps, type VarianceOptions, varianceMaps } from './variance';
 
 /**
  * Grows one plant in a job worker, beside the frames, and resolves with its asset. The work is the

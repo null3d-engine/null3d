@@ -284,3 +284,177 @@ gain the mask's test. The engine's own start and feature files are unaffected, a
 holds. The start files come to 192,863 bytes after Brotli in pipelined WebGL2 mode, inside the
 raised 190 KB budget with 1,697 bytes left. The largest first-use shader file is 1,315,664 bytes
 raw, 200,048 after gzip and 53,073 after Brotli, inside its 1,792 KB, 320 KB and 52 KB caps.
+## Addendum: how the scatter places plants
+
+M3-V6 built the placement half of the add-on. The record above named what it must do; this addendum
+records the choices that the build made, and the figures that shaped them.
+
+**What it does.** `groundMaps` reads the ground once into flat grids: height above the water,
+distance to the water, slope, aspect, northness and eastness, curvature, wetness from the water's
+flow and from the hollows, and the shares that paths, rocks and cave mouths cover. A rule holds one
+tolerance curve for each input and scores a place by the lowest curve, the `EcoBrush` rule that the
+research recommended. `scatterVegetation` places six layers in order, canopy first and dead wood
+last, and returns flat arrays of nine floats for each point.
+
+**The choices, and why.**
+
+- **The placement path uses no transcendental function.** Position, rotation, scale, variant,
+  tint and lichen all come from the integer hash, and the rotation is stored as a share of a whole
+  turn rather than an angle in radians. A point list therefore matches bit for bit on every device,
+  with no tolerance to argue about. A strict comparison across devices needed this: `Math.sin` and
+  `Math.atan2` are allowed to differ in their last bit between engines. A position built from them
+  would not compare equal.
+- **The tiles cannot change the result.** A candidate's cell is indexed over the whole square. It
+  is not indexed over a tile. The build walks the cells of the tiles added in one row-by-row order.
+  The first plant to claim a place keeps it. Both the order that the tiles arrive in and the tile size
+  therefore leave the points identical, and the test checks all three. The first version walked the
+  tiles one after another, which placed each tile band's rows before the next tile band's, so a
+  larger tile won other shared places.
+- **The occupancy grid records the layer, and a rule names the layers it must avoid.** The default
+  is every layer. A sapling names only its own layer, so it stands under the crown that shelters
+  it; ground cover and shrubs do the same. Without this the young layer placed 12 plants in Creek's
+  valley, because every sapling stood inside its parent's crown radius.
+- **Wetness is normalized at the flow's 95th percentile, not its maximum.** Flow gathers by a power
+  law, so one channel holds most of it and the maximum left the rest of the ground at 0.06. The
+  percentile gives the channels 1 and the slopes near 0, which is what a species' curve can use.
+- **The curves were fitted to Creek's measured ground.** The first set was written from the general
+  shape of a valley. It placed 57 plants in Creek, with nothing at all in the ground layer, because
+  its bounds were narrower than the ground's own bands. The built-in rules now follow the measured
+  percentiles of each input over the valley. A scene on other terrain moves the numbers that differ.
+
+**Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds 955 points. They
+are 104 canopy trees, 174 saplings, 651 ground plants and 26 dead wood. The checksum of that placement is
+916344353. The device page compares it on every device and both GPU paths. On the Mac the scatter
+takes about 10 ms in Chrome and the ground maps about 45 ms.
+
+On 25 October 2026 the `vegetation-scatter` plan ran on two cloud phones, each page reporting the
+middle of three timed placements.
+
+| Device | Plants | Checksum | Placement | Ground maps | Display |
+| --- | --- | --- | --- | --- | --- |
+| Galaxy S24, Chrome, WebGL2 page | 955 | 916344353 | 9.0 ms | 85.9 ms | 30 Hz |
+| Galaxy S24, Chrome, WebGPU page | 955 | 916344353 | 11.7 ms | 60.0 ms | 30 Hz |
+| Galaxy S25, Chrome, WebGL2 page | 955 | 916344353 | 9.8 ms | 51.3 ms | 30 Hz |
+| Galaxy S25, Chrome, WebGPU page | 955 | 916344353 | 5.9 ms | 50.9 ms | 30 Hz |
+
+The placement runs on the CPU and starts no engine, so both pages of a device run the same work.
+The S24 has no WebGPU adapter, so its second page named a path that it did not start. Both displays
+ran at 30 Hz, and the cloud reported each phone hot, so read the times as upper bounds. The run
+files are [the S24's](../tested-devices/galaxy-s24-sm-s921b-chrome/20261024-202948-vegetation-scatter.md)
+and [the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261024-203522-vegetation-scatter.md).
+
+**Options rejected.**
+
+- **Float noise for the point source.** It draws other plants on other GPUs, which hard rule 29
+  already refuses for shaders.
+- **A hard cutoff instead of a score.** A tolerance curve that accepted or refused a place outright
+  gave hard band edges, where the density jumped from one species to none. The score as the chance
+  that a candidate grows fades each species into its neighbor's ground.
+- **Occupancy resolved per tile.** A tile that arrived later would have seen another tile's plants
+  and refused its own, so the result would follow the streaming order.
+## Addendum: the bark and leaf atlases, and why the browser paints them
+
+M3-V5 built the atlases that give a plant its bark and its leaves. `bakePlantAtlases` paints four
+textures from integer hashes in the browser, the first time a page asks for them, and `plantMaterial`
+draws a trunk or a crown from them. The plan asked for the atlas to be painted on the GPU and kept,
+and the second half of that is what decided the first.
+
+**What the atlases hold.** The bark block is 256 texels square and tiles around and along a branch:
+stretched Voronoi plates, warped by fractal noise, with cracks between them and fibres up the trunk.
+The leaf block is 512 by 256 texels, in eight cells of 128: four leaf clusters, a needle spray, a
+frond, a blade and a broad leaf. A leaf comes from an outline with veins written into a height field,
+and the gradient of that field gives the normal map. Each atlas has a colour map, in sRGB, whose
+values multiply the species' own colour, and a linear surface map: the normal in red and green, the
+leaf's coverage or the bark's roughness in blue, and the leaf's thickness in alpha.
+
+**A pass texture keeps no image once its pass stops drawing.** A full-screen pass that paints the
+atlas once and then waits, through `every` or through `render.setPassEnabled(pass, false)`, leaves
+the materials that sample its texture with nothing: every picture came out black. The engine's
+documentation promises that a pass keeps its last image, and the render graph keeps the same
+resource, so it is the image that is lost rather than the binding. Painting the atlas in every frame
+that a plant draws is the only way a pass texture would hold it, and that is far too slow: on
+CI's software GPU the vegetation pages then took more than sixty seconds and timed out.
+
+**A pass texture keeps no alpha either.** A fragment shader's alpha does not reach a material that
+samples the pass's texture: a leaf's cut-out drew as a filled square. Even the per-frame route would
+have needed the coverage moved into a colour channel.
+
+**So the browser paints, and the engine keeps.** The pixels come from the same integer hashes that
+the shaders would use, so every device paints the same atlas and no file is downloaded. The engine
+makes each texture's mip levels, whose average alpha is the leaf's coverage, and a masked material
+fades its cut edges with alpha to coverage. That keeps a shrinking card's coverage without a
+pyramid of levels painted by hand. A test holds the property: three leaf cards of one square of the
+atlas, at 12, 24 and 48 metres from one camera, cover the same share of their own boxes.
+`tests/image/leaf-card-coverage.spec.ts` runs it on all three GPU paths, and the
+`vegetation-coverage` picture shows the same for three crowns at three distances.
+
+**Owed.** The paint's time on each device, which the device record keeps, and the owner's judgement
+of the generated leaves beside Creek's painted textures, which the `vegetation-versus-creek` picture
+shows side by side.
+
+## Addendum: the leaf cells, redrawn so that each holds leaves
+
+The first atlas passed its coverage test and still looked wrong. Each cell held one smooth outline
+repeated along a twig, and the leaves of a cell merged into a slab. The cells' colour also sat near
+white, so a crown read as a pale tiled pattern. Creek's painted oak holds many leaves that differ in
+tone, shape and edge. That gap is what M3-V5's judgement asked about.
+
+**The fault.** The painter never multiplied a leaf's half width by the leaf's aspect. Every leaf
+painted between three and twenty times too wide for the shape its family described. A single cell
+still looked like a leaf, because a leaf that is too wide is still a leaf. A crown did not: its cards
+merged into slabs, and no outline could be seen. Each cell's leaves covered each other into one blob,
+whatever the family drew. The aspect now scales the half width, so every silhouette draws at the size
+that its shape means. Whoever changes a painter should check it on a repeated card as well as on one
+cell, since one cell hides this fault. A unit test now holds each cluster cell's cover between 0.35
+and 0.8 of its square, which a painter of too-wide leaves cannot reach.
+
+**What a cell holds now.** A cluster cell carries 20 to 24 leaves, so a card presents leaves over
+most of its square. A family sets each leaf's outline. That outline has a width profile along
+the midrib and teeth along the edges. A family may also give the lobes of an oak or a hosta, and the
+veins. Each leaf of a card then draws its own numbers from its seed. These cover its profile and
+aspect, and its tooth count and depth. They also cover its lobe depth, vein count and strength, a bow
+of its midrib and a narrower side. Its brightness and its lean to yellow come from them too. One leaf
+in five has a round bite out of an edge, so a crown never reads as a pattern. The cells keep their
+eight kinds. Four are broadleaf sprays: an oak's lobes, a beech's fine teeth, a birch's small teeth
+and a willow's narrow blade. The fifth is a conifer spray of needle pairs, and the sixth a fern's
+frond of lobed pinnae. The seventh is a clump of eleven grass blades. The eighth is a broad hosta
+leaf, with a smaller one behind it.
+
+**The colour map.** A leaf runs from darker at its base to lighter at its tip. A slow blotch mottles
+its blade, its veins take a line of shade or light, and its rim darkens by half. That rim lets two
+overlapping leaves read apart, as a painted card's dark edges do. A leaf also darkens where another
+leaf lies over it, as a pile of leaves shades itself. The channels are scaled so that the brightest
+one stays under white. A warm leaf then shows its hue instead of clipping to a pale pink or blue.
+Across a cell, the green channel spreads with a standard deviation of 22 to 26 of 255. The darkest
+leaf lies near 128.
+
+**What takes no leaf.** A texel that no leaf covers takes its cell's mean leaf colour and mean height.
+Mip levels average colour without weighting by alpha. A background of its own would therefore pull a
+distant crown's hue toward it. A height of its own would bend the normal at every silhouette.
+
+**A card's fill is what closes a crown.** The first atlas filled 0.34 of a card's square. The
+`vegetation-versus-creek` picture showed the result: cards of leaf with sky between them, so a crown
+read as several bunches rather than one crown. The card count was not the cause. The oak generator
+places 960 cards of 0.8 by 0.72 metres for the crown. Creek's painted oak holds about 4,550 leaf
+quads over a crown of 9 by 7 by 10 metres. In leaf area the generated crown already carried more
+than the painted one. At a fill of 0.46, with 20 to 24 leaves of their own size in each cell, the
+same crown closes. A fill of 0.62 closes it no further, and it cost the leaves their own shapes.
+Growing every leaf until it neared the card's rim made each card read as one huge leaf, which is the
+same fault at another scale. So the fill comes from more leaves, never from longer ones.
+
+**The coverage property holds.** A cluster cell now covers 0.45 to 0.48 of its square, against 0.34
+before. The coverage test reads 0.490, 0.496 and 0.498 of a card's box at 12, 24 and 48 metres, on
+all three GPU paths. A card therefore keeps its share as it shrinks, as it did before.
+
+**The bake's time.** `paintLeaf` takes about 230 ms, and `paintBark` about 160 ms, on an Apple M5 Max
+laptop under load. The figures were about 300 ms and 136 ms before the change. The leaf's cost fell
+because each leaf now rejects a texel outside a box around its outline, before working out the outline.
+
+**What the pictures show.** The `vegetation-atlas` picture draws the change plainly. Its leaf card was
+one large leaf with a midrib, and it is now a twig of lobed leaves that fills its square. The `vegetation-versus-creek`
+picture shows the generated oak beside Creek's painted one, and the leaves there now have outlines,
+veins and tones of their own. That picture still shows a gap: the generated crown is paler and flatter
+than Creek's. The atlas is a map that multiplies a species' colour. The crown is lit by one uniform
+light with no crown occlusion, so the leaves differ by their own paint alone. Creek's texture carries
+painted shadowing as well. The rest of that gap belongs to M3-V7, not to the atlas. That task adds the
+leaf material with crown-bent normals, a tint for each tree and crown occlusion.

@@ -73,41 +73,55 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
       - uses: ./.github/actions/archive
+        id: setup
         timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
 
+      # Each check below runs once the setup above has passed, also after an earlier check failed,
+      # so a run reports every fault at once. When the picture references were missing on 25 October
+      # 2026, the check that found them stopped the job, and the type check and the unit tests ran in
+      # no run until they were drawn.
+
       # Git keeps no generated file (D-105). The install step wrote them before the shader modules
       # arrived, so this writes them again, and fails when a generator wrote a file that git keeps.
       - name: The generators change no file that git keeps
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: |
           bun tools/generate.ts
           git status --porcelain
           test -z "$(git status --porcelain)"
 
       - run: bun run docs:check
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
       - run: bun run docs:style
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
       - run: bun run skills:check
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
 
       - name: Skill validator
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: |
           pip install --quiet pyyaml
           curl -fsSL "$SKILL_VALIDATOR_URL" -o "$RUNNER_TEMP/quick_validate.py"
           for skill in skills/*/; do python3 "$RUNNER_TEMP/quick_validate.py" "$skill"; done
 
       - run: bun run check
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
       # TypeScript keeps an incremental record of each project under target/typecheck, by the hash
       # of each file's text, so the newest run's record serves any later commit: the check then
       # reads again only the files that changed and the files they reach. On the Mac a check with
       # the record of the same tree took 9 s, against 27 s without it; CI's check without it took
       # 100 to 134 s. A record of another TypeScript version or other compiler options is ignored.
       - uses: actions/cache/restore@v4
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         with:
           path: target/typecheck
           key: typecheck-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: typecheck-${{ runner.os }}-
       - run: bun run typecheck
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
       - uses: actions/cache/save@v4
         if: "!cancelled() && env.SAVE_CACHES == 'true' && hashFiles('target/typecheck/*.tsbuildinfo') != ''"
         with:
@@ -115,7 +129,9 @@ jobs:
           key: typecheck-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
       # The meshopt unit tests read the Khronos test file and build test files from the samples.
       - uses: ./.github/actions/samples
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
       - run: bun run test
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
 
   heavy-checks:
     # The checks that hold gigabytes, each in a process of its own: the generated shader set beside
@@ -269,13 +285,13 @@ jobs:
       # shader crates, the crate they depend on, the Cargo files, the toolchain and nextest's
       # settings. The other parts run every workspace test, which reads every crate and, outside
       # them, the generated engine modules that two crates check, a test fixture, a test page's
-      # table, the engine's error codes, an add-on's shader, the test environments and the
+      # table, the engine's error codes, two add-ons' shaders, the test environments and the
       # compiler's runner script. Nine landings in ten change none of those files. A file outside
       # the crates that the crates' code names belongs in this list, and
       # tools/lib/ci-workflow.test.ts fails on one that the list leaves out.
       - name: The key of this part's inputs
         id: inputs
-        run: echo "key=passed-v2-${{ matrix.id }}-${{ matrix.shard || matrix.partition }}-${{ matrix.shard && hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml') || hashFiles('crates/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml', '.github/actions/optimized-shader-crates/**', 'packages/engine/src/generated/gpu.ts', 'packages/engine/src/generated/core.ts', 'packages/engine/src/errors/codes.ts', 'tests/fixtures/light-clusters.bin', 'tests/pages/lib/dfg-table.ts', 'tests/pages/assets/environments/**', 'examples/addons/aurora/aurora.wgsl', 'tools/shader-compiler.ts') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=passed-v2-${{ matrix.id }}-${{ matrix.shard || matrix.partition }}-${{ matrix.shard && hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml') || hashFiles('crates/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml', '.github/actions/optimized-shader-crates/**', 'packages/engine/src/generated/gpu.ts', 'packages/engine/src/generated/core.ts', 'packages/engine/src/errors/codes.ts', 'tests/fixtures/light-clusters.bin', 'tests/pages/lib/dfg-table.ts', 'tests/pages/assets/environments/**', 'examples/addons/aurora/aurora.wgsl', 'examples/addons/car-paint/paint.wgsl', 'tools/shader-compiler.ts') }}" >> "$GITHUB_OUTPUT"
       - name: Find an earlier pass with the same inputs
         id: passed
         uses: actions/cache/restore@v4

@@ -485,7 +485,7 @@ describe('budgetProblems', () => {
 
 	it("passes a start and a later part at their budgets, with the owner's Brotli figures", () => {
 		// The owner raised the start's Brotli budget so the milestone's work fits.
-		expect(START_BUDGET.brotli).toBe(190 * 1024);
+		expect(START_BUDGET.brotli).toBe(192 * 1024);
 		expect(LATER_BUDGET.brotli).toBe(17 * 1024);
 		expect(budgetProblems(sizes(START_BUDGET, LATER_BUDGET), downloads, later)).toEqual([]);
 	});
@@ -516,7 +516,7 @@ describe('budgetProblems', () => {
 	});
 
 	it("names a feature's shader module over its budget in a column, which no start counts", () => {
-		expect(FIRST_USE_SHADER_BUDGET.brotli).toBe(52 * 1024);
+		expect(FIRST_USE_SHADER_BUDGET.brotli).toBe(56 * 1024);
 		const within = sizes(START_BUDGET, LATER_BUDGET);
 		within.set('shaders-bloom-wgsl.js', FIRST_USE_SHADER_BUDGET);
 		expect(budgetProblems(within, downloads, later)).toEqual([]);

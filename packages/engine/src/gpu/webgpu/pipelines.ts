@@ -45,6 +45,7 @@ import {
 	LAYOUT_LIGHT_CLUSTERS,
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_MATERIAL_MAPS_PARALLAX,
+	LAYOUT_MATERIAL_MAPS_SCENE,
 	LAYOUT_MATERIAL_SCENE,
 	LAYOUT_MOTION_FRAME,
 	LAYOUT_PARTICLE,
@@ -815,6 +816,27 @@ export class Pipelines {
 			'material maps with parallax',
 			mapEntries(maps),
 		);
+		// A custom material that reads the copy of the scene's depth takes the maps' group with the
+		// last slot and the displacement map left out, which no custom material reads. Its fragment
+		// stage then holds the frame group's eight sampled textures, this group's seven and the
+		// copy, within the sixteen that every device allows.
+		const sceneMaps = MAP_SLOTS.slice(0, MAP_SLOTS.length - 1);
+		this.defineLayout(LAYOUT_MATERIAL_MAPS_SCENE, 'material maps with scene depth', [
+			...sceneMaps.map(
+				(binding): GPUBindGroupLayoutEntry => ({
+					binding,
+					visibility: maps,
+					texture: { viewDimension: '2d-array' },
+				}),
+			),
+			...sceneMaps.map(
+				(slot): GPUBindGroupLayoutEntry => ({
+					binding: MAP_SLOTS.length + slot,
+					visibility: maps,
+					sampler: {},
+				}),
+			),
+		]);
 		const compute = GPUShaderStage.COMPUTE;
 		// The culling pipelines' parameters, the scene's tables, the compacted instances and indirect
 		// draws, then the depth pyramid of occlusion culling, whose first word counts the frame's
@@ -1590,6 +1612,9 @@ export class Pipelines {
 			this.computeTemplates.set(id, { shader: shader.variants });
 			return;
 		}
+		// A sky layer's build of the sky map's shader draws no pipeline of the scene: the map's
+		// generator builds its pipelines, so the template needs nothing here.
+		if (kind === 'skyLayerMap') return;
 		// A sky layer draws the template's box around the camera, with the frame's group and its
 		// own values in the background layer's group.
 		if (kind === 'skyLayer') {
@@ -1628,18 +1653,16 @@ export class Pipelines {
 			return;
 		}
 		// A material that reads the scene's depth binds the copy after its maps, or after the
-		// frame's group when it has none.
+		// frame's group when it has none. Its maps' group leaves a slot free for the copy.
 		const scene = shader.sceneDepth === true ? [LAYOUT_MATERIAL_SCENE] : [];
+		const maps = shader.sceneDepth === true ? LAYOUT_MATERIAL_MAPS_SCENE : LAYOUT_MATERIAL_MAPS;
 		// A draw shader makes every vertex itself, so its pipelines read no vertex buffer and have
 		// no prepass: its object has no mesh and no depth to write before the shading.
 		this.defineTemplate(id, {
 			label: `custom material ${id}`,
 			shader: shader.variants,
 			pipeline: 'main',
-			layouts: [
-				...(shader.textures > 0 ? [LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS] : [LAYOUT_FRAME]),
-				...scene,
-			],
+			layouts: [...(shader.textures > 0 ? [LAYOUT_FRAME, maps] : [LAYOUT_FRAME]), ...scene],
 			// A material whose WGSL sets the surface's alpha cuts its shadow's holes with a
 			// fragment stage, as the engine's own masked casters do.
 			depthFragment: shader.alpha === true,

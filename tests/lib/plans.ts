@@ -209,6 +209,12 @@ export type Check =
 	| { kind: 'uploads'; tier: Tier }
 	/** The mip levels page: each way of making mip levels on WebGL2, read back level by level. */
 	| { kind: 'mip-levels' }
+	/**
+	 * The recording page: a device records its own session, with the keyboard, a touch and a long
+	 * frame, and publishes the recording with the frame lines that the sketch saw. A test on the
+	 * computer replays the file and compares the lines.
+	 */
+	| { kind: 'record' }
 	/** The video texture page: a video on the page shown on a surface, within the upload budget. */
 	| { kind: 'video-texture'; tier: Tier }
 	/** The environment generator page: the built-in room made on the GPU, read back level by level. */
@@ -264,6 +270,11 @@ export type Check =
 	| { kind: 'sky-map'; tier: Tier }
 	/** The sky refresh page: the frames from a sun move until the sky's light follows it. */
 	| { kind: 'sky-refresh'; tier: Tier }
+	/**
+	 * The sky layer light page: a green layer's arrival in the reflections and in the light that the
+	 * sky's map gives the scene, and its departure.
+	 */
+	| { kind: 'sky-layer'; tier: Tier }
 	/**
 	 * The room light page: an environment asked for during play, the built-in room or an HDR file,
 	 * whose every frame must show its light; it times the load.
@@ -1600,6 +1611,28 @@ export function treeGenerationPlan(): PlanItem<Check>[] {
 	];
 }
 
+/**
+ * Creek's valley placed by the vegetation add-on's ecological rules, on each GPU path: the page
+ * checks its placement against the reference that another device recorded, and times it. The
+ * placement reads no GPU, so the two paths must give the same points.
+ */
+export function vegetationScatterPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(
+			'vegetation-scatter-webgl2',
+			'vegetation-scatter',
+			{ kind: 'probe', tier: 'webgl2' },
+			{ switches: ['runs=3'], timeoutSeconds: 180 },
+		),
+		pageItem(
+			'vegetation-scatter-webgpu',
+			'vegetation-scatter',
+			{ kind: 'probe', tier: 'webgpu' },
+			{ switches: ['runs=3', 'gpu=webgpu'], timeoutSeconds: 180 },
+		),
+	];
+}
+
 /** The showcase demos that the demos plan measures. */
 const MEASURED_DEMOS = ['skyway', 'night-town'] as const;
 
@@ -1669,6 +1702,14 @@ export function skyPlan(): PlanItem<Check>[] {
 				'sky-refresh',
 				{ kind: 'sky-refresh', tier },
 				{ switches: [`gpu=${path}`, 'fps=20'], timeoutSeconds: 90 },
+			),
+		),
+		...SKY_PATHS.map(([path, tier]) =>
+			pageItem(
+				`sky-layer-light-${path}`,
+				'sky-layer-light',
+				{ kind: 'sky-layer', tier },
+				{ switches: [`gpu=${path}`, 'fps=20'], timeoutSeconds: 120 },
 			),
 		),
 	];
@@ -2136,7 +2177,23 @@ export function shimmerPlan(): PlanItem<Check>[] {
 	);
 }
 
+/**
+ * The recording page on a device: it records a session with the keyboard, a touch and one long
+ * frame, and publishes the file with the frame lines. The computer's replay of the file is a test
+ * of its own, `tests/image/recording-replay.spec.ts`, which reads the run's result.
+ */
+export const recordPlan = (): PlanItem<Check>[] => [
+	{
+		id: 'record-phone',
+		// One thread, so the long frame that the page holds is a frame of the session's own timeline.
+		path: '/tests/pages/recording-device.html?record&threads=off',
+		timeoutSeconds: 180,
+		check: { kind: 'record' },
+	},
+];
+
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
+	record: recordPlan,
 	checks: checksPlan,
 	smoke: smokePlan,
 	parity: parityPlan,
@@ -2173,6 +2230,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
 	'tree-generation': treeGenerationPlan,
+	'vegetation-scatter': vegetationScatterPlan,
 	'webgpu-stall': webgpuStallPlan,
 	reflection: reflectionPlan,
 	occlusion: occlusionPlan,
@@ -2341,8 +2399,44 @@ interface SkyRefreshResult {
 	frames: { since: number; mirror: number[]; rough: number[] }[];
 }
 
+/** The captures of the sky layer light page, by the stretch that they belong to. */
+interface SkyLayerResult {
+	frames: { stretch: number; frame: number; mirror: number[]; rough: number[] }[];
+}
+
 /** How far a color may stray from the new sky's, in levels of 255, to count as the new light. */
 const SKY_NEAR = 4;
+
+/** How green a color of the sky layer light page is: its green above red and blue, in levels of 255. */
+const skyLayerGreen = (color: number[]): number =>
+	(color[1] as number) - ((color[0] as number) + (color[2] as number)) / 2;
+
+/** The change of the sky layer light page that counts as the layer's, in levels of 255. */
+const SKY_LAYER_CHANGE = 15;
+
+/**
+ * The sky layer light page's two places, the reflections and the light the map gives the scene: the
+ * green that each gained from the layer, and the frames between the two taking it.
+ */
+function skyLayerReport(result: SkyLayerResult): { line: string; problems: string[] } {
+	const place = (stretch: number, at: 'mirror' | 'rough') => {
+		const frames = result.frames.filter((frame) => frame.stretch === stretch).slice(-4);
+		const greens = frames.map((frame) => skyLayerGreen(frame[at]));
+		if (greens.length === 0) return Number.NaN;
+		return greens.reduce((sum, value) => sum + value, 0) / greens.length;
+	};
+	const gained = {
+		mirror: place(1, 'mirror') - place(0, 'mirror'),
+		rough: place(1, 'rough') - place(0, 'rough'),
+	};
+	const problems = (['mirror', 'rough'] as const)
+		.filter((at) => !(gained[at] > SKY_LAYER_CHANGE))
+		.map((at) => `the ${at} gained ${gained[at].toFixed(1)} of the layer's green`);
+	return {
+		line: `the layer's green reached the reflections by ${gained.mirror.toFixed(1)} and the light by ${gained.rough.toFixed(1)}`,
+		problems,
+	};
+}
 
 /**
  * The frames from a sun move until both spheres show the new sky's light: the first capture after
@@ -2920,6 +3014,22 @@ export function judge(
 				: ['the engine started without shared memory, so the load tested no maximum'];
 		case 'room':
 			return typeof result.room === 'number' ? [] : ['the page did not count its room'];
+		case 'record': {
+			const log = result.log as unknown;
+			const frames = result.frames as unknown;
+			const recording = result.recording as unknown;
+			const problems: string[] = [];
+			if (!Array.isArray(log)) problems.push('the page published no frame lines');
+			else if (typeof frames !== 'number' || log.length !== frames)
+				problems.push(
+					`the page published ${log.length} frame lines for its ${String(frames)} frames`,
+				);
+			if (typeof frames !== 'number' || frames < 20)
+				problems.push(`the session ran ${String(frames)} frames, too few to compare`);
+			if (typeof recording !== 'string' || recording.length < 100)
+				problems.push('the page published no recording');
+			return problems;
+		}
 		case 'mip-levels': {
 			const mips = result as unknown as MipLevelsResult;
 			context?.note?.(mipLevelsNote(mips));
@@ -3083,6 +3193,11 @@ export function judge(
 		}
 		case 'sky-refresh': {
 			const { line, problems } = skyRefreshReport(result as ItemResult & SkyRefreshResult);
+			if (problems.length === 0) context?.note?.(line);
+			return problems;
+		}
+		case 'sky-layer': {
+			const { line, problems } = skyLayerReport(result as ItemResult & SkyLayerResult);
 			if (problems.length === 0) context?.note?.(line);
 			return problems;
 		}

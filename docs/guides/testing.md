@@ -104,6 +104,18 @@ bunx @null3d/cli shot --script drive.script --out tour.png
 
 [Timed scripts](../cli/null3d.md#timed-scripts) gives the steps and the addresses of objects and properties.
 
+## Record a session that went wrong
+
+A bug on a phone can replay on this computer. Open your page with `?record`: the engine records each frame's step and the input that the sketch read, from the page's first frame, and a **Save recording** button appears. Reproduce the bug, tap it, and copy the file to the computer. The recording keeps the sketch's random seed, so the sketch's setup builds the same scene on the replay.
+
+Open the same page with `?replay=<file>`, or replay a file from anywhere with the command line:
+
+```sh
+bunx @null3d/cli shot --replay bug.n3dr --out bug.png
+```
+
+The replay runs the recording's frames in order, with their recorded steps and input, and draws the last one. It reads no live input. Its pixels differ from the phone's as any two GPUs' do, so a replay proves the frames and not the picture. A recording stops at 600 seconds of sketch time.
+
 ## Image tests from the command line
 
 `bunx @null3d/cli test` runs your image tests with no test code. List them in `null3d.json` in your project's folder:

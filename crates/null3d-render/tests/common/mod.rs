@@ -222,6 +222,7 @@ impl<B: FrameBuilder> World<B> {
             contact: 0.0,
             layers: DEFAULT_LAYERS,
             hero: None,
+            hero_size: 0,
         }));
     }
 
@@ -493,6 +494,9 @@ impl<B: FrameBuilder> World<B> {
         self.record(structure_changed);
         for _ in 0..2 {
             mock.replay(self.renderer.list(self.frame).words()).unwrap();
+            // The thread that draws raises a read's slot a frame or two later, and the mock holds
+            // the buffer until it does: between the two replays, that read has landed.
+            mock.finish_reads();
         }
         let commands = self.commands();
         self.frame += 1;

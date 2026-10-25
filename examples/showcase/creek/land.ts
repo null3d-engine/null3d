@@ -7,6 +7,8 @@ import { Noise, type TexelSample, terrain, textureSet } from '../../lib/procedur
 
 /** The height of the water's surface. */
 export const WATER = 0;
+/** How fast the current carries the ripples and the caustics downstream, toward +x. */
+export const FLOW = 0.35;
 /**
  * The layer of what the camera draws and the water's reflection leaves out: the grass far from the
  * water, the pebbles and the floating leaves, which lie under or on the water's plane.

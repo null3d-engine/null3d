@@ -366,6 +366,15 @@ export const QUALITY_SETTINGS = {
 		changes: 'start',
 		values: [256, 512, 1024, 2048],
 	},
+	// Texels on each side of the tile that holds the sun's hero object. The tile is a layer of the
+	// atlas, so every layer takes its size: the number that keeps a car's shadow four times finer
+	// than the nearest cascade's grows the whole atlas. High takes 2,048 and Ultra 4,096, where the
+	// cascades' texels are finer.
+	heroTileSize: {
+		presets: [1024, 2048, 2048, 4096],
+		changes: 'start',
+		values: [1024, 2048, 4096],
+	},
 	// Point lights cast shadows into six tiles each, so only the heavier presets turn them on.
 	pointLightShadows: {
 		presets: [false, false, true, true],
@@ -663,6 +672,13 @@ export interface QualitySettings {
 	 * `createEngine` sets it, and `set` does not take it.
 	 */
 	shadowTileSize: number;
+	/**
+	 * Texels on each side of the tile that holds a directional light's hero shadow, for each light
+	 * whose `shadow` options name no `heroTileSize`: 1,024, 2,048 or 4,096. The tile is a layer of
+	 * the shadow atlas, so every layer takes its size and a larger one takes more memory, 4 bytes
+	 * per texel. The `heroTileSize` option of `createEngine` sets it, and `set` does not take it.
+	 */
+	heroTileSize: number;
 	/**
 	 * True when point lights cast shadows. Each point light that casts them takes six tiles of the
 	 * shadow atlas, one for each face of a cube around it, within `shadowTiles`. The

@@ -73,6 +73,28 @@ describe('parseShotArgs', () => {
 			);
 	});
 
+	it('reads a recording to replay, and refuses a time or a script with it', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'null3d-replay-'));
+		const file = join(dir, 'bug.n3dr');
+		writeFileSync(file, Buffer.from([1, 2, 3, 4]));
+		try {
+			const options = parseShotArgs(['--replay', file]);
+			expect(options.recording?.file).toBe(file);
+			expect(Array.from(options.recording?.bytes ?? [])).toEqual([1, 2, 3, 4]);
+			expect(mistake(['--replay', file, '--time', '1'])).toContain(
+				'--time and --replay cannot both be given',
+			);
+			expect(mistake(['--replay', file, '--script', 'x.script'])).toContain(
+				'--script and --replay cannot both be given',
+			);
+			expect(mistake(['--replay', join(dir, 'absent.n3dr')])).toContain(
+				'cannot read the recording',
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it('names an option it lacks, an option without its value, and an argument it does not take', () => {
 		expect(mistake(['--bogus'])).toBe('--bogus is not one of its options');
 		expect(mistake(['--out'])).toBe('--out needs a value');

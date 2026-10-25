@@ -312,8 +312,8 @@ fn surface(input: SurfaceInput) -> Surface {
 - A surface that draws before the copy exists reads 0, the far plane. That is a surface in the opaque pass, and any surface in a scene pass or a reflection pass.
 - The engine makes the copy while a material that declares the input draws, whatever the quality preset says.
 - `sceneDistance` takes a perspective and an orthographic camera. On WebGL2, the values are the depth that the device stores, so a device that draws `reversed-gl` depth gives less precise distances.
-- A material that reads the scene's depth declares no textures of its own. The two groups together would pass WebGPU's 16 sampled textures in the fragment stage.
-- Development builds throw E1217 when the declaration and the WGSL disagree, and for a material with both the depth and its own textures.
+- A material that reads the scene's depth takes up to seven textures of its own. Its maps' group gives up one slot, which leaves the copy of the depth the fragment stage's last sampled texture.
+- Development builds throw E1217 when the declaration and the WGSL disagree, and for a material with both the depth and eight textures.
 
 [Custom materials](../api/materials.md#the-scene-behind-a-surface) gives the options and the cases where an input is absent.
 

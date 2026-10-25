@@ -38,6 +38,9 @@ const TEXTURES_DEF: &str = "CUSTOM_TEXTURES";
 /// The shader def that puts the joint texture's group after the template's own groups on WebGPU:
 /// after the maps' group, or after the scene depth's.
 const JOINTS_AFTER_MAPS_DEF: &str = "JOINTS_AFTER_MAPS";
+/// The shader def that puts the joint texture's group after both the maps' group and the scene
+/// depth's, which a material with textures that reads the depth binds.
+const JOINTS_AFTER_SCENE_DEF: &str = "JOINTS_AFTER_SCENE";
 /// The shader def that binds the copy of the camera's opaque depth for a custom material's
 /// surface function, which reads it through `sceneDepth` and `sceneDistance`.
 const SCENE_DEPTH_DEF: &str = "SCENE_DEPTH";
@@ -94,16 +97,27 @@ const VERTEX_OFFSET_DEF: &str = "CUSTOM_VERTEX_OFFSET";
 fn without_scene_depth(defs: &[String]) -> Vec<String> {
     // A build with only the scene depth takes no group after the frame's once the depth is gone, so
     // its joint texture goes back to the group after the frame's. A build with textures keeps the
-    // group that the maps take. A build that shaded a surface gets stand-ins for the functions
-    // that its WGSL may call, so the WGSL still builds where no surface runs.
+    // group that the maps take, and loses the depth's group from before the joint texture. A build
+    // that shaded a surface gets stand-ins for the functions that its WGSL may call, so the WGSL
+    // still builds where no surface runs.
     let textures = defs.iter().any(|def| def == TEXTURES_DEF);
     let shaded = defs.iter().any(|def| def == SCENE_DEPTH_DEF);
     let mut out: Vec<String> = defs
         .iter()
-        .filter(|def| def.as_str() != SCENE_DEPTH_DEF)
-        .filter(|def| textures || def.as_str() != JOINTS_AFTER_MAPS_DEF)
+        .filter(|def| {
+            !matches!(
+                def.as_str(),
+                SCENE_DEPTH_DEF | JOINTS_AFTER_SCENE_DEF | JOINTS_AFTER_MAPS_DEF
+            )
+        })
         .cloned()
         .collect();
+    // With the depth's group gone, the maps' group is the last before the joint texture, and the
+    // frame's alone where the material has no textures.
+    if textures {
+        out.push(JOINTS_AFTER_MAPS_DEF.to_owned());
+    }
+    out.sort();
     if shaded {
         out.push(SCENE_DEPTH_STUB_DEF.to_owned());
     }
@@ -709,9 +723,15 @@ impl Compiler {
                     defs.push(SCENE_DEPTH_DEF.to_owned());
                 }
                 if !texture_fields.is_empty() || scene_depth {
-                    // On WebGPU a group after the frame's takes a place of its own, so the SKIN
-                    // builds read the joint texture from the group after it.
-                    defs.push(JOINTS_AFTER_MAPS_DEF.to_owned());
+                    // On WebGPU each group that a build binds before the joint texture takes a
+                    // place of its own, so the SKIN builds read the joint texture from the group
+                    // after the last of them.
+                    let joints = if !texture_fields.is_empty() && scene_depth {
+                        JOINTS_AFTER_SCENE_DEF
+                    } else {
+                        JOINTS_AFTER_MAPS_DEF
+                    };
+                    defs.push(joints.to_owned());
                 }
                 // Every build shades area lights, so a material's builds stay as few as before.
                 if variant.permutations.iter().any(|bit| bit == AREA_LIGHTS) {

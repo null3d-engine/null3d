@@ -430,6 +430,19 @@ A run folder holds every page's full result, with frames and images, and stays o
 - Run it on the Mac in a quiet lane: `NULL3D_CLUSTER_COST=1 bun run test:browser -- cluster-cost.spec.ts`. `NULL3D_CLUSTER_PRESETS` narrows the presets, as a list.
 - The frame's GPU time falls as the camera draws back, which is the saving that coarser patches make: by about a quarter on the phone and on the tablet's compatibility mode, and by a tenth on the tablet's core WebGPU path, where the fill of its many pixels weighs more. [D-231](decisions/D-231-cluster-levels-cost.md) gives each device's figures.
 
+## Vegetation scatter
+
+- `tests/pages/vegetation-scatter.html` places Creek's 160 m valley with the vegetation add-on's ecological rules at seed 7. It compares the point list with a reference checksum, then places the tiles in reverse order and with a second tile size, which must give the same points. It times three placements and reports the middle one. The placement runs on the CPU and starts no engine, so both GPU paths give the same points.
+- Run it on a phone with the plan: `bun run devices:cloud --only bsgalaxys24-chrome --plan vegetation-scatter`. Run it on the Mac with `bun tests/real-browsers.ts --plan vegetation-scatter "Google Chrome"`. The page takes `?runs=` for the timed runs, `?seed=` for another seed and `?tile=` for the second tile size.
+- On 25 October 2026 two cloud phones placed the valley. The Galaxy S24 took 9.0 ms and 11.7 ms, with ground maps of 85.9 ms and 60.0 ms. The Galaxy S25 took 9.8 ms and 5.9 ms, with ground maps of 51.3 ms and 50.9 ms. Each page reached the reference checksum, 916344353, with 955 plants. Both displays ran at 30 Hz and the cloud reported both phones hot, so read the times as upper bounds. [D-241](decisions/D-241-vegetation-foundation.md#addendum-how-the-scatter-places-plants) gives the rule and the point counts.
+
+## Full-resolution sharpening
+
+- The `sharpen` page is the effect cost page with `effect=sharpen`: a wall of 32 by 32 boxes in two colors, so edges fill the view at every pixel. The off side draws the one-pass final pass, and the on side the two steps that the sharpening draws at the whole canvas's scale. At a render scale of 0.5 both sides draw the two steps, so that pair is the control: the value adds nothing there ([D-205](decisions/D-205-sharpening.md)).
+- Run it on a phone or a tablet with the plan: `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys24-chrome --plan sharpen`. The plan is timed, so the runner measures the display's refresh rate before each page.
+- Run it on the Mac in a quiet window: `NULL3D_SHARPEN_COST=1 bun run test:browser -- sharpen-cost.spec.ts`.
+- The value adds 0.393 ms at the whole canvas's scale on the Mac's WebGPU path, 0.948 ms on an iPad Pro 13 and 1.376 ms on a Galaxy S25. At half scale it adds nothing on any device. WebGL2 has no GPU timer on the iPad or on the phones, so those rows give the frame interval alone. [D-205](decisions/D-205-sharpening.md) gives each device's figures.
+
 ## Double-sided see-through objects
 
 - The page switch `?sides=two` draws every box of S2 see-through and double-sided. The transparent pass then draws each run's back faces, then its front faces ([D-82](decisions/D-82-transparency-parity.md)). `?sides=one` draws the same boxes with `forceSinglePass`, in one draw. The difference between the two is the cost of the second draw.
@@ -599,6 +612,16 @@ The page kinds that end in `-timed` start null3D on WebGL2 with `?gl-timing`. Th
 - The page kinds that end in `-synced` start null3D with `?gl-timing=sync`. Each call then ends with `getError`, which waits for that process, so a wait there counts toward the call that caused it. Writes into a texture count apart for each texture, named by its size and its format's GL code.
 - On the iPad: `bun tests/real-browsers.ts --plan bench --scenes s4 --pages null3d-webgl2-timed,null3d-webgl2-synced --runs 2 --seconds 10 --lan ipad-safari`.
 - On 2 October 2026 these pages found the two waits that [Safari's WebGL2 path](implementation-notes.md#safaris-webgl2-path) describes. In S3, `fenceSync` took 22 ms per frame. In S4, the synced page put 16 ms on one texture write per frame.
+
+## How the GPU time is measured
+
+- On WebGPU, `measure` and the stats overlay report `gpuMs` from timestamp queries on each pass. A timed frame's commands open with a start mark, an empty compute pass that the timer dispatches first, and each pass writes a timestamp when it begins and when it ends.
+- The frame's time is the latest pass end less the earliest pass begin, the start mark's. It is not the sum of the passes' own times: a tile GPU overlaps the spans of its passes, so a sum counts the shared time more than once. A pass that the GPU left untimed, or timed out of order, stays out of the span and of the frame's parts, and the frame keeps the others.
+- The browser gives no period for its timestamps. The step between them is the greatest common divisor of the offsets that the frame reads back, not a constant of the device, so the figure follows a browser that rounds to any grid. `gpuStepMs` holds that step in milliseconds, or null when the times look exact.
+- Timing runs start the browser with `GPU_TIMING_ARGS` from `packages/cli/src/browser.js`: `--enable-webgpu-developer-features` and `--disable-dawn-features=timestamp_quantization`. Dawn otherwise rounds every timestamp to its privacy grid, and a short pass then reads as 0 ms. `bun run bench:run`, the timing browser tests and the command-line tool's `bench` command use those flags.
+- Every test that times a cost starts its browser with these flags, through `tests/lib/timing-browser.ts`. On the Mac, that is its own GPU. The sky map's test also runs on CI, so it keeps the run's browser and adds the flags to it. Twelve of the fifteen cost tests timed without them until 25 October 2026, so their medians sat on the timer's rounded grid. [D-136](decisions/D-136-bump-displacement-wireframe.md) measured that grid at a step of about 0.07 ms. A figure is only as fine as its step, so every cost test now asks for the exact one. The device runner's Safari and phone browsers take no Chromium flags, so their figures keep the browser's own step. `gpuStepMs` reports that step where the device has a WebGPU timer.
+- `bun run bench:run` keeps the medians of the figure in each run's result, and `engine.measure` reports `gpuStepMs` beside it. The stats overlay shows the mean of the last half second, from the same records, and `debug.frameStats()` gives the same figures. A run that still rounds reports its step there, and its `gpuMs` is then only as fine as that step.
+- On WebGL2 the frame's replay runs inside one query, so there is no span to take and no step to find: `gpuMs` covers the whole frame, and `gpuStepMs` is null.
 
 ## GPU time per pass
 

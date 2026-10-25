@@ -4,7 +4,9 @@
 // the guards that read the whole repository, which a merge can break with no conflict: the decision
 // records' numbers, and the unit tests that hold the release guide, the shipped network calls and
 // the timing specs' switches to every package and spec in the tree. They take seconds, where the
-// unit suite takes minutes, and without them each such fault showed only a CI run later. Any other
+// unit suite takes minutes, and without them each such fault showed only a CI run later. With
+// NULL3D_LANDING_CRATE_TESTS=1, a landing that changes Rust also runs the tests of the crates it
+// changes, in the queue's CPU lane, which can wait long on a loaded machine. Any other
 // branch only saves work, so the hook runs nothing for it. A push to main runs those guards too,
 // and first checks the commits it adds:
 //   1. their messages and trailers, with commitlint and check-trailers.ts over main's commit before
@@ -138,14 +140,18 @@ export function changedCrates(
 }
 
 /**
- * The unit tests that read every package or spec of the repository, so a merge that adds one can
- * break them: the release guide's package table, the record of shipped network calls, and the
- * timing specs' switch names. Each file takes a few seconds.
+ * The unit tests that read every package, spec or crate of the repository, so a merge that adds one
+ * can break them: the release guide's package table, the CDN build's add-ons, the record of shipped
+ * network calls, the timing specs' switch names, and CI's workflow against the scripts and files
+ * that its jobs read.
+ * Each file takes a few seconds at most.
  */
 export const GUARD_TESTS = [
 	'tools/lib/release.test.ts',
+	'tools/lib/cdn.test.ts',
 	'tools/lib/network-use.test.ts',
 	'tests/lib/priority-setup.test.ts',
+	'tools/lib/ci-workflow.test.ts',
 ] as const;
 
 /** One step of the check: what it runs, why, and the queue lane it takes, or none. */
@@ -204,17 +210,48 @@ export function plan(
 		lane: 'CPU_ONLY',
 		command: ['cargo', 'check', '--workspace'],
 	});
+	const tests = crateTests(files, crates, nextest);
+	return tests ? [...steps, tests] : steps;
+}
+
+/** The tests of the crates that `files` change, or none when they change no crate. */
+export function crateTests(
+	files: readonly string[],
+	crates: ReadonlyMap<string, string>,
+	nextest: boolean,
+): Step | undefined {
 	const names = changedCrates(files, crates);
-	if (names.length === 0) return steps;
+	if (names.length === 0) return undefined;
 	const packages = names.flatMap((name) => ['-p', name]);
-	steps.push({
+	return {
 		why: `the push changes these crates, so their tests must pass: ${names.join(', ')}`,
 		lane: 'CPU_ONLY',
 		command: nextest
 			? ['cargo', 'nextest', 'run', '--no-fail-fast', '--profile', 'ci', ...packages]
 			: ['cargo', 'test', '--no-fail-fast', ...packages, '--', '--skip', WHOLE_SHADER_BUILD],
-	});
-	return steps;
+	};
+}
+
+/** The variable that asks a landing's push to test the crates it changes as well. */
+export const LANDING_CRATE_TESTS = 'NULL3D_LANDING_CRATE_TESTS';
+
+/**
+ * The steps of a landing on the milestone branch that changes `files`: the guards over the tree,
+ * and, when `crateTests` asks for them and the landing changes Rust, the tests of the crates it
+ * changes, in the queue's CPU lane. The guards take seconds. The crate tests are opt-in: on a loaded
+ * machine the CPU lane's slots stay busy for an hour, and on 25 October 2026 a landing's push waited
+ * there 27 minutes without starting cargo, until its timeout killed the push and left the hook
+ * waiting. CI's Rust tests still catch a crate's fault, one run after the landing.
+ */
+export function landingSteps(
+	files: readonly string[],
+	crates: ReadonlyMap<string, string>,
+	nextest: boolean,
+	withCrateTests = false,
+): Step[] {
+	const tests =
+		withCrateTests && touchesRust([...files]) ? crateTests(files, crates, nextest) : undefined;
+	return tests ? [...guardSteps(), tests] : guardSteps();
 }
 
 const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' }).trim();
@@ -306,8 +343,18 @@ function main(): void {
 			);
 			return;
 		}
+		const files = NO_COMMIT.test(landing.remoteSha)
+			? []
+			: git('diff', '--name-only', landing.remoteSha, landing.localSha).split('\n').filter(Boolean);
+		const withCrateTests = process.env[LANDING_CRATE_TESTS] === '1';
+		const steps = landingSteps(
+			files,
+			workspaceCrates(),
+			withCrateTests && touchesRust(files) && hasNextest(),
+			withCrateTests,
+		);
 		console.log('pre-push: checking the landing on the milestone branch');
-		runSteps(guardSteps(), 'the milestone branch', jobQueue());
+		runSteps(steps, 'the milestone branch', jobQueue());
 		return;
 	}
 	const base = baseOf(push);

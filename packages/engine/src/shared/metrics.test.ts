@@ -292,7 +292,11 @@ describe('summarizeFrames', () => {
 			render.count(Counter.Pipelines, frame === 1 ? 2 : 0);
 			render.count(Counter.SkippedDraws, frame === 2 ? 3 : 0);
 			render.commit(2);
-			record(gpu, frame, 0.1 * frame);
+			// The browser rounds the frame's timestamps to a step of 0.1 ms, which is the greatest
+			// common divisor of the offsets that the record carries.
+			gpu.begin(frame);
+			gpu.gpuTick(100_000 * frame);
+			gpu.commit(0.1 * frame);
 			// The GPU finishes each frame 4 ms after its submit, 32 ms apart: half the presented rate.
 			// Every completion record has an interval, since the first completion leaves none.
 			completion.begin(frame);
@@ -492,13 +496,15 @@ describe('ratePerSecond', () => {
 });
 
 describe('timerStep', () => {
-	it('finds the rounding step of GPU times, and none for exact times', () => {
-		const step = 0.065536;
-		expect(timerStep([0, step, 2 * step, step])).toBeCloseTo(step, 9);
-		expect(timerStep([0.1234, 0.2468, 0.3719])).toBeNull();
-		expect(timerStep([0.001, 0.002])).toBeNull();
+	it('finds the step as the divisor of the offsets, and none when the times look exact', () => {
+		// Every offset is a whole number of the browser's 65.536 us rounding steps.
+		expect(timerStep([65536, 131072, 196608])).toBeCloseTo(0.065536, 9);
+		// The frames' own steps may share a factor, and their divisor is still the browser's step.
+		expect(timerStep([200_000, 300_000])).toBeCloseTo(0.1, 9);
+		expect(timerStep([1, 2, 3])).toBeNull();
 		expect(timerStep([0, 0])).toBeNull();
 		expect(timerStep([])).toBeNull();
+		expect(timerStep(undefined)).toBeNull();
 	});
 });
 

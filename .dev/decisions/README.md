@@ -11,6 +11,7 @@ A decision record settles one design question with measured data. It states the 
 1. Take the next free number, and check that no remote branch uses it: `git fetch`, then `git grep -l 'D-<number>' $(git for-each-ref --format='%(refname)' refs/remotes/origin) -- .dev/decisions`. Two branches can still take one number, and the docs check then refuses the second when it merges main.
 2. Copy [TEMPLATE.md](TEMPLATE.md) to `D-<number>-<short-name>.md`, with the short name in lowercase words joined by hyphens.
 3. Start with the line `# D-<number>: <title>`. Under it, write a `Status:` paragraph and a `Summary:` paragraph. The status says what is decided and what is pending, with dates. The summary gives the choice and its main figures in one to three sentences.
-4. When the record changes, keep its status and summary current.
+4. Where the options differ in how the result looks, the `## Look` section says which looks better, and the decision takes that one ([hard rule 40](../../AGENTS.md#hard-rules)). Effort and schedule are no reason to take the worse look. Another hard rule may limit a cost, such as frame time. A quality preset or a cheaper technique of the same look then meets it, and the section says how. A record whose options look the same says so in one line.
+5. When the record changes, keep its status and summary current.
 
 No file lists the records by hand, so a pull request that adds a record changes no file that other pull requests change. [D-84](D-84-generated-decision-list.md) gives the reasons. `bun run docs:check` and the commit hook refuse a record without its title, status or summary, and two records with one number.

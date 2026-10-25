@@ -3,10 +3,10 @@
 // the pad in every frame, so the sun's hero tile draws in every frame; without it the car stands
 // still, and the tile draws once and then rests.
 //
-// The hero cost page passes ?fixed and ?scale=: the scene then draws at that render scale alone,
-// with the governor off, and starts with the hero off. On the page's 'hero' message it names the
-// car's body as the hero, waits until its pipelines are built, and posts 'settled'. 'hero-off'
-// turns the hero off again.
+// The hero cost page passes ?fixed, ?scale= and ?tile=: the scene then draws at that render scale
+// alone, with the hero tile at that size or the preset's, with the governor off, and starts with
+// the hero off. On the page's 'hero' message it names the car's body as the hero, waits until its
+// pipelines are built, and posts 'settled'. 'hero-off' turns the hero off again.
 //
 // The sky, the environment and the post effects are left out, because they draw the same on both
 // sides and only add noise. The sun, the car, the yard and the stones are the demo's.
@@ -17,6 +17,8 @@ const params = new URL(import.meta.url).searchParams;
 const MOVING = params.has('moving');
 const FIXED = params.has('fixed');
 const SCALE = Number(params.get('scale') ?? 1);
+/** The hero tile size to time, or 0 for the preset's default. */
+const TILE = Number(params.get('tile') ?? 0) as 0 | 1024 | 2048 | 4096;
 /** The hour of the light, a low sun before sunset, and the sun's heading across the yard. */
 const HOUR = 17.3;
 const HEADING = -2.1;
@@ -86,7 +88,7 @@ export default defineSketch((ctx) => {
 			return;
 		}
 		if (message !== 'hero') return;
-		sun.setHeroShadow(body);
+		sun.setHeroShadow(body, TILE || undefined);
 		// Two warm-ups: the first builds the hero's pipelines, and the second passes a frame with
 		// the tile held, so a still car's single tile draw does not land in the measured seconds.
 		void scene

@@ -193,11 +193,22 @@ The rules that the reworked demos follow, and why:
 
   The traffic added at most 0.6 ms to the GPU time and no error to the scene's updates.
 - The real lights went to a fixed share of the rows, one row in 7 at 30,000 cars and one in 24 at
-  100,000, so the nearest car often had no light (25 October 2026, M3-B6). The search now reads every
-  row of the lanes near the camera. It skips a lane whose line across the way runs farther from the
-  eye than the light's range, before it reads a row, so its cost follows those lanes and not the
-  count. `examples/addons/traffic-lanes/lights.test.ts` compares it with a full search at 30,000 and
-  100,000 rows and checks that the nearest car has a light.
+  100,000. The nearest car therefore often had no light (25 October 2026, M3-B6). The search now
+  reads every row of the lanes near the camera. It skips a lane whose line across the way runs
+  farther from the eye than the light's range. The search therefore follows the lanes near the eye,
+  not the count. It runs four times a second. A car that holds a light keeps it 20% past the range.
+  A camera that drifts across the edge therefore cannot blink it on and off. The search compares
+  squared distances and takes one square root per light at the end. That took the measured cost down
+  2.5 to 3 times. At a Mac load near 55, one search took about 0.3 ms at 30,000 rows and 1.1 ms at
+  100,000 rows. The medians were 0.6 and 2.5 ms. The instances demo pays the 100,000-row figure at
+  Ultra, because all of its lanes are in range. Skyway pays 0.25 to 0.5 ms, because its camera sees
+  one or two of its ten streets. A search lands whole in one frame, so the cost is a spike every
+  quarter second. The row count sets it, not the light count.
+  `examples/addons/traffic-lanes/lights.test.ts` compares the search with a full search at 30,000
+  and 100,000 rows. It checks that the nearest car has a light. It also checks the cadence, the
+  kept-range margin and the ordinary range on one car. `real-lights.test.ts` drives the add-on
+  through the option with a recorded scene. It checks that the nearest cars are the lit ones. It
+  also checks that the option off builds no light and lights nobody.
 - The instances demo gained lanes of hover cars on 18 October 2026 (M2-EX43, [D-172](decisions/D-172-neon-harbour-follow-ups.md)). Four lanes cross the sky at 17 to 22 m, on lines 45 to 75 m from the field's center, so the traffic stays a distant layer above the horizon and no car passes near the lens. Each car is a row of a body batch and a tail light batch, which blooms. The sketch writes every row from the time alone, so a held frame draws the same cars. The lanes moved to `traffic.ts` beside the sketch, which stays under 150 lines. Against the old pictures the drawn ones differ in 1.44% to 1.49% of their pixels, against the limit of 0.1%. The references moved in both sets.
 
 ### Frame rates on the Mac
@@ -428,11 +439,12 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. 
 
 The galaxy's sketch time is the loop that turns every star and writes its row. It grows with the count, so Low draws 30,000 stars. No phone or tablet has run the five demos yet.
 
-## The aurora demo (M3-E10, 24 October 2026)
+## The aurora demo (M3-E10, 24 October 2026, widened 25 October)
 
 `aurora: A frozen lake at night` shows the sky-layer hook: the aurora example add-on draws one WGSL function over the core sky, under the moon and the stars, in the camera's view, in scene passes and in reflections.
 
-- The layer lights nothing: the sky's environment map and its diffuse light come from the core sky alone, and the demo adds one dim ambient light in the aurora's color so the ice and the snow read under it. A sketch that a layer must light gives it a light of its own, as this one does.
+- The layer reaches both places that a sky is seen. Its WGSL is built into the shader that fills the sky's environment map, so the ice mirrors the curtains, and the map's own texels give the scene its diffuse light, so the ice and the snow read green from above. The demo needs no ambient light of its own for the aurora, and has none.
+- The aurora drifts, so the demo asks the map to capture it twice a second with `refresh: 0.5`. The map's light follows each capture within a couple of frames, which the demo's slow clouds hide.
 - The layer reads the core sky's cloud coverage and density, so the demo keeps the physical sky's thin clouds: they hide the aurora where they thicken, as they hide the stars.
 - The curtains are flat in the sky and have no parallax. The camera stays at eye height over the ice, so the layer reads as a sky and not as a wall.
 - The image test holds the demo at 1.5 seconds, where the aurora's swell has moved the layer by less than a step.
@@ -767,7 +779,7 @@ Creek is a small stream in a grassy valley (M2-EX8). The first phase, on 10 Octo
 | Under the water (`underwater.ts`) | While the camera is under the surface, a custom effect makes the view read as seen through flowing water. The current's wobble runs downstream across the picture, caustics play over the bed, and the water swallows the light with distance into its own green. The water's surface draws both faces: from below, the world above shows through a window overhead, and past the window's edge the surface turns some light back down as a faint mirror. Each pixel decides for itself, from where its line of sight leaves the near plane, so a camera half under the water splits the picture at the waterline. The effect is added while the camera is within 0.6 m above the water, since a new effect takes a few frames to start drawing. The Auto route dips under the water for about six seconds as it glides down the stream, through shots that pass the surface on purpose (`through`). `route.test.ts` keeps the dip clear of the bed and the stones (owner, 20 October 2026). |
 | Moods (`examples/lib/stage.ts`) | Afternoon, golden hour, blue hour and night from `timeOfDay`, lit by the sky's environment, and a studio lit by the built-in room. A mood can thicken the fog into a haze: golden hour and blue hour do |
 
-**The water code is temporary.** M3-F5's water add-on, `@null3d/water`, takes the Creek's river with its view from under the water. Once it exists, the Creek draws its water through the add-on, and `water.ts` and `underwater.ts` are deleted, so the scene keeps no water code of its own (owner, 20 October 2026, [D-173](decisions/D-173-addon-hooks.md)).
+**The water is the add-on's.** M3-F5's water add-on, `@null3d/water`, took the Creek's river with its view from under the water. The Creek draws its water through the add-on, and its `water.ts` and `underwater.ts` are gone, so the scene keeps no water code of its own. The add-on takes the scene's analytic middle line and half width as its river shape, and its stone foam map (owner, 20 October 2026, [D-173](decisions/D-173-addon-hooks.md); [D-257](decisions/D-257-water-addon.md)).
 
 **The plant code and models are temporary.** The vegetation add-on of M3-V4 to M3-V9 grows Creek's trees, ferns, hostas, shrubs, flowers and grass at first use. It places them over the whole valley by ecological rules and moves them all in one wind field. Once it exists, Creek draws its plants through it (M3-V11). Its Blender plant models, their script and their files of about 3.1 MB are deleted. So is the scene's own plant code: `grass.ts`, `models.ts` and the plant parts of `flora.ts`. The floating leaves and the fireflies stay (owner, 24 October 2026, [D-241](decisions/D-241-vegetation-foundation.md)).
 

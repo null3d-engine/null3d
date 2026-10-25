@@ -104,7 +104,10 @@ class CountingCompiler implements ShaderCompiler {
 		this.calls++;
 		return {
 			ok: true,
-			layer: { variants: { webgpu: build(layer.source) } },
+			layer: {
+				variants: { webgpu: build(layer.source) },
+				map: { webgpu: build(layer.source) },
+			},
 			warnings: [],
 		};
 	}

@@ -371,7 +371,7 @@ function skyLayerOutcome(result: SkyLayerResult): WgslCompile {
 	if (!result.ok) return { ok: false, problems: result.problems, builds };
 	return {
 		ok: true,
-		shader: { kind: 'skyLayer', variants: result.layer.variants },
+		shader: { kind: 'skyLayer', variants: result.layer.variants, map: result.layer.map },
 		warnings: result.warnings,
 		builds,
 	};

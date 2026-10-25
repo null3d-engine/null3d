@@ -40,6 +40,40 @@ The engine's own add-ons leave the range out and pin the engine version exactly 
 
 Every shipped file may import `@null3d/engine` and `@null3d/engine/stats`. The check refuses any other engine entry point, and the engine's source files. When the add-on needs something that the API lacks, that is a hook to build in the engine, so another developer can build the same add-on.
 
+## Follow the preset and show the cost
+
+A feature declares the value that each quality preset gives it, and the engine resolves the value for the preset in use. The frame-budget governor's steps reach it too, so an add-on that costs too much lightens its own work. `FeatureHost` carries these values from the sketch's quality, and reports the feature's figures to the stats overlay. A page that imports no add-on feature downloads none of that code.
+
+```ts
+const host = new FeatureHost({
+	quality: ctx.quality,
+	tier: ctx.engine.capabilities.tier,
+	page: ctx.page,
+	namespace: NAMESPACE, // the add-on's namespace, from declareAddonNamespace()
+});
+
+host.add(
+	defineFeature({
+		name: 'water',
+		settings: {
+			reflectionEvery: {
+				presets: [2, 2, 1, 1],
+				values: { min: 1, max: 16, whole: true },
+				governor: 'double',
+			},
+		},
+		budget: { presets: [1.7, 1.7, 3.4, 3.4], min: 0.25 },
+		quality: (_preset, _settings, own) => {
+			// own.settings.reflectionEvery holds the cadence for this preset and the governor's steps.
+		},
+	}),
+);
+```
+
+The overlay gives the feature a row of its own, such as `water  gpu not measured  reflectionEvery 2  budget 1.7 of 1.7 ms`. The row shows the feature's settings, its budget and the memory that it reports. The water add-on draws its reflection every other frame on Low and Medium, so that pass costs half as much on average there. Call `host.destroy()` when the add-on stops.
+
+[Preset settings and the frame-budget governor](../api/features.md#preset-settings-and-the-frame-budget-governor) gives every option.
+
 ## Compile the shaders on both paths
 
 The null3D Vite plugin compiles each `.wgsl` file that the add-on imports, for WebGPU and for WebGL2. An add-on that draws has shader code that both paths run, or its README states the fallback. A shader file that fails to compile stops the build.
@@ -79,7 +113,7 @@ PASS  cost per preset: low 0.42 ms of GPU time, medium 0.51 ms of GPU time, high
 PASS  allocation per preset: low 0 bytes, medium 0 bytes, high 0 bytes, ultra 0 bytes per frame in the add-on's own code, on Chrome 141
 ```
 
-Use `--skip-browser` on a machine that has no GPU or no browser. The shader build and the size gate need the add-on's own Vite and null3D plugin.
+Use `--skip-browser` on a machine that has no GPU or no browser. Use `--skip-cost` when the machine is loaded, since a cost figure would then measure the load: the page and allocation gates still run, and the cost gate stays owed. The shader build and the size gate need the add-on's own Vite and null3D plugin.
 
 The cost figures are measured, and the check prints them; it does not compare them with a number that the add-on claims. The page builds for production, so the figures match what a user gets.
 

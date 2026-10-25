@@ -3,15 +3,16 @@
 //!
 //! # Rows
 //!
-//! Each material has one row of [`MATERIAL_FLOATS`] floats, fifteen `vec4f`s, which the WGSL
+//! Each material has one row of [`MATERIAL_FLOATS`] floats, eighteen `vec4f`s, which the WGSL
 //! struct `MaterialRow` in `null3d::globals` mirrors field for field. Shaders copy the first nine
 //! into a `Material`. Only the builds that let light through read the next two, the transmission's
 //! values; only the builds of layered materials read the next two, the clear coat's and the
 //! sheen's; only the builds that let light through a thin surface read the one after, the diffuse
-//! transmission's values; and only the skin pass's builds read the last, the scatter distances of
-//! the subsurface blur. The [`param`] module names where each
-//! value sits. A row also holds the texture array layer of each of its maps, which the table
-//! writes once the map's image is on the GPU, and [`NO_MAP`] until then. Where a standard
+//! transmission's values; and only the skin pass's builds read the one after that, the scatter
+//! distances of the subsurface blur. The last vec4f holds a light map's transform, and the spare
+//! float of the transmission's vec4f holds the direction map's layer. The [`param`] module names
+//! where each value sits. A row also holds the texture array layer of each of its maps, which the
+//! table writes once the map's image is on the GPU, and [`NO_MAP`] until then. Where a standard
 //! material's maps share a few units of their bind group, as on WebGL2, each map's value is its
 //! unit times [`UNIT_LAYERS`], plus its layer. On WebGPU the table is a
 //! storage buffer; on WebGL2 it is a data texture with one row of texels per material.
@@ -366,11 +367,15 @@ pub mod feature {
     /// `KHR_materials_anisotropy` does: highlights spread across the direction instead of around,
     /// as brushed metal shows. It takes the builds of the layers above the base ([`COAT_SHEEN`]).
     pub const ANISOTROPY: u32 = 1 << 26;
+    /// The light map holds RGBM texels, as Needle's viewer reads its light maps: each texel's
+    /// color is multiplied by its alpha times 8, then the sRGB transfer turns it linear. The
+    /// texture is uploaded as linear texels, so the shader makes that decode itself.
+    pub const LIGHT_MAP_RGBM: u32 = 1 << 27;
     /// A custom material's WGSL sets or reads the surface's alpha, so its builds cut the
     /// material's own shape: by alpha to coverage or the alpha hash, and in a masked shadow caster
     /// and a masked motion build. Only such a material has those builds, so the engine keeps a
     /// material whose WGSL never names the alpha as small as before.
-    pub const SURFACE_ALPHA: u32 = 1 << 27;
+    pub const SURFACE_ALPHA: u32 = 1 << 28;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED
         | VERTEX_COLORS
@@ -399,6 +404,7 @@ pub mod feature {
         | SCENE_DEPTH
         | IRIDESCENCE
         | ANISOTROPY
+        | LIGHT_MAP_RGBM
         | SURFACE_ALPHA;
 
     /// The features whose material lights layers above its base: a clear coat, a sheen,
@@ -482,6 +488,10 @@ pub mod flag {
     /// color map's slot then holds its anisotropy map, the direction in red and green and the
     /// strength in blue, where the row's layer maps are its family's.
     pub const ANISOTROPY: u32 = 1 << 23;
+    /// The light map holds RGBM texels, as Needle's viewer reads its light maps: the color of each
+    /// texel is multiplied by its alpha times 8 before the sRGB transfer turns it linear. The
+    /// texture is uploaded as linear texels, so the build makes that decode itself.
+    pub const LIGHT_MAP_RGBM: u32 = 1 << 24;
 }
 
 /// The row flags (`flag::*` bits) of a material with `features` (`feature::*` bits). The base
@@ -512,10 +522,13 @@ const fn row_flags(features: u32) -> u32 {
     if features & feature::ANISOTROPY != 0 {
         flags |= flag::ANISOTROPY;
     }
+    if features & feature::LIGHT_MAP_RGBM != 0 {
+        flags |= flag::LIGHT_MAP_RGBM;
+    }
     flags
 }
 
-/// Floats in each material's row: seventeen `vec4f`s.
+/// Floats in each material's row: eighteen `vec4f`s.
 pub const MATERIAL_FLOATS: usize = sizes::MATERIAL_BYTES as usize / 4;
 /// Floats of a row of custom values that a custom material's uniforms and texture layers use: eight
 /// `vec4f`s, as the shader compiler packs them. The rest of the row stays unused.
@@ -571,8 +584,14 @@ pub mod param {
     /// The thickness of the volume under the surface, in the mesh's own units: 0 for a thin wall,
     /// which bends no light.
     pub const THICKNESS: usize = 37;
-    /// The index of refraction, 1 or more, which bends the light that passes through.
+    /// The index of refraction, 1 or more, which bends the light that passes through. The float
+    /// after it holds the light map's direction layer.
     pub const IOR: usize = 38;
+    /// The layer of the map that holds a light map's direction, in the radiance's own texture
+    /// array, or [`NO_MAP`] where the material has none. On WebGL2 the value is the light map's
+    /// unit times [`UNIT_LAYERS`], plus the layer. A shader reads the direction through the light
+    /// map's binding, at a layer of its array.
+    pub const LIGHT_MAP_DIRECTION: usize = 39;
     /// The color that white light takes after it travels [`ATTENUATION_DISTANCE`] through the
     /// volume: 3 floats, linear.
     pub const ATTENUATION_COLOR: usize = 40;
@@ -621,6 +640,12 @@ pub mod param {
     /// light through. The core sets it as it sets each layer map, so a shader reads the maps
     /// that the material gave.
     pub const LAYER_MAPS_KIND: usize = 66;
+    /// How a light map's texture coordinates stretch along u and along v: 2 floats. The scale is
+    /// 1 by default, which leaves the coordinates alone.
+    pub const LIGHT_MAP_SCALE: usize = 68;
+    /// Where a light map's texture coordinates start along u and along v: 2 floats. The offset is
+    /// 0 by default.
+    pub const LIGHT_MAP_OFFSET: usize = 70;
     /// A decal material's values take the place of the transmission's, which a decal never has.
     /// The cosine of the angle from the decal's direction at which it starts to fade.
     pub const DECAL_FADE_START: usize = TRANSMISSION;
@@ -642,7 +667,7 @@ pub mod param {
             | SHEEN_COLOR
             | DIFFUSE_TRANSMISSION_COLOR
             | SUBSURFACE_COLOR => Some(3),
-            NORMAL_SCALE | CLEARCOAT_NORMAL_SCALE => Some(2),
+            NORMAL_SCALE | CLEARCOAT_NORMAL_SCALE | LIGHT_MAP_SCALE | LIGHT_MAP_OFFSET => Some(2),
             OPACITY
             | ALPHA_CUTOFF
             | METALNESS
@@ -928,6 +953,9 @@ const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     row[param::UV_U] = 1.0;
     row[param::UV_V + 1] = 1.0;
     row[param::REFLECTANCE] = 0.04;
+    row[param::LIGHT_MAP_DIRECTION] = NO_MAP;
+    row[param::LIGHT_MAP_SCALE] = 1.0;
+    row[param::LIGHT_MAP_SCALE + 1] = 1.0;
     let mut k = 0;
     while k < 4 {
         row[param::SPECULAR_COLOR + k] = 1.0;
@@ -982,6 +1010,9 @@ pub struct MaterialTable {
     map_units: Vec<[u8; MAP_SLOTS]>,
     /// Each material's displacement map, `Handle::NONE` where it has none.
     heights: Vec<Handle>,
+    /// Each material's light map direction map, `Handle::NONE` where it has none. It shares the
+    /// light map's texture array, so a shader reads it through the light map's binding.
+    directions: Vec<Handle>,
     /// The shared unit that each material's displacement map samples in the fragment stage, where
     /// maps share units and the material takes parallax.
     height_units: Vec<u8>,
@@ -1042,6 +1073,7 @@ impl MaterialTable {
             maps: Vec::with_capacity(capacity as usize),
             map_units: Vec::with_capacity(capacity as usize),
             heights: Vec::with_capacity(capacity as usize),
+            directions: Vec::with_capacity(capacity as usize),
             height_units: Vec::with_capacity(capacity as usize),
             margins: Vec::with_capacity(capacity as usize),
             values: Vec::with_capacity(capacity as usize * MATERIAL_FLOATS),
@@ -1077,6 +1109,7 @@ impl MaterialTable {
                 self.maps.push([Handle::NONE; MAP_SLOTS]);
                 self.map_units.push([0; MAP_SLOTS]);
                 self.heights.push(Handle::NONE);
+                self.directions.push(Handle::NONE);
                 self.height_units.push(0);
                 self.margins.push(0.0);
                 self.values.extend_from_slice(&[0.0; MATERIAL_FLOATS]);
@@ -1100,6 +1133,7 @@ impl MaterialTable {
         self.maps[at] = [Handle::NONE; MAP_SLOTS];
         self.map_units[at] = [0; MAP_SLOTS];
         self.heights[at] = Handle::NONE;
+        self.directions[at] = Handle::NONE;
         self.height_units[at] = 0;
         self.margins[at] = 0.0;
         self.biases[at] = DepthBias::NONE;
@@ -1138,6 +1172,7 @@ impl MaterialTable {
         self.unmapped -= u32::from(keeps_display_color(self.features[at]));
         self.maps[at] = [Handle::NONE; MAP_SLOTS];
         self.heights[at] = Handle::NONE;
+        self.directions[at] = Handle::NONE;
         self.maps_changed = true;
         self.destroyed = true;
         Ok(())
@@ -1412,6 +1447,33 @@ impl MaterialTable {
             .unwrap_or(Handle::NONE)
     }
 
+    /// Gives a material the direction map of its light map, or `Handle::NONE` to light as a plain
+    /// light map. A shader reads the direction through the light map's own binding, so the map
+    /// must share the light map's texture array; [`MaterialTable::update_map_layers`] writes no
+    /// layer for a map that does not.
+    pub fn set_light_map_direction(
+        &mut self,
+        id: u32,
+        texture: Handle,
+    ) -> Result<(), MaterialError> {
+        if !self.is_live(id) {
+            return Err(MaterialError::Unknown(id));
+        }
+        if self.directions[id as usize] != texture {
+            self.directions[id as usize] = texture;
+            self.maps_changed = true;
+        }
+        Ok(())
+    }
+
+    /// A material's light map direction map, or `Handle::NONE`.
+    pub fn light_map_direction(&self, id: u32) -> Handle {
+        self.directions
+            .get(id as usize)
+            .copied()
+            .unwrap_or(Handle::NONE)
+    }
+
     /// How far a material's bounding spheres grow for its displacement, in the mesh's units: the
     /// farthest that its displacement has moved a vertex, or 0 without a displacement map.
     pub fn bounds_margin(&self, id: u32) -> f32 {
@@ -1576,13 +1638,15 @@ impl MaterialTable {
 
     /// Writes each map's layer into its row when a map changed, or when `layers_changed` says
     /// that a texture's layer became ready or stopped drawing. `ready_layer` gives the layer of a
-    /// texture whose image is on the GPU, and `premultiplied` says whether that image holds colors
-    /// multiplied by their alpha, which the row's flags then say for the base color map. Only rows
-    /// whose layers or flags differ count as changed.
+    /// texture whose image is on the GPU, `same_array` says whether two textures share a texture
+    /// array, and `premultiplied` says whether an image holds colors multiplied by their alpha,
+    /// which the row's flags then say for the base color map. Only rows whose layers or flags
+    /// differ count as changed.
     pub fn update_map_layers(
         &mut self,
         layers_changed: bool,
         ready_layer: impl Fn(Handle) -> Option<u32>,
+        same_array: impl Fn(Handle, Handle) -> bool,
         premultiplied: impl Fn(Handle) -> Premultiplied,
     ) {
         if !std::mem::take(&mut self.maps_changed) && !layers_changed {
@@ -1606,6 +1670,22 @@ impl MaterialTable {
                 changed |= *layer != value;
                 *layer = value;
             }
+            // A light map's direction map sits in the light map's own texture array, so a shader
+            // reads it through the light map's binding, at the light map's unit. A direction map
+            // in another array, or a light map without a unit, leaves the light map plain.
+            let light = maps[MapSlot::Light as usize];
+            let direction = self.directions[id as usize];
+            let light_unit = units[MapSlot::Light as usize];
+            let ready = if light.is_none() || direction.is_none() || light_unit == NO_UNIT {
+                None
+            } else {
+                ready_layer(direction).filter(|_| same_array(light, direction))
+            };
+            let value = ready.map_or(NO_MAP, |layer| {
+                (u32::from(light_unit) * UNIT_LAYERS + layer) as f32
+            });
+            changed |= row[param::LIGHT_MAP_DIRECTION] != value;
+            row[param::LIGHT_MAP_DIRECTION] = value;
             // The base color map's texels decide whether its colors are premultiplied.
             let base = maps[MapSlot::BaseColor as usize];
             let base_flags = if row[param::MAP_LAYERS] == NO_MAP {
@@ -1702,7 +1782,7 @@ mod tests {
         let line = table.create(Shading::Line, 0, [1.0; 4]).unwrap();
         // Dash size, gap size, dash scale and dash offset, in the fourth texel of the custom values.
         table.set_values(line, 12, &[0.25, 0.12, 1.0, 0.0]).unwrap();
-        table.update_map_layers(true, |_| None, |_| Premultiplied::No);
+        table.update_map_layers(true, |_| None, |_, _| true, |_| Premultiplied::No);
         assert_eq!(
             &table.values(0..1)[12..16],
             &[0.25, 0.12, 1.0, 0.0],
@@ -2317,7 +2397,7 @@ mod tests {
         // A ready layer goes to both stages' floats; a shared unit only to the fragment stage's.
         table.set_height_unit(plain, 2);
         table.set_height_unit(normal, NO_UNIT);
-        table.update_map_layers(true, |_| Some(5), |_| Premultiplied::No);
+        table.update_map_layers(true, |_| Some(5), |_, _| true, |_| Premultiplied::No);
         let layers = |id| {
             let v = values(&table, id);
             [v[height::LAYER], v[height::PIXEL_LAYER]]
@@ -2346,7 +2426,7 @@ mod tests {
         table
             .set_displacement_map(lit, Handle::new(1, 0), false)
             .unwrap();
-        table.update_map_layers(true, |_| Some(5), |_| Premultiplied::No);
+        table.update_map_layers(true, |_| Some(5), |_, _| true, |_| Premultiplied::No);
         assert_eq!(
             &table.values(line..line + 1)[..4],
             &dash,
@@ -2380,7 +2460,7 @@ mod tests {
         );
         assert_eq!(table.maps(waiting)[MapSlot::Emissive as usize], on_its_way);
         table.take_changed();
-        table.update_map_layers(false, layer, |_| Premultiplied::No);
+        table.update_map_layers(false, layer, |_, _| true, |_| Premultiplied::No);
         assert_eq!(
             table.take_changed(),
             Some(mapped..mapped + 1),
@@ -2390,18 +2470,18 @@ mod tests {
         expected[0] = 7.0;
         assert_eq!(layers(&table, mapped), expected);
         assert_eq!(layers(&table, waiting), [NO_MAP; MAP_SLOTS]);
-        table.update_map_layers(false, layer, |_| Premultiplied::No);
+        table.update_map_layers(false, layer, |_, _| true, |_| Premultiplied::No);
         assert_eq!(table.take_changed(), None, "nothing changed");
         // A texture whose layer became ready writes the layers again.
         let both = |_: Handle| Some(3);
-        table.update_map_layers(true, both, |_| Premultiplied::No);
+        table.update_map_layers(true, both, |_, _| true, |_| Premultiplied::No);
         assert_eq!(table.take_changed(), Some(mapped..waiting + 1));
         assert_eq!(layers(&table, waiting)[MapSlot::Emissive as usize], 3.0);
         // The specular maps take the last two layers, and their own coordinate bits.
         table
             .set_map(mapped, MapSlot::SpecularColor, ready, true)
             .unwrap();
-        table.update_map_layers(false, layer, |_| Premultiplied::No);
+        table.update_map_layers(false, layer, |_, _| true, |_| Premultiplied::No);
         assert_eq!(layers(&table, mapped)[MAP_SLOTS - 1], 7.0);
         assert_eq!(
             row(&table, mapped)[param::FLAGS] as u32
@@ -2420,7 +2500,7 @@ mod tests {
             ),
             (Premultiplied::No, 0),
         ] {
-            table.update_map_layers(true, both, |_| premultiplied);
+            table.update_map_layers(true, both, |_, _| true, |_| premultiplied);
             assert_eq!(map_flags(&table, mapped), flags, "{premultiplied:?}");
             assert_eq!(map_flags(&table, waiting), 0);
         }
@@ -2452,6 +2532,41 @@ mod tests {
     }
 
     #[test]
+    fn a_light_maps_direction_takes_a_layer_of_the_light_maps_own_array() {
+        let mut table = MaterialTable::with_capacity(1);
+        let id = table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        let light = Handle::new(1, 0);
+        let direction = Handle::new(2, 0);
+        let other = Handle::new(3, 0);
+        table.set_map(id, MapSlot::Light, light, true).unwrap();
+        table.set_light_map_direction(id, direction).unwrap();
+        // The direction shares the light map's array, so its layer names the light map's unit.
+        table.update_map_layers(
+            true,
+            |_| Some(4),
+            |first, second| first == light && (second == light || second == direction),
+            |_| Premultiplied::No,
+        );
+        assert_eq!(row(&table, id)[param::LIGHT_MAP_DIRECTION], 4.0);
+        // A direction in another array would name a layer of a map that is not this one.
+        table.set_light_map_direction(id, other).unwrap();
+        table.update_map_layers(
+            true,
+            |_| Some(5),
+            |first, second| first == light && second == light,
+            |_| Premultiplied::No,
+        );
+        assert_eq!(row(&table, id)[param::LIGHT_MAP_DIRECTION], NO_MAP);
+        // A direction without a light map lights nothing.
+        table.set_light_map_direction(id, direction).unwrap();
+        table
+            .set_map(id, MapSlot::Light, Handle::NONE, false)
+            .unwrap();
+        table.update_map_layers(true, |_| Some(5), |_, _| true, |_| Premultiplied::No);
+        assert_eq!(row(&table, id)[param::LIGHT_MAP_DIRECTION], NO_MAP);
+    }
+
+    #[test]
     fn rows_name_the_shared_unit_of_each_map_beside_its_layer() {
         let mut table = MaterialTable::with_capacity(1);
         let id = table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
@@ -2460,7 +2575,7 @@ mod tests {
             table.set_map(id, slot, texture, false).unwrap();
         }
         let ready = |_: Handle| Some(5);
-        table.update_map_layers(false, ready, |_| Premultiplied::No);
+        table.update_map_layers(false, ready, |_, _| true, |_| Premultiplied::No);
         assert_eq!(
             layers(&table, id)[MapSlot::Normal as usize],
             5.0,
@@ -2471,7 +2586,7 @@ mod tests {
         units[MapSlot::Normal as usize] = 2;
         table.take_changed();
         table.set_map_units(id, units);
-        table.update_map_layers(false, ready, |_| Premultiplied::No);
+        table.update_map_layers(false, ready, |_, _| true, |_| Premultiplied::No);
         assert_eq!(table.take_changed(), Some(id..id + 1));
         let mut expected = [NO_MAP; MAP_SLOTS];
         expected[MapSlot::BaseColor as usize] = 5.0;
@@ -2482,7 +2597,7 @@ mod tests {
             "a map without a unit draws as without its texture"
         );
         table.set_map_units(id, units);
-        table.update_map_layers(false, ready, |_| Premultiplied::No);
+        table.update_map_layers(false, ready, |_, _| true, |_| Premultiplied::No);
         assert_eq!(table.take_changed(), None, "the same units change nothing");
     }
 }

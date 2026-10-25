@@ -11,10 +11,13 @@ import type { Material, MeshGeometry } from '../scene/resources';
 import {
 	controlViews,
 	createControlBuffer,
+	EVENT_KEY_DOWN,
+	EVENT_KEY_UP,
 	frameAfter,
 	frameReached,
 	nextFrame,
 	Slot,
+	writeInputEvent,
 } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { onEngineStop } from '../shared/helper-workers';
@@ -26,6 +29,7 @@ import {
 	Role,
 	sampleFrames,
 } from '../shared/metrics';
+import { decodeRecording, type ReplayProgram } from '../shared/recording';
 import { jobAsker } from '../shared/task-host';
 import { defineSketch, type SketchContext, type SketchOptions } from './define-sketch';
 import type { QualityStart, QualityUpdate } from './quality';
@@ -211,6 +215,8 @@ async function start(
 		grows = false,
 		holdSeconds,
 		holdScript,
+		replay,
+		record = false,
 		keyCodes = [],
 		shared = false,
 		cellsRefused,
@@ -224,6 +230,8 @@ async function start(
 		grows?: boolean;
 		holdSeconds?: number;
 		holdScript?: HoldScript;
+		replay?: ReplayProgram;
+		record?: boolean;
 		keyCodes?: readonly string[];
 		shared?: boolean;
 		cellsRefused?: () => number;
@@ -300,6 +308,7 @@ async function start(
 			sendPreload: () => {},
 			onAskBuilds: () => {},
 			pageUrl: 'http://localhost/',
+			sketchUrl: 'http://localhost/sketch.ts',
 			maxTargetFps,
 			threads: [['sketch-worker', [Role.Sketch, Role.Render]]],
 			showStats: (show) => log.push(`stats ${show}`),
@@ -309,6 +318,8 @@ async function start(
 		},
 		holdSeconds,
 		holdScript,
+		replay,
+		record,
 	);
 	let context: SketchContext | undefined;
 	try {
@@ -597,12 +608,13 @@ describe('SketchRunner', () => {
 		expect(moves(page.calls)).toHaveLength(1);
 	});
 
-	it("gives new directional lights the preset's shadow cascades and map size before the setup", async () => {
+	it("gives new directional lights the preset's shadow cascades, map size and hero tile size", async () => {
 		const { calls } = await start(() => ({}));
 		const medium = presetSettings('medium');
 		expect(calls.filter((call) => call[0] === 'setLightDefault')).toEqual([
 			['setLightDefault', C.LIGHT_VALUE_SHADOW_CASCADES, medium.shadowCascades],
 			['setLightDefault', C.LIGHT_VALUE_SHADOW_MAP_SIZE, medium.shadowMapSize],
+			['setLightDefault', C.LIGHT_VALUE_HERO_SIZE, medium.heroTileSize],
 		]);
 	});
 
@@ -1222,5 +1234,99 @@ describe('hold mode with a timed script', () => {
 			},
 		]);
 		expect(runner.holdScriptResult?.dumps).toHaveLength(1);
+	});
+});
+
+describe('recording a session and replaying it', () => {
+	/** The key that the session presses, as the harness numbers it. */
+	const KEYS = ['KeyW'];
+
+	/** What a frame showed the sketch: its time, its step and whether the key was down. */
+	const seenLine = (now: number, dt: number, down: boolean) =>
+		`${now.toFixed(6)} ${dt.toFixed(6)} ${down ? 1 : 0}`;
+
+	/** A sketch that logs what each frame gave it: its time, its step and the key that drove it. */
+	const logging = (lines: string[]) => (context: SketchContext) => {
+		const { input, time } = context;
+		return {
+			onUpdate(dt: number) {
+				lines.push(seenLine(time.now, dt, input.isDown('KeyW')));
+			},
+		};
+	};
+
+	it('records each frame’s step and the input it read, and replays them to the same states', async () => {
+		/** What the live session's frames gave the sketch. */
+		const live: string[] = [];
+		const session = await start(logging(live), undefined, { keyCodes: KEYS, record: true });
+		session.runner.step(0);
+		// A key press lands before the second frame, then a long frame, then a release.
+		writeInputEvent(session.control, EVENT_KEY_DOWN, 0, 0, 0, 0, 0, 0, 0);
+		session.runner.step(1000 / 60);
+		session.runner.step(1000 / 60 + 200);
+		writeInputEvent(session.control, EVENT_KEY_UP, 0, 0, 0, 0, 0, 0, 0);
+		session.runner.step(1000 / 60 + 216);
+		session.runner.step(1000 / 60 + 232);
+
+		const bytes = await session.runner.saveRecording();
+		expect(bytes).toBeDefined();
+		const program = decodeRecording(bytes as Uint8Array);
+		expect(program.fixedRate).toBe(60);
+		expect(program.steps.length).toBe(5);
+
+		/** What the replay's frames gave the sketch. */
+		const replayed: string[] = [];
+		const replay = await start(logging(replayed), undefined, { keyCodes: KEYS, replay: program });
+		expect(replayed).toEqual(live);
+		expect(replay.runner.replayOutcome).toEqual({
+			frames: 5,
+			seconds: program.steps.reduce((sum, step) => sum + step, 0),
+			sketch: 'http://localhost/sketch.ts',
+			stopped: false,
+		});
+	});
+
+	it('runs no recording when the page does not record, and no replay when it gives none', async () => {
+		const lines: string[] = [];
+		const session = await start(logging(lines), undefined, { keyCodes: KEYS });
+		session.runner.step(0);
+		expect(await session.runner.saveRecording()).toBeUndefined();
+		expect(session.runner.replayOutcome).toBeUndefined();
+	});
+
+	it('refuses a recording of a sketch with another fixed rate, naming both rates', async () => {
+		const program = {
+			seed: 1,
+			fixedRate: 30,
+			sketch: 'http://localhost/sketch.ts',
+			stopped: false,
+			steps: new Float64Array([0]),
+			starts: new Uint32Array([0]),
+			counts: new Uint32Array([0]),
+			events: new Float64Array(0),
+			keyNames: [],
+			stride: 7,
+		} satisfies ReplayProgram;
+		await expect(
+			start(logging([]), undefined, { keyCodes: KEYS, replay: program }),
+		).rejects.toThrow('the recording runs 30 fixed steps a second, and this sketch runs 60');
+	});
+
+	it('refuses a recording that names a key that this engine does not have', async () => {
+		const program = {
+			seed: 1,
+			fixedRate: 60,
+			sketch: 'http://localhost/sketch.ts',
+			stopped: false,
+			steps: new Float64Array([0]),
+			starts: new Uint32Array([0]),
+			counts: new Uint32Array([1]),
+			events: new Float64Array([EVENT_KEY_DOWN, 0, 0, 0, 0, 0, 0]),
+			keyNames: ['KeyZ'],
+			stride: 7,
+		} satisfies ReplayProgram;
+		await expect(
+			start(logging([]), undefined, { keyCodes: KEYS, replay: program }),
+		).rejects.toThrow('the recording used the key "KeyZ"');
 	});
 });

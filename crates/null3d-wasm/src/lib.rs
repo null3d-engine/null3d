@@ -192,6 +192,8 @@ mod render_detail {
     pub const BAD_LEVELS: u32 = 15;
     /// A light probe grid's texture that is not a 3D texture.
     pub const NOT_A_VOLUME: u32 = 17;
+    /// The second detail is the bytes that the shadow atlas would take, in mebibytes.
+    pub const SHADOW_ATLAS_TOO_LARGE: u32 = 18;
 }
 
 struct Engine {
@@ -398,6 +400,9 @@ fn record_failure(error: RecordError) -> u32 {
         }
         RecordError::SkinnedPagesFull { limit } => (render_detail::SKINNED_PAGES_FULL, limit),
         RecordError::UploadsFull => (render_detail::UPLOADS_FULL, 0),
+        RecordError::ShadowAtlasTooLarge { megabytes } => {
+            (render_detail::SHADOW_ATLAS_TOO_LARGE, megabytes)
+        }
         RecordError::OutOfMemory { bytes } => {
             return core_failure(CoreError::OutOfMemory { bytes });
         }
@@ -2504,12 +2509,15 @@ pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) 
     // two slots of their own.
     let raw = slot;
     let height = raw == map_slot::BUMP || raw == map_slot::DISPLACEMENT;
+    let direction = raw == map_slot::LIGHT_MAP_DIRECTION;
     let slot = raw as usize;
     let layer = slot
         .checked_sub(MapSlot::ALL.len())
         .map(|k| LayerMap::ALL.get(k));
     let (slot, layer) = if height {
         (MapSlot::Normal, None)
+    } else if direction {
+        (MapSlot::Light, None)
     } else {
         match (MapSlot::ALL.get(slot), layer) {
             (Some(&slot), _) => (slot, None),
@@ -2529,6 +2537,7 @@ pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) 
         let set = match raw {
             map_slot::BUMP => table.set_bump_map(id, map, second_uv),
             map_slot::DISPLACEMENT => table.set_displacement_map(id, map, second_uv),
+            map_slot::LIGHT_MAP_DIRECTION => table.set_light_map_direction(id, map),
             _ => match layer {
                 Some(layer) => table.set_layer_map(id, layer, map, second_uv),
                 None => table.set_map(id, slot, map, second_uv),
@@ -4569,17 +4578,28 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
 }
 
 /// Draws layer `template` over the background from the next frame on, with its share of the sun
-/// that it hides and its opacity, or removes the layer for `template` 0. The TypeScript API checks
-/// the values.
+/// that it hides, its opacity, and the seconds `refresh` between the captures that the sky's
+/// environment map makes of it. `map` is the same WGSL built into the shader that fills that map's
+/// cube faces, so its reflections and the light taken from it hold the layer too. Removes the layer
+/// for `template` 0. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setSkyLayer)]
-pub fn set_sky_layer(template: u32, sun: f32, opacity: f32) -> u32 {
+pub fn set_sky_layer(
+    template: u32,
+    map: u32,
+    sun: f32,
+    opacity: f32,
+    refresh: f32,
+    slot: u32,
+) -> u32 {
     with_engine(|e| {
         let layer = (template != 0).then_some(SkyLayer {
             template,
+            map,
             opacity: opacity.clamp(0.0, 1.0),
             sun: sun.clamp(0.0, 1.0),
+            refresh: refresh.max(0.0),
         });
-        e.renderer.settings_mut().set_sky_layer(layer);
+        e.renderer.settings_mut().set_sky_layer(layer, slot);
         0
     })
 }
@@ -4652,9 +4672,11 @@ pub fn set_physical_sky(on: bool) -> u32 {
 // comes to rest fills once more, exactly. Before the scene's first sky background, the maps show
 // the sky of the background's values, which TypeScript writes first. Fails for a texture that is
 // not live.
-/// Makes a generated cube texture a map of the scene's sky.
+/// Makes a generated cube texture a map of the scene's sky. `capture` is the stage at which the map
+/// captures the light that a sky layer over it gives, which the page places a stage or two before
+/// the last, so that the read lands before the levels that the last stage publishes.
 #[wasm_bindgen(js_name = addSkyMap)]
-pub fn add_sky_map(texture: u32, stages: u32) -> u32 {
+pub fn add_sky_map(texture: u32, stages: u32, capture: u32) -> u32 {
     with_engine(|e| {
         let sky = sky_of(&e.background_values[..]);
         let settings = e.renderer.settings_mut();
@@ -4669,7 +4691,7 @@ pub fn add_sky_map(texture: u32, stages: u32) -> u32 {
         if maps.sky().is_none() {
             maps.set_sky(MapSky::analytic(sky));
         }
-        maps.add(texture, stages);
+        maps.add(texture, stages, capture);
         0
     })
 }

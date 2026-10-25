@@ -14,6 +14,7 @@ import {
 	MAP_SLOT_IRIDESCENCE,
 	MAP_SLOT_IRIDESCENCE_THICKNESS,
 	MAP_SLOT_LIGHT,
+	MAP_SLOT_LIGHT_MAP_DIRECTION,
 	MAP_SLOT_NORMAL,
 	MAP_SLOT_SHEEN_COLOR,
 	MAP_SLOT_SHEEN_ROUGHNESS,
@@ -32,6 +33,7 @@ import {
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
 	MATERIAL_FEATURE_IRIDESCENCE,
+	MATERIAL_FEATURE_LIGHT_MAP_RGBM,
 	MATERIAL_FEATURE_MULTIPLY,
 	MATERIAL_FEATURE_NO_CONTACT_SHADOWS,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
@@ -69,6 +71,8 @@ import {
 	MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX,
 	MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MIN,
 	MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
+	MATERIAL_PARAM_LIGHT_MAP_OFFSET,
+	MATERIAL_PARAM_LIGHT_MAP_SCALE,
 	MATERIAL_PARAM_METALNESS,
 	MATERIAL_PARAM_NORMAL_SCALE,
 	MATERIAL_PARAM_OCCLUSION_STRENGTH,
@@ -127,6 +131,8 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_NORMAL_SCALE, 2],
 	[MATERIAL_PARAM_OCCLUSION_STRENGTH, 1],
 	[MATERIAL_PARAM_LIGHT_MAP_INTENSITY, 1],
+	[MATERIAL_PARAM_LIGHT_MAP_SCALE, 2],
+	[MATERIAL_PARAM_LIGHT_MAP_OFFSET, 2],
 	[MATERIAL_PARAM_ENV_INTENSITY, 1],
 	[MATERIAL_PARAM_UV_U, 3],
 	[MATERIAL_PARAM_UV_V, 3],
@@ -450,6 +456,45 @@ describe('Material.set', () => {
 		expect(features).toEqual([]);
 	});
 
+	test('a light map direction takes its own map, and the map places the bake', () => {
+		const { maps, features, table, materials } = fakeCore();
+		materials.standard({
+			lightMap: texture(5, 1),
+			lightMapDirection: texture(6),
+			lightMapOffset: [0.25, 0.5],
+			lightMapRepeat: [0.5, 0.25],
+		});
+		expect(maps).toEqual([
+			[1, MAP_SLOT_LIGHT, 5, 1],
+			[1, MAP_SLOT_LIGHT_MAP_DIRECTION, 6, 0],
+		]);
+		expect(features).toEqual([0]);
+		const row = table[0] as number[];
+		expect(row[MATERIAL_PARAM_LIGHT_MAP_SCALE]).toBe(0.5);
+		expect(row[MATERIAL_PARAM_LIGHT_MAP_SCALE + 1]).toBe(0.25);
+		expect(row[MATERIAL_PARAM_LIGHT_MAP_OFFSET]).toBe(0.25);
+		expect(row[MATERIAL_PARAM_LIGHT_MAP_OFFSET + 1]).toBe(0.5);
+	});
+
+	test('a light map that holds RGBM texels takes the decode feature', () => {
+		const { features, materials } = fakeCore();
+		materials.standard({ lightMap: texture(5), lightMapDecode: 'rgbm' });
+		expect(features).toEqual([MATERIAL_FEATURE_LIGHT_MAP_RGBM]);
+	});
+
+	test('a light map direction, transform or decode needs the light map', () => {
+		const { materials, maps } = fakeCore();
+		for (const options of [
+			{ lightMapDirection: texture(5) },
+			{ lightMapOffset: [0, 0] as const },
+			{ lightMapRepeat: [1, 1] as const },
+			{ lightMapDecode: 'rgbm' as const },
+		]) {
+			const error = thrown(() => materials.standard(options));
+			expect(error.message).toStartWith('E1217: materials.standard() got ');
+		}
+		expect(maps).toEqual([]);
+	});
 	test('maps go into their slots, on the coordinates of their texture', () => {
 		const { maps, shadings, materials } = fakeCore();
 		materials.standard({ map: texture(5), normalMap: texture(6), lightMap: texture(7, 1) });
@@ -1169,18 +1214,29 @@ describe('materials.shader', () => {
 		expect(unused.message).toStartWith(
 			"E1217: materials.shader() got the scene input 'sceneDepth', but its WGSL never calls sceneDepth or sceneDistance.",
 		);
-		// The depth group and the maps' group would pass WebGPU's sampled textures in the
-		// fragment stage together.
+		// A material that reads the depth keeps seven of the maps' eight slots, so the copy fits
+		// the fragment stage beside them.
+		const two = [
+			{ name: 'foam', offset: 0 },
+			{ name: 'mirror', offset: 1 },
+		];
+		materials.shader({
+			wgsl: { ...compiledMaterial([], two), sceneDepth: true },
+			sceneInputs: ['sceneDepth'],
+			textures: { foam: layered(1), mirror: layered(2) },
+		});
+		const eight = Array.from({ length: 8 }, (_, slot) => ({ name: `map${slot}`, offset: slot }));
 		const textured = thrown(() =>
 			materials.shader({
-				wgsl: { ...compiledMaterial([], [{ name: 'detail', offset: 0 }]), sceneDepth: true },
+				wgsl: { ...compiledMaterial([], eight), sceneDepth: true },
 				sceneInputs: ['sceneDepth'],
-				textures: { detail: texture(1) },
+				textures: Object.fromEntries(eight.map(({ name }) => [name, layered(1)])),
 			}),
 		);
 		expect(textured.message).toStartWith(
-			"E1217: materials.shader() got WGSL that reads the scene's depth and declares textures of its own.",
+			"E1217: materials.shader() got WGSL that reads the scene's depth and declares 8 textures.",
 		);
+		expect(textured.message).toContain('Drop 1 of the textures');
 	});
 
 	test('refuses the scene inputs that a custom material does not read yet', () => {

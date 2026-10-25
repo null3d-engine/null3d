@@ -14,6 +14,7 @@ import type { BakedLight, LightMapData } from './baked-light';
 import { type BuiltinEnvironmentName, Environment } from './environment';
 import { FILE_LIMITS, imageSize, imageTooLarge } from './file-limits';
 import { GltfExtensions } from './gltf-extensions';
+import { toHalfFloat } from './half-float';
 import type { LightProbeGridData, LightProbeGridOptions } from './light-probes';
 import { Lut, type LutData } from './lut';
 import type { CoreMemory } from './memory';
@@ -532,9 +533,9 @@ export class Assets {
 	 */
 	async skyEnvironment(): Promise<Environment> {
 		const call = 'assets.skyEnvironment';
-		const { size, levels, stages, sh } = (await builtinEnvironments(call)).SKY_MAP;
+		const { size, levels, stages, capture, sh } = (await builtinEnvironments(call)).SKY_MAP;
 		const texture = await this.textures.fromGenerator('sky', size, levels, call);
-		this.textures.addSkyMap(texture, stages, call, writeSkyDefaults);
+		this.textures.addSkyMap(texture, stages, capture, call, writeSkyDefaults);
 		return new Environment(texture, size, levels, 'rgb9e5ufloat', sh);
 	}
 
@@ -627,10 +628,10 @@ export class Assets {
 	/**
 	 * Downloads a light map that a tool outside the engine baked, in the [baked light
 	 * file](../../guides/baked-light-data.md) format. It gives the radiance as a texture for a
-	 * material's `lightMap`, and, for a directional light map, the light's direction at each texel.
-	 * The first light map loads the reader, about 2 KB after Brotli. Throws E1411 or E1413 as
-	 * `loadTexture` does, E1434 when the file is not a light map that this engine reads, and E1406
-	 * when the reader does not load.
+	 * material's `lightMap`, and, for a directional light map, the light's direction at each texel
+	 * as a second texture for the same material's `lightMapDirection`. The first light map loads
+	 * the reader, about 2 KB after Brotli. Throws E1411 or E1413 as `loadTexture` does, E1434 when
+	 * the file is not a light map that this engine reads, and E1406 when the reader does not load.
 	 */
 	async loadLightMap(url: string | URL): Promise<LightMapData> {
 		const call = 'assets.loadLightMap';
@@ -640,6 +641,7 @@ export class Assets {
 		if (file.kind !== 'light-map') wrongKind(address, call, file.kind, 'light-map');
 		const { width, height, encoding, radiance, direction } = file;
 		let texture: Texture;
+		let directionTexture: Texture | undefined;
 		if (encoding === 'rgb8') {
 			// A texture holds four channels, so the radiance's three bytes gain an opaque alpha.
 			const data = new Uint8Array(width * height * 4);
@@ -650,6 +652,27 @@ export class Assets {
 				data[at + 3] = 255;
 			}
 			texture = this.textures.fromData({ width, height, colorSpace: 'srgb', data });
+			if (direction) {
+				// The direction shares the radiance's texture array, so that a shader reads it
+				// through the light map's binding. It therefore takes the radiance's sRGB format,
+				// and each byte is the one whose decoded value comes closest to the axis's.
+				const closest = sRGBBytes();
+				const texels = new Uint8Array(width * height * 4);
+				for (let at = 0, from = 0; at < texels.length; at += 4, from += 3) {
+					for (let c = 0; c < 3; c++) {
+						// A file may hold the one signed byte past -1, which the table's first entry takes.
+						const entry = Math.max(0, Math.min(254, (direction[from + c] as number) + 127));
+						texels[at + c] = closest[entry] as number;
+					}
+					texels[at + 3] = 255;
+				}
+				directionTexture = this.textures.fromData({
+					width,
+					height,
+					colorSpace: 'srgb',
+					data: texels,
+				});
+			}
 		} else {
 			const halves = new Uint16Array(radiance.buffer, radiance.byteOffset, radiance.byteLength / 2);
 			texture = this.textures.fromData({
@@ -659,8 +682,24 @@ export class Assets {
 				colorSpace: 'linear',
 				data: halves,
 			});
+			if (direction) {
+				// Linear texels keep each axis at half precision, which needs no sRGB round trip.
+				const texels = new Uint16Array(width * height * 4);
+				for (let at = 0, from = 0; at < texels.length; at += 4, from += 3) {
+					for (let c = 0; c < 3; c++)
+						texels[at + c] = toHalfFloat((direction[from + c] as number) / 127 / 2 + 0.5);
+					texels[at + 3] = toHalfFloat(1);
+				}
+				directionTexture = this.textures.fromData({
+					width,
+					height,
+					format: 'rgba16float',
+					colorSpace: 'linear',
+					data: texels,
+				});
+			}
 		}
-		return { width, height, texture, direction };
+		return { width, height, texture, direction, directionTexture };
 	}
 
 	/**
@@ -1061,4 +1100,32 @@ async function decode(
 			`${call}() could not decode ${address} as an image: ${reasonOf(error)}.`,
 		);
 	}
+}
+
+/** The decoded value of each sRGB byte, as the sampler gives it, and the byte closest to each of
+ * 255 evenly spaced linear values. Built once, when a light map with a direction first loads. */
+let srgbBytes: Uint8Array | undefined;
+
+function sRGBBytes(): Uint8Array {
+	if (srgbBytes) return srgbBytes;
+	const linear = Float32Array.from({ length: 256 }, (_, byte) => {
+		const c = byte / 255;
+		return c < 0.04045 ? c * 0.0773993808 : (c * 0.9478672986 + 0.0521327014) ** 2.4;
+	});
+	const closest = new Uint8Array(255);
+	for (let entry = 0; entry < 255; entry++) {
+		const target = entry / 254;
+		let best = 0;
+		let error = Math.abs((linear[0] as number) - target);
+		for (let byte = 1; byte < 256; byte++) {
+			const next = Math.abs((linear[byte] as number) - target);
+			if (next < error) {
+				error = next;
+				best = byte;
+			}
+		}
+		closest[entry] = best;
+	}
+	srgbBytes = closest;
+	return closest;
 }

@@ -205,6 +205,8 @@ const FOG_VOLUME_SKETCH = 'tests/pages/sketches/fog-volume-sketch.ts';
 
 /** The volumetric fog tests' image size: wide enough for the rays between the pillars to show. */
 const FOG_VOLUME_SIZE = [480, 270] as const;
+/** The hero shadow's picture size, large enough to see the tile's texels on the car's shadow. */
+const HERO_SIZE = [640, 360] as const;
 
 /**
  * The volumetric fog: the sun's rays between the pillars, and the street lamps' cones at night with
@@ -1364,6 +1366,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'water-shores',
 		sketch: 'tests/pages/sketches/water-shores-sketch.ts',
+		hold: 0,
+		modes: ALL_MODES,
+	},
+	// The same shoreline, with the water's own textures beside the depth: a sheet of ripple rings and
+	// a field of foam flecks. A material that reads the copy of the opaque scene's depth takes a maps'
+	// group with one slot fewer, so both the copy and the textures fit the fragment stage. Every GPU
+	// tier must bind all three groups, so a tier that drops one shows a different shore.
+	{
+		name: 'depth-textures',
+		sketch: 'tests/pages/sketches/depth-textures-sketch.ts',
 		hold: 0,
 		modes: ALL_MODES,
 	},
@@ -2652,8 +2664,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 1,
 	},
 	// Each built-in vegetation species: three of its variants, grown from the species record and a
-	// fixed seed, in a row on flat ground. The cards carry no atlas yet, so the picture shows the
-	// crown's shape, its branches and where its cards sit.
+	// fixed seed, in a row on flat ground, drawn with the bark and leaf atlases that the GPU paints
+	// at first use.
 	...[
 		'broadleaf',
 		'conifer',
@@ -2673,6 +2685,39 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: `tests/pages/sketches/vegetation-sketch.ts?species=${species}`,
 		hold: 1,
 	})),
+	// The four maps that the GPU paints for the two atlases, each with its mip levels beside it,
+	// and below them a trunk and a leaf card drawn through the materials that sample them.
+	{
+		name: 'vegetation-atlas',
+		sketch: 'tests/pages/sketches/vegetation-atlas-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+	},
+	// One oak crown at three distances from one camera: the leaf cards keep the share of the picture
+	// that they cover as they shrink, since every level of the atlas is painted with its own filter.
+	// Creek's painted oak beside the generated one: the file that the showcase loads, with an
+	// artist's bark and leaf textures, and the same species grown by the add-on and drawn from the
+	// atlases that the GPU paints at first use. The picture is the judge of the two side by side.
+	{
+		name: 'vegetation-versus-creek',
+		sketch: 'tests/pages/sketches/vegetation-versus-creek-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+		// Creek's model files are large, and the software GPU takes its time with their textures.
+		timeoutSeconds: 180,
+	},
+	{
+		name: 'vegetation-leaf-cards',
+		sketch: 'tests/pages/sketches/leaf-card-coverage-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+	},
+	{
+		name: 'vegetation-coverage',
+		sketch: 'tests/pages/sketches/vegetation-coverage-sketch.ts',
+		hold: 1,
+		size: [640, 360],
+	},
 	// Impostors of the impostors add-on: cards far from the world's origin, each blending the three
 	// atlas views nearest its direction to the eye and lit by the sun from the normal the surface
 	// atlas stores, and a merged row of a plain, a turned and a mirrored panel, which draws only
@@ -3086,8 +3131,31 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.012 },
 			}),
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
+			// The hero shadow is fine detail on one object, so its demo draws larger than the
+			// other demos, where the tile size's difference shows.
+			...(demo.name === 'hero-shadow' && { size: HERO_SIZE }),
 		};
 	}),
+	// The hero demo at both tile sizes. The car stands in the same place and its shadow falls the
+	// same way; the larger tile draws its edge sharper, which shows that the detail the preset pays
+	// for is kept, not smeared. The demo's own test, `demo-hero-shadow`, draws High at the default
+	// of 2,048, and this draws the 1,024 tile beside it. `demo-hero-shadow-ultra` names the largest
+	// tile, so every GPU path draws it, and the Ultra preset's cascades beside it.
+	{
+		name: 'demo-hero-shadow-tile-1024',
+		sketch: 'examples/hero-shadow/sketch.ts?heroTile=1024',
+		size: HERO_SIZE,
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'demo-hero-shadow-ultra',
+		sketch: 'examples/hero-shadow/sketch.ts?heroTile=4096',
+		switches: ['preset=ultra'],
+		size: HERO_SIZE,
+		hold: 1,
+		timeoutSeconds: 60,
+	},
 	// The objects demo's Look button, which a held frame cannot press: the same stage and time with
 	// one material over every mesh of the main pass, so each crate keeps its shape and its place.
 	{

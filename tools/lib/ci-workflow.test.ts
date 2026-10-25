@@ -584,6 +584,19 @@ describe("CI's workflow", () => {
 		);
 	});
 
+	it('runs every check of docs-and-tools after a failed one, once its setup has passed', () => {
+		// A failed check would otherwise stop the job, and hide every fault in the checks after it.
+		const steps = jobNamed('docs-and-tools').steps ?? [];
+		const setup = steps.findIndex(({ id }) => id === 'setup');
+		expect(setup).toBeGreaterThan(0);
+		const checks = steps.slice(setup + 1).filter(({ uses }) => uses !== 'actions/cache/save@v4');
+		expect(checks.length).toBeGreaterThan(0);
+		for (const step of checks)
+			expect(step.if, step.name ?? step.run ?? step.uses).toBe(
+				"${{ !cancelled() && steps.setup.outcome == 'success' }}",
+			);
+	});
+
 	it('limits every transfer through the archive action to a few minutes', () => {
 		// A stalled upload otherwise holds its job, and the runs queued behind it, until the job's limit.
 		for (const [name, job] of Object.entries(jobs))

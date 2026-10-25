@@ -264,6 +264,7 @@ describe('SketchQuality.lower', () => {
 			shadowMapSize: MEDIUM.shadowMapSize,
 			shadowTiles: MEDIUM.shadowTiles,
 			shadowTileSize: MEDIUM.shadowTileSize,
+			heroTileSize: MEDIUM.heroTileSize,
 			pointLightShadows: MEDIUM.pointLightShadows,
 			depthPrepass: MEDIUM.depthPrepass,
 			gpuOcclusion: MEDIUM.gpuOcclusion,

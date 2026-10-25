@@ -311,6 +311,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 120,
 	},
 	{
+		name: 'water',
+		group: 'Light, materials and effects',
+		sketch: new URL('./water/sketch.ts', import.meta.url),
+		code: 'water/',
+		title: 'Water',
+		scene: 'River into a lake',
+		summary:
+			'A river winds down a grassy valley into a lake, drawn by @null3d/water from one description of both bodies. Waves and ripples follow the current, caustics play over the bed, boulders trail foam, the banks and the sky mirror in the surface, and the shore fades where the bed rises to meet it. The camera drifts downstream and dips under the water, where the add-on tints, bends and lights the view from below.',
+		hold: 1,
+		timeoutSeconds: 180,
+	},
+	{
 		name: 'weighted-transparency',
 		group: 'Light, materials and effects',
 		sketch: new URL('./weighted-transparency/sketch.ts', import.meta.url),
@@ -402,7 +414,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Hero shadow',
 		scene: 'Launch yard at sunset',
 		summary:
-			"A car on a launch pad in the low evening sun, made in code, with stone blocks around the yard. The sun's cascades hold the blocks' long shadows at a few centimeters per texel, while the car gets a shadow map of its own, fitted tightly to it, several times finer. Every 3 seconds the car's hero shadow turns off and on again, so the difference shows.",
+			"A car on a launch pad in the low evening sun, made in code, with stone blocks around the yard. The sun's cascades hold the blocks' long shadows at a few centimeters per texel, while the car gets a shadow map of its own, fitted tightly to it, several times finer. The preset chooses the tile size, and a page may name one. Every 3 seconds the car's hero shadow turns off and on again, so the difference shows.",
 		hold: 1,
 		timeoutSeconds: 60,
 	},
