@@ -84,3 +84,25 @@ say so.
   ran near a load of 100 on 25 October 2026, where neither run measures anything.
 - The guide `docs/guides/car-paint.md` and the add-on README describe the model, its options and its
   limit.
+
+## Addendum, 25 October 2026: the light's size the glints need
+
+The pictures drawn for this record showed no glint. The paint with its flakes and the paint without
+them differed only where the count takes the smooth highlight away. Across all six references no
+pixel grew brighter than one step. The highlight fell by up to 76 steps over about 1,100 pixels. The
+sparkle the model describes had not drawn at all.
+
+The chance that one flake reflects the light is the light's solid angle over the cap of flake
+normals. A radius of 0.02 radians is a light 1.1 degrees across. About one flake in 1,400 caught it
+in the paint's footprint. Each caught flake added its light where the smooth highlight was already
+clipped or too dim to show. The default now names 0.25 radians, a softbox 14 degrees across. That is
+what the option's text claimed before it.
+
+Measured on the Mac's GPU with the paint test's own body, the pixels that grew brighter than 8 steps
+were none at 0.02 radians. They were 14 at 0.08, 49 at 0.15, 161 at 0.25 and 442 at 0.4, with the
+cells the sketch drew then. The brightest glint fell from 154 to 103 to 58 steps over that range.
+The default takes the middle. There the sparkle is many flakes, each with a strong contrast: 228
+pixels on that body, the brightest 103 steps above it. The test sketch's flake cells now cover the
+same distance along each texture coordinate. A glint therefore draws as a 2 by 2 pixel dot rather
+than a six to one dash. The dash was the cell's shape on screen, not the flake's. The paint spec also
+checks that the flakes brighten pixels, so a model that only removes the highlight fails it.
