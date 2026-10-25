@@ -26,7 +26,7 @@ Result: with the skill, 55 of 60 graded expectations passed, 92%. Without it, 49
 Two conditions for every case, one run each:
 
 - **With the skill.** The run reads `skills/null3d-develop/SKILL.md` first and follows it and the
-  files that it points to. Every one of the ten runs read the skill file, and each read 2 to 11
+  files that it points to. Every one of the ten runs read the skill file, and each read 1 to 10
   more files under `skills/`.
 - **Without it.** The run is told that the skill is not installed, and that it may read nothing
   under `skills/` or `.claude/skills/`. It keeps the engine's docs under `docs/`. No baseline run
