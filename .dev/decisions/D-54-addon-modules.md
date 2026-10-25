@@ -524,3 +524,35 @@ and the counts between, the selection wants all 27 chunks. The first view now wa
 - `firstViewCount` decides the prefix, and it is a pure function with its own test. The loader
   reports `settled(index)`, which is true for a chunk that loaded and for one that stayed
   unreachable, so a failed nearest chunk cannot hold the first view forever.
+
+## Addendum, 25 October 2026: a chunk's level follows the cloud's size
+
+Status: decided while building M3-F2. Date: 2026-10-25. Task: M3-F2.
+
+The selection measured a chunk's distance in that chunk's own radius. The cut fix of the same day
+made the chunks smaller, and a smaller chunk then passed for a farther one, so a view drew fewer
+splats as the cloud was cut finer. The 36,000-splat demo cloud drew 36,000 under the pre-fix cut,
+22,026 with its 8 chunks, and 12,563 when cut into 27: a look regression, since a cut is not a
+change of what the camera sees.
+
+The level now measures distance in the radius of the whole cloud, which the selector works out from
+the chunks' bounds and writes into the task's buffer. A cut no longer changes a chunk's level:
+
+| Cut of the 36,000-splat demo cloud | Before | After |
+| --- | --- | --- |
+| Pre-fix cut, one chunk | 36,000 | 36,000 |
+| 8 chunks, as it ships | 22,026 | 36,000 |
+| 27 chunks | 12,563 | 35,403 |
+
+The 27-chunk cut keeps 597 fewer because its far, smaller chunks cover less of the screen and their
+band asked for half. The distance still thins a cloud that is viewed from far, which is what the
+levels are for: 4,503 splats at 50 m either way. The budget still stops the total, so a device's
+preset decides how many draw and the levels decide where: the same 400,000-splat cloud draws its
+250,000 budget near the camera and its 10,000 cap in the streaming test.
+
+- A screen-space rule, which would compare a chunk's apparent size with its splat count, was
+  rejected: it draws fewer splats than the cloud holds whenever the view is dense, so it would keep
+  the regression that this addendum fixes.
+- The first view's byte bound above is unchanged by this. The chunks it loads draw their chosen
+  prefixes, which are finer now, and a budget that binds, as every device preset does, still caps
+  the total.
