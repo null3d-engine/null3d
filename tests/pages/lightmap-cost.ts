@@ -6,8 +6,9 @@
 // frame of each side and reports the share of pixels that moved past a few steps, which proves the
 // engine kept the direction: a direction texture in another array than the radiance's leaves the
 // light map plain, and the two frames then match. After a warm-up, the page measures play with the
-// direction off and on, in turns, three times each, and reports the medians of each side's GPU time
-// per frame, where the device has a GPU timer, of its frame interval and CPU time, and of each
+// direction off and on, four rounds each, and reverses the order on alternate rounds, so a clock
+// that drifts through the run does not favour either side. It reports the medians of each side's GPU
+// time per frame, where the device has a GPU timer, of its frame interval and CPU time, and of each
 // thread's. Open it with ?gpu= for each path.
 import { createEngine } from '@null3d/engine';
 import { featureCost } from './lib/feature-cost';
@@ -60,7 +61,12 @@ run('lightmap-cost', async () => {
 		return changedShare(plain.pixels, directional.pixels);
 	};
 	const directionShare = await measureDirectionShare();
-	const { off, on } = await featureCost(engine, setDirection);
+	// Four rounds, with the opposite side first on alternate rounds, so a clock or a cache that
+	// changes during the run does not make either side look cheaper.
+	const { off, on } = await featureCost(engine, setDirection, undefined, {
+		alternate: true,
+		rounds: 4,
+	});
 	await engine.destroy();
 	return {
 		tier: engine.capabilities.tier,

@@ -22,6 +22,7 @@ import { dedup, dedupAccessors } from './dedup.js';
 import { quantizeMeshes, reorderMeshes } from './geometry.js';
 import { MAX_TEXTURE_SIDE } from './images.js';
 import {
+	orderLevels,
 	planLevels,
 	SIMPLIFY_MAX_ERROR,
 	simplifyMeshes,
@@ -271,6 +272,7 @@ export async function optimizeModel(path, options, encode) {
 	await reorderMeshes(doc);
 	quantizeMeshes(doc);
 	const levels = options.lod ? await planLevels(doc) : new Map();
+	if (levels.size > 0) orderLevels(doc, levels);
 	/** @type {Map<string, Uint8Array>} */
 	const stages = new Map();
 	if (options.stages && levels.size > 0)

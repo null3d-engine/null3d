@@ -1,9 +1,9 @@
 // Makes what a package's tarball holds besides the files git keeps: its license copies and, as the
 // package needs, its built JavaScript and declarations, the shader modules and a copy of the docs
-// (tools/lib/packages.ts). Each package's `prepack` script runs it from the package's folder:
+// (tools/lib/pack.ts). Each package's `prepack` script runs it from the package's folder:
 //   bun ../../tools/build-package.ts <package folder name>
 import { join } from 'node:path';
-import { buildPackage } from './lib/packages';
+import { buildPackage } from './lib/pack';
 
 const [name] = process.argv.slice(2);
 try {

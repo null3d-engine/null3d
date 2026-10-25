@@ -123,7 +123,7 @@ for (const [k, knight] of knights.entries()) {
 
 ## Property animation
 
-A clip can move values other than bones and morph weights. A glTF file with `KHR_animation_pointer` moves a material's color or opacity, a light's intensity or color, or a node's visibility. These tracks follow the clip's time, speed, fades and weights. A sketch starts the same kind of animation in code with `scene.animateProperty`.
+A clip can move values other than bones and morph weights. A glTF file with `KHR_animation_pointer` moves a material's color or opacity, and where its maps sit on the texture coordinates. It also moves a light's intensity or color, or a node's visibility. These tracks follow the clip's time, speed, fades and weights. A sketch starts the same kind of animation in code with `scene.animateProperty`.
 
 ```ts
 const pulse = scene.animateProperty(lamp, 'light.intensity', {
@@ -143,12 +143,12 @@ return {
 | --- | --- |
 | Light | `light.intensity`, `light.color`, `light.range`, `light.decay`, `light.angle` and `light.penumbra` |
 | Camera | `camera.fov` in degrees, `camera.near`, `camera.far`, and `camera.height` for an orthographic camera |
-| Material | The values that `setUniform` takes, such as `material.opacity`, `material.color` or `material.roughness` |
+| Material | The values that `setUniform` takes, such as `material.opacity`, `material.color` or `material.roughness`, and `material.uvOffset` or `material.uvScale` for where its maps sit on the texture coordinates |
 | Object | `position`, `rotation` as a quaternion `[x, y, z, w]`, `scale` and `visible` |
 
 The prefix is optional, so `'intensity'` names a light's intensity too. A directional light has no range or cone, and a perspective camera has no view height.
 
-`keyframes` holds the time of each key in seconds, and the value of each key. One key holds one number for an intensity, three for a color, a position or a scale, and four for a rotation. The values of the keys follow one another. A cubic key holds three times as many numbers: an in-tangent, the value and an out-tangent.
+`keyframes` holds the time of each key in seconds, and the value of each key. One key holds one number for an intensity, two for where the maps sit on the texture coordinates, three for a color, a position or a scale, and four for a rotation. The values of the keys follow one another. A cubic key holds three times as many numbers: an in-tangent, the value and an out-tangent.
 
 | Option | Default | What it does |
 | --- | --- | --- |
@@ -169,18 +169,18 @@ The returned animation has these calls and values:
 | `stop()` | Stops the animation, and leaves the target at its last value |
 | `time`, `playing`, `speed`, `loop` | What it holds |
 
-An animation of a material changes every object that uses the material, as a change through `set` does. A value that an animation writes costs nothing per frame. The engine samples the tracks on the sketch's thread, after the job workers advanced the clips, so a sketch has no update call to make.
+An animation of a material changes every object that uses the material, as a change through `set` does. A value that an animation writes costs nothing per frame. The engine samples the tracks on the sketch's thread, after the job workers advanced the clips, so a sketch has no update call to make. A material has one transform for all its maps, so `uvOffset` and `uvScale` move every map of the material together.
 
 ### Files with KHR_animation_pointer
 
-The loader reads a pointer to a node's transform, its morph weights, or its visibility under `KHR_node_visibility`. It also reads a pointer to a material's values, and to a light's intensity, color or range. A base color factor moves the material's color, and its fourth number moves the opacity. Each track joins its clip, so `animator().play(name)` plays it with the clip's other tracks. A clip at less than full weight mixes the value with the value that the file gave the property.
+The loader reads a pointer to a node's transform, its morph weights, or its visibility under `KHR_node_visibility`. It also reads a pointer to a material's values, and to a light's intensity, color or range. A base color factor moves the material's color, and its fourth number moves the opacity. The offset and scale of a base color texture's or an emissive texture's `KHR_texture_transform` move the material's maps. Each track joins its clip, so `animator().play(name)` plays it with the clip's other tracks. A clip at less than full weight mixes the value with the value that the file gave the property.
 
 ```ts
 const copy = scene.instantiate(await assets.loadGltf(url));
 copy.animator().play('Cube Animation');
 ```
 
-A pointer that the engine does not read leaves the value as the file has it. Development builds warn about each one. The names show the kind. They are a camera's values, because the loader reads no cameras from files. They are a texture's transform, a light's inner cone angle, and the values of extensions that the engine does not draw.
+A pointer that the engine does not read leaves the value as the file has it. Development builds warn about each one. The names show the kind. The engine leaves out a camera's values, because it reads no cameras from files. It leaves out a texture transform's rotation, and the transforms of every texture but a base color or an emissive one. It leaves out a light's inner cone angle. It also leaves out `normalTexture/scale`, and the pointers of `KHR_materials_ior`, `KHR_materials_volume`'s attenuation color and distance, and `KHR_materials_iridescence`'s thickness range. It leaves out the values of extensions that it does not draw. A material keeps one transform for all its maps, so a file that moves two of them apart plays the first.
 
 ## Clip weights
 
@@ -512,7 +512,7 @@ Where three.js and null3D differ:
 - three.js's `setEffectiveWeight` stops a fade. null3D's `setWeight` leaves a fade running, which multiplies the weight.
 - three.js has no blend by a value. A three.js blend of walk and run keeps each clip's own rate, so their steps drift apart. A null3D blend keeps them in step.
 - `action.startAt(time)`, which delays a start, has no counterpart. Call `play` at that time in `onUpdate`.
-- three.js reads `KHR_animation_pointer` with a plugin that registers on the loader. null3D's loader reads the pointers of lights, materials and node visibility itself. A pointer that it does not read leaves its value as the file has it, and development builds warn.
+- three.js reads `KHR_animation_pointer` with a plugin that registers on the loader. null3D's loader reads the pointers of lights, materials, node visibility and the offset and scale of a base color or emissive texture's transform itself. A pointer that it does not read leaves its value as the file has it, and development builds warn.
 
 | | three.js | null3D |
 | --- | --- | --- |

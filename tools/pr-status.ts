@@ -47,8 +47,7 @@ const INCOMPLETE = new Set([
 	'M3-D7',
 	'M3-D9',
 	'M3-F2',
-	'M3-G4',
-	'M3-K4',
+	'M3-G1',
 	'M3-R16',
 	'M3-R17',
 	'M3-R20',
@@ -76,7 +75,6 @@ const INCOMPLETE = new Set([
 	'M3-A11',
 	'M3-R1',
 	'M3-O1',
-	'M3-G1',
 	'M3-G2',
 	'M3-G3',
 	'M3-R2',
@@ -90,6 +88,8 @@ const INCOMPLETE = new Set([
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
+	'M3-V15':
+		'not built: the records put the fluid wind in an add-on of its own, and no wind package exists on the branch yet, so there is nothing for a branch check to read',
 	'M3-A9':
 		'the hero tile and its cost figures are in: a still hero adds no pass, a moving one adds a depth pass of 0.028 to 0.037 ms, and WebGL2 reads the tile for 0.27 ms less than the cascades (D-219)',
 	'M3-E6':
@@ -101,7 +101,7 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-D9':
 		'the command and its refusal are tested, and the two gate faults its first runs found are fixed: the size gate held compiled shader-build files to the code budget, and the fixture sketch never moved so no frame drew. D-225 records the run over every foundation add-on that has a package, and both fixtures, including three-compat, whose entry the size fix brought from 181.9 KB to 27.8 KB',
 	'M3-L1':
-		'every item is built with its pictures, but D-211 records Mac figures alone: the phone GPU time the fade item asks for, and the iPad and phone figures the section asks for, are missing',
+		'the iPad and phone figures the section asks for are in the addendum of D-137 dated 25 October; what remains is the phone GPU time that the fade item asks for',
 	'M3-L3':
 		'the WebGPU path draws the patches, but D-213 records the WebGL2 multi-draw path, the whole-level fallback and the GPU time as not built',
 	'M3-R22':
@@ -111,7 +111,8 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-F3':
 		'dropped with the temporal resolve it waited on (D-206); the owner may change the ruling',
 	'M3-F10': 'dropped with the temporal resolve it needs (D-206); the owner may change the ruling',
-	'M3-R12': 'the build compiles only the listed permutations; the time and size are not recorded',
+	'M3-R12':
+		'the narrowing is not on the branch at all. It exists only on an unlanded branch from 23 October, and there it stops recording before the scene builds its own pipelines, strips the device bits the build compares, and drops the empty word that compute and full-screen passes need. Whatever the list then holds is not the set the pages draw with, so a narrowed build fails at the first pipeline it lacks rather than compiling the wrong thing quietly. A helper is proving each fault, and no time or size figure exists yet',
 	'M3-A11':
 		'measured on both paths at every preset; it does not beat the presets, so it stays behind the internal setting and does not ship (D-206). Its black-capture and bind-group faults are fixed, its shader file still loads on first use, and that first-use case is now tested on both paths',
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
@@ -124,10 +125,11 @@ const NOTES: Readonly<Record<string, string>> = {
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-L2':
-		'the memory figure is a 40,000-ball test on the main view alone, and no GPU time was taken on the Mac, an iPad or a phone-class device',
+		"the file's levels now share their vertices and are ordered coarsest first, so a coarse level names a prefix of the buffer, proved on the staged terrain where the coarsest level's largest index is one less than the vertices it uses; what remains is a phone-class GPU row, because the S24 has no WebGPU adapter and no WebGL2 GPU timer, and that row waits on a phone that can time its GPU",
 	'M3-L4':
 		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
-	'M3-A2': "the refresh's cost rows are all owed, the Mac's included",
+	'M3-A2':
+		"the iPad Pro and the Galaxy S24 have timed the refresh, and their runs are recorded; the Mac's rows are still owed",
 	'M3-A8':
 		'the shipped design is a display-color table with no tone curve, which replaced the HDR input D-199 has the owner approving',
 	'M3-A9':
@@ -139,7 +141,8 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
-	'M3-G1': "the Khronos sample's texture-transform pointers are not animated",
+	'M3-G1':
+		"the engine keeps one texture transform per material, so a clip that moves a base colour or emissive map also moves that material's still maps, where three.js keeps a transform per texture; the comparison passes because it reads the animator's sampled values and never the material",
 	'M3-G2': 'no Khronos iridescence sample is tested',
 	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',
 	'M3-R2': 'the stress test has not run on an iPad or a phone-class device since the change',
@@ -152,22 +155,19 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-B2':
 		"the task's finish line needs the material's cost per GPU path and preset, and its own record says that cost is owed: the machine stayed above a load of 100 while the add-on was built",
 	'M3-B3':
-		"the Showroom tablet the task names is M3-C2's work, which is not built, and the screen demo's software-GPU pictures fail CI",
+		"the Showroom tablet the task names is M3-C2's work, which is not built; the screen demo's software-GPU pictures were redrawn from CI on 25 October and no longer stand in the way",
 	'M3-B5':
-		"the flakes draw nothing: no pixel in the six references is brighter than the picture without them, and the paint's own flakes test fails on all three paths in CI",
+		'the glints draw and are tested in both sets; its cost per preset is owed (D-255), which needs a quiet GPU',
 	'M3-E7':
-		"its finish line needs the car paint's glints to use the lobes, and the glints draw nothing",
+		"its finish line needs the car paint's glints to use the lobes; the glints draw now (D-255), and the record does not yet say whether the hook needs a general lobe form rather than the add-on's own",
 	'M3-V4':
-		'no device has timed the new generator, so the device figures are of the stand-in it replaced; no Mac, iPad or S24 GPU or memory figure exists, no check-addon run is recorded, and the software-GPU species pictures fail in CI',
+		'no device has timed the new generator, so the device figures are of the stand-in it replaced; no Mac, iPad or S24 GPU or memory figure exists, and no check-addon run is recorded',
 	'M3-D7':
 		'no test add-on or material reaches E1209: the browser test uses an internal entry, and it fails in CI because the software GPU accepts the program it builds',
 	'M3-D9':
 		'no record shows the listing check passing on vegetation, and its one run skipped the shader and size checks',
 	'M3-F2':
-		'a 100,000-splat cloud becomes one chunk and cannot stream, and the streaming test fails in CI',
-	'M3-G4':
-		"a material with clear coat, sheen, iridescence or anisotropy cannot take the transmission or thickness maps on any path, and D-52's rule that a gap is a bug makes that a bug",
-	'M3-K4': "one of three.js r186's seven CSS3D examples is ported, and only its first layout",
+		"a 100,000-splat cloud becomes one chunk and cannot stream; the streaming test's last recorded CI failure predates the chunking fix, and no pass has been recorded since",
 	'M3-R16': 'no project made from the template is installed, built and used with the hook on',
 	'M3-R17':
 		"the evaluation's own record says it does not reach the gate, and the skill text it evaluates differs from the pinned version",
@@ -209,16 +209,27 @@ const GROUPS: readonly (readonly [string, string])[] = [
 const git = (...args: string[]) =>
 	execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
-/** Every task ID that a kept commit's `Task:` trailer names. A split task keeps a lower-case tail. */
+/** The roots that hold a build of the engine, its tests, its demos and its published pages. */
+const CODE_ROOTS = ['crates/', 'packages/', 'tests/', 'examples/', 'bench/', 'docs/'];
+
+/** Every task ID that a kept commit's `Task:` trailer names, once that commit built something. */
 function landedTasks(): Set<string> {
-	const out = git('log', '--format=%b', `${BASE}..HEAD`);
-	// Only a trailer claims a task. A commit body that mentions an ID in prose, such as a
-	// `Docs-Checked:` line, must not tick it: the audit of 23 October found one task ticked that
-	// no commit had ever named in a trailer.
-	const claimed = out
-		.split('\n')
-		.filter((line) => /^Task:\s/.test(line))
-		.join('\n');
+	// A record-only commit claims a task without building any of it, so it must not read as work
+	// that landed with its evidence still owed: that reads to a maintainer as a finished feature
+	// whose proof is missing. Only a commit that touches a file outside the records counts.
+	const out = git('log', '--format=%x1e%H%x1f%b', `${BASE}..HEAD`, '--name-only');
+	const out2 = out.split('\x1e').map((chunk) => {
+		const [header = '', body = ''] = chunk.split('\x1f');
+		const lines = body.split('\n');
+		// A trailer claims a task. A body that mentions an ID in prose, such as a
+		// `Docs-Checked:` line, must not tick it: the audit of 23 October found one task ticked
+		// that no commit had ever named in a trailer.
+		const claimed = lines.filter((line) => /^Task:\s/.test(line)).join('\n');
+		const files = lines.filter((line) => /^\S+\/\S*$/.test(line) && !/^Task:/.test(line));
+		const built = files.some((file) => CODE_ROOTS.some((root) => file.startsWith(root)));
+		return built || header === '' ? claimed : '';
+	});
+	const claimed = out2.join('\n');
 	return new Set(claimed.match(/M3-[A-Z0-9]+[a-z]?/g) ?? []);
 }
 

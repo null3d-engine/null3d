@@ -6,7 +6,7 @@ import { expect, test } from '@playwright/test';
 import { compareImages, percent } from '../../packages/cli/src/compare.js';
 import { decodePngRgba } from '../../packages/cli/src/png.js';
 import { pageResult } from '../lib/page-result.ts';
-import { STAGE } from '../pages/lib/css3d-periodictable.ts';
+import { STAGE } from '../pages/lib/css3d-shared.ts';
 
 /**
  * The most of the picture that may differ: a thousandth, the limit of the reference images. The two

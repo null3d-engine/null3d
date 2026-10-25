@@ -5585,6 +5585,125 @@
 					"sha256": "4eb309f320e2a8e6608e981fa98e90fc6c18bf5688870c7a58187fc753acb55e"
 				}
 			]
+		},
+		{
+			"id": "khronos/AnimationPointerUVs",
+			"title": "Animation Pointer UVs",
+			"purpose": "KHR_animation_pointer on texture transforms: the offset, scale and rotation of each texture slot",
+			"authors": [
+				{
+					"name": "Eric Chadwick",
+					"role": "3D asset and textures",
+					"license": "CC-BY-4.0"
+				},
+				{
+					"name": "Darmstadt Graphics Group GmbH",
+					"role": "owner",
+					"license": "CC-BY-4.0"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/AnimationPointerUVs",
+			"fetched": "2026-10-24",
+			"changes": "None. Kept the glTF variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/AnimationPointerUVs",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "AnimationPointerUVs",
+				"variants": [
+					"glTF"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/AnimationPointerUVs/LICENSE.md",
+					"bytes": 787,
+					"sha256": "318d02ad3708285bff8595899b4b63162d7d80c519d1f1d0815777fe4771db58"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs.bin",
+					"bytes": 5329724,
+					"sha256": "778d37467d4f0db480bead3b8e449e083999ce8344acc609910e4ba506cf751b"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs.gltf",
+					"bytes": 385565,
+					"sha256": "3fe92b05f5d9456c645692773df1bd9991fd95c90a97d1de9d0191c68aa61805"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_Anisotropy.png",
+					"bytes": 40406,
+					"sha256": "5a608e67a8d1533c1f04f62836021e07a66316817b025998957eaf54958a0d51"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_BaseColor.png",
+					"bytes": 59655,
+					"sha256": "ef4fabe76569d7c398e89ac2b1d1390e4c327f29bcb092285382fe85193352f1"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_Clearcoat.png",
+					"bytes": 253446,
+					"sha256": "a247f4be0c363f49e66eda92def7ed2846d447e084e739c954b4c938651edeca"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_ClearcoatNormal.png",
+					"bytes": 207194,
+					"sha256": "7ab95d9ebb6e3d2ff674a3d207f9ecc2b50ec626a45d58d86d3e829d07f5d8f9"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_DiffuseTransmission.png",
+					"bytes": 344954,
+					"sha256": "e265142efb5f1eb8013036ed149121b1f3334033034a8695e1bdfa1240b5614c"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_Emissive.png",
+					"bytes": 252458,
+					"sha256": "f595c38b0805562ee401c6ca4752234091e3fd604684f6e1050e5802c15a39bb"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_Iridescence.png",
+					"bytes": 217901,
+					"sha256": "2bda03709d1eb682637cecabe8078411deb274e84ffbeaf8e8bc6b05a655c4d3"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_Normal.png",
+					"bytes": 16531,
+					"sha256": "2bd6f7cfe118577b8dae7b6cf03fe799d2cf1f72c48561ecc603fff6b8d8236b"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_NormalFlat.png",
+					"bytes": 72,
+					"sha256": "962ef816bd2e27a85bf59470da4bb44b89747ab093ad91395837587faa2a7b6d"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_Orm.png",
+					"bytes": 142256,
+					"sha256": "ea1d39549516d4a690c94a63f8f8fc6047b263c51935a2231f40dad80f0e3601"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_Sheen.png",
+					"bytes": 503577,
+					"sha256": "3cb4848520e1067ab25df9eeab7b34de42235d17183986d6c35bbf0289a42354"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_Specular.png",
+					"bytes": 314624,
+					"sha256": "570fa1a08bbdfbb5dce448c6c37f6a3bb178c5b54b40f68d20bd0541a73d6f93"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_TransmissionVolume.png",
+					"bytes": 96997,
+					"sha256": "c3912b80e28ce7eaa7e96b02207f3cb741306117ae3bc5193af2866b38154b5e"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/metadata.json",
+					"bytes": 727,
+					"sha256": "c6f7d6389c46d70f4001447daf3a97143e760c59b8e392f7f291dcf7bd765808"
+				}
+			]
 		}
 	]
 }
