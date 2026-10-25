@@ -1,8 +1,8 @@
 # D-258: Directional light maps, and reading Needle's light maps
 
 Status: decided by the helper of M3-F4 on 25 October 2026, for the owner's review. Built: the
-second texture, the shader weighting, the glTF reader, the picture test and the memory figure, as
-the consequences list. Date: 2026-10-25. Task: M3-F4.
+second texture, the shader weighting, the glTF reader, the picture test, the memory figure and the
+page that measures the cost, as the consequences list. Date: 2026-10-25. Task: M3-F4.
 
 Summary: A directional light map carries the light's direction in a second texture of the
 radiance's own size, format and color space, so both share one texture array, one binding and one
@@ -40,10 +40,17 @@ either encoding, at 4 bytes for each texel of an `rgb8` radiance and 8 for one o
 They are what the texture store holds for a texture of that size and format, not an estimate
 from the file.
 
-The cost was not measured: the Mac's load was above the guide's ceiling for a timing figure, and a
-figure from a loaded machine would say nothing. The extra work is one texture read and a few
-arithmetic operations per pixel of a directional map, and a branch for a plain one. A later run of
-`bun run bench:gpu-check` on a quiet machine records it here.
+The cost is owed. The `lightmap-cost` page measures it. The page draws 24 lit quads that fill a
+1600 by 900 view once, so every pixel shades one fragment. The plain and directional builds swap in
+turns for three rounds each. Before the timing the page draws one frame of each side and compares
+them, so a direction that the engine dropped fails the run instead of reporting no cost. On
+25 October 2026 the Mac's 1-minute load read between 34 and 156. The spec refuses to measure above
+8, so the run waits for a quiet window and then takes about thirty seconds:
+`NULL3D_LIGHTMAP_COST=1 bun run test:browser -- lightmap-cost.spec.ts`. Its medians go into the
+table above. The trials so far are preliminary and not figures. At a load of 84 the directional
+side read 1.08 ms against 0.99 ms on WebGPU. At a load of about 100 it read 0.06 ms more on every
+path, with about 55.5% of the pixels moved by the direction.
+[Benchmarks](../benchmarks.md#directional-light-maps) gives the paths and the queue form.
 
 ## Decision
 

@@ -7,17 +7,19 @@
 // coordinate set smears the baked light across each mesh.
 import { defineSketch } from '@null3d/engine';
 
-export default defineSketch(async ({ scene, assets, post }) => {
-	post.set({ toneMapping: 'none' });
+export default defineSketch(async ({ scene, assets }) => {
 	const prefab = await assets.loadGltf('assets/models/needle-lightmap/scene.gltf');
 	scene.instantiate(prefab);
+	// A view of the whole little building: the pillars, the wall under the roof, the roof's floor
+	// and its grass, framed from its own bounds.
+	const { center, radius } = prefab.bounds;
 	scene.setActiveCamera(
 		scene.createPerspectiveCamera({
-			fov: 50,
-			near: 0.1,
-			far: 100,
-			position: [3.5, 6.2, 8.5],
-			target: [-2, 5, 1],
+			fov: 45,
+			near: radius / 100,
+			far: radius * 30,
+			position: [center[0] + radius, center[1] + radius, center[2] + radius],
+			target: center,
 		}),
 	);
 	return {};
