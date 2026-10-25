@@ -36,7 +36,7 @@ map must draw exactly as it did.
 | GPU bytes, 1,024 x 1,024, `rgba16float` radiance | 8,388,608 (8 MiB) | 16,777,216 (16 MiB) | none |
 | Ratio | 1.00 | 2.00 | none |
 | GPU time per frame, 1600 x 900, WebGPU | 0.99 ms | 1.05 ms | Chrome on this Mac, 25 October 2026 |
-| GPU time per frame, 1600 x 900, compatibility mode | 0.99 ms | 1.06 ms | Chrome on this Mac, 26 October 2026, alone at a gate of 7.8 (below) |
+| GPU time per frame, 1600 x 900, compatibility mode | 0.99 ms | 1.06 ms | Chrome on this Mac, 26 October 2026, High preset, pixel ratio 1, gate 7.8 (below) |
 | GPU time per frame, 1600 x 900, WebGL2 | 1.48 ms | 1.58 ms | Chrome on this Mac, 25 October 2026 |
 
 The GPU figures count the one level that `assets.loadLightMap` makes, which holds no mip chain for
@@ -63,10 +63,10 @@ their trials to 0.00 ms on WebGPU and 0.03 ms on WebGL2's directional side.
 The compatibility path's first attempt ran from 22:41 to 22:46. That span contained the push
 session's commit hook and shader-set copy from 22:43:45 to 22:44:06, about twenty seconds of another
 job's work. It read 1.11 ms plain against 1.26 ms directional, so 0.15 ms, and that doubt stands:
-the record discards it. A later run measured that path alone on 26 October 2026, with the indexer
-quiet and the gate at 7.8 before the page and 6.9 after. It read 0.99 ms plain against 1.06 ms
-directional, so 0.07 ms, and moved 55.46% of the pixels. That is the compatibility figure in the
-table. [Benchmarks](../benchmarks.md#directional-light-maps) gives the command.
+the record discards it. A later run measured that path alone on 26 October 2026 at the High preset
+and pixel ratio 1, with the indexer quiet and the gate at 7.8 before the page and 6.9 after. It
+read 0.99 ms plain against 1.06 ms directional, so 0.07 ms, and moved 55.46% of the pixels. That
+is the compatibility figure in the table. [Benchmarks](../benchmarks.md#directional-light-maps) gives the command.
 
 A comparison with Needle's viewer is not available. The repository holds no Needle runtime, no
 viewer build and no captured frame; it pins only `@needle-tools/three-animation-pointer`. The scene
