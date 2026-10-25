@@ -8,7 +8,10 @@
 // budget a set of independent pieces to leave out when a scene has more splats than draw.
 import type { SplatData } from './format';
 
-/** The splats that a chunk holds, at about. The cut keeps chunks within 4 times this. */
+/**
+ * The splats that a chunk aims to hold. A cloud that fills only part of its bounds gives fewer,
+ * larger chunks, because its cells hold the splats that fall in them.
+ */
 const CHUNK_SPLATS = 25_000;
 
 /** The grid cells that one axis may have, so a scene far out never makes tiny cells. */
@@ -85,16 +88,18 @@ export async function chunkSplats(
 	const { yieldTo, onChunk } = options;
 	const bounds = boundsOf(data);
 	const cellSplats = Math.min(count, options.splatsPerChunk ?? CHUNK_SPLATS);
-	// Enough cells on a side that a cell holds about one chunk's load.
+	// Enough cells on a side that the cells of the bounds hold about one chunk's load each. The
+	// cube root follows the cloud's size and that load, so a bigger cloud makes smaller chunks
+	// rather than one chunk of the whole.
 	const perAxis = Math.max(
 		1,
 		Math.min(MOST_CELLS_PER_AXIS, Math.ceil((count / cellSplats) ** (1 / 3))),
 	);
 	const cells = perAxis ** 3;
 	const extent = [0, 1, 2].map((k) => (bounds.max[k] as number) - (bounds.min[k] as number));
-	const scale = [0, 1, 2].map(
-		(k) => ((perAxis - 1) / Math.max(extent[k] as number, 1e-9)) as number,
-	);
+	// Each axis is cut into `perAxis` equal widths across the bounds, so a splat's cell follows its
+	// place in the cloud and nothing else.
+	const scale = [0, 1, 2].map((k) => (perAxis / Math.max(extent[k] as number, 1e-9)) as number);
 	const cellOf = (i: number): number => {
 		const position = data.positions;
 		const x = Math.min(
@@ -162,8 +167,58 @@ function boundsOf(data: SplatData): {
 	return { min, max };
 }
 
+/**
+ * One cloud's splats, most important first, around the bounds that its reader gives. A streamed
+ * chunk arrives as a cloud of its own, whose chunk keeps the bounds that the stream's index names,
+ * so the selection can place it before any of its splats have loaded.
+ *
+ * @category api/splats
+ */
+export function chunkFrom(
+	data: SplatData,
+	center: readonly [number, number, number],
+	radius: number,
+): SplatChunk {
+	const which = new Uint32Array(data.count);
+	for (let i = 0; i < data.count; i++) which[i] = i;
+	return buildChunk(data, which, center, radius);
+}
+
 /** One chunk's splats, most important first, and the bounds that its splats make. */
 function chunkOf(data: SplatData, which: Uint32Array): SplatChunk {
+	const min: [number, number, number] = [Infinity, Infinity, Infinity];
+	const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+	for (let k = 0; k < which.length; k++) {
+		const i = which[k] as number;
+		for (let axis = 0; axis < 3; axis++) {
+			const value = data.positions[i * 3 + axis] as number;
+			if (value < (min[axis] as number)) min[axis] = value;
+			if (value > (max[axis] as number)) max[axis] = value;
+		}
+	}
+	const center: [number, number, number] = [
+		((min[0] as number) + (max[0] as number)) / 2,
+		((min[1] as number) + (max[1] as number)) / 2,
+		((min[2] as number) + (max[2] as number)) / 2,
+	];
+	let radius = 0;
+	for (let k = 0; k < which.length; k++) {
+		const i = which[k] as number;
+		const dx = (data.positions[i * 3] as number) - center[0];
+		const dy = (data.positions[i * 3 + 1] as number) - center[1];
+		const dz = (data.positions[i * 3 + 2] as number) - center[2];
+		radius = Math.max(radius, Math.sqrt(dx * dx + dy * dy + dz * dz));
+	}
+	return buildChunk(data, which, center, radius);
+}
+
+/** The splats that `which` names, copied in importance order around the bounds that the caller gives. */
+function buildChunk(
+	data: SplatData,
+	which: Uint32Array,
+	center: readonly [number, number, number],
+	radius: number,
+): SplatChunk {
 	const count = which.length;
 	const weight = new Float32Array(count);
 	for (let k = 0; k < count; k++) {
@@ -182,31 +237,12 @@ function chunkOf(data: SplatData, which: Uint32Array): SplatChunk {
 	const rotations = new Float32Array(count * 4);
 	const scales = new Float32Array(count * 3);
 	const colors = new Float32Array(count * 4);
-	const min: [number, number, number] = [Infinity, Infinity, Infinity];
-	const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
 	for (let k = 0; k < count; k++) {
 		const i = which[order[k] as number] as number;
 		positions.set(data.positions.subarray(i * 3, i * 3 + 3), k * 3);
 		rotations.set(data.rotations.subarray(i * 4, i * 4 + 4), k * 4);
 		scales.set(data.scales.subarray(i * 3, i * 3 + 3), k * 3);
 		colors.set(data.colors.subarray(i * 4, i * 4 + 4), k * 4);
-		for (let axis = 0; axis < 3; axis++) {
-			const value = data.positions[i * 3 + axis] as number;
-			if (value < (min[axis] as number)) min[axis] = value;
-			if (value > (max[axis] as number)) max[axis] = value;
-		}
-	}
-	const center: [number, number, number] = [
-		((min[0] as number) + (max[0] as number)) / 2,
-		((min[1] as number) + (max[1] as number)) / 2,
-		((min[2] as number) + (max[2] as number)) / 2,
-	];
-	let radius = 0;
-	for (let k = 0; k < count; k++) {
-		const dx = (positions[k * 3] as number) - center[0];
-		const dy = (positions[k * 3 + 1] as number) - center[1];
-		const dz = (positions[k * 3 + 2] as number) - center[2];
-		radius = Math.max(radius, Math.sqrt(dx * dx + dy * dy + dz * dz));
 	}
 	return { center, radius, count, positions, rotations, scales, colors };
 }

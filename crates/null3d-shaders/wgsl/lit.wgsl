@@ -129,6 +129,7 @@ enable draw_index;
 #import null3d::lighting::{direct_light, indirect_diffuse}
 #endif
 #import null3d::builtins::{camera, fill_builtins, frame, object}
+#import null3d::color::srgb_to_linear
 #import null3d::globals::{Material}
 #ifdef SCENE_DEPTH
 #import null3d::depth::{linear_depth, orthographic_depth_to_view_z}
@@ -205,6 +206,7 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
 #ifdef MAPS
 #import null3d::mesh::{map_layer, map_ready, map_unit, straight_texel, world_direction}
+#import null3d::mesh::{material_light_map_direction, material_light_map_uv}
 #else ifdef TRANSMISSION
 #import null3d::mesh::{world_direction}
 #else ifdef DECAL
@@ -224,7 +226,7 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::refraction::{transmitted_light}
 #ifdef TONE_MAP
 #import null3d::fog::{fog_factor}
-#import null3d::tonemap::{encode, tone_map, vignette}
+#import null3d::tonemap::{encode, graded_light, tone_map, vignette}
 #endif
 #endif
 #ifdef TRANSLUCENCY
@@ -279,8 +281,19 @@ const BUMP_MAP: u32 = 32u;
 const HEIGHT_NORMALS: u32 = 64u;
 #endif
 
+/// The bit of a material's flags that says its light map holds RGBM texels.
+const LIGHT_MAP_RGBM: u32 = 16777216u;
+
 /// The row of the material that the pixel shows, which the fragment shader reads once.
 var<private> material_row: Material;
+
+#ifdef MAPS
+/// The scale of the light map's texture coordinates along u and v, then their offset along u and
+/// v, which the fragment shader reads once.
+var<private> light_map_uv: vec4f;
+/// The layer of the light map's direction map, or a negative value without one.
+var<private> light_map_direction: f32;
+#endif
 
 #ifdef ALPHA_HASH
 /// The pixel's position in the mesh's own space, where the alpha hash finds its pattern.
@@ -314,10 +327,11 @@ var<private> pixel_material: u32;
 /// The values of the material that lets light through, which the fragment shader reads once.
 var<private> transmission_row: MaterialTransmission;
 
-/// Which family of maps the material keeps in the light map's and the specular maps' slots: 2 when
-/// they hold its transmission and thickness maps, so `with_maps` reads them instead of the
-/// specular maps.
-var<private> layer_maps_kind: u32;
+/// Which family of maps the material keeps in each group of shared slots, two bits each: the light
+/// map's, the specular intensity map's and the specular color map's. A material that lets light
+/// through names 2 for the slots that hold its transmission and thickness maps, so `with_maps`
+/// reads them instead of the specular maps.
+var<private> layer_maps_kinds: u32;
 
 /// The diffuse light that `light_surface` gathers, of which the light through the surface takes
 /// the transmission's share.
@@ -988,6 +1002,9 @@ struct Surface {
     /// Light from the mirror direction, such as a reflection pass's color, in `rgb`, and how much
     /// of it takes the place of the environment's reflection, from 0 to 1, in `a`.
     reflection: vec4f,
+    /// Four values for the material's own lobe function, which the engine passes to `fn lobe`.
+    /// `defaultSurface` leaves them zero, and a material that declares no lobe reads none.
+    lobe: vec4f,
     /// How much of the light behind the surface passes through it, from 0 to 1, in place of that
     /// share of its diffuse light, where the material lets light through.
     transmission: f32,
@@ -1055,7 +1072,51 @@ struct Surface {
 #endif
 }
 
+#ifdef CUSTOM_LOBE
+/// What a custom material's own lobe function knows of the main directional light. The surface
+/// function passes its own four values through `Surface.lobe`, and the engine adds the lobe's
+/// return to the base lobe's specular.
+struct LobeInput {
+    /// The surface's unit normal in world space.
+    normal: vec3f,
+    /// The unit direction from the surface toward the camera.
+    view: vec3f,
+    /// The unit direction from the surface toward the main light.
+    light: vec3f,
+    /// The unit half vector between the main light and the camera.
+    half: vec3f,
+    /// The surface's perceptual roughness, after the engine's filter.
+    roughness: f32,
+    /// The specular reflectance at normal incidence.
+    f0: vec3f,
+    /// The specular radiance that the base lobe reflects from the main light, before the layers.
+    specular: vec3f,
+    /// The main light's irradiance on the surface: the cosine, the color and the shadow.
+    irradiance: vec3f,
+    /// The four values that the surface function wrote to `Surface.lobe`.
+    values: vec4f,
+}
+#endif
+
 #ifdef MAPS
+/// The light map's coordinates through the material's light map transform, with their
+/// derivatives: a bake places a light map on a mesh with its own scale and offset, apart from the
+/// other maps'.
+fn light_map_at(at: MapUv) -> MapUv {
+    let scale = light_map_uv.xy;
+    return MapUv(at.uv * scale + light_map_uv.zw, at.dx * scale, at.dy * scale);
+}
+
+/// The light map's texel of layer `layer` at `at`, decoded from RGBM where the material says so:
+/// each color is multiplied by the texel's alpha times 8, and the sRGB transfer turns it linear.
+fn light_map_texel(layer: f32, at: MapUv) -> vec4f {
+    let texel = light_texel(layer, at);
+    if (u32(material_row.strengths.z) & LIGHT_MAP_RGBM) != 0u {
+        return vec4f(srgb_to_linear(texel.rgb * texel.a * 8.0), 1.0);
+    }
+    return texel;
+}
+
 /// The surface with the material's texture maps: each map that has an image multiplies or
 /// replaces the values that it holds, and the normal map bends the normal last.
 fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
@@ -1110,39 +1171,52 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     }
     specular_texel = vec4f(1.0);
 #ifdef COAT_SHEEN
-    // A layered material's slots 5 to 7 hold the maps of one family of layers, which the row's
-    // kind names: the clear coat's, the coat normal's and the sheen's, or iridescence's and its
-    // thickness with the anisotropy's.
-    if u32(anisotropy_row.z) == 1u {
-        if map_ready(m.more_maps.y) {
-            let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
+    // A material with layers keeps one family's maps in slots 5 to 7, and one that lets light
+    // through keeps its transmission and thickness maps in the two specular slots beside the layer
+    // map of the light slot. The row names each group's family apart: the clear coat's or
+    // iridescence's for the light slot, and either of those or the transmission's and the
+    // thickness's for a specular slot.
+    let kinds = u32(anisotropy_row.z);
+    let layer_kind = kinds & 3u;
+    let intensity_kind = (kinds >> 2u) & 3u;
+    let color_kind = (kinds >> 4u) & 3u;
+    if map_ready(m.more_maps.y) {
+        let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
+        if layer_kind == 1u {
             s.iridescence *= texel.r;
-        }
-        if map_ready(m.more_maps.z) {
-            let texel = specular_intensity_texel(m.more_maps.z, map_uv(flags, 6u, first, second));
-            s.iridescenceThickness = mix(film_row.z, film_row.w, texel.g);
-        }
-    } else {
-        if map_ready(m.more_maps.y) {
-            let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
+        } else {
             s.clearcoat *= select(1.0, texel.r, (flags & COAT_MAP) != 0u);
             s.clearcoatRoughness *= select(1.0, texel.g, (flags & COAT_ROUGHNESS_MAP) != 0u);
         }
-        if map_ready(m.more_maps.z) {
-            let at = map_uv(flags, 6u, first, second);
-            let texel = specular_intensity_texel(m.more_maps.z, at);
+    }
+    if map_ready(m.more_maps.z) {
+        let at = map_uv(flags, 6u, first, second);
+        let texel = specular_intensity_texel(m.more_maps.z, at);
+        if intensity_kind == 1u {
+            s.iridescenceThickness = mix(film_row.z, film_row.w, texel.g);
+#ifdef TRANSMISSION
+        } else if intensity_kind == 2u {
+            s.transmission *= texel.r;
+#endif
+        } else {
             let scale = coat_sheen_row.coat.zw;
             s.clearcoatNormal = bent_normal(texel, scale, at, input, position_dx, position_dy);
         }
-        if map_ready(m.more_maps.w) {
-            let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
+    }
+    if map_ready(m.more_maps.w) {
+        let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
+        if color_kind == 0u {
             s.sheenColor *= select(vec3f(1.0), texel.rgb, (flags & SHEEN_COLOR_MAP) != 0u);
             s.sheenRoughness *= select(1.0, texel.a, (flags & SHEEN_ROUGHNESS_MAP) != 0u);
+#ifdef TRANSMISSION
+        } else if color_kind == 2u {
+            s.thickness *= texel.g;
+#endif
         }
     }
 #else
     if map_ready(m.more_maps.y) {
-        let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
+        let texel = light_map_texel(m.more_maps.y, light_map_at(map_uv(flags, 5u, first, second)));
         s.irradiance = texel.rgb * m.strengths.y;
     }
     // A material that lets light through a thin surface keeps its diffuse transmission maps in
@@ -1154,7 +1228,7 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
 #else ifdef TRANSMISSION
         // A material that lets light through keeps its transmission and thickness maps there
         // instead, whose red and green scale the transmission and the volume.
-        if layer_maps_kind == 2u {
+        if ((layer_maps_kinds >> 2u) & 3u) == 2u {
             s.transmission *= texel.r;
         } else {
             specular_texel.a = texel.a;
@@ -1168,7 +1242,7 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
 #ifdef TRANSLUCENCY
         s.diffuseTransmissionColor *= texel.rgb;
 #else ifdef TRANSMISSION
-        if layer_maps_kind == 2u {
+        if ((layer_maps_kinds >> 4u) & 3u) == 2u {
             s.thickness *= texel.g;
         } else {
             specular_texel = vec4f(texel.rgb, specular_texel.a);
@@ -1213,9 +1287,9 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let frame = tangent_frame(input, frame_at, position_dx, position_dy);
         s.anisotropyTangent = frame[0];
         s.anisotropyBitangent = frame[1];
-        // Its map takes the specular color map's slot in the iridescence family, which the row's
-        // kind names.
-        if u32(anisotropy_row.z) == 1u && map_ready(m.more_maps.w) {
+        // Its map takes the specular color map's slot in the iridescence family, which the row
+        // names by that slot's kind.
+        if color_kind == 1u && map_ready(m.more_maps.w) {
             let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
             s.anisotropyDirection = texel.rg;
             s.anisotropyMapStrength = texel.b;
@@ -1223,6 +1297,20 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     }
 #endif
 #endif
+    // A light map that stores its light's direction weights its light by how far the shaded normal
+    // turns toward that direction from the mesh's own normal, so a normal map's relief shows in
+    // the baked light. A light map without a direction lights the surface evenly. The weight is
+    // the surface's own half-Lambert term against the bake's, so a surface that faces as the bake
+    // did keeps its light; the bake's term is clamped so a surface that faces away from the light
+    // does not blow up.
+    if map_ready(light_map_direction) {
+        let at = light_map_at(map_uv(flags, 5u, first, second));
+        let direction = normalize(light_texel(light_map_direction, at).rgb * 2.0 - 1.0);
+        let toward = dot(s.normal, direction);
+        let baked = dot(input.normal, direction);
+        let weight = (0.5 + 0.5 * toward) / max(0.5 + 0.5 * baked, 0.25);
+        s.irradiance *= min(weight, 2.5);
+    }
     return s;
 }
 
@@ -1292,6 +1380,7 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
     s.irradiance = vec3f(0.0);
 #ifdef CUSTOM
     s.reflection = vec4f(0.0);
+    s.lobe = vec4f(0.0);
 #endif
 #ifdef TRANSMISSION
     s.transmission = transmission_row.values.x;
@@ -1646,9 +1735,10 @@ fn has_surrounding() -> bool {
 /// surface toward the camera, and `dfg` holds the split-sum terms at the surface's roughness and
 /// view angle. `reflection` holds light from the mirror direction and its share, from screen-space
 /// reflections and a custom material's planar reflection, which takes the place of that share of
-/// the reflection probes' and the environment's reflection, with or without either. In the
-/// TRANSLUCENCY builds the lights also gather the light that reaches the surface's back, and the
-/// ambient, hemisphere and environment light from behind goes to `back_indirect`.
+/// the reflection probes' and the environment's reflection, with or without either. `lobe_values`
+/// holds the material's own values for its lobe function, which the engine calls for the main
+/// light. In the TRANSLUCENCY builds the lights also gather the light that reaches the surface's
+/// back, and the ambient, hemisphere and environment light from behind goes to `back_indirect`.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
@@ -1660,6 +1750,7 @@ fn light_surface(
     occlusion: f32,
     contact: f32,
     reflection: vec4f,
+    lobe_values: vec4f,
 ) -> vec3f {
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
     let to_sun = -engine_frame.sun_direction.xyz;
@@ -1692,7 +1783,22 @@ fn light_surface(
     // The layers gather their light first, and the sheen keeps part of it from the base.
     sun_color *= layered_light(normal, to_view, to_sun, sun_color);
 #endif
-    let sun = direct_light(m, normal, to_view, to_sun, sun_color, compensation);
+    var sun = direct_light(m, normal, to_view, to_sun, sun_color, compensation);
+#ifdef CUSTOM_LOBE
+    // The material's own lobe adds its specular beside the base lobe's for the main light. It
+    // knows the light, the view and the half vector, which a surface function cannot see.
+    sun.specular += lobe(LobeInput(
+        normal,
+        to_view,
+        to_sun,
+        normalize(to_sun + to_view),
+        m.roughness,
+        m.specular_blended,
+        sun.specular,
+        saturate(dot(normal, to_sun)) * sun_color,
+        lobe_values,
+    ));
+#endif
 #ifdef TRANSLUCENCY
     gather_back_light(normal, to_sun, sun_color);
     back_indirect = ambient_light(-normal) * occlusion;
@@ -1929,6 +2035,12 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let toward_sun = dot(seen_face, engine_frame.sun_direction.xyz) < 0.0;
     let takes_contact = (u32(material_row.strengths.z) & NO_CONTACT_SHADOWS_FLAG) == 0u;
     let contact = select(1.0, screen.values.w, toward_sun && takes_contact);
+#ifdef CUSTOM
+    // The material's own values for its lobe, or zeros where it has none.
+    let lobe_values = s.lobe;
+#else
+    let lobe_values = vec4f(0.0);
+#endif
     let reflected = light_surface(
         pbr,
         input.relativePosition,
@@ -1940,6 +2052,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         s.occlusion * screen_occlusion(screen.values),
         contact,
         reflection,
+        lobe_values,
     );
 #ifdef TRANSMISSION
     // three.js's getIBLVolumeRefraction: the light from behind, through the diffuse color and less
@@ -2034,7 +2147,11 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let shade = vignette(pixel.xy, engine_frame.target_size.xy, engine_frame.vignette);
     let shaded = fogged(layered, input.relativePosition, material_row) * shade;
     let keeps = keeps_display_color(material_row);
-    let toned = select(tone_map(shaded, engine_frame.output), saturate(shaded), keeps);
+    let toned = select(
+        tone_map(graded_light(shaded, engine_frame.output), engine_frame.output),
+        saturate(shaded),
+        keeps,
+    );
 #ifdef COAT_SHEEN
     let display = toned + through * share * (1.0 - fog) * coat_transmittance(input.viewDirection);
 #else
@@ -2083,9 +2200,19 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     return pick_color(in.key);
 #else
     material_row = material_of(in.material);
+#ifdef MAPS
+    // Only a light-mapped material reads the light map's transform and direction layer.
+    if map_ready(material_row.more_maps.y) {
+        light_map_uv = material_light_map_uv(in.material);
+        light_map_direction = material_light_map_direction(in.material);
+    } else {
+        light_map_uv = vec4f(1.0, 1.0, 0.0, 0.0);
+        light_map_direction = -1.0;
+    }
+#endif
 #ifdef TRANSMISSION
     transmission_row = material_transmission(in.material);
-    layer_maps_kind = layer_maps_kind_of(in.material);
+    layer_maps_kinds = layer_maps_kind_of(in.material);
     object_scale = in.scale;
 #else ifdef TRANSLUCENCY
     translucency_row = material_translucency(in.material);
@@ -2264,6 +2391,16 @@ fn decal_ramp(low: f32, high: f32, x: f32) -> f32 {
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4f {
     material_row = material_of(in.material);
+#ifdef MAPS
+    // Only a light-mapped material reads the light map's transform and direction layer.
+    if map_ready(material_row.more_maps.y) {
+        light_map_uv = material_light_map_uv(in.material);
+        light_map_direction = material_light_map_direction(in.material);
+    } else {
+        light_map_uv = vec4f(1.0, 1.0, 0.0, 0.0);
+        light_map_direction = -1.0;
+    }
+#endif
     // The derivatives come first, while every pixel of the quad runs.
     let step_x = dpdx(in.relative);
     let step_y = dpdy(in.relative);

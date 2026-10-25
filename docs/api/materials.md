@@ -79,6 +79,9 @@ Put the catcher a little above the surface it lies on, so its shadows show over 
 | `displacementBias` | A number | 0 | How far the displacement map moves every vertex, added to its height's share |
 | `aoMapIntensity` | 0 to 1 | 1 | How much the occlusion map darkens ambient light |
 | `lightMapIntensity` | 0 or more | 1 | The factor of the light map's light |
+| `lightMapOffset` | Two numbers | `[0, 0]` | Where the light map's texture coordinates start. It is fixed when the material is created |
+| `lightMapRepeat` | Two numbers | `[1, 1]` | How the light map's texture coordinates stretch. It is fixed when the material is created |
+| `lightMapDecode` | `srgb` or `rgbm` | `srgb` | How the engine reads the light map's texels. `rgbm` decodes Needle's light maps. It is fixed when the material is created |
 | `ior` | 1 or more | 1.5 | The index of refraction of the non-metallic part. It sets how much light the surface reflects head on |
 | `specularIntensity` | 0 to 1 | 1 | The strength of the non-metallic part's specular reflection, at every angle |
 | `specularColor` | A [color](#color), or linear components of 0 or more | White | Tints the non-metallic part's specular reflection head on |
@@ -131,10 +134,10 @@ A surface with `transmission` lets the light behind it through, as three.js's `M
 | Value | What it does |
 | --- | --- |
 | `transmission` | How much light passes through. That share of the surface's diffuse light becomes the light from behind it, times the base color. The surface's reflections stay, so glass still shows its highlights and the environment |
-| `transmissionMap` | The same share, per texel, in red. Its red multiplies `transmission`. A material with it takes no specular maps, since the two share their slots |
+| `transmissionMap` | The same share, per texel, in red. Its red multiplies `transmission`. A material with it takes no `specularIntensityMap`, since the two share a slot |
 | `ior` | How far the light bends where it enters the volume. Glass is 1.5, water 1.33 |
 | `thickness` | How deep the volume is. The light leaves it this far along the bent direction, so a thicker volume shows what lies behind it farther away. 0 is a thin wall, such as a window pane, which bends nothing |
-| `thicknessMap` | The thickness, per texel, in green. Its green multiplies `thickness`. A material with it takes no specular maps, since the two share their slots |
+| `thicknessMap` | The thickness, per texel, in green. Its green multiplies `thickness`. A material with it takes no `specularColorMap`, since the two share a slot |
 | `roughness` | How much the light from behind blurs: none at 0, and very blurred at 1. An `ior` of 1 blurs nothing |
 | `attenuationColor`, `attenuationDistance` | The color of the volume. White light takes `attenuationColor` after `attenuationDistance` inside it, and a deeper color farther in. The default absorbs nothing |
 
@@ -160,7 +163,7 @@ After the camera's view draws its opaque objects, the engine copies their colors
 - `thickness` is in the mesh's own units, and the object's scale multiplies it.
 - Such a surface takes the `opaque` or `blend` alpha mode. `mask` and `hash` throw E1217.
 - Views other than the camera's, such as [scene passes](render.md#scene-passes) and [reflection passes](render.md#reflection-passes), have no copy. There the surface shows the environment's light along the bent ray.
-- A material with `transmissionMap` or `thicknessMap` takes no `specularIntensityMap` and no `specularColorMap`, because the two families of map read the same slots. Development builds throw E1217 for a material that asks for both. A layered material takes none of these maps either.
+- A material with `transmissionMap` or `thicknessMap` takes no `specularIntensityMap` and no `specularColorMap`, because the two families of map read the same slots. Development builds throw E1217 for a material that asks for both. A layered material keeps the two maps beside a clear coat, a sheen, iridescence or anisotropy, as long as no layer map fills the slot that one of them takes: the transmission map shares the specular intensity map's slot with `clearcoatNormalMap` and `iridescenceThicknessMap`, and the thickness map shares the specular color map's slot with the sheen's maps and `anisotropyMap`. A development build throws E1217 for each such clash.
 
 ### Cost of transmission
 
@@ -278,6 +281,8 @@ Give any of these values, or a layer map, when you create the material, to chang
 
 The layers' maps take the places of the light map and the specular maps. So a material with a clear coat, a sheen, iridescence or anisotropy takes no `lightMap`, `specularIntensityMap` or `specularColorMap`, and no `diffuseTransmission`. Development builds throw E1217 for them, and production builds draw the material without them. Its `specularIntensity` and `specularColor` values still apply. Give `clearcoatMap` and `clearcoatRoughnessMap` as one texture, with the coat in red and its roughness in green, and `sheenColorMap` and `sheenRoughnessMap` as one texture, with the roughness in alpha. glTF packs them this way, and two textures for a pair throw E1217. An sRGB texture keeps its alpha linear, so one sRGB texture holds the sheen's color and roughness.
 
+A material with `transmission` keeps its `transmissionMap` and `thicknessMap` in the two specular slots beside the layers, if no layer map fills the slot that one of them takes. The transmission map shares the specular intensity map's slot with `clearcoatNormalMap` and `iridescenceThicknessMap`, and the thickness map shares the specular color map's slot with `sheenColorMap`, `sheenRoughnessMap` and `anisotropyMap`. A development build throws E1217 for a material that asks for two maps of one slot.
+
 ### How the layers draw
 
 The engine uses the formulas of three.js's `MeshPhysicalMaterial`:
@@ -328,7 +333,7 @@ Give any of these values, or a map, when you create the material, to change the 
 | `iridescenceThicknessMap` | G, linear | Mixes `iridescenceThicknessRange` between its two values |
 | `anisotropyMap` | RG direction, B strength, linear | Red and green give the direction in the tangent plane, and blue multiplies `anisotropy` |
 
-A material with these maps takes no `lightMap` and no specular maps, since the maps take their places. A material takes the maps of a clear coat and a sheen, or the maps of iridescence and the anisotropy: the coat's and the sheen's maps fill every place. Development builds throw E1217 for a material that asks for both families. Production builds keep the coat's and the sheen's maps and draw the others' values alone. The glTF loader keeps the coat's and the sheen's maps and notes the others.
+A material with these maps takes no `lightMap` and no specular maps, since the maps take their places. A material takes the maps of a clear coat and a sheen, or the maps of iridescence and the anisotropy: the coat's and the sheen's maps fill every place. Development builds throw E1217 for a material that asks for both families. Production builds keep the coat's and the sheen's maps and draw the others' values alone. The glTF loader keeps the coat's and the sheen's maps and notes the others. A material with `transmission` keeps its `transmissionMap` and `thicknessMap` beside these maps where the slot of one stays free: `iridescenceThicknessMap` fills the transmission map's slot and `anisotropyMap` fills the thickness map's, so a material takes one of each pair.
 
 A material with `anisotropy` needs a map, because the direction it stretches along comes from the surface's tangent frame, which the shader builds from the texture coordinates. Three.js builds that frame from the coordinates too. A material with anisotropy and no map throws E1217.
 
@@ -431,6 +436,7 @@ const brick = materials.standard({
 | `aoMap` | Standard | R, linear | Darkens ambient light, by `aoMapIntensity` |
 | `emissiveMap` | Standard | RGB, sRGB | Multiplies `emissive` times `emissiveIntensity` |
 | `lightMap` | Standard | RGB | Adds baked light to the ambient light, times `lightMapIntensity` |
+| `lightMapDirection` | Standard with `lightMap` | RGB, linear | The direction of the light at each texel of a directional light map, which bends the light with the normal. It is fixed when the material is created |
 | `specularIntensityMap` | Standard | A, linear | Its alpha multiplies `specularIntensity` |
 | `specularColorMap` | Standard | RGB, sRGB | Multiplies `specularColor` |
 | `diffuseTransmissionMap` | Standard with `diffuseTransmission` | A, linear | Its alpha multiplies `diffuseTransmission` |
@@ -442,9 +448,11 @@ const brick = materials.standard({
 
 A material with `diffuseTransmission` takes the two diffuse transmission maps in the places of the specular maps, and takes no specular maps. A material without it, or with a clear coat, a sheen, iridescence or anisotropy, takes no diffuse transmission maps. Development builds throw E1217 for either.
 
-A material with `transmission` may take `transmissionMap` and `thicknessMap` in the places of the specular maps, and then takes no specular maps. Development builds throw E1217 for a material that asks for both families, and for the two maps without `transmission`.
+A material with `transmission` may take `transmissionMap` and `thicknessMap` in the places of the specular maps, and then takes no specular maps. A layered material keeps them beside its layers, unless a layer map fills the slot that one of them takes. Development builds throw E1217 for a material that asks for two maps of one slot, and for the two maps without `transmission`.
 
 The maps of a material are fixed when you create it. A mesh needs texture coordinates to show them, and a mesh without them draws the material without its maps. A map reads the set of coordinates that its texture's `uvSet` names. Light maps usually use the second set, so load them with `uvSet: 1`. A mesh without a second set gives its first set to such a map.
+
+A light map adds baked light to the ambient light. A bake often places its light map on each mesh with its own scale and offset, which `lightMapOffset` and `lightMapRepeat` give; the other maps keep their coordinates. A directional light map also stores the light's direction at each texel: give its `lightMapDirection` and the material's normal map bends the baked light, so relief faces the light of the bake and turns away from it. `assets.loadLightMap` reads a directional map from a [baked light file](../guides/baked-light-data.md). A material made from a model for Needle's viewer takes that model's light maps with their RGBM decode.
 
 A normal map takes its frame from the mesh's tangents when the mesh has them, as `geometry.fromArrays` with `computeTangents` makes them. Otherwise the shader finds the frame from how the positions and the coordinates change between pixels, as three.js does.
 
@@ -535,7 +543,7 @@ These options are fixed when you create the material. Most of them choose the ma
 | `subsurfaceRadius` | Standard | None | Given at all, even as 0, spreads the surface's light under it, and `set` can then change its value. See "Light under the surface" |
 | The layer values and maps | Standard | None | Any of them gives the material its layers above the surface, even a coat of 0, and `set` can then change their values. See "Clear coat and sheen" and "Iridescence and anisotropy" |
 | `fog` | Both | true | Takes the scene's fog. With `false`, the material keeps its color at every distance, as with three.js's `fog: false`. [Scene](scene.md#fog) sets the fog |
-| `toneMapped` | Both | true | With `false`, keeps the color as the display shows it, as with three.js's `toneMapped: false`: the tone curve leaves it alone in the material's own shader, which tone maps on the 8-bit path. The vignette and the sRGB encoding still apply, and the exposure scales the material's colors, so the color shows brighter than the same color tone mapped. The HDR path tone maps the whole image in its final pass, so there the curve still maps this material. [Color management](../concepts/color-management.md) explains the two paths |
+| `toneMapped` | Both | true | With `false`, keeps the color as the display shows it, as with three.js's `toneMapped: false`: the tone curve leaves it alone. The 8-bit path decides that in the material's own shader. The HDR path reads a mask of these surfaces in its final pass and skips the curve where one draws. The vignette and the sRGB encoding still apply, and the exposure scales the material's colors, so the color shows brighter than the same color tone mapped. A blended surface keeps the curve on the HDR path, since a blended pixel mixes two surfaces. [Color management](../concepts/color-management.md) explains the two paths |
 | `contactShadows` | Standard | true | Takes the main directional light's contact shadows. With `false`, the surface takes none and keeps the shadow map's shadows. Use it on grass, leaf cards and other thin surfaces that crowd together or sway, where contact shadows make them dark and grainy and flicker as they move. [Shadows](../concepts/shadows.md#grass-and-other-thin-surfaces) explains why |
 | `wireframe` | Both | false | Draws the edges of each triangle as lines one pixel wide, with the material's own shading, as three.js's `wireframe` does. See "Wireframe" |
 | `parallax` | Standard | false | With a `displacementMap`, adds parallax occlusion mapping. See "Relief" |
@@ -673,6 +681,8 @@ const red = materials.shader({ wgsl: rings, color: '#e04040', roughness: 0.5 });
 red.set({ roughness: 0.2 });
 ```
 
+A material can add its own specular lobe for the main directional light with `fn lobe(input: LobeInput) -> vec3f`. The engine adds the color it returns to that light's specular. Point, spot and area lights draw with the base lobe only. [Surface functions](../shaders/surface-functions.md#a-materials-own-lobe) describes the lobe input.
+
 The WGSL can declare uniforms as the fields of `struct Uniforms`. The `uniforms` option gives their first values, and `set` changes them with the standard values:
 
 ```ts
@@ -757,7 +767,7 @@ const sheet = materials.shader({
 - A surface in the opaque pass reads 0, the far plane, because the copy comes later. A surface in a scene pass or a reflection pass reads 0 too, because its view makes no copy.
 - The copy is made while a material that declares the input draws, whatever the quality preset says. It costs one full-screen pass and one texture of four bytes for each pixel.
 - On WebGL2 the copy holds the depth that the device stores. Where the device draws `reversed-gl` depth, `sceneDistance` is less precise. The engine draws `reversed` depth where the browser has `EXT_clip_control`.
-- A material that reads the scene's depth declares no textures of its own. The depth group and the maps' group together would pass WebGPU's 16 sampled textures in the fragment stage. Development builds throw E1217 for that combination.
+- A material that reads the scene's depth takes up to seven textures of its own: its maps' group gives up one slot, so that the copy of the depth fits the fragment stage beside the maps under WebGPU's limit of 16 sampled textures. A material that declares eight textures beside the depth is refused, and development builds throw E1217 and name how many to drop.
 - The declaration and the WGSL must agree. Development builds throw E1217 for a declaration that the WGSL never uses, and for WGSL that reads the depth without the declaration. They throw it for a scene input that custom materials do not read yet too.
 
 [Surface functions](../shaders/surface-functions.md#the-scenes-depth) shows the helpers among the WGSL.

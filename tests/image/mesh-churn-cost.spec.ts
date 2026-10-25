@@ -7,17 +7,11 @@
 // only with NULL3D_MESH_CHURN_COST set, in a quiet window on a computer with a GPU of its own:
 // NULL3D_MESH_CHURN_COST=1 bun run test:browser -- mesh-churn-cost.spec.ts.
 import { expect, test } from '@playwright/test';
-import { browserOptions, WEBGPU_DEVELOPER_FEATURES } from '../../packages/cli/src/browser.js';
 import { COST_PAGE_MS, COST_TEST_MS, load, waitForQuietLoad } from '../lib/cost-runs.ts';
 import { pageResult } from '../lib/page-result.ts';
+import { TIMING_BROWSER } from '../lib/timing-browser.ts';
 
-// Chrome rounds the GPU timestamps it reports unless its developer features are on.
-test.use({
-	launchOptions: {
-		...browserOptions('chrome-real-gpu'),
-		args: [WEBGPU_DEVELOPER_FEATURES],
-	},
-});
+test.use(TIMING_BROWSER);
 
 test.skip(!process.env.NULL3D_MESH_CHURN_COST, 'set NULL3D_MESH_CHURN_COST to time the churn');
 

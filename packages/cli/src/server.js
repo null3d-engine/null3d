@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
+import { shaderFiles } from './shader-files.js';
 
 /** @import { Logger, PluginOption } from 'vite' */
 
@@ -111,12 +112,15 @@ export async function startDevServer({ plugins = [] } = {}) {
  * config, into a new temporary folder, and serves the build as `vite preview` would. The project's
  * own build folder stays as it was, and closing the server deletes the temporary one. `sourcemap`
  * writes a map beside each built file, for the tools that name a frame by its source; the maps carry
- * no address in the built files, so the page loads nothing more.
+ * no address in the built files, so the page loads nothing more, and no source's text, which a map
+ * would otherwise copy. With `linkedShaders`,
+ * the engine's shader builds stay as the files that the shared shader build wrote, linked beside
+ * the script that names them, so the page's build passes no shader bytes through the bundler.
  *
- * @param {{ sourcemap?: boolean }} [options]
+ * @param {{ sourcemap?: boolean, linkedShaders?: boolean }} [options]
  * @returns {Promise<DevServer>}
  */
-export async function startBuildServer({ sourcemap = false } = {}) {
+export async function startBuildServer({ sourcemap = false, linkedShaders = false } = {}) {
 	const vite = await projectVite(process.cwd());
 	/** @type {string[]} */
 	const errors = [];
@@ -132,8 +136,16 @@ export async function startBuildServer({ sourcemap = false } = {}) {
 		// which a production build reads only when it asks for them.
 		await vite.build({
 			...shared,
+			plugins: linkedShaders ? [shaderFiles()] : [],
 			define: { __NULL3D_URL_SWITCHES__: 'true' },
-			build: { outDir, emptyOutDir: true, ...(sourcemap && { sourcemap: 'hidden' }) },
+			build: {
+				outDir,
+				emptyOutDir: true,
+				...(sourcemap && {
+					sourcemap: 'hidden',
+					rollupOptions: { output: { sourcemapExcludeSources: true } },
+				}),
+			},
 		});
 	} catch (error) {
 		remove();

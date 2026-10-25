@@ -379,6 +379,27 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-renderer.js', module: 'render/draw.ts', loadedBy: 'page.js' },
 	...drawingParts('page', 'page-renderer.js'),
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
+	// A page records or replays only with a switch, so the format and the reader load then, and the
+	// save button loads only for a page that records. The page and the sketch worker each bundle
+	// their own copy of the format, as they do the glTF and KTX2 loaders, so each graph has a part.
+	{
+		name: 'page-recording.js',
+		module: 'shared/recording.ts',
+		loadedBy: 'page.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'sketch-worker-recording.js',
+		module: 'shared/recording.ts',
+		loadedBy: 'sketch-worker.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'page-record-button.js',
+		module: 'page/record-button.ts',
+		loadedBy: 'page.js',
+		onFirstCall: true,
+	},
 	// A page that shows no video downloads none of the support that follows one.
 	{ name: 'page-videos.js', module: 'page/videos.ts', loadedBy: 'page.js', onFirstCall: true },
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
@@ -403,15 +424,20 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'task-worker-ktx2.js', module: 'scene/ktx2-transcode.ts', loadedBy: 'task-worker.js' },
 	{ name: 'task-worker-grade.js', module: 'scene/grade-task.ts', loadedBy: 'task-worker.js' },
 	{ name: 'page-lut.js', module: 'scene/lut-files.ts', loadedBy: 'page-sketch-runner.js' },
+	// The reader of an environment map file and the built-in environments' descriptions load at the
+	// first call that reads them, from the assets file. The page and the sketch worker each bundle
+	// their own copy, and a sketch that reads neither, as most do not, downloads neither.
 	{
 		name: 'page-environment.js',
 		module: 'scene/environment-file.ts',
-		loadedBy: 'page-sketch-runner.js',
+		loadedBy: 'page-assets.js',
+		onFirstCall: true,
 	},
 	{
 		name: 'page-builtin-environments.js',
 		module: 'scene/builtin-environments.ts',
-		loadedBy: 'page-sketch-runner.js',
+		loadedBy: 'page-assets.js',
+		onFirstCall: true,
 	},
 	{ name: 'page-panorama.js', module: 'scene/panorama.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-sprites.js', module: 'scene/sprites.ts', loadedBy: 'page-sketch-runner.js' },
@@ -508,12 +534,14 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'sketch-worker-environment.js',
 		module: 'scene/environment-file.ts',
-		loadedBy: 'sketch-worker.js',
+		loadedBy: 'sketch-worker-assets.js',
+		onFirstCall: true,
 	},
 	{
 		name: 'sketch-worker-builtin-environments.js',
 		module: 'scene/builtin-environments.ts',
-		loadedBy: 'sketch-worker.js',
+		loadedBy: 'sketch-worker-assets.js',
+		onFirstCall: true,
 	},
 	{
 		name: 'sketch-worker-panorama.js',
@@ -870,40 +898,53 @@ export function findEngineParts(
 		namedCache.set(loader.file, names);
 		return names;
 	};
-	// Each part that a loader loads takes a file that the loader names, in the parts' order, and
-	// then a file that the loader reaches through the files it names: a feature's loader loads the
-	// loaders of the files that the feature reads, as the file loader loads the glTF loader. A
-	// round repeats while a loader that was found names the file of a part that waited for it.
+	const direct = (loader: BuiltFile) => new Set(mentions.get(loader.file) ?? []);
+	// Of several unclaimed files that hold a part's module, a part takes one that its loader names
+	// itself, then the one that holds the fewest modules of other parts, then the one with the fewest
+	// engine modules, then the smaller, then the first by name. A worker that bundles a copy of the
+	// module holds its own part's module too, and may hold fewer modules in all than the module's own
+	// file, so the count of all modules comes after the count of other parts. The choice does not
+	// follow the order in which the build lists its files, which differs from Linux to macOS.
+	const partModules = new Set(parts.map((part) => posix.join(ENGINE_SOURCE, part.module)));
+	const otherParts = (file: BuiltFile, own: string) =>
+		file.sources.filter((source) => partModules.has(source) && source !== own).length;
+	const engineModules = (file: BuiltFile) =>
+		file.sources.filter((source) => source.startsWith(ENGINE_SOURCE)).length;
+	const claim = (part: EnginePart, reach: (loader: BuiltFile) => ReadonlySet<string>): boolean => {
+		if (found.has(part.name)) return false;
+		const loader = found.get(part.loadedBy as string);
+		if (!loader) return false;
+		const claimed = new Set(found.values());
+		const reached = reach(loader);
+		const near = direct(loader);
+		const own = posix.join(ENGINE_SOURCE, part.module);
+		const [file] = files
+			.filter((f) => !claimed.has(f) && reached.has(f.file) && holds(f, part.module))
+			.sort(
+				(a, b) =>
+					Number(near.has(b.file)) - Number(near.has(a.file)) ||
+					otherParts(a, own) - otherParts(b, own) ||
+					engineModules(a) - engineModules(b) ||
+					a.text.length - b.text.length ||
+					(a.file < b.file ? -1 : a.file > b.file ? 1 : 0),
+			);
+		if (file) found.set(part.name, file);
+		return file !== undefined;
+	};
+	// Each part that a loader loads takes a file that the loader names, and only when none does, a
+	// file that the loader reaches through the files it names: a feature's loader loads the loaders
+	// of the files that the feature reads, as the file loader loads the glTF loader. The files that
+	// loaders name are matched until no part finds one, before any part looks further: a part listed
+	// before its loader once took a worker's copy two steps down while its own file waited. A round
+	// repeats while a loader that was found names the file of a part that waited for it.
 	const loaded = parts.filter((part) => part.loadedBy);
 	for (let round = 0; round < 4; round++) {
 		let foundOne = false;
-		for (const part of loaded) {
-			if (found.has(part.name)) continue;
-			const loader = found.get(part.loadedBy as string);
-			if (!loader) continue;
-			const claimed = new Set(found.values());
-			const direct = new Set(mentions.get(loader.file) ?? []);
-			const file = files.find(
-				(f) => !claimed.has(f) && holds(f, part.module) && direct.has(f.file),
-			);
-			if (file) {
-				found.set(part.name, file);
-				foundOne = true;
-			}
+		for (let more = true; more; ) {
+			more = false;
+			for (const part of loaded) if (claim(part, direct)) more = foundOne = true;
 		}
-		for (const part of loaded) {
-			if (found.has(part.name)) continue;
-			const loader = found.get(part.loadedBy as string);
-			if (!loader) continue;
-			const claimed = new Set(found.values());
-			const file = files.find(
-				(f) => !claimed.has(f) && holds(f, part.module) && named(loader).has(f.file),
-			);
-			if (file) {
-				found.set(part.name, file);
-				foundOne = true;
-			}
-		}
+		for (const part of loaded) if (claim(part, named)) foundOne = true;
 		if (!foundOne) break;
 	}
 	const claimed = new Set(found.values());
@@ -1015,8 +1056,38 @@ export function downloadSizes(
  * over the old line, for the timed script that hold mode performs. The script's steps and the scene
  * property reads and writes that they use are in the sketch runner, and the page and a script share
  * one writer of input records. The rise leaves 1,164 bytes of room.
+ *
+ * It went to 191 KB on 25 October 2026: the recording and its replay added 722 bytes after Brotli
+ * to the start, for the page's replay switch, the download and check of a recording, and the offer
+ * to save one. The day's other landings had already filled most of the room: the base reached
+ * 194,126 bytes of the 194,560 line, so the feature landed 288 bytes over. The rise leaves 736
+ * bytes.
+ *
+ * It went to 192 KB the same day, because the 191 KB figure was a local build's against a stale
+ * base: CI measured the same commit's pipelined WebGL2 start at 196,106 bytes, 522 over that line,
+ * and every run stopped on it. The time of a GPU frame as the span of its passes had also grown the
+ * frame figures and the stats overlay. The rise leaves 502 bytes. The start went from 186 KB to
+ * 192 KB in two days, and the owner ruled on 25 October 2026 to keep raising the line as needed for
+ * now. A trim that wins bytes back runs beside the raises, and no crossing waits for it.
+ *
+ * It went to 194 KB on 25 October 2026: a local build of the grading work's branch measured
+ * WebGL2's pipelined start at 197,411 bytes, 803 bytes over the old line. The grading controls added
+ * the switch that picks the table's input and the values that the 8-bit path's shaders read. The
+ * rise leaves 1,245 bytes of room.
+ *
+ * It went to 196 KB on 25 October 2026, on the owner's word, after the merge that landed the tooling
+ * work measured WebGL2's pipelined start at 196,291 bytes against the 194 KB line, 2,365 left and
+ * past the warning. Two causes: the sky layer's generator grew in both the page's and the sketch
+ * worker's bundles, by 16.2 and 15.7 per cent, and the WebGL2 page grew 2.0 per cent. The rise
+ * leaves 4,413 bytes of room. The trims owed above still stand as the next work that touches the
+ * start's size.
+ *
+ * It went to 256 KB on 25 October 2026, on the owner's word and described as a figure for now: the
+ * work that closes the milestone's feature list should not stop for a crossing while the trims run
+ * beside it. It leaves 65,853 bytes of room at the measured 196,291. This is headroom, not a new
+ * target; the first trim that wins bytes back still takes them.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 190 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 256 * 1024 };
 
 /**
  * The budget for each part that loads after the start. The Brotli figure rose on 22 October 2026,
@@ -1024,8 +1095,15 @@ export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotl
  * map slots and their loader notes: it went from 14,737 to 16,832 bytes after Brotli (D-215). The
  * figure is the cap of every file that loads after the start, so the raise loosens each of them by
  * the same kilobyte; no other file is near it.
+ *
+ * It rose again on 25 October 2026, from 17 KB to 18 KB, on the owner's word. The glTF worker had
+ * 67 bytes spare at 17,341, and mapping the glTF texture-transform pointers that three.js moves
+ * takes it about 57 bytes past that line. The only way under the old figure was to drop the
+ * loader's checks for a malformed transform and for a material that moves two of them, which is a
+ * worse trade than the kilobyte. This is headroom, not a new target: the first trim that wins bytes
+ * back still takes them, and the glTF worker stays the only file that needs it.
  */
-export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 17 * 1024 };
+export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 18 * 1024 };
 
 /**
  * The budget for a generated combination table, whose name holds `-combos`: the list of module
@@ -1067,11 +1145,20 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
  * fill with over a hundred builds: the largest file went from 1,332,440 to 1,752,865 bytes
  * uncompressed and from 39,341 to 49,501 bytes after Brotli. A separate permutation value would
  * have doubled the lit builds instead, past the build budget.
+ *
+ * The Brotli figure rose to 56 KB on 24 October 2026 for the water add-on (D-14's addendum of that
+ * date). Its surface function rides every build of the standard material, and the largest set is
+ * 1,204.5 KB uncompressed and 53.3 KB after Brotli, so the add-on's own gate would have failed on a
+ * feature that works as the engine's own materials do.
+ *
+ * The grading controls' code over light, which every WebGL2 tone-map build carries, measured
+ * 53,325 bytes in its largest file, the half-precision draw-index tone-map set. That fits inside
+ * the line the water add-on set, so it moved no figure.
  */
 export const FIRST_USE_SHADER_BUDGET: Budget = {
 	raw: 1_792 * 1024,
 	gzip: 320 * 1024,
-	brotli: 52 * 1024,
+	brotli: 56 * 1024,
 };
 
 /**

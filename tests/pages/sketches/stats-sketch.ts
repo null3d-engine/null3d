@@ -15,7 +15,7 @@ import {
 } from '@null3d/engine';
 
 /** The test add-on's names, claimed once as the sketch's module loads. */
-const NAMESPACE = declareAddonNamespace({ name: 'stats_test' });
+const NAMESPACE = declareAddonNamespace({ name: 'stats_test', package: '@null3d/test-stats' });
 
 export default defineSketch(({ scene, geometry, materials, debug, page, quality, engine }) => {
 	let feature: FeatureHandle | undefined;

@@ -133,8 +133,8 @@ Check this table before you write a generator, control, effect or loader of your
 | Hills, valleys and other ground from a height field | `@null3d/terrain` | `api/terrain` | built |
 | Rigid bodies, joints and character movement | the physics add-on | `guides/physics` | not built yet; run Rapier or cannon-es in the sketch worker |
 | Text in the scene, sharp at any distance | the MSDF text add-on | none yet | not built yet; use HTML labels with `ui.trackLabel` |
-| Water with waves, foam and a surface seen from below | `@null3d/water` | none yet | not built yet; recipe 20 builds one with a custom material |
-| Trees, shrubs, grass and wind over plants | the vegetation add-on | none yet | not built yet; generate simple plants above the public API |
+| A river or a lake, with waves, foam, soft shores and a surface seen from below | `@null3d/water` | `api/water` | built |
+| Trees, shrubs, ferns, hostas and grass, with detail levels, wind data and ecological placement | `@null3d/vegetation` | `api/vegetation` | built (generator and scatter; materials and textures not built yet) |
 | three.js look modes for a port: Reinhard and Cineon tone curves, and a soft outline with a glow and a pulse | `@null3d/three-compat` | `api/three-compat` | built |
 
 Drawing:
@@ -181,7 +181,7 @@ Effects:
 | Need | Use | Docs |
 | --- | --- | --- |
 | Tone mapping and exposure | `post.set({ toneMapping, exposure })`; `ev100` (0.2) for lights in real units | `api/post` |
-| A sign, panel or heads-up display that keeps its exact color | `materials.unlit({ color, toneMapped: false })` on the 8-bit path, which `createEngine({ hdr: false })` takes | `api/materials`, `concepts/color-management` |
+| A sign, panel or heads-up display that keeps its exact color | `materials.unlit({ color, toneMapped: false })`; on the HDR path a blended surface keeps the curve | `api/materials`, `concepts/color-management` |
 | Bloom | `post.set({ bloom: { intensity, threshold, knee, blend, weights } })` (0.2); quality setting `bloomSize` | `api/post`, `concepts/post-processing` |
 | Color grading from a `.cube` or `.3dl` file, and a vignette | `post.set({ lut: await assets.loadLut(url), vignette: { intensity, size } })` (0.2) | `api/post`, `api/assets` |
 | Color grading made in code, with no file | `post.set({ lut: await assets.lutFromData({ size, data }) })` (0.2): three numbers per texel, red fastest, as a `.cube` file | `api/assets` |
@@ -202,8 +202,8 @@ Effects:
 | Soap bubbles, beetle shells; brushed metal | `materials.standard({ iridescence })` or `{ anisotropy }` with a map (0.3) | `api/materials`, `shaders/surface-functions` |
 | Decals: scorch marks, mud, puddles, road paint, moss, cracks, posters | A mesh of `geometry.box()` with `materials.decal({ map, normalMap, metalnessRoughnessMap, angleFade, edgeFade })`; the box's z axis points out of the surfaces it marks; a batch of boxes for many (0.2) | `api/materials` |
 | Fog or sky | `scene.setFog` with the fog's color in `scene.setBackground`; `scene.setBackground({ sky })` (0.2); a physical sky that also hazes distant objects: `scene.setBackground({ atmosphere })` (0.2) | `api/scene` |
-| An aurora, a second layer of clouds, or a backdrop of space over the sky | `scene.setSkyLayer({ wgsl })` (0.3) with WGSL that declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer`; it draws over the core sky on every path and lights nothing | `api/scene` |
-| Light shafts, sun rays through trees, glowing cones under lamps and headlights | `scene.setFog({ color, density, heightFalloff, volumetric: { intensity, anisotropy, distance } })` (0.2); quality setting `fogSlices`, 0 on Low, where the fog keeps its `sunGlow` | `api/scene`, `concepts/lighting` |
+| An aurora, a second layer of clouds, or a backdrop of space over the sky | `scene.setSkyLayer(description, { wgsl })` (0.3) with a feature description at the `'background'` point and WGSL that declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer`; it draws over the core sky on every path, reaches its map, and lights the scene | `api/scene` |
+| Light shafts, rays through trees, glowing cones under lamps and headlights | `scene.setFog({ color, density, heightFalloff, volumetric: { intensity, anisotropy, distance } })` (0.2); quality setting `fogSlices`, 0 on Low, where the fog keeps its `sunGlow` | `api/scene`, `concepts/lighting` |
 | Light from the sky, or a time of day | `scene.setEnvironment(await assets.skyEnvironment())` (0.2); `timeOfDay(hours)` values for the sky, the sun, the fog and the exposure (0.2) | `concepts/lighting` |
 | Reflections of a room or a street on floors and metal | `scene.createReflectionProbe({ box: { min, max }, position })` (0.2), one per room; `refresh: 'always'` for moving things | `api/scene` |
 
@@ -225,7 +225,7 @@ const rings = materials.shader({
 rings.set({ roughness: 0.2 }); // the standard values, which defaultSurface reads
 ```
 
-`references/shaders.md` has the full contract: every field of `SurfaceInput` and `Surface`, uniforms (`struct Uniforms` in the WGSL, read from `material`), the names to avoid, and the WGSL rules. Vertex offsets (`fn vertexOffset` in the same WGSL) and the built-in values (`frame.time`, `camera.position`, `object.position`) are built too. So are full shaders (`guides/custom-shaders`), and textures (0.2): `var name: texture_2d<f32>;` in the WGSL and the `textures` option.
+`references/shaders.md` has the full contract: every field of `SurfaceInput` and `Surface`, uniforms (`struct Uniforms` in the WGSL, read from `material`), the names to avoid, and the WGSL rules. Vertex offsets (`fn vertexOffset` in the same WGSL), a lobe that adds specular for the main light (`fn lobe(input: LobeInput) -> vec3f`), and the built-in values (`frame.time`, `camera.position`, `object.position`) are built too. So are full shaders (`guides/custom-shaders`), and textures (0.2): `var name: texture_2d<f32>;` in the WGSL and the `textures` option.
 
 ## 8. When something goes wrong
 

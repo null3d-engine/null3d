@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
@@ -13,6 +13,8 @@ import {
 	buildLog,
 	cargoTargetBase,
 	checkHeapStart,
+	currentArtifactKeys,
+	keepOnlyArtifacts,
 	lockedVersion,
 	parseOptions,
 	readArtifacts,
@@ -43,6 +45,7 @@ describe('parseOptions', () => {
 			prebuilt: false,
 			printBase: false,
 			cacheKey: false,
+			keepCurrent: false,
 			noCache: false,
 		});
 		expect(parseOptions(['--check-size', '--base', 'origin/main'])).toEqual({
@@ -54,6 +57,7 @@ describe('parseOptions', () => {
 			prebuilt: false,
 			printBase: false,
 			cacheKey: false,
+			keepCurrent: false,
 			noCache: false,
 		});
 		expect(parseOptions(['--check-size', '--prebuilt'])).toMatchObject({
@@ -68,6 +72,7 @@ describe('parseOptions', () => {
 		expect(parseOptions(['--sizes-only']).sizesOnly).toBe(true);
 		expect(parseOptions(['--names']).keepNames).toBe(true);
 		expect(parseOptions(['--no-cache']).noCache).toBe(true);
+		expect(parseOptions(['--keep-current']).keepCurrent).toBe(true);
 		expect(parseOptions(['--pages-only', '--names', '--no-cache'])).toMatchObject({
 			pagesOnly: true,
 			keepNames: true,
@@ -242,6 +247,28 @@ describe('artifactsKey', () => {
 		const key = artifactsKey();
 		expect(key).toMatch(/^[0-9a-f]{64}$/);
 		expect(artifactsKey()).toBe(key);
+	});
+
+	it('names an entry for each core variant and one for the tools, each its own key', () => {
+		const keys = currentArtifactKeys();
+		expect(keys).toHaveLength(VARIANTS.length + 1);
+		expect(new Set(keys).size).toBe(keys.length);
+	});
+});
+
+describe('keepOnlyArtifacts', () => {
+	it('removes every entry but the named ones, and leaves a lock and an entry that a build is writing', () => {
+		const base = mkdtempSync(join(tmpdir(), 'null3d-artifacts-'));
+		try {
+			for (const name of ['a', 'b', 'c', 'd.123.partial']) mkdirSync(join(base, name));
+			writeFileSync(join(base, 'e.lock'), '');
+			expect(keepOnlyArtifacts(base, new Set(['a'])).sort()).toEqual(['b', 'c']);
+			expect(readdirSync(base).sort()).toEqual(['a', 'd.123.partial', 'e.lock']);
+			expect(keepOnlyArtifacts(join(base, 'missing'), new Set())).toEqual([]);
+		} finally {
+			rmSync(base, { recursive: true, force: true });
+			rmSync(`${base}.prune.lock`, { recursive: true, force: true });
+		}
 	});
 });
 

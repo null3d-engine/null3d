@@ -1,15 +1,18 @@
 // GPU time per frame and per pass from WebGPU timestamp queries. A timed frame's commands open with
 // a start mark, a compute pass of one invocation that does nothing, and each pass writes a timestamp
-// when it begins and when it ends. So the timer covers the whole frame: the copies recorded before
-// the first pass, each pass, and the time between passes. The timer copies a frame's timestamps out
-// only once the GPU has finished the frame, in a submit of their own: Firefox writes a frame's
-// timestamps when the frame's work completes, so a copy in the frame's own commands reads the
-// values of an earlier frame. Results come back through mappable buffers a few frames later. A
-// frame that finds no free buffer goes untimed instead of stalling the GPU. A pass that the GPU
-// left untimed stays out of the frame's parts, and the frame keeps the others. Timing runs only
-// while the page measures, on one drawn frame in every SAMPLED_EVERY.
+// when it begins and when it ends. The frame's time is the span of those passes: the latest pass end
+// less the earliest pass begin. A tile GPU overlaps the passes, so a sum of their own times would
+// count the overlap again. The browser reports no period for its timestamps, so the step between
+// them is their greatest common divisor. The timer copies a frame's timestamps out only once the GPU
+// has finished the frame, in a submit of their own: Firefox writes a frame's timestamps when the
+// frame's work completes, so a copy in the frame's own commands reads the values of an earlier
+// frame. Results come back through mappable buffers a few frames later. A frame that finds no free
+// buffer goes untimed instead of stalling the GPU. A pass that the GPU left untimed stays out of the
+// frame's parts, and the frame keeps the others. Timing runs only while the page measures, on one
+// drawn frame in every SAMPLED_EVERY.
 
 import { TIMER_MARK_SHADER } from '../../generated/shaders';
+import { commonStep } from '../../shared/gpu-clock';
 import {
 	FrameRecorder,
 	GPU_TIMED_PASSES,
@@ -246,19 +249,25 @@ export class GpuTimer {
 		const recorder = this.recorder;
 		recorder.begin(this.frames[slot] as number);
 		recorder.gpuPasses(passes, this.renderMasks[slot] as number);
+		recorder.gpuTick(commonStep(times, count));
 		recorder.gpuTime(0, marked ? -markEnd / NS_PER_MS : UNTIMED);
-		// Passes that do not depend on each other may overlap. A pass that the GPU left untimed, or
-		// timed out of order, stays out of the frame's parts, and the frame keeps the others.
-		let last = 0;
+		// The frame's time is the span of its passes: the latest pass end less the earliest pass
+		// begin. Passes may overlap on a tile GPU, so adding their own times would count the overlap
+		// again. A pass that the GPU left untimed, or timed out of order, stays out of the frame's
+		// parts and of its span, and the frame keeps the others.
+		let earliest = marked ? markBegin : 0;
+		let latest = 0;
 		for (let pass = 0; pass < timed; pass++) {
 			const at = FIRST_PASS + 2 * pass;
 			const begin = times[at] as number;
 			const end = times[at + 1] as number;
 			const ordered = begin >= 0 && end >= begin;
 			recorder.gpuTime(1 + pass, ordered ? (end - begin) / NS_PER_MS : UNTIMED);
-			if (ordered && end > last) last = end;
+			if (!ordered) continue;
+			if (begin < earliest) earliest = begin;
+			if (end > latest) latest = end;
 		}
-		recorder.commit((last - (marked ? markBegin : 0)) / NS_PER_MS);
+		recorder.commit((latest - earliest) / NS_PER_MS);
 	}
 
 	destroy(): void {

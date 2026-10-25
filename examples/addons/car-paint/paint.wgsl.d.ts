@@ -8,7 +8,8 @@ declare const shader: CompiledMaterial<
 		readonly flakeCells: 'vec2f';
 		readonly weaveCells: 'vec2f';
 		readonly flakeTilt: 'f32';
-		readonly flakeSpread: 'f32';
+		readonly flakeAngle: 'f32';
+		readonly flakeMax: 'f32';
 		readonly seamWidth: 'f32';
 		readonly seamShade: 'f32';
 		readonly weaveShine: 'f32';

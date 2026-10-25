@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost`, `object-growth`, `cluster-cost`, `two-step`, `demos`, `skyway`, `vegetation` and `tree-generation`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `alpha-mask-cost`, `canvas-cost`, `object-growth`, `cluster-cost`, `lod-cost`, `two-step`, `demos`, `skyway`, `vegetation`, `tree-generation` and `vegetation-scatter`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is grey while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-grey when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -272,6 +272,11 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 - The page measures each side for 2 seconds, three times each. Where the browser has a GPU timer, it reports the GPU time per frame. `?aa=msaa` or `?aa=none` sets the antialiasing at the engine's start, because the mode stays fixed while an engine runs.
 - The plan runs the page with each antialiasing mode on each GPU path: 6 pages. Run it on the Mac while it is quiet: `bun tests/real-browsers.ts --plan alpha-mask-cost Safari`.
 
+## The canvas cost plan
+
+- The `canvas-cost` plan measures what a canvas texture's refresh costs, for [D-204](decisions/D-204-canvas-textures.md). Its page follows a 1024 x 1024 `OffscreenCanvas` from the sketch and refreshes a 256 x 256 rectangle of it at 30 Hz. It times the refresh in the sketch, then reports the frame's GPU and CPU time with refreshes and without them.
+- The plan runs the page on both GPU paths: 2 pages. Run it on an iPad or a phone with `bun run devices:cloud --only bsipadpro13-safari,bsgalaxys24-chrome --plan canvas-cost`. The Mac times the same page in its installed Chrome, in a quiet window: `NULL3D_CANVAS_COST=1 bun run test:browser -- canvas-texture.spec.ts --workers=1`.
+
 ## The environment load plan
 
 - The `environment-load` plan times an environment that a sketch asks for during play, for [D-19](decisions/D-19-environment-maps.md). Its page (`tests/pages/room-light.html`) draws a metal sphere with no light. The sketch then asks for the built-in room, or with `?source=` loads an HDR file, and sets it with a blue background in the same step.
@@ -299,8 +304,9 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 ## The splats plan
 
 - The `splats` plan runs the Gaussian splats add-on's streaming check on each GPU path, for M3-F2. It draws a cloud of 400,000 splats, which the add-on cuts into chunks that the draw takes as they arrive. The preset's budget decides how many of them draw.
-- The page reports the splats that draw against that budget, and the chunks that the cut made. It also reports the frame rate, the first-frame time, and the bytes that the page downloaded before the first frame and in total. It fails when the draw is over budget, when the sketch reported no figures, or when the measure drew no frame.
-- The cloud is built in code and handed to the add-on as an SPZ file in memory, so no network file belongs to it. The bytes are the page's own loads, the engine's code among them, and the engine's WebAssembly figure comes beside them. A worker's loads are not in the page's timeline.
+- The page reports the splats that draw against that budget and the chunks that the cloud holds. It also reports the chunks and bytes that arrived, the frame rate, the first-frame time, and the bytes the page downloaded. The run fails when the draw is over budget. It also fails when a chunk stayed unreachable, when the sketch reported no figures, and when the measure drew no frame.
+- The page streams the cloud. It reads a small index from the test server, and the add-on then downloads only the chunk files that the view needs. The server builds the cloud the first time a page asks for a count, and keeps it in memory for the run. Git holds no generated file. `?stream=0` draws the whole file instead, for a comparison.
+- The chunk bytes come from the add-on's own figures. Its loader runs in the sketch worker, and a worker's loads are not in the page's timeline. The page's own byte figure holds the engine's code, and the engine's WebAssembly figure comes beside it.
 - The plan times frames, so the runner page measures the display's refresh rate before each page. It marks the run's figures unreliable below 55 Hz.
 - Read the preset, the frame rate and the budget together. The budget's count differs by GPU path, and the governor can lower the render scale under load.
 - Run it one session at a time on a cloud phone and the cloud iPad: `bun run devices:cloud --only bsgalaxys24-chrome --plan splats` and `bun run devices:cloud --only bsipadpro13-safari --plan splats`. The Galaxy S24 has no WebGPU, so the command lets it lack that path and the engine picks WebGL2.
@@ -334,9 +340,16 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
   the bytes of each variant. It draws nothing, so it needs no GPU path. The generator is the page's
   stand-in in the style of Weber and Penn. The vegetation add-on's own generator replaces it
   (M3-V4).
+- The `vegetation-scatter` plan places Creek's valley with the vegetation add-on's ecological rules,
+  once on each GPU path. The page builds the ground maps from Creek's own height function, scatters
+  the valley, and compares the points against the checksum that another device recorded. It fails
+  when a device places other plants, and it also fails when the tiles arrive in the reverse order or
+  at another size and the points change. It reports the placement time, which is the figure that the
+  vegetation budgets take for a valley of that size. The placement reads no GPU, so both paths must
+  give the same number.
 - Run both on the cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet:
   `bun run devices:cloud --only bsiphone17-safari,bsipadpro13-safari,bsgalaxys24-chrome,bsgalaxytaba9plus-chrome --plan vegetation`,
-  and the same with `--plan tree-generation`.
+  and the same with `--plan tree-generation` and `--plan vegetation-scatter`.
 - The `splats` plan also runs each GPU path at a quarter of the cloud's splat count, at the same
   pixel count. A pair of rows then shows whether the cost follows the count or the screen's fill.
 
@@ -458,7 +471,8 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 - Never start a timing run at background priority. macOS runs a process started with `taskpolicy -b` at background priority, and each child inherits it. No call lifts it again: `taskpolicy -B -p` and `setpriority` report success and change nothing. Chrome started under it draws 5 to 11 frames per second, even in view, and fires its timers about 80 ms late.
 - On 13 October 2026, 7 of 18 timing runs on the Mac reported the display at 5 to 11 Hz, against its 120. Each was queued from inside a job that ran at background priority, as the Mac's job queue runs builds. The pages did little work, about 4 ms of GPU time and under 1 ms of CPU time per frame. Yet their frames came 100 or 200 ms apart. A WebGPU page that waited on the GPU queue stopped answering for 22 minutes.
 - The proof: one parked Chrome window drew 120 frames per second at normal priority, 11 under `taskpolicy -b`, and 120 again after. Parking and covering were not the cause. A parked window drew 120 when another app's window covered its strip for 48 seconds, and when it was in view.
-- `launchInWindow` in `tests/lib/app-window.ts`, `bench:startup` and `bench:soak` refuse to start at background priority, and say why. So do the tools that use `launchInWindow`: `bench:run`, `bench:gpu-check`, `bench:allocation`, `bench:profile` and `readme-media`. A unit test checks the guard.
+- `launchInWindow` in `tests/lib/app-window.ts`, `bench:startup` and `bench:soak` refuse to start at background priority, and say why. So do the tools that use `launchInWindow`: `bench:run`, `bench:gpu-check`, `bench:allocation`, `bench:profile` and `readme-media`. A unit test checks the guard's rule at any load. Three tests start a process at background priority and wait for it to refuse. They skip while the load is over the core count, and say so. Such a process then gets almost no time: on 25 October 2026 it printed nothing in 30 s.
+- A page build refuses to take the machine-wide page-build lock at background priority, and says why (`acquirePageBuildLock` in `tools/lib/build-cache.ts`). Its bundler inherits that priority, and every other page build waits for the lock. On 25 October 2026 one build held the lock for 46 minutes, while its bundler used 38 s of processor time. The job queue runs page builds at normal priority, so the refusal stops only a build started inside a background job.
 - To check a shell before a timing run, run `ps -o pri= -p $$` in it. It prints 4 at background priority, and 31 or near it at normal priority. Each timing tool also prints a line for each reading below the display's highest rate.
 - A job queue that runs some work at background priority must start browser runs outside that work's process tree. launchd can do this. A background process asked launchd to start a job, with `launchctl bootstrap` and `ProcessType` set to `Interactive`. That job ran Chrome at 120 frames per second, with timers on time. The Mac's job queue does this for each browser run that it gets from a background process.
 - Keep the Mac's screen unlocked and its display awake during runs. Safari stops running pages while the Mac is locked, and the runner then waits until its deadline. Chrome started by Playwright keeps running. The runner keeps the display awake while it runs browser apps on a Mac, so the screen saver cannot lock the screen. Before it did, on 6 October 2026, the screen locked 20 minutes into the M1 gate's Safari run. The 4 restart pages after the lock then failed, each waiting for a first frame.
@@ -514,6 +528,7 @@ The team's phone is a Galaxy S24+ (SM-S926B, Exynos 2400, Android 16). It runs o
 The team's tablet is an iPad Pro 11-inch with 8 cores. Safari there reports a Mac user agent.
 
 - The iPad reaches the Mac over HTTPS on the local network. `bun run dev-cert` makes the certificate. Copy its root certificate to the iPad, install the profile, and turn on full trust in Settings > General > About > Certificate Trust Settings.
+- A runner page that sits on "starting" with nothing reaching the Mac usually means the iPad does not trust the server's certificate. Install the mkcert root and turn on full trust as above. On 25 October 2026 the page connected as soon as the root was trusted, and not before. The dev certificate in the cloud kit's folder is made by the same root, so it needs the same trust.
 - `NULL3D_HTTPS=1 bun run dev` serves HTTPS on port 5174 under the Mac's `.local` name. The dev server sends it over HTTP/1.1, because Safari on an iPad sometimes stops loading a worker's modules over HTTP/2. That failure looks like an engine start that never finishes.
 - Each browser opens its own runner page: `https://<mac>.local:5174/tests/pages/runner.html?listen&runner=ipad-safari` in Safari. The name must match the browser, or the page waits for another browser's runs. Pass `--lan ipad-safari` to the runner.
 - For benchmarks, turn on Settings > Accessibility > Motion > Limit Frame Rate, which holds the display at 60 Hz.

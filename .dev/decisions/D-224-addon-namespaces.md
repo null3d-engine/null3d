@@ -53,3 +53,17 @@ The state at `m3-start`'s tip, 68ba20116:
 - **Docs:** the namespaces section of `docs/api/features.md`, and the generated E1225 page.
 - **Size:** the code runs only where an add-on registers, not on the start path. No page that uses no add-on downloads it.
 - **Next:** the listing check (M3-D9) accepts the interface range inside `declareAddonNamespace()` as well as a direct `checkPluginInterface` call, so an add-on that declares through its namespace passes.
+
+## Addendum, 25 October 2026: the package that owns a namespace
+
+The rule above gave a module that loads again the same namespace when it declared the same names. Two different add-ons that declared the same name with the same fields therefore shared one namespace without an error. The namespace now takes a required `package`: the package or module that owns it, such as an npm package name.
+
+- A claim under a package that already holds the name gives back the claimed namespace when every field matches. That is the development reload.
+- A claim under another package is refused with E1225, even when every other field matches. The message names both packages.
+- A claim under the same package with other fields is refused too, and the message says that the package claims other names.
+
+The package takes 1 to 128 characters with no spaces. The registry stores it on the namespace, so a `FeatureHost` and the docs can name the owner.
+
+The shader library name stays reserved for its owner, but the shader build resolves only the engine's own `null3d::` prefix. The docs and the TSDoc no longer show `#import water::waves`. An add-on's WGSL imports the engine's library as every other shader does. Resolving an add-on's own prefix would need the shader compiler to receive that add-on's modules at pack time, which it does not.
+
+**Tests:** `namespaces.test.ts` checks that two packages with one name fail and that both are named, that a reload under its own package keeps its namespace, and that a claim without a usable package fails. The stats test add-on and the splats add-on pass their package.

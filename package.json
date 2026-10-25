@@ -32,7 +32,7 @@
 		"limits": "bun tools/limits.ts",
 		"pr-status": "bun tools/pr-status.ts",
 		"check:fix": "biome check --write .",
-		"typecheck": "bun tools/shaders.ts && bun tools/typecheck.ts",
+		"typecheck": "bun tools/typecheck.ts --shaders",
 		"test": "bun tools/shaders.ts && bun tests/unit.ts",
 		"test:heavy": "bun tools/shaders.ts && bun tests/heavy-checks.ts",
 		"prepare": "bun tools/hooks/install-hooks.ts && bun tools/generate.ts",

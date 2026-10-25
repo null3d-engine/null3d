@@ -456,9 +456,12 @@ fn material_anisotropy(id: u32) -> vec4f {
 #endif
 
 #ifdef TRANSMISSION
-/// Which family of maps material `id` keeps in the light map's and the specular maps' slots: 2
-/// when they hold its transmission and thickness maps, and 0 otherwise, since a material that
-/// lets light through takes no layers.
+/// Which family of maps material `id` keeps in each group of shared slots, two bits each: bits 0
+/// and 1 for the light map's slot, bits 2 and 3 for the specular intensity map's, and bits 4 and 5
+/// for the specular color map's. 0 is a clear coat's and a sheen's, 1 is iridescence's and the
+/// anisotropy's, and 2 is the transmission and thickness maps'. A material with layers may keep its
+/// transmission and thickness maps in the specular slots, so each specular slot names its family
+/// apart from the other's and from the light slot's.
 fn layer_maps_kind_of(id: u32) -> u32 {
 #ifdef WEBGL2
     return u32(textureLoad(materials, vec2u(16u, id), 0).z);
@@ -491,6 +494,25 @@ fn custom_value(id: u32, k: u32) -> vec4f {
     return textureLoad(materials, vec2u(k, textureDimensions(materials).y / 2u + id), 0);
 #else
     return textureLoad(custom_values, vec2u(k, id), 0);
+#endif
+}
+
+/// The scale of material `id`'s light map coordinates along u and v, then their offset along u
+/// and v.
+fn material_light_map_uv(id: u32) -> vec4f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(17u, id), 0);
+#else
+    return materials[id].light_map_uv;
+#endif
+}
+
+/// The layer of material `id`'s light map direction map, or a negative value without one.
+fn material_light_map_direction(id: u32) -> f32 {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(9u, id), 0).w;
+#else
+    return materials[id].transmission.w;
 #endif
 }
 
@@ -857,6 +879,8 @@ const JOINTS_PER_ROW: u32 = 512u;
 
 #ifdef WEBGL2
 @group(2) @binding(4) var joint_matrices: texture_2d<f32>;
+#else ifdef JOINTS_AFTER_SCENE
+@group(3) @binding(0) var joint_matrices: texture_2d<f32>;
 #else ifdef JOINTS_AFTER_MAPS
 @group(2) @binding(0) var joint_matrices: texture_2d<f32>;
 #else

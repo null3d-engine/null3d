@@ -27,8 +27,10 @@ export const API_PACKAGES: readonly ApiPackage[] = [
 	{ entry: 'packages/splats/src/index.ts', source: 'packages/splats/src' },
 	{ entry: 'packages/impostors/src/index.ts', source: 'packages/impostors/src' },
 	{ entry: 'packages/terrain/src/index.ts', source: 'packages/terrain/src' },
+	{ entry: 'packages/vegetation/src/index.ts', source: 'packages/vegetation/src' },
 	{ entry: 'packages/geometry/src/index.ts', source: 'packages/geometry/src' },
 	{ entry: 'packages/three-compat/src/index.ts', source: 'packages/three-compat/src' },
+	{ entry: 'packages/water/src/index.ts', source: 'packages/water/src' },
 ];
 const API_TSCONFIG = 'packages/engine/tsconfig.json';
 

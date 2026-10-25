@@ -68,33 +68,9 @@ import {
 } from '../shared/metrics';
 import * as Role from '../shared/role';
 import { HELD_PERCENT } from '../shared/stats';
+import { BUDGET_STEPS, FULL_SCALE, SCALE_STEP, thousandths } from './budget';
 import { CHECK_MAX_FPS, checkTargetFps } from './check';
 import { QUALITY_SETTINGS } from './presets';
-
-/** The render scale of the whole canvas, in thousandths. */
-export const FULL_SCALE = 1000;
-/** How far one step moves the render scale, in thousandths. */
-export const SCALE_STEP = 50;
-
-/** The render scale in thousandths of a scale from 0 to 1, rounded, from 1 to the whole canvas. */
-export function thousandths(scale: number): number {
-	return Math.min(FULL_SCALE, Math.max(1, Math.round(scale * FULL_SCALE)));
-}
-
-/** How far one step moves the budgets' scale, in thousandths. */
-export const BUDGET_STEP = 250;
-/** The budgets' steps from the full scale down to none. */
-export const BUDGET_STEPS = FULL_SCALE / BUDGET_STEP;
-
-/** The budgets' steps from the full scale down to `min`, a scale from 0 to 1. */
-export function budgetSteps(min: number): number {
-	return Math.ceil((FULL_SCALE - Math.round(min * FULL_SCALE)) / BUDGET_STEP);
-}
-
-/** A budget's scale from 0 to 1 after `level` steps of the budgets, and at least `min`. */
-export function budgetScale(level: number, min: number): number {
-	return Math.max(min, (FULL_SCALE - level * BUDGET_STEP) / FULL_SCALE);
-}
 
 /** The longest interval between two draws of a far shadow cascade, in frames. */
 export const LONGEST_FAR_INTERVAL = QUALITY_SETTINGS.farCascadeInterval.values.max;
@@ -989,6 +965,8 @@ export class GovernorLoop {
 	private readonly refresh: RefreshRate;
 	/** The highest frame rate the governor aims for, in hertz, as the preset check's target allows. */
 	private readonly maxTargetHz: number;
+	/** True once a completion record has come: the engine's first frames leave none. */
+	private completionsSeen = false;
 	/**
 	 * The window's start and the last frame's time, in ms, or -1 before the first frame, then the
 	 * origin of the governor's clock on the frame loop's clock.
@@ -1014,9 +992,10 @@ export class GovernorLoop {
 	/**
 	 * Takes in the frames since the last call, and judges them at the end of each window. The
 	 * frame loop writes the frame's clock reading into `now` first. While the governor is off, it
-	 * does nothing.
+	 * does nothing. `resumed` says that the page showed again since the last call, which explains
+	 * a long gap and is no frame of the page's.
 	 */
-	frame(): void {
+	frame(resumed = false): void {
 		const { times, presented, completed, governor } = this;
 		// Off, the governor judges nothing. Turned on again, it starts as at the first frame.
 		if (!governor.on) {
@@ -1026,6 +1005,8 @@ export class GovernorLoop {
 		const now = this.now[0] as number;
 		presented.add();
 		completed.add();
+		if (!this.completionsSeen && (completed.sums[SUM_RECORDS] as number) > 0)
+			this.completionsSeen = true;
 		const last = times[1] as number;
 		times[1] = now;
 		if (last < 0) governor.restart(this.clock(now) + GRACE_MS);
@@ -1034,7 +1015,7 @@ export class GovernorLoop {
 			// windows again; a frame that was drawing through the gap counts as a frame of its
 			// length, which the governor judges (D-237).
 			const gap = now - last;
-			const held = this.heldFrame(gap);
+			const held = this.heldFrame(gap, resumed);
 			governor.gap(this.clock(now), held ? Math.round(gap * 1000) : 0, this.budgetUs());
 		} else {
 			if (now - (times[0] as number) < WINDOW_MS) return;
@@ -1076,12 +1057,24 @@ export class GovernorLoop {
 	 * after a pause. A frame that a sketch on a thread of its own held is a pause here: the scale
 	 * would not lighten the sketch's own work.
 	 */
-	private heldFrame(gapMs: number): boolean {
+	private heldFrame(gapMs: number, resumed: boolean): boolean {
+		// A resume of the page explains the gap, and is no frame of the page's.
+		if (resumed) return false;
 		const longest = Math.max(
 			this.presented.sums[SUM_LONGEST_BUSY_MS] as number,
 			this.completed.sums[SUM_LONGEST_BUSY_MS] as number,
 		);
-		return longest * 100 >= gapMs * HELD_FRAME_PERCENT;
+		if (longest * 100 >= gapMs * HELD_FRAME_PERCENT) return true;
+		// A frame that the GPU still holds has no busy time yet: a completion is recorded only when
+		// the GPU finishes the frame, and a frame held far longer than the recent ones is given up
+		// without one. So a frame that the thread that draws presented since the last call, and
+		// that no completion has followed, was drawing through the whole gap.
+		// The engine's first frames leave no completion record, so the absence says nothing until
+		// one has come.
+		return (
+			this.completionsSeen &&
+			(this.presented.sums[SUM_RECORDS] as number) > (this.completed.sums[SUM_RECORDS] as number)
+		);
 	}
 
 	/** The frame budget, in µs, from the refresh rate that the thread that draws measured. */

@@ -205,6 +205,8 @@ const FOG_VOLUME_SKETCH = 'tests/pages/sketches/fog-volume-sketch.ts';
 
 /** The volumetric fog tests' image size: wide enough for the rays between the pillars to show. */
 const FOG_VOLUME_SIZE = [480, 270] as const;
+/** The hero shadow's picture size, large enough to see the tile's texels on the car's shadow. */
+const HERO_SIZE = [640, 360] as const;
 
 /**
  * The volumetric fog: the sun's rays between the pillars, and the street lamps' cones at night with
@@ -860,6 +862,9 @@ const TRANSLUCENCY_SKETCH = 'tests/pages/sketches/translucency-sketch.ts';
 const SUBSURFACE_SKETCH = 'tests/pages/sketches/subsurface-sketch.ts';
 /** The sketch of the clear coats and sheens. */
 const COAT_SHEEN_SKETCH = 'tests/pages/sketches/coat-sheen-sketch.ts';
+/** The sketch of the facades add-on: a wall of rooms, far away, and through the power-on wave. */
+const FACADES_SKETCH = 'tests/pages/sketches/facades-sketch.ts';
+
 /** The sketch of the car paint, its flakes, its seams and its carbon weave. */
 const CAR_PAINT_SKETCH = 'tests/pages/sketches/car-paint-sketch.ts';
 /** The sketch of decals on a stone yard. */
@@ -1162,6 +1167,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
 		hold: 0,
 	},
+	// A lightmap scene made for Needle's viewer, reduced from a real export: its `NEEDLE_lightmaps`
+	// extension registers an RGBM light map in linear color, and each node's Needle MeshRenderer
+	// places its own bake with a scale and an offset on the second texture coordinates. The
+	// picture holds the decode and the placement still.
+	{
+		name: 'needle-lightmap',
+		sketch: 'tests/pages/sketches/needle-lightmap-sketch.ts',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0.2,
+	},
 	// A skinned box built in code, bent by a joint, whose level names two of its twelve triangles
 	// and the box's own vertex accessors: the engine stores that level over the base's vertices, and
 	// the joint bends it too. Its copy gives the level accessors of its own and must draw the same
@@ -1364,6 +1379,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		modes: ALL_MODES,
 	},
+	// The same shoreline, with the water's own textures beside the depth: a sheet of ripple rings and
+	// a field of foam flecks. A material that reads the copy of the opaque scene's depth takes a maps'
+	// group with one slot fewer, so both the copy and the textures fit the fragment stage. Every GPU
+	// tier must bind all three groups, so a tier that drops one shows a different shore.
+	{
+		name: 'depth-textures',
+		sketch: 'tests/pages/sketches/depth-textures-sketch.ts',
+		hold: 0,
+		modes: ALL_MODES,
+	},
 	// A box that fixed steps move at 50 steps per second, and a camera that follows it from the late
 	// update, held at 1.5 seconds: the box stays at the center, and every mode runs the same steps.
 	{
@@ -1455,10 +1480,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	...toneMappingTests(),
 	// One bright unlit color on two panels, the left with toneMapped: false. The 8-bit path applies
-	// the output transform in each material's shader, so it keeps that panel's color as the display
-	// shows it and tone maps the other: the panels differ. The HDR path tone maps the whole image in
-	// its final pass, which carries no per-material flag, so both panels draw alike (D-200). The
-	// spec reads the panels on every tier and checks each path's promise.
+	// the output transform in each material's shader. The HDR path's final pass reads the mask of the
+	// surfaces that keep their display color and skips the curve for those pixels. So each path keeps
+	// that panel's color as the display shows it and tone maps the other: the panels differ. The spec
+	// reads the panels on every tier and checks each path's promise.
 	{ name: 'tone-mapped', sketch: TONE_MAPPED_SKETCH, hold: 0 },
 	// The same scene forced onto the 8-bit path on both backends. Compatibility mode covers the
 	// WebGPU build of the material shaders, and WebGL2 uses the build that naga writes instead, so
@@ -2630,6 +2655,61 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/terrain-sketch.ts',
 		hold: 1,
 	},
+	// Each built-in vegetation species: three of its variants, grown from the species record and a
+	// fixed seed, in a row on flat ground, drawn with the bark and leaf atlases that the GPU paints
+	// at first use.
+	...[
+		'broadleaf',
+		'conifer',
+		'shrub',
+		'fern',
+		'meadow-grass',
+		'oak',
+		'beech',
+		'birch',
+		'willow',
+		'alder',
+		'hosta',
+		'sedge',
+		'rush',
+	].map((species) => ({
+		name: `vegetation-${species}`,
+		sketch: `tests/pages/sketches/vegetation-sketch.ts?species=${species}`,
+		hold: 1,
+	})),
+	// The four maps that the GPU paints for the two atlases, each with its mip levels beside it,
+	// and below them a trunk and a leaf card drawn through the materials that sample them.
+	{
+		name: 'vegetation-atlas',
+		sketch: 'tests/pages/sketches/vegetation-atlas-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+	},
+	// One oak crown at three distances from one camera: the leaf cards keep the share of the picture
+	// that they cover as they shrink, since every level of the atlas is painted with its own filter.
+	// Creek's painted oak beside the generated one: the file that the showcase loads, with an
+	// artist's bark and leaf textures, and the same species grown by the add-on and drawn from the
+	// atlases that the GPU paints at first use. The picture is the judge of the two side by side.
+	{
+		name: 'vegetation-versus-creek',
+		sketch: 'tests/pages/sketches/vegetation-versus-creek-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+		// Creek's model files are large, and the software GPU takes its time with their textures.
+		timeoutSeconds: 180,
+	},
+	{
+		name: 'vegetation-leaf-cards',
+		sketch: 'tests/pages/sketches/leaf-card-coverage-sketch.ts',
+		hold: 1,
+		size: [1280, 720],
+	},
+	{
+		name: 'vegetation-coverage',
+		sketch: 'tests/pages/sketches/vegetation-coverage-sketch.ts',
+		hold: 1,
+		size: [640, 360],
+	},
 	// Impostors of the impostors add-on: cards far from the world's origin, each blending the three
 	// atlas views nearest its direction to the eye and lit by the sun from the normal the surface
 	// atlas stores, and a merged row of a plain, a turned and a mirrored panel, which draws only
@@ -2933,6 +3013,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// checks that each part changes the image. A software GPU builds a custom shader and the room
 	// slowly.
 	{ name: 'car-paint', sketch: CAR_PAINT_SKETCH, hold: 0, timeoutSeconds: 120 },
+	// The facades add-on: a wall of lit rooms seen close and in parallax, the same wall from far
+	// enough that the far fallback takes over, and a held frame partway through the power-on wave.
+	// The facades spec checks that the rooms' furniture, the blinds and the wave each change the
+	// image. A software GPU builds a custom shader and the wall pages slowly.
+	{ name: 'facades', sketch: FACADES_SKETCH, hold: 1, timeoutSeconds: 120 },
+	{ name: 'facades-far', sketch: `${FACADES_SKETCH}?far`, hold: 1, timeoutSeconds: 120 },
+	{ name: 'facades-wave', sketch: `${FACADES_SKETCH}?wave`, hold: 0.35, timeoutSeconds: 120 },
+	{ name: 'facades-close', sketch: `${FACADES_SKETCH}?close`, hold: 1, timeoutSeconds: 120 },
 	{
 		name: 'car-paint-no-flakes',
 		sketch: `${CAR_PAINT_SKETCH}?flakes=off`,
@@ -3035,8 +3123,31 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.012 },
 			}),
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
+			// The hero shadow is fine detail on one object, so its demo draws larger than the
+			// other demos, where the tile size's difference shows.
+			...(demo.name === 'hero-shadow' && { size: HERO_SIZE }),
 		};
 	}),
+	// The hero demo at both tile sizes. The car stands in the same place and its shadow falls the
+	// same way; the larger tile draws its edge sharper, which shows that the detail the preset pays
+	// for is kept, not smeared. The demo's own test, `demo-hero-shadow`, draws High at the default
+	// of 2,048, and this draws the 1,024 tile beside it. `demo-hero-shadow-ultra` names the largest
+	// tile, so every GPU path draws it, and the Ultra preset's cascades beside it.
+	{
+		name: 'demo-hero-shadow-tile-1024',
+		sketch: 'examples/hero-shadow/sketch.ts?heroTile=1024',
+		size: HERO_SIZE,
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'demo-hero-shadow-ultra',
+		sketch: 'examples/hero-shadow/sketch.ts?heroTile=4096',
+		switches: ['preset=ultra'],
+		size: HERO_SIZE,
+		hold: 1,
+		timeoutSeconds: 60,
+	},
 	// The objects demo's Look button, which a held frame cannot press: the same stage and time with
 	// one material over every mesh of the main pass, so each crate keeps its shape and its place.
 	{

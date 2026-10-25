@@ -1,10 +1,10 @@
 // The CDN build's helpers: the hash that lets a second run write nothing, and the sizes that the
 // tool prints.
 import { describe, expect, it } from 'bun:test';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CDN_ENTRY, cdnSourcesHash, shownSize } from './cdn';
+import { CDN_ADDONS, CDN_ENTRY, cdnSourcesHash, shownSize } from './cdn';
 
 /** A checkout with the folders that the hash reads, and one source file. */
 function checkout(source: string): string {
@@ -16,6 +16,29 @@ function checkout(source: string): string {
 }
 
 describe('the CDN build', () => {
+	it('carries every public package that builds on the engine', () => {
+		// A page with no build step can load only the add-ons that the build carries, and the docs
+		// promise every foundation add-on there.
+		const packages = join(import.meta.dirname, '../../packages');
+		const addOns = readdirSync(packages)
+			.filter((name) => {
+				try {
+					const manifest = JSON.parse(
+						readFileSync(join(packages, name, 'package.json'), 'utf8'),
+					) as {
+						private?: boolean;
+						peerDependencies?: Record<string, string>;
+					};
+					return manifest.private !== true && '@null3d/engine' in (manifest.peerDependencies ?? {});
+				} catch {
+					return false;
+				}
+			})
+			.sort();
+		expect(addOns.length).toBeGreaterThan(0);
+		expect([...CDN_ADDONS].sort()).toEqual(addOns);
+	});
+
 	it('names the engine entry point inside the folder', () => {
 		expect(CDN_ENTRY).toBe('lib/index.js');
 	});

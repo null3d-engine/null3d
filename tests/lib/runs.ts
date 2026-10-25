@@ -109,7 +109,7 @@ const HELD_MEMORY_FAILURE =
  * every time, so a new runner page sorts a passing fault from a page that cannot load its files.
  */
 const MODULE_LOAD_FAILURE =
-	/\bE1405: the (sketch|render) worker did not start: (its script or a file it imports did not load|error loading dynamically imported module)/;
+	/\bE1405: the (sketch|render) worker did not start: (its script( at \S+?, or a file that it imports,)? did not load|error loading dynamically imported module|.+\(the (sketch|render) worker's script is )/;
 
 /**
  * Whether a page's failure earns one more run in a new runner page. A browser that draws with WebKit
@@ -136,11 +136,14 @@ export function rerunsInNewTab(
  */
 export function unloadedModule(verdict: readonly string[]): string | undefined {
 	for (const problem of verdict) {
+		const loadFailure =
+			/\bE1405: the \w+ worker did not start: (?:error loading dynamically imported module: (\S+?)\.?(?:\s|$)|its script at (\S+?), or a file that it imports, did not load)/.exec(
+				problem,
+			);
 		const url =
 			/\bE1410: the sketch module (\S+) did not load/.exec(problem)?.[1] ??
-			/\bE1405: the \w+ worker did not start: error loading dynamically imported module: (\S+?)\.?(?:\s|$)/.exec(
-				problem,
-			)?.[1];
+			loadFailure?.[1] ??
+			loadFailure?.[2];
 		if (url) return url;
 	}
 	return undefined;

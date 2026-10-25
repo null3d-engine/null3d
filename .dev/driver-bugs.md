@@ -74,6 +74,18 @@ presents.
 The next step is therefore a capture of the frame on a device, not another bisect in the cloud. WebKit's WebGPU inspector needs a Mac running Safari's Develop menu over a
 cable.
 
+## Adreno 619: compatibility mode loses the Vulkan device on its first frame
+
+Status: not reported yet. Found 24 October 2026.
+
+- Device: Samsung Galaxy Tab A9+ (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
+- Browser: Chrome 152.0.7977.54, WebGPU through Dawn's Vulkan backend.
+- Seen in: Creek at Low, in compatibility mode, in the vegetation run of 24 October 2026 ([tested devices](tested-devices.md#vegetation-on-four-cloud-devices-24-october-2026), run 20261024-111020).
+- What happens: the engine's capabilities page reports no compatibility adapter on this device. A page that asked for the mode anyway started, drew no scene, and its render worker lost the device. It reported E1302, `vkQueueSubmit failed with VK_ERROR_DEVICE_LOST` from Dawn. No adapter was left to start another. The engine's frame counter still advanced. So the page reported 3 frames in 5.5 s, and the runner counted a pass.
+- What runs: Creek at Low on WebGL2 draws 0.8 frames a second on the same device.
+- Not tried: whether the loss follows the first draw, a pipeline, or an allocation, and whether any shader triggers it. The engine's own choice never takes the mode there, so the loss comes only from a page that forces it.
+- Workaround: none needed for users, because the engine picks the path from the capabilities report. A page that forces the mode can still hit it. The device page now fails on any engine failure, so a run like this cannot pass again.
+
 ## Safari 27.0: `atomicCompareExchangeWeak` does not compile
 
 Status: fixed in WebKit on 13 September 2026 (commit 4f56cc248e8a, 321006@main, inside bug 323873), not yet in a Safari release. No bug names the fault. Not reported by null3D: a draft waits for the owner. Found 8 October 2026.

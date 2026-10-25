@@ -9,8 +9,9 @@
 // pass, or full, skip or narrow for the pass with fewer of its savings), ?instances=index for
 // vertex shaders that read instance data by index on core WebGPU, ?shadowdepth=32 for shadow
 // cascades in 32-bit float depth instead of 16-bit depth,
-// ?texture-cache=off for KTX2 files that transcode on every load, and ?join=off for custom effects
-// in a pass each, none joined. ?replay-delay= makes the thread that draws wait before it replays
+// ?texture-cache=off for KTX2 files that transcode on every load, ?join=off for custom effects
+// in a pass each, none joined, and ?grading=hdr or display for where the built-in grading table
+// takes its input. ?replay-delay= makes the thread that draws wait before it replays
 // each frame's list, for a test of memory that the sketch thread frees while the list may still
 // point at it. ?hold starts hold mode for image tests, ?preset= fixes the quality preset,
 // ?target-fps= sets the frame rate that the engine defends, ?bench publishes the running engine
@@ -86,6 +87,13 @@ export type SkinningSwitch = 'vertex' | 'compute' | 'full' | 'skip' | 'narrow';
 
 /** A family of compressed texture formats that KTX2 files can become. */
 export type CompressionFamily = 'astc' | 'bc' | 'etc2';
+
+/**
+ * Where the built-in grading table takes its input, which ?grading= picks: `display` grades the
+ * canvas color after the tone curve, and `hdr` grades the light's LogC code before the curve, which
+ * the pass then maps as it maps any light.
+ */
+export type GradingMode = 'display' | 'hdr';
 
 const COMPRESSION_FAMILIES: readonly CompressionFamily[] = ['astc', 'bc', 'etc2'];
 
@@ -174,6 +182,11 @@ export interface Switches {
 	 */
 	join: boolean;
 	/**
+	 * Where the built-in grading table takes its input, which ?grading= picks: `'hdr'` grades the
+	 * light before the tone curve, and `'display'` grades the canvas color after the curve.
+	 */
+	grading: GradingMode;
+	/**
 	 * True when ?prepass=on turns the depth prepass on, false when ?prepass=off turns it off, and
 	 * undefined to leave it to the page's option and the quality preset.
 	 */
@@ -252,6 +265,13 @@ export interface Switches {
 	 * engine checks it when it starts, so a bad time fails at once instead of starting a live engine.
 	 */
 	hold: string | undefined;
+	/**
+	 * The address of the recording that ?replay= names, which the engine runs frame by frame, or
+	 * undefined without the switch. A relative address resolves against the page's.
+	 */
+	replay: string | undefined;
+	/** True when ?record asks the page to record the session's frames and input for a bug report. */
+	record: boolean;
 	/**
 	 * True while ?still-camera lets a still view accumulate its frames, which is the default, and
 	 * false with ?still-camera=off. The image tests and hold mode draw the frame the sketch drew
@@ -370,6 +390,7 @@ export function parseSwitches(search: string): Switches {
 		half: onOff(params.get('half')),
 		cells: params.get('cells') !== 'off',
 		join: params.get('join') !== 'off',
+		grading: oneOf(params.get('grading'), ['display', 'hdr'] as const) ?? 'display',
 		prepass: onOff(params.get('prepass')),
 		occlusion: onOff(params.get('occlusion')),
 		occlusionBuffer: pixelsOf(params.get('occlusion-buffer')),
@@ -386,6 +407,8 @@ export function parseSwitches(search: string): Switches {
 		memoryMiB: within(whole(params.get('memory')), MEMORY_MIB.min, MEMORY_MIB.max),
 		preset: oneOf(params.get('preset'), QUALITY_PRESETS),
 		hold: params.get('hold') ?? undefined,
+		replay: params.get('replay') ?? undefined,
+		record: params.has('record'),
 		still: params.get('still-camera') !== 'off',
 		bench: params.has('bench'),
 		stats: statsSwitch(params.get('stats')),

@@ -27,6 +27,7 @@ import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import {
 	ANTIALIAS_MSAA,
+	LIGHT_VALUE_HERO_SIZE,
 	LIGHT_VALUE_SHADOW_CASCADES,
 	LIGHT_VALUE_SHADOW_MAP_SIZE,
 	TEXTURE_OPTION_KEEP_COPIES,
@@ -44,7 +45,8 @@ import type {
 	HoldScriptStep,
 } from '../page/hold';
 import { type CoreDevice, cellTableWarning } from '../page/limits';
-import { FULL_SCALE, Governor, GovernorLoop, thousandths } from '../quality/governor';
+import { FULL_SCALE, thousandths } from '../quality/budget';
+import { Governor, GovernorLoop } from '../quality/governor';
 import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
 import type { Assets, GltfExtensionHandler, ProgressHandler } from '../scene/assets';
 import { FrameCameras } from '../scene/frame-cameras';
@@ -72,6 +74,7 @@ import {
 	FLAG_PRIMARY,
 	frameAfter,
 	frameReached,
+	type InputEventType,
 	nextFrame,
 	Slot,
 	writeInputEvent,
@@ -89,6 +92,7 @@ import {
 import { MEMORY_AREA_COUNT } from '../shared/memory-area';
 import { MemoryViews } from '../shared/memory-views';
 import { Counter, FrameRecorder, MemoryFigure, Phase, Role } from '../shared/metrics';
+import type { Recorder, ReplayProgram, ReplayResult } from '../shared/recording';
 import { VIDEO_FRAME, type VideoFrameMessage } from '../shared/videos';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
@@ -96,7 +100,7 @@ import { FixedClock, FrameClock, holdSteps } from './clock';
 import type { SketchCallbacks, SketchContext, SketchDefinition } from './define-sketch';
 import { InputReader } from './input';
 import { type QualityStart, type QualityUpdate, RESTART_CHANGE, SketchQuality } from './quality';
-import { HOLD_SEED, seedMathRandom } from './random';
+import { HOLD_SEED, RECORDING_SEED, seedMathRandom } from './random';
 import { type LabelSlotSender, Ui } from './ui';
 
 export type PagePoster = (type: string, data: unknown, transfer?: Transferable[]) => void;
@@ -141,6 +145,8 @@ export interface SketchCore {
 	twoStepProbe: boolean;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
 	pageUrl: string;
+	/** The sketch module's address, which a recording keeps and a replay compares. */
+	sketchUrl: string;
 	/**
 	 * The highest frame rate that the preset check and the governor aim for: the page's `targetFps`
 	 * setting under the ?fps= cap, and infinity for the display's full rate.
@@ -305,6 +311,9 @@ export class SketchRunner {
 	private readonly clock = new FrameClock();
 	/** The fixed steps' clock, which the sketch's options set up. */
 	private fixed = new FixedClock();
+	/** The page's count of resumes as the last frame read it, and whether the page showed since. */
+	private resumes = -1;
+	private resumed = false;
 	/** The sketch's `time`, which each frame updates in place. Its frames are those that run the sketch. */
 	private readonly time = { now: 0, dt: 0, frame: 0 };
 	/**
@@ -419,6 +428,21 @@ export class SketchRunner {
 	private cellsWarned = false;
 	/** What a timed script's steps gave, once hold mode has performed them. */
 	private scriptResult: HoldScriptResult | undefined;
+	/** The recording of this session, while the page records one. */
+	private recorder: Recorder | undefined;
+	/** The frames that this session replays, when the page gave a recording instead of a page to play. */
+	private readonly replayProgram: ReplayProgram | undefined;
+	/** What a replay gave, once its frames ran. */
+	private replayResult: ReplayResult | undefined;
+	/** True while a replay's frames run, so each frame reads the input that the replay wrote. */
+	private replaying = false;
+	/** True when the page records this session's frames and input. */
+	private readonly records: boolean;
+	/**
+	 * True when the session runs fixed frames rather than the page's: hold mode, which steps to a
+	 * time, or a replay, which steps through a recording.
+	 */
+	private readonly holdsFrames: boolean;
 	readonly context: SketchContext;
 
 	/**
@@ -433,7 +457,12 @@ export class SketchRunner {
 		private readonly sketch: SketchCore,
 		private readonly holdSeconds?: number,
 		private readonly holdScript?: HoldScript,
+		replay?: ReplayProgram,
+		record = false,
 	) {
+		this.replayProgram = replay;
+		this.records = record;
+		this.holdsFrames = holdSeconds !== undefined || replay !== undefined;
 		this.record = new FrameRecorder(metrics, Role.Sketch);
 		this.jobRecords = Array.from(
 			{ length: sketch.jobWorkers },
@@ -471,17 +500,20 @@ export class SketchRunner {
 			pointLightShadows,
 			shadowCascades,
 			shadowMapSize,
+			heroTileSize,
 			morphTargets,
 		} = sketch.quality.settings;
 		glue.setShadowTiles(shadowTiles, shadowTileSize, pointLightShadows);
 		glue.setMorphTargets(morphTargets);
 		if (device.occlusionBuffer > 0) glue.setOcclusionBuffer(device.occlusionBuffer);
-		// Directional lights that name no cascades or map size take the preset's.
+		// Directional lights that name no cascades, map size or hero tile size take the preset's.
 		const values = this.core.callValues();
 		values[0] = shadowCascades;
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES);
 		values[0] = shadowMapSize;
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE);
+		values[0] = heroTileSize;
+		glue.setLightDefault(LIGHT_VALUE_HERO_SIZE);
 		if (sketch.jobWorkers > 0) {
 			// The page ends the job workers' loops through these words when the engine stops, and
 			// lets them run the browser's measurement of its memory through the yield word.
@@ -615,6 +647,7 @@ export class SketchRunner {
 			templates,
 			device.joinEffects,
 			new GradeTable(textures),
+			device.gradingHdr,
 		);
 		this.render = new Render(
 			this.core,
@@ -635,6 +668,7 @@ export class SketchRunner {
 		);
 		this.debugDraw = DEV ? new DebugDraw(this.core, host, scene) : undefined;
 		const debug = this.debugDraw ?? new SketchDebug(host);
+		const holdsFrames = this.holdsFrames;
 		this.context = {
 			time: this.time,
 			engine: { viewport: this.viewport, capabilities: sketch.capabilities },
@@ -650,7 +684,7 @@ export class SketchRunner {
 			quality: this.quality,
 			preferences: {
 				get reducedMotion() {
-					return holdSeconds === undefined && Atomics.load(slots, Slot.ReducedMotion) !== 0;
+					return !holdsFrames && Atomics.load(slots, Slot.ReducedMotion) !== 0;
 				},
 				onChange: (handler) => {
 					this.preferenceHandlers.add(handler);
@@ -667,7 +701,11 @@ export class SketchRunner {
 			debug,
 		};
 		// Last, so a constructor that fails leaves the thread's own Math.random in place.
-		if (holdSeconds !== undefined) this.restoreRandom = seedMathRandom(HOLD_SEED);
+		const seed =
+			holdSeconds !== undefined
+				? HOLD_SEED
+				: (replay?.seed ?? (record ? RECORDING_SEED : undefined));
+		if (seed !== undefined) this.restoreRandom = seedMathRandom(seed);
 	}
 
 	/**
@@ -679,12 +717,20 @@ export class SketchRunner {
 		this.fixed = new FixedClock(sketch.options.fixedRate, sketch.options.maxFixedSteps);
 		this.callbacks = (await sketch.setup(this.context)) ?? {};
 		const { check } = this.sketch.quality;
-		if (check && this.holdSeconds === undefined) await this.checkPreset();
+		if (check && !this.holdsFrames) await this.checkPreset();
 		// Warm-ups that the setup started without waiting for them publish their frames first, so
 		// the frame loop never records while a setup frame does.
 		await this.setupFrames;
+		if (this.records) {
+			// The format's code loads only for a session that records one, so a page that records
+			// nothing downloads none of it.
+			const { Recorder: Recording } = await import('../shared/recording');
+			this.recorder = new Recording(RECORDING_SEED, this.sketch.keyCodes);
+			this.input.recorder = this.recorder;
+		}
 		this.setUp = true;
 		if (this.holdSeconds !== undefined) await this.hold(this.holdSeconds);
+		else if (this.replayProgram !== undefined) await this.replay(this.replayProgram);
 	}
 
 	/**
@@ -747,7 +793,7 @@ export class SketchRunner {
 	 * once the thread that draws has taken that frame too, so the targets it makes exist.
 	 */
 	private async settle(drawn: boolean): Promise<void> {
-		if (this.holdSeconds !== undefined) return;
+		if (this.holdsFrames) return;
 		const { slots } = this.sketch.control;
 		const target = this.setUp ? nextFrame(this.recorded.frame) : await this.queueSetupFrame();
 		await reached(slots, Slot.PipelinesBuilt, target);
@@ -1181,7 +1227,10 @@ export class SketchRunner {
 	 * `timestamp` is the frame's time in milliseconds.
 	 */
 	step(timestamp: number): number {
-		this.clock.advance(timestamp, Atomics.load(this.sketch.control.slots, Slot.Resumes));
+		const resumes = Atomics.load(this.sketch.control.slots, Slot.Resumes);
+		this.resumed = this.resumes >= 0 && resumes !== this.resumes;
+		this.resumes = resumes;
+		this.clock.advance(timestamp, resumes);
 		return this.frame();
 	}
 
@@ -1265,6 +1314,120 @@ export class SketchRunner {
 		Atomics.store(slots, Slot.HeldFrom, first);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);
+	}
+
+	/**
+	 * Steps the sketch through a recording: each frame gets the step and the sketch time that it had
+	 * when the session was recorded, and the input that the sketch read in it. The frames run from
+	 * the recording's first one on a fresh setup, so the session's states come out the same on
+	 * another machine, whatever its frame rate. The last frame is the one that the thread that draws
+	 * draws, as in hold mode.
+	 */
+	private async replay(program: ReplayProgram): Promise<void> {
+		const { slots } = this.sketch.control;
+		const { glue } = this.sketch;
+		const rate = Math.round(1 / this.fixed.step);
+		if (program.fixedRate !== rate)
+			throw new EngineError(
+				'E1435',
+				`the recording runs ${program.fixedRate} fixed steps a second, and this sketch runs ${rate}.`,
+			);
+		/** The engine's key index of each name in the recording's dictionary. */
+		const keyIndex = program.keyNames.map((name) => {
+			const index = this.sketch.keyCodes.indexOf(name);
+			if (index >= 0) return index;
+			throw new EngineError(
+				'E1435',
+				`the recording used the key "${name}", which this engine's key codes do not hold. Play the recording with the engine that recorded it.`,
+			);
+		});
+		const frames = program.steps.length;
+		this.replaying = true;
+		let first = 0;
+		let frame = 0;
+		let now = 0;
+		try {
+			for (let at = 0; at < frames; at++) {
+				const step = program.steps[at] as number;
+				now += step;
+				this.clock.replayStep(now, step);
+				const start = program.starts[at] as number;
+				const count = program.counts[at] as number;
+				for (let k = start; k < start + count; k++) this.writeRecordedEvent(program, k, keyIndex);
+				// The last frame is the only one that the thread that draws draws, so it is the first
+				// to wait for the scene's images, as a held frame does. A pass that reads the frame
+				// before it, as screen-space reflections do, draws the frame before the last too.
+				const before = at === frames - 2 && glue.holdsFrameBefore() !== 0;
+				if (first === 0 && (before || at === frames - 1)) {
+					await this.context.scene.imagesSettled();
+					await this.context.scene.areaTablesSettled();
+					await this.post.gradingSettled();
+					await imagesArrived(slots, glue.textureStat(TEXTURE_STAT_IMAGES_SENT, 0));
+					glue.setTextureOption(TEXTURE_OPTION_UPLOAD_ALL, 1);
+					this.gpuEpoch = -1;
+				}
+				frame = this.frame();
+				if (first === 0 && (before || at === frames - 1)) first = frame;
+			}
+			Atomics.store(slots, Slot.HeldFrom, frame);
+			if (glue.readsLastFrame() !== 0 || glue.probesWaiting() !== 0) {
+				this.clock.replayStep(now, 0);
+				frame = this.frame();
+			}
+		} catch (error) {
+			if (error instanceof EngineError && error.code === 'E1435') throw error;
+			throw new EngineError(
+				'E1408',
+				`the replay stopped at ${Number(now.toFixed(3))} seconds, in frame ${this.context.time.frame}: ${messageOf(error)}`,
+			);
+		} finally {
+			this.replaying = false;
+		}
+		this.replayResult = {
+			frames,
+			seconds: now,
+			sketch: program.sketch,
+			stopped: program.stopped,
+		};
+		Atomics.store(slots, Slot.HeldFrom, first);
+		Atomics.store(slots, Slot.FramesPublished, frame);
+		Atomics.notify(slots, Slot.FramesPublished);
+	}
+
+	/** Writes one recorded input record into the ring for the frame that reads it. */
+	private writeRecordedEvent(
+		program: ReplayProgram,
+		event: number,
+		keyIndex: readonly number[],
+	): void {
+		const at = event * program.stride;
+		const type = program.events[at] as number;
+		const code = program.events[at + 1] as number;
+		writeInputEvent(
+			this.sketch.control,
+			type as InputEventType,
+			program.events[at + 5] as number,
+			program.events[at + 6] as number,
+			type === EVENT_KEY_DOWN || type === EVENT_KEY_UP ? (keyIndex[code] as number) : code,
+			program.events[at + 3] as number,
+			program.events[at + 4] as number,
+			program.events[at + 2] as number,
+			nextFrame(this.recorded.frame),
+		);
+	}
+
+	/** What a replay gave, once its frames ran. */
+	get replayOutcome(): ReplayResult | undefined {
+		return this.replayResult;
+	}
+
+	/** The recording of this session so far, or undefined when the page records nothing. */
+	async saveRecording(): Promise<Uint8Array | undefined> {
+		if (this.recorder === undefined) return undefined;
+		return this.recorder.encode({
+			fixedRate: Math.round(1 / this.fixed.step),
+			sketch: this.sketch.sketchUrl,
+		});
 	}
 
 	/** The dump steps that fall at the frame that is about to run, which read it after it ran. */
@@ -1448,7 +1611,8 @@ export class SketchRunner {
 		// render scale of this frame, and whose change handlers hear of a shadow step.
 		if (play && this.governorLoop) {
 			this.governorLoop.now[0] = start;
-			this.governorLoop.frame();
+			this.governorLoop.frame(this.resumed);
+			this.resumed = false;
 			if (this.governor.stepChanges !== this.stepChanges) this.applyGovernedSteps();
 		}
 		// Handlers that hear of a restart may create objects with new pipelines, so their frame
@@ -1458,7 +1622,8 @@ export class SketchRunner {
 		// objects, preference changes, the fixed steps and the update. It stays in this function: a
 		// call that passed the step on would allocate a number for it in every frame.
 		if (play) {
-			if (this.holdSeconds === undefined) {
+			this.recorder?.beginFrame(dt);
+			if (!this.holdsFrames) {
 				this.input.beginFrame(frame, (frame - time.frame) | 0);
 				this.context.scene.dispatchPointerEvents(this.reportError);
 				const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
@@ -1466,9 +1631,9 @@ export class SketchRunner {
 					this.reducedMotion = reducedMotion;
 					this.notify(this.preferenceHandlers, undefined);
 				}
-			} else if (this.holding && this.holdScript !== undefined) {
-				// A hold that performs a timed script reads the events that the steps wrote, so a held
-				// frame driven by input stays the same on every run.
+			} else if (this.replaying || (this.holding && this.holdScript !== undefined)) {
+				// A hold that performs a timed script, or a replay, reads the events that were written
+				// for the frame, so a frame driven by input stays the same on every run.
 				this.input.beginFrame(frame, 0);
 				this.context.scene.dispatchPointerEvents(this.reportError);
 			}

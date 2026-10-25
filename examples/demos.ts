@@ -44,7 +44,8 @@ export interface Demo {
 	largeWorld?: boolean;
 	/**
 	 * False starts the engine on the 8-bit path, where a material with `toneMapped: false` keeps its
-	 * color as the display shows it. The image test adds the page's switch that takes the same path.
+	 * color as the display shows it, as it does on the HDR path. The image test adds the page's
+	 * switch that takes the same path.
 	 */
 	hdr?: boolean;
 	/**
@@ -120,7 +121,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Skyway',
 		scene: 'A rainy megacity from a hover car',
 		summary:
-			'Fly a hover car through a rainy night city: tens of thousands of hover cars streaming along the sky lanes, towers whose windows light room by room, glowing shop fronts and signs, wet streets that mirror the light, and a hero car that leads the camera under the rain.',
+			'Fly a hover car through a rainy night city: tens of thousands of hover cars streaming along the sky lanes, towers whose windows light room by room, glowing shop fronts and signs, wet streets that mirror the light, and a hero car whose deck panels read the flight, leading the camera under the rain.',
 		hold: 1,
 		timeoutSeconds: 300,
 	},
@@ -218,10 +219,11 @@ export const DEMOS: readonly Demo[] = [
 		name: 'canvas-screen',
 		group: 'Light, materials and effects',
 		sketch: new URL('./canvas-screen/sketch.ts', import.meta.url),
+		code: 'canvas-screen/',
 		title: 'Screens drawn on a canvas',
 		scene: 'Reactor control room',
 		summary:
-			'Three wall screens that a sketch paints on OffscreenCanvas objects, each a texture that refreshes only the rectangle that changed. The reactor, shield and coolant readings rise and fall, with their bars and lights, under a breathing lamp.',
+			'Wall screens and a console panel that a sketch paints on OffscreenCanvas objects, each with its own refresh rate and uploading only the rectangle that changed. The LCD look shows sub-pixels, a scan band and dead texels up close, a click turns a panel down or up with a boot glitch, and the reactor, shield and coolant readings rise and fall under a breathing lamp.',
 		hold: 1,
 		timeoutSeconds: 60,
 	},
@@ -233,7 +235,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Clear coat and sheen',
 		scene: 'Rainy showroom',
 		summary:
-			'A car built in code, its candy red paint with glinting metal flakes and door seams under a mirror-smooth clear coat, and carbon fibre trim whose tows shine along their length, on a varnished plinth. Rain falls on wet cobbles whose puddles are a clear coat with rain rings, and velvet glows at its edges with sheen.',
+			"A car built in code, its candy red paint with glinting metal flakes and door seams under a mirror-smooth clear coat, and carbon fibre trim whose tows shine along their length, on a varnished plinth. Rain falls on wet cobbles whose puddles are a clear coat with rain rings, and velvet glows at its edges with sheen. A tablet beside the plinth shows the car's fit on a screen that a tap cycles.",
 		hold: 1,
 		timeoutSeconds: 120,
 	},
@@ -307,6 +309,18 @@ export const DEMOS: readonly Demo[] = [
 			"900 crystals in one batch take their color and their place in a wave from their row, which a custom material reads as input.instance. Three stones share one material, whose bands follow each stone's own axis through object.worldMatrix, and the picked stone lights up by object.id.",
 		hold: 1,
 		timeoutSeconds: 120,
+	},
+	{
+		name: 'water',
+		group: 'Light, materials and effects',
+		sketch: new URL('./water/sketch.ts', import.meta.url),
+		code: 'water/',
+		title: 'Water',
+		scene: 'River into a lake',
+		summary:
+			'A river winds down a grassy valley into a lake, drawn by @null3d/water from one description of both bodies. Waves and ripples follow the current, caustics play over the bed, boulders trail foam, the banks and the sky mirror in the surface, and the shore fades where the bed rises to meet it. The camera drifts downstream and dips under the water, where the add-on tints, bends and lights the view from below.',
+		hold: 1,
+		timeoutSeconds: 180,
 	},
 	{
 		name: 'weighted-transparency',
@@ -400,7 +414,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Hero shadow',
 		scene: 'Launch yard at sunset',
 		summary:
-			"A car on a launch pad in the low evening sun, made in code, with stone blocks around the yard. The sun's cascades hold the blocks' long shadows at a few centimeters per texel, while the car gets a shadow map of its own, fitted tightly to it, several times finer. Every 3 seconds the car's hero shadow turns off and on again, so the difference shows.",
+			"A car on a launch pad in the low evening sun, made in code, with stone blocks around the yard. The sun's cascades hold the blocks' long shadows at a few centimeters per texel, while the car gets a shadow map of its own, fitted tightly to it, several times finer. The preset chooses the tile size, and a page may name one. Every 3 seconds the car's hero shadow turns off and on again, so the difference shows.",
 		hold: 1,
 		timeoutSeconds: 60,
 	},
@@ -445,7 +459,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Tone mapping opt-out',
 		scene: 'Display color chart',
 		summary:
-			"Two rows of the same seven bright colors on a display in a dark gallery. The top row keeps each color exactly as the display shows it, with toneMapped: false. The bottom row takes AgX's punchy curve, which darkens and desaturates it. The demo draws on the 8-bit path, where the flag works.",
+			"Two rows of the same seven bright colors on a display in a dark gallery. The top row keeps each color exactly as the display shows it, with toneMapped: false. The bottom row takes AgX's punchy curve, which darkens and desaturates it. The demo draws on the 8-bit path.",
 		hdr: false,
 		hold: 0.5,
 		timeoutSeconds: 60,
@@ -622,7 +636,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Picking and labels',
 		scene: 'Gallery plinth',
 		summary:
-			'Six polished pieces turn on pedestals on a plinth in a dark gallery under spotlights, each with an HTML label that follows it. The pointer lights up the piece under it, and a click outlines it and marks the point that the ray hit. A plan on the wall beside them marks each click where it lands.',
+			'Six polished pieces turn on pedestals on a plinth in a dark gallery under spotlights, each with an HTML label that follows it. The pointer lights up the piece under it, and a click outlines it and marks the point that the ray hit. A display on the wall beside them marks each click on its canvas where it lands, and uploads only the rectangles that changed.',
 		hold: 2,
 		timeoutSeconds: 60,
 	},

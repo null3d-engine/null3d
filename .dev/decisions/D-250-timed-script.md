@@ -64,6 +64,15 @@ object from its property, so an object's own name may hold dots.
 named `<test>-<state>`, with its own reference. A step that fails, such as a name that finds no
 object, is recorded with the names that are close and fails the command.
 
+## The pictures' state
+
+A held frame's state comes from sketch time, not the wall clock. The engine sets each of hold
+mode's frames from its step number at a fixed rate, and the sketch reads that time and the frame's
+step, so a state that a script names is the same state on any machine and at any speed. A repeat run
+of the whole script, minutes after the references were made, wrote byte-identical image files for
+all three states. The references therefore show the state that their steps name, not whatever the
+machine happened to be doing when the picture was taken.
+
 ## Consequences
 
 - The CLI's `script.js` parses a script and checks every line. `runner.js` sets the page global for

@@ -40,6 +40,24 @@ addEventListener('securitypolicyviolation',e=>{v??={directive:e.effectiveDirecti
 import(s).then(()=>{removeEventListener('message',k);postMessage({${REPORT}:{started:true}});for(const e of h)dispatchEvent(new MessageEvent('message',{data:e.data,ports:e.ports}))},async e=>{let t=0;try{t=(await fetch(s)).status}catch{}await new Promise(r=>setTimeout(r,100));postMessage({${REPORT}:{error:String(e?.message??e),status:t,violation:v}})})`;
 }
 
+/**
+ * Listens for a worker's error events, and reports each one's message, which is empty when the
+ * worker's script, or a file that the script imports, did not load. A browser sends that failure as
+ * a plain `Event`, which the `onerror` property does not receive in every browser, so the listener
+ * goes through `addEventListener`. A script that ran and threw sends an `ErrorEvent` with its
+ * message. Returns a function that removes the listener.
+ */
+export function watchWorkerError(worker: Worker, handler: (message: string) => void): () => void {
+	const listener = (event: Event) => {
+		// The engine reports the failure with its own code, so the browser need not also log it.
+		event.preventDefault();
+		const message = (event as ErrorEvent).message;
+		handler(typeof message === 'string' ? message : '');
+	};
+	worker.addEventListener('error', listener);
+	return () => worker.removeEventListener('error', listener);
+}
+
 /** The engine error for a worker whose script did not run, from its bootstrap's report. */
 export function bootstrapError(
 	what: string,
@@ -92,6 +110,19 @@ export function bootstrapFailure(message: string, error: WasmError): EngineError
 /** The error maker of the `spawnWorker` call that runs. */
 let errorOfCall: WasmError | undefined;
 
+/** The script of the worker that a start made last, as the page resolves it. */
+let lastScript: URL | undefined;
+
+/**
+ * The script of the worker that the last `spawnWorker` call started, as the page resolved it. A
+ * start is synchronous, so the caller that started a worker reads its own script's address here
+ * before any other start runs. An error names that address, including the built file's address in
+ * a production build.
+ */
+export function startedWorkerScript(): URL | undefined {
+	return lastScript;
+}
+
 /**
  * A stand-in for `Worker` that starts a script of another origin through the bootstrap module. It
  * is a plain constructor that returns the thread's own workers, not a subclass: a subclass's
@@ -102,6 +133,7 @@ function bootstrappingWorker(Native: typeof Worker): typeof Worker {
 	// An arrow function cannot stand in for a class: `new` refuses it.
 	function BootstrappedWorker(script: string | URL, options: WorkerOptions = {}): Worker {
 		const url = new URL(String(script), globalThis.location?.href);
+		lastScript = url;
 		if (!isCrossOrigin(url)) return new Native(script, options);
 		watchPolicy();
 		const address = URL.createObjectURL(

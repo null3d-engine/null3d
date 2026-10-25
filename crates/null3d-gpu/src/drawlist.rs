@@ -200,6 +200,13 @@ pub enum Op {
     /// The stages before the copy write nothing that a frame reads, so a map can refresh over
     /// several frames while frames draw with the old one. Each stage reads only what earlier
     /// stages wrote, in this list or in an earlier one.
+    ///
+    /// A map of a scene with a sky layer draws the sky with the layer's own build of the generator's
+    /// shader, which the words after the settings name: the template of that build, then the core
+    /// sky's cloud coverage, density, elevation and scale that the layer obeys, the share of the sun
+    /// that it hides, its opacity and its clock. The last stage names the buffer of the ring that
+    /// the map's light capture lands in, and a `ReadBuffer` after it brings the nine coefficients of
+    /// the map's diffuse light into engine memory.
     SkyMapStep = 55,
     /// [probes texture id, chain texture id, layer, image id, then the six faces' texture ids]:
     /// makes one reflection probe's map from what its six capture views drew (decision record
@@ -750,6 +757,13 @@ pub mod layout {
     /// builds of parallax occlusion mapping. The fragment stage then reads every sampled texture
     /// that WebGPU's default limits give it, so only materials with parallax take it.
     pub const MATERIAL_MAPS_PARALLAX: u32 = 34;
+    /// [`MATERIAL_MAPS`] for a custom material that reads the scene's depth: the first seven map
+    /// slots, their samplers at the bindings after every slot, and no displacement map, which only
+    /// a standard material reads. The last slot's two bindings are left out, so the depth copy that
+    /// the material's own group carries keeps the fragment stage within WebGPU's default count of
+    /// sampled textures. Only WebGPU has it: WebGL2 gives a program a unit only for a texture that
+    /// it reads.
+    pub const MATERIAL_MAPS_SCENE: u32 = 61;
     /// [`FRAME`] for the builds of parallax occlusion mapping: the same groups without the copy of
     /// the opaque color. A parallax material reads the displacement map in the fragment stage as
     /// well as the vertex stage, so its maps' group holds one more sampled texture than any other
@@ -1670,9 +1684,10 @@ pub mod sizes {
     /// screen-space reflections' matrix into the frame before's view and their two vectors, a
     /// still view's jitter, which the scene's vertex shaders add, the physical sky's aerial
     /// perspective's six vectors, and the vignette that the 8-bit path's fragment shaders apply.
-    pub const FRAME_UNIFORM_BYTES: u32 = 992;
-    /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
-    pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
+    pub const FRAME_UNIFORM_BYTES: u32 = 1088;
+    /// Bytes of the output settings: the exposure, the tone mapping, the flags and the render
+    /// size, then the grading controls that the 8-bit path's shaders apply before their curve.
+    pub const OUTPUT_UNIFORM_BYTES: u32 = 112;
     /// Threads per workgroup of the culling shader.
     pub const CULL_WORKGROUP_SIZE: u32 = 128;
     /// 32-bit words per indexed indirect draw.
@@ -1733,12 +1748,12 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: seventeen `vec4f`s. The row holds the
+    /// Bytes of one material's row in the material table: eighteen `vec4f`s. The row holds the
     /// base values, the transmission's values, the attenuation's, the clear coat's, the sheen's,
-    /// the diffuse transmission's, the subsurface scatter's, the iridescence's and the
-    /// anisotropy's. On WebGL2 each row is a row of seventeen `RGBA32_FLOAT` texels of a data
-    /// texture.
-    pub const MATERIAL_BYTES: u32 = 272;
+    /// the diffuse transmission's, the subsurface scatter's, the iridescence's, the anisotropy's
+    /// and the light map's transform. On WebGL2 each row is a row of eighteen `RGBA32_FLOAT`
+    /// texels of a data texture.
+    pub const MATERIAL_BYTES: u32 = 288;
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;
@@ -1949,6 +1964,10 @@ pub mod template {
     /// do, with their base color map where it has an image. Its group 0 is
     /// [`super::layout::MOTION_FRAME`], and group 1 the map's.
     pub const MOTION: u32 = 73;
+    /// The tone mask of instanced meshes: the parts of the objects whose material keeps its color
+    /// as the display shows it, in blue, where the scene's depth leaves them. The final pass reads
+    /// it to skip the tone curve for those pixels. It binds as the depth template does.
+    pub const TONE_MASK: u32 = 79;
     /// One level of screen-space reflections' depth pyramid: one triangle over the level's drawn
     /// corner, each texel the nearest depth of the 2 x 2 texels of the level below it.
     pub const SSR_REDUCE: u32 = 49;
@@ -2079,7 +2098,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 82] = [
+    pub const NAMES: [(&str, u32); 83] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2098,6 +2117,7 @@ pub mod template {
         ("LIGHT_WRITE", LIGHT_WRITE),
         ("SKIN", SKIN),
         ("OUTLINE_MASK", OUTLINE_MASK),
+        ("TONE_MASK", TONE_MASK),
         ("SPRITE", SPRITE),
         ("SPRITE_MAP", SPRITE_MAP),
         ("OCCLUSION_EARLY", OCCLUSION_EARLY),
@@ -2189,7 +2209,10 @@ pub mod groups {
     /// shader, the maps' group of a build that samples maps, and the view's index group of a build
     /// that reads its instances by index. WebGL2 reads each view's instance data from groups of its
     /// own, the draws' group and the instances' one, and binds a material's maps at the group after
-    /// them. A decal adds the scene's depth: at index 2 on WebGPU, after the maps on WebGL2.
+    /// them. A decal adds the scene's depth: at index 2 on WebGPU, after the maps on WebGL2. That
+    /// last index on WebGL2 also holds the copy of the scene's depth that a custom material reads,
+    /// which the view binds once for the whole pass: a pass that draws such a material carries it
+    /// at every draw. A WebGL2 program reads no binding that it does not declare.
     const MESH: &[&[u32]] = &[
         &[layout::FRAME, layout::DEPTH],
         &[
@@ -2208,7 +2231,11 @@ pub mod groups {
             layout::DECAL_DEPTH_MS,
         ],
         &[layout::TEXTURES, layout::MATERIAL_MAPS],
-        &[layout::DECAL_DEPTH, layout::DECAL_DEPTH_MS],
+        &[
+            layout::DECAL_DEPTH,
+            layout::DECAL_DEPTH_MS,
+            layout::MATERIAL_SCENE,
+        ],
     ];
     /// [`MESH`] for a decal's templates, whose frame group leaves out the bindings that no decal
     /// build reads.
@@ -2273,6 +2300,7 @@ pub mod groups {
         (template::LIGHT_WRITE, own!(layout::LIGHT_CLUSTERS)),
         (template::SKIN, own!(layout::SKIN)),
         (template::OUTLINE_MASK, MESH),
+        (template::TONE_MASK, MESH),
         (template::SPRITE, MESH),
         (template::SPRITE_MAP, MESH),
         (template::OCCLUSION_EARLY, own!(layout::CULL)),
@@ -2536,6 +2564,7 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("TEXTURES", layout::TEXTURES),
     ("MATERIAL_MAPS", layout::MATERIAL_MAPS),
     ("MATERIAL_MAPS_PARALLAX", layout::MATERIAL_MAPS_PARALLAX),
+    ("MATERIAL_MAPS_SCENE", layout::MATERIAL_MAPS_SCENE),
     ("FRAME_PARALLAX", layout::FRAME_PARALLAX),
     ("DEPTH", layout::DEPTH),
     ("LIGHT_CLUSTERS", layout::LIGHT_CLUSTERS),

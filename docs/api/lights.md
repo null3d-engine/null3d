@@ -240,7 +240,7 @@ sun.setShadow({ hero: car });
 sun.setHeroShadow(null);
 ```
 
-The object must cast shadows. Its tile comes from the same atlas as the spot and point lights' shadows, and takes its last layer. Surfaces within the object's box along the light read the tile, and the cascades shadow everything else. See [A hero shadow](../concepts/shadows.md#a-hero-shadow).
+The object must cast shadows. Its tile comes from the same atlas as the spot and point lights' shadows, and takes its last layer. Surfaces within the object's box along the light read the tile, and the cascades shadow everything else. The tile size is 1,024, 2,048 or 4,096 texels on each side. Name one with `setHeroShadow(car, 4096)` or the `heroTileSize` option. The quality preset's `heroTileSize` is the default. See [A hero shadow](../concepts/shadows.md#a-hero-shadow).
 
 [Shadows](../concepts/shadows.md) explains cascades, contact shadows, hero shadows, the shadow atlas of spot and point lights, each setting and its default, and the biases.
 

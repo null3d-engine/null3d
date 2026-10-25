@@ -42,7 +42,9 @@ import {
 	BACKGROUND_VALUE_TURBIDITY,
 } from '../generated/core';
 import type { ShaderVariants } from '../generated/shaders';
+import { SkyLight } from '../shared/slot';
 import { Environment } from './environment';
+import type { FeatureDescription } from './features';
 import type { CoreMemory, ViewHolder } from './memory';
 import type { CompiledWgsl } from './resources';
 import { ShaderPreloads } from './shader-preloads';
@@ -337,8 +339,8 @@ export type BackgroundSource =
 
 /**
  * The values of a sky layer that `scene.setSkyLayer` takes, and that a later call changes: its
- * opacity and the share of the sun that it hides. A value that a later call leaves out keeps its
- * own.
+ * opacity, the share of the sun that it hides, and how often the sky's environment map captures it.
+ * A value that a later call leaves out keeps its own.
  *
  * @category api/scene
  */
@@ -351,6 +353,14 @@ export interface SkyLayerValues {
 	 * 0.
 	 */
 	readonly sun?: number;
+	/**
+	 * How often, in seconds, the sky's environment map captures a layer that its own clock moves:
+	 * a second by default. The map lights reflections and the diffuse light of the sky from what it
+	 * holds, so a layer that drifts needs the map to follow it. Give 0 for a layer that stands
+	 * still: its map then fills only when the sky or the layer's values change. A shorter time
+	 * follows a faster layer at a higher cost, one fill of the map spread over a few frames.
+	 */
+	readonly refresh?: number;
 }
 
 /**
@@ -386,8 +396,14 @@ const CALL = 'setBackground';
 export class SceneSkyLayer implements SkyLayer {
 	/** The render pipeline template of the layer's shader, which the draw thread builds, or 0. */
 	private template = 0;
+	/**
+	 * The template of the same WGSL built into the shader that fills the sky's environment map, or
+	 * 0. The map's reflections and its light then hold the layer too.
+	 */
+	private mapTemplate = 0;
 	private opacity = 1;
 	private sun = 0;
+	private refresh = 1;
 
 	constructor(
 		private readonly core: CoreMemory,
@@ -395,18 +411,22 @@ export class SceneSkyLayer implements SkyLayer {
 	) {}
 
 	/**
-	 * Installs a layer over the background, or replaces the one there. Throws E1215 for WGSL that
-	 * the plugin did not compile as a sky layer, and the checks of `set` for its values.
+	 * Installs a layer over the background, or replaces the one there. The description names the
+	 * feature and must record at the background point, as a draw, provide the sky, and draw in the
+	 * main view, the scene passes and the reflections. Throws E1223 for such a description that it
+	 * cannot place, E1215 for WGSL that the plugin did not compile as a sky layer, and the checks
+	 * of `set` for its values.
 	 */
-	install(options: SkyLayerOptions, call: string): void {
+	install(description: FeatureDescription, options: SkyLayerOptions, call: string): void {
+		checkSkyLayer(description, call);
 		if (DEV && (typeof options !== 'object' || options === null))
 			throw new EngineError(
 				'E1213',
 				`${call}() got ${String(options)}, which is not an object of a sky layer's options. Give { wgsl }, with WGSL that declares fn skyLayer(input: SkyLayerInput) -> SkyLayer.`,
 			);
 		const compiled = compiledSkyLayer(options.wgsl, call);
-		const { opacity, sun } = options;
-		if (DEV) checkLayerValues({ opacity, sun }, call);
+		const { opacity, sun, refresh } = options;
+		if (DEV) checkLayerValues({ opacity, sun, refresh }, call);
 		this.template = this.templates.of(compiled, () => [
 			{
 				kind: 'skyLayer',
@@ -414,9 +434,17 @@ export class SceneSkyLayer implements SkyLayer {
 				locations: [],
 				textures: 0,
 			},
+			{
+				kind: 'skyLayerMap',
+				variants: compiled.map,
+				locations: [],
+				textures: 0,
+			},
 		]);
+		this.mapTemplate = this.template + 1;
 		this.opacity = opacity ?? 1;
 		this.sun = sun ?? 0;
+		this.refresh = refresh ?? 1;
 		this.send(call);
 	}
 
@@ -429,6 +457,7 @@ export class SceneSkyLayer implements SkyLayer {
 		}
 		this.opacity = values.opacity ?? this.opacity;
 		this.sun = values.sun ?? this.sun;
+		this.refresh = values.refresh ?? this.refresh;
 		this.send(call);
 	}
 
@@ -436,13 +465,31 @@ export class SceneSkyLayer implements SkyLayer {
 	clear(): void {
 		if (this.template === 0) return;
 		this.template = 0;
-		this.core.check(this.core.glue.setSkyLayer(0, 0, 1), 'clearSkyLayer', undefined, true);
+		this.mapTemplate = 0;
+		this.core.check(
+			this.core.glue.setSkyLayer(0, 0, 0, 1, 0, SkyLight),
+			'clearSkyLayer',
+			undefined,
+			true,
+		);
 	}
 
-	/** Writes the layer's template and values into the core, which the next frame draws. */
+	/** Writes the layer's templates and values into the core, which the next frame draws. */
 	private send(call: string): void {
 		const { core } = this;
-		core.check(core.glue.setSkyLayer(this.template, this.sun, this.opacity), call, undefined, true);
+		core.check(
+			core.glue.setSkyLayer(
+				this.template,
+				this.mapTemplate,
+				this.sun,
+				this.opacity,
+				this.refresh,
+				SkyLight,
+			),
+			call,
+			undefined,
+			true,
+		);
 	}
 }
 
@@ -455,19 +502,61 @@ function checkLayerLive(template: number, call: string): void {
 		);
 }
 
-/** Throws E1108 or E1203 for a layer's value outside 0 to 1. Call it inside `if (DEV)`. */
+/** The views that a sky layer draws in, which its description must name. */
+const SKY_LAYER_VIEWS = ['main', 'scenePass', 'reflection'] as const;
+
+/**
+ * Throws E1223 unless the description places a sky layer: the background point, as a draw, with the
+ * sky slot and the three views that the engine draws it in.
+ */
+function checkSkyLayer(description: FeatureDescription, call: string): void {
+	if (typeof description !== 'object' || description === null)
+		throw new EngineError(
+			'E1223',
+			`${call}() got ${String(description)}, which is not a feature description. Give defineFeature({ name, frame: 'background', kind: 'draw', provides: ['sky'], views: ['main', 'scenePass', 'reflection'] }).`,
+		);
+	const name = description.name;
+	if (description.frame !== 'background')
+		throw new EngineError(
+			'E1223',
+			`${call}() got the feature '${name}' with the frame ${JSON.stringify(description.frame)}; a sky layer records at 'background'.`,
+		);
+	if (description.kind !== 'draw')
+		throw new EngineError(
+			'E1223',
+			`${call}() got the feature '${name}' with the kind ${JSON.stringify(description.kind)}; a sky layer draws, so give the kind 'draw'.`,
+		);
+	const provides = description.provides ?? [];
+	if (!provides.includes('sky'))
+		throw new EngineError(
+			'E1223',
+			`${call}() got the feature '${name}' with the provides ${JSON.stringify(provides)}; a sky layer provides 'sky'.`,
+		);
+	const views = description.views ?? [];
+	if (views.length !== SKY_LAYER_VIEWS.length || !SKY_LAYER_VIEWS.every((v) => views.includes(v)))
+		throw new EngineError(
+			'E1223',
+			`${call}() got the feature '${name}' with the views ${JSON.stringify(views)}; a sky layer draws in 'main', 'scenePass' and 'reflection'.`,
+		);
+}
+
+/** Throws E1108 or E1203 for a layer's value outside 0 to 1, or a refresh that is not a time. */
 function checkLayerValues(values: SkyLayerValues, call: string): void {
 	if (values.opacity !== undefined) checkNumber('opacity', values.opacity, 0, 1, call);
 	if (values.sun !== undefined) checkNumber('sun', values.sun, 0, 1, call);
+	if (values.refresh !== undefined) checkNumber('refresh', values.refresh, 0, Infinity, call);
 }
 
 /** A layer's compiled WGSL, or throws E1215 for WGSL that the plugin did not compile as one. */
 function compiledSkyLayer(
 	wgsl: unknown,
 	call: string,
-): CompiledWgsl & { readonly variants: ShaderVariants } {
+): CompiledWgsl & { readonly variants: ShaderVariants; readonly map: ShaderVariants } {
 	if (typeof wgsl === 'object' && wgsl !== null && (wgsl as CompiledWgsl).kind === 'skyLayer')
-		return wgsl as CompiledWgsl & { readonly variants: ShaderVariants };
+		return wgsl as CompiledWgsl & {
+			readonly variants: ShaderVariants;
+			readonly map: ShaderVariants;
+		};
 	throw new EngineError(
 		'E1215',
 		typeof wgsl === 'string'

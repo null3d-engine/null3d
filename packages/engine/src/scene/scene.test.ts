@@ -87,6 +87,8 @@ function fakeCore(largeWorld = false) {
 	const viewCalls = { added: [] as number[][], rects: [] as number[][], removed: [] as number[] };
 	/** The lens that each camera sent: its target, its handle, its layers, then its values. */
 	const lenses: number[][] = [];
+	/** Each material value that the core received: its material, its parameter and its numbers. */
+	const materialValues: number[][] = [];
 	let nextView = 1;
 	const glue = {
 		sceneCapacity: () => CAPACITY,
@@ -126,11 +128,13 @@ function fakeCore(largeWorld = false) {
 			failure = { code: 1101, details: [texture & SLOT_MASK, FRAME] };
 			return failure.code;
 		},
-		setSkyLayer: (template: number, sun: number, opacity: number) => {
-			skyLayers.push([template, sun, opacity]);
+		setSkyLayer: (template: number, map: number, sun: number, opacity: number) => {
+			skyLayers.push([template, sun, opacity, map]);
 			return 0;
 		},
 		setOverrideMaterial: (material: number) => overrides.push(material) && 0,
+		setMaterialValue: (material: number, param: number, x: number, y: number, z: number) =>
+			materialValues.push([material, param, x, y, z]) && 0,
 		lastErrorCode: () => failure.code,
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
@@ -177,6 +181,8 @@ function fakeCore(largeWorld = false) {
 		box,
 		ball,
 		paint,
+		/** Each material value that the core received: its material, its parameter and its numbers. */
+		materialValues,
 		/** The override material ids that the core received, in order, with 0 for none. */
 		overrides,
 		/** Sets the world matrix that the core gives an object, from a three.js matrix. */
@@ -511,6 +517,29 @@ describe('hold script property paths', () => {
 		expect(() => scene.readScriptPath(car, 'intensity')).toThrow('which it does not take');
 	});
 
+	test("animates a material's maps offset and scale, and keeps their other numbers", () => {
+		const { scene, paint, materialValues } = fakeCore();
+		scene.animateProperty(paint, 'uvOffset', {
+			times: [0, 1],
+			values: [0, 0, 0.5, 0.25],
+			time: 1,
+			loop: false,
+		});
+		scene.animateProperty(paint, 'uvScale', {
+			times: [0, 1],
+			values: [1, 1, 2, 3],
+			time: 1,
+			loop: false,
+		});
+		scene.propertySystem().step(0);
+		// Each write sends the matrix's two rows: their scale and turn, then the offset.
+		const [u, v] = materialValues.slice(-2);
+		// A zero turn gives -0 in one row, which is a zero.
+		const row = (values: number[] | undefined) => values?.map((value) => value || 0);
+		expect(row(u)).toEqual([1, C.MATERIAL_PARAM_UV_U, 2, 0, 0.5]);
+		expect(row(v)).toEqual([1, C.MATERIAL_PARAM_UV_V, 0, 3, 0.25]);
+	});
+
 	test('reads a camera lens, and names the objects that are close to a name', () => {
 		const { scene } = fakeCore();
 		scene.createGroup({ name: 'car' });
@@ -605,20 +634,31 @@ describe('scene.setSkyLayer', () => {
 	const layer = {
 		kind: 'skyLayer',
 		variants: {},
-	} as unknown as Parameters<Scene['setSkyLayer']>[0]['wgsl'];
+		map: {},
+	} as unknown as Parameters<Scene['setSkyLayer']>[1]['wgsl'];
+	/** The description that places a sky layer. */
+	const placed = {
+		name: 'test-layer',
+		frame: 'background',
+		kind: 'draw',
+		provides: ['sky'],
+		views: ['main', 'scenePass', 'reflection'],
+	} as const;
 
 	test('a layer takes its values, a later call changes them, and a clear removes it', () => {
 		const { scene, skyLayers } = fakeCore();
-		const installed = scene.setSkyLayer({ wgsl: layer, sun: 0.25 });
+		const installed = scene.setSkyLayer(placed, { wgsl: layer, sun: 0.25 });
 		const first = skyLayers[0] as number[];
 		expect(first[0]).toBeGreaterThanOrEqual(C.SHADING_CUSTOM_FIRST);
-		expect(first.slice(1)).toEqual([0.25, 1]);
+		expect(first.slice(1, 3)).toEqual([0.25, 1]);
+		// The map's build of the layer takes the template after the layer's own.
+		expect(first[3]).toBe((first[0] as number) + 1);
 		installed.set({ opacity: 0.5 });
-		expect((skyLayers[1] as number[]).slice(1)).toEqual([0.25, 0.5]);
+		expect((skyLayers[1] as number[]).slice(1, 3)).toEqual([0.25, 0.5]);
 		installed.set({ sun: 0.75 });
-		expect((skyLayers[2] as number[]).slice(1)).toEqual([0.75, 0.5]);
+		expect((skyLayers[2] as number[]).slice(1, 3)).toEqual([0.75, 0.5]);
 		scene.clearSkyLayer();
-		expect(skyLayers[3]).toEqual([0, 0, 1]);
+		expect((skyLayers[3] as number[]).slice(0, 3)).toEqual([0, 0, 1]);
 		// A second clear sends nothing: no layer is installed.
 		scene.clearSkyLayer();
 		expect(skyLayers).toHaveLength(4);
@@ -626,33 +666,51 @@ describe('scene.setSkyLayer', () => {
 
 	test('a second install replaces the layer with a template of its own', () => {
 		const { scene, skyLayers } = fakeCore();
-		scene.setSkyLayer({ wgsl: layer });
-		const other = { kind: 'skyLayer', variants: {} } as unknown as typeof layer;
-		scene.setSkyLayer({ wgsl: other });
-		expect((skyLayers[1] as number[])[0]).toBe(((skyLayers[0] as number[])[0] as number) + 1);
-		expect((skyLayers[1] as number[]).slice(1)).toEqual([0, 1]);
+		scene.setSkyLayer(placed, { wgsl: layer });
+		const other = { kind: 'skyLayer', variants: {}, map: {} } as unknown as typeof layer;
+		scene.setSkyLayer(placed, { wgsl: other });
+		// Each layer takes two templates: its box, and the sky map's draws with it.
+		expect((skyLayers[1] as number[])[0]).toBe(((skyLayers[0] as number[])[0] as number) + 2);
+		expect((skyLayers[1] as number[]).slice(1, 3)).toEqual([0, 1]);
+	});
+
+	test('a description that the engine cannot place throws E1223', () => {
+		const { scene } = fakeCore();
+		const options = { wgsl: layer };
+		for (const [key, value, message] of [
+			['frame', 'opaque', 'with the frame "opaque"; a sky layer records at \'background\''],
+			['kind', 'fullscreen', 'with the kind "fullscreen"; a sky layer draws'],
+			['provides', [], "with the provides []; a sky layer provides 'sky'"],
+			['views', ['main'], 'with the views ["main"]; a sky layer draws in'],
+		] as const)
+			expect(
+				thrown(() => scene.setSkyLayer({ ...placed, [key]: value } as never, options)).message,
+			).toContain(message);
+		expect(thrown(() => scene.setSkyLayer(undefined as never, options)).message).toStartWith(
+			'E1223: setSkyLayer() got undefined',
+		);
 	});
 
 	test('WGSL that the plugin did not compile as a sky layer throws E1215', () => {
 		const { scene } = fakeCore();
 		expect(
-			thrown(() => scene.setSkyLayer({ wgsl: 'fn skyLayer() {}' as never })).message,
+			thrown(() => scene.setSkyLayer(placed, { wgsl: 'fn skyLayer() {}' as never })).message,
 		).toStartWith('E1215: setSkyLayer() got WGSL as text');
 		expect(
-			thrown(() => scene.setSkyLayer({ wgsl: { kind: 'effect' } as never })).message,
+			thrown(() => scene.setSkyLayer(placed, { wgsl: { kind: 'effect' } as never })).message,
 		).toStartWith('E1215: setSkyLayer() got "effect", which is not a sky layer');
 	});
 
 	test('a value outside 0 to 1 throws E1108', () => {
 		const { scene } = fakeCore();
-		expect(thrown(() => scene.setSkyLayer({ wgsl: layer, opacity: 1.5 })).message).toStartWith(
-			'E1108: setSkyLayer() got 1.5 for opacity; it takes 0 to 1',
-		);
-		const installed = scene.setSkyLayer({ wgsl: layer });
+		expect(
+			thrown(() => scene.setSkyLayer(placed, { wgsl: layer, opacity: 1.5 })).message,
+		).toStartWith('E1108: setSkyLayer() got 1.5 for opacity; it takes 0 to 1');
+		const installed = scene.setSkyLayer(placed, { wgsl: layer });
 		expect(thrown(() => installed.set({ sun: -0.2 })).message).toStartWith(
 			'E1108: SkyLayer.set() got -0.2 for sun; it takes 0 to 1',
 		);
-		expect(thrown(() => scene.setSkyLayer(undefined as never)).message).toStartWith(
+		expect(thrown(() => scene.setSkyLayer(placed, undefined as never)).message).toStartWith(
 			'E1213: setSkyLayer() got undefined',
 		);
 	});

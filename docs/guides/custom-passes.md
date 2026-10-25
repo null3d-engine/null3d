@@ -331,6 +331,8 @@ const water = materials.shader({ wgsl: waterWgsl, textures: { mirror: textures.f
 
 ### A water recipe
 
+For water in a scene, use [`@null3d/water`](../api/water.md): it draws a river and a lake from one shape, with the waves, the foam, the soft shore and the reflection that this recipe builds by hand. This recipe shows the pieces that the add-on builds on, for a water surface of your own.
+
 This surface function makes a stream. It has ripples that move, a tint that deepens with the depth, foam at the banks, and the reflection of the banks and the sky. It needs the height of the bed under each point of the water. A terrain made in code gives it with the same function that shapes the terrain. A loaded terrain gives it with a height map texture, which the function samples instead.
 
 ```ts
@@ -416,7 +418,8 @@ surface.setRotationEuler(-Math.PI / 2, 0, 0);
 - `ripple` sets how far the waves tilt the normal. The tilt bends the reflection and the sun's highlights.
 - The foam hides the reflection where it lies, through the reflection's share in `a`.
 - The water is opaque, so the bed does not show through it. The shallow tint stands in for the bed's color.
-- Without a height map of the bed, a blended sheet reads the depth of the opaque scene behind it with `sceneInputs: ['sceneDepth']`. The water's depth along the view ray is the gap between the sheet and the geometry behind the pixel. Convert the pixel's own depth to a distance with the camera's range in `engine_frame.camera_range`, then subtract it from `sceneDistance(uv)`. Fade the water's alpha to zero over the last centimeters of the gap. The water then thins and foams against the bank, so its shore ends softly. Such a sheet declares no textures of its own, so this recipe's mirror cannot join it. [Materials](../api/materials.md#the-scene-behind-a-surface) shows the options.
+- Without a height map of the bed, a blended sheet reads the depth of the opaque scene behind it with `sceneInputs: ['sceneDepth']`. The water's depth along the view ray is the gap between the sheet and the geometry behind the pixel. Convert the pixel's own depth to a distance with the camera's range in `engine_frame.camera_range`, then subtract it from `sceneDistance(uv)`. Fade the water's alpha to zero over the last centimeters of the gap. The water then thins and foams against the bank, so its shore ends softly. Such a sheet takes up to seven textures of its own, so this recipe's mirror and a foam map join it. [Materials](../api/materials.md#the-scene-behind-a-surface) shows the options.
+
 - Waves that move the surface's vertices need `setBounds`, as [Culling](../concepts/culling.md) explains. The reflection's plane stays flat, which suits small waves.
 
 ## Full-screen passes
@@ -495,7 +498,7 @@ const glow = render.addPass({ kind: 'fullscreen', wgsl: glowFromMask, writes: 'g
 post.addEffect({ wgsl: addGlow, textures: { glow: textures.fromPass(glow) } });
 ```
 
-- `width: 0` draws the outline mask without the crisp line. The mask's red channel holds each outlined object's coverage, and its green channel the parts that nothing hides, for a glow that differs behind walls.
+- `width: 0` draws the outline mask without the crisp line. The mask's red channel holds each outlined object's coverage, and its green channel the parts that nothing hides, for a glow that differs behind walls. Read those two channels alone: the engine writes the blue channel for surfaces that keep their display color.
 - The pass blurs at half size, which shades a quarter of the pixels and blurs further for the same reads.
 - The effect adds the glow before the tone curve and bloom, on HDR color, so a bright glow also blooms.
 

@@ -27,6 +27,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 21. Fire, smoke and sparks with particles
 22. Terrain from a height field
 23. Outdoor land with an edge the camera never sees
+24. Trees, shrubs and grass from a species record
 
 ## 1. Start a new project
 
@@ -239,12 +240,15 @@ For a pixel-exact pick, use `scene.pick`. It tests the pixel that the camera dra
 ```ts
 if (input.wasPressed('Mouse0')) {
   void scene.pick(input.pointer.x, input.pointer.y).then((hit) => {
-    if (hit?.object === target) { /* the click landed on the target's pixels */ }
+    if (hit?.object !== target || !hit.hasUv || !hit.uv) return;
+    // The mesh's own texture coordinates, as a raycast on the same point gives them.
+    const u = hit.uv[0] as number;
+    const v = hit.uv[1] as number;
   });
 }
 ```
 
-A scene with a whole shader of your own answers its picks with a raycast instead. So does a scene with a blended or transmissive material, or a sprite, point or line. A raycast tests triangles, so it ignores masks. Docs: `api/raycast#pixel-exact-picking`.
+The hit carries `uv` and `hasUv` as a raycast's hit does. Repeated textures give values past 1, and a material's `uvTransform` leaves them alone. A scene with a whole shader of your own answers its picks with a raycast instead. So does a scene with a blended or transmissive material, or a sprite, point or line. A raycast tests triangles, so it ignores masks. Docs: `api/raycast#pixel-exact-picking`.
 
 ## 7. HTML labels above objects (0.2)
 
@@ -490,6 +494,8 @@ board.refresh({ x: 32, y: 32, width: 448, height: 96 });                  // upl
 
 The rectangle counts from the canvas's top-left corner. `fromCanvas` puts the canvas's last row at the bottom of a plane, so the canvas stands upright. `refreshHz` caps the canvas reads. A call that comes sooner reads nothing. The next read covers both rectangles. A 256 x 256 rectangle is 256 KiB, well within the upload budget at 30 Hz. Ask for the 2D context with `willReadFrequently: true`. Docs: `api/textures#canvases`, `cookbook/index`.
 
+The screens example add-on in `examples/addons/screens` wraps this pattern: `createScreen` draws its first picture in the setup, adds a refresh rate per screen, an LCD look by distance, a boot glitch, and `screen.pointOf(event)` for a click on the canvas. A screen's mesh is a plane with texture coordinates, so a click on it lands on a canvas pixel without plane maths. Docs: `guides/screens`.
+
 ## 16. Custom full-screen effect (0.2)
 
 ```ts
@@ -648,7 +654,7 @@ export default defineSketch(({ scene, geometry, materials, textures, render }) =
 });
 ```
 
-The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint, foam and soft shores: read the depth behind the sheet with `sceneInputs: ['sceneDepth']` (0.3). The water's depth is the gap between the sheet and the surface behind it: convert `input.fragCoord.z` with `engine_frame.camera_range` and subtract it from `sceneDistance(uv)`. Fade the alpha over the end of that gap and the shore ends softly. Or use the height-field water recipe in `guides/custom-passes`. A sheet that reads the depth declares no textures, so it takes no mirror. For a camera that dips under the water, see "Water that the camera can go under" in `references/shaders.md` section 7. Docs: `api/render`, `shaders/surface-functions`.
+The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint, foam and soft shores: read the depth behind the sheet with `sceneInputs: ['sceneDepth']` (0.3). The water's depth is the gap between the sheet and the surface behind it: convert `input.fragCoord.z` with `engine_frame.camera_range` and subtract it from `sceneDistance(uv)`. Fade the alpha over the end of that gap and the shore ends softly. Or use the height-field water recipe in `guides/custom-passes`. For a river or a lake, use `createWater` from `@null3d/water` instead: one shape gives either body, with waves, foam, soft shores, caustics, a reflection whose cadence follows the preset, and `createUnderwater` for the view from below. Build water by hand only for a shape the add-on does not take. A sheet that reads the depth takes up to seven textures of its own, so the mirror joins it. Docs: `api/water`, `api/render`, `shaders/surface-functions`.
 
 ## 21. Fire, smoke and sparks with particles
 
@@ -798,3 +804,66 @@ const controls = createOrbitControls(ctx, camera, {
 - Give far scenery `receiveShadows: false`. The automatic shadow distance measures to the far side of each receiver's bounds, so a far mountain that receives shadows makes the near shadows coarse.
 
 Docs: `concepts/lighting` (Where the land ends) has the ground clamp and the haze sheets in code, `api/controls`, `concepts/shadows`.
+
+## 24. Trees, shrubs and grass from a species record
+
+```ts
+import { defineSketch } from '@null3d/engine';
+import {
+  ALL_SPECIES,
+  bakePlantAtlases,
+  generateVariantSet,
+  leafCellFor,
+  plantMaterial,
+} from '@null3d/vegetation';
+
+export default defineSketch((ctx) => {
+  const { scene, geometry } = ctx;
+  const camera = scene.createPerspectiveCamera({ fov: 50, near: 0.1, far: 500, position: [18, 8, 26] });
+  camera.lookAt(0, 5, 0);
+  scene.setActiveCamera(camera);
+  scene.createDirectionalLight({ direction: [-0.4, -1, -0.3], intensity: 3, castShadows: true });
+  scene.createAmbientLight({ intensity: 0.45 });
+
+  // The bark and leaf atlases, which the GPU paints at first use, and one material for each part.
+  const atlases = bakePlantAtlases(ctx);
+  const bark = plantMaterial(ctx, { atlases, part: 'wood', color: '#4a3a2a' });
+  const leaves = plantMaterial(ctx, {
+    atlases,
+    part: 'leaves',
+    cell: leafCellFor(ALL_SPECIES[0]!),
+    color: '#3f5a2a',
+  });
+
+  let x = 0;
+  for (const species of ALL_SPECIES.slice(0, 5)) {
+    for (const asset of generateVariantSet(species, { seed: 7 })) {
+      for (const part of asset.levels[0]?.parts ?? []) {
+        const mesh = geometry.fromArrays(part.arrays);
+        scene.createMesh({
+          mesh,
+          material: part.name === 'wood' ? bark : leaves,
+          position: [x, 0, 0],
+          castShadows: true,
+        });
+        // The lower levels hold the same plant with fewer rings and cards, so the engine picks
+        // one by distance without the crown changing shape.
+        const lower = asset.levels.slice(1).flatMap((level) => {
+          const match = level.parts.find((candidate) => candidate.name === part.name);
+          return match ? [{ mesh: geometry.fromArrays(match.arrays), error: level.error }] : [];
+        });
+        if (lower.length > 0) mesh.setLevels(lower);
+      }
+      x += (asset.crown.max[0] - asset.crown.min[0]) * 1.6;
+    }
+  }
+  return {};
+});
+```
+
+Call `generatePlantInTask` in place of `generateVariantSet` when a scene grows many plants: it runs in a job worker, so the first frames do not wait. A species record is plain data, so a themed set is a list of records and needs no code. The package draws no texture and no material of its own yet, so give its parts materials of your own. Docs: `api/vegetation`.
+
+To place the plants rather than set them out by hand, read the ground once with `groundMaps`, take `builtinRules` for the species, and call `scatterVegetation`. It returns flat point arrays, one record for each plant, so a page looks up the variant and draws a copy at each point. The same seed places the same plants on every device. Pass `EcoScatter` and `addTile` when a scene should place its ground in tiles beside the frames.
+Call `generatePlantInTask` in place of `generateVariantSet` when a scene grows many plants: it runs in a job worker, so the first frames do not wait. A species record is plain data, so a themed set is a list of records and needs no code.
+
+`bakePlantAtlases` paints the bark and the leaf atlases in the browser the first time a page asks for them, and `plantMaterial` draws a part from them: the species' colour multiplies the atlas's own, the normal map bends the light, and the leaf's coverage cuts its outline. `leafCellFor(species)` picks the leaf shape that suits a record, so give each species its own leaf material when a scene draws more than one. Call it once in the setup: it paints four textures and keeps them, and no image file is downloaded. Docs: `api/vegetation`.

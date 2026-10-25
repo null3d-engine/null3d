@@ -44,11 +44,12 @@ import { KEY_CODES } from '../shared/key-codes';
 import { memoryBytes } from '../shared/memory-views';
 import { createMetricsBuffer, MetricsReader, threadRoles } from '../shared/metrics';
 import { addMeasurementRelease } from '../shared/page-measurement';
+import type { ReplayProgram, ReplayResult } from '../shared/recording';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
 import { VIDEO_FOLLOW, type VideoFollowMessage } from '../shared/videos';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { WGSL_UPDATE_EVENT, type WgslUpdate } from '../shared/wgsl-updates';
-import { spawnWorker } from '../shared/worker-start';
+import { spawnWorker, startedWorkerScript, watchWorkerError } from '../shared/worker-start';
 import { loadSketch } from '../sketch/define-sketch';
 import type { QualityStart, QualityUpdate } from '../sketch/quality';
 import type { SketchRunner } from '../sketch/runner';
@@ -203,6 +204,12 @@ export interface EngineOptions {
 	 */
 	shadowTileSize?: number;
 	/**
+	 * Texels on each side of the tile that holds a directional light's hero shadow, for each light
+	 * whose `shadow` options name no `heroTileSize`: 1,024, 2,048 or 4,096. Without it, the quality
+	 * preset sets it. Another value fails with E1213.
+	 */
+	heroTileSize?: number;
+	/**
 	 * True makes point lights cast shadows, false keeps them from it. Without it, the quality
 	 * preset decides: High and Ultra turn them on. Another value fails with E1213.
 	 */
@@ -266,10 +273,10 @@ export interface EngineOptions {
 	transparent?: boolean;
 	/**
 	 * False draws the scene into 8-bit color, where each material's shader applies the output
-	 * transform, instead of HDR color, which the final pass tone maps. A material with
-	 * `toneMapped: false` keeps its exact color only on that path. The default lets the engine pick
-	 * the path from the device, which draws HDR color wherever it can. The `?hdr=off` switch takes
-	 * the 8-bit path too.
+	 * transform, instead of HDR color, which the final pass tone maps. Both paths honour a
+	 * material's `toneMapped: false`, and the 8-bit path also honours it on a blended surface. The
+	 * default lets the engine pick the path from the device, which draws HDR color wherever it
+	 * can. The `?hdr=off` switch takes the 8-bit path too.
 	 */
 	hdr?: boolean;
 	/**
@@ -345,6 +352,14 @@ export interface EngineOptions {
 	 * error also reaches the console.
 	 */
 	onSketchError?: (error: Error) => void;
+	/**
+	 * Called when a worker's script did not load before the worker's first message, and the engine
+	 * started a second copy of it. The fault comes and goes, so the engine recovers on its own: the
+	 * call names the worker, such as `render` or `job 2`, and the address of its script. The engine
+	 * also warns in the console. Without a second copy that loads, the start fails with E1405, which
+	 * names the worker and its script.
+	 */
+	onWorkerRetry?: (worker: string, script: string) => void;
 	/**
 	 * Cancels a start in progress, for example when the user leaves the page. `createEngine` then
 	 * stops the engine's threads and rejects with the signal's reason.
@@ -675,6 +690,15 @@ export interface Engine {
 	 */
 	captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array }>;
 	/**
+	 * Resolves with the recording of the session so far, or undefined when the page does not record
+	 * one. A page records with the `?record` switch, which also puts a save button on the page. The
+	 * file holds each frame's step and the input that the sketch read in it, from the session's
+	 * first frame, so a `?replay` of it draws the same frames. Its format is the engine's own; save
+	 * it to a file and open `?replay=<file>` to run it. Recording seeds the sketch thread's random
+	 * numbers, so a recorded session draws the same frames when it replays.
+	 */
+	saveRecording(): Promise<Uint8Array | undefined>;
+	/**
 	 * Acts out a loss of the GPU, as a driver reset causes. The engine starts a new GPU device and
 	 * draws the whole scene again, as it does after a real loss. Use it to test how your page
 	 * handles one.
@@ -825,8 +849,14 @@ interface WorkerEvents {
 	labelSlot: LabelSlotSender;
 	/** The sketch thread asked for this many job workers, as its parallel work grew. */
 	jobsWanted(count: number): void;
+	/** A worker's script did not load, so the engine started a second copy from the same address. */
+	workerRestart?(role: string, script: string): void;
 	/** What a timed script's steps gave, after the sketch thread performed them in a hold. */
 	holdScript?(result: HoldScriptResult | undefined): void;
+	/** The recording of the session so far, which the page saves as a file. */
+	recording?(bytes: Uint8Array): void;
+	/** What a replay gave, after the sketch thread ran the recording's frames. */
+	replay?(result: ReplayResult): void;
 }
 
 /**
@@ -838,9 +868,6 @@ export function gpuFailure(thread: string, outOfMemory: boolean, message: string
 		? new EngineError('E1304', `${thread}'s GPU ran out of memory: ${message}.`)
 		: new EngineError('E1305', `${thread}'s GPU rejected a command: ${message}.`);
 }
-
-/** What a worker's error event says when its script, or a file that the script imports, did not load. */
-const NO_SCRIPT = 'its script or a file it imports did not load';
 
 /**
  * A worker whose replies are routed: events to the page's handlers, answers to the oldest request.
@@ -868,10 +895,17 @@ export class EngineWorker {
 	private stoppedCleanly = false;
 	/** Settles the wait for the worker's answer to a stop of its drawing. */
 	private answerStop: (() => void) | undefined;
+	/** Removes the current worker's error listener, for a copy or for a worker that the page keeps. */
+	private unwatch: (() => void) | undefined;
 
 	constructor(
 		worker: Worker,
 		private readonly role: string,
+		/**
+		 * The script that the worker runs, which a failure to start names in its error. Absent for a
+		 * worker that started for an engine before, whose script did not load this time.
+		 */
+		private readonly script: URL | string | undefined,
 		events: WorkerEvents,
 		/**
 		 * Starts another copy of the worker, for the one retry of a script that did not load. Absent
@@ -927,6 +961,12 @@ export class EngineWorker {
 					case 'hold-script':
 						events.holdScript?.(reply.result);
 						return;
+					case 'replay-done':
+						events.replay?.(reply.result);
+						return;
+					case 'recording':
+						events.recording?.(reply.bytes);
+						return;
 					case 'lost':
 						forgetWorkerProbe();
 						events.failure(
@@ -968,28 +1008,59 @@ export class EngineWorker {
 				if (reply.type === 'error') pending.reject(startError(reply.role, reply.message));
 				else pending.resolve(reply);
 			};
-			worker.onerror = (event) => {
-				// A browser sends an error event without a message when the worker's script, or a
-				// file that the script imports, did not load. That fault comes and goes, so a worker
-				// whose script has not run gets one more copy before the page reports it.
-				if (!event.message && !this.scriptLoaded && this.restart && !this.retried) {
+			this.unwatch?.();
+			this.unwatch = watchWorkerError(worker, (message) => {
+				// A worker whose script, or a file that the script imports, did not load fails before
+				// it reports its first step. That fault comes and goes, so the worker gets one more
+				// copy before the page reports it, whatever the browser's message says. A failure
+				// that the engine already named, such as a policy that blocks the script, would fail
+				// the copy the same way, so it is reported at once.
+				if (!this.scriptLoaded && this.restart && !this.retried && !errorOfMessage(message)) {
 					this.retried = true;
 					worker.terminate();
 					try {
 						const copy = this.restart();
 						this.worker = copy;
 						listen(copy);
+						events.workerRestart?.(this.role, this.script === undefined ? '' : String(this.script));
 						return;
 					} catch {
 						// The browser refused the copy too, so the page reports the first failure.
 					}
 				}
 				markStopped();
-				failed(event.message || NO_SCRIPT);
+				// A worker that ran its script fails with its own message; one that never ran names
+				// its script, which a wrong path or a host that does not serve it makes wrong.
+				failed(this.scriptLoaded ? message || 'its script failed' : this.startFailure(message));
 				this.answerStop?.();
-			};
+			});
 		};
 		listen(worker);
+	}
+
+	/**
+	 * What the page reports for a worker that did not start. The message names the worker's script,
+	 * so a page that loads the engine's files from a wrong path, or a host that does not serve them,
+	 * shows which file failed.
+	 */
+	private startFailure(message: string): string {
+		const script = this.script === undefined ? '' : String(this.script);
+		if (message)
+			return script ? `${message} (the ${this.role} worker's script is ${script})` : message;
+		const at = script
+			? `its script at ${script}, or a file that it imports, did not load`
+			: 'its script, or a file that it imports, did not load';
+		return this.retried ? `${at}, and a second copy failed too` : at;
+	}
+
+	/**
+	 * Drops the handlers that reach this engine, so a worker that the page keeps, such as a drawing
+	 * worker parked with its canvas, holds none of the engine or its shared memory alive.
+	 */
+	detach(): void {
+		this.unwatch?.();
+		this.unwatch = undefined;
+		this.worker.onmessage = null;
 	}
 
 	/**
@@ -1235,8 +1306,13 @@ function startJobWorker(
 			name: `null3d-job-${index}`,
 		});
 	try {
-		const job = new EngineWorker(startEngineWorker(start), `job ${index}`, events, () =>
-			startEngineWorker(start),
+		const first = startEngineWorker(start);
+		const job = new EngineWorker(
+			first.worker,
+			`job ${index}`,
+			first.script,
+			events,
+			() => startEngineWorker(start).worker,
 		);
 		job.ready().then(
 			() => started(index),
@@ -1253,8 +1329,9 @@ function startJobWorker(
  * Starts an engine worker from a start function, with the engine's own error codes for a failure
  * of a worker's bootstrap from another origin.
  */
-function startEngineWorker(start: () => Worker): Worker {
-	return spawnWorker(start, (code, message) => new EngineError(code, message));
+function startEngineWorker(start: () => Worker): { worker: Worker; script: URL | undefined } {
+	const worker = spawnWorker(start, (code, message) => new EngineError(code, message));
+	return { worker, script: startedWorkerScript() };
 }
 
 /**
@@ -1280,19 +1357,22 @@ function startWorkers(
 	 */
 	const kept = (start: () => Worker) => {
 		const first = startEngineWorker(start);
-		made.push(first);
+		made.push(first.worker);
 		return {
-			worker: first,
+			worker: first.worker,
+			script: first.script,
 			restart: () => {
 				const copy = startEngineWorker(start);
-				made.push(copy);
-				return copy;
+				made.push(copy.worker);
+				return copy.worker;
 			},
 		};
 	};
 	/** A worker that ran for an engine before keeps its script: there is nothing to load again. */
 	const keptBefore = (role: DrawingRole) =>
-		reused?.role === role ? { worker: reused.worker, restart: undefined } : undefined;
+		reused?.role === role
+			? { worker: reused.worker, script: undefined, restart: undefined }
+			: undefined;
 	try {
 		const sketchStart = sketchWorker
 			? (keptBefore('sketch') ??
@@ -1315,10 +1395,22 @@ function startWorkers(
 				))
 			: undefined;
 		const sketch = sketchStart
-			? new EngineWorker(sketchStart.worker, 'sketch', events, sketchStart.restart)
+			? new EngineWorker(
+					sketchStart.worker,
+					'sketch',
+					sketchStart.script,
+					events,
+					sketchStart.restart,
+				)
 			: undefined;
 		const render = renderStart
-			? new EngineWorker(renderStart.worker, 'render', events, renderStart.restart)
+			? new EngineWorker(
+					renderStart.worker,
+					'render',
+					renderStart.script,
+					events,
+					renderStart.restart,
+				)
 			: undefined;
 		return { sketch, render, jobs: [] };
 	} catch (thrown) {
@@ -1327,6 +1419,65 @@ function startWorkers(
 		const reason = thrown instanceof Error ? thrown.message : String(thrown);
 		throw new EngineError('E1405', `the browser refused to start an engine worker: ${reason}.`);
 	}
+}
+
+/** The path of an address, which names a sketch across the machines that serve it. */
+function pathOf(address: string): string {
+	try {
+		return new URL(address, globalThis.location?.href).pathname;
+	} catch {
+		return address;
+	}
+}
+
+/**
+ * The recording that `address` names, downloaded and read before the engine starts, so a file that
+ * is not a recording fails the start with a message rather than a page that runs nothing. The
+ * recording must be of the sketch that this page runs, or its frames mean nothing.
+ */
+async function readReplay(address: string, sketchUrl: string): Promise<ReplayProgram> {
+	let url: URL;
+	try {
+		url = new URL(address, globalThis.location?.href);
+	} catch {
+		throw new EngineError(
+			'E1435',
+			`?replay=${address} is not an address. Give the address of a recording file, such as ?replay=/bug.n3dr.`,
+		);
+	}
+	let response: Response;
+	try {
+		response = await fetch(url);
+	} catch (error) {
+		throw new EngineError(
+			'E1435',
+			`createEngine() could not download the recording ${url.href}: ${messageOf(error)}. Check the address, and that the file's server sends it to this page's origin.`,
+		);
+	}
+	if (!response.ok)
+		throw new EngineError(
+			'E1435',
+			`the server answered ${response.status} for the recording ${url.href}. Check that the file is there, and that its server sends it to this page's origin.`,
+		);
+	const bytes = new Uint8Array(await response.arrayBuffer());
+	const { decodeRecording } = await import('../shared/recording');
+	let program: ReplayProgram;
+	try {
+		program = decodeRecording(bytes);
+	} catch (error) {
+		throw new EngineError(
+			'E1435',
+			`createEngine() could not read the recording ${url.href}: ${messageOf(error)}`,
+		);
+	}
+	// The recording's own origin is the machine that made it, which a replay never shares. The
+	// sketch's path is what names the scene.
+	if (pathOf(program.sketch) !== pathOf(sketchUrl))
+		throw new EngineError(
+			'E1435',
+			`the recording was made with the sketch ${program.sketch}, and this page runs ${sketchUrl}. Open the page with the sketch that recorded the session.`,
+		);
+	return program;
 }
 
 /**
@@ -1351,7 +1502,8 @@ function prefetch(url: string): void {
  */
 export async function createEngine(options: EngineOptions): Promise<Engine> {
 	const switches = parseSwitches(URL_SWITCHES ? (globalThis.location?.search ?? '') : '');
-	const holding = options.hold !== undefined || switches.hold !== undefined;
+	const holding =
+		options.hold !== undefined || switches.hold !== undefined || switches.replay !== undefined;
 	const place = placement(options, switches);
 	if (DEV && !warnedIsolation) {
 		const warning = lostIsolationWarning(pageIsolation());
@@ -1404,7 +1556,15 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 				'E1419',
 				`createEngine() got a canvas that no engine can draw on again: ${canvas.dead}.`,
 			);
-		return await startEngine(options, switches, hold, holdScript, place, canvas, holder, release);
+		return await startEngine(
+			options,
+			switches,
+			{ hold, holdScript, replay: switches.replay, record: switches.record },
+			place,
+			canvas,
+			holder,
+			release,
+		);
 	} catch (error) {
 		release();
 		// A coded error's fix arrives in a file of its own, and a failed start reports it whole.
@@ -1447,20 +1607,32 @@ function placement(options: EngineOptions, switches: Switches): Placement {
 	return { threaded, sketchThread: main ? 'main' : 'worker' };
 }
 
+/** How a start runs: a live page, a hold at a sketch time, or a replay of a recording. */
+interface StartModes {
+	/** Hold mode's sketch time in seconds, or undefined for a live page or a replay. */
+	hold?: number;
+	/** A timed script that hold mode performs as it steps the sketch. */
+	holdScript?: HoldScript;
+	/** The address of a recording that the start plays, from ?replay=, or undefined for a live page. */
+	replay?: string;
+	/** True when the page records the session's frames and input. */
+	record: boolean;
+}
+
 /**
- * Starts the engine with the page's switches. With a hold time, it resolves once the held frame
- * is read back, and publishes it.
+ * Starts the engine with the page's switches. With a hold time or a replay, it resolves once the
+ * last frame is read back, and publishes it.
  */
 async function startEngine(
 	options: EngineOptions,
 	switches: Switches,
-	hold: number | undefined,
-	holdScript: HoldScript | undefined,
+	modes: StartModes,
 	{ threaded, sketchThread }: Placement,
 	canvasHold: CanvasHold,
 	holder: Holder,
 	release: () => void,
 ): Promise<Engine> {
+	const { hold, holdScript } = modes;
 	const startedAt = performance.now();
 	const { signal } = options;
 	// A page's progress handler that throws is the page's error: the console shows it, and the
@@ -1475,11 +1647,16 @@ async function startEngine(
 	signal?.throwIfAborted();
 	const pageUrl = globalThis.location?.href;
 	const sketchUrl = new URL(options.sketch, pageUrl).href;
+	const replay = modes.replay === undefined ? undefined : await readReplay(modes.replay, sketchUrl);
+	// A replay records nothing of its own: it runs a file that already holds the frames and input.
+	const record = modes.record && replay === undefined;
 	// The quality preset follows the device hints and the crash marker, which the page has at once,
 	// so its memory maximum is known before the core loads. Hold mode and the ?preset= switch fix
 	// the preset for tests, so they neither read nor write the marker.
 	const marker =
-		hold === undefined && switches.preset === undefined ? new StartMarker(sketchUrl) : undefined;
+		hold === undefined && replay === undefined && switches.preset === undefined
+			? new StartMarker(sketchUrl)
+			: undefined;
 	const history = marker?.read() ?? NO_HISTORY;
 	const optionPreset = presetOption(options.preset);
 	// The highest frame rate that the preset check, the governor and the stats overlay aim for.
@@ -1492,6 +1669,7 @@ async function startEngine(
 		shadowMapSize: options.shadowMapSize,
 		shadowTiles: options.shadowTiles,
 		shadowTileSize: options.shadowTileSize,
+		heroTileSize: options.heroTileSize,
 		pointLightShadows: options.pointLightShadows,
 		depthPrepass: switches.prepass ?? options.depthPrepass,
 		gpuOcclusion: switches.occlusion ?? options.gpuOcclusion,
@@ -1602,6 +1780,10 @@ async function startEngine(
 	let engineThreads!: [string, number[]][];
 	/** What a timed script's steps gave in the sketch worker, which the held result publishes. */
 	let scriptResult: HoldScriptResult | undefined;
+	/** What a replay gave in the sketch worker, which the held result publishes. */
+	let replayResult: ReplayResult | undefined;
+	/** The calls that wait for the session's recording, which the sketch thread answers together. */
+	const recordingWaiters: ((bytes: Uint8Array | undefined) => void)[] = [];
 	const events: WorkerEvents = {
 		sketchMessage: onSketchMessage,
 		sketchError: onSketchError,
@@ -1621,6 +1803,20 @@ async function startEngine(
 		jobsWanted: (count) => growJobs?.(count),
 		holdScript: (result) => {
 			scriptResult = result;
+		},
+		// A recovered worker is not a failure, so the page hears it here and in the console, never
+		// through onFailure.
+		workerRestart: (role, script) => {
+			console.warn(
+				`null3D: the ${role} worker did not load its script at ${script}, so the engine started a second copy.`,
+			);
+			options.onWorkerRetry?.(role, script);
+		},
+		replay: (result) => {
+			replayResult = result;
+		},
+		recording: (bytes) => {
+			for (const resolve of recordingWaiters.splice(0)) resolve(bytes);
 		},
 	};
 	/** Starts job workers up to a count, once the core is ready to hand them. */
@@ -1934,6 +2130,7 @@ async function startEngine(
 			return;
 		}
 		canvasWorker.send({ type: 'park' } satisfies RendererRequest);
+		canvasWorker.detach();
 		parkWorker(options.canvas, canvasHold, canvasWorker.handle, canvasHold.movedTo);
 	};
 	try {
@@ -2105,7 +2302,7 @@ async function startEngine(
 		canvasWatch = watch;
 		watch.listen(true);
 		// Hold mode keeps input out, so a held frame never depends on it.
-		const takesInput = hold === undefined;
+		const takesInput = hold === undefined && replay === undefined;
 		const pageInput = captureInput(options.canvas, control);
 		input = pageInput;
 		pageInput.listen(takesInput);
@@ -2289,6 +2486,7 @@ async function startEngine(
 					capabilities,
 					...senders,
 					pageUrl: pageUrl ?? sketchUrl,
+					sketchUrl,
 					maxTargetFps: maxTarget,
 					threads: engineThreads,
 					twoStepProbe: DEV && switches.twoStep,
@@ -2299,6 +2497,8 @@ async function startEngine(
 				},
 				hold,
 				holdScript,
+				replay,
+				record,
 			);
 			// In hold mode the sketch module loads only now, after the runner seeded the random
 			// numbers. The renderer starts before the setup, so a warm-up in the setup has a renderer
@@ -2323,9 +2523,10 @@ async function startEngine(
 				});
 			await abortable(setup, start.signal);
 			scriptResult = localRunner?.holdScriptResult;
+			replayResult = localRunner?.replayOutcome;
 			if (render) {
 				await abortable(render.ready(), start.signal);
-				if (hold === undefined)
+				if (hold === undefined && replay === undefined)
 					void runPipelined(localRunner, control, (error) =>
 						onFailure(
 							new EngineError('E1404', `the sketch on the page failed: ${messageOf(error)}.`),
@@ -2346,6 +2547,8 @@ async function startEngine(
 				capabilities,
 				hold,
 				holdScript,
+				replay,
+				record,
 				quality,
 				maxTargetFps: maxTarget,
 				threads: engineThreads,
@@ -2523,6 +2726,16 @@ async function startEngine(
 			async captureFrame() {
 				return held ? { ...held, pixels: held.pixels.slice() } : capture();
 			},
+			async saveRecording() {
+				if (stopped()) return undefined;
+				if (localRunner !== undefined) return localRunner.saveRecording();
+				const worker = threads?.sketch;
+				if (worker === undefined) return undefined;
+				return await new Promise<Uint8Array | undefined>((resolve) => {
+					recordingWaiters.push(resolve);
+					worker.send({ type: 'save-recording' });
+				});
+			},
 			simulateGpuLoss() {
 				if (localDrawing) localDrawing.simulateLoss();
 				else rendererHost?.send({ type: 'lose-gpu' });
@@ -2535,7 +2748,11 @@ async function startEngine(
 				if (destroyOptions?.release) releaseMemories();
 			},
 		};
-		if (hold === undefined) {
+		if (record && hold === undefined)
+			void import('./record-button')
+				.then(({ showRecordButton }) => showRecordButton(engine))
+				.catch((error) => console.warn('null3D could not show the save-recording button:', error));
+		if (hold === undefined && replay === undefined) {
 			if (switches.bench) (globalThis as Record<string, unknown>)[BENCH_GLOBAL] = engine;
 			// The switch's start state goes on top of the option's corner.
 			if (switches.stats !== false) {
@@ -2554,14 +2771,18 @@ async function startEngine(
 		const { summarizeFrames } = await loadFrameStats();
 		publishHold({
 			ok: true,
-			time: hold,
+			time: hold ?? replayResult?.seconds ?? 0,
 			frame: Atomics.load(slots, Slot.FramesTaken),
 			tier,
 			directDraws: device.directDraws,
 			...held,
 			stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
 			...(scriptResult !== undefined && { script: scriptResult }),
+			...(replayResult !== undefined && { replay: replayResult }),
 		});
+		// A replay ends on its last frame: the sketch stops there, rather than running on past the
+		// session that the file holds.
+		if (replay !== undefined) engine.setPaused(true);
 		return engine;
 	} catch (e) {
 		starting = false;
