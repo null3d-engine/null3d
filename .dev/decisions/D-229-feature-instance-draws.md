@@ -318,3 +318,19 @@ are unaffected by it.
 
 Until it lands, a page should keep its instance draw out of the shadow views, or expect its shadow
 in the wrong place. The M3-V8 grass, whose near blades must cast (D-241), waits on this fix.
+
+## Addendum, 26 October 2026: what the allocation proof found, and a fault left open
+
+The allocation proof earned its place on its first run. It found two allocations in the WebGL2 row
+split: an array for every instance row, and `Math.hypot`'s arguments, which the browser keeps in an
+array. A probe showed that the cost was per row, not per call: about 24 bytes each. Both are fixed.
+The split writes the batch's arrays directly, and each column's length is a square root of the
+squares. The check now passes on both GPU paths, at 6.4 s on WebGPU and 3.4 s on WebGL2.
+
+One fault is recorded here and left open, by the coordinator's ruling of 26 October 2026. A device
+that chose the direct-draw path fixes that choice on the first frame, while the scene holds no
+feature-instance draw (`gpu_driven/mod.rs`, the `!self.created` test in `record_into`). A draw
+created after that frame on such a device takes the direct path. Its bucket's CPU count is 0,
+because the engine hides a feature draw from the culling shader, so the draw draws nothing and no
+error says why. No page meets this today: every first user adds its draw in the sketch's setup. It
+needs a task of its own, either to refuse such a draw or to move the session to the indirect path.
