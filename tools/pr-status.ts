@@ -124,7 +124,7 @@ const NOTES: Readonly<Record<string, string>> = {
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-L2':
-		"the file's levels share their vertices but are not ordered coarsest first, so a coarse level names vertices spread through the whole buffer; the Mac has no GPU time under the fade rule, only the 11 October table that predates it; and the phone rows are frame interval and CPU time, because the S24 has no WebGPU adapter and no WebGL2 GPU timer",
+		"the file's levels now share their vertices and are ordered coarsest first, so a coarse level names a prefix of the buffer, proved on the staged terrain where the coarsest level's largest index is one less than the vertices it uses; what remains is a phone-class GPU row, because the S24 has no WebGPU adapter and no WebGL2 GPU timer, and that row waits on a phone that can time its GPU",
 	'M3-L4':
 		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
 	'M3-A2': "the refresh's cost rows are all owed, the Mac's included",
