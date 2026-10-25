@@ -46,6 +46,12 @@ of the demo beside a mirror half.
 | The aurora, under the demo's camera, fog, bloom and exposure: mirror half, ice half, sky above | 148, 80 and 198 green | Mac, Chrome 153, WebGPU |
 | The demo itself, live: the ice just below the horizon, then near the camera | 25, then 4 green | Mac, Chrome 153, WebGPU |
 
+The mirror and ice readings are two points on one row of one frame, 100 and 380 texels from the
+left edge, so they share a view angle but not a direction: a flat lake reflects a different part of
+the sky on each side of the frame, and the aurora is not the same brightness in both. The gap
+between them is therefore the surface's loss and the sky's own variation together, and the
+surface's share alone needs the same pixel drawn twice.
+
 How the data was produced: a temporary probe page, one page load for each row, on 25 October 2026,
 its pixels read through `engine.captureFrame()`. The page drew the plane and the sphere of the
 question under each sky and posted the environment's format and levels; it is not kept, and
@@ -55,12 +61,21 @@ question under each sky and posted the environment's format and levels; it is no
 
 The demo's ice is a dielectric of 4 per cent, and the picture follows that. One frame of the demo's
 own camera, sky, layer, fog, bloom and exposure held the lake split in two: a mirror half on the left
-of the frame and the demo's own ice on the right. The aurora read 148 green on the mirror at one
-pixel and 80 on the ice at the same pixel, where the sky above them read 198. The demo's own picture
-reads 25 green just below the horizon and 4 near the camera, which is the same ice at a steeper
-angle. So the lake does take the aurora, and how much of it the ice shows is its own reflectance: the
-owner's dark mirror is the change that makes the lake show the sky, and this record does not decide
-that look.
+of the frame and the demo's own ice on the right. On one row of that frame, 100 texels from the left
+edge the mirror read 148 green and 380 texels from it the ice read 80, where the sky above them read
+198. The demo's own picture reads 25 green just below the horizon and 4 near the camera, which is the
+same ice at a steeper angle.
+
+Those two points do not share the sky's own brightness, so the gap between them is not yet the
+surface's loss on its own: a flat lake reflects a different azimuth on each side of the frame. What
+the ice loses is measured by drawing one pixel twice, the same camera and the same sky and only the
+material changed, and that measurement is owed before the redraw. The geometry says what it will
+show: the sampled row's rays meet the lake 73 degrees from its normal, where a dielectric of index
+1.5 reflects about 22 per cent by Schlick's approximation, against the mirror's 100, so the ice's
+share of the mirror's reading is about a fifth before its roughness blurs the reflection, and the
+rest of the gap is the aurora being brighter at one azimuth than the other. What the record holds now
+is the shape of the answer: the lake takes the aurora, and the ice shows a share of it that its own
+reflectance allows, which the owner's dark mirror replaces with a surface that shows the sky.
 
 ## Decision
 
@@ -70,6 +85,13 @@ plane is built facing +Z and its rotation turns that to +Y. Size and space make 
 the map's centre faces as the sky does. The map's format is the room's format, and the room's map
 reflects at full strength under the same camera and the same sky. The physical sky's map reflects
 too, so the panorama path fills and its stages read it.
+
+To say it plainly for the reader who finds the earlier trial, where a white metal lake under the
+physical sky reflected nothing: the plane has no normal or winding fault, and a mirror over that sky
+does reflect it. The same page, the same camera and the same physical sky read 190 and 237 levels
+where the lake mirrored the room's map, and 255 green where it mirrored a flat layer. What the trial
+read was the sky it pointed at, not a surface that could not reflect: a flat lake reflects one
+narrow band of elevations, and that band is dark in the night sky except where a curtain crosses it.
 
 What the run did find is that the sky drew a layer that its own reflection did not match. The layer's
 box template wrote the layer's colour into the exposed scene without the exposure: with the exposure
