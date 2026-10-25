@@ -53,8 +53,8 @@ The field is built in two stages. M3-V15 builds the first.
 **Stage one, this task.** The analytic wind is incompressible by construction. Its swirl is the curl
 of one stream function in the ground plane, a push is a vortex, and a gust turns in rings about its
 own center. Its base flow is constant along the ground and slower near it. No pressure solve is
-therefore needed to keep the air's volume. The test measures the discrete form's divergence at 3.5e-5 a second.
-That is under a thousandth of the field's 6 m/s, so the air keeps its volume without one.
+therefore needed to keep the air's volume. The test holds the discrete form's divergence under a thousandth of the field's
+speed, so the air keeps its volume without one.
 A grid that follows the camera samples that field into one `rgba16float` texture, which a reader
 samples with one texture read. The texture holds the wind across the ground and the local speed in
 its fourth channel.
@@ -97,6 +97,14 @@ divergence, and the projection removes it.
   reads it the same way before and after the change.
 - **Evidence:** the add-on's tests prove the field moves a plant card, and that a frozen field fails
   those tests. The allocation figure and `check-addon`'s page, cost and allocation gates are owed
-  while timing runs are barred. `check-addon`'s size gate reports the entry over its code budget.
-  The water add-on fails that gate on this branch too. The plugin inlines an imported effect's
-  compiled data in the entry, and the entry without it is a seventh of the figure.
+  while timing runs are barred, so this record claims none of them.
+- **The size gate is not this add-on's fault:** at head `b25592ccd`, the command in
+  `docs/guides/add-ons.md`, `bunx @null3d/cli check-addon packages/wind`, builds the add-on and
+  reports its entry at 89.3 KB raw against a 64 KB code budget. The WebGL2 fallback effect's
+  compiled data is most of it: the same build with that import removed makes an entry of 13.7 KB.
+  Water fails the same gate at 109.2 KB at that head. M3-R25 owns the fault, and neither the gate
+  nor its budget changes here.
+- **A check that used to skip:** that command runs under node, and the Vite plugin did not export
+  its `package.json`. Node refused the path, the tool found no plugin, and it printed a skip for the
+  shader and size gates. It still exited 0 when every other gate passed, so a skipped check read as
+  a pass. The plugin now exports its manifest, and `packages/cli/src/check-addon.test.ts` pins it.
