@@ -975,6 +975,10 @@ pub struct SceneSettings {
     background: Option<Background>,
     /// The layer that an add-on draws over the background, from the template the page sent.
     sky_layer: Option<SkyLayer>,
+    /// The first GPU id of the ring of buffers that a sky map's light capture reads back into.
+    sky_light_buffers: u32,
+    /// The control slot that a capture raises once its coefficients are in engine memory.
+    sky_light_slot: u32,
     /// The CPU model of the physical sky's air, once the scene drew a physical sky.
     air: Option<AirModel>,
     /// True while the quality settings draw the physical sky, else the analytic sky stands in.
@@ -1183,6 +1187,8 @@ impl SceneSettings {
             used_materials: Vec::new(),
             background: None,
             sky_layer: None,
+            sky_light_buffers: 0,
+            sky_light_slot: 0,
             air: None,
             physical_sky: true,
             stand_in: None,
@@ -2524,13 +2530,22 @@ impl SceneSettings {
     }
 
     /// Draws `layer` over the background from the next frame on, or nothing with `None`. A layer
-    /// dims the share of the sun that it hides, from the disc that the core sky draws.
-    pub fn set_sky_layer(&mut self, layer: Option<SkyLayer>) {
+    /// dims the share of the sun that it hides, from the disc that the core sky draws, and a map
+    /// of the sky captures its light into the slot that the page named.
+    pub fn set_sky_layer(&mut self, layer: Option<SkyLayer>, light_slot: u32) {
         self.sky_layer = layer;
+        self.sky_light_slot = light_slot;
+        self.sky_maps.set_layer(layer);
         let visibility = self.sun_visibility();
         if let Some(background) = self.background.as_mut() {
             background.sun_visibility = visibility;
         }
+    }
+
+    /// Places the ring of buffers that a sky map's light capture reads back into: the first of
+    /// this builder's GPU ids for it.
+    pub fn place_sky_light_buffers(&mut self, first: u32) {
+        self.sky_light_buffers = first;
     }
 
     /// What of the sun the core sky draws: 1 while no layer hides any of it.
@@ -2650,6 +2665,7 @@ impl SceneSettings {
         // A map of the physical sky starts a fill from the panorama of the sky as it is now, which
         // the pass draws once the frame's texture work has made the map ready, so a held frame,
         // whose first frame makes it, fills it too.
+        self.sky_maps.set_clock(self.clock_seconds()[0]);
         let drawn = self.sky_maps.wants_panorama(&self.textures) && sky.record_panorama(list)?;
         self.sky_maps.record(
             &self.textures,
@@ -2657,6 +2673,10 @@ impl SceneSettings {
             drawn,
             sky.panorama(),
             self.air.as_ref(),
+            crate::sky_maps::LightTarget {
+                buffers: self.sky_light_buffers,
+                slot: self.sky_light_slot,
+            },
         )?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;

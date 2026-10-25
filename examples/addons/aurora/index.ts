@@ -2,7 +2,8 @@
 // hook. Its WGSL declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer`, which `scene.setSkyLayer`
 // draws over the background, under every object, on every GPU path. The core sky still draws the
 // sun, the moon, the stars and its flat clouds: the layer adds the aurora over them, and the sky's
-// cloud coverage hides it where it hides the stars.
+// cloud coverage hides it where it hides the stars. The layer's WGSL reaches the sky's environment
+// map as well, so a scene's reflections show the aurora and its light falls on what it stands over.
 //
 // The layer reads the core sky's cloud settings, the sketch time and the share of the sun that it
 // hides, so it needs no values of its own: its colors and its rate of drift are constants in
@@ -35,6 +36,13 @@ export interface AuroraOptions {
 	 * 0.15.
 	 */
 	readonly sun?: number;
+	/**
+	 * How often, in seconds, the sky's environment map captures the aurora: half a second by
+	 * default. The map lights the reflections of the sky and the diffuse light that it gives the
+	 * scene, so the curtains' drift reaches the ice below at that rate. Give 0 for an aurora that
+	 * stands still, and its map then fills only when the sky or its values change.
+	 */
+	readonly refresh?: number;
 }
 
 /** The aurora that a sketch draws over its sky. */
@@ -55,6 +63,7 @@ export function createAurora(ctx: SketchContext, options: AuroraOptions = {}): A
 		wgsl: auroraShader,
 		opacity: options.opacity ?? 1,
 		sun: options.sun ?? 0.15,
+		refresh: options.refresh ?? 0.5,
 	});
 	return {
 		set: (values) => layer.set(values),

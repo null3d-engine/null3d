@@ -98,6 +98,10 @@ pub struct Shader {
     /// only: the build checks it and writes no module of it.
     #[serde(default)]
     pub sky_layers: bool,
+    /// True for the shader that a sky map's cube faces are drawn with, which a layer builds again
+    /// with its own WGSL added.
+    #[serde(default)]
+    pub sky_layer_maps: bool,
 }
 
 /// The entry points of one render pipeline.

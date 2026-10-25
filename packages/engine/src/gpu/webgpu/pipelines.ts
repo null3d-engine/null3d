@@ -1612,6 +1612,9 @@ export class Pipelines {
 			this.computeTemplates.set(id, { shader: shader.variants });
 			return;
 		}
+		// A sky layer's build of the sky map's shader draws no pipeline of the scene: the map's
+		// generator builds its pipelines, so the template needs nothing here.
+		if (kind === 'skyLayerMap') return;
 		// A sky layer draws the template's box around the camera, with the frame's group and its
 		// own values in the background layer's group.
 		if (kind === 'skyLayer') {
