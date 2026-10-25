@@ -67,7 +67,7 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-B5':
 		"`examples/addons/car-paint/` makes the flakes with Deliot and Belcour's glint model: `paint.wgsl` counts the facets in the pixel footprint that reflect the main light, from each flake cell's own random value and drawn from the Poisson form of the binomial, through the lobe hook. Three pictures moved 1.77 to 2.34 per cent of their pixels on every tier in both sets, and the demo stayed inside tolerance; the first draw was rejected for blocky patches and is recorded with the fix. `crates/null3d-shaders/tests/material.rs` builds the shipped WGSL on both paths; D-255",
 	'M3-G4':
-		"`transmissionMap` and `thicknessMap`: `packages/engine/src/scene/resources.ts`, the shaders' thickness reads",
+		"`transmissionMap` and `thicknessMap` load and draw: `packages/engine/src/scene/resources.ts` and `gltf-parse.ts` give each layered material's layer maps the light slot and its transmission and thickness maps the two specular slots, so a clear coat, sheen, iridescence or anisotropy material takes both maps on every path; `tests/image/transmission.spec.ts` draws them with the maps switched on, on WebGPU, compatibility mode and WebGL2, and its clear-coat case fails when the slot families collide; the transmission, transmission-custom, transmission-blend, transmission-maps, transmission-in-front, transmission-water and gltf-ktx2 pictures match their references on all three tiers with no reference moved; D-122 records the slot table, the packing and the row that adds no float",
 	'M3-K1': '`scene.createView({ camera, rect })`: `packages/engine/src/scene/scene.ts`',
 	'M3-K3':
 		'Spot-light cookies, `light.map`: `packages/engine/src/scene/scene.ts`, `docs/api/lights.md`',
