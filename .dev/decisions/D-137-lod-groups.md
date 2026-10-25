@@ -625,12 +625,15 @@ by 34% and 66% on WebGL2. Its GPU buffer bytes do not change between the two sid
 Low and 23.7 MiB at High, and 6.2 and 6.3 MiB on WebGL2. Chrome on the Mac times WebGL2, where the
 tablets and the phone report no timer there.
 
-The identical bytes on the two sides do not prove the lists are sized to what draws. The level set
-exists on both sides, so the removed rule would give identical bytes too, and far more of them. The
-absolute totals rule that rule out. At Low the Mac's GPU buffers take 19.8 MiB in all, while the
-removed rule's two copy lists alone would take 20.5 MB and 10.2 MB, more than the whole measured
-figure. The Rust copy-list tests give the lists' own figures, 2.6 MB each.
+Levels add no GPU buffer bytes on any device: the totals are 19.8 and 23.7 MiB on the Mac, 21.8 and
+25.6 on the iPads, and 25.8 and 27.6 on the S25. That they are identical off and on does not prove
+the sizing, because off is a threshold of 0 and keeps the buckets, so the removed rule would give
+identical sides and far more bytes. The absolute totals rule it out: each stays below the 30.7 MB
+that the removed rule's two copy lists alone would take. The two Rust copy-list tests measure one
+copy per source, 2.6 MB each.
 
 The run connected only after the mkcert root was trusted on the iPad. Until then the runner page
 sat on "starting" and nothing reached the Mac. [Device sessions](../devices.md) now records that
-step. With this run every device row of the task is complete.
+step. With this run the task's device rows are complete, but the phone GPU row is a stand-in and
+indicative: it comes from the S25, a faster GPU of another make, and the runner marks its timings
+unreliable. The S24 itself times no GPU on either path.
