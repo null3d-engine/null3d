@@ -185,7 +185,7 @@ The review found five weak points in what this record describes:
 
 - The fade goes where it shows least. The asset tool's levels change the picture by less than a pixel at the switch. D-91 found no wider change at 502 of 518 switches. Yet they pay for the double draw, the discard and the fade lists. Hand-made levels, such as Creek's leaf-card trees, change the picture far more. On Low, which turns the fade off, they pop. The fade becomes a choice per level. It is off for a measured error, and on for a level given by distance or by a hand-set error, on Low too.
 - The rule measures to the center of the bounds. An object whose radius is half its distance then shows twice the allowed error on its near side. The rule moves to the nearest point of the bounds, as meshoptimizer, Godot and `clusterlod.h` do.
-- Each level and each fade list reserves room for every copy, in every view. Read from the code, 40,000 copies with 4 levels and 4 cascades take about 61 MB of copy lists, plus growth room. One list per view would take about 13 MB. The main view's list passes WebGPU's default 128 MiB binding limit near 260,000 copies with four fading levels. These are estimates to measure. The lists will follow what draws.
+- Each level and each fade list reserved room for every copy, in every view. Read from the code, 40,000 copies with 4 levels and 4 cascades were estimated at about 61 MB of copy lists, and one list per view at about 13 MB. The measured figures in this record's addendum of 22 October correct those estimates. The casters' list is one list that every cascade draws, so the cascade count does not multiply it. The lists now follow what draws.
 - Every copy uses the same 4 × 4 pattern, so neighbouring copies line up into one grid. The pattern will differ per copy.
 - A distance or a screen coverage becomes an error for a screen 1,080 pixels high. So on a screen 2,160 pixels high, the level switches at twice the distance. Levels can then be picked by distance or by coverage beside error.
 
@@ -271,13 +271,23 @@ it may pick. So a slice never falls short of the shader's writes, whatever the l
 shared distance come to. The buckets without levels keep the slices of the build. A scene without
 levels runs no count.
 
-| Copies of four levels, with fading bands | Before | After |
+| Copies of four levels, with fading bands | Before, the removed rule's arithmetic | After, measured |
 | --- | --- | --- |
 | 40,000 copies, the main view | 20.5 MB | 2.6 MB |
-| 40,000 copies, the main view and four cascades | 61 MB | 13 MB |
+| 40,000 copies, the four cascades' casters list | 10.2 MB | 2.6 MB |
+| Both lists together | 30.7 MB | 5.1 MB |
 
-`crates/null3d-render/tests/levels.rs` measures the figures from the frame's own copy lists. A
-band adds about a tenth more, for the sources inside it, which take a copy in each of two fade
+`crates/null3d-render/tests/levels.rs` measures the after figures from the frame's own copy lists.
+`forty_thousand_copies_of_four_levels_take_one_copy_each` reads the main view, and
+`forty_thousand_casters_of_four_cascades_take_one_copy_each` reads the casters' layout with four
+cascades. The four cascades draw one copy list, so the list takes one copy for each of the 40,000
+trees, and the levels add nothing to it. The before figures are arithmetic from the removed rule at
+64 bytes a copy. The main view had eight slices, one for each of four levels and its fading band:
+20.5 MB. The casters' list had four slices, because its shadow pipelines take no fading build, and
+its fade buckets exist only in the scene layout: 10.2 MB. The earlier estimate of 61 MB counted a
+list for each cascade, which the code does not keep.
+
+A band adds about a tenth more, for the sources inside it, which take a copy in each of two fade
 buckets.
 
 The culling shader cannot size these slices itself. A draw reads its bucket's copies from a vertex
@@ -368,6 +378,17 @@ Blender without levels still gets them (follow-up 5).
   predictable. An author who wants earlier thinning gives the level its own error.
 - The card step runs only for a mesh that a skin does not pose, because a posed list's positions
   are in the scene's units and the level's stored positions are in the mesh's.
+- No picture test shows this step. The level's error is a card's size, so the level switches where
+  the tree stands a few pixels tall. The tool's own test tree has a 1.7-unit tree with cards of 0.28
+  to 0.42 units. Its levels get errors from 5,926 to 13,333 integer steps, which is 0.61 to 1.38
+  units. At a 360-pixel picture and a 35-degree lens the nearest switch lies about 349 m out, where
+  the tree stands about 4 pixels tall. A crown's cover cannot be read at that size. A picture at a
+  useful size would need the file's errors set for the camera's distance. That shows the engine
+  drawing the thinned cards, but not the tool's error rule. The unit tests hold the step:
+  `keeps a share of the cards at each level, grown about their middles`,
+  `writes each card level its own positions, and shares the wood stream`, and `treats a card folded
+  along its middle as a card, as Creek makes its leaves`. The `vegetation-leaf-cards` picture holds
+  the cards' coverage at three distances.
 
 ## Addendum: texture coordinates in the level error (22 October 2026, M3-L2)
 
@@ -465,3 +486,94 @@ the picture test draws the cards around many directions so a disagreement shows.
 The eye comes from the frame's camera, so the cards have no per-frame call. `update` left the API,
 and with it the origin that the sprite batch needed: the engine draws everything relative to the
 camera, so world positions keep their precision far from the world's origin.
+
+## Addendum: the vertices of a file's levels are shared, but not ordered by level (25 October 2026, M3-L2)
+
+The plan asked for a file's levels to draw ranges of the base mesh's indices. Those indices name the
+base's own vertices. The vertices were to come in coarsest-level-first order, as meshoptimizer's
+README advises. The first part is built. A level the asset tool writes names the base's accessors.
+The loader therefore stores the level over the base's vertices. The level costs its indices alone.
+The second part is not built. It is a recorded choice rather than a gap.
+
+Coarsest-first order is a new step in the tool's pipeline. `reorderMeshes` runs before the levels are
+planned. It orders the vertices for the GPU's vertex cache, not by level. Ordering by level needs
+a reorder after `planLevels`. That step remaps every vertex stream and every level's indices. The
+task's coordinator decided on 25 October 2026 not to build it, because the index ranges work without
+it. Its gain is stated in bytes below for whoever needs streaming later.
+
+What the ordering would gain is the share of the vertex buffer that a coarse level must have
+resident. Without it, a level's indices point across almost the whole buffer. The tool's test ball
+has a base of 1,225 vertices of 16 bytes. Its coarsest level names 122 vertices. Those vertices span
+1,201 slots, 98% of the array. A draw of that level therefore needs almost the whole 19,600-byte
+vertex buffer. In coarsest-first order the same 122 vertices would sit in the first 1,952 bytes. A
+staged loader could then send 1,952 bytes, not 19,600, before the first coarse draw. That holds back
+17,648 bytes, 90% of the vertex buffer, until a finer level arrives. The gain scales with the base's
+vertex bytes, and it is a streaming and cache gain only. The levels already copy no vertices, so no
+total memory and no picture changes. It gains nothing for the 40,000-pine scene, whose procedural
+levels are meshes of their own. M3-L4's staged loading is the user that would spend the step.
+
+## Addendum: the levels' cost on an iPad and a phone (25 October 2026, M3-L2)
+
+The level-of-detail section asks each of its tasks for the GPU time and memory on the Mac, an iPad
+and an S24-class phone. The Mac's GPU time is in this record's table of 11 October. That table
+predates the fade rule of 22 October, so its Low rows measured a Low preset with no fading bands.
+The device rows below are the first level-cost figures under the new rule. The copy lists'
+memory is in the addendum above. This addendum adds the owner's iPad, the cloud iPad and the phone.
+
+The `lod-cost` page draws 40,000 pines, four levels each. It times the forest with every tree at its
+base mesh. It then times it with each tree at the level that its size on the screen picks. The two
+sides take turns, two seconds at a time, three times over, at Low and at High. After the timing the
+page reports each side's GPU buffer bytes from the stats overlay.
+
+The owner's rule of 25 October 2026 splits the rows. Memory is read exactly, so a cloud iPad's
+memory stands. A GPU time is a timing, so an iPad's absolute figure comes from the owner's own iPad.
+The cloud iPad's figure stands beside it as the comparison. Phones keep the cloud-first rule, so
+the Galaxy S24 gives both of its rows.
+
+| Device | Path | Preset | GPU off, on (ms) | GPU buffers off, on (MiB) |
+| --- | --- | --- | --- | --- |
+| iPad Pro 11-inch, owner's | WebGPU | Low | 67.36, 16.83 | 21.8, 21.8 |
+| iPad Pro 11-inch, owner's | WebGPU | High | 150.92, 53.64 | 25.6, 25.6 |
+| iPad Pro 11-inch, owner's | compatibility | Low | 67.62, 17.83 | 21.8, 21.8 |
+| iPad Pro 11-inch, owner's | compatibility | High | 97.24, 46.31 | 25.6, 25.6 |
+| iPad Pro 11-inch, owner's | WebGL2 | Low | no timer | 6.2, 6.2 |
+| iPad Pro 11-inch, owner's | WebGL2 | High | no timer | 6.3, 6.3 |
+| iPad Pro 13, cloud | WebGPU | Low | 10.95, 5.28 | 22.0, 22.0 |
+| iPad Pro 13, cloud | WebGPU | High | 42.38, 32.12 | 25.6, 25.6 |
+| iPad Pro 13, cloud | compatibility | Low | 11.00, 5.40 | 22.0, 22.0 |
+| iPad Pro 13, cloud | compatibility | High | 31.36, 26.41 | 25.6, 25.6 |
+| iPad Pro 13, cloud | WebGL2 | Low | no timer | 6.1, 6.1 |
+| iPad Pro 13, cloud | WebGL2 | High | no timer | 6.2, 6.2 |
+| Galaxy S24, cloud | WebGL2 | Low | no timer | 6.1, 6.1 |
+| Galaxy S24, cloud | WebGL2 | High | no timer | 6.2, 6.2 |
+
+The owner's iPad Pro 11-inch ran Safari 26.6.2 on iPadOS 26.7 at 59 Hz. Its window was 1,194 by
+659 CSS pixels at 2x. Its levels cut the GPU time by 75% at Low on core WebGPU, and by 64% at High.
+They cut it by 74% and 52% in compatibility mode. Its WebGL2 frame interval fell from 108.94 to
+30.16 ms at Low and from 154.44 to 77.32 ms at High. Its GPU buffer bytes do not change between the
+two sides either, at 21.8 MiB at Low and 25.6 MiB at High. The run's own files therefore hold the
+memory rows on this device too.
+
+This iPad is an older model than the cloud iPad Pro 13, so its absolute times are several times
+larger. At Low on core WebGPU its frame takes 67.36 ms with the base meshes against the Pro's
+10.95 ms. That gap is why the owner's own iPad gives the absolute row, and why the Pro's figures
+stand beside it as the comparison rather than in its place.
+
+
+The cloud iPad ran Safari 26.6.1 on iOS 26 at 59 Hz. Its window was 1,032 by 1,264 CSS pixels at
+2x. Its levels cut the GPU time by 52% at Low on core WebGPU, and by 51% in compatibility mode. They
+cut it by 24% at High on core WebGPU. Its GPU buffer bytes do not change between the two sides. The
+copy lists therefore follow what draws on the device as they do on the Mac. The lists take one copy
+per source. They do not take a slice per level per view. The Mac's table above holds the same
+finding: 2.6 MB in the main view and 2.6 MB in the casters' list, against 20.5 MB and 10.2 MB from
+the removed rule.
+
+The Galaxy S24 ran Chrome 152 on Android 16 with no WebGPU adapter, so only its WebGL2 rows ran.
+Chrome on Android reports no WebGL2 GPU timer. The cloud display ran at 30 Hz, so its frame interval
+sits at its 33.3 ms limit and hides any saving. The runner marks its timings unreliable. Its GPU
+buffer bytes also do not change, at 6.1 MiB at Low and 6.2 MiB at High. Its CPU time rises with the
+levels on, by 1.78 ms at Low and 1.35 ms at High. That is the level picks and the fade pairs.
+
+The run connected only after the mkcert root was trusted on the iPad. Until then the runner page
+sat on "starting" and nothing reached the Mac. [Device sessions](../devices.md) now records that
+step. With this run every device row of the task is complete.

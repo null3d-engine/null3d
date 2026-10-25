@@ -67,7 +67,6 @@ const INCOMPLETE = new Set([
 	'M3-L3',
 	'M3-R12',
 	'M3-R22',
-	'M3-L2',
 	'M3-L4',
 	'M3-A2',
 	'M3-A8',
@@ -122,8 +121,6 @@ const NOTES: Readonly<Record<string, string>> = {
  * above, because both describe the same task and only one of them can be true.
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
-	'M3-L2':
-		'the memory figure is a 40,000-ball test on the main view alone, and no GPU time was taken on the Mac, an iPad or a phone-class device',
 	'M3-L4':
 		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
 	'M3-A2': "the refresh's cost rows are all owed, the Mac's included",
