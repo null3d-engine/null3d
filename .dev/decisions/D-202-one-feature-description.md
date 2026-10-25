@@ -409,14 +409,18 @@ the focus. The test ships nothing and moves no built-in.
 
 `tests/image/feature-effect.spec.ts` holds the frame at 0 seconds in one browser and compares runs
 of it. It needs no reference picture, as `direct-draws.spec.ts` does not. Each path is checked on
-its own, because each GPU path draws its own edges and each tier keeps its own references:
+its own, because each GPU path draws its own edges and each tier keeps its own references. The
+spec proves two separate things, and no single number carries both:
 
-- On WebGPU and on WebGL2, the frame with the pass must differ from the frame with `?dof=off` in at
-  least 2% of its pixels. The lower bound shows that the pass reached the picture. The run prints the
-  share, and at Medium on this Mac it changed 45.5868% of the pixels on WebGPU and 37.9149% on
-  WebGL2.
-- At Low, where `dofSamples` is 0 and `ready` answers false, the two frames must match within 0.05%
-  on both paths. Both paths changed 0.0000%, so a feature that is not ready changes nothing at all.
+- **Placement.** On WebGPU and on WebGL2, the frame with the pass must differ from the frame with
+  `?dof=off` in at least 2% of its pixels. At Medium on this Mac it changed 45.5868% of the pixels on
+  WebGPU and 37.9149% on WebGL2. The pass therefore reached the picture on both paths.
+- **The ready gate.** The sketch publishes the adapter's own `draws` answer, and the spec requires
+  false at Low, where `dofSamples` is 0, and true at Medium, where it is 22. The picture cannot carry
+  this check. A pass whose tap count is 0 returns its input unchanged, so a frame that ran the pass
+  anyway would match one that did not. A unit test holds the same rule without a GPU: `keeps the
+  effect of a feature that is not ready out of the chain` asserts that the effect chain received no
+  effect.
 
 The runs are at Medium, a preset that both paths run. WebGL2 caps its preset at Medium, so a run
 at High would compare WebGPU's High against WebGL2's Medium.

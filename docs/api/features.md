@@ -140,9 +140,13 @@ An output is a texture that a feature publishes to materials, effects and passes
 
 A reader shows the neutral value while the feature is absent, switched off or not ready. A missing feature then breaks nothing downstream. Output names are unique across the engine's features.
 
+Nothing binds a registered output to a texture yet. The compute pass publishes the texture that its description names, and a material reads it through `textures.fromPass`. The declared neutral default is checked and kept, and it becomes a bound texture when an adapter reads a registered output.
+
 ## Lighting slots
 
 A feature can provide one or more lighting slots: `'shadow'`, `'ambient'`, `'sky'`, `'ao'`, `'reflection'` or `'fog'`. One feature provides each slot. A second provider throws, because the scene would then have two answers for one kind of light.
+
+Nothing reads a slot's provider yet. The rule keeps one owner ready for the hook that first consumes a slot.
 
 ## Views
 
@@ -236,7 +240,7 @@ The `quality` callback runs once when the feature is added, and again whenever t
 
 The stats overlay shows a row for each feature, under the engine's own figures. A row names the feature, its GPU time, its settings, its budget and the memory that it reports, such as `splats  gpu 0.42 ms  budgetSplats 500000  budget 3.0 of 4.0 ms  memory 12.0 MiB`.
 
-A feature has one GPU timing scope. The engine times the feature's work in the frames that it records. Until the engine places a feature in the frame, the scope reads `gpu not measured`. The feature's memory comes from its `memory` callback, which the engine calls only when a figure changes.
+A feature has one GPU timing scope. The engine does not measure a feature's GPU time yet, so the scope reads `gpu not measured` even where an adapter places the feature's work. The feature's memory comes from its `memory` callback, which the engine calls only when a figure changes.
 
 `FeatureStats` holds the same figures. `FeatureHost.stats` gives them to the sketch, for tests and logs. The host sends them to the page, which the overlay reads, whenever one changes.
 
@@ -246,7 +250,16 @@ A feature has one GPU timing scope. The engine times the feature's work in the f
 - `quality` maps the engine's preset and settings onto the feature's own settings. Its third argument holds the feature's resolved settings and its budget's share, which the host keeps current.
 - `resize` gives the render size in device pixels. Make targets of the new size.
 - `reset` names why the feature must drop its history. The reasons are a new render size, a camera cut to another place, and an exposure change that makes stored values stale.
-- `destroy` frees the feature's own objects. The registry does not call it: stop the feature before you remove it.
+- `destroy` frees the feature's own objects. The registry does not call it. The full-screen adapter's handle calls it when you destroy the handle, and otherwise stop the feature before you remove it.
+
+Not every callback has a caller yet, and the page says which do:
+
+| Callback | Who calls it today |
+| --- | --- |
+| `quality` | `FeatureHost`, when the preset or its settings change |
+| `ready` | The full-screen adapter, when it places a feature and on each quality change. The draw, instance, compute and sky-layer adapters do not ask it yet. |
+| `resize`, `reset` | Nothing yet. An add-on that keeps targets or history keeps its own size and reset state. |
+| `destroy` | The full-screen adapter's handle, when the add-on destroys it. Otherwise the owner of the feature calls it. |
 
 ## Adapters
 

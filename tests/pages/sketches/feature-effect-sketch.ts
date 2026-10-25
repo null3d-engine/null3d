@@ -3,8 +3,22 @@
 // pixel's distance from the focus. The description reads the scene's color and depth, writes the
 // color, and takes its tap count from the preset's dofSamples, so High draws 43 taps and Low draws
 // none. `?dof=off` draws the scene without the feature, for the spec that compares the two frames.
-// The frame is held at 0 seconds, so a run draws the same picture every time.
+// The sketch publishes what the adapter says about the pass, so a spec that runs the sketch on the
+// page can check the ready gate itself rather than the picture. The frame is held at 0 seconds, so a
+// run draws the same picture every time.
 import { declareAddonNamespace, defineFeature, defineSketch, FeatureHost } from '@null3d/engine';
+
+declare global {
+	interface Window {
+		/** What the adapter says about the pass: whether it draws, and the taps it was given. */
+		__null3dFeature?: { draws: boolean; samples: number };
+	}
+}
+
+/** Publishes the adapter's state where a spec that runs the sketch on the page can read it. */
+function publish(draws: boolean, samples: number): void {
+	if (typeof window !== 'undefined') window.__null3dFeature = { draws, samples };
+}
 
 /** The test add-on's names, claimed once as the sketch's module loads. */
 const NAMESPACE = declareAddonNamespace({ name: 'dof_test', package: '@null3d/test-dof' });
@@ -131,5 +145,11 @@ export default defineSketch(async ({ scene, geometry, materials, post, quality, 
 	});
 	// A preset that changed while the adapter loaded reaches the pass here.
 	dof.setUniform('samples', samples);
-	setSamples = (value) => dof.setUniform('samples', value);
+	publish(dof.draws, samples);
+	setSamples = (value) => {
+		dof.setUniform('samples', value);
+		// The quality change that carried this value also asks the adapter's ready again.
+		dof.refresh();
+		publish(dof.draws, value);
+	};
 });
