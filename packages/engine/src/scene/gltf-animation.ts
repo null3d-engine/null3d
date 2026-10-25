@@ -106,7 +106,7 @@ export interface RigTrack {
  * lights, or the visibility of one of its nodes. The indices are the file's own lists.
  */
 export type RigPropertyTarget =
-	| { kind: 'material'; index: number; value: string }
+	| { kind: 'material'; index: number; value: string; key?: string }
 	| { kind: 'light'; index: number; value: string }
 	| { kind: 'node'; index: number; value: 'visible' };
 
@@ -211,6 +211,34 @@ const POINTER_LIGHT_VALUES: ReadonlyMap<string, string> = new Map([
 	['spot/outerConeAngle', 'angle'],
 ]);
 
+/**
+ * The texture transforms that a pointer can move, by the pointer's tail after the material's
+ * index: the material value that each writes, and the name that a test reads it by. Every map of a
+ * material shares its transform, and these are the four transforms that three.js's
+ * animation-pointer plugin moves.
+ */
+const POINTER_TEXTURE_TRANSFORMS: ReadonlyMap<
+	string,
+	{ value: 'uvOffset' | 'uvScale'; key: string }
+> = new Map([
+	[
+		'pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/offset',
+		{ value: 'uvOffset', key: 'baseColorOffset' },
+	],
+	[
+		'pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/scale',
+		{ value: 'uvScale', key: 'baseColorScale' },
+	],
+	[
+		'emissiveTexture/extensions/KHR_texture_transform/offset',
+		{ value: 'uvOffset', key: 'emissiveOffset' },
+	],
+	[
+		'emissiveTexture/extensions/KHR_texture_transform/scale',
+		{ value: 'uvScale', key: 'emissiveScale' },
+	],
+]);
+
 /** The colors of an object's material, with their numbers per key. */
 const COLOR_COMPONENTS = 3;
 
@@ -265,6 +293,13 @@ function pointerTarget(
 		const value = POINTER_MATERIAL_VALUES.get(tail);
 		if (value !== undefined)
 			return { kind: 'property', target: { kind: 'material', index, value }, colorSplit: false };
+		const transform = POINTER_TEXTURE_TRANSFORMS.get(tail);
+		if (transform !== undefined)
+			return {
+				kind: 'property',
+				target: { kind: 'material', index, value: transform.value, key: transform.key },
+				colorSplit: false,
+			};
 		notes.push(`${what} moves a material's ${tail}, which the engine does not animate`);
 		return undefined;
 	}
@@ -813,6 +848,13 @@ function parseClip(
 			// floats when glTF allows one.
 			perKey = output.components;
 			if (perKey === 0 || perKey > 4) broken(`${where}'s output holds ${perKey} values per key`);
+			// A texture transform gives a texture coordinate pair, so its keys hold two numbers.
+			const value = property.target.kind === 'material' ? property.target.value : '';
+			const pair = value === 'uvOffset' || value === 'uvScale';
+			if (pair && perKey !== 2)
+				broken(
+					`${where}'s output has ${perKey} numbers per key, and a texture transform takes two`,
+				);
 		} else perKey = nodePath === 'rotation' ? 4 : 3;
 		if (perKey === 3 && !property && nodePath === 'weights') {
 			const mesh = (nodes[node] as NodeData).mesh;

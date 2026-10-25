@@ -1493,6 +1493,9 @@ function propertyAnimation(
 		const id = rig.clips.get(clip.name);
 		if (id === undefined) continue;
 		const tracks: PropertyTrack[] = [];
+		// A material keeps one texture transform for every map, so a clip that moves two of them
+		// plays the first and notes the other rather than mixing the two into one value.
+		const played = new Set<number>();
 		for (const track of clip.properties ?? []) {
 			const { target, components } = track;
 			const key = `${target.kind} ${target.index} ${target.value}`;
@@ -1521,9 +1524,17 @@ function propertyAnimation(
 				});
 				targets.push(where);
 				// The key names the property as a file's pointer does, such as "materials/0/color".
-				keys.push(`${target.kind}s/${target.index}/${target.value}`);
+				const name = target.kind === 'material' ? (target.key ?? target.value) : target.value;
+				keys.push(`${target.kind}s/${target.index}/${name}`);
 				known.set(key, binding);
 			}
+			if (played.has(binding)) {
+				notes.push(
+					`the clip "${clip.name}" moves two transforms of ${target.kind} ${target.index}, and the engine keeps one for every map, so it plays the first`,
+				);
+				continue;
+			}
+			played.add(binding);
 			tracks.push({
 				binding,
 				interpolation: track.interpolation ?? 'linear',
@@ -1605,6 +1616,10 @@ function propertyBase(target: RigPropertyTarget, data: GltfData): Float32Array |
 				return one(layers?.anisotropy);
 			case 'anisotropyRotation':
 				return one(layers?.anisotropyRotation);
+			case 'uvOffset':
+				return Float32Array.from(m.uvTransform?.offset ?? [0, 0]);
+			case 'uvScale':
+				return Float32Array.from(m.uvTransform?.repeat ?? [1, 1]);
 		}
 		return undefined;
 	}

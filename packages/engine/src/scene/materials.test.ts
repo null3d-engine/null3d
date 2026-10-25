@@ -622,6 +622,26 @@ describe('Material.set', () => {
 		close(v, [-3, 0, 0.25]);
 		stone.set({ uvTransform: { repeat: [4, 4] } });
 		close(row().slice(MATERIAL_PARAM_UV_U, MATERIAL_PARAM_UV_U + 3), [4, 0, 0]);
+		close(row().slice(MATERIAL_PARAM_UV_V, MATERIAL_PARAM_UV_V + 3), [0, 4, 0]);
+		// An animation changes one pair of the transform and keeps the rest, as a glTF pointer does.
+		stone.writeUvPair('uvOffset', 0.25, -0.5);
+		close(row().slice(MATERIAL_PARAM_UV_U, MATERIAL_PARAM_UV_U + 3), [4, 0, 0.25]);
+		close(row().slice(MATERIAL_PARAM_UV_V, MATERIAL_PARAM_UV_V + 3), [0, 4, -0.5]);
+		stone.writeUvPair('uvScale', 2, 2);
+		close(row().slice(MATERIAL_PARAM_UV_U, MATERIAL_PARAM_UV_U + 3), [2, 0, 0.25]);
+		close(row().slice(MATERIAL_PARAM_UV_V, MATERIAL_PARAM_UV_V + 3), [0, 2, -0.5]);
+		// A material created with a transform keeps its turn and its other pair for a part write.
+		const turned = materials.standard({
+			uvTransform: { offset: [0.5, 0.25], repeat: [2, 3], rotation: Math.PI / 2 },
+		});
+		turned.writeUvPair('uvScale', 1, 1);
+		const turnedU = table[1] as number[];
+		expect(turnedU[MATERIAL_PARAM_UV_U]).toBeCloseTo(0, 12);
+		expect(turnedU[MATERIAL_PARAM_UV_U + 1]).toBeCloseTo(1, 12);
+		expect(turnedU[MATERIAL_PARAM_UV_U + 2]).toBeCloseTo(0.5, 12);
+		expect(turnedU[MATERIAL_PARAM_UV_V]).toBeCloseTo(-1, 12);
+		expect(turnedU[MATERIAL_PARAM_UV_V + 1]).toBeCloseTo(0, 12);
+		expect(turnedU[MATERIAL_PARAM_UV_V + 2]).toBeCloseTo(0.25, 12);
 		stone.set({ lightMapIntensity: 3 });
 		expect(row()[MATERIAL_PARAM_LIGHT_MAP_INTENSITY]).toBe(3);
 		stone.set({ envIntensity: 0.25 });
