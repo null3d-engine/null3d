@@ -35,6 +35,7 @@ import {
 	MATERIAL_FEATURE_IRIDESCENCE,
 	MATERIAL_FEATURE_LIGHT_MAP_RGBM,
 	MATERIAL_FEATURE_MULTIPLY,
+	MATERIAL_FEATURE_NO_COLOR_WRITE,
 	MATERIAL_FEATURE_NO_CONTACT_SHADOWS,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
@@ -416,6 +417,20 @@ describe('Material.set', () => {
 			MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_MULTIPLY,
 			MATERIAL_FEATURE_BLEND,
 			MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_WEIGHTED | MATERIAL_FEATURE_DOUBLE_SIDED,
+		]);
+	});
+
+	test('passes a material that writes depth alone, which the opaque pass draws first', () => {
+		const { features, materials } = fakeCore();
+		materials.unlit({ colorWrite: false });
+		materials.standard({ colorWrite: false, alphaMode: 'mask', alphaCutoff: 0.3 });
+		materials.unlit({ colorWrite: true });
+		expect(features).toEqual([
+			MATERIAL_FEATURE_NO_COLOR_WRITE,
+			MATERIAL_FEATURE_NO_COLOR_WRITE |
+				MATERIAL_FEATURE_ALPHA_MASK |
+				MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
+			0,
 		]);
 	});
 

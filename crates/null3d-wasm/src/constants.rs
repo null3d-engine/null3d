@@ -1066,6 +1066,7 @@ pub fn typescript() -> String {
                 ("BLEND", feature::BLEND),
                 ("NO_DEPTH_WRITE", feature::NO_DEPTH_WRITE),
                 ("NO_DEPTH_TEST", feature::NO_DEPTH_TEST),
+                ("NO_COLOR_WRITE", feature::NO_COLOR_WRITE),
                 ("ADDITIVE", feature::ADDITIVE),
                 ("MULTIPLY", feature::MULTIPLY),
                 ("NO_FOG", feature::NO_FOG),

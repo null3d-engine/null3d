@@ -536,6 +536,7 @@ These options are fixed when you create the material. Most of them choose the ma
 | `blending` | Both | `'normal'` | With the `blend` alpha mode, how the surface meets what lies behind it: `'normal'`, `'additive'`, `'multiply'` or `'weighted'`. See "Blending" |
 | `depthWrite` | Both | true | False writes no depth, so the surface hides nothing that draws after it |
 | `depthTest` | Both | true | False draws the surface whatever lies in front of it. It then writes no depth either, as in three.js's WebGL renderer |
+| `colorWrite` | Both | true | False writes no color, so the surface shows nothing itself and hides what lies behind it, as three.js's `colorWrite: false` does. See "Invisible surfaces that hide" |
 | `depthBias` | Both | No bias | Moves the surface's depth, as three.js's polygon offset does. See "Depth bias" |
 | `forceSinglePass` | Both | false | With the `blend` alpha mode and `doubleSided`, draws both faces in one draw, as three.js's `forceSinglePass` does. See "Double-sided blended surfaces" |
 | `transmission` | Standard | None | Given at all, even as 0, lets light through the surface, and `set` can then change its value. See "Transmission" |
@@ -591,6 +592,20 @@ This is the best technique for cut-out shapes, so it is the default, as in Filam
 // sketch.ts: grass cards whose cut edges MSAA smooths, and a fence with hard pixel edges.
 const grass = materials.standard({ map: grassTexture, alphaMode: 'mask', alphaCutoff: 0.5 });
 const fence = materials.standard({ map: fenceTexture, alphaMode: 'mask', alphaToCoverage: false });
+```
+
+## Invisible surfaces that hide
+
+`colorWrite: false` draws a surface that shows nothing itself. It still writes depth, so it hides what lies behind it. Its objects draw before the opaque objects that write color, so the depth it writes holds back their color. Use it for a plane that hides the scene behind a page, as three.js's `colorWrite: false` does.
+
+With the `mask` or `hash` alpha mode, the parts that the alpha drops write no depth either. The surface then cuts a shape out of the space it holds.
+
+A blended surface that writes no color keeps its place among the blended objects, which `setRenderOrder` orders. It hides only the surfaces that draw after it.
+
+```ts
+// sketch.ts: a plane at a page's plane, which holds back the frame's faces behind the page.
+const holdout = materials.unlit({ colorWrite: false });
+scene.createMesh({ mesh: geometry.plane({ width: 8, height: 6 }), material: holdout });
 ```
 
 ## Double-sided blended surfaces

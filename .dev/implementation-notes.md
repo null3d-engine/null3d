@@ -512,6 +512,15 @@ Some unit tests build a bundle of engine code with Vite inside the test process,
 - A device module holds the builds of each shader that a device with its bits asks for. The builds of features that load on first use are the exception. So the culling shader, which has no bits, is in every WGSL module. A device whose bits have no module fails to start its renderer, with an error that names the bits.
 - On WebGPU, a pipeline that draws depth only has no fragment stage, so its pixels cannot be dropped. Shadow casters draw that way. So the first build of the shadow cutout templates, in October 2026, still cast each masked caster's whole shape on WebGPU. No error showed: the cutout code was in the shader, but no pipeline ran it. WebGL2 always builds a fragment shader, so it cut the holes. A depth template that must drop pixels now asks for its fragment stage (`depthFragment` in `gpu/webgpu/pipelines.ts`), with no color targets. The shadow cutout templates do so, and the plain depth template still skips the stage, which keeps solid casters as cheap as before. The `alpha-mask-shadows` image test catches a missing stage on WebGPU. [D-82](decisions/D-82-transparency-parity.md#a-fault-found-on-the-way) has the details.
 
+## Surfaces that write no color
+
+- A material with `colorWrite: false` sets its pipeline's color write mask to none. Both GPU paths already had that state for the depth prepass.
+- The engine also draws the opaque surfaces that write no color before those that write color. The GPU-driven builder records their buckets first, and the WebGL2 builder sorts its draw list when it builds a layout.
+- Such a surface is a holdout: it shows nothing itself, and the depth it writes holds back the surfaces behind it. The order cannot come from the pipeline keys, because a key with another state bit sorts after the keys it must beat.
+- A holdout with the `mask` or `hash` alpha mode writes no depth where its alpha drops the fragment, so it cuts a shape out of the space it holds.
+- A blended surface that writes no color keeps its place among the blended surfaces, which `setRenderOrder` orders.
+- The feature takes bit 28 of the material's feature word. It changes no shader, only the pipeline's state. The mixed CSS3D port needed it for the example's invisible plane ([D-208](decisions/D-208-html-elements-as-planes.md)).
+
 ## Shader files that load on first use
 
 A feature that most pages do not use keeps its shader builds out of the start files ([D-56](decisions/D-56-first-use-shader-files.md)). Sprites, lines, skinning, morph targets, bloom, ambient occlusion, the texture background, GPU occlusion culling, area lights and the engine's test template do so today.

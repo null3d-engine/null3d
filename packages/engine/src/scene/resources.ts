@@ -40,6 +40,7 @@ import {
 	MATERIAL_FEATURE_IRIDESCENCE,
 	MATERIAL_FEATURE_LIGHT_MAP_RGBM,
 	MATERIAL_FEATURE_MULTIPLY,
+	MATERIAL_FEATURE_NO_COLOR_WRITE,
 	MATERIAL_FEATURE_NO_CONTACT_SHADOWS,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
@@ -1485,6 +1486,15 @@ export interface MaterialFeatures {
 	 * in three.js's WebGL renderer. The default is true.
 	 */
 	depthTest?: boolean;
+	/**
+	 * False to write no color, so the surface shows nothing itself and hides what lies behind it
+	 * by the depth it writes, as three.js's `colorWrite: false` does. Its objects draw before the
+	 * opaque objects that write color, so nothing behind it shows through. With the `mask` or
+	 * `hash` alpha mode, the parts that the alpha drops write no depth either, so the surface cuts
+	 * a shape out of the space it holds. A blended surface keeps its place among the blended
+	 * objects, which `setRenderOrder` orders. The default is true.
+	 */
+	colorWrite?: boolean;
 	/** Moves the surface's depth, as three.js's polygon offset does. The default is no bias. */
 	depthBias?: DepthBias;
 	/**
@@ -2831,6 +2841,7 @@ function featureBits(options: StandardOptions): number {
 		BLENDINGS[options.blending ?? 'normal'] |
 		(options.depthWrite === false ? MATERIAL_FEATURE_NO_DEPTH_WRITE : 0) |
 		(options.depthTest === false ? MATERIAL_FEATURE_NO_DEPTH_TEST : 0) |
+		(options.colorWrite === false ? MATERIAL_FEATURE_NO_COLOR_WRITE : 0) |
 		(options.fog === false ? MATERIAL_FEATURE_NO_FOG : 0) |
 		(options.toneMapped === false ? MATERIAL_FEATURE_NO_TONE_MAP : 0) |
 		(options.contactShadows === false ? MATERIAL_FEATURE_NO_CONTACT_SHADOWS : 0) |

@@ -187,6 +187,9 @@ pub(super) struct Bucket {
     /// True when that pipeline is the bucket's own template's, which reads the frame group and the
     /// maps' group as the shading does, and false for the depth template's.
     pub(super) prepass_own: bool,
+    /// True for a bucket whose surface writes no color. Its draws come first, so the depth it
+    /// writes holds back the color of the surfaces behind it.
+    pub(super) holdout: bool,
     /// The bind group of its material's map, or 0 for a pipeline that reads none.
     pub(super) group: u32,
     pub(super) material: u32,
@@ -1190,6 +1193,10 @@ impl Layout {
                     || regions.is_some()
                     || (pipeline.template >= template::CUSTOM_FIRST
                         && pipeline.permutation & permutation::MOTION != 0));
+            // A surface that writes no color holds back what lies behind it, so its draws come
+            // before the surfaces that write color. Only the scene's own layout draws them.
+            let holdout =
+                drawn == Drawn::Scene && pipeline.state & state_flags::NO_COLOR_WRITE != 0;
             // The motion template's pipelines bind a map's group after the frame's, and a blank
             // one's where the pair has no map.
             let group =
@@ -1255,6 +1262,7 @@ impl Layout {
                 pipeline,
                 prepass,
                 prepass_own,
+                holdout,
                 group,
                 material,
                 scene_depth,

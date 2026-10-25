@@ -371,6 +371,12 @@ pub mod feature {
     /// color is multiplied by its alpha times 8, then the sRGB transfer turns it linear. The
     /// texture is uploaded as linear texels, so the shader makes that decode itself.
     pub const LIGHT_MAP_RGBM: u32 = 1 << 27;
+    /// The surface writes depth and no color, so it shows nothing itself and hides what lies
+    /// behind it, as three.js's `colorWrite: false` does. Its objects draw before the opaque
+    /// objects that write color, so the depth it writes holds their color back. With
+    /// [`ALPHA_MASK`] the parts below the cutoff write nothing at all, so the surface cuts a shape
+    /// out of the depth it holds.
+    pub const NO_COLOR_WRITE: u32 = 1 << 28;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED
         | VERTEX_COLORS
@@ -399,7 +405,8 @@ pub mod feature {
         | SCENE_DEPTH
         | IRIDESCENCE
         | ANISOTROPY
-        | LIGHT_MAP_RGBM;
+        | LIGHT_MAP_RGBM
+        | NO_COLOR_WRITE;
 
     /// The features whose material lights layers above its base: a clear coat, a sheen,
     /// iridescence or anisotropy. Each takes the shader builds that [`COAT_SHEEN`] names, whose
