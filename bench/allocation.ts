@@ -183,6 +183,7 @@ import {
 } from '../packages/cli/src/heap-profile.js';
 import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { attachWorkers, DevTools, evaluate, pagesAt, sleep, within } from './lib/devtools';
 import { pagePath } from './lib/parity';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
@@ -809,6 +810,7 @@ async function reachFrames(frames: () => Promise<number>, target: number): Promi
 }
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The allocation check');
 	const args = process.argv.slice(2);
 	const option = (name: string, fallback: number) => {
 		const at = args.indexOf(name);
