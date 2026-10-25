@@ -10,6 +10,7 @@ import {
 	colorMorphBuilder,
 	iorBuilder,
 	iridescenceBuilder,
+	maskedTransmissionBuilder,
 	specularBuilder,
 } from '../../tests/pages/lib/gltf-files';
 import { PARITY_CANVAS } from './spec';
@@ -83,12 +84,14 @@ export const MODELS_HDR = sampleUrl('sources/hdri/polyhaven/venice_sunset/venice
  * compression under each of its two names, Draco compression, and morph targets: weights that a
  * clip animates, eight
  * targets on two primitives, a file's default weight on primitives that share targets, and targets
- * that move vertex colors. Five scenes make their files in code: the color targets, and small
+ * that move vertex colors. Six scenes make their files in code: the color targets, small
  * equivalents of four Khronos test models whose originals need an environment map, transmission or
- * lights of their own: KHR_materials_specular's factors and textures, KHR_materials_ior's indices
+ * lights of their own (KHR_materials_specular's factors and textures, KHR_materials_ior's indices
  * with the specular values, KHR_materials_iridescence's films, and KHR_materials_anisotropy's
- * stretched highlights. Those scenes' own lights light them. The vendor name's file is the instancing model as
- * gltfpack compresses it (tests/lib/meshopt-fixtures.ts), which the repository keeps. The Khronos
+ * stretched highlights), and a glass that masks its alpha and takes its transmission and thickness
+ * from maps. The four Khronos equivalents' own lights light them. The vendor name's file is the
+ * instancing model as gltfpack compresses it (tests/lib/meshopt-fixtures.ts), which the repository
+ * keeps. The Khronos
  * name's file covers every mode and filter. The Draco scenes draw the sample content's skinned
  * Draco model, and the coordinates test model as Draco's encoder compresses it
  * (tests/lib/draco-fixtures.ts), each against its uncompressed scene. The Khronos models of
@@ -177,6 +180,11 @@ export const MODEL_SCENES = {
 	anisotropy: {
 		file: () => anisotropyBuilder().glb(),
 		ownLights: true,
+		timeoutSeconds: LAYERS_SECONDS,
+	},
+	'transmission-mask': {
+		file: () => maskedTransmissionBuilder().glb(),
+		frame: { center: [0, 0, -0.4], radius: 2 },
 		timeoutSeconds: LAYERS_SECONDS,
 	},
 	'morph-primitives': {
