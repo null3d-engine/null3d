@@ -238,6 +238,9 @@ pub(super) struct Bucket {
     pub(super) feature: u32,
     /// The most instances that the feature draw's buffer holds, 0 for a bucket of the engine's own.
     pub(super) feature_capacity: u32,
+    /// True while the add-on's feature says that the draw draws, and true for a bucket of the
+    /// engine's own. A bucket whose feature is not ready records no draw in any view.
+    pub(super) feature_ready: bool,
     /// The scene slot of the object that places the feature draw, or `u32::MAX` for a bucket of the
     /// engine's own.
     pub(super) feature_slot: u32,
@@ -1280,6 +1283,7 @@ impl Layout {
                 cluster,
                 feature: feature.unwrap_or(0),
                 feature_capacity: record.map_or(0, |(_, capacity, _)| capacity),
+                feature_ready: feature.is_none_or(|id| settings.feature_instances().is_ready(id)),
                 feature_slot: object.unwrap_or(u32::MAX),
             });
             *base += count;

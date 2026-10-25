@@ -2,10 +2,11 @@
 
 Status: decided by the helper of M3-E9 on 23 October 2026, for the owner's review. Built: the
 opaque main-view path on WebGPU and the CPU-filled batch on WebGL2, with the count copied into the
-indirect draw after each compute step. Not built yet: the compute pass that binds the two buffers,
-which waits on M3-E8, and the transparent and shadow-many paths. The task is therefore not
-complete: without that pass no test can show a compute shader's count becoming the drawn count.
-Date: 2026-10-23. Task: M3-E9.
+indirect draw after each compute step; the compute pass that binds the two buffers (M3-E8), drawn
+by the `feature-instances-compute` picture on WebGPU and in compatibility mode; the conversion of
+the world rows to camera-relative rows; and the count in the shadow views (the addendum below).
+Not built yet: the transparent path and the shadow-many path. The task also waits for its first
+real user, since the splats add-on cannot take the hook. Date: 2026-10-23. Task: M3-E9.
 
 Summary: An add-on's instance draw reserves one indirect entry in each view's existing draw buffer,
 and the engine copies the add-on's count word into that entry after every compute step and before
@@ -206,7 +207,7 @@ dispatch for each draw in each frame, so a camera that moves costs no upload of 
   previous frame had already converted, unless the page re-uploaded its rows or the add-on's
   compute rewrote every live row every frame. The second buffer makes the conversion a function of
   the world rows alone, so both update paths serve it.
-- The bind group of a draw is `layout::FEATURE_ROWS` (59): the camera's block, the count word, the
+- The bind group of a draw is `layout::FEATURE_ROWS` (60): the camera's block, the count word, the
   world rows and the rows it writes. The pipeline is `template::FEATURE_ROWS` (83). The camera's
   block is the conversion's own 16-byte uniform buffer, not the add-on compute block: the second
   buffer needs a fourth binding, so the conversion cannot share the add-on's group, and the compute
@@ -276,3 +277,44 @@ Consequences:
   (`LAYOUT_COMPUTE_INSTANCE_BUFFERS`).
 - The per-frame cost is one 4-byte copy for each draw entry of each drawn shadow view, beside the
   camera's.
+
+## Addendum, 26 October 2026: a feature's `ready` callback gates the draw
+
+`docs/api/features.md` promises that a feature whose `ready` callback answers false costs nothing:
+no pass, no target, and none of its code or shaders downloads. Nothing called that callback, so an
+instance draw recorded its indirect draw and copied its count even while the add-on said that it
+drew nothing. The engine now asks it.
+
+The sketch's thread calls each instance draw's `ready` once each frame, before the frame's
+commands, and tells the core when the answer changes. A draw whose feature is not ready keeps its
+bucket, so the views keep their offsets, but records no draw in any view, copies no count word and
+converts no rows. The layout is built again in the frame the answer changes, which re-records each
+view's bundle. A description without a `ready` callback registers no poll at all, so the common
+case costs nothing.
+
+The render test `a_draw_records_nothing_while_its_feature_is_not_ready` reads both answers from the
+recorded commands: the ready frame copies the count word and draws the reserved indirect entry, and
+the unready frame does neither. The adapter's tests check that the page's `ready` reaches the core
+once per change, and that the WebGL2 batch draws none of its rows while unready.
+
+## Known gap, 26 October 2026: a casting instance draw's shadow falls in the wrong place
+
+The count now reaches every shadow view, and a render test proves the cascade draws the reserved
+entry. The geometry does not follow yet. The conversion subtracts the **main camera's** world
+position, so the rows that a shadow view reads are relative to a camera that the view does not use.
+The caster's vertex shader multiplies them by the light's own view-projection, so the instances land
+off by the distance from the main camera to the light's camera, which for a cascade is tens of
+meters: they fall outside the cascade and cast no shadow. The engine's own casters are unaffected,
+because each view's culling writes its compacted rows relative to that view's camera.
+
+A drawn test showed it. A compute-filled field of 42 discs lay above a ground with the sun casting,
+and a standard box set beside the field cast a shadow while the discs cast none, on WebGPU and in
+compatibility mode.
+
+The fix is the per-view conversion that this record's "shadow-many path" deferred: each view that
+draws a casting instance draw needs its own buffer of rows, converted with that view's camera, and
+the draw's instance binding in that view must name it. The count copy and the readiness gate above
+are unaffected by it.
+
+Until it lands, a page should keep its instance draw out of the shadow views, or expect its shadow
+in the wrong place. The M3-V8 grass, whose near blades must cast (D-241), waits on this fix.

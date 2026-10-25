@@ -7,8 +7,11 @@
 //! the count stays whatever the add-on's feature wrote. The frame copies each draw's count word
 //! into the instance count of the bucket's indirect draws before the pass that draws it, in the
 //! camera's view and in every shadow view: an instance that the GPU counts casts its shadow by that
-//! same
-//! count (D-241).
+//! same count (D-241).
+//!
+//! A draw whose feature reports itself not ready records nothing at all: no draw in any view, no
+//! count copy and no conversion, which is the no-cost promise that a feature's `ready` callback
+//! makes. The layout is built again when that answer changes.
 //!
 //! The table holds no GPU object: the renderer makes the add-on's instance and count buffers from
 //! the ids that a draw's place in this table names.
@@ -46,6 +49,9 @@ struct FeatureInstance {
     written: u32,
     /// The first row and the row count that the next frame uploads, or `None` when no row waits.
     changed: Option<(u32, u32)>,
+    /// True while the add-on's feature says that it draws. A draw that is not ready records no
+    /// draw, no conversion and no count copy, which is the no-cost promise of a feature's `ready`.
+    ready: bool,
 }
 
 /// The scene's feature-instance draws, by id from 1.
@@ -54,6 +60,8 @@ pub struct FeatureInstanceTable {
     draws: Vec<Option<FeatureInstance>>,
     /// Each live draw's object slot and id, by slot.
     by_slot: Vec<(u32, u32)>,
+    /// Steps each time a draw's readiness changes, so a frame knows that its layouts are stale.
+    readiness: u64,
 }
 
 impl FeatureInstanceTable {
@@ -78,6 +86,7 @@ impl FeatureInstanceTable {
             rows: Vec::new(),
             written: 0,
             changed: None,
+            ready: true,
         });
         let id = index as u32 + 1;
         // A slot whose object died with its draw still made takes the new draw. The old one keeps
@@ -109,6 +118,30 @@ impl FeatureInstanceTable {
         };
         draw.count = count.min(draw.capacity);
         true
+    }
+
+    /// Sets whether the add-on's feature draws now, and returns false for no such draw. A draw that
+    /// is not ready takes no room in a view and draws nothing; the frame after the answer changes
+    /// rebuilds its views, which steps [`Self::readiness`].
+    pub fn set_ready(&mut self, id: u32, ready: bool) -> bool {
+        let Some(draw) = self.get_mut(id) else {
+            return false;
+        };
+        if draw.ready != ready {
+            draw.ready = ready;
+            self.readiness += 1;
+        }
+        true
+    }
+
+    /// True while the add-on's feature says that draw `id` draws, and false for no such draw.
+    pub fn is_ready(&self, id: u32) -> bool {
+        self.get(id).is_some_and(|draw| draw.ready)
+    }
+
+    /// The count of readiness changes, which tells a frame that its views must be built again.
+    pub fn readiness(&self) -> u64 {
+        self.readiness
     }
 
     /// Writes `count` per-instance rows from `values` at row `start`, as the page's own data. The

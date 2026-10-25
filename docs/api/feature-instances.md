@@ -141,6 +141,7 @@ On WebGL2, each row's matrix is split into a position, a rotation and a scale th
 ## Limits
 
 - The draw records at the opaque point, and its feature records in the main view alone. The engine still draws the object into the shadow views of the lights that it casts into. A transparent instance draw, and one in a reflection or a scene pass, arrives with the add-on that first needs it.
+- The draw records only while the description's `ready` callback answers true. The sketch's thread asks it once each frame. While it answers false the engine records no draw, no count copy and no conversion for it, and draws none of its rows on WebGL2.
 - The engine does not cull the draw by the camera's frustum or layers. Your compute's cull, or your count, decides what draws. `draw.setVisible(false)` stops it, and so does a hidden parent.
 - The engine does not bound the count. Keep the add-on's count at or under `capacity`. Past it, the GPU reads past the end of the buffer.
 - The engine keeps two buffers of `capacity` rows: the world rows that you fill and the camera-relative rows that it converts them into each frame. A large capacity therefore takes twice the instance memory.

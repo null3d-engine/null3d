@@ -4072,8 +4072,8 @@ pub fn destroy_feature_instances(id: u32) -> u32 {
     })
 }
 
-/// Sets the count that a shadow view draws and that a page without compute sets for a draw whose
-/// instance count the GPU writes.
+/// Sets the count that a page without compute draws for a draw whose instance count the GPU
+/// writes. The count word starts each frame from it.
 #[wasm_bindgen(js_name = setFeatureInstanceCount)]
 pub fn set_feature_instance_count(id: u32, count: u32) -> u32 {
     with_engine(|e| {
@@ -4082,6 +4082,20 @@ pub fn set_feature_instance_count(id: u32, count: u32) -> u32 {
             .feature_instances_mut()
             .set_count(id, count);
         0
+    })
+}
+
+/// Tells the engine whether the add-on's feature draws now, for a draw whose instance count the GPU
+/// writes. A draw that is not ready records no draw, no conversion and no count copy.
+#[wasm_bindgen(js_name = setFeatureInstanceReady)]
+pub fn set_feature_instance_ready(id: u32, ready: bool) -> u32 {
+    with_engine(|e| {
+        u32::from(
+            !e.renderer
+                .settings_mut()
+                .feature_instances_mut()
+                .set_ready(id, ready),
+        )
     })
 }
 

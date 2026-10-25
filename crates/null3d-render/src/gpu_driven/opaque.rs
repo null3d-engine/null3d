@@ -486,7 +486,12 @@ impl Draws<'_> {
         let mut bound = None;
         for (b, bucket) in layout.buckets.iter().enumerate() {
             let id = pipeline_of(bucket);
-            if id == 0 || (bucket.group != 0 && hidden(bucket.group)) {
+            // A feature-instance draw whose feature does not draw now records nothing: the views
+            // take no room for it, and its count word is not copied either.
+            if id == 0
+                || (bucket.feature != 0 && !bucket.feature_ready)
+                || (bucket.group != 0 && hidden(bucket.group))
+            {
                 continue;
             }
             let own = own_of(bucket);

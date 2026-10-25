@@ -263,6 +263,14 @@ fn a_shadow_view_draws_the_count_that_the_gpu_writes() {
             copy < first_render,
             "cascade {cascade} takes the count before the first render pass"
         );
+        // The cascade's pass draws the reserved entry that the copy fills.
+        let entry = commands[copy].1[3] - 4;
+        assert!(
+            commands
+                .iter()
+                .any(|(op, o)| *op == Op::DrawIndexedIndirect && o[0] == buffer && o[1] == entry),
+            "cascade {cascade} draws the reserved indirect entry"
+        );
     }
     // The camera's view takes the same word.
     assert!(commands.iter().any(|(op, o)| *op == Op::CopyBufferToBuffer
@@ -305,11 +313,10 @@ fn a_hidden_draw_keeps_the_reset_and_draws_nothing() {
 }
 
 #[test]
-fn a_frame_records_the_draw_only_once_the_feature_is_ready() {
-    // The design note asks that the engine record no draw for a feature that is not ready. The page
-    // makes the draw ready between two frames: the frame before holds no feature draw, so it
-    // records no count copy and none of its draws, and the frame after records the draw that reads
-    // the reserved indirect entry.
+fn a_draw_records_nothing_while_its_feature_is_not_ready() {
+    // The design note's proof: a feature whose `ready` callback answers false takes no room in the
+    // frame, so the view records no indirect draw at the draw's reserved entry and copies no count
+    // word. The ready frame records both, at the same place.
     let mut world = World::new();
     let handle = world.objects[0];
     world.scene.set_local_radius(handle, 1.0).unwrap();
@@ -318,31 +325,20 @@ fn a_frame_records_the_draw_only_once_the_feature_is_ready() {
         .apply_commands(
             &[Command::set_flags(
                 handle,
-                flags::BOUNDS,
+                flags::CUSTOM_BOUNDS,
                 flags::CUSTOM_BOUNDS,
             )],
             1,
         )
         .unwrap();
     let slot = world.scene.resolve(handle).unwrap();
-    let counts = feature_buffer_ids(1).1;
-
-    let mock = &mut MockBackend::default();
-    let pending = world.step(mock, true);
-    assert!(
-        !pending
-            .iter()
-            .any(|(op, o)| *op == Op::CopyBufferToBuffer && o[0] == counts),
-        "a frame without a ready feature draw copies no count word"
-    );
-
-    // The page makes the draw ready.
     let table = world.renderer.settings_mut().feature_instances_mut();
     let id = table.create(slot, 16).unwrap();
     assert!(table.set_count(id, 5));
+    let (_, counts) = feature_buffer_ids(id);
+
+    let mock = &mut MockBackend::default();
     let ready = world.step(mock, true);
-    // The frame copies the count word into the draw's reserved indirect entry, which the view then
-    // draws: the command names the view's buffer and the reserved place in it.
     let camera = view_indirect_buffer(ViewId::CAMERA);
     let word = ready
         .iter()
@@ -354,6 +350,50 @@ fn a_frame_records_the_draw_only_once_the_feature_is_ready() {
             .iter()
             .any(|(op, o)| *op == Op::DrawIndexedIndirect && o[0] == camera && o[1] == word - 4),
         "the ready frame draws the reserved indirect entry"
+    );
+
+    // The add-on's feature says that it does not draw now.
+    assert!(
+        world
+            .renderer
+            .settings_mut()
+            .feature_instances_mut()
+            .set_ready(id, false)
+    );
+    let pending = world.step(mock, true);
+    assert!(
+        !pending
+            .iter()
+            .any(|(op, o)| *op == Op::CopyBufferToBuffer && o[0] == counts),
+        "an unready draw copies no count word"
+    );
+    assert!(
+        !pending
+            .iter()
+            .any(|(op, o)| *op == Op::DrawIndexedIndirect && o[0] == camera && o[1] == word - 4),
+        "an unready draw records no indirect draw"
+    );
+
+    // A feature that is ready again records both once more.
+    assert!(
+        world
+            .renderer
+            .settings_mut()
+            .feature_instances_mut()
+            .set_ready(id, true)
+    );
+    let again = world.step(mock, true);
+    assert!(
+        again
+            .iter()
+            .any(|(op, o)| *op == Op::CopyBufferToBuffer && o[0] == counts && o[2] == camera),
+        "the ready feature copies its count again"
+    );
+    assert!(
+        again
+            .iter()
+            .any(|(op, o)| *op == Op::DrawIndexedIndirect && o[0] == camera && o[1] == word - 4),
+        "the ready feature records its indirect draw again"
     );
 }
 
