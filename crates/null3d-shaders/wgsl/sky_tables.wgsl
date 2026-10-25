@@ -201,7 +201,8 @@ fn panorama_step(uv: vec2f) -> vec3f {
     let r = values.view.x;
     let bottom = values.air.ground.w;
     let sky = textureSampleLevel(sky_view_table, wrapped, sky_view_uv(bottom, r, d), 0.0).rgb;
-    if d.y <= 0.0 || values.clouds.z <= 0.0 {
+    // The volumetric tier's sky map adds the clouds in its own step, so the panorama carries none.
+    if d.y <= 0.0 || values.clouds.z <= 0.0 || values.view.w > 0.0 {
         return sky;
     }
     let zenith = textureSampleLevel(sky_view_table, wrapped, sky_view_uv(bottom, r, vec3f(0.0, 1.0, 0.0)), 0.0).rgb;

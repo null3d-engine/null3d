@@ -148,6 +148,8 @@ export const LAYOUT_AO_DEPTH = 16;
 export const LAYOUT_AO_DEPTH_MS = 17;
 export const LAYOUT_AO = 18;
 export const LAYOUT_BACKGROUND = 19;
+export const LAYOUT_CLOUDS = 72;
+export const LAYOUT_CLOUDS_ATMOSPHERE = 73;
 export const LAYOUT_INSTANCE_INDEX = 20;
 export const LAYOUT_EFFECT = 21;
 export const LAYOUT_EFFECT_DEPTH_MS = 22;
@@ -360,6 +362,8 @@ export const TEMPLATE_MOMENT_SMAA_BLEND = 98;
 export const TEMPLATE_MOMENT_SMAA_RESOLVE = 99;
 export const TEMPLATE_BOUNCE_TRACE = 100;
 export const TEMPLATE_BOUNCE_DENOISE = 101;
+export const TEMPLATE_BACKGROUND_CLOUDS = 102;
+export const TEMPLATE_BACKGROUND_CLOUDS_ATMOSPHERE = 103;
 export const TEMPLATE_CUSTOM_FIRST = 128;
 
 export const BUFFER_USAGE_MAP_READ = 1;

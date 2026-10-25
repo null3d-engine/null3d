@@ -423,6 +423,12 @@ const FIRST_USE_SKETCHES: Partial<Record<ShaderFeature, string>> = {
 const FIRST_USE_SWITCHES: Partial<Record<ShaderFeature, string>> = {
 	instance_index: '&instances=index',
 	occlusion: '&occlusion=on',
+	// The tier starts above Medium, which WebGL2 and compatibility mode stop at.
+	clouds: '&cloudSteps=32',
+	// A sky at High draws the tier over it, which would download the clouds' file as well. These
+	// pages draw the flat layer alone, so each keeps the one file that its own feature loads.
+	sky: '&cloudSteps=0',
+	physical_sky: '&cloudSteps=0',
 };
 
 /**
@@ -431,6 +437,14 @@ const FIRST_USE_SWITCHES: Partial<Record<ShaderFeature, string>> = {
  * that the sketch tells when its pick has settled. The guide says why it differs.
  */
 const FIRST_USE_LIVE: ReadonlySet<ShaderFeature> = new Set(['picking']);
+
+/**
+ * The other features' files that a feature's first use also downloads: the cloud tier draws over
+ * the sky, so its page loads the sky's file too.
+ */
+const FEATURE_EXTRAS: Partial<Record<ShaderFeature, readonly ShaderFeature[]>> = {
+	clouds: ['sky'],
+};
 
 /**
  * The feature whose shader file a feature downloads on each GPU path, where it is another's, and
@@ -504,13 +518,17 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				expect(shaderFiles).toEqual([]);
 				return;
 			}
+			// The shader files spell a feature's name with hyphens. A feature that draws another's
+			// file as well, such as the cloud tier over the sky, downloads both, and so does one
+			// whose page makes the frame copy the opaque color.
 			const also = FIRST_USE_ALSO[feature];
-			// The shader files spell a feature's name with hyphens.
-			const wanted = [owner ?? feature, ...(also ? [also] : [])].map((name) =>
-				name.replaceAll('_', '-'),
-			);
-			expect(shaderFiles).toHaveLength(wanted.length);
-			for (const file of wanted)
+			const files = [
+				owner ?? feature,
+				...(also ? [also] : []),
+				...(FEATURE_EXTRAS[feature] ?? []),
+			].map((name) => name.replaceAll('_', '-'));
+			expect(shaderFiles).toHaveLength(files.length);
+			for (const file of files)
 				expect(
 					shaderFiles.filter((path) => new RegExp(`/shaders-${file}-(wgsl|glsl)[^/]*$`).test(path)),
 				).toHaveLength(1);

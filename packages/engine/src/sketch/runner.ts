@@ -1084,6 +1084,7 @@ export class SketchRunner {
 			glue.setLightFit(settings.lightFit ? 1 : 0) !== 0 ||
 			this.setLevelQuality() !== 0 ||
 			glue.setPhysicalSky(settings.physicalSky) !== 0 ||
+			glue.setCloudSteps(settings.cloudSteps) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0 ||
 			glue.setParallax(settings.parallax) !== 0 ||
 			glue.setMomentTransparency(settings.momentTransparency) !== 0 ||
