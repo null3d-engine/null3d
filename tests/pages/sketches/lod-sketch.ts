@@ -6,7 +6,8 @@
 // screen at any canvas size. Settings: `?batch` draws the copies as rows of one instance batch,
 // `?crisp` switches the levels at once, as a measured error does, `?mask` draws with a mask smoothed
 // by alpha to coverage, as foliage does, which passes every pixel, `?material` gives each level a
-// material of its own in the level's color, which must draw the same image, `?shadows` draws one
+// material of its own in the level's color and white vertices, so a level that ignores its material
+// draws white and the picture shows the fault, `?shadows` draws one
 // large copy in front of a wall, whose shadow draws a coarser level than the copy itself, `?hide`
 // raises the threshold and places copies around the hide distance, and `?range` gives every copy a
 // distance band, with rows of copies around its start and its end.
@@ -89,8 +90,11 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 		shadow: { cascades: 1, mapSize: 2048, distance: 40 },
 	});
 	scene.createAmbientLight({ color: '#ffffff', intensity: 0.6 });
-	const [base, ...lower] = LEVELS.map(([segments, color]) =>
-		geometry.fromArrays(sphere(segments, color)),
+	const [base, ...lower] = LEVELS.map(([segments, color], k) =>
+		// With `?material`, each lower level's own material carries its color, so its vertices are
+		// white. A level drawn with the base object's vertex-colored material would then draw
+		// white, which the picture shows as a fault; the level's material draws its color.
+		geometry.fromArrays(sphere(segments, params.has('material') && k > 0 ? [1, 1, 1] : color)),
 	);
 	if (!base) return;
 	// A hand-set error's switch shows, so its levels fade over a band; `?crisp` switches them at
