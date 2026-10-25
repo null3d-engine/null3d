@@ -8,7 +8,7 @@ summary: "One description for an add-on's render work: the frame point, the read
 
 # Add-on feature descriptions
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A description with `kind: 'draw'` can become a draw with [`scene.addFeatureDraw`](feature-draws.md). A description with `kind: 'compute'` can become a compute pass with [`render.addPass`](render.md#compute-passes). The full-screen kind does not reach the frame yet: it arrives with the add-on hook that first uses it. Until then, a registration checks the shape and changes nothing that draws. A feature's preset settings, budget and stats work today. Its GPU time reads as not measured until the engine records its frame work.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A description with `kind: 'draw'` can become a draw with [`scene.addFeatureDraw`](feature-draws.md). A description with `kind: 'compute'` can become a compute pass with [`render.addPass`](render.md#compute-passes). The full-screen kind does not reach the frame yet: it arrives with the add-on hook that first uses it. Until then, a registration checks the shape and changes nothing that draws. A feature's preset settings, budget, GPU scope and stats work today.
 
 ```mermaid
 flowchart LR
@@ -79,6 +79,7 @@ A description is data, apart from its callbacks. The engine can send the declara
 | `ready` | Called when the engine needs to know whether the feature draws. `false` means no cost at all. | Always ready |
 | `settings` | The feature's own settings, by name, each with a value on every preset and the values it takes. | None |
 | `budget` | The feature's time budget in each frame, on every preset. | None |
+| `gpu` | The render passes that carry the feature's frame work, whose GPU time the overlay shows as its own. | None |
 | `memory` | Returns the GPU bytes that the feature's own objects hold. | None |
 | `quality` | Called with the preset, the engine's settings and the feature's own values when the engine's quality changes. | None |
 | `resize` | Called with the render size in device pixels when it changes. | None |
@@ -235,9 +236,25 @@ The `quality` callback runs once when the feature is added, and again whenever t
 
 The stats overlay shows a row for each feature, under the engine's own figures. A row names the feature, its GPU time, its settings, its budget and the memory that it reports, such as `splats  gpu 0.42 ms  budgetSplats 500000  budget 3.0 of 4.0 ms  memory 12.0 MiB`.
 
-A feature has one GPU timing scope. The engine times the feature's work in the frames that it records. Until the engine places a feature in the frame, the scope reads `gpu not measured`. The feature's memory comes from its `memory` callback, which the engine calls only when a figure changes.
+A feature has one GPU timing scope. Its `gpu` option names the render passes that carry its work, and the overlay shows their GPU time added up as the feature's own. A pass comes from `render.addPass`, such as the reflection pass that draws a mirrored scene:
 
-`FeatureStats` holds the same figures. `FeatureHost.stats` gives them to the sketch, for tests and logs. The host sends them to the page, which the overlay reads, whenever one changes.
+```ts
+const mirror = render.addPass({ kind: 'reflection', writes: 'water', plane: { point: [0, 0, 0] } });
+
+features.add(
+  defineFeature({
+    name: 'water',
+    gpu: { passes: [mirror] },
+    // settings, budget and the quality callback
+  }),
+);
+```
+
+A feature whose work records inside a pass of the engine's own, such as a draw among the transparent objects, names no scope, and its row reads `gpu not measured`. The engine times one frame in eleven and at most seven passes in it. A pass after them adds its time to the last one's, whose name then ends in `and later`. A pass that draws in some frames only keeps the figure of the window that last timed it, so its row does not blank between them. On WebGL2 the engine times the whole frame alone, so no feature has a figure there.
+
+The overlay also lists the GPU time of each step of the frame that the GPU timed, under `GPU steps`. A step is one of the engine's own passes, by its name, or a sketch's pass, by the feature that declares it.
+
+`FeatureStats` holds the same figures. `FeatureHost.stats` gives them to the sketch, for tests and logs. The host sends them to the page, which the overlay reads, whenever one changes. The sketch's copy of a feature's `gpuMs` stays null, because the page is what reads the frame's GPU timings.
 
 ## Callbacks
 
@@ -261,11 +278,11 @@ The other hooks still need their own payload, and they arrive with the add-on th
 | Hook | What the description does not yet give it |
 | --- | --- |
 | Material lobes, baked-data formats and glTF extension handlers | They are not frame features, so each needs its own hook. |
-| Scene inputs, presets and stats | Each needs its own declaration: a depth input behind a material, or a GPU timing scope. |
+| Scene inputs | A depth input behind a material needs its own declaration. |
 
 ## Checks
 
-`defineFeature` returns a frozen description with the defaults filled. It throws E1223 for an option that a description does not take. It also throws for a frame point or kind that does not go together. The same holds for an order outside its band, or a name that is too long. An output with no neutral default throws too. So does a resource, view or slot that does not exist. A setting whose preset value is not one of its values throws. So does a setting with a governor but no budget, and a budget whose four times are not above 0.
+`defineFeature` returns a frozen description with the defaults filled. It throws E1223 for an option that a description does not take. It also throws for a frame point or kind that does not go together. The same holds for an order outside its band, or a name that is too long. An output with no neutral default throws too. So does a resource, view or slot that does not exist. A setting whose preset value is not one of its values throws. So does a setting with a governor but no budget, a budget whose four times are not above 0, and a GPU scope pass that `render.addPass` did not return.
 
 `FeatureRegistry.add` refuses a feature name that another feature has. It also refuses an output name that another feature publishes, and a lighting slot that another feature provides. `remove` gives those names back.
 

@@ -40,6 +40,7 @@ function noFigures(tier: Tier, preset: QualityPreset): FrameStats {
 		threads: [],
 		gpuMs: null,
 		gpuStepMs: null,
+		gpuSteps: [],
 		drawCalls: 0,
 		triangles: 0,
 		objects: 0,

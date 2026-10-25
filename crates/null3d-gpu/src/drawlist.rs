@@ -92,10 +92,12 @@ pub enum Op {
     GenerateMipmaps = 15,
     /// [color target texture id or 0 for the canvas or `NO_TARGET`, resolve target texture id or
     /// 0 for the canvas or `NO_TARGET`, depth texture id or `NO_TARGET`, clear red, green, blue,
-    /// alpha (f32), clear depth (f32), pass flags, then optionally a second color target texture
-    /// id]. A target is a texture of one layer and one mip level, or a view of one. A pass without
-    /// a color target draws depth only. A second color target has one sample, no resolve, and the
-    /// first target's clear color and flags; its pipelines are those with `permutation::WEIGHTED`.
+    /// alpha (f32), clear depth (f32), pass flags, second color target texture id or `NO_TARGET`,
+    /// scope]. A target is a texture of one layer and one mip level, or a view of one. A pass
+    /// without a color target draws depth only. A second color target has one sample, no resolve,
+    /// and the first target's clear color and flags; its pipelines are those with
+    /// `permutation::WEIGHTED`. The scope names the step that the pass records, from `scope::*`,
+    /// or 0 for a step that no scope names; the engine times each pass's GPU work by it.
     BeginRenderPass = 16,
     /// [render pipeline id]
     SetPipeline = 17,
@@ -130,7 +132,8 @@ pub enum Op {
     BeginBundle = 32,
     /// []
     EndBundle = 33,
-    /// []
+    /// [scope]: the step that the passes of this compute pass record, from `scope::*`, or 0 for a
+    /// step that no scope names.
     BeginComputePass = 40,
     /// [compute pipeline id]
     SetComputePipeline = 41,

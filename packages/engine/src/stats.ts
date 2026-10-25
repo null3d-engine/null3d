@@ -19,6 +19,7 @@ export {
 } from './debug/stats-panel';
 export {
 	type StatsFigures,
+	type StatsGpuStep,
 	type StatsMainThread,
 	type StatsMemory,
 	type StatsMemoryArea,

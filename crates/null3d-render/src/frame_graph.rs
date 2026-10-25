@@ -193,6 +193,7 @@ use crate::output::{Antialias, Output, SceneColor};
 use crate::particles::{DEPTH_COPY_FORMAT, ParticleDepthCopy};
 use crate::pick;
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
+use crate::scope;
 use crate::shadow_tiles;
 use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
 use crate::ssr::{self, LastView, SsrIds, SsrPass, TraceFrame};
@@ -5331,7 +5332,11 @@ impl FrameGraph {
             match step.kind {
                 StepKind::Compute => {
                     let start = list.len();
-                    list.push(Op::BeginComputePass, &[])?;
+                    let id = plan
+                        .passes(step)
+                        .first()
+                        .map_or(scope::NONE, |&pass| role_scope(self.roles[pass.index()]));
+                    list.push(Op::BeginComputePass, &[id])?;
                     let begun = list.len();
                     for &pass in plan.passes(step) {
                         // A sketch's compute pass is the graph's to record. Every other compute
@@ -5603,6 +5608,11 @@ impl FrameGraph {
             }
         }
         let [r, g, b, a] = clear;
+        // The step is one render pass, timed as one scope: the role of its first pass names it.
+        let id = plan
+            .passes(step)
+            .first()
+            .map_or(scope::NONE, |&pass| role_scope(self.roles[pass.index()]));
         let operands = [
             color,
             resolve,
@@ -5614,9 +5624,9 @@ impl FrameGraph {
             0f32.to_bits(),
             flags,
             second,
+            id,
         ];
-        let count = if second == NO_TARGET { 9 } else { 10 };
-        list.push(Op::BeginRenderPass, &operands[..count])?;
+        list.push(Op::BeginRenderPass, &operands)?;
         Ok(())
     }
 
@@ -5907,6 +5917,58 @@ fn role_view(role: Role) -> Option<ViewId> {
     match role {
         Role::Opaque(view) | Role::Prepass(view) | Role::Transparent(view) => Some(view),
         _ => None,
+    }
+}
+
+/// The GPU scope of a pass of `role`: the kind of step that it records, and its place among the
+/// steps of that kind, such as the second step of bloom's chain. A view's scope carries the view's
+/// place, which names a sketch's pass.
+fn role_scope(role: Role) -> u32 {
+    match role {
+        Role::LightClusters => scope::LIGHT_CLUSTERS,
+        Role::Skin => scope::SKIN,
+        Role::Cull(view) => scope::of(scope::CULL, view.index() as u32),
+        Role::Prepass(view) => scope::of(scope::PREPASS, view.index() as u32),
+        Role::Opaque(view) => scope::of(scope::OPAQUE, view.index() as u32),
+        Role::Occluders(view) => scope::of(scope::OCCLUDERS, view.index() as u32),
+        Role::Pyramid(view) => scope::of(scope::PYRAMID, view.index() as u32),
+        Role::LateCull(view) => scope::of(scope::LATE_CULL, view.index() as u32),
+        Role::Shadow(view) => scope::of(scope::SHADOW, view.index() as u32),
+        Role::DebugLines => scope::DEBUG_LINES,
+        Role::Transparent(view) => scope::of(scope::TRANSPARENT, view.index() as u32),
+        Role::Decals => scope::DECALS,
+        Role::DecalRedraw => scope::DECAL_REDRAW,
+        Role::Pick => scope::PICK,
+        Role::PickResolve => scope::PICK_RESOLVE,
+        Role::Resolve => scope::RESOLVE,
+        Role::Bloom(step) => scope::of(scope::BLOOM, u32::from(step)),
+        Role::OutlineMask => scope::OUTLINE_MASK,
+        Role::SkinLight => scope::SKIN_LIGHT,
+        Role::Subsurface(step) => scope::of(scope::SUBSURFACE, u32::from(step)),
+        Role::Ao(step) => scope::of(scope::AO, u32::from(step)),
+        Role::Ssr(step) => scope::of(scope::SSR, u32::from(step)),
+        Role::Effect(step) => scope::of(scope::EFFECT, u32::from(step)),
+        Role::Dof(step) => scope::of(scope::DOF, u32::from(step)),
+        Role::FogLight(step) => scope::of(scope::FOG_LIGHT, u32::from(step)),
+        Role::FogBlock => scope::FOG_BLOCK,
+        Role::FogSum => scope::FOG_SUM,
+        Role::FogApply => scope::FOG_APPLY,
+        Role::Taa(step) => scope::of(scope::TAA, u32::from(step)),
+        Role::ViewCopy(view) => scope::of(scope::VIEW_COPY, view.index() as u32),
+        Role::Fullscreen(view) => scope::of(scope::FULLSCREEN, view.index() as u32),
+        Role::Compute(view) => scope::of(scope::COMPUTE, view.index() as u32),
+        Role::TransmissionCopy => scope::TRANSMISSION_COPY,
+        Role::Motion => scope::MOTION,
+        Role::MotionView => scope::MOTION_VIEW,
+        Role::Weighted => scope::WEIGHTED,
+        Role::WeightedComposite => scope::WEIGHTED_COMPOSITE,
+        Role::ParticleDepthCopy => scope::PARTICLE_DEPTH_COPY,
+        Role::Accumulate => scope::ACCUMULATE,
+        Role::Final => scope::FINAL,
+        Role::FinalStill => scope::FINAL_STILL,
+        Role::FinalBloom => scope::FINAL_BLOOM,
+        Role::Output => scope::OUTPUT,
+        Role::OutputBloom => scope::OUTPUT_BLOOM,
     }
 }
 
@@ -6868,6 +6930,72 @@ mod tests {
         // accumulation's passes have a test of their own.
         graph.still_enabled = false;
         graph
+    }
+
+    #[test]
+    fn each_role_names_a_step_of_the_frame() {
+        assert_eq!(role_scope(Role::Opaque(ViewId::CAMERA)), scope::OPAQUE);
+        assert_eq!(
+            role_scope(Role::Transparent(ViewId::from_index(3))),
+            scope::of(scope::TRANSPARENT, 3)
+        );
+        assert_eq!(role_scope(Role::Bloom(2)), scope::of(scope::BLOOM, 2));
+        assert_eq!(role_scope(Role::Final), scope::FINAL);
+        // Two steps never share a kind, so a scope names one step of the frame.
+        let kinds = [
+            scope::LIGHT_CLUSTERS,
+            scope::SKIN,
+            scope::CULL,
+            scope::PREPASS,
+            scope::OPAQUE,
+            scope::OCCLUDERS,
+            scope::PYRAMID,
+            scope::LATE_CULL,
+            scope::SHADOW,
+            scope::DEBUG_LINES,
+            scope::TRANSPARENT,
+            scope::DECALS,
+            scope::DECAL_REDRAW,
+            scope::PICK,
+            scope::PICK_RESOLVE,
+            scope::RESOLVE,
+            scope::BLOOM,
+            scope::OUTLINE_MASK,
+            scope::SKIN_LIGHT,
+            scope::SUBSURFACE,
+            scope::AO,
+            scope::SSR,
+            scope::EFFECT,
+            scope::DOF,
+            scope::FOG_LIGHT,
+            scope::FOG_BLOCK,
+            scope::FOG_SUM,
+            scope::FOG_APPLY,
+            scope::TAA,
+            scope::VIEW_COPY,
+            scope::FULLSCREEN,
+            scope::COMPUTE,
+            scope::TRANSMISSION_COPY,
+            scope::MOTION,
+            scope::MOTION_VIEW,
+            scope::WEIGHTED,
+            scope::WEIGHTED_COMPOSITE,
+            scope::PARTICLE_DEPTH_COPY,
+            scope::ACCUMULATE,
+            scope::FINAL,
+            scope::FINAL_STILL,
+            scope::FINAL_BLOOM,
+            scope::OUTPUT,
+            scope::OUTPUT_BLOOM,
+        ];
+        assert!(!kinds.contains(&scope::NONE));
+        for (at, &kind) in kinds.iter().enumerate() {
+            assert_eq!(
+                kinds.iter().position(|&other| other == kind),
+                Some(at),
+                "two steps share the kind {kind}"
+            );
+        }
     }
 
     #[test]
@@ -9277,7 +9405,10 @@ mod tests {
                 .unwrap();
             let pairs: Vec<_> = operands(&list, Op::BeginRenderPass)
                 .into_iter()
-                .filter(|pass| pass.len() == 10)
+                .filter(|pass| {
+                    pass.get(9)
+                        .is_some_and(|&id| id != null3d_gpu::drawlist::NO_TARGET)
+                })
                 .collect();
             assert_eq!(
                 pairs.len(),

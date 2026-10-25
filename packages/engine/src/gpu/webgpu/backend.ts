@@ -1180,7 +1180,9 @@ export class WebGPUBackend {
 						floats,
 						a + 7,
 					);
-					setup.setTimestampWrites(this.timer?.passWrites(true));
+					setup.setTimestampWrites(
+						this.timer?.passWrites(true, length > 11 ? (words[a + 10] as number) : 0),
+					);
 					this.indirect.begin(words, i + length, end, this.bundles, this.buffers, this.openEncoder);
 					pass = this.commandEncoder().beginRenderPass(setup.descriptor);
 					this.skipDraws = false;
@@ -1239,7 +1241,10 @@ export class WebGPUBackend {
 					break;
 				}
 				case G.OP_BEGIN_COMPUTE_PASS:
-					this.computePass.timestampWrites = this.timer?.passWrites(false);
+					this.computePass.timestampWrites = this.timer?.passWrites(
+						false,
+						length > 1 ? (words[a] as number) : 0,
+					);
 					computePass = this.commandEncoder().beginComputePass(this.computePass);
 					this.skipDispatches = false;
 					break;

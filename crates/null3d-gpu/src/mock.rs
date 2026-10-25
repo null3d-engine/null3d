@@ -1050,8 +1050,8 @@ impl MockBackend {
         };
         let (color, resolve, depth) = (optional(o[0])?, optional(o[1])?, optional(o[2])?);
         let second = match o.get(9) {
-            Some(&id) => Some(self.target(op, id)?),
-            None => None,
+            Some(&id) if id != NO_TARGET => Some(self.target(op, id)?),
+            _ => None,
         };
         if let Some(second) = second {
             let Some(color) = color else {

@@ -80,6 +80,18 @@ export interface StatsMemoryArea {
 }
 
 /**
+ * One step of the frame's GPU work, in `StatsFigures.gpuSteps`.
+ *
+ * @category api/debug
+ */
+export interface StatsGpuStep {
+	/** The step's name, such as `shadows`, `bloom 2` or a sketch pass's own name. */
+	readonly name: string;
+	/** The step's GPU time per frame in milliseconds. */
+	readonly ms: number;
+}
+
+/**
  * The figures that the stats overlay shows, in the form that `statsText` lays out. Means per frame
  * are over the last window of frames, about half a second.
  *
@@ -105,6 +117,11 @@ export interface StatsFigures {
 	readonly threads: readonly StatsThread[];
 	/** Mean GPU time per frame, in milliseconds, or null where the GPU path cannot time frames. */
 	readonly gpuMs: number | null;
+	/**
+	 * The GPU time per frame of each step of the frame that the GPU timed, in its order. A page
+	 * that times no pass leaves it out.
+	 */
+	readonly gpuSteps?: readonly StatsGpuStep[];
 	/** Mean draw calls per frame. */
 	readonly drawCalls: number;
 	/** Mean bytes uploaded to the GPU per frame, or null where the page does not know it. */
@@ -200,6 +217,8 @@ export function statsText(figures: StatsFigures): string {
 		`draw calls ${Math.round(figures.drawCalls)}${upload}`,
 		`triangles ${count(figures.triangles)}  objects ${count(figures.objects)}`,
 	);
+	for (const step of figures.gpuSteps ?? [])
+		if (step.ms >= SHOWN_MS) lines.push(`  ${step.name}  ${ms(step.ms)}`);
 	for (const feature of figures.features ?? []) lines.push(featureLine(feature));
 	lines.push(`memory  wasm ${mib(memory.wasmBytes)}  js heap ${mib(memory.jsHeapBytes)}`);
 	if (figures.memoryAreas && figures.memoryAreas.length > 0) {
