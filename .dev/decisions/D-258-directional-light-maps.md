@@ -42,14 +42,17 @@ from the file.
 
 The cost is owed. The `lightmap-cost` page measures it. The page draws 24 lit quads that fill a
 1600 by 900 view once, so every pixel shades one fragment. The plain and directional builds swap in
-turns for three rounds each. Before the timing the page draws one frame of each side and compares
-them, so a direction that the engine dropped fails the run instead of reporting no cost. On
-25 October 2026 the Mac's 1-minute load read between 34 and 156. The spec refuses to measure above
-8, so the run waits for a quiet window and then takes about thirty seconds:
-`NULL3D_LIGHTMAP_COST=1 bun run test:browser -- lightmap-cost.spec.ts`. Its medians go into the
-table above. The trials so far are preliminary and not figures. At a load of 84 the directional
-side read 1.08 ms against 0.99 ms on WebGPU. At a load of about 100 it read 0.06 ms more on every
-path, with about 55.5% of the pixels moved by the direction.
+turns for four rounds each. The order reverses on alternate rounds, so a clock that drifts through
+the run does not favour either side. Before the timing the page draws one frame of each side and
+compares them, so a direction that the engine dropped fails the run instead of reporting no cost.
+On 25 October 2026 the Mac's 1-minute load read between 34 and 156. The spec refuses to measure
+above 8, so the run waits for a quiet window and then takes about a minute:
+`NULL3D_LIGHTMAP_COST=1 bun run test:browser -- lightmap-cost.spec.ts --workers=1`. Its medians go
+into the table above. The trials so far are preliminary and not figures. At a load of 84, before
+the sides alternated, the directional side read 1.08 ms against 0.99 ms on WebGPU. With alternating
+rounds at a load of about 100, it read 1.05 against 0.99 in compatibility mode and 1.55 against
+1.48 on WebGL2, while WebGPU read 1.04 against 1.26. That last figure shows what a loaded machine
+does to the order, and why the figure waits. About 55.5% of the pixels moved on every path.
 [Benchmarks](../benchmarks.md#directional-light-maps) gives the paths and the queue form.
 
 ## Decision
