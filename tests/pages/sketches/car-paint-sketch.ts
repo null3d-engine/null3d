@@ -35,7 +35,7 @@ export default defineSketch(async (ctx) => {
 		color: '#9e0b16',
 		metalness: 0.72,
 		roughness: 0.34,
-		flakes: params.get('flakes') === 'off' ? false : { cells: [110, 180], tilt: 0.28 },
+		flakes: params.get('flakes') === 'off' ? false : { cells: [330, 90], tilt: 0.28 },
 		seams:
 			params.get('seams') === 'off' ? false : { spacing: [0.34, 0], width: 0.0024, shade: 0.85 },
 		weave: params.get('weave') === 'on' ? { cells: [70, 120], shine: 0.9 } : false,
