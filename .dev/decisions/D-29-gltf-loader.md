@@ -2,7 +2,7 @@
 
 Status: decided. Date: 2026-10-03. Task: M2-A2.
 
-Summary: A worker of the loader's own parses glTF files and decodes their images, loaded with the first file. A prefab is a template that `instantiate` creates with one core call and one batch of commands. A model's instance batches share one set of rows through batch parts. Ten sample models match three.js's `GLTFLoader` by its image rule, two under limits with reasons.
+Summary: A worker of the loader's own parses glTF files and decodes their images, loaded with the first file. A prefab is a template that `instantiate` creates with one core call and one batch of commands. A model's instance batches share one set of rows through batch parts. Ten sample models match three.js's `GLTFLoader` by its image rule, some of them under limits that this record gives.
 
 ## Question
 
@@ -58,7 +58,7 @@ Ten models draw as image tests on all three tiers. The parity test compares each
 | `gltf-vertex-colors` (VertexColorTest) | 0%, 0%, 0% | 0%, 0%, 0% |
 | `gltf-texture-coordinates` (TextureCoordinateTest) | 0%, 0%, 0% | 0%, 0%, 0% |
 
-Two scenes pass under limits of their own, in `MODEL_LIMITS` of `bench/lib/parity.ts`. The lamp's glass uses `KHR_materials_transmission`, volume and ior, which three.js draws and null3D does not read, so it takes 1%. All its differing pixels lie on the glass and its beads. Since null3D draws transmission ([D-122](D-122-transmission.md)), 0.27% to 0.39% differ on the Mac, all on the stained glass, whose transmission map and clear coat null3D does not draw. The limit is now 0.5%. The instanced cubes put black faces beside white ones at hundreds of edges. Compatibility mode's 8-bit path averages those edges after it encodes the colors, so the scene takes 0.5%. It matches exactly on the other tiers.
+Some scenes pass under limits of their own, in `MODEL_LIMITS` of `bench/lib/parity.ts`. The lamp's glass uses `KHR_materials_transmission`, volume and ior, and its stained glass masks its alpha. Until M3-G5 the loader dropped a masked material's transmission with its maps, so the scene took 0.5%: 0.27% to 0.39% of its pixels differed on the Mac on 10 October 2026, all on the stained glass, and 0.16% to 0.18% after null3D drew the glass's clear coat. The masked glass now keeps its transmission and its map. On 26 October 2026 the Mac's GPU drew it at 0.111%, 0.118% and 0.107% of the pixels on WebGPU, compatibility mode and WebGL2. three.js's two renderers differ by 0.093%. Most of the remaining pixels lie on the clear-coated metal rim and the beads. The rest lie on the glass's own highlights, so the scene takes 0.13%. The instanced cubes put black faces beside white ones at hundreds of edges. Compatibility mode's 8-bit path averages those edges after it encodes the colors, so the scene takes 0.5%. It matches exactly on the other tiers.
 
 ### Copies
 
