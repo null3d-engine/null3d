@@ -267,7 +267,7 @@ A sun that stops between two steps would leave the map up to half a degree behin
 
 The rule lives in `MapSky::compares` in `crates/null3d-render/src/sky_maps.rs`. The analytic sky and the physical sky's panorama both follow it, and the panorama is drawn only in a frame whose fill starts.
 
-A map that shows a sky layer fills for the layer as well as for the sky. It fills when the layer is installed, replaced, removed or changes its values, and every `refresh` seconds that the layer asks for, one second by default, counted from the end of the fill before. A fill cannot start until the last one ends, so a layer at the default rate fills about 45 times a minute at 60 frames a second, and its map draws a stage in 20 of every 60 frames. The figures below are for a map with no layer ([D-242](D-242-sky-layers.md)).
+A map that shows a sky layer fills for the layer as well as for the sky. It fills when the layer is installed, replaced, removed or changes its values, and every `refresh` seconds that the layer asks for, one second by default, counted from the end of the fill before. A fill cannot start until the last one ends, so a layer at the default rate fills about 45 times a minute at 60 frames a second, and its map draws a stage in 15 of every 60 frames: a fill of 20 frames, then 60 frames of waiting. The figures below are for a map with no layer ([D-242](D-242-sky-layers.md)).
 
 ### What it saves
 
