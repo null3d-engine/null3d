@@ -1112,7 +1112,7 @@ a GPU target and one value of the bits a device fixes, so there are twelve table
 
 The twelve tables are 5.0 MB uncompressed and 294 KB after Brotli together. The largest is
 `shader-paragraphs-glsl-tone-map-half.js` at 593.0 KB uncompressed and 31.4 KB after Brotli, inside
-the 1,536 KB and 49 KB that a shader file of a feature that loads on first use may take.
+the 1,792 KB and 56 KB that a shader file of a feature that loads on first use may take.
 
 Only the feature-set modules changed. All twelve modules of the start are byte-identical to what the
 build wrote before, so a page that uses no feature downloads exactly what it did, and a kind's table
