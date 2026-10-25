@@ -58,10 +58,16 @@ for (let index = 0; index < ELEMENTS.length; index++) {
 
 - A label element is sized in CSS pixels, which are the scene's units, so the example's camera and positions carry over unchanged.
 - The example fills the window. A port with a fixed frame gives the camera that frame's aspect ratio.
-- `createEngine`'s `maxLabels3d` holds 256 labels by default, which fits the table's 118 cells.
+- `createEngine`'s `maxLabels3d` holds 256 labels by default. The table's 118 cells fit, and a scene with more planes raises it, as the sprites example's 512 do.
 - The cells' CSS goes in the page's stylesheet, and the layer that holds the elements covers the canvas.
 - The example's random start positions and tints have no held picture. Take them from the cell's place instead, as the port does with an integer hash of the index.
 - The engine hides a plane whose anchor is behind the camera or outside the near and far planes. `CSS3DRenderer` draws it there, mirrored.
+- A billboard label also takes the object's scale, so a sprite that grows and shrinks ports as it is. `rotation` is the sprite's `rotation2D`.
+- A hidden object hides its element. A scene that shows only some of its objects therefore needs no extra call, as the molecules example shows with its atoms and its bonds.
+- An element can hold an iframe or any other markup. Give it `pointer-events: auto` for the clicks that `CSS3DRenderer` gives its elements.
+- An orthographic camera carries the planes too. Give `scene.createOrthographicCamera` the height, or the four edges, that the example's camera uses.
+
+All seven three.js CSS3D examples have a port under `tests/pages/`: `css3d_periodictable`, `css3d_molecules`, `css3d_sprites`, `css3d_sandbox`, `css3d_orthographic`, `css3d_mixed` and `css3d_youtube`. Each page draws its scene with null3D and with three.js's `CSS3DRenderer`, and its test compares the element pictures of the two stages. Read one before porting a CSS3D scene of your own.
 
 ## 2. Messages between page and sketch
 

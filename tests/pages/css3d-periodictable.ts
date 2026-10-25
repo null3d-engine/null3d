@@ -14,6 +14,7 @@ import {
 	type ElementCell,
 	STAGE,
 } from './lib/css3d-periodictable';
+import { frames } from './lib/css3d-shared';
 import { run } from './lib/result';
 
 /** The cell elements of one engine's stage, in the table's order. */
@@ -38,13 +39,6 @@ function cell(index: number): HTMLElement {
 	element.append(number, symbol, details);
 	return element;
 }
-
-/** Resolves after `count` animation frames. */
-const frames = (count: number) =>
-	new Promise<void>((resolve) => {
-		const step = () => (--count <= 0 ? resolve() : requestAnimationFrame(step));
-		requestAnimationFrame(step);
-	});
 
 /** Draws the example with three.js's CSS3DRenderer into a stage, and gives its cells. */
 function threeStage(stage: HTMLElement): Cells {
