@@ -527,6 +527,7 @@ The team's phone is a Galaxy S24+ (SM-S926B, Exynos 2400, Android 16). It runs o
 The team's tablet is an iPad Pro 11-inch with 8 cores. Safari there reports a Mac user agent.
 
 - The iPad reaches the Mac over HTTPS on the local network. `bun run dev-cert` makes the certificate. Copy its root certificate to the iPad, install the profile, and turn on full trust in Settings > General > About > Certificate Trust Settings.
+- A runner page that sits on "starting" with nothing reaching the Mac usually means the iPad does not trust the server's certificate. Install the mkcert root and turn on full trust as above. On 25 October 2026 the page connected as soon as the root was trusted, and not before. The dev certificate in the cloud kit's folder is made by the same root, so it needs the same trust.
 - `NULL3D_HTTPS=1 bun run dev` serves HTTPS on port 5174 under the Mac's `.local` name. The dev server sends it over HTTP/1.1, because Safari on an iPad sometimes stops loading a worker's modules over HTTP/2. That failure looks like an engine start that never finishes.
 - Each browser opens its own runner page: `https://<mac>.local:5174/tests/pages/runner.html?listen&runner=ipad-safari` in Safari. The name must match the browser, or the page waits for another browser's runs. Pass `--lan ipad-safari` to the runner.
 - For benchmarks, turn on Settings > Accessibility > Motion > Limit Frame Rate, which holds the display at 60 Hz.
