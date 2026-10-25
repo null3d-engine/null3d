@@ -16,15 +16,22 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
 	acquireLock,
+	BACKGROUND_PRIORITY,
 	CACHE_ROOT,
 	cacheDir,
 	cacheOff,
 	cacheRoot,
 	cargoEnv,
+	cpuSeconds,
 	HEAVY_SLOT_ENV,
+	type HolderWatch,
 	hashFiles,
 	hashOf,
+	holderVerdict,
 	liveLockHolder,
+	pageBuildPriorityProblem,
+	processPriority,
+	processTree,
 	pruneCache,
 	runByLine,
 	runCargo,
@@ -247,6 +254,94 @@ describe('liveLockHolder', () => {
 			expect(liveLockHolder(lock)).toBeUndefined();
 		});
 	});
+});
+
+describe("a waiter's watch on a lock's holder", () => {
+	/** A watch that judges a holder within a second, for the tests. */
+	const QUICK_WATCH: HolderWatch = {
+		sampleMs: 50,
+		reportMs: 60_000,
+		progressSeconds: 30,
+		stallMs: 500,
+	};
+
+	/** A lock at `lock` held by a child that sleeps, started by `command`, once that child runs. */
+	const heldBySleeper = async (lock: string, command: string[]) => {
+		const [program, ...args] = command;
+		const child = spawn(program as string, args, { stdio: 'ignore' });
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		mkdirSync(lock);
+		writeFileSync(join(lock, 'pid'), String(child.pid));
+		return child;
+	};
+
+	it("reads ps's processor time in both of its forms", () => {
+		expect(cpuSeconds('0:37.90')).toBeCloseTo(37.9);
+		expect(cpuSeconds('147:22.29')).toBeCloseTo(147 * 60 + 22.29);
+		expect(cpuSeconds('02:03:04')).toBe(2 * 3600 + 3 * 60 + 4);
+		expect(cpuSeconds('1-02:03:04')).toBe(86_400 + 2 * 3600 + 3 * 60 + 4);
+	});
+
+	it('waits on a holder that progresses, ends one at background priority, and stops for any other', () => {
+		expect(holderVerdict(499, BACKGROUND_PRIORITY, 500)).toBe('wait');
+		expect(holderVerdict(500, BACKGROUND_PRIORITY, 500)).toBe('end');
+		expect(holderVerdict(500, 31, 500)).toBe('stop');
+		expect(holderVerdict(500, undefined, 500)).toBe('stop');
+	});
+
+	it('refuses a page build at background priority, and lets one at any higher priority take the lock', () => {
+		expect(pageBuildPriorityProblem(BACKGROUND_PRIORITY)).toContain(
+			'macOS background priority (4)',
+		);
+		expect(pageBuildPriorityProblem(5)).toBeUndefined();
+		expect(pageBuildPriorityProblem(31)).toBeUndefined();
+		expect(pageBuildPriorityProblem(undefined)).toBeUndefined();
+	});
+
+	it("counts this process's own processor time in its tree", () => {
+		const tree = processTree(process.pid);
+		expect(tree?.pids).toContain(process.pid);
+		expect(tree?.seconds).toBeGreaterThan(0);
+		expect(processTree(999_999_999)).toBeUndefined();
+	});
+
+	it('stops waiting for a holder at normal priority that makes no progress, and leaves it running', async () => {
+		const folder = mkdtempSync(join(tmpdir(), 'null3d-lock-'));
+		const lock = join(folder, 'build.lock');
+		const holder = await heldBySleeper(lock, ['sleep', '30']);
+		try {
+			expect(() => acquireLock(lock, { watch: QUICK_WATCH })).toThrow(
+				`stopped waiting for the lock at ${lock}: its holder, pid ${holder.pid}`,
+			);
+			expect(holder.exitCode).toBeNull();
+			expect(readFileSync(join(lock, 'pid'), 'utf8')).toBe(String(holder.pid));
+		} finally {
+			holder.kill();
+			rmSync(folder, { recursive: true, force: true });
+		}
+	});
+
+	// A process at background priority that only sleeps needs no processor time, so this test holds
+	// at any load, unlike the ones that wait for such a process to print.
+	it.skipIf(process.platform !== 'darwin')(
+		'ends a holder at background priority that makes no progress, and takes its lock',
+		async () => {
+			const folder = mkdtempSync(join(tmpdir(), 'null3d-lock-'));
+			const lock = join(folder, 'build.lock');
+			const holder = await heldBySleeper(lock, ['taskpolicy', '-b', 'sleep', '30']);
+			const ended = new Promise((resolve) => holder.on('exit', resolve));
+			try {
+				expect(processPriority(holder.pid)).toBe(BACKGROUND_PRIORITY);
+				const release = acquireLock(lock, { watch: QUICK_WATCH });
+				expect(readFileSync(join(lock, 'pid'), 'utf8')).toBe(String(process.pid));
+				release();
+				await ended;
+			} finally {
+				holder.kill();
+				rmSync(folder, { recursive: true, force: true });
+			}
+		},
+	);
 });
 
 describe('acquireLock', () => {

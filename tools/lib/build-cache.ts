@@ -14,7 +14,7 @@
 // judges the engine's crates fresh by file times, and sccache, when installed, shares the compiled
 // dependency crates instead (see cargoEnv). Every cargo run of the repository goes through
 // `runCargo` or `runCargoAsync`, which share one setup, so that rule holds at each of them.
-import { type StdioOptions, spawn, spawnSync } from 'node:child_process';
+import { execFileSync, type StdioOptions, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
 	accessSync,
@@ -293,6 +293,105 @@ const LOCK_POLL_MS = 200;
 /** A lock that names no process this long after it was taken was left by one that stopped. */
 const UNNAMED_LOCK_MS = 60_000;
 
+/**
+ * How a waiter watches a lock's holder: how often it reads the processor time that the holder's
+ * processes have used, how often it says what it read, how much of that time counts as progress,
+ * and how long a holder may go without progress. A page build at normal priority uses about a
+ * minute of processor time per minute; the two starved holders of 25 October 2026 used 38 s in 36
+ * minutes and 4 s in 54, while every other page build waited.
+ */
+export interface HolderWatch {
+	readonly sampleMs: number;
+	readonly reportMs: number;
+	readonly progressSeconds: number;
+	readonly stallMs: number;
+}
+
+/** The watch that a page build's wait for the machine's page-build lock keeps on its holder. */
+export const HOLDER_WATCH: HolderWatch = {
+	sampleMs: 15_000,
+	reportMs: 120_000,
+	progressSeconds: 30,
+	stallMs: 10 * 60_000,
+};
+
+/**
+ * What a waiter does about a holder that has gone `stalledMs` without progress: it waits, it ends a
+ * holder at background priority, which no call can raise again and which would hold the lock for
+ * hours, or it stops waiting and says why. A slow holder at any other priority is never ended.
+ */
+export function holderVerdict(
+	stalledMs: number,
+	priority: number | undefined,
+	stallMs: number,
+): 'wait' | 'end' | 'stop' {
+	if (stalledMs < stallMs) return 'wait';
+	return priority !== undefined && priority <= BACKGROUND_PRIORITY ? 'end' : 'stop';
+}
+
+/** Processor time as `ps` prints it, `[[dd-]hh:]mm:ss.ss` or macOS's `mm:ss.ss`, in seconds. */
+export function cpuSeconds(text: string): number {
+	const [days, clock] = text.includes('-') ? text.split('-') : ['0', text];
+	const seconds = (clock ?? '').split(':').reduce((total, part) => total * 60 + Number(part), 0);
+	return Number(days) * 24 * 60 * 60 + seconds;
+}
+
+/**
+ * A process and its descendants as `ps` lists them now: their ids, and the processor time that they
+ * have used together, in seconds. Undefined when `ps` fails or the process has gone.
+ */
+export function processTree(pid: number): { pids: number[]; seconds: number } | undefined {
+	let listing: string;
+	try {
+		listing = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,time='], {
+			encoding: 'utf8',
+			timeout: 10_000,
+		});
+	} catch {
+		return undefined;
+	}
+	const children = new Map<number, number[]>();
+	const time = new Map<number, number>();
+	for (const line of listing.split('\n')) {
+		const [id, parent, used] = line.trim().split(/\s+/);
+		if (!id || !parent || !used) continue;
+		time.set(Number(id), cpuSeconds(used));
+		children.set(Number(parent), [...(children.get(Number(parent)) ?? []), Number(id)]);
+	}
+	if (!time.has(pid)) return undefined;
+	const pids: number[] = [];
+	for (const next = [pid]; next.length > 0; ) {
+		const id = next.pop() as number;
+		pids.push(id);
+		next.push(...(children.get(id) ?? []));
+	}
+	return { pids, seconds: pids.reduce((sum, id) => sum + (time.get(id) ?? 0), 0) };
+}
+
+/** Ends the processes in `pids`, and those that ignore the request a few seconds later. */
+function endProcesses(pids: readonly number[]): void {
+	const signal = (id: number, name: NodeJS.Signals) => {
+		try {
+			process.kill(id, name);
+		} catch {
+			// It has gone already.
+		}
+	};
+	for (const id of pids) signal(id, 'SIGTERM');
+	for (let waited = 0; waited < 5_000 && pids.some(isRunning); waited += LOCK_POLL_MS)
+		sleep(LOCK_POLL_MS);
+	for (const id of pids) if (isRunning(id)) signal(id, 'SIGKILL');
+}
+
+/** What a waiter has read of one holder: when that holder last made progress, and what it had used then. */
+interface HolderReading {
+	readonly pid: number;
+	seconds: number;
+	progressAt: number;
+	sampledAt: number;
+	reportedAt: number;
+}
+
 function sleep(ms: number): void {
 	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
@@ -365,7 +464,10 @@ export const HEAVY_SLOT_ENV = 'NULL3D_HEAVY_SLOT';
  * while the job does nothing else frees the slot. On 24 October 2026 six jobs held slots for up to
  * 49 minutes with almost no processor time, and were killed by hand as hung.
  */
-export function acquireLock(path: string, options: { freesSlot?: boolean } = {}): () => void {
+export function acquireLock(
+	path: string,
+	options: { freesSlot?: boolean; watch?: HolderWatch } = {},
+): () => void {
 	mkdirSync(dirname(path), { recursive: true });
 	const started = performance.now();
 	const slot = process.env[HEAVY_SLOT_ENV];
@@ -375,7 +477,7 @@ export function acquireLock(path: string, options: { freesSlot?: boolean } = {})
 			: undefined;
 	let waited: boolean;
 	try {
-		waited = waitForLock(path, marker);
+		waited = waitForLock(path, marker, options.watch);
 	} finally {
 		if (marker) rmSync(marker, { force: true });
 	}
@@ -389,10 +491,12 @@ export function acquireLock(path: string, options: { freesSlot?: boolean } = {})
 /**
  * Creates the lock folder at `path` once no live process holds it, and returns true when it had to
  * wait. At its first wait it says who holds the lock, and writes `marker` when it has one, so the
- * job's slot of the job queue counts as free while it waits.
+ * job's slot of the job queue counts as free while it waits. With `watch`, it keeps the watch on
+ * the holder that `HolderWatch` describes.
  */
-function waitForLock(path: string, marker: string | undefined): boolean {
+function waitForLock(path: string, marker: string | undefined, watch?: HolderWatch): boolean {
 	let waited = false;
+	let reading: HolderReading | undefined;
 	for (;;) {
 		try {
 			mkdirSync(path);
@@ -420,17 +524,109 @@ function waitForLock(path: string, marker: string | undefined): boolean {
 			const free = marker ? "; this job's slot of the job queue counts as free while it waits" : '';
 			console.log(`waiting for the lock at ${path}, ${who}${free}`);
 		}
+		if (watch && holder > 0) {
+			reading = watchHolder(path, holder, takenMs, watch, reading);
+			if (!reading) continue;
+		}
 		sleep(LOCK_POLL_MS);
 	}
 }
 
 /**
+ * One step of a waiter's watch on the lock's holder: reads what the holder's processes have used
+ * when a sample is due, says so when a report is due, and acts on the verdict. Returns the reading
+ * to keep, or undefined once it has ended the holder and broken its lock. Throws when it stops
+ * waiting. A holder whose processes have used less than the progress threshold in all their life
+ * has made no progress since it took the lock, so its stall counts from then.
+ */
+function watchHolder(
+	path: string,
+	holder: number,
+	takenMs: number,
+	watch: HolderWatch,
+	reading: HolderReading | undefined,
+): HolderReading | undefined {
+	const now = Date.now();
+	if (reading?.pid !== holder) {
+		const seconds = processTree(holder)?.seconds ?? 0;
+		const progressAt = seconds < watch.progressSeconds ? takenMs : now;
+		return { pid: holder, seconds, progressAt, sampledAt: 0, reportedAt: now };
+	}
+	if (now - reading.sampledAt < watch.sampleMs) return reading;
+	reading.sampledAt = now;
+	const tree = processTree(holder);
+	if (!tree) return reading;
+	if (tree.seconds - reading.seconds >= watch.progressSeconds) {
+		reading.seconds = tree.seconds;
+		reading.progressAt = now;
+	}
+	const priority = processPriority(holder);
+	const minutes = ((now - reading.progressAt) / 60_000).toFixed(1);
+	const used = `${(tree.seconds - reading.seconds).toFixed(1)} s of processor time in the last ${minutes} minutes`;
+	const at = `pid ${holder}, at priority ${priority ?? 'unknown'}`;
+	switch (holderVerdict(now - reading.progressAt, priority, watch.stallMs)) {
+		case 'end':
+			console.log(
+				`ending the holder of the lock at ${path}: ${at}, which is macOS background priority, used ${used}. No call can raise it again, so it must start over at normal priority`,
+			);
+			endProcesses(tree.pids);
+			breakLock(path);
+			return undefined;
+		case 'stop':
+			throw new Error(
+				`stopped waiting for the lock at ${path}: its holder, ${at}, used ${used}, so it is making no progress. Find out what it waits on, or end it if it has hung`,
+			);
+		case 'wait':
+			if (now - reading.reportedAt >= watch.reportMs) {
+				reading.reportedAt = now;
+				console.log(`still waiting for the lock at ${path}: its holder, ${at}, used ${used}`);
+			}
+			return reading;
+	}
+}
+
+/** The scheduling priority that `ps` shows on macOS for a process at background priority. */
+export const BACKGROUND_PRIORITY = 4;
+
+/** A process's scheduling priority as `ps` shows it on macOS, or undefined elsewhere or when `ps` fails. */
+export function processPriority(pid: number = process.pid): number | undefined {
+	if (process.platform !== 'darwin') return undefined;
+	try {
+		const priority = Number(
+			execFileSync('ps', ['-o', 'pri=', '-p', String(pid)], { encoding: 'utf8', timeout: 10_000 }),
+		);
+		return Number.isFinite(priority) ? priority : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Why a page build at `priority` must not take the machine's page-build lock, or undefined when it
+ * may. At macOS background priority its bundler inherits that priority, and on a loaded machine gets
+ * almost no processor time while every other page build waits for the lock: on 25 October 2026 one
+ * held it for 46 minutes, its bundler having used 38 s of processor time. No call lifts a process
+ * out of background priority, so the build must start without it.
+ */
+export function pageBuildPriorityProblem(priority: number | undefined): string | undefined {
+	if (priority === undefined || priority > BACKGROUND_PRIORITY) return undefined;
+	return `this page build runs at macOS background priority (${priority}), where its bundler gets almost no processor time while it holds the machine's page-build lock, and every other page build waits for it. Start it at normal priority: through the job queue's CPU lane, or from a shell that no job run with \`taskpolicy -b\` started`;
+}
+
+/**
  * Takes the machine's lock of production page builds, which lets one run at a time: two at once
  * leave the bundler blocked in its own callback, gaining a tenth of a second of processor time a
- * minute, and neither finishes. Returns the function that releases it.
+ * minute, and neither finishes. Returns the function that releases it. A build at background
+ * priority refuses to take it (pageBuildPriorityProblem), and a wait for it keeps the watch on its
+ * holder that HOLDER_WATCH gives.
  */
 export function acquirePageBuildLock(): () => void {
-	return acquireLock(join(cacheRoot(), 'page-build.lock'), { freesSlot: true });
+	const problem = pageBuildPriorityProblem(processPriority());
+	if (problem) throw new Error(problem);
+	return acquireLock(join(cacheRoot(), 'page-build.lock'), {
+		freesSlot: true,
+		watch: HOLDER_WATCH,
+	});
 }
 
 /**
