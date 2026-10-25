@@ -199,7 +199,7 @@ function writeNotices(root: string, out: string): void {
  * engine; and the notices of every package in it. Fails when this checkout lacks a file that a
  * page loads, with the step that writes it.
  */
-export function buildCdn(root: string, out: string): CdnBuild {
+export async function buildCdn(root: string, out: string): Promise<CdnBuild> {
 	refuseStaleCore(root);
 	const sources = cdnSourcesHash(root);
 	if (stampOf(out) === sources && existsSync(join(out, CDN_ENTRY))) {
@@ -207,7 +207,7 @@ export function buildCdn(root: string, out: string): CdnBuild {
 		const bytes = files.reduce((total, file) => total + file.bytes, 0);
 		return { out, files, bytes, reused: true };
 	}
-	buildPackageLibraries(root, ['engine', ...CDN_ADDONS]);
+	await buildPackageLibraries(root, ['engine', ...CDN_ADDONS]);
 	const missing = missingCdnSources(root);
 	if (missing.length > 0)
 		throw new Error(
