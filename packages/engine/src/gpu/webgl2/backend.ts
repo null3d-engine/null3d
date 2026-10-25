@@ -943,6 +943,9 @@ export class WebGL2Backend {
 			const a = i + 1;
 			switch (op) {
 				case G.OP_CREATE_BUFFER:
+					// A capture draws the frame again, and the buffers of that frame exist already:
+					// making one again would destroy the buffer that a read waits on.
+					if (this.canvasTarget && this.buffers[words[a] as number]) break;
 					this.counts.objects++;
 					this.createBuffer(words[a] as number, words[a + 1] as number, words[a + 2] as number);
 					break;

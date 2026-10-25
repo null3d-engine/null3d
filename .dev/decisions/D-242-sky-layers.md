@@ -161,11 +161,14 @@ of the nine coefficients took the first word of every third texel, where the tar
 each, so the diffuse light mixed the coefficients of different directions; it now reads each
 texel's first three words.
 
-On the Mac under a load of 90 to 160, `sky-layer-light` takes the layer in the reflections and in
-the diffuse light on all three tiers. Its order check still fails there: the light arrived one fill
-later than the levels, because three of the four light reads that a layer's fills queued never
-landed. A machine that keeps up takes the light with the levels, and the compatibility and webgl2
-tiers passed the whole spec once. The read's landing is the open fault.
+The last fault was why the light arrived one fill after the levels. The drawing that a capture makes
+ran the frame's own command to make each buffer, and a second make destroys the buffer it makes and
+builds another. The light read of the ring then failed with "Buffer was destroyed before mapping was
+resolved", so its fill's light never landed and the map's next fill, a grace of frames later,
+supplied it one fill late. A capture now keeps the buffers that the frame made: three of the four
+light reads of a run failed this way. With that fixed, `sky-layer-light` passes the whole spec on
+webgpu, compatibility mode and webgl2 on SwiftShader, and the light reaches the scene with the
+levels.
 
 ### The cost
 
