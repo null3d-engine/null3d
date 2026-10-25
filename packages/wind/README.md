@@ -39,7 +39,7 @@ export default defineSketch((ctx) => {
 });
 ```
 
-Call `update` once in each frame. The calls allocate nothing.
+Call `update` once in each frame. The add-on's calls allocate nothing; a sketch that pushes every frame keeps one two-number array for the place.
 
 ## The field
 

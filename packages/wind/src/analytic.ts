@@ -74,7 +74,52 @@ export interface Push {
 	readonly born: number;
 }
 
-/** The field's settings, which a page sets once or changes at any time. */
+/** One slot of the ring, which the add-on writes in place so that a push allocates nothing. */
+interface PushSlot {
+	x: number;
+	z: number;
+	strength: number;
+	born: number;
+}
+
+/** The pushes that a page made, which the field reads in place. */
+export interface PushRing {
+	/** The slots, which the field reads. A slot whose strength is 0 turns nothing. */
+	readonly slots: readonly Push[];
+	/**
+	 * Writes a push into the oldest slot. It replaces that slot's numbers, so a page may call it in
+	 * every frame and the call allocates nothing.
+	 */
+	add(x: number, z: number, strength: number, born: number): void;
+}
+
+/** Makes the empty ring that a page's pushes go into. The slots are made once, here. */
+export function createPushRing(): PushRing {
+	const slots: PushSlot[] = Array.from({ length: PUSH_SLOTS }, () => ({
+		x: 0,
+		z: 0,
+		strength: 0,
+		born: -PUSH_LIFE,
+	}));
+	let next = 0;
+	return {
+		slots,
+		add(x, z, strength, born) {
+			const slot = slots[next] as PushSlot;
+			slot.x = x;
+			slot.z = z;
+			slot.strength = strength;
+			slot.born = born;
+			next = (next + 1) % PUSH_SLOTS;
+		},
+	};
+}
+
+/**
+ * The field's settings, which a page sets once or changes at any time.
+ *
+ * @category api/wind
+ */
 export interface FieldState {
 	/** The wind's speed in meters a second, at the top of the profile. */
 	speed: number;
@@ -194,7 +239,7 @@ export function analyticVelocity(
 
 	// The pushes: a vortex around each, turning more slowly as it ages away.
 	for (const push of pushes) {
-		if (!push) continue;
+		if (!push || push.strength === 0) continue;
 		const age = t - push.born;
 		if (age < 0 || age > PUSH_LIFE) continue;
 		const fadeOut = 1 - age / PUSH_LIFE;

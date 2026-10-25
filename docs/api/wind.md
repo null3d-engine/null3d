@@ -53,7 +53,7 @@ export default defineSketch((ctx) => {
 });
 ```
 
-Call `update` once in each frame. It places the box about the camera and sends the field's values to the GPU. The calls allocate nothing, so a sketch may make them in every frame.
+Call `update` once in each frame. It places the box about the camera and sends the field's values to the GPU. The add-on's calls allocate nothing, so a sketch may make them in every frame. A sketch that pushes in every frame keeps one two-number array for the place, rather than a new one each time.
 
 ## The calls
 
@@ -101,7 +101,7 @@ fn vertexOffset(input: VertexInput) -> vec3f {
     let place = object.position + input.position;
     let air = wind_sample(place, material.origin, material.size);
     // A plant's top leans more than its foot. The share is metres of lean for each metre a second
-    // of air, so a steady wind of 4 bends the top of a 1 metre plant about 0.3 metres.
+    // of air: a steady wind of 4 leans the top of a 1 meter plant by about 0.3 meters.
     return vec3f(air.r, 0.0, air.b) * (0.08 * input.uv.y);
 }
 ```
@@ -122,3 +122,6 @@ The field is incompressible: its swirl is the curl of one stream function, and a
 - A device without float render targets cannot hold the field. There the add-on draws nothing, and a reader that samples the texture reads its neutral black.
 - A place outside the box reads the box's edge. Keep the box wide enough for every plant and smoke card that reads it. Otherwise the air is smooth rather than exact at the scene's edge.
 - The add-on allocates nothing in a frame, and its texture exists only while something reads it.
+
+[The API reference](reference/wind.md) lists every export of this page with its type and
+description. The engine's doc comments make it.

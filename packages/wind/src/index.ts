@@ -17,7 +17,6 @@ export const NAMESPACE = declareAddonNamespace({
 	errorCodes: [2400, 2499],
 });
 
-export type { FieldState, Push } from './analytic';
-export { analyticVelocity, defaultFieldState, profile } from './analytic';
+export type { FieldState } from './analytic';
 export type { Wind, WindField, WindOptions } from './wind';
 export { createWind } from './wind';
