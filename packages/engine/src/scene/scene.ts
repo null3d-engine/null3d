@@ -3489,6 +3489,8 @@ export class Scene implements ViewHolder {
 	/** The ray and hit that a pick's raycast reuses. */
 	private pickRay: Ray | undefined;
 	private pickHit: RaycastHit | undefined;
+	/** The point of a pick's ray, in CSS pixels, which the ray's math reads from an array. */
+	private pickPoint: Float64Array | undefined;
 	/** The command batches that the world took before the runner's first frame, or -1. */
 	private settledCommands = -1;
 	/** The environment's values in the core, made on the first `setEnvironment`. */
@@ -5476,8 +5478,8 @@ export class Scene implements ViewHolder {
 	/** GPU picking's queries, made on the first pick. */
 	private get picks(): ScenePicks {
 		if (!this.scenePicks) {
-			this.scenePicks = new ScenePicks(this.core, this.queryTargets(), (x, y) =>
-				this.pickByRay(x, y),
+			this.scenePicks = new ScenePicks(this.core, this.queryTargets(), (x, y, frame) =>
+				this.pickByRay(x, y, frame),
 			);
 		}
 		return this.scenePicks;
@@ -5489,6 +5491,13 @@ export class Scene implements ViewHolder {
 	 * `camera.screenToRay` takes them, and the point is tested at the pixel that the camera draws,
 	 * not at a projected triangle: a cut-out material's holes and a surface thinner than a pixel
 	 * answer as the image shows them.
+	 *
+	 * A hit carries `uv`, where on the surface the pixel landed in the mesh's first texture
+	 * coordinates, blended across its triangle's three corners as a raycast's `uv` is, and `hasUv`,
+	 * which says whether to read it. A ray from the camera of the frame that recorded the pick
+	 * finds them from the same point, so the two ways of asking agree. A skinned or morphed
+	 * character, and a custom material that offsets its vertices, draws a different shape than the
+	 * mesh that the ray tests, so its coordinates can differ from the pose it drew.
 	 *
 	 * The answer arrives one or more frames later, through a promise, and a pick in every frame
 	 * waits in a queue of its own. The frame that records the pick draws it, so the camera of that
@@ -5520,10 +5529,14 @@ export class Scene implements ViewHolder {
 		this.scenePicks?.stop();
 	}
 
-	/** Casts a ray through a point of the canvas, for a pick that the GPU pass cannot draw. */
-	private pickByRay(x: number, y: number): PickHit | null {
-		const camera = this.activeCamera;
-		if (!camera || camera.destroyedFrame !== -1) return null;
+	/**
+	 * Casts a ray through a point of the canvas: with the camera of `frame`, or with the camera as
+	 * it stands and the frame of the point's input event when `frame` is -1. Answers a pick that the
+	 * GPU pass cannot draw, and finds the texture coordinates of a pixel that it did pick.
+	 */
+	private pickByRay(x: number, y: number, frame: number): PickHit | null {
+		const active = this.activeCamera;
+		const live = active !== undefined && active.destroyedFrame === -1 ? active : undefined;
 		// The ray and hit are made once, when the first pick needs them.
 		if (!this.pickRay) this.pickRay = { origin: [0, 0, 0], direction: [0, 0, 0] };
 		if (!this.pickHit) {
@@ -5532,23 +5545,44 @@ export class Scene implements ViewHolder {
 				instance: -1,
 				point: [0, 0, 0],
 				normal: [0, 0, 0],
+				uv: [0, 0],
+				hasUv: false,
 				distance: 0,
 				triangle: -1,
 			};
 		}
 		const ray = this.pickRay;
 		const hit = this.pickHit;
-		camera.screenToRay(x, y, ray);
+		let layers: number;
+		if (frame < 0) {
+			if (live === undefined) return null;
+			live.screenToRay(x, y, ray);
+			layers = live.layers;
+		} else {
+			if (!this.pickPoint) this.pickPoint = new Float64Array(2);
+			const point = this.pickPoint;
+			point[0] = x;
+			point[1] = y;
+			// A frame that the ring no longer holds answers no coordinates, rather than aim a camera
+			// that has moved at the pixel that the older frame showed.
+			layers = this.frameCameras.frameRay(frame, point, ray, undefined);
+			if (layers < 0) return null;
+		}
 		// A camera that has not drawn cannot project the point, so the frame it would have answered
 		// showed nothing there.
 		if (!Number.isFinite(ray.direction[0])) return null;
 		if (!Number.isFinite(ray.direction[1])) return null;
 		if (!Number.isFinite(ray.direction[2])) return null;
-		const layers = camera.layers;
 		if (!this.raycast(ray.origin, ray.direction, { layers }, hit) || hit.object === null) {
 			return null;
 		}
-		return { object: hit.object, instance: hit.instance };
+		const uv = hit.uv;
+		return {
+			object: hit.object,
+			instance: hit.instance,
+			uv: [uv?.[0] ?? Number.NaN, uv?.[1] ?? Number.NaN],
+			hasUv: hit.hasUv === true,
+		};
 	}
 
 	/**

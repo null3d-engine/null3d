@@ -307,6 +307,11 @@ export interface CoreGlue extends CoreErrors {
 	pickResultAddress(): number;
 	/** True when GPU picking finds every source that the scene draws. */
 	pickCoversScene(): number;
+	/**
+	 * The engine frame that recorded the landed pick, or -1 when no pick has landed. A ray from that
+	 * frame's camera finds the texture coordinates of its pixel.
+	 */
+	pickFrame(): number;
 	/** The object or batch id that a pick's source key names, or 0 for a key that names nothing. */
 	pickTargetId(key: number): number;
 	/** The instance row that a pick's source key names, or 0 for an object of the scene. */
@@ -1237,6 +1242,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'requestPick',
 	'pickResultAddress',
 	'pickCoversScene',
+	'pickFrame',
 	'pickTargetId',
 	'pickTargetRow',
 	'createShapeMesh',
