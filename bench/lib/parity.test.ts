@@ -328,6 +328,7 @@ describe('feature scenes', () => {
 			'gltf-ior',
 			'gltf-iridescence',
 			'gltf-anisotropy',
+			'gltf-anisotropy-strength',
 			'gltf-clearcoat',
 			'gltf-toy-car',
 			'shadows',
