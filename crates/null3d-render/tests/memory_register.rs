@@ -1,11 +1,12 @@
 //! The memory register against a hand measurement of the same tables, by the method of the memory
-//! study: two scene sizes, the growth divided by the slots between them, and the register's figure
-//! matched to the hand count within five per cent.
+//! study: two scene sizes, and the register's figure matched to the hand count within five per
+//! cent.
 //!
-//! The upload arenas hold the bytes that the frame's own write commands copy into them, which the
-//! draw list records. The casters' layout keeps a fixed number of words for each scene slot, which
-//! the scene's capacity states. Each check runs on the WebGPU and WebGL2 builders, whose layouts
-//! keep different numbers of words.
+//! The upload arenas' used bytes are matched with the frame's own write commands, whose byte
+//! lengths the draw list records. In these scenes every write copies from an arena. The casters'
+//! layout keeps a fixed number of words for each scene slot, which the scene's capacity states.
+//! Each check runs on the WebGPU and WebGL2 builders, whose layouts keep different numbers of
+//! words.
 
 mod common;
 
@@ -55,7 +56,7 @@ fn webgl2(capacity: u32) -> World<CpuCulledRenderer> {
 }
 
 /// Adds visible objects that share one mesh and cast shadows, so the casters' layout holds their
-/// slots.
+/// slots. The objects are unskinned, so the layout's skinned-object tables stay empty.
 fn add_casters<B: FrameBuilder>(world: &mut World<B>, objects: u32) {
     let settings = world.renderer.settings_mut();
     let material = settings
@@ -97,8 +98,10 @@ fn register<B: FrameBuilder>(world: &World<B>) -> MemoryRegister {
 /// The operations of one recorded frame, and their operands.
 type Commands = Vec<(Op, Vec<u32>)>;
 
-/// The bytes that a frame's list copies into its upload arena: the byte lengths of its write
-/// commands, which are the arena's own bytes padded to four.
+/// The bytes that a frame's list writes: the byte lengths of its write commands. In the scenes
+/// below every write copies from the upload arena, which holds those bytes padded to four. A light
+/// table or an image can write from its own bytes instead, and this count cannot tell the two
+/// apart.
 fn uploaded(commands: &[(Op, Vec<u32>)]) -> u64 {
     let mut bytes = 0;
     for (op, operands) in commands {
@@ -137,8 +140,9 @@ fn upload_arenas_hold_their_frames_writes<B: FrameBuilder>(mut world: World<B>, 
     assert!(hand > 0, "the frames write nothing into their arenas");
     assert!(
         arenas.used.abs_diff(hand) * 20 <= hand,
-        "the upload arenas hold {} bytes, against the {} bytes that the two frames' write commands copied in",
+        "the upload arenas hold {} bytes at capacity {}, against the {} bytes that the two frames' write commands copied in",
         arenas.used,
+        capacity,
         hand
     );
     assert!(
@@ -156,7 +160,10 @@ fn upload_arenas_hold_their_frames_writes<B: FrameBuilder>(mut world: World<B>, 
 }
 
 /// The casters' layout grows by the hand count of words for each added scene slot. The slots are
-/// the scene's capacity, which `SceneStorage` states as `capacity + 1` rows.
+/// the scene's capacity, which `SceneStorage` states as `capacity + 1` rows. The layout also holds
+/// each casting mesh's buckets and draw records, and a skinned object's bounds and first row. One
+/// mesh casts in both scenes here and no caster is skinned, so those tables are equal at both sizes
+/// and the growth check cancels them. It covers the per-slot tables alone.
 fn casters_take_words_for_each_slot<B: FrameBuilder>(
     mut small: World<B>,
     mut large: World<B>,
@@ -185,11 +192,13 @@ fn casters_take_words_for_each_slot<B: FrameBuilder>(
 #[test]
 fn the_gpu_driven_upload_arenas_hold_the_bytes_their_frames_write() {
     upload_arenas_hold_their_frames_writes(gpu(SMALL), SMALL);
+    upload_arenas_hold_their_frames_writes(gpu(LARGE), LARGE);
 }
 
 #[test]
 fn the_webgl2_upload_arenas_hold_the_bytes_their_frames_write() {
     upload_arenas_hold_their_frames_writes(webgl2(SMALL), SMALL);
+    upload_arenas_hold_their_frames_writes(webgl2(LARGE), LARGE);
 }
 
 #[test]
