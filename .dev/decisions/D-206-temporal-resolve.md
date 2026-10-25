@@ -237,7 +237,7 @@ These scenes are light, and their WebGL2 figures vary with the passes that write
 | Fix | Before | Built in | Test |
 | --- | --- | --- | --- |
 | Per-object motion exactly 0 for still content | Built by M2-EX25, with no exact proof | `lib/motion_math.wgsl`, `surface_motion` | The shader library's `motion_math::surface_motion` cases, which compare the bits with an exact reference |
-| A variance box widened to hold the centre pixel, against banding | Missing | `lib/temporal.wgsl`, `temporal_widen` | The shader library's `temporal::temporal_widen` cases, which require the centre to lie inside the box |
+| A variance box widened to hold the center pixel, against banding | Missing | `lib/temporal.wgsl`, `temporal_widen` | The shader library's `temporal::temporal_widen` cases, which require the center to lie inside the box |
 | The history rescaled by the exposure ratio | Missing | `crates/null3d-render/src/frame.rs`, `taa_frame`, and `taa.wgsl` | `tests/image/taa-fixes.spec.ts`, the `exposure` case |
 | A reactive mask from the transparent alpha | Missing | `taa.wgsl`, from the scene color's alpha, with `Reactive`'s bits | `taa-fixes.spec.ts`, the `alpha` case |
 | An opaque-only color target for the transparency mask | Missing | The `TaaOpaque` copy pass in `crates/null3d-render/src/frame_graph.rs` | `taa-fixes.spec.ts`, the `opaque` case |
@@ -246,7 +246,7 @@ These scenes are light, and their WebGL2 figures vary with the passes that write
 Why each fix is right:
 
 - **Exact zero motion.** A still surface computes this frame's image place less the same place of the last frame, which is zero bit for bit. The motion target clears to zero and the cull keeps only the objects that moved, so a still surface draws nothing at all. Without this, a resolve smears every still pixel.
-- **The widened box.** The history is clamped to a box around the neighborhood's mean and spread, inside its smallest and largest values. That box can leave out the pixel's own color, and the clamp then pulls the history away from this frame each frame, which shows as banding on a lit gradient. The box now grows to hold the centre color, and no edge moves otherwise.
+- **The widened box.** The history is clamped to a box around the neighborhood's mean and spread, inside its smallest and largest values. That box can leave out the pixel's own color, and the clamp then pulls the history away from this frame each frame, which shows as banding on a lit gradient. The box now grows to hold the center color, and no edge moves otherwise.
 - **The exposure ratio.** The lit pass scales every color by the camera's exposure, so a history written under one exposure holds other numbers than this frame's colors. The frame now carries this frame's exposure over the last frame's, and the resolve scales the history by it before the blend.
 - **The transparent alpha.** The scene color's alpha holds a blended surface where the canvas shows through. The resolve lowers the history there, shaped as FSR2 shapes it: the history's share falls by the mask's value.
 - **The opaque-only copy.** A blended surface over an opaque one leaves the scene alpha at one, so the alpha carries nothing. A copy of the scene color after the opaque pass, and before the blended pass, gives the comparison that finds it: where the composited color differs from the copy beyond a small threshold, a blended surface drew, and the history falls. The copy draws whenever the resolve does, not only while a scene blends, so the texture that the resolve reads is always the copy. A unit test (`the_resolve_copies_the_opaque_color_before_a_blend_draws`) holds the copy before the blended pass and the resolve after it.
@@ -265,7 +265,7 @@ The quality figures of the previous addendum were taken before these five fixes.
 | Test | What it proves |
 | --- | --- |
 | `tests/lib/shader-library.test.ts` | The numbered cases, the variants and the references agree |
-| `tests/image/shader-library.spec.ts`, on WebGPU, compatibility mode and WebGL2 | `motion_math::surface_motion` gives exactly zero for a still surface, and `temporal_widen` holds the centre pixel |
+| `tests/image/shader-library.spec.ts`, on WebGPU, compatibility mode and WebGL2 | `motion_math::surface_motion` gives exactly zero for a still surface, and `temporal_widen` holds the center pixel |
 | `tests/image/taa-fixes.spec.ts`, `a history follows a change of the exposure` | A resolved frame holds the scene at a doubled exposure |
 | `tests/image/taa-fixes.spec.ts`, `the scene's alpha lowers the history` | The alpha signal keeps the background out of a blended surface's history |
 | `tests/image/taa-fixes.spec.ts`, `the opaque-only copy lowers the history` | The opaque-only comparison does the same over an opaque surface |
