@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import {
 	existsSync,
 	mkdirSync,
@@ -6,10 +7,12 @@ import {
 	readdirSync,
 	readFileSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { UsageError } from './args.js';
 import { createProject, packageNameFor, parseCreateArgs, templateNames } from './create.js';
 
@@ -26,6 +29,11 @@ function tempRoot() {
 afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
+
+/** The tools that an agent settings file runs the hook before. */
+function hookMatchers(settings: { hooks: { PreToolUse: { matcher: string }[] } }) {
+	return settings.hooks.PreToolUse.map((hook) => hook.matcher);
+}
 
 /** What parsing `args` throws, as the message a person sees. */
 function mistake(args: string[]): string {
@@ -73,8 +81,9 @@ describe('createProject', () => {
 			'vite.config.ts',
 			'AGENTS.md',
 			'.gitignore',
+			'.agent/agent-hook.mjs',
 			'.claude/settings.json',
-			'.claude/agent-hook.mjs',
+			'.codex/hooks.json',
 		]) {
 			expect(existsSync(join(target, file))).toBe(true);
 		}
@@ -106,18 +115,47 @@ describe('createProject', () => {
 		}
 	});
 
-	it('turns the hook on for commands and for edits', () => {
+	it('turns the hook on for commands and for edits, in both agents', () => {
 		const root = tempRoot();
 		const target = createProject({ dir: join(root, 'my-game'), version: '0.1.0' });
-		const settings = JSON.parse(readFileSync(join(target, '.claude/settings.json'), 'utf8'));
-		const hooks = settings.hooks.PreToolUse;
+		const claude = JSON.parse(readFileSync(join(target, '.claude/settings.json'), 'utf8'));
+		const codex = JSON.parse(readFileSync(join(target, '.codex/hooks.json'), 'utf8'));
 
-		expect(hooks.map((hook: { matcher: string }) => hook.matcher)).toEqual([
-			'Bash',
-			'Edit|Write|MultiEdit',
-		]);
-		expect(hooks[0].hooks[0].command).toContain('.claude/agent-hook.mjs" bash');
-		expect(hooks[1].hooks[0].command).toContain('.claude/agent-hook.mjs" edit');
+		expect(hookMatchers(claude)).toEqual(['Bash', 'Edit|Write|MultiEdit']);
+		expect(hookMatchers(codex)).toEqual(['Bash', 'Edit|Write|apply_patch']);
+		for (const settings of [claude, codex]) {
+			expect(settings.hooks.PreToolUse[0].hooks[0].command).toContain('.agent/agent-hook.mjs');
+			expect(settings.hooks.PreToolUse[1].hooks[0].command).toContain('.agent/agent-hook.mjs');
+		}
+	});
+
+	it('runs the hook that a new project installs', () => {
+		const root = tempRoot();
+		const target = createProject({ dir: join(root, 'my-game'), version: '0.1.0' });
+		const link = join(target, 'node_modules', '@null3d', 'cli');
+		mkdirSync(join(target, 'node_modules', '@null3d'), { recursive: true });
+		symlinkSync(fileURLToPath(new URL('..', import.meta.url)), link, 'dir');
+
+		const claude = JSON.parse(readFileSync(join(target, '.claude/settings.json'), 'utf8'));
+		const claudeCommand = claude.hooks.PreToolUse[0].hooks[0].command;
+		const refused = spawnSync('sh', ['-c', claudeCommand], {
+			cwd: target,
+			input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'sleep 5' } }),
+			encoding: 'utf8',
+			env: { ...process.env, CLAUDE_PROJECT_DIR: target },
+		});
+		expect(refused.status).toBe(2);
+		expect(refused.stderr).toContain('do not wait with sleep');
+
+		const codex = JSON.parse(readFileSync(join(target, '.codex/hooks.json'), 'utf8'));
+		const codexCommand = codex.hooks.PreToolUse[0].hooks[0].command;
+		const allowed = spawnSync('sh', ['-c', codexCommand], {
+			cwd: target,
+			input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'bun run build' } }),
+			encoding: 'utf8',
+		});
+		expect(allowed.status).toBe(0);
+		expect(allowed.stderr).toBe('');
 	});
 
 	it('makes a name that npm accepts from the folder', () => {
@@ -158,6 +196,18 @@ describe('createProject', () => {
 		expect(() => createProject({ dir: target, version: '0.1.0' })).toThrow('.claude/settings.json');
 		expect(readFileSync(settings, 'utf8')).toBe(own);
 		expect(readdirSync(join(target, '.claude'))).toEqual(['settings.json']);
+	});
+
+	it('leaves an existing Codex hooks file as it is', () => {
+		const root = tempRoot();
+		const target = join(root, 'game');
+		mkdirSync(join(target, '.codex'), { recursive: true });
+		const hooks = join(target, '.codex', 'hooks.json');
+		const own = '{"hooks":{"PreToolUse":[]}}\n';
+		writeFileSync(hooks, own);
+
+		expect(() => createProject({ dir: target, version: '0.1.0' })).toThrow('.codex/hooks.json');
+		expect(readFileSync(hooks, 'utf8')).toBe(own);
 	});
 
 	it('does not overwrite the settings of a project that it made before', () => {

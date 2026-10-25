@@ -50,8 +50,9 @@ The folder must not exist, or it must be empty. A folder with files stays as it 
 | `tsconfig.json` | The TypeScript settings that `bunx @null3d/cli test` checks the project with. |
 | `package.json` | The project's name, scripts and packages. Every `@null3d/*` package takes one version. |
 | `AGENTS.md` | The rules for an AI agent that works in the project. |
-| `.claude/settings.json` | The Claude Code hook that checks the rules before each command and each edit. |
-| `.claude/agent-hook.mjs` | The hook's code. It needs no package. |
+| `.agent/agent-hook.mjs` | The hook that checks the rules before each command and each edit. |
+| `.claude/settings.json` | The Claude Code settings that run the hook. |
+| `.codex/hooks.json` | The Codex settings that run the hook. |
 
 [Your first scene](first-scene.md) explains the page module, the sketch module and the engine's calls.
 
@@ -59,6 +60,10 @@ The folder must not exist, or it must be empty. A folder with files stays as it 
 
 `AGENTS.md` names the installed null3D version and the `null3d-develop` skill. The project does not hold a copy of the skill today. When the project has `.claude/skills/null3d-develop/SKILL.md`, an agent reads that file. Otherwise the agent reads the engine docs in `node_modules/@null3d/engine/docs/`, which match the installed version.
 
-Claude Code runs the hook before each Bash command and each edit. The hook refuses a command that waits with `sleep`, stops a process by name or follows a log. It refuses an edit that makes an object in `onUpdate`, or that reaches the DOM from the sketch. It also refuses an import of a name that the installed engine does not export. A refused call stops with a message that gives the fix.
+Claude Code runs the hook through `.claude/settings.json`, and Codex runs it through `.codex/hooks.json`. Both run the same file, `.agent/agent-hook.mjs`. Codex runs the hooks of a folder that you trust.
 
-Codex and other agents read `AGENTS.md` and follow the same rules.
+The hook refuses three commands, so they do not run: a command that waits with `sleep`, one that stops a process by name, and one that follows a log. The message gives the fix.
+
+The hook flags three source rules and lets the edit go on. It flags an object, array or string made in `onUpdate`. It flags a DOM name in the sketch module. It flags an import of a name that the installed engine does not export. A planned API does not exist, so its name is absent from the installed declarations. The message names the file, the line and the fix.
+
+The hook takes every rule from `@null3d/cli/agent-rules`. That module holds each rule and its message once, so a project and any other null3D tool agree. The hook reads the module from the installed packages, and `bun install` writes them. Before that install, the hook cannot check a call, so it lets the call go on.

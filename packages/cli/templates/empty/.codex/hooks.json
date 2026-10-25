@@ -1,0 +1,27 @@
+{
+	"description": "The null3D rules for an AI agent, checked before each command and each file edit.",
+	"hooks": {
+		"PreToolUse": [
+			{
+				"matcher": "Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "d=$PWD; while [ ! -f \"$d/.agent/agent-hook.mjs\" ] && [ \"$d\" != \"/\" ]; do d=$(dirname \"$d\"); done; node \"$d/.agent/agent-hook.mjs\" bash",
+						"timeout": 30
+					}
+				]
+			},
+			{
+				"matcher": "Edit|Write|apply_patch",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "d=$PWD; while [ ! -f \"$d/.agent/agent-hook.mjs\" ] && [ \"$d\" != \"/\" ]; do d=$(dirname \"$d\"); done; node \"$d/.agent/agent-hook.mjs\" edit",
+						"timeout": 30
+					}
+				]
+			}
+		]
+	}
+}
