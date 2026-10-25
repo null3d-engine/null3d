@@ -1290,7 +1290,7 @@ describe('skins and clips', () => {
 		];
 		const [code, message] = refusal(b.glb());
 		expect(code).toBe('E1416');
-		expect(message).toContain('has 1 numbers per key, and a texture transform takes two');
+		expect(message).toContain('holds 1 numbers per key, and a texture transform takes two');
 	});
 
 	test('two clips of one name both stay, the second with a number', () => {
