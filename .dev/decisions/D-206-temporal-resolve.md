@@ -311,6 +311,6 @@ What the figures say:
 
 The fixes answer the faults of the prototype. They do not answer the three that the previous addendum named: motion for a vertex-shader wind, a rejection that keeps sub-pixel edges, and a sharper resolve. The figures of this addendum also do not include phones, and the resolve is still off on every preset.
 
-Two things are owed here. The opaque-only comparison's effect is not measured: its test records the figure and asserts only that the run drew the scene. The copy's order and its bind group are held by a unit test, so the remaining work is a scene in which the comparison's effect shows. The rain also needs motion for a blended draw before a resolve can help it.
+Two things are owed here. The opaque-only comparison's effect is not measured: its test records the figure and asserts only that the run drew the scene. The copy's order and its bind group are held by the unit test `the_resolve_copies_the_opaque_color_before_a_blend_draws`, so the remaining work is a scene in which the comparison's effect shows. The task's finish line does not name that comparison, so the signal stays as it is. The rain also needs motion for a blended draw before a resolve can help it.
 
 A later attempt starts from the measured figures above and from these items.
