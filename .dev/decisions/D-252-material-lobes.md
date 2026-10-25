@@ -1,8 +1,8 @@
 # D-252: A material's own specular lobe
 
 Status: decided by the helper of M3-E7 on 25 October 2026, for the owner's review. Built: the hook,
-the input record and both GPU paths through the WGSL-to-GLSL step. First user: M3-B5's glints.
-Date: 2026-10-25. Task: M3-E7.
+the input record and both GPU paths through the WGSL-to-GLSL step. First user: M3-B5's car paint,
+whose glints declare it. Date: 2026-10-25. Task: M3-E7.
 
 Summary: A custom material declares `fn lobe(input: LobeInput) -> vec3f`. The engine calls it for the
 main directional light and adds the color it returns to that light's specular. The surface function
@@ -37,6 +37,10 @@ function has none of those. What does an add-on write, and what does the engine 
 - Both GPU paths draw it. The hook is WGSL in the material's own function; the WGSL-to-GLSL step
   compiles it for WebGL2.
 
+The engine owns the hook and the add-on owns the model. The engine declares the hook, the input
+record and the call. No flake or sparkle appears in the hook's name or its record, because the
+add-on's WGSL writes the whole model.
+
 ## The main light alone
 
 The engine's clustered point, spot and area lights draw in `null3d::lights::clustered_light`, a
@@ -59,20 +63,40 @@ The limit is documented, so a reader does not assume glints from every light:
 - A material that declares no lobe pays nothing: no call, no record and no build.
 - A material with a lobe pays one function call for each pixel of the main light, inside the shading
   the engine already does. The call reads values that the shading holds.
-- The first user records its cost per preset with its own pictures.
+- The first user's cost per preset is owed, and D-255 names the command that measures it.
 
 ## Consequences
 
 - Code: the hook table and its signature check in `crates/null3d-shaders/src/material.rs`; the
   `LobeInput` record, the `Surface.lobe` field and the call in `crates/null3d-shaders/wgsl/lit.wgsl`;
   the plugin's function names in `packages/vite-plugin/src/wgsl.ts`; the error texts of E1215.
-- Tests: `crates/null3d-shaders/tests/material.rs` builds a material with a lobe and refuses a wrong
-  signature; `packages/vite-plugin/src/wgsl.test.ts` builds a lobe on its own.
+- Tests: `crates/null3d-shaders/tests/material.rs` builds a material with a lobe into every variant
+  and refuses a wrong signature. It also builds the car paint's shipped WGSL on WebGPU and WebGL2.
+  `packages/vite-plugin/src/wgsl.test.ts` builds a lobe on its own.
 - Docs: `docs/shaders/surface-functions.md` has "A material's own lobe", with the input table and the
   limit. `docs/api/materials.md`, `docs/guides/custom-shaders.md` and the develop skill name the
   function.
-- Owed at landing: the `GPU-Checked:` line from `bun run bench:gpu-check`, and the first user's
-  pictures, which M3-B5 redraws. The machine ran near a load of 100 on 25 October 2026, where
-  neither run measures anything.
-- Next: M3-B5 declares the lobe for its flakes. M3-E7's Done when needs that user, so the two tasks
-  close together.
+- Pictures: `tests/image/car-paint.spec.ts` measures pixels that grow brighter with the flakes than
+  without them, so the glints draw. D-255 records its runs in both reference sets.
+- Next: M3-B5 declares the lobe for its flakes, as D-255 records. M3-B5's own cost per preset is
+  still owed.
+
+## Runs
+
+The GPU check's line for the hook is the one recorded by commit dd2bcab87, taken on 25 October
+2026:
+
+`GPU-Checked: 9369b1380..c307ddad6 not judged: s4 medium 4.24 to 4.20 ms (+3.0%); s6 medium 4.69 to 4.61 ms (-4.3%); s4 high 4.54 to 2.24 ms (-38.1%); s6 high 6.51 to 6.70 ms (+10.3%); the benchmark pages changed between the commits`
+
+The measured tip, c307ddad6, contains this task's commit 766387e0e. The check says not judged because
+the benchmark pages changed between the two builds. The guide says such a line still gives the
+figures, and a reviewer judges them.
+
+The line does not measure the branch's final code, because GPU-path commits landed after c307ddad6.
+A further `bun run bench:gpu-check` is therefore owed before the landing. No record holds a timing
+run of the hook alone. Its code enters only the builds of materials that declare a lobe, and the
+benchmark scenes declare none.
+
+The build tests are `cargo test -p null3d-shaders --test material`: a lobe in every variant, a wrong
+signature refused, and the car paint on both paths. On 26 October 2026 that test passed 33 of 33 on
+this Mac, and the log is `/tmp/e7-lobe-test.log` there.
