@@ -337,11 +337,59 @@ export function cpuSeconds(text: string): number {
 	return Number(days) * 24 * 60 * 60 + seconds;
 }
 
+/** A process's id, its parent's id and the processor time that it has used, in seconds. */
+type ProcessRow = [id: number, parent: number, seconds: number];
+
+/** The clock ticks in a second, which Linux counts processor time in, read once. */
+let clockTicks: number | undefined;
+function ticksPerSecond(): number {
+	if (clockTicks === undefined) {
+		try {
+			clockTicks =
+				Number(execFileSync('getconf', ['CLK_TCK'], { encoding: 'utf8', timeout: 10_000 })) || 100;
+		} catch {
+			clockTicks = 100;
+		}
+	}
+	return clockTicks;
+}
+
 /**
- * A process and its descendants as `ps` lists them now: the processor time that each has used, in
- * seconds, by its id. Undefined when `ps` fails or the process has gone.
+ * The parent and the processor time, in seconds, of a process's record in Linux's `/proc/<id>/stat`,
+ * whose times count clock ticks. The name in parentheses may hold spaces and parentheses, so the
+ * fields count from its last closing parenthesis: the state, the parent, and the user and system
+ * times further on.
  */
-export function processTree(pid: number): Map<number, number> | undefined {
+export function statTimes(stat: string, ticks: number): [parent: number, seconds: number] {
+	const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+	return [Number(fields[1]), (Number(fields[11]) + Number(fields[12])) / ticks];
+}
+
+/**
+ * Every process as the system lists it now. Linux's `ps` prints processor time in whole seconds,
+ * which shows a child that runs for less than one as using none, so on Linux the times come from
+ * each process's own record. Undefined when the listing fails.
+ */
+function processRows(): ProcessRow[] | undefined {
+	if (process.platform === 'linux') {
+		let names: string[];
+		try {
+			names = readdirSync('/proc');
+		} catch {
+			return undefined;
+		}
+		const ticks = ticksPerSecond();
+		const rows: ProcessRow[] = [];
+		for (const name of names) {
+			if (!/^\d+$/.test(name)) continue;
+			try {
+				rows.push([Number(name), ...statTimes(readFileSync(`/proc/${name}/stat`, 'utf8'), ticks)]);
+			} catch {
+				// It has gone.
+			}
+		}
+		return rows;
+	}
 	let listing: string;
 	try {
 		listing = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,time='], {
@@ -351,13 +399,26 @@ export function processTree(pid: number): Map<number, number> | undefined {
 	} catch {
 		return undefined;
 	}
-	const children = new Map<number, number[]>();
-	const time = new Map<number, number>();
+	const rows: ProcessRow[] = [];
 	for (const line of listing.split('\n')) {
 		const [id, parent, used] = line.trim().split(/\s+/);
-		if (!id || !parent || !used) continue;
-		time.set(Number(id), cpuSeconds(used));
-		children.set(Number(parent), [...(children.get(Number(parent)) ?? []), Number(id)]);
+		if (id && parent && used) rows.push([Number(id), Number(parent), cpuSeconds(used)]);
+	}
+	return rows;
+}
+
+/**
+ * A process and its descendants as the system lists them now: the processor time that each has
+ * used, in seconds, by its id. Undefined when the listing fails or the process has gone.
+ */
+export function processTree(pid: number): Map<number, number> | undefined {
+	const rows = processRows();
+	if (rows === undefined) return undefined;
+	const children = new Map<number, number[]>();
+	const time = new Map<number, number>();
+	for (const [id, parent, seconds] of rows) {
+		time.set(id, seconds);
+		children.set(parent, [...(children.get(parent) ?? []), id]);
 	}
 	if (!time.has(pid)) return undefined;
 	const tree = new Map<number, number>();

@@ -36,6 +36,7 @@ import {
 	runByLine,
 	runCargo,
 	runCargoAsync,
+	statTimes,
 	TreeTime,
 	touchCacheEntry,
 	writeFileAtomic,
@@ -281,6 +282,12 @@ describe("a waiter's watch on a lock's holder", () => {
 		expect(cpuSeconds('147:22.29')).toBeCloseTo(147 * 60 + 22.29);
 		expect(cpuSeconds('02:03:04')).toBe(2 * 3600 + 3 * 60 + 4);
 		expect(cpuSeconds('1-02:03:04')).toBe(86_400 + 2 * 3600 + 3 * 60 + 4);
+	});
+
+	it("reads a Linux process record's parent and processor time, whatever its name holds", () => {
+		const stat =
+			'4242 (vite (worker) 2) S 17 4242 4242 0 -1 4194560 5 0 0 0 250 125 7 3 20 0 1 0 9';
+		expect(statTimes(stat, 100)).toEqual([17, 3.75]);
 	});
 
 	it('waits on a holder that progresses, ends one at background priority, and stops for any other', () => {
