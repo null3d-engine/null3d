@@ -8,7 +8,7 @@
 // word, and the engine names it the moment a pipeline asks for it.
 //
 // Usage, from the repository root, with the pages served by `bun run examples:preview`:
-//   bun tools/shader-permutations.ts --base http://localhost:4173 --out tools/shader-permutations.txt
+//   bun tools/shader-permutations.ts --base http://localhost:5173 --out tools/shader-permutations.txt
 //     [--pages demos] [--extra a,b]
 // `--pages` names a page list: `demos` runs every demo of `examples/demos.ts` in hold mode. A
 // project of its own names its pages with repeated `--page <path>` arguments instead.
@@ -16,13 +16,10 @@
 // such as a feature that a visitor turns on.
 import { writeFileSync } from 'node:fs';
 import { DEMOS } from '../examples/demos.ts';
-import { launchChromium } from '../packages/cli/src/browser.js';
+import { defaultEnvironment, launchBrowser } from '../packages/cli/src/browser.js';
 
 /** The page's record of the permutation words that a recording run collected, in order. */
 type Recorded = { __null3dPermutations?: number[] };
-
-/** The device bits that a device module fixes, which a build's list leaves out. */
-const DEVICE_BITS = 1 | 2 | 8192;
 
 interface Page {
 	/** The page's path from `--base`, such as `/demos/s1-cells/`. */
@@ -35,14 +32,18 @@ function options(): { base: string; out: string; pages: Page[]; extra: number[] 
 		const at = args.indexOf(name);
 		return at < 0 ? undefined : args[at + 1];
 	};
-	const base = value('--base') ?? 'http://localhost:4173';
+	const base = value('--base') ?? 'http://localhost:5173';
 	const out = value('--out') ?? 'tools/shader-permutations.txt';
 	const pages: Page[] = [];
 	for (let at = 0; at < args.length; at++)
 		if (args[at] === '--page') pages.push({ path: args[at + 1] ?? '' });
 	// The examples page runs a demo by name, and hold mode draws the frame that its image test holds.
+	// Both GPU paths record: each path's variants list bits that the other's do not, such as the
+	// morph targets of WebGL2 and the instance index of WebGPU, and one set serves every device.
 	if (value('--pages') === 'demos' && pages.length === 0)
-		for (const demo of DEMOS) pages.push({ path: `/?demo=${demo.name}&hold=1` });
+		for (const demo of DEMOS)
+			for (const gpu of ['webgpu', 'webgl2'] as const)
+				pages.push({ path: `/?demo=${demo.name}&hold=${demo.hold}&gpu=${gpu}` });
 	const extra = (value('--extra') ?? '')
 		.split(',')
 		.map((word) => word.trim())
@@ -55,7 +56,9 @@ const { base, out, pages, extra } = options();
 if (pages.length === 0)
 	throw new Error('name the pages to record: --pages demos, or one --page <path> for each');
 writeFileSync(out, '');
-const browser = await launchChromium({ headless: true });
+// The real GPU where the machine has one, so both paths draw as a device draws them; the software
+// GPU elsewhere, as CI runs it.
+const browser = await launchBrowser(defaultEnvironment());
 const words = new Set<number>(extra);
 try {
 	for (const page of pages) {
@@ -72,8 +75,9 @@ try {
 			const found = (await tab.evaluate(
 				() => (globalThis as Recorded).__null3dPermutations,
 			)) as number[];
-			// The device bits belong to the module that a device loads, so a list leaves them out.
-			for (const word of found) words.add((word & ~DEVICE_BITS) >>> 0);
+			// The engine records each word without the bits that a device fixes, so one list serves
+			// every device module.
+			for (const word of found) words.add(word >>> 0);
 			console.log(`${page.path}: ${found.length} words`);
 		} catch (error) {
 			throw new Error(`${page.path}: ${(error as Error).message}`);
@@ -84,7 +88,9 @@ try {
 } finally {
 	await browser.close();
 }
-const sorted = [...words].filter((word) => word !== 0).sort((a, b) => a - b);
+// The word without any bit set is a word like another: the builds of compute passes, pre-passes and
+// full-screen passes carry it, so a list that left it out would leave those passes without a shader.
+const sorted = [...words].sort((a, b) => a - b);
 const lines = [
 	'# The permutation words that this project draws with, one hexadecimal word on each line.',
 	`# Written by bun tools/shader-permutations.ts. A word added by hand keeps the run working`,

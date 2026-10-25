@@ -40,8 +40,8 @@ startWorker(
 			try {
 				canvas = message.canvas ?? canvas;
 				if (!canvas) throw new Error('the page gave the render worker no canvas');
-				// The scene's pipelines ask for their variants as it warms up, so a recording that
-				// starts here lists every word that the scene draws with.
+				// A recording starts here, before the scene's draws ask for their pipelines, and the
+				// page stops it once the held frame has drawn them.
 				if (message.recordPermutations) recordPermutations();
 				host = new DrawingHost();
 				imagePort = message.imagePort;
@@ -65,7 +65,6 @@ startWorker(
 					role: 'render',
 					threaded: message.build === 'threaded',
 					tier: drawing.renderer.tier,
-					...(message.recordPermutations ? { permutations: stopRecordingPermutations() } : {}),
 				});
 			} catch (e) {
 				await host.release();
@@ -78,6 +77,8 @@ startWorker(
 		} else if (message.type === 'capture' && host.drawing && controlSlots) {
 			const capture = message.image ? captureImage : captureFrame;
 			await replyWithCapture(capture(host.drawing, controlSlots));
+		} else if (message.type === 'stop-recording') {
+			replyToPage({ type: 'recorded', role: 'render', permutations: stopRecordingPermutations() });
 		} else if (message.type === 'lose-gpu') {
 			host.drawing?.simulateLoss();
 		} else if (message.type === 'stop-drawing') {
