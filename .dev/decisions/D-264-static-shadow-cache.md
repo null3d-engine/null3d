@@ -204,9 +204,34 @@ that the answer turns on the mover mix rather than on the keep rate.
 | GPU time per frame, Medium | | | |
 | Busiest thread, per frame | | | |
 
-How the data will be produced: the benchmark harness for the scenes it holds, and a page that reads
-`engine.measure().gpuPassMs` for a day-night demo. The keep rate above came from a count that runs
-without a GPU timer. The restore costs come from a probe page that draws only the restore.
+### How the figures were produced
+
+The keep rate came from a count that runs without a GPU. It drives the engine's own `fit_cascades`
+and `CascadeSchedule` with a camera path and a sun turn taken from each scene's code. It compares
+the box test with the engine's own schedule. The count is not kept in the repository: it answers one
+question and asserts nothing about the engine that a test should hold.
+
+The per-pass figures come from a demo page opened with `?bench`, which publishes the running engine
+on the page. A script then reads `engine.measure().gpuPassMs`. The cascades are the first render
+passes of a frame. The frame graph declares every shadow pass before any view's passes. The demos
+are examples, so the benchmark harness does not reach them. These figures come from the development
+server rather than a production build.
+
+A fresh copy of the repository needs three things before a demo page will draw. Each one fails in a
+way that reads as a fault in the demo:
+
+- `bun run shaders` writes the generated shader modules. Without them no page builds.
+- The development server compiles each sketch's shader when the page asks for it. That compiler is
+  `packages/vite-plugin/dist/shader-compiler.wasm`, and only `bun run build` writes it. Without it
+  every demo page answers 500 and names the missing file.
+- The engine's own WebAssembly in `packages/engine/dist/wasm` comes from `bun run build` too.
+
+This measurement took the last two from another checkout of the repository. That is sound only
+because no file under `crates/` differs between the two commits. The bytes were built from the same
+sources. Copy a build artifact only after that check.
+
+The restore costs come from a probe page that draws only the restore. It measures a whole
+depth-layer copy, a small dirty rectangle, and a pass that writes depth from the cached texture.
 
 ## Look
 
