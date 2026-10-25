@@ -20,6 +20,15 @@ const PAGE_MS = 120_000;
 /** The pages that the test draws for each run: the paint and the body without each part. */
 const PAGES_PER_RUN = 4;
 
+/**
+ * The fewest pixels that a clustered light's glints must brighten. The paint's flakes must sparkle
+ * under a point and a spot light as they do under the main light, so a lobe that answers the main
+ * light alone leaves the body smooth and this count at zero. The flakes brighten 182 pixels under
+ * the point light and 171 under the spot light on WebGPU, compatibility mode and WebGL2, so the
+ * floor is a third of the smaller figure.
+ */
+const GLINT_FLOOR = 56;
+
 /** Each pixel's red, green and blue, from 0 to 1. */
 async function imageOf(page: Page, path: string): Promise<Float32Array> {
 	await page.goto(path);
@@ -78,19 +87,20 @@ test('car-paint: each part changes the image', async ({ page }) => {
 			seams: await imageOf(page, variant(run.path, '?seams=off')),
 			weave: await imageOf(page, variant(run.path, '?weave=on')),
 		};
-		// The flakes glint where the sun's band crosses the body, the seams darken their grooves,
+		// The flakes glint where a light's band crosses the body, the seams darken their grooves,
 		// and the weave draws its twill with a highlight along the tows. Each changes a fair share
 		// of the image, which a shader that skipped it would not. The flakes must also brighten
 		// pixels. That count is the only guard against a lobe that darkens without sparkling: the
 		// mean and share floors below pass such a paint.
-		// Each set's picture pairs measure the flakes a mean channel difference of 0.00262 to
-		// 0.00267 and 0.01607 to 0.01631 of the channels changing by more than 8 steps, with 216 to
-		// 232 pixels brighter, the seams 0.00070 and 0.00339 to 0.00341, and the weave 0.01491 to
-		// 0.01504 and 0.12667 to 0.12770. The part test's own runs measure the same to within a
-		// step. Each floor is half the smallest of those figures, and a skipped part would draw the
-		// plain body, so it fails by the whole floor.
+		// Each set's picture pairs measure the flakes a mean channel difference of 0.00472 to
+		// 0.00474 and 0.02615 to 0.02626 of the channels changing by more than 8 steps, with 260 to
+		// 263 pixels brighter, the seams 0.00071 and 0.00345 to 0.00348, and the weave 0.01437 and
+		// 0.12380 to 0.12410. The flakes' figures rose from a mean of 0.00262 on 15 October 2026,
+		// because the point light glints now as well as the sun. The part test's own runs measure
+		// the same to within a step. Each floor is half the smallest of those figures, and a skipped
+		// part would draw the plain body, so it fails by the whole floor.
 		const parts = [
-			['flakes', plain.flakes, 0.0013, 0.008],
+			['flakes', plain.flakes, 0.0023, 0.013],
 			['seams', plain.seams, 0.00035, 0.0016],
 			['weave', plain.weave, 0.0074, 0.063],
 		] as const;
@@ -115,6 +125,26 @@ test('car-paint: each part changes the image', async ({ page }) => {
 		}
 		expect
 			.soft(brightened(painted, plain.flakes, 8 / 255), `${run.id}: the flakes glint`)
-			.toBeGreaterThan(108);
+			.toBeGreaterThan(130);
+	}
+});
+
+test('car-paint: the flakes glint under a point and a spot light', async ({ page }) => {
+	const runs = IMAGE_RUNS.filter((run) => run.test === 'car-paint');
+	expect(runs.length).toBe(3);
+	// Two lights, each with the flakes and without them, on every tier.
+	test.setTimeout(runs.length * PAGES_PER_RUN * PAGE_MS);
+	for (const run of runs) {
+		for (const lamp of ['point', 'spot']) {
+			// The main light is out, so the clustered light alone lights the body. A lobe that
+			// answers only the main light draws the two images the same, and the floor fails.
+			const lit = await imageOf(page, variant(run.path, `?sun=off&lamp=${lamp}`));
+			const plain = await imageOf(page, variant(run.path, `?sun=off&lamp=${lamp}&flakes=off`));
+			const glints = brightened(lit, plain, 8 / 255);
+			console.log(`${run.id} ${lamp}: glints ${glints}`);
+			expect
+				.soft(glints, `${run.id}: the flakes glint under the ${lamp} light`)
+				.toBeGreaterThan(GLINT_FLOOR);
+		}
 	}
 });

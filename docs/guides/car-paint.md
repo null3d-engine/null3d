@@ -61,9 +61,9 @@ scene.createMesh({ mesh: body, material: paint });
 
 - `flakes.cells` counts flake cells across each texture coordinate.
 - `flakes.tilt` is how far the flakes' normals spread from the surface normal. It sets the width
-  of the band where they catch the main light.
-- `flakes.angle` is the main light's angular radius in radians, which sets how many flakes glint at
-  once. A smaller value suits a hard sun, where the glints are rarer and brighter. A larger one
+  of the band where they catch a light.
+- `flakes.angle` is the angular radius of each light in radians, which sets how many flakes glint
+  at once. A smaller value suits a hard sun, where the glints are rarer and brighter. A larger one
   suits a broad studio light, where more flakes catch it together.
 - `flakes.max` is the most that one pixel's glint may exceed the smooth lobe. It bounds a bright
   single flake.
@@ -77,16 +77,16 @@ scene.createMesh({ mesh: body, material: paint });
 
 The **flakes** are the metal's microfacets, drawn with the glint model of Deliot and Belcour. Each
 pixel covers a number of flake cells. The paint counts how many of the flakes in that footprint
-reflect the main light into the eye, and uses that count in place of the smooth highlight. A pixel
+reflect a light into the eye, and uses that count in place of the smooth highlight. A pixel
 whose flakes miss the light draws no highlight, and one where a flake catches it draws a bright
 spot. The count's average is the smooth lobe, so a car far away draws as smooth metal, without
-shimmering as it moves. The spot stays where the light reflects, so the sparkle follows the sun as
-the car turns. The clear coat keeps its own smooth normal, so the flakes never disturb the coat's
+shimmering as it moves. The spot stays where the light reflects, so the sparkle follows each light
+as the car turns. The clear coat keeps its own smooth normal, so the flakes never disturb the coat's
 reflection.
 
-The model replaces the base highlight of the main directional light only. Point, spot and area
-lights draw their own smooth highlight, with no glints. The add-on has no glint for them, because
-the engine's lobe hook sees the main light alone.
+The model replaces the base highlight of each light that the engine's lobe hook reaches: the main
+directional light, and each point and spot light that reaches the surface. Area lights draw their
+own smooth highlight, with no glints, because their light is an integral over the light's area.
 
 The **seams** are grooves at the look's intervals. Each groove draws at least as wide as a pixel.
 The base darkens in the groove and the coat's normal bends into it, so a highlight runs along the
@@ -100,7 +100,7 @@ their own way. The gaps between the tows draw darker and rougher.
 
 The paint pays for the clear coat's lobe. The flakes cost the footprint's derivatives and one hash
 for each pixel, and the lobe adds two hashes and a short sum of terms for each pixel
-of the main light. The seams cost a few derivatives for each pixel. The weave adds its own pattern,
+of each light. The seams cost a few derivatives for each pixel. The weave adds its own pattern,
 slope and roughness change. A material without flakes, seams or a weave draws the same surface as a
 plain metallic paint.
 
@@ -109,8 +109,9 @@ plain metallic paint.
 - A mesh must have texture coordinates. A mesh without them does not draw with the paint.
 - The parts read the texture coordinates, so uneven coordinates stretch the flakes, the seams and
   the weave. Change `cells` and `spacing` to match the mesh.
-- The glints come from the main directional light. Point, spot and area lights draw the base
-  highlight alone, so a scene without a main light shows no sparkle.
+- The glints come from the main directional light and from each point and spot light that reaches
+  the surface. Area lights draw the base highlight alone, so a scene with no direct light shows no
+  sparkle.
 
 ## Related pages
 

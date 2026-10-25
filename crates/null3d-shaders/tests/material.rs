@@ -964,16 +964,35 @@ fn lobe(input: LobeInput) -> vec3f {
 fn a_lobe_function_builds_into_every_variant_with_the_surface_values() {
     let built = compile(SPARKLE).expect("the material with a lobe builds");
     assert_eq!(built.functions, ["surface", "lobe"]);
-    let mut builds = 0;
+    let (mut written, mut programs_written) = (0, 0);
     for (name, variant) in &built.variants {
         // The custom WGSL joins the template before its variants are built, so the lobe's body is
         // in the caster, motion and pick builds too, and each must compile with it.
         if let Some(wgsl) = &variant.wgsl {
             assert!(wgsl.source.contains("fn lobe("), "{name}");
-            builds += 1;
+            // The engine builds the lobe's input twice in a shading build: once for the main
+            // directional light, and once in the override that the clustered loop's per-light call
+            // reaches. A build that dropped the clustered call drops the unused override too, and
+            // then only one input is left.
+            assert_eq!(wgsl.source.matches("LobeInput(").count(), 2, "{name}");
+            assert!(!wgsl.source.contains("naga_oil"), "{name}");
+            written += 1;
+        }
+        if let Some(programs) = &variant.glsl {
+            for (pipeline, program) in programs {
+                // The WebGL2 build writes the same two calls, with the input's members flattened
+                // into the lobe's arguments.
+                let calls = program.fragment.source.matches("= lobe(").count();
+                assert_eq!(calls, 2, "{name} {pipeline}");
+                assert!(
+                    !program.fragment.source.contains("naga_oil"),
+                    "{name} {pipeline}"
+                );
+                programs_written += 1;
+            }
         }
     }
-    assert!(builds > 0);
+    assert!(written > 0 && programs_written > 0);
 }
 
 #[test]

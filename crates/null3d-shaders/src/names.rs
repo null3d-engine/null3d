@@ -13,7 +13,10 @@ use crate::library::Library;
 pub(crate) fn undecorate(module: &mut Module, library: &Library) {
     let split = |name: &str| -> Option<(String, String)> {
         library.modules().iter().find_map(|m| {
+            // A function that a shader overrides keeps the composer's override marker in place of
+            // the module marker.
             name.strip_suffix(&m.decoration)
+                .or_else(|| name.strip_suffix(&m.override_decoration()))
                 .map(|item| (item.to_owned(), m.name.replace("::", "_")))
         })
     };

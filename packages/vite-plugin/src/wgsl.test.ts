@@ -447,7 +447,12 @@ fn surface(input: SurfaceInput) -> Surface {
 			'fn lobe(input: LobeInput) -> vec3f {\n    return input.specular * input.values.z;\n}\n';
 		const built = material(await compileWgsl('src/sparkle.wgsl', sparkle, HINT));
 		expect(built.functions).toEqual(['lobe']);
-		expect(built.variants.webgpu?.wgsl?.source).toContain('fn lobe(');
+		const wgsl = built.variants.webgpu?.wgsl?.source ?? '';
+		expect(wgsl).toContain('fn lobe(');
+		// The engine builds the lobe's input for the main light and again in the override that the
+		// clustered loop reaches, and the composer's marker is off the overriding name.
+		expect(wgsl.match(/LobeInput\(/g)).toHaveLength(2);
+		expect(wgsl).not.toContain('naga_oil');
 	});
 
 	it('builds a mesh shader of its own as a full shader of a custom material', async () => {

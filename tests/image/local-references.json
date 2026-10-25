@@ -1,4 +1,22 @@
 {
+	"chromium-swiftshader/compat/car-paint-no-seams.png": {
+		"test": "car-paint-no-seams",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/car-paint-weave.png": {
+		"test": "car-paint-weave",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/car-paint.png": {
+		"test": "car-paint",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
 	"chromium-swiftshader/compat/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
 		"tier": "compat",
@@ -29,6 +47,24 @@
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
 	},
+	"chromium-swiftshader/webgl2/car-paint-no-seams.png": {
+		"test": "car-paint-no-seams",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/car-paint-weave.png": {
+		"test": "car-paint-weave",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/car-paint.png": {
+		"test": "car-paint",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
 	"chromium-swiftshader/webgl2/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
 		"tier": "webgl2",
@@ -56,6 +92,24 @@
 	"chromium-swiftshader/webgl2/gltf-toy-car.png": {
 		"test": "gltf-toy-car",
 		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/car-paint-no-seams.png": {
+		"test": "car-paint-no-seams",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/car-paint-weave.png": {
+		"test": "car-paint-weave",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/car-paint.png": {
+		"test": "car-paint",
+		"tier": "webgpu",
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
 	},

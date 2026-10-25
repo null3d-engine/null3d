@@ -1,6 +1,6 @@
 // Car paint: a metallic base under the engine's clear coat, with metal flakes, panel seams and an
 // optional carbon weave. The flakes are the metal's own microfacets: the lobe counts how many of
-// them reflect the main light into the eye at each pixel, as Deliot and Belcour's glint model, so
+// them reflect a light into the eye at each pixel, as Deliot and Belcour's glint model, so
 // the paint sparkles where the light is and smooths as a cell shrinks below a pixel. A seam is a
 // groove whose share of a pixel keeps it as wide as a pixel, and the weave shapes each tow's
 // normal so that its highlight runs along the tow.
@@ -16,7 +16,7 @@ struct Uniforms {
     weaveCells: vec2f,
     // How wide the flakes' normals spread from the surface normal, from 0 for none.
     flakeTilt: f32,
-    // The angular radius of the main light in radians, which sets how many flakes reflect it.
+    // The angular radius of each light in radians, which sets how many flakes reflect it.
     flakeAngle: f32,
     // The most that one pixel's glint may exceed the smooth lobe, which bounds a firefly.
     flakeMax: f32,
@@ -165,7 +165,7 @@ fn flake_count(mean: f32, u1: f32, u2: f32) -> f32 {
     return count;
 }
 
-/// The flakes' glint: how many of the metal's facets reflect the main light into the eye at this
+/// The flakes' glint: how many of the metal's facets reflect a light into the eye at this
 /// pixel, from the binomial distribution of Deliot and Belcour's model. The base lobe's specular is
 /// replaced by the flakes' own light, so the paint sparkles where the light is and nowhere else.
 fn lobe(input: LobeInput) -> vec3f {

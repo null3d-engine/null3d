@@ -201,20 +201,44 @@ fn spot_map(
     return light_image(i32(light.up_image.w) - 1, uv, level);
 }
 
+virtual fn custom_lobe(
+    normal: vec3f,
+    to_view: vec3f,
+    to_light: vec3f,
+    roughness: f32,
+    f0: vec3f,
+    specular: vec3f,
+    irradiance: vec3f,
+    values: vec4f,
+) -> vec3f {
+    // The specular that a custom material's own lobe adds beside the base lobe for one point or
+    // spot light. A material that declares `fn lobe` replaces this function with a call to it (see
+    // the lit template), and every light of a surface's cluster then asks that lobe, as the main
+    // directional light does. This declaration adds none, and a build whose material declares no
+    // lobe never calls it, so the build drops the function. Keep a comment off the line above the
+    // declaration: the composer's rewrite of the keyword drops the line break after it, and would
+    // fold the declaration into a comment.
+    return vec3f(0.0);
+}
+
 /// The light that a PBR surface reflects toward the camera from the point, spot and area lights of
 /// its cluster, as three.js's `RE_Direct_Physical` gives it for each point and spot light, and its
 /// `RE_Direct_RectArea_Physical` for each area light. `relative` is the
 /// surface's position relative to the camera, `normal` its unit normal, and `to_view` the unit
 /// direction toward the camera. `compensation` comes from `multiscatter_compensation`. In the
-/// TRANSLUCENCY builds each light also adds the light that reaches the surface's back, shadowed
-/// from the side that it falls on (null3d::translucency). COAT_SHEEN builds each light lights the
-/// surface's clear coat and sheen too (null3d::coat_sheen).
+/// CUSTOM_LOBE builds `lobe_values` holds the four values that a custom material's surface function
+/// leaves for its own lobe. In the TRANSLUCENCY builds each light also adds the light that reaches
+/// the surface's back, shadowed from the side that it falls on (null3d::translucency). COAT_SHEEN
+/// builds each light lights the surface's clear coat and sheen too (null3d::coat_sheen).
 fn clustered_light(
     m: PbrMaterial,
     relative: vec3f,
     normal: vec3f,
     to_view: vec3f,
     compensation: vec3f,
+#ifdef CUSTOM_LOBE
+    lobe_values: vec4f,
+#endif
 ) -> Reflected {
     var sum = Reflected(vec3f(0.0), vec3f(0.0));
     let found = cluster_lights(relative);
@@ -277,6 +301,21 @@ fn clustered_light(
         incoming *= layered_light(normal, to_view, to_light, incoming);
 #endif
         let reflected = direct_light(m, normal, to_view, to_light, incoming, compensation);
+#ifdef CUSTOM_LOBE
+        // A custom material's own lobe adds its specular beside the base lobe's for this light, as
+        // it does for the main directional light: it sees the light's direction, its irradiance on
+        // the surface and the base lobe's specular.
+        sum.specular += custom_lobe(
+            normal,
+            to_view,
+            to_light,
+            m.roughness,
+            m.specular_blended,
+            reflected.specular,
+            saturate(dot(normal, to_light)) * incoming,
+            lobe_values,
+        );
+#endif
 #ifdef TRANSLUCENCY
         gather_back_light(normal, to_light, incoming);
 #endif

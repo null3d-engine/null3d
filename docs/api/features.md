@@ -260,7 +260,7 @@ The other hooks still need their own payload, and they arrive with the add-on th
 
 | Hook | What the description does not yet give it |
 | --- | --- |
-| Material lobes, baked-data formats and glTF extension handlers | They are not frame features, so each needs its own hook. |
+| Baked-data formats and glTF extension handlers | They are not frame features, so each needs its own hook. |
 | Scene inputs, presets and stats | Each needs its own declaration: a depth input behind a material, or a GPU timing scope. |
 
 ## Checks

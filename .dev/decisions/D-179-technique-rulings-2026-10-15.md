@@ -240,3 +240,11 @@ so H4 is needed after all.
 
 The machine ran at a load near 100 on 25 October 2026, so no reference or cost run could be made
 for option A in that session.
+
+### Settled, 26 October 2026
+
+Option A is built for M3-E7: the hook exists, and the car paint declares it. The engine calls it for
+the main directional light and for each point and spot light of the surface's cluster, as the design
+above asks. The hook's input is `LobeInput`, and the material's function is `fn lobe`, as
+[D-252](D-252-material-lobes.md) records. Area lights keep their own smooth highlight. Ruling 17
+therefore stands with no change, and no owner ruling is owed on this addendum.

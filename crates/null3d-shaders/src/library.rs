@@ -60,6 +60,19 @@ pub(crate) struct LibraryModule {
     pub half: bool,
 }
 
+/// The marker the composer writes into a name that a module's function adds, and the one that
+/// stands there when a shader overrides that function. Both end in a base32 module path.
+const MODULE_MARKER: &str = "X_naga_oil_mod_X";
+const OVERRIDE_MARKER: &str = "X_naga_oil_vrt_X";
+
+impl LibraryModule {
+    /// The suffix that a name keeps when a shader overrides one of this module's functions. The
+    /// composer writes its override marker in place of the module marker.
+    pub fn override_decoration(&self) -> String {
+        self.decoration.replacen(MODULE_MARKER, OVERRIDE_MARKER, 1)
+    }
+}
+
 /// The library modules, each after the modules it imports.
 pub(crate) struct Library {
     modules: Vec<LibraryModule>,
@@ -290,20 +303,22 @@ impl Library {
     pub fn undecorate(&self, text: &str) -> String {
         let mut text = text.to_owned();
         for module in &self.modules {
-            let mut out = String::with_capacity(text.len());
-            let mut rest = text.as_str();
-            while let Some(at) = rest.find(&module.decoration) {
-                let item = rest[..at]
-                    .trim_end_matches(|c: char| c == '_' || c.is_alphanumeric())
-                    .len();
-                out.push_str(&rest[..item]);
-                out.push_str(&module.name);
-                out.push_str("::");
-                out.push_str(&rest[item..at]);
-                rest = &rest[at + module.decoration.len()..];
+            for decoration in [&module.decoration, &module.override_decoration()] {
+                let mut out = String::with_capacity(text.len());
+                let mut rest = text.as_str();
+                while let Some(at) = rest.find(decoration.as_str()) {
+                    let item = rest[..at]
+                        .trim_end_matches(|c: char| c == '_' || c.is_alphanumeric())
+                        .len();
+                    out.push_str(&rest[..item]);
+                    out.push_str(&module.name);
+                    out.push_str("::");
+                    out.push_str(&rest[item..at]);
+                    rest = &rest[at + decoration.len()..];
+                }
+                out.push_str(rest);
+                text = out;
             }
-            out.push_str(rest);
-            text = out;
         }
         text
     }

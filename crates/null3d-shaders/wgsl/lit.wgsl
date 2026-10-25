@@ -1118,28 +1118,54 @@ struct Surface {
 }
 
 #ifdef CUSTOM_LOBE
-/// What a custom material's own lobe function knows of the main directional light. The surface
-/// function passes its own four values through `Surface.lobe`, and the engine adds the lobe's
-/// return to the base lobe's specular.
+/// What a custom material's own lobe function knows of one of the scene's direct lights. The
+/// engine calls the lobe for the main directional light and for each point and spot light that
+/// reaches the surface, and adds the lobe's return to that light's base specular.
 struct LobeInput {
     /// The surface's unit normal in world space.
     normal: vec3f,
     /// The unit direction from the surface toward the camera.
     view: vec3f,
-    /// The unit direction from the surface toward the main light.
+    /// The unit direction from the surface toward the light.
     light: vec3f,
-    /// The unit half vector between the main light and the camera.
+    /// The unit half vector between the light and the camera.
     half: vec3f,
     /// The surface's perceptual roughness, after the engine's filter.
     roughness: f32,
     /// The specular reflectance at normal incidence.
     f0: vec3f,
-    /// The specular radiance that the base lobe reflects from the main light, before the layers.
+    /// The specular radiance that the base lobe reflects from this light, before the layers.
     specular: vec3f,
-    /// The main light's irradiance on the surface: the cosine, the color and the shadow.
+    /// The light's irradiance on the surface: the cosine, the color and the shadow.
     irradiance: vec3f,
     /// The four values that the surface function wrote to `Surface.lobe`.
     values: vec4f,
+}
+
+/// The material's own lobe answers a point or spot light as well as the main directional light:
+/// the engine's clustered loop calls this function once for each light of the surface's cluster.
+/// The material's `fn lobe` then sees that light's direction, irradiance and base specular.
+override fn null3d::lights::custom_lobe(
+    normal: vec3f,
+    to_view: vec3f,
+    to_light: vec3f,
+    roughness: f32,
+    f0: vec3f,
+    specular: vec3f,
+    irradiance: vec3f,
+    values: vec4f,
+) -> vec3f {
+    return lobe(LobeInput(
+        normal,
+        to_view,
+        to_light,
+        normalize(to_light + to_view),
+        roughness,
+        f0,
+        specular,
+        irradiance,
+        values,
+    ));
 }
 #endif
 
@@ -1790,7 +1816,7 @@ fn has_surrounding() -> bool {
 /// view angle. `reflection` holds light from the mirror direction and its share, from screen-space
 /// reflections and a custom material's planar reflection, which takes the place of that share of
 /// the reflection probes' and the environment's reflection, with or without either. `lobe_values`
-/// holds the material's own values for its lobe function, which the engine calls for the main
+/// holds the material's own values for its lobe function, which the engine calls for each direct
 /// light. In the TRANSLUCENCY builds the lights also gather the light that reaches the surface's
 /// back, and the ambient, hemisphere and environment light from behind goes to `back_indirect`.
 fn light_surface(
@@ -1857,7 +1883,16 @@ fn light_surface(
     gather_back_light(normal, to_sun, sun_color);
     back_indirect = ambient_light(-normal) * occlusion;
 #endif
-    let clustered = clustered_light(m, relative, normal, to_view, compensation);
+    let clustered = clustered_light(
+        m,
+        relative,
+        normal,
+        to_view,
+        compensation,
+#ifdef CUSTOM_LOBE
+        lobe_values,
+#endif
+    );
     let n_dot_v = saturate(dot(normal, to_view));
     let surrounding_light = ambient_light(normal) + extra;
 #ifdef COAT_SHEEN

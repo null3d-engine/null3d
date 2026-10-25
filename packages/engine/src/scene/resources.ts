@@ -1721,7 +1721,8 @@ export interface ShaderOptions<Wgsl extends string | CompiledWgsl = string | Com
 	 * which can start from `defaultSurface(input)`. The engine lights the surface that it returns.
 	 * It can declare `struct Uniforms`, whose fields the surface function reads from `material`,
 	 * `fn vertexOffset`, which moves the mesh's vertices, and `fn lobe(input: LobeInput) -> vec3f`,
-	 * which adds specular for the main light beside the base lobe. A full shader has a `@vertex`
+	 * which adds specular beside the base lobe for the main light and for each point and spot light.
+	 * A full shader has a `@vertex`
 	 * entry point that takes an `InstanceIn`, and a `@fragment` one, instead. Materials made from the
 	 * same WGSL share their shader.
 	 */

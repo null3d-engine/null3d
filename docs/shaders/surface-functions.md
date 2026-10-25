@@ -109,7 +109,7 @@ To show a value while you work on a function, put it in the emissive light and m
 
 ## A material's own lobe
 
-A material can add its own specular lobe beside the base lobe. Declare `fn lobe(input: LobeInput) -> vec3f` next to its surface function. The engine calls it for the main directional light and adds the color it returns to that light's specular.
+A material can add its own specular lobe beside the base lobe. Declare `fn lobe(input: LobeInput) -> vec3f` next to its surface function. The engine calls it once for the main directional light and once for each point and spot light that reaches the surface. It adds the color that the lobe returns to that light's specular.
 
 ```wgsl
 fn lobe(input: LobeInput) -> vec3f {
@@ -123,17 +123,17 @@ fn lobe(input: LobeInput) -> vec3f {
 | --- | --- | --- |
 | `normal` | `vec3f` | The surface's unit normal in world space |
 | `view` | `vec3f` | The unit direction from the surface toward the camera |
-| `light` | `vec3f` | The unit direction from the surface toward the main light |
+| `light` | `vec3f` | The unit direction from the surface toward the light |
 | `half` | `vec3f` | The unit half vector between the light and the view |
 | `roughness` | `f32` | The surface's perceptual roughness, after the engine's filter |
 | `f0` | `vec3f` | The specular reflectance at normal incidence |
-| `specular` | `vec3f` | The specular radiance that the base lobe reflects from the main light, before the layers |
-| `irradiance` | `vec3f` | The main light's irradiance on the surface: the cosine, the color and the shadow |
+| `specular` | `vec3f` | The specular radiance that the base lobe reflects from that light, before the layers |
+| `irradiance` | `vec3f` | The light's irradiance on the surface: the cosine, the color and the shadow |
 | `values` | `vec4f` | The four values that the surface function wrote to `s.lobe` |
 
 The surface function passes four values to the lobe through `s.lobe`, and the lobe reads them as `input.values`. Use them for what the lobe needs from the surface, such as a footprint, a mask or a random value. `defaultSurface` leaves them zero.
 
-The lobe runs for the main directional light alone. Point, spot and area lights draw with the base lobe only, so a look that needs their glints is not built. A material that declares no lobe pays nothing, and the lobe runs in the builds of a material that declares one alone.
+The lobe runs for the main directional light and for each point and spot light of the surface's cluster. Area lights draw with the base lobe alone, because their light is an integral over the light's area and the lobe has no area form. A material that declares no lobe pays nothing, and the lobe runs in the builds of a material that declares one alone.
 
 ## Uniforms
 
