@@ -1075,8 +1075,13 @@ export function downloadSizes(
  * worker's bundles, by 16.2 and 15.7 per cent, and the WebGL2 page grew 2.0 per cent. The rise
  * leaves 4,413 bytes of room. The trims owed above still stand as the next work that touches the
  * start's size.
+ *
+ * It went to 256 KB on 25 October 2026, on the owner's word and described as a figure for now: the
+ * work that closes the milestone's feature list should not stop for a crossing while the trims run
+ * beside it. It leaves 65,853 bytes of room at the measured 196,291. This is headroom, not a new
+ * target; the first trim that wins bytes back still takes them.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 196 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 256 * 1024 };
 
 /**
  * The budget for each part that loads after the start. The Brotli figure rose on 22 October 2026,
