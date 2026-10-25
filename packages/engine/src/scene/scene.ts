@@ -1715,7 +1715,7 @@ export class Mesh extends Object3D {
 
 	/**
 	 * Raises or lowers the threshold that picks this mesh's levels of detail, as Godot's
-	 * `lod_bias` does. A bias above 1 makes every switch happen farther away, so the object draws
+	 * `lod_bias` does. A bias above 1 makes every switch happen nearer, so the object draws
 	 * coarser levels. A bias below 1 keeps its detail, which a hero object wants. The bias
 	 * multiplies the threshold of the level switches and of the distance at which the object
 	 * hides, so both move by the same factor. The default is 1. The object's mesh needs levels
