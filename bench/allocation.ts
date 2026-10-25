@@ -411,21 +411,17 @@ export const DAY_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number
 
 /**
  * Places that allocate with `--canvas`, on top of `BUDGETS`: the browser's image data for the
- * rectangle and its copy into engine memory, which the browser attributes to the refresh and to
- * the copy at each read, the argument object that the sketch passes to the call, and the render
- * passes that make the texture's mip levels again. Measured on the Mac on 25 October 2026, on the
- * run that passed on each path: the sketch worker read 144.6, 141.2 and 27.4 bytes per frame on
- * the WebGPU path and 153.2, 147.1 and 25.3 on WebGL2, for the image data, the copy and the call's
- * argument, and the WebGPU replay's place read 169.2 for the levels, which WebGL2 makes without a
- * render pass.
+ * rectangle and the copy of it into engine memory, which the profiler attributes to the copy at
+ * each read, and the render passes that make the texture's mip levels again. The refresh adds no
+ * place of its own, and the sketch changes one rectangle object in place, so the sample holds the
+ * browser's and the engine's work alone. Measured on 25 October 2026: the copy place read 145.1
+ * bytes per frame on the Mac's WebGPU path, 140.7 on its WebGL2 and 131.3 on CI's SwiftShader; the
+ * mip levels read 169.5 on the Mac's WebGPU path and 165.9 on SwiftShader, whose windows reached
+ * 202.7, and WebGL2 makes them without a render pass.
  */
 export const CANVAS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
-	'sketch-worker': {
-		'refresh scene/textures.ts': 192,
-		'setRegion scene/textures.ts': 192,
-		'onLateUpdate null3d/s1-sketch.ts': 48,
-	},
-	'render-worker': { 'generateMipmaps webgpu/backend.ts': 208 },
+	'sketch-worker': { 'setRegion scene/textures.ts': 192 },
+	'render-worker': { 'generateMipmaps webgpu/backend.ts': 224 },
 };
 
 /**
