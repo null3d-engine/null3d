@@ -1,4 +1,4 @@
-# D-256: Directional light maps, and reading Needle's light maps
+# D-258: Directional light maps, and reading Needle's light maps
 
 Status: decided by the helper of M3-F4 on 25 October 2026, for the owner's review. Built: the
 second texture, the shader weighting, the glTF reader, the picture test and the memory figure, as
