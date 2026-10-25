@@ -1678,9 +1678,10 @@ pub mod sizes {
     /// screen-space reflections' matrix into the frame before's view and their two vectors, a
     /// still view's jitter, which the scene's vertex shaders add, the physical sky's aerial
     /// perspective's six vectors, and the vignette that the 8-bit path's fragment shaders apply.
-    pub const FRAME_UNIFORM_BYTES: u32 = 992;
-    /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
-    pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
+    pub const FRAME_UNIFORM_BYTES: u32 = 1088;
+    /// Bytes of the output settings: the exposure, the tone mapping, the flags and the render
+    /// size, then the grading controls that the 8-bit path's shaders apply before their curve.
+    pub const OUTPUT_UNIFORM_BYTES: u32 = 112;
     /// Threads per workgroup of the culling shader.
     pub const CULL_WORKGROUP_SIZE: u32 = 128;
     /// 32-bit words per indexed indirect draw.

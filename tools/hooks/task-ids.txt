@@ -385,6 +385,11 @@ M3-V9
 M3-V10
 M3-V11
 M3-V12
+M3-V13
+M3-V14
+M3-V15
+M3-V16
+M3-V17
 
 # Process labels, accepted on 15 October 2026, that no plan file names.
 M2-process

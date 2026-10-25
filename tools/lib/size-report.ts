@@ -410,6 +410,34 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-assets.js', module: 'scene/assets.ts', loadedBy: 'page-sketch-runner.js' },
+	// The built-in environments' descriptions load on first use, and the page and the sketch worker
+	// each bundle their own copy: a sketch that names no built-in environment, as most do not,
+	// downloads neither.
+	{
+		name: 'page-environment.js',
+		module: 'scene/builtin-environments.ts',
+		loadedBy: 'page-assets.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'sketch-worker-environment.js',
+		module: 'scene/builtin-environments.ts',
+		loadedBy: 'sketch-worker-assets.js',
+		onFirstCall: true,
+	},
+	// The reader of an environment map file loads on first use too, and both bundles carry a copy.
+	{
+		name: 'page-environment-file.js',
+		module: 'scene/environment-file.ts',
+		loadedBy: 'page-assets.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'sketch-worker-environment-file.js',
+		module: 'scene/environment-file.ts',
+		loadedBy: 'sketch-worker-assets.js',
+		onFirstCall: true,
+	},
 	{ name: 'page-baked-light.js', module: 'scene/baked-light.ts', loadedBy: 'page-assets.js' },
 	// The half-float helpers are read by several of the start's own modules, so the bundler writes
 	// them to a file of their own that every page loads: a part of the start, not a first-use file.
@@ -1055,14 +1083,13 @@ export function downloadSizes(
  * 192 KB in two days, and the owner ruled on 25 October 2026 to keep raising the line as needed for
  * now. A trim that wins bytes back runs beside the raises, and no crossing waits for it.
  *
- * It went to 193 KB on 25 October 2026, for M3-V2's cut-out builds. A custom material's WGSL that
- * names the surface's alpha now cuts the material's own shape: its builds gain alpha to coverage,
- * the alpha hash and their sample mask, and its caster and motion build test the alpha. The
- * material gating and the custom template's depth stage are in the start. After the merge with the
- * day's tip, WebGL2's pipelined start measured 196,999 bytes, 391 over the old line, and low
- * latency measured 193,244. The rise leaves 633 bytes.
+
+ * It went to 194 KB on 25 October 2026: a local build of the grading work's branch measured
+ * WebGL2's pipelined start at 197,411 bytes, 803 bytes over the old line. The grading controls added
+ * the switch that picks the table's input and the values that the 8-bit path's shaders read. The
+ * rise leaves 1,245 bytes of room.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 193 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 194 * 1024 };
 
 /**
  * The budget for each part that loads after the start. The Brotli figure rose on 22 October 2026,
@@ -1118,6 +1145,10 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
  * date). Its surface function rides every build of the standard material, and the largest set is
  * 1,204.5 KB uncompressed and 53.3 KB after Brotli, so the add-on's own gate would have failed on a
  * feature that works as the engine's own materials do.
+ *
+ * The grading controls' code over light, which every WebGL2 tone-map build carries, measured
+ * 53,325 bytes in its largest file, the half-precision draw-index tone-map set. That fits inside
+ * the line the water add-on set, so it moved no figure.
  */
 export const FIRST_USE_SHADER_BUDGET: Budget = {
 	raw: 1_792 * 1024,

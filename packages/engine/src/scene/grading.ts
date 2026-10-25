@@ -184,8 +184,13 @@ function chroma(color: Rgb): Rgb {
 	return [color[0] - l, color[1] - l, color[2] - l];
 }
 
-/** The white balance's factors and the split toning's chroma, resolved once for a whole bake. */
-function resolve(values: GradeValues): GradingGains {
+/**
+ * The white balance's factors and the split toning's chroma, resolved once for a whole bake. The
+ * display-space table and the table over high dynamic range color share them.
+ *
+ * @internal
+ */
+export function resolveGradingGains(values: GradeValues): GradingGains {
 	return {
 		gains: whiteBalanceGains(values.whiteBalance[0], values.whiteBalance[1]),
 		shadowChroma: chroma(values.shadows),
@@ -201,7 +206,7 @@ function resolve(values: GradeValues): GradingGains {
  * reference does. This is the reference: the baked table matches it between its texels.
  */
 export function gradeColor(c: Rgb, values: GradeValues): Rgb {
-	return gradeWith(c, values, resolve(values));
+	return gradeWith(c, values, resolveGradingGains(values));
 }
 
 /** [`gradeColor`] with the gains resolved once, which a bake through the whole table reuses. */
@@ -240,7 +245,7 @@ function gradeWith(c: Rgb, values: GradeValues, gains: GradingGains): Rgb {
  * channel's overshoot past 1, which an 8-bit texel would clip inside its cell.
  */
 export function bakeGrade(values: GradeValues, size = GRADE_SIZE): Float32Array {
-	const gains = resolve(values);
+	const gains = resolveGradingGains(values);
 	const texels = new Float32Array(size * size * size * 4);
 	const last = size - 1;
 	let at = 0;

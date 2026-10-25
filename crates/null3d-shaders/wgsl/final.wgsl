@@ -74,6 +74,7 @@
 // multiply it back after.
 #import null3d::fullscreen::{triangle}
 #import null3d::color::{limit_hdr, linear_to_srgb}
+#import null3d::grade::{logc_encode_rgb}
 #import null3d::tonemap
 
 /// The settings flag that says the scene color holds display color.
@@ -87,6 +88,9 @@ const GRADE: u32 = 256u;
 /// The settings flag that skips the tone curve where the mask marks a surface that keeps its color
 /// as the display shows it.
 const UNMAPPED: u32 = 512u;
+/// The settings flag that grades high dynamic range light with the built-in table before the tone
+/// curve.
+const GRADE_HDR: u32 = 1024u;
 
 /// The settings flag that draws the outline's line.
 const OUTLINE: u32 = 8u;
@@ -567,7 +571,8 @@ fn pixel_color(position: vec2f) -> vec4f {
 /// mapped and encoded, and multiplied by its coverage. Display color stays as it is, and so does
 /// the color of a surface that the tone mask marks, which skips the curve.
 fn display(texel: vec4f, uv: vec2f, render: vec2f) -> vec4f {
-    if (settings.output.flags & DISPLAY_COLOR) != 0u {
+    let flags = settings.output.flags;
+    if (flags & DISPLAY_COLOR) != 0u {
         return texel;
     }
     // Additive blending adds coverage too, past 1 over a covered pixel, which covers it whole.
@@ -576,13 +581,21 @@ fn display(texel: vec4f, uv: vec2f, render: vec2f) -> vec4f {
         return vec4f(0.0);
     }
     let exposed = texel.rgb / coverage;
+    // The table over high dynamic range light holds the grade before the curve. The curve stays
+    // here, exact: a 32-texel table cannot hold a punchy curve that clamps each channel at black,
+    // so the pass reads the graded light and maps it as it maps any light.
+    var light = exposed;
+    if (flags & GRADE_HDR) != 0u {
+        let at = saturate(logc_encode_rgb(exposed)) * GRADE_SCALE + GRADE_OFFSET;
+        light = max(textureSampleLevel(grade_table, lut_sampler, at, 0.0).rgb, vec3f(0.0));
+    }
 #ifdef CUSTOM_TONE_CURVE
-    let mapped = saturate(toneCurve(exposed));
+    let mapped = saturate(toneCurve(light));
 #else
 #ifdef EFFECT_CHAIN
-    let mapped = tone_curve_hook(exposed);
+    let mapped = tone_curve_hook(light);
 #else
-    let mapped = null3d::tonemap::tone_map(exposed, settings.output);
+    let mapped = null3d::tonemap::tone_map(light, settings.output);
 #endif
 #endif
     // The mask's fraction mixes a surface that keeps its display color with one that takes the
@@ -597,7 +610,7 @@ fn display(texel: vec4f, uv: vec2f, render: vec2f) -> vec4f {
 /// the pass grades nothing.
 fn finish(color: vec4f, position: vec2f) -> vec4f {
     let flags = settings.output.flags;
-    let grades = (flags & (LUT | GRADE | VIGNETTE)) != 0u;
+    let grades = (flags & (LUT | GRADE | GRADE_HDR | VIGNETTE)) != 0u;
     // A pass that holds display color and grades nothing leaves the color as it is, unless the
     // second step of the high dynamic range path asks for the dither (DITHER).
     if (display_color() && !grades && (flags & DITHER) == 0u) || color.a <= 0.0 {

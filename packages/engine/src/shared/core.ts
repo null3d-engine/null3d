@@ -307,6 +307,11 @@ export interface CoreGlue extends CoreErrors {
 	pickResultAddress(): number;
 	/** True when GPU picking finds every source that the scene draws. */
 	pickCoversScene(): number;
+	/**
+	 * The engine frame that recorded the landed pick, or -1 when no pick has landed. A ray from that
+	 * frame's camera finds the texture coordinates of its pixel.
+	 */
+	pickFrame(): number;
 	/** The object or batch id that a pick's source key names, or 0 for a key that names nothing. */
 	pickTargetId(key: number): number;
 	/** The instance row that a pick's source key names, or 0 for an object of the scene. */
@@ -905,9 +910,16 @@ export interface CoreGlue extends CoreErrors {
 	setLut(texture: number): number;
 	/**
 	 * Grades the canvas color with the built-in grading table in a 3D texture, or with none for 0,
-	 * from the next frame on: a job worker baked the sketch's grading values into it.
+	 * from the next frame on: a job worker baked the sketch's grading values into it. `hdr` says
+	 * the table holds the grade over high dynamic range light, which the pass reads before the tone
+	 * curve, instead of display color.
 	 */
-	setGrade(texture: number): number;
+	setGrade(texture: number, hdr: boolean): number;
+	/**
+	 * Sets the grading controls that the 8-bit path's shaders apply before their tone curve from
+	 * the post-processing values, or clears them.
+	 */
+	setGradeValues(on: boolean): number;
 	/**
 	 * Turns the vignette on with the post-processing values' intensity, size, falloff and roundness,
 	 * or off.
@@ -1247,6 +1259,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'requestPick',
 	'pickResultAddress',
 	'pickCoversScene',
+	'pickFrame',
 	'pickTargetId',
 	'pickTargetRow',
 	'createShapeMesh',
@@ -1371,6 +1384,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOcclusionBuffer',
 	'setLut',
 	'setGrade',
+	'setGradeValues',
 	'setVignette',
 	'setSharpen',
 	'environmentValues',

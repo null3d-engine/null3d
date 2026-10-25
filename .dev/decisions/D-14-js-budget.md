@@ -1120,20 +1120,15 @@ about two of the features that follow.
   both halves read would then sit in the start instead, so the split needs three modules for under a
   kilobyte. This is the next trim worth taking if the room runs out again.
 
-## The start's budget rises to 193 KB for the cut-out builds, 25 October 2026
+## The start's budget rises to 194 KB, 25 October 2026
 
-M3-V2 gives a custom material's WGSL the standard material's cut-out features. A material whose
-WGSL sets or reads the surface's `alpha` gains the builds of alpha to coverage, the alpha hash and
-their sample mask, and its shadow caster and motion build test that alpha in a fragment stage. The
-feature's own shader builds load with the material on first use, so a page that never draws one
-downloads none of them. The material gating and the custom template's depth stage are in the start.
+The grading work's branch measured WebGL2's pipelined start at 197,411 bytes after Brotli in a local
+build, 803 bytes over the 192 KB line. Its own addition is small. It holds the switch that picks
+where the grading table takes its input, the values that the 8-bit path's shaders read, and the code
+that routes the grade to each path. The day's other landings had already filled the room.
 
-After the merge with the day's tip, a production page build measured 196,999 bytes after Brotli in
-pipelined WebGL2 mode, 391 over the 192 KB line. Low latency measured 193,244 and drawing on the
-main thread 194,534. The feature's own share is about 900 bytes: the same tip without it measured
-196,092 in the trim's record above.
-
-The budget rises to 193 KB, or 197,632 bytes, leaving 633 bytes of room. The owner's rule of
-22 October allows the start's budget to rise as needed without asking, and the ruling of 25 October
-repeats it. The trims that the sections above owe, the light probes' split among them, still stand
-as the next work that touches the start's size.
+The budget rises to 194 KB, or 198,656 bytes, leaving 1,245 bytes of room. The owner's rule of
+22 October allows the start's budget to rise as needed without asking, reaffirmed on 25 October. The
+second grading design's bake loads only in the grade task's worker file, which has its own budget.
+A page that never grades therefore pays nothing for it. The trims owed above still stand as the next
+work that touches the start's size.

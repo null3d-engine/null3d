@@ -61,6 +61,7 @@ const INCOMPLETE = new Set([
 	'M3-B1',
 	'M3-E4a',
 	'M3-F5',
+	'M3-E6',
 	'M3-E8',
 	'M3-L1',
 	'M3-L3',
@@ -68,7 +69,6 @@ const INCOMPLETE = new Set([
 	'M3-R22',
 	'M3-L2',
 	'M3-L4',
-	'M3-A1',
 	'M3-A2',
 	'M3-A8',
 	'M3-A9',
@@ -93,7 +93,7 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-A9':
 		'the hero tile and its cost figures are in: a still hero adds no pass, a moving one adds a depth pass of 0.028 to 0.037 ms, and WebGL2 reads the tile for 0.27 ms less than the cascades (D-219)',
 	'M3-E6':
-		"both first users follow the preset: splats' budget, and the water add-on's reflection cadence, which doubles the wait at each frame-budget step up to every sixteenth frame and shows itself in the overlay as a water row with its interval and the pass's share of a frame",
+		"both first users follow the preset: splats' budget, and the water add-on's reflection cadence, which doubles the wait at each frame-budget step up to every sixteenth frame. The overlay part of the task is not built: D-199's decision 4 asks for one GPU timing scope per built-in step and per add-on feature, and D-173 for each add-on's GPU time, while the add-on rows hold no GPU time and the overlay shows one frame total",
 	'M3-E8':
 		"the compute pass and its WebGL2 fragment form are built and tested; the first-user outcome waits on M3-F9's ocean, because the splats add-on cannot take the hook",
 	'M3-B1':
@@ -127,8 +127,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the memory figure is a 40,000-ball test on the main view alone, and no GPU time was taken on the Mac, an iPad or a phone-class device',
 	'M3-L4':
 		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
-	'M3-A1':
-		'`scene.pick` returns no texture coordinates; raycasts and pointer events do, so the pixel-exact pick is short of the task',
 	'M3-A2': "the refresh's cost rows are all owed, the Mac's included",
 	'M3-A8':
 		'the shipped design is a display-color table with no tone curve, which replaced the HDR input D-199 has the owner approving',
@@ -265,6 +263,7 @@ function description(): string {
 				!PARTIAL[id] &&
 				!ON_BRANCH.has(id) &&
 				!INCOMPLETE.has(id) &&
+				!(id in AUDIT_GAPS) &&
 				id in TASK_EVIDENCE;
 			const mark = done ? 'x' : ' ';
 			const note = PARTIAL[id]

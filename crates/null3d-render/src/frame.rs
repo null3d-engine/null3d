@@ -60,7 +60,7 @@ use crate::materials::{
 use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Page, UpdateError};
 use crate::motion;
 use crate::outline::Outline;
-use crate::output::{Antialias, Output, SceneColor, ToneMapping};
+use crate::output::{Antialias, GradeUniform, Output, OutputUniform, SceneColor, ToneMapping};
 use crate::particles::ParticleTable;
 use crate::physical_sky::{AerialUniform, Atmosphere, PhysicalSkyPass};
 use crate::physical_sky_light::{AirModel, analytic_stand_in};
@@ -1053,6 +1053,11 @@ pub struct SceneSettings {
     /// The built-in grading table's texture while the sketch sets grading values. A job worker
     /// baked the values into it.
     grade: Option<Handle>,
+    /// True while the grading table holds the grade over high dynamic range light, which the pass
+    /// reads before the tone curve, instead of display color.
+    grade_hdr: bool,
+    /// The grading controls that the 8-bit path's shaders apply before their tone curve.
+    grade_values: Option<GradeUniform>,
     /// The vignette while the sketch turns it on.
     vignette: Option<Vignette>,
     /// The sharpening's strength while the sketch turns it on, from 0 for off to 1 for the most.
@@ -1235,6 +1240,8 @@ impl SceneSettings {
             taa_frames: 0,
             lut: None,
             grade: None,
+            grade_hdr: false,
+            grade_values: None,
             vignette: None,
             sharpen: None,
             environment: None,
@@ -2023,9 +2030,18 @@ impl SceneSettings {
     /// Grades the canvas color with the built-in grading table in 3D texture `texture`, or with
     /// none with `None`, from the next recorded frame on. A job worker bakes the sketch's grading
     /// values into the table's texels. The pass keeps the table's last texels on the GPU while a
-    /// later bake uploads, so changing the values leaves no frame ungraded.
-    pub fn set_grade(&mut self, texture: Option<Handle>) {
+    /// later bake uploads, so changing the values leaves no frame ungraded. `hdr` says the table
+    /// holds the grade over high dynamic range light, which the pass reads before the tone curve,
+    /// instead of display color.
+    pub fn set_grade(&mut self, texture: Option<Handle>, hdr: bool) {
         self.grade = texture;
+        self.grade_hdr = texture.is_some() && hdr;
+    }
+
+    /// Sets the grading controls that the 8-bit path's shaders apply before their tone curve, or
+    /// clears them with `None`, from the next recorded frame on.
+    pub fn set_grade_values(&mut self, values: Option<GradeUniform>) {
+        self.grade_values = values;
     }
 
     /// Turns the vignette on with its settings, or off with `None`, from the next recorded frame
@@ -2175,11 +2191,16 @@ impl SceneSettings {
         self.outline = outline;
     }
 
-    /// True while the sketch sets a color grading table, or the vignette on the HDR path, outside
-    /// a debug view, whose colors reach the canvas as its shader writes them. The final pass then
-    /// runs on every path. On the 8-bit path the scene shaders apply the vignette.
+    /// True while the sketch sets a color grading table or the built-in grading, or the vignette on
+    /// the HDR path, outside a debug view, whose colors reach the canvas as its shader writes
+    /// them. The final pass then runs on every path. On the 8-bit path the scene shaders apply the
+    /// vignette and the grade over high dynamic range light.
     pub(crate) fn grades(&self) -> bool {
-        (self.lut.is_some() || self.final_vignette().is_some()) && !self.debug_view.is_debug()
+        // The grade over high dynamic range light runs in the 8-bit path's scene shaders, so its
+        // table needs no final pass there.
+        let display_grade = self.grade.is_some() && !self.grade_hdr;
+        (self.lut.is_some() || display_grade || self.final_vignette().is_some())
+            && !self.debug_view.is_debug()
     }
 
     /// The vignette that the final pass applies: the sketch's on the HDR path, none on the 8-bit
@@ -2199,6 +2220,15 @@ impl SceneSettings {
         }
     }
 
+    /// The grading controls that the 8-bit path's scene shaders apply before their tone curve:
+    /// the sketch's while the grade over high dynamic range light runs there, else `None`.
+    pub(crate) fn scene_grade(&self) -> Option<GradeUniform> {
+        if self.canvas.scene_color.is_hdr() || self.debug_view.is_debug() || !self.grade_hdr {
+            return None;
+        }
+        self.grade_values
+    }
+
     /// What the final pass grades the frame with: the table once its texels are on the GPU, the
     /// vignette, and the sharpening. Nothing in a debug view.
     pub(crate) fn grading(&self) -> Grading {
@@ -2216,6 +2246,7 @@ impl SceneSettings {
         Grading {
             lut,
             grade,
+            hdr: self.grade_hdr,
             vignette: self.final_vignette(),
             sharpen: self.sharpen(),
         }
@@ -2508,14 +2539,22 @@ impl SceneSettings {
     }
 
     /// The exposed background color that the camera's view draws as a background on the 8-bit
-    /// path while the vignette is on, or none. There the scene shaders darken their light by the
-    /// vignette before their tone mapping, and a clear alone would leave the color as it is. Without
-    /// a background color the clear is black, which the vignette leaves black.
-    pub(crate) fn vignetted_background_color(&self) -> Option<[f32; 3]> {
-        if self.background().is_some() || self.scene_vignette()[0] <= 0.0 {
+    /// path while the scene shaders shade it before their tone curve, or none: while the vignette
+    /// or the grade over high dynamic range light is on. A clear alone would leave the color as it
+    /// is. The vignette leaves a black clear black, so a scene without a background color draws
+    /// none for it. A grade's lift raises black, so the grade alone still draws the black that the
+    /// other path grades.
+    pub(crate) fn shaded_background_color(&self) -> Option<[f32; 3]> {
+        let vignetted = self.scene_vignette()[0] > 0.0;
+        let graded = self.scene_grade().is_some();
+        if self.background().is_some() || !(vignetted || graded) {
             return None;
         }
-        let color = self.lighting.background?;
+        let color = match self.lighting.background {
+            Some(color) => color,
+            None if graded => [0.0, 0.0, 0.0],
+            None => return None,
+        };
         Some(self.drawn_output().expose(color))
     }
 
@@ -3820,7 +3859,16 @@ impl SceneSettings {
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
             hemisphere: self.lighting.hemisphere,
-            output: output.uniform(),
+            output: {
+                let mut output_uniform = output.uniform();
+                if view_id == ViewId::CAMERA
+                    && let Some(grade) = self.scene_grade()
+                {
+                    output_uniform.flags |= OutputUniform::GRADE_HDR;
+                    output_uniform.grade = grade;
+                }
+                output_uniform
+            },
             fog: {
                 let mut fog = fog::uniform_of(self.lighting.fog.as_ref(), y, output.exposure);
                 // The volumetric fog's sun light replaces the glow in the camera's view.
