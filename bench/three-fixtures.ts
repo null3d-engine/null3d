@@ -1224,7 +1224,11 @@ async function gltfPropertiesFixture(): Promise<string> {
 		loader.register((parser) => new GLTFAnimationPointerExtension(parser));
 		let source: ArrayBuffer;
 		let base: string;
-		if (model.url) {
+		if (model.url.startsWith('/samples/')) {
+			const path = join(samplesDir(root), model.url.slice('/samples/'.length));
+			source = readFileSync(path).buffer as ArrayBuffer;
+			base = pathToFileURL(`${dirname(path)}/`).href;
+		} else if (model.url) {
 			const path = join(root, 'tests/pages', model.url);
 			source = readFileSync(path).buffer as ArrayBuffer;
 			base = pathToFileURL(`${dirname(path)}/`).href;
