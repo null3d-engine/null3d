@@ -71,8 +71,8 @@ export interface GradingSettings {
 	 */
 	lift?: readonly [number, number, number];
 	/**
-	 * The power that each channel is raised to, above 0. It is 1 by default, which leaves the
-	 * channel as it is, and values below 1 brighten the shadows.
+	 * The gamma of each channel, above 0. A channel is raised to the power of one over its gamma, so
+	 * values above 1 brighten the shadows and 1 leaves the channel as it is.
 	 */
 	gamma?: readonly [number, number, number];
 	/**
