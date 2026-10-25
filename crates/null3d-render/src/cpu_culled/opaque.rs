@@ -31,7 +31,7 @@ use super::ids;
 use super::layout::{Draw, Layout, MULTI_DRAW_BLOCK_BYTES, run_end};
 use crate::environment;
 use crate::frame::{
-    CELL_OFFSET_BYTES, CellOffsets, MeshBuffers, RecordError, UploadArena, grown_size, put_u32,
+    CELL_OFFSET_BYTES, CellOffsets, MeshBuffers, RecordError, UploadArena, grown_size_any, put_u32,
 };
 use crate::frame_data::FrameUniform;
 use crate::probe_grid;
@@ -505,7 +505,7 @@ impl Opaque {
         let state = &mut self.views[slot];
         let draws_bytes = RING * layout.draws_slot_bytes;
         if state.draws_bytes < draws_bytes {
-            state.draws_bytes = grown_size(draws_bytes, u32::MAX);
+            state.draws_bytes = grown_size_any(draws_bytes);
             list.push(
                 Op::CreateBuffer,
                 &[

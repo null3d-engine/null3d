@@ -197,6 +197,8 @@ mod render_detail {
     pub const NOT_A_VOLUME: u32 = 17;
     /// The second detail is the bytes that the shadow atlas would take, in mebibytes.
     pub const SHADOW_ATLAS_TOO_LARGE: u32 = 18;
+    /// The second detail is the most bytes that one buffer may take.
+    pub const BUFFER_FULL: u32 = 19;
 }
 
 struct Engine {
@@ -415,6 +417,7 @@ fn record_failure(error: RecordError) -> u32 {
         }
         RecordError::SkinnedPagesFull { limit } => (render_detail::SKINNED_PAGES_FULL, limit),
         RecordError::UploadsFull => (render_detail::UPLOADS_FULL, 0),
+        RecordError::BufferFull { bytes } => (render_detail::BUFFER_FULL, bytes),
         RecordError::ShadowAtlasTooLarge { megabytes } => {
             (render_detail::SHADOW_ATLAS_TOO_LARGE, megabytes)
         }

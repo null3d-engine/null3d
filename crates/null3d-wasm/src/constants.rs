@@ -21,6 +21,7 @@ use null3d_render::frame::{NO_MATERIAL, NO_MESH};
 use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
 use null3d_render::materials::{feature, param};
+use null3d_render::meshes::MAX_BUFFER_BYTES;
 use null3d_render::output::{Antialias, ToneMapping};
 use null3d_render::particles;
 use null3d_render::skinning::SkinningMode;
@@ -957,6 +958,7 @@ pub fn typescript() -> String {
                     "PORTABLE_STORAGE_BINDING_BYTES",
                     sizes::PORTABLE_STORAGE_BINDING_BYTES,
                 ),
+                ("PORTABLE_BUFFER_BYTES", MAX_BUFFER_BYTES as u32),
                 ("MAX_USEFUL_BINDING_BYTES", MAX_USEFUL_BINDING_BYTES),
                 ("INSTANCE_STRIDE", sizes::INSTANCE_STRIDE),
                 ("PORTABLE_MAX_SOURCES", PORTABLE_MAX_SOURCES),

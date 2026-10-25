@@ -1202,6 +1202,27 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tolerance: { threshold: 0, maxDiffRatio: 0 },
 		swiftShaderTolerance: LEVEL_ROUNDING_TOLERANCE,
 	},
+	// The asset tool's leaf-card step: a tree from a file whose crown is a list of separate leaf
+	// cards. The first lower level keeps half of the cards and grows them about their middles, and
+	// a bias brings that switch near the camera, where the crown spans about 100 of the 640 pixels.
+	// Without the step the tool plans no level for the crown, because every card's edges are
+	// borders, which stay.
+	{
+		name: 'asset-card-level',
+		sketch: 'tests/pages/sketches/asset-levels-sketch.ts?scene=tree',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+	},
+	// The asset tool's texture-coordinate weight: a flat grid whose texture repeats across it. Its
+	// coarsest level reports the slide of those coordinates, and that error holds the level out at
+	// a distance, so a finer level draws here and the checker stays square. Without the weight the
+	// coarsest level reports almost no error, draws here, and scrambles the checker.
+	{
+		name: 'asset-bent-grid',
+		sketch: 'tests/pages/sketches/asset-levels-sketch.ts?scene=grid',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+	},
 	// The outputs of assets convert: a skinned, morphed column from FBX halfway through its clip,
 	// the same column from OBJ, a pyramid from STL with face colors and a cube from PLY with corner
 	// colors. Each must load and draw alike on every tier.

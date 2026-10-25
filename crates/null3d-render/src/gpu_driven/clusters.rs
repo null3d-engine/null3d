@@ -114,7 +114,10 @@ impl Clusters {
         let mut recreated = false;
         for (k, id) in ids.into_iter().enumerate() {
             if self.tables[k] < needed[k] {
-                self.tables[k] = grown_size(needed[k], binding_bytes);
+                self.tables[k] =
+                    grown_size(needed[k], binding_bytes).ok_or(RecordError::BufferFull {
+                        bytes: binding_bytes,
+                    })?;
                 list.push(
                     Op::CreateBuffer,
                     &[id, self.tables[k], usage::STORAGE | usage::COPY_DST],
@@ -213,7 +216,9 @@ impl Clusters {
         let mut recreated = false;
         for ((id, size, flags), made) in needed.into_iter().zip(made) {
             if *made < size {
-                *made = grown_size(size, binding_bytes);
+                *made = grown_size(size, binding_bytes).ok_or(RecordError::BufferFull {
+                    bytes: binding_bytes,
+                })?;
                 list.push(Op::CreateBuffer, &[id, *made, flags])?;
                 recreated = true;
             }
