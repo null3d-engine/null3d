@@ -104,3 +104,68 @@ three.js's `css3d_periodictable` example:
 - The port draws the table layout, the example's first settled state. The example's other three
   layouts and their transitions are not part of this test. The label system supports them, since
   the sketch moves the objects that carry the labels.
+
+## Addendum, 25 October 2026: the other six CSS3D examples are ported too
+
+The addendum above closed K4's line with the periodic table. The other six of three.js r186's seven
+CSS3D examples now have ports beside it, each with a picture test:
+
+| Example | The scene | What the port shows |
+| --- | --- | --- |
+| `css3d_molecules` | Caffeine's atoms as balls and its bonds as bars, under a turning root | Billboard labels for the atoms and world labels for the bars, with a label hidden by its hidden object |
+| `css3d_sprites` | 512 images that move between four formations and shimmer in scale | 512 billboards in one page, each scaled by its object every frame |
+| `css3d_sandbox` | Ten squares at scattered places, turns and scales, each over a wireframe plane | World labels that coincide with the geometry the engine draws |
+| `css3d_orthographic` | Four colored planes around a point, under an orthographic camera | A lens without perspective carries the planes |
+| `css3d_mixed` | A room, a blue frame and an embedded web page in it | An iframe as a plane, under a see-through canvas that draws the scene over it |
+| `css3d_youtube` | Four embedded pages in a ring | Four planes turned out of one point, each holding a live page |
+
+The ports share a page helper, `tests/pages/lib/css3d-example.ts`. It starts the engine on the
+port's sketch and binds the page's elements. It waits for the labels of the held frame, then draws
+three.js's twin from the same data. A second helper, `tests/lib/css3d-compare.ts`, loads a page on
+WebGPU and on WebGL2. It checks each element's box against three.js's and hides both canvases. Then
+it compares the two layers of elements pixel by pixel. The comparison reads DOM pixels that no GPU
+draws, so a screenshot is the reading. The periodic table port reads its picture the same way.
+
+Where the ports differ from the examples, and why:
+
+- The examples that scatter their content use `Math.random()`, which a held picture cannot repeat.
+  The ports take every scattered value from an integer hash of the element's place. The three.js
+  twin takes the same values.
+- The sprites' shimmer phase and the molecules' turn read the page's clock in the examples. Both
+  ports read the sketch's clock, so the held frame is the same on every machine.
+- The engine hides an element whose anchor is behind the camera or outside the lens's near and far
+  planes, as the decision above rules. The sprites port stands inside its cloud, so three.js's twin
+  hides the same elements. The picture compares the elements that a viewpoint can see.
+- The mixed example embeds a second three.js example, and the youtube example embeds YouTube
+  videos. The ports embed pages made in code, so a held picture needs no network. The mixed
+  example's room draws every edge of a segmented box. The port draws the twelve outer edges.
+- No example's controls are ported. Each page draws its example's first state, as the periodic table
+  port does. That is the molecules example's caffeine in its atoms-and-bonds view, and a fixed
+  camera in place of the controls. The engine has no camera view offset, which the sandbox and
+  orthographic examples offer only in a panel. Nothing that any first state draws needs it.
+- The mixed port keeps the example's layer order, with the elements below a see-through canvas. The
+  frame's border therefore covers the page where the two meet. The port also shows that an engine
+  canvas passes the page through where it draws nothing.
+
+No fault of the engine showed while porting. The label system carried every capability that the
+examples need, with no special case in a page. It took a billboard that follows its object's scale,
+and an orthographic lens. It took a hidden object that hides its element, and an element that holds
+a live iframe. It also held a page with more planes than the default capacity (`maxLabels3d`), over
+a see-through canvas.
+
+Each port ran on the Mac's GPU on 25 October 2026. It compared its layer of elements with three.js's
+own draw of the same data, at 960 by 540 pixels. A figure is the share of the picture that differed.
+
+| Port | WebGPU | WebGL2 |
+| --- | --- | --- |
+| molecules | 0.000% | 0.000% |
+| sprites | 0.003% | 0.003% |
+| sandbox | 0.000% | 0.000% |
+| orthographic | 0.000% | 0.000% |
+| mixed | 0.000% | 0.000% |
+| youtube | 0.001% | 0.001% |
+
+The periodic table's comparison had no differing pixel either. The sprites and the youtube port
+differ in a few pixels at their edges. That is most likely where a matrix that the engine keeps in
+32-bit floats lands a fraction of a pixel from three.js's. The test allows a thousandth of the
+picture, the limit of the reference images, for a slower rasteriser.
