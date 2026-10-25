@@ -542,6 +542,21 @@ function aoTests(): ImageTest[] {
 			tiers: ['webgpu', 'webgl2'],
 			reference: 'ao-wide',
 		},
+		// The ways of starting the prepass's stand-in color draw the same image, since no pass reads
+		// it: the engine's default loads it, and the other two clear it or attach no color at all
+		// (D-265). Only WebGL2 takes the switch.
+		{
+			...test('ao-prepass-color-clear', '?ao=wide'),
+			tiers: ['webgl2'],
+			switches: ['prepass-color=clear'],
+			reference: 'ao-wide',
+		},
+		{
+			...test('ao-prepass-color-none', '?ao=wide'),
+			tiers: ['webgl2'],
+			switches: ['prepass-color=none'],
+			reference: 'ao-wide',
+		},
 	];
 }
 
