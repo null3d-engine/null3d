@@ -1195,12 +1195,14 @@ async function gltfPropertiesFixture(): Promise<string> {
 			});
 			if (value === 'color') return [material.color.r, material.color.g, material.color.b];
 			if (value === 'opacity') return [material.opacity];
-			const pair = (v: Vec2 | undefined, u: number, vDefault: number) =>
-				v ? [v.x, v.y] : [u, vDefault];
-			if (value === 'baseColorOffset') return pair(material.map?.offset, 0, 0);
-			if (value === 'baseColorScale') return pair(material.map?.repeat, 1, 1);
-			if (value === 'emissiveOffset') return pair(material.emissiveMap?.offset, 0, 0);
-			if (value === 'emissiveScale') return pair(material.emissiveMap?.repeat, 1, 1);
+			const pair = (v: Vec2 | undefined, what: string) => {
+				if (!v) throw new Error(`${key}: three.js gives the material no ${what}`);
+				return [v.x, v.y];
+			};
+			if (value === 'baseColorOffset') return pair(material.map?.offset, 'base color map');
+			if (value === 'baseColorScale') return pair(material.map?.repeat, 'base color map');
+			if (value === 'emissiveOffset') return pair(material.emissiveMap?.offset, 'emissive map');
+			if (value === 'emissiveScale') return pair(material.emissiveMap?.repeat, 'emissive map');
 		} else if (kind === 'nodes') {
 			const node = (await parser.getDependency('node', at)) as { visible: boolean };
 			return [node.visible ? 1 : 0];
