@@ -124,7 +124,7 @@ const NOTES: Readonly<Record<string, string>> = {
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-L2':
-		'the memory figure is a 40,000-ball test on the main view alone, and no GPU time was taken on the Mac, an iPad or a phone-class device',
+		"every item is on the branch with its unit and picture tests, and the copy lists' memory is measured by `forty_thousand_copies_of_four_levels_take_one_copy_each` in `crates/null3d-render/tests/levels.rs`: 2.6 MB in the main view, where a slice per level per view would take 20.5 MB. D-137's table of 22 October records 13 MB with four cascades, against 61 MB. The Mac's GPU time is in its table of 11 October, and the GPU time and memory figures therefore come from the Mac alone: no iPad or phone row exists yet. The iPad and Galaxy S24 rows are the gap. The lod-cost page now reports memory per side, and the lod-cost device plan is ready for the two cloud runs, so only those rows are missing",
 	'M3-L4':
 		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
 	'M3-A2': "the refresh's cost rows are all owed, the Mac's included",

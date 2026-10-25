@@ -465,3 +465,27 @@ the picture test draws the cards around many directions so a disagreement shows.
 The eye comes from the frame's camera, so the cards have no per-frame call. `update` left the API,
 and with it the origin that the sprite batch needed: the engine draws everything relative to the
 camera, so world positions keep their precision far from the world's origin.
+
+## Addendum: the vertices of a file's levels are shared, but not ordered by level (25 October 2026, M3-L2)
+
+The plan asked for a file's levels to draw ranges of the base mesh's indices. Those indices name the
+base's own vertices. The vertices were to come in coarsest-level-first order, as meshoptimizer's
+README advises. The first part is built. A level the asset tool writes names the base's accessors.
+The loader therefore stores the level over the base's vertices. The level costs its indices alone.
+The second part is not built. It is a recorded choice rather than a gap.
+
+Coarsest-first order is a new step in the tool's pipeline. `reorderMeshes` runs before the levels are
+planned. It orders the vertices for the GPU's vertex cache, not by level. Ordering by level needs
+a reorder after `planLevels`. That step remaps every vertex stream and every level's indices. The
+owner's ruling of 25 October 2026 holds it back until its gain is stated in bytes.
+
+What the ordering would gain is the share of the vertex buffer that a coarse level must have
+resident. Without it, a level's indices point across almost the whole buffer. The tool's test ball
+has a base of 1,225 vertices of 16 bytes. Its coarsest level names 122 vertices. Those vertices span
+1,201 slots, 98% of the array. A draw of that level therefore needs almost the whole 19,600-byte
+vertex buffer. In coarsest-first order the same 122 vertices would sit in the first 1,952 bytes. A
+staged loader could then send 1,952 bytes, not 19,600, before the first coarse draw. That holds back
+17,648 bytes, 90% of the vertex buffer, until a finer level arrives. The gain scales with the base's
+vertex bytes, and it is a streaming and cache gain only. The levels already copy no vertices, so no
+total memory and no picture changes. It gains nothing for the 40,000-pine scene, whose procedural
+levels are meshes of their own. M3-L4's staged loading is the user that would spend the step.
