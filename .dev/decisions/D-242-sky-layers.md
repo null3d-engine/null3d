@@ -193,10 +193,14 @@ sky, installs a green layer, removes it, and checks that each sphere takes the l
 loses it, and that neither shows it while the other does not beyond the frames that the light takes
 to follow the map. It runs on every GPU tier through the `sky` plan.
 
-The aurora demo's pictures move in both reference sets: its ice now mirrors the curtains and the ice
-and snow take their green from the sky's light, and the sketch's stand-in ambient light is gone. The
-references are redrawn from the first run after this change, on the Mac's GPU and with `CI=1`, and
-`.dev/image-tests.md` gains the remake's entry with its figures then.
+The aurora demo's pictures stay as they were drawn on 24 October 2026, before the layer reached its
+map. With the layer in the map and its light in the scene, all six still match those references on
+webgpu, compatibility mode and webgl2, on the Mac's GPU and on SwiftShader, within the manifest's
+tolerance of a tenth of a per cent of the pixels. The add-on's colour is scaled by the sky's cloud
+coverage, which the demo keeps at 0.06, so a held frame holds little of its light. The references
+move only if the demo's look changes.
+
+`sky-layer-light` keeps no pictures: it reads the spheres' colours, so it needs no reference.
 
 ### The map's light and a layer that never arrives
 
