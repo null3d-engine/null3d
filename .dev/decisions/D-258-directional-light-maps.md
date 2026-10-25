@@ -44,21 +44,26 @@ either encoding, at 4 bytes for each texel of an `rgb8` radiance and 8 for one o
 They are what the texture store holds for a texture of that size and format, not an estimate
 from the file.
 
-The `lightmap-cost` page measured the cost on 25 October 2026, in Chrome on this Mac's GPU. The
-page draws 24 lit quads that fill a 1600 by 900 view once, so every pixel shades one fragment. The
-plain and directional builds swap in turns for four rounds each, and the order reverses on alternate
-rounds. Before the timing the page draws one frame of each side and compares them. On WebGPU 55.71%
-of the pixels moved, so the direction reached the shader. The direction costs about a tenth of a
-millisecond on every path: 0.06 ms on WebGPU, 0.15 ms in compatibility mode and 0.10 ms on WebGL2.
+The `lightmap-cost` page measured the cost on 25 October 2026, in headless Chrome on this Mac's GPU.
+The figures were taken on `1c76d6cf8`, whose drawing code is the tip's. The page draws 24 lit quads
+that fill a 1600 by 900 view once, so every pixel shades one fragment. The plain and directional
+builds swap in turns for four rounds each, and the order reverses on alternate rounds. Before the
+timing the page draws one frame of each side and compares them. The direction moved 55.71% of the
+pixels on WebGPU, 55.46% in compatibility mode and 55.48% on WebGL2, so it reached the shader on
+every path. The direction costs about a tenth of a millisecond on every path: 0.06 ms on WebGPU,
+0.15 ms in compatibility mode and 0.10 ms on WebGL2.
 
-The run took its slot at 22:39:45. Three facts bound how far the figures can be trusted. The gate
-reads the load once, before each path's page, and not again during the rounds. The three readings
-were 7.5, 7.9 and 7.5. WebGPU and WebGL2 then measured while the load drifted upward, to 9.9 and
-9.2 by the end of each path. The compatibility path ran from 22:41 to 22:46. That span contained
-the push session's commit hook and shader-set copy from 22:43:45 to 22:44:06, about twenty seconds
-of another job's work. Its 1.11 ms plain time and its 0.15 ms difference carry that doubt, and it
-is the row to take again first in a quiet window.
-[Benchmarks](../benchmarks.md#directional-light-maps) gives the command.
+The run took its slot at 22:39:45. These facts bound how far the figures can be trusted. The gate
+checks the load only before each path's page. It polls every 15 seconds until the load is below 8,
+and it never checks during the rounds. The three readings were 7.5, 7.9 and 7.5. WebGPU and WebGL2
+then measured while the load drifted upward, to 9.9 and 9.2 by the end of each path. The indexer
+ran between 180% and 280% through the whole run, not only during compatibility. The two clean paths'
+gates still read 7.5. Their medians match their trials to 0.00 ms on WebGPU and 0.03 ms on WebGL2's
+directional side. The compatibility path ran from 22:41 to 22:46. That span contained the push
+session's commit hook and shader-set copy from 22:43:45 to 22:44:06, about twenty seconds of another
+job's work. Its 1.11 ms plain time is 0.12 ms above the trial's 0.99 ms. Its 0.15 ms difference is
+0.09 ms above the trial's 0.06 ms. Both carry that doubt, and it is the row to take again first in
+a quiet window. [Benchmarks](../benchmarks.md#directional-light-maps) gives the command.
 
 ## Decision
 
