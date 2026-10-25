@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { Document, type Node, type Primitive } from '@gltf-transform/core';
 import { MODELS_DIR, terrainDocument } from './cluster-fixture.js';
 import {
+	orderLevels,
 	planLevels,
 	STAGE_HEADER_SIZE,
 	STAGE_LEVELS,
@@ -282,6 +283,65 @@ function gridDocument(n: number, uv: ((x: number, z: number) => [number, number]
 	doc.createScene().addChild(doc.createNode('grid').setMesh(mesh));
 	return { doc, mesh };
 }
+
+describe('the coarsest-first vertex order', () => {
+	it('puts each level’s vertices in a prefix of its base and keeps every triangle', async () => {
+		const { doc, mesh } = treeDocument();
+		const plans = await planLevels(doc);
+		const plan = plans.get(mesh);
+		expect(plan).toBeDefined();
+		if (!plan) return;
+		const prims = plan.prims;
+		// The positions each level's triangles drew before the reorder, and the base's own.
+		const before = plan.levels.map((level) =>
+			level.indices.map((indices, p) => {
+				const positions =
+					level.positions[p] ?? (prims[p]?.getAttribute('POSITION')?.getArray() as Float32Array);
+				return { indices: Uint32Array.from(indices), positions: Float32Array.from(positions) };
+			}),
+		);
+		const base = prims.map((prim) => ({
+			indices: Uint32Array.from(prim.getIndices()?.getArray() ?? []),
+			positions: Float32Array.from(prim.getAttribute('POSITION')?.getArray() as Float32Array),
+		}));
+		orderLevels(doc, plans);
+		prims.forEach((prim, p) => {
+			const positions = prim.getAttribute('POSITION')?.getArray() as Float32Array;
+			const indices = prim.getIndices()?.getArray() as ArrayLike<number>;
+			const old = base[p] as { indices: Uint32Array; positions: Float32Array };
+			for (let i = 0; i < indices.length; i++)
+				for (let c = 0; c < 3; c++)
+					expect(positions[(indices[i] as number) * 3 + c]).toBeCloseTo(
+						old.positions[(old.indices[i] as number) * 3 + c] as number,
+						5,
+					);
+			// Each level and the levels coarser than it share one prefix of the new order.
+			for (let k = plan.levels.length - 1; k >= 0; k--) {
+				const used = new Set<number>();
+				for (let j = k; j < plan.levels.length; j++)
+					for (const vertex of plan.levels[j]?.indices[p] ?? []) used.add(vertex);
+				const farthest = Math.max(...used);
+				expect(farthest).toBeLessThan(used.size);
+			}
+		});
+		// Every level still draws the positions its triangles drew before the reorder.
+		plan.levels.forEach((level, k) => {
+			prims.forEach((prim, p) => {
+				const positions = (level.positions[p] ??
+					prim.getAttribute('POSITION')?.getArray()) as Float32Array;
+				const indices = level.indices[p] as Uint32Array;
+				const old = before[k]?.[p];
+				if (!old) return;
+				for (let i = 0; i < indices.length; i++)
+					for (let c = 0; c < 3; c++)
+						expect(positions[(indices[i] as number) * 3 + c]).toBeCloseTo(
+							old.positions[(old.indices[i] as number) * 3 + c] as number,
+							5,
+						);
+			});
+		});
+	});
+});
 
 describe('texture coordinates in the levels error', () => {
 	it('counts a texture that would slide, where a flat surface otherwise simplifies free', async () => {

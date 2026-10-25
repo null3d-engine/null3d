@@ -5,7 +5,13 @@
 // as a distance in the units the mesh draws in, which the engine compares with the screen.
 import { MathUtils } from '@gltf-transform/core';
 import { MeshoptSimplifier } from 'meshoptimizer';
-import { cacheOrder, setIndices, triangleIndices, triangleLists } from './geometry.js';
+import {
+	cacheOrder,
+	reorderVertices,
+	setIndices,
+	triangleIndices,
+	triangleLists,
+} from './geometry.js';
 import { lodOf, MSFT_LOD, MSFTLod } from './lod-extension.js';
 
 /** @import { Accessor, Buffer, Document, Mesh, Node, Primitive, Skin } from '@gltf-transform/core' */
@@ -703,6 +709,63 @@ export async function planLevels(doc) {
 		if (levels.length > 0) plans.set(mesh, { prims, side, levels });
 	}
 	return plans;
+}
+
+/**
+ * Orders each planned mesh's vertices so that a coarse level names a prefix of them, as
+ * meshoptimizer's README advises: the coarsest level's vertices first, then each finer level's new
+ * ones, then the base mesh's own, and any vertex that no triangle uses last. A viewer can then send
+ * a coarse level's part of the buffer first and add the finer parts as they download. The base and
+ * every level keep their triangles: only the vertex numbering changes.
+ *
+ * @param {Document} doc
+ * @param {Map<Mesh, MeshLevels>} plans
+ */
+export function orderLevels(doc, plans) {
+	for (const [, plan] of plans) {
+		plan.prims.forEach((prim, p) => {
+			const count = /** @type {Accessor} */ (prim.getAttribute('POSITION')).getCount();
+			/** @type {number[]} */
+			const order = [];
+			const seen = new Uint8Array(count);
+			/** @param {Uint32Array} indices */
+			const take = (indices) => {
+				for (const vertex of indices)
+					if (!seen[vertex]) {
+						seen[vertex] = 1;
+						order.push(vertex);
+					}
+			};
+			// The coarsest level first, then each finer one, then the base mesh itself.
+			for (let k = plan.levels.length - 1; k >= 0; k--) {
+				const level = plan.levels[k];
+				if (level) take(/** @type {Uint32Array} */ (level.indices[p]));
+			}
+			take(triangleIndices(prim, count));
+			for (let vertex = 0; vertex < count; vertex++) if (!seen[vertex]) order.push(vertex);
+			const remap = new Uint32Array(count);
+			order.forEach((vertex, at) => {
+				remap[vertex] = at;
+			});
+			reorderVertices(doc, prim, remap);
+			for (const level of plan.levels) {
+				const indices = /** @type {Uint32Array} */ (level.indices[p]);
+				level.indices[p] = Uint32Array.from(
+					indices,
+					(vertex) => /** @type {number} */ (remap[vertex]),
+				);
+				const positions = level.positions[p];
+				if (!positions) continue;
+				const moved = new Float32Array(positions.length);
+				for (let vertex = 0; vertex < count; vertex++)
+					for (let c = 0; c < 3; c++)
+						moved[/** @type {number} */ (remap[vertex]) * 3 + c] = /** @type {number} */ (
+							positions[vertex * 3 + c]
+						);
+				level.positions[p] = moved;
+			}
+		});
+	}
 }
 
 /**

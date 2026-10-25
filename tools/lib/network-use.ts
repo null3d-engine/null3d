@@ -27,8 +27,8 @@ export const FETCH_SITES: Readonly<Record<string, FetchSite>> = {
 		why: "starts the engine core's own file, beside the engine's code",
 	},
 	'packages/engine/src/page/engine.ts': {
-		count: 1,
-		why: 'prefetches the sketch module that the page passes in',
+		count: 2,
+		why: 'prefetches the sketch module that the page passes in, and downloads the recording that a replay page names',
 	},
 	'packages/engine/src/scene/area-light-tables.ts': {
 		count: 1,
@@ -48,7 +48,11 @@ export const FETCH_SITES: Readonly<Record<string, FetchSite>> = {
 	},
 	'packages/splats/src/system.ts': {
 		count: 1,
-		why: 'downloads the SPZ file that the sketch names',
+		why: "downloads the SPZ file that the sketch names, and a streamed cloud's index beside it",
+	},
+	'packages/splats/src/stream.ts': {
+		count: 1,
+		why: 'downloads only the chunk files that the view asks for, which is what makes a large cloud appear without the whole file',
 	},
 	'packages/vite-plugin/src/engine-shaders.ts': {
 		count: 2,

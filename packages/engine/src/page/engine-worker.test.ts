@@ -15,14 +15,31 @@ beforeEach(() => setErrorFixes(ERROR_FIXES));
 /** A stand-in for a Worker that the test answers for. */
 function fakeWorker() {
 	const sent: unknown[] = [];
-	const worker = {
-		onmessage: null as ((event: MessageEvent<WorkerReply>) => void) | null,
-		onerror: null as ((event: ErrorEvent) => void) | null,
-		postMessage: (message: unknown) => sent.push(message),
-		terminate: () => {},
-	};
+	class FakeWorker extends EventTarget {
+		onmessage: ((event: MessageEvent<WorkerReply>) => void) | null = null;
+		postMessage(message: unknown): void {
+			sent.push(message);
+		}
+		terminate(): void {}
+	}
+	const worker = new FakeWorker();
 	const reply = (data: WorkerReply) => worker.onmessage?.({ data } as MessageEvent<WorkerReply>);
-	return { worker: worker as unknown as Worker, reply, sent, raw: worker };
+	/** Fires the error event that a browser sends for a script that did not load: no message. */
+	const loadFailure = () => worker.dispatchEvent(new Event('error'));
+	/** Fires the error event of a worker that threw, with the browser's message. */
+	const threw = (message: string) => {
+		const event = new Event('error');
+		Object.defineProperty(event, 'message', { value: message });
+		worker.dispatchEvent(event);
+	};
+	return {
+		worker: worker as unknown as Worker,
+		reply,
+		sent,
+		raw: worker,
+		loadFailure,
+		threw,
+	};
 }
 
 /**
@@ -60,6 +77,9 @@ function heldTimers() {
 	};
 }
 
+/** The address that each test's worker runs, which a failure names. */
+const SCRIPT = 'http://localhost/null3d/render-worker.ts';
+
 /** A page whose visibility a test sets, or undefined on a thread that has no document. */
 const page = globalThis as { document?: { visibilityState: string } };
 
@@ -67,7 +87,7 @@ const page = globalThis as { document?: { visibilityState: string } };
 async function started(role = 'job 3') {
 	const fake = fakeWorker();
 	const failures: [EngineError, boolean | undefined][] = [];
-	const engineWorker = new EngineWorker(fake.worker, role, {
+	const engineWorker = new EngineWorker(fake.worker, role, SCRIPT, {
 		sketchMessage: () => {},
 		sketchError: () => {},
 		failure: (error, endsStart) => failures.push([error, endsStart]),
@@ -120,9 +140,9 @@ test('a stop waits for the answer, and a clean answer lets the worker start agai
 });
 
 test('a worker that ends with an error event is reported once it had started', async () => {
-	const { raw, failures, engineWorker } = await started('sketch');
+	const { threw, failures, engineWorker } = await started('sketch');
 	const answered = engineWorker.stopDrawing();
-	raw.onerror?.({ message: 'boom' } as ErrorEvent);
+	threw('boom');
 	await answered;
 	expect(engineWorker.cleanStop).toBe(false);
 	expect(failures.map(([error]) => error.code)).toEqual(['E1404']);
@@ -195,8 +215,11 @@ test("the wait's limit sits above the time that a frame's pipelines may take", (
 /** The events of an engine worker that a test gives no handlers of its own. */
 function unwatched() {
 	const failures: EngineError[] = [];
+	/** Each worker that the engine started a second copy of, with its script's address. */
+	const restarts: [string, string][] = [];
 	return {
 		failures,
+		restarts,
 		events: {
 			sketchMessage: () => {},
 			sketchError: () => {},
@@ -205,6 +228,7 @@ function unwatched() {
 			stats: () => {},
 			labelSlot: () => {},
 			jobsWanted: () => {},
+			workerRestart: (role: string, script: string) => restarts.push([role, script]),
 		},
 	};
 }
@@ -212,13 +236,23 @@ function unwatched() {
 test('a worker whose script did not load gets one more copy, and the messages held for it', async () => {
 	const first = fakeWorker();
 	const second = fakeWorker();
-	const { events, failures } = unwatched();
-	const engineWorker = new EngineWorker(first.worker, 'render', events, () => second.worker);
+	const { events, failures, restarts } = unwatched();
+	const engineWorker = new EngineWorker(
+		first.worker,
+		'render',
+		SCRIPT,
+		events,
+		() => second.worker,
+	);
 	// No message reaches a worker that has not run its script: it could not take one.
 	engineWorker.send({ type: 'init', core: 'core' });
 	expect(first.sent).toEqual([]);
-	first.raw.onerror?.({ message: '' } as ErrorEvent);
+	// Firefox sends the failure of a script that did not load as a plain event with no message,
+	// which reaches a listener but not the `onerror` property in every browser.
+	first.loadFailure();
 	expect(failures).toEqual([]);
+	// The page can see that the engine recovered, and which worker it started again.
+	expect(restarts).toEqual([['render', SCRIPT]]);
 	// The copy takes the held message once its script has run, and the start goes on.
 	second.reply({ type: 'progress', role: 'render', step: 'loaded' });
 	expect(second.sent).toEqual([{ type: 'init', core: 'core' }]);
@@ -226,38 +260,65 @@ test('a worker whose script did not load gets one more copy, and the messages he
 	await expect(engineWorker.ready()).resolves.toMatchObject({ type: 'ready' });
 });
 
-test('a worker whose script does not load twice fails the start with E1405', async () => {
+test('a worker whose script does not load twice fails the start with E1405, naming its script', async () => {
 	const first = fakeWorker();
 	const second = fakeWorker();
-	const { events, failures } = unwatched();
-	const engineWorker = new EngineWorker(first.worker, 'render', events, () => second.worker);
-	first.raw.onerror?.({ message: '' } as ErrorEvent);
-	second.raw.onerror?.({ message: '' } as ErrorEvent);
-	await expect(engineWorker.ready()).rejects.toThrow(
-		'the render worker did not start: its script or a file it imports did not load.',
+	const { events, failures, restarts } = unwatched();
+	const engineWorker = new EngineWorker(
+		first.worker,
+		'render',
+		SCRIPT,
+		events,
+		() => second.worker,
 	);
+	first.loadFailure();
+	second.loadFailure();
+	expect(restarts).toEqual([['render', SCRIPT]]);
+	await expect(engineWorker.ready()).rejects.toThrow(
+		`the render worker did not start: its script at ${SCRIPT}, or a file that it imports, did not load, and a second copy failed too.`,
+	);
+	const error = await engineWorker.ready().then(
+		() => undefined,
+		(reason: EngineError) => reason,
+	);
+	expect(error?.code).toBe('E1405');
 	expect(failures).toEqual([]);
 });
 
-test('a worker that fails with a message is not started again', async () => {
+test('a failure that the engine already named is reported without a second copy', async () => {
 	const first = fakeWorker();
-	const { events } = unwatched();
+	const { events, restarts } = unwatched();
 	let copies = 0;
-	const engineWorker = new EngineWorker(first.worker, 'sketch', events, () => {
+	const engineWorker = new EngineWorker(first.worker, 'sketch', SCRIPT, events, () => {
 		copies++;
 		return fakeWorker().worker;
 	});
-	first.raw.onerror?.({
-		message: 'Script at http://localhost/render-worker.ts cannot be accessed.',
-	} as ErrorEvent);
-	await expect(engineWorker.ready()).rejects.toThrow('cannot be accessed');
+	first.threw(
+		"E1422: the page's Content-Security-Policy blocks the sketch worker: its worker-src does not allow the script.",
+	);
+	await expect(engineWorker.ready()).rejects.toThrow('E1422');
+	expect(copies).toBe(0);
+	expect(restarts).toEqual([]);
+});
+
+test('a worker that fails after its script ran is not started again', async () => {
+	const fake = fakeWorker();
+	const { events } = unwatched();
+	let copies = 0;
+	const engineWorker = new EngineWorker(fake.worker, 'sketch', SCRIPT, events, () => {
+		copies++;
+		return fakeWorker().worker;
+	});
+	fake.reply({ type: 'progress', role: 'sketch', step: 'loaded' });
+	fake.threw('boom');
+	await expect(engineWorker.ready()).rejects.toThrow('boom');
 	expect(copies).toBe(0);
 });
 
 test('a worker that ran its script keeps the messages that follow', async () => {
 	const fake = fakeWorker();
 	const { events } = unwatched();
-	const engineWorker = new EngineWorker(fake.worker, 'render', events, () => fake.worker);
+	const engineWorker = new EngineWorker(fake.worker, 'render', SCRIPT, events, () => fake.worker);
 	fake.reply({ type: 'progress', role: 'render', step: 'loaded' });
 	engineWorker.send({ type: 'capture' });
 	expect(fake.sent).toEqual([{ type: 'capture' }]);
@@ -266,7 +327,7 @@ test('a worker that ran its script keeps the messages that follow', async () => 
 test('a loop that fails before the worker is ready fails the start', async () => {
 	const fake = fakeWorker();
 	const failures: EngineError[] = [];
-	const engineWorker = new EngineWorker(fake.worker, 'sketch', {
+	const engineWorker = new EngineWorker(fake.worker, 'sketch', SCRIPT, {
 		sketchMessage: () => {},
 		sketchError: () => {},
 		failure: (error) => failures.push(error),

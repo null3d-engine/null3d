@@ -141,6 +141,9 @@ export class ModuleBuilds {
 		const index = this.counts.get(kind as BuildKind) ?? 0;
 		this.counts.set(kind as BuildKind, index + 1);
 		this.sources.push({ kind: kind as BuildKind, variants });
+		// An effect's pieces reach the thread that draws. An effect that reads the pixels beside its
+		// own joins a host as the first member of a group or of the fold. The shader build gives no
+		// pieces to an effect that declares textures or reads bloom's chain, which draws its own pass.
 		return pack.value(
 			{ ...shader, variants: {}, permutations: permutationsOf(variants) },
 			hot,

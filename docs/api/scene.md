@@ -237,15 +237,22 @@ Development builds throw E1203 for a number that is not finite, and E1108 for a 
 
 ### Sky layers
 
-`scene.setSkyLayer({ wgsl })` draws an add-on's own layer over the sky: the top of the sky, a second layer of clouds, an aurora or a space backdrop. The layer's WGSL declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer` and the null3D Vite plugin builds it into the engine's sky-layer template, which owns the box around the camera, the bindings, the depth state and the blend. The layer draws right after the background, in the pixels that no object covers, on WebGPU, WebGL2 and in compatibility mode.
+`scene.setSkyLayer(description, { wgsl })` draws an add-on's own layer over the sky: the top of the sky, a second layer of clouds, an aurora or a space backdrop. The description is a [feature description](features.md): it names the feature and records at the `'background'` point, as a `'draw'`, provides `'sky'`, and draws in the `'main'`, `'scenePass'` and `'reflection'` views. The layer's WGSL declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer` and the null3D Vite plugin builds it into the engine's sky-layer template, which owns the box around the camera, the bindings, the depth state and the blend. The layer draws right after the background, in the pixels that no object covers, on WebGPU, WebGL2 and in compatibility mode.
 
 ```ts
-import { defineSketch } from '@null3d/engine';
+import { defineFeature, defineSketch } from '@null3d/engine';
 import curtain from './curtain.wgsl';
 
 export default defineSketch(({ scene }) => {
   scene.setBackground({ sky: { cloudCoverage: 0.1 } });
-  const layer = scene.setSkyLayer({ wgsl: curtain, sun: 0.2 });
+  const description = defineFeature({
+    name: 'curtain',
+    frame: 'background',
+    kind: 'draw',
+    provides: ['sky'],
+    views: ['main', 'scenePass', 'reflection'],
+  });
+  const layer = scene.setSkyLayer(description, { wgsl: curtain, sun: 0.2 });
   return {
     onUpdate(time) {
       layer.set({ opacity: 0.8 + 0.2 * Math.sin(time.now) });
@@ -259,6 +266,7 @@ export default defineSketch(({ scene }) => {
 | `wgsl` | Compiled WGSL that declares `fn skyLayer` | | The layer's function, from a `.wgsl` file or a tagged template literal |
 | `opacity` | 0 to 1 | 1 | How much of the layer's color draws, which multiplies its coverage |
 | `sun` | 0 to 1 | 0 | The share of the sun that the layer hides. The core sky dims its disc and glow by the rest |
+| `refresh` | seconds | 1 | How often the sky's environment map captures a layer that its clock moves. Give 0 for a layer that stands still |
 
 The layer's function reads one input and returns one value:
 
@@ -273,7 +281,9 @@ The layer's function reads one input and returns one value:
 
 A layer declares no uniforms, textures or bindings of its own: the engine binds the frame and the layer's values, and the add-on's numbers are constants in its WGSL. It draws in the camera's view, in scene passes and in reflections, and it draws nothing where the background draws nothing, as in a debug view. A second call replaces the layer, `set` changes its values, and `scene.clearSkyLayer()` removes it and gives the core sky its full sun back.
 
-The scene's environment map and its diffuse light come from the core sky alone, so a layer adds no light to the scene. Give a scene that a layer should light a light of its own. The aurora example add-on in `examples/addons/aurora/` draws one.
+The layer reaches the sky's environment map as well as the background, so every place that a sky is seen shows it: a lake or a window reflects the layer, and the diffuse light that the sky gives the scene carries its color, so it lights the ground under it. The engine builds the layer's WGSL a second time into the shader that fills the map's cube faces, and finds the map's light in the map itself: a small pass sums a level of the map onto the nine coefficients of its diffuse light, and the engine reads them back once for each fill, never in a frame and with nothing waiting: the read is asynchronous, and a fill that cannot start while another runs starts on a later frame. None of this is the add-on's work, and the light matches the reflections because it comes from them.
+
+A fill spreads over some twenty frames, one stage a frame, so a layer that its clock moves tells the map how often to capture it with `refresh`, in seconds. A shorter time follows a faster layer, at a rate of one fill each `refresh` seconds: at the default of a second that is 20 stage draws a second, and a page that asks for less waits for none of it. A layer of 0 stands still and costs one fill per change. Until the first capture of a new layer lands, the scene keeps the core sky's own light, and a frame or two passes before the map's light follows its texels. The aurora example add-on in `examples/addons/aurora/` draws one, over a frozen lake that reflects it.
 
 ## Multiple views
 

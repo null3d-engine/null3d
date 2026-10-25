@@ -146,7 +146,7 @@ const DOCS = {
 	E1209: {
 		title: 'Too many textures',
 		cause:
-			'A material whose shader reads more textures than a WebGL2 shader stage has units. The engine numbers the textures that a program reads, and WebGL2 gives every stage 16 units. The lit shader reads most of them, so a custom material or add-on draw reaches the limit with its own textures, beside the maps and the shadows.',
+			'A material whose shader reads more textures than a WebGL2 shader stage has units. The engine numbers the textures that a program reads, and WebGL2 gives every stage at least 16 units, as many as the device reports. The lit shader reads most of them, so a custom material or add-on draw reaches the limit with its own textures, beside the maps and the shadows.',
 		example:
 			'E1209: a WebGL2 program reads 18 textures in its fragment stage, and a stage has 16 units: give the material fewer textures.',
 		since: '0.3',
@@ -168,7 +168,7 @@ const DOCS = {
 	E1215: {
 		title: 'Invalid custom WGSL',
 		cause:
-			'materials.shader(), post.addEffect(), post.set() or scene.setSkyLayer() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function or a vertex offset. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh. An effect declares fn effect, a tone curve fn toneCurve, and a sky layer fn skyLayer.',
+			'materials.shader(), post.addEffect(), post.set() or scene.setSkyLayer() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function, a vertex offset or a lobe. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh. An effect declares fn effect, a tone curve fn toneCurve, and a sky layer fn skyLayer.',
 		example:
 			'E1215: materials.shader() got WGSL as text, which the null3D Vite plugin did not compile.',
 		since: '0.1',
@@ -184,7 +184,7 @@ const DOCS = {
 	E1217: {
 		title: 'Invalid material option',
 		cause:
-			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options and the blending that they do not take, and a material that lets light through refuses the mask and hash alpha modes and the weighted blending. A layered material, with a clear coat or a sheen, refuses a light map, specular maps, the transmission and thickness maps, and two textures for a pair of layer maps that glTF packs into one. A material with transmission refuses the specular maps beside the transmission and thickness maps, whose slots they share, and other materials refuse those two maps. A material that lets light through to its other side refuses the specular maps, whose places its diffuse transmission maps take, a clear coat, a sheen and the weighted blending, and other materials refuse the diffuse transmission maps. A custom material refuses subsurfaceRadius, which only a standard material takes.',
+			"A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options and the blending that they do not take, and a material that lets light through refuses the mask and hash alpha modes and the weighted blending. A layered material, with a clear coat, a sheen, iridescence or anisotropy, refuses a light map, specular maps, and two textures for a pair of layer maps that glTF packs into one. It refuses a transmission or a thickness map only where one of its layer maps fills that map's slot: the clear coat's normal map and iridescence's thickness map fill the transmission map's, and the sheen's maps and the anisotropy map fill the thickness map's. A material with transmission refuses the specular maps beside the transmission and thickness maps, whose slots they share, and other materials refuse those two maps. A material that lets light through to its other side refuses the specular maps, whose places its diffuse transmission maps take, a clear coat, a sheen and the weighted blending, and other materials refuse the diffuse transmission maps. A custom material refuses subsurfaceRadius, which only a standard material takes.",
 		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 		since: '0.1',
 	},
@@ -230,7 +230,7 @@ const DOCS = {
 	E1223: {
 		title: 'Invalid feature description',
 		cause:
-			'defineFeature(), FeatureRegistry.add(), addFeatureDraw() or a compute pass of render.addPass() got a description that it cannot take: an unknown option, a name that is empty or longer than 64 characters, a frame point or kind that does not exist or does not go together, an order outside its band, an unknown resource, lighting slot or view, a resource or view without a frame point, an output with no neutral default, a feature name or output name that another feature has, a lighting slot that another feature provides, or a draw at a frame point, view or alpha mode that the draw adapter does not place, or a compute pass at a frame point, view, scene resource read or output that the compute adapter does not place.',
+			'defineFeature(), FeatureRegistry.add(), addFeatureDraw(), scene.setSkyLayer() or a compute pass of render.addPass() got a description that it cannot take: an unknown option, a name that is empty or longer than 64 characters, a frame point or kind that does not exist or does not go together, an order outside its band, an unknown resource, lighting slot or view, a resource or view without a frame point, an output with no neutral default, a feature name or output name that another feature has, a lighting slot that another feature provides, a draw at a frame point, view or alpha mode that the draw adapter does not place, a sky layer that does not record at the background point, as a draw, providing the sky and drawing in the three views, or a compute pass at a frame point, view, scene resource read or output that the compute adapter does not place.',
 		example:
 			"E1223: FeatureRegistry.add() got the slot 'ao', which the feature 'ambient-occlusion' provides already. One feature provides each lighting slot.",
 		since: '0.3',
@@ -246,9 +246,9 @@ const DOCS = {
 	E1225: {
 		title: 'Add-on name clash',
 		cause:
-			'An add-on registered a name that the engine or another add-on holds: its namespace, its shader library, an error-code range, a quality key, or the name of a feature, output or lighting slot. Two add-ons cannot share a name, a range or a key, because the engine would have two answers for one of them.',
+			'An add-on registered a name that the engine or another add-on holds: its namespace, its shader library, an error-code range, a quality key, or the name of a feature, output or lighting slot. A namespace also names the package that owns it, so a second add-on that takes the name is refused even when its other fields match, while a reload of the same package keeps its namespace. Two add-ons cannot share a name, a range or a key, because the engine would have two answers for one of them.',
 		example:
-			"E1225: FeatureHost.add() got the feature 'splats' for the add-on 'particles', which the add-on 'splats_pack' registers already. Give the feature a name of its own.",
+			"E1225: declareAddonNamespace() got the add-on name 'water' for the package '@ben/water', which the package '@ana/water' claims already. Give each add-on a name of its own.",
 		since: '0.3',
 	},
 	E1301: {
@@ -524,10 +524,18 @@ const DOCS = {
 			'E1434: assets.loadLightProbeGrid() could not read https://example.com/light/grid.json: its version is 2, and this engine reads version 1.',
 		since: '0.3',
 	},
+	E1435: {
+		title: 'Recording not read',
+		cause:
+			'createEngine() could not read the recording that ?replay= names, or the recording does not match this page. The file may not be a null3D recording, may come from another version of the format, may be cut short, or may name keys or fixed steps that this engine does not have. The message names the fault.',
+		example:
+			'E1435: createEngine() could not read the recording https://example.com/bug.n3dr: the file is not a null3D recording: it does not start with the format marker. Save the recording again, or ask for a new one.',
+		since: '0.3',
+	},
 	E1501: {
 		title: 'Render space full',
 		cause:
-			'The scene needs more room than the renderer has. The message names the full part: the material table, the upload space, the culling pass, skinning on WebGPU, or the draw list. On WebGPU the culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. On WebGL2 the number follows the largest texture the device allows. The number for the device is in engine.capabilities.maxInstances. On WebGPU, skinned meshes keep their skinned vertices in at most 8 GPU buffers. Those hold 1 GiB in all on most devices. Skinned meshes fill at most 32 mesh buffers. The draw list grows with the scene, so it fills only when memory runs out. A frame that fails draws nothing, and the canvas keeps the last whole frame.',
+			'The scene needs more room than the renderer has. The message names the full part: the material table, the upload space, the culling pass, skinning on WebGPU, the draw list, or the shadow atlas. On WebGPU the culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. On WebGL2 the number follows the largest texture the device allows. The number for the device is in engine.capabilities.maxInstances. On WebGPU, skinned meshes keep their skinned vertices in at most 8 GPU buffers. Those hold 1 GiB in all on most devices. Skinned meshes fill at most 32 mesh buffers. The draw list grows with the scene, so it fills only when memory runs out. A frame that fails draws nothing, and the canvas keeps the last whole frame.',
 		example: 'E1501: materials.standard() failed: the material table is full.',
 		since: '0.1',
 	},

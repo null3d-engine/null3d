@@ -10,7 +10,7 @@
 // that leaves the core uses it like any add-on (D-173, D-199).
 
 import { EngineError } from '../errors/engine-error';
-import { BUDGET_STEPS } from '../quality/governor';
+import { BUDGET_STEPS } from '../quality/budget';
 import {
 	describeValues,
 	presetIndex,

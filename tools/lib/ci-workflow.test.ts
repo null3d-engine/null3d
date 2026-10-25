@@ -10,6 +10,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { PRODUCTION_BUILD_PAGES, PRODUCTION_BUILD_TESTS } from '../../tests/lib/server.ts';
 import { HEARTBEAT_SECONDS } from '../../tests/pages/lib/runner-rules.ts';
+import { PASS_KEYED } from './ci-passes.ts';
+import { withImports } from './script-imports.ts';
 
 interface Step {
 	id?: string;
@@ -47,6 +49,8 @@ const scripts = (
 
 /** The condition of the full run's jobs, which a push to a milestone branch skips. */
 const FULL_RUN = "github.event_name != 'push' || github.ref == 'refs/heads/main'";
+/** A value as the workflow writes it: an expression that GitHub works out when the run starts. */
+const expression = (text: string) => `\${{ ${text} }}`;
 const needsOf = (job: Job | undefined): string[] =>
 	job?.needs === undefined ? [] : Array.isArray(job.needs) ? job.needs : [job.needs];
 const oneTo = (count: number) => Array.from({ length: count }, (_, i) => i + 1);
@@ -130,37 +134,25 @@ const RUST_STARTED_SCRIPTS = [
 /** A script path in a command: a file of the repository that Bun runs or tests. */
 const SCRIPT_PATH = /(?:^|[\s(])(?:\.\/)?((?:tools|tests|packages|bench)\/[\w./-]+\.[cm]?[jt]s)\b/g;
 /** A relative import or a dynamic import of a relative path. */
-const RELATIVE_IMPORT = /(?:from|import)\s*\(?\s*['"](\.{1,2}\/[^'"?]+)/g;
 /** The build job writes this folder, and the key names its inputs instead of its files. */
 const GENERATED = 'packages/engine/src/generated/';
 
-/** The repository file that an import names, by its path from the root, or null outside it. */
-function importedFile(from: string, spec: string): string | null {
-	const base = resolve(dirname(join(ROOT, from)), spec);
-	for (const candidate of [
-		base,
-		base.replace(/\.js$/, '.ts'),
-		`${base}.ts`,
-		join(base, 'index.ts'),
-	])
-		if (existsSync(candidate) && statSync(candidate).isFile()) return relative(ROOT, candidate);
-	return null;
-}
-
 /** The scripts and every repository file that they import, directly or through other files. */
-function scriptsWithImports(start: readonly string[]): Set<string> {
-	const found = new Set<string>();
-	const next = [...start];
-	for (let file = next.pop(); file !== undefined; file = next.pop()) {
-		if (found.has(file)) continue;
-		found.add(file);
-		if (file.startsWith(GENERATED)) continue;
-		for (const [, spec] of readFileSync(join(ROOT, file), 'utf8').matchAll(RELATIVE_IMPORT)) {
-			const imported = spec === undefined ? null : importedFile(file, spec);
-			if (imported !== null && !imported.includes('node_modules')) next.push(imported);
-		}
-	}
-	return found;
+const scriptsWithImports = (start: readonly string[]) =>
+	withImports(ROOT, start, (file) => file.startsWith(GENERATED));
+
+/** The globs of each hash that the passes job's step works out, by the hash's name. */
+function passHashGlobs(): Map<string, string[]> {
+	const step = jobNamed('passes').steps?.find(({ id }) => id === 'hashes');
+	const globs = new Map<string, string[]>();
+	for (const [, name = '', args = ''] of (step?.run ?? '').matchAll(
+		/echo "([\w-]+)=\$\{\{ hashFiles\(([^)]*)\) \}\}"/g,
+	))
+		globs.set(
+			name,
+			[...args.matchAll(/'([^']+)'/g)].map(([, glob]) => glob ?? ''),
+		);
+	return globs;
 }
 
 /** A pattern of `hashFiles` as a regular expression over paths from the root. */
@@ -183,6 +175,17 @@ describe("CI's workflow", () => {
 		expect(gated).toEqual(others);
 	});
 
+	it("runs a job after ci-passed on ci-passed's own result", () => {
+		// GitHub's default condition needs every job before it to have passed, and a pass-keyed job
+		// that passed in an earlier run is skipped, which would skip the job after ci-passed too.
+		const after = Object.entries(jobs).filter(([, job]) => needsOf(job).includes('ci-passed'));
+		expect(after.length).toBeGreaterThan(0);
+		for (const [name, job] of after)
+			expect(String(job.if), name).toStartWith(
+				"${{ !cancelled() && needs.ci-passed.result == 'success' && ",
+			);
+	});
+
 	it("lets only the full run's jobs skip, and only in a quick run", () => {
 		const step = jobNamed('ci-passed').steps?.find(({ name }) => name === 'Every job passed');
 		const list = /\[([^\]]*)\] as \$full/.exec(step?.run ?? '')?.[1] ?? '';
@@ -192,12 +195,22 @@ describe("CI's workflow", () => {
 			.sort();
 		expect(skippable).toEqual(full);
 		expect(full.length).toBeGreaterThan(0);
+		// A pass-keyed job skips when the passes job found every part passed, and ci-passed knows it.
+		for (const name of Object.keys(PASS_KEYED)) {
+			expect(jobNamed(name).if, name).toBe(
+				expression(`!contains(fromJSON(needs.passes.outputs.passed), '${name}')`),
+			);
+			expect(needsOf(jobs[name]), name).toContain('passes');
+		}
+		expect(step?.env?.PASSED).toBe(expression("needs.passes.outputs.passed || '[]'"));
+		expect(step?.run).toContain('(.key | IN($passed[]))');
 		// Every other job that ci-passed waits for runs in every run.
 		for (const name of needsOf(jobs['ci-passed']))
-			if (!full.includes(name)) expect(jobNamed(name).if, name).toBeUndefined();
+			if (!full.includes(name) && !(name in PASS_KEYED))
+				expect(jobNamed(name).if, name).toBeUndefined();
 		// The quick run that ci-passed reads is a run that the full-run condition leaves out.
 		expect(step?.env?.QUICK).toBe(
-			"${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}",
+			expression("github.event_name == 'push' && github.ref != 'refs/heads/main'"),
 		);
 	});
 
@@ -285,7 +298,7 @@ describe("CI's workflow", () => {
 		expect(shares.map(([part]) => part)).toEqual(oneTo(count));
 		expect(shares.every(([, total]) => total === count)).toBe(true);
 		const steps = jobNamed('shader-compiler-plugin').steps ?? [];
-		const pass = steps.find(({ name }) => name === "The key of this part's inputs")?.run ?? '';
+		const pass = String(steps.find(({ id }) => id === 'passed')?.with?.key);
 		const cache = steps.find(
 			({ with: given }) => given?.path === 'node_modules/.cache/null3d-shaders',
 		);
@@ -562,6 +575,15 @@ describe("CI's workflow", () => {
 		);
 		expect(at(restore)).toBeLessThan(build);
 		expect(at(save)).toBeGreaterThan(build);
+		// A miss restores the newest earlier folder, whose entries the build checks one by one, and
+		// the folder keeps only this build's entries before it is saved, so it does not grow.
+		const prefix = String(restore?.with?.['restore-keys']);
+		expect(prefix.length).toBeGreaterThan(0);
+		expect(String(save?.with?.key).startsWith(prefix)).toBe(true);
+		const trim = steps.find(({ run }) => run?.includes('bun tools/build-wasm.ts --keep-current'));
+		expect(at(trim)).toBeGreaterThan(build);
+		expect(at(trim)).toBeLessThan(at(save));
+		expect(trim?.if).toBe(save?.if);
 	});
 
 	it("runs a milestone branch's pushes in the branch's caches, and no pull request event", () => {
@@ -572,7 +594,7 @@ describe("CI's workflow", () => {
 		// Each pushed branch has one group, and a run started by hand a group of its own, so a push
 		// never cancels or replaces a full run.
 		expect(workflow.concurrency.group).toBe(
-			"ci-${{ github.event_name == 'push' && github.ref_name || github.run_id }}",
+			`ci-${expression("github.event_name == 'push' && github.ref_name || github.run_id")}`,
 		);
 	});
 
@@ -580,8 +602,31 @@ describe("CI's workflow", () => {
 		// Cancelling a milestone branch's started run threw its work away: its landings come in
 		// bursts, and a later run waits instead, while GitHub drops an older waiting run before it starts.
 		expect(workflow.concurrency['cancel-in-progress']).toBe(
-			"${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}",
+			expression("github.event_name == 'push' && github.ref == 'refs/heads/main'"),
 		);
+	});
+
+	it('runs every check of docs-and-tools after a failed one, once its setup has passed', () => {
+		// A failed check would otherwise stop the job, and hide every fault in the checks after it.
+		const steps = jobNamed('docs-and-tools').steps ?? [];
+		const setup = steps.findIndex(({ id }) => id === 'setup');
+		expect(setup).toBeGreaterThan(0);
+		const checks = steps.slice(setup + 1).filter(({ uses }) => uses !== 'actions/cache/save@v4');
+		expect(checks.length).toBeGreaterThan(0);
+		for (const step of checks)
+			expect(step.if, step.name ?? step.run ?? step.uses).toBe(
+				expression("!cancelled() && steps.setup.outcome == 'success'"),
+			);
+	});
+
+	it('limits every transfer through the archive action to a few minutes', () => {
+		// A stalled upload otherwise holds its job, and the runs queued behind it, until the job's limit.
+		for (const [name, job] of Object.entries(jobs))
+			for (const step of job.steps ?? [])
+				if (step.uses === './.github/actions/archive') {
+					expect(step['timeout-minutes'], name).toBeGreaterThan(0);
+					expect(step['timeout-minutes'], name).toBeLessThanOrEqual(6);
+				}
 	});
 
 	it("moves the build job's files and the load builds only through the archive action", () => {
@@ -596,17 +641,11 @@ describe("CI's workflow", () => {
 	});
 
 	it('names in each pass key every script that its part starts, with their imports', () => {
-		const keyed = Object.entries(jobs).filter(([, job]) =>
-			(job.steps ?? []).some(({ name }) => /^The key of this \w+'s inputs$/.test(name ?? '')),
-		);
-		expect(keyed.length).toBeGreaterThan(0);
-		for (const [name, job] of keyed) {
-			const key = (job.steps ?? []).find(({ name: step }) =>
-				/^The key of this \w+'s inputs$/.test(step ?? ''),
-			);
-			const globs = [...(key?.run ?? '').matchAll(/hashFiles\(([^)]*)\)/g)].flatMap(([, args]) =>
-				[...(args ?? '').matchAll(/'([^']+)'/g)].map(([, glob]) => glob ?? ''),
-			);
+		const hashes = passHashGlobs();
+		for (const [name, { hashes: names }] of Object.entries(PASS_KEYED)) {
+			const job = jobNamed(name);
+			const globs = names.flatMap((hash) => hashes.get(hash) ?? []);
+			expect(globs.length, name).toBeGreaterThan(0);
 			const patterns = globs.map(globPattern);
 			const started = commandsOf(job).flatMap(({ text, env }) => {
 				const named = [...text.matchAll(SCRIPT_PATH)].map(([, path]) => path ?? '');
@@ -631,19 +670,13 @@ describe("CI's workflow", () => {
 	it("names in the Rust tests' key every file outside the crates that the crates' code names", () => {
 		// A path such as "../../packages/engine/src/errors/codes.ts" counts from the file that names
 		// it, as include_str! reads it, or from its crate, as a path joined to the crate's folder does.
-		const step = jobNamed('rust-tests').steps?.find(
-			({ name }) => name === "The key of this part's inputs",
-		);
-		const workspace = /\|\| hashFiles\(([^)]*)\)/.exec(step?.run ?? '')?.[1] ?? '';
-		const patterns = [...workspace.matchAll(/'([^']+)'/g)].map(([, glob]) =>
-			globPattern(glob ?? ''),
-		);
+		const patterns = (passHashGlobs().get('rust-workspace') ?? []).map(globPattern);
 		expect(patterns.length).toBeGreaterThan(0);
 		const named = new Set<string>();
 		for (const file of filesBelow('crates').filter((path) => path.endsWith('.rs'))) {
 			const crate = file.split('/').slice(0, 2).join('/');
 			const text = readFileSync(join(ROOT, file), 'utf8');
-			for (const [, path = ''] of text.matchAll(/"\/?((?:\.\.\/)+[\w@.\/-]+)"/g))
+			for (const [, path = ''] of text.matchAll(/"\/?((?:\.\.\/)+[\w@./-]+)"/g))
 				for (const base of [dirname(file), crate]) {
 					const target = relative(ROOT, resolve(ROOT, base, path));
 					if (

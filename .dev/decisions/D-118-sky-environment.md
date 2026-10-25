@@ -269,16 +269,17 @@ The rule lives in `MapSky::compares` in `crates/null3d-render/src/sky_maps.rs`. 
 
 ### What it saves
 
-A fill takes 20 frames, one stage a frame, so a map can start a new one only after the last ends. The unit test `a_day_cycle_draws_the_sky_map_only_for_the_frames_its_sun_steps` (`crates/null3d-render/tests/sky_maps.rs`) counts the frames that record a stage, at 60 frames a second with the built-in map's stages, for a sketch that writes its sky in every frame. Before this addendum, every one of those frames drew a stage.
+A fill takes 20 frames, one stage a frame, so a map can start a new one only after the last ends. The unit test `a_day_cycle_draws_the_sky_map_only_for_the_frames_its_sun_steps` (`crates/null3d-render/tests/sky_maps.rs`) counts the frames that record a stage, at 60 frames a second with the built-in map's stages, for a sketch that writes its sky in every frame. It counts 1,800 frames, half a minute, and prints each case's count. One fill every 20 frames gives the fills a minute. [Benchmarks](../benchmarks.md#sky-map-refreshes) shows the command and its output. Before this addendum, every one of those frames drew a stage.
 
 | Sun | Frames that drew a stage, of 1,800 | Fills a minute | Share of the frames |
 | --- | --- | --- | --- |
-| Still, with the default clouds drifting | 100 | 12 | 6% |
-| An hour a day, 0.1 degrees a second | 100 | 12 | 6% |
+| Still, with the default clouds drifting | 100 | 10 | 6% |
+| An hour a day, 0.1 degrees a second | 100 | 10 | 6% |
 | A ten-minute day, 0.6 degrees a second | 700 | 70 | 39% |
-| The showcase's Auto day, 80 seconds, at 4.5 degrees a second | 1,794 | 180 | 100% |
+| The showcase's Auto day, 80 seconds, at 4.5 degrees a second | 1,794 | 179 | 100% |
+| A day a minute, at 6 degrees a second | 1,796 | 179 | 100% |
 
-The unit test itself counts 600 frames, where a ten-minute day draws 220 of them.
+The figures come from a run on 25 October 2026.
 
 A stage costs about 1 ms of GPU time on a MacBook Pro (the sections above). So a still sky with drifting clouds gives back about 0.93 ms of every frame, and an hour-long day the same. The ten-minute day gives back about 0.6 ms. A day a minute keeps the map drawing in every frame, as it did before, because a fill of 20 frames cannot take the place of a step every 5 frames. [Benchmarks](../benchmarks.md#sky-map-refreshes) says how to take the counts again.
 

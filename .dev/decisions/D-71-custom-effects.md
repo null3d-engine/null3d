@@ -248,3 +248,48 @@ calls fitted no function, and the driver refused the whole shader with "'fx74470
 : no matching overloaded function found". The engine then drew each effect in a pass of its own, so
 the images still matched and the fault stayed hidden. D-167's addendum records the fix, the check
 that refuses such a call, and its evidence. The joins now run at every render scale.
+
+## Addendum, 25 October 2026: an effect that reads bloom's chain bound the wrong source
+
+An effect that calls `effectBloom` moves bloom's chain before the effects. The chain then reads the
+scene's color rather than the effects' output, as [Post-processing](../../docs/concepts/post-processing.md)
+states. The passes declared that source since M3-A4 (d8234c106), whose test checked the order of
+the steps but not the texture that the first step binds. The first step's bound texture was still
+the last effect's target, which the code chose when no effect read the chain. So the declaration and
+the binding disagreed. The chain sampled a target that the effect pass writes later in the same
+frame, or the previous frame's copy of it.
+
+Two faults came from it. A held frame draws once, so it sampled the effect's target before anything
+wrote it. That target held its clear color, so bloom thresholded black and drew no glow at all. Every
+lens kit picture with a mark showed that, while the pictures of the core's own looks kept their glow.
+A live frame sampled the frame before, so the glow lagged the picture. The streak's own glow also fed
+back into the chain that made it.
+
+The fix gives the choice one place, `FrameGraph::bloom_source`, which the declaration and the
+binding both call. The test `a_lone_effect_that_reads_bloom_keeps_the_whole_chain_and_the_glow`
+checks that the first step binds the scene's color and not the effect's target. The marks of the
+lens kit, `demo-post-effects` and `demo-skyway` draw differently, and their references were redrawn
+in both sets.
+
+## Addendum, 25 October 2026: the pieces of an effect that reads its neighbours
+
+Every joined group and fold that held an effect reading the pixels beside its own failed to join, on
+both GPU paths. The pages stopped in hold mode with E1408 and "an effect has no piece for the host's
+build webgl2", or `webgpu`. The pages were `effects`, `effects-reversed`, `effects-later`,
+`effects-bloom-curve` and `effects-scale-50`, and their `-separate` twins passed. Full run
+40157091937 showed it on Chromium and on Firefox.
+
+The shader build gives each effect a piece for every build of both hosts. The engine joins a group
+or a fold from those pieces, as above. The water add-on's landing (72d2add85) made the Vite plugin
+empty the pieces of an effect whose `joins` flag is false. That change took the flag to mean that
+such an effect draws a pass of its own. The flag says only that the effect cannot follow another
+effect in one pass. A group starts with any effect, and the effects after it join while they read
+only their own pixel. The last group folds into the final pass too (Data, What joins). So an effect
+that reads its neighbours still joins a host as its first member. Its pieces must reach the thread
+that draws.
+
+The fix keeps each effect's pieces as the shader build gives them
+(`packages/vite-plugin/src/material-builds.ts`). An effect that draws a pass of its own gets no
+pieces from the shader build already. That covers an effect that declares textures or reads bloom's
+chain. The test `material-builds.test.ts` checks that an effect that does not join the effect before
+it keeps its pieces.

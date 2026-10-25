@@ -13,6 +13,7 @@ import {
 	budgetOf,
 	engineVersions,
 	interfaceResult,
+	MAX_ALLOCATION_SAMPLES,
 	nameProfile,
 	pageOf,
 	parseCheckAddonArgs,
@@ -20,6 +21,7 @@ import {
 	ranAddonCode,
 	readAddon,
 	run,
+	samplingIntervalFor,
 	sizeProblems,
 } from './check-addon.js';
 import { freePort } from './devtools.js';
@@ -46,17 +48,25 @@ describe('parseCheckAddonArgs', () => {
 			folder: process.cwd(),
 			page: undefined,
 			skipBrowser: false,
+			skipCost: false,
 			help: false,
 		});
 	});
 
 	it('reads the folder, the page and the browser switch', () => {
 		expect(
-			parseCheckAddonArgs(['addons/splats', '--page', '/demo.html', '--skip-browser']),
+			parseCheckAddonArgs([
+				'addons/splats',
+				'--page',
+				'/demo.html',
+				'--skip-browser',
+				'--skip-cost',
+			]),
 		).toEqual({
 			folder: 'addons/splats',
 			page: '/demo.html',
 			skipBrowser: true,
+			skipCost: true,
 			help: false,
 		});
 	});
@@ -408,17 +418,17 @@ describe('sizeProblems', () => {
 
 	it('accepts a file at its budget in every column', () => {
 		expect(
-			sizeProblems([{ name: 'addon.js', raw: 64 * KB, gzip: 24 * KB, brotli: 17 * KB }]),
+			sizeProblems([{ name: 'addon.js', raw: 64 * KB, gzip: 24 * KB, brotli: 18 * KB }]),
 		).toEqual([]);
 	});
 
 	it('names each column of a file over its budget', () => {
 		expect(
-			sizeProblems([{ name: 'addon.js', raw: 65 * KB, gzip: 25 * KB, brotli: 18 * KB }]),
+			sizeProblems([{ name: 'addon.js', raw: 65 * KB, gzip: 25 * KB, brotli: 19 * KB }]),
 		).toEqual([
 			'addon.js is 65.0 KB raw, over its 64.0 KB budget',
 			'addon.js is 25.0 KB gzip, over its 24.0 KB budget',
-			'addon.js is 18.0 KB brotli, over its 17.0 KB budget',
+			'addon.js is 19.0 KB brotli, over its 18.0 KB budget',
 		]);
 	});
 
@@ -434,8 +444,8 @@ describe('sizeProblems', () => {
 	it('holds a file of shader builds to the first-use shader budget', () => {
 		const name = 'material-glsl-3-4147f7f033096b80-DAeZ5SYm.js';
 		expect(sizeProblems([{ name, raw: 900 * KB, gzip: 160 * KB, brotli: 45 * KB }])).toEqual([]);
-		expect(sizeProblems([{ name, raw: 900 * KB, gzip: 160 * KB, brotli: 53 * KB }])).toEqual([
-			`${name} is 53.0 KB brotli, over its 52.0 KB budget`,
+		expect(sizeProblems([{ name, raw: 900 * KB, gzip: 160 * KB, brotli: 57 * KB }])).toEqual([
+			`${name} is 57.0 KB brotli, over its 56.0 KB budget`,
 		]);
 	});
 });
@@ -518,6 +528,29 @@ describe('ranAddonCode', () => {
 		expect(ranAddonCode(frames, asRecorded, { folder: '/work/addon', name: '@acme/addon' })).toBe(
 			false,
 		);
+	});
+});
+
+describe('samplingIntervalFor', () => {
+	/** The samples that one worker's profile holds in a sample of the gate's length. */
+	const samplesAt = (bytesPerSecond: number) =>
+		(bytesPerSecond * 4) / samplingIntervalFor(bytesPerSecond);
+
+	it('keeps the finest interval for a page that allocates slowly', () => {
+		expect(samplingIntervalFor(0)).toBe(128);
+		// The allocating fixture: about 5.8 KB a frame at 60 frames a second.
+		expect(samplingIntervalFor(5.8 * 1024 * 60)).toBe(128);
+	});
+
+	it('widens the interval so that a fast page holds at most the stated samples', () => {
+		// Half a terabyte a second is far past any browser page, and the count still holds there.
+		for (const bytesPerSecond of [10 * 1024 ** 2, 1024 ** 3, 10 * 1024 ** 3, 512 * 1024 ** 3]) {
+			expect(samplesAt(bytesPerSecond)).toBeLessThanOrEqual(MAX_ALLOCATION_SAMPLES);
+		}
+	});
+
+	it('stops at the coarsest interval, above about a terabyte a second', () => {
+		expect(samplingIntervalFor(10 * 1024 ** 4)).toBe(16 * 1024 * 1024);
 	});
 });
 

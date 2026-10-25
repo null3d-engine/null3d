@@ -2,12 +2,18 @@
 // each checks the engine's source again and one after another they took minutes.
 // Each keeps TypeScript's incremental record under target/typecheck, so a check after a small change
 // checks again only the files that the change reaches. A project's output prints whole when it ends,
-// and the command fails when any project fails. `bun run typecheck` runs it after the shader build.
+// and the command fails when any project fails.
 //   bun tools/typecheck.ts
+// `--shaders` first brings the shader modules up to date, which the engine's projects import. When
+// that needs a build while another checkout's shader build holds the machine's lock, it checks
+// against the modules in place instead of waiting, and builds them and checks again only when a
+// project fails. `bun run typecheck`, the commit hook and CI run it so:
+//   bun tools/typecheck.ts --shaders
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
+import { ensureShaderModules, shaderModulesUnlessBusy } from './lib/shader-modules';
 
 const ROOT = join(import.meta.dirname, '..');
 
@@ -28,8 +34,13 @@ export const PROJECTS = [
 	'packages/splats/tsconfig.test.json',
 	'packages/terrain',
 	'packages/terrain/tsconfig.test.json',
+	'packages/vegetation',
+	'packages/vegetation/tsconfig.test.json',
 	'packages/three-compat',
 	'packages/three-compat/tsconfig.test.json',
+	'packages/water',
+	'packages/water/tsconfig.test.json',
+	'packages/water/tsconfig.page.json',
 	'packages/cli',
 	'tests/pages',
 	'tests/fixtures/project',
@@ -110,14 +121,45 @@ export async function checkAll(
 	return results;
 }
 
+/** Prints a project's result, with its errors when it failed. */
+function report(result: Checked): void {
+	console.log(
+		`${result.passed ? 'PASS' : 'FAIL'}  ${result.project} (${result.seconds.toFixed(1)} s)`,
+	);
+	if (!result.passed) process.stdout.write(result.output);
+}
+
+/**
+ * Checks every project and prints each result. With `shaders`, it first brings the shader modules up
+ * to date, or keeps the ones in place while another checkout's build holds the machine's lock;
+ * against those, a failure may be theirs, so it prints nothing until it has built them and checked
+ * again. Returns the results that it printed.
+ */
+async function main(shaders: boolean): Promise<Checked[]> {
+	const shadersMatch = !shaders || shaderModulesUnlessBusy(ROOT);
+	if (shaders && shadersMatch) console.log('The shader modules match their sources.');
+	const results = await checkAll(PROJECTS, undefined, shadersMatch ? report : undefined);
+	if (shadersMatch) return results;
+	if (results.every((result) => result.passed)) {
+		for (const result of results) report(result);
+		return results;
+	}
+	console.log(
+		'A project failed against the modules in place, so this builds them and checks again.',
+	);
+	ensureShaderModules(ROOT);
+	return checkAll(PROJECTS, undefined, report);
+}
+
 if (import.meta.main) {
 	const started = performance.now();
-	const results = await checkAll(PROJECTS, undefined, (result) => {
-		console.log(
-			`${result.passed ? 'PASS' : 'FAIL'}  ${result.project} (${result.seconds.toFixed(1)} s)`,
-		);
-		if (!result.passed) process.stdout.write(result.output);
-	});
+	let results: Checked[];
+	try {
+		results = await main(process.argv.includes('--shaders'));
+	} catch (e) {
+		console.error(`error: ${(e as Error).message}`);
+		process.exit(1);
+	}
 	const failed = results.filter((result) => !result.passed);
 	const seconds = ((performance.now() - started) / 1000).toFixed(1);
 	if (failed.length > 0) {

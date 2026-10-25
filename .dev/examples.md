@@ -192,6 +192,23 @@ The rules that the reworked demos follow, and why:
   | WebGL2 | 120, 119, 119, 120 fps | 4.5, 5.2, 5.0, 5.0 ms |
 
   The traffic added at most 0.6 ms to the GPU time and no error to the scene's updates.
+- The real lights went to a fixed share of the rows, one row in 7 at 30,000 cars and one in 24 at
+  100,000. The nearest car therefore often had no light (25 October 2026, M3-B6). The search now
+  reads every row of the lanes near the camera. It skips a lane whose line across the way runs
+  farther from the eye than the light's range. The search therefore follows the lanes near the eye,
+  not the count. It runs four times a second. A car that holds a light keeps it 20% past the range.
+  A camera that drifts across the edge therefore cannot blink it on and off. The search compares
+  squared distances and takes one square root per light at the end. That took the measured cost down
+  2.5 to 3 times. At a Mac load near 55, one search took about 0.3 ms at 30,000 rows and 1.1 ms at
+  100,000 rows. The medians were 0.6 and 2.5 ms. The instances demo pays the 100,000-row figure at
+  Ultra, because all of its lanes are in range. Skyway pays 0.25 to 0.5 ms, because its camera sees
+  one or two of its ten streets. A search lands whole in one frame, so the cost is a spike every
+  quarter second. The row count sets it, not the light count.
+  `examples/addons/traffic-lanes/lights.test.ts` compares the search with a full search at 30,000
+  and 100,000 rows. It checks that the nearest car has a light. It also checks the cadence, the
+  kept-range margin and the ordinary range on one car. `real-lights.test.ts` drives the add-on
+  through the option with a recorded scene. It checks that the nearest cars are the lit ones. It
+  also checks that the option off builds no light and lights nobody.
 - The instances demo gained lanes of hover cars on 18 October 2026 (M2-EX43, [D-172](decisions/D-172-neon-harbour-follow-ups.md)). Four lanes cross the sky at 17 to 22 m, on lines 45 to 75 m from the field's center, so the traffic stays a distant layer above the horizon and no car passes near the lens. Each car is a row of a body batch and a tail light batch, which blooms. The sketch writes every row from the time alone, so a held frame draws the same cars. The lanes moved to `traffic.ts` beside the sketch, which stays under 150 lines. Against the old pictures the drawn ones differ in 1.44% to 1.49% of their pixels, against the limit of 0.1%. The references moved in both sets.
 
 ### Frame rates on the Mac
@@ -422,14 +439,46 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. 
 
 The galaxy's sketch time is the loop that turns every star and writes its row. It grows with the count, so Low draws 30,000 stars. No phone or tablet has run the five demos yet.
 
-## The aurora demo (M3-E10, 24 October 2026)
+## The aurora demo (M3-E10, 24 October 2026, widened 25 October)
 
 `aurora: A frozen lake at night` shows the sky-layer hook: the aurora example add-on draws one WGSL function over the core sky, under the moon and the stars, in the camera's view, in scene passes and in reflections.
 
-- The layer lights nothing: the sky's environment map and its diffuse light come from the core sky alone, and the demo adds one dim ambient light in the aurora's color so the ice and the snow read under it. A sketch that a layer must light gives it a light of its own, as this one does.
+- The layer reaches both places that a sky is seen. Its WGSL is built into the shader that fills the sky's environment map, so the ice mirrors the curtains, and the map's own texels give the scene its diffuse light, so the ice and the snow read green from above. The demo needs no ambient light of its own for the aurora, and has none.
+- The aurora drifts, so the demo asks the map to capture it twice a second with `refresh: 0.5`. The map's light follows each capture within a couple of frames, which the demo's slow clouds hide.
 - The layer reads the core sky's cloud coverage and density, so the demo keeps the physical sky's thin clouds: they hide the aurora where they thicken, as they hide the stars.
 - The curtains are flat in the sky and have no parallax. The camera stays at eye height over the ice, so the layer reads as a sky and not as a wall.
 - The image test holds the demo at 1.5 seconds, where the aurora's swell has moved the layer by less than a step.
+
+## The screens add-on (M3-B3, 24 October 2026)
+
+`examples/addons/screens/` draws displays in the world on `OffscreenCanvas` objects. A screen holds
+one canvas-backed texture, reads it at its own refresh rate, and uploads only the rectangles that
+changed. Its LCD material draws the panel's structure by distance: red, green and blue bars in each
+texel, a drifting scan band, dark gaps between the rows, dead texels and a boot glitch. A click on
+the plane maps back to the canvas's own coordinates. The design and its measured cost are in
+[D-253](decisions/D-253-in-world-screens.md).
+
+- The `canvas-screen` demo draws three wall panels at 20, 12 and 8 Hz, and a console panel close to
+  the camera whose texels cover several pixels, so its sub-pixels, scan band and dead texels show.
+  A click turns a panel down or up, with a boot glitch on the way on. Its first picture is painted
+  before the texture reads the canvas, so a held frame shows it.
+- The picking demo's wall plan is now a screen from the add-on. A click's point on the canvas comes
+  from the add-on's mapping of the hit's texture coordinates, and the plan uploads only the two
+  rectangles that a click changes: its new square and the square it drops.
+- The showroom demo, `coat-and-sheen`, has a tablet beside the plinth from the add-on. A tap cycles
+  its pages, and the new page uploads as one change. The panel shows its sub-pixels when the camera
+  comes close.
+- Skyway's hero car draws its speed and altitude panels, and a navigation panel between them, from
+  the add-on, in `examples/showcase/skyway/cockpit.ts`. The deck panels refresh at 12 Hz and the map
+  at 8 Hz, and each uploads only the rectangles of its canvas that its reading changed.
+- The security camera's monitor keeps its own small LCD look in `monitor.ts`, because its picture
+  comes from a render pass rather than a canvas. Its look could move onto the add-on's material if
+  the add-on took any texture, and that is a later change.
+- Against the old pictures, the Mac's GPU drew 4.063% to 4.104% of the pixels differently for
+  `demo-canvas-screen`, 0.222% to 0.410% for `demo-picking` and 0.332% to 0.354% for
+  `demo-coat-and-sheen`. SwiftShader drew 4.092% to 4.137%, 0.215% to 0.415% and 0.325% to 0.351%.
+  The limit is 0.1%, and the two sets moved together, so no `Mac-References:` trailer applies. The
+  figures and the commands to redraw the pictures are in [Image tests](image-tests.md#references).
 
 ## The automatic exposure demo (M2-EX31, 11 October 2026)
 
@@ -500,6 +549,28 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 - **The look follows the light, not the nearest mood:** a scene's own look, such as Creek's fireflies, mist, leaf tint and caustics, blends between the moods on either side of the hour (`moodMix` in `examples/lib/stage.ts`). Through the dark hours, while the sun is more than 18 degrees under the horizon, it holds Night. Only while the sky has light does it move from each mood to the next. The dawn's look comes in through the morning twilight and is whole at Dawn's hour. Creek once took the look of the nearest fixed mood. At 02:36, halfway between Night and Dawn, the dawn's warm caustics then came on at once, and the stream changed color in the middle of the night (owner's recording, 20 October 2026). The stage's own haze factor blends the same way. `examples/lib/stage.test.ts` checks that no mood's share steps between hours a minute apart.
 - **The showcase scenes are Creek, Night town and Skyway.** A forest at dawn, a night town under the moon, and a city from the air.
 
+### Night town's windows (M3-B2, 25 October 2026)
+
+Night town now draws its window panes through the facades example add-on
+(`examples/addons/facades/`), as Skyway does, in the add-on's pane form
+([D-254](decisions/D-254-interior-mapped-facades.md)).
+
+- Each pane looks into a room behind its glass: a lamp's pool, a floor, a ceiling, a block of
+  furniture, blinds and a curtain in some. The eye's ray meets the room's box, so the room moves in
+  parallax as the camera passes, and the view from one side of a window shows more of it than the
+  view from in front.
+- The panes keep their own row values: whether the pane is lit, how warm its light is, the phase of
+  its flicker and whether a screen lights it. The hour still dims every pane through that value.
+- The town lights up as the scene starts, from the square outward, on the add-on's power-on wave.
+  Each pane's light rises on a damped spring once the wave reaches it.
+- The panes draw the add-on's timber finish for their frames, so the wall finish that the pages
+  carry and the pane's frame agree. The house walls keep the scene's own timber texture.
+- The picture changed, so the `demo-night-town` image test needs new references in both sets. The
+  candidate differs from the old reference in 0.575% of its pixels.
+- The add-on's own cost, per GPU path and preset, is owed. The cost test needs a quiet computer,
+  and the fleet kept the Mac above the quiet threshold through the night it was built. The add-on's
+  README gives the command.
+
 ### Skyway (M3-C1, 22 October 2026)
 
 Skyway is the third showcase scene. It flies a hover car through a rainy night city. The scene
@@ -530,10 +601,15 @@ and a hero car with two screens.
   hull carried a zero-area sliver to stretch the sphere.
 - **The windows are a world-space grid.** One window is the same size on every tower and on every
   face. It never stretches with a building's scale. A lit window shows a small room in parallax:
-  a lamp panel, a floor, a ceiling and a block of furniture. Where a window covers less than a
-  pixel, the face fades to its average light. The grid then never shimmers.
+  a lamp's pool, a floor, a ceiling, a block of furniture, blinds that some rooms draw down and a
+  curtain in some. Where a window covers less than a pixel, the face fades to its average light.
+  The grid then never shimmers. The facades example add-on owns this
+  (`examples/addons/facades/`), and Skyway uses it ([D-254](decisions/D-254-interior-mapped-facades.md)).
+  The wall pages and the window codes are made in code when the scene starts, so the add-on ships
+  no image. Street level is a band of lit shop fronts, also from the add-on.
 - **The power-on wave** lights the city from the middle out over the first second, from the frame
-  clock. A held frame therefore always shows the same city.
+  clock. Each window waits for the wave to reach it and then rises on a damped spring, which
+  overshoots slightly and settles. A held frame therefore always shows the same city.
 - **The lights.** The city holds 180 point lights and three spot lights. Its windows, signs and the
   cars' lights are emissive surfaces. The engine lists at most 1,024 lights in a frame. The plan's
   1,000 to 4,000 real lights through the fog therefore waits for the many-lights work (M3-F3). The
@@ -703,9 +779,9 @@ Creek is a small stream in a grassy valley (M2-EX8). The first phase, on 10 Octo
 | Under the water (`underwater.ts`) | While the camera is under the surface, a custom effect makes the view read as seen through flowing water. The current's wobble runs downstream across the picture, caustics play over the bed, and the water swallows the light with distance into its own green. The water's surface draws both faces: from below, the world above shows through a window overhead, and past the window's edge the surface turns some light back down as a faint mirror. Each pixel decides for itself, from where its line of sight leaves the near plane, so a camera half under the water splits the picture at the waterline. The effect is added while the camera is within 0.6 m above the water, since a new effect takes a few frames to start drawing. The Auto route dips under the water for about six seconds as it glides down the stream, through shots that pass the surface on purpose (`through`). `route.test.ts` keeps the dip clear of the bed and the stones (owner, 20 October 2026). |
 | Moods (`examples/lib/stage.ts`) | Afternoon, golden hour, blue hour and night from `timeOfDay`, lit by the sky's environment, and a studio lit by the built-in room. A mood can thicken the fog into a haze: golden hour and blue hour do |
 
-**The water code is temporary.** M3-F5's water add-on, `@null3d/water`, takes the Creek's river with its view from under the water. Once it exists, the Creek draws its water through the add-on, and `water.ts` and `underwater.ts` are deleted, so the scene keeps no water code of its own (owner, 20 October 2026, [D-173](decisions/D-173-addon-hooks.md)).
+**The water is the add-on's.** M3-F5's water add-on, `@null3d/water`, took the Creek's river with its view from under the water. The Creek draws its water through the add-on, and its `water.ts` and `underwater.ts` are gone, so the scene keeps no water code of its own. The add-on takes the scene's analytic middle line and half width as its river shape, and its stone foam map (owner, 20 October 2026, [D-173](decisions/D-173-addon-hooks.md); [D-257](decisions/D-257-water-addon.md)).
 
-**The plant code and models are temporary.** The vegetation add-on of M3-V4 to M3-V9 grows Creek's trees, ferns, hostas, shrubs, flowers and grass at first use. It places them over the whole valley by ecological rules and moves them all in one wind field. Once it exists, Creek draws its plants through it (M3-V11). Its Blender plant models, their script and their files of about 3.1 MB are deleted. So is the scene's own plant code: `grass.ts`, `models.ts` and the plant parts of `flora.ts`. The floating leaves and the fireflies stay (owner, 24 October 2026, [D-241](decisions/D-241-vegetation-foundation.md)).
+**The plant code and models are temporary.** The vegetation add-on of M3-V4 to M3-V9 grows Creek's trees, ferns, hostas, shrubs, flowers and grass at first use. It places them over the whole valley by ecological rules and moves them all in one wind field, which the wind add-on provides. Once it exists, Creek draws its plants through it (M3-V11). Its Blender plant models, their script and their files of about 3.1 MB are deleted. So is the scene's own plant code: `grass.ts`, `models.ts` and the plant parts of `flora.ts`. The floating leaves and the fireflies stay (owner, 24 October 2026, [D-241](decisions/D-241-vegetation-foundation.md)).
 
 The choices, and why:
 

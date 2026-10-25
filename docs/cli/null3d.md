@@ -59,6 +59,7 @@ bunx @null3d/cli shot --out shot.png --time 1.5 --size 1280x720 --gpu webgl2
 | `--out <file.png>` | The image to write. The JSON file beside it takes its name, such as `shot.json` | `shot.png` |
 | `--time <seconds>` | The sketch time of the frame, from 0 to 600 | The `hold` option of `createEngine`, or 0 |
 | `--script <file>` | A [timed script](#timed-scripts) that drives the page. Each of its shot steps writes its own image, such as `shot-start.png` | No script: one frame at `--time` |
+| `--replay <file>` | A [recording](#replay-a-recording) that the page replays, and the last frame draws | No recording: a hold at `--time` |
 | `--size <width>x<height>` | The browser window's size in CSS pixels. Each CSS pixel is one pixel of the image | `1280x720` |
 | `--gpu <tier>` | Forces a GPU tier: `webgpu`, `compat` or `webgl2` | The engine picks the tier |
 | `--page <path>` | The page to open, from the dev server's root, with any query of its own | `/` |
@@ -106,6 +107,18 @@ When no frame is drawn, `shot` says why, saves the JSON file and exits with 1. I
 - The project has no HTML file at the `--page` path. Vite would answer that address with your main page.
 
 A page must start the engine as it loads. A page that waits for a click never starts the hold, so `shot` gives up after `--timeout` seconds.
+
+## Replay a recording
+
+A page that opens with `?record` records each frame's step and the input that the sketch read, from the page's first frame, and shows a **Save recording** button. Its recording replays on another machine with `?replay=<file>`, or from the command line with a file anywhere on the computer:
+
+```sh
+bunx @null3d/cli shot --replay bug.n3dr --out bug.png
+```
+
+The command serves the file to the page, runs the recording's frames in order with their recorded steps and input, and draws the last one. It reads no live input, and `--time` and `--script` cannot be given with it: the recording sets every frame's time. The summary names the frames, the final sketch time and the sketch that recorded them.
+
+A recording stops at 600 seconds of sketch time, and its file says so. A sketch that reads the quality preset or the device's capabilities can draw differently on a replay, because the replay picks this computer's own preset. [Testing your sketch](../guides/testing.md#record-a-session-that-went-wrong) gives the whole workflow.
 
 ## Timed scripts
 
@@ -360,10 +373,11 @@ The shader and size gates build the add-on with the Vite and the null3D plugin t
 | --- | --- | --- |
 | `--page <path>` | The page to open, from the project's root, such as `/demo.html` | The first test's page in `null3d.json` |
 | `--skip-browser` | Runs no gate that opens a browser | The page gates run |
+| `--skip-cost` | Leaves out the cost gate alone, for a machine whose load would show in the figures. The page and allocation gates still run | The cost gate runs |
 
 Each page gate draws as `bench` does: with Chrome on the computer's GPU, or with Playwright's Chromium on SwiftShader when the CI variable is set. The cost gate measures the production build on each quality preset. It prints the GPU time per frame where the device times it, and the CPU time otherwise.
 
-The allocation gate samples the heaps of the page's sketch and render workers. It names each function by the source file that the build's map gives it. It prints the bytes per frame that the add-on's own code allocated on each preset, and the page's own figure beside it. A source file counts as the add-on's own when the file is in its folder, or in its copy under `node_modules`. The gate fails when it cannot measure the page, such as on a page that runs no engine worker. It also fails when the page ran none of the add-on's own code, because then it measured other code. It never fails on a figure. On the software GPU, the page's animation frames outrun the engine's drawn frames, so the figure there is lower than on a real GPU.
+The allocation gate samples the heaps of the page's sketch and render workers. It names each function by the source file that the build's map gives it. It prints the bytes per frame that the add-on's own code allocated on each preset, and the page's own figure beside it. A source file counts as the add-on's own when the file is in its folder, or in its copy under `node_modules`. The gate fails when it cannot measure the page, such as on a page that runs no engine worker. It also fails when the page ran none of the add-on's own code, because then it measured other code. It never fails on a figure. The gate holds at most 250,000 sampled objects for each worker in each sample, and samples a page that allocates faster less finely. On the software GPU, the page's animation frames outrun the engine's drawn frames, so the figure there is lower than on a real GPU.
 
 ## assets
 

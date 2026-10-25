@@ -35,15 +35,25 @@ describe('parseSwitches', () => {
 			queue: undefined,
 			jobs: undefined,
 			join: true,
+			grading: 'display',
 			memoryMiB: undefined,
 			preset: undefined,
 			hold: undefined,
+			replay: undefined,
+			record: false,
 			still: true,
 			bench: false,
 			stats: undefined,
 			glTiming: undefined,
 			replayDelay: undefined,
 		});
+	});
+
+	it('picks where the grading table takes its input with ?grading=', () => {
+		expect(parseSwitches('?grading=hdr').grading).toBe('hdr');
+		expect(parseSwitches('?grading=display').grading).toBe('display');
+		for (const bad of ['HDR', 'light', '', 'hdrx'])
+			expect(parseSwitches(`?grading=${bad}`).grading).toBe('display');
 	});
 
 	it('sizes the software occlusion buffer with ?occlusion-buffer=, and leaves it to the core otherwise', () => {
@@ -108,6 +118,17 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?half=on').half).toBe(true);
 		expect(parseSwitches('?half=off').half).toBe(false);
 		expect(parseSwitches('?half=yes').half).toBeUndefined();
+	});
+
+	it('reads the recording that ?replay= names, and ?record with or without a value', () => {
+		expect(parseSwitches('?replay=/bug.n3dr').replay).toBe('/bug.n3dr');
+		expect(parseSwitches('?replay=https://example.com/bug.n3dr').replay).toBe(
+			'https://example.com/bug.n3dr',
+		);
+		expect(parseSwitches('').replay).toBeUndefined();
+		expect(parseSwitches('?record').record).toBe(true);
+		expect(parseSwitches('?record=on').record).toBe(true);
+		expect(parseSwitches('').record).toBe(false);
 	});
 
 	it('reads ?bench with or without a value', () => {

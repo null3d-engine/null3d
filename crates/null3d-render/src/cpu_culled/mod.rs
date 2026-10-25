@@ -343,8 +343,10 @@ mod ids {
     pub const PICK_BUFFERS: u32 = BLANK_LAST + 1;
     /// The bind group of GPU picking's resolve pass.
     pub const PICK_GROUP: u32 = PICK_BUFFERS + crate::pick::RING as u32;
+    /// The buffers of the sky maps' light captures, one for each read that may wait for the GPU.
+    pub const SKY_LIGHT_BUFFERS: u32 = PICK_GROUP + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = PICK_GROUP + 1;
+    pub const TARGETS: u32 = SKY_LIGHT_BUFFERS + crate::sky_maps::LIGHT_RING as u32;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The uniform buffer of the compute passes' blocks. WebGL2 runs no compute pass, so nothing
@@ -537,6 +539,20 @@ pub const fn max_sources(max_texture_size: u32) -> u32 {
 /// Bits of a source in an index list entry: those below the cell index.
 pub const MAX_SOURCE_BITS: u32 = CELL_SHIFT;
 
+/// The layouts a frame builds besides the scene's, which its passes draw.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct LayoutWanted {
+    /// The outlined objects, which the outline view draws into the mask.
+    outlines: bool,
+    /// The objects whose material has a scatter radius, which the subsurface view draws.
+    scatters: bool,
+    /// The objects whose material keeps its display color, which the tone view draws into the
+    /// mask.
+    tones: bool,
+    /// True when the scene's draws get their motion pipelines.
+    motion: bool,
+}
+
 /// Records one draw list per frame for the WebGL2 path.
 pub struct CpuCulledRenderer {
     config: CpuCulledConfig,
@@ -595,6 +611,12 @@ pub struct CpuCulledRenderer {
     /// The subsurface view's culling output and draws.
     skin_culling: Culling,
     skin_draws: Opaque,
+    /// The tone view's layout, culling output and draws.
+    tone: Layout,
+    tone_culling: Culling,
+    tone_draws: Opaque,
+    /// True when the layouts were built while some material keeps its display color.
+    layouts_toned: bool,
     /// True when the cascades' uniform block holds cascades, which receivers then read.
     cascades_held: bool,
     lines: LinesPass,
@@ -678,6 +700,7 @@ impl CpuCulledRenderer {
             config.cascade_depth,
         );
         settings.share_map_units(sizes::SHARED_MAP_UNITS as usize);
+        settings.place_sky_light_buffers(ids::SKY_LIGHT_BUFFERS);
         Self {
             config,
             settings,
@@ -829,6 +852,10 @@ impl CpuCulledRenderer {
             outline_draws: Opaque::new(ViewId::OUTLINE, config.multi_draw),
             skin_culling: Culling::new(ViewId::SUBSURFACE),
             skin_draws: Opaque::new(ViewId::SUBSURFACE, config.multi_draw),
+            tone: Layout::new(Drawn::Tone),
+            tone_culling: Culling::new(ViewId::TONE),
+            tone_draws: Opaque::new(ViewId::TONE, config.multi_draw),
+            layouts_toned: false,
             cascades_held: false,
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
@@ -934,6 +961,7 @@ impl CpuCulledRenderer {
             (_, Some(_)) => &self.tile_culling,
             _ if view == ViewId::OUTLINE => &self.outline_culling,
             _ if view == ViewId::SUBSURFACE => &self.skin_culling,
+            _ if view == ViewId::TONE => &self.tone_culling,
             _ => &self.culling,
         }
     }
@@ -941,6 +969,12 @@ impl CpuCulledRenderer {
     /// The outline views that the frame culls: one while outlines are on.
     fn outline_views(&self) -> usize {
         usize::from(self.layouts_outlined)
+    }
+
+    /// The tone views that the frame culls: one while some material keeps its display color and
+    /// the path draw HDR color.
+    fn tone_views(&self) -> usize {
+        usize::from(self.layouts_toned && !self.tone.buckets.is_empty())
     }
 
     /// The subsurface views that the frame culls: one while the subsurface blur has taps and some
@@ -1043,18 +1077,22 @@ impl CpuCulledRenderer {
     /// Assigns every source to a data texture and a bucket, then makes room for the new layout:
     /// the clusters, the culling runs and every view's output, and the upload arenas. While
     /// `shadows` has a pass on, the casters' layout holds the casters, and the receivers read the
-    /// shadow maps. With `outlines`, the outlined layout holds the outlined objects, and with
-    /// `scatters` the subsurface layout holds the objects whose material has a scatter radius.
-    /// With `motion`, the scene's draws get their motion pipelines.
+    /// shadow maps. `wanted` says which of the other layouts a pass draws: the outlined objects,
+    /// the objects whose material has a scatter radius, and the objects whose material keeps its
+    /// display color; and whether the scene's draws get their motion pipelines.
     fn rebuild_layout(
         &mut self,
         input: &FrameInput<'_>,
         shadows: CasterPasses,
-        outlines: bool,
-        scatters: bool,
-        motion: bool,
+        wanted: LayoutWanted,
         picking: bool,
     ) -> Result<(), RecordError> {
+        let LayoutWanted {
+            outlines,
+            scatters,
+            tones,
+            motion,
+        } = wanted;
         self.settings
             .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
         let rows = input.scene.capacity().saturating_add(1);
@@ -1137,6 +1175,28 @@ impl CpuCulledRenderer {
             self.outlined.clear();
         }
         self.layouts_outlined = outlines;
+        if tones {
+            let targets = self.with_draw_index(self.graph.outline_targets());
+            let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
+            self.tone.rebuild(
+                settings,
+                pipelines,
+                skins,
+                targets,
+                input,
+                limit,
+                multi_draw,
+                shadows,
+                Prepass::Off,
+                None,
+                &mut self.key_counts,
+                pick_targets,
+                false,
+            )?;
+        } else {
+            self.tone.clear();
+        }
+        self.layouts_toned = tones;
         if scatters {
             let targets = self.with_draw_index(self.graph.skin_targets());
             let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
@@ -1253,6 +1313,7 @@ impl CpuCulledRenderer {
         let (scene_buckets, casters) = (&self.layout.scene_buckets, &self.casters.scene_buckets);
         let outlined = &self.outlined.scene_buckets;
         let scattering = &self.scattering.scene_buckets;
+        let toned = &self.tone.scene_buckets;
         let in_layout = |buckets: &[u32], slot: usize| {
             buckets.get(slot).is_some_and(|&bucket| bucket != NO_BUCKET)
         };
@@ -1261,6 +1322,7 @@ impl CpuCulledRenderer {
                 || in_layout(casters, slot)
                 || in_layout(outlined, slot)
                 || in_layout(scattering, slot)
+                || in_layout(toned, slot)
         };
         self.cells
             .classify(input.scene, &culled)
@@ -1293,6 +1355,9 @@ impl CpuCulledRenderer {
         self.skin_culling
             .reserve(self.scattering.room, self.skin_views())
             .map_err(out_of_memory)?;
+        self.tone_culling
+            .reserve(self.tone.room, self.tone_views())
+            .map_err(out_of_memory)?;
         // Room for every static batch's cluster order, so a batch coming to rest later uploads
         // its clusters without growing the arena.
         let bound = self.upload_bound_without_clusters() + self.layout.cluster_rows as usize * 4;
@@ -1313,12 +1378,14 @@ impl CpuCulledRenderer {
         let tiles = self.tile_count();
         let outlines = self.outline_views();
         let skins = self.skin_views();
+        let tones = self.tone_views();
         for (culling, layout, count) in [
             (&mut self.culling, &self.layout, views),
             (&mut self.cascade_culling, &self.casters, cascades),
             (&mut self.tile_culling, &self.casters, tiles),
             (&mut self.outline_culling, &self.outlined, outlines),
             (&mut self.skin_culling, &self.scattering, skins),
+            (&mut self.tone_culling, &self.tone, tones),
         ] {
             if culling.views() < count {
                 let room = layout.room;
@@ -1390,7 +1457,7 @@ impl CpuCulledRenderer {
         let views = self.settings.views().len();
         let tiles = (self.settings.tile_settings().tiles as usize).min(MAX_TILES);
         let cascades = (MAX_CASCADES + tiles) * per_view(&self.casters);
-        let outline = per_view(&self.outlined) + per_view(&self.scattering);
+        let outline = per_view(&self.outlined) + per_view(&self.scattering) + per_view(&self.tone);
         let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
         meshes
             + materials
@@ -1477,7 +1544,7 @@ impl CpuCulledRenderer {
         &mut self,
         list: &mut DrawList,
         input: &FrameInput<'_>,
-        first_new: [usize; 5],
+        first_new: [usize; 6],
         rebuilt: bool,
     ) -> Result<bool, RecordError> {
         let limit = self.config.max_texture_size;
@@ -1495,12 +1562,14 @@ impl CpuCulledRenderer {
         let tiles = self.tile_count();
         let outlines = self.outline_views();
         let skin_views = self.skin_views();
+        let tone_views = self.tone_views();
         let [
             first_new,
             first_new_cascade,
             first_new_tile,
             first_new_outline,
             first_new_skin,
+            first_new_tone,
         ] = first_new;
         for (culling, draws, layout, count, first_new) in [
             (
@@ -1537,6 +1606,13 @@ impl CpuCulledRenderer {
                 &self.scattering,
                 skin_views,
                 first_new_skin,
+            ),
+            (
+                &mut self.tone_culling,
+                &mut self.tone_draws,
+                &self.tone,
+                tone_views,
+                first_new_tone,
             ),
         ] {
             let first = if rebuilt { 0 } else { first_new };
@@ -1733,6 +1809,8 @@ impl CpuCulledRenderer {
         self.graph.set_sharpen(self.settings.sharpen());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
+        self.graph
+            .set_tone_mask(!self.tone.buckets.is_empty() && self.graph.hdr_color());
         self.graph.set_still_enabled(self.settings.still_enabled());
         self.graph.set_still(self.settings.still());
         self.graph.set_subsurface(
@@ -1901,6 +1979,12 @@ impl CpuCulledRenderer {
         if first_new_outline < outlines {
             Opaque::bind_frame(list, ViewId::OUTLINE, None)?;
         }
+        let tones = self.tone_views();
+        let first_new_tone = self.tone_draws.views();
+        self.tone_draws.add_views(list, tones)?;
+        if first_new_tone < tones {
+            Opaque::bind_frame(list, ViewId::TONE, None)?;
+        }
         // The subsurface view lights its objects as the camera's view does, so its frame groups
         // bind the camera's textures, again whenever the camera's do.
         let skin_views = self.skin_views();
@@ -2025,7 +2109,8 @@ impl CpuCulledRenderer {
             || first_new_cascade < cascades
             || first_new_tile < tiles
             || first_new_outline < outlines
-            || first_new_skin < skin_views;
+            || first_new_skin < skin_views
+            || first_new_tone < tones;
         let new_texture = if rebuilt || new_views {
             let first_new = [
                 first_new,
@@ -2033,6 +2118,7 @@ impl CpuCulledRenderer {
                 first_new_tile,
                 first_new_outline,
                 first_new_skin,
+                first_new_tone,
             ];
             self.size_resources(list, input, first_new, rebuilt)?
         } else {
@@ -2158,6 +2244,18 @@ impl CpuCulledRenderer {
                     streamed,
                 },
             )?;
+            upload_views(
+                list,
+                arena,
+                (&mut self.tone_culling, &mut self.tone_draws, &self.tone),
+                None,
+                tones,
+                UploadFrame {
+                    frame,
+                    hold_uniforms,
+                    streamed,
+                },
+            )?;
             if let Some(shadow) = &self.shadow {
                 shadows::upload(list, arena, ids::SHADOWS, shadow)?;
                 upload_views(
@@ -2191,8 +2289,9 @@ impl CpuCulledRenderer {
         let (tile_culling, tile_draws) = (&self.tile_culling, &self.tile_draws);
         let (outline_culling, outline_draws) = (&self.outline_culling, &self.outline_draws);
         let (skin_culling, skin_draws) = (&self.skin_culling, &self.skin_draws);
+        let (tone_culling, tone_draws) = (&self.tone_culling, &self.tone_draws);
         let (layout, casters, meshes) = (&self.layout, &self.casters, &self.meshes);
-        let (outlined, scattering) = (&self.outlined, &self.scattering);
+        let (outlined, scattering, toned) = (&self.outlined, &self.scattering, &self.tone);
         let (transparent, background) = (&self.transparent, &self.background);
         let (decals, decal_records_at) = (&self.decals, self.decal_records_at);
         let (redraws, redraw_records_at) = (&self.redraws, self.redraw_records_at);
@@ -2288,20 +2387,42 @@ impl CpuCulledRenderer {
                         list, arena, view, starts, casters, meshes, shading, &never, 0,
                     )
                 }
-                Role::OutlineMask if outline_culling.frame(ViewId::OUTLINE).is_some() => {
-                    let view = ViewId::OUTLINE;
-                    let starts = outline_culling.culled(frame, view).bucket_starts();
-                    outline_draws.record(
-                        list,
-                        arena,
-                        view,
-                        starts,
-                        outlined,
-                        meshes,
-                        Shading::Depth,
-                        &never,
-                        0,
-                    )
+                Role::OutlineMask
+                    if outline_culling.frame(ViewId::OUTLINE).is_some()
+                        || tone_culling.frame(ViewId::TONE).is_some() =>
+                {
+                    if outline_culling.frame(ViewId::OUTLINE).is_some() {
+                        let view = ViewId::OUTLINE;
+                        let starts = outline_culling.culled(frame, view).bucket_starts();
+                        outline_draws.record(
+                            list,
+                            arena,
+                            view,
+                            starts,
+                            outlined,
+                            meshes,
+                            Shading::Depth,
+                            &never,
+                            0,
+                        )?;
+                    }
+                    // The tone view shares the mask pass, into the mask's blue channel.
+                    if tone_culling.frame(ViewId::TONE).is_some() {
+                        let view = ViewId::TONE;
+                        let starts = tone_culling.culled(frame, view).bucket_starts();
+                        tone_draws.record(
+                            list,
+                            arena,
+                            view,
+                            starts,
+                            toned,
+                            meshes,
+                            Shading::Depth,
+                            &never,
+                            0,
+                        )?;
+                    }
+                    Ok(())
                 }
                 Role::SkinLight if skin_culling.frame(ViewId::SUBSURFACE).is_some() => {
                     let view = ViewId::SUBSURFACE;
@@ -2602,7 +2723,7 @@ impl CpuCulledRenderer {
 impl FrameBuilder for CpuCulledRenderer {
     fn account(&self, register: &mut null3d_core::memory::MemoryRegister) {
         let mut layouts = null3d_core::memory::MemoryUse::default();
-        for layout in [&self.layout, &self.outlined, &self.scattering] {
+        for layout in [&self.layout, &self.outlined, &self.scattering, &self.tone] {
             layout.account(&mut layouts);
         }
         register.add(null3d_core::memory::area::LAYOUTS, layouts);
@@ -2638,7 +2759,8 @@ impl FrameBuilder for CpuCulledRenderer {
         self.cascade_culling.reserve_sources(sources)?;
         self.tile_culling.reserve_sources(sources)?;
         self.outline_culling.reserve_sources(sources)?;
-        self.skin_culling.reserve_sources(sources)
+        self.skin_culling.reserve_sources(sources)?;
+        self.tone_culling.reserve_sources(sources)
     }
 
     fn cull(&mut self, input: &FrameInput<'_>) -> Result<(), RecordError> {
@@ -2669,7 +2791,7 @@ impl FrameBuilder for CpuCulledRenderer {
             settings.meshes(),
             &sways,
             self.shadow.and_then(|shadow| shadow.hero),
-        );
+        )?;
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
         // casters draw into the passes of each.
         let cascades = self.settings.cascade_depth().targets();
@@ -2683,6 +2805,9 @@ impl FrameBuilder for CpuCulledRenderer {
         };
         let outlines = self.settings.outline().is_some();
         let scatters = self.settings.holds_scattering();
+        // The tone mask only matters on the path whose final pass applies the tone curve. The
+        // 8-bit path applies the flag in each material's shader.
+        let tones = self.settings.any_keeps_display_color() && self.graph.hdr_color();
         let motion = self.settings.motion_wanted();
         // Ambient occlusion and the sun's contact shadows read the depth prepass's depth, so
         // turning them on or off can switch the prepass, whose pipelines the layout holds.
@@ -2719,21 +2844,28 @@ impl FrameBuilder for CpuCulledRenderer {
             .settings
             .update_probe_shading(&mut self.pipelines, input.pipelines_built);
         let particles_changed = self.settings.particles_mut().take_changed();
+        let wanted = LayoutWanted {
+            outlines,
+            scatters,
+            tones,
+            motion,
+        };
         if particles_changed
             || input.structure_changed
             || !self.layout.built
             || area_switched
             || probe_switched
             || shadows != self.layouts_shadowed
-            || outlines != self.layouts_outlined
-            || scatters != self.layouts_scattered
-            || motion != self.layouts_moving
+            || wanted.outlines != self.layouts_outlined
+            || wanted.scatters != self.layouts_scattered
+            || wanted.tones != self.layouts_toned
+            || wanted.motion != self.layouts_moving
             || prepass_changed
             || self.redraws_wanted() != self.redraws_built
             || picking != self.layouts_picked
             || skinned_appear
         {
-            self.rebuild_layout(input, shadows, outlines, scatters, motion, picking)?;
+            self.rebuild_layout(input, shadows, wanted, picking)?;
         }
         self.add_culled_views()?;
         self.cells.update(input);
@@ -2858,6 +2990,21 @@ impl FrameBuilder for CpuCulledRenderer {
                 None,
             )
             .map_err(|_| out_of_memory(&self.scattering))?;
+        // The tone view sees what the camera's view sees, while some object's material keeps its
+        // display color.
+        let tones = !self.tone.buckets.is_empty();
+        self.tone_culling
+            .cull(
+                input,
+                &self.tone,
+                &mut self.clusters,
+                cells,
+                &|_| camera.filter(|_| tones),
+                &|_| camera_rule,
+                None,
+                None,
+            )
+            .map_err(|_| out_of_memory(&self.tone))?;
         // The staged levels' watches read the levels that the camera's view picked.
         if self.settings.watches_stages() {
             let cull = self.culling.culled_in(input.frame, ViewId::CAMERA);
@@ -2978,6 +3125,8 @@ impl FrameBuilder for CpuCulledRenderer {
         self.outline_draws.forget_gpu();
         self.skin_culling.forget_gpu();
         self.skin_draws.forget_gpu();
+        self.tone_culling.forget_gpu();
+        self.tone_draws.forget_gpu();
         self.pick.reset_gpu();
         self.tiles.forget_gpu();
         self.cascades_held = false;

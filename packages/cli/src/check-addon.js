@@ -70,8 +70,12 @@ const INTERFACE_CALL =
 /** The call that an engine add-on makes to pin the engine version. */
 const VERSION_CALL = /checkAddonVersion\(\s*['"]([^'"]+)['"]\s*,\s*VERSION\s*\)/;
 
-/** The budget of each column for a file that an add-on loads after the start (D-14). */
-export const ADDON_FILE_BUDGET = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 17 * 1024 };
+/**
+ * The budget of each column for a file that an add-on loads after the start (D-14). It follows the
+ * engine's own figure for the same kind of file, which rose to 18 KB on 25 October 2026 for the glTF
+ * worker's texture-transform pointers; an add-on may not take more room than the engine allows it.
+ */
+export const ADDON_FILE_BUDGET = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 18 * 1024 };
 
 /**
  * The budget of each column for a built file that holds compiled shader builds (D-14, D-215). The
@@ -80,7 +84,7 @@ export const ADDON_FILE_BUDGET = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 17 *
  * budget above. The engine's size report keeps the same figures for its own first-use shader files,
  * and a test keeps these equal to that report's.
  */
-export const ADDON_SHADER_BUDGET = { raw: 1792 * 1024, gzip: 320 * 1024, brotli: 52 * 1024 };
+export const ADDON_SHADER_BUDGET = { raw: 1792 * 1024, gzip: 320 * 1024, brotli: 56 * 1024 };
 
 /**
  * A built file that holds compiled shader builds: the plugin names each set after its kind, its
@@ -99,6 +103,7 @@ const SHOWN_LINES = 12;
 const OPTIONS = /** @type {const} */ ({
 	page: { type: 'string' },
 	'skip-browser': { type: 'boolean', default: false },
+	'skip-cost': { type: 'boolean', default: false },
 	help: { type: 'boolean', short: 'h', default: false },
 });
 
@@ -122,6 +127,8 @@ Options:
   --page <path>       The page to open, from the project's root, such as /demo.html, instead of
                       the config's
   --skip-browser      Run no gate that opens a browser
+  --skip-cost         Leave out the cost gate alone, for a machine whose load would show in its
+                      figures; the page and allocation gates still run
   --help              Print this help`;
 
 /**
@@ -141,6 +148,7 @@ export function parseCheckAddonArgs(args) {
 		folder: positionals[0] ?? process.cwd(),
 		page: values.page,
 		skipBrowser: values['skip-browser'],
+		skipCost: values['skip-cost'],
 		help: values.help,
 	};
 }
@@ -803,6 +811,27 @@ const SAMPLED_WORKERS = ['sketch-worker', 'render-worker'];
 /** Bytes between the heap profiler's samples, small so that a few bytes per frame still show. */
 const SAMPLING_INTERVAL = 128;
 
+/**
+ * The most objects that one worker's profile may hold in one sample. The profiler records one
+ * sample for each stretch of bytes that a page allocates, so a page that allocates fast would
+ * otherwise grow a profile until the memory runs out. The gate learns the page's rate first, then
+ * widens the interval to hold this count, which keeps one sample at about 20 MB.
+ */
+export const MAX_ALLOCATION_SAMPLES = 250_000;
+
+/**
+ * The coarsest interval that the gate sets. At this interval and the count above, a sample holds
+ * any page's allocations up to a few terabytes in its window, so the count holds for every page.
+ */
+const COARSEST_SAMPLING_INTERVAL = 16 * 1024 * 1024;
+
+/**
+ * Milliseconds of the page's frames that the gate samples to learn its allocation rate, and the
+ * bytes between those samples, coarse so that the rate's own profile stays small.
+ */
+const RATE_SAMPLE_MS = 250;
+const RATE_SAMPLING_INTERVAL = 8192;
+
 /** Seconds that a page warms up before a sample, so the browser optimizes its frame code. */
 const ALLOCATION_WARMUP_SECONDS = 20;
 
@@ -954,6 +983,38 @@ export function ranAddonCode(frames, names, addon) {
 }
 
 /**
+ * The bytes between samples that keep one worker's profile under `MAX_ALLOCATION_SAMPLES`, for a
+ * page that allocates `bytesPerSecond`. A page that allocates slowly takes the finest interval, so
+ * a few bytes per frame still show; a faster page is sampled less finely, and its places are
+ * coarser.
+ *
+ * @param {number} bytesPerSecond
+ * @returns {number}
+ */
+export function samplingIntervalFor(bytesPerSecond) {
+	const wanted = Math.ceil((bytesPerSecond * ALLOCATION_SAMPLE_SECONDS) / MAX_ALLOCATION_SAMPLES);
+	return Math.min(COARSEST_SAMPLING_INTERVAL, Math.max(SAMPLING_INTERVAL, wanted));
+}
+
+/**
+ * The bytes that the page's workers allocate each second, from a short sample at a coarse interval.
+ *
+ * @param {HeapSampler} sampler
+ * @param {() => Promise<number>} frames
+ * @returns {Promise<number>}
+ */
+async function allocationRate(sampler, frames) {
+	await sampler.start(RATE_SAMPLING_INTERVAL);
+	const start = await frames();
+	await sleep(RATE_SAMPLE_MS);
+	const profiles = await sampler.stop();
+	if ((await frames()) - start <= 0) return 0;
+	let bytes = 0;
+	for (const profile of profiles.values()) bytes += totalSize(profile.head);
+	return bytes / (RATE_SAMPLE_MS / 1000);
+}
+
+/**
  * Waits until a page's frame counter reaches `target`, and throws when it stands still for a while,
  * as on a page whose engine failed.
  *
@@ -1024,6 +1085,7 @@ async function sampleAllocation({ devtools, browserPage, url, names, addon }) {
 	const addonRan = [...ran.values()].some((frames) => ranAddonCode(frames, names, addon));
 	const sampler = new HeapSampler(devtools, workers);
 	await sampler.enable();
+	const interval = samplingIntervalFor(await allocationRate(sampler, framesSoFar));
 	/** @type {Map<string, Sample[]>} */
 	const samples = new Map();
 	/** @type {Map<string, number>} */
@@ -1032,7 +1094,7 @@ async function sampleAllocation({ devtools, browserPage, url, names, addon }) {
 	const addonPlaces = new Set();
 	let frames = 0;
 	for (let sample = 0; sample < ALLOCATION_SAMPLES; sample++) {
-		await sampler.start(SAMPLING_INTERVAL);
+		await sampler.start(interval);
 		const startFrames = await framesSoFar();
 		await sleep(ALLOCATION_SAMPLE_SECONDS * 1000);
 		const profiles = await sampler.stop();
@@ -1286,10 +1348,18 @@ export async function run(args) {
 				runner = await startRunner({
 					production: true,
 					sourcemap: true,
+					// The engine's shader builds come from the shared shader set as files, so the page's
+					// build passes none of their bytes through the bundler.
+					linkedShaders: true,
 					browserArgs: [WEBGPU_DEVELOPER_FEATURES, `--remote-debugging-port=${port}`],
 				});
 				print(await strictPolicyGate(runner, chosen.page));
-				print(await costGate(runner, chosen.page));
+				if (options.skipCost)
+					print({
+						status: 'SKIP',
+						text: 'cost: --skip-cost runs no cost measurement, because a loaded machine reports its load',
+					});
+				else print(await costGate(runner, chosen.page));
 				print(await allocationGate(runner, { page: chosen.page, folder, name: addon.name }, port));
 			} catch (error) {
 				print({

@@ -5,7 +5,8 @@
 import { performance } from 'node:perf_hooks';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { defaultEnvironment, launchBrowser } from './browser.js';
-import { HOLD_SCRIPT_GLOBAL, holdPath, readHold, watchConsole } from './page.js';
+import { HOLD_SCRIPT_GLOBAL, holdPath, readHold, switchedPath, watchConsole } from './page.js';
+import { RECORDING_PATH } from './recording-page.js';
 import { startBuildServer, startDevServer } from './server.js';
 
 /** @import { Browser, Page } from 'playwright-core' */
@@ -58,20 +59,24 @@ const POLL_MS = 100;
 /**
  * Starts a server of the project in the current folder and a headless browser. The server is the
  * project's Vite dev server, with any `plugins` besides the project's own, or with `production`, a
- * server of a production build of the project, whose files carry source maps with `sourcemap`.
- * `browserArgs` adds flags to the browser's own.
+ * server of a production build of the project, whose files carry source maps with `sourcemap`,
+ * and, with `linkedShaders`, whose engine shader builds are the files that the shared shader build
+ * wrote rather than copies that the build emitted. `browserArgs` adds flags to the browser's own.
  *
- * @param {{ environment?: Environment, production?: boolean, sourcemap?: boolean, plugins?: PluginOption[], browserArgs?: readonly string[] }} [options]
+ * @param {{ environment?: Environment, production?: boolean, sourcemap?: boolean, linkedShaders?: boolean, plugins?: PluginOption[], browserArgs?: readonly string[] }} [options]
  * @returns {Promise<Runner>}
  */
 export async function startRunner({
 	environment = defaultEnvironment(),
 	production = false,
 	sourcemap = false,
+	linkedShaders = false,
 	plugins,
 	browserArgs = [],
 } = {}) {
-	const server = await (production ? startBuildServer({ sourcemap }) : startDevServer({ plugins }));
+	const server = await (production
+		? startBuildServer({ sourcemap, linkedShaders })
+		: startDevServer({ plugins }));
 	try {
 		const browser = await launchBrowser(environment, browserArgs);
 		return {
@@ -171,6 +176,23 @@ export function holdPage(runner, { path, time, gpu, size, timeoutMs, script }) {
 	return visitPage(
 		runner,
 		{ path: holdPath(path, { time, gpu }), size, timeoutMs, script },
+		waitForHold,
+	);
+}
+
+/**
+ * Opens a page that replays a recording, and waits for its last frame. The recording's address is
+ * the one that the run's plugin serves; a replay needs no hold time, because the recording gives
+ * each frame's step.
+ *
+ * @param {Runner} runner
+ * @param {{ path: string, gpu?: Tier, size: readonly [number, number], timeoutMs: number }} options
+ * @returns {Promise<HeldPage>}
+ */
+export function replayPage(runner, { path, gpu, size, timeoutMs }) {
+	return visitPage(
+		runner,
+		{ path: switchedPath(path, { replay: RECORDING_PATH, gpu }), size, timeoutMs },
 		waitForHold,
 	);
 }

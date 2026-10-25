@@ -73,6 +73,7 @@ import {
 	TEMPLATE_SUBSURFACE_MAPS,
 	TEMPLATE_TAA_COPY,
 	TEMPLATE_TAA_RESOLVE,
+	TEMPLATE_TONE_MASK,
 	TEMPLATE_TRANSMISSION_COPY,
 	TEMPLATE_WEIGHTED_COMPOSITE,
 	TEMPLATE_WEIGHTED_DEPTH,
@@ -153,16 +154,34 @@ export function stageUnitCount(stage: GlslStage): number {
 }
 
 /**
- * Throws E1209 when one stage of a program reads more textures than a WebGL2 stage has units. The
- * engine hands out the stage's units, so a material that asks for too many hears about it, rather
- * than the device failing to link a shader that then draws nothing.
+ * The texture units that each stage of a context reads: the vertex stage's, then the fragment
+ * stage's. A WebGL2 device gives its stages at least [`MIN_STAGE_TEXTURE_UNITS`] each. The last of
+ * a context's units carries uploads and copies, so a program reads at most one fewer.
  */
-export function checkStageUnits(stage: GlslStage, stageName: 'vertex' | 'fragment'): void {
+export function stageTextureUnits(gl: WebGL2RenderingContext): readonly [number, number] {
+	const used = (units: number) => Math.min(units, UPLOAD_UNIT);
+	return [
+		used(gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS) as number),
+		used(gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) as number),
+	];
+}
+
+/**
+ * Throws E1209 when one stage of a program reads more textures than the device's stage has units.
+ * The engine hands out the stage's units, so a material that asks for too many hears about it,
+ * rather than the device failing to link a shader that then draws nothing. `limit` is the units
+ * that the device reports for the stage.
+ */
+export function checkStageUnits(
+	stage: GlslStage,
+	stageName: 'vertex' | 'fragment',
+	limit: number,
+): void {
 	const units = stageUnitCount(stage);
-	if (units <= MIN_STAGE_TEXTURE_UNITS) return;
+	if (units <= limit) return;
 	throw new EngineError(
 		'E1209',
-		`a WebGL2 program reads ${units} textures in its ${stageName} stage, and a stage has ${MIN_STAGE_TEXTURE_UNITS} units: give the material fewer textures.`,
+		`a WebGL2 program reads ${units} textures in its ${stageName} stage, and a stage has ${limit} units: give the material fewer textures.`,
 	);
 }
 
@@ -296,6 +315,7 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_SHADOW_CUTOUT] = { shader: shaders.shadow_cutout, pipeline: 'main' };
 	templates[TEMPLATE_SHADOW_CUTOUT_MAP] = { shader: shaders.shadow_cutout_map, pipeline: 'main' };
 	templates[TEMPLATE_OUTLINE_MASK] = { shader: shaders.outline_mask, pipeline: 'main' };
+	templates[TEMPLATE_TONE_MASK] = { shader: shaders.tone_mask, pipeline: 'main' };
 	templates[TEMPLATE_MOTION] = { shader: shaders.motion, pipeline: 'main' };
 	templates[TEMPLATE_PICK] = { shader: shaders.pick, pipeline: 'main' };
 	templates[TEMPLATE_PICK_MAPS] = { shader: shaders.pick_maps, pipeline: 'main' };
@@ -504,6 +524,11 @@ function linkError(gl: WebGL2RenderingContext, p: Program, attempt: string): Err
  * Safari's random Metal fault is done once more, into a new program, and waited for.
  */
 export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: DepthSetup): void {
+	// The units are counted from the sources, before the device reads them, so a material that
+	// asks for too many hears E1209 rather than a link failure that reads as a broken shader.
+	const [vertexUnits, fragmentUnits] = stageTextureUnits(gl);
+	checkStageUnits(p.source.vertex, 'vertex', vertexUnits);
+	checkStageUnits(p.source.fragment, 'fragment', fragmentUnits);
 	if (!gl.getProgramParameter(p.program, gl.LINK_STATUS)) {
 		if (!metalFault(gl, p)) throw linkError(gl, p, '');
 		relink(gl, p);
@@ -516,11 +541,7 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: De
 	}
 	gl.useProgram(p.program);
 	const textureUnits: number[] = [];
-	for (const [stageName, stage] of [
-		['vertex', p.source.vertex],
-		['fragment', p.source.fragment],
-	] as const) {
-		checkStageUnits(stage, stageName);
+	for (const stage of [p.source.vertex, p.source.fragment]) {
 		for (const block of stage.uniformBlocks) {
 			const index = gl.getUniformBlockIndex(p.program, block.name);
 			if (index !== gl.INVALID_INDEX)

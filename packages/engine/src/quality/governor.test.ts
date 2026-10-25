@@ -6,16 +6,20 @@ import { HELD_PERCENT, TARGET_CAP_HZ } from '../shared/stats';
 import {
 	BUDGET_STEP,
 	BUDGET_STEPS,
-	BUDGET_US,
 	budgetScale,
 	budgetSteps,
+	FULL_SCALE,
+	SCALE_STEP,
+	thousandths,
+} from './budget';
+import {
+	BUDGET_US,
 	CLOCK_LIMIT_MS,
 	DROP_AFTER_MS,
 	FAILED_RAISE_MS,
 	FEWEST_CONTACT_STEPS,
 	FLOOR_AFTER_MS,
 	FRAME_US,
-	FULL_SCALE,
 	farIntervalSteps,
 	GAP_MS,
 	Governor,
@@ -28,10 +32,8 @@ import {
 	LOWEST_AO_SCALE,
 	LOWEST_SSR_SCALE,
 	RAISE_AFTER_MS,
-	SCALE_STEP,
 	SETTLE_MS,
 	SMALLEST_BLOOM_SIZE,
-	thousandths,
 	WINDOW_END,
 	WINDOW_MS,
 } from './governor';
@@ -778,9 +780,16 @@ describe('the governor in the frame loop', () => {
 		let frame = 0;
 		/**
 		 * Steps frames `interval` ms apart for `ms`, or with the intervals of a list in turn, the GPU
-		 * taking `delay` for each.
+		 * taking `delay` for each. `completion` false writes no completion record, as for a frame
+		 * that the GPU held until the tracker gave it up. `resumed` says that the page showed again
+		 * since the last call.
 		 */
-		const run = (interval: number | readonly number[], delay: number, ms: number): number => {
+		const run = (
+			interval: number | readonly number[],
+			delay: number,
+			ms: number,
+			options: { completion?: boolean; resumed?: boolean } = {},
+		): number => {
 			const intervals = typeof interval === 'number' ? [interval] : interval;
 			for (const end = now + ms; now < end; ) {
 				const gap = intervals[frame % intervals.length] as number;
@@ -789,11 +798,13 @@ describe('the governor in the frame loop', () => {
 				render.begin(frame);
 				render.interval(gap);
 				render.commit(1);
-				done.begin(frame);
-				done.interval(gap);
-				done.commit(delay);
+				if (options.completion !== false) {
+					done.begin(frame);
+					done.interval(gap);
+					done.commit(delay);
+				}
 				resolution.now[0] = now;
-				resolution.frame();
+				resolution.frame(options.resumed === true);
 			}
 			return resolution.governor.scale;
 		};
@@ -962,11 +973,11 @@ describe('the governor in the frame loop', () => {
 			expect(run(HELD, HELD, HELD + WINDOW_MS)).toBe(FULL_SCALE);
 		});
 
-		it("judges a held frame after a step before the trial's time runs out", () => {
+		it("takes the step back within a second when the new setting's first frame fits in one", () => {
 			const { run } = loop();
 			expect(run(450, 450, GRACE_MS + 3 * DROP_AFTER_MS)).toBe(FULL_SCALE - SCALE_STEP);
-			// The first frame after the step took 900 ms and came well within `LOWER_TRIAL_MS`, so only
-			// the held frame can undo the step: no second could be judged, and the trial's bound is far.
+			// The frame after the step takes 900 ms, so the governor's return comes within that second.
+			// It cannot be the trial's 4 s bound, which is far, so only the held frame decides it.
 			expect(run(900, 900, 900 + WINDOW_MS)).toBe(FULL_SCALE);
 		});
 
@@ -979,6 +990,31 @@ describe('the governor in the frame loop', () => {
 			// However long the slow frames last, the software device takes no step below the whole
 			// scale again.
 			for (let k = 0; k < 40; k++) expect(run(HELD, HELD, HELD + WINDOW_MS)).toBe(FULL_SCALE);
+		});
+
+		it('judges a frame that the GPU still holds, whose completion has not come', () => {
+			// CI's software renderer: the step down turned frames of about 300 ms into frames of about
+			// 1.4 s, and the completion of the first one was given up, so no busy time told the gap from
+			// a pause. The frame that the thread that draws presented, with no completion after it, was
+			// drawing through the whole gap.
+			const { run } = loop();
+			expect(run(450, 450, GRACE_MS + 3 * DROP_AFTER_MS)).toBe(FULL_SCALE - SCALE_STEP);
+			expect(run(1440, BUDGET, 1440, { completion: false })).toBe(FULL_SCALE);
+		});
+
+		it('takes no held-frame step before a completion record has come', () => {
+			// The engine's first frames leave no completion record, so a slow first frame is no evidence
+			// that a frame was drawing: it builds its pipelines, and the page is starting.
+			const { run } = loop();
+			expect(run(3000, 3000, 6000, { completion: false })).toBe(FULL_SCALE);
+		});
+
+		it('starts its windows again when the page showed again, whatever the rings hold', () => {
+			const { run } = loop();
+			run(BUDGET, BUDGET / 2, GRACE_MS + 1000);
+			// A hidden page that shows again leaves a frame presented and uncompleted in the rings, but
+			// the page was not drawing through the gap.
+			expect(run(1440, BUDGET, 1440, { completion: false, resumed: true })).toBe(FULL_SCALE);
 		});
 
 		it('steps below the whole scale on a software device while the steps pay', () => {

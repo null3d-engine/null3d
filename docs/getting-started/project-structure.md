@@ -51,7 +51,8 @@ The folder must not exist, or it must be empty. A folder with files stays as it 
 | `package.json` | The project's name, scripts and packages. Every `@null3d/*` package takes one version. |
 | `AGENTS.md` | The rules for an AI agent that works in the project. |
 | `.claude/settings.json` | The Claude Code hook that checks the rules before each command and each edit. |
-| `.claude/agent-hook.mjs` | The hook's code. It needs no package. |
+| `.claude/agent-hook.mjs` | The hook's code, which Claude Code and Codex both run. It needs no package. |
+| `.codex/hooks.json` | The Codex hook that runs the same code on Codex's tool calls. |
 
 [Your first scene](first-scene.md) explains the page module, the sketch module and the engine's calls.
 
@@ -61,4 +62,6 @@ The folder must not exist, or it must be empty. A folder with files stays as it 
 
 Claude Code runs the hook before each Bash command and each edit. The hook refuses a command that waits with `sleep`, stops a process by name or follows a log. It refuses an edit that makes an object in `onUpdate`, or that reaches the DOM from the sketch. It also refuses an import of a name that the installed engine does not export. A refused call stops with a message that gives the fix.
 
-Codex and other agents read `AGENTS.md` and follow the same rules.
+Codex runs the same hook before a shell command and before a file edit, through `.codex/hooks.json`. Codex sends a file edit as one patch, which the hook reads file by file. Codex asks you to trust a project's hooks, with `/hooks`, before it runs them.
+
+Other agents read `AGENTS.md` and follow the same rules.

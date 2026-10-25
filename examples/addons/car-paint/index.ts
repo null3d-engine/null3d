@@ -1,8 +1,8 @@
 // Car paint: a metallic base under the engine's clear coat, with metal flakes, panel seams and an
-// optional carbon weave. The paint is a custom material whose surface function changes the base
-// normal and roughness, so the engine's own lighting, clear coat and stretched lobe give the look.
-// The flakes never shimmer: a cell that shrinks below a pixel fades to the smooth normal, and the
-// roughness widens to the flakes' spread, so a distant car draws as smooth metal.
+// optional carbon weave. The paint is a custom material: its surface function places the flakes and
+// its lobe counts how many of them reflect the main light into the eye, so the engine's own
+// lighting and clear coat give the look. The flakes never shimmer: a cell that shrinks below a
+// pixel averages its facets, so a distant car draws as smooth metal.
 import type { ColorInput, Material, SketchContext } from '@null3d/engine';
 import paintShader from './paint.wgsl';
 
@@ -15,15 +15,22 @@ export interface PaintFlakes {
 	 */
 	cells?: readonly [number, number];
 	/**
-	 * How far a flake tilts the base normal, from 0 for none to about 0.5 for a rough glitter. The
+	 * How far the flakes' normals spread from the surface normal, from 0 for none to about 0.5 for
+	 * a rough glitter. It sets the width of the band where the flakes catch the main light. The
 	 * default is 0.25.
 	 */
 	tilt?: number;
 	/**
-	 * How much the flakes' spread widens the roughness once a cell shrinks below a pixel. It keeps
-	 * a distant surface as bright as a near one. The default is 0.18.
+	 * The angular radius of the main light in radians, which sets how many flakes reflect it at
+	 * once. The default is 0.25, a softbox that many flakes catch together. A smaller value suits a
+	 * hard sun, where the glints are rarer and brighter.
 	 */
-	spread?: number;
+	angle?: number;
+	/**
+	 * The most that one pixel's glint may exceed the smooth lobe, which bounds a bright single
+	 * flake. The default is 64.
+	 */
+	max?: number;
 }
 
 /** The panel seams: grooves in the paint whose coat catches an edge of light. */
@@ -78,7 +85,12 @@ export interface CarPaintLook {
 }
 
 /** The flakes that a paint starts with. */
-const DEFAULT_FLAKES: Required<PaintFlakes> = { cells: [120, 210], tilt: 0.25, spread: 0.18 };
+const DEFAULT_FLAKES: Required<PaintFlakes> = {
+	cells: [120, 210],
+	tilt: 0.25,
+	angle: 0.25,
+	max: 64,
+};
 /** The seams that a paint starts with. */
 const DEFAULT_SEAMS: Required<PaintSeams> = { spacing: [0.34, 0], width: 0.0022, shade: 0.85 };
 /** The weave that a paint starts with. */
@@ -105,7 +117,8 @@ export function createCarPaint(ctx: SketchContext, look: CarPaintLook = {}): Mat
 			flakeCells: flakes ? flakes.cells : ([0, 0] as const),
 			weaveCells: weave ? weave.cells : ([0, 0] as const),
 			flakeTilt: flakes ? flakes.tilt : 0,
-			flakeSpread: flakes ? flakes.spread : 0,
+			flakeAngle: flakes ? flakes.angle : 0,
+			flakeMax: flakes ? flakes.max : 0,
 			seamWidth: seams ? seams.width : 0,
 			seamShade: seams ? seams.shade : 0,
 			weaveShine: weave ? weave.shine : 0,

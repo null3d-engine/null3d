@@ -33,7 +33,7 @@ scene.
 | Ground from a height field | `@null3d/terrain` | built |
 | Rigid bodies, joints and character movement | the physics add-on | not built yet; run Rapier or cannon-es in the sketch worker |
 | Text in the scene | the MSDF text add-on | not built yet; use HTML labels |
-| Water with waves and foam | `@null3d/water` | not built yet; use a custom material and a reflection pass |
+| A river or a lake, with waves, foam and soft shores | `@null3d/water` | built; see the docs page api/water |
 | Trees, shrubs, grass and wind | the vegetation add-on | not built yet |
 | three.js look modes for a port | `@null3d/three-compat` | built |
 
@@ -52,7 +52,8 @@ scene.
    page thread.
 7. Run `bunx @null3d/cli test` before you report the work as done.
 
-Claude Code checks rules 2 to 6 before each command and each edit, through the hook in
-`.claude/settings.json`. Codex and other agents read this file and follow the same rules. The hook
-is optional: delete its entries in `.claude/settings.json`, or the hook file, to remove these
-checks.
+Claude Code checks rules 2 to 6 before each command and each edit, through the hook that
+`.claude/settings.json` names. Codex checks the same rules through `.codex/hooks.json`, which runs
+the same hook script on Codex's tool calls. Codex asks you to trust a project's hooks before it
+runs them. Other agents read this file and follow the same rules. The hook is optional: delete
+those files, or their hook entries, to remove the checks.

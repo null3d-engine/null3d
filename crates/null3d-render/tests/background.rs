@@ -403,8 +403,10 @@ const LAYER: u32 = template::CUSTOM_FIRST;
 fn sky_layer(sun: f32, opacity: f32) -> null3d_render::background::SkyLayer {
     null3d_render::background::SkyLayer {
         template: LAYER,
+        map: 0,
         opacity,
         sun,
+        refresh: 0.0,
     }
 }
 
@@ -427,7 +429,7 @@ fn a_sky_layer_draws_after_the_background<B: FrameBuilder>(mut world: World<B>) 
     world.add_object(&grid(1, 1), Shading::Lit);
     let settings = world.renderer.settings_mut();
     settings.set_background_source(Some(background(BackgroundSource::Sky(Sky::default()))));
-    settings.set_sky_layer(Some(sky_layer(0.4, 1.0)));
+    settings.set_sky_layer(Some(sky_layer(0.4, 1.0)), 0);
     let commands = world.step(&mut mock, true);
     let sky = box_pipelines(&commands, template::BACKGROUND_SKY, LAST);
     assert_eq!(sky.len(), 1);
@@ -471,7 +473,7 @@ fn a_sky_layer_draws_after_the_background<B: FrameBuilder>(mut world: World<B>) 
     world
         .renderer
         .settings_mut()
-        .set_sky_layer(Some(sky_layer(0.6, 0.5)));
+        .set_sky_layer(Some(sky_layer(0.6, 0.5)), 0);
     let commands = world.step(&mut mock, false);
     assert_eq!(value_writes(&commands, buffer), 1, "the layer changed");
 }
@@ -493,7 +495,7 @@ fn a_debug_view_or_a_scene_without_a_background_draws_no_layer() {
     let mut world = World::new();
     let mut mock = MockBackend::default();
     let settings = world.renderer.settings_mut();
-    settings.set_sky_layer(Some(sky_layer(0.4, 1.0)));
+    settings.set_sky_layer(Some(sky_layer(0.4, 1.0)), 0);
     let commands = world.step(&mut mock, true);
     assert!(
         layer_pipelines(&commands, LAST).is_empty(),
@@ -516,7 +518,7 @@ fn a_layer_dims_the_sun_that_the_sky_draws() {
     let mut mock = MockBackend::default();
     let settings = world.renderer.settings_mut();
     settings.set_background_source(Some(background(BackgroundSource::Sky(Sky::default()))));
-    settings.set_sky_layer(Some(sky_layer(0.25, 1.0)));
+    settings.set_sky_layer(Some(sky_layer(0.25, 1.0)), 0);
     assert_eq!(
         world
             .renderer

@@ -273,6 +273,21 @@ describe("a module's custom materials", () => {
 		}
 	});
 
+	it('keep the pieces of an effect that reads its neighbours, which still starts a group', () => {
+		const marker = 'the pieces of an effect that reads the pixels beside its own';
+		const piece = {
+			permutation: 0,
+			wgsl: { items: [marker], run: 'run' },
+			glsl: null,
+		} as const;
+		const pieces = { group: { webgpu: piece }, fold: { webgpu: piece } };
+		const variants = { webgpu: build('wgsl', 0), webgl2: build('glsl', 0) };
+		const joined = { ...effect(variants), joins: true, pieces };
+		const head = { ...effect(variants), joins: false, pieces };
+		expect(new ModuleBuilds().value(new ShaderPack(), joined)).toContain(marker);
+		expect(new ModuleBuilds().value(new ShaderPack(), head)).toContain(marker);
+	});
+
 	it('leave other shaders as the pack gives them, and a module without materials ends with nothing', () => {
 		const pack = new ShaderPack();
 		const moduleBuilds = new ModuleBuilds();

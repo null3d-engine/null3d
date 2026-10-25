@@ -14,6 +14,7 @@ import {
 	MAP_SLOT_IRIDESCENCE,
 	MAP_SLOT_IRIDESCENCE_THICKNESS,
 	MAP_SLOT_LIGHT,
+	MAP_SLOT_LIGHT_MAP_DIRECTION,
 	MAP_SLOT_NORMAL,
 	MAP_SLOT_SHEEN_COLOR,
 	MAP_SLOT_SHEEN_ROUGHNESS,
@@ -32,6 +33,7 @@ import {
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
 	MATERIAL_FEATURE_IRIDESCENCE,
+	MATERIAL_FEATURE_LIGHT_MAP_RGBM,
 	MATERIAL_FEATURE_MULTIPLY,
 	MATERIAL_FEATURE_NO_CONTACT_SHADOWS,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
@@ -68,6 +70,8 @@ import {
 	MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX,
 	MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MIN,
 	MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
+	MATERIAL_PARAM_LIGHT_MAP_OFFSET,
+	MATERIAL_PARAM_LIGHT_MAP_SCALE,
 	MATERIAL_PARAM_METALNESS,
 	MATERIAL_PARAM_NORMAL_SCALE,
 	MATERIAL_PARAM_OCCLUSION_STRENGTH,
@@ -126,6 +130,8 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_NORMAL_SCALE, 2],
 	[MATERIAL_PARAM_OCCLUSION_STRENGTH, 1],
 	[MATERIAL_PARAM_LIGHT_MAP_INTENSITY, 1],
+	[MATERIAL_PARAM_LIGHT_MAP_SCALE, 2],
+	[MATERIAL_PARAM_LIGHT_MAP_OFFSET, 2],
 	[MATERIAL_PARAM_ENV_INTENSITY, 1],
 	[MATERIAL_PARAM_UV_U, 3],
 	[MATERIAL_PARAM_UV_V, 3],
@@ -449,6 +455,45 @@ describe('Material.set', () => {
 		expect(features).toEqual([]);
 	});
 
+	test('a light map direction takes its own map, and the map places the bake', () => {
+		const { maps, features, table, materials } = fakeCore();
+		materials.standard({
+			lightMap: texture(5, 1),
+			lightMapDirection: texture(6),
+			lightMapOffset: [0.25, 0.5],
+			lightMapRepeat: [0.5, 0.25],
+		});
+		expect(maps).toEqual([
+			[1, MAP_SLOT_LIGHT, 5, 1],
+			[1, MAP_SLOT_LIGHT_MAP_DIRECTION, 6, 0],
+		]);
+		expect(features).toEqual([0]);
+		const row = table[0] as number[];
+		expect(row[MATERIAL_PARAM_LIGHT_MAP_SCALE]).toBe(0.5);
+		expect(row[MATERIAL_PARAM_LIGHT_MAP_SCALE + 1]).toBe(0.25);
+		expect(row[MATERIAL_PARAM_LIGHT_MAP_OFFSET]).toBe(0.25);
+		expect(row[MATERIAL_PARAM_LIGHT_MAP_OFFSET + 1]).toBe(0.5);
+	});
+
+	test('a light map that holds RGBM texels takes the decode feature', () => {
+		const { features, materials } = fakeCore();
+		materials.standard({ lightMap: texture(5), lightMapDecode: 'rgbm' });
+		expect(features).toEqual([MATERIAL_FEATURE_LIGHT_MAP_RGBM]);
+	});
+
+	test('a light map direction, transform or decode needs the light map', () => {
+		const { materials, maps } = fakeCore();
+		for (const options of [
+			{ lightMapDirection: texture(5) },
+			{ lightMapOffset: [0, 0] as const },
+			{ lightMapRepeat: [1, 1] as const },
+			{ lightMapDecode: 'rgbm' as const },
+		]) {
+			const error = thrown(() => materials.standard(options));
+			expect(error.message).toStartWith('E1217: materials.standard() got ');
+		}
+		expect(maps).toEqual([]);
+	});
 	test('maps go into their slots, on the coordinates of their texture', () => {
 		const { maps, shadings, materials } = fakeCore();
 		materials.standard({ map: texture(5), normalMap: texture(6), lightMap: texture(7, 1) });
@@ -577,6 +622,26 @@ describe('Material.set', () => {
 		close(v, [-3, 0, 0.25]);
 		stone.set({ uvTransform: { repeat: [4, 4] } });
 		close(row().slice(MATERIAL_PARAM_UV_U, MATERIAL_PARAM_UV_U + 3), [4, 0, 0]);
+		close(row().slice(MATERIAL_PARAM_UV_V, MATERIAL_PARAM_UV_V + 3), [0, 4, 0]);
+		// An animation changes one pair of the transform and keeps the rest, as a glTF pointer does.
+		stone.writeUvPair('uvOffset', 0.25, -0.5);
+		close(row().slice(MATERIAL_PARAM_UV_U, MATERIAL_PARAM_UV_U + 3), [4, 0, 0.25]);
+		close(row().slice(MATERIAL_PARAM_UV_V, MATERIAL_PARAM_UV_V + 3), [0, 4, -0.5]);
+		stone.writeUvPair('uvScale', 2, 2);
+		close(row().slice(MATERIAL_PARAM_UV_U, MATERIAL_PARAM_UV_U + 3), [2, 0, 0.25]);
+		close(row().slice(MATERIAL_PARAM_UV_V, MATERIAL_PARAM_UV_V + 3), [0, 2, -0.5]);
+		// A material created with a transform keeps its turn and its other pair for a part write.
+		const turned = materials.standard({
+			uvTransform: { offset: [0.5, 0.25], repeat: [2, 3], rotation: Math.PI / 2 },
+		});
+		turned.writeUvPair('uvScale', 1, 1);
+		const turnedU = table[1] as number[];
+		expect(turnedU[MATERIAL_PARAM_UV_U]).toBeCloseTo(0, 12);
+		expect(turnedU[MATERIAL_PARAM_UV_U + 1]).toBeCloseTo(1, 12);
+		expect(turnedU[MATERIAL_PARAM_UV_U + 2]).toBeCloseTo(0.5, 12);
+		expect(turnedU[MATERIAL_PARAM_UV_V]).toBeCloseTo(-1, 12);
+		expect(turnedU[MATERIAL_PARAM_UV_V + 1]).toBeCloseTo(0, 12);
+		expect(turnedU[MATERIAL_PARAM_UV_V + 2]).toBeCloseTo(0.25, 12);
 		stone.set({ lightMapIntensity: 3 });
 		expect(row()[MATERIAL_PARAM_LIGHT_MAP_INTENSITY]).toBe(3);
 		stone.set({ envIntensity: 0.25 });
@@ -726,13 +791,65 @@ describe('Material.set', () => {
 		expect(leaf.message).toStartWith(
 			'E1217: materials.standard() got thicknessMap with diffuseTransmission;',
 		);
-		const painted = thrown(() =>
-			materials.standard({ transmission: 0.8, clearcoat: 1, transmissionMap: texture(5) }),
+		// A layer's values leave the specular slots free, so the maps fit beside a clear coat and a
+		// sheen. They stay out only where a layer map fills the slot that one of them takes.
+		materials.standard({
+			transmission: 0.8,
+			clearcoat: 1,
+			sheenColor: '#ffffff',
+			transmissionMap: texture(5),
+			thicknessMap: texture(6, 1),
+		});
+		expect(maps.at(-2)).toEqual([2, MAP_SLOT_TRANSMISSION, 5, 0]);
+		expect(maps.at(-1)).toEqual([2, MAP_SLOT_THICKNESS, 6, 1]);
+		const coatNormal = thrown(() =>
+			materials.standard({
+				transmission: 0.8,
+				clearcoat: 1,
+				clearcoatNormalMap: texture(7),
+				transmissionMap: texture(5),
+			}),
 		);
-		expect(painted.message).toStartWith(
-			'E1217: materials.standard() got transmissionMap with a clear coat, a sheen, iridescence or anisotropy,',
+		expect(coatNormal.message).toStartWith(
+			'E1217: materials.standard() got transmissionMap with clearcoatNormalMap,',
 		);
-		expect(table).toHaveLength(1);
+		const sheen = thrown(() =>
+			materials.standard({
+				transmission: 0.8,
+				sheenColor: '#ffffff',
+				sheenColorMap: texture(7),
+				thicknessMap: texture(5),
+			}),
+		);
+		expect(sheen.message).toStartWith(
+			'E1217: materials.standard() got thicknessMap with sheenColorMap,',
+		);
+		// The coat map of the light map's slot keeps its place beside the two.
+		materials.standard({
+			transmission: 0.8,
+			clearcoat: 1,
+			clearcoatMap: texture(7),
+			transmissionMap: texture(5),
+			thicknessMap: texture(6, 1),
+		});
+		expect(maps.slice(-3)).toEqual([
+			[3, MAP_SLOT_TRANSMISSION, 5, 0],
+			[3, MAP_SLOT_THICKNESS, 6, 1],
+			[3, MAP_SLOT_COAT, 7, 0],
+		]);
+		// One specular slot may hold a layer map while the other holds a volume map: a coat normal
+		// map fills the specular intensity slot, so only the thickness map fits beside it.
+		materials.standard({
+			transmission: 0.8,
+			clearcoat: 1,
+			clearcoatNormalMap: texture(7),
+			thicknessMap: texture(6),
+		});
+		expect(maps.slice(-2)).toEqual([
+			[4, MAP_SLOT_THICKNESS, 6, 0],
+			[4, MAP_SLOT_COAT_NORMAL, 7, 0],
+		]);
+		expect(table).toHaveLength(4);
 	});
 
 	test('refuses diffuse transmission beside layers and the weighted blending', () => {
@@ -1168,18 +1285,29 @@ describe('materials.shader', () => {
 		expect(unused.message).toStartWith(
 			"E1217: materials.shader() got the scene input 'sceneDepth', but its WGSL never calls sceneDepth or sceneDistance.",
 		);
-		// The depth group and the maps' group would pass WebGPU's sampled textures in the
-		// fragment stage together.
+		// A material that reads the depth keeps seven of the maps' eight slots, so the copy fits
+		// the fragment stage beside them.
+		const two = [
+			{ name: 'foam', offset: 0 },
+			{ name: 'mirror', offset: 1 },
+		];
+		materials.shader({
+			wgsl: { ...compiledMaterial([], two), sceneDepth: true },
+			sceneInputs: ['sceneDepth'],
+			textures: { foam: layered(1), mirror: layered(2) },
+		});
+		const eight = Array.from({ length: 8 }, (_, slot) => ({ name: `map${slot}`, offset: slot }));
 		const textured = thrown(() =>
 			materials.shader({
-				wgsl: { ...compiledMaterial([], [{ name: 'detail', offset: 0 }]), sceneDepth: true },
+				wgsl: { ...compiledMaterial([], eight), sceneDepth: true },
 				sceneInputs: ['sceneDepth'],
-				textures: { detail: texture(1) },
+				textures: Object.fromEntries(eight.map(({ name }) => [name, layered(1)])),
 			}),
 		);
 		expect(textured.message).toStartWith(
-			"E1217: materials.shader() got WGSL that reads the scene's depth and declares textures of its own.",
+			"E1217: materials.shader() got WGSL that reads the scene's depth and declares 8 textures.",
 		);
+		expect(textured.message).toContain('Drop 1 of the textures');
 	});
 
 	test('refuses the scene inputs that a custom material does not read yet', () => {

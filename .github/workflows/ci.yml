@@ -73,48 +73,76 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
       - uses: ./.github/actions/archive
+        id: setup
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
 
+      # Each check below runs once the setup above has passed, also after an earlier check failed,
+      # so a run reports every fault at once. When the picture references were missing on 25 October
+      # 2026, the check that found them stopped the job, and the type check and the unit tests ran in
+      # no run until they were drawn.
+
       # Git keeps no generated file (D-105). The install step wrote them before the shader modules
       # arrived, so this writes them again, and fails when a generator wrote a file that git keeps.
       - name: The generators change no file that git keeps
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: |
           bun tools/generate.ts
           git status --porcelain
           test -z "$(git status --porcelain)"
 
       - run: bun run docs:check
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
       - run: bun run docs:style
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
       - run: bun run skills:check
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
 
       - name: Skill validator
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: |
           pip install --quiet pyyaml
           curl -fsSL "$SKILL_VALIDATOR_URL" -o "$RUNNER_TEMP/quick_validate.py"
           for skill in skills/*/; do python3 "$RUNNER_TEMP/quick_validate.py" "$skill"; done
 
       - run: bun run check
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
       # TypeScript keeps an incremental record of each project under target/typecheck, by the hash
       # of each file's text, so the newest run's record serves any later commit: the check then
       # reads again only the files that changed and the files they reach. On the Mac a check with
       # the record of the same tree took 9 s, against 27 s without it; CI's check without it took
       # 100 to 134 s. A record of another TypeScript version or other compiler options is ignored.
       - uses: actions/cache/restore@v4
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         with:
           path: target/typecheck
           key: typecheck-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: typecheck-${{ runner.os }}-
-      - run: bun run typecheck
+      # The unit tests run one group at a time, in one process, so they keep about one of the
+      # runner's cores busy. The type check runs its projects on the others, beside them: it starts
+      # here, and the step after the tests waits for it, prints what it printed and fails with it.
+      - name: Start the type check beside the unit tests
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          (bun run typecheck > "$RUNNER_TEMP/typecheck.log" 2>&1; echo $? > "$RUNNER_TEMP/typecheck.status") &
+      # The meshopt unit tests read the Khronos test file and build test files from the samples.
+      - uses: ./.github/actions/samples
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+      - run: bun run test
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+      - name: The type check
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          while [ ! -f "$RUNNER_TEMP/typecheck.status" ]; do sleep 2; done
+          cat "$RUNNER_TEMP/typecheck.log"
+          exit "$(cat "$RUNNER_TEMP/typecheck.status")"
       - uses: actions/cache/save@v4
         if: "!cancelled() && env.SAVE_CACHES == 'true' && hashFiles('target/typecheck/*.tsbuildinfo') != ''"
         with:
           path: target/typecheck
           key: typecheck-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
-      # The meshopt unit tests read the Khronos test file and build test files from the samples.
-      - uses: ./.github/actions/samples
-      - run: bun run test
 
   heavy-checks:
     # The checks that hold gigabytes, each in a process of its own: the generated shader set beside
@@ -143,6 +171,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -209,6 +238,81 @@ jobs:
           fi
           grep -q 'disallowed method `std::time::SystemTime::now`' clippy.log
 
+  passes:
+    # The Rust tests, the shader compiler's shards and the plugin's compiler tests pass again
+    # without building when an earlier run passed them with the same inputs. This job works out
+    # each of their parts' keys once and looks each one up (tools/lib/ci-passes.ts). A job whose
+    # every part passed then starts no runner: each part took a runner of its own to find its pass,
+    # 30 runners in a run that changed no Rust or shader file. A job that runs reads its parts' keys
+    # here, and each part still looks its own key up, so only the parts that did not pass build.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Reading the Actions cache's list of entries.
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      keys: ${{ steps.passes.outputs.keys }}
+      passed: ${{ steps.passes.outputs.passed }}
+      modules: ${{ steps.passes.outputs.modules }}
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+        with: *without-references
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: ./.github/actions/bun-install
+      # Each hash covers exactly the files that a part reads, so a part passes again only when none
+      # of them changed. The Rust tests' shader part reads only the shader crates, the crate they
+      # depend on, the Cargo files, the toolchain and nextest's settings. Their other parts run
+      # every workspace test, which reads every crate and, outside them, the generated engine
+      # modules that two crates check, a test fixture, a test page's table, the engine's error
+      # codes, two add-ons' shaders, the test environments and the compiler's runner script. Nine
+      # landings in ten change none of those files. A file outside the crates that the crates' code
+      # names belongs in that list.
+      #
+      # The shader compiler's hash names the files that decide what the compiler produces and the
+      # scripts that run it: the shader crates, the build tool that builds the compiler, the
+      # compiler's runner script and the three files of the Vite plugin that the runner imports,
+      # which import no package. Not the whole of tools/lib: that folder holds the size report, the
+      # limits report and the cache's own rules, and a change to any of them used to purge this pass
+      # and rebuild every shard cold (22 October 2026). Not the whole plugin or the packages' lock
+      # either: from 23 to 24 October 2026, 12 of the 39 landings that changed the wider key changed
+      # only the plugin's other files and tests or the lock, and each such run rebuilt all the
+      # shards, about 80 job-minutes.
+      #
+      # The plugin's hash names the files that decide what the compiler and the shader modules
+      # hold, and the plugin and test helper that its tests import. Its tests' own hash names the
+      # two files whose declarations they compare. The packing test's parts each key instead on the
+      # `.wgsl` files and the scripts with tagged WGSL of their share of the test pages, the
+      # fixtures and the demos, which the next step hashes: a change to a page or a demo that holds
+      # no WGSL passes them again. The whole folders once made a key that changed with almost every
+      # push, and each part took 5.5 to 6.8 minutes each time.
+      #
+      # tools/lib/ci-passes.ts ends every key with a hash of the part's job as the workflow parses,
+      # with the repository's own actions that it runs, such as the step that builds the shader
+      # crates optimized, so those need no entry in a hash here.
+      #
+      # A script that a part starts, or that such a script imports, belongs in its hash, and
+      # tools/lib/ci-workflow.test.ts fails on one that a hash leaves out.
+      - name: The hashes of the files that each part reads
+        id: hashes
+        run: |
+          echo "rust-shaders=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml') }}" >> "$GITHUB_OUTPUT"
+          echo "rust-workspace=${{ hashFiles('crates/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml', 'packages/engine/src/generated/gpu.ts', 'packages/engine/src/generated/core.ts', 'packages/engine/src/errors/codes.ts', 'tests/fixtures/light-clusters.bin', 'tests/pages/lib/dfg-table.ts', 'tests/pages/assets/environments/**', 'examples/addons/aurora/aurora.wgsl', 'examples/addons/car-paint/paint.wgsl', 'tools/shader-compiler.ts') }}" >> "$GITHUB_OUTPUT"
+          echo "shader-compiler=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shader-compiler.ts', 'packages/vite-plugin/src/compiler-calls.js', 'packages/vite-plugin/src/shader-compiler.ts', 'packages/vite-plugin/src/shader-types.ts', 'package.json') }}" >> "$GITHUB_OUTPUT"
+          echo "plugin=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'tools/lib/wgsl-modules.ts', 'tools/lib/build-cache.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}" >> "$GITHUB_OUTPUT"
+          echo "plugin-tests=${{ hashFiles('tests/fixtures/typed-uniforms/**', 'tests/pages/sketches/shaders/**') }}" >> "$GITHUB_OUTPUT"
+      - name: The parts' keys, and the jobs whose every part passed
+        id: passes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          HASHES: ${{ toJSON(steps.hashes.outputs) }}
+        run: bun tools/lib/ci-passes.ts >> "$GITHUB_OUTPUT"
+
   rust-tests:
     # The Rust tests through cargo-nextest, which runs the tests of every test file at once.
     # cargo test runs the files one after another, and a few slow files then set the job's time.
@@ -219,6 +323,10 @@ jobs:
     # job's shader tool does.
     # --no-fail-fast runs every test after a failure, so a run reports every failing test.
     name: rust-tests (${{ matrix.part }})
+    needs: passes
+    # A part whose files passed in an earlier run passes again without building, and a run whose
+    # every part passed starts none (the passes job).
+    if: ${{ !contains(fromJSON(needs.passes.outputs.passed), 'rust-tests') }}
     env:
       # Unset for the parts that do not shard; each sharded test reads it only when it parses.
       NULL3D_SHADER_SHARD: ${{ matrix.shard || '' }}
@@ -261,25 +369,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with: *without-references
-      # When an earlier run passed a part with the same files, the part passes again without
-      # building anything: the key below hashes exactly the files that the part reads, and names the
-      # part's share, which a new shard or partition count changes. A shader part reads only the
-      # shader crates, the crate they depend on, the Cargo files, the toolchain and nextest's
-      # settings. The other parts run every workspace test, which reads every crate and, outside
-      # them, the generated engine modules that two crates check, a test fixture, a test page's
-      # table, the engine's error codes, an add-on's shader, the test environments and the
-      # compiler's runner script. Nine landings in ten change none of those files. A file outside
-      # the crates that the crates' code names belongs in this list, and
-      # tools/lib/ci-workflow.test.ts fails on one that the list leaves out.
-      - name: The key of this part's inputs
-        id: inputs
-        run: echo "key=passed-v2-${{ matrix.id }}-${{ matrix.shard || matrix.partition }}-${{ matrix.shard && hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml') || hashFiles('crates/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml', '.github/actions/optimized-shader-crates/**', 'packages/engine/src/generated/gpu.ts', 'packages/engine/src/generated/core.ts', 'packages/engine/src/errors/codes.ts', 'tests/fixtures/light-clusters.bin', 'tests/pages/lib/dfg-table.ts', 'tests/pages/assets/environments/**', 'examples/addons/aurora/aurora.wgsl', 'tools/shader-compiler.ts') }}" >> "$GITHUB_OUTPUT"
       - name: Find an earlier pass with the same inputs
         id: passed
         uses: actions/cache/restore@v4
         with:
           path: target/passed
-          key: ${{ steps.inputs.outputs.key }}
+          key: ${{ fromJSON(needs.passes.outputs.keys)['rust-tests'][matrix.id] }}
           lookup-only: true
       - name: Install the pinned Rust toolchain
         if: steps.passed.outputs.cache-hit != 'true'
@@ -309,7 +404,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: target/passed
-          key: ${{ steps.inputs.outputs.key }}
+          key: ${{ fromJSON(needs.passes.outputs.keys)['rust-tests'][matrix.id] }}
       - name: Name the earlier pass
         if: steps.passed.outputs.cache-hit == 'true'
         run: echo "These inputs passed this part in an earlier run, so it built nothing." | tee -a "$GITHUB_STEP_SUMMARY"
@@ -379,6 +474,7 @@ jobs:
       # The entries repeat much of their text, so one archive of them all packs far smaller than
       # the artifact's own zip, which compresses each file alone (D-235).
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         if: steps.whole.outputs.cache-hit != 'true'
         with:
           mode: upload
@@ -459,6 +555,7 @@ jobs:
       # folder that held it in its job: an earlier stamp's folder when the compiler's program has the
       # bytes that wrote it. A run whose caches held every entry has none to download.
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         continue-on-error: true
         with:
           mode: download
@@ -468,7 +565,10 @@ jobs:
       # The WebAssembly files and the tools' modules, which the build script keeps under a key of
       # every input: the core's Rust sources, the flags, the toolchain and the wasm-bindgen and
       # wasm-opt releases. A run that changed none of them copies every file in place and runs no
-      # cargo, wasm-bindgen or wasm-opt, which took 118 s of run 39944103955's build job.
+      # cargo, wasm-bindgen or wasm-opt, which took 118 s of run 39944103955's build job. Each file
+      # set is an entry of its own in the folder, under its own key, so a run that changed only the
+      # shader compiler restores the newest earlier folder and copies the cores' files from it, and
+      # one that changed only a core keeps the tools' modules.
       - id: wasm-key
         run: bun tools/build-wasm.ts --cache-key | tee -a "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@v4
@@ -476,6 +576,7 @@ jobs:
         with:
           path: ~/.cache/null3d/wasm-artifacts
           key: wasm-artifacts-${{ runner.os }}-${{ steps.wasm-key.outputs.key }}
+          restore-keys: wasm-artifacts-${{ runner.os }}-
       # The shader caches between runs: a run builds only the shaders whose inputs changed.
       - name: Build the shader modules and the WebAssembly files that the test pages need
         uses: ./.github/actions/shaders
@@ -484,6 +585,11 @@ jobs:
       - id: entry-folder
         name: Name the entry folder that the shader build used
         run: bun tools/shaders.ts --entry-folder | tee -a "$GITHUB_OUTPUT"
+      # The folder keeps only this run's entries, so an earlier run's entries that it no longer
+      # needs do not grow it from save to save.
+      - name: Keep only this build's WebAssembly entries
+        if: steps.wasm.outputs.cache-hit != 'true' && env.SAVE_CACHES == 'true'
+        run: bun tools/build-wasm.ts --keep-current
       - uses: actions/cache/save@v4
         if: steps.wasm.outputs.cache-hit != 'true' && env.SAVE_CACHES == 'true'
         with:
@@ -504,6 +610,7 @@ jobs:
       # Every later job downloads these files, about 2.8 GB, as one archive: as the artifact's own
       # zip they took 510 MB and 77 s to upload in run 39869813447, and about 122 MB this way.
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: upload
           name: page-wasm
@@ -617,6 +724,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -657,6 +765,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -704,7 +813,8 @@ jobs:
     # own below, so no shard runs them after its share. A shard whose inputs passed in an earlier run
     # passes again without building, as the shader parts of rust-tests do.
     name: shader-compiler (${{ matrix.part }} of ${{ strategy.job-total }})
-    needs: build
+    needs: [build, passes]
+    if: ${{ !contains(fromJSON(needs.passes.outputs.passed), 'shader-compiler') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -738,25 +848,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with: *without-references
-      # The key names the files that decide what the compiler produces and the scripts that run it:
-      # the shader crates, the build tool that builds the compiler, the compiler's runner script and
-      # the three files of the Vite plugin that the runner imports, which import no package. Not the
-      # whole of tools/lib: that folder holds the size report, the limits report and the cache's own
-      # rules, and a change to any of them used to purge this pass and rebuild every shard cold (22
-      # October 2026). Not the whole plugin or the packages' lock either: from 23 to 24 October 2026,
-      # 12 of the 39 landings that changed the wider key changed only the plugin's other files and
-      # tests or the lock, and each such run rebuilt all the shards, about 80 job-minutes. A script
-      # that a shard starts, or that such a script imports, belongs in this list, and
-      # tools/lib/ci-workflow.test.ts fails on one that the list leaves out.
-      - name: The key of this shard's inputs
-        id: inputs
-        run: echo "key=passed-v4-shader-compiler-${{ matrix.shard }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shader-compiler.ts', 'packages/vite-plugin/src/compiler-calls.js', 'packages/vite-plugin/src/shader-compiler.ts', 'packages/vite-plugin/src/shader-types.ts', 'package.json') }}" >> "$GITHUB_OUTPUT"
       - name: Find an earlier pass with the same inputs
         id: passed
         uses: actions/cache/restore@v4
         with:
           path: target/passed
-          key: ${{ steps.inputs.outputs.key }}
+          key: ${{ fromJSON(needs.passes.outputs.keys)['shader-compiler'][format('{0}', matrix.part)] }}
           lookup-only: true
       - name: Install the pinned Rust toolchain
         if: steps.passed.outputs.cache-hit != 'true'
@@ -775,6 +872,7 @@ jobs:
       - if: steps.passed.outputs.cache-hit != 'true'
         run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         if: steps.passed.outputs.cache-hit != 'true'
         with:
           mode: download
@@ -810,7 +908,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: target/passed
-          key: ${{ steps.inputs.outputs.key }}
+          key: ${{ fromJSON(needs.passes.outputs.keys)['shader-compiler'][format('{0}', matrix.part)] }}
       - name: Name the earlier pass
         if: steps.passed.outputs.cache-hit == 'true'
         run: echo "These inputs passed this shard in an earlier run, so it built nothing." | tee -a "$GITHUB_STEP_SUMMARY"
@@ -823,14 +921,15 @@ jobs:
     # runs in 4 parts of its own, each with a quarter of the modules, a pass and a cache of its own:
     # after a change to the shader crates, one part compiled every module for 7.5 minutes in run
     # 40085184470, the end of that run, while the others had ended by 5.9. A part whose inputs
-    # passed in an earlier run passes again, as the shader-compiler shards do. Its key names the
-    # files that decide what the compiler and the shader modules hold, the plugin and the test
-    # helper that its tests import, and the repository's WGSL that the part compiles: the modules
-    # with WGSL of the test pages, the fixtures and the demos for the packing test, which
-    # tools/lib/wgsl-modules.ts lists, and the two files whose declarations the plugin's tests
-    # compare for the other part.
+    # passed in an earlier run passes again, as the shader-compiler shards do. Its key, which the
+    # passes job works out, names the files that decide what the compiler and the shader modules
+    # hold, the plugin and the test helper that its tests import, and the repository's WGSL that the
+    # part compiles: the modules with WGSL of the test pages, the fixtures and the demos for the
+    # packing test, which tools/lib/wgsl-modules.ts lists, and the two files whose declarations the
+    # plugin's tests compare for the other part.
     name: shader-compiler-plugin (${{ matrix.script }}${{ matrix.share && format(' {0}', matrix.share) || '' }})
-    needs: build
+    needs: [build, passes]
+    if: ${{ !contains(fromJSON(needs.passes.outputs.passed), 'shader-compiler-plugin') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -852,25 +951,15 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      # The packing test compiles the `.wgsl` files and the scripts with tagged WGSL of the test
-      # pages, the fixtures and the demos, so its key holds those modules alone: a change to a page
-      # or a demo that holds no WGSL passes it again. The whole folders once made a key that changed
-      # with almost every push, and the part took 5.5 to 6.8 minutes each time.
-      - name: The hash of the modules that this part of the packing test compiles
-        id: modules
-        if: matrix.script == 'test:shader-compiler:pack'
-        run: bun tools/lib/wgsl-modules.ts ${{ matrix.share }} >> "$GITHUB_OUTPUT"
-      - name: The key of this part's inputs
-        id: inputs
-        run: echo "key=passed-v2-shader-compiler-plugin-${{ matrix.script }}${{ matrix.share && format('-{0}', matrix.share) || '' }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'tools/lib/wgsl-modules.ts', 'tools/lib/build-cache.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}-${{ matrix.script == 'test:shader-compiler:pack' && steps.modules.outputs.hash || hashFiles('tests/fixtures/typed-uniforms/**', 'tests/pages/sketches/shaders/**') }}" >> "$GITHUB_OUTPUT"
       - name: Find an earlier pass with the same inputs
         id: passed
         uses: actions/cache/restore@v4
         with:
           path: target/passed
-          key: ${{ steps.inputs.outputs.key }}
+          key: ${{ fromJSON(needs.passes.outputs.keys)['shader-compiler-plugin'][format('{0}{1}', matrix.script, matrix.share && format('-{0}', matrix.share) || '')] }}
           lookup-only: true
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         if: steps.passed.outputs.cache-hit != 'true'
         with:
           mode: download
@@ -883,7 +972,7 @@ jobs:
         if: steps.passed.outputs.cache-hit != 'true' && matrix.script == 'test:shader-compiler:pack'
         with:
           path: node_modules/.cache/null3d-shaders
-          key: shader-pack-compiles-${{ matrix.share }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/vite-plugin/**') }}-${{ steps.modules.outputs.hash }}
+          key: shader-pack-compiles-${{ matrix.share }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/vite-plugin/**') }}-${{ fromJSON(needs.passes.outputs.modules)[matrix.share] }}
           restore-keys: |
             shader-pack-compiles-${{ matrix.share }}-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/vite-plugin/**') }}-
       - name: The Vite plugin's tests through the shader compiler
@@ -900,7 +989,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: target/passed
-          key: ${{ steps.inputs.outputs.key }}
+          key: ${{ fromJSON(needs.passes.outputs.keys)['shader-compiler-plugin'][format('{0}{1}', matrix.script, matrix.share && format('-{0}', matrix.share) || '')] }}
       - name: Name the earlier pass
         if: steps.passed.outputs.cache-hit == 'true'
         run: echo "These inputs passed this part in an earlier run, so it built nothing." | tee -a "$GITHUB_STEP_SUMMARY"
@@ -925,6 +1014,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -994,6 +1084,7 @@ jobs:
       - run: bun install --frozen-lockfile
       # The build job's files, at their places in the repository.
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -1038,6 +1129,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -1082,6 +1174,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -1141,6 +1234,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -1204,6 +1298,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -1255,6 +1350,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -1364,10 +1460,12 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: load-pages
@@ -1396,8 +1494,9 @@ jobs:
     # SwiftShader, which draws S1's 100,000 boxes at under one frame a second, so the check draws
     # fewer boxes here, counts the frames that S1 steps, and judges them by CI's own budgets
     # (bench/allocation.ts). The Mac's gate keeps the full count on a real GPU. On SwiftShader the
-    # browser optimizes after fewer calls, so the warm-up is 1,200 frames and the job takes about 4
-    # minutes.
+    # browser optimizes after fewer calls, so the warm-up is 1,200 frames and each run takes about 4
+    # minutes. The WebGPU job runs a second time with `--canvas`, so S1's own places keep their own
+    # budgets and a canvas texture's refresh is judged by its budgets too.
     name: allocation (${{ matrix.gpu }})
     needs: [build, load-pages]
     if: *full-run
@@ -1420,10 +1519,12 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: load-pages
@@ -1436,6 +1537,11 @@ jobs:
           mode: download
       - name: Per-frame allocation in S1 on SwiftShader
         run: bun run bench:allocation --gpu ${{ matrix.gpu }}
+      # Only on WebGPU: on the software GPU's WebGL2 path the heap profiler charges bursts of
+      # compiled canvas code to a place at the root that no budget can name.
+      - name: Per-frame allocation with a canvas texture's refresh
+        if: matrix.gpu == 'webgpu'
+        run: bun run bench:allocation --canvas --gpu webgpu
 
   load-pages:
     # The production build of the benchmark pages, which the bench shards and the allocation jobs
@@ -1463,6 +1569,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -1473,6 +1580,7 @@ jobs:
       - name: The benchmark pages, built for production
         run: bun tests/lib/load-server.ts bench-pages
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: upload
           name: load-pages
@@ -1501,12 +1609,14 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
       - name: The startup pages, built for production
         run: bun tests/lib/load-server.ts startup-pages
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: upload
           name: load-startup-pages
@@ -1671,8 +1781,10 @@ jobs:
     # generated file added, since main keeps none (D-105). Links that must work on GitHub point
     # there, such as the docs link in each engine error message. Only this job writes to the
     # repository, and main's rules cover only main. Each push replaces the branch's one commit.
+    # GitHub's default condition needs every job before ci-passed to have passed, and a pass-keyed
+    # job that passed in an earlier run is skipped, so this job reads ci-passed's own result.
     needs: ci-passed
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: ${{ !cancelled() && needs.ci-passed.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -1688,6 +1800,7 @@ jobs:
       - uses: ./.github/actions/bun-install
       # The engine's API reference names the shader features, which the shader modules hold.
       - uses: ./.github/actions/archive
+        timeout-minutes: 5
         with:
           mode: download
           name: page-wasm
@@ -1703,10 +1816,13 @@ jobs:
     # The one check of this workflow that main's rules require, so that the jobs above can split into
     # shards and change their names with no change to the rules. It runs after every other job, also
     # after a failure or a cancel, and fails unless each job passed. Only a push to a milestone
-    # branch may skip jobs, and only the full run's jobs, which take the full-run condition.
+    # branch may skip jobs, and only the full run's jobs, which take the full-run condition. The
+    # one other job that may skip is a pass-keyed job whose every part passed in an earlier run,
+    # which the passes job names.
     if: always()
     needs:
       - commits
+      - passes
       - shader-entries
       - docs-and-tools
       - heavy-checks
@@ -1754,18 +1870,22 @@ jobs:
               echo "::warning title=Cancelled::$name was cancelled, by a newer push to main or by hand"
             fi
           done
-      # The full run's jobs, which may skip in a quick run alone, as their condition says.
+      # The full run's jobs, which may skip in a quick run alone, as their condition says, and the
+      # jobs that passed with the same inputs before.
       - name: Every job passed
         env:
           NEEDS: ${{ toJSON(needs) }}
           QUICK: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}
+          # The pass-keyed jobs whose every part passed in an earlier run, which start no runner.
+          PASSED: ${{ needs.passes.outputs.passed || '[]' }}
         run: |
           echo "quick checks only: $QUICK"
+          echo "jobs that passed in an earlier run: $PASSED"
           jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
-          jq -e --argjson quick "$QUICK" '[
+          jq -e --argjson quick "$QUICK" --argjson passed "$PASSED" '[
               "load-pages", "load-startup-pages", "browser", "browser-alone", "browser-heavy",
               "browser-production", "browser-city", "showcase", "bench", "allocation",
               "real-browsers", "real-browsers-prebuilt"
             ] as $full | length > 0 and all(to_entries[]; .value.result == "success"
-              or (.value.result == "skipped" and $quick and (.key | IN($full[]))))' \
+              or (.value.result == "skipped" and ($quick and (.key | IN($full[])) or (.key | IN($passed[])))))' \
             <<< "$NEEDS" > /dev/null

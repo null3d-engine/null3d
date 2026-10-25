@@ -21,6 +21,8 @@
 //     [--base <ref>]
 //   bun tools/build-wasm.ts --cache-key     print one key of every file that --pages-only builds, as
 //                                           key=<hash>, for CI's cache of them, and stop
+//   bun tools/build-wasm.ts --keep-current  remove every cache entry but those of the files that
+//                                           --pages-only builds now, before CI saves the cache
 //   bun tools/build-wasm.ts --names         keep the core's function names, for a CPU profile;
 //                                           the names add size, so this skips the size checks
 //   bun tools/build-wasm.ts --pages-only    build only what the test pages and the tools need,
@@ -483,6 +485,8 @@ export interface BuildOptions {
 	printBase: boolean;
 	/** Print one key of every artifact that a `--pages-only` build writes, for CI's cache of them. */
 	cacheKey: boolean;
+	/** Remove every cache entry but those that a `--pages-only` build writes now. */
+	keepCurrent: boolean;
 	/** Build every file again, instead of copying a file that an earlier build cached. */
 	noCache: boolean;
 	/** Build the engine test page, measure only this part of its files and write their sizes. */
@@ -492,7 +496,7 @@ export interface BuildOptions {
 }
 
 const USAGE =
-	'usage: bun tools/build-wasm.ts [--no-cache] [--check-size [--base <ref>] [--prebuilt [--part <i>/<n> | --judge-parts <dir>]] | --sizes-only | --prebuilt | --names | --pages-only | --print-base [--base <ref>] | --cache-key]';
+	'usage: bun tools/build-wasm.ts [--no-cache] [--check-size [--base <ref>] [--prebuilt [--part <i>/<n> | --judge-parts <dir>]] | --sizes-only | --prebuilt | --names | --pages-only | --print-base [--base <ref>] | --cache-key | --keep-current]';
 
 /** The options that take a value, with what each needs. */
 const VALUE_OPTIONS: Readonly<Record<string, string>> = {
@@ -511,6 +515,7 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		prebuilt: false,
 		printBase: false,
 		cacheKey: false,
+		keepCurrent: false,
 		noCache: false,
 	};
 	for (let i = 0; i < args.length; i++) {
@@ -522,6 +527,7 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		else if (arg === '--prebuilt') options.prebuilt = true;
 		else if (arg === '--print-base') options.printBase = true;
 		else if (arg === '--cache-key') options.cacheKey = true;
+		else if (arg === '--keep-current') options.keepCurrent = true;
 		else if (arg === '--no-cache') options.noCache = true;
 		else if (Object.hasOwn(VALUE_OPTIONS, arg)) {
 			const value = args[i + 1];
@@ -741,22 +747,47 @@ export function toolsKey(shaders: string, assets: string, tools: ToolVersions): 
 	);
 }
 
-/**
- * One key of every artifact that a build of the cores and the tools' modules writes: a hash of each
- * entry's own key, as the build reads them, so it changes exactly when one of the entries would.
- * CI keeps the cache folder under it, so a run whose Rust sources, flags and tools did not change
- * copies every file in place and runs no cargo, wasm-bindgen or wasm-opt.
- */
-export function artifactsKey(): string {
+/** The key of each cache entry that a build of the cores and the tools' modules writes, as it reads them. */
+export function currentArtifactKeys(): string[] {
 	const tools = toolVersions(readFileSync(join(root, 'Cargo.lock'), 'utf8'));
 	const stamp = coreSourcesStamp(root);
 	const [shaders, assets] = toolInputs(root);
-	return digest(
-		[
-			...VARIANTS.map((variant) => variantKey(variant, stamp, false, tools)),
-			toolsKey(shaders, assets, tools),
-		].join('\n'),
-	);
+	return [
+		...VARIANTS.map((variant) => variantKey(variant, stamp, false, tools)),
+		toolsKey(shaders, assets, tools),
+	];
+}
+
+/**
+ * One key of every artifact that a build of the cores and the tools' modules writes: a hash of each
+ * entry's own key, so it changes exactly when one of the entries would. CI keeps the cache folder
+ * under it, so a run whose Rust sources, flags and tools did not change copies every file in place
+ * and runs no cargo, wasm-bindgen or wasm-opt. A run that changed some of them restores an earlier
+ * run's folder, copies the entries that still match, and builds only the others.
+ */
+export function artifactsKey(): string {
+	return digest(currentArtifactKeys().join('\n'));
+}
+
+/**
+ * Removes every entry of the cache folder `base` but those named in `keep`, and returns the names it
+ * removed. An entry that another build is writing, and a lock, stay. The prune's lock keeps it from
+ * running beside a prune of the same folder.
+ */
+export function keepOnlyArtifacts(base: string, keep: ReadonlySet<string>): string[] {
+	if (!existsSync(base)) return [];
+	const release = acquireLock(`${base}.prune.lock`);
+	try {
+		const removed: string[] = [];
+		for (const name of readdirSync(base)) {
+			if (keep.has(name) || name.endsWith('.partial') || name.endsWith('.lock')) continue;
+			rmSync(join(base, name), { recursive: true, force: true });
+			removed.push(name);
+		}
+		return removed;
+	} finally {
+		release();
+	}
 }
 
 /**
@@ -1002,6 +1033,10 @@ async function buildToolModules(
  */
 function buildEngineTestPage(): BuiltFile[] {
 	console.log('\nbuilding the engine test page for production');
+	// The build folder is outside the project, so the build does not empty it. A file of an earlier
+	// build would then read as a part of this one, and a chunk that this build writes to another
+	// name leaves the earlier copy behind.
+	rmSync(join(root, JS_BUILD_DIR), { recursive: true, force: true });
 	const release = acquirePageBuildLock();
 	try {
 		const args = ['vite', 'build', '--sourcemap', 'hidden', '--outDir', JS_BUILD_DIR];
@@ -1356,6 +1391,11 @@ async function main(): Promise<void> {
 	}
 	if (options.cacheKey) {
 		console.log(`key=${artifactsKey()}`);
+		return;
+	}
+	if (options.keepCurrent) {
+		const removed = keepOnlyArtifacts(ARTIFACT_CACHE_BASE, new Set(currentArtifactKeys()));
+		console.log(`removed ${removed.length} cache entries that this build does not write`);
 		return;
 	}
 	// Only a size check takes the lock: it also builds the base commit with that commit's own build

@@ -13,6 +13,9 @@ import {
 	waitForQuiet,
 } from '../lib/effect-cost.ts';
 import { pageResult } from '../lib/page-result.ts';
+import { TIMING_BROWSER } from '../lib/timing-browser.ts';
+
+test.use(TIMING_BROWSER);
 
 for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
 	for (const slices of [32, 64, 96])

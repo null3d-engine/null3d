@@ -7,15 +7,19 @@
 // A scene whose sources the pass cannot draw whole, such as one with a custom material without a
 // vertex offset, a blended surface or a sprite, answers with a raycast instead: the ray tests
 // triangles, so it ignores the masks that the count of pixels would honor. An engine that runs no
-// frame loop, as hold mode does, answers with a raycast too.
+// frame loop, as hold mode does, answers with a raycast too. A pick's texture coordinates come
+// from a raycast through the same pixel, with the camera of the frame that recorded the pick: the
+// id target names the source of the pixel, and the ray names its triangle and blends the corners.
 
 import { EngineError } from '../errors/engine-error';
+import type { Vec2Like } from '../math/types';
 import { PickRead0 } from '../shared/slot';
 import type { CoreMemory, ViewHolder } from './memory';
 import type { QueryTarget, QueryTargets } from './queries';
 
 /**
- * What a pick found: an object or the batch of a row, and the row of an instance batch.
+ * What a pick found: an object or the batch of a row, the row of an instance batch, and where on
+ * the surface the pixel landed.
  *
  * @category api/raycast
  */
@@ -24,6 +28,18 @@ export interface PickHit {
 	object: QueryTarget;
 	/** The row of a batch, or -1 for an object of the scene. */
 	instance: number;
+	/**
+	 * Where on the surface the pixel landed, as the first texture coordinates of the hit triangle
+	 * blended across its three corners, as three.js's `intersection.uv`. Read `hasUv` first: the
+	 * numbers mean nothing when it is false.
+	 */
+	uv?: Vec2Like;
+	/**
+	 * True when the picked surface has a first texture coordinate set, so `uv` holds where on the
+	 * surface the pixel landed. False for a mesh that has no such coordinates, and when the ray
+	 * that finds them met another source than the pick's.
+	 */
+	hasUv?: boolean;
 }
 
 /** How many reads of the pick ring may wait for the GPU at once. */
@@ -34,6 +50,9 @@ const RESULT_WORDS = 4;
 
 /** The row that a pick's answer gives an object of the scene. */
 const NO_ROW = 0xffffffff;
+
+/** The frame that a pick names when its ray must use the camera as it stands. */
+const NO_FRAME = -1;
 
 /** A pick that waits for its frame. */
 interface Job {
@@ -61,12 +80,13 @@ export class ScenePicks implements ViewHolder {
 
 	/**
 	 * `byRay` answers a pick that the GPU pass cannot draw: it casts a ray through the point with
-	 * the camera of the frame that last ran.
+	 * the camera of the frame that last ran. It also finds the texture coordinates of a pixel that
+	 * the GPU pass picked, from the camera of the frame that recorded the pick.
 	 */
 	constructor(
 		private readonly core: CoreMemory,
 		private readonly targets: QueryTargets,
-		private readonly byRay: (x: number, y: number) => PickHit | null,
+		private readonly byRay: (x: number, y: number, frame: number) => PickHit | null,
 	) {
 		core.holdViews(this);
 	}
@@ -95,7 +115,7 @@ export class ScenePicks implements ViewHolder {
 			// A pick always answers through the promise, even when the ray path throws before the
 			// first frame.
 			try {
-				return Promise.resolve(this.byRay(x, y));
+				return Promise.resolve(this.byRay(x, y, NO_FRAME));
 			} catch (error) {
 				return Promise.reject(error);
 			}
@@ -165,7 +185,7 @@ export class ScenePicks implements ViewHolder {
 
 	/** Reads the ids that the job's read landed, and names the object or row that they name. */
 	private answer(job: InFlight): PickHit | null {
-		if (this.core.glue.pickCoversScene() === 0) return this.byRay(job.x, job.y);
+		if (this.core.glue.pickCoversScene() === 0) return this.byRay(job.x, job.y, NO_FRAME);
 		const results = this.resultView();
 		const key = results[job.ring * RESULT_WORDS] as number;
 		if (key === 0) return null;
@@ -174,10 +194,43 @@ export class ScenePicks implements ViewHolder {
 		const row = this.core.glue.pickTargetRow(key);
 		if (row === NO_ROW) {
 			const object = this.targets.objectAt(id);
-			return object === undefined ? null : { object, instance: -1 };
+			return object === undefined ? null : this.withUv({ object, instance: -1 }, job);
 		}
 		const batch = this.targets.batchAt(id);
-		return batch === undefined ? null : { object: batch, instance: row };
+		return batch === undefined ? null : this.withUv({ object: batch, instance: row }, job);
+	}
+
+	/**
+	 * Adds the texture coordinates that the picked pixel lies under. The id target names the source
+	 * of the pixel but not its triangle, so a ray from the camera of the frame that recorded the
+	 * pick finds them. A ray that meets another source, or none, leaves them unknown: the pick
+	 * stays the id target's answer, which is exact at the pixel.
+	 */
+	private withUv(hit: PickHit, job: Job): PickHit {
+		let ray: PickHit | null = null;
+		const frame = this.core.glue.pickFrame();
+		// A pick that named no frame leaves the coordinates unknown, rather than casting from a
+		// camera that did not draw the pixel.
+		if (frame >= 0) {
+			try {
+				ray = this.byRay(job.x, job.y, frame);
+			} catch {
+				// A ray that cannot run leaves the coordinates unknown: the id target still answered.
+			}
+		}
+		const uv = ray?.uv;
+		hit.hasUv =
+			ray !== null &&
+			ray.object === hit.object &&
+			ray.instance === hit.instance &&
+			ray.hasUv === true;
+		// Fresh numbers for each answer, as a raycast's hit object holds its own: the next pick
+		// reuses the ray and its hit.
+		hit.uv = [
+			hit.hasUv ? (uv?.[0] ?? Number.NaN) : Number.NaN,
+			hit.hasUv ? (uv?.[1] ?? Number.NaN) : Number.NaN,
+		];
+		return hit;
 	}
 
 	/** The view of the pick ring's results, made again when the memory grows. */

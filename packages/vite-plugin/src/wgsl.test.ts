@@ -329,6 +329,10 @@ fn effect(input: EffectInput) -> vec4f {
 			'webgpu_tone_map',
 		]);
 		expect(result.shader.variants.webgpu?.wgsl?.source).toContain('skyLayer');
+		// The same WGSL builds into the shader that fills the sky map's cube faces, which makes the
+		// reflections and the light that the scene takes from them.
+		expect(Object.keys(result.shader.map).sort()).toEqual(['webgl2', 'webgpu']);
+		expect(result.shader.map.webgpu?.wgsl?.source).toContain('fn skyLayer');
 		// A layer with uniforms is refused: its values come from the template's own block.
 		const bad =
 			'struct Uniforms { tint: vec3f }\nfn skyLayer(input: SkyLayerInput) -> SkyLayer {\n    return SkyLayer(vec3f(0.0), 0.0);\n}\n';
@@ -436,6 +440,14 @@ fn surface(input: SurfaceInput) -> Surface {
 		const built = material(await compileWgsl('src/wave.wgsl', wave, HINT));
 		expect(built.functions).toEqual(['vertexOffset']);
 		expect(built.variants.webgpu?.wgsl?.source).toContain('fn vertexOffset(');
+	});
+
+	it('builds a lobe alone as a custom material', async () => {
+		const sparkle =
+			'fn lobe(input: LobeInput) -> vec3f {\n    return input.specular * input.values.z;\n}\n';
+		const built = material(await compileWgsl('src/sparkle.wgsl', sparkle, HINT));
+		expect(built.functions).toEqual(['lobe']);
+		expect(built.variants.webgpu?.wgsl?.source).toContain('fn lobe(');
 	});
 
 	it('builds a mesh shader of its own as a full shader of a custom material', async () => {

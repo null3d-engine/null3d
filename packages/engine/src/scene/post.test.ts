@@ -50,6 +50,14 @@ function post(
 		...[1, 0.1, 0.9, 0.5, 3, 1, -4, 4, 0],
 		...[1, 100, 0.5, 0.5],
 		...[0],
+		// The grading controls' defaults: unit white balance factors and saturation, no lift, unit
+		// gamma and gain, and no split toning.
+		...[1, 1, 1, 1],
+		...[0, 0, 0, 0],
+		...[1, 1, 1, 0],
+		...[1, 1, 1, 0],
+		...[0, 0, 0, 0],
+		...[0, 0, 0, 0],
 	);
 	expect(block.length).toBe(C.POST_VALUE_COUNT);
 	let views = 0;
@@ -90,6 +98,12 @@ function post(
 				const domain = [0, 1, 2].map((k) => at(C.POST_VALUE_LUT_DOMAIN_MIN + k));
 				const top = [0, 1, 2].map((k) => at(C.POST_VALUE_LUT_DOMAIN_MAX + k));
 				luts.push([texture, at(C.POST_VALUE_LUT_INTENSITY), ...domain, ...top]);
+				return 0;
+			},
+			setGrade(_texture: number, _hdr: boolean) {
+				return 0;
+			},
+			setGradeValues(_on: boolean) {
 				return 0;
 			},
 			setVignette(on: boolean) {
