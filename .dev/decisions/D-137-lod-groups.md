@@ -414,10 +414,11 @@ one of them. The unit test reads the error itself, which is the quantity the ite
 `counts a texture that would slide, where a flat surface otherwise simplifies free` holds a bent
 grid's error to more than twice a flat one's.
 
-The task's coordinator accepted this exemption in writing on 26 October 2026. The acceptance rests
-on that reason and measurement. The weight is part of the error that picks the level, not a change
-to the level's triangles. So a picture near enough to show a slide draws the level where the engine
-does not pick it. The unit test stands as the item's proof.
+The coordinator accepted this exemption in writing at 00:50 on 26 October 2026. The words were: "I
+accept the exemption for the texture-coordinate weight." The acceptance rests on that reason and
+measurement. The weight is part of the error that picks the level, not a change to the level's
+triangles. So a picture near enough to show a slide draws the level where the engine does not pick
+it. The unit test that reads the error is the right instrument, and it stands as the item's proof.
 
 ## Addendum: the level pictures place each copy by its own distance (22 October 2026, M3-L2)
 

@@ -347,7 +347,8 @@ describe('texture coordinates in the levels error', () => {
 	// No picture test covers this weight. The weight is part of the error that picks the level, so a
 	// picture near enough to show a sliding texture draws the level where the engine does not pick it,
 	// and at the level's own switch the slide is under a pixel. The coordinator accepted this
-	// exemption in writing on 26 October 2026, on that reason and the measurement in
+	// exemption in writing at 00:50 on 26 October 2026, in these words: "I accept the exemption for
+	// the texture-coordinate weight." The acceptance rests on that reason and the measurement in
 	// D-137: a flat one-meter grid warped by 0.15 of the texture reports a 0.32-unit error and
 	// switches its level about 156 m out, where the grid spans about three pixels.
 	it('counts a texture that would slide, where a flat surface otherwise simplifies free', async () => {
