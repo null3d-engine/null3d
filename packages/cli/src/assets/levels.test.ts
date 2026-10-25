@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Document, type Node, type Primitive } from '@gltf-transform/core';
+import { Document, type Node, NodeIO, type Primitive } from '@gltf-transform/core';
+import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
+import { MeshoptDecoder } from 'meshoptimizer';
 import { MODELS_DIR, terrainDocument } from './cluster-fixture.js';
 import {
 	orderLevels,
@@ -13,7 +15,7 @@ import {
 	storeLevels,
 	storeStages,
 } from './levels.js';
-import { lodOf } from './lod-extension.js';
+import { lodOf, MSFTLod } from './lod-extension.js';
 import { buildStagedModel, STAGED_FILE } from './staged-fixture.js';
 
 /** The most cards a mesh of trees has in the test, and each card's side. */
@@ -344,13 +346,13 @@ describe('the coarsest-first vertex order', () => {
 });
 
 describe('texture coordinates in the levels error', () => {
-	// No picture test covers this weight. The weight is part of the error that picks the level, so a
-	// picture near enough to show a sliding texture draws the level where the engine does not pick it,
-	// and at the level's own switch the slide is under a pixel. The coordinator accepted this
-	// exemption in writing at 00:50 on 26 October 2026, in these words: "I accept the exemption for
-	// the texture-coordinate weight." The acceptance rests on that reason and the measurement in
-	// D-137: a flat one-meter grid warped by 0.15 of the texture reports a 0.32-unit error and
-	// switches its level about 156 m out, where the grid spans about three pixels.
+	// No picture test covers this weight, and it cannot. The weight is part of the error that picks
+	// the level, not a change to the level's triangles. A picture at the level's own switch cannot
+	// show it, and one near enough to show a slide draws a level the engine does not pick. The
+	// coordinator accepted this exemption on 26 October 2026. It rests on the measurement in
+	// D-137: with the shipped weight of one sixty-fourth of the grid's longest side, the bent grid
+	// below reports a coarsest error of 0.116 units. Its level switches about 36 m out on a
+	// 360-pixel picture at a 60-degree lens, where the whole grid spans about nine pixels.
 	it('counts a texture that would slide, where a flat surface otherwise simplifies free', async () => {
 		// A flat grid simplifies to a few triangles with no geometric error. Texture coordinates
 		// that repeat across it keep the simplifier from sliding them, so a level's error grows.
@@ -363,6 +365,9 @@ describe('texture coordinates in the levels error', () => {
 		const flatError = await worst(flat);
 		const bentError = await worst(bent);
 		expect(flatError).toBeGreaterThan(0);
+		expect(flatError).toBeLessThan(0.001);
+		expect(bentError).toBeGreaterThan(0.11);
+		expect(bentError).toBeLessThan(0.12);
 		expect(bentError).toBeGreaterThan(flatError * 2);
 	});
 });
@@ -464,5 +469,16 @@ describe('the staged test model', () => {
 			const file = readFileSync(join(MODELS_DIR, name));
 			expect(Buffer.from(bytes).equals(file), name).toBe(true);
 		}
+		// The file draws its coarsest level, which the step leaves as a prefix of the reordered
+		// stream: it names 515 vertices and its largest index is 514.
+		await MeshoptDecoder.ready;
+		const io = new NodeIO()
+			.registerExtensions([...ALL_EXTENSIONS, MSFTLod])
+			.registerDependencies({ 'meshopt.decoder': MeshoptDecoder });
+		const doc = await io.readBinary(model.glb);
+		const prim = doc.getRoot().listMeshes()[0]?.listPrimitives()[0];
+		const used = new Set(prim?.getIndices()?.getArray() ?? []);
+		expect(used.size).toBe(515);
+		expect(Math.max(...used)).toBe(514);
 	}, 180_000);
 });
