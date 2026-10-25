@@ -657,6 +657,8 @@ impl HeroBox {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HeroShadow {
     pub bounds: HeroBox,
+    /// Texels on each side of the tile that holds it.
+    pub size: u32,
     /// The light's layer mask: its tile draws the casters whose masks share a bit with it.
     pub layers: u32,
     /// The light's bias toward the light, in meters.
@@ -669,11 +671,13 @@ impl HeroShadow {
     /// The hero shadow of the object in scene slot `row`, for a light that travels along
     /// `direction`, which has length 1. `None` for an object without bounds, which draws no
     /// shadow.
+    #[allow(clippy::too_many_arguments)]
     pub fn of(
         scene: &SceneStorage,
         parity: usize,
         row: u32,
         direction: [f32; 3],
+        size: u32,
         layers: u32,
         bias: f32,
         normal_bias: f32,
@@ -691,6 +695,7 @@ impl HeroShadow {
         });
         Some(Self {
             bounds: HeroBox::fit(direction, center, radius),
+            size: size.max(1),
             layers,
             bias,
             normal_bias,
@@ -1316,18 +1321,85 @@ mod tests {
         assert!(!hero.touches(at(-(f64::from(radius) * f64::from(HERO_REACH + 3.0))), 0.1));
     }
 
+    /// The lens of the hero demo's wide window, and the shadow distance that its sun names.
+    const DEMO_LENS: Lens = Lens::Perspective(Perspective {
+        fov_degrees: 42.0,
+        near: 0.05,
+        far: 1000.0,
+    });
+    const DEMO_DISTANCE: f32 = 60.0;
+    /// The radius of the bounding sphere that the demo gives its car to hold the whole vehicle.
+    const CAR_RADIUS: f32 = 2.2;
+
     #[test]
-    fn the_hero_s_tile_holds_four_times_the_first_cascade_s_texels_at_ten_metres() {
-        let cascades = fit(&camera(), &LENS, 1.5, DOWN_AND_ACROSS, &SETTINGS);
-        let first = cascades.used()[0];
-        assert!(first.end > 10.0, "the first cascade holds 10 m");
-        // An object of about a car's size, which its own tile of 1,024 texels fits tightly.
-        let hero = HeroBox::fit(DOWN_AND_ACROSS, [0.0, 1.0, 10.0], 0.9).texel(1024);
-        assert!(
-            hero * 4.0 <= first.texel,
-            "the hero's texel {hero} m against the first cascade's {} m",
-            first.texel
+    fn the_hero_s_tile_holds_four_times_the_cascades_texels_at_ten_metres_on_every_preset() {
+        // Each preset's cascades, map size and default hero tile size, as the quality settings
+        // give them. The cascade that holds 10 m is the comparison: a short shadow distance ends
+        // the first cascade before 10 m, and a receiver there reads the next one.
+        for (preset, cascades, map_size, hero_size) in [
+            ("Low", 2, 1024, 1024),
+            ("Medium", 3, 2048, 2048),
+            ("High", 3, 2048, 2048),
+            ("Ultra", 4, 4096, 4096),
+        ] {
+            let settings = ShadowSettings {
+                cascades,
+                map_size,
+                distance: DEMO_DISTANCE,
+                ..SETTINGS
+            };
+            let fitted = fit(
+                &camera(),
+                &DEMO_LENS,
+                16.0 / 9.0,
+                DOWN_AND_ACROSS,
+                &settings,
+            );
+            let near = fitted
+                .used()
+                .iter()
+                .find(|cascade| cascade.end > 10.0)
+                .expect("the cascades reach 10 m");
+            let hero = HeroBox::fit(DOWN_AND_ACROSS, [0.0, 1.0, 10.0], CAR_RADIUS).texel(hero_size);
+            assert!(
+                hero * 4.0 <= near.texel,
+                "{preset}: the hero's texel {hero} m against the cascade's {} m",
+                near.texel
+            );
+        }
+    }
+
+    #[test]
+    fn a_bigger_hero_object_needs_a_bigger_tile_for_the_same_detail() {
+        // The ratio is the hero tile's texels over the object's width, so a tile that keeps a
+        // car's shadow at four times the cascades' has to grow with the object. The presets give
+        // each size a tile of its own: this guards that the setting, not the preset's light tile
+        // size, decides the detail.
+        let settings = ShadowSettings {
+            cascades: 3,
+            map_size: 2048,
+            distance: DEMO_DISTANCE,
+            ..SETTINGS
+        };
+        let fitted = fit(
+            &camera(),
+            &DEMO_LENS,
+            16.0 / 9.0,
+            DOWN_AND_ACROSS,
+            &settings,
         );
+        let near = fitted
+            .used()
+            .iter()
+            .find(|cascade| cascade.end > 10.0)
+            .expect("the cascades reach 10 m");
+        let texel = |radius: f32, size: u32| {
+            HeroBox::fit(DOWN_AND_ACROSS, [0.0, 1.0, 10.0], radius).texel(size)
+        };
+        // The car's 4.4 m sphere keeps four times the detail at 2,048 texels, and a sphere twice
+        // its size needs 4,096 for the same ratio.
+        assert!(texel(CAR_RADIUS, 2048) * 4.0 <= near.texel);
+        assert!(texel(CAR_RADIUS * 2.0, 4096) * 4.0 <= near.texel);
     }
 
     #[test]

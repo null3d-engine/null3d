@@ -31,7 +31,7 @@ function ground(x: number, z: number): number {
 		0.5 +
 		0.4 * Math.sin(x * 0.045 + 1) * Math.sin(z * 0.05) +
 		0.03 * Math.max(0, Math.abs(z) - 24) ** 1.4;
-	return bed + (bank - bed) * math.smoothstep(basin, 0, 1);
+	return bank + (bed - bank) * math.smoothstep(basin, 0, 1);
 }
 
 export default defineSketch(async (ctx) => {
@@ -98,7 +98,7 @@ export default defineSketch(async (ctx) => {
 			kind: 'river',
 			middle,
 			halfWidth: middle.map(([x]) => halfWidth(x)),
-			depth: (x, z) => -ground(x, z),
+			depth: (x, z) => Math.max(0, -ground(x, z)),
 			speed: 0.6,
 		},
 		{ kind: 'lake', shore, depth: 3.8, shoreWidth: 6 },

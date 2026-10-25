@@ -59,6 +59,7 @@ export const LIGHT_VALUE_WIDTH = 11;
 export const LIGHT_VALUE_HEIGHT = 12;
 export const LIGHT_VALUE_RADIUS = 13;
 export const LIGHT_VALUE_IMAGE = 14;
+export const LIGHT_VALUE_HERO_SIZE = 15;
 
 export const SCENE_FIELD_POSITIONS = 0;
 export const SCENE_FIELD_ROTATIONS = 1;

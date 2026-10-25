@@ -45,7 +45,7 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | `targetFps: 'display'` or a whole number | The frame rate that the preset check and the governor defend. Without it, the display's refresh rate, at most 60. `'display'` defends the display's full rate, and a number caps the target at that rate: [The target frame rate](../concepts/quality-presets.md#the-target-frame-rate). |
 | `maxPixelRatio` | Replaces the preset's pixel ratio cap. |
 | `antialias: 'msaa'`, `'fxaa'` or `'none'` | Replaces the preset's anti-aliasing mode. |
-| `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `pointLightShadows`, `depthPrepass`, `gpuOcclusion`, `morphTargets` | Replace the preset's values of these settings, which stay fixed while the engine runs. |
+| `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `heroTileSize`, `pointLightShadows`, `depthPrepass`, `gpuOcclusion`, `morphTargets` | Replace the preset's values of these settings, which stay fixed while the engine runs. |
 | `softwareOcclusion`, `textureMemoryMiB` | Replace the preset's values of these settings. A sketch can change them during play. |
 | `memory: { maximumMiB }` | Replaces the preset's memory maximum: [Page API](engine.md#memory). |
 | `?preset=low` to `?preset=ultra` | Fixes the preset for tests. It wins over the option, and the engine ignores earlier crashes and checks no preset. |

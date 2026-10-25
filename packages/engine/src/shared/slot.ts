@@ -167,6 +167,12 @@ export const PlanEpoch = 48;
 /** The plan generation each frame parity's draw list was recorded under. */
 export const FramePlan0 = 49;
 export const FramePlan1 = 50;
+/**
+ * Each capture of a sky map's light: the thread that draws adds one once the coefficients of the
+ * map's light are in engine memory at the address that the core gave the capture. The core takes
+ * them by comparing the words that landed with the ones before, so nothing reads this slot.
+ */
+export const SkyLight = 51;
 export const PickRead0 = 37;
 export const PickRead1 = 38;
 export const PickRead2 = 39;

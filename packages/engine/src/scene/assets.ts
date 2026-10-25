@@ -533,9 +533,9 @@ export class Assets {
 	 */
 	async skyEnvironment(): Promise<Environment> {
 		const call = 'assets.skyEnvironment';
-		const { size, levels, stages, sh } = (await builtinEnvironments(call)).SKY_MAP;
+		const { size, levels, stages, capture, sh } = (await builtinEnvironments(call)).SKY_MAP;
 		const texture = await this.textures.fromGenerator('sky', size, levels, call);
-		this.textures.addSkyMap(texture, stages, call, writeSkyDefaults);
+		this.textures.addSkyMap(texture, stages, capture, call, writeSkyDefaults);
 		return new Environment(texture, size, levels, 'rgb9e5ufloat', sh);
 	}
 

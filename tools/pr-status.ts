@@ -55,8 +55,10 @@ const INCOMPLETE = new Set([
 	'M3-E2',
 	'M3-E4',
 	'M3-K3',
+	'M3-A10',
+	'M3-E10',
+	'M3-V6',
 	'M3-B1',
-	'M3-E6',
 	'M3-E4a',
 	'M3-F5',
 	'M3-E8',
@@ -91,7 +93,7 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-A9':
 		'the hero tile and its cost figures are in: a still hero adds no pass, a moving one adds a depth pass of 0.028 to 0.037 ms, and WebGL2 reads the tile for 0.27 ms less than the cascades (D-219)',
 	'M3-E6':
-		"splats' budget follows the preset and reaches the overlay; water's reflection cadence, the other first user, is not on the branch",
+		"both first users follow the preset: splats' budget, and the water add-on's reflection cadence, which doubles the wait at each frame-budget step up to every sixteenth frame and shows itself in the overlay as a water row with its interval and the pass's share of a frame",
 	'M3-E8':
 		"the compute pass and its WebGL2 fragment form are built and tested; the first-user outcome waits on M3-F9's ocean, because the splats add-on cannot take the hook",
 	'M3-B1':
@@ -135,7 +137,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-A11':
 		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
 	'M3-E10':
-		'the owner has ruled that a sky layer reaches both the environment map and the CPU sky light, and a helper is building both; D-242 still records the narrowing until its addendum lands',
+		'the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the work is built on a helper branch and not yet on this branch, and the aurora references and the new picture have not been made',
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
@@ -178,12 +180,16 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"whether the approved hook table stands against hard rule 8 is the owner's to decide, and the tick waits on that",
 	'M3-K3':
 		'the task asks for image tests on every path, and there are none: no cookie picture is in the manifest and no cookie page among the sketches. Whether the 128 by 128 pixels-only cookie looks good enough is a second question, which the better-look rule raises',
+	'M3-A10':
+		"the finish line asks for the S24+, and the S24 run gives only a frame time held at its 30 Hz limit, which its own run file marks unreliable; the S25 is a faster GPU of another make on a path the S24+ lacks, so whether it closes the line is the owner's call. CI's five software sharpen references also show no sharpening at all, so the picture does not hold the effect it claims",
+	'M3-V6':
+		'the same placement is shown only on two Android phones in Chrome, so no second JavaScript engine has placed it, and no iPad run exists; the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, the Mac figure has no raw record, and docs/api/vegetation.md still calls the scatter not built',
 	'M3-E4a':
 		'the material change is on the branch with the water work, but the task asks for a material that declares the scene depth beside two textures on WebGPU, compatibility and WebGL2, and for the cost of a material that reads neither; its helper is finishing that proof',
 	'M3-F5':
 		'the water add-on, its records and its demos are on the branch, but twelve of its reference pictures are not drawn, so the picture-reference check fails; its evidence line waits on those pictures',
 	'M3-V5':
-		"the atlases draw and the crowns keep their coverage at three distances, but the task's line asks the owner to judge them at least as good as Creek's painted textures, and its author reports the generated leaves are not there yet; the paint time per device is owed too",
+		"every vegetation picture passes in both reference sets on both GPUs and the crowns keep their coverage at three distances, and the leaf cells now hold a spray of lobed, veined, damaged leaves instead of one smooth shape. Its author's verdict is that the atlas is at least as good as Creek's as a texture, and that the crown is still paler and flatter because the material lights it with one uniform light while Creek's texture carries painted shadowing, which belongs to M3-V7. The task's line asks the owner to judge the two side by side, and the paint time per device is owed too",
 	'M3-V1':
 		'Creek has no WebGPU figure on any device, and no vegetation task after it has its own budget per preset',
 	'M3-V3': 'the Mac, iPad and phone GPU time and memory are not recorded',
@@ -235,6 +241,7 @@ function description(): string {
 		!PARTIAL[id] &&
 		!ON_BRANCH.has(id) &&
 		!INCOMPLETE.has(id) &&
+		!(id in AUDIT_GAPS) &&
 		id in TASK_EVIDENCE;
 	const open = tasks.filter(({ id }) => !landed.has(id) && !PARTIAL[id] && !ON_BRANCH.has(id));
 	const lines = [

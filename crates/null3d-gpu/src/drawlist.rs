@@ -200,6 +200,13 @@ pub enum Op {
     /// The stages before the copy write nothing that a frame reads, so a map can refresh over
     /// several frames while frames draw with the old one. Each stage reads only what earlier
     /// stages wrote, in this list or in an earlier one.
+    ///
+    /// A map of a scene with a sky layer draws the sky with the layer's own build of the generator's
+    /// shader, which the words after the settings name: the template of that build, then the core
+    /// sky's cloud coverage, density, elevation and scale that the layer obeys, the share of the sun
+    /// that it hides, its opacity and its clock. The last stage names the buffer of the ring that
+    /// the map's light capture lands in, and a `ReadBuffer` after it brings the nine coefficients of
+    /// the map's diffuse light into engine memory.
     SkyMapStep = 55,
     /// [probes texture id, chain texture id, layer, image id, then the six faces' texture ids]:
     /// makes one reflection probe's map from what its six capture views drew (decision record
@@ -2201,7 +2208,10 @@ pub mod groups {
     /// shader, the maps' group of a build that samples maps, and the view's index group of a build
     /// that reads its instances by index. WebGL2 reads each view's instance data from groups of its
     /// own, the draws' group and the instances' one, and binds a material's maps at the group after
-    /// them. A decal adds the scene's depth: at index 2 on WebGPU, after the maps on WebGL2.
+    /// them. A decal adds the scene's depth: at index 2 on WebGPU, after the maps on WebGL2. That
+    /// last index on WebGL2 also holds the copy of the scene's depth that a custom material reads,
+    /// which the view binds once for the whole pass: a pass that draws such a material carries it
+    /// at every draw. A WebGL2 program reads no binding that it does not declare.
     const MESH: &[&[u32]] = &[
         &[layout::FRAME, layout::DEPTH],
         &[
@@ -2220,7 +2230,11 @@ pub mod groups {
             layout::DECAL_DEPTH_MS,
         ],
         &[layout::TEXTURES, layout::MATERIAL_MAPS],
-        &[layout::DECAL_DEPTH, layout::DECAL_DEPTH_MS],
+        &[
+            layout::DECAL_DEPTH,
+            layout::DECAL_DEPTH_MS,
+            layout::MATERIAL_SCENE,
+        ],
     ];
     /// [`MESH`] for a decal's templates, whose frame group leaves out the bindings that no decal
     /// build reads.

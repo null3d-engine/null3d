@@ -608,6 +608,17 @@ export interface CandidateFacts {
 	tolerance: Tolerance;
 	/** Why the image cannot become the reference, when it cannot. */
 	fixed?: string;
+	/**
+	 * The CI run whose job drew the image, when GitHub Actions drew it. A software-GPU reference
+	 * comes only from CI's own drawing, so the review accepts one only with this run, or from a run
+	 * that it fetched itself.
+	 */
+	ciRun?: string;
+}
+
+/** The CI run that draws in this process, from GitHub Actions' own variables, or none elsewhere. */
+export function ciRunOf(env: Readonly<Record<string, string | undefined>>): string | undefined {
+	return env.GITHUB_ACTIONS === 'true' && env.GITHUB_RUN_ID ? env.GITHUB_RUN_ID : undefined;
 }
 
 /** The files of one candidate, which differ in their endings. */
@@ -656,6 +667,7 @@ export function compareWithReference(
 		reference: reference.file,
 		tolerance: reference.tolerance,
 		...(reference.fixed && { fixed: reference.fixed }),
+		...(ciRunOf(process.env) && { ciRun: ciRunOf(process.env) }),
 	};
 	// The first mode that differs keeps its candidate: the later modes of a test on a tier draw the
 	// same pixels, or fail for that on their own. The facts go last, so they mark a whole candidate.

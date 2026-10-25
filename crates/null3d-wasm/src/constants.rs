@@ -813,6 +813,7 @@ pub fn typescript() -> String {
                 ("HEIGHT", light_value::HEIGHT),
                 ("RADIUS", light_value::RADIUS),
                 ("IMAGE", light_value::IMAGE),
+                ("HERO_SIZE", light_value::HERO_SIZE),
             ],
         ),
         (

@@ -205,6 +205,8 @@ const FOG_VOLUME_SKETCH = 'tests/pages/sketches/fog-volume-sketch.ts';
 
 /** The volumetric fog tests' image size: wide enough for the rays between the pillars to show. */
 const FOG_VOLUME_SIZE = [480, 270] as const;
+/** The hero shadow's picture size, large enough to see the tile's texels on the car's shadow. */
+const HERO_SIZE = [640, 360] as const;
 
 /**
  * The volumetric fog: the sun's rays between the pillars, and the street lamps' cones at night with
@@ -3121,8 +3123,31 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.012 },
 			}),
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
+			// The hero shadow is fine detail on one object, so its demo draws larger than the
+			// other demos, where the tile size's difference shows.
+			...(demo.name === 'hero-shadow' && { size: HERO_SIZE }),
 		};
 	}),
+	// The hero demo at both tile sizes. The car stands in the same place and its shadow falls the
+	// same way; the larger tile draws its edge sharper, which shows that the detail the preset pays
+	// for is kept, not smeared. The demo's own test, `demo-hero-shadow`, draws High at the default
+	// of 2,048, and this draws the 1,024 tile beside it. `demo-hero-shadow-ultra` names the largest
+	// tile, so every GPU path draws it, and the Ultra preset's cascades beside it.
+	{
+		name: 'demo-hero-shadow-tile-1024',
+		sketch: 'examples/hero-shadow/sketch.ts?heroTile=1024',
+		size: HERO_SIZE,
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'demo-hero-shadow-ultra',
+		sketch: 'examples/hero-shadow/sketch.ts?heroTile=4096',
+		switches: ['preset=ultra'],
+		size: HERO_SIZE,
+		hold: 1,
+		timeoutSeconds: 60,
+	},
 	// The objects demo's Look button, which a held frame cannot press: the same stage and time with
 	// one material over every mesh of the main pass, so each crate keeps its shape and its place.
 	{
