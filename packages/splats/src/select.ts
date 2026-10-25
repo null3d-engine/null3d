@@ -4,7 +4,7 @@
 // reads straight from it, so no count crosses a message and a call allocates no array.
 import { runTask, type Task } from '@null3d/engine';
 import type { SplatChunk } from './chunks';
-import { BUDGET, CHUNK_COUNT, EYE, HEADER, STRIDE, TOTAL } from './select-task';
+import { BUDGET, CHUNK_COUNT, CLOUD_RADIUS, EYE, HEADER, STRIDE, TOTAL } from './select-task';
 
 /** What the selection needs of a chunk: its bounds and its count, before its data arrives. */
 export type ChunkBounds = Pick<SplatChunk, 'center' | 'radius' | 'count'>;
@@ -33,6 +33,7 @@ export class SplatSelector {
 		this.view = new Float32Array(buffer);
 		this.input = { view: this.view };
 		this.view[CHUNK_COUNT] = chunks.length;
+		this.view[CLOUD_RADIUS] = cloudRadiusOf(chunks);
 		this.counts = this.view.subarray(HEADER + chunks.length * STRIDE, floats);
 		chunks.forEach((chunk, i) => {
 			const at = HEADER + i * STRIDE;
@@ -62,4 +63,31 @@ export class SplatSelector {
 	get total(): number {
 		return this.view[TOTAL] as number;
 	}
+}
+
+/**
+ * The radius of a sphere that holds the cloud: the farthest chunk's own radius from the cloud's
+ * center. The selection measures distance in this size, so a finer cut does not thin the view.
+ */
+function cloudRadiusOf(chunks: readonly ChunkBounds[]): number {
+	if (chunks.length === 0) return 0;
+	let x = 0;
+	let y = 0;
+	let z = 0;
+	for (const chunk of chunks) {
+		x += chunk.center[0];
+		y += chunk.center[1];
+		z += chunk.center[2];
+	}
+	x /= chunks.length;
+	y /= chunks.length;
+	z /= chunks.length;
+	let radius = 0;
+	for (const chunk of chunks) {
+		const dx = chunk.center[0] - x;
+		const dy = chunk.center[1] - y;
+		const dz = chunk.center[2] - z;
+		radius = Math.max(radius, Math.sqrt(dx * dx + dy * dy + dz * dz) + chunk.radius);
+	}
+	return radius;
 }
