@@ -1,9 +1,12 @@
 # D-266: A prepass's unwritten stand-in color costs Safari's WebGL2 path
 
 Status: decided on 26 October 2026 by the device run below. The depth-only framebuffer is the
-engine's default. The two other ways stay behind a page switch for measurement. The rise is
-under 0.5 ms on the iPhone 18 Pro at both render scales. On the iPad 10 it is under 0.5 ms at render
-scale 0.5. That page's noise leaves its scale 1 reading between 0.5 and 0.6 ms. Date:
+engine's default. The two other ways stay behind a page switch for measurement. The rise is under
+0.5 ms on the iPhone 18 Pro at both render scales, and on the iPad 10 at render scale 0.5.
+
+On the iPad 10 at scale 1 the page is GPU-bound, so the 0.52 to 0.64 ms it reads cannot pass or fail
+the bar. If it is read as a number, it misses. The charge this record removes is gone there, and the
+rest is ambient occlusion's own passes. Whether that closes the task is the owner's decision. Date:
 2026-10-25, updated 2026-10-26. Task: M3-R23.
 
 Summary: When a screen step splits the depth prepass from the opaque pass on WebGL2, the prepass
@@ -111,6 +114,12 @@ The frame waits on the GPU. The render worker's figure rose 0.64 ms while the in
 so the figure covers only part of the GPU time there. It reads 0.52 and 0.64 ms in the two runs, and
 the three ways spread 0.48 to 0.65 ms in one run. So that figure does not resolve the bar either way,
 and this record does not judge the fix by it.
+
+A lighter page at the same render scale would settle how large the residual is. It would not settle
+the bar, which names this page. That page cannot hold the display's rate at scale 1 on this tablet
+even with ambient occlusion off: its own scene takes 21.76 ms, which is 46 frames a second against
+the 16.7 ms of 60 Hz. So no setting of the effect makes it a clean instrument at scale 1. A page
+with fewer pixels or fewer draws would, and it would measure a page that the bar does not name.
 
 ## Consequences
 
