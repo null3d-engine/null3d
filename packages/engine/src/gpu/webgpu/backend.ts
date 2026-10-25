@@ -984,6 +984,10 @@ export class WebGPUBackend {
 			const a = i + 1;
 			switch (op) {
 				case G.OP_CREATE_BUFFER: {
+					// A capture draws the frame again, and the buffers of that frame exist already:
+					// making one again would destroy the buffer that a read is still mapping it from,
+					// and the read would fail with the buffer gone.
+					if (this.canvasTarget && this.buffers[words[a] as number] !== undefined) break;
 					this.counts.objects++;
 					this.releaseBuffer(words[a] as number);
 					// A buffer of indirect draws is also a source of copies: of each draw's arguments
