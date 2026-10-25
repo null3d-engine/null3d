@@ -1147,3 +1147,15 @@ The owner's rule of 22 October allows the start's budget to rise as needed witho
 on 25 October. The trims owed above still stand as the next work that touches the start's size, and
 the growth of the two generator files carries its own `Size-Growth:` trailers on the commit that
 explains them.
+
+## The start's budget goes to 256 KB for now, 25 October 2026
+
+The owner raised it again the same afternoon, to 256 KB or 262,144 bytes, and described the figure
+as one for now. The reason is time: the work that closes the milestone's feature list should not stop
+for a crossing while the trims run beside it. At the measured 196,291 bytes it leaves 65,853 bytes of
+room.
+
+The line is headroom, not a target. The owner placed the reduction in M4: the line comes down and the
+trimming is done as part of that milestone, not during M3's push to finish its features. A crossing
+before then is read the same way it was today. The raises buy time, and the trims are the work that
+returns the line to something the project would choose on purpose.
