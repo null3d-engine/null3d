@@ -25,6 +25,9 @@ const BODY_PUSH_MS = 250;
  * the eye.
  */
 const START = Math.PI / 2;
+/** The place of the one gust, and the place each push is made at, kept so no frame allocates one. */
+const GUST_AT: [number, number] = [-20, -14];
+const PUSH_AT: [number, number] = [0, 0];
 
 /** The card's material: a plane whose top leans with the air at its foot. */
 const card = /* wgsl */ `
@@ -144,12 +147,14 @@ export default defineSketch((ctx: SketchContext) => {
 			body.setPosition(x, 1.4, z);
 			// The body shoves the air as it goes, so the wake trails behind it.
 			if (moving && time.now - pushed > BODY_PUSH_MS / 1000) {
-				wind.push([x, z], 4);
+				PUSH_AT[0] = x;
+				PUSH_AT[1] = z;
+				wind.push(PUSH_AT, 4);
 				pushed = time.now;
 			}
 			// One gust arrives from upwind, so the cards change as it passes over them.
 			if (!FROZEN && !sent && time.now > 0) {
-				wind.gust([-20, -14]);
+				wind.gust(GUST_AT);
 				sent = true;
 			}
 			wind.update();

@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	analyticVelocity,
+	createPushRing,
 	defaultFieldState,
 	divergence,
 	type FieldState,
 	PUSH_LIFE,
+	PUSH_SLOTS,
 	type Push,
 	profile,
 	value3,
@@ -92,6 +94,25 @@ describe('the noise the field is built from', () => {
 		const near = value3(3.1, 2.2, 1.3);
 		const next = value3(3.1001, 2.2, 1.3);
 		expect(Math.abs(near - next)).toBeLessThan(0.01);
+	});
+});
+
+describe('the pushes ring', () => {
+	test('writes its own slots, so a push allocates nothing', () => {
+		const ring = createPushRing();
+		const first = ring.slots.map((slot) => slot);
+		expect(first).toHaveLength(PUSH_SLOTS);
+		for (let i = 0; i < 20; i++) ring.add(i, -i, 1, i);
+		// The same objects come back, which a call that made a push object would break.
+		for (let i = 0; i < PUSH_SLOTS; i++) expect(ring.slots[i]).toBe(first[i]);
+		// Four slots, so the newest four pushes are the ones that turn the air.
+		expect(ring.slots.map((slot) => slot.x)).toEqual([16, 17, 18, 19]);
+	});
+
+	test('an empty ring turns nothing', () => {
+		const ring = createPushRing();
+		const state = still();
+		expect(at(state, 3, 4, 0, 0, ring.slots)).toEqual(at(state, 3, 4, 0, 0, []));
 	});
 });
 

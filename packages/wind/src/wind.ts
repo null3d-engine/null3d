@@ -10,16 +10,20 @@ import {
 } from '@null3d/engine';
 import {
 	analyticVelocity,
+	createPushRing,
 	defaultFieldState,
 	type FieldState,
 	PUSH_LIFE,
 	PUSH_SLOTS,
-	type Push,
 } from './analytic';
 import fallbackShader from './grid.fallback.wgsl';
 import gridShader from './grid.wgsl';
 
-/** What a page gives the wind, at the start or later. */
+/**
+ * What a page gives the wind, at the start or later.
+ *
+ * @category api/wind
+ */
 export interface WindOptions {
 	/** The camera whose ground place the box follows. The field is centered on it in every frame. */
 	camera: Camera;
@@ -31,7 +35,11 @@ export interface WindOptions {
 	air?: Partial<FieldState>;
 }
 
-/** The field that a reader samples: a texture of the air, and the box it covers. */
+/**
+ * The field that a reader samples: a texture of the air, and the box it covers.
+ *
+ * @category api/wind
+ */
 export interface WindField {
 	/**
 	 * The texture. A reader declares it as `var wind: texture_2d_array<f32>;` and samples layer 0.
@@ -45,7 +53,11 @@ export interface WindField {
 	readonly size: number;
 }
 
-/** The wind that a page reads and drives. */
+/**
+ * The wind that a page reads and drives.
+ *
+ * @category api/wind
+ */
 export interface Wind {
 	/** The field that a plant, a flag or a smoke card samples. */
 	readonly field: WindField;
@@ -96,8 +108,7 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	const box = options.box ?? 128;
 	const grid = options.grid ?? 64;
 	const air: FieldState = { ...defaultFieldState(), ...options.air };
-	const pushes: (Push | undefined)[] = new Array(PUSH_SLOTS).fill(undefined);
-	let next = 0;
+	const pushes = createPushRing();
 	const now = (): number => ctx.time.now;
 
 	// The pass takes eight value vectors: the settings, the pushes' ring and the box.
@@ -117,7 +128,7 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		values[10] = air.swirlDrift;
 		values[11] = air.seed;
 		for (let i = 0; i < PUSH_SLOTS; i++) {
-			const push = pushes[i];
+			const push = pushes.slots[i];
 			const at = 12 + i * 4;
 			values[at] = push?.x ?? 0;
 			values[at + 1] = push?.z ?? 0;
@@ -176,12 +187,12 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		y: number,
 		z: number,
 		out: [number, number, number],
-	): [number, number, number] => analyticVelocity(air, pushes, x, y, z, now(), out);
+	): [number, number, number] => analyticVelocity(air, pushes.slots, x, y, z, now(), out);
 
-	// A gust and a push are one turn of the air, and the newest replaces the oldest.
+	// A gust and a push are one turn of the air, and the newest replaces the oldest. The ring
+	// writes its own slots, so neither call allocates anything.
 	const turn = (at: readonly [number, number], strength: number): void => {
-		pushes[next] = { x: at[0], z: at[1], strength, born: now() };
-		next = (next + 1) % PUSH_SLOTS;
+		pushes.add(at[0], at[1], strength, now());
 	};
 
 	return {
