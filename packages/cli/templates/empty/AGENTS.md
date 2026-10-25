@@ -21,7 +21,24 @@ in `node_modules/@null3d/engine/docs/`. They match the installed version.
    page thread.
 7. Run `bunx @null3d/cli test` before you report the work as done.
 
-Claude Code checks rules 2 to 6 before each command and each edit, through the hook in
-`.claude/settings.json`. Codex and other agents read this file and follow the same rules. The hook
-is optional: delete its entries in `.claude/settings.json`, or the hook file, to remove these
-checks.
+## What the hook checks
+
+The hook holds one rule for each command and each edit. A rule with the action `refuse` blocks the
+call, and the agent must find another way. A rule with the action `flag` tells the agent, and the
+call goes on.
+
+| Rule | Action | What it checks |
+| --- | --- | --- |
+| `no-sleep` | refuse | A command that waits with `sleep`. |
+| `no-kill-by-name` | refuse | `pkill`, `killall`, or `kill` with a process name. |
+| `no-log-follow` | refuse | `tail -f`, `journalctl -f`, `docker logs -f` and their like. |
+| `no-planned-api` | flag | An import that the installed engine does not export. |
+| `no-allocation-in-onupdate` | flag | An object, array or string made inside `onUpdate`. |
+| `no-dom-in-sketch` | flag | A DOM name in `sketch.ts`. |
+
+Claude Code runs the hook through `.claude/settings.json`, and Codex runs it through
+`.codex/hooks.json`. Both run `.agent/agent-hook.mjs`, which takes its rules from
+`@null3d/cli/agent-rules` in the installed packages. The hook needs `bun install` to find the rules.
+
+The hook is optional: delete its entries in `.claude/settings.json` and `.codex/hooks.json`, or the
+hook file, to stop the checks.

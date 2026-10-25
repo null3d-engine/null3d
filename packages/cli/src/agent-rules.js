@@ -1,17 +1,71 @@
-#!/usr/bin/env node
-// The agent hook of a null3D project. Claude Code runs it before a Bash command and before a file
-// edit, with the call as JSON on stdin. It exits 2 to refuse the call, and prints the reason on
-// stderr. It exits 0 to allow the call, and when it cannot read the call, so its own fault never
-// stops work.
+// The rules that a null3D project gives to an AI agent, in one place. The project's hook applies
+// them to each command and each edit, and a lint rule reads the same list. A rule either refuses
+// the call or flags it: a refusal stops the call, and a flag tells the agent and lets it go on.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+
+/**
+ * @typedef {object} Rule
+ * @property {string} id The rule's name, which a report names.
+ * @property {'command' | 'source'} kind What the rule reads: a shell command or the project's source.
+ * @property {'refuse' | 'flag'} action What the hook does when the rule fires.
+ * @property {string} summary The rule in one sentence.
+ */
+
+/** Every rule, in the order that a report lists them. */
+export const RULES = /** @type {readonly Rule[]} */ ([
+	{
+		id: 'no-sleep',
+		kind: 'command',
+		action: 'refuse',
+		summary: 'Do not wait with sleep. Run a check that ends on its own.',
+	},
+	{
+		id: 'no-kill-by-name',
+		kind: 'command',
+		action: 'refuse',
+		summary: 'Stop only a process that you started, by its PID.',
+	},
+	{
+		id: 'no-log-follow',
+		kind: 'command',
+		action: 'refuse',
+		summary: 'Read a log file once instead of following it.',
+	},
+	{
+		id: 'no-planned-api',
+		kind: 'source',
+		action: 'flag',
+		summary: 'Import only names that the installed engine exports.',
+	},
+	{
+		id: 'no-allocation-in-onupdate',
+		kind: 'source',
+		action: 'flag',
+		summary: 'Make no object, array or string inside the frame update.',
+	},
+	{
+		id: 'no-dom-in-sketch',
+		kind: 'source',
+		action: 'flag',
+		summary: 'Keep DOM access out of the sketch, which runs in a worker.',
+	},
+]);
+
+/**
+ * @typedef {object} Finding
+ * @property {string} id The rule that the finding reports.
+ * @property {string} message What the agent must do instead.
+ */
 
 /** The words that end one shell command and start the next. */
 const SEPARATORS = /&&|\|\||[;|\n]/;
 
 /** A source line that only mentions a name in a comment is not code. */
 const COMMENTS = /\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;
+
+/** A name inside a plain string is text, so a DOM check ignores it. */
+const STRINGS = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g;
 
 /** The files whose code runs in the sketch worker, where the DOM does not exist. */
 const SKETCH_FILE = /(?:^|\/)sketch\.[cm]?[jt]sx?$/;
@@ -20,11 +74,14 @@ const SKETCH_FILE = /(?:^|\/)sketch\.[cm]?[jt]sx?$/;
 const DOM_NAMES =
 	/\b(?:document|window|localStorage|sessionStorage|requestAnimationFrame|HTMLElement|HTMLCanvasElement|querySelector|getElementById)\b/;
 
-/** The method that runs once per frame. */
-const ON_UPDATE = /\bonUpdate\s*\([^)]*\)\s*\{/g;
+/** The ways that a source file writes the frame update that the sketch calls. */
+const ON_UPDATE = [
+	/\bonUpdate\s*\([^)]*\)\s*\{/g,
+	/\bonUpdate\s*[:=]\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\{/g,
+];
 
 /** The ways that code makes a new object, array or string inside a frame. */
-const ALLOCATIONS = [
+const ALLOCATIONS = /** @type {const} */ ([
 	[/\bnew\s+[A-Za-z_$]/, 'creates an object'],
 	[/\.(?:create|clone)\s*\(/, 'creates an object'],
 	[/\.(?:map|filter|flatMap|slice|concat|join)\s*\(/, 'copies an array'],
@@ -32,12 +89,12 @@ const ALLOCATIONS = [
 	[/(?:=|\breturn|\(|,)\s*\[/, 'builds an array'],
 	[/(?:=|\breturn|\(|,)\s*\{/, 'builds an object'],
 	[/`/, 'builds a string'],
-];
+]);
 
 /** The named imports that the engine's own package can satisfy. */
 const ENGINE_IMPORT = /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+['"]@null3d\/engine['"]/g;
 
-/** The most declaration text that the hook reads, so a huge package cannot slow every edit. */
+/** The most declaration text that a check reads, so a huge package cannot slow every edit. */
 const DECLARATION_LIMIT = 8_000_000;
 
 const MESSAGES = {
@@ -112,32 +169,34 @@ function followsLog(name, args) {
  * The rule that a shell command breaks, or null when it breaks none.
  *
  * @param {string} command
- * @returns {string | null}
+ * @returns {Finding | null}
  */
 export function refusedCommand(command) {
 	for (const segment of command.split(SEPARATORS)) {
 		const words = commandWords(segment);
 		const name = words[0] ?? '';
 		const args = words.slice(1);
-		if (name === 'sleep') return MESSAGES.waiting;
-		if (name === 'pkill' || name === 'killall') return MESSAGES.stop;
+		if (name === 'sleep') return { id: 'no-sleep', message: MESSAGES.waiting };
+		if (name === 'pkill' || name === 'killall')
+			return { id: 'no-kill-by-name', message: MESSAGES.stop };
 		if (name === 'kill') {
 			const targets = args.filter((arg) => !arg.startsWith('-'));
 			if (targets.length === 0 || targets.some((target) => !/^\d+$/.test(target)))
-				return MESSAGES.stop;
+				return { id: 'no-kill-by-name', message: MESSAGES.stop };
 		}
-		if (followsLog(name, args)) return MESSAGES.follow;
+		if (followsLog(name, args)) return { id: 'no-log-follow', message: MESSAGES.follow };
 	}
 	return null;
 }
 
 /**
- * `text` with every comment replaced by spaces, so offsets and line numbers still match.
+ * `text` with each match of `pattern` replaced by spaces, so offsets and line numbers still match.
  *
  * @param {string} text
+ * @param {RegExp} pattern
  */
-function blankComments(text) {
-	return text.replace(COMMENTS, (comment) => comment.replace(/[^\n]/g, ' '));
+function blank(text, pattern) {
+	return text.replace(pattern, (match) => match.replace(/[^\n]/g, ' '));
 }
 
 /**
@@ -172,41 +231,47 @@ function blockAt(text, open) {
 }
 
 /**
- * The first allocation in an `onUpdate` body, as the message that names it, or null.
+ * The first allocation in a frame update, as the finding that names it, or null.
  *
  * @param {string} file
- * @param {string} text
- * @returns {string | null}
+ * @param {string} text Source text whose comments and strings are blank.
+ * @returns {Finding | null}
  */
-function refusedAllocation(file, text) {
-	for (const match of text.matchAll(ON_UPDATE)) {
-		const open = (match.index ?? 0) + match[0].lastIndexOf('{');
-		const body = blockAt(text, open);
-		const bodyText = text.slice(body.start, body.end);
-		let first = null;
-		for (const [pattern, effect] of ALLOCATIONS) {
-			const found = /** @type {RegExp} */ (pattern).exec(bodyText);
-			const index = found?.index ?? -1;
-			if (index >= 0 && (first === null || index < first.index)) first = { index, effect };
-		}
-		if (first) {
-			const line = lineAt(text, body.start + first.index);
-			return `null3D agent hook: ${file}:${line} ${first.effect} in onUpdate, which runs every frame. Make it once outside onUpdate and reuse it.`;
+function allocationFinding(file, text) {
+	for (const pattern of ON_UPDATE) {
+		pattern.lastIndex = 0;
+		for (const match of text.matchAll(pattern)) {
+			const open = (match.index ?? 0) + match[0].lastIndexOf('{');
+			const body = blockAt(text, open);
+			const bodyText = text.slice(body.start, body.end);
+			let first = null;
+			for (const [allocates, effect] of ALLOCATIONS) {
+				const found = allocates.exec(bodyText);
+				const index = found?.index ?? -1;
+				if (index >= 0 && (first === null || index < first.index)) first = { index, effect };
+			}
+			if (first) {
+				const line = lineAt(text, body.start + first.index);
+				return {
+					id: 'no-allocation-in-onupdate',
+					message: `null3D agent hook: ${file}:${line} ${first.effect} in onUpdate, which runs every frame. Make it once outside onUpdate and reuse it.`,
+				};
+			}
 		}
 	}
 	return null;
 }
 
 /**
- * The first import of a name that the installed engine does not export, as the message that names
+ * The first import of a name that the installed engine does not export, as the finding that names
  * it, or null. The docs mark an API that does not exist with `status: planned`.
  *
  * @param {string} file
- * @param {string} text
+ * @param {string} text Source text whose comments are blank.
  * @param {string} declarations
- * @returns {string | null}
+ * @returns {Finding | null}
  */
-function refusedImport(file, text, declarations) {
+function plannedApiFinding(file, text, declarations) {
 	if (declarations === '') return null;
 	for (const match of text.matchAll(ENGINE_IMPORT)) {
 		for (const part of (match[1] ?? '').split(',')) {
@@ -219,7 +284,10 @@ function refusedImport(file, text, declarations) {
 			const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 			if (!new RegExp(`\\b${escaped}\\b`).test(declarations)) {
 				const line = lineAt(text, match.index ?? 0);
-				return `null3D agent hook: ${file}:${line} imports ${name}, which the installed @null3d/engine does not export. A planned API does not exist in this version; read its docs page and use the workaround the page gives.`;
+				return {
+					id: 'no-planned-api',
+					message: `null3D agent hook: ${file}:${line} imports ${name}, which the installed @null3d/engine does not export. A planned API does not exist in this version. Read its docs page and use the workaround that the page gives.`,
+				};
 			}
 		}
 	}
@@ -227,25 +295,29 @@ function refusedImport(file, text, declarations) {
 }
 
 /**
- * The rule that a file edit breaks, or null when it breaks none.
+ * The rule that an edit of a file breaks, or null when it breaks none.
  *
  * @param {string} file The path of the file that the edit writes.
- * @param {string} source The text that the edit writes.
+ * @param {string} source The whole text of the file after the edit.
  * @param {{ declarations?: string }} [context] The exports of the installed engine.
- * @returns {string | null}
+ * @returns {Finding | null}
  */
 export function refusedSource(file, source, { declarations = '' } = {}) {
-	const text = blankComments(source);
-	const imported = refusedImport(file, text, declarations);
-	if (imported) return imported;
+	const named = blank(source, COMMENTS);
+	const planned = plannedApiFinding(file, named, declarations);
+	if (planned) return planned;
+	const code = blank(named, STRINGS);
 	if (SKETCH_FILE.test(file)) {
-		const dom = DOM_NAMES.exec(text);
+		const dom = DOM_NAMES.exec(code);
 		if (dom) {
-			const line = lineAt(text, dom.index);
-			return `null3D agent hook: ${file}:${line} uses ${dom[0]} in the sketch. The sketch runs in a worker and has no DOM: keep HTML in page.ts and send messages between the two. A sketch on the main thread may use the DOM, but it shares the page thread.`;
+			const line = lineAt(code, dom.index);
+			return {
+				id: 'no-dom-in-sketch',
+				message: `null3D agent hook: ${file}:${line} uses ${dom[0]} in the sketch. The sketch runs in a worker and has no DOM: keep HTML in page.ts and send messages between the two. A sketch on the main thread may use the DOM, but it shares the page thread.`,
+			};
 		}
 	}
-	return refusedAllocation(file, text);
+	return allocationFinding(file, code);
 }
 
 /**
@@ -291,39 +363,12 @@ export function engineDeclarations(root) {
 	return text;
 }
 
-/** The event and the call that Claude Code gives the hook, as the rule that it breaks. */
-async function main() {
-	const event = process.argv[2] ?? '';
-	let input = '';
-	for await (const chunk of process.stdin) input += chunk;
-	let call;
-	try {
-		call = /** @type {{ tool_name?: string, tool_input?: Record<string, unknown> }} */ (
-			JSON.parse(input)
-		);
-	} catch {
-		return 0;
-	}
-	const tool = call.tool_name ?? '';
-	const args = call.tool_input ?? {};
-	let refused = null;
-	if (event === 'bash' || tool === 'Bash') {
-		refused = refusedCommand(String(args.command ?? ''));
-	} else if (event === 'edit' || /^(?:Edit|Write|MultiEdit)$/.test(tool)) {
-		const root = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
-		refused = refusedSource(
-			String(args.file_path ?? args.path ?? ''),
-			String(args.content ?? args.new_string ?? ''),
-			{ declarations: engineDeclarations(root) },
-		);
-	}
-	if (refused) {
-		console.error(refused);
-		return 2;
-	}
-	return 0;
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-	process.exitCode = await main();
+/**
+ * The rule that `finding` reports, or undefined when no rule has its id.
+ *
+ * @param {string} id
+ * @returns {Rule | undefined}
+ */
+export function ruleFor(id) {
+	return RULES.find((rule) => rule.id === id);
 }
