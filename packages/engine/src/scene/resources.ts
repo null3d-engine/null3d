@@ -1383,13 +1383,16 @@ export interface StandardMaps {
 	/**
 	 * The share of the light behind the surface that passes through it, in red, in linear color.
 	 * Its red multiplies `transmission`. Only a material created with `transmission` takes it, and
-	 * such a material takes no specular maps, since these maps take their slots.
+	 * such a material takes no specular intensity map, since these maps take its slot. A material
+	 * with layers keeps it unless a layer map fills the slot: a clear coat's normal map and
+	 * iridescence's thickness map do.
 	 */
 	transmissionMap?: Texture;
 	/**
 	 * The thickness of the volume under the surface, in green, in linear color. Its green
 	 * multiplies `thickness`. Only a material created with `transmission` takes it, and such a
-	 * material takes no specular maps, since these maps take their slots.
+	 * material takes no specular color map, since these maps take its slot. A material with layers
+	 * keeps it unless a layer map fills the slot: the sheen's maps and an anisotropy map do.
 	 */
 	thicknessMap?: Texture;
 	/**
@@ -1973,6 +1976,38 @@ const IRIDESCENCE_MAPS: readonly (keyof StandardMaps)[] = [
 	'iridescenceThicknessMap',
 ];
 
+/** The layer maps that fill the specular intensity map's slot, which a transmission map takes. */
+const SPECULAR_INTENSITY_LAYER_MAPS: readonly (keyof StandardMaps)[] = [
+	'clearcoatNormalMap',
+	'iridescenceThicknessMap',
+];
+
+/** The layer maps that fill the specular color map's slot, which a thickness map takes. */
+const SPECULAR_COLOR_LAYER_MAPS: readonly (keyof StandardMaps)[] = [
+	'sheenColorMap',
+	'sheenRoughnessMap',
+	'anisotropyMap',
+];
+
+/**
+ * The layer map that fills the slot that a transmission or a thickness map takes, or none: the
+ * transmission map shares the specular intensity map's slot and the thickness map the specular
+ * color map's. A material with layers may keep the two maps beside the one layer map of the light
+ * map's slot, so this names the clash that remains.
+ */
+function volumeSlotOwner(
+	options: StandardOptions,
+	key: keyof StandardMaps,
+): keyof StandardMaps | undefined {
+	const owners =
+		key === 'transmissionMap'
+			? SPECULAR_INTENSITY_LAYER_MAPS
+			: key === 'thicknessMap'
+				? SPECULAR_COLOR_LAYER_MAPS
+				: undefined;
+	return owners?.find((owner) => options[owner] !== undefined);
+}
+
 /** True when `options` give any map of `keys`. */
 function takesAnyMap(options: StandardOptions, keys: readonly (keyof StandardMaps)[]): boolean {
 	return keys.some((key) => options[key] !== undefined);
@@ -2006,13 +2041,10 @@ function takesAnisotropy(options: StandardOptions): boolean {
  * without the map rather than read it as another layer's.
  */
 function skipsLayerMap(options: StandardOptions, key: keyof StandardMaps): boolean {
-	if (
-		key === 'lightMap' ||
-		SPECULAR_MAPS.has(key) ||
-		TRANSLUCENCY_MAPS.has(key) ||
-		TRANSMISSION_MAPS.has(key)
-	)
-		return true;
+	if (key === 'lightMap' || SPECULAR_MAPS.has(key) || TRANSLUCENCY_MAPS.has(key)) return true;
+	// A transmission map takes the specular intensity map's slot and a thickness map the specular
+	// color map's, so each stays out only where a layer map fills that slot.
+	if (TRANSMISSION_MAPS.has(key)) return volumeSlotOwner(options, key) !== undefined;
 	if (key === 'clearcoatRoughnessMap')
 		return !!options.clearcoatMap && options.clearcoatMap !== options.clearcoatRoughnessMap;
 	if (key === 'sheenRoughnessMap')
@@ -2349,21 +2381,45 @@ function writeValues(
 		sendValue(core, id, MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE, call);
 	}
 	if (uvTransform) {
-		// three.js's texture matrix with its center at the origin, by rows.
 		const { offset, repeat, rotation = 0 } = uvTransform;
-		const u = repeat ? repeat[0] : 1;
-		const v = repeat ? repeat[1] : 1;
-		const c = Math.cos(rotation);
-		const s = Math.sin(rotation);
-		numbers[0] = u * c;
-		numbers[1] = u * s;
-		numbers[2] = offset ? offset[0] : 0;
-		sendValue(core, id, MATERIAL_PARAM_UV_U, call);
-		numbers[0] = -v * s;
-		numbers[1] = v * c;
-		numbers[2] = offset ? offset[1] : 0;
-		sendValue(core, id, MATERIAL_PARAM_UV_V, call);
+		writeUvMatrix(
+			core,
+			id,
+			offset ? offset[0] : 0,
+			offset ? offset[1] : 0,
+			repeat ? repeat[0] : 1,
+			repeat ? repeat[1] : 1,
+			rotation,
+			call,
+		);
 	}
+}
+
+/**
+ * Writes where material `id`'s maps sit on the texture coordinates, as three.js's texture matrix
+ * with its center at the origin, by rows. It allocates nothing.
+ */
+function writeUvMatrix(
+	core: CoreMemory,
+	id: number,
+	offsetU: number,
+	offsetV: number,
+	scaleU: number,
+	scaleV: number,
+	rotation: number,
+	call: string,
+): void {
+	const numbers = core.callValues();
+	const c = Math.cos(rotation);
+	const s = Math.sin(rotation);
+	numbers[0] = scaleU * c;
+	numbers[1] = scaleU * s;
+	numbers[2] = offsetU;
+	sendValue(core, id, MATERIAL_PARAM_UV_U, call);
+	numbers[0] = -scaleV * s;
+	numbers[1] = scaleV * c;
+	numbers[2] = offsetV;
+	sendValue(core, id, MATERIAL_PARAM_UV_V, call);
 }
 
 /** Sets material `id`'s value `param` to the core's call values. */
@@ -2416,13 +2472,20 @@ const COLOR_VALUES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Numbers per key that a material value takes: 3 for a color, 1 for a number, and 0 for a name
- * that the value has none. It reads the tables that `setUniform` uses, so a name that it takes is
- * a name that `setUniform` takes.
+ * The material values that take a pair of numbers: where the maps sit on the texture coordinates.
+ * Every map of a material shares the transform, so a pair moves them all.
+ */
+const UV_VALUES: ReadonlySet<string> = new Set(['uvOffset', 'uvScale']);
+
+/**
+ * Numbers per key that a material value takes: 3 for a color, 2 for the maps' offset or scale, 1
+ * for a number, and 0 for a name that the value has none. It reads the tables that `setUniform`
+ * uses, so a name that it takes is a name that `setUniform` takes.
  *
  * @internal
  */
 export function materialValueComponents(name: string): number {
+	if (UV_VALUES.has(name)) return 2;
 	if (!ONE_VALUE_PARAMS.has(name)) return 0;
 	return COLOR_VALUES.has(name) ? 3 : 1;
 }
@@ -2696,8 +2759,9 @@ function checkFeatures(options: StandardOptions, call: string): void {
 }
 
 /**
- * Throws E1217 for a layered material with a map whose slot its layers take, and for a pair of
- * layer maps that glTF packs into one texture but that are two. Call it inside `if (DEV)`.
+ * Throws E1217 for a layered material with a map whose slot its layers take, for a transmission
+ * or a thickness map beside the layer map of its own slot, and for a pair of layer maps that glTF
+ * packs into one texture but that are two. Call it inside `if (DEV)`.
  */
 function checkLayerMaps(options: StandardOptions, call: string): void {
 	const sharedSlot =
@@ -2707,16 +2771,24 @@ function checkLayerMaps(options: StandardOptions, call: string): void {
 				? 'specularIntensityMap'
 				: options.specularColorMap !== undefined
 					? 'specularColorMap'
-					: options.transmissionMap !== undefined
-						? 'transmissionMap'
-						: options.thicknessMap !== undefined
-							? 'thicknessMap'
-							: undefined;
+					: undefined;
 	if (sharedSlot)
 		throw new EngineError(
 			'E1217',
-			`${call}() got ${sharedSlot} with a clear coat, a sheen, iridescence or anisotropy, whose maps take its place. Bake its light, specular or volume values into the other maps, or use a material without layers.`,
+			`${call}() got ${sharedSlot} with a clear coat, a sheen, iridescence or anisotropy, whose maps take its place. Bake its light or specular values into the other maps, or use a material without layers.`,
 		);
+	// The transmission and thickness maps take the specular maps' slots, which a layer map fills
+	// only when the material gives one of that slot: the light map's slot stays free for its layer
+	// map beside them.
+	for (const key of TRANSMISSION_MAPS) {
+		if (options[key] === undefined) continue;
+		const owner = volumeSlotOwner(options, key);
+		if (owner)
+			throw new EngineError(
+				'E1217',
+				`${call}() got ${key} with ${owner}, which fills the same slot. Give the material one map of that slot or the other.`,
+			);
+	}
 	for (const [first, second, packed] of [
 		['clearcoatMap', 'clearcoatRoughnessMap', 'the roughness in the green of the clear coat map'],
 		['sheenColorMap', 'sheenRoughnessMap', 'the roughness in the alpha of the sheen color map'],
@@ -3055,6 +3127,13 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	/** The displacement map's scale and bias, which `set` changes one at a time, where it has one. */
 	private displacement: [number, number] | undefined;
 
+	/**
+	 * Where the maps sit on the texture coordinates, as `set` last gave them: the offset's two
+	 * numbers, the scale's two and the rotation, so an animation can change one pair and keep the
+	 * rest.
+	 */
+	private uv: [number, number, number, number, number] | undefined;
+
 	/** @internal */
 	constructor(
 		id: number,
@@ -3104,6 +3183,7 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		const sheen = linearOrNone(values.sheenColor, call, SHEEN);
 		// A bump map's strength takes the normal scale's place.
 		const kept = this.bump && values.normalScale ? { ...values, normalScale: undefined } : values;
+		if (values.uvTransform !== undefined) this.recordUv(values.uvTransform);
 		writeValues(
 			core,
 			id,
@@ -3198,6 +3278,40 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 			return;
 		}
 		writeOneValue(this.core, this.id, this.oneCall, name, value);
+	}
+
+	/**
+	 * @internal Changes the maps' offset or their scale, for a property animation, and keeps the
+	 * rest of the transform. The maps share one transform, so every map of the material moves. It
+	 * allocates nothing, so a track writes a pair in every frame.
+	 */
+	writeUvPair(name: 'uvOffset' | 'uvScale', u: number, v: number): void {
+		const uv = this.uvValues();
+		if (name === 'uvOffset') {
+			uv[0] = u;
+			uv[1] = v;
+		} else {
+			uv[2] = u;
+			uv[3] = v;
+		}
+		writeUvMatrix(this.core, this.id, uv[0], uv[1], uv[2], uv[3], uv[4], this.call);
+	}
+
+	/** @internal Keeps where `values` puts the maps on the texture coordinates, for a part write. */
+	recordUv(values: UvTransform): void {
+		const uv = this.uvValues();
+		const { offset, repeat, rotation = 0 } = values;
+		uv[0] = offset ? offset[0] : 0;
+		uv[1] = offset ? offset[1] : 0;
+		uv[2] = repeat ? repeat[0] : 1;
+		uv[3] = repeat ? repeat[1] : 1;
+		uv[4] = rotation;
+	}
+
+	/** The maps' transform, which a value makes where the material has none. */
+	private uvValues(): [number, number, number, number, number] {
+		this.uv ??= [0, 0, 1, 1, 0];
+		return this.uv;
 	}
 
 	/**
@@ -3304,6 +3418,7 @@ export class Materials {
 			`${call}.set`,
 			shading,
 		);
+		if (options.uvTransform !== undefined) material.recordUv(options.uvTransform);
 		if (options.bumpMap || options.displacementMap) material.heights(options);
 		return material;
 	}
@@ -3551,6 +3666,7 @@ export class Materials {
 		// with the material, before its first frame.
 		if (sceneDepth) this.shaders.need('particles');
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms, shading);
+		if (options.uvTransform !== undefined) material.recordUv(options.uvTransform);
 		const { core } = this;
 		writeUniforms(core, id, uniforms, uniformValues, call);
 		textures.forEach((texture, slot) => {
