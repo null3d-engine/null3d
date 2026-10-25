@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import {
+	MAP_ROW_SLOT_COAT,
 	MAP_ROW_SLOT_SHEEN_COLOR,
 	MAP_SLOT_ANISOTROPY,
 	MAP_SLOT_BASE_COLOR,
@@ -114,7 +115,7 @@ import type { CoreGlue } from '../shared/core';
 import type { CustomShader } from '../shared/images';
 import { withCallValues } from './fake-call-values';
 import { CoreMemory } from './memory';
-import { Materials } from './resources';
+import { Materials, slotOwners } from './resources';
 import { ShaderPreloads } from './shader-preloads';
 import { ShaderTemplates } from './shader-templates';
 import { Texture, type Textures } from './textures';
@@ -722,6 +723,64 @@ describe('Material.set', () => {
 		expect(at(MATERIAL_PARAM_UV_U)).toEqual([2, 0, 0]);
 		expect(at(occlusion)).toEqual([2, 0, 0]);
 		expect(at(sheen)).toEqual([2, 0, 0]);
+	});
+
+	test('places a slot with the map that fills it, and not one the material leaves out', () => {
+		const { table, materials } = fakeCore();
+		const normal = MATERIAL_PARAM_MAP_UV + (MAP_SLOT_NORMAL - 1) * MATERIAL_PARAM_MAP_UV_STRIDE;
+		const at = (param: number, index = 0) =>
+			(table[index] as number[]).slice(param, param + 3).map((value) => value + 0);
+		// A normal map wins over a bump map, so the bump map's transform does not take the slot.
+		materials.standard({
+			normalMap: texture(1),
+			bumpMap: texture(2),
+			mapUvTransforms: { normalMap: { repeat: [2, 2] }, bumpMap: { repeat: [5, 5] } },
+		});
+		expect(at(normal)).toEqual([2, 0, 0]);
+		expect(at(normal + 4)).toEqual([0, 2, 0]);
+		// Without a normal map the bump map fills the slot, and a displacement map's transform
+		// does not take it, since the displacement reads that slot.
+		materials.standard({
+			bumpMap: texture(3),
+			displacementMap: texture(4),
+			mapUvTransforms: { bumpMap: { repeat: [3, 3] }, displacementMap: { repeat: [7, 7] } },
+		});
+		expect(at(normal, 1)).toEqual([3, 0, 0]);
+		// A displacement map fills the slot where neither other map does.
+		materials.standard({
+			displacementMap: texture(5),
+			mapUvTransforms: { displacementMap: { repeat: [7, 7] } },
+		});
+		expect(at(normal, 2)).toEqual([7, 0, 0]);
+		// A transform for a map the material does not have takes no slot at all.
+		materials.standard({
+			normalMap: texture(6),
+			mapUvTransforms: { bumpMap: { repeat: [9, 9] } },
+		});
+		expect(at(normal, 3)).toEqual([1, 0, 0]);
+	});
+
+	test('the map that fills a shared slot owns it, as the production skip rules leave it', () => {
+		const tex = texture(1);
+		// A clear coat's roughness map leaves the slot to a different coat map.
+		const coat = slotOwners({ clearcoatMap: tex, clearcoatRoughnessMap: texture(2) }, 0, true);
+		expect(coat[MAP_ROW_SLOT_COAT]).toBe('clearcoatMap');
+		// A transmission map leaves the specular intensity map's slot to that map, and a thickness
+		// map leaves the specular color map's slot to that one.
+		const volume = slotOwners({ transmissionMap: tex, specularIntensityMap: texture(2) }, 0, false);
+		expect(volume[MAP_SLOT_SPECULAR_INTENSITY]).toBe('specularIntensityMap');
+		const thickness = slotOwners({ thicknessMap: tex, specularColorMap: texture(2) }, 0, false);
+		expect(thickness[MAP_SLOT_SPECULAR_COLOR]).toBe('specularColorMap');
+		// A translucent material keeps the diffuse transmission map and leaves out the specular one.
+		const thin = slotOwners(
+			{ diffuseTransmissionMap: tex, specularIntensityMap: texture(2) },
+			MATERIAL_FEATURE_TRANSLUCENCY,
+			false,
+		);
+		expect(thin[MAP_SLOT_DIFFUSE_TRANSMISSION]).toBe('diffuseTransmissionMap');
+		// A layered material leaves the light map out, and its transform with it.
+		const layered = slotOwners({ lightMap: tex, sheenColorMap: texture(2) }, 0, true);
+		expect(layered[MAP_SLOT_LIGHT]).toBeUndefined();
 	});
 
 	test('writes the specular values, with the reflectance that the index of refraction gives', () => {
