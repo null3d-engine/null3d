@@ -3,7 +3,7 @@
 // vertex, so a plant, a flag and a smoke card all read the same air with one texture read.
 //
 // The grid holds the analytic field at the height of a tree's crown. A reader scales it by its own
-// height's factor, which `wind_profile` gives in `analytic.ts` and in `field.wgsl`.
+// height's factor, which `wind_profile` gives in `analytic.ts` and in `shaders/field.wgsl`.
 //
 // The block between the analytic-field markers is byte for byte the same as the one in
 // `grid.fallback.wgsl`, which draws the WebGL2 fragment form. A test compares them and fails when
