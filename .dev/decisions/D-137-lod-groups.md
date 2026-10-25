@@ -404,9 +404,11 @@ and the engine reads a level's error as a distance, so a heavy weight would make
 mesh switch levels much farther out. At a sixty-fourth, the test scene's ball keeps four levels,
 where the same scene without texture coordinates in the error has six.
 
-No picture test shows this weight. The weight is part of the measured error that picks a level, not
-a change to the level's triangles. A picture at the level's own switch therefore cannot show it. A
-picture near enough to show a slide draws the level where the engine does not pick it.
+No picture test shows this weight. The weight enters the measured error that picks a level. It also
+changes the level's triangles, because the simplifier weighs the texture coordinates when it
+decides which vertices to collapse. A picture at the level's own switch cannot show the weight on
+its own, because its reference is built with the same weight. A picture near enough to show a slide
+draws the level where the engine does not pick it.
 
 The unit test's own bent grid measures the weight. It is a flat grid of one meter across, 32 by 32
 cells, whose texture coordinates repeat the texture eight times across it. With the shipped weight,
@@ -423,10 +425,9 @@ the error itself, which is the quantity the item adds:
 grid's coarsest error above 0.11 units.
 
 The coordinator accepted this exemption on 26 October 2026, before this record was written. The
-acceptance rests on that reason and measurement. The weight is part of the error that picks the
-level, not a change to the level's triangles. So a picture near enough to show a slide draws the
-level where the engine does not pick it. The unit test that reads the error is the right instrument,
-and it stands as the item's proof.
+acceptance rests on that reason and measurement. The weight enters the error that picks the level,
+and it also changes the level's triangles. The unit test that reads the error is the right
+instrument, and it stands as the item's proof.
 
 ## Addendum: the level pictures place each copy by its own distance (22 October 2026, M3-L2)
 
@@ -544,7 +545,7 @@ user that spends it.
 
 `packages/cli/src/assets/levels.test.ts` holds two facts. Each level and every coarser level share
 one prefix of the new numbering. Every triangle keeps the positions it drew before the reorder.
-Before the step the same levels' largest index was 16,640, even for the coarsest level's 515
+Before the step the same levels' largest index was 12,245, even for the coarsest level's 515
 vertices, so the prefix check fails without it.
 
 ## Addendum: the levels' cost on an iPad and a phone (25 October 2026, M3-L2)
