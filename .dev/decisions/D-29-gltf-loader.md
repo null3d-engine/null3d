@@ -82,7 +82,7 @@ The loader on the sketch thread then makes each mesh, material and texture once.
 
 - A node with a mesh of one primitive becomes a `Mesh`. A node with several primitives, or with a light and a mesh, becomes a `Group` with one child for each. Any other node becomes a `Group`, or the light it holds.
 - Materials follow `GLTFLoader`. Vertex colors turn on where a primitive has them, and a primitive without normals shades flat. One without tangents turns the normal map's green channel over. Blended materials write no depth. The default material of glTF is metal-rough with both factors at 1.
-- `KHR_texture_transform` sets the material's one `uvTransform`. three.js gives each map its own; the engine's materials have one, so the base color map's transform wins, or else the first map's. A map's `texCoord` sets the texture's `uvSet`, so a texture that two materials read on different sets becomes two textures.
+- `KHR_texture_transform` sets the transform of the map that its texture info belongs to, in the material's `mapUvTransforms`. three.js gives each map its own, and the material's row now keeps one for each row slot ([the addendum below](#addendum-2026-10-25-each-map-keeps-its-own-transform)). A map's `texCoord` sets the texture's `uvSet`, so a texture that two materials read on different sets becomes two textures.
 - glTF's lights are in three.js's units, and the engine's too. The engine assigns lights to clusters by their ranges. So a point or spot light without a `range` ends where its light falls to 0.001 lux, at `sqrt(intensity / 0.001)` meters. In three.js, `distance = 0` means no end. The parity of the lights scene is exact at that cutoff.
 - `EXT_mesh_gpu_instancing` becomes one instance batch per node of each copy. Batches have no parent, so each row takes the node's place in the world when the copy is created, and stays there.
 - Skins, clips and morph targets wait for M2-C7. Points and lines wait for lane G; the loader leaves them out with a warning in development builds.
@@ -120,3 +120,20 @@ Its `GLTFLoader` parses on the main thread, and decodes images with `ImageBitmap
 - M2-C7 reads skins, clips and morph targets in the parser, and hands them to M2-C1's core calls from the loader.
 - The image tests `gltf-*` load sample models, so the CI jobs that draw them fetch the sample content first (`.github/actions/samples`).
 - The record is in the table in [README.md](README.md).
+
+## Addendum, 2026-10-25: each map keeps its own transform
+
+`KHR_texture_transform` now sets the transform of the map whose texture info carries it, in the
+material's `mapUvTransforms`. The loader used to set one `uvTransform`, from the base color map's
+transform or the first map's. three.js keeps one transform for each texture, and the material row
+now does too
+([D-209](D-209-property-animation.md#addendum-2026-10-25-each-map-keeps-its-own-transform)). A file
+that places its maps differently therefore draws that way.
+
+Six models of the sample content carry a transform. Five of them place a map apart from the base
+color map, so their pictures moved and their references were redrawn in both sets in the same
+change. They are `TextureTransformTest`, `ClearCoatCarPaint`, `SheenChair`, `SheenCloth` and
+`ToyCar`. The car paint and the toy car scale their normal map by 3. The sheen chair places its
+normal map apart from its base color map. The sheen cloth scales its sheen maps by 30 and leaves its
+occlusion map at 1. The sixth, `TextureTransformMultiTest`, is not one of the manifest's models.
+`AnimationPointerUVs` also carries transforms, but its test reads values and not pixels.

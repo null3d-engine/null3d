@@ -24,6 +24,7 @@ import { Environment } from './environment';
 import { withCallValues } from './fake-call-values';
 import { FrameCameras } from './frame-cameras';
 import { CoreMemory } from './memory';
+import { PROPERTY_MATERIAL, PropertyAnimation, type PropertyBinding } from './property-animation';
 import { Material, MeshGeometry } from './resources';
 import { type Object3D, Scene } from './scene';
 import { Texture, type Textures } from './textures';
@@ -531,13 +532,82 @@ describe('hold script property paths', () => {
 			time: 1,
 			loop: false,
 		});
+		const start = materialValues.length;
 		scene.propertySystem().step(0);
-		// Each write sends the matrix's two rows: their scale and turn, then the offset.
-		const [u, v] = materialValues.slice(-2);
+		const written = materialValues.slice(start);
+		// Each write sends one map transform's two rows: their scale and turn, then the offset. A
+		// sketch's own animation moves every map of the material together.
+		const last = (param: number) => written.filter((values) => values[1] === param).at(-1);
 		// A zero turn gives -0 in one row, which is a zero.
 		const row = (values: number[] | undefined) => values?.map((value) => value || 0);
-		expect(row(u)).toEqual([1, C.MATERIAL_PARAM_UV_U, 2, 0, 0.5]);
-		expect(row(v)).toEqual([1, C.MATERIAL_PARAM_UV_V, 0, 3, 0.25]);
+		expect(row(last(C.MATERIAL_PARAM_UV_U))).toEqual([1, C.MATERIAL_PARAM_UV_U, 2, 0, 0.5]);
+		expect(row(last(C.MATERIAL_PARAM_UV_V))).toEqual([1, C.MATERIAL_PARAM_UV_V, 0, 3, 0.25]);
+		// Eight maps, two rows each, for both animations.
+		expect(written).toHaveLength(32);
+		expect(row(written.at(-2))).toEqual([
+			1,
+			C.MATERIAL_PARAM_MAP_UV + 6 * C.MATERIAL_PARAM_MAP_UV_STRIDE,
+			2,
+			0,
+			0.5,
+		]);
+	});
+
+	test('a property track moves only its own map of a material', () => {
+		const { scene, paint, materialValues } = fakeCore();
+		const system = scene.propertySystem();
+		// A file's pointer names one map, so its track writes that map's transform alone.
+		const track = (slot: number, name: 'uvOffset' | 'uvScale', values: number[]) => {
+			const binding: PropertyBinding = {
+				what: PROPERTY_MATERIAL,
+				name,
+				components: 2,
+				base: new Float32Array(2),
+				slot,
+			};
+			system.add(
+				new PropertyAnimation(
+					system,
+					paint,
+					binding,
+					{
+						binding: 0,
+						interpolation: 'linear',
+						times: new Float32Array([0, 1]),
+						values: new Float32Array(values),
+					},
+					{ times: [0, 1], values, time: 1, loop: false },
+				),
+			);
+		};
+		track(C.MAP_SLOT_BASE_COLOR, 'uvOffset', [0, 0, 0.5, 0.25]);
+		track(C.MAP_SLOT_EMISSIVE, 'uvScale', [1, 1, 2, 3]);
+		const start = materialValues.length;
+		system.step(0);
+		const written = materialValues.slice(start);
+		const rowOf = (param: number) => written.find((values) => values[1] === param);
+		const base =
+			C.MATERIAL_PARAM_MAP_UV + (C.MAP_SLOT_EMISSIVE - 1) * C.MATERIAL_PARAM_MAP_UV_STRIDE;
+		// The base color map's offset reached its own two rows.
+		expect(rowOf(C.MATERIAL_PARAM_UV_U)?.map((value) => value || 0)).toEqual([
+			1,
+			C.MATERIAL_PARAM_UV_U,
+			1,
+			0,
+			0.5,
+		]);
+		expect(rowOf(C.MATERIAL_PARAM_UV_V)?.map((value) => value || 0)).toEqual([
+			1,
+			C.MATERIAL_PARAM_UV_V,
+			0,
+			1,
+			0.25,
+		]);
+		// The emissive map's scale reached the rows of its own slot.
+		expect(rowOf(base)?.map((value) => value || 0)).toEqual([1, base, 2, 0, 0]);
+		expect(rowOf(base + 4)?.map((value) => value || 0)).toEqual([1, base + 4, 0, 3, 0]);
+		// No other map moved.
+		expect(written).toHaveLength(4);
 	});
 
 	test('reads a camera lens, and names the objects that are close to a name', () => {
