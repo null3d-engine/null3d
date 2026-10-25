@@ -312,16 +312,18 @@ function readHeredocHeader(command, start) {
 }
 
 /**
- * The index after the bodies of the heredocs that wait from the line at `start`.
+ * The bodies of the heredocs that wait from the line at `start`, and the index after them.
  *
  * @param {string} command
  * @param {number} start
  * @param {readonly { delimiter: string, stripTabs: boolean }[]} pending
- * @returns {number}
+ * @returns {{ end: number, bodies: string[] }}
  */
 function skipHeredocs(command, start, pending) {
+	const bodies = [];
 	let i = start;
 	for (const { delimiter, stripTabs } of pending) {
+		const lines = [];
 		while (i < command.length) {
 			const end = command.indexOf('\n', i);
 			const stop = end < 0 ? command.length : end;
@@ -329,28 +331,42 @@ function skipHeredocs(command, start, pending) {
 			if (stripTabs) line = line.replace(/^\t+/, '');
 			i = end < 0 ? command.length : end + 1;
 			if (line === delimiter) break;
+			lines.push(line);
 		}
+		bodies.push(lines.join('\n'));
 	}
-	return i;
+	return { end: i, bodies };
 }
 
 /**
- * The words of each simple command in `command`. A quoted run is one word, a heredoc body is not a
- * command, and `#` starts a comment at the start of a word.
+ * @typedef {object} ShellSegment
+ * @property {string[]} words The words of the simple command.
+ * @property {boolean} piped True when a pipe feeds this command from the one before.
+ * @property {string[]} heredocs The bodies of the heredocs that this command declares.
+ */
+
+/**
+ * The simple commands in `command`. A quoted run is one word, `#` starts a comment at the start of
+ * a word, and a heredoc's body belongs to the command that declares it.
  *
  * @param {string} command
- * @returns {string[][]}
+ * @returns {ShellSegment[]}
  */
 export function shellSegments(command) {
-	/** @type {string[][]} */
+	/** @type {ShellSegment[]} */
 	const segments = [];
 	/** @type {string[]} */
 	let words = [];
+	/** @type {string[]} */
+	let bodies = [];
 	/** @type {{ delimiter: string, stripTabs: boolean }[]} */
-	let pending = [];
+	const pending = [];
+	let piped = false;
 	const endSegment = () => {
-		if (words.length > 0) segments.push(words);
+		if (words.length > 0) segments.push({ words, piped, heredocs: bodies });
 		words = [];
+		bodies = [];
+		piped = false;
 	};
 	let i = 0;
 	while (i < command.length) {
@@ -360,9 +376,14 @@ export function shellSegments(command) {
 			continue;
 		}
 		if (ch === '\n') {
+			if (pending.length > 0) {
+				const skipped = skipHeredocs(command, i + 1, pending);
+				bodies.push(...skipped.bodies);
+				i = skipped.end;
+			} else {
+				i += 1;
+			}
 			endSegment();
-			i = skipHeredocs(command, i + 1, pending);
-			pending = [];
 			continue;
 		}
 		if (ch === '#') {
@@ -375,9 +396,19 @@ export function shellSegments(command) {
 			i += 1;
 			continue;
 		}
-		if (ch === '&' || ch === '|') {
+		if (ch === '&') {
 			endSegment();
-			i += command[i + 1] === ch ? 2 : 1;
+			i += command[i + 1] === '&' ? 2 : 1;
+			continue;
+		}
+		if (ch === '|') {
+			endSegment();
+			if (command[i + 1] === '|') {
+				i += 2;
+			} else {
+				piped = true;
+				i += 1;
+			}
 			continue;
 		}
 		if (ch === '<' && command[i + 1] === '<' && command[i + 2] !== '<') {
@@ -418,13 +449,15 @@ function withoutRedirections(words) {
 }
 
 /**
- * `words` without the settings and wrappers before the command they run.
+ * `words` without the settings and wrappers before the command they run, and whether `xargs` runs
+ * that command with the names that it reads from its input.
  *
  * @param {readonly string[]} words
- * @returns {string[]}
+ * @returns {{ words: string[], xargs: boolean }}
  */
 function unwrap(words) {
 	let i = 0;
+	let xargs = false;
 	while (i < words.length) {
 		const word = words[i] ?? '';
 		if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) {
@@ -438,6 +471,7 @@ function unwrap(words) {
 			break;
 		}
 		if (WRAPPERS.has(word)) {
+			if (word === 'xargs') xargs = true;
 			const values = WRAPPER_VALUES[word];
 			i += 1;
 			while (i < words.length && (words[i] ?? '').startsWith('-')) {
@@ -450,7 +484,7 @@ function unwrap(words) {
 		}
 		break;
 	}
-	return words.slice(i);
+	return { words: words.slice(i), xargs };
 }
 
 /**
@@ -484,9 +518,17 @@ function followsLog(name, args) {
  */
 function killTargets(args) {
 	const targets = [];
+	let literal = false;
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i] ?? '';
-		if (arg === '--') continue;
+		if (literal) {
+			targets.push(arg);
+			continue;
+		}
+		if (arg === '--') {
+			literal = true;
+			continue;
+		}
 		if (arg === '-s' || arg === '-n' || arg === '--signal') {
 			i += 1;
 			continue;
@@ -499,15 +541,17 @@ function killTargets(args) {
 }
 
 /**
- * True when `target` names a process that the command started: a number, a job, a variable, or a
- * command that reads a stored number. A name, or a search by name, is not one.
+ * True when `target` names a process that the command started: a number, a job, a shell expansion,
+ * or a command that reads a stored number. A name, or a search by name, is not one.
  *
  * @param {string} target
  */
 function namesPid(target) {
 	if (/^\d+$/.test(target)) return true;
+	// A job name points at a process of this shell, which the hook cannot see.
 	if (/^%[\w-]+$/.test(target)) return true;
-	if (/^\$\{?[\w!@*#?$-]+\}?$/.test(target)) return true;
+	if (/^\$\{[^}]*\}$/.test(target)) return true;
+	if (/^\$[\w!@*#$?-]+$/.test(target)) return true;
 	if (/^\$\([\s\S]*\)$/.test(target) || /^`[\s\S]*`$/.test(target))
 		return !/\b(?:pgrep|pidof)\b/.test(target);
 	return false;
@@ -527,20 +571,31 @@ function shellCommandAt(args) {
 	return -1;
 }
 
+/** The commands that turn a process name into the numbers that another command reads. */
+const NAME_LOOKUPS = new Set(['pgrep', 'pidof', 'ps', 'grep']);
+
 /**
  * The rule that one simple command breaks, or null when it breaks none.
  *
- * @param {readonly string[]} words
+ * @param {ShellSegment} segment
  * @param {number} depth How many shells this check has already looked inside.
+ * @param {string} producer The command that pipes its output into this one, or an empty string.
  * @returns {Finding | null}
  */
-function refusedWords(words, depth) {
-	const command = unwrap(withoutRedirections(words));
+function refusedWords(segment, depth, producer) {
+	const { words: command, xargs } = unwrap(withoutRedirections(segment.words));
 	const name = basename(command[0] ?? '');
 	const args = command.slice(1);
 	if (SHELLS.has(name)) {
 		const at = shellCommandAt(args);
-		if (at >= 0 && depth < 3) return refusedCommand(args[at] ?? '', depth + 1);
+		if (at >= 0) return depth < 3 ? refusedCommand(args[at] ?? '', depth + 1) : null;
+		// A shell that runs no `-c` command reads its script from a heredoc, when it has one.
+		if (depth < 3) {
+			for (const body of segment.heredocs) {
+				const finding = refusedCommand(body, depth + 1);
+				if (finding) return finding;
+			}
+		}
 		return null;
 	}
 	if (name === 'sleep') return { id: 'no-sleep', message: WAITING };
@@ -548,6 +603,11 @@ function refusedWords(words, depth) {
 	if (name === 'kill') {
 		const targets = killTargets(args);
 		if (targets.length === 0 && args.some((arg) => arg === '-l' || arg === '-L')) return null;
+		// xargs passes numbers in from its input, which a rule cannot see. Only a name lookup makes
+		// a name, so any other producer leaves the target out of sight rather than out of a name.
+		if (targets.length === 0 && xargs) {
+			return NAME_LOOKUPS.has(producer) ? { id: 'no-kill-by-name', message: STOPPING } : null;
+		}
 		if (targets.length === 0 || targets.some((target) => !namesPid(target)))
 			return { id: 'no-kill-by-name', message: STOPPING };
 	}
@@ -563,9 +623,11 @@ function refusedWords(words, depth) {
  * @returns {Finding | null}
  */
 export function refusedCommand(command, depth = 0) {
-	for (const words of shellSegments(command)) {
-		const finding = refusedWords(words, depth);
+	let producer = '';
+	for (const segment of shellSegments(command)) {
+		const finding = refusedWords(segment, depth, segment.piped ? producer : '');
 		if (finding) return finding;
+		producer = basename(unwrap(withoutRedirections(segment.words)).words[0] ?? '');
 	}
 	return null;
 }
