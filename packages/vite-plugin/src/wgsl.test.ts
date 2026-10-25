@@ -20,8 +20,9 @@ import {
 } from './wgsl';
 
 // A custom surface function builds into every variant of the standard material, which takes seconds
-// on a CI runner of four cores.
-setDefaultTimeout(30_000);
+// on a CI runner of four cores. The mask's builds in an instance batch grew the manifest by five
+// thousand builds, and a compile on a loaded runner now passes thirty seconds.
+setDefaultTimeout(60_000);
 
 /** The hint that the tests' compiles end their message about a missing entry point with. */
 const HINT = 'HINT';
