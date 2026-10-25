@@ -1,13 +1,14 @@
 //! Draws of an add-on feature whose instance count the GPU writes (D-173, hook H2). A draw names
-//! the scene object that places it, the most instances that it may draw, and the count that its
-//! shadow views and a page without compute use. The draw's own per-instance buffer belongs to the
-//! add-on's compute pass, and the count word is the add-on's to write each frame.
+//! the scene object that places it, the most instances that it may draw, and the count that a page
+//! without compute sets. The draw's own per-instance buffer belongs to the add-on's compute pass,
+//! and the count word is the add-on's to write each frame.
 //!
 //! The layout gives such an object a bucket of its own, which the culling shader never visits, so
-//! the count stays whatever the add-on's feature wrote. The frame copies each draw's count word into
-//! the instance count of the bucket's indirect draws before the pass that draws it. A shadow view
-//! draws the count that the page set with [`FeatureInstanceTable::set_count`], because the add-on's
-//! compute writes the count for the main view alone.
+//! the count stays whatever the add-on's feature wrote. The frame copies each draw's count word
+//! into the instance count of the bucket's indirect draws before the pass that draws it, in the
+//! camera's view and in every shadow view: an instance that the GPU counts casts its shadow by that
+//! same
+//! count (D-241).
 //!
 //! The table holds no GPU object: the renderer makes the add-on's instance and count buffers from
 //! the ids that a draw's place in this table names.
@@ -37,7 +38,7 @@ struct FeatureInstance {
     slot: u32,
     /// The most instances that the draw may hold.
     capacity: u32,
-    /// The count that a shadow view draws and that a page without compute sets.
+    /// The count that a page without compute sets, which the count word starts each frame from.
     count: u32,
     /// The per-instance rows that the page wrote, or empty before its first write.
     rows: Vec<f32>,
@@ -100,8 +101,8 @@ impl FeatureInstanceTable {
         self.by_slot.retain(|&(_, i)| i != id);
     }
 
-    /// Sets the count that a shadow view draws, and that a page without compute sets. Returns
-    /// false for no such draw.
+    /// Sets the count that a page without compute draws, which the count word starts each frame
+    /// from. Returns false for no such draw.
     pub fn set_count(&mut self, id: u32, count: u32) -> bool {
         let Some(draw) = self.get_mut(id) else {
             return false;
