@@ -178,8 +178,12 @@ The two differ because a ratio of two medians is not the median of ratios, and t
 widely. The verdict rests on the percentage and on its noise, the standard error of that median
 ratio. A page fails only when the change exceeds its threshold in percent and in milliseconds, and
 twice its noise. For GPU time those thresholds are 25 per cent and 0.3 ms. S6 at high reads +5.7
-per cent against a 14.8 per cent noise, so its wider medians are not separable from the machine. No
-benchmark scene installs a sky layer, so the checked pages never run the changed path.
+per cent against a 14.8 per cent noise, so its wider medians are not separable from the machine.
+
+The check did not measure the ground reflections. No benchmark scene installs a sky layer, so S4
+and S6 never run the changed shader path. What the line establishes is that nothing else got
+slower. A benchmark scene with a ground plane under a layer is owed as a task of its own, on the
+owner's list.
 
 The base, `668b7a423`, is a milestone commit whose benchmark pages are identical to the branch's:
 `git diff` names no file under `bench/pages` or `bench/scenes`, so the tool judged the comparison.
