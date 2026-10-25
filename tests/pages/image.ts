@@ -55,6 +55,7 @@ run('image', async () => {
 		shadowTileSize: params.has('shadowTileSize') ? Number(params.get('shadowTileSize')) : undefined,
 		pointLightShadows: params.has('pointLightShadows') || undefined,
 		morphTargets: params.has('morphTargets') ? Number(params.get('morphTargets')) : undefined,
+		cloudSteps: params.has('cloudSteps') ? Number(params.get('cloudSteps')) : undefined,
 		largeWorld: params.has('largeWorld'),
 	});
 	engine.onSketchMessage((type, data) => {
