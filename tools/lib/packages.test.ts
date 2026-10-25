@@ -239,9 +239,9 @@ describe('shaderFiles', () => {
 });
 
 describe('compileShaders', () => {
-	it('refuses WGSL that is no shader, and names the file', () => {
+	it('refuses WGSL that is no shader, and names the file', async () => {
 		const { root, dir } = packageFixture({ 'src/empty.wgsl': '// nothing here\n' });
-		expect(() => compileShaders(root, dir)).toThrow(
+		await expect(compileShaders(root, dir)).rejects.toThrow(
 			/packages\/demo\/src\/empty\.wgsl:1:1: the WGSL has no entry point/,
 		);
 	});
@@ -249,7 +249,7 @@ describe('compileShaders', () => {
 	describe.skipIf(!COMPILES)('with the shader compiler', () => {
 		it('writes the compiled module and its build sets, and no raw WGSL', async () => {
 			const { root, dir } = packageFixture({ 'src/glow.wgsl': MATERIAL });
-			compileShaders(root, dir);
+			await compileShaders(root, dir);
 			const lib = join(dir, 'lib');
 			expect(existsSync(join(lib, 'glow.wgsl'))).toBe(false);
 			expect(existsSync(join(lib, 'glow.wgsl.js'))).toBe(true);
@@ -265,9 +265,9 @@ describe('compileShaders', () => {
 			expect(Object.keys(builds).length).toBeGreaterThan(0);
 		});
 
-		it('fails on WGSL that does not compile, and names the file and the place', () => {
+		it('fails on WGSL that does not compile, and names the file and the place', async () => {
 			const { root, dir } = packageFixture({ 'src/broken.wgsl': BROKEN });
-			expect(() => compileShaders(root, dir)).toThrow(
+			await expect(compileShaders(root, dir)).rejects.toThrow(
 				/packages\/demo\/src\/broken\.wgsl:\d+:\d+: no definition in scope for identifier: `nope`/,
 			);
 		});

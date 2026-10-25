@@ -81,6 +81,8 @@ Vite loads its configs with Node, and Playwright runs in Node, so they cannot ta
 
 The pack tool deletes each `lib/` after it packs. So no local check can pass on built files that CI does not have.
 
+The pack tool, the CDN build and `bun run test:packages` build each library once. An add-on builds as soon as the engine has, beside the other add-ons, and their WGSL shares one pool of compiler threads. A custom material's compile splits across that pool's threads. Built one after another, the add-ons took about 76 of the 130 seconds that CI's pack step took.
+
 The engine's `./internal` and `./stats` entry points exist under the source condition only. The repository's tests and benchmark pages use them, and a project that installs the engine cannot import them.
 
 These options were rejected:
