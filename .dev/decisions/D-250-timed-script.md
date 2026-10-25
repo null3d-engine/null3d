@@ -113,24 +113,27 @@ script's writes.
 `tests/image/cli-script.spec.ts` runs a script in two places. In the fixture project the script
 drives a key, the pointer, a property write and a dump. That test checks that each of the three
 images differs from the other two, and those images have no references. In the repository the
-spec runs the showcase script at 320 by 180 pixels, and compares each of the three images with a
-reference. The runs are `script-demo-night-town-opening`, `-wide` and `-square` in
-`tests/image/script-runs.ts`. The opening run borrows the reference of the manifest's
+spec draws the showcase script at 320 by 180 pixels and compares each of the three images with its
+reference. On 26 October 2026 the spec passed four of four on this Mac's Chrome in 38.5 seconds,
+and all three images matched their references. The runs are `script-demo-night-town-opening`,
+`-wide` and `-square` in `tests/image/script-runs.ts`. The opening run borrows the reference of
+the manifest's
 `demo-night-town`, which holds the same frame and keeps the only picture of it. The other two runs
 keep their own references. The real GPU draws at the High preset, and the software GPU at Low, as
 the image manifest's showcase tests do.
 
-The real GPU's references are on the branch, and the spec passed four of four on this Mac's
-Chrome. The software GPU's two references are not on the branch: only a CI run of the pushed
-branch draws them. That run saves the three images as candidates, and `bun run images:review --ci
-<run> --accept` makes them references.
+The real GPU's references are on the branch. The software GPU's two references are not: only a CI
+run of the pushed branch draws them. That run saves the two missing images as candidates.
+Accepting them with `bun run images:review --ci <run> --accept` makes them references. Each test
+then compares against the picture that the same run drew, and the next run on the branch is the
+green one for that set. The branch keeps no local-reference note, because neither software picture
+is kept from a local drawing.
 
 The earlier version of this addendum drove `examples/input`, a basic demo, because a showcase was
 thought to need input steps. That is not so: a showcase's camera moves with the sketch time. The
 input demo's script and references are therefore gone, and the fixture project still drives the
 key and pointer steps.
 
-The engine's unit tests run in CI's `docs-and-tools` job, which runs `bun run test`. This branch is
-not pushed, so CI has not run them. This machine ran the suite on 26 October 2026: all 16 groups
-passed, 4,257 tests across 355 files, and 41 tests skipped themselves. The command-line tool's
-script tests pass, 11 of 11.
+The engine's unit tests run in CI's `docs-and-tools` job, which runs `bun run test`. The branch is
+pushed, and the suite's recorded run has 4,279 tests across 357 files, with 41 tests skipped. The
+command-line tool's script tests pass, 11 of 11.

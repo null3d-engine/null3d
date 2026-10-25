@@ -58,10 +58,11 @@ export const SCRIPT_RUNS: ImageRun[] = SCRIPT_STATES.map((state) => ({
 	// The software GPU draws every showcase at its Low preset, as the image manifest does, which
 	// keeps its run short.
 	swiftShaderSwitches: ['preset=low'],
-	// The command-line tool draws these, in its own spec rather than the image page. The opening
-	// state borrows the demo's reference, so that test draws it.
+	// The command-line tool draws these, in its own spec rather than the image page. That spec saves
+	// a picture without a reference as a candidate. The opening state borrows the demo's reference,
+	// so that test draws it.
 	...(state !== 'opening' && {
-		make: `{ci}node packages/cli/bin/null3d.js shot --script tests/image/showcase-night-town.script --page '${SHOWCASE_PAGE}' --size 320x180 --gpu webgl2 --out target/night-town.png, with preset=low on the page under CI=1, then bun run images:review --accept ${SHOWCASE_REFERENCE[state]}`,
+		make: `{ci}NULL3D_PRODUCTION_PAGES=skip bun run test:browser image/cli-script.spec.ts, which saves the new picture as a candidate, then bun run images:review --accept ${SHOWCASE_REFERENCE[state]}`,
 	}),
 	tolerance: TOLERANCE,
 	deviceTolerance: DEVICE_TOLERANCE,
