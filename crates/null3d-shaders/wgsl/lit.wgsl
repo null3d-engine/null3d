@@ -1142,6 +1142,15 @@ struct LobeInput {
     values: vec4f,
 }
 
+/// The unit half vector between a light and the eye, as the material's lobe reads it. A light
+/// exactly behind the eye sums the two directions to nothing, and then no half vector exists: the
+/// surface's normal stands in for it, so the lobe draws a finite color rather than a NaN.
+fn lobe_half(to_light: vec3f, to_view: vec3f, normal: vec3f) -> vec3f {
+    let sum = to_light + to_view;
+    let straight = dot(sum, sum);
+    return select(normal, sum * inverseSqrt(straight), straight > 1e-8);
+}
+
 /// The material's own lobe answers a point or spot light as well as the main directional light:
 /// the engine's clustered loop calls this function once for each light of the surface's cluster.
 /// The material's `fn lobe` then sees that light's direction, irradiance and base specular.
@@ -1159,7 +1168,7 @@ override fn null3d::lights::custom_lobe(
         normal,
         to_view,
         to_light,
-        normalize(to_light + to_view),
+        lobe_half(to_light, to_view, normal),
         roughness,
         f0,
         specular,
@@ -1871,7 +1880,7 @@ fn light_surface(
         normal,
         to_view,
         to_sun,
-        normalize(to_sun + to_view),
+        lobe_half(to_sun, to_view, normal),
         m.roughness,
         m.specular_blended,
         sun.specular,

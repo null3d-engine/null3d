@@ -1,13 +1,15 @@
 // Car paint for its image tests: a long rounded body in candy red under the built-in room's light
 // and a sun. ?flakes=off leaves the metal flakes out, ?seams=off the panel seams, and ?weave=on
 // gives the body a carbon weave whose tows stretch their highlight. ?sun=off draws without the
-// main light, and ?lamp=spot gives the clustered light a cone, so the paint spec can check that
-// the flakes glint under each kind of light. The paint spec checks that each part changes the
-// image.
+// main light, and ?lamp=spot or ?lamp=eye moves the clustered light: a cone onto the body, or a
+// bare bulb at the camera, where each surface's light direction is exactly opposite its view. The
+// paint spec checks that each part changes the image, and that the flakes glint under each light.
 import { defineSketch } from '@null3d/engine';
 import { createCarPaint } from '../../../examples/addons/car-paint';
 
 const params = new URL(import.meta.url).searchParams;
+/** Where the camera stands, which is also where the eye lamp sits. */
+const EYE = [2.2, 1.15, 3.3] as const;
 
 export default defineSketch(async (ctx) => {
 	const { scene, geometry, assets } = ctx;
@@ -18,7 +20,7 @@ export default defineSketch(async (ctx) => {
 			fov: 32,
 			near: 0.1,
 			far: 40,
-			position: [2.2, 1.15, 3.3],
+			position: [...EYE] as [number, number, number],
 			target: [0, 0.55, 0],
 		}),
 	);
@@ -31,7 +33,7 @@ export default defineSketch(async (ctx) => {
 			intensity: 3.2,
 		});
 	}
-	// The clustered light: a bare bulb, or a cone from the same place onto the body.
+	// The clustered light: a bare bulb, a cone from the bulb onto the body, or a bulb at the camera.
 	const bulb = {
 		position: [1.6, 1.6, 1.6] as [number, number, number],
 		color: '#bcd6ff',
@@ -40,6 +42,8 @@ export default defineSketch(async (ctx) => {
 	};
 	if (lamp === 'spot') {
 		scene.createSpotLight({ ...bulb, target: [0, 0.55, 0], angle: 0.5, penumbra: 0.25 });
+	} else if (lamp === 'eye') {
+		scene.createPointLight({ ...bulb, position: [...EYE] as [number, number, number] });
 	} else if (lamp === 'point') {
 		scene.createPointLight(bulb);
 	}

@@ -96,34 +96,55 @@ The composer leaves its own marker in the name of an overriding function, such a
 ## Consequences
 
 - Code: the hook table and its signature check in `crates/null3d-shaders/src/material.rs`; the
-  `LobeInput` record, the override and the call in `crates/null3d-shaders/wgsl/lit.wgsl`; the
-  virtual function and the per-light call in `crates/null3d-shaders/wgsl/lib/lights.wgsl`. The
-  extra argument of `clustered_light` follows in `line.wgsl`, and the override marker in
-  `crates/null3d-shaders/src/names.rs` and `library.rs`. The plugin's function names are in
-  `packages/vite-plugin/src/wgsl.ts`, and the error texts of E1215 changed with them.
+  `LobeInput` record, the `lobe_half` guard, the override and the call in
+  `crates/null3d-shaders/wgsl/lit.wgsl`; the virtual function and the per-light call in
+  `crates/null3d-shaders/wgsl/lib/lights.wgsl`. `clustered_light` takes the surface's four values
+  only in the CUSTOM_LOBE builds, so `line.wgsl` and every other caller is unchanged. The override
+  marker is taken off in `crates/null3d-shaders/src/names.rs` and `library.rs`. The plugin's
+  function names are in `packages/vite-plugin/src/wgsl.ts`, and the error texts of E1215 changed
+  with them.
 - Tests: `crates/null3d-shaders/tests/material.rs` builds a material with a lobe into every
   variant. It counts the two calls that reach the lobe in the WGSL and in the GLSL of each build.
   It refuses a wrong signature, and builds the car paint's shipped WGSL on WebGPU and WebGL2.
-  `packages/vite-plugin/src/wgsl.test.ts` builds a lobe on its own. `tests/image/car-paint.spec.ts`
-  measures glints under a point light and under a spot light with the main light out, on every GPU
-  tier.
+  `packages/vite-plugin/src/wgsl.test.ts` builds a lobe on its own.
+  `tests/image/car-paint.spec.ts` measures glints with the main light out, under a point light,
+  under a spot light and under a lamp at the eye, on every GPU tier. The lamp at the eye makes each
+  surface's light direction exactly opposite its view, which is where a half vector from the raw
+  sum would divide by zero.
 - Docs: `docs/shaders/surface-functions.md` holds the lobe's section, with the input table and the
   limit. `docs/api/materials.md`, `docs/guides/custom-shaders.md` and the develop skill name the
   function. `docs/guides/car-paint.md` and the add-on's README describe the glints under each light.
 - Pictures: `tests/image/car-paint.spec.ts` measures pixels that grow brighter with the flakes than
   without them, so the glints draw. Its second test turns the main light out, and counts 182
-  brighter pixels under the point light and 171 under the spot light, on WebGPU, compatibility mode
-  and WebGL2. The paint's references moved, and [image tests](../image-tests.md#references) records
-  the shares and the commands.
+  brighter pixels under the point light, 171 under the spot light and 182 under the lamp at the eye,
+  the same on WebGPU, compatibility mode and WebGL2. The paint's references moved, and
+  [image tests](../image-tests.md#references) records the shares and the commands.
 - Next: M3-B5 declares the lobe for its flakes, as D-255 records. M3-B5's own cost per preset is
   still owed.
 
 ## Runs
 
-The build tests are `cargo test -p null3d-shaders --test material`: a lobe in every variant with both
-calls present, a wrong signature refused, and the car paint on both paths. CI run 40222451866 passed
-those tests in its rust-tests jobs, and its browser shards drew the paint's glints on WebGPU,
-compatibility mode and WebGL2.
+On 26 October 2026, on the Mac, the branch's own code gave these results:
+
+- `cargo test -p null3d-shaders --test material`: 33 passed, 0 failed. A lobe in every variant with
+  both calls present, a wrong signature refused, and the car paint on both paths.
+- `cargo test -p null3d-shaders --lib`: 91 passed, 0 failed.
+- `tests/image/car-paint.spec.ts`: both tests passed. The part test drew 260 to 263 glints with the
+  main light on, and the per-light test drew 182 under the point light, 171 under the spot light and
+  166 to 168 under the lamp at the eye, on WebGPU, compatibility mode and WebGL2.
+- The same per-light test passed on this Mac's SwiftShader: 184 under the point light, 173 under the
+  spot light and 166 to 168 under the lamp at the eye. The part test drew 264 to 267 glints there.
+- The paint's pictures moved by 0.418% to 0.677% of the pixels on the Mac's GPU, and by 0.425% to
+  0.641% under SwiftShader, against a 0.1% limit. They still match after the `lobe_half` guard, which
+  none of those scenes reaches. [Image tests](../image-tests.md#references) holds the figures per
+  test and the commands that draw them again.
+
+The plugin's `builds a lobe alone as a custom material` passed through the rebuilt shader compiler.
+The rest of that suite met its own 30-second limit under a load near 90, including tests that this
+task does not touch.
+
+No CI run holds this code yet. The first run of the branch checks the SwiftShader picture set,
+which this Mac drew.
 
 The GPU check's line for the hook is the one recorded by commit dd2bcab87, taken on 25 October 2026:
 

@@ -129,13 +129,16 @@ test('car-paint: each part changes the image', async ({ page }) => {
 	}
 });
 
-test('car-paint: the flakes glint under a point and a spot light', async ({ page }) => {
+test('car-paint: the flakes glint under each clustered light', async ({ page }) => {
 	const runs = IMAGE_RUNS.filter((run) => run.test === 'car-paint');
 	expect(runs.length).toBe(3);
-	// Two lights, each with the flakes and without them, on every tier.
-	test.setTimeout(runs.length * PAGES_PER_RUN * PAGE_MS);
+	// Three positions, each with the flakes and without them, on every tier. The lamp at the eye
+	// puts each surface's light direction exactly opposite its view, where the half vector has no
+	// direction: a lobe that divides by it draws nothing at all.
+	const lamps = ['point', 'spot', 'eye'];
+	test.setTimeout(runs.length * lamps.length * 2 * PAGE_MS);
 	for (const run of runs) {
-		for (const lamp of ['point', 'spot']) {
+		for (const lamp of lamps) {
 			// The main light is out, so the clustered light alone lights the body. A lobe that
 			// answers only the main light draws the two images the same, and the floor fails.
 			const lit = await imageOf(page, variant(run.path, `?sun=off&lamp=${lamp}`));

@@ -234,8 +234,10 @@ Image tests compare still frames, so the `cells-6378km` test shows that a scene 
   This Mac's SwiftShader drew 0.637%, 0.641% and 0.639%, then 0.637%, 0.641% and 0.639%, and
   0.425%, 0.429% and 0.425%. The limit is 0.1%. The software set was drawn on this Mac with `CI=1`.
   `tests/image/local-references.json` records why: the branch was not pushed when it was drawn, so
-  no CI run could draw it. A set that CI draws would be the stronger proof, and the branch's first
-  CI run checks it. An older reference of these three tests is stale. Draw them again with
+  no CI run could draw it. The paint's per-light test also ran on this Mac's SwiftShader and passed:
+  184 brighter pixels under the point light, 173 under the spot light and 166 to 168 under a lamp at
+  the eye, against a floor of 56. No CI run holds this code yet, so a set that CI draws is still
+  owed. An older reference of these three tests is stale. Draw them again with
   `bun run test:images -g 'car-paint'` on the Mac's GPU and with `CI=1`. Then accept them with
   `bun run images:review --accept car-paint,car-paint-no-seams,car-paint-weave`.
 - **The plant species' and the reading demo's software-GPU pictures are CI's own drawings, from 25 October 2026.** CI run 40129292542 failed these 42 pictures on every tier, and run 40136479101 drew them again, byte for byte. The plants differed in 0.116% to 5.255% of their pixels against the limit of 0.100%, and the reading digits in 0.733% to 0.816%. Two causes held the old pictures. The leaf atlases that `3a6adcf23` paints at first use moved six species' look, and that commit drew only the real-GPU set again. The other software pictures came from a Mac's software GPU, which rounds thin leaves and 2D text its own way ([D-238](decisions/D-238-gate-pictures-from-ci.md)). The new pictures are CI's own drawings, and each one matches the unchanged real-GPU picture within 0.9% of its pixels. The approved look has not moved, and no real-GPU reference changes. The commit carries a `Mac-References:` trailer. An older reference of any of these 14 tests is stale. Draw it again from a CI run that fails it, with `bun run images:review --ci <run>`, and accept it with `bun run images:review --accept <test>`. A Mac run with `CI=1` cannot draw these pictures.
