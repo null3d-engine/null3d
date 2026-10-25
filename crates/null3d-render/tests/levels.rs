@@ -455,6 +455,45 @@ fn forty_thousand_copies_of_four_levels_take_one_copy_each() {
     assert_eq!(8 * rows * 64, 20_480_000);
 }
 
+/// The same forest as the test above, but its trees cast the sun's shadows in four cascades. The
+/// casters' layout is one copy list that every cascade draws, so the four cascades must not
+/// multiply the list.
+#[test]
+fn forty_thousand_casters_of_four_cascades_take_one_copy_each() {
+    let rows: u32 = 40_000;
+    let mut measured = Vec::new();
+    for with_levels in [false, true] {
+        let mut world = World::new();
+        world.cast_sun_shadows(4);
+        if with_levels {
+            give_levels_of(&mut world, &[0.01, 0.05, 0.2], 0b1110);
+        }
+        let slot = world.scene.slots().resolve(world.objects[0]).unwrap() as usize;
+        let material = world.scene.materials()[slot];
+        let batch = world
+            .batches
+            .create(rows, false, false, BALL, material, 0.9)
+            .unwrap();
+        {
+            let batch = world.batches.get_mut(batch).unwrap();
+            batch.set_active_count(rows).unwrap();
+            batch.set_shadows(null3d_core::scene::flags::CAST_SHADOWS);
+        }
+        world.record(true);
+        measured.push(copies(&world)[1]);
+    }
+    // `measured[0]` is the casters' list without levels, and `measured[1]` with them. The four
+    // cascades draw one copy list, so the list takes one copy for each of the 40,000 trees, and
+    // the levels add nothing to it: 2.56 MB, where a slice for every copy in every level and band
+    // took 20.48 MB.
+    let per_copy = rows * 64;
+    assert_eq!(measured[1], measured[0], "{measured:?}");
+    for bytes in measured {
+        assert!(bytes >= per_copy && bytes < per_copy + 128, "{bytes}");
+    }
+    assert_eq!(8 * per_copy, 20_480_000);
+}
+
 #[test]
 fn a_bias_on_an_object_makes_its_levels_switch_nearer() {
     let mut world = cpu_world();
