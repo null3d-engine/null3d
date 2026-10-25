@@ -311,13 +311,26 @@ whole capacity. The sun's shadows on the ground show the counted rows alone: the
 throw no shadow. A post beside the field casts a shadow of its own, so the picture names this draw's
 shadow and not only a shadow in general.
 
-An earlier note in this record gave a wrong cause for a shadow that a diagnostic did not show. It
-said that the conversion subtracts the main camera's position, while a shadow view reads rows
-relative to its own camera. That is false. A cascade's view frame carries the main camera
-(`crates/null3d-render/src/shadows.rs`, `ShadowFrame::view_frame`), and every shadow matrix takes
-positions relative to that camera. So the frame's one conversion is the conversion that every view
-needs, and a per-view conversion would subtract the same position in each view. A shadow atlas's
-tiles are fitted the same way. The conversion therefore stays one per frame.
+The diagnostic was at fault, not the renderer. Two faults of its own hid the shadow:
+
+- The sun travelled away from the camera, so each disc's shadow fell behind it and into the next
+  disc of the row. Nothing on the ground showed, though the shadow map held it.
+- The discs were thin single-sided surfaces, and the shadow pass culls the faces away from the
+  light. With the light behind them, they wrote no depth at all.
+
+Aiming the sun toward the camera and giving the discs `doubleSided` showed every shadow at once. The
+API page for instance draws now names both. A reader who sees a missing shadow checks the framing
+and the surface's sides before suspecting the engine.
+
+The same diagnostic produced a wrong cause in this record. It said that the conversion subtracts the
+main camera's position, while a shadow view reads rows relative to its own camera. On that reading,
+each view would need its own converted rows. That is false. A cascade's view frame carries the main
+camera (`crates/null3d-render/src/shadows.rs`, `ShadowFrame::view_frame`). Its matrix takes positions
+relative to that camera, and it rejects a point left in world coordinates, which the test
+`every_cascade_reads_rows_relative_to_the_main_camera` shows. So the frame's one conversion is the
+conversion that every view needs, and a per-view conversion would subtract the same position in each
+view. A shadow atlas's tiles are fitted the same way. The conversion stays one per frame, and the
+per-view version is not built.
 
 ## Addendum, 26 October 2026: what the allocation proof found, and a fault left open
 
