@@ -331,8 +331,9 @@ export default defineSketch(async ({ assets, post }) => {
 
 The grading controls set a look from a few numbers, without a table file. A job worker bakes them
 into a table of its own. The final pass applies that table to the display color that the tone curve
-leaves, before a `lut`. Changing a value costs the frames nothing: the picture shows the new grade
-once the worker's bake reaches the GPU, usually within a few frames.
+leaves, before a `lut`. A change stalls no frame. The picture shows the new grade once the
+worker's bake reaches the GPU, usually within a few frames. The frame that lands a bake uploads the
+table, 256 KB.
 
 ```ts
 post.set({
@@ -367,7 +368,7 @@ post.set({
 - The table holds the grade alone, and the tone curve stays a calculation in the pass. A custom tone curve therefore still works with the controls.
 - The final pass applies the built-in grade first and a `lut` after it, so a look from a file can sit over a grade from the controls.
 - The final pass draws on every GPU path, with HDR color or without it, so both paths grade alike.
-- The bake runs in a job worker, so a value that changes in a frame loop does not stall the frames. Where no worker can run tasks, the picture keeps its colors and development builds warn once.
+- The bake runs in a job worker, so a value that changes in a frame loop does not stall the frames. The frame that lands a bake uploads the table, 256 KB. Where no worker can run tasks, the picture keeps its colors and development builds warn once.
 - The values are designed for the null3D grading controls. To match a grade that a colorist made in another tool, load its `.cube` file instead.
 
 ## Vignette
