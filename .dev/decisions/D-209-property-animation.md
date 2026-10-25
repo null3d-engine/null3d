@@ -60,13 +60,21 @@ slots, so it still places every map. `mapUvTransforms` gives one map a transform
 loader fills it from each map's `KHR_texture_transform`
 ([D-29](D-29-gltf-loader.md#addendum-2026-10-25-each-map-keeps-its-own-transform)).
 
+**Why the map writes decide the slot.** Every map's transform used to go to its slot, whether or
+not that map drew. A material with a normal map and a bump map could then take the bump map's
+transform in the normal map's slot. A production build also leaves out a map that would take
+another map's slot, such as a clear coat's roughness map beside a coat map. Its transform still
+placed the slot that the other map fills. The placement now follows the map writes: a map that the
+writes leave out places no slot.
+
 **Figures.** The row grows from eighteen `vec4f`s to thirty-two, which is 288 bytes to 512. The
 material table grows with it, by 224 KiB at its 1,024 rows, on both GPU paths. On WebGL2 the
 material data texture's rows grow from thirty-four texels to forty-eight, the sixteen columns of the
 split-sum table included. The shader's table column moves from 18 to 32. The fragment shader reads a
 map's two rows inside the branch that samples that map, and applies them there: two dot products
 place the coordinate and four carry its changes across the pixel. A material pays that for each map
-it samples, and nothing for a map it lacks.
+it samples, and nothing for a map it lacks. One exception is the anisotropy's tangent frame, which
+reads the base color slot where the material has no base color map.
 
 **Rejected: keep one transform per material and note the second as unplayed.** It fails intent
 parity with three.js and with the files. `SheenCloth` scales its sheen maps by 30 and leaves its
