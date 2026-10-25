@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MESSAGE_PHRASES } from './agent-rules.js';
 
 /** The hook that the template installs, and that Claude Code and Codex both run. */
 const HOOK = fileURLToPath(new URL('../templates/empty/.agent/agent-hook.mjs', import.meta.url));
@@ -143,6 +144,29 @@ describe('the source rules', () => {
 		expect(result.stdout).toBe('');
 	});
 
+	it('keeps the context of an edit that does not fit the file', () => {
+		const root = project();
+		const result = runHook(
+			'edit',
+			{
+				tool_name: 'MultiEdit',
+				tool_input: {
+					file_path: 'src/sketch.ts',
+					edits: [
+						{
+							old_string: '\tonUpdate(dt) {\n\t\tangle += dt * 9;',
+							new_string:
+								'\tonUpdate(dt) {\n\t\tconst v = new Float32Array(3);\n\t\tangle += dt * 9;',
+						},
+					],
+				},
+			},
+			root,
+		);
+		expect(result.status).toBe(0);
+		expect(flagged(result)).toContain('onUpdate');
+	});
+
 	it('flags a planned API that the installed engine does not export', () => {
 		const root = project();
 		const engine = join(root, 'node_modules', '@null3d', 'engine');
@@ -191,6 +215,18 @@ describe('the Codex patch', () => {
 		);
 		expect(result.status).toBe(0);
 		expect(flagged(result)).toContain('onUpdate');
+	});
+
+	it('reads the patch from another field that a build may use', () => {
+		const patch = [
+			'*** Begin Patch',
+			'*** Add File: src/scene/sketch.ts',
+			'+const el = document.getElementById("app");',
+			'*** End Patch',
+		].join('\n');
+		const result = runHook('edit', { tool_name: 'apply_patch', tool_input: { patch } });
+		expect(result.status).toBe(0);
+		expect(flagged(result)).toContain('has no DOM');
 	});
 
 	it('reads a file that the patch adds', () => {
@@ -258,10 +294,12 @@ describe('the hook itself', () => {
 	it('takes every rule from the shared module', () => {
 		const hook = readFileSync(HOOK, 'utf8');
 		expect(hook).toContain("'@null3d/cli/agent-rules'");
-		expect(hook).not.toContain('do not wait with sleep');
+		for (const phrase of MESSAGE_PHRASES) {
+			expect(hook).not.toContain(phrase);
+		}
 	});
 
-	it('allows each call before the project has installed its packages', () => {
+	it('tells the agent to install the packages, so no call passes unseen', () => {
 		const root = mkdtempSync(join(tmpdir(), 'null3d-hook-'));
 		roots.push(root);
 		const copy = join(root, '.agent');
@@ -277,6 +315,6 @@ describe('the hook itself', () => {
 			cwd: empty,
 		});
 		expect(result.status).toBe(0);
-		expect(result.stderr).toContain('Run bun install');
+		expect(flagged(result)).toContain('Run bun install');
 	});
 });

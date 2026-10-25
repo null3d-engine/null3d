@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
 	engineDeclarations,
+	MESSAGE_PHRASES,
 	RULES,
 	refusedCommand,
 	refusedSource,
@@ -44,6 +45,11 @@ function sourceRule(file: string, source: string, declarations = '') {
 	return refusedSource(file, source, { declarations })?.id ?? null;
 }
 
+/** The frame update that each allocation test wraps one line in. */
+function body(line: string) {
+	return `export default defineSketch(() => ({\n\tonUpdate(dt) {\n\t\t${line}\n\t},\n}));\n`;
+}
+
 describe('the rule list', () => {
 	it('names every rule once', () => {
 		const ids = RULES.map((rule) => rule.id);
@@ -72,10 +78,15 @@ describe('the rule list', () => {
 			expect(agents).toContain(`\`${rule.id}\` | ${rule.action} |`);
 		}
 	});
+
+	it('gives every rule one fixed message', () => {
+		expect(MESSAGE_PHRASES).toHaveLength(RULES.length);
+		expect(new Set(MESSAGE_PHRASES).size).toBe(MESSAGE_PHRASES.length);
+	});
 });
 
 describe('no-sleep', () => {
-	it('refuses waiting with sleep', () => {
+	it('refuses waiting with sleep, whatever form the command takes', () => {
 		for (const command of [
 			'sleep 5',
 			'bun run test && sleep 1',
@@ -84,17 +95,33 @@ describe('no-sleep', () => {
 			'FOO=1 sleep 1',
 			'sudo -u root sleep 1',
 			'env -i sleep 1',
+			'nice -n 5 sleep 1',
 			'sleep 1 &',
+			'/bin/sleep 1',
+			'bash -c "sleep 1"',
+			"sh -lc 'sleep 2'",
+			'bun run build | tee build.log; sleep 3',
+			'sleep 1 2>/dev/null',
 		]) {
 			expect(commandRule(command)).toBe('no-sleep');
 		}
 		expect(refusedCommand('sleep 5')?.message).toContain('do not wait with sleep');
 	});
 
-	it('allows a command that does not wait', () => {
-		expect(commandRule('bun run test')).toBeNull();
-		expect(commandRule('echo "sleep 5"')).toBeNull();
-		expect(commandRule('bunx @null3d/cli test')).toBeNull();
+	it('allows a command that does not wait, or only talks about waiting', () => {
+		for (const command of [
+			'bun run test',
+			'echo "sleep 5"',
+			'bunx @null3d/cli test',
+			'git commit -m "sleep 1 before the fix"',
+			'echo "a | b"',
+			'bun run build # sleep 1',
+			"cat > note.txt <<'EOF'\nsleep 1 in prose\nEOF",
+			'bash -c "echo hello"',
+			'grep -n sleep dev.log',
+		]) {
+			expect(commandRule(command)).toBeNull();
+		}
 	});
 });
 
@@ -104,20 +131,41 @@ describe('no-kill-by-name', () => {
 			'pkill -f vite',
 			'killall node',
 			'kill node',
-			'kill -9 $(pgrep vite)',
+			'kill -9 node',
+			'kill -s TERM vite',
 			'kill',
-			'kill %1',
+			'kill -9 $(pgrep vite)',
+			'kill $(pidof vite)',
+			'xargs kill',
+			'bash -c "killall node"',
 		]) {
 			expect(commandRule(command)).toBe('no-kill-by-name');
 		}
 		expect(refusedCommand('pkill -f vite')?.message).toContain('by its PID');
 	});
 
-	it('allows stopping a process by its PID', () => {
-		expect(commandRule('kill 1234')).toBeNull();
-		expect(commandRule('kill -9 1234 5678')).toBeNull();
-		expect(commandRule('kill -TERM 1234')).toBeNull();
-		expect(commandRule('echo kill')).toBeNull();
+	it('allows stopping a process that the command names by its number', () => {
+		for (const command of [
+			'kill 1234',
+			'kill -9 1234 5678',
+			'kill -TERM 1234',
+			'kill -s TERM 1234',
+			'kill -n 15 1234',
+			'kill -s KILL 1234',
+			'kill $!',
+			'kill "$PID"',
+			'kill $' + '{PID}',
+			'kill $(cat run/server.pid)',
+			'kill $(cat run/server.pid) 2>/dev/null',
+			'kill %1',
+			'kill -0 $$',
+			'kill -l',
+			'kill $(ps -o pid= -p $$)',
+			'xargs kill 1234 < pids.txt',
+			'command -v kill',
+		]) {
+			expect(commandRule(command)).toBeNull();
+		}
 	});
 });
 
@@ -132,6 +180,7 @@ describe('no-log-follow', () => {
 			'docker logs -f app',
 			'kubectl logs -f pod',
 			'less +F dev.log',
+			'bash -c "tail -f dev.log"',
 		]) {
 			expect(commandRule(command)).toBe('no-log-follow');
 		}
@@ -142,6 +191,7 @@ describe('no-log-follow', () => {
 		expect(commandRule('tail -n 200 dev.log')).toBeNull();
 		expect(commandRule('docker ps')).toBeNull();
 		expect(commandRule('cat dev.log')).toBeNull();
+		expect(commandRule('dev-server | tail -n 50')).toBeNull();
 	});
 });
 
@@ -190,8 +240,6 @@ describe('no-planned-api', () => {
 
 describe('no-allocation-in-onupdate', () => {
 	it('flags an object, array or string made in the frame update', () => {
-		const body = (line: string) =>
-			`export default defineSketch(() => ({\n\tonUpdate(dt) {\n\t\t${line}\n\t},\n}));\n`;
 		for (const line of [
 			'const v = new Float32Array(3);',
 			'const corners = [0, 1, 2];',
@@ -204,10 +252,40 @@ describe('no-allocation-in-onupdate', () => {
 		}
 	});
 
-	it('reads the arrow form of the frame update too', () => {
-		const sketch =
-			'const sketch = {\n\tonUpdate: (dt) => {\n\t\tconst v = new Float32Array(3);\n\t},\n};\n';
-		expect(sourceRule('src/sketch.ts', sketch)).toBe('no-allocation-in-onupdate');
+	it('reads each form that a frame update takes', () => {
+		expect(
+			sourceRule(
+				'src/sketch.ts',
+				'const sketch = {\n\tonUpdate: (dt) => {\n\t\tconst v = new Float32Array(3);\n\t},\n};\n',
+			),
+		).toBe('no-allocation-in-onupdate');
+		expect(
+			sourceRule(
+				'src/sketch.ts',
+				'const sketch = {\n\tonUpdate: function (dt) {\n\t\tconst v = new Float32Array(3);\n\t},\n};\n',
+			),
+		).toBe('no-allocation-in-onupdate');
+	});
+
+	it('follows a frame update that names a closure made above it', () => {
+		expect(
+			sourceRule(
+				'src/sketch.ts',
+				'const update = (dt) => {\n\tconst v = new Float32Array(3);\n};\nexport default { onUpdate: update };\n',
+			),
+		).toBe('no-allocation-in-onupdate');
+		expect(
+			sourceRule(
+				'src/sketch.ts',
+				'function update(dt) {\n\tconst v = new Float32Array(3);\n}\nexport default { onUpdate: update };\n',
+			),
+		).toBe('no-allocation-in-onupdate');
+		expect(
+			sourceRule(
+				'src/sketch.ts',
+				'const onUpdate = () => {\n\tconst v = new Float32Array(3);\n};\nexport default { onUpdate };\n',
+			),
+		).toBe('no-allocation-in-onupdate');
 	});
 
 	it('allows work that reuses objects made outside the frame update', () => {
@@ -215,9 +293,20 @@ describe('no-allocation-in-onupdate', () => {
 		expect(sourceRule('src/sketch.ts', sketch)).toBeNull();
 	});
 
+	it('reads a URL in a string as text, not as the start of a comment', () => {
+		expect(
+			sourceRule(
+				'src/sketch.ts',
+				body('label.textContent = "https://example.com"; const v = new Float32Array(3);'),
+			),
+		).toBe('no-allocation-in-onupdate');
+		expect(
+			sourceRule('src/sketch.ts', body('label.textContent = "https://example.com/a//b";')),
+		).toBeNull();
+	});
+
 	it('ignores brackets and words inside a string', () => {
-		const sketch = `export default defineSketch(() => ({\n\tonUpdate(dt) {\n\t\tlabel.textContent = "a { b [ c document";\n\t},\n}));\n`;
-		expect(sourceRule('src/page.ts', sketch)).toBeNull();
+		expect(sourceRule('src/page.ts', body('label.textContent = "a { b [ c document";'))).toBeNull();
 	});
 });
 
@@ -239,6 +328,7 @@ describe('no-dom-in-sketch', () => {
 	it('ignores a DOM name in a comment or a string', () => {
 		expect(sourceRule('src/sketch.ts', '// the sketch has no document\n')).toBeNull();
 		expect(sourceRule('src/sketch.ts', 'const note = "window";\n')).toBeNull();
+		expect(sourceRule('src/sketch.ts', '/* window and document */\n')).toBeNull();
 	});
 });
 
@@ -248,5 +338,9 @@ describe('the template', () => {
 		const page = readFileSync(join(TEMPLATE, 'src/page.ts'), 'utf8');
 		expect(sourceRule('src/sketch.ts', sketch)).toBeNull();
 		expect(sourceRule('src/page.ts', page)).toBeNull();
+	});
+
+	it('passes its own AGENTS.md rules as a command', () => {
+		expect(commandRule('bunx @null3d/cli test')).toBeNull();
 	});
 });

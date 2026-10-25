@@ -10,6 +10,10 @@ import { fileURLToPath } from 'node:url';
 /** The module that holds every rule, so this file and other null3D tools share one definition. */
 const RULES_PACKAGE = '@null3d/cli/agent-rules';
 
+/** The line that an agent reads when the project has not installed its packages. */
+const NO_PACKAGES =
+	'null3D agent hook: the project has no installed @null3d/cli, so its rules cannot run. Run bun install in the project, then the hook checks each command and each edit.';
+
 /**
  * The rules module that the project's installed command-line tool holds, or null when the project
  * has not run `bun install` yet.
@@ -20,9 +24,6 @@ async function loadRules() {
 	try {
 		return /** @type {Record<string, unknown>} */ (await import(RULES_PACKAGE));
 	} catch {
-		process.stderr.write(
-			'null3D agent hook: the project has no installed @null3d/cli, so its rules cannot run. Run bun install in the project.\n',
-		);
 		return null;
 	}
 }
@@ -75,29 +76,56 @@ function applyEdit(base, edit) {
 }
 
 /**
- * The text that a file edit leaves behind, as the path and the whole text.
+ * The texts that a file edit leaves behind. The first is the whole file after every edit that fits
+ * it. Each edit that does not fit adds its own lines, so the check still sees the context around it.
  *
  * @param {Record<string, unknown>} args The tool's arguments.
  * @param {string} root
- * @returns {{ path: string, text: string } | null}
+ * @returns {{ path: string, text: string }[]}
  */
-function editedFile(args, root) {
+function editedFiles(args, root) {
 	const path = String(args.file_path ?? args.path ?? '');
-	if (path === '') return null;
-	if (typeof args.content === 'string') return { path, text: args.content };
+	if (path === '') return [];
+	if (typeof args.content === 'string') return [{ path, text: args.content }];
 	const base = fileText(root, path);
-	const edits = Array.isArray(args.edits) ? args.edits : null;
-	if (edits) {
-		let text = base;
-		for (const edit of edits) {
-			text = applyEdit(text, /** @type {Record<string, unknown>} */ (edit));
+	const edits = Array.isArray(args.edits)
+		? args.edits
+		: [{ old_string: args.old_string, new_string: args.new_string, replace_all: args.replace_all }];
+	/** @type {{ path: string, text: string }[]} */
+	const files = [];
+	/** @type {string | null} */
+	let text = base;
+	/** @type {{ path: string, text: string }[]} */
+	const nearby = [];
+	for (const edit of edits) {
+		const one = /** @type {Record<string, unknown>} */ (edit);
+		const next = applyEdit(text, one);
+		if (next === null) {
+			const oldText = typeof one.old_string === 'string' ? one.old_string : '';
+			const newText = typeof one.new_string === 'string' ? one.new_string : '';
+			if (oldText !== '' || newText !== '') nearby.push({ path, text: `${oldText}\n${newText}` });
+			continue;
 		}
-		if (text !== null) return { path, text };
-	} else if (typeof args.new_string === 'string') {
-		const text = applyEdit(base, args);
-		if (text !== null) return { path, text };
+		text = next;
 	}
-	return { path, text: typeof args.new_string === 'string' ? args.new_string : '' };
+	if (text !== null) files.push({ path, text });
+	files.push(...nearby);
+	return files;
+}
+
+/**
+ * The patch text that a Codex `apply_patch` call carries. Codex documents the whole patch in
+ * `tool_input.command`, and the other fields are read in case a build passes it another way.
+ *
+ * @param {Record<string, unknown>} args
+ * @returns {string}
+ */
+function patchText(args) {
+	for (const key of ['command', 'patch', 'input', 'arguments']) {
+		const value = args[key];
+		if (typeof value === 'string' && value.includes('*** Begin Patch')) return value;
+	}
+	return '';
 }
 
 /**
@@ -249,15 +277,22 @@ function report(rules, finding) {
 	if (!finding) return 0;
 	const ruleFor = /** @type {(id: string) => { action?: string } | undefined} */ (rules.ruleFor);
 	if (ruleFor(finding.id)?.action === 'flag') {
-		process.stdout.write(
-			`${JSON.stringify({
-				hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: finding.message },
-			})}\n`,
-		);
+		process.stdout.write(`${JSON.stringify(context(finding.message))}\n`);
 		return 0;
 	}
 	process.stderr.write(`${finding.message}\n`);
 	return 2;
+}
+
+/**
+ * The output that gives an agent a message and lets the call go on.
+ *
+ * @param {string} message
+ */
+function context(message) {
+	return {
+		hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: message },
+	};
 }
 
 /** Reads the event and the call that the agent gives the hook, and applies the rules. */
@@ -274,7 +309,10 @@ async function main() {
 	}
 	if (call === null || typeof call !== 'object') return 0;
 	const rules = await loadRules();
-	if (!rules) return 0;
+	if (!rules) {
+		process.stdout.write(`${JSON.stringify(context(NO_PACKAGES))}\n`);
+		return 0;
+	}
 	const tool = String(call.tool_name ?? '');
 	const args = /** @type {Record<string, unknown>} */ (
 		call.tool_input !== null && typeof call.tool_input === 'object' ? call.tool_input : {}
@@ -286,14 +324,10 @@ async function main() {
 		);
 	if (kind === 'bash') return report(rules, refusedCommand(String(args.command ?? '')));
 	const root = projectRoot(call);
-	const patch = tool === 'apply_patch' ? String(args.command ?? '') : '';
-	/** @type {{ path: string, text: string }[]} */
-	let files = [];
-	if (patch) files = patchedFiles(patch, (path) => fileText(root, path));
-	else {
-		const edited = editedFile(args, root);
-		if (edited) files = [edited];
-	}
+	const patch = tool === 'apply_patch' ? patchText(args) : '';
+	const files = patch
+		? patchedFiles(patch, (path) => fileText(root, path))
+		: editedFiles(args, root);
 	const engineDeclarations = /** @type {(root: string) => string} */ (rules.engineDeclarations);
 	const refusedSource =
 		/** @type {(file: string, source: string, context: { declarations: string }) => { id: string, message: string } | null} */ (

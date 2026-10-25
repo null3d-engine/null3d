@@ -2,7 +2,7 @@
 // them to each command and each edit, and a lint rule reads the same list. A rule either refuses
 // the call or flags it: a refusal stops the call, and a flag tells the agent and lets it go on.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 /**
  * @typedef {object} Rule
@@ -58,14 +58,56 @@ export const RULES = /** @type {readonly Rule[]} */ ([
  * @property {string} message What the agent must do instead.
  */
 
-/** The words that end one shell command and start the next. */
-const SEPARATORS = /&&|\|\||[;|\n]/;
+/** The words of the fixed messages, which a check can look for in a copy of the rules. */
+const WAITING =
+	"null3D agent hook: do not wait with sleep. Run a check that ends on its own, such as `bunx @null3d/cli test`, or use the tool's own time limit.";
+const STOPPING =
+	'null3D agent hook: do not stop a process by name. Stop only a process that you started, by its PID.';
+const FOLLOWING =
+	'null3D agent hook: do not follow a log. Read the file once, for example `tail -n 200 <file>`.';
+const ALLOCATION_TAIL =
+	'in onUpdate, which runs every frame. Make it once outside onUpdate and reuse it.';
+const PLANNED_TAIL =
+	'which the installed @null3d/engine does not export. A planned API does not exist in this version. Read its docs page and use the workaround that the page gives.';
+const DOM_TAIL =
+	'in the sketch. The sketch runs in a worker and has no DOM: keep HTML in page.ts and send messages between the two. A sketch on the main thread may use the DOM, but it shares the page thread.';
 
-/** A source line that only mentions a name in a comment is not code. */
-const COMMENTS = /\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;
+/** Every fixed phrase of a message, so a test can prove that a hook holds no rule of its own. */
+export const MESSAGE_PHRASES = /** @type {readonly string[]} */ ([
+	WAITING,
+	STOPPING,
+	FOLLOWING,
+	ALLOCATION_TAIL,
+	PLANNED_TAIL,
+	DOM_TAIL,
+]);
 
-/** A name inside a plain string is text, so a DOM check ignores it. */
-const STRINGS = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g;
+/** The shells whose `-c` argument holds a command that the rules must read too. */
+const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh']);
+
+/** The options of a wrapper command that take the word after them as their value. */
+const WRAPPER_VALUES = /** @type {Readonly<Record<string, ReadonlySet<string>>>} */ ({
+	sudo: new Set(['-u', '-g', '-p', '-a', '-C', '-D', '-r', '-t', '-U']),
+	env: new Set(['-u', '-C', '-S', '--unset', '--chdir']),
+	xargs: new Set(['-n', '-I', '-P', '-L', '-s', '-d', '-E', '-a', '-e']),
+	timeout: new Set(['-s', '-k', '--signal', '--kill-after']),
+	nice: new Set(['-n']),
+});
+
+/** The wrapper commands that run the command after them, and their own options' shape. */
+const WRAPPERS = new Set([
+	'sudo',
+	'env',
+	'xargs',
+	'command',
+	'nohup',
+	'exec',
+	'builtin',
+	'time',
+	'timeout',
+	'gtimeout',
+	'nice',
+]);
 
 /** The files whose code runs in the sketch worker, where the DOM does not exist. */
 const SKETCH_FILE = /(?:^|\/)sketch\.[cm]?[jt]sx?$/;
@@ -78,6 +120,13 @@ const DOM_NAMES =
 const ON_UPDATE = [
 	/\bonUpdate\s*\([^)]*\)\s*\{/g,
 	/\bonUpdate\s*[:=]\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\{/g,
+	/\bonUpdate\s*[:=]\s*(?:async\s+)?function\b[^(]*\([^)]*\)\s*\{/g,
+];
+
+/** A frame update that names a function made elsewhere, or the shorthand property. */
+const ON_UPDATE_NAME = [
+	/\bonUpdate\s*:\s*([A-Za-z_$][\w$]*)\s*(?=[,};]|$)/g,
+	/\{\s*onUpdate\s*[,}]/g,
 ];
 
 /** The ways that code makes a new object, array or string inside a frame. */
@@ -97,44 +146,306 @@ const ENGINE_IMPORT = /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+['"]@null3d\/en
 /** The most declaration text that a check reads, so a huge package cannot slow every edit. */
 const DECLARATION_LIMIT = 8_000_000;
 
-const MESSAGES = {
-	waiting:
-		"null3D agent hook: do not wait with sleep. Run a check that ends on its own, such as `bunx @null3d/cli test`, or use the tool's own time limit.",
-	stop: 'null3D agent hook: do not stop a process by name. Stop only a process that you started, by its PID.',
-	follow:
-		'null3D agent hook: do not follow a log. Read the file once, for example `tail -n 200 <file>`.',
-};
+/**
+ * The index after the quoted text that starts at `start`, honoring a backslash in double quotes and
+ * the substitutions that a double-quoted string runs.
+ *
+ * @param {string} text
+ * @param {number} start The index of the opening quote.
+ * @returns {number}
+ */
+function readQuoted(text, start) {
+	const quote = text[start];
+	let i = start + 1;
+	while (i < text.length) {
+		const ch = text[i];
+		if (ch === '\\' && quote === '"') {
+			i += 2;
+			continue;
+		}
+		if (ch === quote) return i + 1;
+		if (quote === '"' && ch === '$' && text[i + 1] === '(') {
+			i = readSubstitution(text, i);
+			continue;
+		}
+		if (quote === '"' && ch === '`') {
+			i = readBacktick(text, i);
+			continue;
+		}
+		i += 1;
+	}
+	return text.length;
+}
 
 /**
- * The words of one shell segment, without the wrappers and settings before the command, such as
- * `FOO=1`, `sudo` and `timeout 30`.
+ * The index after the backtick that closes the one at `start`.
  *
- * @param {string} segment
- * @returns {string[]}
+ * @param {string} text
+ * @param {number} start
+ * @returns {number}
  */
-function commandWords(segment) {
-	const quoted = segment.match(/"[^"]*"|'[^']*'|[^\s]+/g) ?? [];
-	const words = quoted.map((word) => word.replace(/^["']|["']$/g, ''));
+function readBacktick(text, start) {
+	let i = start + 1;
+	while (i < text.length) {
+		const ch = text[i];
+		if (ch === '\\') {
+			i += 2;
+			continue;
+		}
+		if (ch === '`') return i + 1;
+		i += 1;
+	}
+	return text.length;
+}
+
+/**
+ * The index after the `)` that closes the `$(` at `start`.
+ *
+ * @param {string} text
+ * @param {number} start The index of the `$`.
+ * @returns {number}
+ */
+function readSubstitution(text, start) {
+	let depth = 0;
+	let i = start + 1;
+	while (i < text.length) {
+		const ch = text[i];
+		if (ch === "'" || ch === '"') {
+			i = readQuoted(text, i);
+			continue;
+		}
+		if (ch === '`') {
+			i = readBacktick(text, i);
+			continue;
+		}
+		if (ch === '\\') {
+			i += 2;
+			continue;
+		}
+		if (ch === '(') depth += 1;
+		else if (ch === ')') {
+			depth -= 1;
+			if (depth === 0) return i + 1;
+		}
+		i += 1;
+	}
+	return text.length;
+}
+
+/**
+ * One shell word from `start`, with its quotes removed and its substitutions kept whole.
+ *
+ * @param {string} command
+ * @param {number} start
+ * @returns {{ text: string, end: number }}
+ */
+function readShellWord(command, start) {
+	let text = '';
+	let i = start;
+	while (i < command.length) {
+		const ch = command[i] ?? '';
+		if (ch === '' || ch === ' ' || ch === '\t' || ch === '\r' || ch === '\n') break;
+		if (ch === ';' || ch === '&' || ch === '|') break;
+		if (ch === "'" || ch === '"') {
+			const end = readQuoted(command, i);
+			text += command.slice(i + 1, Math.max(i + 1, end - 1));
+			i = end;
+			continue;
+		}
+		if (ch === '$' && command[i + 1] === '(') {
+			const end = readSubstitution(command, i);
+			text += command.slice(i, end);
+			i = end;
+			continue;
+		}
+		if (ch === '`') {
+			const end = readBacktick(command, i);
+			text += command.slice(i, end);
+			i = end;
+			continue;
+		}
+		if (ch === '\\' && i + 1 < command.length) {
+			text += command[i + 1] ?? '';
+			i += 2;
+			continue;
+		}
+		text += ch;
+		i += 1;
+	}
+	return { text, end: i };
+}
+
+/**
+ * The heredoc that starts with the `<<` at `start`, as its delimiter and whether it strips tabs.
+ *
+ * @param {string} command
+ * @param {number} start
+ * @returns {{ delimiter: string, stripTabs: boolean, end: number } | null}
+ */
+function readHeredocHeader(command, start) {
+	let i = start + 2;
+	let stripTabs = false;
+	if (command[i] === '-') {
+		stripTabs = true;
+		i += 1;
+	}
+	while (command[i] === ' ' || command[i] === '\t') i += 1;
+	let delimiter = '';
+	while (i < command.length) {
+		const ch = command[i] ?? '';
+		if (ch === '' || /[\s;&|<>]/.test(ch)) break;
+		if (ch === "'" || ch === '"') {
+			const end = readQuoted(command, i);
+			delimiter += command.slice(i + 1, Math.max(i + 1, end - 1));
+			i = end;
+			continue;
+		}
+		if (ch === '\\') {
+			delimiter += command[i + 1] ?? '';
+			i += 2;
+			continue;
+		}
+		delimiter += ch;
+		i += 1;
+	}
+	return delimiter === '' ? null : { delimiter, stripTabs, end: i };
+}
+
+/**
+ * The index after the bodies of the heredocs that wait from the line at `start`.
+ *
+ * @param {string} command
+ * @param {number} start
+ * @param {readonly { delimiter: string, stripTabs: boolean }[]} pending
+ * @returns {number}
+ */
+function skipHeredocs(command, start, pending) {
+	let i = start;
+	for (const { delimiter, stripTabs } of pending) {
+		while (i < command.length) {
+			const end = command.indexOf('\n', i);
+			const stop = end < 0 ? command.length : end;
+			let line = command.slice(i, stop);
+			if (stripTabs) line = line.replace(/^\t+/, '');
+			i = end < 0 ? command.length : end + 1;
+			if (line === delimiter) break;
+		}
+	}
+	return i;
+}
+
+/**
+ * The words of each simple command in `command`. A quoted run is one word, a heredoc body is not a
+ * command, and `#` starts a comment at the start of a word.
+ *
+ * @param {string} command
+ * @returns {string[][]}
+ */
+export function shellSegments(command) {
+	/** @type {string[][]} */
+	const segments = [];
+	/** @type {string[]} */
+	let words = [];
+	/** @type {{ delimiter: string, stripTabs: boolean }[]} */
+	let pending = [];
+	const endSegment = () => {
+		if (words.length > 0) segments.push(words);
+		words = [];
+	};
 	let i = 0;
-	while (i < words.length) {
-		const word = words[i] ?? '';
-		if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word) || word === 'command' || word === 'nohup') {
+	while (i < command.length) {
+		const ch = command[i] ?? '';
+		if (ch === ' ' || ch === '\t' || ch === '\r') {
 			i += 1;
 			continue;
 		}
-		if (word === 'sudo' || word === 'env' || word === 'exec') {
+		if (ch === '\n') {
+			endSegment();
+			i = skipHeredocs(command, i + 1, pending);
+			pending = [];
+			continue;
+		}
+		if (ch === '#') {
+			const end = command.indexOf('\n', i);
+			i = end < 0 ? command.length : end;
+			continue;
+		}
+		if (ch === ';') {
+			endSegment();
+			i += 1;
+			continue;
+		}
+		if (ch === '&' || ch === '|') {
+			endSegment();
+			i += command[i + 1] === ch ? 2 : 1;
+			continue;
+		}
+		if (ch === '<' && command[i + 1] === '<' && command[i + 2] !== '<') {
+			const header = readHeredocHeader(command, i);
+			if (header) {
+				pending.push(header);
+				i = header.end;
+				continue;
+			}
+		}
+		const word = readShellWord(command, i);
+		words.push(word.text);
+		i = word.end;
+	}
+	endSegment();
+	return segments;
+}
+
+/**
+ * `words` without the redirections, which name a file and not a process.
+ *
+ * @param {readonly string[]} words
+ * @returns {string[]}
+ */
+function withoutRedirections(words) {
+	const kept = [];
+	for (let i = 0; i < words.length; i++) {
+		const word = words[i] ?? '';
+		const operator = /^\d*[<>]/.exec(word);
+		if (!operator) {
+			kept.push(word);
+			continue;
+		}
+		// A bare operator takes the next word as its file, and any other form names it inline.
+		if (word.replace(operator[0], '') === '') i += 1;
+	}
+	return kept;
+}
+
+/**
+ * `words` without the settings and wrappers before the command they run.
+ *
+ * @param {readonly string[]} words
+ * @returns {string[]}
+ */
+function unwrap(words) {
+	let i = 0;
+	while (i < words.length) {
+		const word = words[i] ?? '';
+		if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) {
+			i += 1;
+			continue;
+		}
+		if (
+			word === 'command' &&
+			((words[i + 1] ?? '').startsWith('-v') || (words[i + 1] ?? '').startsWith('-V'))
+		) {
+			break;
+		}
+		if (WRAPPERS.has(word)) {
+			const values = WRAPPER_VALUES[word];
 			i += 1;
 			while (i < words.length && (words[i] ?? '').startsWith('-')) {
 				const option = words[i] ?? '';
 				i += 1;
-				if (option === '-u' || option === '-g' || option === '-p' || option === '-a') i += 1;
+				if (values?.has(option) && i < words.length) i += 1;
 			}
-			continue;
-		}
-		if (word === 'timeout' || word === 'gtimeout') {
-			i += 1;
-			while (i < words.length && !/^\d/.test(words[i] ?? '')) i += 1;
-			if (i < words.length) i += 1;
+			if ((word === 'timeout' || word === 'gtimeout') && i < words.length) i += 1;
 			continue;
 		}
 		break;
@@ -166,37 +477,154 @@ function followsLog(name, args) {
 }
 
 /**
+ * The words of a `kill` command that name what to stop, without its options and their values.
+ *
+ * @param {readonly string[]} args
+ * @returns {string[]}
+ */
+function killTargets(args) {
+	const targets = [];
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i] ?? '';
+		if (arg === '--') continue;
+		if (arg === '-s' || arg === '-n' || arg === '--signal') {
+			i += 1;
+			continue;
+		}
+		if (arg.startsWith('--signal=')) continue;
+		if (/^-[A-Za-z0-9]+$/.test(arg)) continue;
+		targets.push(arg);
+	}
+	return targets;
+}
+
+/**
+ * True when `target` names a process that the command started: a number, a job, a variable, or a
+ * command that reads a stored number. A name, or a search by name, is not one.
+ *
+ * @param {string} target
+ */
+function namesPid(target) {
+	if (/^\d+$/.test(target)) return true;
+	if (/^%[\w-]+$/.test(target)) return true;
+	if (/^\$\{?[\w!@*#?$-]+\}?$/.test(target)) return true;
+	if (/^\$\([\s\S]*\)$/.test(target) || /^`[\s\S]*`$/.test(target))
+		return !/\b(?:pgrep|pidof)\b/.test(target);
+	return false;
+}
+
+/**
+ * The index in `args` of the command that a shell runs for `-c`, or -1.
+ *
+ * @param {readonly string[]} args
+ */
+function shellCommandAt(args) {
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i] ?? '';
+		if (arg === '--command') return i + 1 < args.length ? i + 1 : -1;
+		if (/^-[A-Za-z]*c[A-Za-z]*$/.test(arg)) return i + 1 < args.length ? i + 1 : -1;
+	}
+	return -1;
+}
+
+/**
+ * The rule that one simple command breaks, or null when it breaks none.
+ *
+ * @param {readonly string[]} words
+ * @param {number} depth How many shells this check has already looked inside.
+ * @returns {Finding | null}
+ */
+function refusedWords(words, depth) {
+	const command = unwrap(withoutRedirections(words));
+	const name = basename(command[0] ?? '');
+	const args = command.slice(1);
+	if (SHELLS.has(name)) {
+		const at = shellCommandAt(args);
+		if (at >= 0 && depth < 3) return refusedCommand(args[at] ?? '', depth + 1);
+		return null;
+	}
+	if (name === 'sleep') return { id: 'no-sleep', message: WAITING };
+	if (name === 'pkill' || name === 'killall') return { id: 'no-kill-by-name', message: STOPPING };
+	if (name === 'kill') {
+		const targets = killTargets(args);
+		if (targets.length === 0 && args.some((arg) => arg === '-l' || arg === '-L')) return null;
+		if (targets.length === 0 || targets.some((target) => !namesPid(target)))
+			return { id: 'no-kill-by-name', message: STOPPING };
+	}
+	if (followsLog(name, args)) return { id: 'no-log-follow', message: FOLLOWING };
+	return null;
+}
+
+/**
  * The rule that a shell command breaks, or null when it breaks none.
  *
  * @param {string} command
+ * @param {number} [depth] How many shells this check has already looked inside.
  * @returns {Finding | null}
  */
-export function refusedCommand(command) {
-	for (const segment of command.split(SEPARATORS)) {
-		const words = commandWords(segment);
-		const name = words[0] ?? '';
-		const args = words.slice(1);
-		if (name === 'sleep') return { id: 'no-sleep', message: MESSAGES.waiting };
-		if (name === 'pkill' || name === 'killall')
-			return { id: 'no-kill-by-name', message: MESSAGES.stop };
-		if (name === 'kill') {
-			const targets = args.filter((arg) => !arg.startsWith('-'));
-			if (targets.length === 0 || targets.some((target) => !/^\d+$/.test(target)))
-				return { id: 'no-kill-by-name', message: MESSAGES.stop };
-		}
-		if (followsLog(name, args)) return { id: 'no-log-follow', message: MESSAGES.follow };
+export function refusedCommand(command, depth = 0) {
+	for (const words of shellSegments(command)) {
+		const finding = refusedWords(words, depth);
+		if (finding) return finding;
 	}
 	return null;
 }
 
 /**
- * `text` with each match of `pattern` replaced by spaces, so offsets and line numbers still match.
+ * `source` in two forms of the same length. `code` has its comments, strings and template literals
+ * blank, and `named` has its comments alone blank, so an import's module name stays.
  *
- * @param {string} text
- * @param {RegExp} pattern
+ * @param {string} source
+ * @returns {{ code: string, named: string }}
  */
-function blank(text, pattern) {
-	return text.replace(pattern, (match) => match.replace(/[^\n]/g, ' '));
+function scanSource(source) {
+	const code = source.split('');
+	const named = source.split('');
+	/**
+	 * @param {number} from
+	 * @param {number} to
+	 * @param {boolean} both
+	 */
+	const blank = (from, to, both) => {
+		for (let k = from; k < to; k++) {
+			if (code[k] !== '\n') code[k] = ' ';
+			if (both && named[k] !== '\n') named[k] = ' ';
+		}
+	};
+	let i = 0;
+	while (i < source.length) {
+		const ch = source[i] ?? '';
+		const next = source[i + 1] ?? '';
+		if (ch === '/' && next === '/') {
+			const end = source.indexOf('\n', i);
+			const stop = end < 0 ? source.length : end;
+			blank(i, stop, true);
+			i = stop;
+			continue;
+		}
+		if (ch === '/' && next === '*') {
+			const end = source.indexOf('*/', i + 2);
+			const stop = end < 0 ? source.length : end + 2;
+			blank(i, stop, true);
+			i = stop;
+			continue;
+		}
+		if (ch === "'" || ch === '"') {
+			const stop = readQuoted(source, i);
+			blank(i, stop, false);
+			i = stop;
+			continue;
+		}
+		if (ch === '`') {
+			// The backticks stay, because the frame rule counts the string that they make.
+			const stop = readBacktick(source, i);
+			blank(i + 1, Math.max(i + 1, stop - 1), false);
+			i = stop;
+			continue;
+		}
+		i += 1;
+	}
+	return { code: code.join(''), named: named.join('') };
 }
 
 /**
@@ -231,32 +659,84 @@ function blockAt(text, open) {
 }
 
 /**
- * The first allocation in a frame update, as the finding that names it, or null.
+ * The block of the function that `name` holds, as the index of its opening brace, or null.
  *
- * @param {string} file
- * @param {string} text Source text whose comments and strings are blank.
- * @returns {Finding | null}
+ * @param {string} text
+ * @param {string} name
+ * @returns {{ open: number } | null}
  */
-function allocationFinding(file, text) {
+function namedFunction(text, name) {
+	const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const patterns = [
+		`(?:const|let|var)\\s+${escaped}\\s*=\\s*(?:async\\s+)?(?:function\\b[^(]*)?\\([^)]*\\)\\s*=>\\s*\\{`,
+		`(?:const|let|var)\\s+${escaped}\\s*=\\s*(?:async\\s+)?function\\b[^(]*\\([^)]*\\)\\s*\\{`,
+		`function\\s+${escaped}\\s*\\([^)]*\\)\\s*\\{`,
+	];
+	for (const pattern of patterns) {
+		const found = new RegExp(pattern).exec(text);
+		if (found) return { open: (found.index ?? 0) + found[0].lastIndexOf('{') };
+	}
+	return null;
+}
+
+/**
+ * The body of each function that the sketch calls once per frame, which may be named elsewhere.
+ *
+ * @param {string} text Source text whose comments, strings and templates are blank.
+ * @returns {{ start: number, end: number }[]}
+ */
+function updateBodies(text) {
+	/** @type {{ start: number, end: number }[]} */
+	const bodies = [];
+	/** @type {Set<string>} */
+	const seen = new Set();
+	/** @param {number} open */
+	const add = (open) => {
+		const block = blockAt(text, open);
+		const key = `${block.start}:${block.end}`;
+		if (seen.has(key)) return;
+		seen.add(key);
+		bodies.push(block);
+	};
 	for (const pattern of ON_UPDATE) {
 		pattern.lastIndex = 0;
 		for (const match of text.matchAll(pattern)) {
-			const open = (match.index ?? 0) + match[0].lastIndexOf('{');
-			const body = blockAt(text, open);
-			const bodyText = text.slice(body.start, body.end);
-			let first = null;
-			for (const [allocates, effect] of ALLOCATIONS) {
-				const found = allocates.exec(bodyText);
-				const index = found?.index ?? -1;
-				if (index >= 0 && (first === null || index < first.index)) first = { index, effect };
-			}
-			if (first) {
-				const line = lineAt(text, body.start + first.index);
-				return {
-					id: 'no-allocation-in-onupdate',
-					message: `null3D agent hook: ${file}:${line} ${first.effect} in onUpdate, which runs every frame. Make it once outside onUpdate and reuse it.`,
-				};
-			}
+			add((match.index ?? 0) + match[0].lastIndexOf('{'));
+		}
+	}
+	for (const pattern of ON_UPDATE_NAME) {
+		pattern.lastIndex = 0;
+		for (const match of text.matchAll(pattern)) {
+			const named = namedFunction(text, match[1] ?? 'onUpdate');
+			if (named) add(named.open);
+		}
+	}
+	return bodies;
+}
+
+/**
+ * The first allocation in a frame update, as the finding that names it, or null.
+ *
+ * @param {string} file
+ * @param {string} text Source text whose comments, strings and templates are blank.
+ * @returns {Finding | null}
+ */
+function allocationFinding(file, text) {
+	for (const body of updateBodies(text)) {
+		const bodyText = text.slice(body.start, body.end);
+		/** @type {{ index: number, effect: string } | null} */
+		let first = null;
+		for (const [allocates, effect] of ALLOCATIONS) {
+			const found = allocates.exec(bodyText);
+			const index = found?.index ?? -1;
+			if (index >= 0 && (first === null || index < first.index)) first = { index, effect };
+		}
+		if (first) {
+			const line = lineAt(text, body.start + first.index);
+			return {
+				id: 'no-allocation-in-onupdate',
+				message: `null3D agent hook: ${file}:${line} ${first.effect} ${ALLOCATION_TAIL}`,
+			};
 		}
 	}
 	return null;
@@ -286,7 +766,7 @@ function plannedApiFinding(file, text, declarations) {
 				const line = lineAt(text, match.index ?? 0);
 				return {
 					id: 'no-planned-api',
-					message: `null3D agent hook: ${file}:${line} imports ${name}, which the installed @null3d/engine does not export. A planned API does not exist in this version. Read its docs page and use the workaround that the page gives.`,
+					message: `null3D agent hook: ${file}:${line} imports ${name}, ${PLANNED_TAIL}`,
 				};
 			}
 		}
@@ -303,17 +783,16 @@ function plannedApiFinding(file, text, declarations) {
  * @returns {Finding | null}
  */
 export function refusedSource(file, source, { declarations = '' } = {}) {
-	const named = blank(source, COMMENTS);
+	const { code, named } = scanSource(source);
 	const planned = plannedApiFinding(file, named, declarations);
 	if (planned) return planned;
-	const code = blank(named, STRINGS);
 	if (SKETCH_FILE.test(file)) {
 		const dom = DOM_NAMES.exec(code);
 		if (dom) {
 			const line = lineAt(code, dom.index);
 			return {
 				id: 'no-dom-in-sketch',
-				message: `null3D agent hook: ${file}:${line} uses ${dom[0]} in the sketch. The sketch runs in a worker and has no DOM: keep HTML in page.ts and send messages between the two. A sketch on the main thread may use the DOM, but it shares the page thread.`,
+				message: `null3D agent hook: ${file}:${line} uses ${dom[0]} ${DOM_TAIL}`,
 			};
 		}
 	}
