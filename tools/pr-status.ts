@@ -59,7 +59,6 @@ const INCOMPLETE = new Set([
 	'M3-V6',
 	'M3-B1',
 	'M3-E4a',
-	'M3-F5',
 	'M3-E6',
 	'M3-E8',
 	'M3-L1',
@@ -185,7 +184,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-E4a':
 		'the material change is on the branch with the water work, but the task asks for a material that declares the scene depth beside two textures on WebGPU, compatibility and WebGL2, and for the cost of a material that reads neither; its helper is finishing that proof',
 	'M3-F5':
-		'the water add-on, its records and its demos are on the branch, but twelve of its reference pictures are not drawn, so the picture-reference check fails; its evidence line waits on those pictures',
+		"the twelve missing pictures are drawn and every water picture passes in both sets, but the Creek's six pictures moved with the add-on's own switch. A counterfactual run, with the sky layer present and only the switch reverted, matched the old references in 0.000% of their pixels and differed from the new ones by 0.165% to 0.661%. The finish line's unchanged-references clause is therefore not met, and whether the add-on's new look stands is the owner's call",
 	'M3-V5':
 		"every vegetation picture passes in both reference sets on both GPUs and the crowns keep their coverage at three distances, and the leaf cells now hold a spray of lobed, veined, damaged leaves instead of one smooth shape. Its author's verdict is that the atlas is at least as good as Creek's as a texture, and that the crown is still paler and flatter because the material lights it with one uniform light while Creek's texture carries painted shadowing, which belongs to M3-V7. The task's line asks the owner to judge the two side by side, and the paint time per device is owed too",
 	'M3-V1':
