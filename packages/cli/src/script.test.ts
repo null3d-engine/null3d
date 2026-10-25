@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { UsageError } from './args.js';
-import { parseScript, scriptProgram, shotSteps } from './script.js';
+import { parseScript, scriptProgram, scriptReadTimes, shotAt, shotSteps } from './script.js';
 
 /** What parsing `text` throws, as the message a person sees. */
 function mistake(text: string): string {
@@ -149,5 +149,28 @@ describe('scriptProgram', () => {
 	it('lists a script’s shots in time order', () => {
 		const steps = parseScript('1 dump car\n2 shot start\n3 dump car.position\n4 shot driving');
 		expect(shotSteps(steps).map((step) => step.name)).toEqual(['start', 'driving']);
+	});
+});
+
+describe('scriptReadTimes', () => {
+	it('lists the times of the shot and dump steps, once each and in order', () => {
+		const steps = parseScript(
+			['0 shot first', '1 dump car', '1.5 key KeyW down', '2 dump car', '2 shot second'].join('\n'),
+		);
+		expect(scriptReadTimes(steps)).toEqual([0, 1, 2]);
+	});
+});
+
+describe('shotAt', () => {
+	const steps = parseScript('1 dump car\n1 shot start\n2 dump car\n3 shot driving');
+
+	it('finds the shot step at a time that also has a dump', () => {
+		expect(shotAt(steps, 1)).toEqual({ at: 1, verb: 'shot', name: 'start' });
+		expect(shotAt(steps, 3)).toEqual({ at: 3, verb: 'shot', name: 'driving' });
+	});
+
+	it('gives no shot at a time where the script draws none', () => {
+		expect(shotAt(steps, 2)).toBeUndefined();
+		expect(shotAt(steps, 4)).toBeUndefined();
 	});
 });
