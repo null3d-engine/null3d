@@ -3,36 +3,36 @@
 		"test": "gltf-iridescence-dielectric",
 		"tier": "compat",
 		"date": "2026-10-25",
-		"reason": "the branch cannot run CI before it is pushed, and the Mac's SwiftShader draws CI's picture; a CI drawing replaces this note when the branch runs"
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 5 passed all its tests against these files in run 40226184684, so the two drawings are equal"
 	},
 	"chromium-swiftshader/compat/gltf-iridescence-metallic.png": {
 		"test": "gltf-iridescence-metallic",
 		"tier": "compat",
 		"date": "2026-10-25",
-		"reason": "the branch cannot run CI before it is pushed, and the Mac's SwiftShader draws CI's picture; a CI drawing replaces this note when the branch runs"
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 5 passed all its tests against these files in run 40226184684, so the two drawings are equal"
 	},
 	"chromium-swiftshader/webgl2/gltf-iridescence-dielectric.png": {
 		"test": "gltf-iridescence-dielectric",
 		"tier": "webgl2",
 		"date": "2026-10-25",
-		"reason": "the branch cannot run CI before it is pushed, and the Mac's SwiftShader draws CI's picture; a CI drawing replaces this note when the branch runs"
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 5 passed all its tests against these files in run 40226184684, so the two drawings are equal"
 	},
 	"chromium-swiftshader/webgl2/gltf-iridescence-metallic.png": {
 		"test": "gltf-iridescence-metallic",
 		"tier": "webgl2",
 		"date": "2026-10-25",
-		"reason": "the branch cannot run CI before it is pushed, and the Mac's SwiftShader draws CI's picture; a CI drawing replaces this note when the branch runs"
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 5 passed all its tests against these files in run 40226184684, so the two drawings are equal"
 	},
 	"chromium-swiftshader/webgpu/gltf-iridescence-dielectric.png": {
 		"test": "gltf-iridescence-dielectric",
 		"tier": "webgpu",
 		"date": "2026-10-25",
-		"reason": "the branch cannot run CI before it is pushed, and the Mac's SwiftShader draws CI's picture; a CI drawing replaces this note when the branch runs"
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 5 passed all its tests against these files in run 40226184684, so the two drawings are equal"
 	},
 	"chromium-swiftshader/webgpu/gltf-iridescence-metallic.png": {
 		"test": "gltf-iridescence-metallic",
 		"tier": "webgpu",
 		"date": "2026-10-25",
-		"reason": "the branch cannot run CI before it is pushed, and the Mac's SwiftShader draws CI's picture; a CI drawing replaces this note when the branch runs"
+		"reason": "drawn on this machine, and CI's Chromium SwiftShader browser shard 5 passed all its tests against these files in run 40226184684, so the two drawings are equal"
 	}
 }
