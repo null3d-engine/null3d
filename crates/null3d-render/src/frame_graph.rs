@@ -4454,9 +4454,12 @@ impl FrameGraph {
         let hdr = self.scene_color.is_hdr();
         let first = FinalInputs {
             grading: Grading {
+                // The grade over high dynamic range light runs in the first step, before the
+                // curve; the display-space table runs in the second, on display color.
+                grade: if grading.hdr { grading.grade } else { None },
+                hdr: grading.hdr,
                 vignette: grading.vignette.filter(|_| hdr),
                 lut: None,
-                grade: None,
                 sharpen: None,
             },
             // The first step skips the tone curve where the mask marks a surface that keeps its
@@ -4480,8 +4483,9 @@ impl FrameGraph {
             grading: Grading {
                 vignette: grading.vignette.filter(|_| !hdr),
                 lut: grading.lut,
-                grade: grading.grade,
+                grade: if grading.hdr { None } else { grading.grade },
                 sharpen: grading.sharpen,
+                ..Grading::default()
             },
             fold: None,
             exposure: None,

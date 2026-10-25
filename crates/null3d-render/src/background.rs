@@ -460,18 +460,17 @@ impl BackgroundPass {
         place: Place,
     ) {
         let live = |texture| settings.textures().is_live(texture);
-        let template = match settings.background().map(|b| b.source) {
-            Some(BackgroundSource::Texture(texture)) if live(texture) => template::BACKGROUND,
-            Some(BackgroundSource::Environment(texture) | BackgroundSource::Cubemap(texture))
-                if live(texture) =>
-            {
-                template::BACKGROUND_CUBE
-            }
-            Some(BackgroundSource::Sky(_)) => template::BACKGROUND_SKY,
-            Some(BackgroundSource::Atmosphere(_)) => template::BACKGROUND_ATMOSPHERE,
-            None if settings.vignetted_background_color().is_some() => template::BACKGROUND_CUBE,
-            _ => 0,
-        };
+        let template =
+            match settings.background().map(|b| b.source) {
+                Some(BackgroundSource::Texture(texture)) if live(texture) => template::BACKGROUND,
+                Some(
+                    BackgroundSource::Environment(texture) | BackgroundSource::Cubemap(texture),
+                ) if live(texture) => template::BACKGROUND_CUBE,
+                Some(BackgroundSource::Sky(_)) => template::BACKGROUND_SKY,
+                Some(BackgroundSource::Atmosphere(_)) => template::BACKGROUND_ATMOSPHERE,
+                None if settings.shaded_background_color().is_some() => template::BACKGROUND_CUBE,
+                _ => 0,
+            };
         self.place = place;
         self.pipeline = if template == 0 {
             0
@@ -564,7 +563,7 @@ impl BackgroundPass {
                 };
                 (shape, cube, BackdropUniform::of(&background, levels))
             }
-            None => match settings.vignetted_background_color() {
+            None => match settings.shaded_background_color() {
                 Some(color) => (Shape::Box, blank, BackdropUniform::color(color)),
                 None => return Ok(()),
             },

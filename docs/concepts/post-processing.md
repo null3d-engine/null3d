@@ -336,7 +336,7 @@ Outlines draw the outlined meshes twice into the mask, which takes 4 bytes per p
 A color grading table, from a `.cube` or a `.3dl` file through `assets.loadLut` or from numbers through `assets.lutFromData`, maps each display color to a graded color, as three.js's `LUTPass` does after its `OutputPass`. The vignette darkens the picture toward its edges. [The post-processing API](../api/post.md#color-grading) lists their settings.
 
 - The vignette multiplies HDR color before the tone mapping, as Filament, Unity's URP, Bevy and Babylon.js do. Bright corners then darken as dark corners do. three.js's `VignetteShader` blends display color toward a gray after the tone mapping, which turns bright corners gray.
-- The table works on display color, after the tone mapping. Grading tools make tables for display color, so they look as their authors made them.
+- The grading controls work on display color, after the tone mapping, as most grading tools do. A `.cube` or `.3dl` table works there too: grading tools make tables for display color, so they look as their authors made them.
 - Both draw on every GPU path, with HDR color or without it, as [Post-processing API](../api/post.md#vignette) says.
 - They are settings of the final pass, not passes of their own. Turning one on builds no pipeline, so the picture changes in the next frame with no pause.
 - Each table is a 3D texture, read with one filtered texture read per pixel. The vignette costs a few operations per pixel.

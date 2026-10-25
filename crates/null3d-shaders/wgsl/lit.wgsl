@@ -224,7 +224,7 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::refraction::{transmitted_light}
 #ifdef TONE_MAP
 #import null3d::fog::{fog_factor}
-#import null3d::tonemap::{encode, tone_map, vignette}
+#import null3d::tonemap::{encode, graded_light, tone_map, vignette}
 #endif
 #endif
 #ifdef TRANSLUCENCY
@@ -2088,7 +2088,11 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let shade = vignette(pixel.xy, engine_frame.target_size.xy, engine_frame.vignette);
     let shaded = fogged(layered, input.relativePosition, material_row) * shade;
     let keeps = keeps_display_color(material_row);
-    let toned = select(tone_map(shaded, engine_frame.output), saturate(shaded), keeps);
+    let toned = select(
+        tone_map(graded_light(shaded, engine_frame.output), engine_frame.output),
+        saturate(shaded),
+        keeps,
+    );
 #ifdef COAT_SHEEN
     let display = toned + through * share * (1.0 - fog) * coat_transmittance(input.viewDirection);
 #else

@@ -1049,8 +1049,13 @@ export function downloadSizes(
  * frame figures and the stats overlay. The rise leaves 502 bytes. The start went from 186 KB to
  * 192 KB in two days, and the owner ruled on 25 October 2026 to keep raising the line as needed for
  * now. A trim that wins bytes back runs beside the raises, and no crossing waits for it.
+ *
+ * It went to 194 KB on 25 October 2026: a local build of the grading work's branch measured
+ * WebGL2's pipelined start at 197,411 bytes, 803 bytes over the old line. The grading controls added
+ * the switch that picks the table's input and the values that the 8-bit path's shaders read. The
+ * rise leaves 1,245 bytes of room.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 192 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 194 * 1024 };
 
 /**
  * The budget for each part that loads after the start. The Brotli figure rose on 22 October 2026,
@@ -1101,11 +1106,16 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
  * fill with over a hundred builds: the largest file went from 1,332,440 to 1,752,865 bytes
  * uncompressed and from 39,341 to 49,501 bytes after Brotli. A separate permutation value would
  * have doubled the lit builds instead, past the build budget.
+ *
+ * The Brotli figure rose to 53 KB on 25 October 2026, for the grading controls' code over light:
+ * every WebGL2 tone-map build carries it, and the largest file, the half-precision draw-index
+ * tone-map set, reached 53,325 bytes against the 52 KB cap. The rise leaves 947 bytes. The helper
+ * decided it for the owner's review, as the note above records for the earlier rise.
  */
 export const FIRST_USE_SHADER_BUDGET: Budget = {
 	raw: 1_792 * 1024,
 	gzip: 320 * 1024,
-	brotli: 52 * 1024,
+	brotli: 53 * 1024,
 };
 
 /**
