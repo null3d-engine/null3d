@@ -358,10 +358,17 @@ Two measurements. Either can settle the ruling alone, if it lands on the refusin
   texels that the movers left. A restore above 0.002 ms a layer with every caster still keeps the
   cache under the bar, and the measured whole-layer floor is six times that.
 
-Both probes are ready. They hold Creek's route at the opening pose and its hour at midday. Every
-cascade draws in every frame, and the two sides run in turns inside one quiet sitting. The restore
-probe times a whole-layer copy, a half and a quarter of it, and the two passes that D-16 measured. So
-its copy figure is checked against known costs.
+Both probes are in the repository.
+- `tests/pages/creek-cascade-share.html` starts Creek with `?mood=Midday&cascade-probe`, which holds
+  the route at its opening pose and draws every cascade in every frame. Opened again with
+  `&without=grass`, it times the same view without the grass. Each page publishes the frame's GPU
+  time and every pass's median on `window.__null3dResult`, and prints them.
+- `tests/pages/depth-copy-cost.html` needs no engine. It times a whole-layer copy, a half and a
+  quarter of it, and the two passes that D-16 measured, so its copy figure is checked against known
+  costs.
+
+The two sides of the first probe run in turns inside one quiet sitting, with the load read before and
+after each. A phase whose load passes 8 is thrown away and named as thrown away.
 
 A Creek frame at this pose would also put the cache at the bar. That takes a frame under 8.4 ms with
 the restore at its floor, or under 6.8 ms at the cost D-16 measured. The quietest run measured
@@ -410,7 +417,8 @@ recorded in the examples guide.
 - No engine code changes. The keep-rate count is a new unit test,
   `the_keep_rate_of_a_still_caster_cache_is_counted` in `crates/null3d-render/src/shadows.rs`.
 - Owed before this rule settles: Creek's still-casters' share at the opening pose, and a copy's and a
-  dirty rectangle's restore cost. Two probes wait for a quiet window on the Mac.
+  dirty rectangle's restore cost. The pages for both are in `tests/pages/`, and a quiet window on the
+  Mac is what they wait for.
 - Owed separately: the time-of-day demo's three cascade passes at a quiet load, and a phone figure.
 - If the cache is built, it starts in `CascadeSchedule::plan`, which already holds the box test and
   the moving-caster test. It adds a second shadow map, a restore pass, and a view for each cached

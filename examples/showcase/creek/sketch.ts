@@ -142,9 +142,16 @@ const ALWAYS_REFLECT = params.get('reflect') === 'always';
 const REFLECT_SCALE = Number(params.get('reflection-scale')) || undefined;
 /** The parts of the scene that the address leaves out, for the bisect of the Apple WebGPU stall. */
 const WITHOUT = new Set((params.get('without') ?? '').split(',').filter(Boolean));
+/**
+ * True holds the route at its opening shot and draws every cascade in every frame, so a page can
+ * time each cascade's pass on one view. The cascade-share probe takes it (D-264).
+ */
+const CASCADE_PROBE = params.has('cascade-probe');
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, quality, page, time } = ctx;
+	// The cascade-share probe needs each cascade's pass in the frame's report, in every frame.
+	if (CASCADE_PROBE) quality.set({ farCascadeInterval: 1 });
 	const detail = DETAIL[quality.preset];
 	reportLoading(ctx);
 	const [sky, room] = await Promise.all([
@@ -384,7 +391,8 @@ export default defineSketch(async (ctx) => {
 				)
 					showLook(next);
 			}
-			film.update(dt);
+			// The cascade-share probe times one view, so its route holds the opening pose.
+			film.update(CASCADE_PROBE ? 0 : dt);
 			// After the camera moves, so the view under the water turns the frame the camera dips.
 			underwater?.update(t, stage.airColor, caustics);
 			const lens = controls.lens();
