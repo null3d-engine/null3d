@@ -40,6 +40,10 @@ evaluation report, and both prompts forbid every evaluation folder and the maint
 folder. Every session's tool calls and tool results were searched for those paths and for the
 wording of the expectations. None matched.
 
+One detail of the sanitized copy: its git status still names the deleted case file and the deleted
+`slow-sketch.ts` fixture. Those names therefore appear in a session's own file listing. Only the
+names were visible, not the contents, so the measurement is unaffected.
+
 Grading is blind per case. A separate model call receives the case's request, its expectations and
 both answers as A and B. The order swaps by case, and the judge is told to ignore any sentence about
 which sources the author used. It answers "pass" or "not pass" for each expectation, with a short
