@@ -9,7 +9,7 @@
 import { createEngine } from '@null3d/engine';
 import * as THREE from 'three';
 import { CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
-import { frames, STAGE } from './css3d-shared';
+import { STAGE } from './css3d-shared';
 import { run } from './result';
 
 /** One of the ports: the sketch, the page's own markup, and three.js's twin of the same scene. */
@@ -38,6 +38,13 @@ export interface Css3dPort {
 	 */
 	labelsBelow?: boolean;
 }
+
+/** Resolves after `count` animation frames. */
+export const frames = (count: number): Promise<void> =>
+	new Promise((resolve) => {
+		const step = () => (--count <= 0 ? resolve() : requestAnimationFrame(step));
+		requestAnimationFrame(step);
+	});
 
 /** The element that `selector` names, or an error that names the page's missing markup. */
 function required<T extends HTMLElement>(selector: string): T {

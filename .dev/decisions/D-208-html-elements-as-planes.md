@@ -141,20 +141,24 @@ Where the ports differ from the examples, and why:
   example's room draws every edge of a segmented box. The port draws the twelve outer edges.
 - No example's controls are ported. Each page draws its example's first state, as the periodic table
   port does. That is the molecules example's caffeine in its atoms-and-bonds view, and a fixed
-  camera in place of the controls. The engine has no camera view offset, which the sandbox and
-  orthographic examples offer only in a panel. Nothing that any first state draws needs it.
+  camera in place of the controls. The molecules port hides one atom, an outer hydrogen, as the
+  example's picker hides the objects of a view that it leaves out. The port therefore draws the
+  rule that a hidden object hides its element. The engine has no camera view offset, which the
+  sandbox and orthographic examples offer only in a panel. Nothing that any first state draws needs
+  it.
 - The mixed port keeps the example's layer order, with the elements below a see-through canvas. The
   frame's border therefore covers the page where the two meet. The port also shows that an engine
   canvas passes the page through where it draws nothing.
 
 No fault of the engine showed while porting. The label system carried every capability that the
 examples need, with no special case in a page. It took a billboard that follows its object's scale,
-and an orthographic lens. It took a hidden object that hides its element, and an element that holds
-a live iframe. It also held a page with more planes than the default capacity (`maxLabels3d`), over
-a see-through canvas.
+and an orthographic lens. It hid the element of a hidden object, which the molecules port checks
+with one atom. It also carried an element that holds a live iframe. It held a page with more planes
+than the default capacity (`maxLabels3d`), over a see-through canvas.
 
-Each port ran on the Mac's GPU on 25 October 2026. It compared its layer of elements with three.js's
-own draw of the same data, at 960 by 540 pixels. A figure is the share of the picture that differed.
+Each of the six ports with a two-stage page ran on WebGPU and on WebGL2 on 25 October 2026, twelve
+tests in all. It compared its layer of elements with three.js's own draw of the same data, at 960
+by 540 pixels. A figure is the share of the picture that differed.
 
 | Port | WebGPU | WebGL2 |
 | --- | --- | --- |
@@ -165,7 +169,8 @@ own draw of the same data, at 960 by 540 pixels. A figure is the share of the pi
 | mixed | 0.000% | 0.000% |
 | youtube | 0.001% | 0.001% |
 
-The periodic table's comparison had no differing pixel either. The sprites and the youtube port
-differ in a few pixels at their edges. That is most likely where a matrix that the engine keeps in
-32-bit floats lands a fraction of a pixel from three.js's. The test allows a thousandth of the
-picture, the limit of the reference images, for a slower rasteriser.
+The periodic table port makes its comparison once, on the path that its page takes, and it had no
+differing pixel either. The sprites and the youtube port differ in a few pixels at their edges. That
+is most likely where a matrix that the engine keeps in 32-bit floats lands a fraction of a pixel
+from three.js's. The test allows a thousandth of the picture, the limit of the reference images,
+for a slower rasteriser.
