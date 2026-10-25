@@ -48,7 +48,6 @@ const INCOMPLETE = new Set([
 	'M3-D9',
 	'M3-F2',
 	'M3-G1',
-	'M3-K4',
 	'M3-R16',
 	'M3-R17',
 	'M3-R20',
@@ -166,7 +165,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'no record shows the listing check passing on vegetation, and its one run skipped the shader and size checks',
 	'M3-F2':
 		'a 100,000-splat cloud becomes one chunk and cannot stream, and the streaming test fails in CI',
-	'M3-K4': "one of three.js r186's seven CSS3D examples is ported, and only its first layout",
 	'M3-R16': 'no project made from the template is installed, built and used with the hook on',
 	'M3-R17':
 		"the evaluation's own record says it does not reach the gate, and the skill text it evaluates differs from the pinned version",
