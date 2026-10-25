@@ -120,7 +120,13 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		needs: ['engine'],
 		required: ['THIRD-PARTY-NOTICES.txt'],
 	},
-	impostors: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	impostors: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine', 'vite-plugin'],
+		required: [],
+	},
 	particles: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
 	geometry: {
 		compile: true,
@@ -130,21 +136,45 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		required: ['THIRD-PARTY-NOTICES.txt'],
 	},
 	// The surface function lives in a .wgsl file, which the pack compiles into a module of its own.
-	terrain: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
-	vegetation: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	terrain: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine', 'vite-plugin'],
+		required: [],
+	},
+	vegetation: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine', 'vite-plugin'],
+		required: [],
+	},
 	// Its tone curves and outline passes compile from .wgsl files into modules of their own.
 	'three-compat': {
 		compile: true,
 		shaders: false,
 		docs: false,
-		needs: ['engine'],
+		needs: ['engine', 'vite-plugin'],
 		required: ['THIRD-PARTY-NOTICES.txt'],
 	},
 	// Its task module is built as the JavaScript that the job workers import, and its two shaders
 	// compile into modules of their own.
-	splats: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	splats: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine', 'vite-plugin'],
+		required: [],
+	},
 	// Its surface and underwater WGSL compile into modules of their own.
-	water: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	water: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine', 'vite-plugin'],
+		required: [],
+	},
 	cli: {
 		compile: false,
 		shaders: false,
@@ -439,8 +469,9 @@ export async function compileShaders(
 /**
  * Builds a package's `src/` into `lib/`: TypeScript writes the JavaScript and the declarations,
  * the build copies the JavaScript and declaration files that `src/` holds as they are, compiles
- * the WGSL files, and then rewrites every relative address to the built file. Fails when an import
- * answers no built file.
+ * the WGSL files, and then rewrites each relative address to the built file. The shader build's
+ * own JavaScript is copied only with `shaderJs`, and never rewritten, since its addresses already
+ * name the files. Fails when an import answers no built file.
  */
 async function compile(
 	root: string,
@@ -597,7 +628,11 @@ export async function buildPackageLibraries(
 		let built = builds.get(name);
 		if (!built) {
 			built = (async () => {
-				await Promise.all(packageBuild(name).needs.map(library));
+				// Every build that this one needs settles before this one starts or fails, so a failed
+				// need never leaves another still writing into its `lib/`.
+				const needs = await Promise.allSettled(packageBuild(name).needs.map(library));
+				const failed = needs.find((need) => need.status === 'rejected');
+				if (failed) throw failed.reason;
 				const started = performance.now();
 				await buildLibrary(root, name, pool, shaderJs);
 				console.log(`  built ${name} in ${secondsSince(started)} s`);
@@ -607,11 +642,18 @@ export async function buildPackageLibraries(
 		return built;
 	};
 	try {
-		// Every build ends before the first failure is thrown, so no build still writes into a `lib/`
-		// that the caller removes.
+		// Every build ends before a failure is thrown, so no build still writes into a `lib/` that the
+		// caller removes. A failed need fails each package that needs it with the same error, which
+		// is named once, beside any other failure.
 		const outcomes = await Promise.allSettled(names.map(library));
-		const failed = outcomes.find((outcome) => outcome.status === 'rejected');
-		if (failed) throw failed.reason;
+		const reasons = [
+			...new Set(
+				outcomes.flatMap((outcome) => (outcome.status === 'rejected' ? [outcome.reason] : [])),
+			),
+		];
+		if (reasons.length === 1) throw reasons[0];
+		if (reasons.length > 1)
+			throw new Error(reasons.map((reason) => (reason as Error).message).join('\n\n'));
 	} finally {
 		await pool.close();
 	}

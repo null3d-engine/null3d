@@ -11,17 +11,11 @@
 import { type ESTree, parseSync, Visitor } from 'vite';
 import {
 	type CompileResult,
-	compileEffect,
 	compileHere,
-	compileMaterial,
-	compileShader,
-	compileSkyLayer,
 	type EffectResult,
 	type MaterialResult,
-	type MaterialSource,
 	type ShaderCompiler,
 	type ShaderProblem,
-	type ShaderSource,
 	type ShaderVariantSpec,
 	type SkyLayerResult,
 } from './shader-compiler.ts';
@@ -400,54 +394,6 @@ function shaderOutcome(result: CompileResult, builds: readonly string[]): WgslCo
 }
 
 /**
- * A shader compiler that answers at once: the engine's library runs on the calling thread, which
- * a build tool may do while it packs a package.
- */
-export interface SyncShaderCompiler {
-	shader(shader: ShaderSource): CompileResult;
-	material(material: MaterialSource): MaterialResult;
-	effect(effect: MaterialSource): EffectResult;
-	skyLayer(layer: MaterialSource): SkyLayerResult;
-}
-
-/** Compiles on this thread, answering at once. */
-export const compileNow: SyncShaderCompiler = {
-	shader: compileShader,
-	material: compileMaterial,
-	effect: compileEffect,
-	skyLayer: compileSkyLayer,
-};
-
-/**
- * Compiles WGSL from a project with the engine's shader library, as `compileWgsl` does, on the
- * thread that calls it. A build tool that has no other work meanwhile uses this, so that its steps
- * keep their order.
- */
-export function compileWgslSync(
-	path: string,
-	source: string,
-	hint: string,
-	compiler: SyncShaderCompiler = compileNow,
-): WgslCompile {
-	const plan = planOf(path, source, hint);
-	switch (plan.kind) {
-		case 'problem':
-			return { ok: false, problems: [plan.problem], builds: [] };
-		case 'effect':
-			return effectOutcome(compiler.effect({ path, source }));
-		case 'skyLayer':
-			return skyLayerOutcome(compiler.skyLayer({ path, source }));
-		case 'material':
-			return materialOutcome(compiler.material({ path, source }), plan.draw);
-		case 'shader':
-			return shaderOutcome(
-				compiler.shader({ path, source, pipelines: plan.pipelines, variants: plan.variants }),
-				plan.builds,
-			);
-	}
-}
-
-/**
  * Compiles WGSL from a project with the engine's shader library. A whole shader builds for WebGPU,
  * and for WebGL2 when it has a render pipeline. A custom material's functions build into every
  * variant of the engine's standard material, and a custom effect's or tone curve's into its
@@ -607,21 +553,6 @@ export async function compileWgslFile(
 ): Promise<ShaderOrError> {
 	const source = text.replaceAll('\r\n', '\n');
 	const compiled = await compileWgsl(path, source, FILE_HINT, compiler);
-	return fileOutcome(compiled, source, { path, line: 1, column: 1 }, id);
-}
-
-/**
- * Compiles a `.wgsl` file on the calling thread, as `compileWgslFile` does. A pack step uses this,
- * so that a shader that does not compile fails the pack with a message that names the file.
- */
-export function compileWgslFileSync(
-	path: string,
-	id: string,
-	text: string,
-	compiler: SyncShaderCompiler = compileNow,
-): ShaderOrError {
-	const source = text.replaceAll('\r\n', '\n');
-	const compiled = compileWgslSync(path, source, FILE_HINT, compiler);
 	return fileOutcome(compiled, source, { path, line: 1, column: 1 }, id);
 }
 
