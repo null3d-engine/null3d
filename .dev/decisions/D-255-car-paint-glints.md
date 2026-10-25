@@ -1,8 +1,9 @@
 # D-255: Car-paint glints
 
 Status: decided by the helper of M3-B5 on 25 October 2026, for the owner's review. Built: the model
-in `examples/addons/car-paint/`, with a shader-crate test that builds it on both paths. Owed: the
-paint's picture references and its cost per preset, which need a quiet GPU. Date: 2026-10-25.
+in `examples/addons/car-paint/`, with a shader-crate test that builds it on both paths, and its
+picture references in both sets, drawn by the Mac and by CI. Owed: its cost per preset, which needs
+a quiet GPU. Date: 2026-10-25.
 Task: M3-B5.
 
 Summary: The flakes are the metal's microfacets. For each pixel, the paint counts the facets in the
