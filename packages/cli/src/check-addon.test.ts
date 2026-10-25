@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { missingCoreFiles } from '../../../packages/vite-plugin/src/index.ts';
 import { MATERIAL_BUILDS_ADDRESS } from '../../../packages/vite-plugin/src/material-builds.ts';
+import { NO_CACHE } from '../../../packages/vite-plugin/src/shader-cache.ts';
 import { fixture } from '../../../tools/lib/fixture';
 import { FIRST_USE_SHADER_BUDGET, LATER_BUDGET } from '../../../tools/lib/size-report.ts';
 import { UsageError } from './args.js';
@@ -551,12 +552,21 @@ const BUILDS = (missingCoreFiles(ADDON_FIXTURE) ?? []).length === 0;
 
 describe.skipIf(!BUILDS)('buildAddon', () => {
 	it('gives the shader data that the entry holds a part of its own', async () => {
-		const built = await buildAddon(ADDON_FIXTURE, './src/index.ts');
-		expect(built.error).toBeUndefined();
-		const entry = (built.files ?? []).find((file) => file.name === 'addon.js');
-		// A build with no second pass, or a file that it did not split, leaves no shader part.
-		expect(entry?.shader?.raw ?? 0).toBeGreaterThan(0);
-		expect((entry?.code?.raw ?? 0) + (entry?.shader?.raw ?? 0)).toBe(entry?.raw ?? -1);
+		// A build that reads no cache writes nothing into the fixture and announces no compile, so
+		// the fixture keeps no file of its own and no output escapes into a later test.
+		const before = process.env[NO_CACHE];
+		process.env[NO_CACHE] = '1';
+		try {
+			const built = await buildAddon(ADDON_FIXTURE, './src/index.ts');
+			expect(built.error).toBeUndefined();
+			const entry = (built.files ?? []).find((file) => file.name === 'addon.js');
+			// A build with no second pass, or a file that it did not split, leaves no shader part.
+			expect(entry?.shader?.raw ?? 0).toBeGreaterThan(0);
+			expect((entry?.code?.raw ?? 0) + (entry?.shader?.raw ?? 0)).toBe(entry?.raw ?? -1);
+		} finally {
+			if (before === undefined) delete process.env[NO_CACHE];
+			else process.env[NO_CACHE] = before;
+		}
 	});
 });
 
