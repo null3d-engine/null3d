@@ -2,7 +2,7 @@
 
 Status: decided, 23 October 2026. Task: M3-R3.
 
-Summary: Each engine table and allocator reports the bytes that it reserves, uses and has used at most. The stats overlay's card lists these areas by system, in a development build. A report allocates nothing and runs only while the card shows, so a shipped page pays no frame time for it. On Battle, the rows that D-130 measured reproduce its per-object figures to the byte. They are 263 for the scene's rows, 17 for the cells, 12 for the levels and 48 for the bucket keys.
+Summary: Each engine table and allocator reports the bytes that it reserves, uses and has used at most. The stats overlay's card lists these areas by system, in a development build. A report allocates nothing and runs only while the card shows, so a shipped page pays no frame time for it. On Battle, the four fixed-size rows that D-130 measured reproduce its per-object figures to the byte. The upload and shadow-caster rows do not, and the Decision says why. They are 263 for the scene's rows, 17 for the cells, 12 for the levels and 48 for the bucket keys.
 
 ## Question
 
@@ -97,6 +97,6 @@ D-130's 88 to 142 B per object is a hand inventory of shadow-caster memory. D-13
 | `draw lists` | 0.0 | 0.1 | 0.1 |
 | `animation` | 12.9 | 12.9 | 12.9 |
 
-Two of the reserved readings do not follow from the Data table. The upload arenas reserve 17.1 MiB against the table's 17.0, and the draw lists reserve 0.1 against 0.0. The run is a later build than the table's. Its WebAssembly memory reads 95.1 MiB against the table's 94.8, so its rows need not equal the table's. The exact bytes were never read, so the record keeps the rounded values as the card showed them. The GPU rows read 115.5 MiB of textures and 44.5 MiB of buffers, beside the engine's 95.1 MiB of WebAssembly memory. Those rows carry no tooltip, so the card cannot give their exact bytes. The card costs frames, so this is not a timing run. These are the rows the task names, from one build of the branch.
+The card's readings cannot be reconciled with the Data table, and the record does not claim they can. The card rounds every figure to one decimal of a mebibyte. The reading came from the visible text, not from the tooltip's exact bytes. The Data table's cells are also not labelled by measure, so a comparison would depend on which cell a reader takes each figure from. The run is a later build than the table, with 95.1 MiB of WebAssembly memory against the table's 94.8. A difference is therefore expected and proves nothing either way. What the run does show is that the card lists every area at the size the table's account predicts for a scene of that size.
 
 **Corrections.** The Data section's paragraph after the table said the rows hold 15.1 MB. They add to 15,620,478 bytes, or 15.62 MB. An earlier Decision said that the rows D-130 named reproduce its figures within 1%. That holds for the four fixed-size rows, which match to the byte. It does not hold for the upload arenas, whose 80 B per object is twice D-130's 40 B total. It does not hold for the shadow casters either, because that row measures the casters' draw layout alone. The addendum's hand check is the evidence for those rows. The test is also the raw record of the check, so a reader can run it again. The Data table's figures stay the two runs of 23 October 2026.
