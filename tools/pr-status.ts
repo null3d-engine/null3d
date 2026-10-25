@@ -127,8 +127,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the memory figure is a 40,000-ball test on the main view alone, and no GPU time was taken on the Mac, an iPad or a phone-class device',
 	'M3-L4':
 		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
-	'M3-A1':
-		'`scene.pick` returns no texture coordinates; raycasts and pointer events do, so the pixel-exact pick is short of the task',
 	'M3-A2': "the refresh's cost rows are all owed, the Mac's included",
 	'M3-A8':
 		'the shipped design is a display-color table with no tone curve, which replaced the HDR input D-199 has the owner approving',
@@ -265,6 +263,7 @@ function description(): string {
 				!PARTIAL[id] &&
 				!ON_BRANCH.has(id) &&
 				!INCOMPLETE.has(id) &&
+				!(id in AUDIT_GAPS) &&
 				id in TASK_EVIDENCE;
 			const mark = done ? 'x' : ' ';
 			const note = PARTIAL[id]
