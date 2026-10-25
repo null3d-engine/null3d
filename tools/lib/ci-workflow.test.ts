@@ -10,6 +10,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { PRODUCTION_BUILD_PAGES, PRODUCTION_BUILD_TESTS } from '../../tests/lib/server.ts';
 import { HEARTBEAT_SECONDS } from '../../tests/pages/lib/runner-rules.ts';
+import { PASS_KEYED } from './ci-passes.ts';
 
 interface Step {
 	id?: string;
@@ -166,6 +167,20 @@ function scriptsWithImports(start: readonly string[]): Set<string> {
 }
 
 /** A pattern of `hashFiles` as a regular expression over paths from the root. */
+/** The globs of each hash that the passes job's step works out, by the hash's name. */
+function passHashGlobs(): Map<string, string[]> {
+	const step = jobNamed('passes').steps?.find(({ id }) => id === 'hashes');
+	const globs = new Map<string, string[]>();
+	for (const [, name = '', args = ''] of (step?.run ?? '').matchAll(
+		/echo "([\w-]+)=\$\{\{ hashFiles\(([^)]*)\) \}\}"/g,
+	))
+		globs.set(
+			name,
+			[...args.matchAll(/'([^']+)'/g)].map(([, glob]) => glob ?? ''),
+		);
+	return globs;
+}
+
 const globPattern = (glob: string) =>
 	new RegExp(
 		`^${glob
@@ -194,9 +209,19 @@ describe("CI's workflow", () => {
 			.sort();
 		expect(skippable).toEqual(full);
 		expect(full.length).toBeGreaterThan(0);
+		// A pass-keyed job skips when the passes job found every part passed, and ci-passed knows it.
+		for (const name of Object.keys(PASS_KEYED)) {
+			expect(jobNamed(name).if, name).toBe(
+				expression(`!contains(fromJSON(needs.passes.outputs.passed), '${name}')`),
+			);
+			expect(needsOf(jobs[name]), name).toContain('passes');
+		}
+		expect(step?.env?.PASSED).toBe(expression("needs.passes.outputs.passed || '[]'"));
+		expect(step?.run).toContain('(.key | IN($passed[]))');
 		// Every other job that ci-passed waits for runs in every run.
 		for (const name of needsOf(jobs['ci-passed']))
-			if (!full.includes(name)) expect(jobNamed(name).if, name).toBeUndefined();
+			if (!full.includes(name) && !(name in PASS_KEYED))
+				expect(jobNamed(name).if, name).toBeUndefined();
 		// The quick run that ci-passed reads is a run that the full-run condition leaves out.
 		expect(step?.env?.QUICK).toBe(
 			expression("github.event_name == 'push' && github.ref != 'refs/heads/main'"),
@@ -287,7 +312,7 @@ describe("CI's workflow", () => {
 		expect(shares.map(([part]) => part)).toEqual(oneTo(count));
 		expect(shares.every(([, total]) => total === count)).toBe(true);
 		const steps = jobNamed('shader-compiler-plugin').steps ?? [];
-		const pass = steps.find(({ name }) => name === "The key of this part's inputs")?.run ?? '';
+		const pass = String(steps.find(({ id }) => id === 'passed')?.with?.key);
 		const cache = steps.find(
 			({ with: given }) => given?.path === 'node_modules/.cache/null3d-shaders',
 		);
@@ -621,17 +646,11 @@ describe("CI's workflow", () => {
 	});
 
 	it('names in each pass key every script that its part starts, with their imports', () => {
-		const keyed = Object.entries(jobs).filter(([, job]) =>
-			(job.steps ?? []).some(({ name }) => /^The key of this \w+'s inputs$/.test(name ?? '')),
-		);
-		expect(keyed.length).toBeGreaterThan(0);
-		for (const [name, job] of keyed) {
-			const key = (job.steps ?? []).find(({ name: step }) =>
-				/^The key of this \w+'s inputs$/.test(step ?? ''),
-			);
-			const globs = [...(key?.run ?? '').matchAll(/hashFiles\(([^)]*)\)/g)].flatMap(([, args]) =>
-				[...(args ?? '').matchAll(/'([^']+)'/g)].map(([, glob]) => glob ?? ''),
-			);
+		const hashes = passHashGlobs();
+		for (const [name, { hashes: names }] of Object.entries(PASS_KEYED)) {
+			const job = jobNamed(name);
+			const globs = names.flatMap((hash) => hashes.get(hash) ?? []);
+			expect(globs.length, name).toBeGreaterThan(0);
 			const patterns = globs.map(globPattern);
 			const started = commandsOf(job).flatMap(({ text, env }) => {
 				const named = [...text.matchAll(SCRIPT_PATH)].map(([, path]) => path ?? '');
@@ -656,13 +675,7 @@ describe("CI's workflow", () => {
 	it("names in the Rust tests' key every file outside the crates that the crates' code names", () => {
 		// A path such as "../../packages/engine/src/errors/codes.ts" counts from the file that names
 		// it, as include_str! reads it, or from its crate, as a path joined to the crate's folder does.
-		const step = jobNamed('rust-tests').steps?.find(
-			({ name }) => name === "The key of this part's inputs",
-		);
-		const workspace = /\|\| hashFiles\(([^)]*)\)/.exec(step?.run ?? '')?.[1] ?? '';
-		const patterns = [...workspace.matchAll(/'([^']+)'/g)].map(([, glob]) =>
-			globPattern(glob ?? ''),
-		);
+		const patterns = (passHashGlobs().get('rust-workspace') ?? []).map(globPattern);
 		expect(patterns.length).toBeGreaterThan(0);
 		const named = new Set<string>();
 		for (const file of filesBelow('crates').filter((path) => path.endsWith('.rs'))) {
