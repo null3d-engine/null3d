@@ -6,8 +6,9 @@ a low load.
 
 Summary: Do not build a cache of the still casters. A cache could keep its layers in 75% to 98% of
 the frames of the engine's own scenes, so the keep rate passes. The saving does not. At Creek's best
-pose for a cache, its two cascades cost 0.076 and 0.30 ms, and the saving is about 0.19 ms. Creek's
-frame at that pose is 9.81 ms, so the saving is 1.9%, under the rule's 3%.
+pose for a cache, its two cascades cost 0.076 and 0.29 ms, and the saving is about 0.18 ms. Creek's
+frame at that pose lies between 8.9 and 12.5 ms, so the saving is 1.4% to 2.0%, under the rule's 3%
+at both ends.
 
 ## Question
 
@@ -214,32 +215,36 @@ The page still drifts over a longer sitting. The third measurement of each group
 draw calls against the others' 190 and 185. Only the first two measurements of each group are
 comparable.
 
-That run took its figures at a load near 40, and they are inflated by it. The same page ran again on
-a quiet machine and gave the frame that the rule needs. The
-[second run file](../tested-devices/macbook-pro-chrome/20261026-010100-shadow-frame.md) holds it.
+That run took its figures at a load near 40, and they are inflated by it. The frozen page then ran
+in two more sittings, logged in the
+[first](../tested-devices/macbook-pro-chrome/20261026-010100-shadow-frame.md) and
+[second](../tested-devices/macbook-pro-chrome/20261026-010626-shadow-frame.md) run files.
 
-| Measure | Quiet machine, three runs |
-| --- | --- |
-| Frame GPU | 9.720, 9.867, 9.809 ms |
-| First cascade | 0.076, 0.077, 0.076 ms |
-| Second cascade | 0.296, 0.308, 0.307 ms |
-| CPU | 0.41, 0.40, 0.39 ms |
+| Sitting's load at its start | Frame GPU, three runs | First cascade | Second cascade |
+| --- | --- | --- | --- |
+| 13.90 | 9.720, 9.867, 9.809 ms | 0.076, 0.077, 0.076 ms | 0.296, 0.308, 0.307 ms |
+| 7.57 | 8.937, 11.767, 12.466 ms | 0.074, 0.098, 0.107 ms | 0.287, 0.402, 0.437 ms |
 
-The load averaged 13.9 before the run and 11.5 after it. Both cascade passes and the frame held
-steady across the three measurements, so these are the figures the rule reads.
+The frame did not follow the load. The sitting that began at 13.90 read lower than the one that began
+at 7.57. Within the second, the frame rose from 8.9 to 12.5 ms as the load rose. Nothing in this
+probe isolates the cause. The draw calls drifting to 225 on a later run is the one change visible in
+the same frames.
+
+So Creek's frame at this pose lies between 8.9 and 12.5 ms. The record reads the rule across that
+range rather than picking the figure that suits it.
 
 ### What the figures say
 
 The grass-off pair measured on the loaded machine put about 95% of the second cascade in still
-casters. Taking that share of the quiet machine's 0.30 ms gives an `S2` of about 0.29 ms.
+casters. Taking that share of the quietest cascade, 0.29 ms, gives an `S2` of about 0.28 ms.
 
-    saving = 0.75 x (0.076 + 0.29) - 2 x 0.045 = 0.19 ms
+    saving = 0.75 x (0.076 + 0.28) - 2 x 0.045 = 0.18 ms
 
 The restore is D-16's 0.045 ms a layer, for Creek's two.
 
-So the saving is about 0.19 ms against a frame of 9.81 ms, which is 1.9%. The rule asks for 3%, so
-it fails by a third of the bar. To reach 3% the saving would need 0.29 ms, or Creek's frame would
-have to fall under 6.2 ms.
+So the saving is about 0.18 ms. Against the frame's measured range it is 2.0% at 8.9 ms and 1.4% at
+12.5 ms. The rule asks for 3%, and no end of the range comes near it. The saving would have to reach
+0.27 ms at the fastest frame measured, or Creek's frame would have to fall under 6 ms.
 
 The time-of-day demo cannot pay for a cache. Its two measured cascades total 0.142 and 0.167 ms. At
 its 80% keep rate those save 0.11 and 0.13 ms. Its three layers' restore takes 0.135 ms, which
@@ -290,10 +295,10 @@ no pixel.
 
 ## What would change the answer
 
-The cache needs a saving of 0.29 ms to reach 3% of Creek's 9.81 ms frame, against the 0.19 ms it
-has. Two things could supply the difference. A still cascade of about 0.45 ms instead of 0.30 would
-do it, and so would a Creek frame under 6.2 ms. Neither is in sight: Creek's cascades and frame are
-now measured at its best pose, and both come out the other side of the bar.
+The cache needs 0.27 ms to reach 3% of the fastest frame measured, against the 0.18 ms it has. Two
+things could supply the difference. A still cascade of about 0.42 ms instead of 0.29 would do it, and
+so would a Creek frame under 6 ms. Neither is in sight: Creek's cascades and frame are now measured
+at its best pose, and both come out the other side of the bar.
 
 Night town is the shipped scene with still casters that this record never measured. It may suit a
 cache better than Creek does, and it is the one place left where the figures could go the other way.
@@ -306,8 +311,8 @@ this ruling, since the bar is missed here by a third.
 
 Do not build a cache of the still casters. The keep rate passes, at 75% in Creek and up to 98% in
 the scenes whose sun stands still. The saving does not. At Creek's best pose for a cache, its
-cascades cost 0.076 and 0.30 ms, and the still casters' saving is about 0.19 ms. Creek's frame is
-9.81 ms, so that is 1.9%, under the rule's 3%.
+cascades cost 0.076 and 0.29 ms, and the still casters' saving is about 0.18 ms. Creek's frame lies
+between 8.9 and 12.5 ms, so that is 1.4% to 2.0%, under the rule's 3% at both ends.
 
 The pose is the best one the record found for a cache, because the opening wide shot barely puts the
 grass in the cascades. Every other pose on the route shows more grass and less still work, so the
