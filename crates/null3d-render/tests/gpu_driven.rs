@@ -1411,6 +1411,61 @@ fn the_direct_path_uploads_each_bucket_s_visible_copies() {
     }
 }
 
+/// The direct path's instance buffer binds at vertex slot 1 and no group reads it, so the device's
+/// largest buffer bounds it, not its largest storage binding. A batch that draws inside a distance
+/// band takes a fading bucket beside its bucket, which doubles its rows: the compacted layout then
+/// passes the binding, while the sources still fit the binding that they must obey.
+#[test]
+fn the_direct_path_sizes_its_instance_buffer_past_the_storage_binding() {
+    /// The box mesh that the world's first objects draw, by engine id.
+    const BOX: u32 = 1;
+    let binding = 1024 * 1024;
+    let rows = 10_000;
+    let mut world = World::with_config(RendererConfig {
+        direct_draws: true,
+        storage_binding_bytes: binding,
+        ..RendererConfig::default()
+    });
+    let slot = world.scene.slots().resolve(world.objects[0]).unwrap() as usize;
+    let material = world.scene.materials()[slot];
+    let batch = world
+        .batches
+        .create(rows, false, false, BOX, material, 0.9)
+        .unwrap();
+    let batch = world.batches.get_mut(batch).unwrap();
+    batch.set_active_count(rows).unwrap();
+    batch.set_draw_range(0.0, 100.0);
+    world.record(true);
+    let commands = world.commands();
+    let visible = commands
+        .iter()
+        .find(|(op, o)| *op == Op::SetVertexBuffer && o[0] == 1)
+        .map(|(_, o)| o[1])
+        .expect("a draw binds its view's instances");
+    let size = commands
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateBuffer && o[0] == visible)
+        .map(|(_, o)| o[1])
+        .next_back()
+        .expect("the frame makes the buffer that the draw reads");
+    // The compacted layout reaches past the binding, so its buffer must hold more than a binding
+    // may.
+    let written = commands
+        .iter()
+        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == visible)
+        .map(|(_, o)| o[1] + o[3])
+        .max()
+        .expect("the frame uploads the copies that the draws read");
+    assert!(
+        written > binding,
+        "the compacted layout ends at {written} bytes, inside the {binding}-byte storage binding"
+    );
+    assert!(
+        size > binding,
+        "the instance buffer holds {size} bytes, past the {binding}-byte storage binding"
+    );
+}
+
 #[test]
 fn a_material_that_keeps_its_display_color_draws_the_tone_mask() {
     use null3d_gpu::drawlist::template;
