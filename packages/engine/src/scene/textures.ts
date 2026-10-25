@@ -696,10 +696,23 @@ export class Textures {
 				call,
 				'got a texture that does not follow a canvas. Make it with textures.fromCanvas.',
 			);
-		// The rectangle of the canvas that changed, in the canvas's coordinates.
-		let [left, top, right, bottom] = rect
-			? [rect.x, rect.y, rect.x + rect.width, rect.y + rect.height]
-			: [0, 0, source.width, source.height];
+		// The rectangle of the canvas that changed, in the canvas's coordinates, as four numbers: a
+		// refresh in every frame makes no array for them.
+		let left: number;
+		let top: number;
+		let right: number;
+		let bottom: number;
+		if (rect) {
+			left = rect.x;
+			top = rect.y;
+			right = rect.x + rect.width;
+			bottom = rect.y + rect.height;
+		} else {
+			left = 0;
+			top = 0;
+			right = source.width;
+			bottom = source.height;
+		}
 		if (DEV) {
 			const whole =
 				Number.isInteger(left) &&
