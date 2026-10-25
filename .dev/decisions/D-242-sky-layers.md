@@ -168,7 +168,8 @@ resolved", so its fill's light never landed and the map's next fill, a grace of 
 supplied it one fill late. A capture now keeps the buffers that the frame made: three of the four
 light reads of a run failed this way. With that fixed, `sky-layer-light` passes the whole spec on
 webgpu, compatibility mode and webgl2 on SwiftShader, and the light reaches the scene with the
-levels.
+levels. The run took 8 to 9 seconds on each tier, at the Mac's load of 82 to 90 on 18 cores. The
+fault was never the machine: it was the destroyed buffer, and it happened at every load.
 
 ### The cost
 
