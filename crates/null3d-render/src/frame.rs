@@ -2683,6 +2683,7 @@ impl SceneSettings {
         self.materials.update_map_layers(
             layers_changed,
             |map| textures.ready_layer(map),
+            |first, second| textures.same_array(first, second),
             |map| textures.premultiplied(map),
         );
         // A displacement map whose image arrived moves its casters' vertices.

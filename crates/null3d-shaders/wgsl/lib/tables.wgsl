@@ -22,7 +22,7 @@
 #endif
 
 /// The first column of the split-sum table in its data texture: one past a material's texels.
-const DFG_COLUMN: u32 = 17u;
+const DFG_COLUMN: u32 = 18u;
 
 /// The light tables and the probes' maps, at binding 3 of the frame's group: see the module notes.
 @group(0) @binding(3) var light_tables: texture_2d_array<f32>;
