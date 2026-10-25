@@ -150,3 +150,5 @@ Tests: `materials.rs` checks that a coat map and the volume maps name their fami
 The `gltf-ktx2` test, which draws the lamp, matched its references on all three tiers of the Mac's set with the maps drawn. The lamp's transmission texture leaves that picture within the comparison's limit, so no reference moved. CI's own drawing still judges the software-GPU set. The scene's parity check passes on the three tiers at 0.253%, 0.265% and 0.276% of the pixels, against its limit of 0.5%, where three.js's two renderers differ by 0.093%.
 
 The GPU check reports `not judged`, because the benchmark pages changed between main's commit and this branch. Its figures are s4 Medium 4.24 to 4.20 ms, s6 Medium 4.69 to 4.61 ms, s4 High 4.54 to 2.24 ms and s6 High 6.51 to 6.70 ms. Neither scene draws a material with a clear coat and transmission, so the change adds nothing to their work.
+
+The merge from m3-start made the shader build compile 39 of its 80 entries and reuse 41, in 23 minutes of wall time and 77 minutes of processor time at about three cores, at a machine load of 100 to 175.
