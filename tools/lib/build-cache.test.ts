@@ -332,23 +332,21 @@ describe("a waiter's watch on a lock's holder", () => {
 	it('waits for a holder that works through short children one after another', async () => {
 		const folder = mkdtempSync(join(tmpdir(), 'null3d-lock-'));
 		const lock = join(folder, 'build.lock');
-		// Each child burns half a second of processor time, however slowly the machine gives it, and
-		// exits. With the old count, which fell when a child exited, the holder showed no progress after
-		// its first child, and the waiter stopped while the rest still ran.
+		// The holder is a shell that uses no processor time of its own. Each child burns half a second
+		// of processor time, however slowly the machine gives it, and exits. With the old count, which
+		// fell when a child exited, the holder showed no progress after its first child, and the
+		// waiter stopped while the rest still ran.
 		const burn =
 			'for (;;) { const used = process.cpuUsage(); if (used.user + used.system > 500_000) break; }';
-		const script = `import { spawnSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-mkdirSync(${JSON.stringify(lock)});
-writeFileSync(${JSON.stringify(join(lock, 'pid'))}, String(process.pid));
-for (let i = 0; i < 10; i++) spawnSync(process.execPath, ['-e', ${JSON.stringify(burn)}]);
-rmSync(${JSON.stringify(lock)}, { recursive: true, force: true });`;
-		const holder = spawn(process.execPath, ['-e', script], { stdio: 'ignore' });
+		const script = `mkdir '${lock}' && echo $$ > '${join(lock, 'pid')}' &&
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do '${process.execPath}' -e '${burn}'; done
+rm -rf '${lock}'`;
+		const holder = spawn('sh', ['-c', script], { stdio: 'ignore' });
 		try {
 			for (let i = 0; i < 100 && !existsSync(join(lock, 'pid')); i++)
 				await new Promise((resolve) => setTimeout(resolve, 50));
 			const release = acquireLock(lock, {
-				watch: { sampleMs: 100, reportMs: 60_000, progressSeconds: 0.2, stallMs: 4_000 },
+				watch: { sampleMs: 100, reportMs: 60_000, progressSeconds: 0.1, stallMs: 3_000 },
 			});
 			expect(readFileSync(join(lock, 'pid'), 'utf8')).toBe(String(process.pid));
 			release();
