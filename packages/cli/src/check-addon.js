@@ -70,8 +70,12 @@ const INTERFACE_CALL =
 /** The call that an engine add-on makes to pin the engine version. */
 const VERSION_CALL = /checkAddonVersion\(\s*['"]([^'"]+)['"]\s*,\s*VERSION\s*\)/;
 
-/** The budget of each column for a file that an add-on loads after the start (D-14). */
-export const ADDON_FILE_BUDGET = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 17 * 1024 };
+/**
+ * The budget of each column for a file that an add-on loads after the start (D-14). It follows the
+ * engine's own figure for the same kind of file, which rose to 18 KB on 25 October 2026 for the glTF
+ * worker's texture-transform pointers; an add-on may not take more room than the engine allows it.
+ */
+export const ADDON_FILE_BUDGET = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 18 * 1024 };
 
 /**
  * The budget of each column for a built file that holds compiled shader builds (D-14, D-215). The

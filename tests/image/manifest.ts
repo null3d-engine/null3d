@@ -1167,6 +1167,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
 		hold: 0,
 	},
+	// A lightmap scene made for Needle's viewer, reduced from a real export: its `NEEDLE_lightmaps`
+	// extension registers an RGBM light map in linear color, and each node's Needle MeshRenderer
+	// places its own bake with a scale and an offset on the second texture coordinates. The
+	// picture holds the decode and the placement still.
+	{
+		name: 'needle-lightmap',
+		sketch: 'tests/pages/sketches/needle-lightmap-sketch.ts',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0.2,
+	},
 	// A skinned box built in code, bent by a joint, whose level names two of its twelve triangles
 	// and the box's own vertex accessors: the engine stores that level over the base's vertices, and
 	// the joint bends it too. Its copy gives the level accessors of its own and must draw the same

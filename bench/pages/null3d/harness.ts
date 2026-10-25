@@ -126,6 +126,7 @@ const SKETCH_SWITCHES = [
 	'sides',
 	'alpha',
 	'effects',
+	'canvas',
 	'decode',
 	'sky',
 	'backgroundFirst',

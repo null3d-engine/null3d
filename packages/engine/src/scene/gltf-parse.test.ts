@@ -639,9 +639,52 @@ describe('materials, textures and lights', () => {
 		expect(third?.transmission).toBeUndefined();
 		expect(third?.maps.transmissionMap).toBeUndefined();
 		expect(third?.maps.thicknessMap).toBeUndefined();
-		expect(data.notes).toContain(
-			"material 1's transmission and thickness textures, which a material with specular textures does not take",
+		expect(data.notes).toEqual(
+			expect.arrayContaining([
+				"material 1's transmissionTexture, which it leaves out beside a specular texture",
+			]),
 		);
+	});
+
+	test('a layered material keeps the transmission and thickness textures that fit', () => {
+		const b = specularBuilder()
+			.uses('KHR_materials_transmission')
+			.uses('KHR_materials_volume')
+			.uses('KHR_materials_clearcoat');
+		const [coated, normal, bare] = b.json.materials as [GltfJson, GltfJson, GltfJson];
+		// The stained-glass lamp's glass: one texture holds the clear coat and the transmission.
+		coated.extensions = {
+			KHR_materials_clearcoat: { clearcoatFactor: 1, clearcoatTexture: { index: 0 } },
+			KHR_materials_transmission: { transmissionFactor: 1, transmissionTexture: { index: 0 } },
+			KHR_materials_volume: { thicknessFactor: 0.4, thicknessTexture: { index: 1 } },
+		};
+		// A coat normal texture fills the specular intensity slot, so the transmission texture stays
+		// out; the thickness texture fits beside it, since nothing fills the other slot.
+		normal.extensions = {
+			KHR_materials_clearcoat: { clearcoatFactor: 1, clearcoatNormalTexture: { index: 0 } },
+			KHR_materials_transmission: { transmissionFactor: 1, transmissionTexture: { index: 0 } },
+			KHR_materials_volume: { thicknessFactor: 0.4, thicknessTexture: { index: 1 } },
+		};
+		// A clear coat's value alone leaves both slots free.
+		bare.extensions = {
+			KHR_materials_clearcoat: { clearcoatFactor: 1 },
+			KHR_materials_transmission: { transmissionFactor: 1, transmissionTexture: { index: 0 } },
+			KHR_materials_volume: { thicknessFactor: 0.4, thicknessTexture: { index: 1 } },
+		};
+		const data = parse(b.glb());
+		const [first, second, third] = data.materials;
+		expect(first?.maps.transmissionMap).toBeDefined();
+		expect(first?.maps.thicknessMap).toBeDefined();
+		expect(first?.maps.clearcoatMap).toBeDefined();
+		expect(second?.maps.clearcoatNormalMap).toBeDefined();
+		expect(second?.maps.transmissionMap).toBeUndefined();
+		expect(second?.maps.thicknessMap).toBeDefined();
+		expect(data.notes).toContain(
+			"material 1's transmissionTexture, which it leaves out where the clear coat's normal texture fills the same slot",
+		);
+		expect(third?.maps.transmissionMap).toBeDefined();
+		expect(third?.maps.thicknessMap).toBeDefined();
+		expect(third?.maps.clearcoatMap).toBeUndefined();
 	});
 
 	test('a clear coat or a sheen wins over KHR_materials_diffuse_transmission', () => {
