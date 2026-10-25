@@ -575,6 +575,15 @@ describe("CI's workflow", () => {
 		);
 		expect(at(restore)).toBeLessThan(build);
 		expect(at(save)).toBeGreaterThan(build);
+		// A miss restores the newest earlier folder, whose entries the build checks one by one, and
+		// the folder keeps only this build's entries before it is saved, so it does not grow.
+		const prefix = String(restore?.with?.['restore-keys']);
+		expect(prefix.length).toBeGreaterThan(0);
+		expect(String(save?.with?.key).startsWith(prefix)).toBe(true);
+		const trim = steps.find(({ run }) => run?.includes('bun tools/build-wasm.ts --keep-current'));
+		expect(at(trim)).toBeGreaterThan(build);
+		expect(at(trim)).toBeLessThan(at(save));
+		expect(trim?.if).toBe(save?.if);
 	});
 
 	it("runs a milestone branch's pushes in the branch's caches, and no pull request event", () => {
