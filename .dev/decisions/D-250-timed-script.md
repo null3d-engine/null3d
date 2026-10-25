@@ -122,13 +122,13 @@ the manifest's
 keep their own references. The real GPU draws at the High preset, and the software GPU at Low, as
 the image manifest's showcase tests do.
 
-The real GPU's references are on the branch. The software GPU's two references are not: only a CI
-run of the pushed branch draws them. That run saves the two missing images as candidates.
-Accepting them with `bun run images:review --ci <run> --accept` makes them references. Run
-40223500231 drew them on `33122b8eb`; the later `e30cd473c` changed only documentation and the
-remake command, so they still apply to the scene. Each test then compares against the picture that
-the same run drew, and the next run on the branch is the green one for that set. The branch keeps no local-reference note, because neither software picture
-is kept from a local drawing.
+The real GPU's references are on the branch. The software GPU's two references come from CI: the
+pushed branch's run drew them and saved them as candidates, and accepting those made them
+references. Run 40223500231 drew them on `33122b8eb`. Every commit after it changed only
+documentation, the remake command, or the pictures, so the scene is unchanged. Each test then
+compares against the picture that the same run drew. The next run on the branch is the green one
+for that set. The branch keeps no local-reference note, because neither software picture is kept
+from a local drawing.
 
 The earlier version of this addendum drove `examples/input`, a basic demo, because a showcase was
 thought to need input steps. That is not so: a showcase's camera moves with the sketch time. The
@@ -136,5 +136,6 @@ input demo's script and references are therefore gone, and the fixture project s
 key and pointer steps.
 
 The engine's unit tests run in CI's `docs-and-tools` job, which runs `bun run test`. The branch is
-pushed, and the suite's recorded run has 4,279 tests across 357 files, with 41 tests skipped. The
-command-line tool's script tests pass, 11 of 11.
+pushed. This Mac ran the suite on 26 October 2026 while the machine was loaded, and it reported
+4,279 tests across 357 files, with 41 tests skipped. The command-line tool's script tests pass,
+11 of 11.
