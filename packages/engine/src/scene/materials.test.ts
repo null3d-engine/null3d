@@ -760,6 +760,30 @@ describe('Material.set', () => {
 		expect(at(normal, 3)).toEqual([1, 0, 0]);
 	});
 
+	test('set places a slot with the map that fills it, and not one the material lacks', () => {
+		const { table, materials } = fakeCore();
+		const normal = MATERIAL_PARAM_MAP_UV + (MAP_SLOT_NORMAL - 1) * MATERIAL_PARAM_MAP_UV_STRIDE;
+		const at = (param: number) =>
+			(table[0] as number[]).slice(param, param + 3).map((value) => value + 0);
+		const mapped = materials.standard({
+			normalMap: texture(1),
+			mapUvTransforms: { normalMap: { repeat: [2, 2] } },
+		});
+		expect(at(normal)).toEqual([2, 0, 0]);
+		// A transform for a map that the material does not have takes no slot from the normal map.
+		mapped.set({ mapUvTransforms: { bumpMap: { repeat: [9, 9] } } });
+		expect(at(normal)).toEqual([2, 0, 0]);
+		expect(at(normal + 4)).toEqual([0, 2, 0]);
+		// The recorded transform keeps the normal map's scale, which a later animation moves.
+		mapped.writeUvPair('uvOffset', 0.5, 0.5, MAP_SLOT_NORMAL);
+		expect(at(normal)).toEqual([2, 0, 0.5]);
+		expect(at(normal + 4)).toEqual([0, 2, 0.5]);
+		// A transform for the map that fills the slot still applies through set.
+		mapped.set({ mapUvTransforms: { normalMap: { repeat: [4, 5] } } });
+		expect(at(normal)).toEqual([4, 0, 0]);
+		expect(at(normal + 4)).toEqual([0, 5, 0]);
+	});
+
 	test('the map that fills a shared slot owns it, as the production skip rules leave it', () => {
 		const tex = texture(1);
 		// A clear coat's roughness map leaves the slot to a different coat map.

@@ -1953,10 +1953,10 @@ type SlotOwners = readonly (keyof MapUvTransforms | undefined)[];
 
 /**
  * The map that fills each row slot of `options`, by the rules that choose which maps draw. The row
- * keeps one transform for each slot, so only the map whose texture the slot holds may place it: a
- * map that a production build leaves out fills nothing, and a normal map wins over a bump map. A
- * displacement map reads the normal map's slot where no other map fills it, as its vertex stage
- * reads that slot's transform.
+ * keeps one transform for each slot, so only a map that the material keeps may place it: a map
+ * that a production build leaves out places nothing, and a normal map wins over a bump map. A
+ * displacement map places the normal map's slot where no other map does, since its vertex stage
+ * reads that slot's transform even where no texture fills it.
  *
  * @internal
  */
