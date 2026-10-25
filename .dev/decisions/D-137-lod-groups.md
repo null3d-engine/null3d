@@ -515,7 +515,9 @@ levels are meshes of their own. M3-L4's staged loading is the user that would sp
 ## Addendum: the levels' cost on an iPad and a phone (25 October 2026, M3-L2)
 
 The level-of-detail section asks each of its tasks for the GPU time and memory on the Mac, an iPad
-and an S24-class phone. The Mac's GPU time is in this record's table of 11 October. The copy lists'
+and an S24-class phone. The Mac's GPU time is in this record's table of 11 October. That table
+predates the fade rule of 22 October, so its Low rows measured a Low preset with no fading bands.
+The device rows below are the first level-cost figures under the new rule. The copy lists'
 memory is in the addendum above. This addendum adds the owner's iPad, the cloud iPad and the phone.
 
 The `lod-cost` page draws 40,000 pines, four levels each. It times the forest with every tree at its
