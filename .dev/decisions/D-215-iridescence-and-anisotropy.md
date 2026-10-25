@@ -90,3 +90,19 @@ Options C, B and B. The helper decided on 22 October 2026; the owner's review is
 - The row's last texel is the anisotropy's, which the shader build's test that reads the row's size now names.
 - A material cannot have a clear coat's or a sheen's maps and iridescence's or the anisotropy's maps at once. A file that gives both loses the second family's maps, and the loader says so.
 - The model scenes `gltf-iridescence` and `gltf-anisotropy` make their files in code, since the sample content pins a real Khronos file in a repository of its own. Both match three.js on all three tiers under limits of 0.3% and 0.6%, which are the specular anti-aliasing family's. [Image tests](../image-tests.md) gives the figures.
+
+## Addendum, 25 October 2026: the first-use shader budget rises to 53 KB
+
+The grading controls' second design grades light before the tone curve. Its code rides every WebGL2
+tone-map build, and the largest of those files, the half-precision draw-index tone-map set, reached
+53,325 bytes after Brotli. That is 77 bytes over the 52 KB cap set above.
+
+The cap rises to 53 KB, or 54,272 bytes, leaving 947 bytes on the largest file. The helper decided it
+for the owner's review, as the rise of 22 October was. A trim is possible in principle: the grade is
+a function per shader that the WebGL2 build flattens, so inlining it into the tone map would save a
+few hundred bytes. The helper measured the shape of the generated GLSL but did not take that route,
+because it changes a shared library's structure for the sake of a fraction of a kilobyte, and the
+owner may delete the whole design if the display table stands.
+
+The figure comes from a local build of the branch. CI's `wasm-checks` job measures the same files, and
+a later rise should quote its figure.

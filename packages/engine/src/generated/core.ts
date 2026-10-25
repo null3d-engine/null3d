@@ -375,7 +375,13 @@ export const POST_VALUE_SSR_MAX_DISTANCE = 60;
 export const POST_VALUE_SSR_THICKNESS = 61;
 export const POST_VALUE_SSR_MAX_ROUGHNESS = 62;
 export const POST_VALUE_SHARPEN = 63;
-export const POST_VALUE_COUNT = 64;
+export const POST_VALUE_GRADE_WHITE_BALANCE = 64;
+export const POST_VALUE_GRADE_LIFT = 68;
+export const POST_VALUE_GRADE_GAMMA = 72;
+export const POST_VALUE_GRADE_GAIN = 76;
+export const POST_VALUE_GRADE_SHADOWS = 80;
+export const POST_VALUE_GRADE_HIGHLIGHTS = 84;
+export const POST_VALUE_COUNT = 88;
 
 export const CALL_VALUE_COUNT = 10;
 
