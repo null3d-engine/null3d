@@ -604,9 +604,10 @@ Chrome 152 on Android 15, on Qualcomm's Adreno 830. That is a faster GPU of anot
 S24's Samsung Xclipse 940, so its row is the stand-in and not the S24's own figure. Its levels cut
 the GPU time by 69% at Low and 36% at High on core WebGPU, and by 70% at Low in compatibility mode.
 High on compatibility mode was flat. Its display ran at 30 Hz, so the runner marks its timings
-unreliable, and every interval sits at the 33.3 ms cap apart from High on core WebGPU, which fell
-from 66.6 ms. Its GPU buffer bytes do not change, at 25.8 MiB at Low and 27.6 MiB at High, and
-6.2 MiB on WebGL2.
+unreliable. Every interval sits at the display's 33.3 ms cap apart from High on core WebGPU, where
+the base-meshes side missed the cap at 66.6 ms. That interval fall is the cap, not the levels'
+doing, so it is no saving. Its GPU buffer bytes do not change, at 25.8 MiB at Low and 27.6 MiB at
+High, and 6.2 MiB on WebGL2.
 
 The Mac ran the page in Chrome on 25 October: six pages in 3.9 minutes, each measured at a
 one-minute load between 6.1 and 7.9. Every path held the display's 16.67 ms interval. The levels cut
