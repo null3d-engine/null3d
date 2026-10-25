@@ -98,8 +98,9 @@ that, and the charge follows the texture's size
 The profile's 0.95 ms for each clear above was this charge, read as a clear. The same page measures a
 clear of the full-canvas target at 0.22 to 0.24 ms. It measures the unwritten color at 3.78 to
 3.92 ms. The stand-alone page charges the iPads too: 3.26 ms on the iPad 10 and 12.28 ms on the
-iPad Pro 13. In the engine's own frame, though, the iPad 10 pays only about a tenth of a millisecond
-of it ([D-266](D-266-the-prepass-stand-in-color.md)).
+iPad Pro 13. The engine's own frame on the iPad 10 pays it in frame time, 4.8 to 7.2 ms, which is the
+stand-alone figure scaled by the larger drawing buffer. Its render worker shows only a slice of that,
+about a tenth of a millisecond, because its frame is GPU-bound ([D-266](D-266-the-prepass-stand-in-color.md)).
 
 The 0.2 to 0.7 ms quoted above came from the Medium preset's frame. That frame was measured before
 the prepass's stand-in color became a load. So the figure does not show that the iPads are free of
