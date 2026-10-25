@@ -1,14 +1,16 @@
 // Pre-push guard for pushes to main (D-157's addendum of 15 October 2026). A push to the milestone
-// branch is refused unless the coordinator's landing session sets NULL3D_MILESTONE_LANDING=1: a
-// helper saves its work on its own branch, and the coordinator lands it. The landing's push runs
-// the guards that read the whole repository, which a merge can break with no conflict: the decision
-// records' numbers, and the unit tests that hold the release guide, the shipped network calls and
-// the timing specs' switches to every package and spec in the tree, and the repository's quick
-// check, with the lint, the picture references and the add-on checks. They take seconds, where the
-// unit suite takes minutes, and without them each such fault showed only a CI run later. With
-// NULL3D_LANDING_CRATE_TESTS=1, a landing that changes Rust also runs the tests of the crates it
-// changes, in the queue's CPU lane, which can wait long on a loaded machine. Any other
-// branch only saves work, so the hook runs nothing for it. A push to main runs those guards too,
+// branch is refused unless the session that checks each landing sets NULL3D_MILESTONE_LANDING=1: a
+// helper saves its work on its own branch, the coordinator merges it, and that session, the CI
+// session since 25 October 2026 (D-259), checks the range and pushes it. The landing's push first
+// checks the commits it adds, as a push to main does: their messages, trailers and merges. Then it
+// runs the guards that read the whole repository, which a merge can break with no conflict: the
+// decision records' numbers, and the unit tests that hold the release guide, the shipped network
+// calls and the timing specs' switches to every package and spec in the tree, and the repository's
+// quick check, with the lint, the picture references and the add-on checks. They take seconds,
+// where the unit suite takes minutes, and without them each such fault showed only a CI run later.
+// With NULL3D_LANDING_CRATE_TESTS=1, a landing that changes Rust also runs the tests of the crates
+// it changes, in the queue's CPU lane, which can wait long on a loaded machine. Any other branch
+// only saves work, so the hook runs nothing for it. A push to main runs those guards too,
 // and first checks the commits it adds:
 //   1. their messages and trailers, with commitlint and check-trailers.ts over main's commit before
 //      the push up to the push, as CI's `commits` job does, and their merges, with check-merges.ts,
@@ -42,11 +44,11 @@ import { keptCommits } from './check-trailers';
 
 /** The trailer that skips the check, with the reason for the emergency. */
 export const SKIP_TRAILER = 'Push-Check-Skipped';
-/** The milestone branch, which only the coordinator's landing session pushes. */
+/** The milestone branch, which only the session that checks each landing pushes. */
 export const MILESTONE_REF = 'refs/heads/m3-start';
 /**
- * The variable that names the coordinator's landing session. A helper leaves it unset, so its push
- * to the milestone branch is refused. The landing session sets it for its own push.
+ * The variable that names the session that checks and pushes each landing, the CI session since
+ * 25 October 2026 (D-259). A helper leaves it unset, so its push to the milestone branch is refused.
  */
 export const LANDING_VARIABLE = 'NULL3D_MILESTONE_LANDING';
 /** The test that builds every shader, which CI runs in a job of its own. */
@@ -87,14 +89,14 @@ export function pushToMilestone(refs: readonly PushedRef[]): PushedRef | undefin
 }
 
 /**
- * The message that refuses a push to the milestone branch from a session that is not the
- * coordinator's landing, or undefined when the push may go ahead. A helper saves its work on its
- * own branch and the coordinator lands it, so a helper's push here would put unfinished work on the
- * branch that every other helper and CI read.
+ * The message that refuses a push to the milestone branch from a session that does not check the
+ * landings, or undefined when the push may go ahead. A helper saves its work on its own branch, the
+ * coordinator merges it, and the CI session checks the range and pushes it, so a helper's push here
+ * would put unchecked work on the branch that every other helper and CI read.
  */
 export function milestoneRefusal(refs: readonly PushedRef[], landing: boolean): string | undefined {
 	if (landing || !pushToMilestone(refs)) return undefined;
-	return `pre-push: this push writes ${MILESTONE_REF}, and only the coordinator's landing session pushes the milestone branch. Push your own branch and let the coordinator land it. If you are that session, set ${LANDING_VARIABLE}=1 for the push.`;
+	return `pre-push: this push writes ${MILESTONE_REF}, and only the session that checks the landings pushes the milestone branch. Push your own branch and let the coordinator land it. If you are that session, set ${LANDING_VARIABLE}=1 for the push.`;
 }
 
 /** The reason that a `Push-Check-Skipped:` trailer gives on any of the messages, if one does. */
@@ -192,25 +194,7 @@ export function plan(
 	crates: ReadonlyMap<string, string>,
 	nextest: boolean,
 ): Step[] {
-	const range = `${base}..${head}`;
-	const steps: Step[] = [
-		{
-			why: 'the commits that the push adds to main must follow the commit message rules',
-			lane: 'QUICK',
-			command: ['bunx', 'commitlint', '--from', base, '--to', head],
-		},
-		{
-			why: 'the commits that the push adds to main must carry their trailers',
-			lane: 'QUICK',
-			command: ['bun', 'tools/hooks/check-trailers.ts', range],
-		},
-		{
-			why: 'a merge commit that the push adds to main must hold only resolutions and mechanical fixes',
-			lane: 'QUICK',
-			command: ['bun', 'tools/hooks/check-merges.ts', range],
-		},
-		...guardSteps(),
-	];
+	const steps: Step[] = [...commitSteps(base, head, 'main', 'QUICK'), ...guardSteps()];
 	if (!touchesRust([...files])) return steps;
 	steps.push({
 		why: 'the push changes Rust code or Cargo settings, so the merged workspace must compile',
@@ -219,6 +203,31 @@ export function plan(
 	});
 	const tests = crateTests(files, crates, nextest);
 	return tests ? [...steps, tests] : steps;
+}
+
+/**
+ * The checks of the commits that a push adds to `target` between `base` and `head`: their messages,
+ * their trailers, and their merges, which must hold only resolutions and mechanical fixes.
+ */
+function commitSteps(base: string, head: string, target: string, lane: Step['lane']): Step[] {
+	const range = `${base}..${head}`;
+	return [
+		{
+			why: `the commits that the push adds to ${target} must follow the commit message rules`,
+			lane,
+			command: ['bunx', 'commitlint', '--from', base, '--to', head],
+		},
+		{
+			why: `the commits that the push adds to ${target} must carry their trailers`,
+			lane,
+			command: ['bun', 'tools/hooks/check-trailers.ts', range],
+		},
+		{
+			why: `a merge commit that the push adds to ${target} must hold only resolutions and mechanical fixes`,
+			lane,
+			command: ['bun', 'tools/hooks/check-merges.ts', range],
+		},
+	];
 }
 
 /** The tests of the crates that `files` change, or none when they change no crate. */
@@ -243,9 +252,10 @@ export function crateTests(
 export const LANDING_CRATE_TESTS = 'NULL3D_LANDING_CRATE_TESTS';
 
 /**
- * The steps of a landing on the milestone branch that changes `files`: the guards over the tree,
- * and, when `crateTests` asks for them and the landing changes Rust, the tests of the crates it
- * changes, in the queue's CPU lane. The guards take seconds. The crate tests are opt-in: on a loaded
+ * The steps of a landing on the milestone branch that changes `files`: the checks of the commits
+ * that it adds after `added.base`, as a push to main runs them, the guards over the tree, and, when
+ * `crateTests` asks for them and the landing changes Rust, the tests of the crates it changes, in
+ * the queue's CPU lane. The commit and guard checks run outside the queue and take seconds. The guards take seconds. The crate tests are opt-in: on a loaded
  * machine the CPU lane's slots stay busy for an hour, and on 25 October 2026 a landing's push waited
  * there 27 minutes without starting cargo, until its timeout killed the push and left the hook
  * waiting. CI's Rust tests still catch a crate's fault, one run after the landing.
@@ -255,10 +265,15 @@ export function landingSteps(
 	crates: ReadonlyMap<string, string>,
 	nextest: boolean,
 	withCrateTests = false,
+	added?: { base: string; head: string },
 ): Step[] {
+	const checks = [
+		...(added ? commitSteps(added.base, added.head, 'the milestone branch', 'DIRECT') : []),
+		...guardSteps(),
+	];
 	const tests =
 		withCrateTests && touchesRust([...files]) ? crateTests(files, crates, nextest) : undefined;
-	return tests ? [...guardSteps(), tests] : guardSteps();
+	return tests ? [...checks, tests] : checks;
 }
 
 const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' }).trim();
@@ -359,6 +374,9 @@ function main(): void {
 			workspaceCrates(),
 			withCrateTests && touchesRust(files) && hasNextest(),
 			withCrateTests,
+			NO_COMMIT.test(landing.remoteSha)
+				? undefined
+				: { base: landing.remoteSha, head: landing.localSha },
 		);
 		console.log('pre-push: checking the landing on the milestone branch');
 		runSteps(steps, 'the milestone branch', jobQueue());

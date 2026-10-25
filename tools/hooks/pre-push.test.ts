@@ -61,7 +61,7 @@ describe('the milestone branch', () => {
 		const message = milestoneRefusal(parsePush(line(MILESTONE_REF)), false);
 		expect(message).toContain(MILESTONE_REF);
 		expect(message).toContain(LANDING_VARIABLE);
-		expect(message).toContain('only the coordinator');
+		expect(message).toContain('only the session that checks the landings');
 	});
 
 	it('allows the same push when the coordinator sets the landing variable', () => {
@@ -175,6 +175,18 @@ describe('landingSteps', () => {
 		expect(landingSteps(['crates/null3d-render/src/textures.rs'], CRATES, true)).toEqual(
 			guardSteps(),
 		);
+	});
+
+	it('checks the messages, trailers and merges of the commits that a landing adds, outside the queue', () => {
+		const steps = landingSteps(['.dev/x.md'], CRATES, true, false, { base: 'b2', head: 'a1' }).map(
+			(step) => [step.lane, step.command.join(' ')],
+		);
+		expect(steps).toEqual([
+			['DIRECT', 'bunx commitlint --from b2 --to a1'],
+			['DIRECT', 'bun tools/hooks/check-trailers.ts b2..a1'],
+			['DIRECT', 'bun tools/hooks/check-merges.ts b2..a1'],
+			...guardSteps().map((step) => [step.lane, step.command.join(' ')]),
+		]);
 	});
 
 	it('runs only the guards for a landing that changes no Rust', () => {

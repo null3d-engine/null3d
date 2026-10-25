@@ -251,7 +251,7 @@ Before each push to main (`tools/hooks/pre-push.ts`):
 - git holds the connection to the remote, saying nothing, for the whole check, and a peer closes a quiet connection after about six minutes. So the check refuses a push to main over ssh when nothing keeps that connection alive. A machine that pushes to main names `ServerAliveInterval` for the host ([Branches and parallel work](.dev/pull-requests.md#commit-messages-and-pushes)).
 - Only in an emergency, a `Push-Check-Skipped: <reason>` trailer on a commit of the push skips the check. The owner approved the check on 15 October 2026 ([D-157](.dev/decisions/D-157-direct-pushes-to-main.md)).
 
-The hook refuses a push to the milestone branch, unless the coordinator's landing session sets `NULL3D_MILESTONE_LANDING=1`. A helper saves its work on its own branch, and the coordinator lands it. A push to any other branch runs nothing.
+The hook refuses a push to the milestone branch, unless the session that checks the landings sets `NULL3D_MILESTONE_LANDING=1`. A helper saves its work on its own branch, and the coordinator merges it. The CI session checks each range and pushes it ([D-259](.dev/decisions/D-259-landing-push-gate.md)). That push first checks the messages, trailers and merges of the commits it adds, as a push to main does. A push to any other branch runs nothing.
 
 On each commit message:
 
