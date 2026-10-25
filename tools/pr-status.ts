@@ -75,7 +75,6 @@ const INCOMPLETE = new Set([
 	'M3-A11',
 	'M3-R1',
 	'M3-O1',
-	'M3-G1',
 	'M3-G2',
 	'M3-G3',
 	'M3-R2',
@@ -138,7 +137,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
-	'M3-G1': "the Khronos sample's texture-transform pointers are not animated",
 	'M3-G2': 'no Khronos iridescence sample is tested',
 	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',
 	'M3-R2': 'the stress test has not run on an iPad or a phone-class device since the change',
