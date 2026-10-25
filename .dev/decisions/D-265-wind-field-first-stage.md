@@ -98,13 +98,17 @@ divergence, and the projection removes it.
 - **Evidence:** the add-on's tests prove the field moves a plant card, and that a frozen field fails
   those tests. The allocation figure and `check-addon`'s page, cost and allocation gates are owed
   while timing runs are barred, so this record claims none of them.
-- **The size gate is not this add-on's fault:** at head `b25592ccd`, the command in
-  `docs/guides/add-ons.md`, `bunx @null3d/cli check-addon packages/wind`, builds the add-on and
-  reports its entry at 89.3 KB raw against a 64 KB code budget. The WebGL2 fallback effect's
-  compiled data is most of it: the same build with that import removed makes an entry of 13.7 KB.
-  Water fails the same gate at 109.2 KB at that head. M3-R25 owns the fault, and neither the gate
-  nor its budget changes here.
-- **A check that used to skip:** that command runs under node, and the Vite plugin did not export
-  its `package.json`. Node refused the path, the tool found no plugin, and it printed a skip for the
-  shader and size gates. It still exited 0 when every other gate passed, so a skipped check read as
-  a pass. The plugin now exports its manifest, and `packages/cli/src/check-addon.test.ts` pins it.
+- **The size gate is not this add-on's fault:** at head `dccae65e1`, the command in
+  `docs/guides/add-ons.md`, `bunx @null3d/cli check-addon packages/wind --skip-browser`, builds the
+  add-on and reports its entry at 89.4 KB raw against a 64 KB code budget. The WebGL2 fallback
+  effect's compiled data is most of it: the same build with that import removed makes an entry of
+  13.8 KB at that head. Water fails the same gate at 109.2 KB at that head. `--skip-browser` leaves
+  out the page, cost and allocation gates, which this record names owed. M3-R25 owns the size
+  fault, and neither the gate nor its budget changes here.
+- **A check that used to skip, and what it still needs:** the command runs under node, and the Vite
+  plugin did not export its `package.json`. Node refused the path, the tool found no plugin, and it
+  printed a skip for the shader and size gates. It still exited 0 when every other gate passed, so a
+  skipped check read as a pass. The plugin now exports its manifest, and
+  `packages/cli/src/check-addon.test.ts` pins it. In a checkout whose plugin has no built files,
+  node cannot load the plugin's TypeScript source: the shader gate fails and sizes skips. Build the
+  plugin with `bun tools/build-package.ts vite-plugin`, or run the command with bun.
