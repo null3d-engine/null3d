@@ -2,7 +2,8 @@ import { afterAll, describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { SHADER_COMPILER_URL } from '../../packages/vite-plugin/src/shader-compiler';
 import {
 	builtAddress,
 	compileShaders,
@@ -20,7 +21,10 @@ import {
 import { MODULE_DIR } from './shader-modules';
 
 /** True when the shader compiler's build is present, which the pack tests need. */
-const COMPILES = process.env.NULL3D_SHADER_COMPILER !== undefined;
+const COMPILES = existsSync(fileURLToPath(SHADER_COMPILER_URL));
+
+/** A custom material compiles every build of the standard material, which takes seconds. */
+const COMPILE_MS = 60_000;
 
 /** The built files of a small package, by path in `lib/`. */
 const BUILT = new Set([
@@ -239,38 +243,46 @@ describe('shaderFiles', () => {
 });
 
 describe('compileShaders', () => {
-	it('refuses WGSL that is no shader, and names the file', () => {
+	it('refuses WGSL that is no shader, and names the file', async () => {
 		const { root, dir } = packageFixture({ 'src/empty.wgsl': '// nothing here\n' });
-		expect(() => compileShaders(root, dir)).toThrow(
+		await expect(compileShaders(root, dir)).rejects.toThrow(
 			/packages\/demo\/src\/empty\.wgsl:1:1: the WGSL has no entry point/,
 		);
 	});
 
 	describe.skipIf(!COMPILES)('with the shader compiler', () => {
-		it('writes the compiled module and its build sets, and no raw WGSL', async () => {
-			const { root, dir } = packageFixture({ 'src/glow.wgsl': MATERIAL });
-			compileShaders(root, dir);
-			const lib = join(dir, 'lib');
-			expect(existsSync(join(lib, 'glow.wgsl'))).toBe(false);
-			expect(existsSync(join(lib, 'glow.wgsl.js'))).toBe(true);
-			expect(
-				readdirSync(lib).filter((name) => name.startsWith('glow.wgsl-material-wgsl-')),
-			).not.toEqual([]);
-			const { default: shader } = await import(pathToFileURL(join(lib, 'glow.wgsl.js')).href);
-			expect(shader.kind).toBe('material');
-			expect(shader.functions).toEqual(['surface']);
-			// The builds load on first use, from the set modules beside the shader's own module.
-			expect(Object.keys(shader.variants)).toEqual([]);
-			const builds = await shader.builds('wgsl', 0);
-			expect(Object.keys(builds).length).toBeGreaterThan(0);
-		});
+		it(
+			'writes the compiled module and its build sets, and no raw WGSL',
+			async () => {
+				const { root, dir } = packageFixture({ 'src/glow.wgsl': MATERIAL });
+				await compileShaders(root, dir);
+				const lib = join(dir, 'lib');
+				expect(existsSync(join(lib, 'glow.wgsl'))).toBe(false);
+				expect(existsSync(join(lib, 'glow.wgsl.js'))).toBe(true);
+				expect(
+					readdirSync(lib).filter((name) => name.startsWith('glow.wgsl-material-wgsl-')),
+				).not.toEqual([]);
+				const { default: shader } = await import(pathToFileURL(join(lib, 'glow.wgsl.js')).href);
+				expect(shader.kind).toBe('material');
+				expect(shader.functions).toEqual(['surface']);
+				// The builds load on first use, from the set modules beside the shader's own module.
+				expect(Object.keys(shader.variants)).toEqual([]);
+				const builds = await shader.builds('wgsl', 0);
+				expect(Object.keys(builds).length).toBeGreaterThan(0);
+			},
+			COMPILE_MS,
+		);
 
-		it('fails on WGSL that does not compile, and names the file and the place', () => {
-			const { root, dir } = packageFixture({ 'src/broken.wgsl': BROKEN });
-			expect(() => compileShaders(root, dir)).toThrow(
-				/packages\/demo\/src\/broken\.wgsl:\d+:\d+: no definition in scope for identifier: `nope`/,
-			);
-		});
+		it(
+			'fails on WGSL that does not compile, and names the file and the place',
+			async () => {
+				const { root, dir } = packageFixture({ 'src/broken.wgsl': BROKEN });
+				await expect(compileShaders(root, dir)).rejects.toThrow(
+					/packages\/demo\/src\/broken\.wgsl:\d+:\d+: no definition in scope for identifier: `nope`/,
+				);
+			},
+			COMPILE_MS,
+		);
 	});
 });
 

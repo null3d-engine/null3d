@@ -13,7 +13,7 @@ try {
 	if (!out || args.length !== (at === -1 ? 0 : 2))
 		throw new Error('usage: bun tools/pack-packages.ts [--out <folder>]');
 	const root = join(import.meta.dirname, '..');
-	for (const { name, version, tarball } of packPackages(root, resolve(root, out)))
+	for (const { name, version, tarball } of await packPackages(root, resolve(root, out)))
 		console.log(`${name}@${version}: ${tarball}`);
 } catch (e) {
 	console.error(`error: ${(e as Error).message}`);

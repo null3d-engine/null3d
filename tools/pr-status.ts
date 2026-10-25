@@ -47,7 +47,6 @@ const INCOMPLETE = new Set([
 	'M3-D7',
 	'M3-D9',
 	'M3-F2',
-	'M3-G4',
 	'M3-K4',
 	'M3-R16',
 	'M3-R17',
@@ -165,8 +164,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'no record shows the listing check passing on vegetation, and its one run skipped the shader and size checks',
 	'M3-F2':
 		'a 100,000-splat cloud becomes one chunk and cannot stream, and the streaming test fails in CI',
-	'M3-G4':
-		"a material with clear coat, sheen, iridescence or anisotropy cannot take the transmission or thickness maps on any path, and D-52's rule that a gap is a bug makes that a bug",
 	'M3-K4': "one of three.js r186's seven CSS3D examples is ported, and only its first layout",
 	'M3-R16': 'no project made from the template is installed, built and used with the hook on',
 	'M3-R17':
@@ -177,7 +174,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-E4':
 		"whether the approved hook table stands against hard rule 8 is the owner's to decide, and the tick waits on that",
 	'M3-K3':
-		'the task asks for image tests on every path, and there are none: no cookie picture is in the manifest and no cookie page among the sketches. Whether the 128 by 128 pixels-only cookie looks good enough is a second question, which the better-look rule raises',
+		"the spot-map picture covers the cookie on every path and passes; what remains is the owner's call on whether a 128 by 128 pixels-only cookie looks good enough, which the better-look rule raises",
 	'M3-A10':
 		"the finish line asks for the S24+, and the S24 run gives only a frame time held at its 30 Hz limit, which its own run file marks unreliable; the S25 is a faster GPU of another make on a path the S24+ lacks, so whether it closes the line is the owner's call. CI's five software sharpen references also show no sharpening at all, so the picture does not hold the effect it claims",
 	'M3-V6':
@@ -286,6 +283,7 @@ function description(): string {
 		'',
 		"- CI on this pull request is the branch's backstop, never the first reader of a change.",
 		'- Each helper commits on its own worktree branch, runs the tests its change touches, and reports before the coordinator merges it.',
+		"- A task reported done is read by a fresh checker, never by its author: the checker reads the task's own Done-when line, runs the tests it names and opens the pictures it cites, and only a cleared verdict lets a tick or a landing through.",
 		'- `bun run limits` reports each fixed limit before a push, and `bun run pr-status` rebuilds this list from the branch itself.',
 		'- A commit that can move a limit carries a `Limits-Checked:` line, and one that changes what the GPU draws carries a `GPU-Checked:` line.',
 		'- The pictures, timings and device rows live in `.dev/examples.md`, `.dev/benchmarks.md` and `.dev/tested-devices.md` beside the features they measure.',

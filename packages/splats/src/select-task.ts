@@ -21,16 +21,23 @@ export const CHUNK_COUNT = 0;
 export const BUDGET = 1;
 /** The place of the camera's first number in the header. */
 export const EYE = 2;
+/** The place of the cloud's bounding radius in the header. */
+export const CLOUD_RADIUS = 5;
 /** The place of the total that draws in the header. */
 export const TOTAL = 6;
 
 /** The number of detail levels of a chunk: every splat, then half, a quarter and an eighth. */
 export const LEVELS = 4;
 
-/** The level that a chunk draws at, from the distance to its nearest point and its radius. */
-function levelOf(distance: number, radius: number): number {
+/**
+ * The level that a chunk draws at, from the distance to its nearest point and the cloud's size. The
+ * distance is measured in the cloud's own radius, not the chunk's: a finer cut makes smaller chunks,
+ * and measuring against them would let a smaller chunk pass for a farther one, so the same view
+ * would draw fewer splats.
+ */
+function levelOf(distance: number, radius: number, cloudRadius: number): number {
 	const near = Math.max(distance - radius, 0);
-	const size = Math.max(radius, 1e-3);
+	const size = Math.max(cloudRadius, 1e-3);
 	if (near <= size * 2) return 0;
 	if (near <= size * 4) return 1;
 	if (near <= size * 8) return 2;
@@ -73,6 +80,7 @@ export function run(input: unknown): { output: boolean } {
 	const eyeX = view[EYE] as number;
 	const eyeY = view[EYE + 1] as number;
 	const eyeZ = view[EYE + 2] as number;
+	const cloudRadius = view[CLOUD_RADIUS] as number;
 	for (let i = 0; i < chunks; i++) {
 		const at = HEADER + i * STRIDE;
 		const dx = (view[at] as number) - eyeX;
@@ -81,7 +89,7 @@ export function run(input: unknown): { output: boolean } {
 		const radius = view[at + 3] as number;
 		const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
 		distances[i] = distance > radius ? distance - radius : 0;
-		levels[i] = levelOf(distance, radius);
+		levels[i] = levelOf(distance, radius, cloudRadius);
 		order[i] = i;
 	}
 	order.sort(byDistance);
