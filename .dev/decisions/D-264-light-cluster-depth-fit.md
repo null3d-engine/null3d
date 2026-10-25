@@ -1,14 +1,14 @@
 # D-264: Light clusters: depth-fitted slices and occupancy words
 
-Status: open. The ceiling measurement is owed, and no figure is recorded for it. Date: 2026-10-26. Task: M3-R9.
+Status: measured for M3-R9 on 26 October 2026, for the owner's review. Not built yet. Date: 2026-10-26. Task: M3-R9.
 
 Summary: null3D lists each cluster's lights in a packed index list, so the shading loop walks exactly
 the lights that reach the cluster and never meets an empty group of 32 lights. Occupancy words
 therefore add nothing to this design. A census of S3, the many-lights benchmark, shows that
 depth-fitted slices would halve the average number of listed lights per shaded fragment, from 14.6
-to 7.5, and raise the index list from 2,470 to 5,458 entries, or 8 percent of its cap. The ceiling
-measurement that decides whether to build the fit is owed. The window closed because sessions kept
-starting work in their own checkouts, so the machine could not be kept empty.
+to 7.5, and raise the index list from 2,470 to 5,458 entries, or 8 percent of its cap. The measured
+ceiling on the Mac is 2.25 ms of S3's 4.24 ms GPU frame, or 53 percent, so the fit is to be built.
+Its before-and-after figures on the Mac, the iPad and an S24-class phone are still owed by the task.
 
 ## Question
 
@@ -69,21 +69,42 @@ beside the 80-byte record. The study's scheme also needs the light table sorted 
 that a cluster's mask covers a short range. null3D lists lights in creation order, and sorting them
 changes the order of the floating-point sum, so it changes the picture.
 
-### The ceiling protocol
+### The ceiling
 
-The ceiling is not measured. The plan, when a machine can be kept empty: S3, WebGPU, the High
-preset, 1280 by 720 pixels, the governor off. The two sides are two builds of one commit that
-differ by one compute shader, which writes empty light lists, so every fragment shader is identical.
-Each side runs three rounds in turn, with 5 s of warm-up and 10 s measured, and the one-minute load
-is recorded before and after every run. A ceiling below 0.3 ms ends the task as this record. A
-ceiling of 0.3 ms or more buys the fit, and the rule above decides whether it ships.
+The ceiling is the loop's own GPU cost in S3. The baseline side is commit 668b7a4. The new side is
+commit 5db15f0, which changes this record alone, plus one uncommitted change: the light-clustering
+compute shader writes empty light lists. Every fragment shader is byte-identical on the two sides,
+so the difference is the per-light work of the loop and the index writes. The cluster lookup runs on
+both sides.
+
+The measurement ran in Chrome 155.0.8059.85 on macOS, on the 18 cores of an Apple M5 Max, on the
+protocol canvas at the High preset with the governor off. Each side ran three rounds in turn, with
+10 s of warm-up and 10 s measured. No run was dropped, every run held 120 Hz, and the comparison
+reported no change of measurement.
+
+| Measure | Baseline | Loop skipped | Change |
+| --- | --- | --- | --- |
+| GPU time per frame, median | 4.240 ms (4.223 to 4.267) | 1.993 ms (1.988 to 1.999) | -53.0%, noise 0.4% |
+| Busiest thread | 0.070 ms | 0.065 ms | -13.3%, noise 16.3%, same |
+| Own work | 0.060 ms | 0.050 ms | -16.7%, noise 11.4%, same |
+
+The one-minute load was 2.99 at the start and 2.88 at the end. In run order, baseline round 1 ran
+from 2.99 to 3.18, new round 1 from 3.18 to 3.29, new round 2 from 3.29 to 3.50, baseline round 2
+from 3.50 to 3.56, baseline round 3 from 3.56 to 3.24, and new round 3 from 3.24 to 2.96. The
+highest sample inside any round was 3.74, well under the bar of 8.
+
+The loop costs 2.25 ms of S3's 4.24 ms frame. The census says the fit removes about half the listed
+lights, so the predicted saving is about 1.1 ms, less the extra clustering work that the longer list
+adds. That is more than three times the Mac's floor of 0.3 ms.
 
 ## Decision
 
 - Occupancy words: not built. Reopen only when a list stops being packed, or when a light table
   sorted by position is shown to leave the picture unchanged.
-- Depth-fitted slices: not built yet. The ceiling is owed. The window closed because sessions kept
-  starting work in their own checkouts.
+- Depth-fitted slices: build it. The ceiling clears the floor on the Mac by more than three times,
+  and the census says the fit recovers about half of it.
+- Before the task closes, the before-and-after figures are owed on the Mac, the iPad and an
+  S24-class phone, with the pictures unchanged and the new pass costing less than half the saving.
 - The implementation shape is a depth reduction pass, header words in the light grid, and the slice
   arithmetic moved into the clustering shaders. It is 12 files and about 540 lines, or one and a
   half to two days with the runs.
@@ -96,5 +117,5 @@ ceiling of 0.3 ms or more buys the fit, and the rule above decides whether it sh
   That is why the new pass must cost less than half the saving.
 - The fit can lag the depth range and can be approximate. Correctness never depends on it, because
   the end slices stay open. Only the size of the win depends on it.
-- If the ceiling comes back below 0.3 ms, this record is the task's answer, with the census and the
-  ceiling as its numbers.
+- The task's finish line needs the before-and-after figures on the three devices. The ceiling only
+  sets the bound that those figures must fall inside.
