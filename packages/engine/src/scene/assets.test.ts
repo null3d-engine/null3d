@@ -8,6 +8,7 @@ import { BACKGROUND_VALUE_COUNT, BACKGROUND_VALUE_SUN_POSITION } from '../genera
 import { stopHelperWorkers } from '../shared/helper-workers';
 import { GENERATORS_PRELOAD } from '../shared/images';
 import { Assets, type ModelMakers } from './assets';
+import { SKY_MAP } from './builtin-environments';
 import { Environment } from './environment';
 import { LightProbeGridData } from './light-probes';
 import { ShaderPreloads } from './shader-preloads';
@@ -292,6 +293,7 @@ describe('environments', () => {
 			addSkyMap(
 				_: Texture,
 				_stages: number,
+				capture: number,
 				call: string,
 				defaults: (values: Float32Array) => void,
 			) {
@@ -302,10 +304,11 @@ describe('environments', () => {
 					Array.from(
 						values.subarray(BACKGROUND_VALUE_SUN_POSITION, BACKGROUND_VALUE_SUN_POSITION + 3),
 					),
+					capture,
 				]);
 			},
 		} as unknown as Textures;
-		const skyMaps: [string, number[]][] = [];
+		const skyMaps: [string, number[], number][] = [];
 		return { textures, cubes, skyMaps };
 	}
 
@@ -316,9 +319,11 @@ describe('environments', () => {
 		expect([sky.size, sky.levels, sky.format]).toEqual([256, 6, 'rgb9e5ufloat']);
 		expect(cubes).toEqual([[256, 6, 'rgb9e5ufloat', 'sky']]);
 		// With no sky background yet, the map shows the default sky of three.js's example.
-		const [[call, sun] = ['', []]] = skyMaps;
+		const [[call, sun, capture] = ['', [], 0]] = skyMaps;
 		expect(call).toBe('assets.skyEnvironment');
 		expect(sun.map((c) => Math.round(c * 1e4) / 1e4)).toEqual([0, 0.0349, -0.9994]);
+		// The map captures the sky's light at the stage that the generator names.
+		expect(capture).toBe(SKY_MAP.capture);
 	});
 
 	test("load the asset tool's files into cube maps, and make the built-in room on the GPU", async () => {
