@@ -113,6 +113,8 @@ describe('each guarded entry point', () => {
 		['tools/lib/shader-modules.ts', 'export function shaderModulesUnlessBusy(', null],
 		['tools/typecheck.ts', 'async function main(shaders: boolean)', null],
 		['tools/build-cdn.ts', 'async function main()', null],
+		['tools/build-basis-transcoder.ts', 'async function main()', null],
+		['tools/build-ufbx.ts', 'async function main()', null],
 		['tests/fresh-project.ts', 'async function main()', null],
 		...[
 			'run',
