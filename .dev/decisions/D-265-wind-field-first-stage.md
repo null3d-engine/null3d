@@ -98,9 +98,9 @@ divergence, and the projection removes it.
 - **Evidence:** the add-on's tests prove the field moves a plant card, and that a frozen field fails
   those tests. The allocation figure and `check-addon`'s page, cost and allocation gates are owed
   while timing runs are barred, so this record claims none of them.
-- **The size gate is not this add-on's fault:** at head `dccae65e1`, the command in
+- **The size gate is not this add-on's fault:** at head `8d66b64ca`, the command in
   `docs/guides/add-ons.md`, `bunx @null3d/cli check-addon packages/wind --skip-browser`, builds the
-  add-on and reports its entry at 89.4 KB raw against a 64 KB code budget. The WebGL2 fallback
+  add-on and reports its entry at 89.5 KB raw against a 64 KB code budget. The WebGL2 fallback
   effect's compiled data is most of it: the same build with that import removed makes an entry of
   13.8 KB at that head. Water fails the same gate at 109.2 KB at that head. `--skip-browser` leaves
   out the page, cost and allocation gates, which this record names owed. M3-R25 owns the size
