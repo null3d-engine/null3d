@@ -26,9 +26,11 @@ import { DEV } from '../../shared/dev';
 import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
+import { LAYER_WORD, LIGHT_BUFFER_WORD } from '../environment-words';
 import { floatOfBits } from '../float-bits';
 import { GpuMemory, textureBytes } from '../memory';
 import type { ReadSink } from '../readback';
+import { variantFor } from '../variants';
 import {
 	forEachFallbackAttribute,
 	forEachVertexAttribute,
@@ -1800,7 +1802,31 @@ export class WebGL2Backend {
 			const from = words[a + 3] as number;
 			const panorama = from === 0 ? null : (this.textureOf(from).texture as WebGLTexture);
 			const host = this.programHost;
-			code.skyStage(host, target, width, mips, words, floats, a, this.gpuMemory, panorama);
+			// The page's sky layer, once its shader is here: the map's texels then hold the layer
+			// that the background shows, and so do the reflections and the light taken from them.
+			const template = words[a + LAYER_WORD] as number;
+			const layer =
+				template === 0
+					? undefined
+					: variantFor(this.images.shaders.get(template)?.variants ?? {}, 0, 'glsl');
+			const capture = words[a + LIGHT_BUFFER_WORD] as number;
+			const readback =
+				capture === 0
+					? undefined
+					: (this.need(this.buffers, capture, 'buffer').buffer as WebGLBuffer);
+			code.skyStage(
+				host,
+				target,
+				width,
+				mips,
+				words,
+				floats,
+				a,
+				this.gpuMemory,
+				panorama,
+				layer,
+				readback,
+			);
 		} else code.run(this.programHost, target, width, mips, this.images.generator(id)[0]);
 		this.afterGenerator();
 	}

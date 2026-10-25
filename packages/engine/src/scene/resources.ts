@@ -17,6 +17,7 @@ import {
 	MAP_SLOT_IRIDESCENCE,
 	MAP_SLOT_IRIDESCENCE_THICKNESS,
 	MAP_SLOT_LIGHT,
+	MAP_SLOT_LIGHT_MAP_DIRECTION,
 	MAP_SLOT_METAL_ROUGH,
 	MAP_SLOT_NORMAL,
 	MAP_SLOT_OCCLUSION,
@@ -37,6 +38,7 @@ import {
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
 	MATERIAL_FEATURE_IRIDESCENCE,
+	MATERIAL_FEATURE_LIGHT_MAP_RGBM,
 	MATERIAL_FEATURE_MULTIPLY,
 	MATERIAL_FEATURE_NO_CONTACT_SHADOWS,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
@@ -76,6 +78,8 @@ import {
 	MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX,
 	MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MIN,
 	MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
+	MATERIAL_PARAM_LIGHT_MAP_OFFSET,
+	MATERIAL_PARAM_LIGHT_MAP_SCALE,
 	MATERIAL_PARAM_METALNESS,
 	MATERIAL_PARAM_NORMAL_SCALE,
 	MATERIAL_PARAM_OCCLUSION_STRENGTH,
@@ -1503,6 +1507,33 @@ export interface StandardBaseOptions extends StandardValues, MaterialFeatures {
 	 */
 	flatShading?: boolean;
 	/**
+	 * Where a light map's texture coordinates start, as three.js's `texture.offset`. A bake places
+	 * each light map on a mesh with its own scale and offset, apart from the other maps. It takes
+	 * two numbers, and needs a `lightMap`. The default leaves the coordinates alone.
+	 */
+	lightMapOffset?: readonly [number, number];
+	/**
+	 * How a light map's texture coordinates stretch, as three.js's `texture.repeat`. It takes two
+	 * numbers, and needs a `lightMap`. The default is `[1, 1]`.
+	 */
+	lightMapRepeat?: readonly [number, number];
+	/**
+	 * How the engine reads the light map's texels: `srgb` (the default) takes the texture as sRGB
+	 * color, which the sampler turns linear, or `rgbm` multiplies each texel's color by its alpha
+	 * times 8 and then decodes it as sRGB, as Needle's viewer reads its light maps. With `rgbm`,
+	 * give a texture in linear color, whose raw bytes the shader decodes. It needs a `lightMap`.
+	 */
+	lightMapDecode?: 'srgb' | 'rgbm';
+	/**
+	 * The direction of the light that a directional light map stores at each texel, in linear
+	 * color: red, green and blue map the direction's x, y and z from -1 to 1. A normal map then
+	 * bends the light that the bake stored, instead of lighting it evenly. Give the texture that
+	 * `assets.loadLightMap` returns beside the radiance: the engine reads the direction through
+	 * the light map's own texture binding, so both must have one size, format and color space,
+	 * as `loadLightMap` makes them. Needs a `lightMap`.
+	 */
+	lightMapDirection?: Texture;
+	/**
 	 * Takes the main directional light's contact shadows. False leaves them off this surface,
 	 * which keeps the shadow map's shadows. Set it on thin surfaces that crowd together or sway,
 	 * such as grass blades and leaf cards: the contact shadows take each blade for a solid wall,
@@ -2574,6 +2605,38 @@ const BLENDINGS: Readonly<Record<Blending, number>> = {
 function checkFeatures(options: StandardOptions, call: string): void {
 	const { alphaMode, blending, depthBias, transmission } = options;
 	const features = featureBits(options);
+	for (const [name, pair] of [
+		['lightMapOffset', options.lightMapOffset],
+		['lightMapRepeat', options.lightMapRepeat],
+	] as const) {
+		if (pair === undefined) continue;
+		if (!(pair.length === 2 && pair.every(Number.isFinite)))
+			throw new EngineError(
+				'E1108',
+				`${call}() got the ${name} ${JSON.stringify(pair)}; it takes two finite numbers.`,
+			);
+	}
+	for (const [name, given] of [
+		['lightMapDirection', options.lightMapDirection !== undefined],
+		['lightMapOffset', options.lightMapOffset !== undefined],
+		['lightMapRepeat', options.lightMapRepeat !== undefined],
+		['lightMapDecode', options.lightMapDecode !== undefined],
+	] as const) {
+		if (given && options.lightMap === undefined)
+			throw new EngineError(
+				'E1217',
+				`${call}() got ${name} without lightMap; it sets how the engine reads a light map that the material does not have. Give the material a lightMap.`,
+			);
+	}
+	if (
+		options.lightMapDecode !== undefined &&
+		options.lightMapDecode !== 'srgb' &&
+		options.lightMapDecode !== 'rgbm'
+	)
+		throw new EngineError(
+			'E1217',
+			`${call}() got the lightMapDecode ${JSON.stringify(options.lightMapDecode)}; it takes 'srgb' or 'rgbm'.`,
+		);
 	for (const key of ['transmissionMap', 'thicknessMap'] as const) {
 		if (options[key] === undefined) continue;
 		if (transmission === undefined)
@@ -2751,7 +2814,8 @@ function featureBits(options: StandardOptions): number {
 		(takesIridescence(options) ? MATERIAL_FEATURE_IRIDESCENCE : 0) |
 		(takesAnisotropy(options) ? MATERIAL_FEATURE_ANISOTROPY : 0) |
 		(options.wireframe ? MATERIAL_FEATURE_WIREFRAME : 0) |
-		(options.parallax ? MATERIAL_FEATURE_PARALLAX : 0)
+		(options.parallax ? MATERIAL_FEATURE_PARALLAX : 0) |
+		(options.lightMapDecode === 'rgbm' ? MATERIAL_FEATURE_LIGHT_MAP_RGBM : 0)
 	);
 }
 
@@ -3350,6 +3414,33 @@ export class Materials {
 				undefined,
 				true,
 			);
+		}
+		// A direction map needs the light map whose binding reads it, and a production build leaves
+		// out both where the layers take the light map's slot.
+		if (options.lightMapDirection && options.lightMap && !layered) {
+			core.checkGrowth(
+				core.glue.setMaterialMap(
+					id,
+					MAP_SLOT_LIGHT_MAP_DIRECTION,
+					options.lightMapDirection.handle,
+					0,
+				),
+				call,
+				undefined,
+				true,
+			);
+		}
+		const { lightMapOffset, lightMapRepeat } = options;
+		if (lightMapOffset || lightMapRepeat) {
+			const numbers = core.callValues();
+			const [repeatU, repeatV] = lightMapRepeat ?? [1, 1];
+			const [offsetU, offsetV] = lightMapOffset ?? [0, 0];
+			numbers[0] = repeatU;
+			numbers[1] = repeatV;
+			sendValue(core, id, MATERIAL_PARAM_LIGHT_MAP_SCALE, call);
+			numbers[0] = offsetU;
+			numbers[1] = offsetV;
+			sendValue(core, id, MATERIAL_PARAM_LIGHT_MAP_OFFSET, call);
 		}
 		return id;
 	}

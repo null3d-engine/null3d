@@ -28,8 +28,26 @@ const MOST_PANORAMA_SAMPLES = 8;
 /** Bytes of one step's uniform values, as the shader's `Step` holds them. */
 export const STEP_BYTES = 32;
 
+export { LAYER_VALUES, LAYER_WORD, LIGHT_BUFFER_WORD } from './environment-words';
+
 /** Bytes of the sky's settings, as the shader's `SkySettings` holds them. */
 export const SKY_BYTES = 64;
+
+/** Bytes of the layer's values, as the shader's `SkyLayerValues` holds them. */
+export const LAYER_BYTES = 32;
+
+/**
+ * The texels of a light capture's target, one for each of the nine spherical harmonics
+ * coefficients and seven spare: one row of 32-bit words, as the shader's `fs_feedback` writes
+ * them, and as the read that brings them back covers.
+ */
+export const CAPTURE_TEXELS = 16;
+
+/** The texels across a side of a face of the chain's level that a capture reads. */
+export const CAPTURE_FACE = 32;
+
+/** The bytes of a capture's target: `CAPTURE_TEXELS` texels of four 32-bit words. */
+export const CAPTURE_BYTES = CAPTURE_TEXELS * 16;
 
 /** How a sky map filters: the directions of each texel that the filter and the chain take. */
 export interface SkyFilter {
@@ -71,7 +89,7 @@ export type StepSource = 'traced' | 'chain' | 'panorama' | 'sky';
  * lie side by side in the target, from +X to -Z, so one draw runs every face's texels at once.
  */
 export interface Step {
-	readonly pipeline: 'trace' | 'blur' | 'half' | 'prefilter' | 'panorama' | 'sky';
+	readonly pipeline: 'trace' | 'blur' | 'half' | 'prefilter' | 'panorama' | 'sky' | 'feedback';
 	readonly level: number;
 	/** The texels across a side of each face at the level. */
 	readonly size: number;

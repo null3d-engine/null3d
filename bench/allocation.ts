@@ -47,7 +47,9 @@
 // `--batch-shadows`, the rows cast with the material's own caster builds. `--levels` gives S1's
 // boxes levels of detail, so each frame picks a level for every row, and fades rows between two.
 // `--effects` adds two custom effects to S1, one of which reads the scene's depth, and
-// changes a uniform of each every frame. `--environment` lights S1 with the built-in room, and
+// changes a uniform of each every frame. `--canvas` follows an OffscreenCanvas with a texture and
+// refreshes a rectangle of it every frame, so the sample holds the browser's image data and the
+// upload that the refresh makes. `--environment` lights S1 with the built-in room, and
 // turns it and changes its intensity every frame. `--probes` sets a small light probe grid over
 // S1, so the lit draws take the grid's templates and read it three times a pixel. `--hemisphere`
 // adds two hemisphere lights to S1,
@@ -408,6 +410,21 @@ export const DAY_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number
 };
 
 /**
+ * Places that allocate with `--canvas`, on top of `BUDGETS`: the browser's image data for the
+ * rectangle and the copy of it into engine memory, which the profiler attributes to the copy at
+ * each read, and the render passes that make the texture's mip levels again. The refresh adds no
+ * place of its own, and the sketch changes one rectangle object in place, so the sample holds the
+ * browser's and the engine's work alone. Measured on 25 October 2026: the copy place read 145.1
+ * bytes per frame on the Mac's WebGPU path, 140.7 on its WebGL2 and 131.3 on CI's SwiftShader; the
+ * mip levels read 169.5 on the Mac's WebGPU path and 165.9 on SwiftShader, whose windows reached
+ * 202.7, and WebGL2 makes them without a render pass.
+ */
+export const CANVAS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+	'sketch-worker': { 'setRegion scene/textures.ts': 192 },
+	'render-worker': { 'generateMipmaps webgpu/backend.ts': 224 },
+};
+
+/**
  * Budgets on SwiftShader, where the check runs in CI, in place of those of `BUDGETS`. SwiftShader
  * draws a few frames a second, and the browser still calls the render worker at the display's rate,
  * so work that runs at each of those calls weighs several times as much per frame:
@@ -645,6 +662,7 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 	{ flag: '--area-lights', query: '&areaLights' },
 	{ flag: '--setters', query: '&setters', budgets: SETTER_BUDGETS },
 	{ flag: '--effects', query: '&effects', passes: 2 },
+	{ flag: '--canvas', query: '&canvas', budgets: CANVAS_BUDGETS },
 	{ flag: '--sky', query: '&sky' },
 	{ flag: '--sky-environment', query: '&sky=light', budgets: SKY_ENVIRONMENT_BUDGETS },
 	{ flag: '--atmosphere', query: '&sky=physical' },

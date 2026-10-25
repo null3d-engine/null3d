@@ -330,9 +330,9 @@ export default defineSketch(async ({ assets, post }) => {
 ### Grading controls
 
 The grading controls set a look from a few numbers, without a table file. A job worker bakes them
-into a table of its own, and the final pass applies it after the tone mapping, before a `lut`.
-Changing a value costs the frames nothing: the picture shows the new grade once the worker's bake
-reaches the GPU, usually within a few frames.
+into a table of its own. The final pass applies that table to the display color that the tone curve
+leaves, before a `lut`. Changing a value costs the frames nothing: the picture shows the new grade
+once the worker's bake reaches the GPU, usually within a few frames.
 
 ```ts
 post.set({
@@ -352,7 +352,7 @@ post.set({
 | `grading` | Its settings to turn it on, or `false` to turn it off. A setting that a call leaves out keeps its value. | Off |
 | `grading.whiteBalance.temperature` | The color temperature of the light that whites are corrected for, from 1667 to 25000 kelvin. A low value, such as 3200 for a tungsten lamp, makes the picture cooler. | 6500 |
 | `grading.whiteBalance.tint` | The green to magenta shift, from -1 to 1. Each step of 1 halves or doubles the green channel. | 0 |
-| `grading.lift` | Three values, one per channel, from -1 to 1, added before the curve: positive values lift the blacks. | `[0, 0, 0]` |
+| `grading.lift` | Three values, one per channel, from -1 to 1, added to the color: positive values lift the blacks. | `[0, 0, 0]` |
 | `grading.gamma` | Three powers, one per channel, above 0. Values below 1 brighten the shadows. | `[1, 1, 1]` |
 | `grading.gain` | Three factors, one per channel, from 0 up: higher values brighten the highlights. | `[1, 1, 1]` |
 | `grading.saturation` | How much color the picture keeps: 0 is gray, 1 leaves it as it is, and higher values add color. | 1 |
@@ -361,10 +361,12 @@ post.set({
 | `grading.splitToning.balance` | Where the split falls, from -1 to 1: higher values tint more of the picture with the shadows' hue. | 0 |
 | `grading.splitToning.strength` | How much of the tints reaches the picture, from 0 to 1. | 0 |
 
-- The controls apply in this order: white balance, then saturation around the luma, then lift and gamma and gain on each channel, then split toning.
+- The controls apply in this order: white balance, then saturation around the luma, then lift and gamma and gain on each channel, then split toning. They act on the display color, after the tone curve.
 - White balance corrects the light of the given temperature to the neutral white of daylight at 6500 kelvin. It keeps the picture's brightness.
-- The table holds 32 texels along each side. The final pass takes the square root of the color before it reads the table. Its texels therefore lie closer together toward black. A grade's curve is steepest there.
-- The final pass applies the built-in table first and a `lut` after it, so a look from a file can sit over a grade from the controls.
+- The table holds 32 texels along each side. The final pass takes the square root of the color before it reads the table. Its texels therefore lie closer together toward black, where a grade's curve is steepest.
+- The table holds the grade alone, and the tone curve stays a calculation in the pass. A custom tone curve therefore still works with the controls.
+- The final pass applies the built-in grade first and a `lut` after it, so a look from a file can sit over a grade from the controls.
+- The final pass draws on every GPU path, with HDR color or without it, so both paths grade alike.
 - The bake runs in a job worker, so a value that changes in a frame loop does not stall the frames. Where no worker can run tasks, the picture keeps its colors and development builds warn once.
 - The values are designed for the null3D grading controls. To match a grade that a colorist made in another tool, load its `.cube` file instead.
 

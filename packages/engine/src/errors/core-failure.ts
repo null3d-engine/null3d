@@ -55,6 +55,9 @@ const RENDER_LIMITS: Record<number, string | ((value: string) => string)> = {
 	14: (views) =>
 		`the frame draws ${views} views, the camera's included, which is the most it draws`,
 	16: (lights) => `${lights} rectangle lights already show images, the most that can at once`,
+	// The ceiling is `MAX_ATLAS_BYTES` in crates/null3d-render/src/shadow_tiles.rs.
+	18: (megabytes) =>
+		`the shadow atlas would need ${megabytes} MB, more than the 1,024 MB it may take; name a smaller heroTileSize or fewer shadowTiles`,
 };
 
 /** What the renderer ran out of, for the details `limit` and `value` of E1501. */

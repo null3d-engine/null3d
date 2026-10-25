@@ -424,15 +424,20 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'task-worker-ktx2.js', module: 'scene/ktx2-transcode.ts', loadedBy: 'task-worker.js' },
 	{ name: 'task-worker-grade.js', module: 'scene/grade-task.ts', loadedBy: 'task-worker.js' },
 	{ name: 'page-lut.js', module: 'scene/lut-files.ts', loadedBy: 'page-sketch-runner.js' },
+	// The reader of an environment map file and the built-in environments' descriptions load at the
+	// first call that reads them, from the assets file. The page and the sketch worker each bundle
+	// their own copy, and a sketch that reads neither, as most do not, downloads neither.
 	{
 		name: 'page-environment.js',
 		module: 'scene/environment-file.ts',
-		loadedBy: 'page-sketch-runner.js',
+		loadedBy: 'page-assets.js',
+		onFirstCall: true,
 	},
 	{
 		name: 'page-builtin-environments.js',
 		module: 'scene/builtin-environments.ts',
-		loadedBy: 'page-sketch-runner.js',
+		loadedBy: 'page-assets.js',
+		onFirstCall: true,
 	},
 	{ name: 'page-panorama.js', module: 'scene/panorama.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-sprites.js', module: 'scene/sprites.ts', loadedBy: 'page-sketch-runner.js' },
@@ -529,12 +534,14 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'sketch-worker-environment.js',
 		module: 'scene/environment-file.ts',
-		loadedBy: 'sketch-worker.js',
+		loadedBy: 'sketch-worker-assets.js',
+		onFirstCall: true,
 	},
 	{
 		name: 'sketch-worker-builtin-environments.js',
 		module: 'scene/builtin-environments.ts',
-		loadedBy: 'sketch-worker.js',
+		loadedBy: 'sketch-worker-assets.js',
+		onFirstCall: true,
 	},
 	{
 		name: 'sketch-worker-panorama.js',
@@ -891,40 +898,47 @@ export function findEngineParts(
 		namedCache.set(loader.file, names);
 		return names;
 	};
-	// Each part that a loader loads takes a file that the loader names, in the parts' order, and
-	// then a file that the loader reaches through the files it names: a feature's loader loads the
-	// loaders of the files that the feature reads, as the file loader loads the glTF loader. A
-	// round repeats while a loader that was found names the file of a part that waited for it.
+	const direct = (loader: BuiltFile) => new Set(mentions.get(loader.file) ?? []);
+	// Of several unclaimed files that hold a part's module, a part takes one that its loader names
+	// itself, then the one with the fewest engine modules, then the smaller, then the first by name.
+	// A worker that bundles a copy of the module usually holds more modules than the module's own
+	// file, though not always, so the file that the loader names comes first. The choice does not
+	// follow the order in which the build lists its files, which differs from Linux to macOS.
+	const engineModules = (file: BuiltFile) =>
+		file.sources.filter((source) => source.startsWith(ENGINE_SOURCE)).length;
+	const claim = (part: EnginePart, reach: (loader: BuiltFile) => ReadonlySet<string>): boolean => {
+		if (found.has(part.name)) return false;
+		const loader = found.get(part.loadedBy as string);
+		if (!loader) return false;
+		const claimed = new Set(found.values());
+		const reached = reach(loader);
+		const near = direct(loader);
+		const [file] = files
+			.filter((f) => !claimed.has(f) && reached.has(f.file) && holds(f, part.module))
+			.sort(
+				(a, b) =>
+					Number(near.has(b.file)) - Number(near.has(a.file)) ||
+					engineModules(a) - engineModules(b) ||
+					a.text.length - b.text.length ||
+					(a.file < b.file ? -1 : a.file > b.file ? 1 : 0),
+			);
+		if (file) found.set(part.name, file);
+		return file !== undefined;
+	};
+	// Each part that a loader loads takes a file that the loader names, and only when none does, a
+	// file that the loader reaches through the files it names: a feature's loader loads the loaders
+	// of the files that the feature reads, as the file loader loads the glTF loader. The files that
+	// loaders name are matched until no part finds one, before any part looks further: a part listed
+	// before its loader once took a worker's copy two steps down while its own file waited. A round
+	// repeats while a loader that was found names the file of a part that waited for it.
 	const loaded = parts.filter((part) => part.loadedBy);
 	for (let round = 0; round < 4; round++) {
 		let foundOne = false;
-		for (const part of loaded) {
-			if (found.has(part.name)) continue;
-			const loader = found.get(part.loadedBy as string);
-			if (!loader) continue;
-			const claimed = new Set(found.values());
-			const direct = new Set(mentions.get(loader.file) ?? []);
-			const file = files.find(
-				(f) => !claimed.has(f) && holds(f, part.module) && direct.has(f.file),
-			);
-			if (file) {
-				found.set(part.name, file);
-				foundOne = true;
-			}
+		for (let more = true; more; ) {
+			more = false;
+			for (const part of loaded) if (claim(part, direct)) more = foundOne = true;
 		}
-		for (const part of loaded) {
-			if (found.has(part.name)) continue;
-			const loader = found.get(part.loadedBy as string);
-			if (!loader) continue;
-			const claimed = new Set(found.values());
-			const file = files.find(
-				(f) => !claimed.has(f) && holds(f, part.module) && named(loader).has(f.file),
-			);
-			if (file) {
-				found.set(part.name, file);
-				foundOne = true;
-			}
-		}
+		for (const part of loaded) if (claim(part, named)) foundOne = true;
 		if (!foundOne) break;
 	}
 	const claimed = new Set(found.values());
@@ -1049,8 +1063,25 @@ export function downloadSizes(
  * frame figures and the stats overlay. The rise leaves 502 bytes. The start went from 186 KB to
  * 192 KB in two days, and the owner ruled on 25 October 2026 to keep raising the line as needed for
  * now. A trim that wins bytes back runs beside the raises, and no crossing waits for it.
+ *
+ * It went to 194 KB on 25 October 2026: a local build of the grading work's branch measured
+ * WebGL2's pipelined start at 197,411 bytes, 803 bytes over the old line. The grading controls added
+ * the switch that picks the table's input and the values that the 8-bit path's shaders read. The
+ * rise leaves 1,245 bytes of room.
+ *
+ * It went to 196 KB on 25 October 2026, on the owner's word, after the merge that landed the tooling
+ * work measured WebGL2's pipelined start at 196,291 bytes against the 194 KB line, 2,365 left and
+ * past the warning. Two causes: the sky layer's generator grew in both the page's and the sketch
+ * worker's bundles, by 16.2 and 15.7 per cent, and the WebGL2 page grew 2.0 per cent. The rise
+ * leaves 4,413 bytes of room. The trims owed above still stand as the next work that touches the
+ * start's size.
+ *
+ * It went to 256 KB on 25 October 2026, on the owner's word and described as a figure for now: the
+ * work that closes the milestone's feature list should not stop for a crossing while the trims run
+ * beside it. It leaves 65,853 bytes of room at the measured 196,291. This is headroom, not a new
+ * target; the first trim that wins bytes back still takes them.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 192 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 256 * 1024 };
 
 /**
  * The budget for each part that loads after the start. The Brotli figure rose on 22 October 2026,
@@ -1106,6 +1137,10 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
  * date). Its surface function rides every build of the standard material, and the largest set is
  * 1,204.5 KB uncompressed and 53.3 KB after Brotli, so the add-on's own gate would have failed on a
  * feature that works as the engine's own materials do.
+ *
+ * The grading controls' code over light, which every WebGL2 tone-map build carries, measured
+ * 53,325 bytes in its largest file, the half-precision draw-index tone-map set. That fits inside
+ * the line the water add-on set, so it moved no figure.
  */
 export const FIRST_USE_SHADER_BUDGET: Budget = {
 	raw: 1_792 * 1024,

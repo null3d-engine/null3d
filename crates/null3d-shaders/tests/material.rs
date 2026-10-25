@@ -5,8 +5,10 @@ mod precision;
 
 use std::path::Path;
 
+use null3d_gpu::drawlist::permutation;
 use null3d_shaders::{
-    BuildError, Compiler, Inputs, MaterialOutput, MaterialSource, MaterialTemplate, Problem, Share,
+    BuildError, Compiler, Inputs, Manifest, MaterialOutput, MaterialSource, MaterialTemplate,
+    Problem, Share,
 };
 
 /// The display path of a custom material's WGSL in the tests.
@@ -1035,25 +1037,64 @@ fn textures_beside_the_scene_depth_push_the_joint_texture_after_both_groups() {
         if culled {
             assert!(
                 wgsl.source
-                    .contains("@group(2) @binding(0) var joint_matrices"),
+                    .contains("@group(2) @binding(0)\nvar joint_matrices"),
                 "{name}"
             );
         } else {
             assert!(
                 wgsl.source
-                    .contains("@group(3) @binding(0) var joint_matrices"),
+                    .contains("@group(3) @binding(0)\nvar joint_matrices"),
                 "{name}"
             );
             assert!(
                 wgsl.source
-                    .contains("@group(2) @binding(0) var scene_depth_copy"),
+                    .contains("@group(2) @binding(0)\nvar scene_depth_copy"),
                 "{name}"
             );
             assert!(
-                wgsl.source.contains("@group(1) @binding(0) var foam"),
+                wgsl.source.contains("@group(1) @binding(0)\nvar foam"),
                 "{name}"
             );
         }
     }
     assert!(seen > 0, "some build skins the mesh");
+}
+
+/// A custom material reads its instances from the copies that the culling shader writes, so its
+/// builds leave out the instance-index permutation that the template offers. That build would bind
+/// a group of its own, which is the fifth that WebGPU's default of four does not allow (D-23).
+#[test]
+fn a_custom_material_leaves_out_the_instance_index_build() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let inputs = Inputs::read(&root).expect("the repository's shaders");
+    let manifest = Manifest::parse(&inputs.manifest).expect("the shader manifest");
+    let template = manifest
+        .shaders
+        .values()
+        .find(|shader| shader.custom_materials)
+        .expect("the template that custom materials build with");
+    assert!(
+        template.variants.values().any(|variant| variant
+            .permutations
+            .iter()
+            .any(|name| name == "INSTANCE_INDEX")),
+        "the template offers the instance-index build, so this test has one to see dropped"
+    );
+
+    let built = compile(DEEP_TEXTURED).expect("the material builds");
+    assert!(
+        built
+            .variants
+            .values()
+            .any(|variant| variant.permutation & permutation::SKIN != 0),
+        "the builds keep their other permutation bits"
+    );
+    for (name, variant) in &built.variants {
+        assert_eq!(
+            variant.permutation & permutation::INSTANCE_INDEX,
+            0,
+            "{name}: a custom material reads its instances from the culling shader's copies, so it \
+             takes no build that reads them by index"
+        );
+    }
 }

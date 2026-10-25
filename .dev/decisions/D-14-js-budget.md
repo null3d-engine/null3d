@@ -1119,3 +1119,43 @@ about two of the features that follow.
   bundler keeps it in the start for them. Its pieces cannot simply move, because the constants that
   both halves read would then sit in the start instead, so the split needs three modules for under a
   kilobyte. This is the next trim worth taking if the room runs out again.
+
+## The start's budget rises to 194 KB, 25 October 2026
+
+The grading work's branch measured WebGL2's pipelined start at 197,411 bytes after Brotli in a local
+build, 803 bytes over the 192 KB line. Its own addition is small. It holds the switch that picks
+where the grading table takes its input, the values that the 8-bit path's shaders read, and the code
+that routes the grade to each path. The day's other landings had already filled the room.
+
+The budget rises to 194 KB, or 198,656 bytes, leaving 1,245 bytes of room. The owner's rule of
+22 October allows the start's budget to rise as needed without asking, reaffirmed on 25 October. The
+second grading design's bake loads only in the grade task's worker file, which has its own budget.
+A page that never grades therefore pays nothing for it. The trims owed above still stand as the next
+work that touches the start's size.
+
+## The start's budget rises to 196 KB, 25 October 2026
+
+The merge that landed the day's tooling work measured WebGL2's pipelined start at 196,291 bytes
+after Brotli against the 194 KB line, 2,365 bytes left and past the warning at 97 per cent. Two
+changes had grown it. The sky layer's generator rides both bundles, so `page-environment-generator.js`
+grew 16.2 per cent, from 6,175 to 7,177 bytes, and `sketch-worker-environment-generator.js` 15.7 per
+cent, from 6,174 to 7,142. The WebGL2 page grew 2.0 per cent, from 14,184 to 14,473, for a cause not
+yet found.
+
+The owner said to raise the line. It rises to 196 KB, or 200,704 bytes, leaving 4,413 bytes of room.
+The owner's rule of 22 October allows the start's budget to rise as needed without asking, reaffirmed
+on 25 October. The trims owed above still stand as the next work that touches the start's size, and
+the growth of the two generator files carries its own `Size-Growth:` trailers on the commit that
+explains them.
+
+## The start's budget goes to 256 KB for now, 25 October 2026
+
+The owner raised it again the same afternoon, to 256 KB or 262,144 bytes, and described the figure
+as one for now. The reason is time: the work that closes the milestone's feature list should not stop
+for a crossing while the trims run beside it. At the measured 196,291 bytes it leaves 65,853 bytes of
+room.
+
+The line is headroom, not a target. The owner placed the reduction in M4: the line comes down and the
+trimming is done as part of that milestone, not during M3's push to finish its features. A crossing
+before then is read the same way it was today. The raises buy time, and the trims are the work that
+returns the line to something the project would choose on purpose.

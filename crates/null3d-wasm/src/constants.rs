@@ -136,6 +136,8 @@ pub mod map_slot {
     pub const BUMP: u32 = MAP_SLOTS as u32 + LayerMap::ALL.len() as u32;
     /// A displacement map, which has a binding of its own.
     pub const DISPLACEMENT: u32 = BUMP + 1;
+    /// A light map's direction map, which shares the light map's texture array.
+    pub const LIGHT_MAP_DIRECTION: u32 = DISPLACEMENT + 1;
     /// The diffuse transmission map's slot in a material with the translucency feature.
     pub const DIFFUSE_TRANSMISSION: u32 = MapSlot::DIFFUSE_TRANSMISSION as u32;
     /// The diffuse transmission color map's slot in a material with the translucency feature.
@@ -274,8 +276,17 @@ pub mod post_value {
     pub const SSR_MAX_ROUGHNESS: u32 = 62;
     /// The sharpening's strength, from 0 to 1.
     pub const SHARPEN: u32 = 63;
+    /// The grading controls' white balance factors and the saturation, the lift, the gamma and
+    /// the gain of each channel, and the split toning's two chromas with its balance and its
+    /// strength, in this order. The 8-bit path's shaders apply them before their tone curve.
+    pub const GRADE_WHITE_BALANCE: u32 = 64;
+    pub const GRADE_LIFT: u32 = 68;
+    pub const GRADE_GAMMA: u32 = 72;
+    pub const GRADE_GAIN: u32 = 76;
+    pub const GRADE_SHADOWS: u32 = 80;
+    pub const GRADE_HIGHLIGHTS: u32 = 84;
     /// The values in the block.
-    pub const COUNT: u32 = 64;
+    pub const COUNT: u32 = 88;
 }
 
 /// The block of numbers that `callValues` gives: 64-bit floats that TypeScript writes before a
@@ -811,6 +822,7 @@ pub fn typescript() -> String {
                 ("HEIGHT", light_value::HEIGHT),
                 ("RADIUS", light_value::RADIUS),
                 ("IMAGE", light_value::IMAGE),
+                ("HERO_SIZE", light_value::HERO_SIZE),
             ],
         ),
         (
@@ -1074,6 +1086,7 @@ pub fn typescript() -> String {
                 ("SCENE_DEPTH", feature::SCENE_DEPTH),
                 ("IRIDESCENCE", feature::IRIDESCENCE),
                 ("ANISOTROPY", feature::ANISOTROPY),
+                ("LIGHT_MAP_RGBM", feature::LIGHT_MAP_RGBM),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -1127,6 +1140,7 @@ pub fn typescript() -> String {
                 ("THICKNESS", map_slot::THICKNESS),
                 ("BUMP", map_slot::BUMP),
                 ("DISPLACEMENT", map_slot::DISPLACEMENT),
+                ("LIGHT_MAP_DIRECTION", map_slot::LIGHT_MAP_DIRECTION),
             ],
         ),
         // The values that `setMaterialValue` changes, by the float where each starts in a row.
@@ -1181,6 +1195,8 @@ pub fn typescript() -> String {
                 ),
                 ("ANISOTROPY", param::ANISOTROPY as u32),
                 ("ANISOTROPY_ROTATION", param::ANISOTROPY_ROTATION as u32),
+                ("LIGHT_MAP_SCALE", param::LIGHT_MAP_SCALE as u32),
+                ("LIGHT_MAP_OFFSET", param::LIGHT_MAP_OFFSET as u32),
                 ("DECAL_FADE_START", param::DECAL_FADE_START as u32),
                 ("DECAL_FADE_END", param::DECAL_FADE_END as u32),
                 ("DECAL_EDGE_FADE", param::DECAL_EDGE_FADE as u32),
@@ -1290,6 +1306,12 @@ pub fn typescript() -> String {
                 ("SSR_THICKNESS", post_value::SSR_THICKNESS),
                 ("SSR_MAX_ROUGHNESS", post_value::SSR_MAX_ROUGHNESS),
                 ("SHARPEN", post_value::SHARPEN),
+                ("GRADE_WHITE_BALANCE", post_value::GRADE_WHITE_BALANCE),
+                ("GRADE_LIFT", post_value::GRADE_LIFT),
+                ("GRADE_GAMMA", post_value::GRADE_GAMMA),
+                ("GRADE_GAIN", post_value::GRADE_GAIN),
+                ("GRADE_SHADOWS", post_value::GRADE_SHADOWS),
+                ("GRADE_HIGHLIGHTS", post_value::GRADE_HIGHLIGHTS),
                 ("COUNT", post_value::COUNT),
             ],
         ),

@@ -33,9 +33,11 @@ export const DFG_SIZE = 16;
 
 /**
  * The first column of the table in the texture that holds a material's custom values: one past a
- * material's texels, where the engine keeps it.
+ * material's texels, where the engine keeps it. The page test checks it against the constant that
+ * the shader library carries, and both follow `MATERIAL_TEXELS` in
+ * `crates/null3d-render/src/materials.rs`, which the light map's row took to eighteen.
  */
-export const DFG_COLUMN = 17;
+export const DFG_COLUMN = 18;
 
 /** The table as three.js stores it: half floats, scale then bias, row after row. */
 // biome-ignore format: rows of the table

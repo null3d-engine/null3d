@@ -3,7 +3,14 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { analyseMerge, conflictsIn, mergeProblem, NEW_WORD_ALLOWANCE } from './check-merges';
+import {
+	analyseMerge,
+	conflictsIn,
+	KNOWN_MERGES,
+	mergeProblem,
+	mergesToCheck,
+	NEW_WORD_ALLOWANCE,
+} from './check-merges';
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -57,6 +64,21 @@ function mergeWith(files: Record<string, string>, message = 'Merge branch side')
 }
 
 const resolved = BASE.replace('LIMIT = 16', 'LIMIT = 32; // the default');
+
+describe('KNOWN_MERGES', () => {
+	it('names the nine merges that the owner let stand, by full ids', () => {
+		// A full id names one commit, so a merge with new work under another id is still refused.
+		expect(KNOWN_MERGES.size).toBe(9);
+		for (const sha of KNOWN_MERGES) expect(sha).toMatch(/^[0-9a-f]{40}$/);
+	});
+
+	it('leaves out only the named merges, and every other merge, by full id', () => {
+		const known = [...KNOWN_MERGES][0] as string;
+		const other = 'a'.repeat(40);
+		expect(mergesToCheck([known, other, ''])).toEqual([other]);
+		expect(mergesToCheck([known.slice(0, 9)])).toEqual([known.slice(0, 9)]);
+	});
+});
 
 describe('conflictsIn', () => {
 	it('finds each conflict and the lines of its sides', () => {

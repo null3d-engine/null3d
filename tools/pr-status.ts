@@ -55,10 +55,13 @@ const INCOMPLETE = new Set([
 	'M3-E2',
 	'M3-E4',
 	'M3-K3',
+	'M3-A10',
+	'M3-E10',
+	'M3-V6',
 	'M3-B1',
-	'M3-E6',
 	'M3-E4a',
 	'M3-F5',
+	'M3-E6',
 	'M3-E8',
 	'M3-L1',
 	'M3-L3',
@@ -66,7 +69,6 @@ const INCOMPLETE = new Set([
 	'M3-R22',
 	'M3-L2',
 	'M3-L4',
-	'M3-A1',
 	'M3-A2',
 	'M3-A8',
 	'M3-A9',
@@ -91,7 +93,7 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-A9':
 		'the hero tile and its cost figures are in: a still hero adds no pass, a moving one adds a depth pass of 0.028 to 0.037 ms, and WebGL2 reads the tile for 0.27 ms less than the cascades (D-219)',
 	'M3-E6':
-		"splats' budget follows the preset and reaches the overlay; water's reflection cadence, the other first user, is not on the branch",
+		"both first users follow the preset: splats' budget, and the water add-on's reflection cadence, which doubles the wait at each frame-budget step up to every sixteenth frame. The overlay part of the task is not built: D-199's decision 4 asks for one GPU timing scope per built-in step and per add-on feature, and D-173 for each add-on's GPU time, while the add-on rows hold no GPU time and the overlay shows one frame total",
 	'M3-E8':
 		"the compute pass and its WebGL2 fragment form are built and tested; the first-user outcome waits on M3-F9's ocean, because the splats add-on cannot take the hook",
 	'M3-B1':
@@ -125,8 +127,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the memory figure is a 40,000-ball test on the main view alone, and no GPU time was taken on the Mac, an iPad or a phone-class device',
 	'M3-L4':
 		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
-	'M3-A1':
-		'`scene.pick` returns no texture coordinates; raycasts and pointer events do, so the pixel-exact pick is short of the task',
 	'M3-A2': "the refresh's cost rows are all owed, the Mac's included",
 	'M3-A8':
 		'the shipped design is a display-color table with no tone curve, which replaced the HDR input D-199 has the owner approving',
@@ -135,7 +135,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-A11':
 		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
 	'M3-E10':
-		'the owner has ruled that a sky layer reaches both the environment map and the CPU sky light, and a helper is building both; D-242 still records the narrowing until its addendum lands',
+		'the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the work is built on a helper branch and not yet on this branch, and the aurora references and the new picture have not been made',
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
@@ -177,13 +177,17 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-E4':
 		"whether the approved hook table stands against hard rule 8 is the owner's to decide, and the tick waits on that",
 	'M3-K3':
-		'the task asks for image tests on every path, and there are none: no cookie picture is in the manifest and no cookie page among the sketches. Whether the 128 by 128 pixels-only cookie looks good enough is a second question, which the better-look rule raises',
+		"the spot-map picture covers the cookie on every path and passes; what remains is the owner's call on whether a 128 by 128 pixels-only cookie looks good enough, which the better-look rule raises",
+	'M3-A10':
+		"the finish line asks for the S24+, and the S24 run gives only a frame time held at its 30 Hz limit, which its own run file marks unreliable; the S25 is a faster GPU of another make on a path the S24+ lacks, so whether it closes the line is the owner's call. CI's five software sharpen references also show no sharpening at all, so the picture does not hold the effect it claims",
+	'M3-V6':
+		'the same placement is shown only on two Android phones in Chrome, so no second JavaScript engine has placed it, and no iPad run exists; the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, the Mac figure has no raw record, and docs/api/vegetation.md still calls the scatter not built',
 	'M3-E4a':
 		'the material change is on the branch with the water work, but the task asks for a material that declares the scene depth beside two textures on WebGPU, compatibility and WebGL2, and for the cost of a material that reads neither; its helper is finishing that proof',
 	'M3-F5':
 		'the water add-on, its records and its demos are on the branch, but twelve of its reference pictures are not drawn, so the picture-reference check fails; its evidence line waits on those pictures',
 	'M3-V5':
-		"the atlases draw and the crowns keep their coverage at three distances, but the task's line asks the owner to judge them at least as good as Creek's painted textures, and its author reports the generated leaves are not there yet; the paint time per device is owed too",
+		"every vegetation picture passes in both reference sets on both GPUs and the crowns keep their coverage at three distances, and the leaf cells now hold a spray of lobed, veined, damaged leaves instead of one smooth shape. Its author's verdict is that the atlas is at least as good as Creek's as a texture, and that the crown is still paler and flatter because the material lights it with one uniform light while Creek's texture carries painted shadowing, which belongs to M3-V7. The task's line asks the owner to judge the two side by side, and the paint time per device is owed too",
 	'M3-V1':
 		'Creek has no WebGPU figure on any device, and no vegetation task after it has its own budget per preset',
 	'M3-V3': 'the Mac, iPad and phone GPU time and memory are not recorded',
@@ -235,6 +239,7 @@ function description(): string {
 		!PARTIAL[id] &&
 		!ON_BRANCH.has(id) &&
 		!INCOMPLETE.has(id) &&
+		!(id in AUDIT_GAPS) &&
 		id in TASK_EVIDENCE;
 	const open = tasks.filter(({ id }) => !landed.has(id) && !PARTIAL[id] && !ON_BRANCH.has(id));
 	const lines = [
@@ -258,6 +263,7 @@ function description(): string {
 				!PARTIAL[id] &&
 				!ON_BRANCH.has(id) &&
 				!INCOMPLETE.has(id) &&
+				!(id in AUDIT_GAPS) &&
 				id in TASK_EVIDENCE;
 			const mark = done ? 'x' : ' ';
 			const note = PARTIAL[id]
@@ -280,6 +286,7 @@ function description(): string {
 		'',
 		"- CI on this pull request is the branch's backstop, never the first reader of a change.",
 		'- Each helper commits on its own worktree branch, runs the tests its change touches, and reports before the coordinator merges it.',
+		"- A task reported done is read by a fresh checker, never by its author: the checker reads the task's own Done-when line, runs the tests it names and opens the pictures it cites, and only a cleared verdict lets a tick or a landing through.",
 		'- `bun run limits` reports each fixed limit before a push, and `bun run pr-status` rebuilds this list from the branch itself.',
 		'- A commit that can move a limit carries a `Limits-Checked:` line, and one that changes what the GPU draws carries a `GPU-Checked:` line.',
 		'- The pictures, timings and device rows live in `.dev/examples.md`, `.dev/benchmarks.md` and `.dev/tested-devices.md` beside the features they measure.',
