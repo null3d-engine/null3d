@@ -392,3 +392,15 @@ than Creek's. The atlas is a map that multiplies a species' colour. The crown is
 light with no crown occlusion, so the leaves differ by their own paint alone. Creek's texture carries
 painted shadowing as well. The rest of that gap belongs to M3-V7, not to the atlas. That task adds the
 leaf material with crown-bent normals, a tint for each tree and crown occlusion.
+
+## Addendum: fluid wind lives in the vegetation add-on, 25 October 2026
+
+The owner asked for the M3 plan to measure proper fluid-simulation wind, settable by preset and
+adjusted by the governor, and ruled the same day: "Keep it in the vegetation add-on, not its own".
+The wind therefore adds no add-on package of its own. Its field, its presets and its governor
+steps belong to the vegetation add-on, and the engine changes it needs are made there.
+
+The plan's new tasks carry the work: M3-V13 (compute passes that keep their state between frames),
+M3-V14 (measure fluid wind on devices and set its budgets), M3-V15 (the wind field in the vegetation
+add-on), M3-V16 (preset settings and governor steps) and M3-V17 (plants, grass and floating leaves
+answer the air).
