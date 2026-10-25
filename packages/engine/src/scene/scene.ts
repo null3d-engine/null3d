@@ -3211,9 +3211,13 @@ function writeProperty(
 	if (what === PROPERTY_MATERIAL) {
 		const material = target as Material;
 		if (!material.live) return;
-		if (binding.components === 2)
-			material.writeUvPair(binding.name as 'uvOffset' | 'uvScale', mixed(0), mixed(1));
-		else if (binding.components === 1) material.writeUniform(binding.name, mixed(0));
+		if (binding.components === 2) {
+			// A pair is where the maps sit on the texture coordinates.
+			if (binding.name === 'uvOffset' || binding.name === 'uvScale')
+				material.writeUvPair(binding.name, mixed(0), mixed(1));
+			return;
+		}
+		if (binding.components === 1) material.writeUniform(binding.name, mixed(0));
 		else material.writeUniform(binding.name, color());
 		return;
 	}
