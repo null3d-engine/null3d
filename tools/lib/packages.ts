@@ -447,6 +447,7 @@ async function compile(
 	dir: string,
 	build: PackageBuild,
 	compiler: ShaderCompiler,
+	shaderJs: boolean,
 ): Promise<void> {
 	const lib = join(dir, LIB_DIR);
 	// A release writes the shader set's record into the engine's `lib/` before the pack runs. Any
@@ -479,10 +480,21 @@ async function compile(
 		],
 		root,
 	);
-	for (const path of walkFiles(dir, 'src', (path) => COPIED_FILE.test(path))) {
-		const to = join(lib, path.slice('src/'.length));
+	const copied = walkFiles(join(dir, 'src'), '.', (path) => COPIED_FILE.test(path));
+	// The shader build writes most of the engine's shader modules as JavaScript, gigabytes of them,
+	// whose addresses already name the files. The build never parses them, and copies them only for
+	// a build that ships them: the npm package leaves them out, since the Vite plugin supplies them.
+	const generated = relative(join(dir, 'src'), join(root, MODULE_DIR));
+	const generatedJs = new Set(
+		copied.filter(
+			(path) => posix.dirname(path) === generated && isShaderModule(posix.basename(path)),
+		),
+	);
+	for (const path of copied) {
+		if (generatedJs.has(path) && !shaderJs) continue;
+		const to = join(lib, path);
 		mkdirSync(dirname(to), { recursive: true });
-		copyFileSync(join(dir, path), to);
+		copyFileSync(join(dir, 'src', path), to);
 	}
 	await compileShaders(root, dir, compiler);
 	for (const path of walkFiles(dir, 'src', (path) => /(?<!\.test|\.d)\.ts$/.test(path))) {
@@ -497,9 +509,10 @@ async function compile(
 	// A packaged module that imports a repository-only entry point then answers no built file, and
 	// the rewrite below fails on it.
 	for (const file of repositoryOnlyFiles(build)) rmSync(join(dir, file), { force: true });
-	const exists = (path: string) => existsSync(join(lib, path));
+	const exists = (path: string) => generatedJs.has(path) || existsSync(join(lib, path));
 	const problems: string[] = [];
 	for (const path of walkFiles(lib, '.', (path) => BUILT_FILE.test(path))) {
+		if (generatedJs.has(path)) continue;
 		const file = join(lib, path);
 		const before = readFileSync(file, 'utf8');
 		const { text, unresolved } = rewriteAddresses(posix.normalize(path), before, exists);
@@ -515,10 +528,15 @@ async function compile(
 }
 
 /** Builds one package's own library: the shader modules when its source imports them, then `lib/`. */
-async function buildLibrary(root: string, name: string, compiler: ShaderCompiler): Promise<void> {
+async function buildLibrary(
+	root: string,
+	name: string,
+	compiler: ShaderCompiler,
+	shaderJs: boolean,
+): Promise<void> {
 	const build = packageBuild(name);
 	if (build.shaders) ensureShaderModules(root);
-	if (build.compile) await compile(root, join(root, 'packages', name), build, compiler);
+	if (build.compile) await compile(root, join(root, 'packages', name), build, compiler, shaderJs);
 }
 
 /**
@@ -564,9 +582,15 @@ export async function buildPackages(root: string, names: readonly string[]): Pro
  * package builds as soon as the packages that it needs have built, so the add-ons build at the
  * same time once the engine has, and their WGSL shares one pool of compiler threads. Writes
  * nothing else that a tarball holds, so a tool that only needs files a browser runs, such as the
- * CDN build, calls this.
+ * CDN build, calls this. With `shaderJs`, the engine's library also holds the shader modules that
+ * the shader build wrote as JavaScript, which a page with no bundler loads and the npm package
+ * leaves out.
  */
-export async function buildPackageLibraries(root: string, names: readonly string[]): Promise<void> {
+export async function buildPackageLibraries(
+	root: string,
+	names: readonly string[],
+	{ shaderJs = false }: { shaderJs?: boolean } = {},
+): Promise<void> {
 	const pool = new CompilerPool();
 	const builds = new Map<string, Promise<void>>();
 	const library = (name: string): Promise<void> => {
@@ -575,7 +599,7 @@ export async function buildPackageLibraries(root: string, names: readonly string
 			built = (async () => {
 				await Promise.all(packageBuild(name).needs.map(library));
 				const started = performance.now();
-				await buildLibrary(root, name, pool);
+				await buildLibrary(root, name, pool, shaderJs);
 				console.log(`  built ${name} in ${secondsSince(started)} s`);
 			})();
 			builds.set(name, built);
