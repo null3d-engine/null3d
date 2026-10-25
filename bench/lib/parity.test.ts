@@ -344,6 +344,7 @@ describe('feature scenes', () => {
 		expect(featureScene('morph-closeup')?.limit).toBeUndefined();
 		// three.js's WebGPURenderer draws the Khronos meshopt test wrong, so WebGLRenderer is its reference.
 		expect(featureScene('gltf-meshopt-khr')?.webglOnly).toBe(true);
+		expect(featureScene('gltf-iridescence-metallic')?.webglOnly).toBe(true);
 		expect(featureScene('gltf-meshopt-ext')?.webglOnly).toBeUndefined();
 		for (const scene of looser) expect(scene.limit).toBeGreaterThan(MAX_DIFFERENT_PERCENT);
 		const tone = featureScene('tone-agx');
