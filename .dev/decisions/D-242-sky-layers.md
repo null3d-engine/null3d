@@ -161,6 +161,12 @@ of the nine coefficients took the first word of every third texel, where the tar
 each, so the diffuse light mixed the coefficients of different directions; it now reads each
 texel's first three words.
 
+The test that tells whether a capture landed compared only the first twenty-seven words. That is
+the number of coefficients, where their nine four-word texels take thirty-six. So a capture that
+moved only the last two coefficients read as unchanged, and the map kept the light before them. It
+now covers every word that the coefficients occupy, from 26 October 2026. A unit test moves only the
+last coefficient.
+
 The last fault was why the light arrived one fill after the levels. The drawing that a capture makes
 ran the frame's own command to make each buffer, and a second make destroys the buffer it makes and
 builds another. The light read of the ring then failed with "Buffer was destroyed before mapping was
