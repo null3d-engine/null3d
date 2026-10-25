@@ -746,7 +746,9 @@ impl Skinning {
             .enumerate()
         {
             if *made < needed {
-                *made = grown_size(needed, binding_bytes);
+                *made = grown_size(needed, binding_bytes).ok_or(RecordError::BufferFull {
+                    bytes: binding_bytes,
+                })?;
                 // The motion pass copies the regions into its own buffers each frame.
                 let flags = usage::STORAGE | usage::VERTEX | usage::COPY_SRC;
                 let id = ids::skinned(buffer as u32);
@@ -760,7 +762,10 @@ impl Skinning {
         }
         let table_bytes = self.table_entries * ENTRY_WORDS * 4;
         if self.table_made < table_bytes {
-            self.table_made = grown_size(table_bytes, binding_bytes);
+            self.table_made =
+                grown_size(table_bytes, binding_bytes).ok_or(RecordError::BufferFull {
+                    bytes: binding_bytes,
+                })?;
             let flags = usage::STORAGE | usage::COPY_DST;
             list.push(Op::CreateBuffer, &[ids::SKIN_TABLE, self.table_made, flags])?;
             self.groups_stale = true;

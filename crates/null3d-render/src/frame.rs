@@ -232,6 +232,11 @@ pub enum RecordError {
     },
     /// The frame's copies do not fit its upload arena, which the builder sizes for every frame.
     UploadsFull,
+    /// A buffer that the frame fills would take more bytes than the device lets one buffer hold.
+    BufferFull {
+        /// The most bytes that one buffer may take on this device.
+        bytes: u32,
+    },
     /// Memory could not grow for the tables of a new layout.
     OutOfMemory {
         /// The bytes the tables needed, or `u32::MAX` for more than that.
@@ -4083,10 +4088,11 @@ impl MeshBuffers {
             let buffers = &mut self.pages[p];
             if buffers.outgrown(page) {
                 let limit = MAX_BUFFER_BYTES as u32;
+                let full = || RecordError::BufferFull { bytes: limit };
                 let (vertex_bytes, index_bytes) = page.buffer_bytes();
                 *buffers = PageBuffers {
-                    vertex_bytes: grown_size(vertex_bytes as u32, limit),
-                    index_bytes: grown_size(index_bytes as u32, limit),
+                    vertex_bytes: grown_size(vertex_bytes as u32, limit).ok_or_else(full)?,
+                    index_bytes: grown_size(index_bytes as u32, limit).ok_or_else(full)?,
                     ..PageBuffers::default()
                 };
                 let copied = buffer_usage::COPY_DST;
@@ -4213,13 +4219,26 @@ pub const fn tests_alpha_its_way(shading: Shading) -> bool {
 }
 
 /// The size to create a buffer at when it must hold `needed` bytes: room to grow, so a slowly
-/// growing scene rarely recreates it, but never past `limit`.
-pub fn grown_size(needed: u32, limit: u32) -> u32 {
-    needed
-        .saturating_add(needed / 2)
-        .next_multiple_of(256)
-        .min(limit)
-        .max(needed)
+/// growing scene rarely recreates it, but never past `limit`. None when the need itself passes
+/// `limit`, so the caller refuses the frame rather than ask for a buffer the device cannot bind.
+pub fn grown_size(needed: u32, limit: u32) -> Option<u32> {
+    if needed > limit {
+        return None;
+    }
+    let roomy = needed.saturating_add(needed / 2);
+    Some(
+        roomy
+            .checked_next_multiple_of(256)
+            .unwrap_or(u32::MAX)
+            .min(limit)
+            .max(needed),
+    )
+}
+
+/// [`grown_size`] for a buffer that the device sets no limit on, such as one the engine fills
+/// from its own memory alone.
+pub fn grown_size_any(needed: u32) -> u32 {
+    grown_size(needed, u32::MAX).expect("every size fits a limit of u32::MAX")
 }
 
 /// Encodes a linear color channel as sRGB.

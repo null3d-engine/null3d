@@ -296,6 +296,15 @@ buffer offset that the frame records on the CPU. An indirect draw keeps its firs
 The CPU count runs only for the sources of a mesh with levels. A list of chosen patches per view has
 the same sizing problem (M3-L3). Its count can read this one.
 
+The buffer still takes room to grow, and its sizing kept the need whenever the room passed the
+binding. So a list that needed more than the binding asked for a buffer past the device's limit,
+and nothing checked it. A frame builder now refuses such a buffer with E1501, which names the
+limit in bytes, and every buffer that a frame sizes against a binding takes the same check. The
+list of copies per view is the one that the plan named.
+`a_copy_list_past_the_binding_is_refused_rather_than_sized_over_it` in
+`crates/null3d-render/tests/levels.rs` gives a device whose binding holds the sources, and a batch
+that reserves room in every bucket of its levels, and reads the refusal.
+
 ## Addendum: an object may bias its threshold (22 October 2026)
 
 Godot gives each geometry instance a `lod_bias`, which moves the levels of that object alone: a

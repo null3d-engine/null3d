@@ -439,7 +439,9 @@ impl Culling {
         ];
         for (id, made, size, flags) in needed {
             if *made < size {
-                *made = grown_size(size, binding_bytes);
+                *made = grown_size(size, binding_bytes).ok_or(RecordError::BufferFull {
+                    bytes: binding_bytes,
+                })?;
                 list.push(Op::CreateBuffer, &[id, *made, flags])?;
                 recreated = true;
             }
@@ -462,7 +464,9 @@ impl Culling {
             .expect("a view's buffers exist before it culls");
         let size = layout.compacted_bytes();
         if buffers.visible < size {
-            buffers.visible = grown_size(size, binding_bytes);
+            buffers.visible = grown_size(size, binding_bytes).ok_or(RecordError::BufferFull {
+                bytes: binding_bytes,
+            })?;
             list.push(
                 Op::CreateBuffer,
                 &[

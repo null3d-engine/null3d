@@ -25,7 +25,7 @@ use null3d_core::cells::CellPosition;
 use null3d_gpu::drawlist::sizes::LINE_VERTEX_BYTES;
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage, state_flags, template};
 
-use crate::frame::{RecordError, UploadArena, bind_frame_group, grown_size};
+use crate::frame::{RecordError, UploadArena, bind_frame_group, grown_size_any};
 use crate::pipelines::{DepthBias, DrawKey, PassTargets, PipelineCache};
 
 /// Points that one frame draws as lines, two points per line: each point's position in world
@@ -225,7 +225,7 @@ impl LinesPass {
         };
         let bytes = Self::upload_bytes(lines) as u32;
         if bytes > self.buffer_bytes {
-            self.buffer_bytes = grown_size(bytes, u32::MAX);
+            self.buffer_bytes = grown_size_any(bytes);
             list.push(
                 Op::CreateBuffer,
                 &[
