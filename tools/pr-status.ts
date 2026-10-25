@@ -110,7 +110,8 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-F3':
 		'dropped with the temporal resolve it waited on (D-206); the owner may change the ruling',
 	'M3-F10': 'dropped with the temporal resolve it needs (D-206); the owner may change the ruling',
-	'M3-R12': 'the build compiles only the listed permutations; the time and size are not recorded',
+	'M3-R12':
+		'the narrowing is not on the branch at all — it exists only on an unlanded branch from 23 October, and there it stops recording before the scene builds its own pipelines, strips the device bits the build compares, and drops the empty word that compute and full-screen passes need, so a narrowed build would compile everything and look correct; no time or size figure exists either',
 	'M3-A11':
 		'measured on both paths at every preset; it does not beat the presets, so it stays behind the internal setting and does not ship (D-206). Its black-capture and bind-group faults are fixed, its shader file still loads on first use, and that first-use case is now tested on both paths',
 	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
