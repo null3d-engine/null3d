@@ -45,11 +45,13 @@
 		"prepack": "bun ../../tools/build-package.ts vegetation"
 	},
 	"peerDependencies": {
-		"@null3d/engine": "workspace:*"
+		"@null3d/engine": "workspace:*",
+		"@null3d/wind": "workspace:*"
 	},
 	"devDependencies": {
 		"@null3d/engine": "workspace:*",
 		"@null3d/vite-plugin": "workspace:*",
+		"@null3d/wind": "workspace:*",
 		"@webgpu/types": "0.1.74"
 	}
 }

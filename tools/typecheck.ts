@@ -41,6 +41,8 @@ export const PROJECTS = [
 	'packages/water',
 	'packages/water/tsconfig.test.json',
 	'packages/water/tsconfig.page.json',
+	'packages/wind',
+	'packages/wind/tsconfig.test.json',
 	'packages/cli',
 	'tests/pages',
 	'tests/fixtures/project',

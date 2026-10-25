@@ -410,6 +410,7 @@ Vegetation is the first foundation that depends on another add-on. The rule for 
   engine version and releases with the engine, so the two always release in step.
 - It never copies the other add-on's code. Each feature lives in one place, as rule 11 says.
 
-`tools/check-addon-imports.ts` checks only the engine's entry points today. M3-V15 extends it with
-the wind add-on. It then refuses a relative import from one package into another package's folder.
-It also refuses an import of a sub-path that the other package does not export.
+M3-V15 extended `tools/check-addon-imports.ts` with the wind add-on. It refuses a relative import
+from one package into another package's folder, and an import of a sub-path that the other package
+does not export. `tools/lib/addon-imports.test.ts` covers both refusals, and a fixture that holds one
+import of each.
