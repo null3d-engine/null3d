@@ -418,17 +418,17 @@ describe('sizeProblems', () => {
 
 	it('accepts a file at its budget in every column', () => {
 		expect(
-			sizeProblems([{ name: 'addon.js', raw: 64 * KB, gzip: 24 * KB, brotli: 17 * KB }]),
+			sizeProblems([{ name: 'addon.js', raw: 64 * KB, gzip: 24 * KB, brotli: 18 * KB }]),
 		).toEqual([]);
 	});
 
 	it('names each column of a file over its budget', () => {
 		expect(
-			sizeProblems([{ name: 'addon.js', raw: 65 * KB, gzip: 25 * KB, brotli: 18 * KB }]),
+			sizeProblems([{ name: 'addon.js', raw: 65 * KB, gzip: 25 * KB, brotli: 19 * KB }]),
 		).toEqual([
 			'addon.js is 65.0 KB raw, over its 64.0 KB budget',
 			'addon.js is 25.0 KB gzip, over its 24.0 KB budget',
-			'addon.js is 18.0 KB brotli, over its 17.0 KB budget',
+			'addon.js is 19.0 KB brotli, over its 18.0 KB budget',
 		]);
 	});
 

@@ -47,7 +47,7 @@ const INCOMPLETE = new Set([
 	'M3-D7',
 	'M3-D9',
 	'M3-F2',
-	'M3-G4',
+	'M3-G1',
 	'M3-K4',
 	'M3-R16',
 	'M3-R17',
@@ -75,7 +75,6 @@ const INCOMPLETE = new Set([
 	'M3-A11',
 	'M3-R1',
 	'M3-O1',
-	'M3-G1',
 	'M3-G2',
 	'M3-G3',
 	'M3-R2',
@@ -136,7 +135,8 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
-	'M3-G1': "the Khronos sample's texture-transform pointers are not animated",
+	'M3-G1':
+		"the engine keeps one texture transform per material, so a clip that moves a base colour or emissive map also moves that material's still maps, where three.js keeps a transform per texture; the comparison passes because it reads the animator's sampled values and never the material",
 	'M3-G2': 'no Khronos iridescence sample is tested',
 	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',
 	'M3-R2': 'the stress test has not run on an iPad or a phone-class device since the change',
@@ -162,8 +162,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'no record shows the listing check passing on vegetation, and its one run skipped the shader and size checks',
 	'M3-F2':
 		'a 100,000-splat cloud becomes one chunk and cannot stream, and the streaming test fails in CI',
-	'M3-G4':
-		"a material with clear coat, sheen, iridescence or anisotropy cannot take the transmission or thickness maps on any path, and D-52's rule that a gap is a bug makes that a bug",
 	'M3-K4': "one of three.js r186's seven CSS3D examples is ported, and only its first layout",
 	'M3-R16': 'no project made from the template is installed, built and used with the hook on',
 	'M3-R17':
