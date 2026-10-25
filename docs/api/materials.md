@@ -161,7 +161,7 @@ After the camera's view draws its opaque objects, the engine copies their colors
 - The copy keeps the opaque objects' depth too. A bent ray can land on an opaque object in front of the surface, such as a flower on the bank of a stream. The surface then shows what lies straight behind it instead. three.js shows the flower's color in the water there.
 - The volume is a model, not a ray through the real shape. A ball with `thickness` set to its diameter looks right through its middle. three.js uses the same model.
 - `thickness` is in the mesh's own units, and the object's scale multiplies it.
-- Such a surface takes the `opaque` or `blend` alpha mode. `mask` and `hash` throw E1217.
+- Such a surface takes the `opaque`, `mask` or `blend` alpha mode. A mask decides which pixels draw, and the light from behind fills the pixels that remain. `hash` throws E1217.
 - Views other than the camera's, such as [scene passes](render.md#scene-passes) and [reflection passes](render.md#reflection-passes), have no copy. There the surface shows the environment's light along the bent ray.
 - A material with `transmissionMap` or `thicknessMap` takes no `specularIntensityMap` and no `specularColorMap`, because the two families of map read the same slots. Development builds throw E1217 for a material that asks for both. A layered material keeps the two maps beside a clear coat, a sheen, iridescence or anisotropy, as long as no layer map fills the slot that one of them takes: the transmission map shares the specular intensity map's slot with `clearcoatNormalMap` and `iridescenceThicknessMap`, and the thickness map shares the specular color map's slot with the sheen's maps and `anisotropyMap`. A development build throws E1217 for each such clash.
 
