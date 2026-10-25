@@ -1430,6 +1430,31 @@ export function alphaMaskPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * A canvas screen's refresh cost on each GPU path: a 1024 x 1024 OffscreenCanvas whose 256 x 256
+ * rectangle refreshes at 30 Hz. The page times the refresh in the sketch and reports the frame's
+ * GPU and CPU time with refreshes and without them. D-204 records the figures.
+ */
+export function canvasCostPlan(): PlanItem<Check>[] {
+	// The measured windows double up to half a minute on a slow GPU, and a second window then draws
+	// the same frames without the refresh.
+	const timeoutSeconds = 120;
+	return [
+		pageItem(
+			'canvas-texture-webgpu',
+			'canvas-texture',
+			{ kind: 'probe', tier: 'webgpu' },
+			{ switches: ['gpu=webgpu', 'preset=high'], timeoutSeconds },
+		),
+		pageItem(
+			'canvas-texture-webgl2',
+			'canvas-texture',
+			{ kind: 'probe', tier: 'webgl2' },
+			{ switches: ['gpu=webgl2', 'preset=high'], timeoutSeconds },
+		),
+	];
+}
+
+/**
  * What a tree of cluster patches costs: the heightfield of the cluster-cost page, timed at three
  * camera distances on one GPU path, so the figures show both the saving that coarse patches make
  * and the cost of the pass that picks them. D-213 records the results.
@@ -2231,6 +2256,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	vegetation: vegetationPlan,
 	'tree-generation': treeGenerationPlan,
 	'vegetation-scatter': vegetationScatterPlan,
+	'canvas-cost': canvasCostPlan,
 	'webgpu-stall': webgpuStallPlan,
 	reflection: reflectionPlan,
 	occlusion: occlusionPlan,
