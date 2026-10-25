@@ -387,8 +387,7 @@ Blender without levels still gets them (follow-up 5).
   drawing the thinned cards, but not the tool's error rule. The unit tests hold the step:
   `keeps a share of the cards at each level, grown about their middles`,
   `writes each card level its own positions, and shares the wood stream`, and `treats a card folded
-  along its middle as a card, as Creek makes its leaves`. The `vegetation-leaf-cards` picture holds
-  the cards' coverage at three distances.
+  along its middle as a card, as Creek makes its leaves`.
 
 ## Addendum: texture coordinates in the level error (22 October 2026, M3-L2)
 
@@ -404,6 +403,16 @@ The weight is deliberately modest. The error that the simplifier reports include
 and the engine reads a level's error as a distance, so a heavy weight would make every textured
 mesh switch levels much farther out. At a sixty-fourth, the test scene's ball keeps four levels,
 where the same scene without texture coordinates in the error has six.
+
+No picture test shows this weight. The weight is part of the measured error that picks a level, not
+a change to the level's triangles, so a picture taken at the level's own switch shows no slide by
+construction. A picture near enough to show a slide draws the level where the engine does not pick
+it. The measured case: a flat one-metre grid whose coordinates are warped by 0.15 of the texture
+gets a reported error of 0.32 units, so its level switches about 156 m out on a 360-pixel picture.
+At that distance the whole grid spans about three pixels, and the slide the weight counts is under
+one of them. The unit test reads the error itself, which is the quantity the item adds:
+`counts a texture that would slide, where a flat surface otherwise simplifies free` holds a bent
+grid's error to more than twice a flat one's.
 
 ## Addendum: the level pictures place each copy by its own distance (22 October 2026, M3-L2)
 
@@ -615,6 +624,12 @@ the GPU time by 32% at Low and 40% at High on core WebGPU, by 37% and 43% in com
 by 34% and 66% on WebGL2. Its GPU buffer bytes do not change between the two sides, at 19.8 MiB at
 Low and 23.7 MiB at High, and 6.2 and 6.3 MiB on WebGL2. Chrome on the Mac times WebGL2, where the
 tablets and the phone report no timer there.
+
+The identical bytes on the two sides do not prove the lists are sized to what draws. The level set
+exists on both sides, so the removed rule would give identical bytes too, and far more of them. The
+absolute totals rule that rule out. At Low the Mac's GPU buffers take 19.8 MiB in all, while the
+removed rule's two copy lists alone would take 20.5 MB and 10.2 MB, more than the whole measured
+figure. The Rust copy-list tests give the lists' own figures, 2.6 MB each.
 
 The run connected only after the mkcert root was trusted on the iPad. Until then the runner page
 sat on "starting" and nothing reached the Mac. [Device sessions](../devices.md) now records that
