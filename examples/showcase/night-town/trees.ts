@@ -1,7 +1,7 @@
 // The night town's trees: snow-laden pines that ring the clearing, and bare trees beside the square
 // strung with fairy lights. Pines and branches are made in code; the fairy lights are one sprite
 // batch of small warm dots that twinkle. The pines thin out by the preset, so a phone draws few.
-import { type InstanceBatch, type QualityPreset, quat, type SketchContext } from '@null3d/engine';
+import { defineFeature, mat4, type QualityPreset, quat, type SketchContext } from '@null3d/engine';
 import { markEffect } from '../../lib/layers';
 import { random } from '../../lib/procedural';
 import { groundHeight, offRoad } from './land';
@@ -12,6 +12,46 @@ const PINES: Record<QualityPreset, number> = { low: 90, medium: 200, high: 320, 
 const BARE = 6;
 /** Dots of light on one bare tree. */
 const LIGHTS_PER_TREE = 26;
+
+/**
+ * The pines' material: the standard surface, unchanged, so a pine that the GPU counts looks as it
+ * did in a batch.
+ */
+const DEFAULT_SURFACE = /* wgsl */ `
+fn surface(input: SurfaceInput) -> Surface {
+    return defaultSurface(input);
+}
+`;
+
+/**
+ * The compute shader that counts the pines: the count word takes the preset's share, which the page
+ * gives in the first number of the pass's values.
+ */
+const PINE_COUNT = /* wgsl */ `
+struct ComputeBlock {
+    size: vec4f,
+    clock: vec4f,
+    inverseProjection: mat4x4f,
+    u0: vec4f,
+    u1: vec4f,
+    u2: vec4f,
+    u3: vec4f,
+    u4: vec4f,
+    u5: vec4f,
+    u6: vec4f,
+    u7: vec4f,
+    drawn: vec4f,
+    bloom: vec4f,
+}
+
+@group(0) @binding(0) var<uniform> block: ComputeBlock;
+@group(0) @binding(1) var<storage, read_write> counts: atomic<u32>;
+
+@compute @workgroup_size(1)
+fn main() {
+    atomicStore(&counts, u32(block.u0.x));
+}
+`;
 
 type V3 = readonly [number, number, number];
 interface Build {
@@ -134,12 +174,11 @@ function bareTree(seed: number): { mesh: Build; tips: V3[] } {
 
 /** The pines, the bare trees and their fairy lights, with a way to thin the pines by the preset. */
 export async function createTrees(
-	{ scene, geometry, materials, textures }: SketchContext,
+	{ scene, geometry, materials, textures, render, engine }: SketchContext,
 	clear: (x: number, z: number) => boolean,
 ): Promise<{ fit(preset: QualityPreset): void }> {
 	const next = random(149);
-	const pine = geometry.fromArrays({ ...snowPine(), computeNormals: true });
-	const pineMat = materials.standard({ color: '#ffffff', roughness: 0.9, vertexColors: true });
+	const pineArrays = snowPine();
 	const spots: { x: number; z: number; size: number; yaw: number }[] = [];
 	for (let k = 0; k < 2000 && spots.length < PINES.ultra; k++) {
 		const a = next() * Math.PI * 2;
@@ -149,17 +188,83 @@ export async function createTrees(
 		if (!offRoad(x, z, 2) || clear(x, z)) continue;
 		spots.push({ x, z, size: 6 + 7 * next(), yaw: next() * Math.PI * 2 });
 	}
-	const batch: InstanceBatch = scene.createInstances(pine, spots.length, {
-		material: pineMat,
-		castShadows: true,
-		receiveShadows: true,
-	});
+	// The pines are the demo's user of the GPU-written draw count: the page writes each pine's world
+	// matrix once, and a compute pass writes the count that the preset draws. The pines' place and
+	// look are the material's, as they were in a batch, so the picture does not move.
+	const pines = await scene.addComputeInstances(
+		defineFeature({
+			name: 'night-town-pines',
+			frame: 'opaque',
+			kind: 'draw',
+			band: 'normal',
+			views: ['main'],
+		}),
+		{
+			shader: DEFAULT_SURFACE,
+			vertices: { ...pineArrays, computeNormals: true },
+			capacity: spots.length,
+			count: spots.length,
+			color: '#ffffff',
+			roughness: 0.9,
+			vertexColors: true,
+		},
+	);
+	const rows = new Float32Array(spots.length * 16);
+	const matrix = mat4.create();
+	const turn = quat.create();
 	spots.forEach((s, k) => {
-		batch.positions.set([s.x, groundHeight(s.x, s.z) - 0.2, s.z], k * 3);
-		batch.rotations.set(quat.fromEuler(quat.create(), 0, s.yaw, 0), k * 4);
-		batch.scales.set([s.size * 0.55, s.size, s.size * 0.55], k * 3);
+		const at = k * 16;
+		quat.fromEuler(turn, 0, s.yaw, 0);
+		mat4.compose(matrix, [s.x, groundHeight(s.x, s.z) - 0.2, s.z], turn, [
+			s.size * 0.55,
+			s.size,
+			s.size * 0.55,
+		]);
+		// A row of the engine's instance buffer: the matrix's three rows, each translation in its
+		// fourth number, then the row's ids.
+		rows.set(
+			[
+				matrix[0] as number,
+				matrix[4] as number,
+				matrix[8] as number,
+				matrix[12] as number,
+				matrix[1] as number,
+				matrix[5] as number,
+				matrix[9] as number,
+				matrix[13] as number,
+				matrix[2] as number,
+				matrix[6] as number,
+				matrix[10] as number,
+				matrix[14] as number,
+				0,
+				0,
+				0,
+				0,
+			],
+			at,
+		);
 	});
-	batch.markDirty();
+	pines.setInstances(rows, spots.length);
+	pines.object.setCastShadows(true);
+	pines.object.setReceiveShadows(true);
+	// WebGL2 has no compute pass, so the page's count draws the pines there. On WebGPU the pass
+	// writes the count word every frame, and the frame draws that.
+	const pineCount =
+		engine.capabilities.tier === 'webgl2'
+			? undefined
+			: render.addPass({
+					kind: 'compute',
+					description: defineFeature({
+						name: 'night-town-pine-count',
+						frame: 'opaque',
+						kind: 'compute',
+						band: 'before',
+					}),
+					wgsl: PINE_COUNT,
+					buffers: [pines.counts, pines.instances],
+					dispatch: [1, 1, 1],
+					values: [spots.length],
+				});
 
 	// The bare trees beside the square, each with fairy lights on its branches.
 	const tree = bareTree(211);
@@ -227,7 +332,10 @@ export async function createTrees(
 
 	return {
 		fit(preset) {
-			batch.setActiveCount(Math.min(PINES[preset], spots.length));
+			const drawn = Math.min(PINES[preset], spots.length);
+			// The page's count draws the pines on WebGL2, and the compute pass writes it on WebGPU.
+			pines.setCount(drawn);
+			if (pineCount !== undefined) render.setPassUniforms(pineCount, [drawn]);
 		},
 	};
 }
