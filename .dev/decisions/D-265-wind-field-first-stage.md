@@ -1,0 +1,87 @@
+# D-265: The wind field's first stage, before a pass keeps its state
+
+Status: decided. Date: 2026-10-26. Task: M3-V15. [D-241](D-241-vegetation-foundation.md) puts the
+fluid wind in an add-on of its own, and [D-173](D-173-addon-hooks.md)'s addendum of 25 October 2026
+makes it the twelfth foundation.
+
+Summary: The fluid wind needs a solver that carries its state from one frame to the next, and the
+engine refuses one: a pass may not read its own texture, and two passes may not read each other's
+(E1504). That read is M3-V13, which is not built. The wind add-on therefore starts with a field that
+keeps no state: an analytic wind that is divergence-free by construction, a grid that samples it and
+folds in drag, and a short pressure projection. The API and the sampling function stay the same when
+M3-V13 replaces the core with an advected solve.
+
+## Question
+
+What can the wind add-on build now, so that a plant reads one field, when the engine cannot keep a
+pass's state between frames?
+
+## Rule
+
+- The add-on stays inside the public API (AGENTS.md rule 12). It does not ask for an engine change
+  that belongs to another task.
+- A frame allocates nothing (hard rule 1).
+- Hold mode draws the same picture on every run, so the field is a pure function of sketch time and
+  of the pushes that the page made.
+- The API and the WGSL sampling function do not move when the field gains its memory, so readers
+  built on the analytic field keep working.
+
+## Data
+
+| Need | The engine at `m3-start`, 26 October 2026 | Source |
+| --- | --- | --- |
+| A pass that reads its last step | A pass that reads its own texture, or two that read each other's, throws E1504 | `docs/api/render.md`, Errors |
+| Many solver steps in one frame | A pass runs its dispatch once. 40 Jacobi steps would need 40 passes, and a page's 32nd pass throws E1220 | `docs/api/render.md` |
+| A field of several layers that swaps | No history read, so no swap | M3-V13, not built |
+| Reading the field back on the CPU | No public call reads a pass's texels. M3-V13 adds one | `docs/api/render.md` |
+
+M3-V13 is not on `m3-start`: `git log --all --grep="M3-V13"` finds no commit, `tools/task-evidence.ts`
+has no entry for it, and no engine pass option names a history or a swap. The plan puts it before
+M3-V15, so the field's memory is owed to that task, not to this one.
+
+No timing run was made for this record: the machine was shared and the night's rules bar benchmark
+and timing runs. Every cost figure for the field stays owed to M3-V14.
+
+## Decision
+
+The field is built in two stages. M3-V15 builds the first.
+
+**Stage one, this task.** The analytic wind is incompressible by construction: its swirl is the curl
+of one stream function in the ground plane, a push is a vortex, and a gust turns in rings about its
+own centre. Its base flow is constant along the ground and slower near it. No pressure solve is
+therefore needed to keep the air's volume, and the tests check that the discrete form keeps it. A
+grid that follows the camera samples that field into one `rgba16float` texture, which a reader
+samples with one texture read. The texture holds the wind across the ground and the local speed in
+its fourth channel.
+
+The field is evaluated from sketch time and from the pushes' trail, so it is the same on every run
+of a held frame. A page calls `createWind` once, then sets the base wind, sends a gust or pushes the
+air at a point. The pushes ring holds the four newest, which fade over three seconds.
+
+**Stage two, with M3-V13.** The core is replaced by an advected solve in Stam's form, with vorticity
+confinement and the pressure solve that the plan describes. The field then keeps two states, a
+reader mixes them by the time between the field's steps, and a wake lasts after the body that made
+it has gone. The grid, the box, the outputs, the sampling function and every reader stay as they
+are.
+
+**The pressure projection and the drag arrive together, before stage two.** A projection has nothing
+to remove while the field is incompressible by construction, so building it now would be code that
+no frame runs. It lands with the drag input. The vegetation add-on's grid of canopy cover gives the
+wind that input (M3-V17), and the projection removes the divergence that the drag adds.
+
+## Consequences
+
+- **Code:** `packages/wind/` holds the analytic field in TypeScript and the same formula in the
+  grid's compute shader and in its WebGL2 fragment form. A test holds the two shader copies equal,
+  because the shader build resolves only the engine's library. The TypeScript form serves the tests
+  and the page's own CPU reads.
+- **What stage one cannot do:** a gust does not spread by itself, and a wake does not outlive the
+  body. The pushes' trail stands in for the wake until M3-V13 lands. A place outside the grid's box
+  reads the box's edge, so the air is smooth rather than exact there.
+- **The tier table waits:** the pressure steps, the field steps a second and the mixed states of the
+  plan's table belong to stage two. M3-V14 measures the field that exists, and its rows are replaced
+  when the core changes.
+- **Docs and skills:** the wind page states that the field carries no state yet, and that a page
+  reads it the same way before and after the change.
+- **Evidence:** the add-on's tests prove the field moves a plant and that a frozen field fails those
+  tests. The allocation figure and `check-addon`'s cost gate are owed while timing runs are barred.
