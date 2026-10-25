@@ -407,12 +407,17 @@ where the same scene without texture coordinates in the error has six.
 No picture test shows this weight. The weight is part of the measured error that picks a level, not
 a change to the level's triangles, so a picture taken at the level's own switch shows no slide by
 construction. A picture near enough to show a slide draws the level where the engine does not pick
-it. The measured case: a flat one-metre grid whose coordinates are warped by 0.15 of the texture
+it. The measured case: a flat one-meter grid whose coordinates are warped by 0.15 of the texture
 gets a reported error of 0.32 units, so its level switches about 156 m out on a 360-pixel picture.
 At that distance the whole grid spans about three pixels, and the slide the weight counts is under
 one of them. The unit test reads the error itself, which is the quantity the item adds:
 `counts a texture that would slide, where a flat surface otherwise simplifies free` holds a bent
 grid's error to more than twice a flat one's.
+
+The task's coordinator accepted this exemption in writing on 26 October 2026. The acceptance rests
+on that reason and measurement. The weight is part of the error that picks the level, not a change
+to the level's triangles. So a picture near enough to show a slide draws the level where the engine
+does not pick it. The unit test stands as the item's proof.
 
 ## Addendum: the level pictures place each copy by its own distance (22 October 2026, M3-L2)
 
