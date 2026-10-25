@@ -211,6 +211,17 @@ did not mean the same picture. The Mac's GPU drew that set, and CI's software GP
 
 `sky-layer-light` keeps no pictures: it reads the spheres' colours, so it needs no reference.
 
+The sun dimming had only its values' plumbing and the shader's multiply until 25 October 2026.
+`tests/image/sky-layer-sun.spec.ts` now draws it: a sky whose sun disc fills the middle of a narrow
+view, and a layer that covers nothing but hides the whole sun. It reads the disc's middle and a block
+of plain sky before the layer, with it, and after it is removed. The disc darkens by more than 40
+levels and comes back within 4, while the plain sky stays within 4. With the layer's `sun` given 0,
+the disc stays at 255 and the check fails, so the check fails without the effect. It passes on
+webgpu, compatibility mode and webgl2 on SwiftShader.
+
+The task's other proofs already stand on the branch. `tests/image/errors.spec.ts` runs in every
+engine mode and in the production build, and it asserts the E1223 refusal in a running sketch.
+
 The held frame's map may hold no aurora, and that is an inference. The checker measured the ice's
 green excess fall from +7.7 to -0.8 against the sky above, which is a blue sky with no curtains.
 The draw thread shows the map's build of the layer's shader present at every stage, and the light
