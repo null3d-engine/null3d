@@ -10,6 +10,11 @@ that keeps no state. An analytic wind, incompressible by construction, fills a g
 camera. A page sets the base wind, sends a gust and pushes the air. The API and the sampling
 function stay the same when M3-V13 adds the advected core.
 
+**The field that M3-V15 ships is not the final one.** It has no advected core and no lasting wake.
+Both wait on the repeated compute pass of M3-V13, and the pressure projection is left out for the
+reason in "The decision". A reader of this record should not take the shipped field for the fluid
+simulation that the plan describes.
+
 ## Question
 
 What can the wind add-on build now, so that a plant reads one field, when the engine cannot keep a
@@ -48,8 +53,9 @@ The field is built in two stages. M3-V15 builds the first.
 **Stage one, this task.** The analytic wind is incompressible by construction. Its swirl is the curl
 of one stream function in the ground plane, a push is a vortex, and a gust turns in rings about its
 own center. Its base flow is constant along the ground and slower near it. No pressure solve is
-therefore needed to keep the air's volume, and the tests check that the discrete form keeps it. A
-grid that follows the camera samples that field into one `rgba16float` texture, which a reader
+therefore needed to keep the air's volume. The test measures the discrete form's divergence at 3.5e-5 a second.
+That is under a thousandth of the field's 6 m/s, so the air keeps its volume without one.
+A grid that follows the camera samples that field into one `rgba16float` texture, which a reader
 samples with one texture read. The texture holds the wind across the ground and the local speed in
 its fourth channel.
 
@@ -57,23 +63,26 @@ The field is evaluated from sketch time and from the pushes' trail, so it is the
 of a held frame. A page calls `createWind` once, then sets the base wind, sends a gust or pushes the
 air at a point. The pushes ring holds the four newest, which fade over three seconds.
 
-**Stage two, with M3-V13.** The core is replaced by an advected solve in Stam's form, with vorticity
-confinement and the pressure solve that the plan describes. The field then keeps two states, a
-reader mixes them by the time between the field's steps, and a wake lasts after the body that made
-it has gone. The grid, the box, the outputs, the sampling function and every reader stay as they
-are.
+**Stage two, with M3-V13.** V13 is what lets one pass read its own last step and run its dispatch
+several times in a frame. The core then becomes an advected solve in Stam's form, with vorticity
+confinement and the pressure solve that the plan describes. The field keeps two states, a reader
+mixes them by the time between the field's steps, and a wake lasts after the body that made it has
+gone. The grid, the box, the outputs, the sampling function and every reader stay as they are.
 
-**The pressure projection and the drag arrive together, before stage two.** A projection has nothing
-to remove while the field is incompressible by construction, so building it now would be code that
-no frame runs. It lands with the drag input. The vegetation add-on's grid of canopy cover gives the
-wind that input (M3-V17), and the projection removes the divergence that the drag adds.
+**The pressure projection is left out for now, on purpose.** This field is incompressible by
+construction, so a projection would remove nothing and no frame would run it. The code that ran it
+would be dead. The test above is the measure that says so. The projection returns with the drag
+input from the vegetation add-on's grid of canopy cover, which M3-V17 gives the wind. Drag adds
+divergence, and the projection removes it.
 
 ## Consequences
 
 - **Code:** `packages/wind/` holds the analytic field in TypeScript and the same formula in the
-  grid's compute shader and in its WebGL2 fragment form. A test holds the two shader copies equal,
-  because the shader build resolves only the engine's library. The TypeScript form serves the tests
-  and the page's own CPU reads.
+  grid's compute shader and in its WebGL2 fragment form. The TypeScript form serves the tests and
+  the page's own CPU reads.
+- **Why two shader copies:** the shader build resolves only the engine's `null3d::` library, so one
+  shader cannot import another of the same add-on. The copies exist for that alone. A test holds
+  them byte for byte equal, and a build that received an add-on's own modules would remove them.
 - **What stage one cannot do:** a gust does not spread by itself, and a wake does not outlive the
   body. The pushes' trail stands in for the wake until M3-V13 lands. A place outside the grid's box
   reads the box's edge, so the air is smooth rather than exact there.
