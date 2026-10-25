@@ -12,6 +12,9 @@ interface ExposureResult {
 	resolved: number;
 	reference: number;
 	error: number;
+	offResolved: number;
+	offReference: number;
+	offError: number;
 }
 
 interface GhostResult {
@@ -55,17 +58,21 @@ for (const gpu of GPUS) {
 		expect(result.case).toBe('exposure');
 		// The resolved frame holds the scene at the new exposure, within the noise's own blend.
 		console.log(
-			`TAAFIX exposure on ${result.gpu}: resolved mean ${result.resolved.toFixed(1)} against ${result.reference.toFixed(1)}, error ${result.error.toFixed(1)} levels`,
+			`TAAFIX exposure on ${result.gpu}: resolved mean ${result.resolved.toFixed(1)} against ${result.reference.toFixed(1)}, error ${result.error.toFixed(1)} levels; with the ratio off, ${result.offResolved.toFixed(1)} against ${result.offReference.toFixed(1)}, error ${result.offError.toFixed(1)}`,
 		);
-		// Without the ratio, the history keeps the exposure of the frame before, so the resolved mean
-		// falls about 45% below the reference's, a little over 36 levels. The frame a capture lands
-		// on moves the figure by up to about 20 levels, so the floor of 60% and the 30-level
-		// tolerance both separate a corrected history from one that keeps the old exposure.
+		// The frame a capture lands on moves the figure by up to about 20 levels, so the floor of 60%
+		// and the 30-level tolerance both separate a corrected history from one that keeps the old
+		// exposure. With the switch off the history keeps the exposure of the frame before, so the
+		// resolved mean falls well below the reference's.
 		expect(
 			Math.abs(result.error),
 			`resolved ${result.resolved.toFixed(1)} against ${result.reference.toFixed(1)}`,
 		).toBeLessThan(30);
 		expect(result.resolved).toBeGreaterThan(result.reference * 0.6);
+		expect(
+			result.offError,
+			`with the ratio off the resolved mean was ${result.offResolved.toFixed(1)} against ${result.offReference.toFixed(1)}`,
+		).toBeLessThan(-10);
 	});
 }
 

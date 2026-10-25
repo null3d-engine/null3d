@@ -72,6 +72,9 @@ pub struct Taa {
     pub phone: bool,
     /// The transparency signals that lower the history: see [`Reactive`].
     pub reactive: Reactive,
+    /// True to scale the history by this frame's exposure over the last frame's. False keeps the
+    /// history's own exposure, for measuring what the ratio does.
+    pub exposure: bool,
 }
 
 /// The signals that tell the resolve where a blended surface moved, as bits: 1 reads the scene's
@@ -102,6 +105,7 @@ impl Default for Taa {
             jitter: true,
             phone: false,
             reactive: Reactive::ALL,
+            exposure: true,
         }
     }
 }

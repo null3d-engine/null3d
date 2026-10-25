@@ -551,6 +551,11 @@ export interface TaaPrototypeSettings {
 	 * scene's alpha alone, `'opaque'` for the opaque-only comparison alone, and `'off'` for none.
 	 */
 	reactive?: 'both' | 'alpha' | 'opaque' | 'off';
+	/**
+	 * True scales the history by the frame's exposure over the last frame's. False keeps the
+	 * history's own exposure, for measuring what the ratio does. True by default.
+	 */
+	exposure?: boolean;
 }
 
 /** The bits that name each transparency signal, as the core takes them. */
@@ -957,6 +962,7 @@ export class Post implements ViewHolder {
 				settings.jitter !== false,
 				settings.phone === true,
 				REACTIVE_CODES[settings.reactive ?? 'both'],
+				settings.exposure !== false,
 			),
 			'post.set',
 			undefined,

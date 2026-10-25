@@ -167,25 +167,38 @@ run('taa-fixes', async () => {
 	if (CASE === 'exposure') {
 		// The history settles at an exposure of 1, the page doubles it, and the next resolved frame
 		// must hold the scene at the new exposure. The same scene without the resolve is the
-		// reference: a history that keeps the old exposure would darken it by about a half.
-		const settled = await scene(
-			`case=exposure&gpu=${GPU}&taa=1&jitter=1`,
-			async (engine, heard, applied) => {
-				await advance(heard, 8);
-				await apply(engine, applied, 'exposure', 2);
-				const frame = await capture(engine);
-				engine.postToSketch('taa-off', null);
-				await advance(heard, 4);
-				const reference = await capture(engine);
-				return { frame, reference };
-			},
-		);
+		// reference: a history that keeps the old exposure darkens it by about a half. The ratio
+		// switch runs the scene again with the history held at its own exposure.
+		const run = async (ratio: number) => {
+			const settled = await scene(
+				`case=exposure&gpu=${GPU}&taa=1&jitter=1&ratio=${ratio}`,
+				async (engine, heard, applied) => {
+					await advance(heard, 8);
+					await apply(engine, applied, 'exposure', 2);
+					const frame = await capture(engine);
+					engine.postToSketch('taa-off', null);
+					await advance(heard, 4);
+					const reference = await capture(engine);
+					return { frame, reference };
+				},
+			);
+			return {
+				resolved: mean(settled.frame),
+				reference: mean(settled.reference),
+				error: mean(settled.frame) - mean(settled.reference),
+			};
+		};
+		const on = await run(1);
+		const off = await run(0);
 		return {
 			case: CASE,
 			gpu: GPU,
-			resolved: mean(settled.frame),
-			reference: mean(settled.reference),
-			error: mean(settled.frame) - mean(settled.reference),
+			resolved: on.resolved,
+			reference: on.reference,
+			error: on.error,
+			offResolved: off.resolved,
+			offReference: off.reference,
+			offError: off.error,
 		};
 	}
 

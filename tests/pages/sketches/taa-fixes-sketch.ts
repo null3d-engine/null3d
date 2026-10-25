@@ -21,6 +21,8 @@ const CASE = params.get('case') ?? 'exposure';
 const JITTER = params.get('jitter') !== '0';
 const REACTIVE = (params.get('reactive') ?? 'both') as 'both' | 'alpha' | 'opaque' | 'off';
 const PHONE = params.get('phone') === '1';
+/** False keeps the history's own exposure, for measuring what the ratio does. */
+const RATIO = params.get('ratio') !== '0';
 /** The view's size in pixels, which is one world unit per pixel of the orthographic camera. */
 const SIZE = [320, 180] as const;
 /** The blended square's two places across the view, in world units from its center. */
@@ -116,7 +118,7 @@ export default defineSketch(
 		let reactive = REACTIVE;
 		const setResolve = () =>
 			post.set({
-				taa: feedback > 0 ? { feedback, jitter: JITTER, phone, reactive } : false,
+				taa: feedback > 0 ? { feedback, jitter: JITTER, phone, reactive, exposure: RATIO } : false,
 			});
 		setResolve();
 		const camera = scene.createOrthographicCamera({
