@@ -3,8 +3,9 @@
 // that moves in every frame. The screen refreshes the rectangle of the marker at most 30 times a
 // second, so only that rectangle uploads, well within the frame's upload budget. A measurement at
 // the start times a refresh of the marker's rectangle and one of the whole canvas, so a run can
-// report what a megabyte of changed rectangle costs. On `stop` the sketch draws the marker at a
-// fixed place and refreshes the whole canvas, so the captured frame is the same in every run.
+// report what a megabyte of changed rectangle costs. On `stop` the sketch uploads the base whole,
+// paints a color outside the marker's rectangle, and refreshes the rectangle alone, so the captured
+// frame is the same in every run and shows the rectangle refreshed without that color.
 import { defineSketch, type MeshArrays, type Texture } from '@null3d/engine';
 
 /** Texels along each side of the canvas. */
@@ -132,7 +133,7 @@ export default defineSketch(({ scene, geometry, materials, textures, page, time,
 	screen.refresh();
 
 	let running = false;
-	let stopping = false;
+	let stopping = 0;
 	let started = false;
 	let reported = false;
 	let ready = false;
@@ -143,16 +144,14 @@ export default defineSketch(({ scene, geometry, materials, textures, page, time,
 		if (name === 'start') {
 			running = true;
 			started = true;
+			// The cost figure and the picture both need every frame at the canvas's size. The
+			// frame-budget governor would lower the render scale on a slow machine, which changes
+			// both the frame's cost and its pixels.
+			quality.set({ minRenderScale: 1, maxRenderScale: 1 });
 		}
 		if (name === 'stop') {
 			running = false;
-			stopping = true;
-			// The test compares each thread mode's picture with the first mode's. The frame-budget
-			// governor lowers the render scale on a slow machine, and a frame drawn below the
-			// canvas's size differs from one drawn at it, so the captured frame draws at the full
-			// size whatever the machine's speed. The measured frames keep the governor's scale,
-			// which is what keeps a slow machine's frames quick.
-			quality.set({ minRenderScale: 1, maxRenderScale: 1 });
+			stopping = 1;
 		}
 	});
 
@@ -178,12 +177,23 @@ export default defineSketch(({ scene, geometry, materials, textures, page, time,
 				if (screen.refresh({ x: markerX, y: markerY, width: MARKER, height: MARKER })) refreshes++;
 				return;
 			}
-			if (stopping) {
+			if (stopping === 1) {
 				paintBase(context);
-				context.fillStyle = '#f0f0f0';
-				context.fillRect((SIZE - MARKER) / 2, (SIZE - MARKER) / 2, MARKER, MARKER);
+				// A whole upload leaves a known picture on the texture, which the partial refresh
+				// below then changes in one rectangle.
 				// The refresh rate may still hold this read back: try again in the next frame.
-				if (screen.refresh()) stopping = false;
+				if (screen.refresh()) stopping = 2;
+				return;
+			}
+			if (stopping === 2 && textures.uploads().waiting === 0) {
+				// A color outside the marker's rectangle, which only a whole upload would show.
+				context.fillStyle = '#c020c0';
+				context.fillRect(0, 0, MARKER / 2, MARKER / 2);
+				const x = (SIZE - MARKER) / 2;
+				const y = (SIZE - MARKER) / 2;
+				context.fillStyle = '#f0f0f0';
+				context.fillRect(x, y, MARKER, MARKER);
+				if (screen.refresh({ x, y, width: MARKER, height: MARKER })) stopping = 0;
 				return;
 			}
 			if (started && !reported && textures.uploads().waiting === 0) {
