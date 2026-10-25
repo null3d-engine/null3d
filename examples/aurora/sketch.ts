@@ -1,8 +1,8 @@
 // Aurora: a still night over a frozen lake, with curtains of green light across the sky. The aurora
 // is the sky-layer example add-on: one WGSL function draws it over the core sky, which still draws
-// the moon, the stars and the thin clouds that hide the light. The light of the sky comes from the
-// core sky's environment map, so the ice mirrors what the sky shows; the aurora adds light to the
-// sky alone, and the sketch adds a little of its own to the ice below it.
+// the moon, the stars and the thin clouds that hide the light. The sky's environment map holds the
+// aurora too, so the ice mirrors it, and the light that the map gives the scene lights the ice and
+// the snow green from above.
 import {
 	defineSketch,
 	emptyTimeOfDay,
@@ -88,11 +88,9 @@ export default defineSketch(async (ctx) => {
 		});
 	}
 
-	const aurora = createAurora(ctx, { opacity: 1, sun: 0.2 });
-	// A dim, wide light under the aurora, as its light falls on the ice and the snow.
-	const glow = scene.createAmbientLight();
-	glow.setColor([0.08, 0.24, 0.16]);
-	glow.setIntensity(1.1);
+	// The aurora lights the ice and the snow through the sky's light, which its map carries, so it
+	// needs no light of its own under it. Twice a second is enough for curtains that drift slowly.
+	const aurora = createAurora(ctx, { opacity: 1, sun: 0.2, refresh: 0.5 });
 
 	return {
 		onUpdate() {
