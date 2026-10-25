@@ -411,7 +411,9 @@ impl LightCapture {
         address(&self.words[..])
     }
 
-    /// The coefficients that a capture wrote, as the light that a map gives a surface.
+    /// The coefficients that a capture wrote, as the light that a map gives a surface. The target
+    /// holds one texel for each coefficient, so coefficient `k`'s red, green and blue are the first
+    /// three words of texel `k`.
     fn coefficients(&self) -> Sh {
         let word = |k: usize| {
             let at = k * 4;
@@ -422,7 +424,7 @@ impl LightCapture {
                 self.words[at + 3],
             ])
         };
-        std::array::from_fn(|k| std::array::from_fn(|c| word(k * 3 + c)))
+        std::array::from_fn(|k| std::array::from_fn(|c| word(k * 4 + c)))
     }
 
     /// Takes the coefficients of a capture that landed since the frame before. A capture that wrote

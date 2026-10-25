@@ -212,7 +212,9 @@ export function environmentGenerator(
 			sky,
 			panorama,
 			feedback,
-			units: { cube: host.unit(sky, 0, 1), panorama: host.unit(panorama, 0, 3) },
+			// The capture sums the light by sampling the chain, as the engine's own cube draws do,
+			// so its program names the cube's unit. The sky and panorama programs name theirs.
+			units: { cube: host.unit(feedback, 0, 1), panorama: host.unit(panorama, 0, 3) },
 		};
 		kept.layers.set(layer, made);
 		return made;
@@ -621,41 +623,42 @@ function makeSkyMap(
 			if (parts.length === 0) {
 				settle();
 				unpack(finishedTexels, finishedOffsets, levels, target);
-				// The last stage finds the map's light in the chain that it has just drawn, which
-				// waits in its buffer until a stage that reads it unpacks it.
-				if (layer && readback) {
-					if (chainWaits) {
-						unpack(chainTexels, chainOffsets, chained, chain);
-						chainWaits = false;
+			} else {
+				const drawsSky = steps[(parts[0] as SkyPart).step]?.source === 'sky';
+				if (stage === 0) {
+					gl.bindBuffer(gl.UNIFORM_BUFFER, sky);
+					gl.bufferSubData(gl.UNIFORM_BUFFER, 0, settings, at, SKY_BYTES / 4);
+					if (layer) {
+						// The layer's four cloud values, the share of the sun that it hides, its opacity
+						// and its clock, which its shader reads as `SkyLayerValues`.
+						gl.bindBuffer(gl.UNIFORM_BUFFER, layerValues);
+						gl.bufferSubData(gl.UNIFORM_BUFFER, 0, values, valuesAt, (LAYER_BYTES - 4) / 4);
 					}
-					captureLight(layer, readback);
 				}
-				return;
-			}
-			const drawsSky = steps[(parts[0] as SkyPart).step]?.source === 'sky';
-			if (stage === 0) {
-				gl.bindBuffer(gl.UNIFORM_BUFFER, sky);
-				gl.bufferSubData(gl.UNIFORM_BUFFER, 0, settings, at, SKY_BYTES / 4);
-				if (layer) {
-					// The layer's four cloud values, the share of the sun that it hides, its opacity
-					// and its clock, which its shader reads as `SkyLayerValues`.
-					gl.bindBuffer(gl.UNIFORM_BUFFER, layerValues);
-					gl.bufferSubData(gl.UNIFORM_BUFFER, 0, values, valuesAt, (LAYER_BYTES - 4) / 4);
+				if (drawsSky) gl.bindBufferBase(gl.UNIFORM_BUFFER, skyBinding, sky);
+				else if (chainWaits) {
+					settle();
+					unpack(chainTexels, chainOffsets, chained, chain);
+					chainWaits = false;
 				}
+				gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+				gl.bindVertexArray(null);
+				for (let p = 0; p < parts.length; p++) draw(parts[p] as SkyPart, panorama, layer);
+				if (drawsSky) chainWaits = true;
+				gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+				if (packed) gl.deleteSync(packed);
+				packed = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
 			}
-			if (drawsSky) gl.bindBufferBase(gl.UNIFORM_BUFFER, skyBinding, sky);
-			else if (chainWaits) {
-				settle();
-				unpack(chainTexels, chainOffsets, chained, chain);
-				chainWaits = false;
+			// The stage that the page names sums the map's light, from the chain that the earlier
+			// stages drew. The engine reads it back before the copy's frame publishes the levels.
+			if (layer && readback) {
+				if (chainWaits) {
+					settle();
+					unpack(chainTexels, chainOffsets, chained, chain);
+					chainWaits = false;
+				}
+				captureLight(layer, readback);
 			}
-			gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-			gl.bindVertexArray(null);
-			for (let p = 0; p < parts.length; p++) draw(parts[p] as SkyPart, panorama, layer);
-			if (drawsSky) chainWaits = true;
-			gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-			if (packed) gl.deleteSync(packed);
-			packed = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
 		},
 		destroy(gl) {
 			if (packed) gl.deleteSync(packed);

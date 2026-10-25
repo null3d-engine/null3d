@@ -555,7 +555,11 @@ export class WebGPUBackend {
 					? undefined
 					: variantFor(this.images.shaders.get(template)?.variants ?? {}, 0, 'wgsl');
 			const capture = words[a + LIGHT_BUFFER_WORD] as number;
-			const readback = capture === 0 ? undefined : this.need(this.buffers, capture, 'buffer');
+			// A capture draws the frame again to read it back, and the light capture already ran in
+			// the frame that it draws again: a second draw would write a buffer whose read is still
+			// mapping it, which the device refuses.
+			const readback =
+				capture === 0 || this.canvasTarget ? undefined : this.need(this.buffers, capture, 'buffer');
 			code.skyStage(
 				this.device,
 				encoder,
