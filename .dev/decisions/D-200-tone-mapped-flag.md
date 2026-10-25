@@ -63,3 +63,8 @@ The HDR path now honours the flag. The tone view draws the objects whose materia
 The mask marks opaque surfaces only. An alpha-masked or alpha-hashed surface writes depth and is marked; a blended or transmitting one is not.
 
 `tests/gpu_driven.rs` checks that the engine makes the tone mask's pipeline, that the mask pass draws the material's bucket with it, and that the tone view receives the camera's frame uniform. The last check caught a fault of this branch: the view culled its objects but drew them with an empty frame, so no fragment reached the mask.
+
+The joined-effects pages of the same run failed on both GPU paths, and this mask was the first
+suspect, because its commit was the last to change `final.wgsl`. The fault was elsewhere: the Vite
+plugin emptied the pieces of an effect that reads its neighbours ([D-71](D-71-custom-effects.md)).
+The mask adds host text that a join leaves in place, and it changed none of the pieces.
