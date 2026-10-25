@@ -84,6 +84,38 @@ describe('WebGL2Backend', () => {
 		expect(calls.filter((name) => name === 'checkFramebufferStatus')).toHaveLength(2);
 	});
 
+	it('names no draw buffer on a pass that draws into depth alone', async () => {
+		const { gl, log } = fakeContext();
+		const canvas = { width: 4, height: 4 } as OffscreenCanvas;
+		const backend = new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+		const replay = (...commands: [number, ...number[]][]) => {
+			const words: number[] = [];
+			for (const [op, ...operands] of commands)
+				words.push(op | ((operands.length + 1) << 8), ...operands);
+			const list = new Uint32Array(words);
+			backend.replay(list, new Float32Array(list.buffer), 0, list.length, new ArrayBuffer(64));
+		};
+		const usage = G.TEXTURE_USAGE_RENDER_ATTACHMENT | G.TEXTURE_USAGE_TEXTURE_BINDING;
+		replay(
+			[G.OP_CREATE_TEXTURE, 1, 4, 4, 1, G.FORMAT_RGBA16_FLOAT, usage, 1, 1, G.VIEW_2D],
+			[G.OP_CREATE_TEXTURE, 2, 4, 4, 1, G.FORMAT_DEPTH24_PLUS, usage, 1, 1, G.VIEW_2D],
+		);
+		const pass = (color: number, depth: number) =>
+			replay(
+				[G.OP_BEGIN_RENDER_PASS, color, G.NO_TARGET, depth, 0, 0, 0, 0, 0, 0],
+				[G.OP_END_RENDER_PASS],
+			);
+		// A depth-only pass attaches no color, so it names no draw buffer: Safari's WebGL2 path
+		// charges for a color that a pass holds without writing it (D-265).
+		log.length = 0;
+		pass(G.NO_TARGET, 2);
+		expect(log.filter(([name]) => name === 'drawBuffers')).toEqual([['drawBuffers', [0]]]);
+		// A pass into color alone keeps the framebuffer's own draw buffer, the first attachment.
+		log.length = 0;
+		pass(1, G.NO_TARGET);
+		expect(log.filter(([name]) => name === 'drawBuffers')).toEqual([]);
+	});
+
 	it('invalidates exactly the attachments that a pass has and does not store', async () => {
 		const { gl, invalidates } = fakeContext();
 		const canvas = { width: 4, height: 4 } as OffscreenCanvas;
