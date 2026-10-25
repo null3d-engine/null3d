@@ -64,8 +64,8 @@ loader fills it from each map's `KHR_texture_transform`
 material table grows with it, by 224 KiB at its 1,024 rows, on both GPU paths. On WebGL2 the
 material data texture's rows grow from thirty-four texels to forty-eight, the sixteen columns of the
 split-sum table included. The shader's table column moves from 18 to 32. The fragment shader reads a
-map's two rows inside the branch that samples that map. A material whose maps share one transform
-therefore pays the larger row, and nothing per pixel beyond it.
+map's two rows inside the branch that samples that map, so a material pays one transform for each
+map it samples, and none for a map it lacks.
 
 **Rejected: keep one transform per material and note the second as unplayed.** It fails intent
 parity with three.js and with the files. `SheenCloth` scales its sheen maps by 30 and leaves its
