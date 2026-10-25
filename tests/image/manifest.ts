@@ -1169,8 +1169,11 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// A lightmap scene made for Needle's viewer, reduced from a real export: its `NEEDLE_lightmaps`
 	// extension registers an RGBM light map in linear color, and each node's Needle MeshRenderer
-	// places its own bake with a scale and an offset on the second texture coordinates. The
-	// picture holds the decode and the placement still.
+	// places its own bake with a scale and an offset on the second texture coordinates. The picture
+	// frames the plaster wall, the only mesh with a single set of texture coordinates, and the
+	// grass panel, which has both sets. On WebGPU the wall covers 7,476 pixels at a mean of 30.6 of
+	// 255, with 63.8% above eight steps, and the grass 9,764 pixels at 34.6, with 91.7% above. The
+	// rest of the frame is dark, so a wrong decode or placement shows in those two regions.
 	{
 		name: 'needle-lightmap',
 		sketch: 'tests/pages/sketches/needle-lightmap-sketch.ts',

@@ -2,8 +2,8 @@
 
 Status: decided by the helper of M3-F4 on 25 October 2026, for the owner's review. Built: the
 second texture, the shader weighting, the glTF reader, the picture test, the memory figure, and the
-page that measures the cost and the figure it took, as the consequences list. Date: 2026-10-25.
-Task: M3-F4.
+page that measures the cost and the figure it took, as the consequences list. The comparison with
+Needle's viewer is not available (below). Date: 2026-10-25. Task: M3-F4.
 
 Summary: A directional light map carries the light's direction in a second texture of the
 radiance's own size, format and color space, so both share one texture array, one binding and one
@@ -65,6 +65,14 @@ job's work. Its 1.11 ms plain time is 0.12 ms above the trial's 0.99 ms. Its 0.1
 0.09 ms above the trial's 0.06 ms. Both carry that doubt, and it is the row to take again first in
 a quiet window. [Benchmarks](../benchmarks.md#directional-light-maps) gives the command.
 
+A comparison with Needle's viewer is not available. The repository holds no Needle runtime, no
+viewer build and no captured frame; it pins only `@needle-tools/three-animation-pointer`. The scene
+is a reduced export with `NEEDLE_lightmaps`, `NEEDLE_components` and `NEEDLE_gameobject_data`, and
+the source project's viewer settings are not pinned. The picture test is a regression of the decode
+and the placement, not a comparison with the viewer. The clause needs a frame of this scene captured
+in the viewer, with its camera and settings named, or the owner's ruling that another comparison
+meets it. This record does not claim the clause until one of those exists.
+
 ## Decision
 
 - The direction travels in a texture of its own, in the radiance's format, size and color space,
@@ -116,6 +124,9 @@ a quiet window. [Benchmarks](../benchmarks.md#directional-light-maps) gives the 
   direction layer only for a material that has a light map.
 - `NEEDLE_lightmaps` and `NEEDLE_components` join the extensions that the loader reads, and the
   [assets page](../../docs/api/assets.md) names what each gives.
-- The guards: the picture test `needle-lightmap` holds the decode and the placement still, a unit
-  test parses the reduced real sample's fields, the texture store drops a direction that is not in
-  the radiance's array, and a material test covers each option's refusal.
+- The guards: the picture test `needle-lightmap` frames the plaster wall, the only mesh with a
+  single set of texture coordinates, and the grass panel, which has both sets. On WebGPU the wall
+  covers 7,476 pixels at a mean of 30.6 of 255, with 63.8% above eight steps, and the grass 9,764
+  pixels at 34.6, with 91.7% above. A unit test parses the reduced real sample's fields, the texture
+  store drops a direction that is not in the radiance's array, and a material test covers each
+  option's refusal.
