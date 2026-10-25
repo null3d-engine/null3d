@@ -123,8 +123,9 @@ and nothing is added to a frame.
 
 ### How the layer reaches the CPU sky light
 
-The light is measured from the map rather than modelled from the layer. At a fill's last stage a
-new fragment, `fs_feedback`, sums the map's chain of levels onto the nine spherical harmonics
+The light is measured from the map rather than modelled from the layer. At the stage that the page
+names, a new fragment, `fs_feedback`, sums the map's chain of levels onto the nine spherical
+harmonics
 coefficients of its diffuse light, in three.js's order and scale, on the same grid and with the same
 solid angles that the CPU's own projection of the core sky uses (`crates/null3d-render/
 src/sky_light.rs`). It draws nine texels of 32-bit words into an `RGBA32UI` target, which the frame
@@ -140,6 +141,31 @@ new layer's first capture lands the map keeps the CPU model's own coefficients, 
 its light and none flashes dark before the layer arrives. The picture test checks that order on
 every GPU tier: the light reaches the scene with the map's levels or a frame before them, never
 after.
+
+### The capture's stage, fixed 25 October 2026
+
+The first build recorded the capture only at the copy stage. The core puts the readback buffer in
+the command of the stage that the page names. So no fill ever summed the map's light. The
+reflections held the layer while the diffuse light kept the CPU model of the core sky. So
+`sky-layer-light` failed on all three GPU tiers, with a rough sphere that never turned green. Both
+backends now sum the light at the stage that the core names, before the copy publishes the levels.
+
+The WebGL2 layer's programs took the cube's texture unit from the sky draw, which samples no cube
+texture on that path. Installing a layer therefore failed the first stage with E1405, and no tier
+drew a map with it. The capture's own program names that unit now.
+
+Two smaller faults came with those. A capture draws the frame again to read it back, and the light
+capture ran a second time in that drawing, into a buffer whose read was still mapping it, which the
+device refused with E1305. The capture now runs only in the frame that the page draws. And the read
+of the nine coefficients took the first word of every third texel, where the target holds one texel
+each, so the diffuse light mixed the coefficients of different directions; it now reads each
+texel's first three words.
+
+On the Mac under a load of 90 to 160, `sky-layer-light` takes the layer in the reflections and in
+the diffuse light on all three tiers. Its order check still fails there: the light arrived one fill
+later than the levels, because three of the four light reads that a layer's fills queued never
+landed. A machine that keeps up takes the light with the levels, and the compatibility and webgl2
+tiers passed the whole spec once. The read's landing is the open fault.
 
 ### The cost
 

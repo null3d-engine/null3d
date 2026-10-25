@@ -1810,8 +1810,10 @@ export class WebGL2Backend {
 					? undefined
 					: variantFor(this.images.shaders.get(template)?.variants ?? {}, 0, 'glsl');
 			const capture = words[a + LIGHT_BUFFER_WORD] as number;
+			// A capture draws the frame again to read it back, and the light capture already ran in
+			// the frame that it draws again.
 			const readback =
-				capture === 0
+				capture === 0 || this.canvasTarget
 					? undefined
 					: (this.need(this.buffers, capture, 'buffer').buffer as WebGLBuffer);
 			code.skyStage(

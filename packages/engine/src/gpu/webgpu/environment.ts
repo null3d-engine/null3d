@@ -650,7 +650,9 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 			colorAttachments: [{ view: captureTarget().createView(), loadOp: 'clear', storeOp: 'store' }],
 		});
 		render.setPipeline(layer.pipeline('feedback'));
-		render.setBindGroup(0, captureGroup);
+		// The layout keeps the step's block dynamic so that one buffer holds every stage's values,
+		// and this draw reads the block of its own buffer at the start.
+		render.setBindGroup(0, captureGroup, [0]);
 		render.draw(3);
 		render.end();
 		encoder.copyTextureToBuffer(
@@ -695,12 +697,12 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 				}
 			}
 			if (parts.length > 0) draw(encoder, parts, panorama, layer);
-			else {
+			else
 				for (let level = 0; level < levels; level++)
 					copyFaces(encoder, finished, offsets[level] as number, target, level, 0, 6);
-				// The last stage copies the map's levels in, and finds its light in them.
-				if (layer && readback) captureLight(encoder, layer, readback);
-			}
+			// The stage that the page names sums the map's light, and the engine reads it back
+			// before the copy's frame publishes the levels that it lights.
+			if (layer && readback) captureLight(encoder, layer, readback);
 		},
 		destroy() {
 			for (const resource of [
