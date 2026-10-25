@@ -267,6 +267,8 @@ A sun that stops between two steps would leave the map up to half a degree behin
 
 The rule lives in `MapSky::compares` in `crates/null3d-render/src/sky_maps.rs`. The analytic sky and the physical sky's panorama both follow it, and the panorama is drawn only in a frame whose fill starts.
 
+A map that shows a sky layer fills for the layer as well as for the sky. It fills when the layer is installed, replaced, removed or changes its values, and every `refresh` seconds that the layer asks for, one second by default, counted from the end of the fill before. A fill cannot start until the last one ends, so a layer at the default rate fills about 45 times a minute at 60 frames a second, and its map draws a stage in 20 of every 60 frames. The figures below are for a map with no layer ([D-242](D-242-sky-layers.md)).
+
 ### What it saves
 
 A fill takes 20 frames, one stage a frame, so a map can start a new one only after the last ends. The unit test `a_day_cycle_draws_the_sky_map_only_for_the_frames_its_sun_steps` (`crates/null3d-render/tests/sky_maps.rs`) counts the frames that record a stage, at 60 frames a second with the built-in map's stages, for a sketch that writes its sky in every frame. It counts 1,800 frames, half a minute, and prints each case's count. One fill every 20 frames gives the fills a minute. [Benchmarks](../benchmarks.md#sky-map-refreshes) shows the command and its output. Before this addendum, every one of those frames drew a stage.
