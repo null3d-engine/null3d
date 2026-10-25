@@ -120,12 +120,16 @@ export const ALLOWED_HOSTS: readonly AllowedHost[] = [
 ];
 
 /**
- * A call to the global `fetch`: bare, or reached through the global object. A method that happens
- * to be named `fetch` does not count.
+ * A call to the global `fetch`: bare, reached through the global object by name, or reached through
+ * a bracket key. A method that happens to be named `fetch` does not count. A key built at run time
+ * from pieces cannot be seen here.
  */
-const FETCH_CALL = /(?:(?:globalThis|window|self)\s*(?:\?\.|\.)\s*fetch|(?<![.\w])fetch)\s*\(/g;
+const FETCH_CALL =
+	/(?:(?:globalThis|window|self)\s*(?:\?\.|\.)\s*fetch|(?:globalThis|window|self)\s*(?:\?\.)?\s*\[\s*(['"`])fetch\1\s*\]|(?<![.\w])fetch)\s*(?:\?\.)?\s*\(/g;
 /** An absolute address in a string, as a template or a plain literal gives it. */
 const ABSOLUTE_URL = /(https?|wss?):\/\/([^\s"'`)]+)/g;
+/** A protocol-relative address in a string, which reaches the same host with no scheme. */
+const PROTOCOL_RELATIVE = /(['"`])\s*\/\/([^\s"'`/)]+)/g;
 /** The source files that a package ships: no tests, declarations or installed packages. */
 const SOURCE = /\.(?:[cm]?[jt]s)$/;
 const NOT_SHIPPED = /\.test\.[cm]?[jt]s$|\.d\.[cm]?ts$/;
@@ -245,6 +249,13 @@ export function networkProblems(root: string): {
 			if (!allowedHost(host))
 				problems.push(
 					`${path}: names ${scheme}://${host}, which is not a recorded example, link or local name`,
+				);
+		}
+		for (const match of text.matchAll(PROTOCOL_RELATIVE)) {
+			const host = (match[2] ?? '').split('/')[0] ?? '';
+			if (!allowedHost(host))
+				problems.push(
+					`${path}: names //${host}, which is not a recorded example, link or local name`,
 				);
 		}
 	}

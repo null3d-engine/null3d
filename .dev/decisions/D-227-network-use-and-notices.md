@@ -17,21 +17,27 @@ does each package ship, and which license does each part carry?
 ## Rule
 
 - A shipped source file may call `fetch` only where the record in `tools/lib/network-use.ts` names
-  it, with the call count and the reason. Any other call, and any extra call in a recorded file,
-  fails `bun run test`.
+  it. The record gives the call count and the reason. It covers each form: bare, through the global
+  object, through a bracket key, or as an optional call. Any other call, and any extra call in a
+  recorded file, fails `bun run test`.
 - No shipped file may use `XMLHttpRequest`, `WebSocket`, `EventSource`, `WebTransport`,
-  `RTCPeerConnection` or `sendBeacon`.
-- Shipped code may name an absolute address only for the recorded hosts. Each is an example in a
-  message, a link, the SVG namespace, a name that never resolves, or a loopback server.
+  `RTCPeerConnection`, `sendBeacon`, `importScripts` or `navigator.connection`, except where the
+  record names the file and its count.
+- A vendored file that holds one of those forms may ship only where a shipped file imports it.
+  That file must hand it the compiled module, so its own download path cannot run.
+- Shipped code may name an absolute or protocol-relative address only for the recorded hosts. Each
+  is an example in a message, a link, the SVG namespace, a name that never resolves, or a loopback
+  server.
 - A package whose code comes from another project ships a `THIRD-PARTY-NOTICES.txt` with the
   license texts that the licenses ask a copy to carry.
 
 ## Data
 
-The audit read every shipped source file under `packages/*/src`, `packages/*/bin` and
-`examples/addons`: 346 files. The build's generated shader modules are not read, since the shader
-library that the build writes them from is. The audit found nine `fetch` call sites, all in the
-engine and in the Vite plugin.
+The audit of 23 October 2026 read every shipped source file under the folders that the manifests
+then named, `packages/*/src`, `packages/*/bin` and `examples/addons`: 346 files. The build's
+generated shader modules are not read, since the shader library that the build writes them from is.
+That audit found nine `fetch` call sites, all in the engine and in the Vite plugin. The addenda
+record the sites found after it.
 
 | File | Calls | What it downloads |
 | --- | --- | --- |
@@ -43,10 +49,17 @@ engine and in the Vite plugin.
 | `packages/engine/src/shared/worker-start.ts` | 1 | a worker script's status, read while the engine names a startup failure |
 | `packages/vite-plugin/src/engine-shaders.ts` | 2 | the engine's shader release, fetched by the build, and the interface that offers it |
 
+At the audit of 26 October 2026 the guard read 430 shipped files and found 19 `fetch` calls.
+Thirteen are in null3D code, in ten files: the seven in the table, where `page/engine.ts` now holds
+2, plus `packages/splats/src/system.ts`, `packages/splats/src/stream.ts` and
+`packages/cli/src/devtools.js`. Six are in the three vendored decoders, whose own download path no
+shipped file reaches.
+
 The Vite plugin makes the one request to a third party. It downloads the engine's shader release
 from GitHub and checks its SHA-256 hash. When the download fails, it builds the modules from
 source. `NULL3D_ENGINE_SHADERS` names a local folder and skips the download. The command-line tool
-makes no request; its servers answer on the loopback address.
+makes no request off this machine. Its servers and its debugging socket answer on the loopback
+address, and `src/devtools.js` reads that address and drives the browser over it.
 
 The notices covered these parts before: Basis Universal with Zstandard, meshoptimizer and Draco.
 They also named the three.js table and EXR decoders, the LTC tables and the core's Rust crates.
@@ -136,7 +149,33 @@ the packages. Each package has one row. A ported package ships its `THIRD-PARTY-
 its `files` list carries the file, and it exports `./package.json` for the plugin to resolve.
 Every example add-on is named too.
 
-Evidence: the 22 network tests and the 10 notices tests pass. An added `fetch` in
+Evidence: the 26 network tests and the 10 notices tests pass. An added `fetch` in
 `packages/terrain/src/index.ts` failed the repository check with the call and its host. Renaming
 `instantiateWasm` in `gltf-draco.ts` failed the vendor check. Removing the wind row from the page
 failed the notices check.
+
+## Addendum, 26 October 2026: the reader's findings
+
+A fresh reader refused the task after judging `origin/m3-start` at `28bb8b5fd` rather than this
+branch. On this branch, `packages/cli/THIRD-PARTY-NOTICES.txt` holds three.js 0.186.1's MIT text,
+and `docs/getting-started/third-party-notices.md` carries the `@null3d/cli` row that names it.
+Neither is present at `28bb8b5fd`, so the reader's blocker was already closed where the work lives.
+
+The other findings were checked against this branch. Three were real and are closed:
+
+- The engine's three.js section named the shader ports but not the lighting terms, the split-sum
+  environment light, the skinning, the atmosphere or the room. The section now names all of them.
+- The figures in the Data section were the 23 October ones. Its paragraph now says so. The 26
+  October figures follow the table: 430 shipped files, 19 `fetch` calls, 13 in null3D code and six
+  in vendored glue. The command-line tool's loopback request is stated too.
+- A call through a bracket key, an optional call and a protocol-relative address all passed the
+  guard. It now counts each of them, with a test for each, and the vendored check has a case for
+  the command-line tool's `wasmBinary`.
+
+Two findings were already closed on this branch. The vendor check reads the importer of every
+vendored download path, and it covered the Draco wrapper, the Basis transcoder and the CLI encoder.
+The notices page named vegetation and wind in the first addendum of this date.
+
+Seen to fail: an added bracket-key `fetch` and a protocol-relative address in
+`packages/terrain/src/index.ts` named both forms. The 26 network tests and the 10 notices tests
+pass.

@@ -313,16 +313,20 @@ Licensed under the Apache License, Version 2.0, whose text the Basis Universal s
 gives in full.
 
 ==============================================================================
-three.js: the table of specular terms and the math in the engine core, the tone curves, the
-ambient occlusion and wide line shaders, and the HDR and OpenEXR file readers
+three.js: the engine core's table, math, lighting, skinning and color; its sky, room, file
+readers, ambient occlusion, wide lines and environment shaders
 ==============================================================================
 
-The values of three.js's DFG table, from three.js 0.186.1, https://github.com/mrdoob/three.js.
-The vector, matrix and quaternion arithmetic, and the tone, color and blending code, whose
-curves, formulas and blend order follow its own. The ports of its GTAOPass and
-PoissonDenoiseShader into ao.wgsl, and of its Line2 and LineSegments2 geometry and shader into
-line.wgsl. The ports of HDRLoader and EXRLoader's readers into panorama-worker.js, which maps
-the file's columns and holds its spherical harmonics in the order that three.js uses.
+The values and formulas of three.js 0.186.1, https://github.com/mrdoob/three.js: its DFG table;
+the vector, matrix and quaternion arithmetic; the tone, color and blending code; and the lighting
+terms of MeshStandardMaterial and MeshPhysicalMaterial, with the split-sum environment light, the
+hemisphere and spherical-harmonic irradiance, the tangent frame, bump mapping and decals. The
+morphing, skinning, attachment and depth sorting follow the same source. So do its Sky object's
+atmosphere and clouds, the built-in RoomEnvironment that the environment shader traces, and its
+cube filtering and equirectangular mapping. The ports of HDRLoader and EXRLoader's readers into panorama-worker.js
+map the file's columns and hold its spherical harmonics in three.js's order. The ports of its
+GTAOPass and PoissonDenoiseShader into ao.wgsl, and of its Line2 and LineSegments2 geometry and
+shader into line.wgsl, are here too.
 
 The MIT License
 

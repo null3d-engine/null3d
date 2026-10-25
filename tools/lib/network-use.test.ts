@@ -84,6 +84,25 @@ describe('networkProblems', () => {
 		expect(problems).toContain('packages/terrain/src/index.ts: uses importScripts');
 	});
 
+	test('refuses a call through a bracket key or an optional call', () => {
+		const root = fixture({
+			'packages/engine/src/page/engine.ts':
+				'fetch(a); fetch(b); globalThis["fetch"](c); window[`fetch`](d); self?.[\'fetch\']?.(e);',
+		});
+		const problems = networkProblems(root).problems.join('\n');
+		expect(problems).toContain('packages/engine/src/page/engine.ts: has 5 fetch calls');
+	});
+
+	test('refuses a protocol-relative address, which reaches the same host with no scheme', () => {
+		const root = fixture({
+			'packages/engine/src/page/engine.ts':
+				"fetch(url); fetch(two); const cdn = '//cdn.analytics.example.net/a.js';",
+		});
+		expect(networkProblems(root).problems.join('\n')).toContain(
+			'names //cdn.analytics.example.net',
+		);
+	});
+
 	test('refuses a socket address that the record does not name', () => {
 		const root = fixture({
 			'packages/engine/src/page/engine.ts':
@@ -178,6 +197,26 @@ describe('unreachedVendorProblems', () => {
 		});
 		expect(unreachedVendorProblems(root).join('\n')).toContain(
 			'packages/engine/src/scene/gltf-draco.ts: imports vendor/draco/draco_wasm_wrapper_gltf.js without instantiateWasm or wasmBinary',
+		);
+	});
+
+	test('accepts the command-line tool, which hands its encoder wasmBinary', () => {
+		const root = fixture({
+			'packages/cli/vendor/basis/basis_encoder.js': 'fetch(a);',
+			'packages/cli/src/assets/encoder.js':
+				"const glue = new URL('../../vendor/basis/basis_encoder.js', import.meta.url); const wasmBinary = readFileSync(wasmPath);",
+		});
+		expect(unreachedVendorProblems(root)).toEqual([]);
+	});
+
+	test('refuses the command-line tool when it stops passing wasmBinary', () => {
+		const root = fixture({
+			'packages/cli/vendor/basis/basis_encoder.js': 'fetch(a);',
+			'packages/cli/src/assets/encoder.js':
+				"const glue = new URL('../../vendor/basis/basis_encoder.js', import.meta.url);",
+		});
+		expect(unreachedVendorProblems(root).join('\n')).toContain(
+			'packages/cli/src/assets/encoder.js: imports vendor/basis/basis_encoder.js without instantiateWasm or wasmBinary',
 		);
 	});
 

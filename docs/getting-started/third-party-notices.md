@@ -42,7 +42,7 @@ The null3D packages themselves are offered under the MIT License or the Apache L
 | Zstandard, inside the transcoder | BSD 3-Clause | `vendor/basis` |
 | meshoptimizer 1.3.0, the meshopt decoder | MIT | `vendor/meshopt` |
 | Draco 1.5.7, the glTF decoder | Apache License 2.0 | `vendor/draco` |
-| three.js 0.186.1: the specular table, the math, the tone curves, the ambient occlusion and wide line shaders, and the HDR and EXR readers | MIT | the core, the shader library, `panorama-worker.js` |
+| three.js 0.186.1: the specular table, the math, the lighting terms, the skinning, the tone curves, the sky, the room, and the ambient occlusion, line, environment and file-reader code | MIT | the core, the shader library, `panorama-worker.js` |
 | Filament: the specular anti-aliasing kernel, the anisotropic highlight, and AgX's punchy look | Apache License 2.0 | the shader library |
 | TinyEXR and OpenEXR, whose code the EXR decoders follow | BSD 3-Clause | `panorama-worker.js` |
 | Linearly transformed cosines, the area light tables | BSD 3-Clause | `vendor/ltc` |
