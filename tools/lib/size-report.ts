@@ -312,6 +312,13 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
 		{ name: `${prefix}-call-timing.js`, module: 'gpu/webgl2/call-timing.ts', loadedBy: drawing },
 		{ name: `${prefix}-culled-counts.js`, module: 'gpu/webgpu/culled-counts.ts', loadedBy: webgpu },
 		{
+			// The entry that picks the drawing device's generator, which the drawing thread imports
+			// with the first generator that a sketch asks for. Its steps come in a file of their own.
+			name: `${prefix}-environment-generators.js`,
+			module: 'gpu/environment.ts',
+			loadedBy: drawing,
+		},
+		{
 			name: `${prefix}-environment-generator.js`,
 			module: 'gpu/environment-steps.ts',
 			loadedBy: drawing,
