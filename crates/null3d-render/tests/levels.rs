@@ -484,14 +484,15 @@ fn forty_thousand_casters_of_four_cascades_take_one_copy_each() {
     }
     // `measured[0]` is the casters' list without levels, and `measured[1]` with them. The four
     // cascades draw one copy list, so the list takes one copy for each of the 40,000 trees, and
-    // the levels add nothing to it: 2.56 MB, where a slice for every copy in every level and band
-    // took 20.48 MB.
+    // the levels add nothing to it: 2.56 MB. The removed rule kept a slice for every copy in every
+    // level, and the casters' list has four levels and no fading band, because its shadow
+    // pipelines take no fading build: 10.24 MB.
     let per_copy = rows * 64;
     assert_eq!(measured[1], measured[0], "{measured:?}");
     for bytes in measured {
         assert!(bytes >= per_copy && bytes < per_copy + 128, "{bytes}");
     }
-    assert_eq!(8 * per_copy, 20_480_000);
+    assert_eq!(4 * per_copy, 10_240_000);
 }
 
 #[test]

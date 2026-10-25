@@ -274,16 +274,18 @@ levels runs no count.
 | Copies of four levels, with fading bands | Before, the removed rule's arithmetic | After, measured |
 | --- | --- | --- |
 | 40,000 copies, the main view | 20.5 MB | 2.6 MB |
-| 40,000 copies, the four cascades' casters list | 20.5 MB | 2.6 MB |
-| Both lists together | 41.0 MB | 5.1 MB |
+| 40,000 copies, the four cascades' casters list | 10.2 MB | 2.6 MB |
+| Both lists together | 30.7 MB | 5.1 MB |
 
 `crates/null3d-render/tests/levels.rs` measures the after figures from the frame's own copy lists.
 `forty_thousand_copies_of_four_levels_take_one_copy_each` reads the main view, and
 `forty_thousand_casters_of_four_cascades_take_one_copy_each` reads the casters' layout with four
 cascades. The four cascades draw one copy list, so the list takes one copy for each of the 40,000
-trees, and the levels add nothing to it. The before figures are arithmetic from the removed rule:
-eight slices, one for each of four levels and its fading band, at 64 bytes a copy. The earlier
-estimate of 61 MB counted a list for each cascade, which the code does not keep.
+trees, and the levels add nothing to it. The before figures are arithmetic from the removed rule at
+64 bytes a copy. The main view had eight slices, one for each of four levels and its fading band:
+20.5 MB. The casters' list had four slices, because its shadow pipelines take no fading build, and
+its fade buckets exist only in the scene layout: 10.2 MB. The earlier estimate of 61 MB counted a
+list for each cascade, which the code does not keep.
 
 A band adds about a tenth more, for the sources inside it, which take a copy in each of two fade
 buckets.
@@ -561,7 +563,7 @@ The cloud iPad ran Safari 26.6.1 on iOS 26 at 59 Hz. Its window was 1,032 by 1,2
 core WebGPU. Its GPU buffer bytes do not change between the two sides. The copy lists therefore
 follow what draws on the device as they do on the Mac. The lists take one copy per source. They do
 not take a slice per level per view. The Mac's table above holds the same finding: 2.6 MB in the
-main view and 2.6 MB in the casters' list, against 20.5 MB each from the removed rule.
+main view and 2.6 MB in the casters' list, against 20.5 MB and 10.2 MB from the removed rule.
 
 The Galaxy S24 ran Chrome 152 on Android 16 with no WebGPU adapter, so only its WebGL2 rows ran.
 Chrome on Android reports no WebGL2 GPU timer. The cloud display ran at 30 Hz, so its frame interval
