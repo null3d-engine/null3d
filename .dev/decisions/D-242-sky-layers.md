@@ -117,7 +117,7 @@ The engine cannot tell how fast a layer moves, because its animation lives insid
 layer declares `refresh`, the seconds between the map's captures of it, defaulting to one second;
 0 marks a layer that stands still, whose map then fills only when the sky or the layer's values
 change. A fill spreads over some twenty frames, a stage a frame, so a layer's look costs a rate:
-one fill each `refresh` seconds, 20 stage draws a second at the default. A page that asks for a
+one fill each `refresh` seconds, 15 stage draws a second at the default. A page that asks for a
 faster capture gets one fill after another with no idle stage, which is the most the map can do,
 and nothing is added to a frame.
 
@@ -187,7 +187,7 @@ load on first use, so a page that uses no feature downloads neither, and the dow
 | The read back | 256 bytes copied and mapped asynchronously, once a fill, a stage or two before the copy publishes the levels |
 | A frame | Nothing, and no frame waits: the projection and the read belong to the fill, the read is a map promise on WebGPU and a fence polled with a zero timeout on WebGL2, and a fill that cannot start while another runs starts on a later frame |
 | A still layer, `refresh` 0 | One fill when the layer is installed, replaced or changed, and when the sky moves past a step |
-| A moving layer | A rate: one fill each `refresh` seconds, so 20 stage draws a second at the default of 1 s, and a stage draw a frame while a fill runs. A page that asks for faster gets one fill after another with no idle stage, which is the most the map can do. The rate is the page's to choose: the engine does not slow it to the frame rate or hold it back |
+| A moving layer | A rate: one fill each `refresh` seconds, so 15 stage draws a second at the default of 1 s, and a stage draw a frame while a fill runs. A page that asks for faster gets one fill after another with no idle stage, which is the most the map can do. The rate is the page's to choose: the engine does not slow it to the frame rate or hold it back |
 
 The GPU projection mirrors the CPU's basis and solid angle in WGSL, as the engine's sky model is
 already mirrored between `null3d::atmosphere` and `sky_light.rs`. The two grids are the same, so a
@@ -211,14 +211,20 @@ did not mean the same picture. The Mac's GPU drew that set, and CI's software GP
 
 `sky-layer-light` keeps no pictures: it reads the spheres' colours, so it needs no reference.
 
-The held frame does hold the layer in its map. In hold mode the map's build of the layer's shader is
-present at every stage, and the light capture runs. Its light can still miss the held frame: the
-map's coefficients land through an asynchronous read, and on a loaded machine that read landed 3.2
-seconds after its fill, when the held frames had been drawn and the picture taken. The ground then
-keeps the core sky's blue light while the background shows the green layer, which is what the
-checker saw. A live page applies the light from the frame in which the read lands, as the sky layer
-light page measures. The ice's own colour is blue, so it stays blue either way. A held frame of a
-layer demo therefore moves with the GPU's queue, not only with the demo's look.
+The held frame's map may hold no aurora, and that is an inference. The checker measured the ice's
+green excess fall from +7.7 to -0.8 against the sky above, which is a blue sky with no curtains.
+The draw thread shows the map's build of the layer's shader present at every stage, and the light
+capture running; on a loaded machine the light read landed 3.2 seconds after its fill, once the held
+frames had been drawn. The checker's mechanism is that a layer installed during setup arrives after
+the first fill, and hold mode draws no later frame for the retry fill that would bring it in. That
+needs a proof, and one page can give it: install the layer during setup and read the ice on the
+first frames, blue first and green only after the next fill, or read one sky-map texel where the
+layer is bright. Until then it stays an inference.
+
+The demo's cloud coverage does not suppress the layer. The aurora's brightness scales by the clear
+fraction, about 0.96 at the demo's settings (`examples/addons/aurora/aurora.wgsl`), not by the
+coverage. A demo whose ice shows a plain blue sky is a look question under the owner's better-look
+rule, and it is with the owner.
 
 ### The map's light and a layer that never arrives
 
