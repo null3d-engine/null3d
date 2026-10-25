@@ -66,7 +66,8 @@ fn check<B: FrameBuilder>(mut world: World<B>) {
     }
     let blank = bound_copies(&plain[0])[0];
 
-    // Glass on the standard material, and a masked one, which lets light through unmasked.
+    // Glass on the standard material, and a masked one, which cuts its holes before the light
+    // from behind fills the pixels that remain.
     world.add_object_with(&plane, Shading::Lit, feature::TRANSMISSION);
     let masked = feature::TRANSMISSION | feature::ALPHA_MASK;
     world.add_object_with(&plane, Shading::Lit, masked);
@@ -78,8 +79,11 @@ fn check<B: FrameBuilder>(mut world: World<B>) {
         .collect();
     assert_eq!(
         made,
-        [permutation::TRANSMISSION],
-        "both glass materials draw with one unmasked pipeline"
+        [
+            permutation::TRANSMISSION,
+            permutation::TRANSMISSION | permutation::ALPHA_MASK
+        ],
+        "glass draws with and without its mask, and both sample the copy"
     );
     assert_eq!(
         glass
