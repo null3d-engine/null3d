@@ -720,8 +720,60 @@ pub struct ModuleSet<'a> {
     devices: BTreeMap<DeviceModule, Builds<'a>>,
     /// The tables of shared paragraphs of each kind, in the order of their families.
     shared: BTreeMap<(Target, u32), Vec<SharedParagraphs>>,
+    /// The analysis of each target's builds that need several features.
+    combined: BTreeMap<Target, CombinedAnalysis>,
     /// The kind of module that each file name holds.
     plan: BTreeMap<String, ModuleKind<'a>>,
+}
+
+/// Device modules of builds by `firstUseFile`'s key, with the bits that each key's modules vary in.
+type ModuleFiles = BTreeMap<String, (u32, Vec<DeviceModule>)>;
+
+/// The files of each family of a target's builds that need several features, by family name.
+type CombinedFamilies = BTreeMap<String, ModuleFiles>;
+
+/// The work that every combination loader and the main module's loaders share. It holds which of a
+/// target's device modules need several features, how deep each family splits, and each half's
+/// families.
+struct CombinedAnalysis {
+    /// Those device modules, by `firstUseFile`'s key, with the bits that each key's modules vary in.
+    files: ModuleFiles,
+    /// How many of a key's first features name its combination table, by the key's first feature.
+    depths: BTreeMap<String, usize>,
+    /// Each half's families: the builds without the half-precision bit first, then those with it.
+    halves: [CombinedFamilies; 2],
+}
+
+impl CombinedAnalysis {
+    /// The families of the half-precision builds, or of the rest, by family name.
+    fn families(&self, half: bool) -> &CombinedFamilies {
+        &self.halves[usize::from(half)]
+    }
+}
+
+/// The analysis of each target's builds that need several features. The analysis of a target costs
+/// a scan and a size measurement of every candidate table, so a build makes it once.
+fn combined_analysis(
+    devices: &BTreeMap<DeviceModule, Builds<'_>>,
+) -> BTreeMap<Target, CombinedAnalysis> {
+    let mut analyses = BTreeMap::new();
+    for target in [Target::Wgsl, Target::Glsl] {
+        let files = first_use_files(devices, target, true);
+        let depths = combined_depths(target, &files);
+        let halves = [
+            combined_families(&depths, &split_by_half(&files, false)),
+            combined_families(&depths, &split_by_half(&files, true)),
+        ];
+        analyses.insert(
+            target,
+            CombinedAnalysis {
+                files,
+                depths,
+                halves,
+            },
+        );
+    }
+    analyses
 }
 
 /// The kind of one module of a build: what its text renders from.
@@ -748,6 +800,7 @@ impl<'a> ModuleSet<'a> {
     pub fn new(output: &'a Output) -> Self {
         let devices = device_builds(output);
         let shared = shared_paragraphs(&devices);
+        let combined = combined_analysis(&devices);
         let mut plan = BTreeMap::from([
             (format!("{MAIN_MODULE}.ts"), ModuleKind::Main),
             (format!("{FEATURES_MODULE}.ts"), ModuleKind::Features),
@@ -769,15 +822,12 @@ impl<'a> ModuleSet<'a> {
         for (stem, shader, target) in first_use_modules(output) {
             plan.insert(format!("{stem}.ts"), ModuleKind::FirstUse(shader, target));
         }
-        for target in [Target::Wgsl, Target::Glsl] {
-            let combined = first_use_files(&devices, target, true);
-            let depths = combined_depths(target, &combined);
+        for (target, analysis) in &combined {
             for half in [false, true] {
-                let files = split_by_half(&combined, half);
-                for family in combined_families(&depths, &files).keys() {
+                for family in analysis.families(half).keys() {
                     plan.insert(
-                        format!("{}.ts", combined_module_name(target, half, family)),
-                        ModuleKind::Combined(target, half, family.clone()),
+                        format!("{}.ts", combined_module_name(*target, half, family)),
+                        ModuleKind::Combined(*target, half, family.clone()),
                     );
                 }
             }
@@ -786,6 +836,7 @@ impl<'a> ModuleSet<'a> {
             output,
             devices,
             shared,
+            combined,
             plan,
         }
     }
@@ -798,7 +849,7 @@ impl<'a> ModuleSet<'a> {
     /// The text of the module named `name`, or None when the build makes no such module.
     pub fn text(&self, name: &str) -> Option<String> {
         match self.plan.get(name)? {
-            ModuleKind::Main => Some(main_module(self.output, &self.devices)),
+            ModuleKind::Main => Some(main_module(self.output, &self.devices, &self.combined)),
             ModuleKind::Features => Some(features_module(self.output)),
             ModuleKind::Device(module) => {
                 // A module of the start keeps its own paragraphs and names no table: a page
@@ -821,13 +872,13 @@ impl<'a> ModuleSet<'a> {
                 Some(first_use_module(self.output, shader, *target))
             }
             ModuleKind::Combined(target, half, family) => {
-                let combined = first_use_files(&self.devices, *target, true);
-                let depths = combined_depths(*target, &combined);
-                let files = split_by_half(&combined, *half);
-                let of_family = combined_families(&depths, &files)
-                    .remove(family)
+                // The plan names only families that the analysis holds.
+                let files = self
+                    .combined
+                    .get(target)
+                    .and_then(|analysis| analysis.families(*half).get(family))
                     .expect("a planned family holds at least one key");
-                Some(combined_module(*target, &of_family))
+                Some(combined_module(*target, files))
             }
         }
     }
@@ -885,23 +936,20 @@ pub(crate) fn modules(output: &Output) -> BTreeMap<String, String> {
 
 /// The device modules of `files` whose fixed bits hold the half-precision bit, or those that do
 /// not, so that the loader table of one device's builds is one file that fits its budget.
-fn split_by_half<'a>(
-    files: &BTreeMap<&'a str, (u32, Vec<&'a DeviceModule>)>,
-    half: bool,
-) -> BTreeMap<&'a str, (u32, Vec<&'a DeviceModule>)> {
+fn split_by_half(files: &ModuleFiles, half: bool) -> ModuleFiles {
     let mask = permutation::bit("HALF").unwrap_or(0);
-    let mut out: BTreeMap<&str, (u32, Vec<&DeviceModule>)> = BTreeMap::new();
+    let mut out: ModuleFiles = BTreeMap::new();
     for (file, (_, modules)) in files {
-        let kept: Vec<&DeviceModule> = modules
+        let kept: Vec<DeviceModule> = modules
             .iter()
-            .copied()
             .filter(|module| (module.bits & mask != 0) == half)
+            .cloned()
             .collect();
         if kept.is_empty() {
             continue;
         }
         let bits = kept.iter().fold(0u32, |bits, module| bits | module.bits);
-        out.insert(file, (bits, kept));
+        out.insert(file.clone(), (bits, kept));
     }
     out
 }
@@ -925,12 +973,9 @@ fn combined_family(file: &str, depth: usize) -> String {
 /// feature: the fewest that keep every table of that family within [`COMBINED_TABLE_TARGET`]. A
 /// family whose keys have no more features left keeps its table as it is. The runtime reads these
 /// numbers, so a page loads the table of the family of the build it asks for alone.
-fn combined_depths(
-    target: Target,
-    files: &BTreeMap<&str, (u32, Vec<&DeviceModule>)>,
-) -> BTreeMap<String, usize> {
+fn combined_depths(target: Target, files: &ModuleFiles) -> BTreeMap<String, usize> {
     let mut roots: BTreeMap<String, Vec<&str>> = BTreeMap::new();
-    for &file in files.keys() {
+    for file in files.keys() {
         roots
             .entry(combined_family(file, 1))
             .or_default()
@@ -945,13 +990,12 @@ fn combined_depths(
             .unwrap_or(1);
         let mut depth = 1;
         while depth < longest {
-            let mut groups: BTreeMap<String, BTreeMap<&str, (u32, Vec<&DeviceModule>)>> =
-                BTreeMap::new();
+            let mut groups: BTreeMap<String, ModuleFiles> = BTreeMap::new();
             for &file in &keys {
                 groups
                     .entry(combined_family(file, depth))
                     .or_default()
-                    .insert(file, files[file].clone());
+                    .insert(file.to_owned(), files[file].clone());
             }
             if groups
                 .values()
@@ -967,18 +1011,15 @@ fn combined_depths(
 }
 
 /// `files`, grouped by the family that `depths` names for each key's first feature.
-fn combined_families<'a>(
-    depths: &BTreeMap<String, usize>,
-    files: &BTreeMap<&'a str, (u32, Vec<&'a DeviceModule>)>,
-) -> BTreeMap<String, BTreeMap<&'a str, (u32, Vec<&'a DeviceModule>)>> {
-    let mut families: BTreeMap<String, BTreeMap<&str, (u32, Vec<&DeviceModule>)>> = BTreeMap::new();
-    for (&file, (bits, modules)) in files {
+fn combined_families(depths: &BTreeMap<String, usize>, files: &ModuleFiles) -> CombinedFamilies {
+    let mut families: CombinedFamilies = BTreeMap::new();
+    for (file, (bits, modules)) in files {
         let root = combined_family(file, 1);
         let depth = depths.get(&root).copied().unwrap_or(1);
         families
             .entry(combined_family(file, depth))
             .or_default()
-            .insert(file, (*bits, modules.clone()));
+            .insert(file.clone(), (*bits, modules.clone()));
     }
     families
 }
@@ -998,30 +1039,26 @@ fn combined_module_name(target: Target, half: bool, family: &str) -> String {
 /// A target's device modules of features that load on first use, by `firstUseFile`'s key, with the
 /// bits that each key's modules vary in: those of single features, or of sets of several features
 /// when `combined` is true.
-fn first_use_files<'a>(
-    devices: &'a BTreeMap<DeviceModule, Builds<'_>>,
+fn first_use_files(
+    devices: &BTreeMap<DeviceModule, Builds<'_>>,
     target: Target,
     combined: bool,
-) -> BTreeMap<&'a str, (u32, Vec<&'a DeviceModule>)> {
-    let mut files: BTreeMap<&str, (u32, Vec<&DeviceModule>)> = BTreeMap::new();
+) -> ModuleFiles {
+    let mut files: ModuleFiles = BTreeMap::new();
     for module in devices.keys().filter(|module| module.target == target) {
         if let Some(file) = &module.file
             && file.contains(FEATURE_JOIN) == combined
         {
-            let (bits, modules) = files.entry(file).or_default();
+            let (bits, modules) = files.entry(file.clone()).or_default();
             *bits |= module.bits;
-            modules.push(module);
+            modules.push(module.clone());
         }
     }
     files
 }
 
 /// Writes a loader table of device modules of features that load on first use, by their key.
-fn files_table(
-    ts: &mut Writer,
-    declaration: &str,
-    files: &BTreeMap<&str, (u32, Vec<&DeviceModule>)>,
-) {
+fn files_table(ts: &mut Writer, declaration: &str, files: &ModuleFiles) {
     if files.is_empty() {
         ts.line(&format!("{declaration} {{}};"));
         return;
@@ -1043,7 +1080,7 @@ fn files_table(
 /// The module of a target's loader table of the device modules of builds that need several
 /// features that load on first use. The main module loads it the first time a pipeline or a
 /// preload asks for one of those builds, so the table's addresses add nothing to the start.
-fn combined_module(target: Target, files: &BTreeMap<&str, (u32, Vec<&DeviceModule>)>) -> String {
+fn combined_module(target: Target, files: &ModuleFiles) -> String {
     let mut ts = Writer::default();
     ts.out.push_str(HEADER);
     ts.out.push_str(COMBINED_HEADER);
@@ -1158,7 +1195,11 @@ fn first_use_module(output: &Output, shader: &str, target: Target) -> String {
 /// The main module: the types, one export per shader that does not load by device, `SHADERS`,
 /// which gathers them by name, and the loaders of the device modules, those of the features that
 /// load on first use among them.
-fn main_module(output: &Output, devices: &BTreeMap<DeviceModule, Builds<'_>>) -> String {
+fn main_module(
+    output: &Output,
+    devices: &BTreeMap<DeviceModule, Builds<'_>>,
+    combined: &BTreeMap<Target, CombinedAnalysis>,
+) -> String {
     let mut ts = Writer::default();
     ts.out.push_str(HEADER);
     ts.out.push_str(TYPES);
@@ -1277,7 +1318,7 @@ fn main_module(output: &Output, devices: &BTreeMap<DeviceModule, Builds<'_>>) ->
         }
         ts.close("};");
     }
-    first_use_tables(&mut ts, &output.first_use, devices);
+    first_use_tables(&mut ts, &output.first_use, devices, combined);
     ts.out.push_str(LOADERS);
     ts.out
 }
@@ -1306,6 +1347,7 @@ fn first_use_tables(
     ts: &mut Writer,
     first_use: &FirstUseFeatures,
     devices: &BTreeMap<DeviceModule, Builds<'_>>,
+    combined: &BTreeMap<Target, CombinedAnalysis>,
 ) {
     ts.line("");
     ts.line("/** The half-precision bit of the device's fixed bits, whose combined builds sit in a table of their own. */");
@@ -1324,8 +1366,8 @@ fn first_use_tables(
             &format!("const {name}_FIRST_USE: Readonly<Record<string, FirstUseFiles>> ="),
             &first_use_files(devices, target, false),
         );
-        let combined = first_use_files(devices, target, true);
-        let keys: Vec<String> = combined.keys().map(|key| quote(key)).collect();
+        let analysis = combined.get(&target).expect("every target has an analysis");
+        let keys: Vec<String> = analysis.files.keys().map(|key| quote(key)).collect();
         ts.line("");
         ts.line(&format!(
             "/** The keys of the {name} device modules of builds that need several features. */"
@@ -1338,16 +1380,15 @@ fn first_use_tables(
         ts.line(&format!(
             "/** The loader of the table of each family of the {name} builds that need several features. */"
         ));
-        if combined.is_empty() {
+        if analysis.files.is_empty() {
             ts.line(&format!(
                 "const load{}Combined = (_bits: number, _file: string): Promise<Readonly<Record<string, FirstUseFiles>>> => Promise.resolve({{}});",
                 target_word(target)
             ));
         } else {
             let mask = permutation::bit("HALF").unwrap_or(0);
-            let depths = combined_depths(target, &combined);
-            let halves = combined_families(&depths, &split_by_half(&combined, true));
-            let families = combined_families(&depths, &split_by_half(&combined, false));
+            let halves = analysis.families(true);
+            let families = analysis.families(false);
             ts.open(&format!(
                 "const {name}_COMBINED_TABLES: Readonly<Record<string, (bits: number) => Promise<Readonly<Record<string, FirstUseFiles>>>>> = {{"
             ));
@@ -1371,7 +1412,7 @@ fn first_use_tables(
             ts.open(&format!(
                 "const {name}_COMBINED_DEPTH: Readonly<Record<string, number>> = {{"
             ));
-            for (root, depth) in &depths {
+            for (root, depth) in &analysis.depths {
                 ts.line(&format!("{}: {depth},", quote(root)));
             }
             ts.close("};");
@@ -2166,6 +2207,33 @@ mod tests {
         assert_module_set_matches(&output_with_combined_features());
         assert_module_set_matches(&output_with_first_use_shader());
         assert_module_set_matches(&output_shared_by_features(SHARED_PARAGRAPH_MIN_USES));
+    }
+
+    #[test]
+    fn a_combination_module_holds_the_family_of_a_fresh_analysis() {
+        // The set keeps the analysis of the builds that need several features, so each of their
+        // modules must hold the family that measuring the tables again names for it.
+        let output = output_with_combined_features();
+        let devices = device_builds(&output);
+        let set = ModuleSet::new(&output);
+        let fresh = combined_analysis(&devices);
+        let mut checked = 0;
+        for (name, kind) in &set.plan {
+            let ModuleKind::Combined(target, half, family) = kind else {
+                continue;
+            };
+            let files = fresh[target]
+                .families(*half)
+                .get(family)
+                .expect("a planned family holds at least one key");
+            assert_eq!(
+                set.text(name).as_deref(),
+                Some(combined_module(*target, files).as_str()),
+                "`{name}`"
+            );
+            checked += 1;
+        }
+        assert!(checked > 0, "the build makes combination modules");
     }
 
     #[test]
