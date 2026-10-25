@@ -72,6 +72,9 @@ export interface ModelScene {
 /** The wait of a scene with a clear coat or a sheen, whose builds a software GPU makes slowly. */
 const LAYERS_SECONDS = 60;
 
+/** The wait of a scene with hundreds of materials, whose pipeline setup a software GPU makes slowly. */
+const GRID_SECONDS = 150;
+
 /** The HDR file of the model scenes' environment: the backgrounds scene's, at full intensity. */
 export const MODELS_HDR = sampleUrl('sources/hdri/polyhaven/venice_sunset/venice_sunset_2k.hdr');
 
@@ -94,7 +97,8 @@ export const MODELS_HDR = sampleUrl('sources/hdri/polyhaven/venice_sunset/venice
  * (tests/lib/draco-fixtures.ts), each against its uncompressed scene. The Khronos models of
  * KHR_materials_clearcoat and KHR_materials_sheen draw under the sun, and two of them also under the
  * HDR environment, whose light the coat reflects and the sheen gathers. The toy car has a coat, a
- * sheen and glass in one model.
+ * sheen and glass in one model. The Khronos grid of KHR_materials_anisotropy draws beside the
+ * code-built scene, so a strict comparison covers the real file too.
  */
 export const MODEL_SCENES = {
 	'metal-rough': {
@@ -178,6 +182,16 @@ export const MODEL_SCENES = {
 		file: () => anisotropyBuilder().glb(),
 		ownLights: true,
 		timeoutSeconds: LAYERS_SECONDS,
+	},
+	// The Khronos test grid: the stretch of KHR_materials_anisotropy over seven strengths against
+	// seven roughnesses, whose polished surfaces reflect the environment's light.
+	'anisotropy-strength': {
+		url: new URL(
+			'../../tests/pages/assets/models/sources/khronos/AnisotropyStrengthTest/AnisotropyStrengthTest.glb',
+			import.meta.url,
+		).href,
+		environment: true,
+		timeoutSeconds: GRID_SECONDS,
 	},
 	'morph-primitives': {
 		url: sampleUrl('sources/khronos/MorphPrimitivesTest/glTF-Binary/MorphPrimitivesTest.glb'),
