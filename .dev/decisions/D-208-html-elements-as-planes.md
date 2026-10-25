@@ -122,9 +122,11 @@ CSS3D examples now have ports beside it, each with a picture test:
 The ports share a page helper, `tests/pages/lib/css3d-example.ts`. It starts the engine on the
 port's sketch and binds the page's elements. It waits for the labels of the held frame, then draws
 three.js's twin from the same data. A second helper, `tests/lib/css3d-compare.ts`, loads a page on
-WebGPU and on WebGL2. It checks each element's box against three.js's and hides both canvases. Then
-it compares the two layers of elements pixel by pixel. The comparison reads DOM pixels that no GPU
-draws, so a screenshot is the reading. The periodic table port reads its picture the same way.
+WebGPU and on WebGL2. It checks each element's box against three.js's, hides both canvases, and
+compares the pixels of the two layers of elements. A port whose example also draws WebGL content
+gives its twin the same content. The page reads each engine's frame through that engine, and the
+helper compares those frames too. A browser screenshot never reads a GPU's pixels, as hard rule 16
+says. The periodic table port reads its whole stage, since no GPU draws any of it.
 
 Where the ports differ from the examples, and why:
 
@@ -138,7 +140,9 @@ Where the ports differ from the examples, and why:
   hides the same elements. The picture compares the elements that a viewpoint can see.
 - The mixed example embeds a second three.js example, and the youtube example embeds YouTube
   videos. The ports embed pages made in code, so a held picture needs no network. The mixed
-  example's room draws every edge of a segmented box. The port draws the twelve outer edges.
+  example draws the edges of a segmented box through `EdgesGeometry`. Its 1-degree threshold drops
+  the edges between flat faces, so the example shows the same twelve outer edges that the port
+  draws.
 - No example's controls are ported. Each page draws its example's first state, as the periodic table
   port does. That is the molecules example's caffeine in its atoms-and-bonds view, and a fixed
   camera in place of the controls. The molecules port hides one atom, an outer hydrogen, as the
@@ -147,14 +151,18 @@ Where the ports differ from the examples, and why:
   sandbox and orthographic examples offer only in a panel. Nothing that any first state draws needs
   it.
 - The mixed port keeps the example's layer order, with the elements below a see-through canvas. The
-  frame's border therefore covers the page where the two meet. The port also shows that an engine
-  canvas passes the page through where it draws nothing.
+  frame's border therefore covers the page where the two meet. The example also adds an invisible
+  plane at the page's plane that writes depth and no color, so the room's edges and the frame's
+  faces behind the page stay hidden. The port adds the same plane, which `colorWrite: false` makes
+  possible. The addendum of 26 October 2026 records the fix.
 
-No fault of the engine showed while porting. The label system carried every capability that the
-examples need, with no special case in a page. It took a billboard that follows its object's scale,
-and an orthographic lens. It hid the element of a hidden object, which the molecules port checks
-with one atom. It also carried an element that holds a live iframe. It held a page with more planes
-than the default capacity (`maxLabels3d`), over a see-through canvas.
+The ports needed one engine fault fixed: the material that writes depth and no color, which the
+mixed example's cut-out needs. The addendum of 26 October 2026 records it. Otherwise the label
+system carried every capability that the examples need, with no special case in a page. It took a
+billboard that follows its object's scale, and an orthographic lens. It hid the element of a hidden
+object, which the molecules port checks with one atom. It also carried an element that holds a live
+iframe. It held a page with more planes than the default capacity (`maxLabels3d`), over a see-through
+canvas.
 
 Each of the six ports with a two-stage page ran on WebGPU and on WebGL2 on 25 October 2026, twelve
 tests in all. It compared its layer of elements with three.js's own draw of the same data, at 960
@@ -174,3 +182,38 @@ differing pixel either. The sprites and the youtube port differ in a few pixels 
 is most likely where a matrix that the engine keeps in 32-bit floats lands a fraction of a pixel
 from three.js's. The test allows a thousandth of the picture, the limit of the reference images,
 for a slower rasteriser.
+
+## Addendum, 26 October 2026: the mixed port draws its example's first frame
+
+A review of the ports found that the mixed port did not draw its example's first frame. The example
+adds an invisible plane at the page's plane. That plane writes depth and no color. The room's edges
+and the frame's faces behind the page stay hidden, and the page shows clean. The port had no such
+plane, so the room's edges and the frame's back faces drew over the page. Its frame bars also lay 25
+units further back than the example's, and the port kept the engine's default tone curve.
+
+The engine now takes `colorWrite: false` on a material. The surface writes no color and keeps its
+depth write, as three.js's `colorWrite: false` does. Both GPU paths already had that pipeline state
+for the depth prepass. The engine also draws the opaque surfaces that write no color before the
+others, on both paths (see
+[Implementation notes](../implementation-notes.md#surfaces-that-write-no-color)). A surface that
+writes no color holds back what lies behind it. The pipeline keys of the surfaces it hides can sort
+before its own, so the order cannot come from the keys alone.
+
+The port now:
+
+- adds the example's plane at the page's plane, with `materials.unlit({ colorWrite: false })`;
+- sets the example's neutral tone curve;
+- turns the hemisphere light so its sky lies along the example's light position, which is not
+  straight up;
+- centres the frame's bars on the page's plane, so the border reaches 25 units to each side, as the
+  example's extruded border does.
+
+The comparison now reads the 3D layer. The twin draws the example's room, light, cut-out and frame
+with three.js's `WebGLRenderer`. It builds the frame from the example's own extrude, so a wrong bar
+in the port reaches the comparison. The page reads the engine's frame through `captureFrame` and
+the twin's through WebGL, and the test compares the two frames. A browser screenshot still reads
+only the layers of elements, as hard rule 16 requires.
+
+The demo that shows the option is its own task, M3-K7: a demo with a transparent canvas over a DOM
+backdrop, in which the depth-only material holds the scene back behind the page. This change adds
+no demo of its own.

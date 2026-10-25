@@ -192,7 +192,13 @@ export async function publish(name: string, result: Record<string, unknown>): Pr
 		status.textContent = demo
 			? `${document.title}: running`
 			: JSON.stringify(
-					{ ...report, pixels: undefined, images: undefined, frame: undefined },
+					{
+						...report,
+						pixels: undefined,
+						images: undefined,
+						frame: undefined,
+						frames: undefined,
+					},
 					null,
 					2,
 				);
