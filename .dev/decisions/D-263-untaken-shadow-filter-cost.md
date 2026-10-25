@@ -6,10 +6,11 @@ that compiles it measured 4.084 ms of GPU time per frame. A build without it mea
 round-by-round differences change sign, so the run does not tell a gap of 0.08 ms from its own
 scatter. Date: 2026-10-25. Task: M3-R7.
 
-Summary: On S4 at the Low preset, the wide shadow filter is compiled but never taken. That build
-measured 4.084 ms of GPU time per frame, and the build without it measured 4.004 ms. The 0.08 ms
-difference is about two per cent, and it sits inside the run's scatter. The study's 0.75 ms figure is
-an unconfirmed code comment, so it gives order-of-magnitude context only. The wide path stays.
+Summary: On S4 at the Low preset on WebGPU, the wide shadow filter is compiled but never taken. That
+build measured 4.084 ms of GPU time per frame, and the build without it measured 4.004 ms. The
+0.08 ms difference is about two per cent, and it sits inside the run's scatter. The study's 0.75 ms
+figure is an unconfirmed code comment, so it gives order-of-magnitude context only. The wide path
+stays.
 
 ## Question
 
@@ -66,7 +67,7 @@ noise. It calls the page "same".
 
 The machine and what it means for the figure. The run went directly, not through the job queue. The
 queue kept recreating a drain marker that held the job back. Other work kept the 1-minute load above
-the 8 that a queued timing run waits for, mostly Spotlight indexing. The wrapper printed the load with
+the 8 that a queued timing run waits for. The wrapper printed the load with
 `sysctl -n vm.loadavg`: `load start: { 11.13 21.70 26.83 } 23:00:17` and
 `load end: { 9.12 18.51 25.15 } 23:01:39`. The archived record keeps the runs alone, with no load
 figures. The 1-minute load was therefore 11.1 at the start and 9.1 at the end. The 5-minute load was
@@ -75,7 +76,7 @@ later rounds. So the machine and the GPU had not settled when it ran. The run's 
 therefore about 0.1 ms, or 2.5% of the frame.
 
 That leaves the question answerable. The two builds ran in the same rounds, so a change of the
-machine's speed reaches both alike. The figure to look for, the study's 0.75 ms, is far larger than
+machine's speed reaches both alike. The study's claimed figure, if real, is 0.75 ms, far larger than
 this run's resolution.
 
 What removing the wide path would save in shader size. The build's size report gives the same twelve
