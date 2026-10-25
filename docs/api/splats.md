@@ -116,9 +116,10 @@ preset's value, and `capacity` sets the rows that the batch holds.
 
 A whole file appears as its chunks are cut: the first chunks draw while the rest are cut, and a
 large file never holds up a frame. `ready` resolves when every chunk of a file is ready. For a
-stream, it resolves when the chunks that the last `update` needs have loaded. Call `update` once
-before you await it. `settle()` resolves once the chosen splats are packed, which a still picture
-waits for.
+stream, it resolves once the nearest chunks have arrived, which takes about a megabyte of files, or
+the nearest chunk alone: the first view draws from those, and the cloud fills in as the rest
+arrive. Call `update` once before you await it. `settle()` resolves once the chosen splats are
+packed, which a still picture waits for.
 
 ## A splat stream
 
@@ -192,7 +193,9 @@ total size and `splats.loadedBytes` gives the part that has arrived.
 - The cards need the scene's depth copy, which a material that reads the scene's depth makes. It
   costs one full-screen pass and one texture of four bytes for each pixel.
 - A stream spends one request for each chunk that the view needs. Keep the chunks large enough that
-  the requests do not dominate, and small enough that the first view arrives quickly.
+  the requests do not dominate, and small enough that the first view arrives quickly: before that
+  view draws, the add-on waits for the nearest chunks whose files fit in a megabyte, and for the
+  nearest chunk at least. The rest keep loading behind the frames that draw.
 
 ## Errors
 

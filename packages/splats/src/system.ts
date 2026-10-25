@@ -29,7 +29,13 @@ import './gltf';
 import { type PrefixView, packRows, type SplatRows } from './pack';
 import { SplatSelector } from './select';
 import splatShader from './splats.wgsl';
-import { parseStreamIndex, type SplatStream, SplatStreamLoader, startsStreamIndex } from './stream';
+import {
+	firstViewCount,
+	parseStreamIndex,
+	type SplatStream,
+	SplatStreamLoader,
+	startsStreamIndex,
+} from './stream';
 import { VERSION } from './version';
 
 checkAddonVersion('@null3d/splats', VERSION);
@@ -135,8 +141,9 @@ export interface Splats {
 	readonly loadedBytes: number;
 	/**
 	 * Resolves when the cloud can draw its first view. For a file, every chunk is ready. For a
-	 * stream, the chunks that the last `update` needs are loaded: call `update` once before
-	 * awaiting it to name the view.
+	 * stream, the nearest chunks that the last `update` needs are loaded, about a megabyte of files
+	 * or the nearest chunk alone, and the rest keep loading behind the frames: call `update` once
+	 * before awaiting it.
 	 */
 	readonly ready: Promise<void>;
 	/**
@@ -205,6 +212,10 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 				count: chunk.count,
 				data: undefined,
 			});
+	// The size of each chunk's file, which decides the chunks that the first view waits for.
+	const chunkBytes = stream
+		? Float64Array.from(stream.chunks, (chunk) => chunk.bytes)
+		: new Float64Array(0);
 	// The rows that the batch holds, which the preset and the GPU path decide once the host has
 	// resolved them: a phone then pays for the splats that it may draw, not for the Ultra count.
 	let capacity = 1;
@@ -313,6 +324,9 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 	/** The chunks that the stream should fetch, nearest first, in buffers that a selection reuses. */
 	const wanted: number[] = [];
 	const wantedDistance: number[] = [];
+	/** The nearest wanted chunks that the first view waits for, and whether it has drawn. */
+	const firstView: number[] = [];
+	let firstViewDone = false;
 
 	/**
 	 * Asks the loader for the chunks that the selection wants and that have not arrived, nearest
@@ -342,6 +356,13 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 			wanted[at] = i;
 			wantedDistance[at] = distance;
 		}
+		// The first view draws from the nearest chunks, and the rest keep loading behind the frames
+		// that draw, so a large cloud never leaves the screen empty while its whole first view loads.
+		firstView.length = 0;
+		if (!firstViewDone && wanted.length > 0) {
+			const count = firstViewCount(wanted, chunkBytes);
+			for (let k = 0; k < count; k++) firstView.push(wanted[k] as number);
+		}
 		loader.load(wanted);
 	};
 
@@ -352,10 +373,18 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 	const streamReady = new Promise<void>((resolve) => {
 		resolveReady = resolve;
 	});
+	/** True when the chunks that the first view waits for have arrived, or have stayed unreachable. */
+	const firstViewLoaded = (): boolean => {
+		if (loader === undefined) return true;
+		if (firstView.length === 0) return loader.idle;
+		for (const index of firstView) if (!loader.settled(index)) return false;
+		return true;
+	};
 	const maybeReady = (): void => {
 		if (readyResolved) return;
-		if (!settledOnce || (loader && !loader.idle)) return;
+		if (!settledOnce || !firstViewLoaded()) return;
 		readyResolved = true;
+		firstViewDone = true;
 		resolveReady();
 	};
 
@@ -470,6 +499,7 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 				loadedChunks++;
 				version++;
 				packArrived();
+				maybeReady();
 			},
 			onFailed: (index, error) => {
 				console.error(
