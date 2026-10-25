@@ -258,45 +258,20 @@ fn sun_filtered(kernel: vec4f, uv: vec2f, layer: u32, depth: f32, plane: Receive
     if taps < 3.0 {
         return sun_block(corner - 1.0, vec2f(t.x, s.x), vec2f(t.y, s.y), layer, depth, plane, size);
     }
-    if taps < 5.0 {
-        // Along each axis, the first block's texels weigh 1 - s and 2 - s, the second's 1 + s and
-        // s, out of 4.
-        let b = vec2f(2.0) - s;
-        let c = vec2f(1.0) + s;
-        let x0 = vec2f(t.x, b.x);
-        let y0 = vec2f(t.y, b.y);
-        let x1 = vec2f(c.x, s.x);
-        let y1 = vec2f(c.y, s.y);
-        let first = corner - 2.0;
-        let sum = sun_block(first, x0, y0, layer, depth, plane, size)
-            + sun_block(first + vec2f(2.0, 0.0), x1, y0, layer, depth, plane, size)
-            + sun_block(first + vec2f(0.0, 2.0), x0, y1, layer, depth, plane, size)
-            + sun_block(first + 2.0, x1, y1, layer, depth, plane, size);
-        return sum / 16.0;
-    }
-    // Along each axis, the three blocks' texels weigh 1 - s and 3 - 2s, 4 - s and 3 + s, then
-    // 1 + 2s and s, out of 12.
-    let b = vec2f(3.0) - 2.0 * s;
-    let c = vec2f(4.0) - s;
-    let d = vec2f(3.0) + s;
-    let e = vec2f(1.0) + 2.0 * s;
+    // Along each axis, the first block's texels weigh 1 - s and 2 - s, the second's 1 + s and
+    // s, out of 4.
+    let b = vec2f(2.0) - s;
+    let c = vec2f(1.0) + s;
     let x0 = vec2f(t.x, b.x);
     let y0 = vec2f(t.y, b.y);
-    let x1 = vec2f(c.x, d.x);
-    let y1 = vec2f(c.y, d.y);
-    let x2 = vec2f(e.x, s.x);
-    let y2 = vec2f(e.y, s.y);
-    let first = corner - 3.0;
-    var sum = sun_block(first, x0, y0, layer, depth, plane, size);
-    sum += sun_block(first + vec2f(2.0, 0.0), x1, y0, layer, depth, plane, size);
-    sum += sun_block(first + vec2f(4.0, 0.0), x2, y0, layer, depth, plane, size);
-    sum += sun_block(first + vec2f(0.0, 2.0), x0, y1, layer, depth, plane, size);
-    sum += sun_block(first + vec2f(2.0, 2.0), x1, y1, layer, depth, plane, size);
-    sum += sun_block(first + vec2f(4.0, 2.0), x2, y1, layer, depth, plane, size);
-    sum += sun_block(first + vec2f(0.0, 4.0), x0, y2, layer, depth, plane, size);
-    sum += sun_block(first + vec2f(2.0, 4.0), x1, y2, layer, depth, plane, size);
-    sum += sun_block(first + vec2f(4.0, 4.0), x2, y2, layer, depth, plane, size);
-    return sum / 144.0;
+    let x1 = vec2f(c.x, s.x);
+    let y1 = vec2f(c.y, s.y);
+    let first = corner - 2.0;
+    let sum = sun_block(first, x0, y0, layer, depth, plane, size)
+        + sun_block(first + vec2f(2.0, 0.0), x1, y0, layer, depth, plane, size)
+        + sun_block(first + vec2f(0.0, 2.0), x0, y1, layer, depth, plane, size)
+        + sun_block(first + 2.0, x1, y1, layer, depth, plane, size);
+    return sum / 16.0;
 }
 
 /// The main directional light's bias toward the light and its normal bias in cascade `cascade`, in
@@ -452,34 +427,21 @@ fn filtered(kernel: vec4f, uv: vec2f, layer: u32, depth: f32) -> f32 {
     let corner = floor(uv * size + 0.5);
     let s = uv * size + 0.5 - corner;
     let origin = (corner - 0.5) * texel;
-    var weights: array<vec2f, 3>;
-    var offsets: array<vec2f, 3>;
-    var samples = 2u;
-    var total = 16.0;
-    if taps < 5.0 {
-        weights[0] = 3.0 - 2.0 * s;
-        weights[1] = 1.0 + 2.0 * s;
-        offsets[0] = (2.0 - s) / weights[0] - 1.0;
-        offsets[1] = s / weights[1] + 1.0;
-    } else {
-        samples = 3u;
-        total = 144.0;
-        weights[0] = 4.0 - 3.0 * s;
-        weights[1] = vec2f(7.0);
-        weights[2] = 1.0 + 3.0 * s;
-        offsets[0] = (3.0 - 2.0 * s) / weights[0] - 2.0;
-        offsets[1] = (3.0 + s) / 7.0;
-        offsets[2] = s / weights[2] + 2.0;
-    }
+    var weights: array<vec2f, 2>;
+    var offsets: array<vec2f, 2>;
+    weights[0] = 3.0 - 2.0 * s;
+    weights[1] = 1.0 + 2.0 * s;
+    offsets[0] = (2.0 - s) / weights[0] - 1.0;
+    offsets[1] = s / weights[1] + 1.0;
     var sum = 0.0;
-    for (var row = 0u; row < samples; row += 1u) {
-        for (var column = 0u; column < samples; column += 1u) {
+    for (var row = 0u; row < 2u; row += 1u) {
+        for (var column = 0u; column < 2u; column += 1u) {
             let at = origin + vec2f(offsets[column].x, offsets[row].y) * texel;
             let lit = textureSampleCompareLevel(shadow_atlas, shadow_sampler, at, layer, depth);
             sum += weights[column].x * weights[row].y * lit;
         }
     }
-    return sum / total;
+    return sum / 16.0;
 }
 
 /// The face of a point light's cube that a direction from the light points through, in the order
