@@ -500,7 +500,7 @@ const PREPASS_COLOR: &str = "prepassColor";
 /// it costs Safari's WebGL2 path time that follows the texture's size (WebKit bug 328158). All three
 /// ways draw the same image, and the device run chose the depth-only framebuffer: keeping the color
 /// and clearing it paid the whole charge, while no attachment at all paid a fifth of a millisecond
-/// (D-265).
+/// (D-266).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PrepassColor {
     /// Keeps the color attachment and starts it from what the texture holds, then invalidates it.
@@ -8598,7 +8598,7 @@ mod tests {
                     .any(|step| step[..] == ["DepthPrepass1", "Opaque1"])
             );
             // The prepass stores the depth that the depth step reads and the opaque pass loads. On
-            // WebGL2 it attaches no color, so it never holds one that it does not write (D-265).
+            // WebGL2 it attaches no color, so it never holds one that it does not write (D-266).
             // WebGPU keeps its clear, which is cheap there.
             let plan = frames.graph().plan().unwrap();
             let attachments = plan.attachments(&plan.steps()[prepass]);

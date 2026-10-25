@@ -1,4 +1,4 @@
-# D-265: A prepass's unwritten stand-in color costs Safari's WebGL2 path
+# D-266: A prepass's unwritten stand-in color costs Safari's WebGL2 path
 
 Status: decided on 26 October 2026 by the device run below. The depth-only framebuffer is the
 engine's default. The two other ways stay behind a page switch for measurement. The rise is
