@@ -438,6 +438,13 @@ A run folder holds every page's full result, with frames and images, and stays o
 - Run it on the Mac in a quiet lane: `NULL3D_CLUSTER_COST=1 bun run test:browser -- cluster-cost.spec.ts`. `NULL3D_CLUSTER_PRESETS` narrows the presets, as a list.
 - The frame's GPU time falls as the camera draws back, which is the saving that coarser patches make: by about a quarter on the phone and on the tablet's compatibility mode, and by a tenth on the tablet's core WebGPU path, where the fill of its many pixels weighs more. [D-231](decisions/D-231-cluster-levels-cost.md) gives each device's figures.
 
+## The levels of a forest
+
+- The `lod-cost` page draws 40,000 instanced pines, four levels each, over hills under the sun's shadows. It times two seconds of play with every tree at its base mesh. It then times two seconds with each tree at the level that its size on the screen picks. It does each of those three times ([D-137](decisions/D-137-lod-groups.md)).
+- The page reports the median GPU time of a frame where the device has a GPU timer. Everywhere it reports the median frame interval and CPU time. After the timing it reports each side's memory from the stats overlay. The copy lists that the level buckets take then show beside the frame time. A set of four levels takes one copy per source, not a slice per level per view ([D-137](decisions/D-137-lod-groups.md#addendum-the-copy-lists-follow-what-draws-22-october-2026)).
+- Run it on a phone or a tablet with the plan: `bun run devices:cloud --only bsgalaxys24-chrome,bsipadpro13-safari --plan lod-cost`. The plan times the lowest and the highest preset on each GPU path. It starts with the capabilities page, so a device without WebGPU skips those pages.
+- Run it on the Mac in a quiet lane: `NULL3D_LOD_COST=1 bun run test:browser -- lod-cost.spec.ts`. `NULL3D_LOD_COUNT` sets the trees, 40,000 by default, and `NULL3D_LOD_PRESETS` the presets, as a list.
+
 ## Vegetation scatter
 
 - `tests/pages/vegetation-scatter.html` places Creek's 160 m valley with the vegetation add-on's ecological rules at seed 7. It compares the point list with a reference checksum, then places the tiles in reverse order and with a second tile size, which must give the same points. It times three placements and reports the middle one. The placement runs on the CPU and starts no engine, so both GPU paths give the same points.

@@ -3,10 +3,14 @@
 // ?shadows=off casts none). After a warm-up, the page measures play with every tree at its base
 // mesh, and with each tree at the level that its size on the screen picks, in turns, three times
 // each. It reports the medians of each side's GPU time per frame, where the device has a GPU timer,
-// and of its frame interval and CPU time, with each thread's. Open it with ?gpu= for each path.
+// and of its frame interval and CPU time, with each thread's. It then reports each side's memory,
+// so the copy lists that the level buckets take show beside the frame time. Open it with ?gpu= for
+// each path.
 import { createEngine } from '@null3d/engine';
 import { featureCost } from './lib/feature-cost';
+import { overlayMemory, waitForOverlay } from './lib/overlay-figures';
 import { run } from './lib/result';
+import type { SideMemory } from './lib/side-memory';
 
 const params = new URLSearchParams(location.search);
 const count = Number(params.get('count') ?? '40000');
@@ -34,6 +38,21 @@ run('lod-cost', async () => {
 		engine.postToSketch(levels ? 'levels' : 'levels-off', null);
 		await built;
 	});
+	// The memory figures come from the overlay, which samples the GPUs' tables and the wasm file.
+	// It shows after the timing, so its sampling costs none of the frames above. With levels the
+	// copy lists take one copy per source, not one per level, so the two sides' buffer figures
+	// show the lists following what draws.
+	const wasmBytes = (await engine.measure(0.5)).memory.wasmBytes;
+	const memory: { off?: SideMemory; on?: SideMemory } = {};
+	for (const side of ['off', 'on'] as const) {
+		const built = settled();
+		engine.postToSketch(side === 'on' ? 'levels' : 'levels-off', null);
+		await built;
+		engine.stats(true);
+		const ready = await waitForOverlay('triangles');
+		memory[side] = { ready, ...overlayMemory(wasmBytes) };
+		engine.stats(false);
+	}
 	await engine.destroy();
 	return {
 		tier: engine.capabilities.tier,
@@ -43,6 +62,7 @@ run('lod-cost', async () => {
 		devicePixelRatio,
 		off,
 		on,
+		memory,
 		failures,
 	};
 });
