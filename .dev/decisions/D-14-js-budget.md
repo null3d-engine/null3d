@@ -1119,3 +1119,21 @@ about two of the features that follow.
   bundler keeps it in the start for them. Its pieces cannot simply move, because the constants that
   both halves read would then sit in the start instead, so the split needs three modules for under a
   kilobyte. This is the next trim worth taking if the room runs out again.
+
+## The start's budget rises to 193 KB for the cut-out builds, 25 October 2026
+
+M3-V2 gives a custom material's WGSL the standard material's cut-out features. A material whose
+WGSL sets or reads the surface's `alpha` gains the builds of alpha to coverage, the alpha hash and
+their sample mask, and its shadow caster and motion build test that alpha in a fragment stage. The
+feature's own shader builds load with the material on first use, so a page that never draws one
+downloads none of them. The material gating and the custom template's depth stage are in the start.
+
+After the merge with the day's tip, a production page build measured 196,999 bytes after Brotli in
+pipelined WebGL2 mode, 391 over the 192 KB line. Low latency measured 193,244 and drawing on the
+main thread 194,534. The feature's own share is about 900 bytes: the same tip without it measured
+196,092 in the trim's record above.
+
+The budget rises to 193 KB, or 197,632 bytes, leaving 633 bytes of room. The owner's rule of
+22 October allows the start's budget to rise as needed without asking, and the ruling of 25 October
+repeats it. The trims that the sections above owe, the light probes' split among them, still stand
+as the next work that touches the start's size.

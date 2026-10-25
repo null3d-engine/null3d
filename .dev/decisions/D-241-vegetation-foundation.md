@@ -280,10 +280,12 @@ took 6,116 ms and 4,920 ms, so the rows are not comparable across loads. Two thi
 material's builds. The fading level of detail's builds double every material's shading builds,
 because they load with the material's first use. Alpha to coverage, the alpha hash and their
 sample mask then multiply the builds of a material that names the alpha, and its caster and motion
-gain the mask's test. The engine's own start and feature files are unaffected, and the size check
-holds. The start files come to 192,863 bytes after Brotli in pipelined WebGL2 mode, inside the
-raised 190 KB budget with 1,697 bytes left. The largest first-use shader file is 1,315,664 bytes
-raw, 200,048 after gzip and 53,073 after Brotli, inside its 1,792 KB, 320 KB and 52 KB caps.
+gain the mask's test. The engine's own shader builds are unaffected: the cut-out code sits behind
+bits that only custom materials take. After the merge with the 25 October tip, the start files come
+to 196,999 bytes after Brotli in pipelined WebGL2 mode, inside the raised 193 KB budget with 633
+bytes left. The largest first-use shader file is 1,344,024 bytes raw, 206,200 after gzip and 54,366
+after Brotli, inside its 1,792 KB, 320 KB and 56 KB caps.
+
 ## Addendum: how the scatter places plants
 
 M3-V6 built the placement half of the add-on. The record above named what it must do; this addendum

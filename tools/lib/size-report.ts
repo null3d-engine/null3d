@@ -1054,8 +1054,15 @@ export function downloadSizes(
  * frame figures and the stats overlay. The rise leaves 502 bytes. The start went from 186 KB to
  * 192 KB in two days, and the owner ruled on 25 October 2026 to keep raising the line as needed for
  * now. A trim that wins bytes back runs beside the raises, and no crossing waits for it.
+ *
+ * It went to 193 KB on 25 October 2026, for M3-V2's cut-out builds. A custom material's WGSL that
+ * names the surface's alpha now cuts the material's own shape: its builds gain alpha to coverage,
+ * the alpha hash and their sample mask, and its caster and motion build test the alpha. The
+ * material gating and the custom template's depth stage are in the start. After the merge with the
+ * day's tip, WebGL2's pipelined start measured 196,999 bytes, 391 over the old line, and low
+ * latency measured 193,244. The rise leaves 633 bytes.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 192 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 193 * 1024 };
 
 /**
  * The budget for each part that loads after the start. The Brotli figure rose on 22 October 2026,
