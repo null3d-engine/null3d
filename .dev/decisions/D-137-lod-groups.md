@@ -387,8 +387,7 @@ Blender without levels still gets them (follow-up 5).
   drawing the thinned cards, but not the tool's error rule. The unit tests hold the step:
   `keeps a share of the cards at each level, grown about their middles`,
   `writes each card level its own positions, and shares the wood stream`, and `treats a card folded
-  along its middle as a card, as Creek makes its leaves`. The `vegetation-leaf-cards` picture holds
-  the cards' coverage at three distances.
+  along its middle as a card, as Creek makes its leaves`.
 
 ## Addendum: texture coordinates in the level error (22 October 2026, M3-L2)
 
@@ -404,6 +403,31 @@ The weight is deliberately modest. The error that the simplifier reports include
 and the engine reads a level's error as a distance, so a heavy weight would make every textured
 mesh switch levels much farther out. At a sixty-fourth, the test scene's ball keeps four levels,
 where the same scene without texture coordinates in the error has six.
+
+No picture test shows this weight. The weight enters the measured error that picks a level. It also
+changes the level's triangles, because the simplifier weighs the texture coordinates when it
+decides which vertices to collapse. A picture at the level's own switch cannot show the weight on
+its own, because its reference is built with the same weight. A picture near enough to show a slide
+draws the level where the engine does not pick it.
+
+The unit test's own bent grid measures the weight. It is a flat grid of one meter across, 32 by 32
+cells, whose texture coordinates repeat the texture eight times across it. With the shipped weight,
+one sixty-fourth of the longest side, its coarsest level reports an error of 0.116 units. The same
+grid with one texture coordinate everywhere reports 0.00016, so the reported error is the weight's.
+A slide of the whole texture over a one-meter mesh counts as one sixty-fourth of a unit, a small
+fraction of the mesh's size. On a 360-pixel-high picture at a
+60-degree lens, with the default one-pixel threshold, the switch factor is 311.8. That level then
+switches about 36 m out. There the whole grid spans about nine pixels. That is 74 pixels of a
+480 by 270 picture, or 0.06 percent, far under the picture tests' 0.5 percent limit. A texture slide
+on a mesh that small cannot move enough pixels for a picture test to judge it. The unit test reads
+the error itself, which is the quantity the item adds:
+`counts a texture that would slide, where a flat surface otherwise simplifies free` holds the bent
+grid's coarsest error above 0.11 units.
+
+The coordinator accepted this exemption on 26 October 2026, before this record was written. The
+acceptance rests on that reason and measurement. The weight enters the error that picks the level,
+and it also changes the level's triangles. The unit test that reads the error is the right
+instrument, and it stands as the item's proof.
 
 ## Addendum: the level pictures place each copy by its own distance (22 October 2026, M3-L2)
 
@@ -521,8 +545,8 @@ user that spends it.
 
 `packages/cli/src/assets/levels.test.ts` holds two facts. Each level and every coarser level share
 one prefix of the new numbering. Every triangle keeps the positions it drew before the reorder.
-Before the step the same levels' largest index was 16,640, even for the coarsest level's 514
-vertices, so the prefix check fails without it.
+Before the step the coarsest level's 515 vertices spread up to 12,245. The levels together reach
+the base mesh's last index, 16,640. So the prefix check fails without it.
 
 ## Addendum: the levels' cost on an iPad and a phone (25 October 2026, M3-L2)
 
@@ -559,6 +583,12 @@ the Galaxy S24 gives both of its rows.
 | iPad Pro 13, cloud | WebGL2 | High | no timer | 6.2, 6.2 |
 | Galaxy S24, cloud | WebGL2 | Low | no timer | 6.1, 6.1 |
 | Galaxy S24, cloud | WebGL2 | High | no timer | 6.2, 6.2 |
+| Galaxy S25, cloud, stand-in | WebGPU | Low | 22.81, 7.08 | 25.8, 25.8 |
+| Galaxy S25, cloud, stand-in | WebGPU | High | 54.33, 34.80 | 27.6, 27.6 |
+| Galaxy S25, cloud, stand-in | compatibility | Low | 23.72, 7.21 | 25.8, 25.8 |
+| Galaxy S25, cloud, stand-in | compatibility | High | 25.69, 25.36 | 27.6, 27.6 |
+| Galaxy S25, cloud, stand-in | WebGL2 | Low | no timer | 6.2, 6.2 |
+| Galaxy S25, cloud, stand-in | WebGL2 | High | no timer | 6.2, 6.2 |
 | Mac, Chrome | WebGPU | Low | 5.43, 3.70 | 19.8, 19.8 |
 | Mac, Chrome | WebGPU | High | 9.54, 5.68 | 23.7, 23.7 |
 | Mac, Chrome | compatibility | Low | 5.90, 3.74 | 19.8, 19.8 |
@@ -581,25 +611,50 @@ stand beside it as the comparison rather than in its place.
 
 The cloud iPad ran Safari 26.6.1 on iOS 26 at 59 Hz. Its window was 1,032 by 1,264 CSS pixels at
 2x. Its levels cut the GPU time by 52% at Low on core WebGPU, and by 51% in compatibility mode. They
-cut it by 24% at High on core WebGPU. Its GPU buffer bytes do not change between the two sides. The
-copy lists therefore follow what draws on the device as they do on the Mac. The lists take one copy
-per source. They do not take a slice per level per view. The Mac's table above holds the same
+cut it by 24% at High on core WebGPU. Its GPU buffer bytes do not change between the two sides.
+Identical bytes do not prove the sizing on their own, because the removed rule would give the same
+sides too; the absolute totals rule it out, as the Mac's table above records. The lists take one
+copy per source. They do not take a slice per level per view. The Mac's table above holds the same
 finding: 2.6 MB in the main view and 2.6 MB in the casters' list, against 20.5 MB and 10.2 MB from
 the removed rule.
 
 The Galaxy S24 ran Chrome 152 on Android 16 with no WebGPU adapter, so only its WebGL2 rows ran.
 Chrome on Android reports no WebGL2 GPU timer. The cloud display ran at 30 Hz, so its frame interval
-sits at its 33.3 ms limit and hides any saving. The runner marks its timings unreliable. Its GPU
+sits at its 33.3 ms limit and hides any saving. The runner marks its frame intervals unreliable; its
+CPU times do not depend on the display. Its GPU
 buffer bytes also do not change, at 6.1 MiB at Low and 6.2 MiB at High. Its CPU time rises with the
 levels on, by 1.78 ms at Low and 1.35 ms at High. That is the level picks and the fade pairs.
 
-The Mac ran the page in Chrome on 25 October: six pages in 3.9 minutes, each measured at a
-one-minute load between 6.1 and 7.9. Every path held the display's 16.67 ms interval. The levels cut
+The Galaxy S25 stands in for the S24 class, because the S24 times no GPU on either path. It ran
+Chrome 152 on Android 15, on Qualcomm's Adreno 830. That is a faster GPU of another make than the
+S24's Samsung Xclipse 940, so its row is the stand-in and not the S24's own figure. Its levels cut
+the GPU time by 69% at Low and 36% at High on core WebGPU, and by 70% at Low in compatibility mode.
+High on compatibility mode was flat. Its display ran at 30 Hz, so the runner marks its frame
+intervals unreliable; its GPU timer times do not depend on the display. Every interval sits at the
+display's 33.3 ms cap apart from High on core WebGPU, where
+the base-meshes side missed the cap at 66.6 ms. That interval fall is the cap, not the levels'
+doing, so it is no saving. Its GPU buffer bytes do not change, at 25.8 MiB at Low and 27.6 MiB at
+High, and 6.2 MiB on WebGL2.
+
+The Mac ran the page in Chrome on 25 October: six pages in 3.9 minutes, each page's load gate under
+8, between 6.1 and 7.9. The load then drifted to 8.7 after WebGPU High's gate and 11.1 after
+compatibility Low's gate. Every path held the display's 16.67 ms interval. The levels cut
 the GPU time by 32% at Low and 40% at High on core WebGPU, by 37% and 43% in compatibility mode, and
 by 34% and 66% on WebGL2. Its GPU buffer bytes do not change between the two sides, at 19.8 MiB at
 Low and 23.7 MiB at High, and 6.2 and 6.3 MiB on WebGL2. Chrome on the Mac times WebGL2, where the
 tablets and the phone report no timer there.
 
+Levels add no GPU buffer bytes on any device: the totals are 19.8 and 23.7 MiB on the Mac, 21.8 and
+25.6 on the iPads, and 25.8 and 27.6 on the S25. That they are identical off and on does not prove
+the sizing, because off is a threshold of 0 and keeps the buckets, so the removed rule would give
+identical sides and far more bytes. The absolute totals rule it out: each stays below the 30.7 MB
+that the removed rule's two copy lists alone would take. The two Rust copy-list tests measure one
+copy per source, 2.6 MB each.
+
 The run connected only after the mkcert root was trusted on the iPad. Until then the runner page
 sat on "starting" and nothing reached the Mac. [Device sessions](../devices.md) now records that
-step. With this run every device row of the task is complete.
+step. The phone row comes from the cloud S25, the closest cloud device that times a GPU, as the
+rule for a device that cannot run the plan allows. The S24 has no WebGPU adapter and no WebGL2 GPU
+timer, so its own run gives the frame interval and CPU time alone. The S25's GPU is a faster make,
+so its row shows the phone class's saving rather than the S24's own figure. Its GPU timer times
+stand, and only its frame intervals are cap-bound.

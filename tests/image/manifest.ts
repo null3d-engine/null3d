@@ -1179,8 +1179,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// A skinned box built in code, bent by a joint, whose level names two of its twelve triangles
 	// and the box's own vertex accessors: the engine stores that level over the base's vertices, and
-	// the joint bends it too. Its copy gives the level accessors of its own and must draw the same
-	// pixels, which proves that a skinned level draws the base mesh's own vertices.
+	// the joint bends it too.
 	{
 		name: 'skinned-lod',
 		sketch: 'tests/pages/sketches/skinned-lod-sketch.ts',
@@ -2709,6 +2708,32 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/vegetation-coverage-sketch.ts',
 		hold: 1,
 		size: [640, 360],
+	},
+	// The wind add-on's own page: a field of cards that reads the air at each vertex. A gust
+	// crosses the field between the first hold and the second, so the pairs change where the gust
+	// has reached. The wake test holds one body still, so its trail stays put. The part test draws
+	// the same page with the gust and the swirl taken out, from the drawings it makes itself.
+	{
+		name: 'wind-cards',
+		sketch: 'packages/wind/page/sketch.ts?camera=still',
+		hold: 1,
+		size: [480, 270],
+		// The cards cast shadows that sway with them, and the software GPU takes its time with them.
+		timeoutSeconds: 180,
+	},
+	{
+		name: 'wind-cards-later',
+		sketch: 'packages/wind/page/sketch.ts?camera=still',
+		hold: 1.6,
+		size: [480, 270],
+		timeoutSeconds: 180,
+	},
+	{
+		name: 'wind-wake',
+		sketch: 'packages/wind/page/sketch.ts?still=1',
+		hold: 1.2,
+		size: [480, 270],
+		timeoutSeconds: 180,
 	},
 	// Impostors of the impostors add-on: cards far from the world's origin, each blending the three
 	// atlas views nearest its direction to the eye and lit by the sun from the normal the surface
