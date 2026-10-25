@@ -1670,6 +1670,8 @@ export class SketchRunner {
 		// Job workers woken now start while the engine applies the frame's commands; woken before
 		// the sketch's update, they would spin through it and sleep again.
 		glue.prepareJobs();
+		// Each feature draw answers whether its feature is ready before the frame takes its room.
+		this.context.scene.pollReadiness();
 		// Whole milliseconds and microseconds cross into the core without a number object each.
 		const timeMs = Math.round(time.now * 1000);
 		const stepUs = Math.round(dt * 1_000_000);

@@ -84,6 +84,8 @@ export interface ComputeInstancesHost {
 	): Mesh;
 	/** One batch of `count` rows of `mesh` and `material`, for the CPU path. */
 	createBatch(mesh: MeshGeometry, material: Material, count: number): InstanceBatch;
+	/** Asks `poll` before each frame's work, and forgets it when the returned function is called. */
+	watchReady(poll: () => void): () => void;
 	/** The error that a description the adapter cannot place throws. */
 	fail(detail: string): Error;
 }
@@ -95,6 +97,9 @@ const INSTANCE_FLOATS = C.FEATURE_INSTANCE_INSTANCE_FLOATS;
  * One add-on draw whose live count the GPU writes. Draw its instances from the add-on's own buffer
  * with `setInstances`, or from a compute pass that writes the count word, and free it with
  * `destroy`.
+ *
+ * The description's `ready` callback decides each frame whether the draw draws. While it answers
+ * false the engine records nothing for the draw: no draw, no count copy and no conversion.
  *
  * @category api/feature-instances
  */
@@ -117,9 +122,16 @@ export class ComputeInstances<Wgsl extends string | CompiledWgsl = string | Comp
 		private readonly call: string,
 		/** The most instances that the draw holds. */
 		private readonly capacityValue: number,
+		/** The feature's own answer to whether it draws now, or `undefined` for always. */
+		private readonly ready: (() => boolean) | undefined,
 		private countValue: number,
 		private live = true,
 	) {}
+
+	/** True while the feature's `ready` callback answers true. */
+	private readyValue = true;
+	/** Stops the per-frame readiness poll, once the draw is destroyed. */
+	private unwatch: (() => void) | undefined;
 
 	/** The count that the GPU or the CPU set. */
 	get count(): number {
@@ -134,7 +146,7 @@ export class ComputeInstances<Wgsl extends string | CompiledWgsl = string | Comp
 	setCount(count: number): this {
 		this.checkCount(count);
 		if (this.id !== 0) this.core.glue.setFeatureInstanceCount(this.id, count);
-		else (this.object as InstanceBatch).setActiveCount(count);
+		else (this.object as InstanceBatch).setActiveCount(this.readyValue ? count : 0);
 		this.countValue = count;
 		return this;
 	}
@@ -162,7 +174,7 @@ export class ComputeInstances<Wgsl extends string | CompiledWgsl = string | Comp
 			const batch = this.object as InstanceBatch;
 			writeRows(batch, values, count);
 			batch.markDirty(0, count);
-			batch.setActiveCount(count);
+			batch.setActiveCount(this.readyValue ? count : 0);
 		}
 		this.countValue = count;
 		return this;
@@ -171,13 +183,35 @@ export class ComputeInstances<Wgsl extends string | CompiledWgsl = string | Comp
 	/** Draws the draw, or hides it, from the next frame on. */
 	setVisible(visible: boolean): void {
 		if (this.id !== 0) (this.object as Mesh).setVisible(visible);
-		else (this.object as InstanceBatch).setActiveCount(visible ? this.countValue : 0);
+		else
+			(this.object as InstanceBatch).setActiveCount(
+				visible && this.readyValue ? this.countValue : 0,
+			);
+	}
+
+	/** @internal Starts the per-frame readiness poll, and records its first answer. */
+	listenToReady(host: ComputeInstancesHost): void {
+		this.unwatch = host.watchReady(() => this.refreshReady());
+		this.refreshReady();
+	}
+
+	/**
+	 * Records whether the feature draws now. The engine takes no room for a draw that is not ready,
+	 * and the CPU path draws none of its rows.
+	 */
+	private refreshReady(): void {
+		const ready = this.ready?.() ?? true;
+		if (ready === this.readyValue) return;
+		this.readyValue = ready;
+		if (this.id !== 0) this.core.glue.setFeatureInstanceReady(this.id, ready);
+		else (this.object as InstanceBatch).setActiveCount(ready ? this.countValue : 0);
 	}
 
 	/** Frees the draw's object, material and vertices. Later calls on it throw E1101. */
 	destroy(): void {
 		if (!this.live) return;
 		this.live = false;
+		this.unwatch?.();
 		if (this.id !== 0) {
 			this.core.glue.destroyFeatureInstances(this.id);
 			(this.object as Mesh).destroy();
@@ -261,7 +295,7 @@ export function createComputeInstances<const Wgsl extends string | CompiledWgsl>
 		if (layers !== undefined) batch.setLayers(layers);
 		batch.setActiveCount(count);
 		const none = { buffer: 0, bytes: 0 };
-		return new ComputeInstances(
+		const draw = new ComputeInstances(
 			host.core,
 			0,
 			batch,
@@ -271,8 +305,11 @@ export function createComputeInstances<const Wgsl extends string | CompiledWgsl>
 			none,
 			call,
 			capacity,
+			description.ready,
 			count,
 		);
+		if (description.ready !== undefined) draw.listenToReady(host);
+		return draw;
 	}
 	const object = host.createMesh(mesh, material as unknown as Material, {
 		name: description.name,
@@ -298,7 +335,7 @@ export function createComputeInstances<const Wgsl extends string | CompiledWgsl>
 		buffer: host.core.glue.featureInstanceBuffer(id),
 		bytes: capacity * C.FEATURE_INSTANCE_INSTANCE_BYTES,
 	};
-	return new ComputeInstances(
+	const draw = new ComputeInstances(
 		host.core,
 		id,
 		object,
@@ -308,8 +345,11 @@ export function createComputeInstances<const Wgsl extends string | CompiledWgsl>
 		instances,
 		call,
 		capacity,
+		description.ready,
 		count,
 	);
+	if (description.ready !== undefined) draw.listenToReady(host);
+	return draw;
 }
 
 /** Places the rows that a page wrote in an instance batch, which the CPU path draws. */

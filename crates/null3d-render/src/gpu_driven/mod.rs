@@ -1000,6 +1000,9 @@ pub struct GpuDrivenRenderer {
     /// The capacity that each feature-instance draw's buffers were made for, by id from 1, or 0
     /// before they exist.
     feature_capacity: Vec<u32>,
+    /// The count of readiness changes that the layouts were built at, so a change builds them
+    /// again: a draw whose feature stops being ready leaves every view's buckets.
+    feature_readiness: u64,
     /// The conversion of feature-instance rows to the camera-relative rows that the draws read.
     feature_rows: FeatureRows,
 }
@@ -1242,6 +1245,7 @@ impl GpuDrivenRenderer {
             copy_views: Vec::new(),
             copy_offsets: crate::frame::CellOffsets::default(),
             feature_capacity: vec![0; crate::feature_instances::MAX_FEATURE_INSTANCES as usize],
+            feature_readiness: 0,
             feature_rows: FeatureRows::default(),
             dfg_pending: false,
             bound_environment: ids::BLANK_ENVIRONMENT,
@@ -1519,8 +1523,10 @@ impl GpuDrivenRenderer {
             || self.graph.depth_prepass() != self.layout_prepass
             || self.redraws_wanted() != self.redraws_built
             || picking != self.layouts_picked
-            || skinned_appear;
+            || skinned_appear
+            || self.settings.feature_instances().readiness() != self.feature_readiness;
         if upload_everything {
+            self.feature_readiness = self.settings.feature_instances().readiness();
             let limit = max_sources(self.config.storage_binding_bytes);
             self.settings
                 .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
@@ -3837,8 +3843,9 @@ fn copy_feature_counts(
         return Ok(());
     }
     for bucket in layout.buckets.iter().filter(|bucket| bucket.feature != 0) {
-        // A hidden object's entry keeps the reset's 0, so its draw draws nothing.
-        if layout::feature_hidden(radii, bucket) {
+        // A hidden object's entry keeps the reset's 0, so its draw draws nothing, and a draw whose
+        // feature is not ready copies nothing either.
+        if layout::feature_hidden(radii, bucket) || !features.is_ready(bucket.feature) {
             continue;
         }
         let count = ids::feature_count(bucket.feature);
