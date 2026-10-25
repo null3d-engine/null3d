@@ -658,20 +658,13 @@ fn a_bias_divides_the_switch_of_one_object() {
         },
     ];
     let rule = LevelRule::new(360.0, 1.732, false, 1.0, 0.0);
-    println!("factor {}", rule.factor);
-    // Level 1 switches at 0.01 times the factor, halved by a bias of 2: 1.56 m.
-    println!(
-        "no bias at 1.606: {:?}",
-        rule.pick(&links, 0, 1.0, 0.5, 1.606, 1.0, DrawRange::NONE)
-    );
-    println!(
-        "bias 2 at 1.606: {:?}",
-        rule.pick(&links, 0, 1.0, 0.5, 1.606, 2.0, DrawRange::NONE)
-    );
-    println!(
-        "bias 2 at 1.481: {:?}",
-        rule.pick(&links, 0, 1.0, 0.5, 1.481, 2.0, DrawRange::NONE)
-    );
+    // Level 1 switches at 0.01 times the factor, 3.12 m. At 1.606 m it is over the threshold and
+    // the base level draws; a bias of 2 halves its switch to 1.56 m, so the same distance draws
+    // the level.
+    assert!(matches!(
+        rule.pick(&links, 0, 1.0, 0.5, 1.606, 1.0, DrawRange::NONE),
+        Picked::One(0)
+    ));
     assert!(matches!(
         rule.pick(&links, 0, 1.0, 0.5, 1.606, 2.0, DrawRange::NONE),
         Picked::One(1)
