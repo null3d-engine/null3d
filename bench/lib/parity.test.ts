@@ -271,6 +271,10 @@ describe('feature scenes', () => {
 		expect(featureScene('alpha-mask-shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		// Coverage flips a sample at some cut edges, so its scene takes a small limit of its own.
 		expect(featureScene('alpha-coverage')?.limit).toBe(ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT);
+		// The masked glass's WebGL2 pane edge takes the same sample flip as the coverage scene.
+		expect(featureScene('gltf-transmission-mask')?.limit).toBe(
+			ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT,
+		);
 		// null3D's integer hash draws its own pattern, so the hash scene is a sanity comparison.
 		expect(featureScene('alpha-hash')?.limit).toBe(ALPHA_HASH_MAX_DIFFERENT_PERCENT);
 		// The strong bloom is a sanity comparison; the soft one keeps three.js's rule.
@@ -328,6 +332,7 @@ describe('feature scenes', () => {
 			'gltf-ior',
 			'gltf-iridescence',
 			'gltf-anisotropy',
+			'gltf-transmission-mask',
 			'gltf-clearcoat',
 			'gltf-toy-car',
 			'shadows',

@@ -16,11 +16,12 @@ export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	// The whole generated set beside the text the tests read their counts from.
 	{ file: 'tests/lib/shader-set.test.ts', ceilingMiB: 7168 },
 	// The engine's programs and pipelines, read for every build the build wrote. It reads the whole
-	// generated set as the WebGPU pipelines check does, so it holds the same ceiling: the two draw
-	// kinds and the level bands added builds, and its measured peak passed six thousand.
-	{ file: 'packages/engine/src/gpu/webgl2/programs.test.ts', ceilingMiB: 7168 },
+	// generated set as the WebGPU pipelines check does, so it holds the same ceiling: the masked
+	// transmission's permutations grew the set by 12.5 per cent, and the measured peaks are 7,343
+	// and 7,283 MiB, so both take 7,680 with room for a busy machine.
+	{ file: 'packages/engine/src/gpu/webgl2/programs.test.ts', ceilingMiB: 7680 },
 	// The WebGPU pipeline layouts, read for every build the build wrote.
-	{ file: 'packages/engine/src/gpu/webgpu/pipelines.test.ts', ceilingMiB: 7168 },
+	{ file: 'packages/engine/src/gpu/webgpu/pipelines.test.ts', ceilingMiB: 7680 },
 	// One bundle of the engine for each tree-shaking check, each in a process of its own, with an
 	// empty module in place of the shader modules: about 1.5 GB each.
 	{ file: 'packages/engine/src/math/tree-shaking-vec3.test.ts', ceilingMiB: 3072 },
