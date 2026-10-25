@@ -1,8 +1,11 @@
-# D-260: A sky layer's colour takes the scene's exposure and the background's intensity
+# D-262: A sky layer's colour takes the scene's exposure and the background's intensity
 
 Status: decided on 25 October 2026, for the owner's review. Built: the layer's exposure and the
 background's intensity in the box template, the WebGL2 capture's texture unit, and the
 `sky-layer-exposure` page with its test. Date: 2026-10-25. Task: M3-R24.
+
+The number skips 260 and 261, which the milestone branch took the same day: 260 for the open-source
+readiness record and 261 for moment transparency.
 
 Summary: The ground plane reflects every map, so the fault that the aurora demo showed was never in
 the plane: a sky layer's colour was the one sky colour that the scene's exposure did not reach, so
@@ -50,13 +53,14 @@ question under each sky and posted the environment's format and levels; it is no
 
 ## Look
 
-The demo's ice is a dielectric of 4 per cent, and the picture follows that. Under the demo's own
-camera, sky, fog, bloom and exposure, with the same lake split into a mirror half and the demo's ice
-half, the aurora reads 148 green on the mirror and 80 on the ice at one pixel, where the sky above
-them reads 198. The demo's own picture reads 25 green just below the horizon and 4 near the camera,
-which is the same surface at a steeper angle. So the lake does take the aurora, and how much of it
-the ice shows is its own reflectance: the owner's dark mirror is the change that makes the lake show
-the sky, and this record does not decide that look.
+The demo's ice is a dielectric of 4 per cent, and the picture follows that. One frame of the demo's
+own camera, sky, layer, fog, bloom and exposure held the lake split in two: a mirror half on the left
+of the frame and the demo's own ice on the right. The aurora read 148 green on the mirror at one
+pixel and 80 on the ice at the same pixel, where the sky above them read 198. The demo's own picture
+reads 25 green just below the horizon and 4 near the camera, which is the same ice at a steeper
+angle. So the lake does take the aurora, and how much of it the ice shows is its own reflectance: the
+owner's dark mirror is the change that makes the lake show the sky, and this record does not decide
+that look.
 
 ## Decision
 
@@ -82,10 +86,11 @@ which the layer's uniform carries in its spare value. The sky and the lake then 
 any exposure, and the background's intensity dims the sky alone, as it dims the built-in sky and
 leaves the map that the lake takes alone.
 
-WebGL2 had a second fault on this path, which the page showed as E1404 before the fix ran: a map with
-a layer draws its light capture with the page's own `environment.wgsl` build, and the texture units
-that the layer's programs claimed were read from its `sky` program, which reads no cube. The capture
-now names its own program's unit, as the engine's cube draws do.
+WebGL2 had a second fault on this path. The page failed with E1404, "the render worker failed: a
+WebGL2 program reads no texture at group 0, binding 1", before the fix ran: a map with a layer draws
+its light capture with the page's own `environment.wgsl` build, and the texture units that the
+layer's programs claimed were read from its `sky` program, which reads no cube. The capture now names
+its own program's unit, as the engine's cube draws do.
 
 ## Consequences
 
