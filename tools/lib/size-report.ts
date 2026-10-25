@@ -1068,8 +1068,15 @@ export function downloadSizes(
  * WebGL2's pipelined start at 197,411 bytes, 803 bytes over the old line. The grading controls added
  * the switch that picks the table's input and the values that the 8-bit path's shaders read. The
  * rise leaves 1,245 bytes of room.
+ *
+ * It went to 196 KB on 25 October 2026, on the owner's word, after the merge that landed the tooling
+ * work measured WebGL2's pipelined start at 196,291 bytes against the 194 KB line, 2,365 left and
+ * past the warning. Two causes: the sky layer's generator grew in both the page's and the sketch
+ * worker's bundles, by 16.2 and 15.7 per cent, and the WebGL2 page grew 2.0 per cent. The rise
+ * leaves 4,413 bytes of room. The trims owed above still stand as the next work that touches the
+ * start's size.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 194 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 196 * 1024 };
 
 /**
  * The budget for each part that loads after the start. The Brotli figure rose on 22 October 2026,

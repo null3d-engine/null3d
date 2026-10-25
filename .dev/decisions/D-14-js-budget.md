@@ -1132,3 +1132,18 @@ The budget rises to 194 KB, or 198,656 bytes, leaving 1,245 bytes of room. The o
 second grading design's bake loads only in the grade task's worker file, which has its own budget.
 A page that never grades therefore pays nothing for it. The trims owed above still stand as the next
 work that touches the start's size.
+
+## The start's budget rises to 196 KB, 25 October 2026
+
+The merge that landed the day's tooling work measured WebGL2's pipelined start at 196,291 bytes
+after Brotli against the 194 KB line, 2,365 bytes left and past the warning at 97 per cent. Two
+changes had grown it. The sky layer's generator rides both bundles, so `page-environment-generator.js`
+grew 16.2 per cent, from 6,175 to 7,177 bytes, and `sketch-worker-environment-generator.js` 15.7 per
+cent, from 6,174 to 7,142. The WebGL2 page grew 2.0 per cent, from 14,184 to 14,473, for a cause not
+yet found.
+
+The owner said to raise the line. It rises to 196 KB, or 200,704 bytes, leaving 4,413 bytes of room.
+The owner's rule of 22 October allows the start's budget to rise as needed without asking, reaffirmed
+on 25 October. The trims owed above still stand as the next work that touches the start's size, and
+the growth of the two generator files carries its own `Size-Growth:` trailers on the commit that
+explains them.
