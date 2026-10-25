@@ -29,6 +29,8 @@ The table names what the engine ships. A feature may have both a shader module a
 
 The engine builds each address with `new URL(..., import.meta.url)`. The bundler then ships that file beside the engine's code.
 
+The vendored decoders hold a download path of their own, and the engine never uses it. The engine hands each decoder its compiled WebAssembly, so a page can block every other origin.
+
 ## What your own code downloads
 
 The engine downloads only the addresses that you give it:

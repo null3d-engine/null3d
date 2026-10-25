@@ -110,3 +110,33 @@ upstream.
 The audit also corrected the evidence line for this task. When a call was added to a shipped file,
 one test failed, the repository check. The earlier line said that the guard's thirteen tests failed,
 which was wrong.
+
+## Addendum, 26 October 2026: every package on the page, and the vendored code in the guard
+
+The audit ran a third time, over every folder that a package manifest ships, and it read the
+vendored glue. It found no new call site, so the statement holds. Four gaps closed:
+
+- The notices page had no entry for `@null3d/vegetation` or `@null3d/wind`, the two add-ons that
+  landed after the last audit. Every package now has a row with its upstream, its version where
+  one applies, and its license. A package with no upstream says that it ships only its own code.
+- The command-line tool's asset module ports three.js's environment readers and its built-in
+  room, and its notices named no three.js. The package now carries three.js's MIT text, under
+  version 0.186.1.
+- The engine's shader library follows Filament's specular anti-aliasing kernel, its anisotropic
+  highlight and the two constants of AgX's punchy look. Filament's Apache License 2.0 is named
+  now, and the three.js section names the math, the tone curves and the HDR reader.
+- The guard now reads every folder that a package manifest ships, `vendor` and `templates`
+  included. It also reads the source that a build turns into `lib`. It records the vendored
+  glue's own download path with its counts. The vendor check fails when an importing file stops
+  handing a decoder `instantiateWasm` or `wasmBinary`, because then the vendored download could
+  run.
+
+The notices have their own guard, `tools/lib/notices.ts` with its tests. It pairs the page with
+the packages. Each package has one row. A ported package ships its `THIRD-PARTY-NOTICES.txt`,
+its `files` list carries the file, and it exports `./package.json` for the plugin to resolve.
+Every example add-on is named too.
+
+Evidence: the 22 network tests and the 10 notices tests pass. An added `fetch` in
+`packages/terrain/src/index.ts` failed the repository check with the call and its host. Renaming
+`instantiateWasm` in `gltf-draco.ts` failed the vendor check. Removing the wind row from the page
+failed the notices check.
