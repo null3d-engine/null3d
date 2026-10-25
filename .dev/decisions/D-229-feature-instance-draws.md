@@ -4,9 +4,9 @@ Status: decided by the helper of M3-E9 on 23 October 2026, for the owner's revie
 opaque main-view path on WebGPU and the CPU-filled batch on WebGL2, with the count copied into the
 indirect draw after each compute step; the compute pass that binds the two buffers (M3-E8), drawn
 by the `feature-instances-compute` picture on WebGPU and in compatibility mode; the conversion of
-the world rows to camera-relative rows; and the count in the shadow views (the addendum below).
-Not built yet: the transparent path; the shadow views need no conversion of their own. The task
-also waits for its first real user, since the splats add-on cannot take the hook. Date: 2026-10-23.
+the world rows to camera-relative rows; the count in the shadow views (the addendum below); and the
+hook's first real user, the night town's pines (the addendum of 26 October 2026). Not built yet:
+the transparent path; the shadow views need no conversion of their own. Date: 2026-10-23.
 Task: M3-E9.
 
 Summary: An add-on's instance draw reserves one indirect entry in each view's existing draw buffer,
@@ -341,9 +341,33 @@ The split writes the batch's arrays directly, and each column's length is a squa
 squares. The check now passes on both GPU paths, at 6.4 s on WebGPU and 3.4 s on WebGL2.
 
 One fault is recorded here and left open, by the coordinator's ruling of 26 October 2026. A device
-that chose the direct-draw path fixes that choice on the first frame, while the scene holds no
+that chose the direct-draw path fixes that choice on the first frame. That frame holds no
 feature-instance draw (`gpu_driven/mod.rs`, the `!self.created` test in `record_into`). A draw
-created after that frame on such a device takes the direct path. Its bucket's CPU count is 0,
+made after it on such a device takes the direct path. Its bucket's CPU count is 0,
 because the engine hides a feature draw from the culling shader, so the draw draws nothing and no
-error says why. No page meets this today: every first user adds its draw in the sketch's setup. It
-needs a task of its own, either to refuse such a draw or to move the session to the indirect path.
+error says why. No page meets this today: the hook's first user, the night town's pines, adds its
+draw in the sketch's setup. It needs a task of its own, either to refuse such a draw or to move the
+session to the indirect path.
+
+## Addendum, 26 October 2026: the hook's first real user
+
+The task's finish line wanted a first real user. A hook that nobody calls is unproven. The splats
+add-on cannot take it, so the first user is a shipped demo: the night town's pines, in
+`examples/showcase/night-town/trees.ts`. That demo draws 90 to 400 identical snow pines that ring
+the town, each casting shadows. Until now the page set their count for the quality preset.
+
+The pines now record through the hook. The page writes each pine's world matrix once with
+`setInstances`. A compute pass writes the count word for the current preset, and
+`render.setPassUniforms` changes the pass's values when the preset changes. Their material is a surface function that
+returns `defaultSurface`, so the lighting is the standard material's, and the draw casts and
+receives shadows as the batch did. On WebGL2, which has no compute pass, the page's count draws the
+pines, as this record's WebGL2 path describes.
+
+What it proved: `demo-night-town` draws the same frame as before on WebGPU, in compatibility mode
+and on WebGL2, against the references the demo already had. So the hook's rows, its count word, the
+conversion and the shadow views' count draw what a plain instance batch drew. A surface-function
+material on an instance draw needs nothing new in the engine.
+
+One limit belongs to the author's machine, not to the hook. The demo's software-GPU picture times
+out at 180 s there, and the unchanged demo times out the same way. That reference therefore comes
+from CI, as the demo's other software references do.
