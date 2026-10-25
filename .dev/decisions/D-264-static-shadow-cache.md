@@ -1,15 +1,16 @@
 # D-264: A cache of still casters in the directional light's cascades
 
-Status: proposed. Date: 2026-10-25. Task: M3-R11. The keep rate is counted. The cost of a cascade's
-pass and of a restore is not measured yet, so the table of data is empty and the decision waits.
-Not built yet: the record weighs the option and rules nothing until the figures are in.
+Status: decided on 2026-10-25. Task: M3-R11. Not built yet, and not to be built in this milestone.
+The record weighs two ways to stop a cascade redrawing depth that has not changed: a rest rule and a
+cache of the still casters. It rules against the cache on measured figures, and says what would
+change that.
 
-Summary: Weighs two ways to stop a cascade redrawing depth that has not changed. The first is a
-rest rule, which skips a cascade's pass while nothing in it moved. The second is a second shadow map
-that holds the still casters. A copy or dirty rectangles restore them before the moving casters draw
-over them. A cache could keep its layers in 50% to 98% of the frames of the
-engine's own scenes. The sun's step sets that share, not the camera. The record rules between the
-two after 1.0, and says what would change that answer.
+Summary: Do not build a cache of the still casters. The keep rate is not the reason. A cache could
+keep its layers in 50% to 98% of the scenes' frames, and the sun's step sets that share, not the
+camera. The reason is that the frames a cache can keep hold too little still work to pay for the
+restore. Creek's still casters cost about 0.3 ms in the cascade that reports. Its swaying grass
+costs 3.5 to 4 ms of an 11 ms frame. A rest rule is a separate question, and the record names the
+scene that would make it worth building.
 
 ## Question
 
@@ -164,45 +165,80 @@ tufts near the water, and its still casters are the rocks, the pebbles, the tree
 buildings. So the decisive figure is not the whole cascade pass. It is the share of that pass that
 the still casters take.
 
-### A first estimate of the crossover
+### The estimate before the measurement
 
 A cache pays when the frames it keeps multiply a cascade's draw by more than the restore costs. The
 cascade's draw is not the same as its pass. The still casters' share of the pass is what a cache
 removes, and the movers draw either way.
 
 D-16's figures put one far cascade of S4 at 0.163 to 0.200 ms, and a full layer's restore at
-0.045 ms. Suppose the still casters take two thirds of the draw. A frame that keeps its layer then
-saves 0.11 ms less the restore.
-
-At Low, on the cloud iPad, the same far cascade in every frame cost about 0.1 ms
+0.045 ms. At Low, on the cloud iPad, the same far cascade in every frame cost about 0.1 ms
 ([D-16](D-16-moving-casters-and-bias.md)). A 1,024-texel layer's restore is about a quarter of the
-0.045 ms above. A kept frame there saves near 0.06 ms of a 6.4 ms frame, about 1%.
+0.045 ms above.
 
 Those figures are an estimate built from D-16's measurements of another scene. They are not the
-ruling number, and the measurement of the engine's own scenes replaces them. What they suggest is
-that the answer turns on the mover mix rather than on the keep rate.
+ruling number. The measurement below replaces them.
 
-### What the figures must answer
+### The measured cost
 
-1. What does one cascade's pass cost in the scenes that a cache would serve, at Low and Medium, on
-   this computer and on a phone?
-2. What share of that pass do the still casters take, and what share the movers?
-3. What does each restore form cost? They are a whole-array copy, a pass that writes depth from
-   the cache, and dirty rectangles over the area that the moving casters covered.
-4. Where is the crossover: at which share of still casters does the restore cost less than the draw
-   it replaces?
-5. What does the bookkeeping cost the busiest thread, per cascade and per frame?
-6. Does the image change, on both GPU paths, with the sun held in steps of a quarter of a degree?
-7. What would a plain rest rule take, and is a cache worth building for the frames it leaves?
+The demos ran on the Mac in Chrome on WebGPU at Medium, from the development pages. Each figure is
+from two runs.
 
-| Measure | Today | With the cache | Device and browser |
-| --- | --- | --- | --- |
-| Share of frames a cascade could keep | 50% to 98%, counted | | |
-| GPU time of each cascade pass | | | |
-| Share of that pass that still casters take | | | |
-| Restore cost, per cascade and frame | | | |
-| GPU time per frame, Medium | | | |
-| Busiest thread, per frame | | | |
+| Scene | Frame GPU time | First cascade | Second cascade | The other passes |
+| --- | --- | --- | --- | --- |
+| The time-of-day demo | 2.74 and 2.96 ms | 0.048 and 0.042 ms | 0.094 and 0.125 ms | 1.15 to 1.79 ms |
+| Creek | 11.96 and 10.56 ms | 0.288 and 0.340 ms | 0.531 and 0.490 ms | 4.35 to 6.10 ms |
+
+Two cautions belong with that table. Both make the saving look smaller than it may be, not larger:
+
+- Creek's frame was inflated by the machine's load, which read 69. Its frame time on a quiet machine
+  is smaller, so a saving's share of the frame is understated here. Trust the absolute pass times,
+  and read a share of the frame as understated.
+- The third cascade never reaches the report. A far cascade draws once in three frames, and a pass
+  that appears in only some timed frames is left out. So 0.29 and 0.53 ms are a floor for Creek's
+  shadow cost, not the whole of it.
+
+### How much of that the movers take
+
+Creek again, with its swaying grass set not to cast shadows. This is the one change between the two
+groups, and the grass is Creek's only moving caster.
+
+| Measure | Grass casting | Grass not casting |
+| --- | --- | --- |
+| Frame GPU time | 11.96 and 10.56 ms | 8.04 and 6.39 ms |
+| Draw calls | 135 and 137 | 101 and 101 |
+| First cascade | 0.288 and 0.340 ms | 0.302 and 0.351 ms |
+| Second cascade | 0.531 and 0.490 ms | gone, and every later pass moves up one place |
+
+So the moving grass costs 3.5 to 4 ms of Creek's frame and about 35 draw calls. The still casters
+that a cache could keep cost about 0.3 ms in the cascade that reports, and 0.53 ms in the next. The
+movers are the bulk of Creek's shadow work, which is the opposite of the case a cache needs.
+
+### What the figures settle
+
+The split also says which cascade holds what. Creek's first cascade kept its 0.29 ms when the grass
+stopped casting, so its casters stand still. The second cascade's 0.53 ms went away entirely, so
+every caster in it is grass. The frame fell by far more than those two passes. The rest of the grass
+then sits in the third cascade, which the report does not name.
+
+So the still work that a cache could keep is 0.29 ms in the cascade that reports, plus whatever still
+casters the third cascade holds. Call it at least 0.29 ms and at most twice that.
+
+At Creek's 75% keep rate, 0.29 ms of still casters saves 0.22 ms. Restoring three layers takes back
+about 0.14 ms at D-16's measured 0.045 ms a layer. What is left is under 0.1 ms, and even doubling
+the still work leaves about 0.3 ms. That is 2.5% of Creek's inflated 11 ms frame, and less of a
+quiet one.
+
+The time-of-day demo is worse. Its two measured cascades total under 0.15 ms, which a single layer's
+restore can exceed.
+
+So a cache fails the rule's 3% test, on a quiet frame and on this inflated one alike. It would cost
+a second shadow map, a restore pass and per-frame invalidation bookkeeping.
+
+The rest rule takes a different set of frames, and the same data says so. It fires only where
+nothing in the cascade moved. In Creek the grass is in the cascades and moves in every frame, so
+there it never fires. In forest, whose casters all stand still, it fired in 98 to 100% of frames.
+Its prize is forest's whole cascade cost, which this record does not measure.
 
 ### How the figures were produced
 
@@ -217,6 +253,10 @@ passes of a frame. The frame graph declares every shadow pass before any view's 
 are examples, so the benchmark harness does not reach them. These figures come from the development
 server rather than a production build.
 
+The movers' share came from one edit to Creek: `castShadows` set false on the batch of grass tufts
+near the water, at `examples/showcase/creek/grass.ts`. The edit was reverted after the run and no
+part of it is committed.
+
 A fresh copy of the repository needs three things before a demo page will draw. Each one fails in a
 way that reads as a fault in the demo:
 
@@ -230,37 +270,43 @@ This measurement took the last two from another checkout of the repository. That
 because no file under `crates/` differs between the two commits. The bytes were built from the same
 sources. Copy a build artifact only after that check.
 
-The restore costs come from a probe page that draws only the restore. It measures a whole
-depth-layer copy, a small dirty rectangle, and a pass that writes depth from the cached texture.
-
 ## Look
 
-Both options draw the same shadows while the light turns smoothly. A cache needs the light held in
-steps. A quarter of a degree is the largest step that the October 2026 review of another engine's
-day-night cycle reports. The measurement must show whether a step that size shows in a shadow's
-edge. If it shows, the held light looks worse, and hard rule 40 refuses the cache.
+The two options draw the same shadows while the light turns smoothly. A cache would need the light
+held in steps. A quarter of a degree is the largest step that the October 2026 review of another
+engine's day-night cycle reports. The record does not measure whether a step that size shows in a
+shadow's edge, because the figures above refuse the cache before look decides. The rest rule changes
+no pixel.
 
 ## What would change the answer
 
-The keep rate is no longer the gate. The sun's step in a shipped day cycle passes the half-frames
-test, and a longer day raises it.
+For the cache, a scene would have to hold many more still casters than moving ones. They would also
+need to reach 3% of the frame after the restore's cost. That means a still casters' pass of several
+milliseconds, with movers confined to a small part of each cascade. No scene that the engine ships
+is close. Creek, its heaviest shadow scene, puts its movers first.
 
-The answer turns on two things instead:
-
-- A cascade's pass must cost enough that the share the option removes is at least 3% of the frame.
-  That needs many casters in a cascade.
-- For the cache, the still casters must be a large share of that pass, so that the restore costs
-  less than drawing them again. A scene where nearly every caster moves has nothing to cache.
-
-In what we ship, two things would settle it. The first is a journey that holds its camera still, so
-that a cascade's box holds for seconds at a time. The second is a sun that moves in steps measured
-in seconds rather than in frames, which a slower day cycle gives. A quarter-degree step that does
-not show in a shadow's edge would allow both.
+For the rest rule, the change is a shipped scene whose shadowed casters are mostly still. Forest is
+the nearest case today, and its cascade cost is not measured. One measurement there would decide
+whether the rule is worth building.
 
 ## Decision
 
-Pending the figures above.
+Do not build a cache of the still casters in this milestone. The keep rate passes, at 75% in Creek
+and up to 98% in the scenes whose sun stands still. The reason is the prize. The frames a cache can
+keep hold about 0.3 ms of still casters in the cascade that reports. A restore takes back about two
+thirds of what those frames save. A second shadow map and per-frame invalidation bookkeeping come on
+top.
+
+The rest rule is a different question and stays open. It costs nothing to try, it needs no
+bookkeeping, and it keeps every frame where nothing in a cascade moved. The same data says it will
+rarely fire where movers dominate, which is Creek. It is worth building only if a shipped scene
+turns out to be mostly still casters, and forest is the nearest candidate.
 
 ## Consequences
 
-Pending.
+- No code changes. The cascades' schedule, the shadow map and both frame builders stay as they are.
+- The published pages stay as they are. Nothing that a developer reads has changed.
+- The rest rule is not built, and this record does not rule it in. A later task may measure forest's
+  cascade cost and take it from there. It would start in `CascadeSchedule::plan`, which already
+  holds the box test and the moving-caster test it needs, and it would add no GPU object.
+- The count and the measurement tools are not kept in the repository.
