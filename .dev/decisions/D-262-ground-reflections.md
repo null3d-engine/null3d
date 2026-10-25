@@ -66,16 +66,16 @@ edge the mirror read 148 green and 380 texels from it the ice read 80, where the
 198. The demo's own picture reads 25 green just below the horizon and 4 near the camera, which is the
 same ice at a steeper angle.
 
-Those two points do not share the sky's own brightness, so the gap between them is not yet the
-surface's loss on its own: a flat lake reflects a different azimuth on each side of the frame. What
-the ice loses is measured by drawing one pixel twice, the same camera and the same sky and only the
-material changed, and that measurement is owed before the redraw. The geometry says what it will
-show: the sampled row's rays meet the lake 73 degrees from its normal, where a dielectric of index
-1.5 reflects about 22 per cent by Schlick's approximation, against the mirror's 100, so the ice's
-share of the mirror's reading is about a fifth before its roughness blurs the reflection, and the
-rest of the gap is the aurora being brighter at one azimuth than the other. What the record holds now
-is the shape of the answer: the lake takes the aurora, and the ice shows a share of it that its own
-reflectance allows, which the owner's dark mirror replaces with a surface that shows the sky.
+Those two points do not share the sky's own brightness, so the gap between them is not the surface's
+loss on its own: a flat lake reflects a different azimuth on each side of the frame. The surface's
+share is measured instead by drawing one pixel three times. The camera and the still sky stay the
+same in one run, and only the lake's material changes: the demo's ice, the same ice without
+roughness, and a white mirror. In green, in linear light, the ice reads 0.69 of the mirror just under
+the horizon, 0.57 on the middle row and 0.27 on the nearest row. The ice without roughness reads
+0.67, 0.34 and 0.03 at the same three points. So a dielectric follows its Fresnel curve, strong near
+the horizon and almost nothing at a steep angle, and the rough ice sits above that curve at the two
+steeper rows because its wider lobe gathers more of the bright sky. The gap between the mirror and the
+ice is the surface's own reflection, measured and expected, not a reflection that went missing.
 
 The frame itself, looked at rather than read as pixels: the left half carries the curtains' own
 shapes into the water, with their folds and rays repeated from the horizon to the bottom of the
