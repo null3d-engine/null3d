@@ -405,34 +405,6 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-assets.js', module: 'scene/assets.ts', loadedBy: 'page-sketch-runner.js' },
-	// The built-in environments' descriptions load on first use, and the page and the sketch worker
-	// each bundle their own copy: a sketch that names no built-in environment, as most do not,
-	// downloads neither.
-	{
-		name: 'page-environment.js',
-		module: 'scene/builtin-environments.ts',
-		loadedBy: 'page-assets.js',
-		onFirstCall: true,
-	},
-	{
-		name: 'sketch-worker-environment.js',
-		module: 'scene/builtin-environments.ts',
-		loadedBy: 'sketch-worker-assets.js',
-		onFirstCall: true,
-	},
-	// The reader of an environment map file loads on first use too, and both bundles carry a copy.
-	{
-		name: 'page-environment-file.js',
-		module: 'scene/environment-file.ts',
-		loadedBy: 'page-assets.js',
-		onFirstCall: true,
-	},
-	{
-		name: 'sketch-worker-environment-file.js',
-		module: 'scene/environment-file.ts',
-		loadedBy: 'sketch-worker-assets.js',
-		onFirstCall: true,
-	},
 	{ name: 'page-baked-light.js', module: 'scene/baked-light.ts', loadedBy: 'page-assets.js' },
 	// The half-float helpers are read by several of the start's own modules, so the bundler writes
 	// them to a file of their own that every page loads: a part of the start, not a first-use file.
@@ -452,15 +424,20 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'task-worker-ktx2.js', module: 'scene/ktx2-transcode.ts', loadedBy: 'task-worker.js' },
 	{ name: 'task-worker-grade.js', module: 'scene/grade-task.ts', loadedBy: 'task-worker.js' },
 	{ name: 'page-lut.js', module: 'scene/lut-files.ts', loadedBy: 'page-sketch-runner.js' },
+	// The reader of an environment map file and the built-in environments' descriptions load at the
+	// first call that reads them, from the assets file. The page and the sketch worker each bundle
+	// their own copy, and a sketch that reads neither, as most do not, downloads neither.
 	{
 		name: 'page-environment.js',
 		module: 'scene/environment-file.ts',
-		loadedBy: 'page-sketch-runner.js',
+		loadedBy: 'page-assets.js',
+		onFirstCall: true,
 	},
 	{
 		name: 'page-builtin-environments.js',
 		module: 'scene/builtin-environments.ts',
-		loadedBy: 'page-sketch-runner.js',
+		loadedBy: 'page-assets.js',
+		onFirstCall: true,
 	},
 	{ name: 'page-panorama.js', module: 'scene/panorama.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-sprites.js', module: 'scene/sprites.ts', loadedBy: 'page-sketch-runner.js' },
@@ -557,12 +534,14 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'sketch-worker-environment.js',
 		module: 'scene/environment-file.ts',
-		loadedBy: 'sketch-worker.js',
+		loadedBy: 'sketch-worker-assets.js',
+		onFirstCall: true,
 	},
 	{
 		name: 'sketch-worker-builtin-environments.js',
 		module: 'scene/builtin-environments.ts',
-		loadedBy: 'sketch-worker.js',
+		loadedBy: 'sketch-worker-assets.js',
+		onFirstCall: true,
 	},
 	{
 		name: 'sketch-worker-panorama.js',
@@ -919,40 +898,47 @@ export function findEngineParts(
 		namedCache.set(loader.file, names);
 		return names;
 	};
-	// Each part that a loader loads takes a file that the loader names, in the parts' order, and
-	// then a file that the loader reaches through the files it names: a feature's loader loads the
-	// loaders of the files that the feature reads, as the file loader loads the glTF loader. A
-	// round repeats while a loader that was found names the file of a part that waited for it.
+	const direct = (loader: BuiltFile) => new Set(mentions.get(loader.file) ?? []);
+	// Of several unclaimed files that hold a part's module, a part takes one that its loader names
+	// itself, then the one with the fewest engine modules, then the smaller, then the first by name.
+	// A worker that bundles a copy of the module usually holds more modules than the module's own
+	// file, though not always, so the file that the loader names comes first. The choice does not
+	// follow the order in which the build lists its files, which differs from Linux to macOS.
+	const engineModules = (file: BuiltFile) =>
+		file.sources.filter((source) => source.startsWith(ENGINE_SOURCE)).length;
+	const claim = (part: EnginePart, reach: (loader: BuiltFile) => ReadonlySet<string>): boolean => {
+		if (found.has(part.name)) return false;
+		const loader = found.get(part.loadedBy as string);
+		if (!loader) return false;
+		const claimed = new Set(found.values());
+		const reached = reach(loader);
+		const near = direct(loader);
+		const [file] = files
+			.filter((f) => !claimed.has(f) && reached.has(f.file) && holds(f, part.module))
+			.sort(
+				(a, b) =>
+					Number(near.has(b.file)) - Number(near.has(a.file)) ||
+					engineModules(a) - engineModules(b) ||
+					a.text.length - b.text.length ||
+					(a.file < b.file ? -1 : a.file > b.file ? 1 : 0),
+			);
+		if (file) found.set(part.name, file);
+		return file !== undefined;
+	};
+	// Each part that a loader loads takes a file that the loader names, and only when none does, a
+	// file that the loader reaches through the files it names: a feature's loader loads the loaders
+	// of the files that the feature reads, as the file loader loads the glTF loader. The files that
+	// loaders name are matched until no part finds one, before any part looks further: a part listed
+	// before its loader once took a worker's copy two steps down while its own file waited. A round
+	// repeats while a loader that was found names the file of a part that waited for it.
 	const loaded = parts.filter((part) => part.loadedBy);
 	for (let round = 0; round < 4; round++) {
 		let foundOne = false;
-		for (const part of loaded) {
-			if (found.has(part.name)) continue;
-			const loader = found.get(part.loadedBy as string);
-			if (!loader) continue;
-			const claimed = new Set(found.values());
-			const direct = new Set(mentions.get(loader.file) ?? []);
-			const file = files.find(
-				(f) => !claimed.has(f) && holds(f, part.module) && direct.has(f.file),
-			);
-			if (file) {
-				found.set(part.name, file);
-				foundOne = true;
-			}
+		for (let more = true; more; ) {
+			more = false;
+			for (const part of loaded) if (claim(part, direct)) more = foundOne = true;
 		}
-		for (const part of loaded) {
-			if (found.has(part.name)) continue;
-			const loader = found.get(part.loadedBy as string);
-			if (!loader) continue;
-			const claimed = new Set(found.values());
-			const file = files.find(
-				(f) => !claimed.has(f) && holds(f, part.module) && named(loader).has(f.file),
-			);
-			if (file) {
-				found.set(part.name, file);
-				foundOne = true;
-			}
-		}
+		for (const part of loaded) if (claim(part, named)) foundOne = true;
 		if (!foundOne) break;
 	}
 	const claimed = new Set(found.values());
