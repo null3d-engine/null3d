@@ -148,3 +148,23 @@ sky is seen follows its own setting. The background draws its layer at the backg
 and the lake reflects the map at the environment's. That is two settings doing what the API says,
 not a fault. The test holds it: the lake keeps the value it had while the background's intensity
 halves.
+
+## GPU check
+
+The branch changes how the GPU draws, so it carries the check's line on the empty commit
+`2b8c494b4`, exactly as the tool printed it:
+
+```text
+GPU-Checked: 9369b1380..a3947322c not judged: s4 medium 4.27 to 4.28 ms (+0.5%); s6 medium 4.54 to 4.57 ms (-1.6%); s4 high 4.55 to 4.33 ms (-10.8%); s6 high 4.71 to 4.68 ms (-0.7%); the benchmark pages changed between the commits
+```
+
+The check judged no time. The merge of the milestone branch moved the benchmark pages themselves,
+so the two builds drew different work. `not judged` therefore does not say that the figures were
+equal, and the figures above are not a time verdict for this change. The check dropped one baseline
+run, s4 on WebGPU round 1, which measured 124 Hz where the page runs at 120 Hz. Every other run
+held 120 Hz.
+
+A judged comparison needs a control build whose benchmark pages are the branch's own. That control
+is this branch without the two cost-bearing parts of the fix: the layer's exposure in the box
+template, and the intensity in its uniform. The pages stay the same under `bench/pages` and
+`bench/scenes`, so the tool would judge that comparison. Such a run has not been made.
