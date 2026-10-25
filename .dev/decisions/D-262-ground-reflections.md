@@ -129,10 +129,12 @@ first run after the fix still read the old numbers, because the dev server had s
 template from before the change: a template that a page's own WGSL joins is compiled by the server,
 so a change to it needs the server restarted before the next run.
 
-Every picture of a scene with a sky layer draws the layer at the exposure from now on, which is 9 per
-cent less at the aurora demo's night exposure of 1.1, so that demo's references are drawn again
-after this change lands. The held branch `fix/m3-sky-layer-light` holds a set drawn before it, and
-the owner's ruling on the lake's look draws them again in any case.
+Every picture of a scene with a sky layer draws the layer at the exposure from now on, which draws it
+10 per cent brighter at the aurora demo's night exposure of 1.1, since the pass now multiplies by
+that exposure. The six aurora references on the held branch were drawn before the change, so they
+stand 9 per cent below the new draw and no longer match. That is a fact about the old pictures and
+not a fault in the new draw, which is the sky the scene sets. They are drawn again once the owner's
+ruling on the lake's look is in, as this record says below.
 
 One fault beside this one was found and is not this record's:
 
