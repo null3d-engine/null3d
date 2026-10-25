@@ -7,16 +7,17 @@ The charge is gone on both devices, in the frame time that each pays. The bar's 
 render worker's time per frame. On the iPhone 18 Pro it reads under 0.5 ms at both render scales. On
 the iPad 10 at its own preset it reads 0.52 and 0.64 ms at full scale, above the 0.5 ms bar, and 0.29
 and 0.34 ms at half scale. That full-scale frame is GPU-bound, so the metric there is a slice of the
-cost, and the frame interval shows the charge in full. At the Low preset the iPad reads 0.24 ms at
-full scale and -0.02 ms at half scale. Whether that meets the bar is the owner's decision. Date:
-2026-10-25, updated 2026-10-26. Task: M3-R23.
+cost, and the frame interval shows the charge in full. A later run at the Low preset compared
+ambient occlusion off with on, with the switch at its default in both halves, so it could not isolate
+the fix. Whether the bar is met on the iPad is the owner's decision. Date: 2026-10-25, updated
+2026-10-26. Task: M3-R23.
 
 Summary: When a screen step splits the depth prepass from the opaque pass on WebGL2, the prepass
 drew into a framebuffer of its own. That framebuffer held the scene depth and a full-canvas stand-in
 color that the prepass never wrote. The pass's end then invalidated that color. Safari 26.6 and later
 charges time for that, by an amount that follows the texture's size. The device run chose a
 depth-only framebuffer. On an iPhone 18 Pro it takes the charge from 3.6 ms to 0.2 ms. On an iPad 10
-it takes 4.8 to 7.2 ms of frame time and gives 5.5 ms of it back. Keeping the color and clearing it
+the same color costs 4.8 to 7.2 ms of frame time, and the fix gives it back. Keeping the color and clearing it
 does not remove the charge. This is the whole of M2-R33's fixed cost, which D-193's addendum had
 blamed on the horizon search and the denoise draws.
 
@@ -110,10 +111,28 @@ on both devices. The iPhone's render-worker rise was 0.18 ms at render scale 1 a
 and its interval did not move. The iPad's was 0.64 ms at scale 1 and 0.34 ms at 0.5, with the
 interval at 21.76 to 27.24 ms at full scale and 20.56 to 21.64 ms at half scale.
 
-A third run took the iPad's two pages at the Low preset, which is the preset the phone uses. At
-render scale 1 the interval went from 15.60 to 20.69 ms and the render worker's rise was 0.24 ms. At
-scale 0.5 the interval went from 15.56 to 15.54 ms and the rise was -0.02 ms. The full-scale frame is
-still GPU-bound there, at 48 frames a second against 64, so that figure is again a slice.
+### The Low preset run
+
+A third run took the iPad's two pages at the Low preset, which is the preset the phone uses. It
+answers a different question, and it does not isolate the prepass.
+
+1. The run compares the ambient occlusion cost page's own two halves. One draws the scene with the
+   effect off, and the other draws it with the effect on. Both ran with `prepass-color` at the
+   engine's default, which attaches no color. So the only difference between them is ambient
+   occlusion, with the screen steps and the split prepass that it brings. The switch is not varied,
+   and the stand-in color is in neither state.
+2. The render worker moves 0.24 ms while the interval moves 5.09 ms because the frame is GPU-bound
+   at that setting. With the effect off it drew at the display's rate, 15.60 ms. With it on it fell
+   to 20.69 ms, which is 48 frames a second against 64. The worker waits once a frame inside
+   Safari's GPU process, and that wait covers only part of the added GPU work. The rest lengthens
+   the frame.
+3. The iPad at Low does not hold 60 frames a second with the effect on. A 20.69 ms frame is over the
+   16.7 ms that 60 Hz allows. So a charge that leaves the frame over budget is not shown to be gone
+   by this run.
+
+So the Low run cannot isolate the prepass either. Its 0.24 ms is not a figure for the stand-in
+color, and it is not a reading under the bar. At half scale the page held its rate, 15.56 against
+15.54 ms, and ambient occlusion's whole addition there was -0.02 ms.
 
 The records are
 [the iPhone comparison run](../tested-devices/iphone-18-pro-safari/20261025-174232-ao-prepass-color.md),
@@ -144,10 +163,11 @@ The bar reads the render worker's rise. On the iPhone 18 Pro it is met at both r
 iPad 10 at its own preset it is met at scale 0.5, at 0.29 and 0.34 ms. At scale 1 it reads 0.52 and
 0.64 ms. That frame is GPU-bound: it drew at 37 frames a second with ambient occlusion on against 46
 with it off, and its busiest thread used 1.46 ms of the 27.24 ms frame. So the metric there covers
-0.64 ms of the 5.48 ms that the frame grew, and it cannot show the charge. At the Low preset the same
-metric reads 0.24 ms at scale 1 and -0.02 ms at 0.5. So the full-scale iPad figure misses the bar as
-written at the page's own preset, and the reading at Low is under it. The record states both and
-leaves the ruling to the owner.
+0.64 ms of the 5.48 ms that the frame grew, and it cannot show the charge. The Low preset run cannot add a
+reading: it compared ambient occlusion off with on, with the switch at its default in both halves,
+so its 0.24 ms is not a figure for the stand-in color. So the full-scale iPad figure misses the bar
+as written, and no run has yet given a clean full-scale reading of the fix on that device. The
+record states that and leaves the ruling to the owner.
 
 ## Consequences
 
