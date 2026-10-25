@@ -227,7 +227,7 @@ export const MODEL_SCENES = {
 		url: IRIDESCENCE_METALLIC,
 		environment: true,
 		environmentHdr: STUDIO_HDR,
-		environmentIntensity: 0.35,
+		environmentIntensity: 0.15,
 		ambientOnly: true,
 		frame: { center: [0, 0, 0], radius: 9 },
 		view: [0.35, 0.28, 1],
