@@ -82,7 +82,7 @@ The null3D Vite plugin compiles each `.wgsl` file that the add-on imports, for W
 
 The engine's start stays small, and so does an add-on's. The files that the add-on loads after the first frame hold to a budget in each of three columns: raw bytes, gzip and Brotli. The check prints each file that goes over its budget.
 
-A custom material's, a custom effect's and a custom tone curve's compiled builds load on first use, in files of their own. Those files take the budget for shader builds, which is larger than the budget for code. A shader's builds therefore do not fill the add-on's entry. [Custom shaders](custom-shaders.md#where-a-custom-materials-builds-go) shows the files.
+A custom material's, a custom effect's and a custom tone curve's compiled builds load on first use, in files of their own. Those files take the budget for shader builds, which is larger than the budget for code. Not all compiled WGSL leaves the entry, though. A whole shader's or a sky layer's builds sit in the file that imports them, and so do an effect's pieces. The check counts those bytes as shader data, and holds them to the budget for shader builds. A file that holds both therefore answers both budgets. [Custom shaders](custom-shaders.md#where-a-custom-materials-builds-go) shows the files.
 
 ## Name a page
 
