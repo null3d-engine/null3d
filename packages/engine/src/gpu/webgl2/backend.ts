@@ -31,7 +31,7 @@ import {
 	CLOUD_STEPS_WORD,
 	LAYER_WORD,
 	LIGHT_BUFFER_WORD,
-} from '../environment-steps';
+} from '../environment-words';
 import { floatOfBits } from '../float-bits';
 import { GpuMemory, textureBytes } from '../memory';
 import type { ReadSink } from '../readback';

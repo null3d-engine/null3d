@@ -43,23 +43,15 @@ export const SKY_BYTES = 64;
 /** Bytes of the layer's values, as the shader's `SkyLayerValues` holds them. */
 export const LAYER_BYTES = 32;
 
-/**
- * The words of a stage's command that name the layer over the sky: the template of the layer's
- * build of this shader, its four cloud values, the share of the sun that it hides, its opacity,
- * its clock, and the buffer that a light capture lands in. The engine core writes them, as
- * `crates/null3d-render/src/sky_maps.rs` lays them out.
- */
-export const LAYER_WORD = 20;
-export const LAYER_VALUES = 21;
-export const LIGHT_BUFFER_WORD = 28;
-
-/**
- * The words that name the volumetric cloud tier's step count and its noise field's texture, which
- * a stage's shader draws the march with. The engine core writes them after the layer's words, as
- * `crates/null3d-render/src/sky_maps.rs` lays them out.
- */
-export const CLOUD_STEPS_WORD = 29;
-export const CLOUD_FIELD_WORD = 30;
+// The words of a stage's command sit in environment-words.ts, which every start reads while the
+// steps load only with a sketch's first map.
+export {
+	CLOUD_FIELD_WORD,
+	CLOUD_STEPS_WORD,
+	LAYER_VALUES,
+	LAYER_WORD,
+	LIGHT_BUFFER_WORD,
+} from './environment-words';
 
 /**
  * The texels of a light capture's target, one for each of the nine spherical harmonics
