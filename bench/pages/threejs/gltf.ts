@@ -40,7 +40,7 @@ run('hold', async () => {
 	if (!model) throw new Error(`no model scene is named ${name}`);
 	const { three, renderer, readFrame } = await startThree(rendererName);
 	const scene = new three.Scene();
-	if (model.ownLights) {
+	if (model.ownLights || model.ambientOnly) {
 		scene.background = new three.Color(MODELS_BACKGROUND);
 		scene.add(new three.AmbientLight(DIM_AMBIENT.color, DIM_AMBIENT.intensity));
 	} else lightScene(three, scene, { sun: SUN, ambient: AMBIENT }, MODELS_BACKGROUND);
@@ -50,8 +50,11 @@ run('hold', async () => {
 			rendererName === 'webgpu' ? await import('three/webgpu') : await import('three')
 		) as typeof import('three');
 		const pmrem = new build.PMREMGenerator(renderer as never);
-		const hdr = await new HDRLoader().setDataType(build.FloatType).loadAsync(MODELS_HDR);
+		const hdr = await new HDRLoader()
+			.setDataType(build.FloatType)
+			.loadAsync(model.environmentHdr ?? MODELS_HDR);
 		scene.environment = pmrem.fromEquirectangular(hdr).texture;
+		scene.environmentIntensity = model.environmentIntensity ?? 1;
 	}
 
 	// KTX2Loader finds the transcoder that three.js ships beside it, which the build copies.

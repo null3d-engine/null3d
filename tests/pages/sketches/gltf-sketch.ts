@@ -29,13 +29,16 @@ export default defineSketch(async ({ scene, assets, post, page }) => {
 	if (!model) throw new Error(`no model scene is named ${name}`);
 	post.set({ toneMapping: 'none' });
 	scene.setBackground(MODELS_BACKGROUND);
-	if (model.ownLights) scene.createAmbientLight(DIM_AMBIENT);
+	if (model.ownLights || model.ambientOnly) scene.createAmbientLight(DIM_AMBIENT);
 	else {
 		scene.createDirectionalLight(SUN);
 		scene.createAmbientLight(AMBIENT);
 	}
 	if (model.environment)
-		scene.setEnvironment(await assets.loadEnvironment(sampleEnvironment(MODELS_HDR)));
+		scene.setEnvironment(
+			await assets.loadEnvironment(sampleEnvironment(model.environmentHdr ?? MODELS_HDR)),
+			{ intensity: model.environmentIntensity ?? 1 },
+		);
 	const prefab = await assets.loadGltf(modelUrl(model));
 	const pause = Number(params.get('pause') ?? 0);
 	if (pause > 0) await new Promise((resolve) => setTimeout(resolve, pause));
