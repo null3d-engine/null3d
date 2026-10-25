@@ -545,8 +545,8 @@ user that spends it.
 
 `packages/cli/src/assets/levels.test.ts` holds two facts. Each level and every coarser level share
 one prefix of the new numbering. Every triangle keeps the positions it drew before the reorder.
-Before the step the coarsest level's 515 vertices spread up to 12,245, and the levels together
-reach the base mesh's last index, 16,640, so the prefix check fails without it.
+Before the step the coarsest level's 515 vertices spread up to 12,245. The levels together reach
+the base mesh's last index, 16,640. So the prefix check fails without it.
 
 ## Addendum: the levels' cost on an iPad and a phone (25 October 2026, M3-L2)
 
