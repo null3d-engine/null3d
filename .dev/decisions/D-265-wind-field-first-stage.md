@@ -98,6 +98,11 @@ divergence, and the projection removes it.
 - **Evidence:** the add-on's tests prove the field moves a plant card, and that a frozen field fails
   those tests. The allocation figure and `check-addon`'s page, cost and allocation gates are owed
   while timing runs are barred, so this record claims none of them.
+- **`sample` and the allocation gate:** the gate reads the add-on's page, and that page never calls
+  `sample`, so the gate cannot see it. The call belongs in the benchmark harness as a switch when
+  the gate first runs. It does not belong in the picture page, which would move every picture for a
+  measure it does not need. Until then, a source test holds the functions that a frame calls to the forms that
+  allocate: an object literal, an array literal, a function expression, a for-of and a `new`.
 - **The size gate is not this add-on's fault:** at head `8d66b64ca`, the command in
   `docs/guides/add-ons.md`, `bunx @null3d/cli check-addon packages/wind --skip-browser`, builds the
   add-on and reports its entry at 89.5 KB raw against a 64 KB code budget. The WebGL2 fallback
