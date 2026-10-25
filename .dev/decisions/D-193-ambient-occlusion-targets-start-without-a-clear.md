@@ -86,3 +86,25 @@ denoise draws, or the frame's fence, own what is left. The change stays: a clear
 whole target, and the targets read only what their steps write. Two device measurements decide
 what is left: a call profile of the frame, and a run that forces contact shadows, which skip the
 horizon search. The records of both land in the tested-device pages with their figures.
+
+## Addendum, 25 October 2026: what owned the rest
+
+The suspects above are wrong. The horizon search and the denoise draws do not own the cost. Neither
+does the frame's fence. The prepass's stand-in color owns it. That color is attached and never
+written, and the pass's end invalidates it. Safari 26.6 and later charges render-worker time for
+that, and the charge follows the texture's size
+([D-265](D-265-the-prepass-stand-in-color.md)).
+
+The profile's 0.95 ms for each clear above was this charge, read as a clear. The same page measures a
+clear of the full-canvas target at 0.22 to 0.24 ms. It measures the unwritten color at 3.78 to
+3.92 ms. The stand-alone page charges the iPads too: 3.26 ms on the iPad 10 and 12.28 ms on the
+iPad Pro 13. In the engine's own frame, though, the iPad 10 pays only about a tenth of a millisecond
+of it ([D-265](D-265-the-prepass-stand-in-color.md)).
+
+The 0.2 to 0.7 ms quoted above came from the Medium preset's frame. That frame was measured before
+the prepass's stand-in color became a load. So the figure does not show that the iPads are free of
+the charge.
+
+The prepass's stand-in color is the only attachment of this kind in the engine, as D-265's search
+shows. This decision's rule therefore stands unchanged for the three steps' targets.
+
