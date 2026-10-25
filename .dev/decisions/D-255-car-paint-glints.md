@@ -43,8 +43,8 @@ instead. The surface function cannot see a light, so the model needs the materia
   `atan(1.414 * tilt)`, the corner of the square that the two random tilts span.
 - The facet density is `1 / (2 pi (1 - cos(cap)))`.
 - The light's solid angle is `2 pi (1 - cos(angle))`, where `angle` is its angular radius. A
-  directional light has no size in the engine, so the paint gives it one: the default is `0.02`
-  radians, about a studio softbox, and a look can set a smaller sun or a broader light.
+  directional light has no size in the engine, so the paint gives it one. The default is `0.25`
+  radians, a softbox 28.6 degrees across. A look can set a smaller sun or a broader light.
 - The chance that one facet reflects is `density * solid / (4 cos(half, light))`, clamped to 1.
   This is the small-source form of the paper's probability.
 - The footprint's area in cells is `step.x * step.y`, clamped to at least 1.
@@ -90,7 +90,7 @@ say so.
 
 The pictures drawn for this record showed no glint, and the light's size is why. The chance that one
 flake reflects the main light is the light's solid angle over the cap of flake normals. A radius of
-0.02 radians is a light 1.1 degrees across, so about one flake in 1,400 reflected it. The count was
+0.02 radians is a light 2.3 degrees across, so about one flake in 1,400 reflected it. The count was
 almost always zero. Each caught flake added its light where the smooth highlight was already clipped
 or too dim to show.
 
@@ -99,7 +99,7 @@ smooth highlight away. Across all six references no pixel grew brighter than one
 fell by up to 76 steps over about 1,100 pixels. The sparkle the model describes had not drawn at
 all. A test that only compared the two pictures would have passed such a paint.
 
-The default now names 0.25 radians, a softbox 14 degrees across. That is what the option's text
+The default now names 0.25 radians, a softbox 28.6 degrees across. That is what the option's text
 claimed before it.
 
 Measured on the Mac's GPU with the paint test's own body, the pixels that grew brighter than 8 steps
@@ -117,24 +117,30 @@ and the model smooths it, as this record intends for a distant car. That leaves 
 show the feature. A closer camera in the demo, or coarser flake cells on its paint, would show it.
 The choice belongs to the owner's eye, and the demo keeps its settings for now.
 
+A first version of this addendum, and the fix commit's message, called those radii the light's
+width. A radius of 0.02 radians spans 2.3 degrees and one of 0.25 spans 28.6. This line is the
+correction.
+
 ## Runs
 
 The addendum's figures come from the two reference sets' picture pairs, and these runs measured the
 same to within a step. Each ran on the Mac that holds this checkout:
 
-- `bun run --cwd tests test car-paint.spec.ts` on the Mac's GPU, 25 October 2026, 15:47 to 15:48,
-  1 passed (29.1 s): flakes mean 0.00267, share 0.01650, 228 glints.
-- The same command with `CI=1`, on SwiftShader, 15:49 to 15:51, 1 passed (53.7 s): mean 0.00267,
-  share 0.01651, 232 glints.
-- `bun run test:images` on the Mac's GPU, 15:51 to 16:18, 1,590 passed and 1 failed. `demo-aurora`
-  on webgl2 failed with E1408. That is a capture fault of the sky work, not this paint.
-  `demo-coat-and-sheen` passed on all three tiers. The new default therefore moved that picture by
-  less than the comparison's 0.1 per cent.
-- On the merged tip 383c16bde, `images.spec.ts car-paint.spec.ts -g car-paint`, 20:22 to 20:43,
-  16 passed (36.7 s) on the Mac's GPU. The same run with `CI=1`, 21:12 to 21:13, passed 16 (1.0 m)
-  against the software set that CI drew.
+- On the Mac's GPU, `images.spec.ts car-paint.spec.ts -g car-paint`, 25 October 2026, 15:49:08 to
+  15:49:43: 7 passed and 9 failed (31.6 s). The failures were the nine paint pictures against the
+  old look, whose own candidates this run drew. The part test passed, with flakes mean 0.00267,
+  share 0.01650 and 228 glints.
+- `car-paint.spec.ts` with `CI=1`, on SwiftShader, 15:49:57 to 15:51:30, 1 passed (53.7 s): mean
+  0.00267, share 0.01651, 232 glints.
+- `bun run test:images` on the Mac's GPU, 15:51:45 to 16:18:59, 1,590 passed and 1 failed.
+  `demo-aurora` on webgl2 failed with E1408. That is a capture fault of the sky work, not this
+  paint. `demo-coat-and-sheen` passed on all three tiers. The new default therefore moved that
+  picture by less than the comparison's 0.1 per cent.
+- On the merged tip 383c16bde, `images.spec.ts car-paint.spec.ts -g car-paint`, 20:22:27 to
+  20:43:48, 16 passed (36.7 s) on the Mac's GPU. The same run with `CI=1`, 21:12:32 to 21:13:34,
+  passed 16 (1.0 m) against the software set that CI drew.
 - CI run 40192893324 drew that software set on 25 October 2026, and the nine paint candidates of
   its browser shards 13 and 14 were accepted.
 
-The local runs' logs are `/tmp/paint-mac-spec.log`, `/tmp/paint-swift.log`,
+The local runs' logs are `/tmp/paint-mac2.log`, `/tmp/paint-swift.log`,
 `/tmp/paint-full-mac.log`, `/tmp/paint-merged.log` and `/tmp/paint-swift-final.log` on that machine.
