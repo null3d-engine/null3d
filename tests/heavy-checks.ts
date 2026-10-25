@@ -15,6 +15,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { HEAVY_CHECKS } from './lib/heavy-checks.ts';
 import { budgetNote, checkTimeoutMs } from './lib/run-budget.ts';
+import { exactTestPath } from './lib/test-paths.ts';
 
 /** The repository, which the checks' files are relative to. */
 const ROOT = join(import.meta.dirname, '..');
@@ -27,7 +28,14 @@ for (const { file, ceilingMiB } of HEAVY_CHECKS) {
 	const timeout = checkTimeoutMs();
 	const result = spawnSync(
 		'bun',
-		['test', `--timeout=${timeout}`, '--preload', CEILING, '--conditions=null3d-source', file],
+		[
+			'test',
+			`--timeout=${timeout}`,
+			'--preload',
+			CEILING,
+			'--conditions=null3d-source',
+			exactTestPath(file),
+		],
 		{
 			cwd: ROOT,
 			stdio: 'inherit',
