@@ -264,6 +264,7 @@ export type {
 	DepthBias,
 	Geometry,
 	IntegerArray,
+	MapUvTransforms,
 	Material,
 	MaterialFeatures,
 	MaterialOptions,

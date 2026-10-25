@@ -134,9 +134,6 @@ export const ELEMENTS: readonly ElementCell[] = [
 	{ symbol: 'Og', name: 'Oganesson', mass: '(294)', group: 18, period: 7 },
 ];
 
-/** The stage's size in CSS pixels, which are the scene's units for a label that is a plane. */
-export const STAGE = { width: 960, height: 540 } as const;
-
 /** The camera of the example's table layout: a 40-degree field of view, 3,000 units from the table. */
 export const CAMERA = { fov: 40, near: 1, far: 10000, distance: 3000 } as const;
 

@@ -50,16 +50,16 @@ coordinates, so the caller sets their density and spacing.
 | `roughness` | The base's perceptual roughness | `0.34` |
 | `clearcoat` | How much clear coat covers the paint | `1` |
 | `clearcoatRoughness` | The coat's perceptual roughness | `0.02` |
-| `flakes` | `{ cells, tilt, angle, max }`, or `false` | `{ cells: [120, 210], tilt: 0.25, angle: 0.02, max: 64 }` |
+| `flakes` | `{ cells, tilt, angle, max }`, or `false` | `{ cells: [120, 210], tilt: 0.25, angle: 0.25, max: 64 }` |
 | `seams` | `{ spacing, width, shade }`, or `false` | `{ spacing: [0.34, 0], width: 0.0022, shade: 0.85 }` |
 | `weave` | `{ cells, shine }`, or `false` | `false` |
 
 `flakes.cells` and `weave.cells` count cells across each texture coordinate. `flakes.tilt` is how
 far the flakes' normals spread from the surface normal. `flakes.angle` is the main light's angular
-radius in radians, and `flakes.max` bounds a bright single flake. `seams.spacing` gives the interval
-along each coordinate, and a value of 0 draws no seam along that coordinate. A look with `weave`
-shapes each tow's normal, so the highlight runs along the tow. A look without one draws a smooth
-panel.
+radius in radians, which sets how many flakes glint at once, and `flakes.max` bounds a bright single
+flake. `seams.spacing` gives the interval along each coordinate, and a value of 0 draws no seam
+along that coordinate. A look with `weave` shapes each tow's normal, so the highlight runs along the
+tow. A look without one draws a smooth panel.
 
 ## Cost
 

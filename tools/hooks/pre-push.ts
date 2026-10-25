@@ -1,18 +1,32 @@
 // Pre-push guard for pushes to main (D-157's addendum of 15 October 2026). A push to the milestone
-// branch is refused unless the coordinator's landing session sets NULL3D_MILESTONE_LANDING=1: a
-// helper saves its work on its own branch, and the coordinator lands it. The landing's push runs
-// the guards that read the whole repository, which a merge can break with no conflict: the decision
-// records' numbers, and the unit tests that hold the release guide, the shipped network calls and
-// the timing specs' switches to every package and spec in the tree, and the repository's quick
-// check, with the lint, the picture references and the add-on checks. They take seconds, where the
-// unit suite takes minutes, and without them each such fault showed only a CI run later. With
-// NULL3D_LANDING_CRATE_TESTS=1, a landing that changes Rust also runs the tests of the crates it
-// changes, in the queue's CPU lane, which can wait long on a loaded machine. Any other
-// branch only saves work, so the hook runs nothing for it. A push to main runs those guards too,
-// and first checks the commits it adds:
+// branch is refused unless the session that checks each landing sets NULL3D_MILESTONE_LANDING=1: a
+// helper saves its work on its own branch, the coordinator merges it, and that session, the CI
+// session since 25 October 2026 (D-259), checks the range and pushes it. The landing's push is
+// refused when this checkout does not hold the pushed commit as its HEAD, the branch's commit on
+// the remote, or a copy of the remote's main. It first checks the commits as a push to main does:
+// the messages and trailers from where the branch left main, as CI's `commits` job reads them, and
+// the merges and copies among the commits it adds. Then it runs the guards that read the whole
+// repository, which a merge can break with no conflict: the decision records' numbers, and the
+// unit tests that hold the release guide, the shipped network calls and the timing specs'
+// switches to every package and spec in the tree, and the repository's quick check, with the
+// lint, the picture references and the add-on checks. They take seconds, where the unit suite
+// takes minutes, and without them each such fault showed only a CI run later.
+// With NULL3D_LANDING_CRATE_TESTS=1, a landing that changes Rust also runs the tests of the crates
+// it changes, in the queue's CPU lane, which can wait long on a loaded machine. A landing may also
+// add no problem to the milestone status: the status tool's check (`bun tools/pr-status.ts
+// --check`) runs on the pushed commit and on the branch's commit on the remote, and a `stale:` or
+// `owed:` line that only the pushed commit has refuses the push, with the line and its task. A push
+// may remove such lines. When the landing changes the status on purpose,
+// NULL3D_STATUS_CHANGE=<reason> lets it pass and prints the reason with the lines it lets through.
+// The check must run on the pushed commit, which needs the checkout's plan, whatever the reason; a
+// base where it does not run, such as where the branch left main on a first push, reads as no
+// lines, so such a push needs the reason. Any other branch only saves work, so the hook runs
+// nothing for it. A push to
+// main runs those guards too, and first checks the commits it adds:
 //   1. their messages and trailers, with commitlint and check-trailers.ts over main's commit before
-//      the push up to the push, as CI's `commits` job does, and their merges, with check-merges.ts,
-//      which refuses a merge that carries new work;
+//      the push up to the push, as CI's `commits` job does, their merges, with check-merges.ts,
+//      which refuses a merge that carries new work, and with check-copies.ts, any second copy of a
+//      commit that the branch already holds;
 //   2. when the push changes Rust code or Cargo settings, `cargo check --workspace`, since a merge
 //      that keeps both sides of a struct or a constant often looks valid until it compiles;
 //   3. then the tests of each crate that the push changes, through cargo-nextest's `ci` profile with
@@ -35,20 +49,26 @@
 // holds no such commit to compare with, and no local main ref meets the pushed commit, it refuses
 // the push and asks for a fetch, since it cannot say what the push adds.
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { touchesRust } from './check-rust';
 import { keptCommits } from './check-trailers';
 
 /** The trailer that skips the check, with the reason for the emergency. */
 export const SKIP_TRAILER = 'Push-Check-Skipped';
-/** The milestone branch, which only the coordinator's landing session pushes. */
+/** The milestone branch, which only the session that checks each landing pushes. */
 export const MILESTONE_REF = 'refs/heads/m3-start';
 /**
- * The variable that names the coordinator's landing session. A helper leaves it unset, so its push
- * to the milestone branch is refused. The landing session sets it for its own push.
+ * The variable that names the session that checks and pushes each landing, the CI session since
+ * 25 October 2026 (D-259). A helper leaves it unset, so its push to the milestone branch is refused.
  */
 export const LANDING_VARIABLE = 'NULL3D_MILESTONE_LANDING';
+/**
+ * The variable whose reason lets a landing add a problem to the milestone status, for a landing that
+ * changes the status on purpose.
+ */
+export const STATUS_CHANGE_VARIABLE = 'NULL3D_STATUS_CHANGE';
 /** The test that builds every shader, which CI runs in a job of its own. */
 const WHOLE_SHADER_BUILD =
 	'the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule';
@@ -87,14 +107,14 @@ export function pushToMilestone(refs: readonly PushedRef[]): PushedRef | undefin
 }
 
 /**
- * The message that refuses a push to the milestone branch from a session that is not the
- * coordinator's landing, or undefined when the push may go ahead. A helper saves its work on its
- * own branch and the coordinator lands it, so a helper's push here would put unfinished work on the
- * branch that every other helper and CI read.
+ * The message that refuses a push to the milestone branch from a session that does not check the
+ * landings, or undefined when the push may go ahead. A helper saves its work on its own branch, the
+ * coordinator merges it, and the CI session checks the range and pushes it, so a helper's push here
+ * would put unchecked work on the branch that every other helper and CI read.
  */
 export function milestoneRefusal(refs: readonly PushedRef[], landing: boolean): string | undefined {
 	if (landing || !pushToMilestone(refs)) return undefined;
-	return `pre-push: this push writes ${MILESTONE_REF}, and only the coordinator's landing session pushes the milestone branch. Push your own branch and let the coordinator land it. If you are that session, set ${LANDING_VARIABLE}=1 for the push.`;
+	return `pre-push: this push writes ${MILESTONE_REF}, and only the session that checks the landings pushes the milestone branch. Push your own branch and let the coordinator land it. If you are that session, set ${LANDING_VARIABLE}=1 for the push.`;
 }
 
 /** The reason that a `Push-Check-Skipped:` trailer gives on any of the messages, if one does. */
@@ -143,8 +163,9 @@ export function changedCrates(
 /**
  * The unit tests that read every package, spec or crate of the repository, so a merge that adds one
  * can break them: the release guide's package table, the CDN build's add-ons, the record of shipped
- * network calls, the timing specs' switch names, and CI's workflow against the scripts and files
- * that its jobs read.
+ * network calls, the timing specs' switch names, CI's workflow against the scripts and files
+ * that its jobs read, and the size report's list of the engine's parts, which two landings can each
+ * change so that a name repeats or a part finds the wrong file.
  * Each file takes a few seconds at most.
  */
 export const GUARD_TESTS = [
@@ -153,6 +174,7 @@ export const GUARD_TESTS = [
 	'tools/lib/network-use.test.ts',
 	'tests/lib/priority-setup.test.ts',
 	'tools/lib/ci-workflow.test.ts',
+	'tools/lib/size-report.test.ts',
 ] as const;
 
 /** One step of the check: what it runs, why, and the queue lane it takes, or none. */
@@ -191,25 +213,7 @@ export function plan(
 	crates: ReadonlyMap<string, string>,
 	nextest: boolean,
 ): Step[] {
-	const range = `${base}..${head}`;
-	const steps: Step[] = [
-		{
-			why: 'the commits that the push adds to main must follow the commit message rules',
-			lane: 'QUICK',
-			command: ['bunx', 'commitlint', '--from', base, '--to', head],
-		},
-		{
-			why: 'the commits that the push adds to main must carry their trailers',
-			lane: 'QUICK',
-			command: ['bun', 'tools/hooks/check-trailers.ts', range],
-		},
-		{
-			why: 'a merge commit that the push adds to main must hold only resolutions and mechanical fixes',
-			lane: 'QUICK',
-			command: ['bun', 'tools/hooks/check-merges.ts', range],
-		},
-		...guardSteps(),
-	];
+	const steps: Step[] = [...commitSteps(base, base, head, 'main', 'QUICK'), ...guardSteps()];
 	if (!touchesRust([...files])) return steps;
 	steps.push({
 		why: 'the push changes Rust code or Cargo settings, so the merged workspace must compile',
@@ -218,6 +222,46 @@ export function plan(
 	});
 	const tests = crateTests(files, crates, nextest);
 	return tests ? [...steps, tests] : steps;
+}
+
+/**
+ * The checks of the commits that a push adds to `target` up to `head`: the messages and trailers of
+ * every commit since `messagesFrom`, and of every commit since `added`, its merges, which must hold
+ * only resolutions and mechanical fixes, and that none is a second copy of a commit that the branch
+ * already holds. A push to main reads both from main's commit before the push. A landing reads the
+ * messages from where its branch left main, as CI's `commits` job does: the GPU check's and the Mac
+ * references' trailers are read over the whole range, so an earlier commit of the branch may carry
+ * the trailer that a later one needs.
+ */
+function commitSteps(
+	messagesFrom: string,
+	added: string,
+	head: string,
+	target: string,
+	lane: Step['lane'],
+): Step[] {
+	return [
+		{
+			why: `the commits that the push adds to ${target} must follow the commit message rules`,
+			lane,
+			command: ['bunx', 'commitlint', '--from', messagesFrom, '--to', head],
+		},
+		{
+			why: `the commits that the push adds to ${target} must carry their trailers`,
+			lane,
+			command: ['bun', 'tools/hooks/check-trailers.ts', `${messagesFrom}..${head}`],
+		},
+		{
+			why: `a merge commit that the push adds to ${target} must hold only resolutions and mechanical fixes`,
+			lane,
+			command: ['bun', 'tools/hooks/check-merges.ts', `${added}..${head}`],
+		},
+		{
+			why: `a branch from before a history rewrite would put second copies of commits on ${target}`,
+			lane,
+			command: ['bun', 'tools/hooks/check-copies.ts', `${added}..${head}`],
+		},
+	];
 }
 
 /** The tests of the crates that `files` change, or none when they change no crate. */
@@ -242,25 +286,177 @@ export function crateTests(
 export const LANDING_CRATE_TESTS = 'NULL3D_LANDING_CRATE_TESTS';
 
 /**
- * The steps of a landing on the milestone branch that changes `files`: the guards over the tree,
- * and, when `crateTests` asks for them and the landing changes Rust, the tests of the crates it
- * changes, in the queue's CPU lane. The guards take seconds. The crate tests are opt-in: on a loaded
- * machine the CPU lane's slots stay busy for an hour, and on 25 October 2026 a landing's push waited
- * there 27 minutes without starting cargo, until its timeout killed the push and left the hook
- * waiting. CI's Rust tests still catch a crate's fault, one run after the landing.
+ * The steps of a landing on the milestone branch that changes `files`: the checks of its commits,
+ * the guards over the tree, and, when `crateTests` asks for them and the landing changes Rust, the
+ * tests of the crates it changes, in the queue's CPU lane. With `added`, the commits are those after
+ * `added.base`, and their messages are read from `added.mainBase`, where the branch left main. The
+ * commit and guard checks run outside the queue and take seconds. The crate tests are opt-in: on a
+ * loaded machine the CPU lane's slots stay busy for an hour, and on 25 October 2026 a landing's push
+ * waited there 27 minutes without starting cargo, until its timeout killed the push and left the
+ * hook waiting. CI's Rust tests still catch a crate's fault, one run after the landing.
  */
 export function landingSteps(
 	files: readonly string[],
 	crates: ReadonlyMap<string, string>,
 	nextest: boolean,
 	withCrateTests = false,
+	added?: { base: string; head: string; mainBase: string },
 ): Step[] {
+	const checks = [
+		...(added
+			? commitSteps(added.mainBase, added.base, added.head, 'the milestone branch', 'DIRECT')
+			: []),
+		...guardSteps(),
+	];
 	const tests =
 		withCrateTests && touchesRust([...files]) ? crateTests(files, crates, nextest) : undefined;
-	return tests ? [...guardSteps(), tests] : guardSteps();
+	return tests ? [...checks, tests] : checks;
 }
 
 const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' }).trim();
+
+/** The status check's problem lines in its output: each `stale: …` or `owed: …` line, in order. */
+export function statusLines(output: string): string[] {
+	return output.split('\n').filter((line) => /^(stale|owed): /.test(line));
+}
+
+/** The problem lines that `head` has and `base` lacks, which a landing may not add. */
+export function addedStatusLines(base: readonly string[], head: readonly string[]): string[] {
+	const had = new Set(base);
+	return head.filter((line) => !had.has(line));
+}
+
+/**
+ * Why a landing may not go, when it adds a problem line to the milestone status and no reason lets it,
+ * with each line and its task. Undefined when it adds none, or when `reason` lets it. When the check
+ * did not run at the base, every line counts as added, and the refusal says why.
+ */
+export function statusRefusal(
+	added: readonly string[],
+	base: string,
+	reason: string | undefined,
+	baseRan = true,
+): string | undefined {
+	if (added.length === 0 || reason) return undefined;
+	const lines = added.map(
+		(line) => `  ${/\bM\d+-[A-Z0-9]+[a-z]?/.exec(line)?.[0] ?? 'no task'}: ${line}`,
+	);
+	const count = added.length === 1 ? 'a problem' : `${added.length} problems`;
+	return [
+		baseRan
+			? `pre-push: this landing adds ${count} to the milestone status that ${base} does not have:`
+			: `pre-push: the status check did not run at ${base}, such as where the branch left main, so ${added.length === 1 ? "the pushed commit's one problem counts" : `each of the pushed commit's ${added.length} problems counts`} as added:`,
+		...lines,
+		`Fix each one, with the task's evidence line or its mark in tools/pr-status.ts. When the landing changes the status on purpose, push with ${STATUS_CHANGE_VARIABLE}=<reason>.`,
+	].join('\n');
+}
+
+/** The plan that the status check reads, relative to the tree that it runs in. */
+const STATUS_PLAN = '.internal/plan/m3-breakdown.md';
+
+/**
+ * `env` without the variables that pin git to the pushing checkout. In a linked worktree's hook git
+ * sets GIT_DIR to that worktree's own folder, and a git or tool run in another worktree would then
+ * read the pushing checkout's history and write into its index.
+ */
+function ownTree(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	const copy = { ...env };
+	for (const name of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_PREFIX'])
+		delete copy[name];
+	return copy;
+}
+
+/** A reading of the status check: its problem lines, and whether the check ran at all. */
+export interface StatusReading {
+	lines: string[];
+	ran: boolean;
+}
+
+/**
+ * The status check's reading of the tree in `dir`. The check ran when the tree holds its plan, and it
+ * either passed or printed a problem line: it fails for a problem only after it prints one, so a
+ * failure with no line means it did not run.
+ */
+export function statusOf(dir: string, env: NodeJS.ProcessEnv = process.env): StatusReading {
+	const run = spawnSync('bun', ['tools/pr-status.ts', '--check'], {
+		cwd: dir,
+		env: ownTree(env),
+		encoding: 'utf8',
+		maxBuffer: 64 * 1024 * 1024,
+	});
+	const lines = statusLines(`${run.stdout ?? ''}\n${run.stderr ?? ''}`);
+	return {
+		lines,
+		ran: existsSync(join(dir, STATUS_PLAN)) && (run.status === 0 || lines.length > 0),
+	};
+}
+
+/**
+ * The status check's reading at `commit`, from a worktree of its own beside the checkout at `root`.
+ * The worktree holds only the tools, and the checkout's plan through a link. Hooks stay off, so
+ * making it runs no generator.
+ */
+export function statusAt(
+	commit: string,
+	root = '.',
+	env: NodeJS.ProcessEnv = process.env,
+): StatusReading {
+	const clean = ownTree(env);
+	const run = (cwd: string, ...args: string[]) =>
+		execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], {
+			cwd,
+			env: clean,
+			encoding: 'utf8',
+			stdio: ['ignore', 'pipe', 'pipe'],
+		});
+	const dir = mkdtempSync(join(tmpdir(), 'null3d-status-'));
+	try {
+		run(root, 'worktree', 'add', '--quiet', '--no-checkout', '--detach', dir, commit);
+		run(dir, 'checkout', commit, '--', 'tools');
+		const plan = resolve(root, '.internal');
+		if (existsSync(plan)) symlinkSync(plan, join(dir, '.internal'));
+		return statusOf(dir, clean);
+	} catch {
+		return { lines: [], ran: false };
+	} finally {
+		spawnSync('git', ['worktree', 'remove', '--force', dir], {
+			cwd: root,
+			env: clean,
+			stdio: 'ignore',
+		});
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+/**
+ * Why a landing cannot be checked here, or undefined when it can. The guards read this checkout's
+ * tree, so it must hold the pushed commit as its HEAD. The commit checks read from the branch's
+ * commit on the remote and from where the branch left main, so the checkout must hold both. A first
+ * push of the branch has no commit on the remote, and is read from where it left main.
+ */
+export function landingRefusal(
+	landing: PushedRef,
+	head: string,
+	holdsRemote: boolean,
+	mainBase: string | undefined,
+): string | undefined {
+	if (landing.localSha !== head)
+		return `pre-push: the checks read this checkout's tree, whose HEAD is ${head}, not the pushed commit ${landing.localSha}. Check out the commit that you push, and push again.`;
+	if (!NO_COMMIT.test(landing.remoteSha) && !holdsRemote)
+		return `pre-push: this checkout does not hold ${landing.remoteSha}, the branch's commit on the remote, so the check cannot tell which commits the push adds. Fetch the branch (\`git fetch origin m3-start\`) and push again.`;
+	if (!mainBase)
+		return "pre-push: the checks read the commit messages from where the branch left main, as CI does, and this checkout has no copy of the remote's main. Fetch it (`git fetch origin main`) and push again.";
+	return undefined;
+}
+
+/** Where the branch at `head` left main, by this checkout's copy of the remote's main, if it has one. */
+function mainBaseOf(head: string): string | undefined {
+	try {
+		return git('merge-base', 'refs/remotes/origin/main', head) || undefined;
+	} catch {
+		return undefined;
+	}
+}
 
 /** The crate folders of the workspace and their package names. */
 function workspaceCrates(): Map<string, string> {
@@ -338,27 +534,59 @@ function main(): void {
 	if (!push) {
 		const landing = pushToMilestone(refs);
 		if (!landing || NO_COMMIT.test(landing.localSha)) return;
-		// The guards read this checkout's tree, which a landing pushes as its HEAD.
-		const added = NO_COMMIT.test(landing.remoteSha)
-			? []
-			: keptCommits(`${landing.remoteSha}..${landing.localSha}`);
-		const skipped = skipReason(added.map(({ message }) => message));
+		const holdsRemote =
+			spawnSync('git', ['cat-file', '-e', `${landing.remoteSha}^{commit}`], { stdio: 'ignore' })
+				.status === 0;
+		const mainBase = mainBaseOf(landing.localSha);
+		const refused = landingRefusal(landing, git('rev-parse', 'HEAD'), holdsRemote, mainBase);
+		if (refused || !mainBase) {
+			console.error(refused);
+			process.exit(1);
+		}
+		// A first push of the branch adds every commit since it left main.
+		const base = NO_COMMIT.test(landing.remoteSha) ? mainBase : landing.remoteSha;
+		const skipped = skipReason(
+			keptCommits(`${base}..${landing.localSha}`).map(({ message }) => message),
+		);
 		if (skipped) {
 			console.log(
 				`pre-push: the check before the landing is skipped, as a commit says: ${skipped}`,
 			);
 			return;
 		}
-		const files = NO_COMMIT.test(landing.remoteSha)
-			? []
-			: git('diff', '--name-only', landing.remoteSha, landing.localSha).split('\n').filter(Boolean);
+		const files = git('diff', '--name-only', base, landing.localSha).split('\n').filter(Boolean);
 		const withCrateTests = process.env[LANDING_CRATE_TESTS] === '1';
 		const steps = landingSteps(
 			files,
 			workspaceCrates(),
 			withCrateTests && touchesRust(files) && hasNextest(),
 			withCrateTests,
+			{ base, head: landing.localSha, mainBase },
 		);
+		const reason = process.env[STATUS_CHANGE_VARIABLE];
+		const pushed = statusOf('.');
+		if (!pushed.ran) {
+			console.error(
+				`pre-push: the status check did not run on the pushed commit: this checkout needs its plan at ${STATUS_PLAN} and a working \`bun tools/pr-status.ts --check\`. Push from the checkout that holds the plan.`,
+			);
+			process.exit(1);
+		}
+		// A base whose check does not run, such as where the branch left main, reads as no lines, so
+		// every line of the pushed commit counts as added and the push needs a reason.
+		const atBase = statusAt(base);
+		const added = addedStatusLines(atBase.lines, pushed.lines);
+		const refusedStatus = statusRefusal(added, base.slice(0, 9), reason, atBase.ran);
+		if (refusedStatus) {
+			console.error(refusedStatus);
+			process.exit(1);
+		}
+		if (added.length > 0)
+			console.log(
+				[
+					`pre-push: the landing changes the milestone status on purpose: ${reason}`,
+					...added.map((line) => `  ${line}`),
+				].join('\n'),
+			);
 		console.log('pre-push: checking the landing on the milestone branch');
 		runSteps(steps, 'the milestone branch', jobQueue());
 		return;

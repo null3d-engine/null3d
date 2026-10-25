@@ -102,6 +102,38 @@ function remapped(source, size, remap, count) {
 }
 
 /**
+ * Gives a primitive's vertices the order that `remap` names, moving every vertex stream and the
+ * primitive's own indices. A stream that another primitive also uses gets a copy. Every old vertex
+ * needs a place in the new order.
+ *
+ * @param {Document} doc
+ * @param {Primitive} prim
+ * @param {Uint32Array} remap Each old vertex's new index.
+ */
+export function reorderVertices(doc, prim, remap) {
+	const count = /** @type {Accessor} */ (prim.getAttribute('POSITION')).getCount();
+	const seen = new Set();
+	for (const { owner, semantic, accessor } of vertexStreams(prim)) {
+		let own = accessor;
+		if (seen.has(accessor) || usesOf(doc, accessor) > 1) {
+			own = accessor.clone();
+			owner.setAttribute(semantic, own);
+		}
+		seen.add(own);
+		own.setArray(
+			remapped(/** @type {any} */ (accessor.getArray()), accessor.getElementSize(), remap, count),
+		);
+	}
+	const indices = triangleIndices(prim, count);
+	setIndices(
+		doc,
+		prim,
+		Uint32Array.from(indices, (vertex) => /** @type {number} */ (remap[vertex])),
+		count,
+	);
+}
+
+/**
  * Reorders each triangle list for the GPU's vertex cache, then its vertices in the order that the
  * triangles first use them, and drops vertices that no triangle uses. Every vertex stream of a
  * primitive gets the same order, so a stream that another primitive also uses gets a copy.

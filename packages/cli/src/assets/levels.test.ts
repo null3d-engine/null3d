@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Document, type Node, type Primitive } from '@gltf-transform/core';
+import { Document, type Node, NodeIO, type Primitive } from '@gltf-transform/core';
+import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
+import { MeshoptDecoder } from 'meshoptimizer';
 import { MODELS_DIR, terrainDocument } from './cluster-fixture.js';
 import {
+	orderLevels,
 	planLevels,
 	STAGE_HEADER_SIZE,
 	STAGE_LEVELS,
@@ -12,7 +15,7 @@ import {
 	storeLevels,
 	storeStages,
 } from './levels.js';
-import { lodOf } from './lod-extension.js';
+import { lodOf, MSFTLod } from './lod-extension.js';
 import { buildStagedModel, STAGED_FILE } from './staged-fixture.js';
 
 /** The most cards a mesh of trees has in the test, and each card's side. */
@@ -283,7 +286,74 @@ function gridDocument(n: number, uv: ((x: number, z: number) => [number, number]
 	return { doc, mesh };
 }
 
+describe('the coarsest-first vertex order', () => {
+	it('puts each level’s vertices in a prefix of its base and keeps every triangle', async () => {
+		const { doc, mesh } = treeDocument();
+		const plans = await planLevels(doc);
+		const plan = plans.get(mesh);
+		expect(plan).toBeDefined();
+		if (!plan) return;
+		const prims = plan.prims;
+		// The positions each level's triangles drew before the reorder, and the base's own.
+		const before = plan.levels.map((level) =>
+			level.indices.map((indices, p) => {
+				const positions =
+					level.positions[p] ?? (prims[p]?.getAttribute('POSITION')?.getArray() as Float32Array);
+				return { indices: Uint32Array.from(indices), positions: Float32Array.from(positions) };
+			}),
+		);
+		const base = prims.map((prim) => ({
+			indices: Uint32Array.from(prim.getIndices()?.getArray() ?? []),
+			positions: Float32Array.from(prim.getAttribute('POSITION')?.getArray() as Float32Array),
+		}));
+		orderLevels(doc, plans);
+		prims.forEach((prim, p) => {
+			const positions = prim.getAttribute('POSITION')?.getArray() as Float32Array;
+			const indices = prim.getIndices()?.getArray() as ArrayLike<number>;
+			const old = base[p] as { indices: Uint32Array; positions: Float32Array };
+			for (let i = 0; i < indices.length; i++)
+				for (let c = 0; c < 3; c++)
+					expect(positions[(indices[i] as number) * 3 + c]).toBeCloseTo(
+						old.positions[(old.indices[i] as number) * 3 + c] as number,
+						5,
+					);
+			// Each level and the levels coarser than it share one prefix of the new order.
+			for (let k = plan.levels.length - 1; k >= 0; k--) {
+				const used = new Set<number>();
+				for (let j = k; j < plan.levels.length; j++)
+					for (const vertex of plan.levels[j]?.indices[p] ?? []) used.add(vertex);
+				const farthest = Math.max(...used);
+				expect(farthest).toBeLessThan(used.size);
+			}
+		});
+		// Every level still draws the positions its triangles drew before the reorder.
+		plan.levels.forEach((level, k) => {
+			prims.forEach((prim, p) => {
+				const positions = (level.positions[p] ??
+					prim.getAttribute('POSITION')?.getArray()) as Float32Array;
+				const indices = level.indices[p] as Uint32Array;
+				const old = before[k]?.[p];
+				if (!old) return;
+				for (let i = 0; i < indices.length; i++)
+					for (let c = 0; c < 3; c++)
+						expect(positions[(indices[i] as number) * 3 + c]).toBeCloseTo(
+							old.positions[(old.indices[i] as number) * 3 + c] as number,
+							5,
+						);
+			});
+		});
+	});
+});
+
 describe('texture coordinates in the levels error', () => {
+	// No picture test covers this weight on its own. The weight enters the error that picks the
+	// level, and it also changes the level's triangles. Every picture's reference is built with the
+	// same weight, so a picture cannot show the weight by itself. A picture near enough to show a
+	// slide draws a level the engine does not pick. The coordinator accepted this exemption on
+	// 26 October 2026. It rests on the measurement in D-137: with the shipped weight of one
+	// sixty-fourth of the grid's longest side, the bent grid below reports a coarsest error of
+	// 0.116 units. Its level switches about 36 m out on a 360-pixel picture at a 60-degree lens,
+	// where the whole grid spans about nine pixels.
 	it('counts a texture that would slide, where a flat surface otherwise simplifies free', async () => {
 		// A flat grid simplifies to a few triangles with no geometric error. Texture coordinates
 		// that repeat across it keep the simplifier from sliding them, so a level's error grows.
@@ -296,6 +366,9 @@ describe('texture coordinates in the levels error', () => {
 		const flatError = await worst(flat);
 		const bentError = await worst(bent);
 		expect(flatError).toBeGreaterThan(0);
+		expect(flatError).toBeLessThan(0.001);
+		expect(bentError).toBeGreaterThan(0.11);
+		expect(bentError).toBeLessThan(0.12);
 		expect(bentError).toBeGreaterThan(flatError * 2);
 	});
 });
@@ -397,5 +470,16 @@ describe('the staged test model', () => {
 			const file = readFileSync(join(MODELS_DIR, name));
 			expect(Buffer.from(bytes).equals(file), name).toBe(true);
 		}
+		// The file draws its coarsest level, which the step leaves as a prefix of the reordered
+		// stream: it names 515 vertices and its largest index is 514.
+		await MeshoptDecoder.ready;
+		const io = new NodeIO()
+			.registerExtensions([...ALL_EXTENSIONS, MSFTLod])
+			.registerDependencies({ 'meshopt.decoder': MeshoptDecoder });
+		const doc = await io.readBinary(model.glb);
+		const prim = doc.getRoot().listMeshes()[0]?.listPrimitives()[0];
+		const used = new Set(prim?.getIndices()?.getArray() ?? []);
+		expect(used.size).toBe(515);
+		expect(Math.max(...used)).toBe(514);
 	}, 180_000);
 });

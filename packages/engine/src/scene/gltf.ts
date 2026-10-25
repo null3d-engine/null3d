@@ -29,6 +29,8 @@ import {
 	LIGHT_VALUE_INTENSITY,
 	LIGHT_VALUE_PENUMBRA,
 	LIGHT_VALUE_RANGE,
+	MAP_SLOT_BASE_COLOR,
+	MAP_SLOT_EMISSIVE,
 } from '../generated/core';
 import { DEV } from '../shared/dev';
 import { onEngineStop } from '../shared/helper-workers';
@@ -1386,7 +1388,7 @@ class FileMaterials {
 			alphaCutoff: Math.min(m.alphaCutoff, 1),
 			doubleSided: m.doubleSided,
 			vertexColors,
-			uvTransform: m.uvTransform,
+			mapUvTransforms: m.uvTransforms,
 			// three.js's GLTFLoader writes no depth for blended materials.
 			depthWrite: m.alphaMode !== 'blend',
 			map: map(m.maps.map),
@@ -1469,12 +1471,24 @@ const LIGHT_PROPERTIES: ReadonlyMap<string, number> = new Map([
 ]);
 
 /**
+ * The slot of each map whose transform a `KHR_animation_pointer` moves, by the map's key. These are
+ * the maps that three.js's animation-pointer plugin moves: a base color map and an emissive map.
+ */
+const POINTER_MAP_SLOTS: ReadonlyMap<string, number> = new Map<string, number>([
+	['map', MAP_SLOT_BASE_COLOR],
+	['emissiveMap', MAP_SLOT_EMISSIVE],
+]);
+
+/**
  * The properties that a model's clips move, as the prefab's copies play them: one binding for each
  * property, with the value that the file gave it, and the tracks of each clip by its id in the
  * core. Returns undefined when no clip moves a property, and notes the tracks that name a target
- * the copy does not have.
+ * the copy does not have. Each map keeps a transform of its own, so a clip that moves two maps of
+ * one material plays both.
+ *
+ * @internal
  */
-function propertyAnimation(
+export function propertyAnimation(
 	data: GltfData,
 	materials: FileMaterials,
 	placed: readonly number[],
@@ -1493,9 +1507,13 @@ function propertyAnimation(
 		const id = rig.clips.get(clip.name);
 		if (id === undefined) continue;
 		const tracks: PropertyTrack[] = [];
+		// A clip that moves one property twice plays the first track and notes the other, rather
+		// than mixing the two into one value.
+		const played = new Set<number>();
 		for (const track of clip.properties ?? []) {
 			const { target, components } = track;
-			const key = `${target.kind} ${target.index} ${target.value}`;
+			const moved = target.kind === 'material' ? target.map : undefined;
+			const key = `${target.kind} ${target.index} ${target.value} ${moved ?? ''}`;
 			let binding = known.get(key);
 			if (binding === undefined) {
 				const base = propertyBase(target, data);
@@ -1518,12 +1536,21 @@ function propertyAnimation(
 					name: target.kind === 'material' ? target.value : '',
 					components,
 					base,
+					slot: moved === undefined ? undefined : POINTER_MAP_SLOTS.get(moved),
 				});
 				targets.push(where);
 				// The key names the property as a file's pointer does, such as "materials/0/color".
-				keys.push(`${target.kind}s/${target.index}/${target.value}`);
+				const name = target.kind === 'material' ? (target.key ?? target.value) : target.value;
+				keys.push(`${target.kind}s/${target.index}/${name}`);
 				known.set(key, binding);
 			}
+			if (played.has(binding)) {
+				notes.push(
+					`the clip "${clip.name}" moves ${target.kind} ${target.index}'s ${target.value} twice, so it plays the first track`,
+				);
+				continue;
+			}
+			played.add(binding);
 			tracks.push({
 				binding,
 				interpolation: track.interpolation ?? 'linear',
@@ -1605,6 +1632,10 @@ function propertyBase(target: RigPropertyTarget, data: GltfData): Float32Array |
 				return one(layers?.anisotropy);
 			case 'anisotropyRotation':
 				return one(layers?.anisotropyRotation);
+			case 'uvOffset':
+				return Float32Array.from(m.uvTransforms?.[target.map ?? 'map']?.offset ?? [0, 0]);
+			case 'uvScale':
+				return Float32Array.from(m.uvTransforms?.[target.map ?? 'map']?.repeat ?? [1, 1]);
 		}
 		return undefined;
 	}

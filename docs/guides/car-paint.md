@@ -55,15 +55,16 @@ scene.createMesh({ mesh: body, material: paint });
 | `roughness` | The base's perceptual roughness, from 0 to 1 | `0.34` |
 | `clearcoat` | How much clear coat covers the paint, from 0 to 1 | `1` |
 | `clearcoatRoughness` | The coat's perceptual roughness, from 0 to 1 | `0.02` |
-| `flakes` | `{ cells, tilt, angle, max }`, or `false` | `{ cells: [120, 210], tilt: 0.25, angle: 0.02, max: 64 }` |
+| `flakes` | `{ cells, tilt, angle, max }`, or `false` | `{ cells: [120, 210], tilt: 0.25, angle: 0.25, max: 64 }` |
 | `seams` | `{ spacing, width, shade }`, or `false` | `{ spacing: [0.34, 0], width: 0.0022, shade: 0.85 }` |
 | `weave` | `{ cells, shine }`, or `false` | `false` |
 
 - `flakes.cells` counts flake cells across each texture coordinate.
 - `flakes.tilt` is how far the flakes' normals spread from the surface normal. It sets the width
   of the band where they catch the main light.
-- `flakes.angle` is the main light's angular radius in radians. A smaller value suits a hard sun,
-  and a larger one a broad studio light.
+- `flakes.angle` is the main light's angular radius in radians, which sets how many flakes glint at
+  once. A smaller value suits a hard sun, where the glints are rarer and brighter. A larger one
+  suits a broad studio light, where more flakes catch it together.
 - `flakes.max` is the most that one pixel's glint may exceed the smooth lobe. It bounds a bright
   single flake.
 - `seams.spacing` gives the interval between seams along each texture coordinate. A value of 0

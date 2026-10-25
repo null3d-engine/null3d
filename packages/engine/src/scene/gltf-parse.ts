@@ -736,6 +736,20 @@ export interface UvTransformData {
 	rotation: number;
 }
 
+/** The maps of a material that a file places with a transform of their own, by the map's key. */
+export type MapUvTransformsData = Partial<Record<keyof MaterialData['maps'], UvTransformData>>;
+
+/** Where a texture info's `KHR_texture_transform` places its map on the texture coordinates. */
+function textureTransform(transform: Entry, what: string): UvTransformData {
+	const offset = numbers(transform.offset, 2, [0, 0], `${what}'s texture transform offset`);
+	const scale = numbers(transform.scale, 2, [1, 1], `${what}'s texture transform scale`);
+	return {
+		offset: [offset[0] as number, offset[1] as number],
+		repeat: [scale[0] as number, scale[1] as number],
+		rotation: finite(transform.rotation ?? 0, `${what}'s texture transform rotation`),
+	};
+}
+
 /** A material as the engine's options, with its maps as indices into the texture uses. */
 export interface MaterialData {
 	name: string;
@@ -794,7 +808,11 @@ export interface MaterialData {
 		iridescenceThicknessMap?: number;
 		anisotropyMap?: number;
 	};
-	uvTransform?: UvTransformData;
+	/**
+	 * The maps that the file places with a transform of their own, by the map's key. A map without
+	 * one reads the texture coordinates as the mesh gives them.
+	 */
+	uvTransforms?: MapUvTransformsData;
 }
 
 /** A light of KHR_lights_punctual, in the units that glTF and three.js share. */
@@ -1430,23 +1448,50 @@ export function parseGltf(
 		if (alphaMode !== 'OPAQUE' && alphaMode !== 'MASK' && alphaMode !== 'BLEND')
 			broken(`${what} has the alpha mode ${alphaMode}`);
 		const transmission = transmissionOf(extensions, what, alphaMode === 'MASK', notes);
-		// The transmission and thickness textures take the specular textures' slots, so a material
-		// that gives both keeps the transmission textures, which change its look more.
+		// The transmission and thickness textures take the specular textures' slots, and the loader
+		// keeps the specular textures, since the material API takes one family of the two. A layered
+		// material's specular textures stay out, and its own layer maps fill those slots instead: its
+		// transmission and thickness textures fit beside the one layer map of the light slot.
 		const transmissionExtension = extensions.KHR_materials_transmission as Entry | undefined;
-		const givesVolumeMaps =
-			transmissionExtension?.transmissionTexture !== undefined ||
-			(extensions.KHR_materials_volume as Entry | undefined)?.thicknessTexture !== undefined;
-		const specularTexture = specular.specularTexture ?? specular.specularColorTexture;
-		const takesVolumeMaps = transmission !== undefined && !layered && specularTexture === undefined;
-		if (givesVolumeMaps && transmission !== undefined && layered)
-			notes.push(
-				`${what}'s transmission and thickness textures, which the engine does not draw beside a clear coat, a sheen, iridescence or anisotropy`,
-			);
-		if (givesVolumeMaps && transmission !== undefined && !layered && specularTexture !== undefined)
-			notes.push(
-				`${what}'s transmission and thickness textures, which a material with specular textures does not take`,
-			);
 		const volume = (extensions.KHR_materials_volume ?? {}) as Entry;
+		const specularTexture = specular.specularTexture ?? specular.specularColorTexture;
+		const intensityTaken = layered
+			? (layerMaps.coatNormal ?? layerMaps.iridescenceThickness) !== undefined
+			: specularTexture !== undefined;
+		const colorTaken = layered
+			? (layerMaps.sheenColor ?? layerMaps.sheenRoughness ?? layerMaps.anisotropy) !== undefined
+			: specularTexture !== undefined;
+		const takesTransmissionMap =
+			transmission !== undefined &&
+			transmissionExtension?.transmissionTexture !== undefined &&
+			!intensityTaken;
+		const takesThicknessMap =
+			transmission !== undefined && volume.thicknessTexture !== undefined && !colorTaken;
+		// A layered material loses a volume texture only to the layer map of its slot. Another
+		// material loses both beside a specular texture, since the material API takes one family
+		// of the two.
+		const intensityOwner =
+			layerMaps.coatNormal !== undefined
+				? "the clear coat's normal texture"
+				: 'the iridescence thickness texture';
+		const colorOwner =
+			layerMaps.sheenColor !== undefined || layerMaps.sheenRoughness !== undefined
+				? "the sheen's texture"
+				: 'the anisotropy texture';
+		const intensityReason = layered
+			? `where ${intensityOwner} fills the same slot`
+			: 'beside a specular texture';
+		const colorReason = layered
+			? `where ${colorOwner} fills the same slot`
+			: 'beside a specular texture';
+		if (
+			transmission !== undefined &&
+			transmissionExtension?.transmissionTexture !== undefined &&
+			intensityTaken
+		)
+			notes.push(`${what}'s transmissionTexture, which it leaves out ${intensityReason}`);
+		if (transmission !== undefined && volume.thicknessTexture !== undefined && colorTaken)
+			notes.push(`${what}'s thicknessTexture, which it leaves out ${colorReason}`);
 		const slots = {
 			map: useTexture(pbr.baseColorTexture, 'srgb', `${what}'s baseColorTexture`),
 			metalnessRoughnessMap: useTexture(
@@ -1464,14 +1509,14 @@ export function parseGltf(
 				? undefined
 				: useTexture(specular.specularColorTexture, 'srgb', `${what}'s specularColorTexture`),
 			// The KHR_materials_transmission and KHR_materials_volume extensions give these two.
-			transmissionMap: takesVolumeMaps
+			transmissionMap: takesTransmissionMap
 				? useTexture(
 						transmissionExtension?.transmissionTexture,
 						'linear',
 						`${what}'s transmissionTexture`,
 					)
 				: undefined,
-			thicknessMap: takesVolumeMaps
+			thicknessMap: takesThicknessMap
 				? useTexture(volume.thicknessTexture, 'linear', `${what}'s thicknessTexture`)
 				: undefined,
 			clearcoatMap: useTexture(layerMaps.coat, 'linear', `${what}'s clearcoatTexture`),
@@ -1516,12 +1561,13 @@ export function parseGltf(
 					),
 		};
 		const maps: MaterialData['maps'] = {};
-		let transform: Entry | undefined;
+		const uvTransforms: MapUvTransformsData = {};
 		for (const key of Object.keys(slots) as (keyof typeof slots)[]) {
 			const slot = slots[key];
 			if (!slot) continue;
 			maps[key] = slot.use;
-			transform ??= slot.transform;
+			// A file places each map with its own transform, as three.js gives each texture its own.
+			if (slot.transform) uvTransforms[key] = textureTransform(slot.transform, what);
 		}
 		const diffuseTransmission = diffuseTransmissionOf(
 			extensions,
@@ -1540,6 +1586,8 @@ export function parseGltf(
 			}
 		for (const key of ['diffuseTransmissionMap', 'diffuseTransmissionColorMap'] as const)
 			if (!translucent) delete maps[key];
+		for (const key of Object.keys(uvTransforms) as (keyof typeof uvTransforms)[])
+			if (maps[key] === undefined) delete uvTransforms[key];
 		const data: MaterialData = {
 			name: text(material.name),
 			unlit,
@@ -1584,15 +1632,7 @@ export function parseGltf(
 			}
 			data.layers = values;
 		}
-		if (transform) {
-			const offset = numbers(transform.offset, 2, [0, 0], `${what}'s texture transform offset`);
-			const scale = numbers(transform.scale, 2, [1, 1], `${what}'s texture transform scale`);
-			data.uvTransform = {
-				offset: [offset[0] as number, offset[1] as number],
-				repeat: [scale[0] as number, scale[1] as number],
-				rotation: finite(transform.rotation ?? 0, `${what}'s texture transform rotation`),
-			};
-		}
+		if (Object.keys(uvTransforms).length > 0) data.uvTransforms = uvTransforms;
 		return data;
 	});
 	for (const mesh of meshes)

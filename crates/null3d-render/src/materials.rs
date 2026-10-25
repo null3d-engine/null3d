@@ -3,14 +3,16 @@
 //!
 //! # Rows
 //!
-//! Each material has one row of [`MATERIAL_FLOATS`] floats, eighteen `vec4f`s, which the WGSL
+//! Each material has one row of [`MATERIAL_FLOATS`] floats, thirty-two `vec4f`s, which the WGSL
 //! struct `MaterialRow` in `null3d::globals` mirrors field for field. Shaders copy the first nine
 //! into a `Material`. Only the builds that let light through read the next two, the transmission's
 //! values; only the builds of layered materials read the next two, the clear coat's and the
 //! sheen's; only the builds that let light through a thin surface read the one after, the diffuse
 //! transmission's values; and only the skin pass's builds read the one after that, the scatter
-//! distances of the subsurface blur. The last vec4f holds a light map's transform, and the spare
-//! float of the transmission's vec4f holds the direction map's layer. The [`param`] module names
+//! distances of the subsurface blur. The vec4f after them holds a light map's transform, and the
+//! spare float of the transmission's vec4f holds the direction map's layer. The last fourteen hold
+//! the texture coordinate transforms of the maps of the slots from the second up, two for each: the
+//! base color map's two rows sit with the values that every shader reads. The [`param`] module names
 //! where each value sits. A row also holds the texture array layer of each of its maps, which the
 //! table writes once the map's image is on the GPU, and [`NO_MAP`] until then. Where a standard
 //! material's maps share a few units of their bind group, as on WebGL2, each map's value is its
@@ -522,7 +524,7 @@ const fn row_flags(features: u32) -> u32 {
     flags
 }
 
-/// Floats in each material's row: eighteen `vec4f`s.
+/// Floats in each material's row: thirty-two `vec4f`s.
 pub const MATERIAL_FLOATS: usize = sizes::MATERIAL_BYTES as usize / 4;
 /// Floats of a row of custom values that a custom material's uniforms and texture layers use: eight
 /// `vec4f`s, as the shader compiler packs them. The rest of the row stays unused.
@@ -554,8 +556,9 @@ pub mod param {
     pub const FLAGS: usize = 14;
     /// The factor of the emissive color.
     pub const EMISSIVE_INTENSITY: usize = 15;
-    /// The transform of the first texture coordinates as two rows of a 2 x 3 matrix. The row that
-    /// gives u is 3 floats here, and the row that gives v is 3 floats at [`UV_V`].
+    /// The transform of the base color map's texture coordinates as two rows of a 2 x 3 matrix. The
+    /// row that gives u is 3 floats here, and the row that gives v is 3 floats at [`UV_V`]. Every
+    /// other map's transform sits at [`MAP_UV`].
     pub const UV_U: usize = 16;
     /// The factor of the scene environment's light on the surface, as three.js's
     /// `envMapIntensity`.
@@ -628,11 +631,15 @@ pub mod param {
     pub const ANISOTROPY: usize = 64;
     /// The direction along which the lobe stretches, in radians from the tangent.
     pub const ANISOTROPY_ROTATION: usize = 65;
-    /// Which family's maps the light map's and the specular maps' slots hold, as
-    /// [`LayerMap::kind`] gives it: 0 for a clear coat's and a sheen's, 1 for iridescence's and
-    /// the anisotropy's, and 2 for the transmission and thickness maps' of a material that lets
-    /// light through. The core sets it as it sets each layer map, so a shader reads the maps
-    /// that the material gave.
+    /// Which family's maps each group of shared slots holds, as [`LayerMap::kind`] gives it, packed
+    /// two bits each: bits 0 and 1 for the light map's slot, bits 2 and 3 for the specular intensity
+    /// map's, and bits 4 and 5 for the specular color map's. 0 is a clear coat's and a sheen's, 1 is
+    /// iridescence's and the anisotropy's, and 2 is the transmission and thickness maps' of a
+    /// material that lets light through. The core sets each group's bits as it sets a layer map that
+    /// fills that group's slot, so a shader reads the maps that the material gave. A material with
+    /// layers may keep its transmission and thickness maps in the specular slots beside a layer map
+    /// of the light slot, and each specular slot names its own family, since one may hold a layer map
+    /// while the other holds a transmission or a thickness map.
     pub const LAYER_MAPS_KIND: usize = 66;
     /// How a light map's texture coordinates stretch along u and along v: 2 floats. The scale is
     /// 1 by default, which leaves the coordinates alone.
@@ -640,6 +647,23 @@ pub mod param {
     /// Where a light map's texture coordinates start along u and along v: 2 floats. The offset is
     /// 0 by default.
     pub const LIGHT_MAP_OFFSET: usize = 70;
+    /// The first of the transforms that the row keeps apart from the base color map's: the row that
+    /// gives u, 3 floats, then the row that gives v, 3 floats, and two spares that keep each pair on
+    /// a texel boundary, for each map slot from [`MapSlot::MetalRough`](super::MapSlot::MetalRough)
+    /// up. A map's own transform lets a file place each of its maps differently, as three.js keeps
+    /// one transform for each texture.
+    pub const MAP_UV: usize = 72;
+    /// Floats that each map's transform takes in the row: its two rows and their spares.
+    pub const MAP_UV_STRIDE: usize = 8;
+    /// The texel of the row that [`MAP_UV`] starts at, one per `vec4f`.
+    pub const MAP_UV_TEXEL: u32 = 18;
+
+    /// The float of the row that holds the transform of the map in `slot`, for a slot from 1 up
+    /// ([`UV_U`] and [`UV_V`] hold slot 0's): the row that gives u, with the row that gives v 4
+    /// floats after it. `slot` equal to [`super::MAP_SLOTS`] gives the first float after the block.
+    pub const fn map_uv(slot: usize) -> usize {
+        MAP_UV + (slot - 1) * MAP_UV_STRIDE
+    }
     /// A decal material's values take the place of the transmission's, which a decal never has.
     /// The cosine of the angle from the decal's direction at which it starts to fade.
     pub const DECAL_FADE_START: usize = TRANSMISSION;
@@ -651,6 +675,11 @@ pub mod param {
     /// The floats of the value that starts at `at`, for a value that sketches set, or `None` for
     /// the flags, the map layers, a spare float or a float inside a value.
     pub const fn width(at: usize) -> Option<usize> {
+        // Each map transform of the slots from the second up is the row that gives u, and the row
+        // that gives v, 4 floats further on.
+        if at >= MAP_UV && at < map_uv(super::MAP_SLOTS) && (at - MAP_UV).is_multiple_of(4) {
+            return Some(3);
+        }
         match at {
             COLOR
             | EMISSIVE
@@ -795,18 +824,18 @@ impl LayerMap {
         LayerMap::Thickness,
     ];
 
-    /// Which family of maps the light map's and the specular maps' slots hold, as a row looks it
-    /// up: 0 for a clear coat's and a sheen's, 1 for iridescence's and the anisotropy's, and 2 for
-    /// the transmission and thickness maps' of a material that lets light through.
-    pub const fn kind(self) -> f32 {
+    /// Which family of maps the slot that holds it belongs to: 0 for a clear coat's and a sheen's,
+    /// 1 for iridescence's and the anisotropy's, and 2 for the transmission and thickness maps' of
+    /// a material that lets light through.
+    pub const fn kind(self) -> u32 {
         match self {
             LayerMap::Coat
             | LayerMap::CoatRoughness
             | LayerMap::CoatNormal
             | LayerMap::SheenColor
-            | LayerMap::SheenRoughness => 0.0,
-            LayerMap::Iridescence | LayerMap::IridescenceThickness | LayerMap::Anisotropy => 1.0,
-            LayerMap::Transmission | LayerMap::Thickness => 2.0,
+            | LayerMap::SheenRoughness => 0,
+            LayerMap::Iridescence | LayerMap::IridescenceThickness | LayerMap::Anisotropy => 1,
+            LayerMap::Transmission | LayerMap::Thickness => 2,
         }
     }
 
@@ -821,6 +850,17 @@ impl LayerMap {
             | LayerMap::SheenRoughness
             | LayerMap::Anisotropy
             | LayerMap::Thickness => MapSlot::SpecularColor,
+        }
+    }
+
+    /// The bit of the row's kinds at which this map's slot names its family
+    /// ([`param::LAYER_MAPS_KIND`]).
+    pub const fn kind_shift(self) -> u32 {
+        match self.slot() {
+            MapSlot::Light => 0,
+            MapSlot::SpecularIntensity => 2,
+            MapSlot::SpecularColor => 4,
+            _ => 0,
         }
     }
 
@@ -946,6 +986,12 @@ const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     row[param::ENV_INTENSITY] = 1.0;
     row[param::UV_U] = 1.0;
     row[param::UV_V + 1] = 1.0;
+    let mut slot = 1;
+    while slot < MAP_SLOTS {
+        row[param::map_uv(slot)] = 1.0;
+        row[param::map_uv(slot) + 5] = 1.0;
+        slot += 1;
+    }
     row[param::REFLECTANCE] = 0.04;
     row[param::LIGHT_MAP_DIRECTION] = NO_MAP;
     row[param::LIGHT_MAP_SCALE] = 1.0;
@@ -1316,11 +1362,12 @@ impl MaterialTable {
         row.ok_or(MaterialError::Unknown(id))?
             .copy_from_slice(values);
         self.mark_row(id);
-        // The displacement map reads the texture coordinate transform in the vertex stage, from a
-        // copy in the custom values.
+        // The displacement map holds the normal map's slot, and its vertex stage reads that map's
+        // transform from a copy in the custom values, which both stages read on both GPU paths.
+        let normal = param::map_uv(MapSlot::Normal as usize);
         let copy = match at {
-            param::UV_U => Some(height::UV_U),
-            param::UV_V => Some(height::UV_V),
+            at if at == normal => Some(height::UV_U),
+            at if at == normal + 4 => Some(height::UV_V),
             _ => None,
         };
         if let Some(copy) = copy
@@ -1557,11 +1604,17 @@ impl MaterialTable {
         let bit = map.flag();
         let on = if texture.is_none() { 0 } else { bit };
         *flags = ((*flags as u32 & !bit) | on) as f32;
-        // A live map names the family whose maps the slots hold, so the shader reads the maps that
-        // the material gave: the coat's and the sheen's, iridescence's and the anisotropy's, or the
-        // transmission and thickness maps'.
+        // A live map names the family whose slot it fills, so the shader reads the maps that the
+        // material gave: the coat's and the sheen's, iridescence's and the anisotropy's, or the
+        // transmission and thickness maps'. Each group of slots names its family apart, since a
+        // material with layers may keep the transmission and thickness maps in the specular slots
+        // beside a layer map of the light slot, and one specular slot may hold a layer map while
+        // the other holds one of those two maps.
         if !texture.is_none() {
-            self.rows[id as usize * MATERIAL_FLOATS + param::LAYER_MAPS_KIND] = map.kind();
+            let at = id as usize * MATERIAL_FLOATS + param::LAYER_MAPS_KIND;
+            let shift = map.kind_shift();
+            let kinds = self.rows[at] as u32;
+            self.rows[at] = ((kinds & !(3 << shift)) | (map.kind() << shift)) as f32;
         }
         Ok(())
     }
@@ -1859,6 +1912,12 @@ mod tests {
         assert_eq!(row[param::EMISSIVE_INTENSITY], 1.0);
         assert_eq!(&row[param::UV_U..param::UV_U + 3], &[1.0, 0.0, 0.0]);
         assert_eq!(&row[param::UV_V..param::UV_V + 3], &[0.0, 1.0, 0.0]);
+        // Each other map slot starts with the identity transform too.
+        for slot in 1..MAP_SLOTS {
+            let at = param::map_uv(slot);
+            assert_eq!(&row[at..at + 3], &[1.0, 0.0, 0.0], "map slot {slot}");
+            assert_eq!(&row[at + 4..at + 7], &[0.0, 1.0, 0.0], "map slot {slot}");
+        }
         assert_eq!(
             &row[param::MAP_LAYERS..param::MAP_LAYERS + MAP_SLOTS],
             &[NO_MAP; MAP_SLOTS]
@@ -1893,7 +1952,7 @@ mod tests {
 
     #[test]
     fn each_value_has_its_own_floats_and_vectors_hold_whole_values() {
-        let mut starts = [
+        let mut starts = vec![
             (param::COLOR, 3),
             (param::OPACITY, 1),
             (param::EMISSIVE, 3),
@@ -1932,6 +1991,12 @@ mod tests {
             (param::ANISOTROPY, 1),
             (param::ANISOTROPY_ROTATION, 1),
         ];
+        // Each map of the slots from the second up keeps the two rows of its transform apart from
+        // the material's.
+        for slot in 1..MAP_SLOTS {
+            starts.push((param::map_uv(slot), 3));
+            starts.push((param::map_uv(slot) + 4, 3));
+        }
         starts.sort();
         for pair in starts.windows(2) {
             let ((start, length), (next, _)) = (pair[0], pair[1]);
@@ -1946,6 +2011,10 @@ mod tests {
             assert!(start + length <= MATERIAL_FLOATS);
         }
         assert_eq!(MATERIAL_TEXELS * 16, MATERIAL_FLOATS as u32 * 4);
+        // The maps' transforms fill the row to its end, and the shader finds their block at the
+        // texel that its constant names.
+        assert_eq!(param::map_uv(MAP_SLOTS), MATERIAL_FLOATS);
+        assert_eq!(param::MAP_UV_TEXEL as usize * 4, param::MAP_UV);
     }
 
     #[test]
@@ -2005,6 +2074,26 @@ mod tests {
                 Err(MaterialError::Value(at as u32))
             );
         }
+    }
+
+    #[test]
+    fn each_map_keeps_its_own_texture_transform() {
+        let mut table = MaterialTable::with_capacity(1);
+        table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        let emissive = param::map_uv(MapSlot::Emissive as usize);
+        let occlusion = param::map_uv(MapSlot::Occlusion as usize);
+        assert_eq!(param::width(emissive), Some(3));
+        assert_eq!(param::width(emissive + 4), Some(3));
+        assert_eq!(param::width(emissive + 1), None);
+        table.set(0, emissive, &[0.0, 0.0, 0.5]).unwrap();
+        table.set(0, emissive + 4, &[0.0, 2.0, 0.25]).unwrap();
+        let row = row(&table, 0);
+        assert_eq!(&row[emissive..emissive + 3], &[0.0, 0.0, 0.5]);
+        assert_eq!(&row[emissive + 4..emissive + 7], &[0.0, 2.0, 0.25]);
+        // Every other map keeps the identity, and so does the base color map.
+        assert_eq!(&row[occlusion..occlusion + 3], &[1.0, 0.0, 0.0]);
+        assert_eq!(&row[param::UV_U..param::UV_U + 3], &[1.0, 0.0, 0.0]);
+        assert_eq!(&row[param::UV_V..param::UV_V + 3], &[0.0, 1.0, 0.0]);
     }
 
     #[test]
@@ -2163,8 +2252,8 @@ mod tests {
         let coat = table
             .create(Shading::Lit, feature::COAT_SHEEN, [1.0; 4])
             .unwrap();
-        // A material's layer maps say which family fills the light map's and the specular maps'
-        // slots, so a shader reads a coat map as a coat map and a film map as a film map.
+        // A material's layer maps name the family that fills the slot each takes, so a shader
+        // reads a coat map as a coat map and a film map as a film map.
         table
             .set_layer_map(id, LayerMap::Iridescence, Handle::from_raw(5), false)
             .unwrap();
@@ -2179,9 +2268,17 @@ mod tests {
         table
             .set_layer_map(id, LayerMap::Anisotropy, Handle::from_raw(7), false)
             .unwrap();
+        let kinds = row(&table, id)[param::LAYER_MAPS_KIND] as u32;
+        assert_eq!(kinds & 3, 1, "the light map's slot holds the film");
         assert_eq!(
-            row(&table, id)[param::LAYER_MAPS_KIND],
-            LayerMap::Iridescence.kind()
+            (kinds >> 2) & 3,
+            1,
+            "the specular intensity slot holds the film's thickness"
+        );
+        assert_eq!(
+            (kinds >> 4) & 3,
+            1,
+            "the specular color slot holds the stretch"
         );
         assert_eq!(row(&table, coat)[param::LAYER_MAPS_KIND], 0.0);
         assert_eq!(table.map(id, MapSlot::Light), Handle::from_raw(5));
@@ -2210,16 +2307,29 @@ mod tests {
             .create(Shading::Lit, feature::TRANSMISSION, [1.0; 4])
             .unwrap();
         // A material that lets light through keeps its transmission map in the specular intensity
-        // map's slot and its thickness map in the specular color map's, and its kind says so.
+        // map's slot and its thickness map in the specular color map's, and each of those slots
+        // names its family while the light slot's stays free.
         table
             .set_layer_map(id, LayerMap::Transmission, Handle::from_raw(5), false)
             .unwrap();
         table
             .set_layer_map(id, LayerMap::Thickness, Handle::from_raw(6), true)
             .unwrap();
+        let kinds = row(&table, id)[param::LAYER_MAPS_KIND] as u32;
         assert_eq!(
-            row(&table, id)[param::LAYER_MAPS_KIND],
-            LayerMap::Transmission.kind()
+            (kinds >> 2) & 3,
+            2,
+            "the intensity slot holds the map of the light through"
+        );
+        assert_eq!(
+            (kinds >> 4) & 3,
+            2,
+            "the color slot holds the thickness map"
+        );
+        assert_eq!(
+            kinds & 3,
+            0,
+            "the transmission maps leave the light map's slot alone"
         );
         assert_eq!(
             table.map(id, MapSlot::SpecularIntensity),
@@ -2244,6 +2354,70 @@ mod tests {
         assert_eq!(LayerMap::ALL.len(), 10);
         assert_eq!(LayerMap::Transmission as u32, 8);
         assert_eq!(LayerMap::Thickness as u32, 9);
+    }
+
+    #[test]
+    fn a_layer_map_and_the_volume_maps_name_each_slots_family_apart() {
+        let mut table = MaterialTable::with_capacity(2);
+        let id = table
+            .create(
+                Shading::Lit,
+                feature::COAT_SHEEN | feature::TRANSMISSION,
+                [1.0; 4],
+            )
+            .unwrap();
+        let normal = table
+            .create(
+                Shading::Lit,
+                feature::COAT_SHEEN | feature::TRANSMISSION,
+                [1.0; 4],
+            )
+            .unwrap();
+        // A coated glass keeps its coat map in the light map's slot and the transmission and
+        // thickness maps in the specular slots: one family fills the first slot and another the
+        // last two, so each group of slots names its own family.
+        table
+            .set_layer_map(id, LayerMap::Coat, Handle::from_raw(5), false)
+            .unwrap();
+        table
+            .set_layer_map(id, LayerMap::Transmission, Handle::from_raw(6), false)
+            .unwrap();
+        table
+            .set_layer_map(id, LayerMap::Thickness, Handle::from_raw(7), false)
+            .unwrap();
+        let kinds = row(&table, id)[param::LAYER_MAPS_KIND] as u32;
+        assert_eq!(kinds & 3, LayerMap::Coat.kind());
+        assert_eq!((kinds >> 2) & 3, LayerMap::Transmission.kind());
+        assert_eq!((kinds >> 4) & 3, LayerMap::Thickness.kind());
+        assert_eq!(table.map(id, MapSlot::Light), Handle::from_raw(5));
+        assert_eq!(
+            table.map(id, MapSlot::SpecularIntensity),
+            Handle::from_raw(6)
+        );
+        assert_eq!(table.map(id, MapSlot::SpecularColor), Handle::from_raw(7));
+        // One specular slot may hold a layer map while the other holds a volume map: a coat normal
+        // map keeps the specular intensity slot as the coat's family, and the thickness map names
+        // the specular color slot as the volume's.
+        table
+            .set_layer_map(normal, LayerMap::CoatNormal, Handle::from_raw(6), false)
+            .unwrap();
+        table
+            .set_layer_map(normal, LayerMap::Thickness, Handle::from_raw(7), false)
+            .unwrap();
+        let mixed = row(&table, normal)[param::LAYER_MAPS_KIND] as u32;
+        assert_eq!(mixed & 3, 0, "no layer map fills the light map's slot");
+        assert_eq!(
+            (mixed >> 2) & 3,
+            LayerMap::CoatNormal.kind(),
+            "the intensity slot holds the coat's normals"
+        );
+        assert_eq!(
+            (mixed >> 4) & 3,
+            LayerMap::Thickness.kind(),
+            "the color slot holds the thickness"
+        );
+        // The three kinds sit in the anisotropy `vec4f`, which the shaders already read.
+        assert_eq!(param::LAYER_MAPS_KIND / 4, param::ANISOTROPY / 4);
     }
 
     #[test]
@@ -2382,8 +2556,15 @@ mod tests {
         assert_eq!(table.set_displacement(plain, 0.5, 0.0), Ok(false));
         assert_eq!(table.bounds_margin(plain), 2.0);
         assert_eq!(&values(&table, plain)[..4], &[NO_MAP, 0.5, 0.0, 1.0]);
-        // The texture coordinate transform goes to the custom values too.
-        table.set(plain, param::UV_U, &[2.0, 0.5, 0.25]).unwrap();
+        // The texture coordinate transform of the map in the normal map's slot, which the
+        // displacement reads, goes to the custom values too.
+        table
+            .set(
+                plain,
+                param::map_uv(MapSlot::Normal as usize),
+                &[2.0, 0.5, 0.25],
+            )
+            .unwrap();
         assert_eq!(
             &values(&table, plain)[height::UV_U..height::UV_U + 3],
             &[2.0, 0.5, 0.25]

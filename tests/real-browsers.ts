@@ -76,7 +76,9 @@
 //                       move to the new light on each GPU path, or reflection, which times S1 with
 //                       a reflection pass at a quarter and at half the render size against none,
 //                       or alpha-mask-cost, which times masked lit quads against opaque ones with
-//                       MSAA and without on each GPU path, or demos, which plays the Skyway and
+//                       MSAA and without on each GPU path, or canvas-cost, which times the frames
+//                       that refresh a canvas texture's rectangle against the same frames without
+//                       the refresh, or demos, which plays the Skyway and
 //                       Night town showcases at the chosen preset and at High on each GPU path,
 //                       and reports their frame rate, display rate and first-frame time, or
 //                       splats, which draws a large splat
@@ -1118,7 +1120,9 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'texture-cache',
 	'reflection',
 	'alpha-mask-cost',
+	'canvas-cost',
 	'cluster-cost',
+	'lod-cost',
 	'splats',
 	'demos',
 	'vegetation',
