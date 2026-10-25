@@ -41,7 +41,7 @@ Settle its state before you design the scene.
 | Text in the scene | the MSDF text add-on | not built yet; use HTML labels |
 | A river or a lake, with waves, foam and soft shores | `@null3d/water` | built; see the docs page api/water |
 | Trees, shrubs, ferns, grass and their placement by ecological rules | `@null3d/vegetation` | built (generator, scatter and atlases; grass and materials not built yet) |
-| Wind on plants, flags, cloth and smoke | `@null3d/wind` | not built yet; move each thing with your own noise |
+| Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | built (the field carries no state between frames yet; see the docs page api/wind) |
 | three.js look modes for a port | `@null3d/three-compat` | built |
 
 ## Rules
