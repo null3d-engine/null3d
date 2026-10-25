@@ -22,7 +22,7 @@ The engine's study chapter 04 records the method of a comparable engine. It wrap
 - null3D's `FeatureDraw` and `FeatureInstances` draw inside the engine's opaque or transparent pass, among the scene's other objects. Splitting that pass per feature would change the order that blended objects sort in, and the frame that the figures measured.
 - WebGL2 runs one `TIME_ELAPSED` query at a time, so it times the whole frame and no pass.
 
-The frame record has seven free phase slots and seven free words. It holds the whole-frame time, the time of up to seven passes and their scopes. A pass after them adds its time to the last timed pass's. That step's figure then covers the rest of the frame, and its name ends in `and later`. The engine times one frame in eleven.
+The frame record holds the whole-frame time, the time of up to seven passes and their scopes. A pass after them adds its time to the last timed pass's. That step's figure then covers the rest of the frame, and its name ends in `and later`. The engine times one frame in eleven.
 
 ## Look
 
