@@ -390,6 +390,7 @@ fn shadow_cascades_cull_once_while_the_camera_culls_twice() {
             contact: 0.0,
             layers: DEFAULT_LAYERS,
             hero: None,
+            hero_size: 0,
         }));
     let mut mock = device();
     let (first, steady) = frames(&mut world, &mut mock);

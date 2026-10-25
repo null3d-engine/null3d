@@ -237,6 +237,11 @@ pub enum RecordError {
         /// The bytes the tables needed, or `u32::MAX` for more than that.
         bytes: u32,
     },
+    /// The shadow atlas that the frame planned would take more than the engine allows.
+    ShadowAtlasTooLarge {
+        /// The bytes the atlas would take, in whole mebibytes.
+        megabytes: u32,
+    },
     /// The render graph of the frame's passes did not compile.
     Graph(GraphError),
 }
@@ -3375,6 +3380,7 @@ impl SceneSettings {
                     parity,
                     row,
                     [x, y, z],
+                    shadow.hero_size,
                     shadow.layers,
                     shadow.bias,
                     shadow.normal_bias,

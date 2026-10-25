@@ -91,6 +91,20 @@ use crate::view::ViewFrame;
 /// The most tiles of the shadow atlas.
 pub const MAX_TILES: usize = 24;
 
+/// The most bytes that the shadow atlas may take: one GiB. A hero tile finer than the preset's
+/// light tiles sets the size of every atlas layer, so a page that names a large tile and many
+/// shadow tiles can ask for a texture that a device cannot hold. The renderer refuses such a plan
+/// with [`RecordError::ShadowAtlasTooLarge`] before the GPU is asked, and the frame draws nothing.
+pub const MAX_ATLAS_BYTES: u64 = 1 << 30;
+
+/// A mebibyte, as the atlas's size is counted.
+const MIB: u64 = 1 << 20;
+
+/// The bytes that the atlas of `shape` takes: each layer at 4 bytes a texel.
+fn atlas_bytes(shape: AtlasShape) -> u64 {
+    u64::from(shape.layers) * u64::from(shape.size) * u64::from(shape.size) * 4
+}
+
 /// What the tiles' shadow passes draw into: the atlas's 32-bit float depth, with one sample and no
 /// color. A tile's perspective view stores most of its depth's range near its light, so 16-bit
 /// depth would leave steps of about 1.5% of the distance near the far end: 15 cm at 10 m.
@@ -493,6 +507,10 @@ impl ShadowTiles {
     /// `hero` is the sun's hero object, which draws into the atlas's last tile.
     /// Allocates only when more lights cast shadows, or the scene holds more objects, than in any
     /// frame before.
+    ///
+    /// Fails with [`RecordError::ShadowAtlasTooLarge`] when the planned atlas would take more than
+    /// [`MAX_ATLAS_BYTES`], so a page that names a hero tile and many shadow tiles hears about the
+    /// allocation before the GPU is asked for it.
     #[allow(clippy::too_many_arguments)]
     pub fn plan(
         &mut self,
@@ -503,14 +521,20 @@ impl ShadowTiles {
         meshes: &MeshStorage,
         sways: &dyn Fn(u32) -> bool,
         hero: Option<HeroShadow>,
-    ) {
+    ) -> Result<(), RecordError> {
         self.frames = [None; MAX_TILES];
         self.waiting = 0;
         self.lit.clear();
         self.hero_uniform = HeroUniform::default();
         let shadows = input.shadow_lights;
         let hero = hero.filter(|hero| hero.bounds.half > 0.0 && hero.bounds.away > 0.0);
-        let shape = self.shape_for(shadows, settings, hero.is_some());
+        let shape = self.shape_for(shadows, settings, hero.map(|hero| hero.size));
+        let bytes = atlas_bytes(shape);
+        if bytes > MAX_ATLAS_BYTES {
+            return Err(RecordError::ShadowAtlasTooLarge {
+                megabytes: bytes.div_ceil(MIB) as u32,
+            });
+        }
         if shape != self.shape || settings != self.settings || hero.is_some() != self.hero_on {
             self.slots = [Slot::default(); MAX_TILES];
             self.hero = HeroSlot::default();
@@ -523,7 +547,7 @@ impl ShadowTiles {
             // one draws the hero's tile afresh.
             self.casters_known = false;
             self.hero = HeroSlot::default();
-            return;
+            return Ok(());
         };
         self.assign(input.lights, shadows);
         for lit in &self.lit {
@@ -586,6 +610,7 @@ impl ShadowTiles {
                 slot.waited = 0;
             }
         }
+        Ok(())
     }
 
     /// Plans the sun's hero tile, the atlas's last layer: its values for receivers, and its view
@@ -799,8 +824,14 @@ impl ShadowTiles {
     /// The atlas's shape for the lights that cast shadows and the sun's hero, if it names one: a
     /// layer for each tile that they could fill, within the budget, and no fewer than it has while
     /// some light casts and the settings stay. The hero takes the last layer, which lights never
-    /// fill, so naming one costs them no tile.
-    fn shape_for(&self, shadows: &[LightShadow], settings: TileSettings, hero: bool) -> AtlasShape {
+    /// fill, so naming one costs them no tile. Every layer of an array texture has the same size,
+    /// so a hero tile finer than the preset's lights take sets the size of all of them.
+    fn shape_for(
+        &self,
+        shadows: &[LightShadow],
+        settings: TileSettings,
+        hero: Option<u32>,
+    ) -> AtlasShape {
         let tiles: u32 = shadows
             .iter()
             .map(|light| match light.kind {
@@ -809,15 +840,21 @@ impl ShadowTiles {
                 _ => 0,
             })
             .sum();
-        let room = (MAX_TILES as u32).saturating_sub(u32::from(hero));
+        let hero_size = hero.unwrap_or(0);
+        let hero = u32::from(hero.is_some());
+        let room = (MAX_TILES as u32).saturating_sub(hero);
         let mut lights = tiles.min(settings.tiles).min(room);
-        if settings == self.settings && hero == self.hero_on {
+        if settings == self.settings && hero == u32::from(self.hero_on) {
             lights = lights.max(self.shape.layers.saturating_sub(u32::from(self.hero_on)));
         }
-        let layers = lights + u32::from(hero);
+        let layers = lights + hero;
         AtlasShape {
             layers,
-            size: if layers > 0 { settings.size.max(1) } else { 0 },
+            size: if layers > 0 {
+                settings.size.max(hero_size).max(1)
+            } else {
+                0
+            },
         }
     }
 
@@ -1605,5 +1642,22 @@ mod tests {
             TileUniform::default().as_bytes().len(),
             SHADOW_TILES_UNIFORM_BYTES as usize
         );
+    }
+
+    #[test]
+    fn an_atlas_above_a_gigabyte_is_refused() {
+        // The defaults fit: High's 16 light tiles and the hero's tile at 2,048 takes 272 MiB.
+        let high = AtlasShape {
+            layers: 17,
+            size: 2048,
+        };
+        assert!(atlas_bytes(high) <= MAX_ATLAS_BYTES);
+        // Ultra's 4,096 tile with 24 light tiles takes 1,600 MiB, which the renderer refuses.
+        let ultra = AtlasShape {
+            layers: 25,
+            size: 4096,
+        };
+        assert!(atlas_bytes(ultra) > MAX_ATLAS_BYTES);
+        assert_eq!(atlas_bytes(ultra), 25 * 4096 * 4096 * 4);
     }
 }

@@ -192,6 +192,8 @@ mod render_detail {
     pub const BAD_LEVELS: u32 = 15;
     /// A light probe grid's texture that is not a 3D texture.
     pub const NOT_A_VOLUME: u32 = 17;
+    /// The second detail is the bytes that the shadow atlas would take, in mebibytes.
+    pub const SHADOW_ATLAS_TOO_LARGE: u32 = 18;
 }
 
 struct Engine {
@@ -398,6 +400,9 @@ fn record_failure(error: RecordError) -> u32 {
         }
         RecordError::SkinnedPagesFull { limit } => (render_detail::SKINNED_PAGES_FULL, limit),
         RecordError::UploadsFull => (render_detail::UPLOADS_FULL, 0),
+        RecordError::ShadowAtlasTooLarge { megabytes } => {
+            (render_detail::SHADOW_ATLAS_TOO_LARGE, megabytes)
+        }
         RecordError::OutOfMemory { bytes } => {
             return core_failure(CoreError::OutOfMemory { bytes });
         }
