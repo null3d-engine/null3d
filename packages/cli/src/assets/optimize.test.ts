@@ -8,6 +8,7 @@ import { ALL_EXTENSIONS, KHRDracoMeshCompression } from '@gltf-transform/extensi
 import { MeshoptDecoder } from 'meshoptimizer';
 import { ASSET_SCENE, assetSceneGlb } from '../../../../tests/lib/asset-scene.ts';
 import { shippedDecoder } from '../../../../tests/lib/meshopt-checks.ts';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import {
 	type GltfData,
 	type NodeData,
@@ -22,7 +23,7 @@ import { DEFAULT_OPTIONS, optimizeModel } from './pipeline.js';
 import { reportLines } from './report.js';
 
 // Texture encodes take seconds each on a busy machine or a CI runner of four cores.
-setDefaultTimeout(60_000);
+setDefaultTimeout(scaledBudget(60_000));
 
 const ROOT = join(import.meta.dir, '../../../..');
 const at = (path: string) => join(ROOT, path);

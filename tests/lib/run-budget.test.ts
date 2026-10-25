@@ -1,20 +1,51 @@
 import { describe, expect, it } from 'bun:test';
-import { budgetNote, CHECK_TIMEOUT_MS, checkTimeoutMs, MAX_LOAD_FACTOR } from './run-budget.ts';
+import {
+	budgetNote,
+	CHECK_TIMEOUT_MS,
+	checkTimeoutMs,
+	LOAD_FACTOR_ENV,
+	loadFactor,
+	MAX_LOAD_FACTOR,
+	runLoadFactor,
+	scaledBudget,
+} from './run-budget.ts';
+
+describe('loadFactor', () => {
+	it('is 1 while the load is at most the core count', () => {
+		expect(loadFactor(0, 4)).toBe(1);
+		expect(loadFactor(3.9, 4)).toBe(1);
+		expect(loadFactor(18, 18)).toBe(1);
+	});
+
+	it('is the load per core, rounded up', () => {
+		expect(loadFactor(19, 18)).toBe(2);
+		expect(loadFactor(71, 18)).toBe(4);
+	});
+
+	it('stops at the cap', () => {
+		expect(loadFactor(500, 18)).toBe(MAX_LOAD_FACTOR);
+	});
+});
 
 describe('checkTimeoutMs', () => {
-	it('gives the idle budget while the load is at most the core count', () => {
-		expect(checkTimeoutMs(0, 4)).toBe(CHECK_TIMEOUT_MS);
-		expect(checkTimeoutMs(3.9, 4)).toBe(CHECK_TIMEOUT_MS);
-		expect(checkTimeoutMs(18, 18)).toBe(CHECK_TIMEOUT_MS);
+	it('multiplies the idle budget by the factor', () => {
+		expect(checkTimeoutMs(1)).toBe(CHECK_TIMEOUT_MS);
+		expect(checkTimeoutMs(loadFactor(71, 18))).toBe(120_000);
+	});
+});
+
+describe('scaledBudget', () => {
+	it("grows a stated budget by the factor that the run handed on, as the run's own budget grows", () => {
+		const env = { [LOAD_FACTOR_ENV]: '4' };
+		expect(scaledBudget(60_000, env)).toBe(240_000);
+		expect(scaledBudget(60_000, env) / 60_000).toBe(checkTimeoutMs(4) / CHECK_TIMEOUT_MS);
+		expect(scaledBudget(60_000, { [LOAD_FACTOR_ENV]: '1' })).toBe(60_000);
 	});
 
-	it('multiplies it by the load per core, rounded up', () => {
-		expect(checkTimeoutMs(19, 18)).toBe(2 * CHECK_TIMEOUT_MS);
-		expect(checkTimeoutMs(71, 18)).toBe(120_000);
-	});
-
-	it('stops at the cap, four times the idle budget', () => {
-		expect(checkTimeoutMs(500, 18)).toBe(MAX_LOAD_FACTOR * CHECK_TIMEOUT_MS);
+	it('reads the machine itself when no run handed a factor, or the handed one is not one', () => {
+		for (const handed of [undefined, '', '0', '5', '2.5', 'four'])
+			expect(runLoadFactor({ [LOAD_FACTOR_ENV]: handed }, () => 3)).toBe(3);
+		expect(runLoadFactor({ [LOAD_FACTOR_ENV]: '2' }, () => 3)).toBe(2);
 	});
 });
 

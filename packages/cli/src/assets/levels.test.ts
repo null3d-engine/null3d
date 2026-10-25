@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { Document, type Node, NodeIO, type Primitive } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { MeshoptDecoder } from 'meshoptimizer';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { MODELS_DIR, terrainDocument } from './cluster-fixture.js';
 import {
 	orderLevels,
@@ -462,24 +463,28 @@ describe('levels as separate downloads', () => {
 });
 
 describe('the staged test model', () => {
-	it('holds what the tool builds from the heightfield, and its stages beside it', async () => {
-		const model = await buildStagedModel();
-		const committed = readFileSync(join(MODELS_DIR, STAGED_FILE));
-		expect(Buffer.from(model.glb).equals(committed)).toBe(true);
-		for (const [name, bytes] of model.stages) {
-			const file = readFileSync(join(MODELS_DIR, name));
-			expect(Buffer.from(bytes).equals(file), name).toBe(true);
-		}
-		// The file draws its coarsest level, which the step leaves as a prefix of the reordered
-		// stream: it names 515 vertices and its largest index is 514.
-		await MeshoptDecoder.ready;
-		const io = new NodeIO()
-			.registerExtensions([...ALL_EXTENSIONS, MSFTLod])
-			.registerDependencies({ 'meshopt.decoder': MeshoptDecoder });
-		const doc = await io.readBinary(model.glb);
-		const prim = doc.getRoot().listMeshes()[0]?.listPrimitives()[0];
-		const used = new Set(prim?.getIndices()?.getArray() ?? []);
-		expect(used.size).toBe(515);
-		expect(Math.max(...used)).toBe(514);
-	}, 180_000);
+	it(
+		'holds what the tool builds from the heightfield, and its stages beside it',
+		async () => {
+			const model = await buildStagedModel();
+			const committed = readFileSync(join(MODELS_DIR, STAGED_FILE));
+			expect(Buffer.from(model.glb).equals(committed)).toBe(true);
+			for (const [name, bytes] of model.stages) {
+				const file = readFileSync(join(MODELS_DIR, name));
+				expect(Buffer.from(bytes).equals(file), name).toBe(true);
+			}
+			// The file draws its coarsest level, which the step leaves as a prefix of the reordered
+			// stream: it names 515 vertices and its largest index is 514.
+			await MeshoptDecoder.ready;
+			const io = new NodeIO()
+				.registerExtensions([...ALL_EXTENSIONS, MSFTLod])
+				.registerDependencies({ 'meshopt.decoder': MeshoptDecoder });
+			const doc = await io.readBinary(model.glb);
+			const prim = doc.getRoot().listMeshes()[0]?.listPrimitives()[0];
+			const used = new Set(prim?.getIndices()?.getArray() ?? []);
+			expect(used.size).toBe(515);
+			expect(Math.max(...used)).toBe(514);
+		},
+		scaledBudget(180_000),
+	);
 });

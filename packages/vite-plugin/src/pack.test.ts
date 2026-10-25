@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { availableParallelism, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { moduleShare, wgslModules } from '../../../tools/lib/wgsl-modules';
 import { CompilerPool } from './compile-pool';
 import { LOAD_BUILDS, ShaderPack, UNPACK } from './pack';
@@ -146,7 +147,7 @@ const SHARE = process.env.NULL3D_PACK_SHARE || undefined;
 const PARTS = SHARE ? Number(SHARE.split('/')[1]) : 1;
 
 /** The time that compiling every module of the repository may take on a CI runner. */
-const COMPILE_ALL_MS = 600_000;
+const COMPILE_ALL_MS = scaledBudget(600_000);
 
 /** A module's compiled shaders, as the plugin compiles them. Shaders that do not compile are left out. */
 async function compiledShaders(file: string, compiler: ShaderCompiler): Promise<CompiledWgsl[]> {
