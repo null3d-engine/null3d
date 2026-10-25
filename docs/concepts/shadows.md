@@ -409,7 +409,7 @@ The box holds the object, a radius of space above it and sixteen radii below, wh
 - The light's layers choose the casters: an object casts only when its layer mask shares a bit with the light's. The light still lights every object in a view that it shares a layer with. So an object with `castShadows` on a layer that the light lacks casts nothing, with no warning, and the light shines through it. Give the light that layer too ([Layers and shadows](render-layers.md#layers-and-shadows)). three.js tests casters against the camera's layers instead.
 - The standard material and [custom materials](../shaders/surface-functions.md) show shadows. The unlit material shows none, but unlit objects still cast them.
 - A masked surface cuts the holes of its mask into its shadow, so leaves and fences cast leaf and fence shapes. The shadow tests the surface's opacity, vertex alpha and base color map's alpha against its `alphaCutoff`. A hashed surface casts a hashed shadow, which the filter turns into a partial shadow as dense as its alpha. A blended surface casts its whole shape, as in three.js.
-- A custom material whose WGSL sets or reads the surface's alpha casts that shape: its shadow caster runs the same surface function. WGSL that never names the alpha casts the mesh's whole shape.
+- A custom material whose WGSL sets or reads the surface's alpha casts that shape: its shadow caster runs the surface function, with the scene camera's values and the face that the caster draws, and tests its alpha at the cutoff. WGSL that never names the alpha casts the mesh's whole shape.
 - `setCastShadows` and `setReceiveShadows` rebuild the engine's tables of what it draws, as `setMaterial` does. Set them at setup rather than in every frame.
 
 ## What shadows cost

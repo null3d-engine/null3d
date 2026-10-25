@@ -226,7 +226,9 @@ are the choices the task left open, and the reasons for them.
 
 - **The alpha in the WGSL gates the builds.** The compiler of custom materials looks for `.alpha` in
   a material's tokens. Only such a material builds alpha to coverage, the alpha hash, their sample
-  mask, and a shadow caster and motion build that run the surface's alpha. A material whose WGSL
+  mask, and a shadow caster that runs the surface's alpha. A material with a vertex offset gains a
+  motion build that runs it too; one without an offset has no motion build, so the motion pass cuts
+  no holes of its own. A material whose WGSL
   never names the alpha keeps the builds it had, plus the fading level of detail's. The engine refuses `alphaToCoverage` and the `hash` mode for such a material with E1217,
   and a production build falls back to the cutoff. This mirrors the rule for `transmission`, whose
   builds only WGSL that sets it has.
@@ -234,7 +236,9 @@ are the choices the task left open, and the reasons for them.
   the motion target holds one value. Neither can hold a share of them. A masked custom material's
   caster and motion therefore test the surface's alpha against the material's cutoff, and against
   the alpha hash where the material tests it. Alpha to coverage keeps its fade in the camera's view
-  alone.
+  alone. Those builds bind no copy of the camera's depth, so a surface that reads the depth with
+  `sceneDepth` or `sceneDistance` reads the stand-in there, 0 and the far plane, and cuts another
+  shape in its shadow.
 - **A feature marks the material for the renderer.** `feature::SURFACE_ALPHA` is set from the
   compiled WGSL, and the frame builders read it before they choose a custom caster or a custom
   motion build. A material without it casts its mesh's whole shape, as it did before.
@@ -249,6 +253,26 @@ are the choices the task left open, and the reasons for them.
   vertex offset had read it. A textured or a uniform-driven material therefore failed to build
   its caster's pipeline with E1408 on WebGPU, while a leaf of plain values built. Both layouts
   show the texture to the fragment stage too, where the bind group already held it.
+- **The masked builds give the surface the same inputs.** A masked custom material's caster, and
+  its motion build where it has a vertex offset, run the surface function, so they give it the
+  inputs that
+  [Surface functions](../../docs/shaders/surface-functions.md#cut-out-shapes) documents. Several
+  faults broke that. The caster wrote no object matrices into `object`, though its vertex stage
+  passed them. It placed the fragment in the shadow map's pixels, where the surface reads the
+  camera's. The motion build passed the mesh's normal, not the world's. And the motion build never
+  set `frontFacing`. Both also read the light where the surface reads the camera's `viewDirection`.
+  The built-in `camera` and `frame.resolution` were the shadow view's and the shadow map's.
+  The surface now sees the scene camera's view-projection, view, projection, near and far, target
+  size and eye in light views, carried in the shadow frame. The frame's uniform data grows by 96
+  bytes, and `FRAME_UNIFORM_BYTES` rises from 1,088 to 1,184. The caster fills the object's
+  matrices, places the fragment in the camera's pixel, and reads the camera's place for
+  `viewDirection`. The motion build passes the world normal and the face it draws. A surface that
+  reads any of them therefore cuts the same holes in its shadow and its motion as where it shades. The
+  `custom-surface-inputs` test compares a card whose alpha reads all of them against the same card
+  without them, in the shadow and in the motion view. A shadow caster draws the triangles that face
+  away from the light, so `frontFacing` and the side that `normal` faces can be the caster's own, as
+  the surface docs say. A caster and a motion build bind no copy of the camera's depth, so a surface
+  that reads `sceneDepth` or `sceneDistance` still cuts another shape there, as the docs now say.
 - **Row values keep the mask's own test.** `ROW_VALUES` is no longer kept apart from
   `ALPHA_COVERAGE` or `ALPHA_HASH` in `APART`. The frame builder also stops exempting a batch's
   rows from the mask's own test. So a batch's rows test a mask by the cutoff, by coverage or by the hash,
@@ -261,10 +285,16 @@ are the choices the task left open, and the reasons for them.
 
 The cost of the work, measured on this branch:
 
-- **The engine's start and feature files.** M3-V2 adds no build to the start's shader modules: the
-  caster and motion code sits behind bits that only custom materials take. `surface_place` builds
-  the surface input's code for a custom material's shading, caster and motion builds, under the
-  custom def alone, so an engine lit build carries none of it. The figures are in "Measured" below.
+- **The engine's start and feature files.** `surface_place` builds the surface input's code for a
+  custom material's shading, caster and motion builds, under the custom def alone, so an engine lit
+  build carries none of it. The start's files still grew, for the material gating that reads the
+  compiled WGSL and the custom template's depth stage, by about 900 bytes, and the start's budget
+  rose to 195 KB ([D-14](D-14-js-budget.md#the-starts-budget-rises-to-195-kb-for-the-cut-out-builds-25-october-2026)).
+  The engine's own builds rose too: a batch whose rows bring values now takes its mask's own test, so
+  the lit templates build each mask family over the row bit. The shader build budget rose from 53,762
+  to 54,972 GLSL builds and from 19,227 to 21,777 WGSL builds
+  ([Implementation notes](../implementation-notes.md#the-count-the-manifest-may-not-pass)).
+  The figures are in "Measured" below.
 - **A custom material's builds.** A material that names the alpha gains the builds of coverage, the
   hash and the sample mask, each of which picks up the template's other bits, and the masking of
   its caster and motion. The Vite plugin's build time and the page's module grow for such a
@@ -287,11 +317,12 @@ took 6,116 ms and 4,920 ms, so the rows are not comparable across loads. Two thi
 material's builds. The fading level of detail's builds double every material's shading builds,
 because they load with the material's first use. Alpha to coverage, the alpha hash and their
 sample mask then multiply the builds of a material that names the alpha, and its caster and motion
-gain the mask's test. The engine's own shader builds are unaffected: the cut-out code sits behind
-bits that only custom materials take. After the second merge with the 25 October tip, the start files
-come to 198,457 bytes after Brotli in pipelined WebGL2 mode, inside the raised 195 KB budget with
-1,223 bytes left. The largest first-use shader file is 1,383,239 bytes raw, 212,075 after gzip and 55,712
-after Brotli, inside its 1,792 KB, 320 KB and 56 KB caps.
+gain the mask's test. The engine's own builds and the start's files grew as the bullets above say:
+53,762 to 54,972 GLSL builds and 19,227 to 21,777 WGSL builds, and about 900 bytes of start files.
+After the second merge with the 25 October tip, the start files come to 198,457 bytes after Brotli in
+pipelined WebGL2 mode, inside the raised 195 KB budget with 1,223 bytes left. The largest first-use
+shader file is 1,383,239 bytes raw, 212,075 after gzip and 55,712 after Brotli, inside its 1,792 KB,
+320 KB and 56 KB caps.
 
 ## Addendum: how the scatter places plants
 

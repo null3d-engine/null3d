@@ -39,7 +39,8 @@ struct Frame {
     /// The size of the render target in pixels, and one over each.
     target_size: vec4f,
     /// The distances of the camera's near and far planes, then the change in normalized device
-    /// coordinates across one CSS pixel of the canvas, along x and along y.
+    /// coordinates across one CSS pixel of the canvas, along x and along y. In the views of lights
+    /// they are the scene camera's, which a material's surface reads.
     camera_range: vec4f,
     /// Ambient occlusion's strength, 0 when the view draws none, the scene target's height in
     /// pixels, and the texels of its texture per pixel of the scene, across and down (see
@@ -61,10 +62,12 @@ struct Frame {
     /// this view's camera. It is 0 in the main camera's view.
     shadow_origin: vec4f,
     /// The view matrix for positions relative to the camera: the camera's rotation alone, as the
-    /// camera sits at the origin. `projection * view` is `view_proj`. Zero in the views of lights.
+    /// camera sits at the origin. `projection * view` is `view_proj`. In the views of lights it
+    /// holds the scene camera's view matrix, which a material's surface reads.
     view: mat4x4f,
     /// The projection matrix, into the clip space of the engine's reversed depth: 1 at the near
-    /// plane and 0 at the far plane. Zero in the views of lights.
+    /// plane and 0 at the far plane. In the views of lights it holds the scene camera's projection,
+    /// which a material's surface reads.
     projection: mat4x4f,
     /// Takes a position relative to this frame's camera into the clip space of the camera's view in
     /// the frame before, which screen-space reflections read the color of (see null3d::ssr).
@@ -86,6 +89,17 @@ struct Frame {
     /// The vignette's intensity, size, falloff and roundness, which fragment shaders apply before
     /// the tone mapping on the 8-bit path, in the camera's view. Zero elsewhere, which applies none.
     vignette: vec4f,
+    /// The camera that a material's surface reads: this view's own camera, and the scene camera in
+    /// the views of lights, whose own `view_proj` and `target_size` belong to the light. A masked
+    /// custom material's caster reads the view-projection and the render target's size in pixels
+    /// with one over each, to place its fragment in the camera's pixel.
+    camera_view_proj: mat4x4f,
+    camera_target: vec4f,
+    /// The camera's place as a homogeneous point, as `camera_position` holds it in its view:
+    /// `(0, 0, 0, 1)` for a perspective camera, and the direction toward it with `w` of 0 for an
+    /// orthographic one. A masked custom material's caster reads it for the direction toward the
+    /// camera.
+    camera_eye: vec4f,
 }
 
 /// The clip position of `relative_position` through `view_proj`, with the frame's sub-pixel jitter

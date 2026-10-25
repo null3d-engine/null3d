@@ -471,10 +471,16 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 ```
 
-`alphaToCoverage` smooths the cut edges over about a pixel, as it does for a standard material. `alphaMode: 'hash'` draws a share of the points that the alpha sets. Only WGSL that sets or reads the surface's `alpha` has these builds. A material whose WGSL never names the alpha throws E1217 for both. Such a material runs its surface function three times: as it shades, as it casts a shadow, and as it writes its motion.
+`alphaToCoverage` smooths the cut edges over about a pixel, as it does for a standard material. `alphaMode: 'hash'` draws a share of the points that the alpha sets. Only WGSL that sets or reads the surface's `alpha` has these builds. A material whose WGSL never names the alpha throws E1217 for both.
+
+Such a material runs its surface function as it shades and as it casts a shadow. A material that also declares a vertex offset runs it a third time, as it writes its motion. A material without a vertex offset has no motion build, so the motion pass cuts no holes of its own.
+
+Each run gets the scene camera's inputs. `fragCoord` is its pixel, `frame.resolution` is its target's size, `camera` holds its matrices and planes, and `viewDirection` points toward it. The object's matrices and the mesh's normal are the same. A shadow caster draws the triangles that face away from the light, so `frontFacing` and the side that `normal` faces are the caster's there.
+
+A caster and a motion build bind no copy of the scene's depth. `sceneDepth` reads 0 there and `sceneDistance` the far plane, so a surface whose alpha reads either cuts another shape in those passes.
 
 - Its shadow caster tests the surface's alpha against `alphaCutoff`. Its shadow keeps the mask's holes, and it moves with the vertex offset. The patterns of an alpha texture, such as leaves, show in the shadow.
-- Its motion build tests the same alpha at the same cutoff, so the motion pass cuts the same holes.
+- A material with a vertex offset has a motion build, which tests the same alpha at the same cutoff, so the motion pass cuts the same holes.
 - A masked surface that tests its alpha by the hash casts a hashed shadow, and its motion keeps the same pattern.
 
 A custom material's levels of detail fade, and so do the edges of its distance bands, as [Levels of detail](../concepts/lod.md#fading-between-levels) describes. A mask tested by the alpha hash switches its levels at once.

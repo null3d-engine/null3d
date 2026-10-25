@@ -80,7 +80,7 @@ use null3d_core::scene::{NO_PARENT, SceneStorage, flags};
 use null3d_gpu::drawlist::sizes::{SHADOW_SETTINGS_BYTES, SHADOW_UNIFORM_BYTES};
 use null3d_gpu::drawlist::{DrawList, Op, address, buffer_usage, compare, format};
 
-use crate::camera::{Affine, Lens, Mat4, ViewDepth};
+use crate::camera::{Affine, Lens, Mat4, ViewDepth, multiply};
 use crate::frame::{LINEAR_LEVEL, NEAREST_TEXELS, RecordError, UploadArena, clamp_sampler};
 use crate::frame_data::FrameUniform;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
@@ -919,8 +919,51 @@ pub struct ShadowFrame {
     /// The frame's clock, as the camera's view has it, which the vertex offsets of custom
     /// materials' casters read.
     pub clock: [f32; 4],
+    /// The camera that the materials shade for, which a masked custom material's caster reads to
+    /// place its fragment in the camera's pixel.
+    pub shading: ShadingCamera,
     /// The object whose shadow the light draws into a tile of its own, while it names one.
     pub hero: Option<HeroShadow>,
+}
+
+/// The camera that a light's view shades for, as a masked custom material's caster reads it: the
+/// camera's view-projection, view and projection matrices, the size of its render target in pixels
+/// with one over each, its place as a homogeneous point, its near and far distances with the rest
+/// of its range values, and its cell. The view's own fields belong to the light, so the surface
+/// function would otherwise place its fragment in the shadow map's pixels and read the light where
+/// it reads the camera.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ShadingCamera {
+    /// The matrix from positions relative to the camera to its clip space.
+    pub view_proj: Mat4,
+    /// The camera's view matrix, which looks down -z.
+    pub view: Mat4,
+    /// The camera's projection matrix, with the engine's reversed depth.
+    pub projection: Mat4,
+    /// The camera's render target's size in pixels, and one over each.
+    pub target: [f32; 4],
+    /// The camera's place as a homogeneous point, as its view's `camera_position` holds it.
+    pub eye: [f32; 4],
+    /// The camera's near and far distances, then the rest of its range values.
+    pub range: [f32; 4],
+    /// The camera's cell, whose absolute position is the world's position that the built-in values
+    /// give as `camera.position`.
+    pub camera: CellPosition,
+}
+
+impl ShadingCamera {
+    /// The camera of `frame`, as a light's view gives it to a material.
+    pub fn of(frame: &ViewFrame) -> Self {
+        Self {
+            view_proj: multiply(&frame.uniform.projection, &frame.uniform.view),
+            view: frame.uniform.view,
+            projection: frame.uniform.projection,
+            target: frame.uniform.target_size,
+            eye: frame.uniform.camera_position,
+            range: frame.uniform.camera_range,
+            camera: frame.camera,
+        }
+    }
 }
 
 impl ShadowFrame {
@@ -954,6 +997,13 @@ impl ShadowFrame {
                 target_size: [size, size, 1.0 / size, 1.0 / size],
                 clock: self.clock,
                 camera_world: camera_world(self.camera),
+                // The scene camera, which a material's surface reads where its caster runs.
+                view: self.shading.view,
+                projection: self.shading.projection,
+                camera_range: self.shading.range,
+                camera_view_proj: self.shading.view_proj,
+                camera_target: self.shading.target,
+                camera_eye: self.shading.eye,
                 ..FrameUniform::default()
             },
             frustum: cascade.frustum,
@@ -1643,6 +1693,15 @@ mod tests {
             drawn: 0b111,
             depth: CascadeDepth::default(),
             clock: [2.5, 0.016, 0.0, 0.0],
+            shading: ShadingCamera {
+                view_proj: std::array::from_fn(|k| k as f32),
+                view: std::array::from_fn(|k| k as f32 + 20.0),
+                projection: std::array::from_fn(|k| k as f32 + 40.0),
+                target: [640.0, 360.0, 1.0 / 640.0, 1.0 / 360.0],
+                eye: [0.0, 0.0, 0.0, 1.0],
+                range: [0.1, 40.0, 0.0, 0.0],
+                camera: CellPosition::default(),
+            },
             hero: None,
         };
         let size = SETTINGS.map_size as f32;
@@ -1650,6 +1709,14 @@ mod tests {
             let uniform = frame.view_frame(k).uniform;
             // Custom materials' casters read the frame's clock, as the camera's view has it.
             assert_eq!(uniform.clock, frame.clock);
+            // And the camera's view-projection, target and place, not the light's.
+            assert_eq!(uniform.camera_view_proj, frame.shading.view_proj);
+            assert_eq!(uniform.camera_target, frame.shading.target);
+            assert_eq!(uniform.camera_eye, frame.shading.eye);
+            // The camera's own fields hold the scene camera, which the built-in `camera` reads.
+            assert_eq!(uniform.view, frame.shading.view);
+            assert_eq!(uniform.projection, frame.shading.projection);
+            assert_eq!(uniform.camera_range, frame.shading.range);
             // The direction toward the light, as an orthographic camera's position gives it.
             let [x, y, z, w] = uniform.camera_position;
             let toward = DOWN_AND_ACROSS.map(|v| -v);

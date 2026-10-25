@@ -1677,8 +1677,10 @@ pub mod sizes {
     /// shadow lookups, the camera's view and projection matrices, which custom materials read,
     /// screen-space reflections' matrix into the frame before's view and their two vectors, a
     /// still view's jitter, which the scene's vertex shaders add, the physical sky's aerial
-    /// perspective's six vectors, and the vignette that the 8-bit path's fragment shaders apply.
-    pub const FRAME_UNIFORM_BYTES: u32 = 1088;
+    /// perspective's six vectors, the vignette that the 8-bit path's fragment shaders apply, and
+    /// the camera's view-projection, target size and eye, which a masked custom material's caster
+    /// reads in a light's view.
+    pub const FRAME_UNIFORM_BYTES: u32 = 1184;
     /// Bytes of the output settings: the exposure, the tone mapping, the flags and the render
     /// size, then the grading controls that the 8-bit path's shaders apply before their curve.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 112;

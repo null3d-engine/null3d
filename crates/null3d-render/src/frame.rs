@@ -70,8 +70,8 @@ use crate::probe_shading::ProbeShading;
 use crate::probes::{ProbeError, ProbeList, ProbeSettings, Probes};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
-    CascadeDepth, CascadeSchedule, HeroShadow, MovingCasters, ShadowFrame, ShadowQuality,
-    ShadowSettings, fit_cascades,
+    CascadeDepth, CascadeSchedule, HeroShadow, MovingCasters, ShadingCamera, ShadowFrame,
+    ShadowQuality, ShadowSettings, fit_cascades,
 };
 use crate::sky_maps::{MapSky, SkyMaps};
 use crate::ssr::{self, Ssr, TraceFrame};
@@ -3352,6 +3352,15 @@ impl SceneSettings {
     fn fit_shadows(&mut self, input: &FrameInput<'_>) -> Option<ShadowFrame> {
         let (scene, parity, canvas) = (input.scene, input.parity(), input.canvas);
         let shadow = self.lighting.sun_shadow?;
+        // A masked custom material's caster reads the camera's view and target, since its own
+        // belong to the light.
+        let shading = ShadingCamera::of(&self.view_frame(
+            ViewId::CAMERA,
+            scene,
+            parity,
+            canvas,
+            input.render_scale,
+        )?);
         let (camera, lens) = self.views[ViewId::CAMERA.index()].camera()?;
         let slot = scene.resolve(camera).ok()?;
         let (fitter, lens) = self
@@ -3434,6 +3443,7 @@ impl SceneSettings {
             drawn,
             depth: self.cascade_depth,
             clock: self.clock,
+            shading,
             hero: shadow.hero.and_then(|row| {
                 HeroShadow::of(
                     scene,
@@ -3855,6 +3865,11 @@ impl SceneSettings {
             view: camera.view,
             projection: camera.projection,
             camera_position: camera.eye,
+            // The camera that a material's surface reads, which is this view's own camera. A
+            // light's view carries the scene camera in these fields instead.
+            camera_view_proj: view_proj,
+            camera_target: [width, height, 1.0 / width, 1.0 / height],
+            camera_eye: camera.eye,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,

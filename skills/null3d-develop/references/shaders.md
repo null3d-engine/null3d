@@ -109,7 +109,7 @@ stripes.set({ roughness: 0.4 });
 
 Materials from the same WGSL share one shader and its pipelines. Make one WGSL per look, and many materials from it.
 
-`s.alpha` works with the material's `alphaMode`: `'mask'` draws nothing below `alphaCutoff`, `'hash'` draws a share of the surface that the alpha sets, and `'blend'` blends the surface over what lies behind it, in the transparent pass. A masked material cuts its shadow too, because its shadow caster runs the same surface function. `alphaToCoverage` and the `'hash'` mode need WGSL that sets or reads `s.alpha`; without it they throw E1217.
+`s.alpha` works with the material's `alphaMode`: `'mask'` draws nothing below `alphaCutoff`, `'hash'` draws a share of the surface that the alpha sets, and `'blend'` blends the surface over what lies behind it, in the transparent pass. A masked material cuts its shadow and its motion too, because its caster and its motion build run the same surface function with the same inputs. `alphaToCoverage` and the `'hash'` mode need WGSL that sets or reads `s.alpha`; without it they throw E1217.
 
 `SurfaceInput` also has `uv1`, `fragCoord` and `instance` (0.2). `uv1` is the second texture coordinates, or the first on a mesh with one set. `fragCoord` (`vec3f`) is the pixel from the top left, and its depth, 1 at the near plane. `instance` (`u32`) is the row in its batch, 0 for scene objects. `VertexInput` has `uv1`, `instance` and `colors` too: `colors` is the mesh's vertex color, which a vertex offset reads as data, such as a branch index and a phase for wind. Only WGSL that reads `uv1`, `colors`, `instance`, `object.id` or the object's matrices pays for them.
 
@@ -126,7 +126,7 @@ Globals that the vertex offset and the surface function both read (`shaders/buil
 | `object` | `position` (the object's or instance's origin in the world); `values` (`vec4f`), `worldMatrix` (`mat4x4f`), `normalMatrix` (`mat3x3f`), `id` (`u32`) (0.2) | `worldMatrix`'s translation is relative to the camera. `id` equals `mesh.shaderId` or `batch.shaderId`, and stays while the object lives |
 | `material` | Your uniforms, as `struct Uniforms` declares them | See section 4 |
 
-A vertex offset in a shadow pass reads zeros for `camera.view` and `camera.projection`. A full shader reads zeros for the object's matrices and id.
+A vertex offset and a surface function read the scene camera's `camera` and `frame.resolution` in a shadow pass, as they do on screen. A full shader reads zeros for the object's matrices and id.
 
 The engine renders relative to the camera. `input.relativePosition` is therefore exact near the camera, even in very large worlds. Use it for distances, fades and view-dependent effects. The world position of the input, `camera.position` and `object.position` are absolute. Far from the origin they hold fewer digits (1 mm steps at 10 km), so keep world-space patterns coarse there.
 
