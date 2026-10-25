@@ -1151,7 +1151,7 @@ describe('skins and clips', () => {
 						output: b.accessor(new Float32Array([1, 0]), 1),
 						interpolation: 'STEP',
 					},
-					{ input: at([0, 1]), output: b.accessor(new Float32Array([0, 0, 0, 1, 1, 1]), 3) },
+					{ input: at([0, 1]), output: b.accessor(new Float32Array([0, 0, 0.5, 0.5]), 2) },
 					{ input: at([0, 1]), output: b.accessor(new Float32Array([0.5, 1]), 1) },
 				],
 				channels: [
@@ -1182,15 +1182,115 @@ describe('skins and clips', () => {
 			['material', 0, 'opacity', 1],
 			['light', 0, 'intensity', 1],
 			['node', 1, 'visible', 1],
+			['material', 0, 'uvOffset', 2],
 		]);
 		// A base color factor's fourth number becomes the opacity, key by key.
 		const [color, opacity] = clip?.properties ?? [];
 		expect(Array.from(color?.values ?? [])).toEqual([1, 1, 1, 0, 0, 0]);
 		expect(Array.from(opacity?.values ?? [])).toEqual([1, 0.5]);
 		expect(data.notes).toEqual([
-			"animation 0 moves a material's pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/offset, which the engine does not animate",
 			'animation 0 moves a camera property, and the engine reads no cameras from files',
 		]);
+	});
+
+	test('KHR_animation_pointer moves the map transforms that three.js moves, and no others', () => {
+		const b = new GltfBuilder().uses('KHR_animation_pointer').uses('KHR_texture_transform');
+		b.json.images = [{ uri: 'tex/base.png' }];
+		b.json.textures = [{ source: 0 }];
+		b.json.materials = [
+			{
+				name: 'uv',
+				pbrMetallicRoughness: {
+					baseColorTexture: {
+						index: 0,
+						extensions: { KHR_texture_transform: { offset: [0.25, 0.5] } },
+					},
+				},
+				emissiveTexture: { index: 0 },
+			},
+		];
+		const mesh = b.mesh([boxPrimitive(b, 0)], 'box');
+		b.node({ name: 'Box', mesh });
+		const at = (seconds: number[]) =>
+			b.accessor(new Float32Array(seconds), 1, { min: [0], max: [seconds.at(-1) ?? 0] });
+		const pointer = (path: string) => ({
+			path: 'pointer',
+			extensions: { KHR_animation_pointer: { pointer: path } },
+		});
+		const pairs = (values: number[]) => b.accessor(new Float32Array(values), 2);
+		const transform = (texture: string, part: string) =>
+			pointer(`/materials/0/${texture}/extensions/KHR_texture_transform/${part}`);
+		b.json.animations = [
+			{
+				name: 'Move',
+				samplers: [
+					{ input: at([0, 1]), output: pairs([0, 0, 1, 1]) },
+					{ input: at([0, 1]), output: pairs([1, 1, 2, 2]) },
+					{ input: at([0, 1]), output: pairs([0, 0, 0.5, 0.5]) },
+					{ input: at([0, 1]), output: pairs([1, 1, 3, 3]) },
+					{ input: at([0, 1]), output: pairs([0, 0, 1, 1]) },
+				],
+				channels: [
+					{ sampler: 0, target: transform('pbrMetallicRoughness/baseColorTexture', 'offset') },
+					{ sampler: 1, target: transform('pbrMetallicRoughness/baseColorTexture', 'scale') },
+					{ sampler: 2, target: transform('emissiveTexture', 'offset') },
+					{ sampler: 3, target: transform('emissiveTexture', 'scale') },
+					{ sampler: 4, target: transform('normalTexture', 'offset') },
+				],
+			},
+		];
+		const clip = parse(b.glb()).animation?.clips[0];
+		expect(
+			clip?.properties?.map((p) => [
+				p.target.kind,
+				p.target.index,
+				p.target.value,
+				p.target.kind === 'material' ? p.target.key : '',
+				p.components,
+			]),
+		).toEqual([
+			['material', 0, 'uvOffset', 'baseColorOffset', 2],
+			['material', 0, 'uvScale', 'baseColorScale', 2],
+			['material', 0, 'uvOffset', 'emissiveOffset', 2],
+			['material', 0, 'uvScale', 'emissiveScale', 2],
+		]);
+		expect(Array.from(clip?.properties?.[2]?.values ?? [])).toEqual([0, 0, 0.5, 0.5]);
+		expect(parse(b.glb()).notes).toEqual([
+			"animation 0 moves a material's normalTexture/extensions/KHR_texture_transform/offset, which the engine does not animate",
+		]);
+	});
+
+	test('a texture transform whose keys are not pairs fails with the numbers it has', () => {
+		const b = new GltfBuilder().uses('KHR_animation_pointer').uses('KHR_texture_transform');
+		b.json.images = [{ uri: 'tex/base.png' }];
+		b.json.textures = [{ source: 0 }];
+		b.json.materials = [{ pbrMetallicRoughness: { baseColorTexture: { index: 0 } } }];
+		const mesh = b.mesh([boxPrimitive(b, 0)], 'box');
+		b.node({ name: 'Box', mesh });
+		const at = b.accessor(new Float32Array([0, 1]), 1, { min: [0], max: [1] });
+		b.json.animations = [
+			{
+				name: 'Move',
+				samplers: [{ input: at, output: b.accessor(new Float32Array([0, 1]), 1) }],
+				channels: [
+					{
+						sampler: 0,
+						target: {
+							path: 'pointer',
+							extensions: {
+								KHR_animation_pointer: {
+									pointer:
+										'/materials/0/pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/offset',
+								},
+							},
+						},
+					},
+				],
+			},
+		];
+		const [code, message] = refusal(b.glb());
+		expect(code).toBe('E1416');
+		expect(message).toContain('has 1 numbers per key, and a texture transform takes two');
 	});
 
 	test('two clips of one name both stay, the second with a number', () => {

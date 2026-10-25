@@ -1146,19 +1146,32 @@ async function gltfPosesFixture(): Promise<string> {
 	return `${JSON.stringify(fixture)}\n`;
 }
 
+/** A two-number vector, as three.js's texture offset and repeat are. */
+interface Vec2 {
+	x: number;
+	y: number;
+}
+
 /**
  * What three.js's GLTFLoader, its animation-pointer plugin and AnimationMixer give for the case of
  * `gltf-properties.ts`: the value that each property held at each sampled time.
  */
 async function gltfPropertiesFixture(): Promise<string> {
 	// three.js's file loader reads a .gltf file's buffers by address.
-	const scope = globalThis as { ProgressEvent?: unknown };
+	const scope = globalThis as {
+		ProgressEvent?: unknown;
+		createImageBitmap?: (source: unknown) => Promise<unknown>;
+	};
 	scope.ProgressEvent ??= class extends Event {
 		constructor(type: string, init: Record<string, unknown> = {}) {
 			super(type);
 			Object.assign(this, init);
 		}
 	};
+	// A texture track binds to the texture itself, and a texture whose image failed leaves its map
+	// out, so the mixer cannot bind the track. The test reads values, not pixels, so an image
+	// becomes a stand-in of one texel.
+	scope.createImageBitmap ??= async () => ({ width: 1, height: 1, close() {} });
 	const root = repositoryRoot();
 	type Parser = { getDependency(kind: string, index: number): Promise<unknown> };
 	const read = async (gltf: { parser: Parser; scene: Object3D }, key: string) => {
@@ -1172,6 +1185,8 @@ async function gltfPropertiesFixture(): Promise<string> {
 			let material = source as Material & {
 				color: { r: number; g: number; b: number };
 				opacity: number;
+				map?: { offset: Vec2; repeat: Vec2 };
+				emissiveMap?: { offset: Vec2; repeat: Vec2 };
 			};
 			scene.traverse((object) => {
 				const mesh = object as Object3D & { material?: Material };
@@ -1180,6 +1195,12 @@ async function gltfPropertiesFixture(): Promise<string> {
 			});
 			if (value === 'color') return [material.color.r, material.color.g, material.color.b];
 			if (value === 'opacity') return [material.opacity];
+			const pair = (v: Vec2 | undefined, u: number, vDefault: number) =>
+				v ? [v.x, v.y] : [u, vDefault];
+			if (value === 'baseColorOffset') return pair(material.map?.offset, 0, 0);
+			if (value === 'baseColorScale') return pair(material.map?.repeat, 1, 1);
+			if (value === 'emissiveOffset') return pair(material.emissiveMap?.offset, 0, 0);
+			if (value === 'emissiveScale') return pair(material.emissiveMap?.repeat, 1, 1);
 		} else if (kind === 'nodes') {
 			const node = (await parser.getDependency('node', at)) as { visible: boolean };
 			return [node.visible ? 1 : 0];
