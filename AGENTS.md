@@ -244,7 +244,7 @@ Before each commit:
 
 Before each push to main (`tools/hooks/pre-push.ts`):
 
-- The messages and trailers of every commit that the push adds to main, as CI's `commits` job checks them: commitlint, then the trailer check. The merge check runs over them too, so a merge commit that carries new work is refused.
+- The messages and trailers of every commit that the push adds to main, as CI's `commits` job checks them: commitlint, then the trailer check. The merge check runs over them too, so a merge commit that carries new work is refused. The copy check (`tools/hooks/check-copies.ts`) refuses a commit that repeats one the branch already holds. A repeat has the same subject, author's date and change, as a branch from before a history rewrite carries.
 - When the push changes Rust code or Cargo settings: `cargo check --workspace`, then the tests of each crate that it changes, with `--no-fail-fast`. The test that builds every shader runs in CI only. The diff that this reads runs from main's commit before the push to the pushed commit, so a merge that changes Rust counts.
 - A push that changes no Rust file takes the type check alone, and `cargo check --workspace` follows as its own queued job straight after, since the merged Rust tree then holds main's own bytes ([D-157](.dev/decisions/D-157-direct-pushes-to-main.md#addendum-15-october-2026-a-rust-free-push-needs-the-type-check-only)). Both halves must hold: no Rust file in the branch's diff, and none in the merge that it just resolved. When either half fails, the compile runs before the push.
 - On a machine whose git setting `null3d.jobQueue` names a job queue script, the steps run through that queue.

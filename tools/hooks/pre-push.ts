@@ -207,7 +207,8 @@ export function plan(
 
 /**
  * The checks of the commits that a push adds to `target` between `base` and `head`: their messages,
- * their trailers, and their merges, which must hold only resolutions and mechanical fixes.
+ * their trailers, their merges, which must hold only resolutions and mechanical fixes, and that none
+ * is a second copy of a commit that the branch already holds.
  */
 function commitSteps(base: string, head: string, target: string, lane: Step['lane']): Step[] {
 	const range = `${base}..${head}`;
@@ -226,6 +227,11 @@ function commitSteps(base: string, head: string, target: string, lane: Step['lan
 			why: `a merge commit that the push adds to ${target} must hold only resolutions and mechanical fixes`,
 			lane,
 			command: ['bun', 'tools/hooks/check-merges.ts', range],
+		},
+		{
+			why: `a branch from before a history rewrite would put second copies of commits on ${target}`,
+			lane,
+			command: ['bun', 'tools/hooks/check-copies.ts', range],
 		},
 	];
 }

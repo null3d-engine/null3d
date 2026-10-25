@@ -185,6 +185,7 @@ describe('landingSteps', () => {
 			['DIRECT', 'bunx commitlint --from b2 --to a1'],
 			['DIRECT', 'bun tools/hooks/check-trailers.ts b2..a1'],
 			['DIRECT', 'bun tools/hooks/check-merges.ts b2..a1'],
+			['DIRECT', 'bun tools/hooks/check-copies.ts b2..a1'],
 			...guardSteps().map((step) => [step.lane, step.command.join(' ')]),
 		]);
 	});
@@ -222,6 +223,7 @@ describe('plan', () => {
 			['QUICK', 'bunx commitlint --from b2 --to a1'],
 			['QUICK', 'bun tools/hooks/check-trailers.ts b2..a1'],
 			['QUICK', 'bun tools/hooks/check-merges.ts b2..a1'],
+			['QUICK', 'bun tools/hooks/check-copies.ts b2..a1'],
 			['DIRECT', 'bun tools/decisions.ts --check'],
 			['DIRECT', 'bun run check'],
 			[
@@ -236,6 +238,7 @@ describe('plan', () => {
 			['QUICK', 'bunx commitlint --from b2 --to a1'],
 			['QUICK', 'bun tools/hooks/check-trailers.ts b2..a1'],
 			['QUICK', 'bun tools/hooks/check-merges.ts b2..a1'],
+			['QUICK', 'bun tools/hooks/check-copies.ts b2..a1'],
 			['DIRECT', 'bun tools/decisions.ts --check'],
 			['DIRECT', 'bun run check'],
 			[
@@ -255,7 +258,7 @@ describe('plan', () => {
 	});
 
 	it('compiles the workspace for a Rust file outside the crates, with no crate to test', () => {
-		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs'])).toHaveLength(7);
+		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs'])).toHaveLength(8);
 		expect(commands(['tools/fixtures/disallowed-clock/src/main.rs']).at(-1)?.[1]).toBe(
 			'cargo check --workspace',
 		);
