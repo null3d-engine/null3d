@@ -420,6 +420,19 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		loadedBy: 'sketch-worker-assets.js',
 		onFirstCall: true,
 	},
+	// The reader of an environment map file loads on first use too, and both bundles carry a copy.
+	{
+		name: 'page-environment-file.js',
+		module: 'scene/environment-file.ts',
+		loadedBy: 'page-assets.js',
+		onFirstCall: true,
+	},
+	{
+		name: 'sketch-worker-environment-file.js',
+		module: 'scene/environment-file.ts',
+		loadedBy: 'sketch-worker-assets.js',
+		onFirstCall: true,
+	},
 	{ name: 'page-baked-light.js', module: 'scene/baked-light.ts', loadedBy: 'page-assets.js' },
 	// The half-float helpers are read by several of the start's own modules, so the bundler writes
 	// them to a file of their own that every page loads: a part of the start, not a first-use file.
