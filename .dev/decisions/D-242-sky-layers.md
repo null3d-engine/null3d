@@ -201,14 +201,21 @@ sky, installs a green layer, removes it, and checks that each sphere takes the l
 loses it, and that neither shows it while the other does not beyond the frames that the light takes
 to follow the map. It runs on every GPU tier through the `sky` plan.
 
-The aurora demo's pictures stay as they were drawn on 24 October 2026, before the layer reached its
-map. With the layer in the map and its light in the scene, all six still match those references on
-webgpu, compatibility mode and webgl2, on the Mac's GPU and on SwiftShader, within the manifest's
-tolerance of a tenth of a per cent of the pixels. The add-on's colour is scaled by the sky's cloud
-coverage, which the demo keeps at 0.06, so a held frame holds little of its light. The references
-move only if the demo's look changes.
+The aurora demo's six pictures were redrawn on 25 October 2026, in the form [image
+tests](../image-tests.md#references) records. The old ones were drawn on 24 October, before the
+layer reached the map, and they still held the demo's stand-in ambient light, which the demo no
+longer has. Against them the drawn picture differs in 48.9 per cent of its pixels by more than ten
+levels, and the ice's mean green falls from 22.5 to 6.6. The manifest's tolerance weighs a pixel's
+colour distance rather than its levels, so those pixels passed it, and a passing comparison alone
+did not mean the same picture. The Mac's GPU drew that set, and CI's software GPU draws the other.
 
 `sky-layer-light` keeps no pictures: it reads the spheres' colours, so it needs no reference.
+
+The held frame does hold the layer in its map. In hold mode the map's build of the layer's shader is
+present at every stage, and the light capture runs: the ice stays blue because the add-on scales its
+colour by the sky's cloud coverage, which the demo keeps at 0.06, and the ice's own colour is blue
+(D-118's `sky-layer-light` page measures the layer at full strength). So the blue ice is the demo's
+look, not a layer that missed its map.
 
 ### The map's light and a layer that never arrives
 
