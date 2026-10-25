@@ -63,15 +63,15 @@ move between frames, so the jitter adds no temporal noise.
 ## Look
 
 The volumetric tier looks better than the flat layer, so the presets above Medium draw it (hard rule
-40). The flat layer is one plane of two-dimensional noise: every part of a cloud carries the same
-light, and its edge is a cut line. The march gives the deck a height, so a cloud's top catches the
-light, its base stays in shade and its edge breaks into billows; a light behind it rims that edge. The
-same settings put the cloud in the same place and at the same size on both tiers, so the choice moves
-the look and not the scene.
+40). The flat layer is one plane of two-dimensional noise. Every part of a cloud carries the same
+light, and its edge is a cut line. The march gives the deck a height. A cloud's top catches the
+light, its base stays in shade, and its edge breaks into billows. A light behind it rims that edge.
+The same settings put the cloud in the same place on both tiers. They give it the same size too, so
+the choice moves the look and not the scene.
 
-The tier's own cost is inside the High preset's budget on the devices measured, so no effect is
+The tier's own cost is inside the High preset's budget on the devices measured. No effect is
 dropped to meet a frame budget. A device that cannot hold it lowers its preset, as the governor and
-the preset check already do, and the flat layer keeps every setting's meaning there.
+the preset check already do. The flat layer keeps every setting's meaning there.
 
 ## Decision
 
