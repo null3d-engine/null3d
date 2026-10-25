@@ -89,6 +89,12 @@ Test logic in three ways:
 - Keep game rules in plain modules that take numbers and arrays and import nothing from the engine, and test them with `bun test`. The sketch calls them from `onUpdate` or `onFixedUpdate`.
 - Put a scene into a state for an image test through the sketch module's address, such as `sketch.ts?score=90`, and check the held frame. A hold without a script gives the sketch no input.
 
+Before you believe a picture that judges a change, prove the page read the change:
+
+- A sketch reads its address with `new URL(import.meta.url).searchParams`. Settings that a page puts on the sketch's address are silently lost if the query does not reach the module, and the sketch then draws its own defaults, so every variant is one picture. Have the sketch post back the values it built and print them beside the frame.
+- The dev server answers a sketch address that carries a query with `Cache-Control: max-age=31536000, immutable`, where the same address without a query answers `no-cache`. A browser may therefore keep the first module it fetched for that address. When a value changes between runs, open the page twice with two markers, have the sketch report the one it read, and compare before trusting any difference.
+- When two variants look identical, suspect the pipeline first: the sketch not being re-read, the wrong module, or a stale server. The material is the last explanation, not the first.
+
 ## 4. Testing on real devices
 
 URL switches for the dev server (engine docs `guides/testing`):

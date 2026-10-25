@@ -36,7 +36,7 @@ HTML, CSS, UI, audio   -->   input, onUpdate, scene changes -->  GPU uploads and
 creates the engine           shared typed arrays                 never runs your code
 ```
 
-- `page.ts` owns the DOM, HTML UI and Web Audio. `sketch.ts` has no `document` and no `window`. `createEngine({ sketchThread: 'main' })` runs the sketch on the main thread instead, where it can reach the DOM. Use it only for DOM-heavy apps and for debugging, because the sketch's frames then share the main thread with the page. The two sides talk with `engine.postToSketch` and `page.onMessage`, and with `page.post` and `engine.onSketchMessage`. (`concepts/architecture`, `api/page`)
+- `page.ts` owns the DOM, HTML UI and Web Audio. `sketch.ts` has no `document` and no `window`. `createEngine({ sketchThread: 'main' })` runs the sketch on the main thread instead, where it can reach the DOM. Use it only for DOM-heavy apps and debugging: the sketch's frames then share the main thread. The two sides talk with `engine.postToSketch` and `page.onMessage`, and with `page.post` and `engine.onSketchMessage`. (`concepts/architecture`, `api/page`)
 - Scene objects are small wrappers around 30-bit integer handles. Change them with setters such as `setPosition`; never assign properties like `mesh.position.x = 1`. (`concepts/handles`, `api/objects`)
 - For many objects, write typed arrays directly: instance batches and dynamic objects. This is where null3D gets its speed. (`concepts/instances`)
 - Objects are static by default: they cost nothing per frame until a setter changes them. Objects created with `dynamic: true` are recomputed every frame and may be written through arrays. (`concepts/static-dynamic`)
@@ -84,7 +84,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 1. Pin down the target when the request leaves it open: which devices (phones or desktop), which frame rate, and whether the WebGL2 path matters. Phones usually matter, so assume they do unless told otherwise.
 2. Read the doc pages for the features involved (section 1).
 3. Make the change in small steps. Scene logic goes in `sketch.ts`; DOM, HTML UI and audio go in `page.ts`.
-4. Look at the result. `bunx vite` serves the project, and the null3D Vite plugin adds the right headers. `bunx @null3d/cli shot --out shot.png` renders one frame headless and saves it. Open the image and check it: code that compiles can still draw nothing.
+4. Look at the result. `bunx vite` serves the project, and the null3D Vite plugin adds the right headers. `bunx @null3d/cli shot --out shot.png` renders one frame headless and saves it. Open the image and check it: code that compiles can still draw nothing. Read `references/testing-and-debugging.md` before trusting a picture.
 5. Check the cost with `bunx @null3d/cli bench`, or with `await engine.measure(5)` on the page while it runs. Compare the frame phases with the preset's budget (`references/performance.md`).
 6. Add or update a test. Anything visual gets a hold-mode image test, listed in `null3d.json` (`references/testing-and-debugging.md`). Run `bunx @null3d/cli test`, and open the images of each test that fails.
 7. If the change touches rendering, check the WebGL2 path: add `?gpu=webgl2` to the dev URL, or run `bunx @null3d/cli test --gpu webgl2`.
