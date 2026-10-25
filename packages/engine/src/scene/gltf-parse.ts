@@ -71,6 +71,8 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_meshopt_compression',
 	'EXT_meshopt_compression',
 	'KHR_draco_mesh_compression',
+	'NEEDLE_lightmaps',
+	'NEEDLE_components',
 ];
 
 /**
@@ -859,6 +861,15 @@ export interface NodeData {
 	levels?: NodeLevels;
 	/** The levels of detail that the node's mesh downloads after the file, when it gives any. */
 	stages?: NodeStages;
+	/**
+	 * The light map that the node's Needle `MeshRenderer` names: its index among the file's light
+	 * maps, and the scale and offset of the coordinates at which it reads the map.
+	 */
+	lightMap?: {
+		index: number;
+		scale: [number, number];
+		offset: [number, number];
+	};
 }
 
 /**
@@ -913,6 +924,12 @@ export interface GltfData {
 	animation?: AnimationData;
 	/** What the parser left out, such as points and lines, for a warning in development builds. */
 	notes: string[];
+	/**
+	 * The texture use of each light map that `NEEDLE_lightmaps` registers, by the map's index, or
+	 * -1 for an entry that the engine does not take. A node's Needle `MeshRenderer` names one by
+	 * its index.
+	 */
+	lightMaps: number[];
 	/** True when the file holds Draco data, which development builds warn about. */
 	draco?: true;
 	/**
@@ -927,7 +944,10 @@ export interface GltfData {
 interface Json {
 	asset?: { version?: unknown; extras?: unknown };
 	extensionsRequired?: unknown;
-	extensions?: { KHR_lights_punctual?: { lights?: unknown } };
+	extensions?: {
+		KHR_lights_punctual?: { lights?: unknown };
+		NEEDLE_lightmaps?: unknown;
+	};
 	scene?: unknown;
 	scenes?: unknown;
 	nodes?: unknown;
@@ -1603,6 +1623,8 @@ export function parseGltf(
 			: undefined;
 		return { bytes: bytes.slice(), mimeType, source };
 	});
+	// The Needle light maps add texture uses of their own, which the checks cover too.
+	const lightMaps = parseNeedleLightMaps(json, useTexture);
 	checkImages(images, textureUses);
 
 	const lightDefs = list(json.extensions?.KHR_lights_punctual?.lights, 'lights');
@@ -1641,7 +1663,16 @@ export function parseGltf(
 		budget,
 		notes,
 	);
-	const data: GltfData = { nodes, meshes, materials, textures: textureUses, images, lights, notes };
+	const data: GltfData = {
+		nodes,
+		meshes,
+		materials,
+		textures: textureUses,
+		images,
+		lights,
+		notes,
+		lightMaps,
+	};
 	if (animation) data.animation = animation;
 	if (draco) data.draco = true;
 	const shaders = parseShaders(json);
@@ -2099,6 +2130,76 @@ function toTriangles(
 }
 
 /**
+ * The light maps that `NEEDLE_lightmaps` registers, by the index that a node's `MeshRenderer`
+ * names: each entry of the light map kind points at a texture of the file, which the engine reads
+ * in linear color, as Needle's viewer does before it decodes the RGBM texels. Entries of the
+ * other kinds, the skybox's and a reflection's, pointers to a file rather than to a texture, and
+ * indices that are not whole numbers are left out.
+ *
+ * @internal
+ */
+export function parseNeedleLightMaps(
+	json: Json,
+	useTexture: (
+		info: unknown,
+		colorSpace: 'srgb' | 'linear',
+		what: string,
+	) => { use: number } | undefined,
+): number[] {
+	const extension = json.extensions?.NEEDLE_lightmaps as Entry | undefined;
+	const entries = extension?.textures;
+	if (!Array.isArray(entries)) return [];
+	const maps: number[] = [];
+	for (const [k, value] of entries.entries()) {
+		const lightMap = value as Entry;
+		if (typeof lightMap !== 'object' || lightMap === null) continue;
+		// 0 is a light map; 1 is a skybox and 2 a reflection map, which a material does not take.
+		if ((lightMap.type ?? 0) !== 0) continue;
+		const index = lightMap.index;
+		if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) continue;
+		const pointer = lightMap.pointer;
+		const match = typeof pointer === 'string' ? /^\/?textures\/(\d+)$/.exec(pointer) : null;
+		if (!match) continue;
+		// The map reads the second texture coordinates, and keeps the file's bytes as they are:
+		// the shader decodes the RGBM texels itself.
+		const made = useTexture(
+			{ index: Number(match[1]), texCoord: 1 },
+			'linear',
+			`NEEDLE_lightmaps entry ${k}`,
+		);
+		if (made) maps[index] = made.use;
+	}
+	return Array.from({ length: maps.length }, (_, k) => maps[k] ?? -1);
+}
+
+/**
+ * The light map that a node's Needle `MeshRenderer` names, from `NEEDLE_components`: its index
+ * among the file's light maps, and the scale and offset of its coordinates. A renderer without a
+ * light map, whose index is negative, gives none.
+ *
+ * @internal
+ */
+export function needleLightMap(extensions: Entry): NodeData['lightMap'] {
+	const components = (extensions.NEEDLE_components as Entry | undefined)?.builtin_components;
+	if (!Array.isArray(components)) return undefined;
+	for (const value of components) {
+		const component = value as Entry;
+		if (component?.name !== 'MeshRenderer') continue;
+		const index = component.lightmapIndex;
+		if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return undefined;
+		const held = (component.lightmapScaleOffset ?? {}) as Entry;
+		const number = (value: unknown, fallback: number) =>
+			typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+		return {
+			index,
+			scale: [number(held.x, 1), number(held.y, 1)],
+			offset: [number(held.z, 0), number(held.w, 0)],
+		};
+	}
+	return undefined;
+}
+
+/**
  * The scene's nodes in an order where parents come first, each with its parent's index, and each
  * file node's index in that order, or -1 for a node outside the scene.
  */
@@ -2190,8 +2291,11 @@ function parseNodes(
 		}
 		const lod = extensions.MSFT_lod as Entry | undefined;
 		if (lod && data.mesh >= 0) data.levels = parseLevels(lod, node, defs, meshes.length, what);
-		if (data.mesh >= 0)
+		if (data.mesh >= 0) {
 			data.stages = parseStages((node.extras as Entry | undefined)?.NULL3D_stages);
+			const lightMap = needleLightMap(extensions);
+			if (lightMap) data.lightMap = lightMap;
+		}
 		return data;
 	});
 	return { nodes, place };
