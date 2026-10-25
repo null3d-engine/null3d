@@ -926,6 +926,18 @@ describe('materials, textures and lights', () => {
 		expect(data.notes).toEqual([]);
 	});
 
+	test('a material keeps its anisotropy with no texture of any kind', () => {
+		const data = layered({
+			KHR_materials_anisotropy: { anisotropyStrength: 0.75, anisotropyRotation: 0.4 },
+		});
+		expect(data.materials[0]?.layers).toMatchObject({
+			anisotropy: 0.75,
+			anisotropyRotation: 0.4,
+		});
+		expect(data.materials[0]?.maps).toEqual({});
+		expect(data.notes).toEqual([]);
+	});
+
 	test('a clear coat or a sheen map keeps its slots ahead of iridescence and anisotropy, and notes them', () => {
 		const data = layered({
 			KHR_materials_clearcoat: { clearcoatTexture: { index: 0 } },

@@ -1364,6 +1364,26 @@ fn bent_normal(
 }
 #endif
 
+#ifdef COAT_SHEEN
+#ifndef MAPS
+#ifndef CUSTOM
+/// The frame that the anisotropy turns its direction in where the material draws without maps:
+/// any frame square to the normal, since a surface without texture coordinates gives the lobe no
+/// direction of its own. A material with a map takes the frame from the mesh's tangents or from
+/// the map's coordinates, in the builds that read maps.
+fn normal_frame(input: SurfaceInput) -> mat3x3f {
+    let normal = input.normal;
+    let facing = select(-1.0, 1.0, input.frontFacing);
+    // The helper axis stays away from the normal's own direction, so the cross product keeps its
+    // length.
+    let helper = select(vec3f(0.0, 0.0, 1.0), vec3f(1.0, 0.0, 0.0), abs(normal.z) > 0.999);
+    let tangent = normalize(cross(helper, normal));
+    return mat3x3f(tangent * facing, cross(normal, tangent) * facing, normal);
+}
+#endif
+#endif
+#endif
+
 /// The surface as the material's own values make it: its base color times the vertex color, its
 /// metalness, roughness and emissive light, and the normal of the input, with the material's
 /// texture maps in the builds that have them.
@@ -1430,6 +1450,18 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
 #endif
 #ifdef MAPS
     s = with_maps(s, input);
+#else
+#ifdef COAT_SHEEN
+#ifndef CUSTOM
+    // A surface without maps gives the stretch no direction of its own, so the lobe takes any
+    // frame square to the normal.
+    if (u32(m.strengths.z) & ANISOTROPY_FLAG) != 0u {
+        let frame = normal_frame(input);
+        s.anisotropyTangent = frame[0];
+        s.anisotropyBitangent = frame[1];
+    }
+#endif
+#endif
 #endif
     return s;
 }

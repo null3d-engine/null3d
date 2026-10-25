@@ -1600,17 +1600,7 @@ export function parseGltf(
 		if (diffuseTransmission) data.diffuseTransmission = diffuseTransmission;
 		const scatter = scatterOf(extensions, what, notes);
 		if (scatter) data.scatter = scatter;
-		if (layered) {
-			const values = layersOf(coat, sheen, film, anisotropy, what);
-			// The stretch's direction comes from the surface's tangent frame, which the shader
-			// builds from the texture coordinates. A material with no map draws without it.
-			if (values.anisotropy !== undefined && values.anisotropy !== 0 && !Object.keys(maps).length) {
-				notes.push(`${what}'s anisotropyStrength, which needs a map for its texture coordinates`);
-				values.anisotropy = 0;
-				values.anisotropyRotation = 0;
-			}
-			data.layers = values;
-		}
+		if (layered) data.layers = layersOf(coat, sheen, film, anisotropy, what);
 		if (transform) {
 			const offset = numbers(transform.offset, 2, [0, 0], `${what}'s texture transform offset`);
 			const scale = numbers(transform.scale, 2, [1, 1], `${what}'s texture transform scale`);
