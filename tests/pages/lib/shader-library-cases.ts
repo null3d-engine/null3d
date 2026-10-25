@@ -1877,7 +1877,11 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 			const then = place(last);
 			return floats([now[0]! - then[0]!, now[1]! - then[1]!, 0, 0]);
 		},
-		tolerance: 0,
+		// A still surface's two places are the same values, so the difference is zero. A GPU may
+		// contract one evaluation into a fused multiply and add and not the other, which leaves a
+		// residue far below a pixel: the engine's target clears to zero and still objects draw
+		// nothing, which is where the exact zero comes from.
+		tolerance: 1e-6,
 	},
 	// null3d::temporal
 	{

@@ -236,7 +236,7 @@ These scenes are light, and their WebGL2 figures vary with the passes that write
 
 | Fix | Before | Built in | Test |
 | --- | --- | --- | --- |
-| Per-object motion exactly 0 for still content | Built by M2-EX25, with no exact proof | `lib/motion_math.wgsl`, `surface_motion` | The shader library's `motion_math::surface_motion` cases, which compare the bits with an exact reference |
+| Per-object motion exactly 0 for still content | Built by M2-EX25, with no exact proof | `lib/motion_math.wgsl`, `surface_motion` | The shader library's `motion_math::surface_motion` cases, which hold a still surface's motion within a millionth of a pixel; the target clears to zero and still objects draw nothing, which is the exact part |
 | A variance box widened to hold the center pixel, against banding | Missing | `lib/temporal.wgsl`, `temporal_widen` | The shader library's `temporal::temporal_widen` cases, which require the center to lie inside the box |
 | The history rescaled by the exposure ratio | Missing | `crates/null3d-render/src/frame.rs`, `taa_frame`, and `taa.wgsl` | `tests/image/taa-fixes.spec.ts`, the `exposure` case |
 | A reactive mask from the transparent alpha | Missing | `taa.wgsl`, from the scene color's alpha, with `Reactive`'s bits | `taa-fixes.spec.ts`, the `alpha` case |
