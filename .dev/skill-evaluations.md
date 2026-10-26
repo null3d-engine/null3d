@@ -10,6 +10,12 @@ Result: with the skill, 55 of 60 graded expectations passed, 92%. Without it, 44
 73%. The trigger queries selected the right skill for 20 of 20. The skill therefore meets the
 90% expectation and trigger gates that section 12.6 proposes for release 0.3.
 
+The PR audit session graded the same twenty kept answers once more, with the same grader. It gave 54
+of 60 with the skill (90.0%) and 45 of 60 without, a gap of 9. Two grades changed, both in case 4
+and both on wording. The skill's third point, that a layer mask limits picking to units, went from
+pass to fail. The baseline's first point went from fail to pass. The grader's noise is about one
+point a side, and the bar holds on both readings.
+
 ## What ran
 
 | Item | Value |
@@ -99,8 +105,8 @@ tools and engines chose none.
 
 ## Limits of this run
 
-- This is one graded run per case and condition. A model's answers vary between runs, so a
-  one-point difference is not a trend.
+- This is one answer per case and condition, graded twice. The two gradings differ by one point on
+  each side, so a one-point difference is not a trend.
 - More runs happened than the table shows. Cases 1 and 2, both conditions, started twice and were
   killed after 64 seconds with exit code 143. Those four starts produced no answer. Cases 3 and 4,
   both conditions, ran to completion, but a second pair replaced them and neither old pair was
