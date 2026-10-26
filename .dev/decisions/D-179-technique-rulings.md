@@ -90,11 +90,65 @@ The brief also listed smaller items with a recommendation. The owner's rulings a
 
 A spot-light cookie, three.js's `SpotLight.map`, takes a layer of the light tables' array, so it costs no GPU binding at all.
 
-**What it does.** `map` and `setMap({ width, height, data })` take the sRGB pixels that a rectangle light's `image` takes, and the engine resamples them to linear half floats with every mip level, in the layer that a light's image occupies. An image's size follows its picture: the longer side rounds up to a power of two, kept between 128 and 512 texels a side, and a larger picture is box-filtered down to 512. A picture up to 128 pixels costs what it did, and each step up keeps four times the texels a side. Each image keeps its own size in the corner of its layer, so a small gobo beside a detailed photograph costs little. The shader projects the picture over the cone: it takes the uv from the direction to the surface and the cone's half angle, as three.js projects `light.map` through its spot light's shadow camera. Three.js turns that camera with the light's target and the world's up axis, not with the light's own roll, so the cookie follows the direction alone. A light that points straight down takes the same small tilt that three.js's `lookAt` gives it, so the frame stays defined there. The image's layer has a field of the record of its own, so a frame's shadow tiles and a light's image never share one.
+**What it does.** `map` and `setMap` take the sRGB pixels that a rectangle light's `image` takes, or an engine texture, and the engine resamples them to linear half floats with every mip level, in the layer that a light's image occupies. "A cookie keeps its detail" below gives the sizes and the texture copy. The shader projects the picture over the cone: it takes the uv from the direction to the surface and the cone's half angle, as three.js projects `light.map` through its spot light's shadow camera. Three.js turns that camera with the light's target and the world's up axis, not with the light's own roll, so the cookie follows the direction alone. A light that points straight down takes the same small tilt that three.js's `lookAt` gives it, so the frame stays defined there. The image's layer has a field of the record of its own, so a frame's shadow tiles and a light's image never share one.
 
-**Cost per light.** None in texture units: the light tables' array is at binding 3 of the frame group in every lit pipeline, on both GPU paths, and the cookie adds no binding to it. A visible light's record is 80 bytes (five vectors) so that it can hold the map's layer and the up axis its projection needs, against 64 bytes without them. On WebGL2 that is one more texel per record in the light data texture, so the light grid takes 2,048 words per row rather than 4,096. That keeps the texture 1,792 texels wide, inside the 2,048 that every WebGL2 device allows. The frame's light records take 80 KiB at the engine's 1,024-light cap, per camera view and ring slot. A map's own layer costs about 175 KB with its mip levels at 128 x 128, 699 KB at 256 and 2.8 MB at 512, and the 32 places for light images are shared with rectangle lights' pictures. A scene with one detailed picture takes about 11 MB of the shared array. The record keeps the image's layer plus one in six low bits of one float, and the image's size number sits above those bits, so the record stays 80 bytes and the WebGL2 texture stays 1,792 texels wide. A probe's layers come before the pictures' in the array, so a probe that arrives after a picture moves every picture along. A frame rewrites the records when the probes' layers change and uploads the pictures again into their new layers. A picture larger than the probes' maps makes the array larger, and every probe then captures again rather than showing a corner of its old map.
+**Cost per light.** None in texture units: the light tables' array is at binding 3 of the frame group in every lit pipeline, on both GPU paths, and the cookie adds no binding to it. A visible light's record is 80 bytes (five vectors) so that it can hold the map's layer and the up axis its projection needs, against 64 bytes without them. On WebGL2 that is one more texel per record in the light data texture, so the light grid takes 2,048 words per row rather than 4,096. That keeps the texture 1,792 texels wide, inside the 2,048 that every WebGL2 device allows. The frame's light records take 80 KiB at the engine's 1,024-light cap, per camera view and ring slot. A map's own layer costs about 175 KB with its mip levels at 128 x 128, 699 KB at 256 and 2.8 MB at 512, and the 32 places for light images are shared with rectangle lights' pictures. A scene with one detailed picture takes about 11 MB of the shared array.
 
 **Consequences.** The three.js mapping's `spot-light` entry names `map`, the API page has a "Spot light maps" section, and the develop skill's quick reference lists it. An image test draws a gobo on both GPU paths and in compatibility mode. The GPU's light clustering test fixture follows the 80-byte record.
+
+## A cookie keeps its detail (M3-K3)
+
+A spot light's picture covers the square around its cone. Take a light with a half angle of 0.4
+radians and a wall six meters away. There a texel of a 128 x 128 picture spans three centimeters, so
+a viewer near the wall sees the mip chain blur before the screen's own pixels run out. A gobo of one
+color reads well; a projected photograph, a stained-glass window or a slide does not.
+
+**The size.** An image's size follows its picture. The engine rounds the picture's longer side up to
+a power of two and keeps that size between 128 and 512 texels a side. A picture up to 128 pixels
+costs what it did, and each step up keeps four times the texels a side. A larger picture is
+box-filtered down to 512. Each image keeps its own size in the corner of its layer. The tables'
+layers take the size of the largest image in the scene, or the probes' size where that is larger.
+
+**Why 512.** A 1,024 x 1,024 image takes 11 MB with every level, and the room for four pictures
+would take 44 MB for a scene with one cookie. A phone's memory budget does not carry that. 512 keeps
+a projected photograph sharp on a wall at the distances that scenes show it. The cap is the engine's
+choice, not a preset's. The owner did not take the uncapped route for those figures.
+
+**The record.** A light's record keeps the image's layer plus one in six low bits of one float. The
+number of the image's size sits above those bits. The shader decodes both, so the record stays 80
+bytes and the WebGL2 light data texture stays 1,792 texels wide. The level that ends an image's mip
+chain follows from its size by whole-number arithmetic, and the shader clamps the level it reads to
+that.
+
+**A texture's picture.** A sketch gives a spot light an engine texture as its map, and the engine
+copies it into the light's image once the texture's texels are on the GPU, at up to 512 texels a
+side. The copy is a GPU pass shaped like the mip pass: it draws the source into the image's corner
+and makes its levels. A texture that changes every frame, such as a video's or a render pass's,
+throws E1112, because the copy shows one frame; a 3D or cube texture throws it too, because a cookie
+projects one image. The copy adds no binding and no sampler to the lit shaders, which stay inside
+the 16 sampled textures that a fragment stage allows.
+
+**A probe moves the pictures.** A probe's layers come before the pictures' in the shared array. A
+probe that a scene adds after a picture therefore moves every picture along. A frame rewrites the
+records when the probes' layers change and uploads the pictures again into their new layers, so a
+light never reads a probe's map or an empty layer. A picture larger than the probes' maps makes the
+array larger, and a map copied into a larger layer would show only a corner of itself. Every probe
+therefore captures again when the array's size changes.
+
+**Cost.** A picture of 128 x 128 texels takes 175 KB with every level, 256 takes 699 KB, and 512
+takes 2.8 MB. The tables keep room for four pictures once a scene has one. A scene with one
+detailed picture therefore takes 11 MB of the shared array. A scene that uses no picture pays
+nothing. Resampling runs once per picture: on the Mac at a load near 85, a 512 x 512 source took
+12.5 ms at its fastest and a 1,024 x 1,024 source took 25.0 ms. A texture that a sketch gives the
+light costs one GPU copy at the same time. The shader gains two integer operations per mapped
+light, and it samples the light tables as it did.
+
+**Tests.** The `spot-map` picture draws a small gobo at the smallest image size, which shows a small
+picture's look. The `spot-map-probe` picture moves a light's picture along the array with a
+reflection probe that arrives after it. The `spot-map-texture` picture draws that scene's picture
+from an engine texture instead of pixels, against the pixel form's reference, so the copy's corner,
+row order and layer move must draw the same image. The `demo-spot-cookies` demo draws a 512 x 512
+rose window beside a 128 x 128 window frame. The pictures cover every GPU path.
 
 ## The three-compat add-on
 
@@ -150,7 +204,7 @@ material's own specular lobe ([D-252](D-252-material-lobes.md)), and car paint's
 - **A bake add-on.** The bake stays in the core, as D-146 built it.
 - **Particle collision with the depth buffer.** The particles add-on has no simulation pass ([D-131](D-131-particles.md)).
 - **A spot-light cookie in one texture unit per light.** WebGL2's lit fragment stage has no unit to spare, and a scene with many mapped lights would exceed its count.
-- **A spot-light cookie from an engine texture handle per light.** It needs a sampled binding of its own for each light, or a copy of its texels into the layer for each format, compressed ones included. A light's picture already takes the sRGB pixels that a rectangle light's image takes and resamples them once.
+- **A spot-light cookie from an engine texture handle per light.** It needs a sampled binding of its own for each light, or a copy of its texels into the layer for each format, compressed ones included. The accepted route copies an engine texture into the light's shared image once, rather than binding it per light.
 - **A spot-light cookie in a tile of the shadow atlas.** A spot light that casts shadows needs its tile for depth, so a mapped light that casts them would need two, and a light that casts none still needs a projection frame.
 - **A spot-light cookie in a separate atlas and binding.** It takes a second unit of the frame group on WebGL2 for one feature, where the light tables' array holds layers with mips.
 - **Keeping the hashed normal for the car paint and amending ruling 17.** It drops a feature the owner approved.

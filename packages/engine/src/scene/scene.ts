@@ -755,10 +755,10 @@ export interface SpotLightOptions extends PointLightOptions {
 	penumbra?: number;
 	/**
 	 * A picture that the light projects over its cone, such as a window frame, a gobo pattern or a
-	 * projected texture, as `setMap` takes it. The color and intensity tint it. Without it, the
-	 * light has one color in the cone.
+	 * projected photograph, as `setMap` takes it: sRGB pixels, or a texture. The color and
+	 * intensity tint it. Without it, the light has one color in the cone.
 	 */
-	map?: LightImagePixels;
+	map?: LightImagePixels | Texture;
 	/**
 	 * True makes the light cast shadows, like `setCastShadows(true)`. The default is false. The
 	 * quality preset's `shadowTiles` caps the lights that cast them at once.
@@ -2383,6 +2383,9 @@ export class PointLight extends Light {
  * @category api/lights
  */
 export class SpotLight extends Light {
+	/** @internal The texture that `setMap` gave the light and that is not copied yet, so a later picture cancels it. */
+	pendingTexture: Texture | null = null;
+
 	/** Sets the distance in meters where the light ends, above 0. */
 	setRange(range: number): void {
 		this.scene.core.callValues()[0] = range;
@@ -2408,19 +2411,30 @@ export class SpotLight extends Light {
 	}
 
 	/**
-	 * Projects a picture over the light's cone, such as a window frame or a gobo pattern, or `null`
-	 * to go back to one color. The color and intensity tint it. The picture fills the square around
-	 * the cone: a circle in its middle lands on the cone's edge, where the light ends. The picture's
-	 * top row lies along the world's up, as three.js aims a spot light's map. The engine keeps the
-	 * picture's detail up to 512 texels a side, so a small gobo costs less memory than a detailed
-	 * photograph. A surface far from the light shows the picture blurred. Up to 32 lights show
-	 * pictures at once, and rectangle and spot lights share those places. A new picture allocates
-	 * and takes up to a few tens of milliseconds, so set it at setup or now and then, not in every
-	 * frame.
+	 * Projects a picture over the light's cone, such as a window frame, a gobo pattern or a
+	 * projected photograph, or `null` to go back to one color. The color and intensity tint it.
+	 * The picture fills the square around the cone: a circle in its middle lands on the cone's
+	 * edge, where the light ends. The picture's top row lies along the world's up, as three.js
+	 * aims a spot light's map. The engine keeps the picture's detail up to 512 texels a side, so a
+	 * small gobo costs less memory than a detailed photograph. Give sRGB pixels, or a texture that
+	 * the engine copies once: a texture larger than 512 texels a side is reduced, and one that
+	 * changes every frame, such as a video's or a render pass's, throws E1112, because the copy
+	 * would show a single frame. A surface far from the light shows the picture blurred. Up to 32
+	 * lights show pictures at once, and rectangle and spot lights share those places. A new
+	 * picture takes up to a few tens of milliseconds, so set it at setup or now and then, not in
+	 * every frame.
 	 */
-	setMap(map: LightImagePixels | null): void {
+	setMap(map: LightImagePixels | Texture | null): void {
 		const call = 'setMap';
 		if (DEV) checkLive(call, this);
+		if (map instanceof Texture) {
+			checkMapTexture(call, map, this);
+			this.pendingImage = null;
+			this.pendingTexture = map;
+			writeLightTexture(this, map, call);
+			return;
+		}
+		this.pendingTexture = null;
 		if (map !== null && DEV) checkLightImage(call, map, this);
 		this.pendingImage = map;
 		writeLightImage(this, map, call);
@@ -2436,6 +2450,7 @@ export class SpotLight extends Light {
 	/** Removes the light at the next frame, and frees its picture's place. */
 	override destroy(): void {
 		this.pendingImage = null;
+		this.pendingTexture = null;
 		if (this.id !== 0) this.scene.core.glue.removeLightImage(this.id);
 		super.destroy();
 	}
@@ -2574,6 +2589,48 @@ function checkLightImage(call: string, image: LightImagePixels, light: Light): v
 		throw new EngineError(
 			'E1108',
 			`${call}() got an image of ${width} x ${height} pixels with ${data?.length ?? 0} bytes on ${light.describe()}, which needs a whole width and height above 0 and 4 bytes per pixel.`,
+		);
+}
+
+/**
+ * Gives `light` a picture whose texels come from `texture`: the resampler picks the image's size
+ * from the texture's, and a task asks the frame builder for the copy, which `imagesSettled` waits
+ * for. The frame builder copies once, when the texture's texels reach the GPU.
+ */
+function writeLightTexture(light: SpotLight, texture: Texture, call: string): void {
+	const { scene } = light;
+	const { core } = scene;
+	const id = light.id;
+	scene.queueImage(
+		import('./light-images').then(({ lightImageSize }) => {
+			if (light.id !== id || light.pendingTexture !== texture || !texture.live) return;
+			const size = lightImageSize(texture.width, texture.height);
+			core.check(core.glue.setLightMapTexture(id, texture.handle, size), call, light.label, true);
+		}),
+	);
+}
+
+/** Throws E1112 for a texture that a spot light's map cannot copy into its image. */
+function checkMapTexture(call: string, texture: Texture, light: Light): void {
+	if (!texture.live)
+		throw new EngineError(
+			'E1112',
+			`${call}() got a texture that texture.destroy() destroyed on ${light.describe()}. Give a live texture.`,
+		);
+	if (texture.pass || texture.video)
+		throw new EngineError(
+			'E1112',
+			`${call}() got a texture that changes every frame on ${light.describe()}, which a spot light's map copies once. Give a still texture, such as one that assets.loadTexture loaded.`,
+		);
+	if (texture.depth !== 1)
+		throw new EngineError(
+			'E1112',
+			`${call}() got a texture of ${texture.depth} layers on ${light.describe()}, which a spot light's map cannot project. Give a 2D texture.`,
+		);
+	if (texture.droppedLevels > 0)
+		throw new EngineError(
+			'E1112',
+			`${call}() got a texture whose largest mip levels the texture memory budget dropped on ${light.describe()}, so it has no picture to copy. Free texture memory, or give another texture.`,
 		);
 }
 

@@ -26,6 +26,8 @@ export const ERROR_FIXES = {
 		'Change a static object with setPosition(), setRotation(), setScale() or another setter: each one marks the object for the engine to update. Code that writes values straight into engine memory needs a dynamic object, which the engine updates in every frame. For a row of a static batch, call markDirty(start, count) on the batch after you write its arrays, or create the batch with dynamic: true. If your code writes no engine memory, this is an engine bug: report it with the message.',
 	E1111:
 		'Destroy the objects and instance batches that use the mesh or model first, with destroy() on each. Then destroy the mesh or model, in the same frame or later. Destroying the group that scene.instantiate() returned takes the whole copy of a model. To keep an object and drop its mesh, give it another mesh with setMesh() first.',
+	E1112:
+		'Give a still 2D texture, such as one that assets.loadTexture, textures.fromImageBitmap or textures.fromData makes. A texture that changes every frame needs a cookie of its own, copied in each frame.',
 	E1203:
 		'Check the value computed before this call. NaN often comes from dividing zero by zero, or from normalizing a zero-length vector.',
 	E1204:

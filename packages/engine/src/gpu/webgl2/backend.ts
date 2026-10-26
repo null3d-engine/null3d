@@ -66,6 +66,15 @@ const MIP_UNIT = 0;
 const MIP_PROGRAM = 'mipmap';
 /** The key of the program that copies a layer texel by texel. */
 const COPY_PROGRAM = 'mipmap copy';
+/** The key of the program that draws a texture into a corner of another at a size of its own. */
+const SCALE_PROGRAM = 'mipmap scale';
+
+/**
+ * Bits of the scale draw's instance that hold the texels across the destination: a light's image
+ * takes at most 512, so they fit in ten. The source's layer sits above them. The mipmap shader's
+ * scale pipeline reads both.
+ */
+const SCALE_SIZE_BITS = 10;
 
 // Attachment names, for invalidating what a pass does not store.
 const COLOR_ATTACHMENT0 = 0x8ce0;
@@ -430,6 +439,7 @@ export class WebGL2Backend {
 	/** The template of the program that draws mip levels. */
 	private readonly mipTemplate: GlslTemplate;
 	private readonly copyTemplate: GlslTemplate;
+	private readonly scaleTemplate: GlslTemplate;
 	private readonly bindGroups: (BindEntry[] | undefined)[] = [];
 	private readonly vertexArrays: (VertexArray | undefined)[] = [];
 	/** Vertex arrays of the buffers that templates with their own vertex layout draw from, by id. */
@@ -629,6 +639,7 @@ export class WebGL2Backend {
 		this.templates = engineTemplates(shaders);
 		this.mipTemplate = mipmapTemplate(shaders, 'main');
 		this.copyTemplate = mipmapTemplate(shaders, 'copy');
+		this.scaleTemplate = mipmapTemplate(shaders, 'scale');
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
 		this.joins = new JoinedBuilds(this.images.shaders);
@@ -1017,6 +1028,9 @@ export class WebGL2Backend {
 				case G.OP_GENERATE_MIPMAPS:
 					this.generateMipmaps(words[a] as number, words[a + 1] as number);
 					break;
+				case G.OP_COPY_INTO_IMAGE:
+					this.copyIntoImage(words, a);
+					break;
 				case G.OP_COPY_TEXTURE_TO_TEXTURE:
 					this.copyTexture(words, a);
 					break;
@@ -1155,10 +1169,17 @@ export class WebGL2Backend {
 	 * The program that draws mip levels, or the one that copies a layer, which starts compiling the
 	 * first time.
 	 */
-	private spareProgramOf(key: typeof MIP_PROGRAM | typeof COPY_PROGRAM): Program {
+	private spareProgramOf(
+		key: typeof MIP_PROGRAM | typeof COPY_PROGRAM | typeof SCALE_PROGRAM,
+	): Program {
 		let program = this.programs.get(key);
 		if (!program) {
-			const template = key === MIP_PROGRAM ? this.mipTemplate : this.copyTemplate;
+			const template =
+				key === MIP_PROGRAM
+					? this.mipTemplate
+					: key === COPY_PROGRAM
+						? this.copyTemplate
+						: this.scaleTemplate;
 			program = createProgram(this.gl, template, 0);
 			this.programs.set(key, program);
 		}
@@ -1166,12 +1187,13 @@ export class WebGL2Backend {
 	}
 
 	/**
-	 * Starts compiling the programs that draw mip levels and copy layers, so that the driver can
-	 * compile them before the first texture upload needs them. Nothing waits for their link here.
-	 * A program that fails to start is made again at first use, which reports the failure.
+	 * Starts compiling the programs that draw mip levels, copy layers and scale one texture into
+	 * another, so that the driver can compile them before the first texture needs them. Nothing
+	 * waits for their link here. A program that fails to start is made again at first use, which
+	 * reports the failure.
 	 */
 	private prebuildSparePrograms(): void {
-		for (const key of [MIP_PROGRAM, COPY_PROGRAM] as const) {
+		for (const key of [MIP_PROGRAM, COPY_PROGRAM, SCALE_PROGRAM] as const) {
 			try {
 				this.spareProgramOf(key);
 			} catch {}
@@ -1182,7 +1204,9 @@ export class WebGL2Backend {
 	 * The program that draws mip levels, or the one that copies a layer, in use. Its first use
 	 * waits for its link when the driver has not finished it.
 	 */
-	private spareProgram(key: typeof MIP_PROGRAM | typeof COPY_PROGRAM): Program {
+	private spareProgram(
+		key: typeof MIP_PROGRAM | typeof COPY_PROGRAM | typeof SCALE_PROGRAM,
+	): Program {
 		const program = this.spareProgramOf(key);
 		this.useProgram(program);
 		return program;
@@ -1824,23 +1848,53 @@ export class WebGL2Backend {
 	 * it averages the stored bytes of sRGB texels, not their linear values. `generateMipmap` would
 	 * remake every layer. A frame's render target of one layer in a linear format takes
 	 * `generateMipmap` instead. Its levels are made in every frame, as the copy behind glass is, and
-	 * a draw and a copy per level cost far more GPU time than the levels' own work.
+	 * a draw and a copy per level cost far more GPU time than the levels' own work. `levels` holds
+	 * how many levels an image needs, or 0 for the texture's own count.
 	 */
-	private generateMipmaps(id: number, layer: number): void {
+	private generateMipmaps(id: number, layer: number, levels = 0): void {
 		const texture = this.textureOf(id);
 		if (texture.nativeMips) {
 			this.editTexture(MIP_UNIT, texture.target, texture.texture);
 			this.gl.generateMipmap(texture.target);
 			return;
 		}
-		const program = this.beginSpareDraws(MIP_PROGRAM, texture, texture.width, texture.height);
-		for (let level = 1; level < texture.mips; level++) {
+		const program = this.beginSpareDraws(
+			MIP_PROGRAM,
+			texture,
+			texture.format,
+			texture.width,
+			texture.height,
+		);
+		const count = levels === 0 ? texture.mips : Math.min(levels, texture.mips);
+		for (let level = 1; level < count; level++) {
 			const width = Math.max(1, texture.width >> level);
 			const height = Math.max(1, texture.height >> level);
 			this.drawIntoSpare(program, texture, level - 1, layer, width, height);
 			this.copyFromSpare(texture, level, 0, 0, layer, 0, 0, width, height);
 		}
-		this.endSpareDraws(texture);
+		this.endSpareDraws(texture, texture.format);
+	}
+
+	/**
+	 * Draws one layer of a source texture into the first texels of one layer of a light's image,
+	 * at a size of its own, then makes that layer's mip levels: a spot light's picture that a
+	 * sketch set as a texture. The image's corner is the smallest `size` by `size` texels of the
+	 * layer, which the light tables' shaders read, so a source larger than the corner is reduced.
+	 */
+	private copyIntoImage(words: Uint32Array, a: number): void {
+		const sourceId = words[a] as number;
+		const sourceLayer = words[a + 1] as number;
+		const destId = words[a + 2] as number;
+		const destLayer = words[a + 3] as number;
+		const size = words[a + 4] as number;
+		const levels = words[a + 5] as number;
+		const source = this.textureOf(sourceId);
+		const dest = this.textureOf(destId);
+		const program = this.beginSpareDraws(SCALE_PROGRAM, source, dest.format, size, size);
+		this.drawScaleIntoSpare(program, source, size | (sourceLayer << SCALE_SIZE_BITS), size, size);
+		this.copyFromSpare(dest, 0, 0, 0, destLayer, 0, 0, size, size);
+		this.endSpareDraws(source, dest.format);
+		this.generateMipmaps(destId, destLayer, levels);
 	}
 
 	/** The generators' code once a generator ran, which frees a sky map with its texture. */
@@ -1942,17 +1996,19 @@ export class WebGL2Backend {
 	}
 
 	/**
-	 * Gets ready to draw layers of `source` into the spare texture of its format, at least `width`
-	 * by `height`, with the program that `key` names. The source is bound for sampling.
+	 * Gets ready to draw layers of `source` into the spare texture of `format`, at least `width`
+	 * by `height`, with the program that `key` names. The source is bound for sampling. The spare
+	 * takes the format of what the draws go into, which a scale draw writes into another texture.
 	 */
 	private beginSpareDraws(
-		key: typeof MIP_PROGRAM | typeof COPY_PROGRAM,
+		key: typeof MIP_PROGRAM | typeof COPY_PROGRAM | typeof SCALE_PROGRAM,
 		source: GlTexture,
+		format: GlFormat,
 		width: number,
 		height: number,
 	): Program {
 		const gl = this.gl;
-		const spare = this.spareOf(source.format, width, height);
+		const spare = this.spareOf(format, width, height);
 		const program = this.spareProgram(key);
 		if (!this.mipFramebuffer) this.mipFramebuffer = gl.createFramebuffer();
 		if (!this.mipSampler) {
@@ -1963,7 +2019,7 @@ export class WebGL2Backend {
 		}
 		// The copies read the spare through the same framebuffer that the draws write.
 		gl.bindFramebuffer(gl.FRAMEBUFFER, this.mipFramebuffer);
-		const attachment = source.format.attachment;
+		const attachment = format.attachment;
 		gl.framebufferTexture2D(gl.FRAMEBUFFER, attachment, gl.TEXTURE_2D, spare.texture, 0);
 		this.useVertexArray(this.emptyVertexArray());
 		this.setScissorTest(false);
@@ -2002,6 +2058,30 @@ export class WebGL2Backend {
 		gl.drawArrays(gl.TRIANGLES, 0, 3);
 	}
 
+	/**
+	 * Draws the source into the spare's lower-left `width` by `height` texels at a size of its
+	 * own: `instance` holds the destination's size and the source's layer, as the scale program
+	 * reads them. The program reads the source's first level.
+	 */
+	private drawScaleIntoSpare(
+		program: Program,
+		source: GlTexture,
+		instance: number,
+		width: number,
+		height: number,
+	): void {
+		const gl = this.gl;
+		if (program.firstInstance && program.firstInstanceValue !== instance) {
+			gl.uniform1ui(program.firstInstance, instance);
+			program.firstInstanceValue = instance;
+		}
+		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, source.texture);
+		gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_BASE_LEVEL, 0);
+		gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAX_LEVEL, 0);
+		this.setGlViewport(0, 0, width, height);
+		gl.drawArrays(gl.TRIANGLES, 0, 3);
+	}
+
 	/** Copies a rectangle of the spare into a level of `into`: a layer, a cube face or a 3D slice. */
 	private copyFromSpare(
 		into: GlTexture,
@@ -2024,14 +2104,14 @@ export class WebGL2Backend {
 		}
 	}
 
-	/** Gives the source back all its levels, and takes the spare out of the framebuffer. */
-	private endSpareDraws(source: GlTexture): void {
+	/** Gives the source back all its levels, and takes the spare of `format` out of the framebuffer. */
+	private endSpareDraws(source: GlTexture, format: GlFormat): void {
 		const gl = this.gl;
 		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, source.texture);
 		gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_BASE_LEVEL, 0);
 		gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAX_LEVEL, source.mips - 1);
 		// A framebuffer that is not bound keeps what it holds alive, so the spare leaves it.
-		const attachment = source.format.attachment;
+		const attachment = format.attachment;
 		gl.framebufferTexture2D(gl.FRAMEBUFFER, attachment, gl.TEXTURE_2D, null, 0);
 	}
 

@@ -55,7 +55,7 @@ A light's scale changes neither its range, its cone nor its size.
 
 ## Spot light maps
 
-A spot light can project a picture over its cone, as a stage light throws a gobo pattern, a window throws its frame, or a projector shows an image. The `map` option and `setMap({ width, height, data })` take sRGB pixels, four bytes each, top row first, as a rectangle light's `image` does.
+A spot light can project a picture over its cone, as a stage light throws a gobo pattern, a window throws its frame, or a projector shows an image. The `map` option and `setMap` take an engine texture, or sRGB pixels, four bytes each, top row first, as a rectangle light's `image` does.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -77,19 +77,19 @@ export default defineSketch(({ scene, materials, geometry }) => {
 - The picture fills the square that bounds the cone: a circle in the middle of the picture lands on the cone's edge, where the light ends.
 - The picture's top row lies along the world's up, as three.js aims the camera that projects a spot light's map. Aim the light first: turning the light turns the picture with it, and rolling the light about its own axis leaves the picture as it is.
 - The color and intensity tint the picture: a dark part of it gives less light, and a red part gives red light. `setMap(null)` goes back to one color.
-- The engine keeps the picture's detail up to 512 texels a side, in every mip level. A small gobo therefore costs less memory than a detailed photograph of the same light. A surface far from the light shows the picture blurred and a surface near the light shows it sharp. Up to 32 lights show pictures at once, and rectangle and spot lights share those places. A new picture allocates and takes up to a few tens of milliseconds, so set it at setup or now and then.
+- The map is sRGB pixels, four bytes each with the top row first, or a texture. The engine copies a texture into the light's picture once, when the texture's texels reach the GPU, so a later change to the texture does not reach the light: give a still texture. A video's texture and a render pass's texture change every frame, and a 3D or cube texture holds more than one image, so each throws E1112.
+- The engine keeps the picture's detail up to 512 texels a side, in every mip level, and reduces a larger texture to that. A small gobo therefore costs less memory than a detailed photograph of the same light. A surface far from the light shows the picture blurred and a surface near the light shows it sharp. Up to 32 lights show pictures at once, and rectangle and spot lights share those places. A new picture takes up to a few tens of milliseconds, so set it at setup or now and then.
 - A picture of 128 x 128 texels a side takes about 0.2 MB with its mip levels. One of 512 x 512 takes about 2.8 MB. The engine keeps room for four pictures once a scene has one. A scene with one detailed picture therefore takes about 11 MB.
 - Spot light maps light every GPU path in the same way: WebGPU, WebGPU's compatibility mode and WebGL2. They add no texture to the lit shaders, because the lights' pictures share a table that every lit surface already reads.
 
-A picture from an image file becomes pixels in two steps: decode it, then read its rows.
+A picture from an image file is one call:
 
 ```ts
-const bitmap = await assets.loadImageBitmap('/gobo.png', { flipY: false });
-const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-const context = canvas.getContext('2d')!;
-context.drawImage(bitmap, 0, 0);
-light.setMap(context.getImageData(0, 0, bitmap.width, bitmap.height));
+const gobo = await assets.loadTexture('/gobo.png');
+light.setMap(gobo);
 ```
+
+Code that draws a picture, such as a canvas or a generated pattern, gives its sRGB pixels instead: `light.setMap({ width, height, data })`, four bytes each with the top row first.
 
 ## Color, intensity and units
 
@@ -273,7 +273,7 @@ The object must cast shadows. Its tile comes from the same atlas as the spot and
 | `light.castShadow = true`, `light.shadow.mapSize`, `light.shadow.bias` | `castShadows: true`, and `shadow: { mapSize, bias, normalBias, intensity }`, both biases in meters. [Shadows](../concepts/shadows.md) covers the differences. |
 | A second shadowed light fitted to one object, or a hand-fitted `DirectionalLight` shadow camera, for a sharper close-up shadow | `sun.setShadow({ hero: object })`: the light gives the object a fitted shadow map of its own, and follows it |
 | `spotLight.castShadow = true` or `pointLight.castShadow = true`, and `shadow.bias` | `castShadows: true`, and `shadow: { bias, normalBias, intensity }` in meters. The quality preset sets the tile size. |
-| `spotLight.map = texture` | `map: { width, height, data }` at create, or `setMap({ width, height, data })`: sRGB pixels that the engine resamples and projects, rather than a texture handle. `setMap(null)` goes back to one color |
+| `spotLight.map = texture` | `map: texture` at create, or `setMap(texture)`: the engine copies the texture into its own light image once. `setMap({ width, height, data })` takes sRGB pixels instead. `setMap(null)` goes back to one color |
 
 A three.js `distance` of 0 means a light with no end. null3D needs a finite range, so pick the distance where the light no longer matters.
 

@@ -39,8 +39,9 @@ export function lightImageHalves(size: number): number {
 
 /**
  * Pixels of a picture that a light shows, for `RectAreaLight.setImage` and `SpotLight.setMap`:
- * rows from the top, four sRGB bytes per pixel. The engine keeps the picture's detail up to 512
- * texels a side, and a larger picture is resampled down to that.
+ * rows from the top, four sRGB bytes per pixel. A spot light's map also takes an engine texture.
+ * The engine keeps the picture's detail up to 512 texels a side, and a larger picture is resampled
+ * down to that.
  *
  * @category api/lights
  */

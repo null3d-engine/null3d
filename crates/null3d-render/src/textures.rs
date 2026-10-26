@@ -1564,6 +1564,16 @@ impl TextureStore {
         }
     }
 
+    /// The GPU array and layer that a shader copies a texture from, once its texels are on the
+    /// GPU: a 2D texture's, whose layers a shader samples. A 3D or cube texture has no such array,
+    /// and a texture that still uploads has none either.
+    pub fn copy_source(&self, texture: Handle) -> Option<(u32, u32)> {
+        let slot = self.slot(texture).ok()?;
+        let array = &self.arrays[slot.array as usize];
+        (array.key.kind == Kind::Layers && matches!(slot.state, State::Uploaded { .. }))
+            .then(|| (self.array_id(slot.array), slot.layer))
+    }
+
     /// Whether a texture's texels on the GPU come from an image that holds colors multiplied by
     /// their alpha, and in which encoding the colors were multiplied.
     pub fn premultiplied(&self, texture: Handle) -> Premultiplied {

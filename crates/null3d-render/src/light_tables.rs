@@ -16,7 +16,9 @@
 //! - Each layer after the probes holds a light's image in linear light, in its corner: the
 //!   picture that a rectangle light shows over its area, or the map that a spot light projects
 //!   over its cone. An image keeps the detail of its picture up to [`MAX_IMAGE_SIZE`] texels a
-//!   side, with every mip level; its record names the size along with its layer.
+//!   side, with every mip level; its record names the size along with its layer. A sketch gives
+//!   the image sRGB pixels, or a texture that the frame copies into the image once the texture's
+//!   texels are on the GPU.
 //!
 //! The texture starts at 64 x 64 texels and 3 layers with one level, and grows on demand: a probe
 //! or a light's first image makes it again at the size and layers that both need. A regrow copies
@@ -28,6 +30,7 @@
 //! third-party notices hold). The engine's package ships them in a file of their own, which the
 //! sketch thread reads into [`LightTables::area_texels_mut`].
 
+use null3d_core::handle::Handle;
 use null3d_gpu::drawlist::{DrawList, Op};
 
 use crate::frame::{RecordError, address};
@@ -98,6 +101,16 @@ pub struct Shape {
     pub levels: u32,
 }
 
+/// Where a light's image gets its texels.
+#[derive(Debug)]
+enum ImageSource {
+    /// The half floats of every level, the largest first, which a sketch filled.
+    Pixels(Vec<u16>),
+    /// A texture that a sketch gave the light, which a frame copies into the image. A cookie is a
+    /// snapshot: the copy happens once, and later changes to the texture do not reach the light.
+    Texture(Handle),
+}
+
 /// A light's image in engine memory.
 #[derive(Debug)]
 struct Image {
@@ -105,10 +118,12 @@ struct Image {
     light: u32,
     /// The texels across a side of the image's largest level.
     size: u32,
-    /// The half floats of every level, the largest first.
-    texels: Vec<u16>,
+    /// Where the image's texels come from.
+    source: ImageSource,
     /// True while the texture lacks the image's texels.
     pending: bool,
+    /// True once the array holds the image's texels, so the light's record may name it.
+    shown: bool,
 }
 
 /// The area lights' tables and the lights' images in engine memory, and the layers of the frame
@@ -157,8 +172,44 @@ impl LightTables {
     /// `None` when the size is one that no image takes, every place is taken, or memory cannot
     /// grow.
     pub fn image_texels_mut(&mut self, light: u32, size: u32) -> Option<&mut [u16]> {
-        size_index(size)?;
         let halves = halves(size);
+        let place = self.place_for(light, size)?;
+        let image = &mut self.images[place];
+        let texels = match std::mem::replace(&mut image.source, ImageSource::Pixels(Vec::new())) {
+            ImageSource::Pixels(texels) if texels.len() == halves => texels,
+            _ => {
+                let mut texels = Vec::new();
+                texels.try_reserve_exact(halves).ok()?;
+                texels.resize(halves, 0);
+                texels
+            }
+        };
+        image.source = ImageSource::Pixels(texels);
+        image.shown = true;
+        match &mut image.source {
+            ImageSource::Pixels(texels) => Some(texels),
+            ImageSource::Texture(_) => None,
+        }
+    }
+
+    /// Gives light `light` an image of `size` texels a side whose texels come from `texture`: its
+    /// own place, or a free one. A frame copies the texture into the image once the texture's
+    /// texels are on the GPU. Returns false when the size is one that no image takes, or every
+    /// place is taken.
+    pub fn image_texture_mut(&mut self, light: u32, size: u32, texture: Handle) -> bool {
+        let Some(place) = self.place_for(light, size) else {
+            return false;
+        };
+        let image = &mut self.images[place];
+        image.source = ImageSource::Texture(texture);
+        image.pending = true;
+        image.shown = false;
+        true
+    }
+
+    /// The place that light `light`'s image of `size` texels takes, made or found, with its size set.
+    fn place_for(&mut self, light: u32, size: u32) -> Option<usize> {
+        size_index(size)?;
         let place = match self.place_of(light) {
             Some(place) => place,
             None => {
@@ -170,8 +221,9 @@ impl LightTables {
                         self.images.push(Image {
                             light: 0,
                             size,
-                            texels: Vec::new(),
+                            source: ImageSource::Pixels(Vec::new()),
                             pending: false,
+                            shown: false,
                         });
                         self.images.len() - 1
                     }
@@ -181,13 +233,8 @@ impl LightTables {
                 place
             }
         };
-        let image = &mut self.images[place];
-        image.size = size;
-        if image.texels.len() != halves {
-            image.texels.try_reserve_exact(halves).ok()?;
-            image.texels.resize(halves, 0);
-        }
-        Some(&mut image.texels)
+        self.images[place].size = size;
+        Some(place)
     }
 
     /// Marks light `light`'s image as filled, so the next frame uploads it, and returns the number
@@ -198,6 +245,7 @@ impl LightTables {
         let place = self.place_of(light)?;
         let image = &mut self.images[place];
         image.pending = true;
+        image.shown = true;
         image_record(place, image.size, probe_layers)
     }
 
@@ -214,14 +262,19 @@ impl LightTables {
     /// The record that each light with an image needs once the array holds `probe_layers` probe
     /// layers: its layer in the shared array, and the number of its size above that (see
     /// [`size_index`]). A probe's layers come before the images', so a probe that a scene adds or
-    /// removes moves every image, and the light records name the new place.
+    /// removes moves every image, and the light records name the new place. A light whose image
+    /// waits for its texture shows none, so its record is 0 and it keeps its color.
     pub fn image_records(&self, probe_layers: u32) -> impl Iterator<Item = (u32, f32)> + '_ {
         self.images
             .iter()
             .enumerate()
             .filter(|(_, image)| image.light != 0)
-            .filter_map(move |(place, image)| {
-                Some((image.light, image_record(place, image.size, probe_layers)?))
+            .map(move |(place, image)| {
+                let record = match image.source {
+                    ImageSource::Texture(_) if !image.shown => 0.0,
+                    _ => image_record(place, image.size, probe_layers).unwrap_or(0.0),
+                };
+                (image.light, record)
             })
     }
 
@@ -236,7 +289,9 @@ impl LightTables {
         if let Some(place) = self.place_of(light) {
             let image = &mut self.images[place];
             image.light = 0;
+            image.source = ImageSource::Pixels(Vec::new());
             image.pending = false;
+            image.shown = false;
         }
     }
 
@@ -280,17 +335,20 @@ impl LightTables {
         self.area_pending = self.ready;
         for image in &mut self.images {
             image.pending = image.light != 0;
+            image.shown = false;
         }
     }
 
     /// Records what the array lacks: the area tables once they arrive, and each image once it is
     /// filled, into `array`, which the probes own. `probe_layers` gives the probe layers that the
-    /// images follow, as the frame's shape set them.
+    /// images follow, as the frame's shape set them. An image whose texels come from a texture
+    /// asks `copy_source` where to copy them from, and waits while it answers `None`.
     pub(crate) fn record(
         &mut self,
         list: &mut DrawList,
         array: u32,
         probe_layers: u32,
+        mut copy_source: impl FnMut(Handle) -> Option<(u32, u32)>,
     ) -> Result<bool, RecordError> {
         let moved = self.probe_layers != probe_layers;
         // A probe's layers come before the images', so an image whose place moved uploads again
@@ -298,6 +356,7 @@ impl LightTables {
         if moved {
             for image in &mut self.images {
                 image.pending = image.light != 0;
+                image.shown = false;
             }
         }
         let changed = moved
@@ -330,29 +389,52 @@ impl LightTables {
                 continue;
             }
             let layer = FIRST_IMAGE_LAYER + probe_layers + place as u32;
-            let mut from = 0;
-            for level in 0..levels_of(image.size) {
-                let side = image.size >> level;
-                let halves = (4 * side * side) as usize;
-                let bytes = halves_as_bytes(&image.texels[from..from + halves]);
-                list.push(
-                    Op::WriteTexture,
-                    &[
-                        array,
-                        level,
-                        0,
-                        0,
-                        layer,
-                        side,
-                        side,
-                        1,
-                        address(bytes),
-                        bytes.len() as u32,
-                    ],
-                )?;
-                from += halves;
+            match &image.source {
+                ImageSource::Pixels(texels) => {
+                    let mut from = 0;
+                    for level in 0..levels_of(image.size) {
+                        let side = image.size >> level;
+                        let halves = (4 * side * side) as usize;
+                        let bytes = halves_as_bytes(&texels[from..from + halves]);
+                        list.push(
+                            Op::WriteTexture,
+                            &[
+                                array,
+                                level,
+                                0,
+                                0,
+                                layer,
+                                side,
+                                side,
+                                1,
+                                address(bytes),
+                                bytes.len() as u32,
+                            ],
+                        )?;
+                        from += halves;
+                    }
+                    image.pending = false;
+                    image.shown = true;
+                }
+                ImageSource::Texture(texture) => {
+                    let Some((source, source_layer)) = copy_source(*texture) else {
+                        continue;
+                    };
+                    list.push(
+                        Op::CopyIntoImage,
+                        &[
+                            source,
+                            source_layer,
+                            array,
+                            layer,
+                            image.size,
+                            levels_of(image.size),
+                        ],
+                    )?;
+                    image.pending = false;
+                    image.shown = true;
+                }
             }
-            image.pending = false;
         }
         Ok(changed)
     }
@@ -499,7 +581,7 @@ mod tests {
         assert_eq!((after as u32) >> IMAGE_LAYER_BITS, size_index(256).unwrap());
 
         let mut list = DrawList::with_capacity(1024);
-        tables.record(&mut list, 7, 2).unwrap();
+        tables.record(&mut list, 7, 2, |_| None).unwrap();
         // The frame's list writes every level of the image into its new layer.
         let writes = null3d_gpu::drawlist::decode(list.words())
             .filter(|command| command.as_ref().map(|c| c.op) == Ok(Op::WriteTexture))
@@ -508,6 +590,57 @@ mod tests {
         assert!(
             !tables.image_layers_moved(2),
             "the records now name the layers"
+        );
+    }
+
+    #[test]
+    fn a_texture_image_copies_once_the_texture_is_ready() {
+        let mut tables = LightTables::default();
+        assert!(tables.image_texture_mut(5, 256, Handle::from_raw(0x40)));
+        // The light shows no picture until the copy runs, so it keeps its color.
+        assert_eq!(tables.image_records(0).collect::<Vec<_>>(), vec![(5, 0.0)]);
+
+        let copies = |list: &DrawList| {
+            null3d_gpu::drawlist::decode(list.words())
+                .filter_map(|command| command.ok())
+                .filter(|command| command.op == Op::CopyIntoImage)
+                .map(|command| command.operands.to_vec())
+                .collect::<Vec<_>>()
+        };
+        // A frame whose texture is not on the GPU yet copies nothing, and the light keeps its
+        // color.
+        let mut list = DrawList::with_capacity(1024);
+        tables.record(&mut list, 7, 0, |_| None).unwrap();
+        assert!(copies(&list).is_empty());
+        assert_eq!(tables.image_records(0).collect::<Vec<_>>(), vec![(5, 0.0)]);
+
+        // Once the texture's texels are on the GPU, one copy fills the image's layer.
+        tables.record(&mut list, 7, 0, |_| Some((9, 3))).unwrap();
+        let recorded = copies(&list);
+        assert_eq!(
+            recorded,
+            vec![vec![9, 3, 7, FIRST_IMAGE_LAYER, 256, levels_of(256)]]
+        );
+        let record = tables.image_records(0).next().unwrap().1;
+        assert_eq!((record as u32) & 63, FIRST_IMAGE_LAYER + 1);
+        assert_eq!(
+            (record as u32) >> IMAGE_LAYER_BITS,
+            size_index(256).unwrap()
+        );
+
+        // The copy runs once: a later frame records none.
+        let mut later = DrawList::with_capacity(1024);
+        tables.record(&mut later, 7, 0, |_| Some((9, 3))).unwrap();
+        assert!(copies(&later).is_empty());
+
+        // A probe's layers come before the images', so the picture copies into its new layer.
+        tables.record(&mut later, 7, 2, |_| Some((9, 3))).unwrap();
+        let moved = copies(&later);
+        assert_eq!(moved.len(), 1);
+        assert_eq!(moved[0][3], FIRST_IMAGE_LAYER + 2);
+        assert_eq!(
+            tables.image_records(2).next().unwrap().1 as u32 & 63,
+            FIRST_IMAGE_LAYER + 2 + 1
         );
     }
 

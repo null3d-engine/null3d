@@ -59,6 +59,9 @@ Shader text compresses far better than code, so the JavaScript files' proportion
 
 The owner raised the uncompressed figure for two files by 16,384 bytes, in writing: `js/shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-draw-index-tone-map-half.js` and its twin with no draw index, `js/shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-tone-map-half.js`. The directional lights' task (M3-K9) lets a surface take up to four directional lights. The loop that fills them repeats in every build that a file holds, so the generated GLSL of these two files passes the standard figure, while their gzip and Brotli figures stay inside theirs. The raise covers these two files alone, and every other first-use shader file keeps 1,792 KB uncompressed. `FIRST_USE_SHADER_RAW_RAISE` in `tools/lib/size-report.ts` holds the two figures.
 
+A texture that a sketch gives a light costs no first-use shader file: the frame copies it into the light's image with the mip shader's scale pipeline, which loads with the device's shaders.
+
+
 ### Combination tables
 
 The four generated combination tables list the module addresses for the builds that need several features. Each table gains one set of address lines for each pair of bits that the builds form. So its uncompressed size grows with the engine's features, while its compressed size, which a page downloads, stays small: 6.7 to 7.2 KB after Brotli at their largest. The raw figure guards the hosts that send files as they are. A table is a list of short addresses that compresses far better than code. So the owner gave the tables a raw limit of their own, 96 KB, matched by the `-combos` part of the file name, and left their compressed limits at 24 KB and 16 KB.

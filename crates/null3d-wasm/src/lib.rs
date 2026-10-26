@@ -340,15 +340,12 @@ impl Engine {
 }
 
 impl Engine {
-    /// Writes each light's image record again when a probe moved the images to another place in
-    /// the light tables, which the frame's lights read. A probe's layers come before the images',
-    /// so a probe that a scene adds or removes moves every image.
+    /// Writes each light's image record, which the frame's lights read: its layer and size, or 0
+    /// while its texture still waits for its copy. A probe's layers come before the images', so a
+    /// probe that a scene adds or removes moves every image, and the records follow.
     fn fix_image_layers(&mut self) {
         let probe_layers = self.renderer.settings().probes().probe_layers();
         let tables = self.renderer.settings_mut().light_tables_mut();
-        if !tables.image_layers_moved(probe_layers) {
-            return;
-        }
         for (light, value) in tables.image_records(probe_layers) {
             let _ = self.lights.set_value(light, light_value::IMAGE, value);
         }
@@ -3902,6 +3899,29 @@ pub fn light_image(light: u32, size: u32) -> u32 {
                 light_tables::MAX_IMAGES as u32,
             )),
         }
+    })
+}
+
+/// Gives light `light` an image of `size` texels a side whose texels come from texture `texture`.
+/// A frame copies the texture into the image once its texels are on the GPU, and the light shows
+/// the picture from the frame after. The copy is a snapshot: later changes to the texture do not
+/// reach the light. Fails with E1501 when every place for an image is taken, or when the size is
+/// one that no image takes.
+#[wasm_bindgen(js_name = setLightMapTexture)]
+pub fn set_light_map_texture(light: u32, texture: u32, size: u32) -> u32 {
+    value_with_engine(|e| {
+        e.lights.object(light).map_err(core_failure)?;
+        if light_tables::size_index(size).is_none() {
+            return Err(render_failure(render_detail::BAD_IMAGE_SIZE, size));
+        }
+        let tables = e.renderer.settings_mut().light_tables_mut();
+        if !tables.image_texture_mut(light, size, Handle::from_raw(texture)) {
+            return Err(render_failure(
+                render_detail::LIGHT_IMAGES_FULL,
+                light_tables::MAX_IMAGES as u32,
+            ));
+        }
+        0
     })
 }
 

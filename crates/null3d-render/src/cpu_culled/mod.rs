@@ -2031,8 +2031,7 @@ impl CpuCulledRenderer {
         let array = self.settings.probes().array().map_or(0, |(id, _)| id);
         let probe_layers = self.settings.probes().probe_layers();
         self.settings
-            .light_tables_mut()
-            .record(list, array, probe_layers)?;
+            .record_light_images(list, array, probe_layers)?;
         let textures_made = self.graph.textures_made();
         for index in 0..self.opaque.views() {
             if index >= first_new
@@ -2114,6 +2113,12 @@ impl CpuCulledRenderer {
         )?;
         self.settings
             .record_materials(input, list, arena, table, &self.physical_sky)?;
+        // The frame's texture work recorded the uploads, so a texture that a light's image copies
+        // from is on the GPU by the time the frame's passes run.
+        let array = self.settings.probes().array().map_or(0, |(id, _)| id);
+        let probe_layers = self.settings.probes().probe_layers();
+        self.settings
+            .record_light_images(list, array, probe_layers)?;
         self.graph.set_probe_filter(self.settings.probes().filter());
         // The frame's texture work made the passes' targets and uploads ready, so the textures
         // of the effects and the full-screen passes sample from this frame on.

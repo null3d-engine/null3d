@@ -2799,6 +2799,26 @@ impl SceneSettings {
         }
     }
 
+    /// Records the light tables' images into `array`, which the probes own: the pixels that a
+    /// sketch wrote, and a texture's copy once the frame's texture work has its texels on the GPU.
+    /// `probe_layers` gives the probe layers that the images follow. Returns true when the array's
+    /// texels change.
+    pub(crate) fn record_light_images(
+        &mut self,
+        list: &mut DrawList,
+        array: u32,
+        probe_layers: u32,
+    ) -> Result<bool, RecordError> {
+        let Self {
+            light_tables,
+            textures,
+            ..
+        } = self;
+        light_tables.record(list, array, probe_layers, |handle| {
+            textures.copy_source(handle)
+        })
+    }
+
     /// Records the frame's texture work, writes each map's layer into its material's row when a
     /// map changed, or a texture's layer became ready or stopped drawing, then uploads the rows
     /// that changed into `table`. While the textures near their memory budget, it also reads part
