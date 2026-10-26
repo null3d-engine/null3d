@@ -338,13 +338,13 @@ dispatch for each step. A WebGL2 history pass adds a scratch texture of one stat
 each run.
 
 **The figures.** The cost page runs a 256 by 256 history pass of 40 steps in one frame with an 8 by
-8 workgroup, and measures the same scene with the pass switched off, on every GPU path, in a window
-held clear for the run. Two runs gave: WebGPU 0.52 and 0.46 ms of GPU time with the pass on, against
-0.16 and 0.13 with it off; compatibility mode 0.46 and 0.59 against 0.20 and 0.20; WebGL2 12.34 and
-13.23 against 0.35 and 0.36. The frame interval stayed at the display's 16.67 ms. The pass holds
-2 MiB of texels on the compute paths and 1.5 MiB on WebGL2. The runs' 1-minute load was 17.59 to
-7.95, which the run record gives with the commit and the command. A workgroup of one invocation and
-a measurement with no pass-off baseline are rejected: the first dispatches 65,536 workgroups for a
-256 by 256 pass, and the second cannot separate the pass's cost from the frame's. The iPad and the
-phone rows are owed to the landing session, as M3-V14's measurements cover the field that uses the
-pass first.
+8 workgroup, and measures the same scene with the pass switched off, on every GPU path. A workgroup
+of one invocation and a measurement with no pass-off baseline are rejected: the first dispatches
+65,536 workgroups for a 256 by 256 pass, and the second cannot separate the pass's cost from the
+frame's. The figures are owed to a clean window. The only pair taken so far ran while the machine
+was busy, at a 1-minute load of 17.59 to 7.95 on a fourteen-core machine, so it is not a measurement
+for this record; it is kept in the run record as a shape to compare a clean run against. That shape
+holds across both runs: WebGL2 costs an order of magnitude more GPU time than the two compute paths,
+and the pass-off baseline is small everywhere. The pass holds 2 MiB of texels on the compute paths
+and 1.5 MiB on WebGL2. The iPad and the phone rows are owed to the landing session, as M3-V14's
+measurements cover the field that uses the pass first.
