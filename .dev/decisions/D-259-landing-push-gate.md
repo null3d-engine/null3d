@@ -52,15 +52,22 @@ sends each slow one through the job queue:
 - the whole unit suite, `bun run test`;
 - the heavy checks, `bun run test:heavy`: the tests that hold gigabytes of memory, which the unit
   suite leaves out;
-- for a range that changes a file under `packages/`, the fresh-project test, `bun run test:packages`.
-  It needs `NULL3D_ENGINE_SHADERS` set to the engine's `src/generated` folder. It packs every public
-  package as CI's `packages` job does. On 26 October 2026 a range passed the other six checks and
-  failed that job, because the wind add-on's shader library did not compile when the package built.
+- for a range that changes a path that the fresh-project test packs or copies, the fresh-project
+  test, `bun run test:packages`. Those paths are `packages/`, `examples/`, `tools/lib/pack.ts` and
+  `tests/fresh-project.ts`. It needs `NULL3D_ENGINE_SHADERS` set to the engine's `src/generated`
+  folder. It packs every public package as CI's `packages` job does. On 26 October 2026 a range
+  passed the other six checks and failed that job, because the wind add-on's shader library did not
+  compile when the package built.
 
 The CI session runs every unit test and every heavy check, not only the tests of the changed code.
 A test far from a change can pin a figure that the change moves. The add-on check command, the
 command line tool's `check-addon`, holds its own copy of the budget for each file that loads after
 the start. Its test compares that copy with the engine's.
+
+The checks run in the landing checkout, on the head that the landing session hands over. Nothing
+commits in that checkout until the checks end. On 26 October 2026 a commit landed there while the
+unit suite ran. The steps before it read one tree and the steps after it another, so four checks
+ran again on the new head.
 
 When all seven checks pass, the CI session pushes with `NULL3D_MILESTONE_LANDING=1`. The push hook
 reads the messages and trailers from where the branch left main, as CI's `commits` job does. It
