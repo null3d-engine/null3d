@@ -1,8 +1,8 @@
 // A compute pass that keeps its state between runs, and the reads of its texels, on every GPU path.
 // The pass adds one to the state of the run before, so its value counts the runs: 100 runs read
 // 100, 40 runs in one frame read the same as 40 frames of one run, and a stopped pass keeps the
-// value it had. A reset starts the state again from zero. Each read answers through a promise a
-// frame or more after the call, and the page reports that delay.
+// value it had. A reset and a lost device both start the state again from zero. Each read answers
+// through a promise a frame or more after the call, and the page reports that delay.
 import { expect, type Page, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -67,6 +67,12 @@ for (const { tier, query } of TIERS) {
 	test(`a reset starts a history pass again from zero on ${tier}`, async ({ page }) => {
 		const result = await stateCase(page, query, 'reset');
 		expect(result.values).toEqual([0, 1]);
+	});
+
+	test(`a lost device starts a history pass again from zero on ${tier}`, async ({ page }) => {
+		// The engine rebuilds the device and every texture; the counter then starts from empty.
+		const result = await stateCase(page, query, 'loss', 90_000);
+		expect(result.values).toEqual([2, 1]);
 	});
 
 	test(`a stopped pass keeps its image and its alpha on ${tier}`, async ({ page }) => {
