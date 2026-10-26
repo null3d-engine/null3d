@@ -1,10 +1,11 @@
 // M3-E9's first user: the night town's pines are drawn from the count word that its compute pass
 // writes. The page's own count stays at the pines' capacity on this path, so a page that ignored the
-// hook would draw every pine. Two held frames of the same demo at two presets therefore differ in
-// the ring of pines, and a hook that drew the page's count would draw the whole ring in both.
+// hook would draw every pine.
 //
-// The software GPU cannot draw this demo inside its hold limit, as D-229 records, so the
-// measurement runs on the real GPU alone.
+// The demo holds one preset, Low, and only the pass's count word changes: capacity against the
+// preset's own count. Everything else in the scene is therefore the same in both frames, so the
+// difference between them is the pines and nothing else. A page that drew from its own count would
+// draw the capacity both times and show no difference at all.
 import { expect, test } from '@playwright/test';
 
 /** What hold mode publishes on the page, as the engine's hold page describes it. */
@@ -12,18 +13,27 @@ interface HeldPage {
 	__null3dHold?: {
 		ok: boolean;
 		error?: string;
-		width?: number;
-		height?: number;
 		pixels?: Uint8Array;
 	};
 }
 
-/** The frame that the demo holds at `preset`, and its pixels. */
+/** The preset's own pine count at Low, and the capacity that the count word can hold. */
+const LOW = 90;
+const CAPACITY = 400;
+
+/** The frame that the demo holds at Low with `pines` as the count word's value. */
 async function heldFrame(
 	page: import('@playwright/test').Page,
-	preset: 'low' | 'ultra',
+	pines: number,
 ): Promise<Uint8Array> {
-	await page.goto(`/examples/index.html?demo=night-town&preset=${preset}&hold=0.5`);
+	const query = new URLSearchParams({
+		sketch: `/examples/showcase/night-town/sketch.ts?pines=${pines}`,
+		hold: '0.5',
+		size: '320x180',
+		preset: 'low',
+		gpu: 'webgpu',
+	});
+	await page.goto(`/tests/pages/image.html?${query}`);
 	await page.waitForFunction(
 		() => (globalThis as unknown as HeldPage).__null3dHold !== undefined,
 		undefined,
@@ -48,26 +58,22 @@ function differing(a: Uint8Array, b: Uint8Array): number {
 	return pixels / (a.length / 4);
 }
 
-test('the night town draws the pines that the compute pass counts', async ({ page }, testInfo) => {
-	test.skip(
-		testInfo.project.name !== 'chrome-real-gpu',
-		'the software GPU cannot draw the night town inside its hold limit (D-229)',
-	);
+test('the night town draws the pines that the count word names', async ({ page }) => {
 	test.setTimeout(600_000);
-	const low = await heldFrame(page, 'low');
-	const lowAgain = await heldFrame(page, 'low');
-	// The same preset draws the same frame, so the two pictures differ only by what the preset does.
+	const low = await heldFrame(page, LOW);
+	const lowAgain = await heldFrame(page, LOW);
+	// The same count word draws the same frame, so the harness itself moves nothing.
 	const still = differing(low, lowAgain) * 100;
 	expect(still).toBeLessThan(1);
-	const ultra = await heldFrame(page, 'ultra');
-	// Ultra draws 400 pines where Low draws 90, and the page's own count is the capacity in both, so
-	// only the compute pass's count can thin the ring at Low.
-	const moved = differing(low, ultra) * 100;
+	// The capacity draws the whole ring where the preset's count draws a part of it. Only the pass's
+	// word changed, so the difference is the pines.
+	const full = await heldFrame(page, CAPACITY);
+	const moved = differing(low, full) * 100;
 	console.log(
-		`pine count: ${still.toFixed(2)}% moved between two Low frames, ${moved.toFixed(2)}% between Low and Ultra`,
+		`count word: ${still.toFixed(2)}% moved between two frames of ${LOW}, ${moved.toFixed(2)}% between ${LOW} and ${CAPACITY}`,
 	);
 	expect(
 		moved,
-		`${moved.toFixed(1)} per cent of the frame moved between the presets`,
+		`${moved.toFixed(1)} per cent of the frame moved with the count word`,
 	).toBeGreaterThan(2);
 });

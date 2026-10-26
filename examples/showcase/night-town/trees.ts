@@ -176,6 +176,8 @@ function bareTree(seed: number): { mesh: Build; tips: V3[] } {
 export async function createTrees(
 	{ scene, geometry, materials, textures, render, engine }: SketchContext,
 	clear: (x: number, z: number) => boolean,
+	/** The count word's value, in place of the preset's, for the count test. */
+	forced?: number,
 ): Promise<{ fit(preset: QualityPreset): void }> {
 	const next = random(149);
 	const pineArrays = snowPine();
@@ -333,7 +335,8 @@ export async function createTrees(
 
 	return {
 		fit(preset) {
-			const drawn = Math.min(PINES[preset], spots.length);
+			// The count word names the pines to draw, and it never exceeds the capacity.
+			const drawn = Math.min(forced ?? PINES[preset], spots.length);
 			// On WebGL2 the page's count draws the pines. On WebGPU only the pass's count does: the
 			// page's stays at the capacity, so a picture that shows the preset's pines shows that the
 			// GPU's count reached the draw.
