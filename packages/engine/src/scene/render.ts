@@ -313,8 +313,8 @@ export interface ComputePassOptions<Wgsl extends string | CompiledWgsl = string 
 	/**
 	 * The array layers of each state: the texture has that many, or twice as many with `history`.
 	 * A `'writes'` dispatch runs one workgroup along z for each layer, so the shader writes layer
-	 * `id.z`. The default is 1. WebGL2's fragment form draws one layer, so a WebGL2 page keeps to
-	 * one layer and the call throws E1220 past it.
+	 * `id.z`. The default is 1. WebGL2's fragment form draws each layer in a pass of its own, up to
+	 * 32, and the call throws E1220 past them.
 	 */
 	readonly layers?: number;
 	/**
@@ -406,7 +406,7 @@ export class RenderPass {
 	/** @internal The textures that `textures.fromPass` made of it, which its removal destroys. */
 	readonly textures: { readonly live: boolean; destroy(): void }[] = [];
 	/** @internal The array layers of each state of a compute pass's texture. */
-	layers = 1;
+	arrayLayers = 1;
 	/** @internal True when a compute pass keeps two states in its texture's layers. */
 	history = false;
 
@@ -588,10 +588,10 @@ export class Render {
 					call,
 					`got the compute pass "${name}" on WebGL2, which has no compute shaders. Give the pass a fallback: WGSL written as a custom effect's that does the same work for each pixel.`,
 				);
-			if (states > 1)
+			if (states > MAX_FALLBACK_LAYERS)
 				throw invalid(
 					call,
-					`got the compute pass "${name}" on WebGL2 with ${states} layers. A fragment shader draws one layer at a time there, so a pass of several layers runs on WebGPU alone.`,
+					`got the compute pass "${name}" on WebGL2 with ${states} layers. A WebGL2 page draws at most ${MAX_FALLBACK_LAYERS} layers of a fragment form, one layer at a time.`,
 				);
 			const frame = effectTemplate(this.templates, compiledPass(fallback.wgsl, call));
 			// A pass at the resolve or post point reads the scene color, so the fragment form runs
@@ -628,7 +628,7 @@ export class Render {
 				state,
 			);
 			pass.fallback = true;
-			pass.layers = states;
+			pass.arrayLayers = states;
 			pass.history = keepsHistory;
 			return this.keep(pass);
 		}
@@ -676,7 +676,7 @@ export class Render {
 			undefined,
 			state,
 		);
-		pass.layers = states;
+		pass.arrayLayers = states;
 		pass.history = keepsHistory;
 		return this.keep(pass);
 	}
@@ -1205,6 +1205,9 @@ const FORMAT_CODE: Readonly<Record<ComputeFormat, number>> = {
 	r32float: FORMAT_R32_FLOAT,
 	rgba8unorm: FORMAT_RGBA8_UNORM,
 };
+
+/** The most array layers that a WebGL2 page draws of a compute pass's fragment form. */
+const MAX_FALLBACK_LAYERS = 32;
 
 /** The most invocations in a workgroup, and the most along each axis. Every device allows them. */
 const INVOCATIONS = 128;

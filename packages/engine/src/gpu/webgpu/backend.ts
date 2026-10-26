@@ -129,7 +129,7 @@ export class WebGPUBackend {
 	/** Each texture's view for bind groups: the whole texture, in the dimension it was made with. */
 	private readonly bindingViews: (GPUTextureView | undefined)[] = [];
 	/** The view dimension that each texture's bind groups see, which its bind views share. */
-	private readonly viewDimensions: (GPUTextureDimension | undefined)[] = [];
+	private readonly viewDimensions: (GPUTextureViewDimension | undefined)[] = [];
 	/** Each render target's view: a texture of one layer and one mip level, or a view of one. */
 	private readonly targetViews: (GPUTextureView | undefined)[] = [];
 	private readonly samplers: (GPUSampler | undefined)[] = [];

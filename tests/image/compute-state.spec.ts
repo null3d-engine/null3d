@@ -79,7 +79,7 @@ for (const { tier, query } of TIERS) {
 	});
 }
 
-for (const { tier, query } of TIERS.filter(({ tier }) => tier !== 'webgl2')) {
+for (const { tier, query } of TIERS) {
 	test(`a pass of three layers reads back each layer as it wrote it on ${tier}`, async ({
 		page,
 	}) => {

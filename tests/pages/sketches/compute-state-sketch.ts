@@ -102,6 +102,13 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 `;
 
+/** The fragment form of the layered pass: its layer's number, which the engine gives it. */
+const LAYERS_FRAGMENTS = /* wgsl */ `
+fn effect(input: EffectInput) -> vec4f {
+    return vec4f(f32(input.layer + 1u), 0.0, 0.0, 1.0);
+}
+`;
+
 const LAYERS = /* wgsl */ `
 struct ComputeBlock {
     size: vec4f,
@@ -131,7 +138,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 `;
 
 export default defineSketch(({ scene, geometry, materials, textures, render, page }) => {
-	scene.setBackground({ color: '#000000' });
+	scene.setBackground('#000000');
 	const layered = CASE === 'layers';
 	const kept = CASE === 'kept';
 	if (kept) {
@@ -153,7 +160,7 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 			outputs: { counter: { default: 'black' } },
 		}),
 		wgsl: kept ? CONSTANT : layered ? LAYERS : COMPUTE,
-		fallback: layered ? undefined : { wgsl: kept ? CONSTANT_FRAGMENTS : FALLBACK },
+		fallback: { wgsl: layered ? LAYERS_FRAGMENTS : kept ? CONSTANT_FRAGMENTS : FALLBACK },
 		format: 'rgba16float',
 		size: kept ? [64, 64] : [4, 4],
 		history: !kept && !layered,
