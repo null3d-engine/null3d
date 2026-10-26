@@ -2,7 +2,7 @@
 
 Status: decided. Date: 22 October 2026. Task: M3-A8.
 
-Summary: `post.set({ grading })` takes white balance, lift, gamma, gain, saturation and split toning. A job worker bakes them into a table of 32 texels a side. The final pass reads that table after the tone mapping on both GPU paths. A strong grade matches an analytic reference to 0.91 of an 8-bit step on a 17-point grid, and 0.97 with a search between its points. At a saturated yellow it misses by 2.03 steps, which is over L8's one-step tolerance. The accuracy clause is therefore a limit for the owner to accept or reject, not a pass. A change stalls no frame, and one frame uploads the table.
+Summary: `post.set({ grading })` takes white balance, lift, gamma, gain, saturation and split toning. A job worker bakes them into a table of 32 texels a side. The final pass reads that table after the tone mapping on both GPU paths. A strong grade matches an analytic reference to 0.91 of an 8-bit step on a 17-point grid, and 0.97 with a search between its points. At a saturated yellow it misses by 2.03 steps, which is over L8's one-step tolerance. The owner accepted that limit on 26 October 2026, as a cost of the design rather than a reason for more work. A change stalls no frame, and one frame uploads the table.
 
 ## Question
 
@@ -32,7 +32,7 @@ Bake the grading controls, and not the tone curve, into the table.
 - The engine tone maps in the final pass on the HDR path and in each scene shader on the 8-bit path. A curve inside the table would replace the first path's curve. The second path would then fall back to the analytic curve, or need the table bound to every scene shader. One display-space table serves both paths, read after the curve as the `lut` table already is. Both paths then grade alike.
 - The tone curve stays where it is, which leaves custom tone curves, the two-step pass, still views and the tone-mapping work in flight untouched.
 - The job worker runs the bake, so a slider that changes a value each frame does not stall the sketch or the thread that draws. The sketch's thread writes the texels into one 3D texture. The final pass keeps the texels already on the GPU while the new ones upload, so no frame loses its grade.
-- The accuracy is a limit rather than a pass. A 17-point grid gives 0.91 of a step and its search 0.97. A 49-point grid gives 1.71 and its search 2.01. The worst in the cube is 2.03 steps, at a saturated yellow where the grade clamps a channel at zero. The owner accepts or rejects that limit.
+- The accuracy is a limit rather than a pass. A 17-point grid gives 0.91 of a step and its search 0.97. A 49-point grid gives 1.71 and its search 2.01. The worst in the cube is 2.03 steps, at a saturated yellow where the grade clamps a channel at zero. The owner accepted that limit on 26 October 2026.
 - A tetrahedral read was implemented and measured for this record, and rejected. At 49 points it misses by 2.40 steps against 2.01. It has 17 channel samples over one step against 11, and its mean error is 0.049 against 0.043. The pass therefore keeps the sampler's linear filter.
 
 ## Consequences
@@ -115,19 +115,20 @@ Rule 40 decides for the display table:
 
 ### What the branch holds
 
-- `packages/engine/src/scene/grading-hdr.ts` bakes the light table. It also holds the reference that
-  the tests compare the table with.
-- `crates/null3d-shaders/wgsl/lib/grade.wgsl` grades light in a scene shader. A `GRADE_HDR` flag
-  sends it to the final pass before the tone curve, and to the 8-bit path's scene shaders.
+- `packages/engine/src/scene/grading-hdr.ts` baked the light table. It also held the reference that
+  the tests compared the table with.
+- `crates/null3d-shaders/wgsl/lib/grade.wgsl` graded light in a scene shader. A `GRADE_HDR` flag
+  sent it to the final pass before the tone curve, and to the 8-bit path's scene shaders.
 - The grade's 24 values joined the post-processing block, which grew from 64 to 88.
 - A cleared background draws the background's own color while the light table grades. A lift raises
   black, and a clear alone would keep it.
-- `?grading=hdr` and `?grading=display` pick the design, and `display` is the default. A ruling for
-  one of them deletes the other's bake, shader module and switch.
+- `?grading=hdr` and `?grading=display` picked the design, and `display` was the default. The
+  owner's ruling of 26 October 2026 deleted the light design's bake, shader module and switch.
 
 ## Addendum, 26 October 2026: the analytic check and the cost of a change
 
-Status: decided, with the owner's design ruling still open above.
+Status: decided. The owner ruled both questions on 26 October 2026: he accepts the accuracy limit,
+and the display table stays while the light table is deleted.
 
 The first figures compared each table with the function that the bake calls for every texel. That
 shows the table's resolution, not that the function is the grade the docs describe. The tests now
@@ -210,3 +211,24 @@ bake's own time in Bun, not a thread's time in the page.
 That frame keeps its grade: the texture's texels change in place, so a frame draws the old table or
 the new one, never neither. A change that a newer one replaces is dropped when it lands, so a stale
 table never shows.
+
+## Addendum, 26 October 2026: the owner's ruling
+
+The owner ruled both questions on 26 October 2026.
+
+- He accepts the accuracy limit. The table misses by 2.03 steps at a saturated yellow against L8's
+  one-step tolerance. The better interpolation was tried and measured worse. He takes the margin
+  as a cost of the design rather than asking for more work.
+- The display table stays, and the light table is deleted. Its bake, `grading-hdr.ts`, its shader
+  module, `lib/grade.wgsl`, the `GRADE_HDR` flag, and the `?grading` switch are gone. So is the
+  grade that the 8-bit path's scene shaders applied one pixel at a time, with `setGradeValues` and
+  the output block's grade field.
+
+What the removal changed:
+
+- The output uniform drops the 96-byte grade and returns from 112 bytes to 16. The final pass's
+  settings return from 208 bytes to 112, and the frame uniform from 1088 to 992.
+- The post-processing block drops the grade's 24 values and returns from 88 to 64.
+- Every GPU path grades in the final pass, from the one display-space table, which is what the
+  shipped default drew. No picture, page or reference depended on the light path: its own unit test
+  and crate test rows are deleted with it.
