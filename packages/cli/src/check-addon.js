@@ -114,7 +114,8 @@ Runs the engine's gates on one add-on package, in \`folder\` (the current folder
   interface    the entry declares the plugin interface that it works with, or, for a null3D
                package, pins the engine version
   shaders      a build compiles the add-on's WGSL for WebGPU and WebGL2
-  sizes        each file that the add-on loads after the start holds to its budget
+  sizes        each file that the add-on loads after the start is checked against its
+               budget; a file over budget warns, and does not fail the check
   page         with a page, it starts from another origin under the strict policy
   cost         with a page, its cost per frame is measured on each quality preset
   allocation   with a page, the bytes that the add-on's own code allocates per frame are
@@ -686,6 +687,51 @@ function largestSizes(files, part = 'all') {
 	const largest = (/** @type {'raw' | 'gzip' | 'brotli'} */ column) =>
 		Math.max(0, ...files.map((file) => sizeOf(file)[column]));
 	return `${kb(largest('raw'))} raw, ${kb(largest('gzip'))} gzip, ${kb(largest('brotli'))} brotli`;
+}
+
+/**
+ * The sizes gate's result: PASS when every file that the build wrote holds to its budget, and WARN
+ * when one goes over. The three size budgets are the code budget, the later-file budget and the
+ * shader-data budget. An add-on is a choice, so a file over one of them warns rather than fails the
+ * check (owner ruling, 26 October 2026). The page, cost and allocation gates still fail.
+ *
+ * @param {readonly BuiltFileSize[]} files
+ * @returns {Outcome}
+ */
+export function sizeOutcome(files) {
+	const over = sizeProblems(files);
+	const shaderBuilds = files.filter((file) => budgetOf(file.name) === ADDON_SHADER_BUDGET);
+	const code = files.filter((file) => budgetOf(file.name) === ADDON_FILE_BUDGET);
+	const split = code.filter((file) => (file.shader?.raw ?? 0) > 0);
+	const inlined = split.reduce((sum, file) => sum + (file.shader?.raw ?? 0), 0);
+	/** What the gate adds to the plain line about a file that holds shader data. */
+	const notes = [];
+	if (inlined > 0 || shaderBuilds.length > 0) {
+		if (code.length > 0) notes.push(`the largest code file at ${largestSizes(code, 'code')}`);
+		if (shaderBuilds.length > 0)
+			notes.push(`the largest shader build at ${largestSizes(shaderBuilds)}`);
+		if (inlined > 0)
+			notes.push(
+				`${kb(inlined)} of shader data inlined in ${counted(split.length, 'code file')}, within the shader budget`,
+			);
+	}
+	if (over.length > 0)
+		return {
+			status: 'WARN',
+			text: `sizes: ${counted(over.length, 'file')} load more than the budget for a file after the start`,
+			details: over,
+		};
+	return {
+		status: 'PASS',
+		text:
+			notes.length === 0
+				? `sizes: the largest file is ${largestSizes(files)}, within budget`
+				: `sizes: ${counted(files.length, 'file')} within budget, ${notes.join(', ')}`,
+		details: split.map(
+			(file) =>
+				`${file.name}: ${kb(file.raw)} in all, ${kb(file.code?.raw ?? 0)} of code and ${kb(file.shader?.raw ?? 0)} of shader data, which adds ${kb(file.shader?.gzip ?? 0)} gzip and ${kb(file.shader?.brotli ?? 0)} brotli`,
+		),
+	};
 }
 
 /** How many more lines than `SHOWN_LINES` a message printed, as a note, or nothing. */
@@ -1420,41 +1466,7 @@ export async function run(args) {
 			status: 'PASS',
 			text: `shaders: ${counted(files.length, 'file')} built with WGSL for WebGPU and WebGL2`,
 		});
-		const over = sizeProblems(files);
-		const shaderBuilds = files.filter((file) => budgetOf(file.name) === ADDON_SHADER_BUDGET);
-		const code = files.filter((file) => budgetOf(file.name) === ADDON_FILE_BUDGET);
-		const split = code.filter((file) => (file.shader?.raw ?? 0) > 0);
-		const inlined = split.reduce((sum, file) => sum + (file.shader?.raw ?? 0), 0);
-		/** What the gate adds to the plain line about a file that holds shader data. */
-		const notes = [];
-		if (inlined > 0 || shaderBuilds.length > 0) {
-			if (code.length > 0) notes.push(`the largest code file at ${largestSizes(code, 'code')}`);
-			if (shaderBuilds.length > 0)
-				notes.push(`the largest shader build at ${largestSizes(shaderBuilds)}`);
-			if (inlined > 0)
-				notes.push(
-					`${kb(inlined)} of shader data inlined in ${counted(split.length, 'code file')}, within the shader budget`,
-				);
-		}
-		print(
-			over.length === 0
-				? {
-						status: 'PASS',
-						text:
-							notes.length === 0
-								? `sizes: the largest file is ${largestSizes(files)}, within budget`
-								: `sizes: ${counted(files.length, 'file')} within budget, ${notes.join(', ')}`,
-						details: split.map(
-							(file) =>
-								`${file.name}: ${kb(file.raw)} in all, ${kb(file.code?.raw ?? 0)} of code and ${kb(file.shader?.raw ?? 0)} of shader data, which adds ${kb(file.shader?.gzip ?? 0)} gzip and ${kb(file.shader?.brotli ?? 0)} brotli`,
-						),
-					}
-				: {
-						status: 'FAIL',
-						text: `sizes: ${counted(over.length, 'file')} load more than the budget for a file after the start`,
-						details: over,
-					},
-		);
+		print(sizeOutcome(files));
 	}
 
 	if (options.skipBrowser) {
