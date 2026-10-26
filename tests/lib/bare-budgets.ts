@@ -7,16 +7,26 @@
 import ts from 'typescript';
 
 /** Bun's test calls that take a budget, by the budget's place among their arguments. */
-const BUDGET_ARGUMENT: Readonly<Record<string, number>> = {
-	it: 2,
-	test: 2,
-	setDefaultTimeout: 0,
-	beforeAll: 1,
-	beforeEach: 1,
-	afterAll: 1,
-	afterEach: 1,
-	onTestFinished: 1,
-};
+const BUDGET_ARGUMENT: ReadonlyMap<string, number> = new Map([
+	['it', 2],
+	['test', 2],
+	['xit', 2],
+	['xtest', 2],
+	['setDefaultTimeout', 0],
+	['beforeAll', 1],
+	['beforeEach', 1],
+	['afterAll', 1],
+	['afterEach', 1],
+	['onTestFinished', 1],
+]);
+
+/**
+ * The objects of Bun's test module whose own calls take a budget, by call and then by the budget's
+ * place among its arguments. Only the calls named here are read, so `jest.fn(impl)` is no budget.
+ */
+const MEMBER_BUDGET_ARGUMENT: ReadonlyMap<string, ReadonlyMap<string, number>> = new Map([
+	['jest', new Map([['setTimeout', 0]])],
+]);
 
 /** The helper that grows a stated budget with the run's load. */
 const SCALED = 'scaledBudget';
@@ -67,9 +77,9 @@ function scales(budget: ts.Expression, scaled: ReadonlySet<string>): boolean {
 }
 
 /**
- * The local names that a file gives to Bun's calls that take a budget, with the call each one names:
- * `it` for `import { it }` and for `import { it as check }`. A file's own function that is called
- * `test` is not one of them.
+ * The local names that a file gives to Bun's calls and objects that take a budget, with the import
+ * each one names: `it` for `import { it }` and for `import { it as check }`. A file's own function
+ * that is called `test` is not one of them.
  */
 function budgetCalls(source: ts.SourceFile): Map<string, string> {
 	const calls = new Map<string, string>();
@@ -81,10 +91,25 @@ function budgetCalls(source: ts.SourceFile): Map<string, string> {
 		if (!ts.isNamedImports(bindings)) continue;
 		for (const { name, propertyName } of bindings.elements) {
 			const imported = (propertyName ?? name).text;
-			if (imported in BUDGET_ARGUMENT) calls.set(name.text, imported);
+			if (BUDGET_ARGUMENT.has(imported) || MEMBER_BUDGET_ARGUMENT.has(imported))
+				calls.set(name.text, imported);
 		}
 	}
 	return calls;
+}
+
+/** The place of the budget among a call's arguments, or nothing for a call that takes none. */
+function budgetArgument(
+	callee: ts.Expression,
+	calls: ReadonlyMap<string, string>,
+): number | undefined {
+	if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression)) {
+		const members = MEMBER_BUDGET_ARGUMENT.get(calls.get(callee.expression.text) ?? '');
+		if (members) return members.get(callee.name.text);
+	}
+	const local = rootName(callee);
+	const call = local === undefined ? undefined : calls.get(local);
+	return call === undefined ? undefined : BUDGET_ARGUMENT.get(call);
 }
 
 /** The lines, counted from 1, at which a test file states a budget that does not grow with load. */
@@ -95,9 +120,8 @@ export function bareBudgetLines(file: string, text: string): number[] {
 	const lines: number[] = [];
 	const visit = (node: ts.Node) => {
 		if (ts.isCallExpression(node)) {
-			const local = rootName(node.expression);
-			const call = local === undefined ? undefined : calls.get(local);
-			const budget = call === undefined ? undefined : node.arguments[BUDGET_ARGUMENT[call] ?? -1];
+			const place = budgetArgument(node.expression, calls);
+			const budget = place === undefined ? undefined : node.arguments[place];
 			if (budget && !scales(budget, scaled))
 				lines.push(source.getLineAndCharacterOfPosition(budget.getStart(source)).line + 1);
 		}

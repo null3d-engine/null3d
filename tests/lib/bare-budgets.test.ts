@@ -70,6 +70,35 @@ describe('bareBudgetLines', () => {
 		].join('\n');
 		expect(bareBudgetLines('a.test.ts', text)).toEqual([6]);
 	});
+
+	it("finds a fixed budget for a file set through jest's setTimeout, and only that call", () => {
+		const text = [
+			"import { jest as mocks } from 'bun:test';",
+			'mocks.setTimeout(60_000);',
+			'mocks.fn(() => 60_000);',
+			'mocks.setTimeout(scaledBudget(30_000));',
+		].join('\n');
+		expect(bareBudgetLines('a.test.ts', text)).toEqual([2]);
+	});
+
+	it('finds a fixed budget on a skipped check written with xit', () => {
+		const text = [
+			"import { xit } from 'bun:test';",
+			"xit('a', () => {}, 60_000);",
+			"xit('b', () => {}, scaledBudget(60_000));",
+			"xit('c', () => {});",
+		].join('\n');
+		expect(bareBudgetLines('a.test.ts', text)).toEqual([2]);
+	});
+
+	it('finds a fixed budget on a skipped check written with xtest', () => {
+		const text = [
+			"import { xtest } from 'bun:test';",
+			"xtest('a', () => {}, { timeout: 5000 });",
+			"xtest('b', () => {}, { timeout: scaledBudget(5000) });",
+		].join('\n');
+		expect(bareBudgetLines('a.test.ts', text)).toEqual([2]);
+	});
 });
 
 describe('the test files', () => {
