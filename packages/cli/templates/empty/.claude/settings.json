@@ -6,7 +6,7 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "node \"$CLAUDE_PROJECT_DIR/.claude/agent-hook.mjs\" bash"
+						"command": "node \"$CLAUDE_PROJECT_DIR/.agent/agent-hook.mjs\" bash"
 					}
 				]
 			},
@@ -15,7 +15,7 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "node \"$CLAUDE_PROJECT_DIR/.claude/agent-hook.mjs\" edit"
+						"command": "node \"$CLAUDE_PROJECT_DIR/.agent/agent-hook.mjs\" edit"
 					}
 				]
 			}
