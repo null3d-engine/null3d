@@ -5,6 +5,7 @@ import { describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
 import null3d from '@null3d/vite-plugin';
 import { build, type Rollup } from 'vite';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 
 /** The component names of the vector checks, which only the development checks contain. */
 const CHECK_CODE = /["']x["'],\s*["']y["'],\s*["']z["'],\s*["']w["']/;
@@ -39,32 +40,40 @@ async function bundle(module: string, mode: 'production' | 'development'): Promi
 }
 
 describe('release builds', () => {
-	it('drop the development checks and shrink', async () => {
-		const [release, development] = await Promise.all([
-			bundle('scene/scene', 'production'),
-			bundle('scene/scene', 'development'),
-		]);
-		expect(development).toMatch(CHECK_CODE);
-		expect(release).not.toMatch(CHECK_CODE);
-		expect(development).toContain(LIVE_CHECK);
-		expect(release).not.toContain(LIVE_CHECK);
-		expect(release.length).toBeLessThan(development.length);
-		console.log(
-			`scene API, minified: ${development.length} bytes with checks, ${release.length} without`,
-		);
-	}, 60_000);
+	it(
+		'drop the development checks and shrink',
+		async () => {
+			const [release, development] = await Promise.all([
+				bundle('scene/scene', 'production'),
+				bundle('scene/scene', 'development'),
+			]);
+			expect(development).toMatch(CHECK_CODE);
+			expect(release).not.toMatch(CHECK_CODE);
+			expect(development).toContain(LIVE_CHECK);
+			expect(release).not.toContain(LIVE_CHECK);
+			expect(release.length).toBeLessThan(development.length);
+			console.log(
+				`scene API, minified: ${development.length} bytes with checks, ${release.length} without`,
+			);
+		},
+		scaledBudget(60_000),
+	);
 
-	it('drop the check for writes that skip a setter from the frame loop', async () => {
-		const [release, development] = await Promise.all([
-			bundle('sketch/runner', 'production'),
-			bundle('sketch/runner', 'development'),
-		]);
-		for (const trace of UNMARKED_TRACES) {
-			expect(development).toContain(trace);
-			expect(release).not.toContain(trace);
-		}
-		console.log(
-			`sketch runner, minified: ${development.length} bytes with checks, ${release.length} without`,
-		);
-	}, 60_000);
+	it(
+		'drop the check for writes that skip a setter from the frame loop',
+		async () => {
+			const [release, development] = await Promise.all([
+				bundle('sketch/runner', 'production'),
+				bundle('sketch/runner', 'development'),
+			]);
+			for (const trace of UNMARKED_TRACES) {
+				expect(development).toContain(trace);
+				expect(release).not.toContain(trace);
+			}
+			console.log(
+				`sketch runner, minified: ${development.length} bytes with checks, ${release.length} without`,
+			);
+		},
+		scaledBudget(60_000),
+	);
 });

@@ -13,6 +13,7 @@ import {
 	nearLimit,
 	nearLimitWarnings,
 	overLimit,
+	warningLine,
 } from './size-check';
 
 /** A size record with the given Brotli sizes. */
@@ -228,5 +229,15 @@ describe('nearLimitWarnings', () => {
 		);
 		expect(changes.filter(nearLimit)).toEqual([]);
 		expect(nearLimitWarnings(changes, new Map())).toEqual([]);
+	});
+});
+
+describe('warningLine', () => {
+	it('prints a plain warning, and an annotation for the run page under GitHub Actions', () => {
+		const warning = 'js/a.js is 1,830,000 bytes uncompressed, past 97% of its budget';
+		expect(warningLine(warning, {})).toBe(`warning: ${warning}`);
+		expect(warningLine(`${warning}\nnext`, { GITHUB_ACTIONS: 'true' })).toBe(
+			'::warning title=Size check::js/a.js is 1,830,000 bytes uncompressed, past 97%25 of its budget%0Anext',
+		);
 	});
 });

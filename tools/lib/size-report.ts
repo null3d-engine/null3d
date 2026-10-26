@@ -1162,28 +1162,82 @@ export const FIRST_USE_SHADER_BUDGET: Budget = {
 };
 
 /**
- * The share of the start budget that a start may reach before the build prints a warning: 97%. A
- * start that passes it has little room for the next feature, so the report names it while the
- * build still passes. The owner asked for this warning in M3-T1.
+ * The share of a budget that a start or a file may reach in any column before the build prints a
+ * warning: 97%. A start or a file that passes it has little room for the next feature, so the
+ * report names it while the build still passes. The owner asked for this warning on the start in
+ * M3-T1. It covers every budgeted file as well: on 26 October 2026 the largest first-use shader file
+ * stood at 99.8% of its uncompressed budget with no word from the build, and a branch then took it
+ * past.
  */
 export const NEAR_BUDGET_SHARE = 0.97;
 
+/** A start or a file that a budget caps: how a report names it, its size and its budget. */
+interface Budgeted {
+	what: string;
+	size: SizeEntry;
+	budget: Budget;
+}
+
 /**
- * A warning for each start that passes [`NEAR_BUDGET_SHARE`] of its Brotli budget without passing
- * the budget itself, which [`budgetProblems`] reports instead. The warning names the bytes left, so
- * a person can see how much room the next feature has.
+ * Each start and each file that a budget caps: the start of each thread mode, each part that loads
+ * after the start, each combination table and each device module of a feature that loads on first
+ * use.
+ */
+function budgetedSizes(
+	sizes: ReadonlyMap<string, SizeEntry>,
+	downloads: readonly Download[],
+	later: readonly EnginePart[],
+): Budgeted[] {
+	return [
+		...downloadSizes(sizes, downloads).map(({ mode, size }) => ({
+			what: `the engine JavaScript that a page downloads at its start in ${mode} mode`,
+			size,
+			budget: START_BUDGET,
+		})),
+		...later.flatMap(({ name }) => {
+			const size = sizes.get(name);
+			if (!size) return [];
+			// A combination table grows with every feature's bit pairs, so it has a raw limit of its
+			// own; its compressed figure, which a page downloads, stays within the shared one.
+			const budget = name.includes('-combos') ? COMBOS_BUDGET : LATER_BUDGET;
+			return [{ what: `js/${name}, which loads after the start,`, size, budget }];
+		}),
+		...[...sizes].flatMap(([name, size]) =>
+			isCombosPart(name)
+				? [{ what: `js/${name}, which loads after the start,`, size, budget: COMBOS_BUDGET }]
+				: isFirstUseShaderPart(name)
+					? [
+							{
+								what: `js/${name}, the shader builds of a feature that loads on first use,`,
+								size,
+								budget: FIRST_USE_SHADER_BUDGET,
+							},
+						]
+					: [],
+		),
+	];
+}
+
+/**
+ * A warning for each column of each start and each budgeted file that passes
+ * [`NEAR_BUDGET_SHARE`] of its budget without passing the budget itself, which [`budgetProblems`]
+ * reports instead. The warning names the bytes left, so a person can see how much room the next
+ * feature has.
  */
 export function budgetWarnings(
 	sizes: ReadonlyMap<string, SizeEntry>,
 	downloads: readonly Download[] = DOWNLOADS,
+	later: readonly EnginePart[] = LATER_PARTS,
 ): string[] {
-	const near = Math.floor(START_BUDGET.brotli * NEAR_BUDGET_SHARE);
-	return downloadSizes(sizes, downloads).flatMap(({ mode, size }) =>
-		size.brotli > near && size.brotli <= START_BUDGET.brotli
-			? [
-					`the engine JavaScript that a page downloads at its start in ${mode} mode is ${size.brotli.toLocaleString('en-US')} bytes after Brotli, past ${Math.round(NEAR_BUDGET_SHARE * 100)}% of its ${START_BUDGET.brotli / 1024} KB budget, with ${(START_BUDGET.brotli - size.brotli).toLocaleString('en-US')} bytes left`,
-				]
-			: [],
+	return budgetedSizes(sizes, downloads, later).flatMap(({ what, size, budget }) =>
+		COLUMNS.filter(
+			(column) =>
+				size[column] > Math.floor(budget[column] * NEAR_BUDGET_SHARE) &&
+				size[column] <= budget[column],
+		).map(
+			(column) =>
+				`${what} is ${size[column].toLocaleString('en-US')} bytes ${COLUMN_NAMES[column]}, past ${Math.round(NEAR_BUDGET_SHARE * 100)}% of its ${budget[column] / 1024} KB budget, with ${(budget[column] - size[column]).toLocaleString('en-US')} bytes left`,
+		),
 	);
 }
 
@@ -1197,32 +1251,7 @@ export function budgetProblems(
 	downloads: readonly Download[] = DOWNLOADS,
 	later: readonly EnginePart[] = LATER_PARTS,
 ): string[] {
-	return [
-		...downloadSizes(sizes, downloads).flatMap(({ mode, size }) =>
-			overBudget(
-				`the engine JavaScript that a page downloads at its start in ${mode} mode`,
-				size,
-				START_BUDGET,
-			),
-		),
-		...later.flatMap(({ name }) => {
-			const size = sizes.get(name);
-			if (!size) return [];
-			// A combination table grows with every feature's bit pairs, so it has a raw limit of its
-			// own; its compressed figure, which a page downloads, stays within the shared one.
-			const budget = name.includes('-combos') ? COMBOS_BUDGET : LATER_BUDGET;
-			return overBudget(`js/${name}, which loads after the start,`, size, budget);
-		}),
-		...[...sizes].flatMap(([name, size]) =>
-			isCombosPart(name)
-				? overBudget(`js/${name}, which loads after the start,`, size, COMBOS_BUDGET)
-				: isFirstUseShaderPart(name)
-					? overBudget(
-							`js/${name}, the shader builds of a feature that loads on first use,`,
-							size,
-							FIRST_USE_SHADER_BUDGET,
-						)
-					: [],
-		),
-	];
+	return budgetedSizes(sizes, downloads, later).flatMap(({ what, size, budget }) =>
+		overBudget(what, size, budget),
+	);
 }
