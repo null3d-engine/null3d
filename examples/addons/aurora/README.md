@@ -48,8 +48,11 @@ aurora looks, change the constants in `aurora.wgsl`.
   debug view, which draws no background.
 - The aurora is a flat layer in the sky, not a volume: it has no parallax and no depth of its own. A
   camera that flies through it passes under it.
-- The sky's environment map and its light come from the core sky alone. The aurora lights nothing,
-  and a scene that the aurora should light needs a light of its own.
+- The sky's environment map holds the aurora: the layer's WGSL is built into the shader that fills
+  the map, so a surface that reflects the map shows the curtains, and a map that a layer moves fills
+  again on the layer's `refresh`, so its reflection follows the curtains at that rate. The aurora
+  lights nothing, and a scene that the aurora should light needs a light of its own. The demo's own
+  ice is a rough dielectric, and its plane at ground level does not reach the demo's frame (M3-R27).
 
 ## Licence
 

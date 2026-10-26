@@ -18,6 +18,10 @@
 // premultiplied by the coverage, which the fragment writes. On the 8-bit path the blend mixes
 // encoded colors, as those objects do, so a layer that covers fully draws the same on both paths
 // and one that covers partly differs by the encode's rounding.
+//
+// The scene's color is exposed color, so the fragment scales the layer's light by the exposure and
+// by the background's intensity, as the sky around it does: one sky then shows one color where it is
+// drawn and where a map of it is reflected.
 #import null3d::globals::Frame
 #import null3d::sky_layer::{SkyLayer, SkyLayerInput, SkyLayerValues}
 #import null3d::tonemap
@@ -48,7 +52,7 @@ fn fs(in: LayerOut) -> @location(0) vec4f {
         discard;
     }
     let finished = null3d::tonemap::finish(
-        drawn.color,
+        drawn.color * layer.view.w * frame.output.exposure,
         in.clip.xy,
         frame.output,
         frame.target_size.xy,
