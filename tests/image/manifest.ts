@@ -845,7 +845,10 @@ function probeTests(): ImageTest[] {
 			// slow GPU draws the scene, which would draw the settled frame upscaled. A frame that
 			// takes over a second still misses that target, so the sketch pins the governor as well.
 			switches: ['target-fps=1'],
-			expect: { beforeLeft: true, refreshed: true, stale: true },
+			// A frame that the thread that draws skipped whole loses the work in it, and the page
+			// reports the count so that a failure names a skip as its cause. A capture cannot survive
+			// such a skip, and no frame of a working engine skips as stale here (D-206's addendum).
+			expect: { beforeLeft: true, refreshed: true, stale: true, framesSkipped: 0 },
 			// Every step waits for the floor's reflection to settle, which a software GPU's slow
 			// frames stretch out.
 			timeoutSeconds: 120,
