@@ -306,6 +306,8 @@ struct EffectInput {
     pixel: vec2f,
     size: vec2f,
     time: f32,
+    /// The array layer that this draw writes, from 0. An effect writes 0.
+    layer: u32,
 }
 
 /// Vector `part` of the uniforms in the block at `slot`.
@@ -418,6 +420,7 @@ fn effected_texel(texel: vec2i) -> vec4f {
     input.pixel = from_top;
     input.uv = from_top / first.size.xy;
     input.time = first.clock.x;
+    input.layer = 0u;
     let color = effect_chain(input);
     return vec4f(limit_hdr(color.rgb * eye_factor), color.a);
 }

@@ -1003,6 +1003,9 @@ pub struct SceneSettings {
     /// The casters that move in every frame, which keep far cascades drawing.
     moving_casters: MovingCasters,
     canvas: CanvasOutput,
+    /// The canvas size and render scale of the last recorded frame, which a region read checks
+    /// against.
+    last_canvas: Option<((u32, u32), RenderScale)>,
     output: Output,
     /// Bloom's settings while the sketch turns it on.
     bloom: Option<Bloom>,
@@ -1013,6 +1016,8 @@ pub struct SceneSettings {
     /// The pick that the next recorded frame draws, until that frame copies its ids back into
     /// engine memory.
     pick: Option<crate::pick::PickRequest>,
+    /// The read of a compute pass's texture that the next recorded frame copies.
+    pass_read: Option<crate::readback::PassRead>,
     /// Ambient occlusion's settings while the sketch turns it on.
     ao: Option<Ao>,
     /// The size of ambient occlusion's targets, as a share of the render size each way, which the
@@ -1214,6 +1219,7 @@ impl SceneSettings {
             cascade_depth,
             moving_casters: MovingCasters::default(),
             canvas,
+            last_canvas: None,
             output: Output::default(),
             bloom: None,
             bloom_chain: ChainFrame::default(),
@@ -1278,6 +1284,7 @@ impl SceneSettings {
             level_quality: LevelQuality::default(),
             level_scale: RenderScale::FULL,
             pick: None,
+            pass_read: None,
         }
     }
 
@@ -1299,6 +1306,21 @@ impl SceneSettings {
     /// True while a pick waits for a frame.
     pub fn picking(&self) -> bool {
         self.pick.is_some()
+    }
+
+    /// The read of a compute pass's region that the next recorded frame copies, if one waits.
+    pub fn pass_read(&self) -> Option<crate::readback::PassRead> {
+        self.pass_read
+    }
+
+    /// Makes the next recorded frame copy a region of a compute pass's texture.
+    pub fn set_pass_read(&mut self, read: crate::readback::PassRead) {
+        self.pass_read = Some(read);
+    }
+
+    /// Takes the read that a frame recorded, once its copy is on that frame's list.
+    pub fn take_pass_read(&mut self) -> Option<crate::readback::PassRead> {
+        self.pass_read.take()
     }
 
     /// The area lights' tables and the lights' images.
@@ -1337,6 +1359,17 @@ impl SceneSettings {
     }
 
     /// How frames reach the canvas.
+    /// The canvas size and render scale of the last recorded frame, which a read of a pass's region
+    /// checks its region against before the next frame records.
+    pub fn last_frame_size(&self) -> Option<((u32, u32), RenderScale)> {
+        self.last_canvas
+    }
+
+    /// Notes the canvas size and render scale that the frame about to be recorded draws at.
+    pub fn set_last_frame_size(&mut self, canvas: (u32, u32), scale: RenderScale) {
+        self.last_canvas = Some((canvas, scale));
+    }
+
     pub fn canvas(&self) -> CanvasOutput {
         self.canvas
     }
@@ -3048,6 +3081,34 @@ impl SceneSettings {
         {
             pass.values = *values;
             pass.maps.textures = *textures;
+        }
+    }
+
+    /// Gives the compute pass of a view the number of runs that a frame records, from the next
+    /// frame on. A view of another kind, or a removed one, keeps what it has.
+    pub fn set_compute_steps(&mut self, view: ViewId, steps: u32) {
+        let Some(declared) = self.views.get_mut(view.index()) else {
+            return;
+        };
+        if let Some(pass) = declared.compute_pass_mut() {
+            pass.steps = steps;
+        } else if let Some(pass) = declared.fullscreen_pass_mut().filter(|pass| pass.fallback) {
+            // A WebGL2 page runs the fragment form in place of the compute pass.
+            pass.steps = steps;
+        }
+    }
+
+    /// Asks the compute pass of a view to start its states again, from the next frame on: the
+    /// frame clears both states before the pass's first run. A view of another kind, or a removed
+    /// one, keeps what it has.
+    pub fn reset_compute_state(&mut self, view: ViewId) {
+        let Some(declared) = self.views.get_mut(view.index()) else {
+            return;
+        };
+        if let Some(pass) = declared.compute_pass_mut() {
+            pass.reset = pass.reset.wrapping_add(1);
+        } else if let Some(pass) = declared.fullscreen_pass_mut().filter(|pass| pass.fallback) {
+            pass.reset = pass.reset.wrapping_add(1);
         }
     }
 
