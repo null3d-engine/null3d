@@ -19,6 +19,7 @@
 // that alters the program reads a folder of its own, so no entry is read with a new meaning. Each
 // entry keeps its own key and its dependencies' hashes, so those checks still decide one entry.
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { copyInPlace, linkInPlace } from './atomic-files';
@@ -174,9 +175,49 @@ export function inputFiles(root: string, crate = SHADER_CRATE): string[] {
 	return files.sort();
 }
 
-/** A hash of every input of the build of `crate`, the shader build's by default. */
+/**
+ * The text of a WGSL source as the compiled shaders see it: without its comments, with each run of
+ * white space inside a line made one space, and without blank lines. A comment never reaches a
+ * compiled shader, so two sources with the same canonical text compile to the same bytes. Line
+ * breaks stay, because the preprocessor reads its directives line by line, and block comments nest,
+ * as WGSL defines them, keeping the line breaks inside them.
+ */
+export function canonicalWgsl(text: string): string {
+	let out = '';
+	let depth = 0;
+	for (let i = 0; i < text.length; i++) {
+		const pair = text.slice(i, i + 2);
+		if (depth === 0 && pair === '//') {
+			while (i < text.length && text[i] !== '\n') i++;
+			out += '\n';
+		} else if (pair === '/*') {
+			depth++;
+			i++;
+		} else if (depth > 0 && pair === '*/') {
+			depth--;
+			i++;
+		} else if (depth === 0 || text[i] === '\n') out += text[i];
+	}
+	return out
+		.split('\n')
+		.map((line) => line.replace(/\s+/g, ' ').trim())
+		.filter((line) => line !== '')
+		.join('\n');
+}
+
+/**
+ * A hash of every input of the build of `crate`, the shader build's by default. A WGSL source counts
+ * by its canonical text, so an edit to a comment leaves the hash, and the built modules, as they were.
+ */
 export function inputHash(root: string, crate = SHADER_CRATE): string {
-	return hashFiles(root, inputFiles(root, crate));
+	const hash = createHash('sha256');
+	for (const file of inputFiles(root, crate)) {
+		const bytes = readFileSync(join(root, file));
+		hash.update(`${file}\0`);
+		hash.update(file.endsWith('.wgsl') ? canonicalWgsl(bytes.toString('utf8')) : bytes);
+		hash.update('\0');
+	}
+	return hash.digest('hex');
 }
 
 /**

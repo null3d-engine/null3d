@@ -17,6 +17,7 @@ import { hashOf } from './build-cache';
 import { fixture } from './fixture';
 import {
 	buildEntriesShard,
+	canonicalWgsl,
 	compilerStamp,
 	crateFolders,
 	ensureShaderModules,
@@ -542,5 +543,38 @@ describe('a set in the shared cache', () => {
 		} finally {
 			rmSync(cache, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('canonicalWgsl', () => {
+	const source = [
+		'// the light loop',
+		'#import null3d::lights',
+		'',
+		'fn shade(  n: vec3f ) -> f32 {   // a trailing note',
+		'\t/* a block /* that nests */ still a comment',
+		'\t   over lines */ return dot(n, n);',
+		'}',
+	].join('\n');
+
+	it('drops comments, blank lines and runs of white space, and keeps the line breaks', () => {
+		expect(canonicalWgsl(source)).toBe(
+			['#import null3d::lights', 'fn shade( n: vec3f ) -> f32 {', 'return dot(n, n);', '}'].join(
+				'\n',
+			),
+		);
+	});
+
+	it('gives an edit to a comment the same text, and a real edit another', () => {
+		const comment = source.replace(
+			'the light loop',
+			'the light loop, which every lit entry imports',
+		);
+		expect(canonicalWgsl(comment)).toBe(canonicalWgsl(source));
+		const joined = source.replace('#import null3d::lights\n\nfn', '#import null3d::lights fn');
+		expect(canonicalWgsl(joined)).not.toBe(canonicalWgsl(source));
+		expect(canonicalWgsl(source.replace('dot(n, n)', 'dot(n, -n)'))).not.toBe(
+			canonicalWgsl(source),
+		);
 	});
 });

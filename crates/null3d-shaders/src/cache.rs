@@ -93,14 +93,15 @@ impl Cache {
     }
 
     /// The key of one entry: its name, file and source, its manifest table and the compiler's
-    /// stamp. A change to any of them gives another key, so the entry compiles again.
+    /// stamp. A change to any of them gives another key, so the entry compiles again. A WGSL source
+    /// counts by its canonical text, so an edit to a comment keeps the key.
     pub fn key(&self, name: &str, file: &str, source: &str, table: &str) -> String {
         digest(&[
             FORMAT.as_bytes(),
             self.stamp.as_bytes(),
             name.as_bytes(),
             file.as_bytes(),
-            source.as_bytes(),
+            source_text(file, source).as_bytes(),
             table.as_bytes(),
         ])
     }
@@ -170,7 +171,7 @@ impl Cache {
             return None;
         }
         for dep in &entry.deps {
-            if digest(&[files.get(&dep.file)?.as_bytes()]) != dep.hash {
+            if digest(&[source_text(&dep.file, files.get(&dep.file)?).as_bytes()]) != dep.hash {
                 return None;
             }
         }
@@ -341,7 +342,7 @@ impl Cache {
             .filter_map(|file| {
                 files.get(file).map(|source| Dep {
                     file: file.clone(),
-                    hash: digest(&[source.as_bytes()]),
+                    hash: digest(&[source_text(file, source).as_bytes()]),
                 })
             })
             .collect();
@@ -688,6 +689,53 @@ fn prune(folder: &Path, limit: u64) {
     }
 }
 
+/// The text of `source`, the contents of `file`, that decides what it compiles to: a WGSL file's
+/// canonical text (`canonical_wgsl`), and any other file as it is.
+fn source_text<'a>(file: &str, source: &'a str) -> std::borrow::Cow<'a, str> {
+    if file.ends_with(".wgsl") {
+        std::borrow::Cow::Owned(canonical_wgsl(source))
+    } else {
+        std::borrow::Cow::Borrowed(source)
+    }
+}
+
+/// The text of a WGSL source as the compiled shaders see it: without its comments, with each run of
+/// white space inside a line made one space, and without blank lines. A comment never reaches a
+/// compiled shader, so two sources with the same canonical text compile to the same bytes. Line
+/// breaks stay, because the preprocessor reads its directives line by line, and block comments
+/// nest, as WGSL defines them, keeping the line breaks inside them. `canonicalWgsl` in
+/// `tools/lib/shader-modules.ts` makes the same text for the module set's key.
+pub(crate) fn canonical_wgsl(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut kept = Vec::with_capacity(bytes.len());
+    let mut depth = 0usize;
+    let mut i = 0;
+    while i < bytes.len() {
+        let pair = (bytes[i], bytes.get(i + 1).copied());
+        if depth == 0 && pair == (b'/', Some(b'/')) {
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+            kept.push(b'\n');
+        } else if pair == (b'/', Some(b'*')) {
+            depth += 1;
+            i += 1;
+        } else if depth > 0 && pair == (b'*', Some(b'/')) {
+            depth -= 1;
+            i += 1;
+        } else if depth == 0 || bytes[i] == b'\n' {
+            kept.push(bytes[i]);
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&kept)
+        .split('\n')
+        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// A stable 128-bit hash of the given byte strings, as 32 lowercase hex digits. Two independent
 /// 64-bit lanes make a collision between two inputs of one entry practically impossible, so a
 /// cache hit never serves the output of another input.
@@ -710,6 +758,40 @@ fn digest(parts: &[&[u8]]) -> String {
 mod tests {
     use super::*;
     use crate::output::WgslOutput;
+
+    /// The source and canonical text that `canonicalWgsl`'s test in tools/lib/shader-modules.test.ts
+    /// also holds, so the two keys read a WGSL file the same way.
+    const CANONICAL_SOURCE: &str = "// the light loop\n#import null3d::lights\n\nfn shade(  n: vec3f ) -> f32 {   // a trailing note\n\t/* a block /* that nests */ still a comment\n\t   over lines */ return dot(n, n);\n}";
+    const CANONICAL_TEXT: &str =
+        "#import null3d::lights\nfn shade( n: vec3f ) -> f32 {\nreturn dot(n, n);\n}";
+
+    #[test]
+    fn canonical_text_drops_comments_blank_lines_and_white_space_runs_and_keeps_line_breaks() {
+        assert_eq!(canonical_wgsl(CANONICAL_SOURCE), CANONICAL_TEXT);
+    }
+
+    #[test]
+    fn an_edit_to_a_comment_keeps_the_key_and_a_real_edit_changes_it() {
+        let cache = Cache::disabled();
+        let key = |source: &str| cache.key("lit", "lit.wgsl", source, "table");
+        let comment = CANONICAL_SOURCE.replace(
+            "the light loop",
+            "the light loop, which every lit entry imports",
+        );
+        assert_eq!(key(&comment), key(CANONICAL_SOURCE));
+        let joined =
+            CANONICAL_SOURCE.replace("#import null3d::lights\n\nfn", "#import null3d::lights fn");
+        assert_ne!(key(&joined), key(CANONICAL_SOURCE));
+        assert_ne!(
+            key(&CANONICAL_SOURCE.replace("dot(n, n)", "dot(n, -n)")),
+            key(CANONICAL_SOURCE)
+        );
+        assert_ne!(
+            cache.key("lit", "lit.toml", "a // b", "table"),
+            cache.key("lit", "lit.toml", "a // c", "table"),
+            "a file that is not WGSL counts as it is"
+        );
+    }
 
     /// A folder of its own for one test.
     fn temp_folder(name: &str) -> PathBuf {
