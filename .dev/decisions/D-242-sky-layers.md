@@ -272,7 +272,8 @@ program that reads no cube still has one bound.
 The layer-light page is red for a second cause. On the software GPU the capture of the map's light
 reads its texels at the wrong stride. The rough sphere then takes none of the light, and every
 capture reads 0 there. The sky layer's branch carries that fix, which raises the reading to 126 on
-all three tiers. That page therefore has a fix for each of its two causes, and this record holds
+all three tiers. At the branch's merged tip, `0e84de2a8`, the spec passes on all three tiers on
+the software GPU. That page therefore has a fix for each of its two causes, and this record holds
 the first.
 
 The generator now asks the capture for that unit, which is its only use. The unit test
