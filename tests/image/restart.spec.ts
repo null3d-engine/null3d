@@ -145,7 +145,7 @@ for (const mode of THREADED_MODES.filter(({ renderThread }) => renderThread !== 
 }
 
 /**
- * Makes each GPU texture fail as the iPad's did once its GPU memory ran out, in every thread, so
+ * Makes each GPU texture fail as an iPad's does once its GPU memory runs out, in every thread, so
  * the thread that draws fails at its first frame, while the engine starts.
  */
 const TEXTURES_FAIL = `if (typeof GPUDevice !== 'undefined') GPUDevice.prototype.createTexture = () => {

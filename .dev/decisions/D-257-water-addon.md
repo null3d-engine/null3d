@@ -1,17 +1,18 @@
 # D-257: The water add-on
 
-Status: built by M3-F5. Date: 2026-10-24. Task: M3-F5.
+Status: decided. Built: the `@null3d/water` add-on, the Creek's water through it, and the
+reflection's cadence through the feature host. Owed: the cost per preset. Tasks: M3-F5, M3-E6.
 
-Summary: `@null3d/water` draws a river and a lake from one shape. It brings the waves, ripples,
-caustics, foam, soft shores, reflection and underwater view that the Creek showcase had. The surface
-reads the copy of the scene's depth that M3-E4 added, so a shore fades against the real bed. The
-reflection redraws as the quality preset affords. The Creek keeps no water code of its own.
+Summary: `@null3d/water` draws a river and a lake from one shape, with the Creek showcase's waves,
+ripples, caustics, foam, soft shores, reflection and underwater view. The surface reads the copy of
+the scene's depth, so a shore fades against the real bed, and the reflection's cadence is a feature
+setting of the preset and the governor. The Creek keeps no water code of its own.
 
 ## Question
 
-The Creek's water is a custom material, a reflection pass and a post effect. Which parts become the
-foundation add-on that owns all water, and how do a river and a lake share one description and one
-material?
+The Creek's water needs a custom material, a reflection pass and a post effect. Which parts belong
+to the foundation add-on that owns all water, and how do a river and a lake share one description
+and one material?
 
 ## Rule
 
@@ -23,8 +24,8 @@ material?
 
 ## Data
 
-The Creek's water is 298 lines of surface code and 201 lines of underwater effect
-(`examples/showcase/creek/water.ts` and `underwater.ts`, M3-F5's text). It draws:
+M3-F5's text sizes the Creek's water at 298 lines of surface code and 201 lines of underwater
+effect. It draws:
 
 - long waves that move the surface's vertices and finer ripples in its normal, carried downstream by
   a current;
@@ -58,8 +59,9 @@ foam. Measured over a band, the same gap gives the soft shore, which fades the a
 ending on the mesh's edge. The surface draws both faces, and its back face shows the window overhead.
 
 **The reflection cadence.** The pass redraws every other frame on Low and Medium and every frame on
-High and Ultra. The water follows `quality.preset` through `quality.onChange`, and a caller may give
-its own cadence. The pass costs what the Creek's did.
+High and Ultra, and a caller may give its own cadence. [The cadence through the feature
+host](#the-cadence-through-the-feature-host) says how. The pass costs the same as a reflection pass
+of the Creek's own.
 
 **The underwater view.** `createUnderwater` takes the water object. The waterline therefore follows
 the same long waves and the same current, and the effect shows only near or under the surface. It keeps the
@@ -67,21 +69,22 @@ Creek's per-pixel test, wobble, caustics and absorption.
 
 **The Creek.** It samples its own middle line and half width into the shape. It passes its own
 stone foam map. Its bisect switches keep working: `without=water` leaves the water out, and
-`reflect=always` and `reflection-scale` feed the add-on's cadence and its reflection size. `water.ts` and `underwater.ts` go, and its route test reads `waveHeight` from the add-on.
+`reflect=always` and `reflection-scale` feed the add-on's cadence and its reflection size. The Creek
+holds no `water.ts` or `underwater.ts`, and its route test reads `waveHeight` from the add-on.
 
-### Addendum: the cadence through the feature host, 25 October 2026
+### The cadence through the feature host
 
-M3-E6's water first user. The cadence no longer follows the preset with a handler of the add-on's
-own. It is a feature setting, `reflectionEvery`, with the row 2, 2, 1, 1, declared to
-`defineFeature` and resolved by `FeatureHost` for the preset in use. The setting declares the
-governor `double`, so each step of the frame-budget governor's steps doubles the wait, up to every
-16th frame. The caller's `reflectionEvery` merges into the row before the host reads it, so the
-bisect switches still name their own cadence and the governor still steps that cadence.
+The water is M3-E6's first user. The cadence is a feature setting, `reflectionEvery`, with the row
+2, 2, 1, 1, declared to `defineFeature` and resolved by `FeatureHost` for the preset in use. The
+add-on needs no handler of its own on the preset. The setting declares the governor `double`, so
+each of the frame-budget governor's steps doubles the wait, up to every 16th frame. The caller's
+`reflectionEvery` merges into the row before the host reads it, so the bisect switches name their
+own cadence and the governor steps that cadence.
 
 The feature's budget takes the reflection's measured cost from D-120's phone check, 3.4 ms for the
 pass on the S25, halved on the presets whose cadence draws every other frame: 1.7 ms on Low and
-Medium and 3.4 ms on High and Ultra. These are not new measurements. The budget's `min` is 0.25, so
-the governor stops at every 16th frame.
+Medium and 3.4 ms on High and Ultra. These figures come from D-120, not from a run of the add-on.
+The budget's `min` is 0.25, so the governor stops at every 16th frame.
 
 The stats overlay gives the feature a row named `water`, which shows its cadence and its budget:
 `water  gpu not measured  reflectionEvery 2  budget 1.7 of 1.7 ms`. The engine measures no GPU scope
@@ -95,24 +98,18 @@ code, and the water row goes when the water is destroyed. `packages/water/src/ca
 the preset moves the cadence and the overlay figure, the governor's steps double it, a caller's row
 is stepped too, and a page with no water has no row.
 
-The record is D-257 because the milestone's tip gave D-251 to the recording and replay of a session
-while this work was in flight.
-
 ## Consequences
 
-- The add-on's material sets are 53.3 KB after Brotli, so D-14's first-use shader budget rose to
-  56 KB (its addendum of the same date).
+- The add-on's material sets are 53.3 KB after Brotli, so D-14's first-use shader budget is 56 KB.
 - A custom effect that draws its own pass keeps no pieces in its module, because they never reach a
-  host. The underwater effect's were 93 KB of the add-on's entry. D-225 records the fix.
-- The Creek's image references may move where its analytic bed met the general depth read. They are
-  redrawn when the images run, with their reason sent before the change is accepted.
-- The branch landed on the milestone's tip with E4a on top; E4a's own record took D-256 there,
-  because main had taken D-250 for the timed script while both were in flight.
+  host. The underwater effect's pieces would be 93 KB of the add-on's entry. D-225 gives the rule.
+- The Creek's image references may move where its analytic bed meets the general depth read. A
+  redraw of them sends its reason before the change is accepted.
 - The page and allocation gates ran in the browser against E4a's engine: the water page starts from
   another origin under the strict policy, threaded and single-threaded, and the add-on's own code
   allocates zero bytes a frame on all four presets. That is E4a's first user, end to end.
-- The cost per preset stays owed until a quiet window, because the first runs came at a machine load
-  of 90 to 155. Its command is `bun packages/cli/bin/null3d.js check-addon packages/water`, which
+- The cost per preset is owed until a quiet window, because every attempt came at a machine load of
+  90 to 155. Its command is `bun packages/cli/bin/null3d.js check-addon packages/water`, which
   measures the add-on's page on each preset; `--skip-cost` leaves that gate out and runs the page
   and allocation gates.
 - The add-on's tests cover the shape, the mesh's coverage and winding, the wave copies, the foam

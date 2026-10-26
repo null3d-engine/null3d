@@ -507,8 +507,8 @@ const partsOf = (set: ShaderSet) => Math.ceil(glslProgramCountOf(set) / SHADER_P
  * with the coat bit in theirs. `sampled` compiles the same builds without the coat, a sample of
  * those with it, and a sample of the first-use builds, which keeps Safari's shards on CI's few Macs
  * short (D-147, D-189). Its samples share the parts of the other builds, since a part downloads its
- * share of every module: a sample with a part of its own downloaded every module, about 2.5 GB on
- * 20 October 2026, and Safari had not compiled one program of it after 205 s.
+ * share of every module: a sample with a part of its own downloads every module, about 2.5 GB, and
+ * Safari compiles no program of it within 205 s.
  */
 export const SHADER_PLANS = ['all', 'sampled'] as const;
 export type ShaderPlan = (typeof SHADER_PLANS)[number];
@@ -2552,10 +2552,10 @@ function skyRefreshReport(result: SkyRefreshResult): { line: string; problems: s
 }
 
 /**
- * The items that must share an item's shard: the items whose results the check compares with. The
- * parts of the shaders page once stayed in one shard too, where Safari compiles each part faster
- * than the one before. The page has since grown past the 10 minutes that one shard may take, so its
- * parts spread over the shards like the rest, and each shard pays for its own first part.
+ * The items that must share an item's shard: the items whose results the check compares with. In
+ * one shard, Safari compiles each part of the shaders page faster than the one before, but the page
+ * takes longer than the 10 minutes that one shard may take, so its parts spread over the shards
+ * like the rest, and each shard pays for its own first part.
  */
 export function itemsTogether(item: PlanItem<Check>): string[] {
 	return itemsNeeded(item.check);
@@ -2563,9 +2563,9 @@ export function itemsTogether(item: PlanItem<Check>): string[] {
 
 /**
  * About how long the slow pages of the checks plan take in Safari on CI's Mac, for pages that the
- * measured table (`page-times.ts`) does not hold yet. The shaders page's parts grew with the shader
- * set. In run 39291513923 (19 October 2026) a shard's parts took 122 and 143 seconds, each compiled
- * first in its shard. The WebGPU pages of the same names skip there.
+ * measured table (`page-times.ts`) does not hold yet. The shaders page's parts grow with the shader
+ * set: a shard's parts take 122 and 143 seconds, each compiled first in its shard (run
+ * 39291513923). The WebGPU pages of the same names skip there.
  */
 const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
 	[/^shaders-/, 120],

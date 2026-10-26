@@ -79,3 +79,16 @@ fn basis_from_normal(n: vec3f) -> mat3x3f {
     let bitangent = vec3f(b, s + n.y * n.y * a, -n.y);
     return mat3x3f(tangent, bitangent, n);
 }
+
+/// The unit vector halfway between the unit directions `a` and `b`, such as a light and a view.
+/// Where the two cancel, no unit bisector exists, so the result is zero: the value is the same on
+/// every GPU, where a raw normalization of the zero sum leaves the length to the platform. A
+/// specular lobe has no value at that pair of directions either, and a caller that meets the zero
+/// vector gives the lobe no light (pbrt-v4 returns zero from its microfacet BxDFs there).
+fn half_vector(a: vec3f, b: vec3f) -> vec3f {
+    let sum = a + b;
+    if dot(sum, sum) == 0.0 {
+        return vec3f(0.0);
+    }
+    return normalize(sum);
+}

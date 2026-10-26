@@ -167,11 +167,6 @@ export interface CoreDevice {
 	/** False when each custom effect draws in a pass of its own, with none joined or folded. */
 	joinEffects: boolean;
 	/**
-	 * True while the built-in grading table holds the grade over high dynamic range light, which
-	 * the pass reads before the tone curve, instead of display color.
-	 */
-	gradingHdr: boolean;
-	/**
 	 * True when each camera view draws its opaque objects' depth before it shades them.
 	 */
 	depthPrepass: boolean;
@@ -262,7 +257,6 @@ export type DeviceOptions = Pick<
 	| 'compression'
 	| 'cells'
 	| 'join'
-	| 'grading'
 	| 'prepassColor'
 	| 'skinning'
 	| 'indexInstances'
@@ -277,8 +271,6 @@ export type DeviceOptions = Pick<
 	transparent: boolean;
 	/** True to draw the opaque objects' depth in a depth prepass. */
 	depthPrepass: boolean;
-	/** How a prepass that a screen step splits from the opaque pass starts its stand-in color. */
-	prepassColor: PrepassColor | undefined;
 	/** True for positions that keep their precision at any distance from the origin. */
 	largeWorld: boolean;
 	/** The objects that the scene starts with room for, or 0 for the core's default. */
@@ -473,7 +465,6 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		transparent: options.transparent,
 		cellCulling: options.cells,
 		joinEffects: options.join,
-		gradingHdr: options.grading === 'hdr',
 		depthPrepass: options.depthPrepass,
 		prepassColor: PREPASS_COLOR_CODES[options.prepassColor ?? 'none'],
 		skinning: SKINNING_CODES[options.skinning],

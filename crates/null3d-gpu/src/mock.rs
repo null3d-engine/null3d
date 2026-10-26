@@ -210,6 +210,8 @@ pub struct MockBackend {
     reading: HashSet<u32>,
     textures: HashMap<u32, Texture>,
     views: HashMap<u32, View>,
+    /// The texture that each bind view of a layer range names, by the view's id.
+    bind_views: HashMap<u32, u32>,
     /// How many times each texture id was made or released, so a view can tell that its texture
     /// is gone.
     generations: HashMap<u32, u32>,
@@ -675,6 +677,18 @@ impl MockBackend {
         Ok(())
     }
 
+    /// Names a range of one texture's array layers, which a bind group binds as the texture.
+    fn create_bind_view(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
+        let texture = self.texture(op, o[1])?;
+        check(
+            o[3] >= 1 && o[2] + o[3] <= texture.layers,
+            op,
+            "a bind view names layers inside its texture",
+        )?;
+        self.bind_views.insert(o[0], o[1]);
+        Ok(())
+    }
+
     fn write_texture(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
         let at = Location::read(o);
         let texture = self.texel_box(op, at, o[5], o[6], o[7])?;
@@ -967,13 +981,14 @@ impl MockBackend {
                     resources.push(Resource::Buffer(id));
                 }
                 resource_kind::TEXTURE => {
-                    let texture = self.texture(op, id)?;
+                    let base = self.bind_views.get(&id).copied().unwrap_or(id);
+                    let texture = self.texture(op, base)?;
                     check(
                         texture.usage & texture_usage::TEXTURE_BINDING != 0,
                         op,
                         "a bound texture needs TEXTURE_BINDING usage",
                     )?;
-                    resources.push(Resource::Texture(id));
+                    resources.push(Resource::Texture(base));
                 }
                 resource_kind::SAMPLER => {
                     Self::require(self.samplers.contains(&id), op, "sampler", id)?;
@@ -1178,6 +1193,7 @@ impl MockBackend {
             Op::DestroyTexture => {
                 self.textures.remove(&o[0]);
                 self.views.remove(&o[0]);
+                self.bind_views.remove(&o[0]);
                 *self.generations.entry(o[0]).or_default() += 1;
             }
             Op::UploadImage => self.upload_image(op, o)?,
@@ -1297,6 +1313,20 @@ impl MockBackend {
                 self.compute_pipelines.insert(o[0], o[1]);
             }
             Op::CreateBindGroup => self.create_bind_group(op, o)?,
+            Op::CreateBindView => self.create_bind_view(op, o)?,
+            Op::ClearTexture => {
+                let texture = self.texture(op, o[0])?;
+                check(
+                    texture.usage & texture_usage::RENDER_ATTACHMENT != 0,
+                    op,
+                    "a cleared texture needs RENDER_ATTACHMENT usage",
+                )?;
+                check(
+                    o[2] >= 1 && o[1] + o[2] <= texture.layers,
+                    op,
+                    "a clear names layers inside its texture",
+                )?;
+            }
             Op::BeginRenderPass => self.begin_render_pass(op, o)?,
             Op::BeginBundle => {
                 self.outside_passes(op)?;

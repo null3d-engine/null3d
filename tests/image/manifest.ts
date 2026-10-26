@@ -207,6 +207,11 @@ const FOG_VOLUME_SKETCH = 'tests/pages/sketches/fog-volume-sketch.ts';
 const FOG_VOLUME_SIZE = [480, 270] as const;
 /** The hero shadow's picture size, large enough to see the tile's texels on the car's shadow. */
 const HERO_SIZE = [640, 360] as const;
+/**
+ * The Creek picture size at a render scale below the whole canvas: nearly square, as a large live
+ * page draws, so the view crops the sides the way the owner's recording does.
+ */
+const CREEK_SCALE_SIZE = [320, 279] as const;
 
 /**
  * The volumetric fog: the sun's rays between the pillars, and the street lamps' cones at night with
@@ -543,9 +548,10 @@ function aoTests(): ImageTest[] {
 			reference: 'ao-wide',
 		},
 		// The ways of starting the prepass's stand-in color draw the same image, since no pass reads
-		// it: the engine's default attaches no color, and `clear` keeps one and clears it (D-266).
-		// Only WebGL2 takes the switch. The default needs no test of its own, since `ao-wide` draws
-		// it already.
+		// it: the engine's default gives the prepass a depth-only framebuffer, and `clear` keeps a
+		// color and clears it (D-269). Only WebGL2 takes the switch. The default needs no test of its
+		// own, since `ao-wide` draws it already, and that reference was drawn before the change, so an
+		// unchanged match shows that the image did not move.
 		{
 			...test('ao-prepass-color-clear', '?ao=wide'),
 			tiers: ['webgl2'],
@@ -627,7 +633,7 @@ const DARK_TONES_SKETCH = 'tests/pages/sketches/dark-tones-sketch.ts';
  * Dark tones on every tier. A strong vignette over a flat dark background: the dither runs last,
  * after the vignette, so its noise keeps one step of depth in the dark corners. The 8-bit path
  * darkens the linear value of display color instead of HDR color, and must still draw the HDR
- * path's image: on 5 October 2026 no pixel differed past the threshold. A point light's
+ * path's image, with no pixel past the threshold. A point light's
  * falloff over a dark floor: a long dark gradient. On WebGL2 the packed small float format must
  * draw the gradient as 16-bit floats do, with no bands. Core WebGPU draws in that format already
  * where the device can.
@@ -855,7 +861,10 @@ function probeTests(): ImageTest[] {
 			// slow GPU draws the scene, which would draw the settled frame upscaled. A frame that
 			// takes over a second still misses that target, so the sketch pins the governor as well.
 			switches: ['target-fps=1'],
-			expect: { beforeLeft: true, refreshed: true, stale: true },
+			// A frame that the thread that draws skipped whole loses the work in it, and the page
+			// reports the count so that a failure names a skip as its cause. A capture cannot survive
+			// such a skip, and no frame of a working engine skips as stale here (D-206's addendum).
+			expect: { beforeLeft: true, refreshed: true, stale: true, framesSkipped: 0 },
 			// Every step waits for the floor's reflection to settle, which a software GPU's slow
 			// frames stretch out.
 			timeoutSeconds: 120,
@@ -1189,8 +1198,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// A skinned box built in code, bent by a joint, whose level names two of its twelve triangles
 	// and the box's own vertex accessors: the engine stores that level over the base's vertices, and
-	// the joint bends it too. Its copy gives the level accessors of its own and must draw the same
-	// pixels, which proves that a skinned level draws the base mesh's own vertices.
+	// the joint bends it too.
 	{
 		name: 'skinned-lod',
 		sketch: 'tests/pages/sketches/skinned-lod-sketch.ts',
@@ -1212,6 +1220,27 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'asset-scene-lod',
 		tolerance: { threshold: 0, maxDiffRatio: 0 },
 		swiftShaderTolerance: LEVEL_ROUNDING_TOLERANCE,
+	},
+	// The asset tool's leaf-card step: a tree from a file whose crown is a list of separate leaf
+	// cards. The first lower level keeps half of the cards and grows them about their middles, and
+	// a bias brings that switch near the camera, where the crown spans about 100 of the 640 pixels.
+	// Without the step the tool plans no level for the crown, because every card's edges are
+	// borders, which stay.
+	{
+		name: 'asset-card-level',
+		sketch: 'tests/pages/sketches/asset-levels-sketch.ts?scene=tree',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+	},
+	// The asset tool's texture-coordinate weight: a flat grid whose texture repeats across it. Its
+	// coarsest level reports the slide of those coordinates, and that error holds the level out at
+	// a distance, so a finer level draws here and the checker stays square. Without the weight the
+	// coarsest level reports almost no error, draws here, and scrambles the checker.
+	{
+		name: 'asset-bent-grid',
+		sketch: 'tests/pages/sketches/asset-levels-sketch.ts?scene=grid',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
 	},
 	// The outputs of assets convert: a skinned, morphed column from FBX halfway through its clip,
 	// the same column from OBJ, a pyramid from STL with face colors and a cube from PLY with corner
@@ -1377,6 +1406,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		tiers: ['webgpu', 'webgl2'],
 		modes: ALL_MODES,
+	},
+	// The materials recipe's own page with the render scale fixed at 0.75, the floor at High. The
+	// recipe builds its place from the pixel and reads the scene's depth there, so it shows the same
+	// wrong-place fault when the engine maps the place through the depth copy's size.
+	{
+		name: 'scene-depth-render-scale',
+		page: 'tests/pages/scene-depth.html',
+		size: [320, 180],
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['renderScale=0.75'],
 	},
 	// A beach and a pond whose water meets a bed that rises to the surface, an island and two stones.
 	// The surface function reads the copy of the opaque scene's depth and fades the water over a band
@@ -2720,6 +2760,32 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 1,
 		size: [640, 360],
 	},
+	// The wind add-on's own page: a field of cards that reads the air at each vertex. A gust
+	// crosses the field between the first hold and the second, so the pairs change where the gust
+	// has reached. The wake test holds one body still, so its trail stays put. The part test draws
+	// the same page with the gust and the swirl taken out, from the drawings it makes itself.
+	{
+		name: 'wind-cards',
+		sketch: 'packages/wind/page/sketch.ts?camera=still',
+		hold: 1,
+		size: [480, 270],
+		// The cards cast shadows that sway with them, and the software GPU takes its time with them.
+		timeoutSeconds: 180,
+	},
+	{
+		name: 'wind-cards-later',
+		sketch: 'packages/wind/page/sketch.ts?camera=still',
+		hold: 1.6,
+		size: [480, 270],
+		timeoutSeconds: 180,
+	},
+	{
+		name: 'wind-wake',
+		sketch: 'packages/wind/page/sketch.ts?still=1',
+		hold: 1.2,
+		size: [480, 270],
+		timeoutSeconds: 180,
+	},
 	// Impostors of the impostors add-on: cards far from the world's origin, each blending the three
 	// atlas views nearest its direction to the eye and lit by the sun from the normal the surface
 	// atlas stores, and a merged row of a plain, a turned and a mirrored panel, which draws only
@@ -3120,17 +3186,26 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(demo.hdr === false && { expect: { hdr: false } }),
 			...(demo.timeoutSeconds !== undefined && { timeoutSeconds: demo.timeoutSeconds }),
 			// The screens draw their readings into a 2D canvas, and each browser rasterises that
-			// text its own way: the readings and the layout match everywhere, while the digits'
-			// edges differ. On 24 October 2026 Safari differed on 1.0 per cent of the pixels and
-			// Firefox on 1.8, against a device tolerance of half a per cent.
+			// text its own way. The readings, the bars, the chart and the layout match
+			// everywhere, while the glyphs of the digits differ. Firefox drew 2.615 per cent of
+			// the pixels differently from the Mac's picture, and 2.342 from the one CI's
+			// software GPU drew, while those two pictures agreed within 0.760. Its 1,506
+			// differing pixels fall in 30 regions, the largest 527 pixels at the left reading's
+			// glyphs, and the four largest hold 81 per cent of them. Every region lies inside a
+			// reading or a small label. The limit sits a third above the highest figure, and it
+			// applies only where a browser or a device compares with the Mac's pictures.
 			...(demo.name === 'canvas-screen' && {
-				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.025 },
+				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.035 },
 			}),
-			// The rain and the lens marks land on pixels that each browser's own GPU rounds its
-			// own way: every run that judged it found the same city, pose and traffic. Firefox
-			// differed on 0.9 per cent of the pixels on 24 October 2026.
+			// The window lights, the rain and the lens marks are one pixel each, so each
+			// rasteriser rounds their brightness its own way: every run found the same city, pose
+			// and traffic. Firefox on CI's software GPU drew 1.281 per cent of the pixels
+			// differently from the Mac's picture, and gave the same figure to three decimals in
+			// three runs. Its 738 differing pixels fall in 434 regions, 295 of them a single
+			// pixel, and the largest is 17 pixels. The limit sits a third above the figure, and
+			// it applies only where a browser or a device compares with the Mac's pictures.
 			...(demo.name === 'skyway' && {
-				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.012 },
+				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.017 },
 			}),
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
 			// The hero shadow is fine detail on one object, so its demo draws larger than the
@@ -3138,6 +3213,28 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(demo.name === 'hero-shadow' && { size: HERO_SIZE }),
 		};
 	}),
+	// Creek on a near-square canvas at a render scale below the whole canvas, from the opening view
+	// and from the low pass along the bank. The scene draws into a corner of the depth copy, which
+	// keeps the whole canvas's size, so a custom material that reads the scene's depth must map its
+	// place through the image's size. Before that mapping the river draws dry over most of its
+	// length, and water covers the near bank below a straight screen line at the scale. Hold mode
+	// has no governor, so the sketch fixes the scale that a large live page reaches by itself.
+	{
+		name: 'creek-render-scale-opening',
+		sketch: 'examples/showcase/creek/sketch.ts?render-scale=0.75',
+		size: CREEK_SCALE_SIZE,
+		hold: 0.5,
+		swiftShaderSwitches: ['preset=low'],
+		timeoutSeconds: 300,
+	},
+	{
+		name: 'creek-render-scale-route',
+		sketch: 'examples/showcase/creek/sketch.ts?render-scale=0.75',
+		size: CREEK_SCALE_SIZE,
+		hold: 17,
+		swiftShaderSwitches: ['preset=low'],
+		timeoutSeconds: 300,
+	},
 	// The hero demo at both tile sizes. The car stands in the same place and its shadow falls the
 	// same way; the larger tile draws its edge sharper, which shows that the detail the preset pays
 	// for is kept, not smeared. The demo's own test, `demo-hero-shadow`, draws High at the default

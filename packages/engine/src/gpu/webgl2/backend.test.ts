@@ -106,7 +106,7 @@ describe('WebGL2Backend', () => {
 				[G.OP_END_RENDER_PASS],
 			);
 		// A depth-only pass attaches no color, so it names no draw buffer: Safari's WebGL2 path
-		// charges for a color that a pass holds without writing it (D-266).
+		// charges for a color that a pass holds without writing it (D-269).
 		log.length = 0;
 		pass(G.NO_TARGET, 2);
 		expect(log.filter(([name]) => name === 'drawBuffers')).toEqual([['drawBuffers', [0]]]);

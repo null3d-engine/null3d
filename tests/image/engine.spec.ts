@@ -525,11 +525,11 @@ async function jobWorkerFails(page: Page, worker: string): Promise<void> {
 
 // A job worker that does not start is survivable, as the engine's own notes say: the engine runs on
 // with the workers it has, and the on-demand loader sends its tasks only to those. The KTX2 sketch
-// loads a file during its setup, so the page needs one task to finish. The loader used to send that
-// task to a job worker by index, started or not, and a worker that did not start never answers: the
-// page then drew nothing at all. Firefox lost the download of that worker's core on 16 October 2026,
-// in real-browsers, with one of two job workers gone. Each case here loads a page that must finish a
-// task of the loader, and every case keeps the engine to two job workers.
+// loads a file during its setup, so the page needs one task to finish. A loader that sends that
+// task to a job worker by index, started or not, gets no answer from a worker that did not start:
+// the page then draws nothing at all. In the real-browsers run, Firefox can lose the download of a
+// worker's core, which leaves one of two job workers gone. Each case here loads a page that must
+// finish a task of the loader, and every case keeps the engine to two job workers.
 for (const [what, stop] of [
 	[
 		'no job worker starts',

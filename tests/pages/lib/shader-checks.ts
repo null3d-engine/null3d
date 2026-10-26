@@ -161,8 +161,8 @@ function checkProgram(
 
 /**
  * The programs that the page compiles at once. The driver holds each one's compiled code until the
- * page deletes it, and all of the engine's programs at once ran a low-memory tablet out of memory:
- * its browser reloaded the runner page, which opened the same page again, over and over.
+ * page deletes it, and all of the engine's programs at once run a low-memory tablet out of memory:
+ * its browser reloads the runner page, which opens the same page again, over and over.
  */
 const BATCH = 32;
 

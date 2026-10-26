@@ -1,6 +1,7 @@
 # D-254: Interior-mapped facades in one add-on, with codes in an atlas
 
-Status: decided in the M3-B2 branch on 25 October 2026. Date: 2026-10-25. Task: M3-B2.
+Status: decided. Built: the facades example add-on, with both mappings and its generated pages.
+Owed: the material's cost per GPU path and preset. Task: M3-B2.
 
 Summary: A city's windows draw their rooms by interior mapping. One surface function serves two
 mappings. A whole wall takes its cells from the world position. A pane takes its cell from the
@@ -9,9 +10,9 @@ ships and every scene stays offline.
 
 ## The problem
 
-Night town's comparison and Skyway each wrote a facade shader in M2. They copied the room, the
-lamp, the blinds and the far fade between them. Both wanted the same power-on wave. A third scene
-would have copied them again.
+Night town's comparison and Skyway each need a facade shader with the same room, lamp, blinds and
+far fade, and the same power-on wave. A shader in each scene copies all of it, and a third scene
+would copy it again.
 
 ## The choice
 
@@ -36,33 +37,33 @@ would have copied them again.
 
 - A texture or a layer for each window code. A city of 100,000 windows would need far more
   textures than a material binds. D-47 limits a material to six.
-- A wall and a mask alone, as the older night scene drew. The windows read as flat panels, with no
-  parallax when the camera passes.
+- A wall and a mask alone. The windows read as flat panels, with no parallax when the camera
+  passes.
 - A second map for the far average. The page's own mips already hold it. A second map would cost a
   texture slot and an upload.
 - A wave written on the CPU for each window in each frame. The shader already knows the time and
   the distance.
 
-## The faults found
+## Faults to avoid
 
-- **WebGPU drew no facade.** The shader sampled its pages with explicit derivatives, and a branch
-  stood before them. The branch tested a material's value, which WebGPU's uniformity analysis does
-  not accept as uniform control flow for a derivative call. WebGL2 and SwiftShader compiled it, so
-  two paths drew while the main one refused the whole shader. Every derivative call now stands
-  before the first branch, as the engine's shader rules ask. The add-on's image tests draw on all
-  three tiers, so the fault now fails a test on the path that rejects it.
-- **A wall lit as one piece.** The power-on wave measured each object's origin. A wall drawn as one
-  mesh lights as one piece, whatever its width. It now measures the pixel's own place on the
-  ground, which serves a batch of buildings and a single wall alike.
-- **A distant skyline washed beige.** The far fallback mixed the rooms' average light at its
-  close-up strength. It now keeps a third of that. A city of lit windows then reads as a glow.
+- **A branch before a derivative call.** The shader samples its pages with explicit derivatives. A
+  branch that tests a material's value is not uniform control flow for a derivative call under
+  WebGPU's uniformity analysis. WebGPU then refuses the whole shader and draws no facade, while
+  WebGL2 and SwiftShader compile it and draw. Every derivative call stands before the first branch,
+  as the engine's shader rules ask. The add-on's image tests draw on all three tiers, so such a
+  fault fails a test on the path that rejects it.
+- **A wave measured from each object's origin.** A wall drawn as one mesh then lights as one piece,
+  whatever its width. The power-on wave measures the pixel's own place on the ground, which serves a
+  batch of buildings and a single wall alike.
+- **The rooms' average light at its close-up strength.** A distant skyline then washes beige. The
+  far fallback keeps a third of that light, so a city of lit windows reads as a glow.
 
 ## The figures
 
 The two wall pages hold 256 KB each, about 342 KB with their mip levels. The code page holds 1 KB.
 The cost of the material against a plain wall, per GPU path and preset, is owed. Its command is in
-the add-on's README. The test waits for a load of 8. The machine stayed between 120 and 150 through
-the night the add-on was built. A figure taken then would measure the load, not the material.
+the add-on's README. The test waits for a load of 8. The machine's load stood between 120 and 150
+in every attempt, and a figure taken at that load would measure the load, not the material.
 
 ## The limits
 

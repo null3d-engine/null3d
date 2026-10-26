@@ -167,6 +167,14 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		needs: ['engine', 'vite-plugin'],
 		required: [],
 	},
+	// Its analytic field, grid and projection WGSL compile into modules of their own.
+	wind: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine', 'vite-plugin'],
+		required: [],
+	},
 	cli: {
 		compile: false,
 		shaders: false,
@@ -724,7 +732,7 @@ export function publicPackages(root: string): string[] {
  * The generated declarations that the engine's types need, as the packed package holds them. The
  * shader build's JavaScript leaves the tarball, so the check asks for a declaration for each
  * generated TypeScript module: `shaders.d.ts` and the rest, and the engine's own constants modules.
- * It never asks for a generated JavaScript file, which the package no longer carries.
+ * It never asks for a generated JavaScript file, which the package does not carry.
  */
 export function shaderDeclarationFiles(root: string): string[] {
 	const folder = MODULE_DIR.replace(/^packages\/engine\/src\//, `${LIB_DIR}/`);
