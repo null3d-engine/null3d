@@ -972,7 +972,6 @@ mod tests {
                 roundness: 0.5,
             }),
             sharpen: None,
-            ..Grading::default()
         };
         let (_, settings, list) = prepared(format::CANVAS, Antialias::Msaa, grading);
         assert_eq!(
