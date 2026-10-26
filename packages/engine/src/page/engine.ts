@@ -619,8 +619,10 @@ export interface Engine {
 	 * builds that a pipeline needs and that did not download fail the thread that draws with E1424.
 	 * After E1404 or E1424 the engine draws no new frames: destroy it and start a new one. On WebGPU,
 	 * the GPU can also run out of memory (E1304) or reject the engine's work (E1305), and the engine
-	 * draws on without the objects that failed. The engine reports each failure once. Without a
-	 * handler, it logs the failure to the console. Returns a function that removes the handler.
+	 * draws on without the objects that failed. The engine reports each failure once. A failure that
+	 * no handler listened for when the engine reported it reaches the first handler that listens, so
+	 * a failure that the app could not hear yet still arrives, and the engine also logs it to the
+	 * console. Returns a function that removes the handler.
 	 */
 	onFailure(handler: (error: EngineError) => void): () => void;
 	/**
@@ -1747,6 +1749,11 @@ async function startEngine(
 	};
 	const failureHandlers = new Set<(error: EngineError) => void>();
 	const sketchErrorHandlers = new Set<(error: Error) => void>();
+	/**
+	 * The failures that the engine reported while no handler listened, for the first handler that
+	 * does: a failure that reaches nothing is worse than a slow path.
+	 */
+	const earlyFailures: EngineError[] = [];
 	const reported = new Set<string>();
 	const onSketchError = (error: Error) => {
 		for (const handler of sketchErrorHandlers) handler(error);
@@ -1770,7 +1777,11 @@ async function startEngine(
 			start.abort(error);
 			return;
 		}
-		if (failureHandlers.size === 0) console.error(error);
+		if (failureHandlers.size === 0) {
+			earlyFailures.push(error);
+			console.error(error);
+			return;
+		}
 		for (const handler of failureHandlers) handler(error);
 	};
 	// The GPU path, the mode and the threads, which the start sets once the probe has run. The
@@ -2646,6 +2657,7 @@ async function startEngine(
 			},
 			onFailure(handler) {
 				failureHandlers.add(handler);
+				for (const error of earlyFailures.splice(0)) handler(error);
 				return () => failureHandlers.delete(handler);
 			},
 			onSketchError(handler) {
