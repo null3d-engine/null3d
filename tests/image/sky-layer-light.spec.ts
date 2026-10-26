@@ -5,7 +5,7 @@
 // and checks that each shows the layer, that each loses it, and that neither shows it while the
 // other does not for more than the few frames that the light takes to follow the map.
 import { expect, test } from '@playwright/test';
-import { pageResult } from '../lib/page-result.ts';
+import { pageResultWhileProgressing } from '../lib/page-result.ts';
 
 interface Capture {
 	stretch: number;
@@ -25,6 +25,14 @@ const CHANGE = 15;
 const LEAD = 3;
 /** How far the captures at the end of a stretch must agree, in levels of 255. */
 const STEADY = 3;
+/**
+ * The run fails when its page notes no new step for this long. The page notes a step at its first
+ * frame and after each capture. CI's software GPU runs the page several times slower than a
+ * desktop, so a wait on each step leaves a slow machine room and still fails a stuck page.
+ */
+const STALL_MS = 30_000;
+/** The most time the run may take in all. */
+const RUN_LIMIT_MS = 4 * 60_000;
 const TIERS = { webgpu: 'webgpu', compat: 'webgpu-compat', webgl2: 'webgl2' } as const;
 
 /** How green a color is: the green above the mean of red and blue, in levels of 255. */
@@ -57,12 +65,13 @@ function crossing(
 
 for (const gpu of Object.keys(TIERS) as (keyof typeof TIERS)[])
 	test(`a sky layer reaches the reflections and the light on ${gpu}`, async ({ page }) => {
-		test.setTimeout(120_000);
+		test.setTimeout(RUN_LIMIT_MS);
 		await page.goto(`sky-layer-light.html?gpu=${gpu}&fps=20`);
-		const result = await pageResult<{ error?: string; tier: string; frames: Capture[] }>(
-			page,
-			90_000,
-		);
+		const result = await pageResultWhileProgressing<{
+			error?: string;
+			tier: string;
+			frames: Capture[];
+		}>(page, STALL_MS);
 		expect(result.error).toBeUndefined();
 		expect(result.tier).toBe(TIERS[gpu]);
 		const { frames } = result;
