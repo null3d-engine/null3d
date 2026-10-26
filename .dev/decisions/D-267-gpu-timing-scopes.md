@@ -50,4 +50,5 @@ The overlay lists the frame's steps in the card's order. The work bars come firs
 - The water add-on declares its reflection pass as its GPU scope, and the overlay shows the pass's time on the water row.
 - The splats add-on draws inside the transparent pass and reports no GPU time. The subsection above records the check for a timestamp inside that pass. WebGL2 could widen its timer to time the draw. WebGPU cannot without the optional feature, which this Mac's Chrome lacks.
 - `FeatureStats.scope` and `FrameStats.gpuSteps` are public. The `place` of each is internal and the docs leave it out.
+- The GPU check's prepared pages carry a stamp of the commit and the working tree. Every commit makes them stale, so its four minutes of timing come after a full page build.
 - `docs/api/features.md`, `docs/api/debug.md` and `docs/guides/debugging.md` describe the scope, the steps and the limit of seven passes.
