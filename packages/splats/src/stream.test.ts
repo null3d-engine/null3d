@@ -70,7 +70,7 @@ describe('parseStreamIndex', () => {
 
 	it('refuses another format or version', () => {
 		const other = JSON.parse(indexText([])) as Record<string, unknown>;
-		other['format'] = 'someone.else';
+		other.format = 'someone.else';
 		expect(() => parseStreamIndex(JSON.stringify(other), undefined, 'the index')).toThrow(
 			'names the format',
 		);
