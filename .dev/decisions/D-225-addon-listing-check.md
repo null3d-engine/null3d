@@ -385,7 +385,7 @@ serve them, and that is a change of its own with its own measurements.
 **Why the old gate failed.** The sizes gate charged every built file to one budget, chosen by the
 file's name. Most of the wind add-on's entry is not its code. The plugin inlines compiled WGSL in
 the module that imports it. That is a whole shader's builds with the tables of text that they share,
-a sky layer's builds, and an effect's pieces. The inlined shader data is 86,592 of the wind entry's
+and an effect's pieces. The inlined shader data is 86,592 of the wind entry's
 91,607 bytes, or 94.5%. For water it is 97,323 of 111,802, or 87.0%. The gate charged those bytes to
 the 64 KB budget for code, so it failed both entries: 91,607 and 111,802 bytes uncompressed. This
 change moves no byte that a page downloads. It moves only the accounting for those bytes.
@@ -429,7 +429,7 @@ is glue and the small packs, not shader text. WGSL that a module holds as a tagg
 split, so those bytes stay in the code part. That is stricter than the gate claims, and not a way
 past it.
 
-**The figures.** A warm shader cache, and wind's figures repeated in two runs, from
+**The figures.** A warm shader cache at `f04f4f188`, with wind's figures repeated in two runs, from
 `bun packages/cli/bin/null3d.js check-addon <package> --skip-browser`.
 
 | Add-on | File | Raw | Code | Shader data | Share of raw |
@@ -446,3 +446,24 @@ splitting. A test of `splitShaderData` holds the parts to the file's size. A tes
 fails a file whose inlined shader data is over the shader budget. A gate that stopped counting those
 bytes therefore cannot pass it. A test of `emptyShaders` holds the stand-in build to `.wgsl` files
 alone.
+
+## Addendum, 26 October 2026: a size budget warns
+
+The owner's ruling is "Just warn" when an add-on goes over a size budget. Its reason is "Add-ons
+are a choice so it's ok if they cause things to go over budget." The ruling covers the three size
+budgets alone: the code budget, the later-file budget and the shader-data budget. A file over one
+of them prints as WARN. It names each column over its figure, and the command exits 0. The page,
+cost and allocation gates keep failing as they do.
+
+One function decides the verdict and the status, `sizeOutcome` in
+`packages/cli/src/check-addon.js`. It returns PASS when every file holds to its budget and WARN when
+one does not. The print site prints what it returns. Only a FAIL result fails the run, so the
+printed status and the exit status cannot disagree.
+
+WARN is a result status that `test.js` counts beside passed, failed and skipped. A test runs the
+command on an add-on whose build is over the code budget. It requires the WARN line and an exit
+status of 0. With the earlier behavior, which failed the run, that test fails.
+
+The paragraph "What a file over a budget does" above records the gate before this ruling. It printed
+each column over its budget and exited 1. It now prints the same lines and exits 0. The engine's own
+size report does not change. It measures the engine's own files, which are not a choice.

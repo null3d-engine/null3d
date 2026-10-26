@@ -113,6 +113,11 @@ panorama that the physical sky draws, so a map of either sky kind holds the laye
 draws those texels with the page's own pipelines, which it builds at the map's first fill with the
 layer; the layer's values arrive in the stage's command, as the core sky's cloud settings do.
 
+A map's texels hold the layer's radiance as they hold the sky's, so both places that a sky is seen
+take the scene's exposure. The box that draws a layer over the background did not, and a sky and its
+reflection disagreed by that factor; [D-262](D-262-ground-reflections.md) records that fault and its
+fix.
+
 The engine cannot tell how fast a layer moves, because its animation lives inside its WGSL. So the
 layer declares `refresh`, the seconds between the map's captures of it, defaulting to one second;
 0 marks a layer that stands still, whose map then fills only when the sky or the layer's values
@@ -192,11 +197,16 @@ worker started, so it stopped as E1405. Four jobs of each CI run carried one of 
 and 40222451866. WebGPU was not affected: a bind group names every binding of its layout, so a
 program that reads no cube still has one bound.
 
-The layer-light page is red for a second cause. On the software GPU the capture of the map's light
-reads its texels at the wrong stride. The rough sphere then takes none of the light, and every
-capture reads 0 there. The sky layer's branch carries that fix, which raises the reading to 126 on
-all three tiers. That page therefore has a fix for each of its two causes, and this record holds
-the first.
+The layer-light page is red for a second cause. At this tip the capture of the map's light never
+runs, on any GPU tier. The stage split of `333a05a78` put the capture's buffer in the stage that the
+page names, which draws. Both generators run the capture only in the copy stage, which has no
+draws. So no fill sums the map's light, and the rough sphere reads 0 in every capture. A stride
+fault in the CPU's read of the coefficients is a second, smaller fault. On the sky layer's branch,
+on the software GPU, the page takes the layer in the reflections and in the diffuse light on
+WebGPU, compatibility mode and WebGL2, and compatibility mode and WebGL2 passed the whole spec in
+one run (`8bebdff7f`). Its order check still fails under load, where the light can arrive one fill
+after the levels. That branch's D-242 records this as an open fault. That page therefore has a fix
+for each of its two causes, and this record holds the first.
 
 The generator now asks the capture for that unit, which is its only use. The unit test
 `packages/engine/src/gpu/webgl2/environment.test.ts` builds a layer's programs with a stand-in host

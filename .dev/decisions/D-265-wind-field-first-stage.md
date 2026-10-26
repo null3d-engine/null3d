@@ -103,13 +103,14 @@ divergence, and the projection removes it.
   the gate first runs. It does not belong in the picture page, which would move every picture for a
   measure it does not need. Until then, a source test holds the functions that a frame calls to the forms that
   allocate: an object literal, an array literal, a function expression, a for-of and a `new`.
-- **The size gate is not this add-on's fault:** at head `8d66b64ca`, the command in
-  `docs/guides/add-ons.md`, `bunx @null3d/cli check-addon packages/wind --skip-browser`, builds the
-  add-on and reports its entry at 89.5 KB raw against a 64 KB code budget. The WebGL2 fallback
-  effect's compiled data is most of it: the same build with that import removed makes an entry of
-  13.8 KB at that head. Water fails the same gate at 109.2 KB at that head. `--skip-browser` leaves
-  out the page, cost and allocation gates, which this record names owed. M3-R25 owns the size
-  fault, and neither the gate nor its budget changes here.
+- **The size gate charged the add-on's own shader data to the code budget:** at head `8d66b64ca`,
+  the command in `docs/guides/add-ons.md`, `bunx @null3d/cli check-addon packages/wind
+  --skip-browser`, builds the add-on and reports its entry at 89.5 KB raw against a 64 KB code
+  budget. The WebGL2 fallback effect's compiled data is most of it: the same build with that import
+  removed makes an entry of 13.8 KB at that head. Water fails the same gate at 109.2 KB at that
+  head. `--skip-browser` leaves out the page, cost and allocation gates, which this record names
+  owed. M3-R25 later moved an entry's inlined shader data to the shader budget, so both entries pass
+  with no budget changed.
 - **A check that used to skip, and what it still needs:** the command runs under node, and the Vite
   plugin did not export its `package.json`. Node refused the path, the tool found no plugin, and it
   printed a skip for the shader and size gates. It still exited 0 when every other gate passed, so a

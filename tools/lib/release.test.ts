@@ -256,6 +256,21 @@ describe('the notes of a history with branch merges', () => {
 		// it comes out here: both sides then render the same history the same way.
 		for (const name of ['GITHUB_REPOSITORY', 'GITHUB_SERVER_URL', 'GITHUB_API_URL'])
 			delete env[name];
+		// A hook that runs this file, such as the push hook, hands the repository it guards to every
+		// process it starts. A git command told where the repository is ignores the working directory
+		// it is given, so the history built here would be committed to the repository being pushed,
+		// moving its branches. The test owns this folder and nothing else.
+		for (const name of [
+			'GIT_DIR',
+			'GIT_WORK_TREE',
+			'GIT_INDEX_FILE',
+			'GIT_OBJECT_DIRECTORY',
+			'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+			'GIT_COMMON_DIR',
+			'GIT_NAMESPACE',
+			'GIT_PREFIX',
+		])
+			delete env[name];
 		const git = (...args: string[]) =>
 			execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
 				cwd: dir,
