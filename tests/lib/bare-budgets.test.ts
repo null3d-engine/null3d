@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { bareBudgetLines } from './bare-budgets.ts';
 
@@ -54,7 +54,8 @@ describe('the test files', () => {
 			encoding: 'utf8',
 		})
 			.split('\0')
-			.filter(Boolean);
+			// A tracked file that this checkout deleted, and git has not yet staged, has nothing to read.
+			.filter((file) => file && existsSync(join(ROOT, file)));
 		const bare = files.flatMap((file) =>
 			bareBudgetLines(file, readFileSync(join(ROOT, file), 'utf8')).map(
 				(line) => `${file}:${line}`,

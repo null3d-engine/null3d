@@ -17,10 +17,11 @@
 // idle one.
 //
 // A check that states its own budget, for one check or for its file, wraps it in `scaledBudget`,
-// which multiplies it by the factor that the run read when the group started. The run hands that factor to the group's process in the environment, so a stated budget
-// and the run's budget grow from the same reading. A file that `bun test` runs alone reads the load
-// itself. A stated budget that does not scale wins over the run's, so on a loaded machine it can be
-// the smaller of the two: a file that set 60 s timed out at 60 s while the run gave 120 s.
+// which multiplies it by the factor that the run read when the group started. The run hands that
+// factor to the group's process in the environment, so a stated budget and the run's budget grow
+// from the same reading. A file that `bun test` runs alone reads the load itself. A stated budget
+// that does not scale wins over the run's, so on a loaded machine it can be the smaller of the two:
+// a file that set 60 s timed out at 60 s while the run gave 120 s.
 import { availableParallelism, loadavg } from 'node:os';
 
 /** The budget on a machine whose 1-minute load is at most its count of cores. */
@@ -32,7 +33,7 @@ export const MAX_LOAD_FACTOR = 4;
 /** The environment variable through which a run hands its load factor to a group's process. */
 export const LOAD_FACTOR_ENV = 'NULL3D_LOAD_FACTOR';
 
-/** How many times the idle budget a group that starts now gets, at the machine's `load` on its `cores`. */
+/** How many times the idle budget a group that starts now gets, at `load` on the machine's `cores`. */
 export function loadFactor(load = loadavg()[0] ?? 0, cores = availableParallelism()): number {
 	return Math.min(MAX_LOAD_FACTOR, Math.max(1, Math.ceil(load / cores)));
 }
