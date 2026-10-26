@@ -17,6 +17,13 @@ interface StateResult {
 	left?: [number, number, number, number];
 	right?: [number, number, number, number];
 	same?: boolean;
+	/** The cost case's figures: the frame probe's medians, and the pass's texel memory. */
+	seconds?: number;
+	measuredFrames?: number;
+	interval?: number;
+	cpu?: number;
+	gpu?: number | null;
+	passBytes?: number;
 	error?: string;
 }
 
@@ -73,6 +80,19 @@ for (const { tier, query } of TIERS) {
 		// The engine rebuilds the device and every texture; the counter then starts from empty.
 		const result = await stateCase(page, query, 'loss', 90_000);
 		expect(result.values).toEqual([2, 1]);
+	});
+
+	test(`a 40-step history pass measures on ${tier}`, async ({ page }) => {
+		const result = await stateCase(page, query, 'cost', 120_000);
+		expect(result.measuredFrames).toBeGreaterThan(0);
+		expect(result.interval).toBeGreaterThan(0);
+		expect(result.passBytes).toBe(256 * 256 * 8 * 4);
+		// The line the run records: frame interval, CPU, GPU where timed, and the pass's memory.
+		console.log(
+			`cost ${tier}: ${result.interval?.toFixed(2)} ms frame, ${result.cpu?.toFixed(2)} ms CPU, ` +
+				`${result.gpu === null || result.gpu === undefined ? 'no GPU timer' : `${result.gpu.toFixed(2)} ms GPU`}, ` +
+				`${result.measuredFrames} frames in ${result.seconds?.toFixed(1)} s, ${result.passBytes} bytes`,
+		);
 	});
 
 	test(`a stopped pass keeps its image and its alpha on ${tier}`, async ({ page }) => {
