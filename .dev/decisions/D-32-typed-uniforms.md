@@ -1,6 +1,6 @@
 # D-32: How TypeScript learns the uniforms of custom WGSL
 
-Status: decided. Date: 2026-10-03. Task: M2-J1.
+Status: decided and built. Task: M2-J1.
 
 Summary: TypeScript reads `struct Uniforms` from the literal type of tagged WGSL, and the Vite plugin writes a declaration beside each `.wgsl` file, so a wrong uniform name fails the type check. Reading costs about 2 ms of type checking per shader of 13 KB. WGSL that TypeScript cannot read takes any name.
 
@@ -63,7 +63,7 @@ Option 2:
 - For tagged WGSL, `materials.shader` takes the WGSL's type with a `const` type parameter, and `WgslUniforms` reads the fields of `struct Uniforms` from it with the slash-at-a-time reading above. Comments before the struct and inside it do not count, including one that names the struct. It reads the types that the build takes (`f32`, `i32`, `u32`, `vec2f`, `vec3f`, `vec4f`, and the `vecN<f32>` spellings). A field of any other type, or text it cannot read, gives a record that takes any name: the build stops at such WGSL anyway. WGSL with no `struct Uniforms` takes no uniform name.
 - For `.wgsl` files, the plugin writes `x.wgsl.d.ts` beside each file each time it compiles it, in the dev server and in builds. It writes only when the text changes. The declaration types the file's default export as `CompiledMaterial<{ name: type }>` or `CompiledShader`. The engine reads the uniforms from the compiled object's `uniforms` list. Projects commit the declarations, so that `tsc` without Vite sees them. The plugin's `wgslDeclarations: false` turns them off, and files in `node_modules` get none.
 - `UniformValueByType` gives each type's value: a number for `f32`, `i32` and `u32`, and tuples of 2 and 4 numbers for `vec2f` and `vec4f`. A `vec3f` takes a `ColorInput`, as the run-time check does. Tuples catch a wrong length in a literal. Their cost is a type on lists of values, where TypeScript widens `[0, 1]` to `number[]`. `UniformValues<typeof wgsl>` and `ShaderValues<typeof wgsl>` type such lists.
-- WGSL in a variable of type `string`, and compiled WGSL whose type lists no names, take any name, as before. The run-time check (E1216) is unchanged.
+- WGSL in a variable of type `string`, and compiled WGSL whose type lists no names, take any name. The run-time check (E1216) is unchanged.
 
 ## Consequences
 

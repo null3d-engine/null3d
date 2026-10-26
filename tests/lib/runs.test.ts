@@ -1265,8 +1265,8 @@ describe('the checks plan', () => {
 				// needs the whole set: that check runs in a process of its own
 				// (`bun run test:heavy`, [Test memory](../../.dev/tests.md)).
 				// A part downloads its share of every module whatever its set holds, so a set of few
-				// programs in one part downloaded every module: 2.5 GB, which Safari on CI's Mac had not
-				// loaded after 205 s (20 October 2026).
+				// programs in one part downloads every module: 2.5 GB, which Safari on CI's Mac has not
+				// loaded after 205 s.
 				expect([set, shaderFileBytes() / parts.length < MOST_BYTES_PER_PART]).toEqual([set, true]);
 				for (const part of parts) {
 					expect(part.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);

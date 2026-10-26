@@ -10,4 +10,4 @@
 ## Known issues
 
 Its screen runs at 90 Hz, and S4 at Low holds neither format at that rate.
-The runs used a cloud device entry made for them alone, which the cloud device list does not hold ([D-77](../../decisions/D-77-final-pass-order-and-formats.md#the-phones-p3))
+Its runs use a cloud device entry made for them alone, which the cloud device list does not hold ([D-77](../../decisions/D-77-final-pass-order-and-formats.md#the-phones-p3)).

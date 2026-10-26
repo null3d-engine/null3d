@@ -44,8 +44,8 @@ export const CDN_ENTRY = 'lib/index.js';
 
 /**
  * The add-ons that the build carries, each under `addons/<name>/`: every public package that builds
- * on the engine. A unit test fails when a package of the workspace is missing here, as vegetation
- * was until 25 October 2026, when the owner ruled that the build carries it.
+ * on the engine, vegetation among them by the owner's ruling. A unit test fails when a package of
+ * the workspace is missing here.
  */
 export const CDN_ADDONS: readonly string[] = [
 	'controls',

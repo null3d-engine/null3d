@@ -442,8 +442,8 @@ describe('acquireLock', () => {
 		const folder = mkdtempSync(join(tmpdir(), 'null3d-lock-'));
 		const lock = join(folder, 'build.lock');
 		// A lock taken a moment ago by a process that has not written its id yet is live: breaking it
-		// would let this process and that one work at the same time, which is what the old lock did
-		// when it read an empty file as "nobody holds this".
+		// would let this process and that one work at the same time, as a lock that reads an empty
+		// file as "nobody holds this" does.
 		mkdirSync(lock);
 		const module = join(import.meta.dir, 'build-cache.ts');
 		const child = spawn(
@@ -488,7 +488,7 @@ describe('acquireLock', () => {
 		try {
 			await Bun.sleep(700);
 			// It says which process holds the lock while it waits, rather than sitting silent: a
-			// build that waits can look hung, and one did for 13 minutes on 14 October.
+			// build that waits can look hung, as one did for 13 minutes.
 			expect(out).toContain(`held by pid ${process.pid}`);
 			release();
 			await Bun.sleep(700);

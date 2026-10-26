@@ -1,9 +1,10 @@
 // Contact shadows leave alone a face that the camera sees from the side away from the sun, on every
 // tier. The march starts from the face that the camera sees, so on such a face it runs through the
-// surface itself and always finds it in the way. Grass whose material lights both faces as an upper
-// face once took dark, grainy blocks wherever the camera looked toward the sun. The spec draws upright
-// cards lit from behind, with contact shadows on and off (tests/pages/sketches/contact-faces-sketch.ts):
-// the cards must look the same, and the ground in front of them must keep its contact shadows.
+// surface itself and always finds it in the way. Without that rule, grass whose material lights
+// both faces as an upper face takes dark, grainy blocks wherever the camera looks toward the sun.
+// The spec draws upright cards lit from behind, with contact shadows on and off
+// (tests/pages/sketches/contact-faces-sketch.ts): the cards must look the same, and the ground in
+// front of them must keep its contact shadows.
 import { expect, type Page, test } from '@playwright/test';
 import { imageRuns } from '../lib/images.ts';
 import { pageResult } from '../lib/page-result.ts';

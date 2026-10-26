@@ -428,8 +428,8 @@ struct Entry {
     /// The library files the entry used, with the hash of each.
     deps: Vec<Dep>,
     /// The WGSL and GLSL sources of the entry's builds, each once. Thousands of builds share most
-    /// of them: writing each build's sources out whole made a single entry 1.5 GB (code review
-    /// M-32), and holding a copy for each build took several times the file's size in memory.
+    /// of them: writing each build's sources out whole makes a single entry 1.5 GB (code review
+    /// M-32), and holding a copy for each build takes several times the file's size in memory.
     texts: Vec<Arc<str>>,
     /// The builds by name, each naming its sources by their place in `texts`.
     variants: BTreeMap<String, StoredVariant>,

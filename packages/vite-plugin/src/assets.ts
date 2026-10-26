@@ -135,9 +135,9 @@ export function modelKey(identity: string, options: object, files: readonly stri
 /**
  * What the asset tool is: the version it reports and a hash of its own code, which is the module the
  * plugin loads and the files that share its name, the WebAssembly file among them. The version alone
- * is not enough, because it stays `0.0.0` in the repository: a fix to the tool then changed what a
- * model encoded to without changing the key, and the cache kept serving models that the pipeline
- * before the fix wrote (code review H-17). A tool whose files cannot be read falls back to the
+ * is not enough, because it stays `0.0.0` in the repository: a fix to the tool can change what a
+ * model encodes to without changing the key, and the cache would keep serving models that the tool
+ * wrote before the fix (code review H-17). A tool whose files cannot be read falls back to the
  * version it reports.
  */
 export function toolIdentity(version: string): string {

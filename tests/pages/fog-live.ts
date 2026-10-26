@@ -38,8 +38,8 @@ run('fog-live', async () => {
 	// The blend settles per frame, not per second, so wait for a count of frames. A software
 	// renderer draws only a few frames a second, and a fixed time would capture too few.
 	// Each window counts the frames that finish inside it, so a window shorter than one frame
-	// misses most of them: on 20 October 2026 a software GPU whose frames took seconds was counted
-	// at 19 frames in the whole cap. A window that counted none doubles until it holds whole
+	// misses most of them: a software GPU whose frames take seconds is counted at 19 frames in the
+	// whole cap. A window that counted none doubles until it holds whole
 	// frames, so the count follows the device's pace and still stops at the cap.
 	const started = performance.now();
 	let frames = 0;

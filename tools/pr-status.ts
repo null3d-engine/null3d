@@ -26,7 +26,7 @@ const PARTIAL: Readonly<Record<string, string>> = {
 	'M3-C1':
 		'the scene, its lanes, rain and the hero car are in; the moods, the instances demo and the device figures remain',
 	'M3-T1':
-		"the measured fence is in and the trim landed and was then reverted with a record: moving the fog write, the picks and the events out of the start cost more bytes than it saved, so the start stays at about 190 KB against this task's 160 KB target. The owner dropped the task on 24 October 2026 as superseded: the target predates the ruling that the start's budget may rise",
+		"the measured fence is in and the trim landed and was then reverted with a record: moving the fog write, the picks and the events out of the start cost more bytes than it saved, so the start stays at about 190 KB against this task's 160 KB target. The owner dropped the task as superseded: the target predates the ruling that the start's budget may rise",
 	'M3-B4':
 		'the rain streaks, the storm over any hour and the lamp-following city lights are in the Skyway demo; the wet-surface helper, the windshield drops and the particles link remain',
 };
@@ -35,10 +35,9 @@ const PARTIAL: Readonly<Record<string, string>> = {
 const ON_BRANCH = new Set(['M3-E9', 'M3-V2']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
-// The branch's audits, the last at round 24 on 26 October 2026, read every ticked task against its
-// own "Done when" and its section's rule. A tick states that the task is done, so a task those
-// audits found short of its own line is not ticked here until the gap closes, whatever code it
-// already has.
+// The branch's audits read every ticked task against its own "Done when" and its section's rule.
+// A tick states that the task is done, so a task those audits found short of its own line is not
+// ticked here until the gap closes, whatever code it already has.
 const INCOMPLETE = new Set([
 	'M3-B2',
 	'M3-B3',
@@ -85,7 +84,7 @@ const INCOMPLETE = new Set([
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
 	'M3-A8':
-		"the evidence measures the worst error at 2.03 of an 8-bit step at a saturated yellow, over the prototype's one-step tolerance. The owner accepted that cost on 26 October 2026 and ruled that the display table stays and the light table comes out",
+		"the evidence measures the worst error at 2.03 of an 8-bit step at a saturated yellow, over the prototype's one-step tolerance. The owner accepted that cost and ruled that the display table stays and the light table comes out",
 	'M3-A9':
 		'the hero tile and its cost figures are in: a still hero adds no pass, a moving one adds a depth pass of 0.028 to 0.037 ms, and WebGL2 reads the tile for 0.27 ms less than the cascades (D-219)',
 	'M3-E6':
@@ -97,9 +96,9 @@ const NOTES: Readonly<Record<string, string>> = {
 	'M3-D9':
 		"the command and its refusal are tested, and the two gate faults its first runs found are fixed: the size gate held compiled shader-build files to the code budget, and the fixture sketch never moved so no frame drew. D-225 records the run over the six foundations that had a package on 24 October, where every run skipped the page and cost gates; physics, MSDF text, water, three-compat and vegetation had no run, and the wind package came later. Both fixtures ran their gates, and the size fix brought three-compat's entry from 181.9 KB to 27.8 KB",
 	'M3-L1':
-		'the iPad and phone figures the section asks for are in the addendum of D-137 dated 25 October; what remains is the phone GPU time that the fade item asks for',
+		'the iPad and phone figures the section asks for are in D-137; what remains is the phone GPU time that the fade item asks for',
 	'M3-L3':
-		'the WebGPU path draws the patches, but D-213 records the WebGL2 multi-draw path, the whole-level fallback and the GPU time as not built',
+		'the WebGPU path draws the patches, but D-213 records the WebGL2 multi-draw path and the whole-level fallback as not built, and D-231 holds the GPU time',
 	'M3-R22':
 		"the shader cache on the branch is D-248's change, not this task's: it reuses every entry when a compiler change leaves the compiled program identical, 0 compiled and 79 reused in 19 s, where the same change cost an hour. The task's own change, three entries instead of four for every module kind, is on `feat/m3-r22-entry-set` and not on this branch, and the determinism list here still holds `lit`; the two checks' CI times remain unmeasured",
 	'M3-E9':
@@ -132,13 +131,13 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-E7':
 		'unticked by the round 18 audit: the car-paint clause is met, but the hook answers only the main light, so the paint glints under the sun and stays smooth under the point light that both the Showroom and the test page carry. The record declines the other lights as a larger change, which hard rule 40 forbids. Either point and spot lights call the lobe too, or the owner rules that the main light alone stands',
 	'M3-K4':
-		"unticked by the tick audit of 26 October, and the tick before it was wrong: the mixed port leaves out the example's depth-writing cut-out plane, so room edges and two strips about ten pixels wide draw across the embedded page; the comparison hides both 3D canvases before it compares, so it can only see the HTML layers; and the engine has no depth-only material, which the fix needs",
+		"unticked by the tick audit, and the tick before it was wrong: the mixed port leaves out the example's depth-writing cut-out plane, so room edges and two strips about ten pixels wide draw across the embedded page; the comparison hides both 3D canvases before it compares, so it can only see the HTML layers; and the engine has no depth-only material, which the fix needs",
 	'M3-L4':
 		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
 	'M3-A2':
 		"the iPad Pro and the Galaxy S24 have timed the refresh, and their runs are recorded; the Mac's rows are still owed",
 	'M3-A9':
-		"the 1.8 m limit at High was the fixed tile size's fault. D-219's addendum of 25 October 2026 makes the tile size a setting on the owner's ruling, and each preset now defaults to a size that keeps the demo car at or above four times. The costs were taken at loads of 13.6 to 26.3 against the spec's own limit of 8",
+		"the 1.8 m limit at High was the fixed tile size's fault. D-219 makes the tile size a setting on the owner's ruling, and each preset now defaults to a size that keeps the demo car at or above four times. The costs were taken at loads of 13.6 to 26.3 against the spec's own limit of 8",
 	'M3-A11':
 		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
 	'M3-E10':
@@ -221,8 +220,8 @@ function landedTasks(): Set<string> {
 		const [header = '', body = ''] = chunk.split('\x1f');
 		const lines = body.split('\n');
 		// A trailer claims a task. A body that mentions an ID in prose, such as a
-		// `Docs-Checked:` line, must not tick it: the audit of 23 October found one task ticked
-		// that no commit had ever named in a trailer.
+		// `Docs-Checked:` line, must not tick it, or a task that no commit names in a trailer reads
+		// as ticked.
 		const claimed = lines.filter((line) => /^Task:\s/.test(line)).join('\n');
 		const files = lines.filter((line) => /^\S+\/\S*$/.test(line) && !/^Task:/.test(line));
 		const built = files.some((file) => CODE_ROOTS.some((root) => file.startsWith(root)));

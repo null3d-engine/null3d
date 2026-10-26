@@ -1,4 +1,4 @@
-// A check that a scene's own geometry does not overlap (owner, 14 October 2026): a demo builds its
+// A check that a scene's own geometry does not overlap (owner's ruling): a demo builds its
 // pieces so they meet exactly or leave a deliberate gap, never crossing or lying coplanar over one
 // another, which z-fights and shimmers. `findOverlaps` tests every pair of triangles of the parts it
 // is given: a crossing or a coplanar overlap is a fault, a shared edge or vertex is not.

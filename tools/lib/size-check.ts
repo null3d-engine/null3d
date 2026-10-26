@@ -58,7 +58,7 @@ export function grownFiles(changes: readonly SizeChange[]): SizeChange[] {
 /**
  * The bytes after Brotli by which two machines' builds of one commit can differ in a file. Each file
  * names others by hashed names, and the threaded core's bytes, and so its hash, differ between a
- * Mac and CI's Linux runners. On 26 October 2026 the page files differed by 2 to 45 bytes.
+ * Mac and CI's Linux runners. Measured, the page files differ by 2 to 45 bytes.
  */
 export const MACHINE_MARGIN_BYTES = 64;
 

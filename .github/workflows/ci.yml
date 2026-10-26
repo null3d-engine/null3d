@@ -31,9 +31,9 @@ env:
   # (.dev/releases.md). tests/lib/bun-version.test.ts holds every pin to package.json's.
   BUN_VERSION: "1.4.3"
   # git gives up on a transfer that stays under 1 KB/s for 30 s, and actions/checkout then fetches
-  # again. A stalled fetch otherwise waited for curl's own timeout, 23 s and then 11 minutes on a
-  # Safari shard of run 40049563192, and in run 40056066922 a Firefox shard's checkout waited 35
-  # minutes until the job's limit cancelled it and held the whole run.
+  # again. Otherwise a stalled fetch waits for curl's own timeout: 23 s and then 11 minutes on a
+  # Safari shard (run 40049563192), and 35 minutes on a Firefox shard's checkout, until the job's
+  # limit cancelled it and held the whole run (run 40056066922).
   GIT_HTTP_LOW_SPEED_LIMIT: "1000"
   GIT_HTTP_LOW_SPEED_TIME: "30"
   # The browser tests that the browser-heavy job runs one at a time and the browser job's shards
@@ -80,9 +80,9 @@ jobs:
           name: page-wasm
 
       # Each check below runs once the setup above has passed, also after an earlier check failed,
-      # so a run reports every fault at once. When the picture references were missing on 25 October
-      # 2026, the check that found them stopped the job, and the type check and the unit tests ran in
-      # no run until they were drawn.
+      # so a run reports every fault at once. Otherwise a check that stops the job, such as the one
+      # that finds missing picture references, keeps the type check and the unit tests from running
+      # in any run until its fault is fixed.
 
       # Git keeps no generated file (D-105). The install step wrote them before the shader modules
       # arrived, so this writes them again, and fails when a generator wrote a file that git keeps.
@@ -277,19 +277,19 @@ jobs:
       # scripts that run it: the shader crates, the build tool that builds the compiler, the
       # compiler's runner script and the three files of the Vite plugin that the runner imports,
       # which import no package. Not the whole of tools/lib: that folder holds the size report, the
-      # limits report and the cache's own rules, and a change to any of them used to purge this pass
-      # and rebuild every shard cold (22 October 2026). Not the whole plugin or the packages' lock
-      # either: from 23 to 24 October 2026, 12 of the 39 landings that changed the wider key changed
-      # only the plugin's other files and tests or the lock, and each such run rebuilt all the
-      # shards, about 80 job-minutes.
+      # limits report and the cache's own rules, and with it in the key a change to any of them
+      # purges this pass and rebuilds every shard cold. Not the whole plugin or the packages' lock
+      # either: about 12 landings in 39 that change that wider key change only the plugin's other
+      # files and tests or the lock, and with it each such run rebuilds all the shards, about 80
+      # job-minutes.
       #
       # The plugin's hash names the files that decide what the compiler and the shader modules
       # hold, and the plugin and test helpers that its tests import. Its tests' own hash names the
       # two files whose declarations they compare. The packing test's parts each key instead on the
       # `.wgsl` files and the scripts with tagged WGSL of their share of the test pages, the
       # fixtures and the demos, which the next step hashes: a change to a page or a demo that holds
-      # no WGSL passes them again. The whole folders once made a key that changed with almost every
-      # push, and each part took 5.5 to 6.8 minutes each time.
+      # no WGSL passes them again. A key on the whole folders changes with almost every push, and
+      # each part takes 5.5 to 6.8 minutes each time.
       #
       # tools/lib/ci-passes.ts ends every key with a hash of the part's job as the workflow parses,
       # with the repository's own actions that it runs, such as the step that builds the shader
@@ -1378,24 +1378,22 @@ jobs:
     # S4's and S5's pages run in order in one worker each, and each scene has a shard of its own.
     # Side by side, each slowed the other's tests 1.5 to 4 times on the runner's 4 cores: in test
     # run 40074539496, S4 took 3.0 minutes alone, S5 4.7, and both in one shard 6.1. Beside the
-    # parity tests' setup, S4 on WebGL2 twice measured no frame on SwiftShader. The engine's limit
-    # of frames in flight failed open then (.dev/implementation-notes.md).
-    # In run 39854225392 (23 October 2026), shard 1 also held S1's three scenes and took 22.9
-    # minutes of tests: S3 546 s, S5 534 s, S1 376 s, S1-static 346 s, S1-cells 339 s and S4 332 s,
-    # on two workers. S1's scenes then ran in a shard of their own.
-    # After D-236 S1's scenes took 2.8 minutes and the other pages 2.3, each in a job of its own,
-    # while the visual tests took 9.8, one after another on one worker: S5's two took 5.9 minutes
-    # of the 8.9 (run 40046196327, 24 October 2026). So S1 runs with the other pages in shard 2,
-    # and the visual tests split by scene, S5's in shards 4 and 5 and the others in shard 6.
+    # parity tests' setup, S4 on WebGL2 twice measured no frame on SwiftShader, where the engine's
+    # limit of frames in flight failed open (.dev/implementation-notes.md).
+    # Beside S3, S4 and S5 on two workers, S1's three scenes take a shard to 22.9 minutes of tests:
+    # S3 546 s, S5 534 s, S1 376 s, S1-static 346 s, S1-cells 339 s and S4 332 s (run 39854225392).
+    # With D-236, S1's scenes take 2.8 minutes and the other pages 2.3, each in a job of its own,
+    # while the visual tests take 9.8, one after another on one worker: S5's two take 5.9 minutes of
+    # the 8.9 (run 40046196327). So S1 runs with the other pages in shard 3, and the visual tests
+    # split by scene, S5's in shards 5 and 6 and the others in shard 7.
     # The visual tests of the shadows read many frames on SwiftShader, and a page benchmark beside one
     # starts late: in run 39869813447, S2's pages took 50 s to their first frame beside them, against
     # 4 to 5 s on a Mac at both of that run's commits, and the other scenes' pages, away from them,
-    # started faster than a day before. So the visual tests run in shards of their own.
+    # started faster. So the visual tests run in shards of their own.
     # Each parity scene's tests run in order in one worker, and Playwright's --shard keeps such a
-    # group together, so the parity shards split the scenes by count. In main's run 38176334909
-    # (11 October 2026), the parity tests took 13.2 minutes one after another, and the other tests
-    # beside them 3.1 minutes. Shard 1's page tests ended at 7.2. .dev/benchmarks.md holds the
-    # figures.
+    # group together, so the parity shards split the scenes by count. One after another, the parity
+    # tests took 13.2 minutes, and the other tests beside them 3.1 minutes (main's run 38176334909).
+    # Shard 1's page tests ended at 7.2.
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     # Every build of the pages holds S6's, so every shard needs the city's files.
     needs: [build, load-pages]
@@ -1491,7 +1489,7 @@ jobs:
 
   allocation:
     # The per-frame allocation check, `bun run bench:allocation`, on S1 with each GPU path, by the
-    # owner's ruling of 9 October 2026. Each GPU path takes a machine of its own, and the check is
+    # owner's ruling. Each GPU path takes a machine of its own, and the check is
     # the only work there, since a busy machine moves the figures. CI's Chromium draws on
     # SwiftShader, which draws S1's 100,000 boxes at under one frame a second, so the check draws
     # fewer boxes here, counts the frames that S1 steps, and judges them by CI's own budgets
@@ -1680,8 +1678,8 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      # A download on GitHub's macOS machines once stalled with no error until the job's limit ended
-      # it and failed the run, in run 39990527400. Each download has a limit of its own and one more
+      # A download on GitHub's macOS machines can stall with no error until the job's limit ends it
+      # and fails the run (run 39990527400). Each download has a limit of its own and one more
       # try; the slowest that finished took about 3 minutes.
       - uses: ./.github/actions/archive
         id: page-wasm

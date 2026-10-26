@@ -131,7 +131,7 @@ function exported(exports: ReadonlySet<string>, sub: string): boolean {
 /**
  * Why `file` importing `specifier` breaks the rule between two add-ons, or nothing when it keeps
  * it: an add-on reaches another only by its package name or an exported sub-path, never by a
- * relative path into the other's folder (D-173's addendum of 25 October 2026).
+ * relative path into the other's folder (D-173).
  */
 export function packageImportProblem(
 	file: string,

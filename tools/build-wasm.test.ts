@@ -348,7 +348,8 @@ describe('buildCodeHash', () => {
 	it('changes with this script or with the module that rewrites the glue', () => {
 		// Both decide what an entry holds: the script sets the flags and the staging, and the glue
 		// module rewrites every built module. Neither is a Rust source, so neither reaches the
-		// sources' stamp, and without this an edit here kept serving an entry an earlier version wrote.
+		// sources' stamp, and without this an edit here would keep serving an entry an earlier version
+		// wrote.
 		const root = mkdtempSync(join(tmpdir(), 'null3d-code-'));
 		try {
 			for (const file of ['tools/build-wasm.ts', 'tools/lib/core-sources.ts']) {

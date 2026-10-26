@@ -1,7 +1,8 @@
 # D-240: Compute passes with a storage output that the same frame reads
 
-Status: decided by the helper of M3-E8 on 23 October 2026, for the owner's review. Built: the
-pass, both GPU paths and the tests, as the consequences list. Date: 2026-10-23. Task: M3-E8.
+Status: decided by the helper of M3-E8, for the owner's review. Built: the pass, both GPU paths
+and the tests, as the consequences list, and the wait of every pass that draws a reader (M3-V3).
+Pending: the compute path's GPU time on the Mac, the iPad and the S24. Tasks: M3-E8, M3-V3.
 
 Summary: A compute pass is a render pass of the graph whose target is a storage texture that
 materials, effects and other passes sample in the same frame. The add-on gives a compiled compute
@@ -29,18 +30,19 @@ the pass before its readers, and what happens on WebGL2?
 
 ## Data
 
-The engine before this change:
+The engine parts that the pass builds on:
 
-- **Public passes.** `render.addPass` takes a scene, a reflection or a full-screen pass. Each
-  publishes a texture that `textures.fromPass` gives to materials, effects and sprites.
+- **Public passes.** Besides a compute pass, `render.addPass` takes a scene, a reflection or a
+  full-screen pass. Each publishes a texture that `textures.fromPass` gives to materials, effects and sprites.
 - **The graph.** `null3d-render`'s render graph takes a pass's reads and writes, orders the passes,
   culls one that nothing running reads, and plans each target's usage and memory. A pass of
   `PassKind::Compute` that writes a resource gets `STORAGE_BINDING` on that target
   (`graph/compile.rs`, `kept_usage`), and the frame opens one compute step for it. The engine's own
   compute passes, the light clusters, the skinning pass, the culling passes, the depth pyramid and
   the exposure histogram, all write buffers.
-- **Bindings.** A compute pipeline takes a bind group layout of the engine's. The exposure meter's
-  layout is the only one with a storage texture, of `rgba32float`.
+- **Bindings.** A compute pipeline takes a bind group layout of the engine's. Among the engine's
+  own compute passes, the exposure meter's layout is the only one with a storage texture, of
+  `rgba32float`.
 - **The drawing thread.** A sketch's compiled WGSL reaches it as a `CustomShader` under a render
   pipeline template. The WebGPU backend builds compute pipelines from templates the engine knows,
   and parks one whose shader has not arrived.
@@ -77,7 +79,7 @@ The description's one output names the pass's target. Its frame point says when 
 in the frame, and its output's default says what a reader shows before the pass first runs. WebGPU
 starts a texture at zero, so `'black'` and `'transparent'` hold; `'white'` is refused, because it
 would need the texture filled first. The adapter places the main view alone, as the draw adapter
-does, and refuses scene resource reads, because the adapter binds no scene resource yet. Both
+does, and refuses scene resource reads, because the adapter binds no scene resource. Both
 refusals are E1223.
 
 ### The bindings
@@ -102,9 +104,9 @@ struct ComputeBlock {
 The storage texture is read as an array of one layer, as every pass target is sampled, so the
 shader writes layer 0. Group 1 binds the `textures` array in the order it gives them, with the
 materials' maps layout: a texture array at bindings 0 to 7, its samplers at 8 to 15, then the
-displacement map's array and sampler. The maps layout's entries now name the compute stage too.
+displacement map's array and sampler. The maps layout's entries name the compute stage too.
 
-The block is the engine's effect block, which a full-screen pass already gives its WGSL. The
+The block is the engine's effect block, which a full-screen pass also gives its WGSL. The
 compute pass shares it rather than adding a second layout.
 
 ### The order
@@ -144,13 +146,13 @@ same floats that the compute block's eight vectors hold.
 - **A storage buffer output.** Materials sample textures, not buffers. H2's count word goes into
   the engine's indirect buffer, which is H2's own surface (M3-E9), and a general public buffer
   would be a second promise before its user exists.
-- **An adapter of its own, `scene.addFeatureCompute`.** The pass already has a handle that
+- **An adapter of its own, `scene.addFeatureCompute`.** The pass has a handle that
   `textures.fromPass`, `render.setPassEnabled` and `render.removePass` take. A second handle type
   would repeat all four calls and the graph naming.
 - **One description per path.** The description names one kind. The fallback is an option of the
   pass, not a second feature, because both forms publish one output for one user.
-- **Running compute inside a render pass.** WGSL forbids it, and the engine's step planner already
-  opens a compute step of its own.
+- **Running compute inside a render pass.** WGSL forbids it, and the engine's step planner opens a
+  compute step of its own.
 - **A uniform block of the add-on's own layout.** The shader compiler reflects a custom material's
   uniforms, but not a whole shader's. The effect block needs no reflection, and 32 numbers cover
   what the first users need.
@@ -183,14 +185,14 @@ same floats that the compute block's eight vectors hold.
   wait for first use. The start's growth is the option checks and the call, and the size check
   reports it.
 
-## Addendum: every pass that draws a reader waits for the pass (M3-V3, 24 October 2026)
+## Every pass that draws a reader waits for the pass
 
-M3-V3 needed a custom material's vertex offset to read a compute pass's output in every build that
-draws the material, the shadow caster, motion and pick builds among them. The graph ordered the
-pass before the camera's passes, because their opaque and prepass passes read the target of every
-view that a texture shows. The shadow, motion and pick passes read no view target at all, so the
-pass could run after them: a shadow then drew the frame before's data, and a pick or motion pass
-that ran first drew the target's initial zeros.
+A custom material's vertex offset reads a compute pass's output in every build that draws the
+material, the shadow caster, motion and pick builds among them (M3-V3). The camera's opaque and
+prepass passes read the target of every view that a texture shows, so the graph orders the pass
+before them. The shadow, motion and pick passes read no view target at all. Without an edge, the
+pass could run after them. A shadow would then draw the frame before's data, and a pick or motion
+pass that ran first would draw the target's initial zeros.
 
 **The rule.** Each of those three passes reads, and so runs after, every early pass's target that
 the materials it draws sample:
@@ -216,12 +218,12 @@ and checks the cascade's step comes after the pass. The `compute-vertex-offset` 
 box that a vertex offset moves by the pass's output, in the main view and its shadow, on both
 paths, and the motion spec reads the plane's motion back from the debug view.
 
-## Addendum: the compute path's cost and memory (25 October 2026)
+## The compute path's cost and memory
 
-M3-V3's section asks for the GPU time and the memory of the compute path on the Mac, an iPad and a
-phone-class device. None was recorded when the task first landed.
+M3-V3 asks for the GPU time and the memory of the compute path on the Mac, an iPad and a
+phone-class device.
 
-**How it is measured.** The effect cost page, `tests/pages/effect-cost.ts`, gains a `compute` case.
+**How it is measured.** The effect cost page, `tests/pages/effect-cost.ts`, has a `compute` case.
 Its sketch, `tests/pages/sketches/compute-cost-sketch.ts`, draws a field of quads whose vertex
 offset reads a 512 by 512 texture that a compute pass writes in the same frame, so the pass and the
 vertex reads belong to the feature. The page times the scene with the pass off and on in turns: off
@@ -245,14 +247,12 @@ the useful figure is the on side's total.
 | compatibility mode | 67.5 MiB | 2.2 MiB | 6.6 MiB | 85.5 MiB |
 | WebGL2 | 115.4 MiB | 0.6 MiB | 7.6 MiB | 133.4 MiB |
 
-The GPU time is owed. The cost harness measures only while the machine's 1-minute load is under 8,
-and the Mac's load stayed between 100 and 200 through the night, so every attempt refused to record
-a figure. Take it in a quiet window with
+The GPU time is not measured yet. The cost harness measures only while the machine's 1-minute load
+is under 8. The Mac's load stood between 100 and 200 in every attempt, so none recorded a figure.
+Take it in a quiet window with
 `NULL3D_COMPUTE_COST=1 bun run test:browser -- compute-cost.spec.ts`, which prints each path's GPU
 time with the pass off and on, and the load beside it.
 
 The iPad and the S24 run the same page through the `compute` device plan:
 `bun run devices:cloud --only bsipadpro13-safari --plan compute`, and the same with
 `--only bsgalaxys24-chrome`. Each runs six pages: the three GPU paths at scales 1 and 0.5.
-
-

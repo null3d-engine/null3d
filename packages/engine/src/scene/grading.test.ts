@@ -45,7 +45,7 @@ function texelAt(table: Float32Array, at: readonly number[]): Rgb {
  * The graded color of `c` as the final pass reads the baked table: the table's square-root grid,
  * then a linear filter between the eight texels of the cell that holds the color, which is what
  * the final pass's sampler does. A tetrahedral read of four texels was measured and is worse for
- * this table: see the addendum in D-214.
+ * this table: see D-214.
  */
 function lookUp(table: Float32Array, c: Rgb): Rgb {
 	const pos = c.map(texel);

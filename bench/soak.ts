@@ -60,7 +60,7 @@ const WHOLE_TIMEOUT_MS = 300_000;
 /**
  * How long the page's job workers may take to start. The engine grows them over frames, by the
  * work each window hands out, so a software GPU that draws a frame in seconds reaches the full set
- * only after minutes. On 20 October 2026 S6 showed 6 of its 18 workers at the default limit.
+ * only after minutes. With the default limit, S6 shows 6 of its 18 workers on such a GPU.
  */
 const WORKERS_START_MS = 300_000;
 

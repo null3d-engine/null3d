@@ -1,17 +1,14 @@
 # D-263: What the untaken wide shadow filter costs
 
-Status: measured on 25 October 2026 for M3-R7, in one direct run on the Mac. The wide path stays in
-every build. At the Low preset the filter's square is 3, so the wide path never runs there. The
-comparison's paired change is -3.2 per cent for the build without the wide path. Its two medians are
-4.004 ms and 4.084 ms of GPU time per frame. The rounds' differences change sign, and the run
-resolves 0.15 to 0.25 ms. Its 1-minute load was 11.1, falling to 9.1, above the guide's 8. Date:
-2026-10-25. Task: M3-R7.
+Status: decided: the wide path stays in every build. Measured for M3-R7 in one direct run on the
+Mac, under a 1-minute load of 11.1 falling to 9.1, above the guide's 8. At the Low preset the
+filter's square is 3, so the wide path never runs there. Task: M3-R7.
 
-Summary: On S4 at the Low preset on WebGPU, the comparison's paired change is -3.2 per cent for the
-build without the wide shadow filter. Its reported noise is 0.4 per cent, and the rounds spread
-about 2.5 per cent each way. The medians are 4.004 ms against 4.084 ms, a gap of 0.08 ms. The run
+Summary: On S4 at the Low preset on WebGPU, the comparison's paired change is -3.2 percent for the
+build without the wide shadow filter. Its reported noise is 0.4 percent, and the rounds spread
+about 2.5 percent each way. The medians are 4.004 ms against 4.084 ms, a gap of 0.08 ms. The run
 resolves 0.15 to 0.25 ms, under a load above the benchmark guide's limit. Any cost is therefore a few
-per cent at most, and the 0.75 ms the study claims is ruled out. The wide path stays.
+percent at most, and the 0.75 ms the study claims is ruled out. The wide path stays.
 
 ## Question
 
@@ -56,19 +53,19 @@ Apple M5 Max.
 | With the wide path (1c76d6c) | 1.673, 4.135, 4.084 | 4.084 |
 | Without it (d4abe39) | 1.614, 4.004, 4.152 | 4.004 |
 
-The comparison's paired change is -3.2 per cent, with a reported noise of 0.4 per cent. That noise
+The comparison's paired change is -3.2 percent, with a reported noise of 0.4 percent. That noise
 comes from the median absolute deviation, which sets aside the one round that disagrees. Round by
 round, the build without the wide path against the one with it: -3.5%, -3.2% and +1.7%, or -0.059,
--0.130 and +0.068 ms. The medians themselves differ by 0.080 ms, or 2.0 per cent.
+-0.130 and +0.068 ms. The medians themselves differ by 0.080 ms, or 2.0 percent.
 
 Read the scatter of all three rounds rather than the single noise figure, about 2.5% each way. Two
 rounds put the build without the wide path about 3% faster, and one puts it 1.7% slower. So the
 round-by-round differences change sign, and the run does not resolve a difference of this size. Any
-cost is a few per cent at most.
+cost is a few percent at most.
 
 The run's resolution. Each run took 55 GPU-timed frames, and those frames fall into two speeds, about
 1.6 and 4.1 ms. A different mix of the two moves a median by 0.1 to 0.2 ms on its own. So the run
-resolves 0.15 to 0.25 ms, which is four to six per cent of the 4.084 ms frame. The study's 0.75 ms
+resolves 0.15 to 0.25 ms, which is four to six percent of the 4.084 ms frame. The study's 0.75 ms
 is three to five times that resolution, so a cost of that size would have shown.
 
 The machine and what it means for the figure. The run went directly, not through the job queue. The
@@ -93,13 +90,13 @@ bits.
 | 8 WebGL2 modules | 1,261.3 to 1,350.8 KiB raw | 1,247.2 to 1,336.7 KiB raw | 14.08 to 14.11 KiB raw, 0.4 to 0.6 KiB Brotli |
 
 The twelve together save 140.75 KiB raw, 22.66 KiB after gzip and 5.34 KiB after Brotli. That is
-about one per cent of each file. At Low the removal costs no picture, since that preset never runs
+about one percent of each file. At Low the removal costs no picture, since that preset never runs
 the code. A removal from the whole build would take the wide filter from Medium, High and Ultra,
 which draw it.
 
 How the data was produced: `bun run bench:run -- --compare <prepared baseline of 1c76d6c>,.
 --scenes s4 --pages null3d-webgpu --runs 3 --seconds 5 --switches preset=low`. The run was in Chrome
-on the Mac on 25 October 2026. It went directly rather than through the job queue. The archived
+on the Mac. It went directly rather than through the job queue. The archived
 record is [`bench/results/20261025-150017-compare.json`](../../bench/results/20261025-150017-compare.json).
 The run folder is `target/bench/20261025-150017-compare`.
 
@@ -111,9 +108,9 @@ the look of Medium and above does not change ([hard rule 40](../../AGENTS.md#har
 
 ## Decision
 
-The wide path stays in the build at every preset. The comparison's paired change is -3.2 per cent, and
+The wide path stays in the build at every preset. The comparison's paired change is -3.2 percent, and
 the round-by-round differences change sign. The run resolves 0.15 to 0.25 ms, and any cost is a few
-per cent at most. The study's comment puts its own engine's untaken branch at about 0.75 ms, and the
+percent at most. The study's comment puts its own engine's untaken branch at about 0.75 ms, and the
 study itself calls that number unconfirmed. A cost of that size is three to five times this run's
 resolution, so this run would have shown it.
 

@@ -68,9 +68,9 @@ describe('optimized models', () => {
 	});
 
 	it('hash the tool code, so a fix to the tool changes the key of every model', () => {
-		// The tool's version stays 0.0.0 in the repository, so its version alone left the cache
-		// serving models that a pipeline before the fix wrote. The module and the file that shares
-		// its name, the WebAssembly one among them, are both part of the code's hash.
+		// The tool's version stays 0.0.0 in the repository, so its version alone would leave the
+		// cache serving models that the tool wrote before a fix. The module and the file that
+		// shares its name, the WebAssembly one among them, are both part of the code's hash.
 		const folder = mkdtempSync(join(tmpdir(), 'null3d-tool-'));
 		try {
 			const module = join(folder, 'assets.js');

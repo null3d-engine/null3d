@@ -1,19 +1,19 @@
 # D-105: Generated files out of git
 
-Status: decided. The owner ruled on 2026-10-08, about 00:36 and 00:38, that git keeps no generated file unless a reason says it should. The owner left the details to judgement, and the coordinator chose them on 2026-10-08.
+Status: decided and built. The owner ruled that git keeps no generated file unless a reason says it should. The owner left the details to judgement, and the coordinator chose them.
 
-Summary: Git keeps no file that the docs generator or the skills sync writes. Each is a whole file that git ignores, and written pages link to the generated pages they need. The install step, the git hooks, CI, the packages and each release build them. Of 391 commits on main from 2026-09-28, 172 edited the skills copy and 164 an API page. On 2026-10-08, 4 of the 5 open pull requests edited generated output.
+Summary: Git keeps no file that the docs generator or the skills sync writes, and written pages link to the generated pages they need. The install step, the git hooks, CI, the packages and each release build them. Kept in git, the skills copy took edits from 172 of 391 commits on main, and the API pages from 164.
 
 ## Question
 
-Main has no merge queue since [D-99](D-99-no-merge-queue.md), so pull requests merge one after another, and each merge can conflict with the pull requests still open. Most of those conflicts were in generated files. Which generated files leave git, how do they get built, and how does a fresh clone still work for people and agents?
+Branches land on main one after another ([D-157](D-157-direct-pushes-to-main.md)), and each landing can conflict with the branches still open. Most such conflicts come in generated files. Which generated files leave git, how do they get built, and how does a fresh clone still work for people and agents?
 
 ## Rule
 
-- No pull request conflicts on generated output.
+- No branch conflicts on generated output.
 - After `bun install`, a fresh clone has `.claude/skills/`, because Claude Code loads project skills only from there. It also has every docs page that a link points to.
 - Readers outside the repository still get every file: the npm packages, the Claude Code plugin, `bunx skills add`, the skill zips and links on GitHub.
-- `bun install` never builds Rust, so the Mac's heavy-run limits still hold.
+- `bun install` never builds Rust, so the Mac's heavy-run limits hold.
 - A generated file stays in git only for a reason that this record gives. The owner named three such reasons. The file must exist in a fresh clone before any install or build step. A tool outside the build reads it straight from GitHub. Or generating it needs something that CI lacks.
 
 ## Data
@@ -31,21 +31,21 @@ Main has no merge queue since [D-99](D-99-no-merge-queue.md), so pull requests m
 | 13 placeholder pages of planned pages | The page inventory in `tools/lib/docs.ts` | few |
 | `packages/engine/src/generated/core.ts` and `gpu.ts` | The constants in the Rust crates | 58 and 53 |
 
-On 2026-10-08, 4 of the 5 open pull requests edited generated output. #408 edited 12 such files, #399 13, #398 6 and #346 13.
+Of 5 open pull requests, 4 edited generated output: #408 edited 12 such files, #399 13, #398 6 and #346 13.
 
-How the data was produced: `git log --name-only --since=2026-09-28 origin/main` at b83f603e9, and `gh pr list --json files` on 2026-10-08. A script compared each written page before and after each commit, with its generated parts removed.
+How the data was produced: `git log --name-only --since=2026-09-28 origin/main` at b83f603e9, and `gh pr list --json files`. A script compared each written page before and after each commit, with its generated parts removed.
 
 ## Options for generated parts of written pages
 
-Four written pages held generated parts between marker comments: the API pages, the docs index, the quality presets page and the tested devices page.
+Four written pages need generated parts: the API pages, the docs index, the quality presets page and the tested devices page.
 
 | Option | Conflicts on generated output | What readers see | Cost |
 | --- | --- | --- | --- |
 | A. Keep the parts in git | Yes, in most pull requests | The full page | The conflicts this record removes |
-| B. A git clean filter empties each part when a page is staged | None | The full page on disk and in the packages. Empty parts on GitHub and in pull request diffs | A filter in each clone's git config. Git also took a page whose part changed size as modified |
+| B. A git clean filter empties each part when a page is staged | None | The full page on disk and in the packages. Empty parts on GitHub and in pull request diffs | A filter in each clone's git config. Git also takes a page whose part changed size as modified |
 | C. Each part becomes a generated page of its own, and the written page links to it | None | One more link to follow | The written pages change once |
 
-The first build used option B. The coordinator chose option C on 2026-10-08. A filter hides content from what git stores, so GitHub and pull request diffs show emptied parts. People and tools trip over it.
+The coordinator chose option C over B. A filter hides content from what git stores, so GitHub and diffs show emptied parts, and people and tools trip over it.
 
 ## Decision
 
@@ -70,9 +70,9 @@ Option C, with these generated pages:
 
 | Files | Reason |
 | --- | --- |
-| `packages/engine/src/generated/core.ts` and `gpu.ts`, the constants that TypeScript shares with Rust | The Rust tests write them. Each TypeScript command would first need a Rust build of the engine's core and renderer, 10 to 60 seconds after each Rust change. Their Rust source conflicts in the same pull requests anyway |
+| `packages/engine/src/generated/core.ts` and `gpu.ts`, the constants that TypeScript shares with Rust | The Rust tests write them. Each TypeScript command would first need a Rust build of the engine's core and renderer, 10 to 60 seconds after each Rust change. Their Rust source conflicts in the same branches anyway |
 | The render graph's text dump and the light grid's snapshot in `crates/null3d-render/tests/` | They are the tests' expected output, and reviewers read their diffs |
-| The three.js fixtures in `crates/*/tests/fixtures/` | `cargo test` must run in a fresh clone, with no JavaScript step first. They change only when the pinned three.js changes: 6 commits since 2026-09-28 |
+| The three.js fixtures in `crates/*/tests/fixtures/` | `cargo test` must run in a fresh clone, with no JavaScript step first. They change only when the pinned three.js changes: 6 of the 391 commits above |
 | The vendored Basis transcoder and encoder, and the meshopt decoder, in `packages/*/vendor/` | The Basis build needs Emscripten, which CI lacks. The meshopt file comes from a pinned package. Both ship in the packages as they are |
 | The asset tool's FBX and OBJ reader, `packages/cli/vendor/ufbx/ufbx.wasm` | Its build needs Emscripten too, which CI lacks. `bun tools/build-ufbx.ts` makes the same bytes from pinned sources, and a unit test pins its SHA-256 ([D-111](D-111-asset-conversions.md)) |
 | The test files and outputs of `assets convert` in `tests/pages/assets/models/` | Blender made the FBX and OBJ files. The image test draws the outputs, and the unit test checks that the tool still writes the same bytes |
@@ -80,10 +80,9 @@ Option C, with these generated pages:
 | The image references, the benchmark records in `bench/results/` and `.dev/benchmark-results.md`, and the README's animation | They are accepted outputs and measurements. Making them needs a real GPU and a person's review |
 | The version numbers, `CHANGELOG.md` and `.claude-plugin/marketplace.json` | The release writes them. Claude Code reads the marketplace file straight from GitHub |
 | `bun.lock`, `Cargo.lock` and the sample content's manifest in `tools/samples/` | They must exist before any install or download |
-| The list of milestone task IDs, `tools/hooks/task-ids.txt` | The commit-msg hook reads it, and its source, the milestone plans, is kept outside git. The maintainers write it from the plans and commit it ([D-157](D-157-direct-pushes-to-main.md#addendum-2026-10-15-task-footers-and-merge-commits)) |
+| The list of milestone task IDs, `tools/hooks/task-ids.txt` | The commit-msg hook reads it, and its source, the milestone plans, is kept outside git. The maintainers write it from the plans and commit it ([D-157](D-157-direct-pushes-to-main.md#task-footers-and-merge-commits)) |
 
 ## Consequences
 
-- A branch from before this change conflicts once when it merges main. [Branches and parallel work](../pull-requests.md#a-branch-from-before-generated-files-left-git) gives the steps.
 - On GitHub, main has no generated page, so a relative link to one finds no file there. The `generated` branch and each release tag have every page.
-- [AGENTS.md](../../AGENTS.md#docs-and-skills-stay-in-sync), [Branches and parallel work](../pull-requests.md#generated-files) and [Releases](../releases.md) describe the new steps.
+- [AGENTS.md](../../AGENTS.md#docs-and-skills-stay-in-sync), [Branches and parallel work](../pull-requests.md#generated-files) and [Releases](../releases.md) describe the steps.

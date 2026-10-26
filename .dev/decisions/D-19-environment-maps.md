@@ -1,8 +1,8 @@
 # D-19: Environment maps: format, size, levels and where they are prefiltered
 
-Status: decided, 2026-10-04: the file and the tool with M2-B2, then the lookup, the built-in environment's name and the lit scenes' parity with M2-E2. The same day, the owner moved the built-in room out of the engine's package: the GPU makes it at first use. That is now the rule for every built-in asset. D-53 then decided the lookup: each material reads its own roughness. A later task makes that change, so the table of three.js's roughness below stays until then. On 2026-10-05 the owner ruled that the GPU makes the room whole at load, in one submit (D-66), and M2-E9 built it. The same day M2-E4 added HDR files at load, on the room's generator. The HDR load time on the owner's iPad and S24+ came in on 2026-10-07. On 2026-10-11 the owner's iPad gave the lookup's cost, and lit the room's first frame within 200 ms of its resolve. The S24+'s lookup cost is pending. Date: 2026-10-04. Tasks: M2-B2, M2-E2, M2-E9, M2-E4.
+Status: decided and built. M2-B2 holds the file and the tool, and M2-E2 the lookup, the built-in environment's name and the lit scenes' parity. M2-E9 makes the room whole on the GPU at load, by the owner's ruling in [D-66](D-66-step-sizes.md). M2-E4 loads HDR files on the room's generator. Built-in assets are made at run time, by the owner's rule. [D-53](D-53-technique-defaults.md) decided that each material reads its own roughness. That lookup is not built yet, so the lit template still reads the table of three.js's roughness. Pending: the lookup's cost on the S24+. Tasks: M2-B2, M2-E2, M2-E9, M2-E4.
 
-Summary: The asset tool prefilters once, the same bytes everywhere: a KTX2 cube map of `rgb9e5ufloat`, 256 x 256 faces, six GGX levels down to 8 x 8 (2.0 MiB), and nine spherical harmonics coefficients. The lit template reads each roughness from the level that matches three.js's PMREM, which brings lit spheres within three.js's image rule on every tier (0.000% to 0.064% of pixels on WebGPU). The built-in environment is `room`, after three.js's `RoomEnvironment`. The lookup is a value of each frame, not a shader build. Radiance and OpenEXR files load as they are too: a worker reads them, and the GPU filters them at load with the tool's steps, within 0.25 / 1 step of the tool's map.
+Summary: The asset tool prefilters once, the same bytes everywhere, into a KTX2 cube map of `rgb9e5ufloat` with 256 x 256 faces, six GGX levels (2.0 MiB) and nine spherical harmonics coefficients. The lit template reads each roughness from the level that matches three.js's PMREM, as a value of each frame, which keeps lit spheres within three.js's image rule on every tier. The GPU makes the built-in `room`, after three.js's `RoomEnvironment`, and filters Radiance and OpenEXR files at load, within 0.25 / 1 step of the tool's map.
 
 ## Question
 
@@ -18,8 +18,8 @@ Last: how does the built-in room reach a page? As a file in the engine's package
 - Parity with three.js's PMREM within a tolerance that this record sets from measured data.
 - At most 4 MiB of GPU memory for an environment at the default size.
 - The tool's output has the same bytes on every machine, as [D-18](D-18-asset-tool.md) requires.
-
-Note, 2026-10-04: the owner's decision of that day ([D-52](D-52-intent-parity.md)) changes two points of this record. First, a material's roughness means one GGX distribution. three.js's PMREM blurs less than that distribution, as a trait of its technique. So keeping a three.js port's look is no longer a reason to read the matching roughness of the table. Second, built-in assets are made at run time and never ship as files in the engine's package. That rule replaces the room's file in the consequences below.
+- A material's roughness means one GGX distribution ([D-52](D-52-intent-parity.md)). three.js's PMREM blurs less than that distribution, as a trait of its technique. So a three.js port's look is no reason on its own to read the table's matching roughness.
+- Built-in assets are made at run time and never ship as files in the engine's package, by the owner's rule ([D-52](D-52-intent-parity.md#built-in-assets)).
 
 ## The options
 
@@ -109,11 +109,9 @@ The turned scene sets `scene.environmentRotation` in three.js and `rotation` in 
 
 The built-in room is three.js's `RoomEnvironment`, which the tool traces from the room's center. three.js's examples prefilter it with `fromScene(room, 0.04)`: a Gaussian blur of 0.04 radians before the levels. Nearly every three.js scene that uses the room makes it that way, so the tool blurs the traced room by the same 0.04 radians. Each texel weighs the directions around it on a grid of half a sigma, out to three sigmas.
 
-The first room file had no blur, and shaded the walls with only part of three.js's standard material. On the CPU, against three.js's blurred room, its level 0 lay 5.49 / 108 steps away, all of it at the panels' sharp edges. Its total light lay 0.7% to 2.4% above three.js's, rising with roughness. The gap was a real difference in the walls' light. The tool's diffuse light kept the light that the specular layer reflects, where three.js's `RE_Direct_Physical` takes it away by `(1 - F)`. Its specular light also lacked three.js's compensation for multiple scattering, and its Fresnel term used the fifth power where three.js uses its exponential fit.
+The tool shades the room's walls as three.js's `RE_Direct_Physical` does. It uses three.js's table of split-sum terms at roughness 1 to compensate for multiple scattering. A room shaded with only part of three.js's standard material differs in the walls' light. Its diffuse light keeps the light that the specular layer reflects, where `RE_Direct_Physical` takes it away by `(1 - F)`. Its specular light lacks the compensation, and its Fresnel term uses the fifth power where three.js uses its exponential fit. Without the blur too, its level 0 lay 5.49 / 108 steps from three.js's blurred room on the CPU, all of it at the panels' sharp edges. Its total light lay 0.7% to 2.4% above three.js's, rising with roughness. Against three.js's blurred room:
 
-The room now shades as `RE_Direct_Physical` does, with three.js's table of split-sum terms at roughness 1 for the compensation, and takes the blur. Against three.js's blurred room:
-
-| | Before | After |
+| | Part of the material, no blur | `RE_Direct_Physical` and the blur |
 | --- | --- | --- |
 | Level 0, mean / p99 | 5.49 / 108 | 0.79 / 13.7 |
 | Total light against three.js's, roughness 0.1 to 1 | +1.1% to +2.2% | -0.8% to +0.3% |
@@ -123,20 +121,18 @@ The room now shades as `RE_Direct_Physical` does, with three.js's table of split
 | Lit spheres, WebGL2 | 4.21 / 14.3, 0.060% | 3.39 / 11.0, 0.008% |
 | Lit spheres, compatibility mode, the rule | 0.301% | 0.268% |
 
-The light left over sits in the rough levels, as with the HDR files, and at the panels' edges. The panels are small and over 50 times as bright as the walls, so small differences between the two blurs show there. The blur leaves the file less compressible: 393 KB with Brotli, up from 331 KB, and 562 KB with gzip.
+The light left over sits in the rough levels, as with the HDR files, and at the panels' edges. The panels are small and over 50 times as bright as the walls, so small differences between the two blurs show there. The blur leaves the file less compressible: 393 KB with Brotli, against 331 KB without it, and 562 KB with gzip.
 
 ### The built-in room on the GPU
 
-The first room was a file in the engine's package: `packages/engine/environments/room.ktx2`, 2.0 MB, 393 KB with Brotli. The engine found it with `new URL('../../environments/room.ktx2', import.meta.url)`. A bundler copies every such file into every game's build, so each game shipped 2 MB that most never load. An offline web app would download it ahead too. The owner decided on 4 October 2026 that built-in assets are made at run time, never shipped as files in the engine's package ([D-52](D-52-intent-parity.md#built-in-assets)).
-
-The engine now makes the room on the GPU, in the thread that draws, with the tool's steps:
+Built-in assets are made at run time ([D-52](D-52-intent-parity.md#built-in-assets)). The engine makes the room on the GPU, in the thread that draws, with the tool's steps:
 
 1. Trace three.js's room from its center, 4 x 4 directions per texel, at faces of 256.
 2. Blur it by 0.04 radians into the map's level 0 and into a chain. The taps lie on the tool's grid, half a sigma apart, out to three sigmas.
 3. Halve the chain down to one texel: a linear filter reads four texels at their shared corner.
 4. Filter each level from 1 to 5 with the GGX distribution, from the chain, with the tool's Hammersley set, sample counts and levels of detail.
 
-Each draw fills rows of one level, with the level's six faces side by side in its target. So the texels of every face run at once.
+Each draw fills rows of one level, with the level's six faces side by side in its target. So the texels of every face run at once. The filter's smallest levels read up to 8,192 directions per texel over 64 texels a face. A draw of one face alone keeps few of the GPU's lanes busy and waits on each texel's long loop. Drawn that way, the room took 31.5 ms on WebGPU.
 
 No GPU path draws into `rgb9e5ufloat`. So each draw packs its texels into the four bytes of an `rgba8unorm` target, rounded as the tool rounds them. A buffer then carries the bytes into the face's level of a shared-exponent cube. WebGPU copies through a buffer, and WebGL2 through a pixel pack and unpack buffer. Every step reads shared-exponent texels with the GPU's own filtering. One path serves all three tiers. It needs no float render target, which some WebGL2 devices lack.
 
@@ -151,13 +147,13 @@ The table compares each texel with the tool's map of the room, tone mapped as ab
 | 4 (0.55) | 0.073 / 0.21, 1.0014 | 0.058 / 0.21, 1.0011 |
 | 5 (1) | 0.083 / 0.21, 1.0016 | 0.063 / 0.21, 1.0012 |
 
-The lit spheres did not move. Against three.js, 0.008% of the pixels differ on WebGPU and on WebGL2, as with the file. In compatibility mode 0.268% differ, as before.
+The lit spheres draw as with the tool's file. Against three.js, 0.008% of the pixels differ on WebGPU and on WebGL2, and 0.268% in compatibility mode.
 
 The GPU makes the whole room in one submit, at load (D-66, M2-E9). `assets.builtinEnvironment` resolves once the generator's code has loaded and its pipelines are built. The core then records one command for the whole map in the next frame, outside the upload budget and before the frame's passes. So the first frame that uses the room already has its light, and no frame draws the scene without it. That frame takes longer by the map's GPU time. A room asked for during play costs one long frame.
 
-The generator builds its pipelines in the background, after its code loads and before it counts as arrived. So no frame waits for a compile. A new GPU device builds them at its first map.
+The generator builds its pipelines in the background, after its code loads and before it counts as arrived. So no frame waits for a compile. With an empty shader cache, a compile in the map's own frame takes 382 ms on WebGPU and 195 to 394 ms on WebGL2. A new GPU device builds them at its first map.
 
-The whole map in one go, from the call until the GPU had finished it, in Chrome. The Mac's figures come from `tests/image/environment-generator.spec.ts` with `NULL3D_ENV_RUNS=4`, three rounds, on 5 October 2026. The Mac's load average was 23 to 37. The phones' come from prototype L1's second cloud run, `load=1`, on a first page with no shader cache. It has the same steps and shaders, and draws one texel with each pipeline first. On the phones, WebGPU's figure is the GPU's own time.
+The whole map in one go, from the call until the GPU had finished it, in Chrome. The Mac's figures come from `tests/image/environment-generator.spec.ts` with `NULL3D_ENV_RUNS=4`, three rounds. The Mac's load average was 23 to 37. The phones' come from prototype L1's second cloud run, `load=1`, on a first page with no shader cache. It has the same steps and shaders, and draws one texel with each pipeline first. On the phones, WebGPU's figure is the GPU's own time.
 
 | Device, path | Pipelines, in the background | The first map, at load | Later maps |
 | --- | --- | --- | --- |
@@ -167,21 +163,11 @@ The whole map in one go, from the call until the GPU had finished it, in Chrome.
 | Galaxy S25, Pixel 9, 10 and 11, WebGPU | 92.7 to 128.7 ms | 47.8 to 99.7 ms | 16.6 to 95.0 ms |
 | The same phones, WebGL2 | 100.3 to 225.5 ms | 57.7 to 107.3 ms | 42.8 to 111.6 ms |
 
-The thread that draws spends under 1 ms of its own time in the call on the Mac; the rest is the GPU's. Since 6 October 2026, the WebGL2 generator waits for the GPU after each step's pack. Firefox fills the pack buffer late ([implementation notes](../implementation-notes.md#browser-faults)). The thread that draws then waits in the call for most of the map. In Firefox on the Mac it waited 15.4 ms of the 20.8 ms map. The table's WebGL2 times above were taken before that wait. The engine makes no such one-texel draws. On the Mac its first map on WebGL2 showed no wait for the driver, since the pipelines build in the background first. SwiftShader on the Mac took 0.8 to 0.9 s for the whole room.
+The thread that draws spends under 1 ms of its own time in the call on the Mac; the rest is the GPU's. The WebGL2 generator waits for the GPU after each step's pack, because Firefox fills the pack buffer late ([implementation notes](../implementation-notes.md#browser-faults)). The thread that draws then waits in the call for most of the map. In Firefox on the Mac, it waits 15.4 ms of the 20.8 ms map. The table's WebGL2 times leave that wait out. Prototype L1 draws one texel with each pipeline first, and the engine does not. On the Mac its first map on WebGL2 showed no wait for the driver, since the pipelines build in the background first. SwiftShader on the Mac took 0.8 to 0.9 s for the whole room.
 
-Before M2-E9, M2-E2 made the room in 32 slices, one a frame. The Mac timed each slice from its call until the GPU had finished it:
+Each ray of the trace finds its nearest surface first and shades only that one, and the boxes' turns are constants. A trace that shades every surface a ray meets takes 570 ms of the room's 1.5 s on SwiftShader, by WebGL2's timer queries. It also works out each box's sine and cosine for each ray. The nearest-surface trace takes 75 ms there, and 5 ms against 9 ms on the Mac's GPU. It makes the same map: level 0 lies 0.002 / 0.09 steps from the tool's.
 
-| Path | The whole room, slices back to back | A slice, median / most | Pipelines, in the background |
-| --- | --- | --- | --- |
-| WebGPU | 17.4 ms, the first one 29 to 38 ms | 0.8 / 2.5 ms | 9 ms, or 285 to 305 ms when the GPU's shader cache does not hold them |
-| Compatibility mode | 17.4 ms | 0.8 / 2.5 ms | 8 to 10 ms |
-| WebGL2 | 16.6 ms (19.0 ms by timer queries) | 1.2 / 3.0 ms (0.25 / 1.8 ms by timer queries) | 15 to 19 ms, or 127 to 135 ms when the GPU's shader cache does not hold them |
-
-The Mac was busy with other work at the time, with a load average of 37 to 80. A copy of the shader with one constant changed showed the cost of an empty shader cache. SwiftShader on the same Mac took 1.0 to 1.5 s for the room at that load.
-
-The trace once worked out the sine and cosine of each box's turn four times for each box and ray. It also shaded every nearer surface that a ray met. On SwiftShader it was then the costliest step: 570 ms of 1.5 s by WebGL2's timer queries. Each ray now finds its nearest surface first and shades only that one, and the turns are constants. The trace fell to 75 ms on SwiftShader, and from 9 to 5 ms on the Mac's GPU. The whole room fell from 21.2 to 17.4 ms on WebGPU and in compatibility mode. On WebGL2 it fell from 19.8 to 16.6 ms, or from 24.4 to 19.0 ms by timer queries. The map did not change: level 0 lies 0.002 / 0.09 steps from the tool's, as before.
-
-The image tests hold their frame, so each of their runs makes the whole room in one frame. CI's runners share a few cores among the tests that run side by side. Before the change, a run of the room there took more than 30 s on WebGPU and in compatibility mode. On WebGL2 it took about 27 s. The Mac's SwiftShader ran the room's image test on three tiers side by side. Each tier took 45 to 52 s for its five thread modes before the change, and 23 to 25 s after it. Each run of the room's image test may take 60 s, not the usual 30. The rest of the time is the software GPU's alone: the Mac's GPU makes the room in 17 ms.
+The image tests hold their frame, so each of their runs makes the whole room in one frame. CI's runners share a few cores among the tests that run side by side, so a software GPU there takes many seconds for the room. The Mac's SwiftShader runs the room's image test on three tiers side by side. Each tier takes 23 to 25 s for its five thread modes, against 45 to 52 s with the trace that shades every surface. So each run of the room's image test may take 60 s, not the usual 30. The time is the software GPU's alone: the Mac's GPU makes the room in 17 ms.
 
 Cheaper work was measured against a map made with 8 x 8 rays per texel, a finer blur and 4,096 directions at level 1. The engine's map lay 0.32 / 2.5 steps from it at its worst roughness, and the options below lay further:
 
@@ -193,37 +179,41 @@ Cheaper work was measured against a map made with 8 x 8 rays per texel, a finer 
 | Blur taps a sigma apart, a third of the reads | 0.55 / 11.6 | Roughness 0 |
 | Faces of 128, 5 levels | 1.65 / 11.2 against the engine's map | Roughness 0.1 to 0.6 |
 
-None was taken. Fewer rays was nearly free, but the trace no longer costs much. The blur and the filter spend most of their time on texture reads on SwiftShader. With their sums and sines moved out of the loops, they took as long as before.
+None was taken. Fewer rays was nearly free, but the trace costs little. The blur and the filter spend most of their time on texture reads on SwiftShader. With their sums and sines out of the loops, they take as long.
 
-The work is about 66 million texel reads for the blur and 100 million for the filter, and the trace's rays. Before the faces drew side by side, each face of each level drew alone. The room then took 31.5 ms on WebGPU, and its slices up to 9.3 ms. The filter's smallest levels read up to 8,192 directions per texel over 64 texels a face. A draw of one face kept few of the GPU's lanes busy and waited on each texel's long loop. The first room also compiled its pipelines in its first slice. With an empty shader cache that took 382 ms on WebGPU and 195 to 394 ms on WebGL2.
+The work is about 66 million texel reads for the blur and 100 million for the filter, and the trace's rays.
 
-The code and the shaders load on first use:
+The code and the shaders load on first use, after Brotli:
 
-| File | After Brotli | Budget |
-| --- | --- | --- |
-| The generators of both paths, in the thread that draws | 2.1 KB | 16 KB |
-| The room's numbers, in the thread that runs the sketch | 0.2 KB | 16 KB |
-| The shaders, WGSL or GLSL, in the thread that draws | 4.2 KB or 4.4 KB | 32 KB |
+| File | After Brotli |
+| --- | --- |
+| The generators of both paths, in the thread that draws | 2.7 KB |
+| The room's numbers, in the thread that runs the sketch | 0.2 KB |
+| The shaders, WGSL or GLSL, in the thread that draws | 4.7 KB or 4.8 KB |
+| The HDR reader's worker | 5.8 KB |
+| The HDR reader's loader, in the thread that runs the sketch | 0.6 KB |
 
-The engine's JavaScript at a page's start grew by 1.0 KB, to 107.1 KB in pipelined mode. The backends' new command, the image table's generators and the texture call make it.
+Each stays within [D-14](D-14-js-budget.md)'s limits for files that load after the start. The room adds 1.0 KB to the engine's JavaScript at a page's start: the backends' command, the image table's generators and the texture call.
 
 How the parts fit:
 
 - The sketch thread makes a cube texture and asks the core for a generator. The generator takes the next image id, and its name, `room`, goes to the thread that draws as an image does. That thread loads the generators' code and the shaders of its GPU path, and builds the pipelines. Then it counts the generator among the images it received. `builtinEnvironment` waits for that count before it resolves, and the core waits for it as it waits for an image. Then the core records one command, `GenerateTexture`, which makes the whole map at once, before the frame's passes. Held frames wait for every image to arrive, so they wait for the generator too.
 - The core keeps the generator after it ran. A new GPU device makes the room again from it, with no work from the sketch.
 - The generator makes its own textures and buffers for each map and frees them once the map's work has run. A capture that replays the list makes the map again. The WebGPU generator submits the map's commands in one command buffer of their own. The WebGL2 generator changes the context's bindings, so the backend's state cache forgets them afterwards.
-- WebGL2 writes the packed bytes through a spare RGBA8 texture and a pixel buffer on every device. That path needs no float render target, so it needs no fallback. Half floats through a spare texture also matched the tool's file on the cloud phones (prototype L1). They stay the fallback for a device whose pixel buffer copy fails or is slow; none has shown that, so the engine has no such path. The 11-11-10 format and drawing straight into the cube failed there, and the engine never had them.
-- The shader build writes a shader marked `first_use` into a module of its own for each target, `generated/shaders-environment-wgsl.ts` and `-glsl.ts`. The main shader module stays as it was. The size report gives such files a budget of 24 KB each after Brotli, by the owner's decision of 4 October 2026.
+- WebGL2 writes the packed bytes through a spare RGBA8 texture and a pixel buffer on every device. That path needs no float render target, so it needs no fallback. Half floats through a spare texture also matched the tool's file on the cloud phones (prototype L1). They are the fallback for a device whose pixel buffer copy fails or is slow. No device has shown that, so the engine has no such path. The 11-11-10 format and drawing straight into the cube failed on those phones.
+- The shader build writes a shader marked `first_use` into a module of its own for each target, `generated/shaders-environment-wgsl.ts` and `-glsl.ts`. The main shader module does not hold it. The size report holds such files to [D-14](D-14-js-budget.md#first-use-shader-files)'s limit for first-use shader files.
 
 The options rejected:
 
 - Templates and bind groups of the draw list, with the core recording each draw. A draw of a template whose pipeline still builds draws nothing, and a map made once cannot skip a draw. The shader text would also have to reach the backends by another way, since it loads on first use.
 - Float render targets for every step. WebGL2 renders into `rgba16float` only with an extension that some devices lack, and the map would still need packing for `rgb9e5ufloat`.
-- The nine coefficients of diffuse light on the GPU. The room never changes, so its coefficients never change. Reading them back would need a path from the thread that draws to the sketch's thread in every thread mode. In hold mode that thread draws only when a capture asks, so the sketch would wait for a frame that never comes. The engine keeps the tool's 27 numbers instead, nine for a gray room, in the file that loads on first use. They are derived data, not a shipped file, so they fit the owner's rule (agreed on 4 October 2026). A test of the tool checks that they are its own.
+- The nine coefficients of diffuse light on the GPU. The room never changes, so its coefficients never change. Reading them back would need a path from the thread that draws to the sketch's thread in every thread mode. In hold mode that thread draws only when a capture asks, so the sketch would wait for a frame that never comes. The engine keeps the tool's 27 numbers instead, nine for a gray room, in the file that loads on first use. They are derived data, not a shipped file, so they fit the owner's rule, as the owner agreed. A test of the tool checks that they are its own.
+- A file in the engine's package, `room.ktx2`: 2.0 MB, 393 KB with Brotli, found with `new URL(..., import.meta.url)`. A bundler copies every such file into every game's build, so each game ships 2 MB that most never load. An offline web app downloads it ahead too.
+- The room in 32 slices, one a frame. Steps over frames cost 368 to 651 ms on the cloud phones, against 39 to 116 ms of GPU time for one whole map ([D-66](D-66-step-sizes.md)). Until the last slice, frames draw the scene without the room's light.
 
 ### HDR files at load
 
-`assets.loadEnvironment` also takes Radiance (`.hdr`) and OpenEXR (`.exr`) files. three.js ports load them with `HDRLoader` or `EXRLoader` and `PMREMGenerator`. The owner moved this to P0 on 4 October 2026 (decision 8 of D-53), on the room's generator. On 5 October the owner ruled that HDR maps are made whole at load, in one submit. The room is made the same way (option A of prototype L1, D-66). The earlier plan of steps sized by the kind of draw no longer applies.
+`assets.loadEnvironment` also takes Radiance (`.hdr`) and OpenEXR (`.exr`) files. three.js ports load them with `HDRLoader` or `EXRLoader` and `PMREMGenerator`. The owner made this P0 work, on the room's generator ([D-53](D-53-technique-defaults.md)). By the owner's ruling, HDR maps are made whole at load, in one submit, as the room is (option A of prototype L1, [D-66](D-66-step-sizes.md)).
 
 How a file becomes a map:
 
@@ -232,7 +222,7 @@ How a file becomes a map:
 3. The worker projects each row onto the nine coefficients of diffuse light. It averages squares of texels while the image is wider than 2,048 texels, eight for each texel across a face of 256. Then it packs the panorama as shared-exponent texels.
 4. The panorama's texels move to the thread that draws, as an image does. The generator maps them onto the cube with a new step, `panorama`. Then it runs the room's chain and filter steps. All of it is one submit, before the first frame that uses the map.
 
-The `panorama` step averages 2 to 8 directions a side over each cube texel, by the tool's rule (`samples_per_texel`). It reads the panorama with the GPU's linear filter, as the tool's sampler does. The filter repeats across the width and clamps at the top and bottom rows. The map has faces of 256 and 6 levels, the tool's default. `loadEnvironment` takes no size option yet.
+The `panorama` step averages 2 to 8 directions a side over each cube texel, by the tool's rule (`samples_per_texel`). It reads the panorama with the GPU's linear filter, as the tool's sampler does. The filter repeats across the width and clamps at the top and bottom rows. The map has faces of 256 and 6 levels, the tool's default. `loadEnvironment` takes no size option.
 
 #### Light past the format's limit
 
@@ -264,7 +254,7 @@ The panorama on the GPU is at most 2,048 texels wide, 8 MB as shared-exponent te
 
 #### Results
 
-The test `tests/image/environment-generator.spec.ts` makes each file's map with the engine's readers and generator on every GPU path. It compares each level with the tool's map of the same file, tone mapped as above. The figures are steps of 1/255 as mean / p99, and the total light over the tool's. Chrome on the Mac's GPU, 5 October 2026:
+The test `tests/image/environment-generator.spec.ts` makes each file's map with the engine's readers and generator on every GPU path. It compares each level with the tool's map of the same file, tone mapped as above. The figures are steps of 1/255 as mean / p99, and the total light over the tool's. Chrome on the Mac's GPU:
 
 | File | Level 0 | Level 1 | Level 5 | Total light, levels 0 to 5 | Diffuse light, largest difference |
 | --- | --- | --- | --- | --- | --- |
@@ -272,34 +262,15 @@ The test `tests/image/environment-generator.spec.ts` makes each file's map with 
 | Kloofendal, 2K `.hdr`, gain 2 | 0.002 / 0.11 | 0.018 / 0.24 | 0.074 / 0.26 | 0.9999 to 1.0016 | 0.07% |
 | Studio, 1K `.exr`, PIZ floats | 0.004 / 0.16 | 0.023 / 0.23 | 0.082 / 0.23 | 1.0001 to 1.0015 | 0.01% |
 
-The three paths gave the same figures. Each level stays within the room's tolerance of 0.25 / 1 step and 0.5% of total light, which the test now asks of HDR files too. Kloofendal's peak passes the format's limit, and its map matches the tool's as closely as the others. A plain limit would drop the light above 65,408 from its rough levels.
+The three paths gave the same figures. Each level stays within the room's tolerance of 0.25 / 1 step and 0.5% of total light, which the test asks of HDR files too. Kloofendal's peak passes the format's limit, and its map matches the tool's as closely as the others. A plain limit would drop the light above 65,408 from its rough levels.
 
 The sunset from its Radiance file draws the sphere grid as its tool map does. Its image test, `environment-venice-hdr`, borrows the references of `environment-venice`. On all three tiers they lie at most 2 steps of 255 apart per pixel, with no pixel past the image rule. Against three.js's `HDRLoader` and `PMREMGenerator`, 0.000% of pixels differ on WebGPU and WebGL2, and 0.044% in compatibility mode. The studio's OpenEXR file passes three.js's image rule against `EXRLoader` on WebGPU (0.086%) and WebGL2 (0.093%). In compatibility mode 0.498% differ, past three.js's own 0.350% between its renderers. The differences lie on the spheres' bright edges, where that mode's 8-bit MSAA path differs, as above. The studio's map matches the tool's on every path, so the parity list keeps only the sunset.
 
 The times come from Chrome on the Mac (Apple M5 Max), at a load of 15 to 26. The readers took 94 to 125 ms per file on the page's main thread. The worker runs the same code. The map took 19 to 21 ms from the call until the GPU had finished, as the room's does. On WebGL2 it took 16 to 17 ms by timer queries. The `panorama` step replaces the trace and the blur, and the filter costs most.
 
-On cloud devices, the device runner's `environment-load` plan asked for each environment during play (runs `20261005-134447-environment-load` and `20261005-134805-environment-load`, BrowserStack Automate). Every item passed: iPad 6 of 6, Pixel 10 6 of 6, and Galaxy S24 3 of 3, which has no WebGPU. In every frame that used an environment, the sphere showed its light. The figures are milliseconds from the request until the first captured frame that used the environment. The figure in brackets is the time until the environment resolved. The HDR files came through the cloud's tunnel from the Mac, so their times include a download of 5.7 MB (`.hdr`) or 1.3 MB (`.exr`).
+`loadEnvironment` asks for the generator's code and shaders at the call, when the address ends in `.hdr` or `.exr`. Otherwise it asks once the file's first bytes show an HDR file. It starts the reader's worker then too. The sketch sends a reserved name among the shader features to preload. The thread that draws then loads the code and builds the pipelines, before any generator arrives. So the download and the reading overlap the generator's setup. Without the preload, the code loads only when the first generator reaches the thread that draws. That comes after the download and the reading, so the two waits add up.
 
-| Device, path | Room | Venice Sunset, 2K `.hdr` | Studio, 1K `.exr` |
-| --- | --- | --- | --- |
-| iPad Pro 13, Safari 26.6.1, WebGPU | 1,204 (1,071) | 2,291 (2,213) | 1,613 (1,570) |
-| iPad Pro 13, WebGL2 | 912 (784) | 1,544 (1,467) | 1,554 (1,490) |
-| Pixel 10, Chrome 149, WebGPU | 965 (815) | 2,621 (2,448) | 2,390 (2,259) |
-| Pixel 10, WebGL2 | 974 (840) | 2,681 (2,554) | 2,128 (2,003) |
-| Galaxy S24 (Xclipse 940), Chrome 149, WebGL2 | 1,120 (1,006) | 3,191 (3,066) | 2,278 (2,186) |
-
-Two parts make each figure:
-
-- Until the environment resolves, the frames go on as before; the captures in that time drew the sphere unlit, 145 to 4,583 of them. This part holds the download, the reading, the generator's code and the background build of its shaders.
-- From then until the first lit frame, the next frame makes the map, draws, and comes back to the page. It took 114 to 150 ms for the room, and 43 to 173 ms for the HDR files. The one long frame lies in this part.
-
-Why the iPad's `.hdr` took 2,291 ms on WebGPU and 1,544 ms on WebGL2: the gap lies before the environment resolved. That part took 2,213 against 1,467 ms, and the part after it 77 ms on both paths. The room shows that the setup before it resolves costs about 290 ms more on WebGPU on this iPad (1,071 against 784 ms). That setup is the generator's code and the build of its shaders. That leaves about 460 ms. The `.exr` file differs by only 80 ms between the paths, and the readers run the same code on both. So the rest most likely came from the 5.7 MB download through the tunnel, which varies from load to load. Each item ran once, and the page does not time the download apart, so the record cannot prove it.
-
-The task's done-when line asks only that an HDR file lights a scene on all three tiers, and sets no time. Its note took prototype L1's rule: under 200 ms in all on the slowest cloud phone. Option A (D-66) then made the map in one submit, and the rule's 200 ms is the map's own cost. Here, the part after the environment resolved holds the map, its frame and the capture. It stayed under 200 ms on every device and path: at most 150 ms for the room and 173 ms for a file. The first second or more is the download and the background setup, during which frames keep their pace. So the room's 1 s on phones passes the rule.
-
-In those runs, the generator's code and shaders started to load only when the first generator reached the thread that draws. For an HDR file, that was after the download and the reading, so the two waits added up. Now `loadEnvironment` asks for them at the call, when the address ends in `.hdr` or `.exr`. It asks once the file's first bytes show an HDR file otherwise. It starts the reader's worker then too. The sketch sends a reserved name among the shader features to preload. The thread that draws then loads the code and builds the pipelines, before any generator arrives.
-
-The same plan measured the change on the same devices, the old commit against the new one in turns: old, new, old, new. The runs are `20261005-145731` to `20261005-151647`, each ending in `-environment-load`. Every run passed. In each pair, one run was slowed by a stall of 10 to 14 s in the cloud's tunnel. So the table takes the faster run of each pair. A stall only adds time. Milliseconds to the first lit frame, before and after:
+On cloud devices, the device runner's `environment-load` plan asks for each environment during play (BrowserStack Automate). The figures are milliseconds from the request until the first captured frame that used the environment. The HDR files came through the cloud's tunnel from the Mac, so their times include a download of 5.7 MB (`.hdr`) or 1.3 MB (`.exr`). The runs `20261005-145731` to `20261005-151647`, each ending in `-environment-load`, took turns between a build without the preload and one with it. Every run passed, and in every frame that used an environment, the sphere showed its light. In each pair, one run was slowed by a stall of 10 to 14 s in the cloud's tunnel. So the table takes the faster run of each pair. A stall only adds time. Milliseconds to the first lit frame, without the preload and with it:
 
 | Device, path | `.hdr` | `.exr` | Room |
 | --- | --- | --- | --- |
@@ -309,11 +280,18 @@ The same plan measured the change on the same devices, the old commit against th
 | Pixel 10, WebGL2 | 2,428 to 1,326 (-1,102) | 2,138 to 1,687 (-451) | 1,090 to 1,016 |
 | Galaxy S24, WebGL2 | 2,884 to 2,455 (-429) | 2,379 to 1,812 (-567) | 926 to 1,233 |
 
-The HDR files' times fell by 0.25 to 1.2 s on every device and path. The room's path did not change, and its figures moved both ways. The S24's old runs ranged from 926 to 1,061 ms and its new runs from 1,233 to 1,259 ms. Four more pairs of the S24's room page alone settled it (runs `20261005-153346` to `20261005-153913`). The first lit frame's median was 1,140 ms before and 1,095 ms after. The pairs differed by -328 to +163 ms, so the change makes no difference that the runs can show.
+The preload saves 0.25 to 1.2 s on the HDR files, on every device and path. The room's path does not change, and its figures moved both ways. The S24's runs without the preload ranged from 926 to 1,061 ms and with it from 1,233 to 1,259 ms. Four more pairs of the S24's room page alone settled it (runs `20261005-153346` to `20261005-153913`). The first lit frame's median was 1,140 ms without the preload and 1,095 ms with it. The pairs differed by -328 to +163 ms, so the preload makes no difference to the room that the runs can show.
 
-On the Mac (Apple M5 Max, Chrome on its GPU), the room light test ran 3 times with each commit. The load was 3.4 to 4.0. All 27 tests passed in each round. The table gives median milliseconds to the environment resolving, then to the first lit frame, before and after:
+Two parts make each figure. Runs `20261005-134447-environment-load` and `20261005-134805-environment-load`, without the preload, show them:
 
-| File, path | Before | After |
+- Until the environment resolves, the frames go on; the captures in that time drew the sphere unlit, 145 to 4,583 of them. This part holds the download, the reading, the generator's code and the background build of its shaders.
+- From then until the first lit frame, the next frame makes the map, draws, and comes back to the page. It took 114 to 150 ms for the room, and 43 to 173 ms for the HDR files. The one long frame lies in this part.
+
+The task's done-when line asks only that an HDR file lights a scene on all three tiers, and sets no time. Its note took prototype L1's rule: under 200 ms in all on the slowest cloud phone. Option A ([D-66](D-66-step-sizes.md)) makes the map in one submit, so the rule's 200 ms is the map's own cost. Here, the part after the environment resolved holds the map, its frame and the capture. It stayed under 200 ms on every device and path: at most 150 ms for the room and 173 ms for a file. The first second or more is the download and the background setup, during which frames keep their pace. So the room's 1 s on phones passes the rule.
+
+On the Mac (Apple M5 Max, Chrome on its GPU), the room light test ran 3 times with each build. The load was 3.4 to 4.0. All 27 tests passed in each round. The table gives median milliseconds to the environment resolving, then to the first lit frame, without the preload and with it:
+
+| File, path | Without the preload | With the preload |
 | --- | --- | --- |
 | `.hdr`, WebGPU | 112 / 161 | 104 / 162 |
 | `.hdr`, compatibility mode | 111 / 161 | 103 / 161 |
@@ -322,33 +300,18 @@ On the Mac (Apple M5 Max, Chrome on its GPU), the room light test ran 3 times wi
 | `.exr`, compatibility mode | 95 / 139 | 86 / 141 |
 | `.exr`, WebGL2 | 103 / 160 | 87 / 141 |
 
-The files resolved 8 to 17 ms sooner. The first lit frame came up to 19 ms sooner on WebGL2 and at the same time on WebGPU. The room took 10 to 17 ms to resolve and 53 to 61 ms to light, in both rounds. The Mac downloads the file from its own server in a few milliseconds and builds the shaders fast, so there is little to overlap. The saving shows on phones, where the download and the shader builds take far longer.
+With the preload, the files resolve 8 to 17 ms sooner. The first lit frame comes up to 19 ms sooner on WebGL2 and at the same time on WebGPU. The room took 10 to 17 ms to resolve and 53 to 61 ms to light, in both rounds. The Mac downloads the file from its own server in a few milliseconds and builds the shaders fast, so there is little to overlap. The saving shows on phones, where the download and the shader builds take far longer.
 
-On 7 October 2026 the owner's iPad Pro 11 (A12X, Safari 26.6.2, over the local network) and S24+ (Chrome 154, WebGL2 only) ran the same plan on main at 3ca165cc3. The runs are `20261007-043312-environment-load` and `20261007-053943-environment-load`. Every item passed: 6 of 6 on the iPad, and 3 of 3 on the S24+, whose Chrome has no WebGPU. No frame that used the environment lacked its light. Milliseconds to the first lit frame, with the time until the environment resolved in brackets:
-
-| Device, path | Room | Venice Sunset, 2K `.hdr` | Studio, 1K `.exr` |
-| --- | --- | --- | --- |
-| iPad Pro 11, WebGPU | 1,312 (994) | 595 (495) | 417 (316) |
-| iPad Pro 11, WebGL2 | 608 (405) | 466 (345) | 418 (309) |
-| Galaxy S24+, WebGL2 | 174 (90) | 508 (407) | 339 (239) |
-
-- The HDR files lit their first frame 100 to 121 ms after they resolved, on both devices and every path. That is under prototype L1's 200 ms.
-- The files came over the local network, not through the cloud's tunnel, so these times do not compare with the cloud devices' above.
-- The iPad's room took longer after it resolved: 318 ms on WebGPU and 203 ms on WebGL2. Both are past L1's 200 ms, which L1 set for the slowest cloud phone. The S24+'s room took 84 ms. Each item ran once, so the run cannot show whether the room's map or one slow frame took the time.
-
-On 11 October 2026 the owner's iPad ran the plan again, on main at f854dd72d (run `20261011-082829-environment-load`). Every item passed, 6 of 6, and no frame that used the environment lacked its light. The iPad was on its charger, with Limit Frame Rate on. The Mac that served the pages ran at a load of 18 to 23. That can slow the files' download, but not the iPad's own work. Milliseconds to the first lit frame, with the time until the environment resolved in brackets:
+The owner's iPad Pro 11 (A12X, Safari 26.6.2) and S24+ (Chrome 154, WebGL2 only) ran the same plan over the local network. The iPad ran on main at f854dd72d (run `20261011-082829-environment-load`), on its charger, with Limit Frame Rate on. The Mac that served its pages ran at a load of 18 to 23. That can slow the files' download, but not the iPad's own work. The S24+ ran on main at 3ca165cc3 (run `20261007-053943-environment-load`). Every item passed: 6 of 6 on the iPad, and 3 of 3 on the S24+, whose Chrome has no WebGPU. No frame that used the environment lacked its light. Milliseconds to the first lit frame, with the time until the environment resolved in brackets:
 
 | Device, path | Room | Venice Sunset, 2K `.hdr` | Studio, 1K `.exr` |
 | --- | --- | --- | --- |
 | iPad Pro 11, WebGPU | 147 (29) | 597 (497) | 416 (316) |
 | iPad Pro 11, WebGL2 | 128 (35) | 461 (348) | 422 (309) |
+| Galaxy S24+, WebGL2 | 174 (90) | 508 (407) | 339 (239) |
 
-- The room now lit its first frame 118 ms after it resolved on WebGPU and 93 ms on WebGL2. On 7 October it took 318 and 203 ms. Both are under L1's 200 ms.
-- The room resolved in 29 and 35 ms, against 994 and 405 ms on 7 October. Its whole wait fell from 1,312 to 147 ms on WebGPU, and from 608 to 128 ms on WebGL2.
-- The HDR files lit their first frame 100 to 113 ms after they resolved, as on 7 October, and resolved at about the same times.
-- Each item ran once, so the run cannot show which commits since 7 October made the room faster.
-
-The code that loads on first use, after Brotli: the reader's worker 5.8 KB, and its loader 0.6 KB in the sketch's thread. The generators' file grew from 2.1 to 2.7 KB. The environment shaders grew from 4.2 to 4.7 KB in WGSL, and from 4.4 to 4.8 KB in GLSL.
+- Every environment lit its first frame within L1's 200 ms of its resolve. The room took 118 ms on the iPad's WebGPU, 93 ms on its WebGL2 and 84 ms on the S24+. The HDR files took 100 to 121 ms.
+- The files came over the local network, not through the cloud's tunnel, so these times do not compare with the cloud devices' above.
 
 A KTX2 map from the tool is not always the smaller download. After Brotli, Venice Sunset's 2K Radiance file takes 3.8 MB and its map 1.4 MB. The studio's 1K OpenEXR file takes 1.23 MB, and its map 1.36 MB.
 
@@ -372,9 +335,9 @@ The lookup's code adds 0.7 to 2.2 KB after Brotli to each device module, 2.9% to
 - The built-in room repeats three.js's `RoomEnvironment` scene. The tool traces it from the center. It shades it as `MeshStandardMaterial` does with its defaults, with no shadows, as three.js draws it. It then blurs it by 0.04 radians, as three.js's examples prefilter it.
 - `assets.loadEnvironment` reads Radiance and OpenEXR files as well as the tool's files. A worker reads them; the GPU filters them at load with the tool's steps, in one submit before the first frame that uses the map. A power-of-two gain keeps light past 65,408 in the rough levels and the diffuse light. Each level lies within 0.25 / 1 step of the tool's map, and its total light within 0.5% (`tests/image/environment-generator.spec.ts`).
 - The engine makes the built-in room on the GPU when a sketch first asks for it, with the tool's steps, on every tier. It makes the whole map in one submit, before the first frame that uses it (D-66); `tests/image/room-light.spec.ts` checks that no frame with the room lacks its light. Its package ships no file for it. Its map lies within 0.25 / 1 step of the tool's at every level, and its total light within 0.5% (`tests/image/environment-generator.spec.ts`). The tool's `--builtin room` stays: it is the reference of that test and of the parity test.
-- Built-in assets are made at run time, never shipped as files in the engine's package: the owner's rule of 4 October 2026, which [D-52](D-52-intent-parity.md#built-in-assets) records. A built-in asset's code and shaders load on first use, within the budgets for such files.
+- Built-in assets are made at run time, never shipped as files in the engine's package: the owner's rule, which [D-52](D-52-intent-parity.md#built-in-assets) records. A built-in asset's code and shaders load on first use, within the budgets for such files.
 - The built-in environment is named `room`, after three.js's `RoomEnvironment`, which porters know. A sketch calls `assets.builtinEnvironment('room')` for it. The tool, the docs, the skills and the mapping all use that name. The studio preset of drei is an HDR file of its own, which ports through the tool.
-- The lit template reads each material's roughness from the level of the table's GGX roughness, `THREE_PMREM_ROUGHNESS`, blended between its steps of 0.05: `lod = (n - 1) * g * (2 - g)`. The table brings the lit spheres within three.js's image rule on both environments and every tier, which the material's own roughness misses on the room. Under [D-52](D-52-intent-parity.md) that match is no reason on its own. A material's roughness means one GGX distribution, and its own roughness reads exactly that. The table stays until a later task makes the lookup that D-53 decided: each material's own roughness. It lives in `crates/null3d-shaders/wgsl/lib/ibl.wgsl`, so a switch changes one function.
+- The lit template reads each material's roughness from the level of the table's GGX roughness, `THREE_PMREM_ROUGHNESS`, blended between its steps of 0.05: `lod = (n - 1) * g * (2 - g)`. The table brings the lit spheres within three.js's image rule on both environments and every tier, which the material's own roughness misses on the room. Under [D-52](D-52-intent-parity.md) that match is no reason on its own. A material's roughness means one GGX distribution, and its own roughness reads exactly that. The table stays until the lookup that [D-53](D-53-technique-defaults.md) decided, each material's own roughness, is built. It lives in `crates/null3d-shaders/wgsl/lib/ibl.wgsl`, so a switch changes one function.
 - Diffuse light comes from the nine coefficients. Specular light comes from the cube map along the reflection, bent toward the normal by roughness to the fourth power, as three.js's `getIBLRadiance` bends it. Both go through three.js's `RE_IndirectSpecular_Physical`, and the occlusion map darkens the specular light by `computeSpecularOcclusion`.
 - `scene.setEnvironment(env, { intensity, rotation })` sets the scene's environment from the next frame, with three.js's `environmentIntensity` and `environmentRotation` (Euler angles in the order X, Y, Z). A material's `envIntensity` multiplies the intensity. three.js uses `environmentIntensity` in place of a material's `envMapIntensity` under a scene environment. The engine multiplies them, so the material's value keeps its meaning.
 - The environment is a value of each frame, not a permutation bit. The frame's group binds the environment's cube, or a blank one, at bindings 12 and 13. A frame builder reads the environment after the frame's texture uploads, so a held frame, which uploads everything, draws with it.
@@ -383,15 +346,15 @@ The lookup's code adds 0.7 to 2.2 KB after Brotli to each device module, 2.9% to
 ## Consequences
 
 - `bunx @null3d/cli assets env <in.hdr|in.exr> <out.ktx2>` writes the file, and `--builtin room` writes the built-in room. A unit test of the tool checks that the room's nine coefficients are those that the engine keeps (`packages/engine/src/scene/builtin-environments.ts`).
-- OpenEXR files read through the `exr` crate (BSD-3-Clause), which reads every compression but DWAA and DWAB. The tool's module grew from 16 KB to 115 KB after Brotli, most of it the reader.
-- `assets.loadEnvironment(url)` reads the tool's files. Its reader loads on first use, under 1 KB after Brotli. An HDR file loads its reader and worker, 6.4 KB after Brotli, and the generator. `assets.builtinEnvironment('room')` makes the room on the GPU. Its code and shaders load on first use, about 6.6 KB after Brotli in all.
+- OpenEXR files read through the `exr` crate (BSD-3-Clause), which reads every compression but DWAA and DWAB. The tool's module takes 115 KB after Brotli, against 16 KB without the reader.
+- `assets.loadEnvironment(url)` reads the tool's files. Its reader loads on first use, under 1 KB after Brotli. An HDR file loads its reader and worker, 6.4 KB after Brotli, and the generator. `assets.builtinEnvironment('room')` makes the room on the GPU. Its code and shaders load on first use ([The built-in room on the GPU](#the-built-in-room-on-the-gpu) gives their sizes).
 - The image tests `environment-room`, `environment-venice` and `environment-venice-rotated` draw the grid on all three tiers, and the parity scenes of the same names compare it with three.js. The dev server builds the Venice map from the sample content's HDR file with the tool, on the first request (`tools/lib/sample-environments.ts`).
 - On WebGL2 the cube map takes one texture unit of the fragment stage. The standard material with all six maps read 13 of the 16 that every device allows. With the eight maps of [D-63](D-63-specular-and-ior.md), an alpha mask and shadows, it reads all 16.
 - The lookup's cost. The device runner's `environment` plan measures it (`tests/pages/environment-cost.html`). Its scene draws 8 planes of the standard material over the whole window, without and with the room in turns. The difference over the layers is the lookup's cost. The plan has one page per GPU path, WebGPU and WebGL2. A functional run in Chrome on the Mac (Apple M5 Max) drew 1280 x 800 pixels. It gave 0.46 ms of GPU time without the room and 0.52 ms with it.
-- On 11 October 2026 the owner's iPad Pro 11 ran the plan over the local network, on main at f854dd72d (run `20261011-082446-environment`). Both pages passed. The window was 1194 x 722 CSS pixels at a pixel ratio of 2, and the screen held 59 Hz. On WebGPU the GPU time rose from 7.03 to 7.36 ms with the room. That is 0.33 ms for 8 layers, or about 0.04 ms per layer over the whole window. Its frames held the screen's rate, every 15.5 ms. WebGL2 has no GPU timer in Safari. Its frames came every 15.6 ms without the room and every 30.5 ms with it, half the screen's rate. So on this iPad's WebGL2 path the lookup pushes 8 full-window layers past the frame's budget. The run cannot say by how much. The drawing thread's CPU time hardly changed: 0.82 and 0.86 ms.
+- The owner's iPad Pro 11 ran the plan over the local network, on main at f854dd72d (run `20261011-082446-environment`). Both pages passed. The window was 1194 x 722 CSS pixels at a pixel ratio of 2, and the screen held 59 Hz. On WebGPU the GPU time rose from 7.03 to 7.36 ms with the room. That is 0.33 ms for 8 layers, or about 0.04 ms per layer over the whole window. Its frames held the screen's rate, every 15.5 ms. WebGL2 has no GPU timer in Safari. Its frames came every 15.6 ms without the room and every 30.5 ms with it, half the screen's rate. So on this iPad's WebGL2 path the lookup pushes 8 full-window layers past the frame's budget. The run cannot say by how much. The drawing thread's CPU time hardly changed: 0.82 and 0.86 ms.
 - Open: the frame time at a GPU-bound size on the S24+, from the same plan.
 - Open: after the browser replaces the GPU, an environment whose texels the store freed draws as none until the sketch loads it again. Every texture from data does the same, as M2-R6 notes for #76.
 - Open for M2-E3: a blurred background reads the same levels. A sharp background may want `--size 512` or larger.
 - Open: a size option for HDR files at load, such as `--size 512` for sharp backgrounds.
-- Open: KTX2 supercompression. A map of 256 is 2.0 MB. The room's was 393 KB with Brotli and 562 KB with gzip, so a host that compresses `.ktx2` files saves most of a map's bytes. Zstandard in the file would need a decoder in the engine.
-- The tool and the GPU's generator keep their filter, and do not copy three.js r187's. Release r187 shares the tool's GGX lobe, its 256 cube with 6 levels and its roughness of each level. It differs in three ways. Its levels 1 and 2 take 256 samples of the visible normals, with a bias of half a level. The tool takes 512 and then 1,024 there, with a bias of one level. Its levels 3 to 5 weigh every texel of a 16 x 16 copy of the source. The tool samples 2,048 to 8,192 directions of the full chain there. Its blur takes two passes of a 20-tap golden-angle spiral. The tool's takes one pass of a 13 x 13 grid. Under [D-52](D-52-intent-parity.md) a look need not match three.js's pixels. The tool's method takes more samples than r187's at every level, so its map is at least as good. The generator's counts, biases and blur match the tool's. They are in `packages/engine/src/gpu/environment-steps.ts` and `crates/null3d-shaders/wgsl/environment.wgsl`.
+- Open: KTX2 supercompression. A map of 256 is 2.0 MB. The room's map takes 393 KB with Brotli and 562 KB with gzip, so a host that compresses `.ktx2` files saves most of a map's bytes. Zstandard in the file would need a decoder in the engine.
+- The tool and the GPU's generator keep their own filter, not three.js r187's. Release r187 shares the tool's GGX lobe, its 256 cube with 6 levels and its roughness of each level. It differs in three ways. Its levels 1 and 2 take 256 samples of the visible normals, with a bias of half a level. The tool takes 512 and then 1,024 there, with a bias of one level. Its levels 3 to 5 weigh every texel of a 16 x 16 copy of the source. The tool samples 2,048 to 8,192 directions of the full chain there. Its blur takes two passes of a 20-tap golden-angle spiral. The tool's takes one pass of a 13 x 13 grid. Under [D-52](D-52-intent-parity.md) a look need not match three.js's pixels. The tool's method takes more samples than r187's at every level, so its map is at least as good. The generator's counts, biases and blur match the tool's. They are in `packages/engine/src/gpu/environment-steps.ts` and `crates/null3d-shaders/wgsl/environment.wgsl`.

@@ -10,7 +10,7 @@
 //!
 //! The grid templates build a smaller set of permutation bits than the plain lit templates do, so a
 //! pair that carries one of the bits they leave out keeps its plain template and draws without grid
-//! light (H-2 of the 15 October review).
+//! light (code review H-2).
 use null3d_gpu::drawlist::{permutation, template};
 
 use crate::pipelines::{DrawKey, PipelineCache, PipelineKey};

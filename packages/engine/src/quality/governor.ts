@@ -142,8 +142,8 @@ export const LONGEST_RAISE_AFTER_MS = 80_000;
 export const SETTLE_MS = 1000;
 /**
  * How long a step up is on trial, in ms: a step down from its setting within this time counts as
- * its failure. On the iPad, heat made a step up that held the target at first fail 9 to 15 seconds
- * later.
+ * its failure. On the iPad, heat makes a step up that holds the target at first fail 9 to 15
+ * seconds later.
  */
 export const FAILED_RAISE_MS = 30_000;
 /**
@@ -151,7 +151,7 @@ export const FAILED_RAISE_MS = 30_000;
  * frame time of the second that caused it or more, the step made the frames slower, and the
  * governor takes it back. A step that changes nothing stays: a step that saves little shows no gain
  * within one second's noise, and the walk down passes through such steps. On CI's software GPU the
- * step below the whole render scale turned on the two-step upscale, and the frames came about seven
+ * step below the whole render scale turns on the two-step upscale, and the frames come about seven
  * times slower (D-237).
  */
 export const LOWER_LOSS_PERCENT = 110;

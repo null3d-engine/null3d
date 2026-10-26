@@ -82,8 +82,8 @@ test('wind-field: a gust moves the cards, and a frozen field does not', async ({
 		// holds its camera and its body still and cannot move one. The moving pair must change far
 		// more than the frozen pair, so a field that stopped moving between the two times fails
 		// here even if some pixels changed for another reason.
-		// On 26 October 2026 the three tiers measured 0.11657, 0.11450 and 0.11235 of the channels
-		// changed, against 0 on the frozen pair, so the floor is under half of the smallest.
+		// The three tiers measure 0.11657, 0.11450 and 0.11235 of the channels changed, against 0
+		// on the frozen pair, so the floor is under half of the smallest.
 		expect.soft(moved, `${run.id}: the gust moves the cards`).toBeGreaterThan(0.05);
 		expect.soft(frozen, `${run.id}: a frozen field leaves the cards`).toBeLessThan(0.005);
 		expect
