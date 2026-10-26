@@ -9,12 +9,12 @@
 // production. The build must hold the engine's third-party notices, and its page must start the
 // threaded engine in a browser under a strict Content-Security-Policy, whatever test switches the
 // address holds. Last, the project's service worker caches the build on a first visit, and the page
-// must start the threaded engine again with the server stopped, on both GPU paths. Once the test
-// command has run for the last time, the project also builds a page of its own layout around a copy
-// of this repository's examples folder, as a website that holds the repository as a submodule does.
-// That build runs beside the asset tool, the production build and its checks. Two demos, and a
-// comparison in each engine, must start from it. Run `bun run build` first, for the WebAssembly
-// files. Run from the repository root:
+// must start the threaded engine again with the server stopped, on both GPU paths. Once the
+// production build has ended, the project also builds a page of its own layout around a copy of
+// this repository's examples folder, as a website that holds the repository as a submodule does.
+// That build runs beside the production build's start checks. Two demos, and a comparison in each
+// engine, must start from it. Run `bun run build` first, for the WebAssembly files. Run from the
+// repository root:
 //   bun run test:packages [--keep]    --keep leaves the project's folder in place after a pass
 import { spawn, spawnSync } from 'node:child_process';
 import {
@@ -517,9 +517,10 @@ const SITE_SHADER_CACHE_BYTES = 4 * 1024 * 1024 * 1024;
  * Starts the build of a website's page of its own layout around a copy of the repository's examples
  * folder, as a website does that holds the repository as a submodule and installs the packages from
  * npm. The build takes the packages from the project's tarballs and reads nothing of the project's
- * own build, so it runs beside the asset tool, the production build and that build's checks. It
- * starts after the project's last run of the test command, whose dev server would otherwise scan
- * the copied examples and the page.
+ * own build, so it runs beside that build's start checks. It starts once the production build has
+ * ended: with the two Vite builds at once, a CI runner stopped the production build, most likely
+ * for lack of memory. By then the test command has run for the last time, so its dev server cannot
+ * scan the copied examples.
  */
 function startSiteBuild(project: string): BackgroundStep {
 	const copy = join(project, 'null3d');
@@ -626,10 +627,6 @@ async function main(): Promise<void> {
 			);
 		step('Keep the first images as references', project, cli, ['test', '--update-references']);
 		step('Match the references', project, cli, ['test']);
-		// The site's build needs only the installed packages, so it runs beside every step below. Its
-		// copy of the examples and its page sit in the project's folder, where the test command's dev
-		// server would scan them, so it starts once that command has run for the last time.
-		site = startSiteBuild(project);
 		// The asset tool from the tarball: its encoder, its worker and its dependencies.
 		mkdirSync(join(project, 'models'));
 		copyFileSync(join(ROOT, ASSET_SCENE.source), join(project, 'models/scene.glb'));
@@ -665,6 +662,8 @@ async function main(): Promise<void> {
 		if (!existsSync(notices)) throw new Error(`the production build writes no ${NOTICES_FILE}`);
 		if (readFileSync(notices, 'utf8') !== `${expected}\n`)
 			throw new Error(`the production build's ${NOTICES_FILE} differs from the packages' notices`);
+		// The site's build needs only the installed packages, so it runs beside the start checks.
+		site = startSiteBuild(project);
 		await startsUnderStrictPolicy(join(project, 'dist'));
 		await playsOffline(join(project, 'dist'));
 		await startsSiteDemos(project, site);
