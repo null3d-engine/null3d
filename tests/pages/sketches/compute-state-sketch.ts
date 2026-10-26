@@ -36,20 +36,23 @@ struct ComputeBlock {
 @group(0) @binding(1) var output: texture_storage_2d_array<rgba16float, write>;
 @group(0) @binding(2) var history: texture_2d_array<f32>;
 
-@compute @workgroup_size(1)
+@compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3u) {
     let size = vec2u(block.drawn.xy);
     if (id.x >= size.x || id.y >= size.y) { return; }
-    // The view holds the state that this run writes, so its layer is the state's own layer.
+    // The view holds the state that this run writes, so its layer is the state's own layer. The
+    // green and blue channels name the texel, so a read that takes the wrong row or column shows.
     let prev = textureLoad(history, vec2i(id.xy), id.z, 0).r;
-    textureStore(output, vec2i(id.xy), id.z, vec4f(prev + 1.0, 0.0, 0.0, 1.0));
+    textureStore(output, vec2i(id.xy), id.z, vec4f(prev + 1.0, f32(id.x), f32(id.y), 1.0));
 }
 `;
 
 const FALLBACK = /* wgsl */ `
 fn effect(input: EffectInput) -> vec4f {
-    // The state of the run before arrives as the input image.
-    return vec4f(input.color.r + 1.0, 0.0, 0.0, 1.0);
+    // The state of the run before arrives as the input image. The green and blue channels name the
+    // texel, as the compute shader's do.
+    let cell = floor(input.uv * effectInputSize());
+    return vec4f(input.color.r + 1.0, cell.x, cell.y, 1.0);
 }
 `;
 
@@ -141,7 +144,8 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 export default defineSketch(({ scene, geometry, materials, textures, render, page }) => {
 	scene.setBackground('#000000');
 	const layered = CASE === 'layers';
-	const kept = CASE === 'kept';
+	const fullscreenKept = CASE === 'fs-kept';
+	const kept = CASE === 'kept' || fullscreenKept;
 	if (kept) {
 		scene.setActiveCamera(
 			scene.createOrthographicCamera({ height: 1, position: [0, 0, 2], target: [0, 0, 0] }),
@@ -152,23 +156,30 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 		);
 	}
 
-	const field = render.addPass({
-		kind: 'compute',
-		description: defineFeature({
-			name: 'field',
-			frame: 'background',
-			kind: 'compute',
-			outputs: { counter: { default: 'black' } },
-		}),
-		wgsl: kept ? CONSTANT : layered ? LAYERS : COMPUTE,
-		fallback: { wgsl: layered ? LAYERS_FRAGMENTS : kept ? CONSTANT_FRAGMENTS : FALLBACK },
-		format: 'rgba16float',
-		size: CASE === 'cost' ? [256, 256] : kept ? [64, 64] : [4, 4],
-		history: !kept && !layered,
-		layers: layered ? 3 : 1,
-		// Every case starts without a run, and the sequence below asks for the runs that it counts.
-		steps: 0,
-	});
+	const field = fullscreenKept
+		? render.addPass({
+				kind: 'fullscreen',
+				wgsl: CONSTANT_FRAGMENTS,
+				writes: 'counter',
+				size: [64, 64],
+			})
+		: render.addPass({
+				kind: 'compute',
+				description: defineFeature({
+					name: 'field',
+					frame: 'background',
+					kind: 'compute',
+					outputs: { counter: { default: 'black' } },
+				}),
+				wgsl: kept ? CONSTANT : layered ? LAYERS : COMPUTE,
+				fallback: { wgsl: layered ? LAYERS_FRAGMENTS : kept ? CONSTANT_FRAGMENTS : FALLBACK },
+				format: 'rgba16float',
+				size: CASE === 'cost' ? [256, 256] : kept ? [64, 64] : [4, 4],
+				history: !kept && !layered,
+				layers: layered ? 3 : 1,
+				// Every case starts without a run, and the sequence below asks for the runs that it counts.
+				steps: 0,
+			});
 	const shown = textures.fromPass(field);
 	if (kept) {
 		// The left half shows the image, and the right half shows its coverage: a lost alpha shows
@@ -231,6 +242,7 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 
 	let readFrames = 0;
 	let callMs: number | undefined;
+	let texels: number[] | undefined;
 	/**
 	 * The texel at the top-left of `layer`, or of the state that the pass wrote last when `layer` is
 	 * left out.
@@ -270,7 +282,11 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 			await wait(1);
 			// The frame that counts the runs is recorded; later frames must not count more.
 			render.setPassSteps(field, 0);
-			values[0] = await read();
+			// A region of the field, which varies by texel, so a wrong row, column or flip shows.
+			const region = await render.readPass(field, { x: 1, y: 1, width: 2, height: 2 });
+			values[0] = region.data[0] as number;
+			texels = [...region.data];
+			readFrames = region.frames;
 		} else if (CASE === 'forty-row') {
 			render.setPassSteps(field, 40);
 			await wait(1);
@@ -315,10 +331,16 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 			render.setPassSteps(field, 0);
 			values[1] = await read();
 		} else if (CASE === 'cost') {
-			// The page measures the running pass with the engine's frame probe.
+			// The page measures the running pass with the engine's frame probe, then the same scene
+			// with the pass switched off, so the pass's own cost shows.
 			render.setPassSteps(field, 40);
+			page.onMessage((type) => {
+				if (type !== 'baseline') return;
+				render.setPassEnabled(field, false);
+				page.post('measuring-off', { format: shown.format });
+			});
 			await wait(10);
-			page.post('measuring');
+			page.post('measuring', { format: shown.format });
 			return;
 		} else if (CASE === 'slow') {
 			render.setPassSteps(field, 1);
@@ -336,7 +358,7 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 			values[0] = result.data[0] as number;
 			readFrames = result.frames;
 		}
-		page.post('state', { case: CASE, values, frames: readFrames, callMs });
+		page.post('state', { case: CASE, values, frames: readFrames, callMs, texels });
 	})();
 
 	return { onUpdate: wake };

@@ -5810,8 +5810,13 @@ pub fn request_pass_read(
             };
             (format, pass.target_layers())
         } else if let Some(pass) = declared.fullscreen_pass().filter(|pass| pass.fallback) {
+            // A full-screen pass's target has an alpha channel even where the scene color packs
+            // its color, and the canvas code names the 8-bit path's target.
             let format = match settings.canvas().scene_color.format() {
                 null3d_gpu::drawlist::format::CANVAS => null3d_gpu::drawlist::format::RGBA8_UNORM,
+                null3d_gpu::drawlist::format::RG11B10_UFLOAT => {
+                    null3d_gpu::drawlist::format::RGBA16_FLOAT
+                }
                 other => other,
             };
             (

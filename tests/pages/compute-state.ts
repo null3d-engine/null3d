@@ -14,6 +14,8 @@ interface StateReport {
 	frames: number;
 	/** Milliseconds that the read call took to return, for the slow-frame case. */
 	callMs?: number;
+	/** The four numbers of each texel of a region read, top row first. */
+	texels?: number[];
 }
 
 /** The red, green, blue and alpha of one captured pixel. */
@@ -55,35 +57,55 @@ run('compute-state', async () => {
 		];
 	};
 	if (CASE === 'cost') {
-		// The sketch starts 40 runs a frame and asks for the frame probe, which measures them.
-		const measured = await new Promise<FrameMetrics>((resolve, reject) => {
-			const timer = setTimeout(
-				() => reject(new Error('the sketch did not start measuring within 30 s')),
-				30_000,
-			);
-			const off = engine.onSketchMessage((name) => {
-				if (name !== 'measuring') return;
-				clearTimeout(timer);
-				off();
-				void engine.measure(3).then(resolve, reject);
+		// The sketch starts 40 runs a frame and asks for the frame probe, which measures them. The
+		// same measurement runs again with the pass switched off, so the pass's own cost shows.
+		const measureWhen = (
+			message: string,
+		): Promise<{ metrics: FrameMetrics; format: string | undefined }> =>
+			new Promise((resolve, reject) => {
+				const timer = setTimeout(
+					() => reject(new Error(`the sketch sent no "${message}" within 30 s`)),
+					30_000,
+				);
+				const off = engine.onSketchMessage((name, data) => {
+					if (name !== message) return;
+					clearTimeout(timer);
+					off();
+					void engine
+						.measure(3)
+						.then(
+							(metrics) =>
+								resolve({ metrics, format: (data as { format?: string } | undefined)?.format }),
+							reject,
+						);
+				});
 			});
+		const figures = ({ metrics, format }: { metrics: FrameMetrics; format?: string }) => ({
+			frames: metrics.frames,
+			seconds: metrics.seconds,
+			interval: metrics.intervalMs.median,
+			cpu: metrics.cpuMs.median,
+			gpu: metrics.gpuMs?.median ?? null,
+			format: format ?? null,
 		});
-		// The pass takes four times its state's texels: the target's two blocks and two states.
-		const bytes = 256 * 256 * 8 * 4;
+		const on = await measureWhen('measuring');
+		engine.postToSketch('baseline');
+		const off = await measureWhen('measuring-off');
+		// The compute paths hold the target's two blocks and two state textures; WebGL2 holds the
+		// target's two and one scratch. The texel size follows the format the device got.
+		const texel = on.format === 'rgba16float' ? 8 : 4;
+		const copies = tier === 'webgl2' ? 3 : 4;
 		await engine.destroy();
 		return {
 			tier,
 			mode,
 			case: CASE,
-			measuredFrames: measured.frames,
-			seconds: measured.seconds,
-			interval: measured.intervalMs.median,
-			cpu: measured.cpuMs.median,
-			gpu: measured.gpuMs?.median ?? null,
-			passBytes: bytes,
+			on: figures(on),
+			off: figures(off),
+			passBytes: 256 * 256 * copies * texel,
 		};
 	}
-	if (CASE === 'kept') {
+	if (CASE === 'kept' || CASE === 'fs-kept') {
 		await waitMessage('running');
 		const before = await engine.captureFrame();
 		engine.postToSketch('stop');

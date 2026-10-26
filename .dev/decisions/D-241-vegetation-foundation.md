@@ -313,6 +313,14 @@ CI's software GPU the vegetation pages then took more than sixty seconds and tim
 samples the pass's texture: a leaf's cut-out drew as a filled square. Even the per-frame route would
 have needed the coverage moved into a colour channel.
 
+**The cause, and its fix in M3-V13.** The HDR path packs the scene color into 11, 11 and 10 bits,
+with no alpha, and a full-screen pass's target took that format, so the shader's alpha had nowhere
+to go and every sampled alpha read 1. A full-screen pass's target now takes rgba16float there,
+whose fourth channel holds the alpha; the 8-bit path's target already had one. The compute pass
+keeps its alpha in its own rgba16float target. `tests/image/compute-state.spec.ts` checks a stopped
+full-screen pass and a stopped compute pass, each keeping its image and its zero coverage on all
+three GPU paths, and shows both faults fixed rather than worked around.
+
 **So the browser paints, and the engine keeps.** The pixels come from the same integer hashes that
 the shaders would use, so every device paints the same atlas and no file is downloaded. The engine
 makes each texture's mip levels, whose average alpha is the leaf's coverage, and a masked material
