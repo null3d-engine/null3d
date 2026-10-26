@@ -76,7 +76,9 @@ export function sizeGrowthProblems(
 	return findAckValues(message, SIZE_GROWTH_TRAILER).flatMap((value) => {
 		const { named, reasoned } = readTrailer(value, [...files, ...firstUseShaderFiles(value)]);
 		if (named.length === 0)
-			return [`Size-Growth value "${value}" names no file that the size report measures.`];
+			return [
+				`Size-Growth value "${value}" names no file that the size report measures. A commit that grows no measured file needs no Size-Growth trailer: leave it out.`,
+			];
 		return reasoned ? [] : [`Size-Growth value "${value}" gives no reason for the growth.`];
 	});
 }

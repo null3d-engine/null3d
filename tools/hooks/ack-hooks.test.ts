@@ -165,13 +165,13 @@ describe('the Size-Growth trailer', () => {
 		expect(sizeGrowthProblems(lines, files)).toEqual([]);
 		const start = 'feat: x\n\nSize-Growth: js/shaders-made-up.js +3%, nothing';
 		expect(sizeGrowthProblems(start, files)).toEqual([
-			'Size-Growth value "js/shaders-made-up.js +3%, nothing" names no file that the size report measures.',
+			'Size-Growth value "js/shaders-made-up.js +3%, nothing" names no file that the size report measures. A commit that grows no measured file needs no Size-Growth trailer: leave it out.',
 		]);
 	});
 
 	it('rejects a trailer that names no reported file, or gives no reason', () => {
 		expect(sizeGrowthProblems('feat: x\n\nSize-Growth: the core grew for meshes', files)).toEqual([
-			'Size-Growth value "the core grew for meshes" names no file that the size report measures.',
+			'Size-Growth value "the core grew for meshes" names no file that the size report measures. A commit that grows no measured file needs no Size-Growth trailer: leave it out.',
 		]);
 		expect(
 			sizeGrowthProblems('feat: x\n\nSize-Growth: page.js grew for the ring', files)[0],
