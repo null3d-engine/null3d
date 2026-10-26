@@ -230,13 +230,14 @@ export class PassReads implements ViewHolder {
 	/** Decodes one read's region into four numbers for each texel, top row first. */
 	private decode(job: InFlight): Float32Array {
 		const texels = job.width * job.height;
-		const bytes = this.regionView(job.ring, texels * texelBytes(job.format));
+		// A copy spaces its rows by a pitch that the GPU aligns, not by the row's own bytes.
+		const pitch = alignRow(job.width * texelBytes(job.format));
+		const bytes = this.regionView(job.ring, pitch * job.height);
 		const out = new Float32Array(texels * 4);
-		const rowBytes = job.width * texelBytes(job.format);
 		for (let row = 0; row < job.height; row++) {
 			// WebGL2 stores a target's first row at the image's bottom edge.
 			const source = this.webgl2 ? job.height - 1 - row : row;
-			decodeRow(out, row * job.width * 4, bytes, source * rowBytes, job.width, job.format);
+			decodeRow(out, row * job.width * 4, bytes, source * pitch, job.width, job.format);
 		}
 		return out;
 	}
@@ -260,6 +261,11 @@ export class PassReads implements ViewHolder {
 /** The bytes of one texel of a draw list format that a pass reads back. */
 function texelBytes(format: number): number {
 	return format === FORMAT_RGBA16_FLOAT ? 8 : 4;
+}
+
+/** The bytes of one copied row, which the GPU rounds up to 256. */
+function alignRow(bytes: number): number {
+	return Math.ceil(bytes / 256) * 256;
 }
 
 /** Decodes `width` texels of one row into four floats each. */
