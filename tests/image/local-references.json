@@ -1,0 +1,170 @@
+{
+	"chromium-swiftshader/compat/asset-bent-grid.png": {
+		"test": "asset-bent-grid",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/asset-card-level.png": {
+		"test": "asset-card-level",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/gltf-clearcoat-car-paint.png": {
+		"test": "gltf-clearcoat-car-paint",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/gltf-sheen-chair.png": {
+		"test": "gltf-sheen-chair",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/gltf-sheen-cloth.png": {
+		"test": "gltf-sheen-cloth",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/gltf-texture-transform.png": {
+		"test": "gltf-texture-transform",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/gltf-toy-car.png": {
+		"test": "gltf-toy-car",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/asset-bent-grid.png": {
+		"test": "asset-bent-grid",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/asset-card-level.png": {
+		"test": "asset-card-level",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/gltf-clearcoat-car-paint.png": {
+		"test": "gltf-clearcoat-car-paint",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/gltf-sheen-chair.png": {
+		"test": "gltf-sheen-chair",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/gltf-sheen-cloth.png": {
+		"test": "gltf-sheen-cloth",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/gltf-texture-transform.png": {
+		"test": "gltf-texture-transform",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/gltf-toy-car.png": {
+		"test": "gltf-toy-car",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/asset-bent-grid.png": {
+		"test": "asset-bent-grid",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/asset-card-level.png": {
+		"test": "asset-card-level",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
+		"test": "gltf-clearcoat-car-paint",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/gltf-sheen-chair.png": {
+		"test": "gltf-sheen-chair",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/gltf-sheen-cloth.png": {
+		"test": "gltf-sheen-cloth",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/gltf-texture-transform.png": {
+		"test": "gltf-texture-transform",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/wind-cards-later.png": {
+		"test": "wind-cards-later",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/compat/wind-cards.png": {
+		"test": "wind-cards",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/compat/wind-wake.png": {
+		"test": "wind-wake",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/webgl2/wind-cards-later.png": {
+		"test": "wind-cards-later",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/webgl2/wind-cards.png": {
+		"test": "wind-cards",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/webgl2/wind-wake.png": {
+		"test": "wind-wake",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/webgpu/wind-cards-later.png": {
+		"test": "wind-cards-later",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/webgpu/wind-cards.png": {
+		"test": "wind-cards",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	}
+}

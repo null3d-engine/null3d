@@ -8,7 +8,7 @@ summary: "Trees, conifers, shrubs, ferns, hostas and grass grown from a species 
 
 # Vegetation (@null3d/vegetation)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the scatter by ecological rules, the grass, the far-tree impostors and the leaf and bark materials of the vegetation pipeline. This page covers the species generator, the bark and leaf atlases that the browser paints at first use, and the material that draws a plant from them.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: the grass, the far-tree impostors and the leaf and bark materials of the vegetation pipeline. This page covers the species generator, the scatter, and the bark and leaf atlases that the browser paints at first use. It also covers the material that draws a plant from them.
 
 ```mermaid
 flowchart LR

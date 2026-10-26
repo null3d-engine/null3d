@@ -36,6 +36,7 @@ import { watchConsole } from '../packages/cli/src/page.js';
 import { featureImagePath } from '../tests/image/manifest.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { REPO_ROOT, startServer } from '../tests/lib/server.ts';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import {
 	BASELINE_PAIR,
 	type Comparison,
@@ -187,6 +188,7 @@ function saveBaselines(measured: StoredBaselines): void {
 }
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The parity check');
 	const options = parseParityArgs(process.argv.slice(2));
 	// Each run starts with an empty folder, so no image from an earlier run can pass for this one.
 	rmSync(OUTPUT_DIR, { recursive: true, force: true });

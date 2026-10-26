@@ -167,6 +167,14 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		needs: ['engine', 'vite-plugin'],
 		required: [],
 	},
+	// Its analytic field, grid and projection WGSL compile into modules of their own.
+	wind: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine', 'vite-plugin'],
+		required: [],
+	},
 	cli: {
 		compile: false,
 		shaders: false,
