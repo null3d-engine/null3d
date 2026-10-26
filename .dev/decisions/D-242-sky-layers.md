@@ -135,12 +135,12 @@ takes them as the map's diffuse light, in place of the CPU model's.
 
 Because the coefficients come from the texels the reflections read, the two places hold one sky by
 construction: no second implementation of the layer exists, the add-on writes nothing for it, and a
-layer of any shape lights the scene. The capture runs a stage or two before the fill's copy, so the
-read lands first and no frame draws the map's levels beside the core sky's light alone; until a
-new layer's first capture lands the map keeps the CPU model's own coefficients, so no frame loses
-its light and none flashes dark before the layer arrives. The picture test checks that order on
-every GPU tier: the light reaches the scene with the map's levels or a frame before them, never
-after.
+layer of any shape lights the scene. The capture runs a stage or two before the fill's copy, and
+the copy waits up to four frames for that read, so the levels usually publish with the light. A
+read slower than four frames publishes them first, as do a first fill after a device loss and a
+held frame, which never wait. Until a new layer's first capture lands the map keeps the CPU model's
+own coefficients, so no frame loses its light and none flashes dark before the layer arrives. The
+picture test checks that order on every GPU tier, within those limits.
 
 ### The capture's stage, fixed 25 October 2026
 
@@ -177,12 +177,12 @@ webgpu, compatibility mode and webgl2 on SwiftShader, in 8 to 9 seconds on each 
 load of 82 to 90 on 18 cores.
 
 A slow read still let the levels publish first. Full run 40172879653, at `89bd5640a` with the
-kept-buffers fix in, failed the order check on WebGL2: the mirror took the layer at frame 17 and the
-rough sphere at 19, where the spec allows the light to follow by one frame. WebGPU and compatibility
-mode passed. Nothing held the copy for that read: it runs two stages before the copy, and the copy
-published the levels whether the read had landed or not. The copy now waits for the capture that
-its own fill made, up to four frames, and publishes without it after that. The core's tests check
-that the copy waits and that a landing ends the wait.
+kept-buffers fix in, failed the order check on WebGL2: the mirror took the layer two frames before
+the rough sphere did, where the spec allows one. WebGPU and compatibility mode passed. Nothing held
+the copy for that read: it runs two stages before the copy, and the copy published the levels
+whether the read had landed or not. The copy now waits for the capture that its own fill made, up
+to four frames, and publishes without it after that; a read slower than four frames still publishes
+the levels first. The core's tests check that the copy waits and that a landing ends the wait.
 
 Two figures in the runs need their true reading. The scene suite passed 870 of 870 when it ran on a
 quieter machine; the checker, under load, measured 868 of the same 870, where two tests stopped at
