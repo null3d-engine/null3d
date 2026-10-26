@@ -9,7 +9,7 @@ import * as Slot from './slot';
 /** Int32 slots of the control block, read as `Slot.Running`. */
 export { Slot };
 
-const SLOT_COUNT = 52;
+const SLOT_COUNT = 56;
 
 /** Int32 values per input event record. */
 export const INPUT_EVENT_INTS = 8;

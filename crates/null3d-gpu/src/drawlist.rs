@@ -221,12 +221,23 @@ pub enum Op {
     /// octahedral map. Level `i` of `n` holds perceptual roughness `1 - sqrt(1 - i / (n - 1))`,
     /// as an environment map's levels do.
     ProbeFilter = 56,
+    /// [view id, texture id, base layer, layer count]: a view of a range of one texture's array
+    /// layers, for bind groups to name in place of the whole texture. A draw that writes one range
+    /// as storage and reads the other as a sampled texture keeps each subresource in one usage,
+    /// which WebGPU requires. WebGL2 binds the whole texture and lets the shader pick the layer,
+    /// so the view names the texture there. The view has no texels of its own: `DestroyTexture`
+    /// releases it with its texture.
+    CreateBindView = 57,
+    /// [texture id, base layer, layer count]: clears a range of a texture's layers to zero, outside
+    /// every pass. The texture takes `RENDER_ATTACHMENT` usage, and each layer is one clear. A
+    /// compute pass asks for it when the page starts the pass's state again.
+    ClearTexture = 58,
     /// []: submits everything recorded since the previous submit.
     Submit = 63,
 }
 
 impl Op {
-    pub const ALL: [Op; 44] = [
+    pub const ALL: [Op; 46] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -270,6 +281,8 @@ impl Op {
         Op::GenerateTexture,
         Op::SkyMapStep,
         Op::ProbeFilter,
+        Op::CreateBindView,
+        Op::ClearTexture,
         Op::Submit,
     ];
 
@@ -322,6 +335,8 @@ impl Op {
             Op::GenerateTexture => "GENERATE_TEXTURE",
             Op::SkyMapStep => "SKY_MAP_STEP",
             Op::ProbeFilter => "PROBE_FILTER",
+            Op::CreateBindView => "CREATE_BIND_VIEW",
+            Op::ClearTexture => "CLEAR_TEXTURE",
             Op::Submit => "SUBMIT",
         }
     }
@@ -727,6 +742,19 @@ pub mod layout {
     /// block of uniforms, then the draw's count word and its per-instance rows, which the shader
     /// reads and writes as storage. A pass of this layout has no storage texture.
     pub const COMPUTE_INSTANCE_BUFFERS: u32 = 56;
+    /// Group 0 of a compute pass that keeps two states, as 16-bit floats: its block of uniforms,
+    /// the state that the run writes as a storage texture, and the state of the run before as a
+    /// sampled texture that the shader reads with `textureLoad`. Each run binds views of the two
+    /// states, so one subresource is never both written and read.
+    pub const COMPUTE_HISTORY_RGBA16_FLOAT: u32 = 13;
+    /// [`COMPUTE_HISTORY_RGBA16_FLOAT`] for a target of 32-bit floats.
+    pub const COMPUTE_HISTORY_R32_FLOAT: u32 = 15;
+    /// [`COMPUTE_HISTORY_RGBA16_FLOAT`] for a target of 8-bit color.
+    pub const COMPUTE_HISTORY_RGBA8_UNORM: u32 = 29;
+    /// Group 0 of a full-screen pass that runs in place of a compute pass with history: the pass's
+    /// block of uniforms, then the pass's two states as one sampled texture, which the shader
+    /// reads at a layer its block names. Only the WebGL2 path has it.
+    pub const FULLSCREEN_HISTORY: u32 = 62;
     /// Group 0 of the compute pipeline that converts a feature-instance draw's world rows to the
     /// camera-relative rows that the engine's vertex shaders read: its block of uniforms, which
     /// holds the camera's world position, then the draw's count word, its world rows and the rows
@@ -2576,6 +2604,19 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("COMPUTE_R32_FLOAT", layout::COMPUTE_R32_FLOAT),
     ("COMPUTE_RGBA8_UNORM", layout::COMPUTE_RGBA8_UNORM),
     ("COMPUTE_INSTANCE_BUFFERS", layout::COMPUTE_INSTANCE_BUFFERS),
+    (
+        "COMPUTE_HISTORY_RGBA16_FLOAT",
+        layout::COMPUTE_HISTORY_RGBA16_FLOAT,
+    ),
+    (
+        "COMPUTE_HISTORY_R32_FLOAT",
+        layout::COMPUTE_HISTORY_R32_FLOAT,
+    ),
+    (
+        "COMPUTE_HISTORY_RGBA8_UNORM",
+        layout::COMPUTE_HISTORY_RGBA8_UNORM,
+    ),
+    ("FULLSCREEN_HISTORY", layout::FULLSCREEN_HISTORY),
     ("FEATURE_ROWS", layout::FEATURE_ROWS),
     ("DEPTH_PYRAMID", layout::DEPTH_PYRAMID),
     ("AO_DEPTH", layout::AO_DEPTH),

@@ -538,7 +538,7 @@ export class Textures {
 			handle,
 			pass.width,
 			pass.height,
-			1,
+			pass.layers * (pass.history ? 2 : 1),
 			this.passFormat,
 			'linear',
 			0,

@@ -63,6 +63,20 @@ function setup(webgl2 = false) {
 			calls.push(['compute-values', place, [...values], [...textures]]);
 			return 0;
 		},
+		setComputeSteps(place: number, steps: number) {
+			calls.push(['compute-steps', place, steps]);
+			return 0;
+		},
+		resetComputeState(place: number) {
+			calls.push(['compute-reset', place]);
+			return 0;
+		},
+		requestPassRead(...args: number[]) {
+			calls.push(['pass-read', ...args]);
+			return FORMAT_RGBA16_FLOAT + 1;
+		},
+		passReadAddress: () => 256,
+		passReadStride: () => 64,
 		setPassValues(place: number) {
 			calls.push(['values', place, [...values], [...textures]]);
 			return 0;
@@ -85,6 +99,10 @@ function setup(webgl2 = false) {
 	const core = {
 		glue,
 		generation: 0,
+		refresh: () => false,
+		holdViews: () => {},
+		view: (type: typeof Uint8Array, address: number, length: number) =>
+			new type(memory, address, length),
 		heap: (type: typeof Float32Array | typeof Uint32Array) => new type(memory),
 		check(result: number, call: string, what?: string, isStatus = false) {
 			if (isStatus ? result !== 0 : result === 0) throw coreFailure(glue, call, what);
@@ -503,7 +521,7 @@ describe('render passes', () => {
 			C.EFFECT_DEPTH,
 			C.PASS_SOURCE_OUTLINE_MASK,
 		]);
-		const [values, handles] = call.slice(10) as [number[], number[]];
+		const [values, handles] = call.slice(14) as [number[], number[]];
 		expect(values.slice(0, 2)).toEqual([2, 3]);
 		// The texture that the option leaves out samples as white.
 		expect(values[30]).toBe(-1);
@@ -570,7 +588,7 @@ describe('render passes', () => {
 		]);
 		// The three buffer operands follow the counts; a texture pass names none of them.
 		expect(call.slice(11, 14)).toEqual([0, 0, 0]);
-		const [values, handles] = call.slice(15) as [number[], number[]];
+		const [values, handles] = call.slice(18) as [number[], number[]];
 		expect(values.slice(0, 2)).toEqual([0.5, 2]);
 		expect([...handles].every((handle) => handle === 0)).toBe(true);
 		render.setPassUniforms(pass, [1, 3]);
@@ -614,6 +632,62 @@ describe('render passes', () => {
 		expect(add(computePass({ workgroupSize: [64, 64, 1] })).code).toBe('E1220');
 		expect(add(computePass({ wgsl: 'fn main() {}' })).code).toBe('E1215');
 		expect(add(computePass({ format: 'rgba32float' as never })).code).toBe('E1220');
+	});
+
+	it('keeps two states, runs several steps a frame and starts again', () => {
+		const { render, calls } = setup();
+		const pass = render.addPass(computePass({ history: true, layers: 2, steps: 3 }));
+		const call = calls[0] as unknown[];
+		// The three numbers after the buffer operands are history, layers and steps.
+		expect(call.slice(15, 18)).toEqual([1, 2, 3]);
+		expect(pass.layers).toBe(2);
+		expect(pass.history).toBe(true);
+		render.setPassSteps(pass, 40);
+		expect(calls[1]).toEqual(['compute-steps', 1, 40]);
+		// The next call takes the place of the compute pass's values.
+		render.resetPass(pass);
+		expect(calls[2]).toEqual(['compute-reset', 1]);
+	});
+
+	it('refuses a state that a compute pass cannot keep', () => {
+		const { render } = setup();
+		const add = (options: object) => thrown(() => render.addPass(options as never));
+		// A pass with history takes several steps and up to 128 layers.
+		render.addPass(computePass({ history: true, steps: 2, layers: 1 }));
+		expect(add(computePass({ steps: 2 })).code).toBe('E1220');
+		expect(add(computePass({ history: true, buffers: [] })).code).toBe('E1220');
+		expect(add(computePass({ layers: 0 })).code).toBe('E1220');
+		expect(add(computePass({ history: true, layers: 129 })).code).toBe('E1220');
+		expect(add(computePass({ history: 'yes' as never })).code).toBe('E1220');
+		const { render: webgl2 } = setup(true);
+		const fallback = {
+			kind: 'effect',
+			uniforms: [],
+			depth: false,
+			joins: true,
+			textures: [],
+			variants: {},
+			pieces: { group: {}, fold: {} },
+		};
+		expect(
+			thrown(() => webgl2.addPass(computePass({ layers: 3, fallback: { wgsl: fallback } }))).code,
+		).toBe('E1220');
+	});
+
+	it('reads a region of a compute pass a frame later', async () => {
+		const { render, calls } = setup();
+		const pass = render.addPass(computePass({ history: true, steps: 1 }));
+		const slots = new Int32Array(64);
+		render.attachReadControl(slots);
+		const reading = render.readPass(pass, { x: 1, y: 2, width: 2, height: 2 });
+		// The layer is the largest number: the state that the pass wrote last.
+		expect(calls.at(-1)).toEqual(['pass-read', 1, 1, 2, 2, 2, 0xffffffff, 0, 52]);
+		Atomics.store(slots, 52, 1);
+		render.pollReads(slots);
+		const result = await reading;
+		expect([result.width, result.height, result.frames, result.data.length]).toEqual([2, 2, 1, 16]);
+		expect(thrown(() => render.readPass(pass, { width: 0, height: 1 })).code).toBe('E1220');
+		expect(thrown(() => render.readPass(pass, { width: 65, height: 1 })).code).toBe('E1220');
 	});
 
 	it('runs a compute pass of a WebGL2 page as its fragment form, or refuses it', () => {
