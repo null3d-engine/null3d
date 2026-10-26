@@ -105,12 +105,13 @@ const HELD_MEMORY_FAILURE =
 
 /**
  * A sketch, render or job worker that did not start because its script, or a module it imports, did
- * not load (E1405). In CI's Firefox on Linux, a worker's load failed now and then on pages that load
+ * not load (E1405). The engine names each job worker by its number, as `job 2`, and the one that
+ * failed in CI by its role alone. In CI's Firefox on Linux, a worker's load failed now and then on pages that load
  * the same files every time, so a new runner page sorts a passing fault from a page that cannot load
  * its files.
  */
 const MODULE_LOAD_FAILURE =
-	/\bE1405: the (sketch|render|job) worker did not start: (its script( at \S+?, or a file that it imports,)? did not load|error loading dynamically imported module|.+\(the (sketch|render|job) worker's script is )/;
+	/\bE1405: the (sketch|render|job(?: \d+)?) worker did not start: (its script( at \S+?, or a file that it imports,)? did not load|error loading dynamically imported module|.+\(the (sketch|render|job(?: \d+)?) worker's script is )/;
 
 /**
  * Whether a page's failure earns one more run in a new runner page. A browser that draws with WebKit
@@ -138,7 +139,7 @@ export function rerunsInNewTab(
 export function unloadedModule(verdict: readonly string[]): string | undefined {
 	for (const problem of verdict) {
 		const loadFailure =
-			/\bE1405: the \w+ worker did not start: (?:error loading dynamically imported module: (\S+?)\.?(?:\s|$)|its script at (\S+?), or a file that it imports, did not load)/.exec(
+			/\bE1405: the \w+(?: \d+)? worker did not start: (?:error loading dynamically imported module: (\S+?)\.?(?:\s|$)|its script at (\S+?), or a file that it imports, did not load)/.exec(
 				problem,
 			);
 		const url =
