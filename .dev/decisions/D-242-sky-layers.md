@@ -197,9 +197,10 @@ runs, on any GPU tier. The stage split of `333a05a78` put the capture's buffer i
 page names, which draws. Both generators run the capture only in the copy stage, which has no
 draws. So no fill sums the map's light, and the rough sphere reads 0 in every capture. A stride
 fault in the CPU's read of the coefficients is a second, smaller fault, and the sky layer's branch
-carries the fix for both (`8bebdff7f`). On that branch the Mac's GPU reads 126.1 to 126.8 on all
-three tiers at `0e84de2a8`, and the software GPU's three tiers read 127.6 to 128.0. That page
-therefore has a fix for each of its two causes, and this record holds the first.
+carries the fix for both (`8bebdff7f`). On that branch the `sky-layer-light` page passes the whole
+spec on WebGPU, compatibility mode and WebGL2 on the software GPU, and the light reaches the scene
+with the levels. That page therefore has a fix for each of its two causes, and this record holds
+the first.
 
 The generator now asks the capture for that unit, which is its only use. The unit test
 `packages/engine/src/gpu/webgl2/environment.test.ts` builds a layer's programs with a stand-in host
