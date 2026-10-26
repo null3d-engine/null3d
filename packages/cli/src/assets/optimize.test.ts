@@ -6,6 +6,11 @@ import { join } from 'node:path';
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, KHRDracoMeshCompression } from '@gltf-transform/extensions';
 import { MeshoptDecoder } from 'meshoptimizer';
+import {
+	bentGridGlb,
+	cardTreeGlb,
+	LEVEL_SCENES,
+} from '../../../../tests/lib/asset-levels-scenes.ts';
 import { ASSET_SCENE, assetSceneGlb } from '../../../../tests/lib/asset-scene.ts';
 import { shippedDecoder } from '../../../../tests/lib/meshopt-checks.ts';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
@@ -37,6 +42,13 @@ const WRITE = process.env.NULL3D_WRITE_ASSET_SCENE !== undefined;
 if (WRITE) {
 	mkdirSync(join(at(ASSET_SCENE.source), '..'), { recursive: true });
 	writeFileSync(at(ASSET_SCENE.source), assetSceneGlb());
+	for (const [path, make] of [
+		[LEVEL_SCENES.cardTree, cardTreeGlb],
+		[LEVEL_SCENES.bentGrid, bentGridGlb],
+	] as const) {
+		mkdirSync(join(at(path), '..'), { recursive: true });
+		writeFileSync(at(path), make());
+	}
 }
 
 const pool = encoderPool(4);
@@ -49,6 +61,18 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 const optimized = optimizeModel(at(ASSET_SCENE.source), DEFAULT_OPTIONS, encode);
 const lodMeshopt = optimizeModel(at(ASSET_SCENE.source), { ...DEFAULT_OPTIONS, lod: true }, encode);
 const withTrees = optimizeModel(at(ASSET_SCENE.source), { ...DEFAULT_OPTIONS, bvh: 1 }, encode);
+// The two scenes that prove the leaf-card step and the texture-coordinate weight, with the level
+// files that the picture test loads.
+const cardTreeLod = optimizeModel(
+	at(LEVEL_SCENES.cardTree),
+	{ ...DEFAULT_OPTIONS, lod: true },
+	encode,
+);
+const bentGridLod = optimizeModel(
+	at(LEVEL_SCENES.bentGrid),
+	{ ...DEFAULT_OPTIONS, lod: true },
+	encode,
+);
 
 /**
  * An output as glTF-Transform reads it, with meshopt's decoder: written to a folder with its
@@ -586,3 +610,66 @@ describe('the command', () => {
 		);
 	});
 });
+
+describe('the level scenes that the pictures draw', () => {
+	it('writes the card tree and the bent grid with their levels, and the bytes the repository holds', async () => {
+		const card = await cardTreeLod;
+		const grid = await bentGridLod;
+		if (WRITE) {
+			rmSync(at(LEVEL_SCENES.textures), { recursive: true, force: true });
+			mkdirSync(at(LEVEL_SCENES.textures), { recursive: true });
+			writeFileSync(at(LEVEL_SCENES.cardTreeLod), card.glb);
+			writeFileSync(at(LEVEL_SCENES.bentGridLod), grid.glb);
+			for (const [name, bytes] of [...card.files, ...grid.files])
+				writeFileSync(join(at(LEVEL_SCENES.textures), name), bytes);
+		}
+		expect(Buffer.from(card.glb).equals(readFileSync(at(LEVEL_SCENES.cardTreeLod)))).toBe(true);
+		expect(Buffer.from(grid.glb).equals(readFileSync(at(LEVEL_SCENES.bentGridLod)))).toBe(true);
+		expect([...card.files.keys()]).toEqual([]);
+		expect([...grid.files.keys()]).toHaveLength(1);
+		expect(readdirSync(at(LEVEL_SCENES.textures)).sort()).toEqual([...grid.files.keys()].sort());
+		// The tree's crown gets levels, and the first keeps half of its cards. Its card list holds a
+		// POSITION accessor of its own, because the kept cards grow about their middles, while the
+		// trunk's mesh shares the base's positions. A quantized file stores the errors in the
+		// mesh's integer steps, so the node's scale gives metres.
+		const tree = glbJson(readFileSync(at(LEVEL_SCENES.cardTreeLod)));
+		const treeLevels = lodLevels(tree);
+		expect(treeLevels.errors.length).toBeGreaterThanOrEqual(1);
+		expect((treeLevels.errors[0] as number) * treeLevels.scale).toBeCloseTo(
+			Math.hypot(0.3, 0.3),
+			3,
+		);
+		const base = tree.meshes.find((m: { name: string }) => m.name === 'crown');
+		const level = tree.meshes.find((m: { name: string }) => m.name === 'crown_lod1');
+		expect(base.primitives[0].attributes.POSITION).not.toBe(
+			level.primitives[0].attributes.POSITION,
+		);
+		const trunk = tree.meshes.find((m: { name: string }) => m.name === 'trunk');
+		const trunkLevel = tree.meshes.find((m: { name: string }) => m.name === 'trunk_lod1');
+		expect(trunk.primitives[0].attributes.POSITION).toBe(
+			trunkLevel.primitives[0].attributes.POSITION,
+		);
+		// The grid's coarsest level reports the slide of its texture coordinates, which the weight
+		// makes a distance. Without the weight the same level reports near zero, so the picture
+		// draws it against the camera.
+		const bent = glbJson(readFileSync(at(LEVEL_SCENES.bentGridLod)));
+		const gridLevels = lodLevels(bent);
+		expect(gridLevels.errors.length).toBeGreaterThanOrEqual(2);
+		expect(Math.max(...gridLevels.errors) * gridLevels.scale).toBeGreaterThan(0.1);
+	});
+});
+
+/**
+ * The levels that a level file's node carries, from the finest down, and the node's scale: the
+ * quantized file stores errors in its mesh's integer steps, so an error times the scale is metres.
+ */
+function lodLevels(json: { nodes?: { scale?: number[]; extras?: Record<string, unknown> }[] }): {
+	errors: number[];
+	scale: number;
+} {
+	for (const node of json.nodes ?? []) {
+		const errors = node.extras?.NULL3D_lod_error;
+		if (Array.isArray(errors)) return { errors: errors.map(Number), scale: node.scale?.[0] ?? 1 };
+	}
+	return { errors: [], scale: 1 };
+}

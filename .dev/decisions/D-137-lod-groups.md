@@ -296,6 +296,15 @@ buffer offset that the frame records on the CPU. An indirect draw keeps its firs
 The CPU count runs only for the sources of a mesh with levels. A list of chosen patches per view has
 the same sizing problem (M3-L3). Its count can read this one.
 
+The buffer still takes room to grow, and its sizing kept the need whenever the room passed the
+binding. So a list that needed more than the binding asked for a buffer past the device's limit,
+and nothing checked it. A frame builder now refuses such a buffer with E1501, which names the
+limit in bytes, and every buffer that a frame sizes against a binding takes the same check. The
+list of copies per view is the one that the plan named.
+`a_copy_list_past_the_binding_is_refused_rather_than_sized_over_it` in
+`crates/null3d-render/tests/levels.rs` gives a device whose binding holds the sources, and a batch
+that reserves room in every bucket of its levels, and reads the refusal.
+
 ## Addendum: an object may bias its threshold (22 October 2026)
 
 Godot gives each geometry instance a `lod_bias`, which moves the levels of that object alone: a
@@ -378,16 +387,22 @@ Blender without levels still gets them (follow-up 5).
   predictable. An author who wants earlier thinning gives the level its own error.
 - The card step runs only for a mesh that a skin does not pose, because a posed list's positions
   are in the scene's units and the level's stored positions are in the mesh's.
-- No picture test shows this step. The level's error is a card's size, so the level switches where
-  the tree stands a few pixels tall. The tool's own test tree has a 1.7-unit tree with cards of 0.28
-  to 0.42 units. Its levels get errors from 5,926 to 13,333 integer steps, which is 0.61 to 1.38
-  units. At a 360-pixel picture and a 35-degree lens the nearest switch lies about 349 m out, where
-  the tree stands about 4 pixels tall. A crown's cover cannot be read at that size. A picture at a
-  useful size would need the file's errors set for the camera's distance. That shows the engine
-  drawing the thinned cards, but not the tool's error rule. The unit tests hold the step:
-  `keeps a share of the cards at each level, grown about their middles`,
-  `writes each card level its own positions, and shares the wood stream`, and `treats a card folded
-  along its middle as a card, as Creek makes its leaves`.
+- The picture `asset-card-level` shows this step. The tool builds a tree of 40 cards of 0.3 m and a
+  trunk. The picture loads the tool's file and draws its first lower level. That level keeps 20
+  cards and grows each about its middle by the square root of two. A card's size is the level's
+  error, so the switch lies far out. The picture sets the threshold to 16 pixels, the most that the
+  setting takes, and gives the tree a bias of 4. At a 640 by 360 picture and a 40-degree lens, the
+  rule's factor is 30.9. The level's error of 0.424 m then switches it 13 m out. The bias divides
+  that to 3.3 m, and the camera's nearest point lies at 3.8 m. The crown spans about 100 of the
+  picture's 640 pixels. The fixture has a second card level, which keeps 10 cards at an error of
+  0.636 m: with the bias of 4 it switches at 4.9 m, past the camera, so the picture draws the first
+  one. Without the step the tool plans no level for the crown at all. Every edge of a card is an
+  open border, which the simplifier keeps, so the crown's triangles never fall. The picture then
+  draws all 40 cards at their own size, and 0.9 percent of its pixels differed from the reference,
+  against the picture tests' limit of 0.1 percent. The unit tests hold the step's own rules:
+  `keeps a share of the cards at each level, grown about their middles`, `writes each card level
+  its own positions, and shares the wood stream`, and `treats a card folded along its middle as a
+  card, as Creek makes its leaves`.
 
 ## Addendum: texture coordinates in the level error (22 October 2026, M3-L2)
 
@@ -404,30 +419,29 @@ and the engine reads a level's error as a distance, so a heavy weight would make
 mesh switch levels much farther out. At a sixty-fourth, the test scene's ball keeps four levels,
 where the same scene without texture coordinates in the error has six.
 
-No picture test shows this weight. The weight enters the measured error that picks a level. It also
-changes the level's triangles, because the simplifier weighs the texture coordinates when it
-decides which vertices to collapse. A picture at the level's own switch cannot show the weight on
-its own, because its reference is built with the same weight. A picture near enough to show a slide
-draws the level where the engine does not pick it.
+The picture `asset-bent-grid` shows this weight. The tool builds a flat grid of one meter across
+and 32 by 32 cells, whose texture repeats twice across it, and the picture looks at it from about a
+meter. It sets the threshold to 16 pixels, the most that the setting takes. At a 640 by 360 picture
+and a 60-degree lens, the rule's factor is 19.5. The four lower levels report errors of 0.0055 m,
+0.011 m, 0.070 m and 0.25 m, which switch them 0.11 m, 0.22 m, 1.4 m and 4.8 m out. The camera's
+nearest point lies at 0.87 m, so the second lower level draws, and its texture moves under a
+pixel. Without the weight the four errors fall to 0.00001 m through 0.00017 m, and the coarsest
+level switches at 3 mm. It draws against the camera, and its texture scrambles: 10.0 percent of the
+pixels differed, against the picture tests' limit of 0.1 percent.
 
 The unit test's own bent grid measures the weight. It is a flat grid of one meter across, 32 by 32
 cells, whose texture coordinates repeat the texture eight times across it. With the shipped weight,
 one sixty-fourth of the longest side, its coarsest level reports an error of 0.116 units. The same
 grid with one texture coordinate everywhere reports 0.00016, so the reported error is the weight's.
 A slide of the whole texture over a one-meter mesh counts as one sixty-fourth of a unit, a small
-fraction of the mesh's size. On a 360-pixel-high picture at a
-60-degree lens, with the default one-pixel threshold, the switch factor is 311.8. That level then
-switches about 36 m out. There the whole grid spans about nine pixels. That is 74 pixels of a
-480 by 270 picture, or 0.06 percent, far under the picture tests' 0.5 percent limit. A texture slide
-on a mesh that small cannot move enough pixels for a picture test to judge it. The unit test reads
-the error itself, which is the quantity the item adds:
-`counts a texture that would slide, where a flat surface otherwise simplifies free` holds the bent
-grid's coarsest error above 0.11 units.
+fraction of the mesh's size. The unit test reads the error itself, which is the quantity the item
+adds: `counts a texture that would slide, where a flat surface otherwise simplifies free` holds the
+bent grid's coarsest error above 0.11 units.
 
-The coordinator accepted this exemption on 26 October 2026, before this record was written. The
-acceptance rests on that reason and measurement. The weight enters the error that picks the level,
-and it also changes the level's triangles. The unit test that reads the error is the right
-instrument, and it stands as the item's proof.
+The owner ruled the weight question moot on 26 October 2026. `asset-bent-grid` is the weight's
+picture: without the weight, 10.0 percent of its pixels differ against the picture tests' 0.1
+percent limit, and it passed on all three tiers and in Firefox and Safari in run 40248658928. The
+exemption is therefore gone, and the picture is the weight's proof.
 
 ## Addendum: the level pictures place each copy by its own distance (22 October 2026, M3-L2)
 

@@ -58,13 +58,13 @@ describe('the sampling function', () => {
 	test('the page reads the field with the add-on’s one copy of it', () => {
 		// The shader build resolves only the engine's library, so a reader holds a copy. The page's
 		// card material is the first reader, and this fails when either copy is edited alone.
-		const canonical = marked(new URL('./field.wgsl', import.meta.url), 'wind-sample');
+		const canonical = marked(new URL('../shaders/field.wgsl', import.meta.url), 'wind-sample');
 		const page = marked(new URL('../page/sketch.ts', import.meta.url), 'wind-sample');
 		expect(page).toBe(canonical);
 	});
 
 	test('the copy names the texture and the sampler that a reader declares', () => {
-		const canonical = marked(new URL('./field.wgsl', import.meta.url), 'wind-sample');
+		const canonical = marked(new URL('../shaders/field.wgsl', import.meta.url), 'wind-sample');
 		expect(canonical).toContain('fn wind_sample(');
 		expect(canonical).toContain('textureSampleLevel(wind, windSampler');
 	});
