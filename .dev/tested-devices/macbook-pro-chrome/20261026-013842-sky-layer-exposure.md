@@ -7,7 +7,10 @@ shared queue.
 Result: the clean run of `sky-layer-exposure` passed on WebGPU, in compatibility mode and on
 WebGL2. A run with the dim stretch only a fifth dimmer failed all three tests at the exposure
 assertion, which shows that the test can fail. The aurora demo passed all six pictures against the
-unchanged references, so the fix does not move its held frame.
+unchanged references. That does not show the frame held still: the layer draws about 10 per cent
+brighter in linear light at the demo's night exposure of 1.1, and the comparison counts a pixel only
+past its threshold. The six references were already stale at the base, and their redraw belongs to
+M3-R27.
 
 The exposure runs drew `tests/pages/sky-layer-exposure.html`. Its page reads the sky, the lake
 under it and a rough sphere at three stretches: exposures 0.1 and 0.01, and half the background's

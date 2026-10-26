@@ -50,7 +50,7 @@ engine's WGSL inside it.
 | --- | --- | --- |
 | The sky, the lake and the rough sphere with the fix, at exposures 0.1 and 0.01 and at half the background's intensity | The lake follows the sky within 6 levels at both exposures. The dim sky falls below 0.6 of the bright one. The lake keeps its value while the background's intensity halves. The rough sphere takes the map's light. | The run record below |
 | The same page with the dim stretch only a fifth dimmer | All three tier tests failed at the exposure assertion, so the test can fail | the same run record |
-| The aurora demo, in both reference sets | All six pictures pass unchanged, so the fix does not move the held frame | the same run record |
+| The aurora demo, in both reference sets | All six pictures pass. The frame moves within the test's tolerance: the layer draws 10 per cent brighter in linear light at the demo's exposure of 1.1. A pass does not show that no pixel moved, and the six references were already stale at the base. Their redraw belongs to M3-R27 | the same run record |
 
 The runs are recorded in
 `.dev/tested-devices/macbook-pro-chrome/20261026-013842-sky-layer-exposure.md`, with the machine,
@@ -58,32 +58,17 @@ the browser, the load at each start, the viewport and the log.
 
 ## Look
 
-The demo's ice is a dielectric of 4 per cent, and the picture follows that. One frame of the demo's
-own camera, with its sky, layer, fog, bloom and exposure, held the lake split in two. A mirror half
-lay on the left of the frame, and the demo's own ice on the right. The frame itself, looked at
-rather than read as pixels, showed why the halves differ. The left half carries the curtains' own shapes into the
-water, with their folds and rays repeated from the horizon to the bottom of the frame. The right
-half is a smooth, even green-teal with none of that structure, darkening toward the camera. The
-join is a straight vertical edge at the middle of the frame. On the left the lake is a second sky;
-on the right it is a dim surface with the sky's colour in it and none of its detail.
+The demo's ice is a dielectric of 4 per cent, with roughness 0.16 and metalness 0, and the map that
+it samples holds the aurora. At this tip the demo's own view has no lake to judge. The ice plane at
+ground level does not reach the demo's held frame: an unlit magenta material on it changes no pixel,
+at plane sizes of 100 and 4000, in both rotations, with and without the layer (M3-R27). The stored
+`demo-aurora` reference shows the same flat lower half, so the plane was already absent when that
+reference was drawn.
 
-The two halves are read at points on one row, so they share a view angle. They do not share a
-direction. A flat lake reflects a different azimuth on each side of the frame, and the aurora is
-not the same brightness in both. The gap between the halves therefore carries the sky's own
-variation as well as the surface's share. Telling the two apart needs the same pixel drawn twice.
-
-The geometry says what that share is. The sampled row's rays meet the lake about 73 degrees from
-its normal. There a dielectric of index 1.5 reflects about a fifth of a mirror by Schlick's
-approximation. The rest of the gap is the aurora being brighter at one azimuth. That is what a
-dielectric does: its reflection is strong near the horizon and nearly nothing at a steep angle. The
-rough ice's wider lobe gathers more of the bright sky than a mirror does. A mirror and the same ice
-therefore never read alike. The gap between them is the surface's own reflection, not a reflection
-that went missing. The record keeps the ice as it draws, which is the picture the owner asked to
-see before judging the lake's look.
-
-A temporary probe drew the same pixel under three materials, the ice, the ice without roughness and
-a mirror, and that page was not kept. This section therefore quotes no measured share from it, and
-the geometry above gives the share that the look follows.
+The look of that lake is judged in M3-R27, which makes the plane draw at the demo's own camera and
+redraws the six `demo-aurora` references. This record shows the sky's own colour: in the kept page a
+mirror plane at ground level reflects the map that the layer fills, and the sky and its reflection
+hold one colour at two exposures.
 
 ## Decision
 
@@ -94,11 +79,12 @@ The level a mirror samples is level 0, so it reads the map's centre faces, as th
 is filled by the same pass from whichever sky the scene sets, layer and all, and the kept page's
 lake reflects the map that its own layer fills.
 
-To say it plainly for the reader who finds the earlier trial, where a white metal lake under the
-physical sky reflected nothing: the plane has no normal or winding fault, and a mirror over that sky
-does reflect it. What the trial read was the sky it pointed at, not a surface that could not
-reflect: a flat lake reflects one narrow band of elevations, and that band is dark in the night sky
-except where a curtain crosses it.
+For a reader who finds the earlier trial, where a white metal lake under the physical sky reflected
+nothing: the plane has no normal or winding fault. In the kept page a mirror plane at ground level
+reflects the map that the layer fills, so the plane's normal, its winding and its height are not at
+fault. The trial's lake reflected nothing because the demo's ice plane at ground level does not reach
+the demo's own held frame (M3-R27), not because its surface could not reflect or because the lake saw
+a dark band of the sky. The look is judged in M3-R27.
 
 What the investigation found is that the sky drew a layer that its own reflection did not match. The
 layer's box template wrote the layer's colour into the exposed scene without the exposure. The code shows
@@ -129,12 +115,14 @@ inside it. So a change to the template reaches a page after `bun run build` buil
 again and the server restarts.
 
 Every picture of a scene with a sky layer draws the layer at the exposure from now on. At the
-aurora demo's night exposure of 1.1 the layer enters the scene 10 per cent brighter than it did.
-The demo's held picture does not move beyond what the image test counts, though. That comparison
-counts a pixel only when it moves by more than its threshold, about 13 levels. It fails only when
+aurora demo's night exposure of 1.1 the layer enters the scene 10 per cent brighter in linear light
+than it did, so the held frame moves. The image test passes because the move stays inside its
+tolerance: it counts a pixel only when it moves by more than about 13 levels, and it fails only when
 more than 0.1 per cent of pixels do. Runs of `demo-aurora` on the Mac's GPU and with `CI=1` on
-SwiftShader both pass all three tiers against the unchanged references. The six aurora pictures
-therefore stay as they are.
+SwiftShader both pass all three tiers, though a pass does not show that no pixel moved. The six
+references were already stale at the base: D-242 measured 48.9 per cent of their pixels more than
+ten levels from a comparable engine's pictures, so the pass says little about them. Their redraw
+belongs to M3-R27.
 
 One fault beside this one was found and is not this record's:
 
@@ -181,9 +169,10 @@ twice its noise. For GPU time those thresholds are 25 per cent and 0.3 ms. S6 at
 per cent against a 14.8 per cent noise, so its wider medians are not separable from the machine.
 
 The check did not measure the ground reflections. No benchmark scene installs a sky layer, so S4
-and S6 never run the changed shader path. What the line establishes is that nothing else got
-slower. A benchmark scene with a ground plane under a layer is owed as a task of its own, on the
-owner's list.
+and S6 never run the changed shader path: the 0.35 ms figure is noise, not a reflection's cost, and
+at +7.8 per cent it sits under twice the run's 4.4 per cent noise. What the line establishes is that
+nothing else got slower. M3-R26 builds a benchmark scene whose subject is a ground plane reflecting
+a sky layer, and measures the real cost.
 
 The base, `668b7a423`, is a milestone commit whose benchmark pages are identical to the branch's:
 `git diff` names no file under `bench/pages` or `bench/scenes`, so the tool judged the comparison.

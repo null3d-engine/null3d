@@ -115,8 +115,8 @@ layer; the layer's values arrive in the stage's command, as the core sky's cloud
 
 A map's texels hold the layer's radiance as they hold the sky's, so both places that a sky is seen
 take the scene's exposure. The box that draws a layer over the background did not, and a sky and its
-reflection disagreed by that factor; [D-262](D-262-ground-reflections.md) measures it and rules out a
-scale error in the panorama's composite, which the same measurements tested and disproved.
+reflection disagreed by that factor; [D-262](D-262-ground-reflections.md) records that fault and its
+fix.
 
 The engine cannot tell how fast a layer moves, because its animation lives inside its WGSL. So the
 layer declares `refresh`, the seconds between the map's captures of it, defaulting to one second;
