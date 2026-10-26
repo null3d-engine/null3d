@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { scaledBudget } from '../../tests/lib/run-budget.ts';
 import { exactTestPath } from '../../tests/lib/test-paths';
 import {
 	addedStatusLines,
@@ -132,73 +133,81 @@ describe('the milestone status', () => {
 		expect(statusRefusal([line], 'a3bbedbb5', undefined)).toContain(`  M3-D9a: ${line}`);
 	});
 
-	it("reads the same lines from a commit's own worktree as from this checkout at that commit", () => {
-		const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-		expect(statusAt(head)).toEqual(statusOf('.'));
-	}, 60_000);
+	it(
+		"reads the same lines from a commit's own worktree as from this checkout at that commit",
+		() => {
+			const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+			expect(statusAt(head)).toEqual(statusOf('.'));
+		},
+		scaledBudget(60_000),
+	);
 
-	it("reads a base at its own commit, even from a linked worktree's hook, and stages nothing", () => {
-		// A scratch repository whose status tool prints the lines that its own tools/ hold, and a line
-		// that names the commit its git calls read, so a reading shows which commit's tools ran and
-		// which history they read.
-		const repo = mkdtempSync(join(tmpdir(), 'null3d-status-test-'));
-		// The machine's own git settings, such as hooks or signing, play no part in the scratch repository.
-		const run = (cwd: string, ...args: string[]) =>
-			execFileSync(
-				'git',
-				['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args],
-				{
-					cwd,
-					encoding: 'utf8',
-				},
-			).trim();
-		const tool = `import { LINES } from './lines.ts';
+	it(
+		"reads a base at its own commit, even from a linked worktree's hook, and stages nothing",
+		() => {
+			// A scratch repository whose status tool prints the lines that its own tools/ hold, and a line
+			// that names the commit its git calls read, so a reading shows which commit's tools ran and
+			// which history they read.
+			const repo = mkdtempSync(join(tmpdir(), 'null3d-status-test-'));
+			// The machine's own git settings, such as hooks or signing, play no part in the scratch repository.
+			const run = (cwd: string, ...args: string[]) =>
+				execFileSync(
+					'git',
+					['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args],
+					{
+						cwd,
+						encoding: 'utf8',
+					},
+				).trim();
+			const tool = `import { LINES } from './lines.ts';
 const head = Bun.spawnSync(['git', 'rev-parse', 'HEAD']).stdout.toString().trim();
 for (const line of LINES) console.error(line);
 console.error(\`stale: M3-H1 reads history at \${head}\`);
 process.exit(LINES.some((line) => line.startsWith('owed:')) ? 1 : 0);
 `;
-		try {
-			run(repo, 'init', '--quiet', '-b', 'main');
-			run(repo, 'config', 'user.email', 'test@example.com');
-			run(repo, 'config', 'user.name', 'test');
-			mkdirSync(join(repo, 'tools'));
-			mkdirSync(join(repo, '.internal/plan'), { recursive: true });
-			writeFileSync(join(repo, '.internal/plan/m3-breakdown.md'), 'plan\n');
-			writeFileSync(join(repo, '.gitignore'), '.internal\n');
-			writeFileSync(join(repo, 'tools/pr-status.ts'), tool);
-			writeFileSync(
-				join(repo, 'tools/lines.ts'),
-				`export const LINES = [${JSON.stringify(stale)}];\n`,
-			);
-			run(repo, 'add', '.');
-			run(repo, 'commit', '--quiet', '-m', 'base');
-			const base = run(repo, 'rev-parse', 'HEAD');
-			writeFileSync(
-				join(repo, 'tools/lines.ts'),
-				`export const LINES = [${JSON.stringify(stale)}, ${JSON.stringify(owed)}];\n`,
-			);
-			run(repo, 'commit', '--quiet', '-am', 'head');
-			const head = run(repo, 'rev-parse', 'HEAD');
-			const at = (commit: string) => `stale: M3-H1 reads history at ${commit}`;
-			expect(statusOf(repo)).toEqual({ lines: [stale, owed, at(head)], ran: true });
-			expect(statusAt(base, repo)).toEqual({ lines: [stale, at(base)], ran: true });
-			// A push from a linked worktree runs its hook with GIT_DIR set to that worktree's own folder.
-			const linked = join(repo, 'linked');
-			run(repo, 'worktree', 'add', '--quiet', linked, 'HEAD');
-			symlinkSync(join(repo, '.internal'), join(linked, '.internal'));
-			const gitDir = run(linked, 'rev-parse', '--absolute-git-dir');
-			const hook = { ...process.env, GIT_DIR: gitDir };
-			expect(statusAt(base, linked, hook)).toEqual({ lines: [stale, at(base)], ran: true });
-			expect(run(linked, 'status', '--porcelain', '--untracked-files=no')).toBe('');
-			expect(run(repo, 'worktree', 'list').split('\n')).toHaveLength(2);
-			// Without its plan the check does not run, and the reading says so.
-			rmSync(join(linked, '.internal'));
-			expect(statusOf(linked).ran).toBe(false);
-		} finally {
-			rmSync(repo, { recursive: true, force: true });
-		}
-	}, 60_000);
+			try {
+				run(repo, 'init', '--quiet', '-b', 'main');
+				run(repo, 'config', 'user.email', 'test@example.com');
+				run(repo, 'config', 'user.name', 'test');
+				mkdirSync(join(repo, 'tools'));
+				mkdirSync(join(repo, '.internal/plan'), { recursive: true });
+				writeFileSync(join(repo, '.internal/plan/m3-breakdown.md'), 'plan\n');
+				writeFileSync(join(repo, '.gitignore'), '.internal\n');
+				writeFileSync(join(repo, 'tools/pr-status.ts'), tool);
+				writeFileSync(
+					join(repo, 'tools/lines.ts'),
+					`export const LINES = [${JSON.stringify(stale)}];\n`,
+				);
+				run(repo, 'add', '.');
+				run(repo, 'commit', '--quiet', '-m', 'base');
+				const base = run(repo, 'rev-parse', 'HEAD');
+				writeFileSync(
+					join(repo, 'tools/lines.ts'),
+					`export const LINES = [${JSON.stringify(stale)}, ${JSON.stringify(owed)}];\n`,
+				);
+				run(repo, 'commit', '--quiet', '-am', 'head');
+				const head = run(repo, 'rev-parse', 'HEAD');
+				const at = (commit: string) => `stale: M3-H1 reads history at ${commit}`;
+				expect(statusOf(repo)).toEqual({ lines: [stale, owed, at(head)], ran: true });
+				expect(statusAt(base, repo)).toEqual({ lines: [stale, at(base)], ran: true });
+				// A push from a linked worktree runs its hook with GIT_DIR set to that worktree's own folder.
+				const linked = join(repo, 'linked');
+				run(repo, 'worktree', 'add', '--quiet', linked, 'HEAD');
+				symlinkSync(join(repo, '.internal'), join(linked, '.internal'));
+				const gitDir = run(linked, 'rev-parse', '--absolute-git-dir');
+				const hook = { ...process.env, GIT_DIR: gitDir };
+				expect(statusAt(base, linked, hook)).toEqual({ lines: [stale, at(base)], ran: true });
+				expect(run(linked, 'status', '--porcelain', '--untracked-files=no')).toBe('');
+				expect(run(repo, 'worktree', 'list').split('\n')).toHaveLength(2);
+				// Without its plan the check does not run, and the reading says so.
+				rmSync(join(linked, '.internal'));
+				expect(statusOf(linked).ran).toBe(false);
+			} finally {
+				rmSync(repo, { recursive: true, force: true });
+			}
+		},
+		scaledBudget(60_000),
+	);
 });
 
 describe('baseOf', () => {

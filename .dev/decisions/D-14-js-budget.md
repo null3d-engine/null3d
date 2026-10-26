@@ -1174,3 +1174,18 @@ The gzip figure stays at 24 KB and the uncompressed one at 64 KB. This is headro
 the first trim that wins bytes back takes them, and the glTF worker stays the only file near the
 line. `d09e9ddfb` makes the add-on check follow the same figure. The M2 table of gzip and
 uncompressed budgets above records the figures as they stood on 4 October 2026.
+
+## The warning covers every budgeted file, 26 October 2026
+
+The warning at 97 per cent covered only the start. A file with a budget of its own passed in silence
+until it crossed. On the pushed milestone tip, 4a3eceaea, and again on c7f0868e6, the largest
+first-use shader file was
+`js/shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-draw-index-tone-map-half.js`.
+It was 1,788.5 KB uncompressed, 99.8 per cent of its 1,792 KB budget, and five of its siblings were
+past 97 per cent. A branch merged with the milestone then measured it at 1,844,611 bytes, over the
+budget. The branch had estimated its own cost at one to three kilobytes. A few lines in the lit shader
+repeat once for each build that the file holds, so they cost about 13 KB.
+
+`budgetWarnings` now reads the same list of starts and files as `budgetProblems`. It warns about
+each column of each one that passes 97 per cent of its budget without passing it. Under GitHub
+Actions, the size check prints its warnings as annotations, which the run's page shows.

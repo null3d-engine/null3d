@@ -14,6 +14,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build, createServer } from 'vite';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { GltfBuilder } from '../../../tests/pages/lib/gltf-files';
 import { fixture } from '../../../tools/lib/fixture';
 import {
@@ -27,7 +28,7 @@ import {
 import null3d from './index';
 
 // Texture encodes take seconds each on a busy machine or a CI runner of four cores.
-setDefaultTimeout(60_000);
+setDefaultTimeout(scaledBudget(60_000));
 
 const SCENE = join(import.meta.dir, '../../../tests/pages/assets/models/asset-scene.glb');
 

@@ -12,7 +12,7 @@ import { spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { HEAVY_CHECKS, ignorePatternOf } from './lib/heavy-checks.ts';
-import { budgetNote, checkTimeoutMs } from './lib/run-budget.ts';
+import { budgetNote, checkTimeoutMs, LOAD_FACTOR_ENV, loadFactor } from './lib/run-budget.ts';
 import { exactTestPath } from './lib/test-paths.ts';
 
 /** The repository, which the groups' paths are relative to. */
@@ -41,7 +41,8 @@ for (const paths of GROUPS) {
 	// `--isolate` is not used: it gives each file a global of its own, which shrank the engine's
 	// group from 2,908 MB to 2,054 MB, but grew the group of the runner's tests from 1,220 MB to
 	// 3,822 MB and made it three times slower, so the run's peak was higher with it.
-	const timeout = checkTimeoutMs();
+	const factor = loadFactor();
+	const timeout = checkTimeoutMs(factor);
 	const args = [
 		'test',
 		`--timeout=${timeout}`,
@@ -55,7 +56,11 @@ for (const paths of GROUPS) {
 	const result = spawnSync('bun', args, {
 		cwd: ROOT,
 		stdio: 'inherit',
-		env: { ...process.env, NULL3D_TEST_MEMORY_MIB: `${CEILING_MIB}` },
+		env: {
+			...process.env,
+			NULL3D_TEST_MEMORY_MIB: `${CEILING_MIB}`,
+			[LOAD_FACTOR_ENV]: `${factor}`,
+		},
 	});
 	const seconds = Math.round((Date.now() - started) / 1000);
 	const outcome = result.status === 0 ? 'passed' : `failed with ${result.status}`;
