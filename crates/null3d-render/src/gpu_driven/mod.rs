@@ -801,6 +801,11 @@ pub fn view_indirect_buffer(view: ViewId) -> u32 {
     ids::indirect(view)
 }
 
+/// The ids of the scene's cluster patch table and its indices, which the cluster pass reads.
+pub fn cluster_table_buffers() -> (u32, u32) {
+    (ids::CLUSTER_PATCHES, ids::CLUSTER_INDICES)
+}
+
 /// Sizes the builder allocates once, what the device offers, and how its frames reach the canvas.
 #[derive(Clone, Copy, Debug)]
 pub struct RendererConfig {
@@ -2227,21 +2232,21 @@ impl GpuDrivenRenderer {
             }
             (false, false)
         };
-        // The scene's cluster tables follow its layout: they upload again when it changes. The
-        // cluster pass group binds them, and it reads them in a dispatch that the direct path does
-        // not record, so there the largest buffer alone bounds them.
-        let cluster_bytes = if self.config.direct_draws {
-            unbound_buffer_bytes(Some(binding_bytes))
+        // The scene's cluster tables follow its layout: they upload again when it changes. Only
+        // the path that runs the cluster pass builds them, whose group binds each table whole and
+        // whose dispatch reads it. The direct path binds neither and reads neither, so it builds
+        // neither.
+        let clusters_recreated = if self.config.direct_draws {
+            false
         } else {
-            binding_bytes
+            self.clusters.apply_tables(
+                list,
+                arena,
+                &self.layout,
+                upload_everything,
+                binding_bytes,
+            )?
         };
-        let clusters_recreated = self.clusters.apply_tables(
-            list,
-            arena,
-            &self.layout,
-            upload_everything,
-            cluster_bytes,
-        )?;
         // Build the motion tables when their layout changes, even while its pipelines load.
         // Once the view can draw, the scene may no longer need a layout upload.
         if motion && upload_everything {
@@ -3527,9 +3532,14 @@ impl GpuDrivenRenderer {
     fn upload_bound(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
         // The cluster tables upload again whenever the layout changes, and every view uploads its
-        // three blocks of dispatch parameters.
-        let clusters = clusters::Clusters::upload_bytes(&self.layout)
-            + clusters::Clusters::upload_bytes(&self.casters);
+        // three blocks of dispatch parameters. Both belong to the cluster pass, which the direct
+        // path does not record.
+        let clusters = if self.config.direct_draws {
+            0
+        } else {
+            clusters::Clusters::upload_bytes(&self.layout)
+                + clusters::Clusters::upload_bytes(&self.casters)
+        };
         let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2
             + dfg::BYTES
             + ao::BLANK_BYTES;
