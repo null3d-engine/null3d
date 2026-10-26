@@ -335,8 +335,16 @@ describe('waitForRunners', () => {
 			'E1405: the render worker did not start: its script at http://localhost:5173/packages/engine/src/workers/render-worker.ts, or a file that it imports, did not load, and a second copy failed too. Read the message: it names the worker that did not start, and why.';
 		const thrown =
 			"E1405: the render worker did not start: Failed to load script (the render worker's script is http://localhost:5173/packages/engine/src/workers/render-worker.ts). Read the message: it names the worker that did not start, and why.";
+		// CI's Firefox 39 of 41 in run 40248658928 failed so, and passed in a rerun of the job.
+		const job =
+			'E1405: the job worker did not start: error loading dynamically imported module: http://localhost:5173/packages/engine/dist/wasm/threaded/null3d.js. Read the message: it names the worker that did not start, and why.';
+		// The engine names each job worker by its number (`job ${index}` in page/engine.ts).
+		const jobScript =
+			'E1405: the job 2 worker did not start: its script at http://localhost:5173/packages/engine/src/workers/job-worker.ts, or a file that it imports, did not load, and a second copy failed too. Read the message: it names the worker that did not start, and why.';
+		const jobThrown =
+			"E1405: the job 2 worker did not start: Failed to load script (the job 2 worker's script is http://localhost:5173/packages/engine/src/workers/job-worker.ts). Read the message: it names the worker that did not start, and why.";
 		for (const browser of ['Firefox', 'Chrome', 'Safari'])
-			for (const problem of [module, script, thrown])
+			for (const problem of [module, script, thrown, job, jobScript, jobThrown])
 				expect(rerunsInNewTab(browser, ['another problem', problem])).toBe(true);
 		// A worker that started and then failed in the sketch's own setup is the sketch's fault.
 		expect(
@@ -344,11 +352,23 @@ describe('waitForRunners', () => {
 				'E1405: the sketch worker did not start: TypeError: setup is not a function',
 			]),
 		).toBe(false);
+		// A job worker that loaded and then failed is the engine's fault, not a load that may pass.
+		expect(
+			rerunsInNewTab('Firefox', [
+				'E1405: the job 2 worker did not start: RuntimeError: unreachable',
+			]),
+		).toBe(false);
 		expect(unloadedModule([module])).toBe(
 			'http://localhost:5173/packages/engine/dist/wasm/threaded/null3d.js',
 		);
 		expect(unloadedModule([script])).toBe(
 			'http://localhost:5173/packages/engine/src/workers/render-worker.ts',
+		);
+		expect(unloadedModule([job])).toBe(
+			'http://localhost:5173/packages/engine/dist/wasm/threaded/null3d.js',
+		);
+		expect(unloadedModule([jobScript])).toBe(
+			'http://localhost:5173/packages/engine/src/workers/job-worker.ts',
 		);
 	});
 

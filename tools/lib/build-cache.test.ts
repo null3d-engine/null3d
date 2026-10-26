@@ -27,6 +27,7 @@ import {
 	type HolderWatch,
 	hashFiles,
 	hashOf,
+	holderText,
 	holderVerdict,
 	liveLockHolder,
 	pageBuildPriorityProblem,
@@ -654,5 +655,22 @@ describe('runByLine', () => {
 		});
 		expect(run.status).toBeNull();
 		expect(run.error).toBeInstanceOf(Error);
+	});
+});
+
+describe('holderText', () => {
+	it("names the holder, what it runs and since when, for a waiter's first line", () => {
+		const taken = Date.UTC(2026, 9, 26, 4, 51, 20);
+		const since = new Date(taken).toTimeString().slice(0, 8);
+		expect(holderText(1234, taken, 'bun tools/typecheck.ts', taken + 35_000)).toBe(
+			`held by pid 1234 (bun tools/typecheck.ts) since ${since}, 35 s ago`,
+		);
+		expect(holderText(1234, taken, '', taken + 1_000)).toBe(
+			`held by pid 1234 since ${since}, 1 s ago`,
+		);
+	});
+
+	it('says when the lock names no process', () => {
+		expect(holderText(0, Date.now())).toBe('taken by a process that named no id');
 	});
 });

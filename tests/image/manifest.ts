@@ -1202,6 +1202,27 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tolerance: { threshold: 0, maxDiffRatio: 0 },
 		swiftShaderTolerance: LEVEL_ROUNDING_TOLERANCE,
 	},
+	// The asset tool's leaf-card step: a tree from a file whose crown is a list of separate leaf
+	// cards. The first lower level keeps half of the cards and grows them about their middles, and
+	// a bias brings that switch near the camera, where the crown spans about 100 of the 640 pixels.
+	// Without the step the tool plans no level for the crown, because every card's edges are
+	// borders, which stay.
+	{
+		name: 'asset-card-level',
+		sketch: 'tests/pages/sketches/asset-levels-sketch.ts?scene=tree',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+	},
+	// The asset tool's texture-coordinate weight: a flat grid whose texture repeats across it. Its
+	// coarsest level reports the slide of those coordinates, and that error holds the level out at
+	// a distance, so a finer level draws here and the checker stays square. Without the weight the
+	// coarsest level reports almost no error, draws here, and scrambles the checker.
+	{
+		name: 'asset-bent-grid',
+		sketch: 'tests/pages/sketches/asset-levels-sketch.ts?scene=grid',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0,
+	},
 	// The outputs of assets convert: a skinned, morphed column from FBX halfway through its clip,
 	// the same column from OBJ, a pyramid from STL with face colors and a cube from PLY with corner
 	// colors. Each must load and draw alike on every tier.
@@ -3135,17 +3156,26 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(demo.hdr === false && { expect: { hdr: false } }),
 			...(demo.timeoutSeconds !== undefined && { timeoutSeconds: demo.timeoutSeconds }),
 			// The screens draw their readings into a 2D canvas, and each browser rasterises that
-			// text its own way: the readings and the layout match everywhere, while the digits'
-			// edges differ. On 24 October 2026 Safari differed on 1.0 per cent of the pixels and
-			// Firefox on 1.8, against a device tolerance of half a per cent.
+			// text its own way. The readings, the bars, the chart and the layout match
+			// everywhere, while the glyphs of the digits differ. Firefox drew 2.615 per cent of
+			// the pixels differently from the Mac's picture, and 2.342 from the one CI's
+			// software GPU drew, while those two pictures agreed within 0.760. Its 1,506
+			// differing pixels fall in 30 regions, the largest 527 pixels at the left reading's
+			// glyphs, and the four largest hold 81 per cent of them. Every region lies inside a
+			// reading or a small label. The limit sits a third above the highest figure, and it
+			// applies only where a browser or a device compares with the Mac's pictures.
 			...(demo.name === 'canvas-screen' && {
-				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.025 },
+				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.035 },
 			}),
-			// The rain and the lens marks land on pixels that each browser's own GPU rounds its
-			// own way: every run that judged it found the same city, pose and traffic. Firefox
-			// differed on 0.9 per cent of the pixels on 24 October 2026.
+			// The window lights, the rain and the lens marks are one pixel each, so each
+			// rasteriser rounds their brightness its own way: every run found the same city, pose
+			// and traffic. Firefox on CI's software GPU drew 1.281 per cent of the pixels
+			// differently from the Mac's picture, and gave the same figure to three decimals in
+			// three runs. Its 738 differing pixels fall in 434 regions, 295 of them a single
+			// pixel, and the largest is 17 pixels. The limit sits a third above the figure, and
+			// it applies only where a browser or a device compares with the Mac's pictures.
 			...(demo.name === 'skyway' && {
-				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.012 },
+				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.017 },
 			}),
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
 			// The hero shadow is fine detail on one object, so its demo draws larger than the
