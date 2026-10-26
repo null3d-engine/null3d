@@ -315,14 +315,14 @@ copies the state before from the target into a scratch texture. It then draws th
 view of the other state. Both states stay in the target's layers, so a reader sees the same two
 layers on both paths. The fragment form reads the state before as `input.color`.
 
-WebGL2 binds a texture array whole and cannot sample one of its layers in a fragment shader, so the
+WebGL2 binds a texture array whole. It cannot sample one of its layers in a fragment shader, so the
 fragment form draws one layer at a time. A run of a pass of several layers copies the state
 before's layer into the scratch, then draws that layer. `input.layer` names the layer that the draw
 writes. Each layer has a block of its own in a buffer of the fragment forms, because the block
 carries the layer. Up to 32 layers work on WebGL2, and the call throws E1220 past them. The WebGPU
-paths draw 256. This is a limit of the path, not a dropped feature.
+paths draw 128 with history and 256 without. This is a limit of the path, not a dropped feature.
 
-**Cost and memory.** The two states take twice the target's texels, and a history pass records one
+**Cost and memory.** The two states take twice the target's texels. A history pass records one
 dispatch for each step. A WebGL2 history pass adds a scratch texture of one state and one copy for
 each run. The swap's GPU time and memory on the Mac, an iPad and a phone are owed, as M3-V14's
 measurements cover the field that uses it first.
