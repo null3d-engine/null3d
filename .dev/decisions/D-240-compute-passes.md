@@ -290,6 +290,12 @@ previous state through its own bind group, not through `Pass::reads`, so the gra
 finds no cycle. A page that names the pass's own texture in `textures` still throws E1504, and so
 does every other loop.
 
+**The order.** The states need no barrier of their own: each frame's commands are submitted in
+order, and the copies into the target are recorded after the compute pass on the same encoder, so
+the frame before's writes finish before this frame's reads. The page's forty-runs-in-one-frame case
+reading the same as forty frames is the proof; a read that saw stale state would not count to forty.
+Keep that case: a change that adds a graph edge must keep it passing.
+
 **Readers.** A material or an effect that declares the pass's texture as `texture_2d<f32>` samples
 the state that the last run wrote: the engine writes that state's first layer into the map's layer
 each frame. A reader that declares `texture_2d_array<f32>` sees both states and names the layers
