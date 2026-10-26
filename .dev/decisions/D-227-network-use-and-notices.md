@@ -84,7 +84,9 @@ earcut, and the Basis encoder and ufbx. They also cover these parts:
   anti-aliasing kernel, its anisotropic highlight and the two constants of AgX's punchy look. So
   the notices name Filament's Apache License 2.0, with its copyright line.
 - The engine's depth of field ports KinoBokeh and follows the composite of Unity's post-processing
-  stack v1, so its notices carry both MIT texts. Its final pass translates AMD FidelityFX FSR 1's
+  stack v1, so its notices carry both MIT texts. Nothing comes from the stack's second version: its
+  licence binds code to Unity-dependent projects, so code ported from it could not ship here at all,
+  whatever a notices file says. Its final pass translates AMD FidelityFX FSR 1's
   RCAS and ports Qualcomm Snapdragon GSR 1's upscale, and its screen-space reflections follow AMD
   FidelityFX SSSR's march, so the notices carry AMD's MIT text and Qualcomm's BSD 3-Clause text.
   The Vite plugin's compiler embeds every engine shader, so the plugin's notices name the same
