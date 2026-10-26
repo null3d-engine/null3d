@@ -1,6 +1,8 @@
 # D-268: Three sessions share the milestone's work, and one of them audits the ticks
 
-Status: decided by the owner on 26 October 2026. Date: 2026-10-26. Task: none.
+Status: decided by the owner on 26 October 2026. Widened by the owner later that day (addendum):
+the CI session also makes every build faster and cuts the memory that each build needs.
+Date: 2026-10-26. Task: none.
 
 Summary: The milestone's work runs in three agent sessions. The landing session runs the
 helpers, merges their branches and keeps the ticks. The CI session checks and pushes each landing,
@@ -59,3 +61,13 @@ ticks again after they are given.
 - `AGENTS.md` and `.dev/pull-requests.md` name the three sessions and the audit of the ticks.
 - A refused tick goes back into the status tool's list of unfinished tasks (`tools/pr-status.ts`),
   and the finding becomes the task's note there.
+
+## Addendum, 26 October 2026: the build's speed and memory
+
+Later the same day, the owner widened the CI session's work. Besides its work above, the CI
+session makes every build faster and cuts the memory that each build needs. That holds in CI and
+on the machines that build the milestone. It covers the shader build, the page builds, the type
+check, the test suites and the job queue's lanes.
+
+- A task in the milestone plan that makes a build faster, or cuts the memory that a build needs,
+  goes to the CI session.
