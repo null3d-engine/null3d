@@ -432,7 +432,8 @@ fn build_entries(
 /// Compiles each job's build, with the results in the jobs' order. The builds are independent,
 /// so they spread over the machine's cores, each thread with a compiler of its own. The shader
 /// compiler that a page or a bundler loads is built for WebAssembly, which has no threads there,
-/// so it compiles them one after another.
+/// so it compiles them one after another. The results hold each source text once: a build's
+/// sources become the copies that earlier builds with the same texts made.
 fn compile_jobs(
     compiler: &mut Compiler,
     shaders: &[(&String, &manifest::Shader)],
@@ -443,22 +444,33 @@ fn compile_jobs(
     let next = AtomicUsize::new(0);
     let finished = AtomicUsize::new(0);
     let total = jobs.len();
+    let sources = output::SharedSources::default();
+    let fresh_composers = composer_builds();
     let work = |compiler: &mut Compiler| {
         let mut done = Vec::new();
+        let mut since_fresh = 0;
         loop {
             let index = next.fetch_add(1, Ordering::Relaxed);
             let Some(job) = jobs.get(index) else {
                 return done;
             };
+            if fresh_composers.is_some_and(|builds| since_fresh >= builds) {
+                compiler.composers = Composers::default();
+                since_fresh = 0;
+            }
+            since_fresh += 1;
             let shader = shaders[job.entry].1;
             // The engine's own builds fail on every warning, so a build that passes has none.
-            let result = compiler.variant(
+            let mut result = compiler.variant(
                 &shader_path(&shader.file),
                 &inputs.files[&shader.file],
                 &shader.pipelines,
                 job.variant,
                 &job.build,
             );
+            if let Ok(built) = &mut result {
+                sources.share(&mut built.output);
+            }
             done.push((index, result));
             progress(finished.fetch_add(1, Ordering::Relaxed) + 1, total);
         }
@@ -492,6 +504,22 @@ fn compile_jobs(
     };
     done.sort_unstable_by_key(|&(index, _)| index);
     Ok(done.into_iter().map(|(_, result)| result).collect())
+}
+
+/// How many builds a thread compiles before its composers start again empty. A composer keeps the
+/// library modules it built for every set of shader defs it has met, so a thread that compiled
+/// thousands of builds held thousands of modules: about 0.36 GB a thread in a build of every shader.
+/// Starting again every few hundred builds cost no measurable processor time, because the modules
+/// that the next builds need are few and quick to build again (D-235).
+const COMPOSER_BUILDS: usize = 200;
+
+/// [`COMPOSER_BUILDS`], or the count that NULL3D_SHADER_COMPOSER_BUILDS sets, where zero keeps the
+/// modules for the whole run.
+fn composer_builds() -> Option<usize> {
+    std::env::var("NULL3D_SHADER_COMPOSER_BUILDS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .map_or(Some(COMPOSER_BUILDS), |count| (count > 0).then_some(count))
 }
 
 /// How many threads compile `jobs` builds: one for each core, and no more than there are builds.
@@ -926,8 +954,8 @@ pub enum Written {
     Unchanged,
 }
 
-/// Device modules in the output folder that the build did not make, by path.
-fn stale_modules(root: &Path, modules: &BTreeMap<String, String>) -> Vec<String> {
+/// Device modules in the output folder that are not among the build's `modules`, by path.
+fn stale_modules(root: &Path, modules: &std::collections::BTreeSet<String>) -> Vec<String> {
     let Ok(entries) = fs::read_dir(root.join(OUTPUT_DIR)) else {
         return Vec::new();
     };
@@ -940,7 +968,7 @@ fn stale_modules(root: &Path, modules: &BTreeMap<String, String>) -> Vec<String>
                 && (name.ends_with(".ts") || name.ends_with(".js"))
         })
         .map(|name| format!("{OUTPUT_DIR}/{name}"))
-        .filter(|path| !modules.contains_key(path))
+        .filter(|path| !modules.contains(path))
         .collect();
     stale.sort();
     stale
@@ -967,23 +995,40 @@ pub fn write_cached_reporting(
 ) -> Result<(Written, CacheStats), BuildError> {
     let inputs = Inputs::read(root)?;
     let (output, stats) = build_with_cache_reporting(&inputs, cache, progress)?;
-    let modules = typescript(&output);
+    Ok((write_modules(root, &output)?, stats))
+}
+
+/// Writes each module of `output` whose file holds other text, and deletes the device modules that
+/// the build no longer makes. Each module is written as soon as it renders and then dropped, so the
+/// run never holds the whole set's text, which is several gigabytes.
+fn write_modules(root: &Path, output: &Output) -> Result<Written, BuildError> {
+    let set = ModuleSet::new(output);
+    let paths = set
+        .names()
+        .map(|name| format!("{OUTPUT_DIR}/{name}"))
+        .collect();
     let mut written = Written::Unchanged;
-    for path in stale_modules(root, &modules) {
+    for path in stale_modules(root, &paths) {
         fs::remove_file(root.join(&path))
             .map_err(|e| Problem::in_file(&path, format!("cannot delete the file: {e}")))?;
         written = Written::Updated;
     }
-    for (path, module) in &modules {
-        let file = root.join(path);
-        if fs::read_to_string(&file).is_ok_and(|current| current == *module) {
-            continue;
+    let changes = set.render_each(|name, module| {
+        let path = format!("{OUTPUT_DIR}/{name}");
+        let file = root.join(&path);
+        if fs::read_to_string(&file).is_ok_and(|current| current == module) {
+            return Ok(false);
         }
         file.parent()
             .map_or(Ok(()), fs::create_dir_all)
-            .and_then(|()| fs::write(&file, module))
-            .map_err(|e| Problem::in_file(path, format!("cannot write the file: {e}")))?;
-        written = Written::Updated;
+            .and_then(|()| fs::write(&file, &module))
+            .map(|()| true)
+            .map_err(|e| Problem::in_file(&path, format!("cannot write the file: {e}")))
+    });
+    for changed in changes {
+        if changed? {
+            written = Written::Updated;
+        }
     }
-    Ok((written, stats))
+    Ok(written)
 }

@@ -1,8 +1,9 @@
 //! What the build makes: for each variant, WGSL for WebGPU and GLSL ES 3.00 with reflection for
 //! WebGL2. The records serialize with the field names of the generated TypeScript module's types.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use null3d_gpu::drawlist::permutation;
 use serde::{Deserialize, Serialize};
@@ -125,6 +126,51 @@ pub struct VariantOutput {
     pub wgsl: Option<WgslOutput>,
     /// GLSL programs for WebGL2 by pipeline name, when the variant targets it.
     pub glsl: Option<BTreeMap<String, GlslProgram>>,
+}
+
+impl VariantOutput {
+    /// Every source of the build: its WGSL module and both stages of each GLSL program.
+    pub(crate) fn sources_mut(&mut self) -> impl Iterator<Item = &mut Arc<str>> {
+        let wgsl = self.wgsl.iter_mut().map(|wgsl| &mut wgsl.source);
+        let glsl = self.glsl.iter_mut().flat_map(|programs| {
+            programs
+                .values_mut()
+                .flat_map(|program| [&mut program.vertex.source, &mut program.fragment.source])
+        });
+        wgsl.chain(glsl)
+    }
+}
+
+/// How many locks the sources of [`SharedSources`] are split between.
+const SOURCE_LOCKS: usize = 32;
+
+/// One copy in memory of each source text that the builds of a run make. Thousands of builds of one
+/// entry make the same WGSL or GLSL source, and builds that each keep their own copy hold several
+/// times the memory of the copies shared (D-235), so each build's sources become the shared copies
+/// as soon as the build ends. The texts are split between locks by their hash, so the threads that
+/// compile seldom wait on one another.
+#[derive(Default)]
+pub(crate) struct SharedSources {
+    locks: [Mutex<HashSet<Arc<str>>>; SOURCE_LOCKS],
+}
+
+impl SharedSources {
+    /// Makes each source of `build` the run's copy of its text: the copy kept from an earlier build
+    /// with the same text, or this source itself, kept for later builds, when it is the first.
+    pub(crate) fn share(&self, build: &mut VariantOutput) {
+        for source in build.sources_mut() {
+            let mut hasher = DefaultHasher::new();
+            source.hash(&mut hasher);
+            let lock = &self.locks[(hasher.finish() % SOURCE_LOCKS as u64) as usize];
+            let mut texts = lock.lock().unwrap_or_else(PoisonError::into_inner);
+            match texts.get(&**source) {
+                Some(shared) => *source = Arc::clone(shared),
+                None => {
+                    texts.insert(Arc::clone(source));
+                }
+            }
+        }
+    }
 }
 
 /// One WGSL module and the entry points of each render pipeline.

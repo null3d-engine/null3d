@@ -93,3 +93,32 @@ CI runs twelve `shader-entries` jobs in place of eight. In run 40046196327, whic
 
 CI runs sixteen `shader-entries` jobs in place of twelve. In test run 40062880929, which compiled every entry and a new compiler, the twelve jobs compiled for 119 to 197 s each and took 2.4 to 3.9 minutes. About 45 s of each compile step built the compiler's program, which the per-entry cache now keeps for later runs of the same stamp. The jobs head the longest chain of a run that changes the shaders, and the enterprise runs 500 jobs at once. So sixteen jobs give each about 6.3% of the builds. The slowest should then compile for about 150 s, and take about 3 minutes.
 
+
+## Update, 26 October 2026: a build that compiles every entry
+
+The rows above measure builds that read every entry from the cache. No row measured a build that compiles every entry. On a machine with 14 cores and 36 GB, such a build of 93720008d on 14 threads held 17.45 GB at its peak. The job queue on that machine gives 24 GB to all its jobs together, so the build could not run beside a page build.
+
+Four things held the memory. Each one is now changed, and the modules stay byte for byte the same:
+
+- Each build kept its own copy of its sources until the last build ended. A read from the cache shares them, and a compiled build did not. Now each build's sources become the run's one copy of each text as the build ends.
+- Each thread's composers kept the library modules for every set of shader defs that the thread met, about 0.36 GB a thread by the end of the run. Now a thread's composers start again empty every 200 builds. This cost no measurable processor time: 4,537 s against 4,552 s on 7 threads. `NULL3D_SHADER_COMPOSER_BUILDS` sets another count, and 0 keeps the modules for the whole run.
+- The build rendered all 5,965 modules, 3 GB of text, before it wrote the first one. Now each module is written as soon as it renders, so the run holds only the modules that it renders at that moment.
+- A read of an entry held the file's bytes and the parsed entry at once: 2.3 GB of bytes for `standard_maps`. Now the read parses the file as it reads it.
+
+In the table, a GB is 10<sup>9</sup> bytes.
+
+| Build of 93720008d | Threads | Peak footprint | Peak resident | Processor time | Wall time |
+| --- | --- | --- | --- | --- | --- |
+| Before the change, compiles every entry | 14 | not read | 17.45 GB | not read | 382 to 396 s |
+| Shared sources, modules written as they render | 14 | 9.06 GB | 9.47 GB | 4,759 s | 816 s |
+| The same | 7 | 6.51 GB | 6.80 GB | 4,552 s | 858 s |
+| The same, with composers that start again every 200 builds | 7 | 3.45 GB | 4.52 GB | 4,537 s | 938 s |
+| All four changes, through `bun tools/shaders.ts` | 14 | not read | 5.65 GB | 5,230 s | 497 s |
+| Before the change, reads every entry | 14 | 6.79 GB | 7.09 GB | 66 s | 31 s |
+| All four changes, reads every entry | 14 | 3.49 GB | 3.71 GB | 66 s | 28 s |
+
+How the data was produced: each row ran `/usr/bin/time -l target/shader/shader-build --root <copy> --cache <folder> --stamp <name>` through the job queue, with `NULL3D_SHADER_THREADS` set to the thread count. The copy held only the manifest and the shader folder, with an empty output folder, and the cache folder started empty. The rows that read every entry used the folder that the cold build of the same compiler wrote. The first row and the fifth ran `bun tools/shaders.ts` in a checkout, so the timing tool read only the resident peak of the largest process. In every run, `diff -r` found the modules the same as those of the compiler before the change.
+
+Every build that compiled every entry shared the machine with other sessions' jobs, so its wall time and its processor time only bound its cost. A comparison of the two compilers on an idle machine is still owed.
+
+The budget: a build that compiles every entry now holds less than 6 GB on 14 threads, and a read of every entry less than 4 GB. A change that raises either peak states the new figure, measured as above. `crates/null3d-shaders/tests/cache.rs` checks that compiled builds with the same text hold one copy of it. With the sharing removed, the test fails.
