@@ -1393,6 +1393,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tiers: ['webgpu', 'webgl2'],
 		modes: ALL_MODES,
 	},
+	// The materials recipe's own page with the render scale fixed at 0.75, the floor at High. The
+	// recipe builds its place from the pixel and reads the scene's depth there, so it shows the same
+	// wrong-place fault when the engine maps the place through the depth copy's size.
+	{
+		name: 'scene-depth-render-scale',
+		page: 'tests/pages/scene-depth.html',
+		size: [320, 180],
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['renderScale=0.75'],
+	},
 	// A beach and a pond whose water meets a bed that rises to the surface, an island and two stones.
 	// The surface function reads the copy of the opaque scene's depth and fades the water over a band
 	// at the end of its gap to the geometry behind it, so each shoreline is soft rather than a hard
