@@ -61,6 +61,7 @@ The function takes an `EffectInput`:
 | `pixel` | `vec2f` | The pixel's center in pixels, from the top left. |
 | `size` | `vec2f` | The image's size in pixels, at the render scale. |
 | `time` | `f32` | The sketch time in seconds. |
+| `layer` | `u32` | The array layer the draw writes, from 0. An effect writes 0. |
 
 It returns the new color in the same form: linear, and multiplied by coverage. Keep alpha as `input.color.a` unless the effect changes what covers the pixel.
 
