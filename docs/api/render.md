@@ -293,7 +293,7 @@ export default defineSketch(({ materials, geometry, scene, textures, render }) =
 | `wgsl` | WGSL that the null3D Vite plugin compiled, with a `@compute` entry point. | Required |
 | `format` | The texture's format: `'rgba16float'` for high dynamic range color, `'r32float'` for one number per pixel, or `'rgba8unorm'` for 8-bit color. | `'rgba16float'` |
 | `history` | The pass keeps two states, and each run reads the state of the run before. See [State between runs](#state-between-runs). | `false` |
-| `layers` | The array layers of each state, from 1 to 256, or 128 at most with `history`. A `'writes'` dispatch runs one workgroup along z for each layer. A WebGL2 page draws one layer. | 1 |
+| `layers` | The array layers of each state, from 1 to 256, or 128 at most with `history`. A `'writes'` dispatch runs one workgroup along z for each layer. A WebGL2 page draws each layer, up to 32. | 1 |
 | `steps` | The runs that a frame records, swapping the two states between them. `render.setPassSteps` changes it. A pass without `history` runs once. | 1 |
 | `workgroupSize` | The invocations along each axis of a workgroup. | The shader's `@workgroup_size` |
 | `dispatch` | `'writes'` covers the texture: the size divided by the workgroup size, rounding up. Three whole numbers give the workgroup counts along each axis. | `'writes'` |
@@ -417,7 +417,9 @@ const red = data[(3 * width + 2) * 4];
 
 ### WebGL2
 
-WebGL2 has no compute shaders. A WebGL2 page runs the `fallback` WGSL as a full-screen pass, with the same values, textures, size, scale and pace. A pass with `history` runs its fragment form once for each step. The fragment form reads the state of the run before as `input.color`, which holds that state's texels at the pixel. A WebGL2 page draws one layer. A pass of several layers runs on WebGPU and in compatibility mode, and the call throws E1220 on WebGL2. The values keep their positions: the fields of the fragment form's `struct Uniforms` start at the same floats as the compute block's `u0`. Give no fallback when the work needs atomics, shared memory or a write to a place that the shader chooses, because a fragment shader cannot do those. The call then throws E1220 on WebGL2. The engine draws a compute pass on WebGPU only.
+WebGL2 has no compute shaders. A WebGL2 page runs the `fallback` WGSL as a full-screen pass, with the same values, textures, size, scale and pace. A pass with `history` runs its fragment form once for each step. The fragment form reads the state of the run before as `input.color`, which holds that state's texels at the pixel.
+
+A pass of several layers draws each layer in a pass of its own. `input.layer` gives the layer that the draw writes, from 0. Up to 32 layers work on WebGL2, and a pass of more throws E1220. The WebGPU paths draw up to 256. The values keep their positions: the fields of the fragment form's `struct Uniforms` start at the same floats as the compute block's `u0`. Give no fallback when the work needs atomics, shared memory or a write to a place that the shader chooses, because a fragment shader cannot do those. The call then throws E1220 on WebGL2. The engine draws a compute pass on WebGPU only.
 
 ### Switching and removing passes
 

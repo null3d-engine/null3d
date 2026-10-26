@@ -14,8 +14,8 @@
 //! their draws.
 
 use null3d_gpu::drawlist::{
-    DrawList, NO_TARGET, Op, format, layout as bind_layout, pass_flags, permutation, state_flags,
-    texture_usage, view,
+    DrawList, NO_TARGET, Op, buffer_usage as usage, format, layout as bind_layout, pass_flags,
+    permutation, state_flags, texture_usage, view,
 };
 
 use crate::bloom::bytes_of;
@@ -26,10 +26,17 @@ use crate::effects::{
 use crate::frame::{RecordError, UploadArena};
 use crate::graph::{RenderScale, Size};
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
-use crate::view::{Fullscreen, MAX_VIEWS};
+use crate::view::{Fullscreen, MAX_VIEWS, View};
 
 /// Bytes of the uniform buffer: a block for each view.
 const BUFFER_BYTES: usize = MAX_VIEWS * BLOCK;
+
+/// The array layers that one fragment form draws, each with a block of its own: a WebGL2 page
+/// draws a pass of several layers one layer at a time. The call refuses a pass of more layers.
+pub(crate) const MAX_FALLBACK_LAYERS: u32 = 32;
+
+/// Bytes of the buffer that holds one block for each state layer of each view.
+const LAYER_BUFFER_BYTES: usize = MAX_VIEWS * MAX_FALLBACK_LAYERS as usize * BLOCK;
 
 /// The GPU objects of the full-screen passes, which the frame builder's id ranges set.
 #[derive(Clone, Copy, Debug)]
@@ -44,11 +51,20 @@ pub(crate) struct FullscreenIds {
     pub(crate) blank_color: u32,
     /// The texel that a pass which reads no depth binds in its place.
     pub(crate) blank_depth: u32,
-    /// Two views of a fallback pass's target, one for each state, from this id on by the view's
-    /// place.
+    /// The views of a fallback pass's target: two states of up to [`MAX_FALLBACK_LAYERS`] layers,
+    /// from this id on by the view's place.
     pub(crate) first_view: u32,
     /// The scratch texture of a fallback pass's read state, from this id on by the view's place.
     pub(crate) first_scratch: u32,
+    /// The group of each state layer of a fallback pass of several layers, from this id on.
+    pub(crate) first_layer_group: u32,
+    /// The buffer of those groups' blocks.
+    pub(crate) layer_buffer: u32,
+}
+
+/// The id of the view of one state layer of the fallback pass at `place`.
+const fn layer_view(ids: FullscreenIds, place: usize, state: u32, layer: u32) -> u32 {
+    ids.first_view + (place as u32 * 2 + state) * MAX_FALLBACK_LAYERS + layer
 }
 
 /// What a fallback pass's scratch texture and state views were made for.
@@ -59,6 +75,8 @@ struct FallbackMade {
     scratch: u32,
     /// The states that the target holds, and so the layer views that it draws into.
     states: u32,
+    /// The array layers of each state.
+    layers: u32,
 }
 
 /// What a pass reads this frame: its input image and its depth, as textures of the draw list.
@@ -104,11 +122,29 @@ pub(crate) struct FullscreenPasses {
     bound: [Option<(PassInputs, u32)>; MAX_VIEWS],
     /// What each fallback pass's scratch texture and state views were made for.
     fallback: [Option<FallbackMade>; MAX_VIEWS],
+    /// What each layer of a fallback pass of several layers binds, or `None` before its group
+    /// exists.
+    bound_layers: [[Option<(PassInputs, u32)>; MAX_FALLBACK_LAYERS as usize]; MAX_VIEWS],
+    /// True once the buffer of the layer groups' blocks exists.
+    layers_created: bool,
 }
 
 impl FullscreenPasses {
     /// Bytes a frame may copy into its arena: every view's block.
     pub(crate) const UPLOAD_BYTES: usize = MAX_VIEWS * BLOCK_BYTES;
+
+    /// Bytes that the frame copies for the views: one block for each pass, or one for each layer
+    /// of a pass of several layers.
+    pub(crate) fn upload_bound(&self, views: &[View]) -> usize {
+        views
+            .iter()
+            .filter_map(View::fullscreen_pass)
+            .filter(|pass| pass.fallback)
+            .map(|pass| {
+                (pass.layers.clamp(1, MAX_FALLBACK_LAYERS) as usize).saturating_sub(1) * BLOCK_BYTES
+            })
+            .sum()
+    }
 
     /// The passes, with GPU objects from `ids`, drawing into targets of `format`, whose depth reads
     /// are multisampled when `multisampled_depth` says.
@@ -122,6 +158,8 @@ impl FullscreenPasses {
             uploaded: [None; MAX_VIEWS],
             bound: [None; MAX_VIEWS],
             fallback: [None; MAX_VIEWS],
+            bound_layers: [[None; MAX_FALLBACK_LAYERS as usize]; MAX_VIEWS],
+            layers_created: false,
         }
     }
 
@@ -227,10 +265,9 @@ impl FullscreenPasses {
         Ok(())
     }
 
-    /// Prepares the fragment form of a compute pass that keeps history: its scratch texture holds
-    /// the state that each step reads, and its group samples that state as the pass's input image.
-    /// The target's two states are viewed one at a time, so a step draws into one while it reads
-    /// the other through the scratch.
+    /// Prepares the fragment form of a compute pass: its scratch texture holds the state that
+    /// each step reads, and its group samples that state as the pass's input image. A pass of
+    /// several layers draws one layer at a time, each with a block that names its layer.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn prepare_fallback(
         &mut self,
@@ -244,20 +281,22 @@ impl FullscreenPasses {
         textures_made: bool,
     ) -> Result<(), RecordError> {
         let ids = self.ids;
+        let states = if pass.history { 2 } else { 1 };
+        let layers = pass.layers.clamp(1, MAX_FALLBACK_LAYERS);
         let made = FallbackMade {
             target,
             drawn,
             scratch: ids.first_scratch + place as u32,
-            states: if pass.history { 2 } else { 1 },
+            states,
+            layers,
         };
         if textures_made || self.fallback[place] != Some(made) {
             if let Some(old) = self.fallback[place] {
                 list.push(Op::DestroyTexture, &[old.scratch])?;
                 for state in 0..old.states {
-                    list.push(
-                        Op::DestroyTexture,
-                        &[ids.first_view + (place * 2) as u32 + state],
-                    )?;
+                    for layer in 0..old.layers {
+                        list.push(Op::DestroyTexture, &[layer_view(ids, place, state, layer)])?;
+                    }
                 }
             }
             if pass.history {
@@ -279,44 +318,111 @@ impl FullscreenPasses {
                     ],
                 )?;
             }
-            for state in 0..made.states {
-                list.push(
-                    Op::CreateTextureView,
-                    &[
-                        ids.first_view + (place * 2) as u32 + state,
-                        target,
-                        0,
-                        state,
-                    ],
-                )?;
+            for state in 0..states {
+                for layer in 0..layers {
+                    list.push(
+                        Op::CreateTextureView,
+                        &[
+                            layer_view(ids, place, state, layer),
+                            target,
+                            0,
+                            state * layers + layer,
+                        ],
+                    )?;
+                }
             }
             self.fallback[place] = Some(made);
             self.bound[place] = None;
+            self.bound_layers[place] = [None; MAX_FALLBACK_LAYERS as usize];
         }
-        let inputs = if pass.history {
-            PassInputs {
-                color: made.scratch,
-                depth: 0,
-            }
+        if layers == 1 {
+            let inputs = if pass.history {
+                PassInputs {
+                    color: made.scratch,
+                    depth: 0,
+                }
+            } else {
+                inputs
+            };
+            return self.prepare(
+                list,
+                arena,
+                (place, pass, inputs),
+                drawn,
+                (canvas, scale),
+                clock,
+                inverse_projection,
+                textures_made,
+            );
+        }
+        // A pass of several layers gives each layer a block of its own, which names the layer that
+        // the fragment form writes. The blocks share a buffer of their own.
+        if !self.layers_created {
+            list.push(
+                Op::CreateBuffer,
+                &[
+                    ids.layer_buffer,
+                    LAYER_BUFFER_BYTES as u32,
+                    usage::UNIFORM | usage::COPY_DST,
+                ],
+            )?;
+            self.layers_created = true;
+        }
+        let render = Size::Full.viewport(canvas, scale);
+        let (width, height) = (drawn.0.max(1) as f32, drawn.1.max(1) as f32);
+        let layout = if self.reads_multisampled(pass) {
+            bind_layout::EFFECT_DEPTH_MS
         } else {
-            inputs
+            bind_layout::EFFECT
         };
-        self.prepare(
-            list,
-            arena,
-            (place, pass, inputs),
-            drawn,
-            (canvas, scale),
-            clock,
-            inverse_projection,
-            textures_made,
-        )
+        for layer in 0..layers {
+            let slot = place as u32 * MAX_FALLBACK_LAYERS + layer;
+            let block = Block {
+                size: [
+                    render.0 as f32,
+                    render.1 as f32,
+                    canvas.0.max(1) as f32,
+                    canvas.1.max(1) as f32,
+                ],
+                clock: [clock[0], clock[1], 0.0, 0.0],
+                inverse_projection: inverse_projection.unwrap_or(IDENTITY),
+                values: pass.values,
+                // The engine writes the layer plus one, so each layer takes the pass-texture path.
+                drawn: [width, height, height, (layer + 1) as f32],
+                bloom: [0.0; 4],
+            };
+            let (at, bytes) = arena.push(bytes_of(&block))?;
+            list.push(
+                Op::WriteBuffer,
+                &[ids.layer_buffer, slot * BLOCK as u32, at, bytes],
+            )?;
+            let read = PassInputs {
+                color: if pass.history {
+                    made.scratch
+                } else {
+                    inputs.color
+                },
+                depth: inputs.depth,
+            };
+            if self.bound_layers[place][layer as usize] == Some((read, layout)) {
+                continue;
+            }
+            create_effect_group(
+                list,
+                (ids.first_layer_group + slot, layout),
+                (ids.layer_buffer, slot * BLOCK as u32, BLOCK_BYTES as u32),
+                (read.color, ids.sampler, read.depth),
+                0,
+            )?;
+            self.bound_layers[place][layer as usize] = Some((read, layout));
+        }
+        Ok(())
     }
 
     /// Records the runs of a fallback pass: each step copies the state that it reads into the
     /// scratch texture, then draws the next state into the other state's layer. The target keeps
     /// both states as its two layers, so a reader samples either. A pass without history draws
-    /// once, into its only layer.
+    /// once, into its only layer. A pass of several layers draws each layer of each step.
     pub(crate) fn record_fallback(
         &self,
         list: &mut DrawList,
@@ -333,56 +439,64 @@ impl FullscreenPasses {
         };
         let ids = self.ids;
         let (width, height) = made.drawn;
+        let layers = made.layers;
         let steps = if pass.history { pass.steps } else { 1 };
         let mut state = state;
         for _ in 0..steps {
             let read = 1 - state;
-            if pass.history {
-                // The state that this run reads goes into the scratch texture that it samples.
+            for layer in 0..layers {
+                if pass.history {
+                    // The state that this run reads goes into the scratch texture that it samples.
+                    list.push(
+                        Op::CopyTextureToTexture,
+                        &[
+                            target,
+                            0,
+                            0,
+                            0,
+                            u32::from(read) * layers + layer,
+                            made.scratch,
+                            0,
+                            0,
+                            0,
+                            0,
+                            width,
+                            height,
+                            1,
+                        ],
+                    )?;
+                }
                 list.push(
-                    Op::CopyTextureToTexture,
+                    Op::BeginRenderPass,
                     &[
-                        target,
-                        0,
-                        0,
-                        0,
-                        u32::from(read),
-                        made.scratch,
+                        layer_view(ids, place, u32::from(state), layer),
+                        NO_TARGET,
+                        NO_TARGET,
                         0,
                         0,
                         0,
                         0,
-                        width,
-                        height,
-                        1,
+                        0,
+                        pass_flags::STORE_COLOR,
                     ],
                 )?;
-            }
-            list.push(
-                Op::BeginRenderPass,
-                &[
-                    ids.first_view + (place * 2) as u32 + u32::from(state),
-                    NO_TARGET,
-                    NO_TARGET,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    pass_flags::STORE_COLOR,
-                ],
-            )?;
-            list.push(Op::SetPipeline, &[pipeline])?;
-            list.push(Op::SetBindGroup, &[0, ids.first_group + place as u32, 0])?;
-            if pass.maps.any() {
-                if pass.maps.group == 0 {
-                    list.push(Op::EndRenderPass, &[])?;
-                    return Ok(());
+                list.push(Op::SetPipeline, &[pipeline])?;
+                let group = if layers == 1 {
+                    ids.first_group + place as u32
+                } else {
+                    ids.first_layer_group + place as u32 * MAX_FALLBACK_LAYERS + layer
+                };
+                list.push(Op::SetBindGroup, &[0, group, 0])?;
+                if pass.maps.any() {
+                    if pass.maps.group == 0 {
+                        list.push(Op::EndRenderPass, &[])?;
+                        return Ok(());
+                    }
+                    list.push(Op::SetBindGroup, &[1, pass.maps.group, 0])?;
                 }
-                list.push(Op::SetBindGroup, &[1, pass.maps.group, 0])?;
+                list.push(Op::Draw, &[3, 1, 0, 0])?;
+                list.push(Op::EndRenderPass, &[])?;
             }
-            list.push(Op::Draw, &[3, 1, 0, 0])?;
-            list.push(Op::EndRenderPass, &[])?;
             state = read;
         }
         Ok(())
@@ -422,6 +536,8 @@ impl FullscreenPasses {
         self.uploaded = [None; MAX_VIEWS];
         self.bound = [None; MAX_VIEWS];
         self.fallback = [None; MAX_VIEWS];
+        self.bound_layers = [[None; MAX_FALLBACK_LAYERS as usize]; MAX_VIEWS];
+        self.layers_created = false;
     }
 }
 
