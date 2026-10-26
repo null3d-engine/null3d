@@ -4113,8 +4113,8 @@ impl FrameGraph {
             }
             let ready = !pass.maps.any() || pass.maps.group != 0;
             let runs = ready && target.is_some() && self.compute_runs(place);
-            self.compute
-                .begin_frame(place, pass, runs, self.textures_made);
+            let drawn = view_size(&self.declared_views[place]).made(self.canvas, self.scale);
+            self.compute.begin_frame(place, pass, runs, drawn);
         }
         // The fragment form of a compute pass on WebGL2 keeps its states in the full-screen pass.
         for place in 1..self.declared_views.len() {
@@ -5535,8 +5535,8 @@ impl FrameGraph {
                         continue;
                     }
                     let start = list.len();
-                    list.push(Op::BeginComputePass, &[])?;
-                    let begun = list.len();
+                    let mut began = false;
+                    let mut wrote = false;
                     for &pass in plan.passes(step) {
                         // A sketch's compute pass is the graph's to record. Every other compute
                         // pass of the step belongs to the builder.
@@ -5544,32 +5544,50 @@ impl FrameGraph {
                             Role::Compute(view) => {
                                 let place = view.index();
                                 if let Some(pass) = self.declared_views[place].compute_pass() {
+                                    if !began {
+                                        list.push(Op::BeginComputePass, &[])?;
+                                        began = true;
+                                    }
+                                    let before = list.len();
                                     let drawn = view_size(&self.declared_views[place])
                                         .made(self.canvas, self.scale);
                                     self.compute.record(list, place, pass, drawn)?;
+                                    wrote |= list.len() > before;
+                                    if pass.history {
+                                        // A reader later in this step samples the target, so the
+                                        // pass ends and its states reach the target before the
+                                        // reader records.
+                                        if began {
+                                            list.push(Op::EndComputePass, &[])?;
+                                            began = false;
+                                        }
+                                        let before = list.len();
+                                        self.compute.copy_states(list, place, pass)?;
+                                        wrote |= list.len() > before;
+                                    }
                                 }
                             }
-                            role => record(list, role)?,
-                        }
-                    }
-                    if list.len() == begun {
-                        list.truncate(start);
-                    } else {
-                        list.push(Op::EndComputePass, &[])?;
-                        // A history pass keeps its states in textures of their own, so the frame
-                        // copies them into its target's two blocks once its runs have finished.
-                        for &pass in plan.passes(step) {
-                            if let Role::Compute(view) = self.roles[pass.index()]
-                                && let Some(content) =
-                                    self.declared_views[view.index()].compute_pass()
-                            {
-                                self.compute.copy_states(list, view.index(), content)?;
+                            role => {
+                                if !began {
+                                    list.push(Op::BeginComputePass, &[])?;
+                                    began = true;
+                                }
+                                let before = list.len();
+                                record(list, role)?;
+                                wrote |= list.len() > before;
                             }
                         }
+                    }
+                    if began {
+                        list.push(Op::EndComputePass, &[])?;
+                    }
+                    if wrote {
                         // A buffer that a compute pass writes reaches the commands that read it
                         // after the pass, not inside one: a copy between buffers needs its own
                         // place outside every pass.
                         after_compute(list)?;
+                    } else {
+                        list.truncate(start);
                     }
                 }
                 StepKind::Render { size, .. } => {
@@ -10091,5 +10109,186 @@ mod tests {
             .unwrap();
         assert!(frames.graph().find_pass("BloomDown0").is_none());
         assert_eq!(steps(&frames), [vec!["Opaque", "Resolve"]]);
+    }
+
+    /// Probe for the M3-V13 audit: one frame's three lists, prepared, uploaded and recorded.
+    fn probe_frame(frames: &mut FrameGraph, canvas: (u32, u32)) -> (DrawList, DrawList, DrawList) {
+        let mut prepared = DrawList::with_capacity(65536);
+        frames
+            .prepare(&mut prepared, canvas, RenderScale::FULL)
+            .unwrap();
+        let mut arena = UploadArena::default();
+        arena.reset(frames.upload_bound());
+        let mut uploaded = DrawList::with_capacity(65536);
+        frames
+            .upload(
+                &mut uploaded,
+                &mut arena,
+                Output::default(),
+                Grading::default(),
+            )
+            .unwrap();
+        let mut recorded = DrawList::with_capacity(65536);
+        frames
+            .record(
+                &mut recorded,
+                |_| [0.0; 4],
+                |_| true,
+                |_: &mut DrawList, _: Role| Ok(()),
+                |_| Ok(()),
+                |_| Ok(()),
+                |_| Ok(()),
+            )
+            .unwrap();
+        (prepared, uploaded, recorded)
+    }
+
+    #[test]
+    fn probe_v13_p1_a_compute_reader_in_the_same_step_samples_the_copied_state() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        let a = history_compute(true, 1, 1);
+        let mut b = compute(true);
+        b.compute_pass_mut().unwrap().maps.views = 1 << 1;
+        frames.sync(&[View::default(), a, b]);
+        let (_p, _u, recorded) = probe_frame(&mut frames, (64, 48));
+        eprintln!("P1 steps: {:?}", steps(&frames));
+        let target = frames.view_target(ViewId::from_index(1)).unwrap();
+        let commands: Vec<(Op, Vec<u32>)> = null3d_gpu::drawlist::decode(recorded.words())
+            .map(|command| command.unwrap())
+            .map(|command| (command.op, command.operands.to_vec()))
+            .collect();
+        for (index, (op, words)) in commands.iter().enumerate() {
+            if matches!(
+                op,
+                Op::Dispatch
+                    | Op::CopyTextureToTexture
+                    | Op::BeginComputePass
+                    | Op::EndComputePass
+                    | Op::SetComputePipeline
+            ) {
+                eprintln!("P1 {index}: {op:?} {words:?}");
+            }
+        }
+        let copy = commands
+            .iter()
+            .position(|(op, words)| *op == Op::CopyTextureToTexture && words[5] == target)
+            .expect("the history pass's states reach its target");
+        let last_dispatch = commands
+            .iter()
+            .rposition(|(op, _)| *op == Op::Dispatch)
+            .unwrap();
+        eprintln!(
+            "P1 A step {:?}, B step {:?}; A's copy at {copy}, B's dispatch at {last_dispatch}",
+            step_of(&frames, "Opaque1"),
+            step_of(&frames, "Opaque2")
+        );
+        assert!(
+            copy < last_dispatch,
+            "the reader's dispatch (at {last_dispatch}) comes before the copy of the newest state into the target (at {copy})"
+        );
+    }
+
+    #[test]
+    fn probe_v13_p2_a_canvas_resize_keeps_a_stopped_fixed_size_pass_at_its_newest_state() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        let mut view = history_compute(true, 2, 1);
+        view.target_mut().size = Some((16, 16));
+        frames.sync(&[View::default(), view]);
+        probe_frame(&mut frames, (64, 48));
+        assert_eq!(
+            frames.read_layer(1, u32::MAX),
+            1,
+            "two runs leave the second state"
+        );
+        let mut stopped = view;
+        stopped.compute_pass_mut().unwrap().steps = 0;
+        frames.sync(&[View::default(), stopped]);
+        probe_frame(&mut frames, (64, 48));
+        assert_eq!(
+            frames.read_layer(1, u32::MAX),
+            1,
+            "a stopped pass keeps its newest state"
+        );
+        let target = frames.view_target(ViewId::from_index(1)).unwrap();
+        let (prepared, _u, _r) = probe_frame(&mut frames, (128, 96));
+        let remade = operands(&prepared, Op::CreateTexture)
+            .iter()
+            .any(|texture| texture[0] == target);
+        eprintln!(
+            "P2 the fixed-size target {target} remade at the resize: {remade}; now {:?}; textures made: {}",
+            frames.view_target(ViewId::from_index(1)),
+            frames.textures_made
+        );
+        assert_eq!(
+            frames.read_layer(1, u32::MAX),
+            1,
+            "a canvas resize moves a stopped fixed-size pass's readers to its older state"
+        );
+    }
+
+    #[test]
+    fn probe_v13_p3_a_canvas_resize_keeps_the_states_of_a_fixed_size_pass() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        let mut view = history_compute(true, 1, 1);
+        view.target_mut().size = Some((16, 16));
+        frames.sync(&[View::default(), view]);
+        probe_frame(&mut frames, (64, 48));
+        let (_p, uploaded, _r) = probe_frame(&mut frames, (64, 48));
+        assert!(
+            operands(&uploaded, Op::CreateTexture)
+                .iter()
+                .all(|texture| texture[0] != 602 && texture[0] != 603),
+            "a still canvas keeps the states"
+        );
+        let (prepared, uploaded, _r) = probe_frame(&mut frames, (128, 96));
+        let target = frames.view_target(ViewId::from_index(1)).unwrap();
+        eprintln!(
+            "P3 target remade at the resize: {}",
+            operands(&prepared, Op::CreateTexture)
+                .iter()
+                .any(|texture| texture[0] == target)
+        );
+        let remade: Vec<_> = operands(&uploaded, Op::CreateTexture)
+            .into_iter()
+            .filter(|texture| texture[0] == 602 || texture[0] == 603)
+            .collect();
+        assert!(
+            remade.is_empty(),
+            "a canvas resize made a fixed-size pass's states again, so its field starts from empty: {remade:?}"
+        );
+    }
+
+    #[test]
+    fn probe_v13_p4_a_pass_resized_while_off_copies_states_of_its_new_size() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        let view = history_compute(true, 1, 1);
+        frames.sync(&[View::default(), view]);
+        probe_frame(&mut frames, (64, 48));
+        let mut off = view;
+        off.target_mut().enabled = false;
+        frames.sync(&[View::default(), off]);
+        let (_p2, u2, _r2) = probe_frame(&mut frames, (128, 96));
+        frames.sync(&[View::default(), view]);
+        let (_p3, u3, r3) = probe_frame(&mut frames, (128, 96));
+        let states: Vec<_> = [&u2, &u3]
+            .iter()
+            .flat_map(|list| operands(list, Op::CreateTexture))
+            .filter(|texture| texture[0] == 602)
+            .collect();
+        let copies: Vec<_> = operands(&r3, Op::CopyTextureToTexture)
+            .into_iter()
+            .filter(|copy| copy[0] == 602)
+            .collect();
+        eprintln!(
+            "P4 state 0 made after the first frame: {states:?}; its copies once on again: {copies:?}"
+        );
+        let copied = copies.first().map(|copy| (copy[10], copy[11]));
+        assert!(copied.is_some(), "the pass copies its states once on again");
+        assert!(
+            states
+                .iter()
+                .any(|texture| Some((texture[1], texture[2])) == copied),
+            "the copy of {copied:?} texels reads a state texture made at the first frame's size"
+        );
     }
 }

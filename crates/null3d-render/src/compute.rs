@@ -53,6 +53,15 @@ pub(crate) struct ComputePassIds {
 /// Bytes of the uniform buffer: a block for each view.
 const BUFFER_BYTES: usize = MAX_VIEWS * BLOCK;
 
+/// The format code of a history pass's state textures.
+const fn state_code(pass: &Compute) -> u32 {
+    if pass.format == 0 {
+        format::RGBA16_FLOAT
+    } else {
+        pass.format
+    }
+}
+
 /// The texture that holds one state of the pass at view place `place`.
 const fn state_texture(ids: ComputePassIds, place: usize, state: u32) -> u32 {
     ids.first_state + (place * 2) as u32 + state
@@ -140,6 +149,9 @@ pub(crate) struct ComputePasses {
     viewed: [u32; MAX_VIEWS],
     /// The size of each view's state textures, in texels.
     sized: [(u32, u32); MAX_VIEWS],
+    /// The layers and format code of each view's state textures.
+    layers: [u32; MAX_VIEWS],
+    code: [u32; MAX_VIEWS],
     /// True once each view's two state textures exist.
     states: [bool; MAX_VIEWS],
     /// True when each view's pass ran in this frame, so its states must reach the target.
@@ -171,6 +183,8 @@ impl ComputePasses {
             bound: [[None; 2]; MAX_VIEWS],
             viewed: [0; MAX_VIEWS],
             sized: [(0, 0); MAX_VIEWS],
+            layers: [0; MAX_VIEWS],
+            code: [0; MAX_VIEWS],
             states: [false; MAX_VIEWS],
             ran: [false; MAX_VIEWS],
             state: [0; MAX_VIEWS],
@@ -183,22 +197,18 @@ impl ComputePasses {
 
     /// Starts the view's frame: the state that its first run writes, and the state that its last
     /// run leaves for readers. A frame of no runs, or of an even number of steps, leaves the state
-    /// that the frame before left. `textures_made` says the graph made the plan's textures again,
-    /// so both states are empty and the first one is next.
+    /// that the frame before left. A frame whose state textures are stale, because this view's own
+    /// size, layers or shader changed, makes them again and starts both states empty.
     pub(crate) fn begin_frame(
         &mut self,
         place: usize,
         pass: &Compute,
         runs: bool,
-        textures_made: bool,
+        drawn: (u32, u32),
     ) {
-        let seen = (pass.template, pass.history);
-        if textures_made || self.seen[place] != Some(seen) {
+        if pass.history && self.states_stale(place, pass, drawn) {
             self.state[place] = 0;
             self.newest[place] = 0;
-            self.viewed[place] = 0;
-            self.bound[place] = [None; 2];
-            self.seen[place] = Some(seen);
         }
         self.draw_state[place] = self.state[place];
         self.ran[place] = pass.history && runs && pass.steps > 0;
@@ -208,6 +218,17 @@ impl ComputePasses {
             self.newest[place] = self.state[place] ^ ((pass.steps - 1) & 1) as u8;
             self.state[place] ^= (pass.steps & 1) as u8;
         }
+    }
+
+    /// True when the view's state textures do not hold what this frame's pass and target need, so
+    /// the frame makes them again and both states start empty. A pass of a fixed size keeps them
+    /// through a canvas resize.
+    fn states_stale(&self, place: usize, pass: &Compute, drawn: (u32, u32)) -> bool {
+        !self.states[place]
+            || self.sized[place] != drawn
+            || self.layers[place] != pass.layers.max(1)
+            || self.code[place] != state_code(pass)
+            || self.seen[place] != Some((pass.template, pass.history))
     }
 
     /// The array layer of the state that a history pass last wrote, or 0 for a pass that keeps no
@@ -345,20 +366,19 @@ impl ComputePasses {
             }
             None if pass.history => {
                 let layers = pass.layers.max(1);
+                let code = state_code(pass);
                 // Two textures hold the states, so a run writes one and samples the other, and
-                // every binding covers a whole texture, which compatibility mode requires.
-                if textures_made || !self.states[place] {
+                // every binding covers a whole texture, which compatibility mode requires. They
+                // are made again only when this view's own size, layers or shader changes: a
+                // canvas resize leaves a pass of a fixed size, and the state it holds, alone.
+                let same = !self.states_stale(place, pass, drawn);
+                if !same {
                     if self.states[place] {
                         for state in 0..2u32 {
                             list.push(Op::DestroyTexture, &[state_view(ids, place, state)])?;
                             list.push(Op::DestroyTexture, &[state_texture(ids, place, state)])?;
                         }
                     }
-                    let code = if pass.format == 0 {
-                        format::RGBA16_FLOAT
-                    } else {
-                        pass.format
-                    };
                     for state in 0..2u32 {
                         let texture = state_texture(ids, place, state);
                         list.push(
@@ -384,10 +404,13 @@ impl ComputePasses {
                         )?;
                     }
                     self.states[place] = true;
+                    self.sized[place] = drawn;
+                    self.layers[place] = layers;
+                    self.code[place] = code;
+                    self.seen[place] = Some((pass.template, pass.history));
                     self.bound[place] = [None; 2];
                 }
                 self.viewed[place] = target;
-                self.sized[place] = drawn;
                 for state in 0..2u32 {
                     let bound = Bound {
                         target,
@@ -395,7 +418,7 @@ impl ComputePasses {
                         drawn,
                         state,
                     };
-                    if !textures_made && self.bound[place][state as usize] == Some(bound) {
+                    if self.bound[place][state as usize] == Some(bound) {
                         continue;
                     }
                     let write = state_view(ids, place, state);
@@ -559,6 +582,8 @@ impl ComputePasses {
         self.bound = [[None; 2]; MAX_VIEWS];
         self.viewed = [0; MAX_VIEWS];
         self.sized = [(0, 0); MAX_VIEWS];
+        self.layers = [0; MAX_VIEWS];
+        self.code = [0; MAX_VIEWS];
         self.states = [false; MAX_VIEWS];
         self.ran = [false; MAX_VIEWS];
         self.state = [0; MAX_VIEWS];
@@ -683,19 +708,28 @@ mod tests {
             first_state: 60,
         };
         let mut passes = ComputePasses::new(ids);
-        passes.begin_frame(1, &pass, true, false);
+        // The state textures hold a frame at this size and pass, so a frame at the same size keeps
+        // them and their states.
+        passes.states[1] = true;
+        passes.sized[1] = (16, 16);
+        passes.layers[1] = 1;
+        passes.code[1] = format::RGBA16_FLOAT;
+        passes.seen[1] = Some((pass.template, pass.history));
+        passes.begin_frame(1, &pass, true, (16, 16));
         assert_eq!(
             passes.state[1], 1,
             "an odd count of steps leaves the second state"
         );
-        // A lost device makes every texture again, so the next frame starts from the first, empty
-        // state and records no run.
+        // The frame makes the state textures at another size, so the states start empty and it
+        // records no run.
         let idle = Compute { steps: 0, ..pass };
-        passes.begin_frame(1, &idle, true, true);
+        passes.begin_frame(1, &idle, true, (32, 32));
         assert_eq!(passes.state[1], 0);
-        // The first run after the loss writes the empty state, not the one that the old device left.
+        // The frame's prepare then makes them at the new size, and the first run writes the empty
+        // state, not the one that the old size left.
+        passes.sized[1] = (32, 32);
         let once = Compute { steps: 1, ..pass };
-        passes.begin_frame(1, &once, true, false);
+        passes.begin_frame(1, &once, true, (32, 32));
         assert_eq!(passes.state[1], 1);
     }
 

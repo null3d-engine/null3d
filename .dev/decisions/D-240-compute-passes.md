@@ -291,8 +291,9 @@ finds no cycle. A page that names the pass's own texture in `textures` still thr
 does every other loop.
 
 **The order.** The states need no barrier of their own: each frame's commands are submitted in
-order, and the copies into the target are recorded after the compute pass on the same encoder, so
-the frame before's writes finish before this frame's reads. The page's forty-runs-in-one-frame case
+order, and a history pass's copies into the target are recorded between compute passes, before any
+pass that samples it. A reader in the same step therefore sees the state this frame wrote, and the
+frame before's writes finish before this frame's reads. The page's forty-runs-in-one-frame case
 reading the same as forty frames is the proof; a read that saw stale state would not count to forty.
 Keep that case: a change that adds a graph edge must keep it passing.
 
