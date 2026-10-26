@@ -56,6 +56,27 @@ export function parseCommit({ subject, body, hash }: RawCommit): ParsedCommit {
 }
 
 /**
+ * The environment of a git command that must read the repository its own working directory names.
+ * A hook that starts this code hands its repository to every process it starts, and git obeys that
+ * over the directory, so the variables that name a repository come out here.
+ */
+function repositoryEnv(): NodeJS.ProcessEnv {
+	const env: NodeJS.ProcessEnv = { ...process.env };
+	for (const name of [
+		'GIT_DIR',
+		'GIT_WORK_TREE',
+		'GIT_INDEX_FILE',
+		'GIT_COMMON_DIR',
+		'GIT_OBJECT_DIRECTORY',
+		'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+		'GIT_NAMESPACE',
+		'GIT_PREFIX',
+	])
+		delete env[name];
+	return env;
+}
+
+/**
  * Every commit in a range of history that is not a merge, newest first, parsed as git writes its
  * log, so no limit on the log's size applies. A merge only joins a branch, and the branch's own
  * commits are listed one by one, so the range's notes miss no change, whichever branch brought it.
@@ -63,6 +84,7 @@ export function parseCommit({ subject, body, hash }: RawCommit): ParsedCommit {
 export async function* readCommits(root: string, range: string): AsyncGenerator<ParsedCommit> {
 	const git = spawn('git', ['log', '--no-merges', '--format=%H%x00%s%x00%b%x1e', range], {
 		cwd: root,
+		env: repositoryEnv(),
 		stdio: ['ignore', 'pipe', 'pipe'],
 	});
 	const exited = new Promise<number | null>((resolve, reject) => {
