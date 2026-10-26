@@ -55,7 +55,6 @@ const INCOMPLETE = new Set([
 	'M3-V6',
 	'M3-B1',
 	'M3-E4a',
-	'M3-F5',
 	'M3-E6',
 	'M3-E8',
 	'M3-L1',
@@ -120,7 +119,7 @@ const NOTES: Readonly<Record<string, string>> = {
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-F8':
-		"unticked by the round 27 audit although its branch lands: the capture guard's fix proves the two-probe picture on WebGL2, and the WebGPU and compatibility references recorded the lost-probe fault, so those paths prove nothing until M3-R36 draws them again. Its tick also waits on M3-R35, the pick that never settles after a GPU loss, which the record places under this task.",
+		"unticked by the round 27 audit although its branch lands: the capture guard's fix proves the two-probe picture on WebGL2, and the WebGPU and compatibility references recorded the lost-probe fault, so those paths prove nothing until M3-R36 draws them again. Its tick waits on M3-R36 and on CI's full run at the landed commit passing probe-capture and probe-blend on every path; the pick gap that the record placed under this task is closed by M3-R35.",
 	'M3-R18':
 		'unticked by audit round 21, after two rounds of reading had passed it: the finish line asks every package notices to list its upstreams, and four ported upstreams are named nowhere. KinoBokeh and Unity post-processing stack v1 behind the depth-of-field gather, AMD FidelityFX FSR 1 RCAS and Qualcomm Snapdragon GSR 1 behind the final pass, each fetched and compared by hand against the shader source. The gap earlier rounds missed is which package ships the text: the engine npm package leaves the compiled shaders out, while the Vite plugin shader compiler carries the full text of every engine shader and names none of these upstreams, nor three.js, nor Filament. The guard that would catch it, tying an attribution claim to the notices of the package that ships that code, does not exist yet',
 	'M3-R14':
@@ -181,8 +180,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the same placement is shown only on two Android phones in Chrome, so no second JavaScript engine has placed it, and no iPad run exists; the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
 	'M3-E4a':
 		'the material change is on the branch with the water work, but the task asks for a material that declares the scene depth beside two textures on WebGPU, compatibility and WebGL2, and for the cost of a material that reads neither; its helper is finishing that proof',
-	'M3-F5':
-		'the water add-on, its records and its demos are on the branch, and `0e88e6b86` drew its twelve reference pictures; the owner has not judged the new Creek look, which waives the unchanged-references clause, and the record line is not chosen between the withdrawn tick and the attribution run',
 	'M3-V5':
 		"every vegetation picture passes in both reference sets on both GPUs and the crowns keep their coverage at three distances, and the leaf cells now hold a spray of lobed, veined, damaged leaves instead of one smooth shape. Its author's verdict is that the atlas is at least as good as Creek's as a texture, and that the crown is still paler and flatter because the material lights it with one uniform light while Creek's texture carries painted shadowing, which belongs to M3-V7. The task's line asks the owner to judge the two side by side, and the paint time per device is owed too",
 	'M3-V1':
