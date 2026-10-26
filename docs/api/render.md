@@ -354,7 +354,7 @@ The shader declares the state of the run before at binding 2 and reads it with `
 @group(0) @binding(2) var history: texture_2d_array<f32>;
 
 // `id.z` is the layer within the state, from 0 to the pass's layers less one.
-let before = textureLoad(history, vec2i(id.xy), id.z);
+let before = textureLoad(history, vec2i(id.xy), id.z, 0);
 ```
 
 Binding 1 holds the state that this run writes, so the shader writes layer `id.z` as it does without

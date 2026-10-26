@@ -562,6 +562,46 @@ mod tests {
     }
 
     #[test]
+    fn a_rebuilt_target_starts_the_states_again_from_empty() {
+        let pass = Compute {
+            template: 1,
+            workgroup: [8, 8, 1],
+            dispatch: None,
+            format: format::RGBA16_FLOAT,
+            after_scene: false,
+            values: [0.0; crate::effects::EFFECT_FLOATS],
+            maps: crate::effects::EffectMaps::NONE,
+            buffers: None,
+            history: true,
+            layers: 1,
+            steps: 3,
+            reset: 0,
+        };
+        let ids = ComputePassIds {
+            buffer: 1,
+            first_group: 10,
+            first_history_group: 20,
+            first_pipeline: 30,
+            first_view: 40,
+        };
+        let mut passes = ComputePasses::new(ids);
+        passes.begin_frame(1, &pass, true, false);
+        assert_eq!(
+            passes.state[1], 1,
+            "an odd count of steps leaves the second state"
+        );
+        // A lost device makes every texture again, so the next frame starts from the first, empty
+        // state and records no run.
+        let idle = Compute { steps: 0, ..pass };
+        passes.begin_frame(1, &idle, true, true);
+        assert_eq!(passes.state[1], 0);
+        // The first run after the loss writes the empty state, not the one that the old device left.
+        let once = Compute { steps: 1, ..pass };
+        passes.begin_frame(1, &once, true, false);
+        assert_eq!(passes.state[1], 1);
+    }
+
+    #[test]
     fn a_history_pass_keeps_the_state_that_its_last_step_wrote() {
         let pass = Compute {
             template: 1,

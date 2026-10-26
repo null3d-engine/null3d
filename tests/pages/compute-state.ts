@@ -20,9 +20,12 @@ type Pixel = [number, number, number, number];
 run('compute-state', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
+	// The build rewrites the static address of the sketch module, so the case goes on afterwards.
+	const sketch = new URL('./sketches/compute-state-sketch.ts', import.meta.url);
+	sketch.searchParams.set('case', CASE);
 	const engine = await createEngine({
 		canvas,
-		sketch: new URL(`./sketches/compute-state-sketch.ts?case=${CASE}`, import.meta.url),
+		sketch,
 		maxPixelRatio: 1,
 	});
 	const tier = engine.capabilities.tier;
@@ -66,6 +69,15 @@ run('compute-state', async () => {
 		);
 		await engine.destroy();
 		return { tier, mode, case: CASE, left, right, same };
+	}
+	if (CASE === 'loss') {
+		// The sketch asks for the loss once it has read a value; the engine rebuilds every texture.
+		const off = engine.onSketchMessage((name) => {
+			if (name !== 'lose') return;
+			off();
+			engine.simulateGpuLoss();
+			setTimeout(() => engine.postToSketch('lost'), 1500);
+		});
 	}
 	const state = await new Promise<StateReport>((resolve, reject) => {
 		const timer = setTimeout(
