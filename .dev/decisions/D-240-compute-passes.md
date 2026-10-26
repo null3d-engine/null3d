@@ -257,7 +257,7 @@ The iPad and the S24 run the same page through the `compute` device plan:
 
 
 
-## Addendum: compute passes that keep their state (M3-V13, 26 October 2026)
+## Addendum: compute passes that keep their state (M3-V13)
 
 The fluid wind of M3-V15 needs a pass that reads its own output from the run before: advection and
 each Jacobi step of the pressure solve read the state that the step before wrote. D-240 refused a
@@ -337,10 +337,10 @@ that runs the pass copies both states into the target, `layers * 2` layer copies
 dispatch for each step. A WebGL2 history pass adds a scratch texture of one state and one copy for
 each run.
 
-**The figures.** The first figures here are withdrawn. They ran a one-thread workgroup, which
-dispatches 65,536 workgroups for a 256 by 256 pass, and they measured no pass-off baseline, so they
-could not separate the pass's cost from the frame's. The cost page now runs the pass with an 8 by 8
-workgroup and measures the same scene with the pass switched off, on every GPU path. Its figures
-are owed to a held quiet window on the Mac; the run record names the commit, the command and the
-machine's load. The iPad and the phone rows are owed to the landing session, as M3-V14's
-measurements cover the field that uses the pass first.
+**The figures.** The cost page runs the pass with an 8 by 8 workgroup and measures the same scene
+with the pass switched off, on every GPU path. A workgroup of one invocation and a measurement with
+no pass-off baseline are rejected: the first dispatches 65,536 workgroups for a 256 by 256 pass, and
+the second cannot separate the pass's cost from the frame's. The figures are owed to a held quiet
+window on the Mac; the run record names the commit, the command and the machine's load. The iPad
+and the phone rows are owed to the landing session, as M3-V14's measurements cover the field that
+uses the pass first.
