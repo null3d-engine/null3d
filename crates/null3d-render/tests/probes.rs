@@ -136,3 +136,72 @@ fn a_probe_captures_when_made_and_again_on_request_on_both_paths() {
         ..CpuCulledConfig::default()
     })));
 }
+
+/// A held scene records every frame before the thread that draws draws one, so no pipeline is
+/// built when a held frame records. Two probes side by side each capture in the held frame that
+/// picks them: the first held frame captures one, and the extra held frame that a waiting probe
+/// records captures the other.
+fn check_two_held_captures<B: FrameBuilder>(mut world: World<B>) {
+    let mut mock = MockBackend::default();
+    world.pipelines_built = 0;
+    world.step(&mut mock, true);
+    let west = ProbeSettings {
+        low: [-5.0, -5.0, -5.0],
+        high: [0.0, 5.0, 5.0],
+        capture: [-2.0, 1.0, 0.0],
+        ..ProbeSettings::default()
+    };
+    let east = ProbeSettings {
+        low: [0.0, -5.0, -5.0],
+        high: [5.0, 5.0, 5.0],
+        capture: [2.0, 1.0, 0.0],
+        ..ProbeSettings::default()
+    };
+    let settings = world.renderer.settings_mut();
+    settings.set_probe(0, west).unwrap();
+    settings.set_probe(1, east).unwrap();
+    let generator = settings.textures_mut().take_image_id();
+    settings.probes_mut().set_generator(generator);
+    // Until the thread that draws holds the filter's generator, no probe captures.
+    let commands = world.step(&mut mock, true);
+    assert!(filters(&commands).is_empty());
+    mock.provide_generator(generator);
+    let taken = world.frame - 1;
+    world
+        .renderer
+        .settings_mut()
+        .textures_mut()
+        .sync(generator, taken);
+
+    let mut first = Vec::new();
+    for _ in 0..3 {
+        first = filters(&world.step(&mut mock, false));
+        if !first.is_empty() {
+            break;
+        }
+    }
+    assert_eq!(first.len(), 1, "the first held frame captures a probe");
+    assert_eq!(first[0].1[2], 0, "the first held frame captures probe 0");
+
+    // The runner records one more held frame because a probe still waits for its first capture.
+    let second = filters(&world.step(&mut mock, false));
+    assert_eq!(
+        second.len(),
+        1,
+        "the second held frame captures the other probe"
+    );
+    assert_eq!(
+        second[0].1[2], 1,
+        "the second held frame captures probe 1, not probe 0 again"
+    );
+    assert!(!world.renderer.settings().probes().waiting());
+}
+
+#[test]
+fn each_held_frame_captures_its_own_probe() {
+    check_two_held_captures(World::new());
+    check_two_held_captures(World::build(CpuCulledRenderer::new(CpuCulledConfig {
+        multi_draw: true,
+        ..CpuCulledConfig::default()
+    })));
+}
