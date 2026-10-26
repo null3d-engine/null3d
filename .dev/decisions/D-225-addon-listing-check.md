@@ -385,7 +385,7 @@ serve them, and that is a change of its own with its own measurements.
 **Why the old gate failed.** The sizes gate charged every built file to one budget, chosen by the
 file's name. Most of the wind add-on's entry is not its code. The plugin inlines compiled WGSL in
 the module that imports it. That is a whole shader's builds with the tables of text that they share,
-a sky layer's builds, and an effect's pieces. The inlined shader data is 86,592 of the wind entry's
+and an effect's pieces. The inlined shader data is 86,592 of the wind entry's
 91,607 bytes, or 94.5%. For water it is 97,323 of 111,802, or 87.0%. The gate charged those bytes to
 the 64 KB budget for code, so it failed both entries: 91,607 and 111,802 bytes uncompressed. This
 change moves no byte that a page downloads. It moves only the accounting for those bytes.
@@ -429,7 +429,7 @@ is glue and the small packs, not shader text. WGSL that a module holds as a tagg
 split, so those bytes stay in the code part. That is stricter than the gate claims, and not a way
 past it.
 
-**The figures.** A warm shader cache, and wind's figures repeated in two runs, from
+**The figures.** A warm shader cache at `f04f4f188`, with wind's figures repeated in two runs, from
 `bun packages/cli/bin/null3d.js check-addon <package> --skip-browser`.
 
 | Add-on | File | Raw | Code | Shader data | Share of raw |
