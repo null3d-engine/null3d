@@ -26,18 +26,19 @@ const PARTIAL: Readonly<Record<string, string>> = {
 	'M3-C1':
 		'the scene, its lanes, rain and the hero car are in; the moods, the instances demo and the device figures remain',
 	'M3-T1':
-		"the measured fence is in and the trim landed and was then reverted with a record: moving the fog write, the picks and the events out of the start cost more bytes than it saved, so the start stays at about 190 KB against this task's 160 KB target. That target predates the owner's decision to raise the start's budget to 187 KB, so the task needs the owner's word on whether it still means anything",
+		"the measured fence is in and the trim landed and was then reverted with a record: moving the fog write, the picks and the events out of the start cost more bytes than it saved, so the start stays at about 190 KB against this task's 160 KB target. The owner dropped the task on 24 October 2026 as superseded: the target predates the ruling that the start's budget may rise",
 	'M3-B4':
 		'the rain streaks, the storm over any hour and the lamp-following city lights are in the Skyway demo; the wet-surface helper, the windshield drops and the particles link remain',
 };
 
-/** Tasks built on a helper branch, with nothing of them on this branch yet. */
+/** Tasks whose work is on a helper branch, whether or not part of it has reached this branch. */
 const ON_BRANCH = new Set(['M3-E9', 'M3-V2']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
-// An audit of the branch on 24 October 2026 read every ticked task against its own "Done when" and
-// its section's rule. A tick states that the task is done, so a task that audit found short of its
-// own line is not ticked here until the gap closes, whatever code it already has.
+// The branch's audits, the last at round 24 on 26 October 2026, read every ticked task against its
+// own "Done when" and its section's rule. A tick states that the task is done, so a task those
+// audits found short of its own line is not ticked here until the gap closes, whatever code it
+// already has.
 const INCOMPLETE = new Set([
 	'M3-B2',
 	'M3-B3',
@@ -85,28 +86,29 @@ const INCOMPLETE = new Set([
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
 	'M3-A8':
-		'the evidence measures the worst error at 2.03 of an 8-bit step at a saturated yellow, and the prototype sets the tolerance at one step, so the values do not match within it; the record leaves that to the owner, who has not ruled. The display table against the light one behind the switch is the same open ruling',
+		"the evidence measures the worst error at 2.03 of an 8-bit step at a saturated yellow, over the prototype's one-step tolerance. The owner accepted that cost on 26 October 2026 and ruled that the display table stays and the light table comes out",
 	'M3-A9':
 		'the hero tile and its cost figures are in: a still hero adds no pass, a moving one adds a depth pass of 0.028 to 0.037 ms, and WebGL2 reads the tile for 0.27 ms less than the cascades (D-219)',
 	'M3-E6':
 		"both first users follow the preset: splats' budget, and the water add-on's reflection cadence, which doubles the wait at each frame-budget step up to every sixteenth frame. The overlay part of the task is not built: D-199's decision 4 asks for one GPU timing scope per built-in step and per add-on feature, and D-173 for each add-on's GPU time, while the add-on rows hold no GPU time and the overlay shows one frame total",
 	'M3-E8':
-		"the compute pass and its WebGL2 fragment form are built and tested; the first-user outcome waits on M3-F9's ocean, because the splats add-on cannot take the hook",
+		"the compute pass and its WebGL2 fragment form are built and tested, and the wind add-on fills its field through the hook with a compute pass. The owner's 25 October ruling adds M3-V13's history to the hook, and the first-user outcome the plan names still waits on M3-F9's ocean",
 	'M3-B1':
 		'the pictures hold every lens mark now, and the streak and grain ones were tightened after they proved nothing at the default threshold: each mark moves about 2.8 per cent of the pixels against a half per cent limit. The cost per preset is still owed — it needs a machine idle enough for a quiet timing run, and the fleet has not given one since this morning',
 	'M3-D9':
-		'the command and its refusal are tested, and the two gate faults its first runs found are fixed: the size gate held compiled shader-build files to the code budget, and the fixture sketch never moved so no frame drew. D-225 records the run over every foundation add-on that has a package, and both fixtures, including three-compat, whose entry the size fix brought from 181.9 KB to 27.8 KB',
+		"the command and its refusal are tested, and the two gate faults its first runs found are fixed: the size gate held compiled shader-build files to the code budget, and the fixture sketch never moved so no frame drew. D-225 records the run over the six foundations that had a package on 24 October, where every run skipped the page and cost gates; physics, MSDF text, water, three-compat and vegetation had no run, and the wind package came later. Both fixtures ran their gates, and the size fix brought three-compat's entry from 181.9 KB to 27.8 KB",
 	'M3-L1':
 		'the iPad and phone figures the section asks for are in the addendum of D-137 dated 25 October; what remains is the phone GPU time that the fade item asks for',
 	'M3-L3':
 		'the WebGPU path draws the patches, but D-213 records the WebGL2 multi-draw path, the whole-level fallback and the GPU time as not built',
 	'M3-R22':
-		"the shader cache now reuses every entry when a compiler change leaves the compiled program identical: 0 compiled and 79 reused in 19 s, where the same change cost an hour, and a real shader change compiles exactly one. The task's own done-when is the two checks' times in CI, which are still unmeasured",
+		"the shader cache on the branch is D-248's change, not this task's: it reuses every entry when a compiler change leaves the compiled program identical, 0 compiled and 79 reused in 19 s, where the same change cost an hour. The task's own change, three entries instead of four for every module kind, is on `feat/m3-r22-entry-set` and not on this branch, and the determinism list here still holds `lit`; the two checks' CI times remain unmeasured",
 	'M3-E9':
 		"the engine half is built and CI has compared its pictures: the count word reaches the main view's indirect entry after the last compute dispatch, an unculled draw reads the add-on's rows and draws that count, and the compute picture fills no row on the CPU. What the task still wants: a first user, since the splats cannot take the hook and V8's blade path is the one in sight; GPU counts in the shadow views, which today take the page's count; and the allocation check and the no-draw-before-ready test from its design note",
 	'M3-F3':
-		'dropped with the temporal resolve it waited on (D-206); the owner may change the ruling',
-	'M3-F10': 'dropped with the temporal resolve it needs (D-206); the owner may change the ruling',
+		"dropped with the temporal resolve it waited on (D-206); M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
+	'M3-F10':
+		"dropped with the temporal resolve it needs (D-206); M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
 	'M3-R12':
 		'the narrowing is not on the branch at all. It exists only on an unlanded branch from 23 October, and there it stops recording before the scene builds its own pipelines, strips the device bits the build compares, and drops the empty word that compute and full-screen passes need. Whatever the list then holds is not the set the pages draw with, so a narrowed build fails at the first pipeline it lacks rather than compiling the wrong thing quietly. A helper is proving each fault, and no time or size figure exists yet',
 	'M3-A11':
@@ -115,9 +117,9 @@ const NOTES: Readonly<Record<string, string>> = {
 };
 
 /**
- * Why a task whose work is on the branch is still unticked: the gap that an audit of 24 October
- * 2026 found between the task's own "Done when" and what the branch holds. These win over the note
- * above, because both describe the same task and only one of them can be true.
+ * Why a task whose work is on the branch is still unticked: the gap that the branch's audits found
+ * between the task's own "Done when" and what the branch holds. These win over the note above,
+ * because both describe the same task and only one of them can be true.
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-R18':
@@ -137,11 +139,11 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-A2':
 		"the iPad Pro and the Galaxy S24 have timed the refresh, and their runs are recorded; the Mac's rows are still owed",
 	'M3-A9':
-		"the 4x shadow detail holds only for an object up to 1.8 m on High, and the costs were taken at loads of 13.6 to 26.3 against the spec's own limit of 8",
+		"the 1.8 m limit at High was the fixed tile size's fault. D-219's addendum of 25 October 2026 makes the tile size a setting on the owner's ruling, and each preset now defaults to a size that keeps the demo car at or above four times. The costs were taken at loads of 13.6 to 26.3 against the spec's own limit of 8",
 	'M3-A11':
 		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
 	'M3-E10':
-		'the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the work is built on a helper branch and not yet on this branch, and the aurora references and the new picture have not been made',
+		'the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the widening (`1441b441d`) and the aurora cube-unit fix (`06fade99b`, `fc2487164`) are on this branch, while the light sum, the coefficient stride and the aurora pictures are on `fix/m3-sky-layer-light`',
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
@@ -179,11 +181,11 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-A10':
 		"the finish line asks for the S24+, and the S24 run gives only a frame time held at its 30 Hz limit, which its own run file marks unreliable; the S25 is a faster GPU of another make on a path the S24+ lacks, so whether it closes the line is the owner's call. CI's five software sharpen references also show no sharpening at all, so the picture does not hold the effect it claims",
 	'M3-V6':
-		'the same placement is shown only on two Android phones in Chrome, so no second JavaScript engine has placed it, and no iPad run exists; the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, the Mac figure has no raw record, and docs/api/vegetation.md still calls the scatter not built',
+		'the same placement is shown only on two Android phones in Chrome, so no second JavaScript engine has placed it, and no iPad run exists; the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
 	'M3-E4a':
 		'the material change is on the branch with the water work, but the task asks for a material that declares the scene depth beside two textures on WebGPU, compatibility and WebGL2, and for the cost of a material that reads neither; its helper is finishing that proof',
 	'M3-F5':
-		'the water add-on, its records and its demos are on the branch, but twelve of its reference pictures are not drawn, so the picture-reference check fails; its evidence line waits on those pictures',
+		'the water add-on, its records and its demos are on the branch, and `0e88e6b86` drew its twelve reference pictures; the owner has not judged the new Creek look, which waives the unchanged-references clause, and the record line is not chosen between the withdrawn tick and the attribution run',
 	'M3-V5':
 		"every vegetation picture passes in both reference sets on both GPUs and the crowns keep their coverage at three distances, and the leaf cells now hold a spray of lobed, veined, damaged leaves instead of one smooth shape. Its author's verdict is that the atlas is at least as good as Creek's as a texture, and that the crown is still paler and flatter because the material lights it with one uniform light while Creek's texture carries painted shadowing, which belongs to M3-V7. The task's line asks the owner to judge the two side by side, and the paint time per device is owed too",
 	'M3-V1':
