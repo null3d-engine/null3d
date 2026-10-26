@@ -317,7 +317,10 @@ read took. A frame copies the region into one buffer of a four-buffer ring after
 then reads the buffer into engine memory. The GPU's read raises a control slot, and the sketch's
 frame loop answers the promise. No thread waits, so hard rule 4 holds. The layer defaults to the
 state that the pass wrote last, which a history pass needs because the state alternates. A stopped
-pass reads its kept image.
+pass reads its kept image. The page checks answer a 2 by 2 region three frames after the call on
+WebGPU and compatibility mode, and four to five on WebGL2. A region that reaches past the pass's
+texture is refused with E1220 before a frame records it, because a copy past the end would reject
+the frame's commands.
 
 **WebGL2.** No compute shader runs there, so the fragment form keeps the same two states. Each run
 copies the state before from the target into a scratch texture. It then draws the pass into a layer
@@ -332,7 +335,9 @@ carries the layer. Up to 32 layers work on WebGL2, and the call throws E1220 pas
 paths draw 128 with history and 256 without. This is a limit of the path, not a dropped feature.
 
 **Cost and memory.** The target holds both states as `layers * 2` layers, and the two state
-textures hold them once more, so a history pass takes four times the texels of one state. A frame
+textures hold them once more, so a history pass takes four times the texels of one state on the
+WebGPU paths. On WebGL2 the target holds both states and the fallback adds one scratch, so it takes
+three times. A frame
 that runs the pass copies both states into the target, `layers * 2` layer copies, and records one
 dispatch for each step. A WebGL2 history pass adds a scratch texture of one state and one copy for
 each run.
@@ -343,8 +348,6 @@ of one invocation and a measurement with no pass-off baseline are rejected: the 
 65,536 workgroups for a 256 by 256 pass, and the second cannot separate the pass's cost from the
 frame's. The figures are owed to a clean window. The only pair taken so far ran while the machine
 was busy, at a 1-minute load of 17.59 to 7.95 on a fourteen-core machine, so it is not a measurement
-for this record; it is kept in the run record as a shape to compare a clean run against. That shape
-holds across both runs: WebGL2 costs an order of magnitude more GPU time than the two compute paths,
-and the pass-off baseline is small everywhere. The pass holds 2 MiB of texels on the compute paths
-and 1.5 MiB on WebGL2. The iPad and the phone rows are owed to the landing session, as M3-V14's
+for this record; the run record keeps it only to compare a clean run against. The pass holds 2 MiB
+of texels on the compute paths and 1.5 MiB on WebGL2. The iPad and the phone rows are owed to the landing session, as M3-V14's
 measurements cover the field that uses the pass first.

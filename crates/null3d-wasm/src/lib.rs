@@ -354,6 +354,9 @@ impl Engine {
         jobs: &'static JobSystem,
         pipelines_built: u32,
     ) -> (&mut dyn FrameBuilder, FrameInput<'_>) {
+        self.renderer
+            .settings_mut()
+            .set_last_frame_size(canvas, render_scale);
         if self.snapshot.frame() != frame {
             self.snapshot.record(frame, &self.scene, &self.batches);
             self.renderer.settings_mut().gather_lights(
@@ -5833,6 +5836,15 @@ pub fn request_pass_read(
             || (layer != u32::MAX && layer >= layers)
         {
             return u32::MAX;
+        }
+        // A region that reaches past the pass's texture would invalidate the frame's commands, so
+        // it is refused here rather than at that frame. The last frame's size gives a full-size
+        // target's size.
+        if let Some((canvas, scale)) = settings.last_frame_size() {
+            let (side_width, side_height) = declared.drawn_size(canvas, scale);
+            if x.saturating_add(width) > side_width || y.saturating_add(height) > side_height {
+                return u32::MAX;
+            }
         }
         let texel_bytes = null3d_gpu::drawlist::format::texel_bytes(format);
         if texel_bytes == 0 || width * height * texel_bytes > null3d_render::readback::MAX_BYTES {

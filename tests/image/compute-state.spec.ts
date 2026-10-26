@@ -104,6 +104,11 @@ for (const { tier, query } of TIERS) {
 		expect(result.frames).toBeGreaterThanOrEqual(1);
 	});
 
+	test(`an out-of-range read is refused on ${tier}`, async ({ page }) => {
+		const result = await stateCase(page, query, 'refuse');
+		expect(result.values[0]).toBe(1);
+	});
+
 	test(`a 40-step history pass measures on ${tier}`, async ({ page }) => {
 		const result = await stateCase(page, query, 'cost', 150_000);
 		const on = result.on as CostFigures;

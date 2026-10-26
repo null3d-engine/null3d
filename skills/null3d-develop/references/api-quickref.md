@@ -682,7 +682,7 @@ const waves = render.addPass({
   textures: [textures.fromPass(half)],          // group 1, in map-slot order
   fallback: { wgsl: wavesFragments }, // the fragment form that WebGL2 runs; without it, WebGL2 throws E1220
   history: true,                     // (0.4) two states: each run reads the state of the run before
-  layers: 1,                         // array layers of each state; WebGL2 draws one
+  layers: 1,                         // array layers of each state; WebGL2 draws them one at a time, up to 32
   steps: 40,                         // runs a frame, swapping the states; render.setPassSteps changes it
 });
 render.setPassUniforms(waves, [next]);  // allocates nothing

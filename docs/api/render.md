@@ -392,12 +392,15 @@ starts the states empty, as it starts every texture, so a pass begins again from
 
 A pass that does not run keeps the state that its last run wrote, as it keeps its image.
 
-A pass with history costs four times the memory of one state. The target holds both states as
-`layers * 2` layers, and the pass keeps two state textures of `layers` layers each. At
-`rgba16float` that is 32 bytes for each texel of one state, and at `r32float` 16 bytes. Size a
-history pass for its grid, not the canvas: 128 by 128 takes 512 KiB, and 256 by 256 takes 2 MiB.
-The 8192 by 8192 side that the device allows would take 2 GiB, which no page should choose by
-accident. `render.dumpGraph()` does not list the state textures, so budget them beside its figures.
+A pass with history costs more than one state. On the WebGPU paths the target holds both states as
+`layers * 2` layers, and the pass keeps two state textures of `layers` layers each: four times the
+texels of one state. On WebGL2 the fragment form keeps both states in the target's layers and adds
+one scratch texture of one state: three times. At `rgba16float` that is 32 bytes for each texel of
+one state on the WebGPU paths and 24 on WebGL2; at `r32float`, 16 and 12. Size a history pass for
+its grid, not the canvas: 128 by 128 takes 512 KiB on the WebGPU paths and 384 KiB on WebGL2, and
+256 by 256 takes 2 MiB and 1.5 MiB. The 8192 by 8192 side that the device allows would take 2 GiB
+on the WebGPU paths, which no page should choose by accident. `render.dumpGraph()` does not list the
+state textures, so budget them beside its figures.
 
 ### Reading a region back
 
@@ -422,8 +425,8 @@ const red = data[(3 * width + 2) * 4];
   pass of several layers by naming it.
 - A stopped pass gives back the last texels that it wrote, because its texture keeps them.
 - Throws E1220 for a pass of another kind, a region that is not whole texels, or one larger than 64
-  each way. A region outside the pass's texture, or a pass with no texture, gives no answer: the
-  call fails after 240 frames.
+  each way. A region that reaches past the pass's texture throws E1220 at once, before a frame
+  records it. A pass with no texture gives no answer: the call fails after 240 frames.
 
 ### WebGL2
 
@@ -457,7 +460,7 @@ console.log(render.dumpGraph());
 
 | Code | Cause |
 | --- | --- |
-| E1220 | Options that `render.addPass` does not take, a `writes` or `name` that another pass has, or a 32nd pass. Both a `size` and a `scale`, or a scene pass with neither. A reflection's plane without a point, a normal of no length, or a `scale` or `every` that it does not take. An `input` other than `'sceneColor'` or `'outlineMask'`. A compute pass on WebGL2 with no fallback, a workgroup size that a device cannot run, or a format that a compute pass does not write. A compute pass with `history` and an instance draw's buffers, `steps` above one without `history`, more than 128 layers with history, or more than one layer on WebGL2. A call to `render.setPassSteps` or `render.resetPass` on a pass of another kind, or more than one step of a pass without history. A `render.readPass` region that is not whole texels from 0, larger than 64 each way, or on a pass of another kind. Or something that is not a render pass, given to `render.setPassEnabled`, `render.removePass`, `render.setPassUniform`, `render.setPassUniforms`, `render.setPassSteps`, `render.resetPass`, `render.readPass` or `textures.fromPass`, or a pass of another kind given to them. |
+| E1220 | Options that `render.addPass` does not take, a `writes` or `name` that another pass has, or a 32nd pass. Both a `size` and a `scale`, or a scene pass with neither. A reflection's plane without a point, a normal of no length, or a `scale` or `every` that it does not take. An `input` other than `'sceneColor'` or `'outlineMask'`. A compute pass on WebGL2 with no fallback, a workgroup size that a device cannot run, or a format that a compute pass does not write. A compute pass with `history` and an instance draw's buffers, `steps` above one without `history`, more than 128 layers with history, or more than 32 layers on WebGL2. A call to `render.setPassSteps` or `render.resetPass` on a pass of another kind, or more than one step of a pass without history. A `render.readPass` region that is not whole texels from 0, larger than 64 each way, past the pass's texture, or on a pass of another kind. Or something that is not a render pass, given to `render.setPassEnabled`, `render.removePass`, `render.setPassUniform`, `render.setPassUniforms`, `render.setPassSteps`, `render.resetPass`, `render.readPass` or `textures.fromPass`, or a pass of another kind given to them. |
 | E1215 | A full-screen pass's WGSL that the null3D Vite plugin did not compile as an effect, or a compute pass's WGSL without a `@compute` entry point. |
 | E1216 | A uniform or a texture that the full-screen pass's WGSL does not declare, or a value of the wrong kind. |
 | E1223 | A compute pass whose feature description is not a compute feature, has no frame point, records in another view, reads a scene resource, or publishes anything but one output whose default is `'black'` or `'transparent'`. |

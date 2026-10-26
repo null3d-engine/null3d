@@ -1003,6 +1003,9 @@ pub struct SceneSettings {
     /// The casters that move in every frame, which keep far cascades drawing.
     moving_casters: MovingCasters,
     canvas: CanvasOutput,
+    /// The canvas size and render scale of the last recorded frame, which a region read checks
+    /// against.
+    last_canvas: Option<((u32, u32), RenderScale)>,
     output: Output,
     /// Bloom's settings while the sketch turns it on.
     bloom: Option<Bloom>,
@@ -1221,6 +1224,7 @@ impl SceneSettings {
             cascade_depth,
             moving_casters: MovingCasters::default(),
             canvas,
+            last_canvas: None,
             output: Output::default(),
             bloom: None,
             bloom_chain: ChainFrame::default(),
@@ -1362,6 +1366,17 @@ impl SceneSettings {
     }
 
     /// How frames reach the canvas.
+    /// The canvas size and render scale of the last recorded frame, which a read of a pass's region
+    /// checks its region against before the next frame records.
+    pub fn last_frame_size(&self) -> Option<((u32, u32), RenderScale)> {
+        self.last_canvas
+    }
+
+    /// Notes the canvas size and render scale that the frame about to be recorded draws at.
+    pub fn set_last_frame_size(&mut self, canvas: (u32, u32), scale: RenderScale) {
+        self.last_canvas = Some((canvas, scale));
+    }
+
     pub fn canvas(&self) -> CanvasOutput {
         self.canvas
     }

@@ -569,6 +569,11 @@ impl View {
         &self.target
     }
 
+    /// The size this view draws in texels, for a canvas of `canvas` device pixels at `scale`.
+    pub fn drawn_size(&self, canvas: (u32, u32), scale: crate::graph::RenderScale) -> (u32, u32) {
+        self.target.graph_size().made(canvas, scale)
+    }
+
     pub(crate) fn target_mut(&mut self) -> &mut ViewTarget {
         &mut self.target
     }
