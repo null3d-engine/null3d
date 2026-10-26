@@ -3549,6 +3549,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			// The hero shadow is fine detail on one object, so its demo draws larger than the
 			// other demos, where the tile size's difference shows.
 			...(demo.name === 'hero-shadow' && { size: HERO_SIZE }),
+			// A projected picture's detail is fine, so its demo draws larger too, where the fine
+			// lines of the stained glass and the window's bars show at their own size.
+			...(demo.name === 'spot-cookies' && { size: [640, 360] as const }),
 		};
 	}),
 	// Creek on a near-square canvas at a render scale below the whole canvas, from the opening view

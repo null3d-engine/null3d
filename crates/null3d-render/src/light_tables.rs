@@ -154,8 +154,10 @@ impl LightTables {
 
     /// The half floats of light `light`'s image of `size` texels a side, for the sketch thread to
     /// fill: its own place, or a free one. A new size makes the image's memory again. Returns
-    /// `None` when every place is taken or memory cannot grow.
+    /// `None` when the size is one that no image takes, every place is taken, or memory cannot
+    /// grow.
     pub fn image_texels_mut(&mut self, light: u32, size: u32) -> Option<&mut [u16]> {
+        size_index(size)?;
         let halves = halves(size);
         let place = match self.place_of(light) {
             Some(place) => place,
@@ -196,9 +198,7 @@ impl LightTables {
         let place = self.place_of(light)?;
         let image = &mut self.images[place];
         image.pending = true;
-        let layer = FIRST_IMAGE_LAYER + probe_layers + place as u32;
-        let index = size_index(image.size)?;
-        Some(((layer + 1) | (index << IMAGE_LAYER_BITS)) as f32)
+        image_record(place, image.size, probe_layers)
     }
 
     /// The texels across a side of the largest image, or [`IMAGE_SIZE`] while no light has one.
@@ -221,12 +221,7 @@ impl LightTables {
             .enumerate()
             .filter(|(_, image)| image.light != 0)
             .filter_map(move |(place, image)| {
-                let layer = FIRST_IMAGE_LAYER + probe_layers + place as u32;
-                let index = size_index(image.size)?;
-                Some((
-                    image.light,
-                    ((layer + 1) | (index << IMAGE_LAYER_BITS)) as f32,
-                ))
+                Some((image.light, image_record(place, image.size, probe_layers)?))
             })
     }
 
@@ -363,6 +358,15 @@ impl LightTables {
     }
 }
 
+/// The number that a light's record keeps for the image in `place` of `size` texels a side, with
+/// `probe_layers` probe layers ahead of it: the image's layer in the shared array plus one, and
+/// the number of its size above that (see [`size_index`]). `None` for a size that no image takes.
+fn image_record(place: usize, size: u32, probe_layers: u32) -> Option<f32> {
+    let layer = FIRST_IMAGE_LAYER + probe_layers + place as u32;
+    let index = size_index(size)?;
+    Some(((layer + 1) | (index << IMAGE_LAYER_BITS)) as f32)
+}
+
 /// The bytes of half floats, in the engine's little-endian memory.
 fn halves_as_bytes(halves: &[u16]) -> &[u8] {
     // SAFETY: a u16 has no padding bytes, and the slice covers exactly the halves' bytes.
@@ -390,6 +394,10 @@ mod tests {
     #[test]
     fn images_take_free_places_and_the_shape_grows_in_steps() {
         let mut tables = LightTables::default();
+        assert!(
+            tables.image_texels_mut(1, 100).is_none(),
+            "a size that no image takes"
+        );
         assert_eq!(
             tables.shape(256, 0),
             Shape {
