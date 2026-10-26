@@ -334,5 +334,14 @@ paths draw 128 with history and 256 without. This is a limit of the path, not a 
 textures hold them once more, so a history pass takes four times the texels of one state. A frame
 that runs the pass copies both states into the target, `layers * 2` layer copies, and records one
 dispatch for each step. A WebGL2 history pass adds a scratch texture of one state and one copy for
-each run. The swap's GPU time and memory on the Mac, an iPad and a phone are owed, as M3-V14's
-measurements cover the field that uses it first.
+each run.
+
+**The figures.** The page `tests/pages/compute-state.html?case=cost` runs a 256 by 256 history pass
+of 40 steps in every frame and measures three seconds with the engine's frame probe. On the Mac
+(M5 Max), in a quiet window the lead held on 26 October 2026, two runs gave: WebGPU 7.27 and
+5.31 ms of GPU time; compatibility mode 5.51 and 5.96 ms; WebGL2 13.53 and 13.65 ms. The frame
+interval stayed at 16.67 ms, the display's own, and the busiest thread took 0.13 to 0.16 ms. The
+pass's texel memory is 2 MiB. The WebGL2 figure repeats within 1%, while the WebGPU figures move
+with the timer's rounding at this small size. The machine's 1-minute load was 11.6 at the first
+run's start and 8.4 at the second's. The iPad and the phone rows are owed to the landing session,
+as M3-V14's measurements cover the field that uses the pass first.
