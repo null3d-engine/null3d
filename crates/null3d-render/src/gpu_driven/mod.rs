@@ -173,6 +173,7 @@ use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
     RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, floats_as_bytes,
+    unbound_buffer_bytes,
 };
 use crate::frame_graph::{DrawnViews, FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
@@ -2232,13 +2233,20 @@ impl GpuDrivenRenderer {
             }
             (false, false)
         };
-        // The scene's cluster tables follow its layout: they upload again when it changes.
+        // The scene's cluster tables follow its layout: they upload again when it changes. The
+        // cluster pass group binds them, and it reads them in a dispatch that the direct path does
+        // not record, so there the largest buffer alone bounds them.
+        let cluster_bytes = if self.config.direct_draws {
+            unbound_buffer_bytes(Some(binding_bytes))
+        } else {
+            binding_bytes
+        };
         let clusters_recreated = self.clusters.apply_tables(
             list,
             arena,
             &self.layout,
             upload_everything,
-            binding_bytes,
+            cluster_bytes,
         )?;
         // Build the motion tables when their layout changes, even while its pipelines load.
         // Once the view can draw, the scene may no longer need a layout upload.
@@ -2522,9 +2530,12 @@ impl GpuDrivenRenderer {
             &mut self.lights,
             self.lights_made & drawn_views,
         )?;
-        self.transparent.size(list, &self.sorted, views)?;
-        self.decals.size(list, &self.decal_layout, 1)?;
-        self.redraws.size(list, &self.redraw_layout, 1)?;
+        self.transparent
+            .size(list, &self.sorted, views, binding_bytes)?;
+        self.decals
+            .size(list, &self.decal_layout, 1, binding_bytes)?;
+        self.redraws
+            .size(list, &self.redraw_layout, 1, binding_bytes)?;
 
         let render_size = self.graph.render_size();
         let any_probes = self.settings.probes().any();
@@ -2917,8 +2928,16 @@ impl GpuDrivenRenderer {
         )?;
         self.settings.particles_mut().clear_marks();
         let camera = self.frames[ViewId::CAMERA.index()].as_ref();
-        self.lines
-            .upload(list, arena, &input.lines, camera.map(|frame| &frame.camera))?;
+        // A line buffer binds at a vertex slot and no group reads it, so the device's largest
+        // buffer bounds it.
+        let lines_bytes = unbound_buffer_bytes(Some(self.config.storage_binding_bytes));
+        self.lines.upload(
+            list,
+            arena,
+            &input.lines,
+            camera.map(|frame| &frame.camera),
+            lines_bytes,
+        )?;
         // The culling reset zeroed the indirect draws, so the page's counts reach them from here,
         // and the frame copies the add-on's own counts over them once every compute step ended.
         self.copy_feature_counts(list, input.scene.world(parity).radii())?;

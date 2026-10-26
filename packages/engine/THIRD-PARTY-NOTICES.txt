@@ -313,15 +313,16 @@ Licensed under the Apache License, Version 2.0, whose text the Basis Universal s
 gives in full.
 
 ==============================================================================
-three.js: the table of specular terms in the engine core (null3d_bg.wasm), the ambient
-occlusion and wide line shaders (the shader modules), and the OpenEXR decoders in the HDR file
-reader (panorama-worker.js)
+three.js: the table of specular terms and the math in the engine core, the tone curves, the
+ambient occlusion and wide line shaders, and the HDR and OpenEXR file readers
 ==============================================================================
 
 The values of three.js's DFG table, from three.js 0.186.1, https://github.com/mrdoob/three.js.
-The ports of its GTAOPass and PoissonDenoiseShader into ao.wgsl, and of its Line2 and
-LineSegments2 geometry and shader into line.wgsl. The ports of EXRLoader's decoders, from the
-same release.
+The vector, matrix and quaternion arithmetic, and the tone, color and blending code, whose
+curves, formulas and blend order follow its own. The ports of its GTAOPass and
+PoissonDenoiseShader into ao.wgsl, and of its Line2 and LineSegments2 geometry and shader into
+line.wgsl. The ports of HDRLoader and EXRLoader's readers into panorama-worker.js, which maps
+the file's columns and holds its spherical harmonics in the order that three.js uses.
 
 The MIT License
 
@@ -344,6 +345,16 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+==============================================================================
+Filament: the specular anti-aliasing kernel, the anisotropic highlight, and AgX's punchy look
+==============================================================================
+
+The specular anti-aliasing kernel, the anisotropic GGX highlight and the two constants of AgX's
+punchy look follow Filament's, from https://github.com/google/filament. The kernel and the
+highlight are in the shader library, and the punchy look is in the tone mapping shader.
+
+Apache License, Version 2.0, whose text the Basis Universal section above gives in full.
 
 ==============================================================================
 Linearly transformed cosines: the area lights' tables (area-light-tables.bin)

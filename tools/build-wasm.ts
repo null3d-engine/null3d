@@ -21,6 +21,8 @@
 //     [--base <ref>]
 //   bun tools/build-wasm.ts --cache-key     print one key of every file that --pages-only builds, as
 //                                           key=<hash>, for CI's cache of them, and stop
+//   bun tools/build-wasm.ts --keep-current  remove every cache entry but those of the files that
+//                                           --pages-only builds now, before CI saves the cache
 //   bun tools/build-wasm.ts --names         keep the core's function names, for a CPU profile;
 //                                           the names add size, so this skips the size checks
 //   bun tools/build-wasm.ts --pages-only    build only what the test pages and the tools need,
@@ -85,6 +87,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ASSET_FORMATS_URL } from '../packages/cli/src/assets/formats.js';
@@ -110,15 +113,18 @@ import {
 	writeFolderAtomic,
 } from './lib/build-cache';
 import { coreSourcesStamp, stampGlue } from './lib/core-sources';
+import { refuseInQuietWindow } from './lib/quiet-window';
 import { ensureShaderModules, inputHash } from './lib/shader-modules';
 import {
 	type BaseChoice,
 	chooseBase,
 	compareSizes,
-	grownFiles,
 	growthLines,
 	growthProblems,
 	growthSummary,
+	nearLimit,
+	nearLimitWarnings,
+	overLimit,
 } from './lib/size-check';
 import {
 	keepSizeMemo,
@@ -303,6 +309,94 @@ export function checkHeapStart(linked: Uint8Array, bound: Uint8Array): void {
 		);
 }
 
+/**
+ * The compiler option that names the Rust library's source folder by the fixed path that the
+ * toolchain's own build gives it, `/rustc/<commit>`, from `rustc -vV`'s output. With the library's
+ * source installed, the compiler writes that folder's place on the machine into the panic
+ * locations of the library code that it compiles. Each machine then built other bytes, and so the
+ * hashed name of every file that names a module differed too, and with it that file's size.
+ */
+export function librarySourceRemap(sysroot: string, rustcVersion: string): string {
+	const commit = /^commit-hash: ([0-9a-f]+)$/m.exec(rustcVersion)?.[1];
+	if (!commit)
+		throw new Error(
+			'rustc -vV names no commit hash, so the build cannot give the Rust library source a fixed path',
+		);
+	return `--remap-path-prefix=${sysroot}/lib/rustlib/src/rust=/rustc/${commit}`;
+}
+
+/**
+ * The compiler option that names cargo's home folder, where it keeps the sources of the crates that
+ * the build downloads, by the fixed path `/cargo`. Those crates write their source paths into
+ * their panic locations as the Rust library does, from a folder in each machine's home.
+ */
+export function cargoHomeRemap(cargoHome: string): string {
+	return `--remap-path-prefix=${cargoHome}=/cargo`;
+}
+
+/**
+ * Refuses a built module that holds one of `folders`, the folders of the machine that built it. A
+ * folder in the bytes makes each machine build other bytes, and every page that loads the module
+ * would download the folder's name.
+ */
+export function checkNoMachineFolders(
+	bytes: Uint8Array,
+	folders: readonly string[],
+	module: string,
+): void {
+	const held = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	const found = folders.filter((folder) => held.includes(folder));
+	if (found.length > 0)
+		throw new Error(
+			`${module} holds the build machine's folder ${found.join(' and ')}: give the folder a fixed path with --remap-path-prefix in the build's compiler options`,
+		);
+}
+
+/** A folder's path without its trailing slashes. */
+const trimmed = (folder: string) => folder.replace(/\/+$/, '');
+
+/**
+ * Each folder with one trailing slash, as a path inside it starts. The root folder is left out,
+ * since every absolute path starts with it.
+ */
+export function machineFolders(folders: readonly string[]): string[] {
+	return folders
+		.map(trimmed)
+		.filter((folder) => folder !== '')
+		.map((folder) => `${folder}/`);
+}
+
+/**
+ * The compiler options that every WebAssembly build adds to its own, and the folders that no built
+ * module may hold: the Rust toolchain's, cargo's home, the checkout's and the home folder. Read
+ * once, on the first build that misses the cache. The compiler applies the last option whose
+ * folder matches, so the library source's option comes last, in case cargo's home holds it.
+ */
+let machine: { options: string[]; folders: string[] } | undefined;
+function buildMachine() {
+	if (!machine) {
+		const rustc = (args: string[]) => execFileSync('rustc', args, { cwd: root, encoding: 'utf8' });
+		const sysroot = trimmed(rustc(['--print', 'sysroot']).trim());
+		const cargoHome = trimmed(process.env.CARGO_HOME || join(homedir(), '.cargo'));
+		machine = {
+			options: [cargoHomeRemap(cargoHome), librarySourceRemap(sysroot, rustc(['-vV']))],
+			folders: machineFolders([sysroot, cargoHome, root, homedir()]),
+		};
+	}
+	return machine;
+}
+
+/**
+ * The variable that hands cargo the compiler options `options`, then `added`, one by one, so that a
+ * folder with a space in its name stays one option.
+ */
+export function compilerOptions(
+	options: string,
+	added: readonly string[] = buildMachine().options,
+): Record<string, string> {
+	return { CARGO_ENCODED_RUSTFLAGS: [...options.split(' '), ...added].join('\x1f') };
+}
+
 /** The locked version of a package in Cargo.lock. */
 export function lockedVersion(cargoLock: string, name: string): string {
 	const match = cargoLock.match(
@@ -483,6 +577,8 @@ export interface BuildOptions {
 	printBase: boolean;
 	/** Print one key of every artifact that a `--pages-only` build writes, for CI's cache of them. */
 	cacheKey: boolean;
+	/** Remove every cache entry but those that a `--pages-only` build writes now. */
+	keepCurrent: boolean;
 	/** Build every file again, instead of copying a file that an earlier build cached. */
 	noCache: boolean;
 	/** Build the engine test page, measure only this part of its files and write their sizes. */
@@ -492,7 +588,7 @@ export interface BuildOptions {
 }
 
 const USAGE =
-	'usage: bun tools/build-wasm.ts [--no-cache] [--check-size [--base <ref>] [--prebuilt [--part <i>/<n> | --judge-parts <dir>]] | --sizes-only | --prebuilt | --names | --pages-only | --print-base [--base <ref>] | --cache-key]';
+	'usage: bun tools/build-wasm.ts [--no-cache] [--check-size [--base <ref>] [--prebuilt [--part <i>/<n> | --judge-parts <dir>]] | --sizes-only | --prebuilt | --names | --pages-only | --print-base [--base <ref>] | --cache-key | --keep-current]';
 
 /** The options that take a value, with what each needs. */
 const VALUE_OPTIONS: Readonly<Record<string, string>> = {
@@ -511,6 +607,7 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		prebuilt: false,
 		printBase: false,
 		cacheKey: false,
+		keepCurrent: false,
 		noCache: false,
 	};
 	for (let i = 0; i < args.length; i++) {
@@ -522,6 +619,7 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		else if (arg === '--prebuilt') options.prebuilt = true;
 		else if (arg === '--print-base') options.printBase = true;
 		else if (arg === '--cache-key') options.cacheKey = true;
+		else if (arg === '--keep-current') options.keepCurrent = true;
 		else if (arg === '--no-cache') options.noCache = true;
 		else if (Object.hasOwn(VALUE_OPTIONS, arg)) {
 			const value = args[i + 1];
@@ -741,22 +839,47 @@ export function toolsKey(shaders: string, assets: string, tools: ToolVersions): 
 	);
 }
 
-/**
- * One key of every artifact that a build of the cores and the tools' modules writes: a hash of each
- * entry's own key, as the build reads them, so it changes exactly when one of the entries would.
- * CI keeps the cache folder under it, so a run whose Rust sources, flags and tools did not change
- * copies every file in place and runs no cargo, wasm-bindgen or wasm-opt.
- */
-export function artifactsKey(): string {
+/** The key of each cache entry that a build of the cores and the tools' modules writes, as it reads them. */
+export function currentArtifactKeys(): string[] {
 	const tools = toolVersions(readFileSync(join(root, 'Cargo.lock'), 'utf8'));
 	const stamp = coreSourcesStamp(root);
 	const [shaders, assets] = toolInputs(root);
-	return digest(
-		[
-			...VARIANTS.map((variant) => variantKey(variant, stamp, false, tools)),
-			toolsKey(shaders, assets, tools),
-		].join('\n'),
-	);
+	return [
+		...VARIANTS.map((variant) => variantKey(variant, stamp, false, tools)),
+		toolsKey(shaders, assets, tools),
+	];
+}
+
+/**
+ * One key of every artifact that a build of the cores and the tools' modules writes: a hash of each
+ * entry's own key, so it changes exactly when one of the entries would. CI keeps the cache folder
+ * under it, so a run whose Rust sources, flags and tools did not change copies every file in place
+ * and runs no cargo, wasm-bindgen or wasm-opt. A run that changed some of them restores an earlier
+ * run's folder, copies the entries that still match, and builds only the others.
+ */
+export function artifactsKey(): string {
+	return digest(currentArtifactKeys().join('\n'));
+}
+
+/**
+ * Removes every entry of the cache folder `base` but those named in `keep`, and returns the names it
+ * removed. An entry that another build is writing, and a lock, stay. The prune's lock keeps it from
+ * running beside a prune of the same folder.
+ */
+export function keepOnlyArtifacts(base: string, keep: ReadonlySet<string>): string[] {
+	if (!existsSync(base)) return [];
+	const release = acquireLock(`${base}.prune.lock`);
+	try {
+		const removed: string[] = [];
+		for (const name of readdirSync(base)) {
+			if (keep.has(name) || name.endsWith('.partial') || name.endsWith('.lock')) continue;
+			rmSync(join(base, name), { recursive: true, force: true });
+			removed.push(name);
+		}
+		return removed;
+	} finally {
+		release();
+	}
 }
 
 /**
@@ -875,7 +998,7 @@ async function buildVariant(
 	log.say(`building the ${variant.name} WebAssembly file`);
 	await log.cargo(
 		['build', '-p', CRATE, '--release', '--target', 'wasm32-unknown-unknown', ...variant.cargoArgs],
-		{ RUSTFLAGS: variant.rustflags },
+		compilerOptions(variant.rustflags),
 		targetDir,
 	);
 	// The files take shape in this build's own staging folder, and go in place whole once every step
@@ -906,6 +1029,11 @@ async function buildVariant(
 		wasm,
 	]);
 	if (variant.reclaimsHeap) checkHeapStart(readFileSync(linked), readFileSync(wasm));
+	checkNoMachineFolders(
+		readFileSync(wasm),
+		buildMachine().folders,
+		`the ${variant.name} WebAssembly file`,
+	);
 	// Every file the build staged, which replaceFolder then puts in place: the same set a read restores.
 	const stagedFiles = readdirSync(staged)
 		.filter((name) => !name.endsWith('.partial'))
@@ -957,22 +1085,21 @@ async function buildToolModules(
 	}
 	const targetDir = `${CARGO_TARGET_BASE}/wasm-shaders`;
 	log.say("building the shader compiler and the asset tool's formats");
-	await log.cargo(
-		[
-			'build',
-			...TOOL_MODULES.flatMap(({ crate }) => ['-p', crate]),
-			'--release',
-			'--target',
-			'wasm32-unknown-unknown',
-		],
-		{ RUSTFLAGS: '-Cstrip=symbols' },
-		targetDir,
-	);
+	// Each module builds in a cargo call of its own. One call over both merges the features of the
+	// dependencies they share, so each module's bytes would follow what else the call builds: with
+	// the shader compiler beside it, the asset module's `half` and `libm` gained features.
+	for (const { crate } of TOOL_MODULES)
+		await log.cargo(
+			['build', '-p', crate, '--release', '--target', 'wasm32-unknown-unknown'],
+			compilerOptions('-Cstrip=symbols'),
+			targetDir,
+		);
+	const built = (crate: string) =>
+		`${targetDir}/wasm32-unknown-unknown/release/${crate.replace(/-/g, '_')}.wasm`;
+	for (const { crate } of TOOL_MODULES)
+		checkNoMachineFolders(readFileSync(built(crate)), buildMachine().folders, `${crate}.wasm`);
 	withInstallLock('tools', () => {
-		for (const { crate, path } of TOOL_MODULES) {
-			const built = `${targetDir}/wasm32-unknown-unknown/release/${crate.replace(/-/g, '_')}.wasm`;
-			copyInPlace(built, path);
-		}
+		for (const { crate, path } of TOOL_MODULES) copyInPlace(built(crate), path);
 	});
 	// The tools' crates are hashed before cargo builds them, so an edit during the build means these
 	// modules are not what the key names (see buildVariant, which takes the same care).
@@ -1327,14 +1454,16 @@ function baseSizes(sha: string): Record<string, Pick<SizeEntry, 'brotli'>> {
 function checkGrowth(sizes: Record<string, SizeEntry>, ref: string | undefined): string[] {
 	const base = resolveBase(chooseBase(ref, process.env));
 	const changes = compareSizes(baseSizes(base.sha), sizes);
-	const grown = grownFiles(changes).map(({ file }) => file);
-	const explainedBy = explainedFiles(keptCommits(`${base.sha}..HEAD`, root), grown);
+	const watched = changes.filter((c) => overLimit(c) || nearLimit(c)).map(({ file }) => file);
+	const explainedBy = explainedFiles(keptCommits(`${base.sha}..HEAD`, root), watched);
 	const short = base.sha.slice(0, 8);
 	console.log(`\ngrowth after Brotli against the base, ${short} "${base.subject}", ${base.why}`);
 	for (const line of growthLines(changes, explainedBy)) console.log(line);
 	const summary = process.env.GITHUB_STEP_SUMMARY;
 	if (summary)
 		appendFileSync(summary, growthSummary(changes, explainedBy, `\`${short}\`, ${base.why}`));
+	for (const warning of nearLimitWarnings(changes, explainedBy))
+		console.warn(`warning: ${warning}`);
 	return growthProblems(changes, explainedBy);
 }
 
@@ -1362,6 +1491,12 @@ async function main(): Promise<void> {
 		console.log(`key=${artifactsKey()}`);
 		return;
 	}
+	if (options.keepCurrent) {
+		const removed = keepOnlyArtifacts(ARTIFACT_CACHE_BASE, new Set(currentArtifactKeys()));
+		console.log(`removed ${removed.length} cache entries that this build does not write`);
+		return;
+	}
+	refuseInQuietWindow(options.checkSize ? 'The size check' : 'The WebAssembly build');
 	// Only a size check takes the lock: it also builds the base commit with that commit's own build
 	// script, which may stage into the shared target folder. Ordinary builds overlap, because each one
 	// stages in a folder of its own and Cargo locks the target folder that builds share. The lock is

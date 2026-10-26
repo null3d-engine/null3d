@@ -1,82 +1,93 @@
 // Guards what the docs promise about the network: the engine, its loader and its add-ons contact no
-// server of their own. Shipped code may call `fetch` only in the files below, and may name an
-// absolute address only for the hosts below, which are examples, links or names that never resolve.
-// A new call fails the check until this record and docs/getting-started/network-use.md say why.
-// The build's own output is not read: the shader modules under `generated` are written from the
-// shader library, which the check reads as source.
-import { readdirSync, readFileSync } from 'node:fs';
+// server of their own. Shipped code may call `fetch`, or use another network API, only where the
+// record below names the file, with the count and the reason. A new call fails the check until this
+// record and docs/getting-started/network-use.md say what it downloads.
+//
+// Vendored glue holds a download path of its own. The engine reaches none of it, because it hands
+// each decoder its compiled module, which `unreachedVendorProblems` checks. The build's generated
+// shader modules are not read: the shader library that the build writes them from is.
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
-/** A call site that the shipped code may have. */
-export interface FetchSite {
-	/** How many `fetch(` forms the file holds, so a second call in the same file fails too. */
-	readonly count: number;
-	/** What the file downloads, and why that is not a server that the engine chooses. */
+/** What a shipped file may do that reaches the network, and why it contacts no server. */
+export interface NetworkUse {
+	/** What the file downloads, and why that is not a server that null3D chooses. */
 	readonly why: string;
+	/** How many `fetch(` forms the file holds, so a second call in the same file fails too. */
+	readonly fetch?: number;
+	/**
+	 * How many times each forbidden API appears. Only vendored glue records one: its own download
+	 * path never runs, because the shipped file that imports it supplies the compiled module.
+	 */
+	readonly apis?: Readonly<Record<string, number>>;
 }
 
 /**
- * The only files that may call `fetch`, each with its count and the reason.
+ * The only files that may reach the network, each with its counts and the reason.
  *
- * Every one downloads a file that the page names: the engine's own files, the sketch module, or an
- * address from the sketch. None names a server of its own.
+ * Every null3D file downloads a file that the page names: the engine's own files, the sketch module,
+ * or an address from the sketch. The vendored glue holds a fallback that downloads its WebAssembly.
  */
-export const FETCH_SITES: Readonly<Record<string, FetchSite>> = {
+export const NETWORK_USES: Readonly<Record<string, NetworkUse>> = {
 	'packages/engine/src/page/early-core.ts': {
-		count: 1,
+		fetch: 1,
 		why: "starts the engine core's own file, beside the engine's code",
 	},
 	'packages/engine/src/page/engine.ts': {
-		count: 2,
+		fetch: 2,
 		why: 'prefetches the sketch module that the page passes in, and downloads the recording that a replay page names',
 	},
 	'packages/engine/src/scene/area-light-tables.ts': {
-		count: 1,
+		fetch: 1,
 		why: "downloads the engine's own area light tables",
 	},
 	'packages/engine/src/scene/assets.ts': {
-		count: 2,
+		fetch: 2,
 		why: 'downloads the addresses that the sketch asks for, and a file again from the cache',
 	},
 	'packages/engine/src/shared/wasm.ts': {
-		count: 1,
+		fetch: 1,
 		why: "downloads the engine's own WebAssembly and that of an add-on's task",
 	},
 	'packages/engine/src/shared/worker-start.ts': {
-		count: 1,
+		fetch: 1,
 		why: "reads a worker script's status while the engine names a startup failure",
 	},
 	'packages/splats/src/system.ts': {
-		count: 1,
+		fetch: 1,
 		why: "downloads the SPZ file that the sketch names, and a streamed cloud's index beside it",
 	},
 	'packages/splats/src/stream.ts': {
-		count: 1,
+		fetch: 1,
 		why: 'downloads only the chunk files that the view asks for, which is what makes a large cloud appear without the whole file',
 	},
 	'packages/vite-plugin/src/engine-shaders.ts': {
-		count: 2,
+		fetch: 2,
 		why: "the build fetches the engine's shader release, and declares the fetch it offers",
 	},
 	'packages/cli/src/devtools.js': {
-		count: 1,
-		why: "reads the debugging address of the browser that the tool started, on this machine's own loopback",
+		fetch: 1,
+		apis: { WebSocket: 2 },
+		why: "reads the debugging address of the browser that the tool started, on this machine's own loopback, over its debugging socket",
+	},
+	'packages/engine/vendor/draco/draco_wasm_wrapper_gltf.js': {
+		fetch: 2,
+		apis: { XMLHttpRequest: 3, importScripts: 1 },
+		why: "the vendored Draco glue's own fallback download, never taken because `scene/gltf-draco.ts` hands it its compiled module",
+	},
+	'packages/engine/vendor/basis/basis_transcoder.mjs': {
+		fetch: 2,
+		apis: { XMLHttpRequest: 1 },
+		why: "the vendored Basis transcoder's own fallback download, never taken because `scene/ktx2-transcode.ts` hands it its compiled module",
+	},
+	'packages/cli/vendor/basis/basis_encoder.js': {
+		fetch: 2,
+		apis: { XMLHttpRequest: 6 },
+		why: "the vendored Basis encoder's own fallback download, never taken because `src/assets/encoder.js` hands it its compiled module",
 	},
 };
 
-/**
- * The only files that may open a socket, each with the reason.
- *
- * A socket here speaks to a browser on this machine, which the tool itself started, over that
- * browser's own debugging protocol. It names no server and reaches no other machine.
- */
-export const SOCKET_SITES: Readonly<Record<string, { readonly why: string }>> = {
-	'packages/cli/src/devtools.js': {
-		why: 'drives the browser that the command-line tool started, over its debugging socket',
-	},
-};
-
-/** Calls that reach the network, or report about it, which no shipped file may make. */
+/** Calls that reach the network, or report about it, which no shipped file may make on its own. */
 export const FORBIDDEN_APIS: readonly (readonly [string, RegExp])[] = [
 	['XMLHttpRequest', /\bXMLHttpRequest\b/],
 	['WebSocket', /\bWebSocket\b/],
@@ -119,6 +130,9 @@ const ABSOLUTE_URL = /(https?|wss?):\/\/([^\s"'`)]+)/g;
 const SOURCE = /\.(?:[cm]?[jt]s)$/;
 const NOT_SHIPPED = /\.test\.[cm]?[jt]s$|\.d\.[cm]?ts$/;
 
+/** The folders that a build writes, whose code comes from the package's source. */
+const BUILT = new Set(['dist', 'generated', 'lib', 'node_modules', 'target']);
+
 /** The reason that `host` may be named, or nothing when it may not. */
 export function allowedHost(host: string): string | undefined {
 	const bare = host.replace(/[.;,]+$/, '').split(':')[0] ?? '';
@@ -143,11 +157,36 @@ function sourceFiles(dir: string): string[] {
 		.map((entry) => join(dir, entry));
 }
 
+/**
+ * The top-level folders of a package that hold the code it ships: those its manifest names, plus
+ * the source that a build turns into its library. A folder that the manifest does not name does not
+ * ship, and a built folder comes from the source, so neither is read again.
+ */
+function shippedFolderNames(packageDir: string): string[] {
+	let entries: string[];
+	try {
+		const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as {
+			files?: string[];
+		};
+		entries = (manifest.files ?? []).filter((entry) => !entry.startsWith('!'));
+	} catch {
+		entries = ['src', 'bin', 'vendor', 'templates'];
+	}
+	const names = new Set(['src', ...entries.map((entry) => entry.split('/')[0] ?? '')]);
+	names.delete('');
+	return [...names].filter((name) => !BUILT.has(name));
+}
+
 /** The folders whose shipped files the check reads, relative to the repository root. */
 export function checkedFolders(root: string): string[] {
-	const packages = readdirSync(join(root, 'packages')).map((name) => join(root, 'packages', name));
-	const folders = packages.map((folder) => join(folder, 'src'));
-	folders.push(...packages.map((folder) => join(folder, 'bin')));
+	const packageRoot = join(root, 'packages');
+	const names = existsSync(packageRoot) ? readdirSync(packageRoot) : [];
+	const folders = names.flatMap((name) => {
+		const dir = join(packageRoot, name);
+		return shippedFolderNames(dir)
+			.map((folder) => join(dir, folder))
+			.filter((folder) => existsSync(folder) && statSync(folder).isDirectory());
+	});
 	folders.push(join(root, 'examples/addons'));
 	return folders;
 }
@@ -165,28 +204,41 @@ export function networkProblems(root: string): {
 	let files = 0;
 	let calls = 0;
 	const seen = new Set<string>();
+	const apiPatterns = FORBIDDEN_APIS.map(
+		([name, pattern]) => [name, new RegExp(pattern.source, 'g')] as const,
+	);
 	for (const file of checkedFolders(root).flatMap(sourceFiles)) {
 		if (seen.has(file)) continue;
 		seen.add(file);
 		files++;
 		const path = relative(root, file).split(sep).join('/');
 		const text = readFileSync(file, 'utf8');
-		for (const [name, pattern] of FORBIDDEN_APIS) {
-			const declared = name === 'WebSocket' && SOCKET_SITES[path];
-			if (pattern.test(text) && !declared)
-				problems.push(`${path}: uses ${name}, which reaches the network`);
-		}
-		const site = FETCH_SITES[path];
-		const found = text.match(new RegExp(FETCH_CALL, 'g'))?.length ?? 0;
-		calls += found;
-		if (found > 0 && !site)
+		const use = NETWORK_USES[path];
+		const foundFetch = text.match(new RegExp(FETCH_CALL, 'g'))?.length ?? 0;
+		calls += foundFetch;
+		const expectedFetch = use?.fetch ?? 0;
+		if (foundFetch !== 0 && !use)
 			problems.push(
 				`${path}: calls fetch, and no entry in network-use.ts says what it downloads. Add one with the reason, and say so in docs/getting-started/network-use.md`,
 			);
-		if (site && found !== site.count)
+		else if (foundFetch !== expectedFetch)
 			problems.push(
-				`${path}: has ${found} fetch calls, and network-use.ts records ${site.count}. Update the record and the network use page`,
+				`${path}: has ${foundFetch} fetch calls, and network-use.ts records ${expectedFetch}. Update the record and the network use page`,
 			);
+		for (const [name, pattern] of apiPatterns) {
+			const found = text.match(pattern)?.length ?? 0;
+			const expected = use?.apis?.[name] ?? 0;
+			if (found === expected) continue;
+			if (!use || expected === 0) problems.push(`${path}: uses ${name}, which reaches the network`);
+			else if (found === 0)
+				problems.push(
+					`${path}: network-use.ts records ${expected} uses of ${name}, and the file has none. Update the record`,
+				);
+			else
+				problems.push(
+					`${path}: has ${found} uses of ${name}, and network-use.ts records ${expected}. Update the record`,
+				);
+		}
 		for (const match of text.matchAll(ABSOLUTE_URL)) {
 			const scheme = match[1] ?? '';
 			const host = (match[2] ?? '').split('/')[0] ?? '';
@@ -197,4 +249,56 @@ export function networkProblems(root: string): {
 		}
 	}
 	return { problems, files, calls };
+}
+
+/** The records whose file no longer ships, so the record has to go or the file has to return. */
+export function staleUseProblems(root: string): string[] {
+	const shipped = new Set(
+		checkedFolders(root)
+			.flatMap(sourceFiles)
+			.map((file) => relative(root, file).split(sep).join('/')),
+	);
+	return Object.keys(NETWORK_USES)
+		.filter((path) => !shipped.has(path))
+		.map((path) => `${path}: network-use.ts records it, and no such shipped file exists`);
+}
+
+/**
+ * Every vendored file whose network forms the record names, and which a shipped file imports
+ * without handing it the compiled module. Such a file could reach its own download, so the promise
+ * that a page contacts no server would fail. Each problem is `path: problem`.
+ */
+export function unreachedVendorProblems(root: string): string[] {
+	const problems: string[] = [];
+	const packageRoot = join(root, 'packages');
+	const names = existsSync(packageRoot) ? readdirSync(packageRoot) : [];
+	const importers = names
+		.flatMap((name) => {
+			const dir = join(packageRoot, name);
+			return shippedFolderNames(dir)
+				.filter((folder) => folder !== 'vendor')
+				.map((folder) => join(dir, folder));
+		})
+		.flatMap(sourceFiles);
+	const texts = importers.map((file) => ({ file, text: readFileSync(file, 'utf8') }));
+	for (const path of Object.keys(NETWORK_USES)) {
+		const parts = path.split('/');
+		if (parts[2] !== 'vendor' || !existsSync(join(root, path))) continue;
+		const tail = parts.slice(2).join('/');
+		const users = texts.filter(({ text }) => text.includes(tail));
+		if (users.length === 0) {
+			problems.push(
+				`${path}: holds a download path, and no shipped file imports it. Remove the record, or import the file where the module is handed in`,
+			);
+			continue;
+		}
+		for (const { file, text } of users) {
+			if (/\b(?:instantiateWasm|wasmBinary)\b/.test(text)) continue;
+			const rel = relative(root, file).split(sep).join('/');
+			problems.push(
+				`${rel}: imports ${tail} without instantiateWasm or wasmBinary, so the vendored download path can run`,
+			);
+		}
+	}
+	return problems;
 }

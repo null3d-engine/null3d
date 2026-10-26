@@ -126,7 +126,7 @@ use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
     RecordError, SceneSettings, StillMarks, UploadArena, bind_frame_group, drawn_rows, joined_rows,
-    settled,
+    settled, unbound_buffer_bytes,
 };
 use crate::frame_graph::{DrawnViews, FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
@@ -2283,11 +2283,15 @@ impl CpuCulledRenderer {
             }
         }
         let camera = self.culling.frame(ViewId::CAMERA);
+        // WebGL2 binds no storage buffers, so the portable limit on a buffer's size alone bounds
+        // the lines' vertex buffer.
+        let lines_bytes = unbound_buffer_bytes(None);
         self.lines.upload(
             list,
             arena,
             &input.lines,
             camera.map(|values| &values.camera),
+            lines_bytes,
         )?;
         let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);
         let weighted = self.graph.weighted_declared();

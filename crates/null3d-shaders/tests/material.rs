@@ -765,12 +765,20 @@ const EFFECTS: [(&str, &str); 10] = [
     ),
 ];
 
+/// A material's uniforms and textures come from its source before any build, so every share of
+/// its builds holds the same ones, and the test builds the smallest share: the first build and the
+/// WebGPU builds without bits.
 #[test]
 fn the_row_of_custom_values_holds_the_measured_effects() {
     let mut most = 0;
     for (effect, declarations) in EFFECTS {
         let source = format!("{declarations}\n{STRIPES}");
-        let built = compile(&source).unwrap_or_else(|error| panic!("{effect}: {error}"));
+        let smallest = Share {
+            index: 0,
+            count: u32::MAX,
+        };
+        let built = compile_share(&source, Some(smallest))
+            .unwrap_or_else(|error| panic!("{effect}: {error}"));
         let floats = |ty: &str| match ty {
             "vec2f" => 2,
             "vec3f" => 3,

@@ -112,6 +112,35 @@ test('transmission-maps: the transmission and thickness maps vary the glass', as
 	}
 });
 
+/**
+ * A clear coat's value leaves the specular maps' slots free, where the transmission and thickness
+ * maps sit. A shader that dropped those maps in a coated material would draw the same glass with
+ * and without them, so the plain coat's balls differ from the mapped ones by far more than a
+ * drawing's own noise.
+ */
+test('transmission-maps: a clear coat keeps the transmission and thickness maps', async ({
+	page,
+}) => {
+	test.setTimeout(240_000);
+	const runs = IMAGE_RUNS.filter((run) => run.test === 'transmission-maps');
+	expect(runs.length).toBe(3);
+	for (const run of runs) {
+		// The plain scene's run of the same tier and thread mode draws the balls without a map, so
+		// each variant adds its own switches to that path rather than to the mapped one's.
+		const plain = manifestRun(
+			'transmission',
+			run.tier,
+			run.mode?.name as EngineModeName | undefined,
+		);
+		const mapped = await imageOf(page, variant(plain.path, GLASS_SKETCH, '?coat&maps'));
+		const coated = await imageOf(page, variant(plain.path, GLASS_SKETCH, '?coat'));
+		const smooth = discOf(mapped, SMOOTH);
+		expect
+			.soft(difference(mapped, coated, smooth), `${run.id}: the coat keeps the maps`)
+			.toBeGreaterThan(0.01);
+	}
+});
+
 test('transmission-water: ripples bend the bed that shows through the water', async ({ page }) => {
 	test.setTimeout(240_000);
 	const runs = IMAGE_RUNS.filter((run) => run.test === 'transmission-water');

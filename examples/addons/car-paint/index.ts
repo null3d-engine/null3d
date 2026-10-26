@@ -22,8 +22,8 @@ export interface PaintFlakes {
 	tilt?: number;
 	/**
 	 * The angular radius of the main light in radians, which sets how many flakes reflect it at
-	 * once. The default is 0.02, about the size of a soft studio light. Use a smaller value for a
-	 * hard sun or a larger one for a broad light.
+	 * once. The default is 0.25, a softbox that many flakes catch together. A smaller value suits a
+	 * hard sun, where the glints are rarer and brighter.
 	 */
 	angle?: number;
 	/**
@@ -88,7 +88,7 @@ export interface CarPaintLook {
 const DEFAULT_FLAKES: Required<PaintFlakes> = {
 	cells: [120, 210],
 	tilt: 0.25,
-	angle: 0.02,
+	angle: 0.25,
 	max: 64,
 };
 /** The seams that a paint starts with. */

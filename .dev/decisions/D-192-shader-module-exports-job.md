@@ -1,6 +1,6 @@
 # D-192: A test that builds every shader gets its own CI part
 
-Status: superseded by [D-218](D-218-efficient-ci-jobs.md) on 22 October 2026: the test builds the few entries that make every kind of module, among the workspace's tests. Decided on 19 October 2026. Task: none.
+Status: superseded by [D-218](D-218-efficient-ci-jobs.md) on 22 October 2026: the test runs among the workspace's tests. Since 25 October 2026 it builds two small entries, and the determinism check covers every kind of module. Decided on 19 October 2026. Task: none.
 
 Summary: The shader module exports test builds the whole shader set through the WebAssembly compiler, so it now runs in a third part of `rust-tests` with a 90-minute limit. It took 1,291 seconds beside every other test on 18 October 2026, and on 19 October 2026 it still ran at 1,440 seconds when that part's 35-minute limit ended.
 

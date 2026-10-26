@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'bun:test';
 import { spawn, spawnSync } from 'node:child_process';
-import { availableParallelism, loadavg } from 'node:os';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { availableParallelism, loadavg, tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Page } from '@playwright/test';
+import { BACKGROUND_PRIORITY, processPriority } from '../../tools/lib/build-cache.ts';
 import { REFRESH_MEASURE, refreshRate } from '../pages/lib/refresh-rate.ts';
 import { parseArgs, timesOnThisMachine } from '../real-browsers.ts';
 import {
 	appWindow,
-	BACKGROUND_PRIORITY,
 	displayRateCheck,
 	displayRateProblem,
 	frontApp,
@@ -18,7 +20,6 @@ import {
 	parkedPlace,
 	parkScript,
 	priorityProblem,
-	processPriority,
 	RUNNER_TITLE,
 	SMALL_SIZE,
 } from './app-window.ts';
@@ -172,14 +173,14 @@ describe('the background priority guard', () => {
 	const mac = process.platform === 'darwin';
 	// A process at background priority gets almost no processor time while the machine runs more
 	// work than it has cores: on 25 October 2026, at a load of 60 to 100, such a child printed nothing
-	// in 30 s. The two tests below that wait for what such a child prints cannot then tell the
-	// guard's refusal from a start that never ran, so they skip, and say so. The rule is tested at any
+	// in 30 s. The tests below that wait for what such a child prints cannot then tell the guard's
+	// refusal from a start that never ran, so they skip, and say so. The rule is tested at any
 	// load, and so is the priority that taskpolicy gives a child, which needs no time to read.
 	const load = loadavg()[0] ?? 0;
 	const starved = mac && load > availableParallelism();
 	if (starved)
 		console.warn(
-			`the background priority guard: the two tests that wait for a background process skip, since the load of ${load.toFixed(0)} is over the ${availableParallelism()} cores, so the guard's refusal goes unproven in this run`,
+			`the background priority guard: the tests that wait for a background process skip, since the load of ${load.toFixed(0)} is over the ${availableParallelism()} cores, so the guard's refusal goes unproven in this run`,
 		);
 
 	it('refuses background priority and accepts any higher one', () => {
@@ -204,11 +205,12 @@ describe('the background priority guard', () => {
 	);
 
 	/** What a script prints when it runs `call` at background priority: the refusal, or that it went on. */
-	const atBackgroundPriority = (module: string, call: string) => {
+	const atBackgroundPriority = (module: string, call: string, env = process.env) => {
 		const script = `import * as tool from ${JSON.stringify(new URL(module, import.meta.url).pathname)};
 try { await ${call}; console.log('WENT ON'); } catch (e) { console.log(e.message); }`;
 		return spawnSync('taskpolicy', ['-b', process.execPath, '-e', script], {
 			encoding: 'utf8',
+			env,
 			timeout: 30_000,
 		}).stdout;
 	};
@@ -231,6 +233,26 @@ try { await ${call}; console.log('WENT ON'); } catch (e) { console.log(e.message
 			const stdout = atBackgroundPriority('./priority-setup.ts', 'tool.default()');
 			if (process.env.CI) expect(stdout).toContain('WENT ON');
 			else expect(stdout).toContain('macOS background priority');
+		},
+		30_000,
+	);
+
+	it.skipIf(!mac || starved)(
+		"stops a page build at background priority before it takes the machine's page-build lock",
+		() => {
+			// A cache root of its own, so a guard that let the build on would take no shared lock.
+			const cache = mkdtempSync(join(tmpdir(), 'null3d-page-lock-'));
+			try {
+				const stdout = atBackgroundPriority(
+					'../../tools/lib/build-cache.ts',
+					'tool.acquirePageBuildLock()',
+					{ ...process.env, NULL3D_BUILD_CACHE: cache },
+				);
+				expect(stdout).toContain('macOS background priority');
+				expect(stdout).not.toContain('WENT ON');
+			} finally {
+				rmSync(cache, { recursive: true, force: true });
+			}
 		},
 		30_000,
 	);

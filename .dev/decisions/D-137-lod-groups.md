@@ -185,7 +185,7 @@ The review found five weak points in what this record describes:
 
 - The fade goes where it shows least. The asset tool's levels change the picture by less than a pixel at the switch. D-91 found no wider change at 502 of 518 switches. Yet they pay for the double draw, the discard and the fade lists. Hand-made levels, such as Creek's leaf-card trees, change the picture far more. On Low, which turns the fade off, they pop. The fade becomes a choice per level. It is off for a measured error, and on for a level given by distance or by a hand-set error, on Low too.
 - The rule measures to the center of the bounds. An object whose radius is half its distance then shows twice the allowed error on its near side. The rule moves to the nearest point of the bounds, as meshoptimizer, Godot and `clusterlod.h` do.
-- Each level and each fade list reserves room for every copy, in every view. Read from the code, 40,000 copies with 4 levels and 4 cascades take about 61 MB of copy lists, plus growth room. One list per view would take about 13 MB. The main view's list passes WebGPU's default 128 MiB binding limit near 260,000 copies with four fading levels. These are estimates to measure. The lists will follow what draws.
+- Each level and each fade list reserved room for every copy, in every view. Read from the code, 40,000 copies with 4 levels and 4 cascades were estimated at about 61 MB of copy lists, and one list per view at about 13 MB. The measured figures in this record's addendum of 22 October correct those estimates. The casters' list is one list that every cascade draws, so the cascade count does not multiply it. The lists now follow what draws.
 - Every copy uses the same 4 × 4 pattern, so neighbouring copies line up into one grid. The pattern will differ per copy.
 - A distance or a screen coverage becomes an error for a screen 1,080 pixels high. So on a screen 2,160 pixels high, the level switches at twice the distance. Levels can then be picked by distance or by coverage beside error.
 
@@ -271,13 +271,23 @@ it may pick. So a slice never falls short of the shader's writes, whatever the l
 shared distance come to. The buckets without levels keep the slices of the build. A scene without
 levels runs no count.
 
-| Copies of four levels, with fading bands | Before | After |
+| Copies of four levels, with fading bands | Before, the removed rule's arithmetic | After, measured |
 | --- | --- | --- |
 | 40,000 copies, the main view | 20.5 MB | 2.6 MB |
-| 40,000 copies, the main view and four cascades | 61 MB | 13 MB |
+| 40,000 copies, the four cascades' casters list | 10.2 MB | 2.6 MB |
+| Both lists together | 30.7 MB | 5.1 MB |
 
-`crates/null3d-render/tests/levels.rs` measures the figures from the frame's own copy lists. A
-band adds about a tenth more, for the sources inside it, which take a copy in each of two fade
+`crates/null3d-render/tests/levels.rs` measures the after figures from the frame's own copy lists.
+`forty_thousand_copies_of_four_levels_take_one_copy_each` reads the main view, and
+`forty_thousand_casters_of_four_cascades_take_one_copy_each` reads the casters' layout with four
+cascades. The four cascades draw one copy list, so the list takes one copy for each of the 40,000
+trees, and the levels add nothing to it. The before figures are arithmetic from the removed rule at
+64 bytes a copy. The main view had eight slices, one for each of four levels and its fading band:
+20.5 MB. The casters' list had four slices, because its shadow pipelines take no fading build, and
+its fade buckets exist only in the scene layout: 10.2 MB. The earlier estimate of 61 MB counted a
+list for each cascade, which the code does not keep.
+
+A band adds about a tenth more, for the sources inside it, which take a copy in each of two fade
 buckets.
 
 The culling shader cannot size these slices itself. A draw reads its bucket's copies from a vertex
@@ -285,6 +295,15 @@ buffer offset that the frame records on the CPU. An indirect draw keeps its firs
 (hard rule 8). A count on the GPU would need a readback, or a second pass that costs every frame.
 The CPU count runs only for the sources of a mesh with levels. A list of chosen patches per view has
 the same sizing problem (M3-L3). Its count can read this one.
+
+The buffer still takes room to grow, and its sizing kept the need whenever the room passed the
+binding. So a list that needed more than the binding asked for a buffer past the device's limit,
+and nothing checked it. A frame builder now refuses such a buffer with E1501, which names the
+limit in bytes, and every buffer that a frame sizes against a binding takes the same check. The
+list of copies per view is the one that the plan named.
+`a_copy_list_past_the_binding_is_refused_rather_than_sized_over_it` in
+`crates/null3d-render/tests/levels.rs` gives a device whose binding holds the sources, and a batch
+that reserves room in every bucket of its levels, and reads the refusal.
 
 ## Addendum: an object may bias its threshold (22 October 2026)
 
@@ -368,6 +387,22 @@ Blender without levels still gets them (follow-up 5).
   predictable. An author who wants earlier thinning gives the level its own error.
 - The card step runs only for a mesh that a skin does not pose, because a posed list's positions
   are in the scene's units and the level's stored positions are in the mesh's.
+- The picture `asset-card-level` shows this step. The tool builds a tree of 40 cards of 0.3 m and a
+  trunk. The picture loads the tool's file and draws its first lower level. That level keeps 20
+  cards and grows each about its middle by the square root of two. A card's size is the level's
+  error, so the switch lies far out. The picture sets the threshold to 16 pixels, the most that the
+  setting takes, and gives the tree a bias of 4. At a 640 by 360 picture and a 40-degree lens, the
+  rule's factor is 30.9. The level's error of 0.424 m then switches it 13 m out. The bias divides
+  that to 3.3 m, and the camera's nearest point lies at 3.8 m. The crown spans about 100 of the
+  picture's 640 pixels. The fixture has a second card level, which keeps 10 cards at an error of
+  0.636 m: with the bias of 4 it switches at 4.9 m, past the camera, so the picture draws the first
+  one. Without the step the tool plans no level for the crown at all. Every edge of a card is an
+  open border, which the simplifier keeps, so the crown's triangles never fall. The picture then
+  draws all 40 cards at their own size, and 0.9 percent of its pixels differed from the reference,
+  against the picture tests' limit of 0.1 percent. The unit tests hold the step's own rules:
+  `keeps a share of the cards at each level, grown about their middles`, `writes each card level
+  its own positions, and shares the wood stream`, and `treats a card folded along its middle as a
+  card, as Creek makes its leaves`.
 
 ## Addendum: texture coordinates in the level error (22 October 2026, M3-L2)
 
@@ -383,6 +418,30 @@ The weight is deliberately modest. The error that the simplifier reports include
 and the engine reads a level's error as a distance, so a heavy weight would make every textured
 mesh switch levels much farther out. At a sixty-fourth, the test scene's ball keeps four levels,
 where the same scene without texture coordinates in the error has six.
+
+The picture `asset-bent-grid` shows this weight. The tool builds a flat grid of one meter across
+and 32 by 32 cells, whose texture repeats twice across it, and the picture looks at it from about a
+meter. It sets the threshold to 16 pixels, the most that the setting takes. At a 640 by 360 picture
+and a 60-degree lens, the rule's factor is 19.5. The four lower levels report errors of 0.0055 m,
+0.011 m, 0.070 m and 0.25 m, which switch them 0.11 m, 0.22 m, 1.4 m and 4.8 m out. The camera's
+nearest point lies at 0.87 m, so the second lower level draws, and its texture moves under a
+pixel. Without the weight the four errors fall to 0.00001 m through 0.00017 m, and the coarsest
+level switches at 3 mm. It draws against the camera, and its texture scrambles: 10.0 percent of the
+pixels differed, against the picture tests' limit of 0.1 percent.
+
+The unit test's own bent grid measures the weight. It is a flat grid of one meter across, 32 by 32
+cells, whose texture coordinates repeat the texture eight times across it. With the shipped weight,
+one sixty-fourth of the longest side, its coarsest level reports an error of 0.116 units. The same
+grid with one texture coordinate everywhere reports 0.00016, so the reported error is the weight's.
+A slide of the whole texture over a one-meter mesh counts as one sixty-fourth of a unit, a small
+fraction of the mesh's size. The unit test reads the error itself, which is the quantity the item
+adds: `counts a texture that would slide, where a flat surface otherwise simplifies free` holds the
+bent grid's coarsest error above 0.11 units.
+
+The coordinator accepted the exemption from a picture for the weight on 26 October 2026, and that
+acceptance was the coordinator's alone. The owner has not ruled on it. The picture above now proves
+what the exemption covered, so the owner can confirm or drop the exemption with that proof in front
+of them.
 
 ## Addendum: the level pictures place each copy by its own distance (22 October 2026, M3-L2)
 
@@ -465,3 +524,151 @@ the picture test draws the cards around many directions so a disagreement shows.
 The eye comes from the frame's camera, so the cards have no per-frame call. `update` left the API,
 and with it the origin that the sprite batch needed: the engine draws everything relative to the
 camera, so world positions keep their precision far from the world's origin.
+
+## Addendum: a file's levels read their vertices from the start of the buffer (25 October 2026, M3-L2)
+
+The plan asked for a file's levels to draw ranges of the base mesh's indices. Those indices name the
+base's own vertices. The vertices were to come in coarsest-level-first order, as meshoptimizer's
+README advises. Both parts are built.
+
+A level the asset tool writes names the base's accessors. The loader therefore stores the level over
+the base's vertices. The level costs its indices alone. After the levels are planned, the tool orders
+each mesh's vertices. The coarsest level's come first, then each finer level's new ones, then the
+base mesh's own. Any vertex that no triangle uses comes last. Every vertex stream moves with them.
+The base's indices and every level's indices are remapped. The step runs only for the meshes whose
+levels the tool plans; a file's own levels keep their order.
+
+The order leaves each level at the start of the buffer. On the tool's staged terrain the coarsest
+level names 515 vertices and its largest index is 514. Each finer stage's largest index is one less
+than the vertices it uses, up to the finest stage's 16,641. A staged loader can therefore send the
+coarsest level's part of the buffer first and add each finer part as it arrives.
+
+The step runs before the cluster planner. A mesh that takes both whole levels and a tree of patches
+therefore writes them over one vertex order, which is the layout M3-L3's patch data and its fallback
+levels share. The tool builds it once, in `packages/cli/src/assets/levels.js`, and both writers name
+the base mesh's accessors.
+
+The gain is the share of the buffer that a coarse level no longer needs resident. On the tool's test
+ball the coarsest level names 122 of 1,225 vertices of 16 bytes. Before the step they spread over
+98% of the array, so a draw needed almost the whole 19,600-byte vertex buffer. The order puts them in
+the first 1,952 bytes. That holds back 17,648 bytes, 90% of the buffer, until a finer level arrives.
+The gain scales with the base's vertex bytes, and it is a streaming and cache gain only. The levels
+already copy no vertices, so no total memory and no picture changes. It gains nothing for the
+40,000-pine scene, whose procedural levels are meshes of their own. M3-L4's staged loading is the
+user that spends it.
+
+`packages/cli/src/assets/levels.test.ts` holds two facts. Each level and every coarser level share
+one prefix of the new numbering. Every triangle keeps the positions it drew before the reorder.
+Before the step the coarsest level's 515 vertices spread up to 12,245. The levels together reach
+the base mesh's last index, 16,640. So the prefix check fails without it.
+
+## Addendum: the levels' cost on an iPad and a phone (25 October 2026, M3-L2)
+
+The level-of-detail section asks each of its tasks for the GPU time and memory on the Mac, an iPad
+and an S24-class phone. The Mac's GPU time is in this record's table of 11 October, which predates
+the fade rule of 22 October: its Low rows measured a Low preset with no fading bands. The Mac ran
+the page again on 25 October under the new rule, and its rows are below with the devices'. The copy
+lists' memory is in the addendum above. This addendum adds the Mac's new rows, the owner's iPad, the
+cloud iPad and the phone.
+
+The `lod-cost` page draws 40,000 pines, four levels each. It times the forest with every tree at its
+base mesh. It then times it with each tree at the level that its size on the screen picks. The two
+sides take turns, two seconds at a time, three times over, at Low and at High. After the timing the
+page reports each side's GPU buffer bytes from the stats overlay.
+
+The owner's rule of 25 October 2026 splits the rows. Memory is read exactly, so a cloud iPad's
+memory stands. A GPU time is a timing, so an iPad's absolute figure comes from the owner's own iPad.
+The cloud iPad's figure stands beside it as the comparison. Phones keep the cloud-first rule, so
+the Galaxy S24 gives both of its rows.
+
+| Device | Path | Preset | GPU off, on (ms) | GPU buffers off, on (MiB) |
+| --- | --- | --- | --- | --- |
+| iPad Pro 11-inch, owner's | WebGPU | Low | 67.36, 16.83 | 21.8, 21.8 |
+| iPad Pro 11-inch, owner's | WebGPU | High | 150.92, 53.64 | 25.6, 25.6 |
+| iPad Pro 11-inch, owner's | compatibility | Low | 67.62, 17.83 | 21.8, 21.8 |
+| iPad Pro 11-inch, owner's | compatibility | High | 97.24, 46.31 | 25.6, 25.6 |
+| iPad Pro 11-inch, owner's | WebGL2 | Low | no timer | 6.2, 6.2 |
+| iPad Pro 11-inch, owner's | WebGL2 | High | no timer | 6.3, 6.3 |
+| iPad Pro 13, cloud | WebGPU | Low | 10.95, 5.28 | 22.0, 22.0 |
+| iPad Pro 13, cloud | WebGPU | High | 42.38, 32.12 | 25.6, 25.6 |
+| iPad Pro 13, cloud | compatibility | Low | 11.00, 5.40 | 22.0, 22.0 |
+| iPad Pro 13, cloud | compatibility | High | 31.36, 26.41 | 25.6, 25.6 |
+| iPad Pro 13, cloud | WebGL2 | Low | no timer | 6.1, 6.1 |
+| iPad Pro 13, cloud | WebGL2 | High | no timer | 6.2, 6.2 |
+| Galaxy S24, cloud | WebGL2 | Low | no timer | 6.1, 6.1 |
+| Galaxy S24, cloud | WebGL2 | High | no timer | 6.2, 6.2 |
+| Galaxy S25, cloud, stand-in | WebGPU | Low | 22.81, 7.08 | 25.8, 25.8 |
+| Galaxy S25, cloud, stand-in | WebGPU | High | 54.33, 34.80 | 27.6, 27.6 |
+| Galaxy S25, cloud, stand-in | compatibility | Low | 23.72, 7.21 | 25.8, 25.8 |
+| Galaxy S25, cloud, stand-in | compatibility | High | 25.69, 25.36 | 27.6, 27.6 |
+| Galaxy S25, cloud, stand-in | WebGL2 | Low | no timer | 6.2, 6.2 |
+| Galaxy S25, cloud, stand-in | WebGL2 | High | no timer | 6.2, 6.2 |
+| Mac, Chrome | WebGPU | Low | 5.43, 3.70 | 19.8, 19.8 |
+| Mac, Chrome | WebGPU | High | 9.54, 5.68 | 23.7, 23.7 |
+| Mac, Chrome | compatibility | Low | 5.90, 3.74 | 19.8, 19.8 |
+| Mac, Chrome | compatibility | High | 7.33, 4.16 | 23.7, 23.7 |
+| Mac, Chrome | WebGL2 | Low | 8.25, 5.46 | 6.2, 6.2 |
+| Mac, Chrome | WebGL2 | High | 12.48, 4.23 | 6.3, 6.3 |
+
+The owner's iPad Pro 11-inch ran Safari 26.6.2 on iPadOS 26.7 at 59 Hz. Its window was 1,194 by
+659 CSS pixels at 2x. Its levels cut the GPU time by 75% at Low on core WebGPU, and by 64% at High.
+They cut it by 74% and 52% in compatibility mode. Its WebGL2 frame interval fell from 108.94 to
+30.16 ms at Low and from 154.44 to 77.32 ms at High. Its GPU buffer bytes do not change between the
+two sides either, at 21.8 MiB at Low and 25.6 MiB at High. The run's own files therefore hold the
+memory rows on this device too.
+
+This iPad is an older model than the cloud iPad Pro 13, so its absolute times are several times
+larger. At Low on core WebGPU its frame takes 67.36 ms with the base meshes against the Pro's
+10.95 ms. That gap is why the owner's own iPad gives the absolute row, and why the Pro's figures
+stand beside it as the comparison rather than in its place.
+
+
+The cloud iPad ran Safari 26.6.1 on iOS 26 at 59 Hz. Its window was 1,032 by 1,264 CSS pixels at
+2x. Its levels cut the GPU time by 52% at Low on core WebGPU, and by 51% in compatibility mode. They
+cut it by 24% at High on core WebGPU. Its GPU buffer bytes do not change between the two sides.
+Identical bytes do not prove the sizing on their own, because the removed rule would give the same
+sides too; the absolute totals rule it out, as the Mac's table above records. The lists take one
+copy per source. They do not take a slice per level per view. The Mac's table above holds the same
+finding: 2.6 MB in the main view and 2.6 MB in the casters' list, against 20.5 MB and 10.2 MB from
+the removed rule.
+
+The Galaxy S24 ran Chrome 152 on Android 16 with no WebGPU adapter, so only its WebGL2 rows ran.
+Chrome on Android reports no WebGL2 GPU timer. The cloud display ran at 30 Hz, so its frame interval
+sits at its 33.3 ms limit and hides any saving. The runner marks its frame intervals unreliable; its
+CPU times do not depend on the display. Its GPU
+buffer bytes also do not change, at 6.1 MiB at Low and 6.2 MiB at High. Its CPU time rises with the
+levels on, by 1.78 ms at Low and 1.35 ms at High. That is the level picks and the fade pairs.
+
+The Galaxy S25 stands in for the S24 class, because the S24 times no GPU on either path. It ran
+Chrome 152 on Android 15, on Qualcomm's Adreno 830. That is a faster GPU of another make than the
+S24's Samsung Xclipse 940, so its row is the stand-in and not the S24's own figure. Its levels cut
+the GPU time by 69% at Low and 36% at High on core WebGPU, and by 70% at Low in compatibility mode.
+High on compatibility mode was flat. Its display ran at 30 Hz, so the runner marks its frame
+intervals unreliable; its GPU timer times do not depend on the display. Every interval sits at the
+display's 33.3 ms cap apart from High on core WebGPU, where
+the base-meshes side missed the cap at 66.6 ms. That interval fall is the cap, not the levels'
+doing, so it is no saving. Its GPU buffer bytes do not change, at 25.8 MiB at Low and 27.6 MiB at
+High, and 6.2 MiB on WebGL2.
+
+The Mac ran the page in Chrome on 25 October: six pages in 3.9 minutes, each page's load gate under
+8, between 6.1 and 7.9. The load then drifted to 8.7 after WebGPU High's gate and 11.1 after
+compatibility Low's gate. Every path held the display's 16.67 ms interval. The levels cut
+the GPU time by 32% at Low and 40% at High on core WebGPU, by 37% and 43% in compatibility mode, and
+by 34% and 66% on WebGL2. Its GPU buffer bytes do not change between the two sides, at 19.8 MiB at
+Low and 23.7 MiB at High, and 6.2 and 6.3 MiB on WebGL2. Chrome on the Mac times WebGL2, where the
+tablets and the phone report no timer there.
+
+Levels add no GPU buffer bytes on any device: the totals are 19.8 and 23.7 MiB on the Mac, 21.8 and
+25.6 on the iPads, and 25.8 and 27.6 on the S25. That they are identical off and on does not prove
+the sizing, because off is a threshold of 0 and keeps the buckets, so the removed rule would give
+identical sides and far more bytes. The absolute totals rule it out: each stays below the 30.7 MB
+that the removed rule's two copy lists alone would take. The two Rust copy-list tests measure one
+copy per source, 2.6 MB each.
+
+The run connected only after the mkcert root was trusted on the iPad. Until then the runner page
+sat on "starting" and nothing reached the Mac. [Device sessions](../devices.md) now records that
+step. The phone row comes from the cloud S25, the closest cloud device that times a GPU, as the
+rule for a device that cannot run the plan allows. The S24 has no WebGPU adapter and no WebGL2 GPU
+timer, so its own run gives the frame interval and CPU time alone. The S25's GPU is a faster make,
+so its row shows the phone class's saving rather than the S24's own figure. Its GPU timer times
+stand, and only its frame intervals are cap-bound.

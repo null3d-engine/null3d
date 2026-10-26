@@ -1250,9 +1250,7 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
 /// twenty or more feature sets those builds make; and a whole-shader first-use module, through
 /// `environment`. `lit` has the feature bits of the textured standard material, less its relief
 /// bits, at about a seventh of its builds. The textured material alone is most of the whole
-/// build, and two builds of it made this check the longest part of CI by far. The module exports
-/// test of `null3d-shaders-wasm` builds the same list, for the same reason, and keeps a copy of it,
-/// since one crate's tests cannot read another's.
+/// build, and two builds of it made this check the longest part of CI by far.
 const DETERMINISM_ENTRIES: &[&str] = &["lit", "environment", "pick", "timer_mark"];
 
 /// The one test that builds every shader of the repository. A full build takes minutes, and

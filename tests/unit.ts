@@ -12,7 +12,8 @@ import { spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { HEAVY_CHECKS, ignorePatternOf } from './lib/heavy-checks.ts';
-import { CHECK_TIMEOUT_MS } from './lib/run-budget.ts';
+import { budgetNote, checkTimeoutMs } from './lib/run-budget.ts';
+import { exactTestPath } from './lib/test-paths.ts';
 
 /** The repository, which the groups' paths are relative to. */
 const ROOT = join(import.meta.dirname, '..');
@@ -40,15 +41,16 @@ for (const paths of GROUPS) {
 	// `--isolate` is not used: it gives each file a global of its own, which shrank the engine's
 	// group from 2,908 MB to 2,054 MB, but grew the group of the runner's tests from 1,220 MB to
 	// 3,822 MB and made it three times slower, so the run's peak was higher with it.
+	const timeout = checkTimeoutMs();
 	const args = [
 		'test',
-		`--timeout=${CHECK_TIMEOUT_MS}`,
+		`--timeout=${timeout}`,
 		'--preload',
 		CEILING_PRELOAD,
 		'--conditions=null3d-source',
 	];
 	for (const { file } of HEAVY_CHECKS) args.push(`--path-ignore-patterns=${ignorePatternOf(file)}`);
-	args.push(...paths);
+	args.push(...paths.map(exactTestPath));
 	const started = Date.now();
 	const result = spawnSync('bun', args, {
 		cwd: ROOT,
@@ -57,7 +59,9 @@ for (const paths of GROUPS) {
 	});
 	const seconds = Math.round((Date.now() - started) / 1000);
 	const outcome = result.status === 0 ? 'passed' : `failed with ${result.status}`;
-	console.log(`unit: ${paths.join(' ')} ${outcome} in ${seconds}s, under ${CEILING_MIB} MiB`);
+	console.log(
+		`unit: ${paths.join(' ')} ${outcome} in ${seconds}s, under ${CEILING_MIB} MiB${budgetNote(timeout)}`,
+	);
 	if (result.status !== 0) failed += 1;
 }
 process.exit(failed === 0 ? 0 : 1);

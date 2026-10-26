@@ -37,6 +37,7 @@
 		"packages/vegetation/**",
 		"packages/three-compat/**",
 		"packages/splats/**",
-		"packages/water/**"
+		"packages/water/**",
+		"packages/wind/**"
 	]
 }

@@ -173,6 +173,8 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP",
 # occlusion, emissive, light and specular maps, which share six texture units on WebGL2. In the
 # TRANSLUCENCY builds the specular maps' slots hold the diffuse transmission maps instead, and in
 # the COAT_SHEEN builds the light and specular maps' slots hold the coat, coat normal and sheen maps.
+# A build of both features keeps a layer map in the light map's slot and the transmission and
+# thickness maps in the specular slots, where no layer map fills one of them.
 # VERTEX_TANGENT takes the normal map's frame from the mesh's tangents, and VERTEX_COLOR, ALPHA_MASK,
 # RECEIVE_SHADOWS, TRANSMISSION, TRANSLUCENCY and COAT_SHEEN act as for the standard material.
 # BUMP bends the normal by a height map in the normal map's slot. DISPLACEMENT moves each vertex

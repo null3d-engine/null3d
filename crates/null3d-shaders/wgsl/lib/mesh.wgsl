@@ -456,9 +456,12 @@ fn material_anisotropy(id: u32) -> vec4f {
 #endif
 
 #ifdef TRANSMISSION
-/// Which family of maps material `id` keeps in the light map's and the specular maps' slots: 2
-/// when they hold its transmission and thickness maps, and 0 otherwise, since a material that
-/// lets light through takes no layers.
+/// Which family of maps material `id` keeps in each group of shared slots, two bits each: bits 0
+/// and 1 for the light map's slot, bits 2 and 3 for the specular intensity map's, and bits 4 and 5
+/// for the specular color map's. 0 is a clear coat's and a sheen's, 1 is iridescence's and the
+/// anisotropy's, and 2 is the transmission and thickness maps'. A material with layers may keep its
+/// transmission and thickness maps in the specular slots, so each specular slot names its family
+/// apart from the other's and from the light slot's.
 fn layer_maps_kind_of(id: u32) -> u32 {
 #ifdef WEBGL2
     return u32(textureLoad(materials, vec2u(16u, id), 0).z);
@@ -501,6 +504,29 @@ fn material_light_map_uv(id: u32) -> vec4f {
     return textureLoad(materials, vec2u(17u, id), 0);
 #else
     return materials[id].light_map_uv;
+#endif
+}
+
+/// The texel of a material's row where the transforms of the maps of the slots from the second up
+/// start, two texels for each.
+const MATERIAL_MAP_UV_TEXEL: u32 = 18u;
+
+/// The two rows of a 2 x 3 matrix that places a map on the texture coordinates: the row that gives
+/// u, then the row that gives v. Each row's fourth float is a spare.
+struct MapUvRows {
+    u: vec4f,
+    v: vec4f,
+}
+
+/// The transform of material `id`'s map in `slot`, for a slot from 1 up. The base color map's
+/// transform sits in the values that every shader reads, as `Material::uv_u` and `Material::uv_v`.
+fn material_map_uv(id: u32, slot: u32) -> MapUvRows {
+#ifdef WEBGL2
+    let at = vec2u(MATERIAL_MAP_UV_TEXEL + (slot - 1u) * 2u, id);
+    return MapUvRows(textureLoad(materials, at, 0), textureLoad(materials, at + vec2u(1u, 0u), 0));
+#else
+    let at = (slot - 1u) * 2u;
+    return MapUvRows(materials[id].map_uv[at], materials[id].map_uv[at + 1u]);
 #endif
 }
 

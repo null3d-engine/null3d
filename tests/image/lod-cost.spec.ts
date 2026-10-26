@@ -1,7 +1,8 @@
 // What levels of detail save, on each GPU path and preset: the forest of the lod-cost page, timed
 // with every tree at its base mesh and with each at its own level, in turns (tests/pages/lod-cost.ts).
-// It prints each side's medians for D-137. It runs only with NULL3D_LOD_COST set, in a quiet window
-// on a computer with a GPU of its own: NULL3D_LOD_COST=1 bun run test:browser -- lod-cost.spec.ts.
+// It prints each side's medians, and each side's memory, for D-137. It runs only with NULL3D_LOD_COST
+// set, in a quiet window on a computer with a GPU of its own: NULL3D_LOD_COST=1 bun run test:browser
+// -- lod-cost.spec.ts.
 // NULL3D_LOD_COUNT sets the trees, 40,000 by default, and NULL3D_LOD_PRESETS the presets, as a
 // list. Each test waits for a quiet computer, within a time limit, and prints the load beside its
 // figures (tests/lib/effect-cost.ts).
@@ -10,6 +11,7 @@ import {
 	type CostResult,
 	costTimeout,
 	loadNow,
+	memoryLine,
 	sideLine,
 	waitForQuiet,
 } from '../lib/effect-cost.ts';
@@ -36,6 +38,8 @@ for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
 					`${result.tier} ${preset}, ${count} trees, load ${loadBefore} before and ${loadNow()} after`,
 					sideLine('base meshes', result.off, 2, true),
 					sideLine('levels', result.on, 2, true),
+					memoryLine('base meshes', result.memory?.off),
+					memoryLine('levels', result.memory?.on),
 				].join('\n'),
 			);
 			expect(result.failures).toEqual([]);

@@ -261,6 +261,8 @@ export type Check =
 	| { kind: 'alpha-mask'; tier: Tier; antialias: 'msaa' | 'none' }
 	/** The cluster cost page: a tree of cluster patches timed at three distances. */
 	| { kind: 'cluster'; tier: Tier }
+	/** The level-of-detail cost page: 40,000 pines timed with every tree at its base mesh and at its level. */
+	| { kind: 'lod'; tier: Tier }
 	/**
 	 * A development page that only reports what it found, such as the two-step probe: its result
 	 * holds the figures, and nothing judges them.
@@ -1698,6 +1700,36 @@ export function demosPlan(): PlanItem<Check>[] {
 	];
 }
 
+/**
+ * What the levels of a dense forest save: the lod-cost page's 40,000 pines, four levels each, timed
+ * with every tree at its base mesh and with each at its own level in turns, at the lowest and the
+ * highest preset. The two presets carry different thresholds and shadow settings, so the saving
+ * shows at both ends of the quality range. The page reports each side's memory too, so the copy
+ * lists that the level buckets take show beside the frame time. The capabilities page comes first,
+ * so a device without WebGPU skips those pages. D-137 records the results.
+ */
+export function lodCostPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+	];
+	for (const [path, tier] of ALPHA_MASK_PATHS)
+		for (const preset of ['low', 'high'] as const)
+			items.push(
+				pageItem(
+					`lod-${path}-${preset}`,
+					'lod-cost',
+					{ kind: 'lod', tier },
+					{
+						switches: [`gpu=${path}`, `preset=${preset}`, 'count=40000'],
+						// The forest starts 40,000 trees of four levels before it times them, which a
+						// phone takes longer to do than the effect pages' scenes.
+						timeoutSeconds: 180,
+					},
+				),
+			);
+	return items;
+}
+
 /** The GPU paths of the sky plan's pages, with the tier each draws on. */
 const SKY_PATHS = [
 	['webgpu', 'webgpu'],
@@ -2249,6 +2281,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	grass: grassPlan,
 	'alpha-mask-cost': alphaMaskPlan,
 	'cluster-cost': clusterCostPlan,
+	'lod-cost': lodCostPlan,
 	'two-step': twoStepPlan,
 	sky: skyPlan,
 	demos: demosPlan,
@@ -3194,6 +3227,25 @@ export function judge(
 				...(cost.sides ?? [])
 					.filter((side) => !side.intervalMs)
 					.map((side) => `the page measured no frame at ${side.distance} m`),
+			];
+		}
+		case 'lod': {
+			// The page times the forest with the levels off and on, so a side that measured no frame
+			// tells nothing about the saving, and a memory figure that never showed leaves the copy
+			// lists unmeasured on that device.
+			const cost = result as ItemResult & {
+				failures?: string[];
+				off?: { intervalMs?: number | null };
+				on?: { intervalMs?: number | null };
+				memory?: { off?: { ready?: boolean }; on?: { ready?: boolean } };
+			};
+			return [
+				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
+				...(cost.off?.intervalMs ? [] : ['the page measured no frame with the levels off']),
+				...(cost.on?.intervalMs ? [] : ['the page measured no frame with the levels on']),
+				...(cost.memory?.off?.ready && cost.memory?.on?.ready
+					? []
+					: ['the page reported no memory figure']),
 			];
 		}
 		case 'gpu-occlusion': {

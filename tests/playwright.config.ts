@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { defineConfig } from '@playwright/test';
 import { browserOptions, defaultEnvironment } from '../packages/cli/src/browser.js';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
 import { ALONE_PROJECT_SUFFIX, RUNS_ALONE } from './lib/alone.ts';
 import {
@@ -11,6 +12,9 @@ import {
 	REPO_ROOT,
 } from './lib/server.ts';
 
+// A run refuses to start in another run's quiet window. Its workers and web servers inherit the
+// runner's pass, so a window that opens later never stops a run halfway.
+refuseInQuietWindow('The browser tests');
 // The test files import the shader modules, which git does not keep, and Playwright loads the test
 // files before it starts the web servers.
 ensureShaderModules(REPO_ROOT);

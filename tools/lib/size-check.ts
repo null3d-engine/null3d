@@ -55,6 +55,29 @@ export function grownFiles(changes: readonly SizeChange[]): SizeChange[] {
 	return changes.filter(overLimit);
 }
 
+/**
+ * The bytes after Brotli by which two machines' builds of one commit can differ in a file. Each file
+ * names others by hashed names, and the threaded core's bytes, and so its hash, differ between a
+ * Mac and CI's Linux runners. On 26 October 2026 the page files differed by 2 to 45 bytes.
+ */
+export const MACHINE_MARGIN_BYTES = 64;
+
+/** The size after Brotli at which a file of `base` bytes first fails the check. */
+export function failingSize(base: number): number {
+	return Math.max(Math.floor(base * (1 + MAX_GROWTH)) + 1, base + MIN_GROWTH_BYTES);
+}
+
+/**
+ * True when a file grew by more than the machines' margin and stopped under the limit by no more
+ * than that margin, so another machine's build of the same commit can fail it. A small file, whose
+ * limit is the byte floor, cannot grow by the margin and stay under it, so it never counts.
+ */
+export function nearLimit(change: SizeChange): boolean {
+	const { base, head } = change;
+	if (base === undefined || head === undefined || overLimit(change)) return false;
+	return head - base > MACHINE_MARGIN_BYTES && failingSize(base) - head <= MACHINE_MARGIN_BYTES;
+}
+
 /** The commit that the size check compares with, before git resolves it. */
 export type BaseChoice =
 	/** A commit that git can name, such as a branch, a tag or `HEAD^`. */
@@ -156,6 +179,23 @@ export function growthSummary(
 function firstUseShaderFile(file: string): boolean {
 	const name = file.startsWith('js/') ? file.slice(3) : file;
 	return isFirstUseShaderPart(name) || isCombosPart(name);
+}
+
+/**
+ * A warning for each file near the limit with no trailer to explain it: it passes here, and CI's
+ * build of the same commit can fail it.
+ */
+export function nearLimitWarnings(
+	changes: readonly SizeChange[],
+	explainedBy: ReadonlyMap<string, string>,
+): string[] {
+	return changes
+		.filter(nearLimit)
+		.filter((change) => !explainedBy.has(change.file) && !firstUseShaderFile(change.file))
+		.map(
+			(change) =>
+				`${change.file} grew ${growthText(change)} after Brotli, to ${bytes(change.head)} bytes, ${failingSize(change.base as number) - (change.head as number)} under the limit, and another machine's build can differ by up to ${MACHINE_MARGIN_BYTES}: CI may fail it unless a Size-Growth trailer names it`,
+		);
 }
 
 /** A problem for each file that grew past the limit with no trailer to explain it. */

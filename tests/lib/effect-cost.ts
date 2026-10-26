@@ -2,9 +2,8 @@
 // for a quiet computer before each measurement, and the lines that print each side's medians. Each
 // spec times its effect off and on, in turns, on a computer with a GPU of its own, and prints the
 // load beside its figures, as other work on the computer would spoil them.
-import { loadavg } from 'node:os';
-
 import type { SideMemory } from '../pages/lib/side-memory';
+import { LOAD_WAIT_MS, load, waitForQuietLoad } from './cost-runs.ts';
 
 /** The memory figures of one side of a cost page's turns, from the engine's stats overlay. */
 export type { SideMemory };
@@ -31,11 +30,6 @@ export interface CostResult {
 	failures: string[];
 }
 
-/** The 1-minute load under which a test measures, how often it checks it, and how long it waits. */
-const QUIET_LOAD = 8;
-const LOAD_CHECK_MS = 15_000;
-const LOAD_WAIT_MS = 600_000;
-
 /**
  * A cost test's time limit: the longest wait for a quiet computer, and the measurement's own
  * time after it.
@@ -43,23 +37,14 @@ const LOAD_WAIT_MS = 600_000;
 export const costTimeout = (measureMs: number) => LOAD_WAIT_MS + measureMs;
 
 /** The computer's 1-minute load, as a report prints it. */
-export const loadNow = () => (loadavg()[0] as number).toFixed(1);
+export const loadNow = load;
 
 /**
- * Waits until the computer's 1-minute load is under `QUIET_LOAD`, and returns the load. A load that
- * stays high fails the test after a time limit, so a quiet window is never held by a wait.
- * `NULL3D_COST_TRIAL` skips the wait, for an untimed trial that only checks that the pages run.
+ * Waits for a quiet computer as waitForQuietLoad does, and returns the load. `NULL3D_COST_TRIAL`
+ * skips the wait, for an untimed trial that only checks that the pages run.
  */
 export async function waitForQuiet(): Promise<string> {
-	if (process.env.NULL3D_COST_TRIAL) return loadNow();
-	const waitUntil = Date.now() + LOAD_WAIT_MS;
-	while ((loadavg()[0] as number) >= QUIET_LOAD) {
-		if (Date.now() > waitUntil)
-			throw new Error(
-				`the load stayed at ${QUIET_LOAD} or above for ${LOAD_WAIT_MS / 60_000} minutes`,
-			);
-		await new Promise((resolve) => setTimeout(resolve, LOAD_CHECK_MS));
-	}
+	await waitForQuietLoad();
 	return loadNow();
 }
 

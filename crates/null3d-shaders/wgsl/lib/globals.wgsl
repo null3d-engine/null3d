@@ -178,13 +178,19 @@ struct MaterialRow {
     /// nanometers.
     iridescence: vec4f,
     /// The anisotropy's strength, its rotation from the tangent in radians, the family of maps that
-    /// the light map's and the specular maps' slots hold (0 for the clear coat's and the sheen's, 1
-    /// for iridescence's and the anisotropy's, 2 for the transmission and the thickness maps'), and
-    /// a spare.
+    /// each group of shared slots holds (two bits each: 0 for the light map's slot, 2 for the
+    /// specular intensity map's and 4 for the specular color map's; 0 is the clear coat's and the
+    /// sheen's, 1 iridescence's and the anisotropy's, and 2 the transmission and thickness maps'),
+    /// and a spare.
     anisotropy: vec4f,
     /// The scale of a light map's texture coordinates along u and v, then their offset along u
     /// and v. The identity leaves the coordinates as the mesh gives them.
     light_map_uv: vec4f,
+    /// The transforms of the maps of the slots from the second up, two `vec4f`s each: the 2 x 3
+    /// matrix's row that gives u, then the row that gives v. The base color map's two rows are
+    /// `Material::uv_u` and `Material::uv_v`, in the values that every shader reads. A map whose
+    /// transform is the identity reads the coordinates as the mesh gives them.
+    map_uv: array<vec4f, 14>,
 }
 
 /// The values of a material that lets light through: its row's `transmission` and `attenuation`.

@@ -114,26 +114,39 @@ export class DevTools {
 	 */
 	static async connect(port, timeoutMs = CONNECT_TIMEOUT_MS) {
 		const deadline = Date.now() + timeoutMs;
+		/** The time left before the deadline, so that a port that takes a request and never answers ends the wait too. */
+		const left = () => Math.max(1, deadline - Date.now());
 		/** @type {{ webSocketDebuggerUrl: string } | undefined} */
 		let version;
 		while (!version) {
 			try {
-				version = /** @type {{ webSocketDebuggerUrl: string }} */ (
-					await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()
-				);
+				const answer = await fetch(`http://127.0.0.1:${port}/json/version`, {
+					signal: AbortSignal.timeout(left()),
+				});
+				version = /** @type {{ webSocketDebuggerUrl: string }} */ (await answer.json());
 			} catch (error) {
-				if (Date.now() > deadline)
+				if (Date.now() >= deadline)
 					throw new Error(
 						`no browser answered on debugging port ${port}: ${error instanceof Error ? error.message : error}`,
 					);
-				await sleep(250);
+				await sleep(Math.min(250, left()));
 			}
 		}
 		const path = new URL(version.webSocketDebuggerUrl).pathname;
 		const socket = new WebSocket(`ws://127.0.0.1:${port}${path}`);
 		await new Promise((resolve, reject) => {
-			socket.onopen = resolve;
-			socket.onerror = reject;
+			const timer = setTimeout(() => {
+				socket.close();
+				reject(new Error(`the debugging socket on port ${port} did not open in time`));
+			}, left());
+			socket.onopen = () => {
+				clearTimeout(timer);
+				resolve(undefined);
+			};
+			socket.onerror = (error) => {
+				clearTimeout(timer);
+				reject(error);
+			};
 		});
 		return new DevTools(socket);
 	}
