@@ -267,7 +267,7 @@ that refusal for every other loop and adds one option that closes the loop legal
 **The two states.** `history: true` gives a pass two states in one texture. The target holds
 `layers * 2` array layers: the first state takes the first `layers`, and the second the layers after
 them. A run binds a view of the state that it writes, at group 0 binding 1 as before, and a view of
-the other state at binding 2, which the shader reads with `textureLoad(history, coord, id.z)`.
+the other state at binding 2, which the shader reads with `textureLoad(history, coord, id.z, 0)`.
 The two views cover different layers, so one subresource is never both written and sampled, which
 WebGPU requires. The frame swaps the views between runs. A one-layer shader writes layer 0 as
 before, so the option changes nothing for a pass that does not use it.

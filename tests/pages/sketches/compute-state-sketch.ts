@@ -9,6 +9,7 @@
 //   gives what it wrote.
 // - stopped: five runs, then the pass switches off, and a read keeps the last state.
 // - reset: the state starts again from zero, and a run then reads one.
+// - loss: two runs read two, the page loses the GPU, and one run then reads one.
 import { defineFeature, defineSketch } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -40,7 +41,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     let size = vec2u(block.drawn.xy);
     if (id.x >= size.x || id.y >= size.y) { return; }
     // The view holds the state that this run writes, so its layer is the state's own layer.
-    let prev = textureLoad(history, vec2i(id.xy), id.z).r;
+    let prev = textureLoad(history, vec2i(id.xy), id.z, 0).r;
     textureStore(output, vec2i(id.xy), id.z, vec4f(prev + 1.0, 0.0, 0.0, 1.0));
 }
 `;
@@ -249,6 +250,15 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 		return result.data[0] as number;
 	};
 
+	// The page answers 'lost' once the engine has a new device after it asks for the loss.
+	let lost = (): void => {};
+	const lostPromise = new Promise<void>((resolve) => {
+		lost = resolve;
+	});
+	page.onMessage((type) => {
+		if (type === 'lost') lost();
+	});
+
 	void (async () => {
 		// The first update sets the case's runs before its frame records, so each wait below counts
 		// the frames that the pass really ran in.
@@ -286,6 +296,19 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 			render.resetPass(field);
 			await wait(2);
 			values[0] = await read();
+			render.setPassSteps(field, 1);
+			await wait(1);
+			render.setPassSteps(field, 0);
+			values[1] = await read();
+		} else if (CASE === 'loss') {
+			render.setPassSteps(field, 1);
+			await wait(2);
+			render.setPassSteps(field, 0);
+			values[0] = await read();
+			// A lost device makes every texture again, so the pass starts again from an empty state.
+			page.post('lose');
+			await lostPromise;
+			await wait(12);
 			render.setPassSteps(field, 1);
 			await wait(1);
 			render.setPassSteps(field, 0);
