@@ -252,6 +252,9 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::iridescence::{eval_iridescence, schlick_to_reflectance}
 #import null3d::math::{rotate_2d}
 #endif
+#ifdef CUSTOM_LOBE
+#import null3d::math::{half_vector}
+#endif
 #ifdef ALPHA_COVERAGE
 #import null3d::cutout::{alpha_coverage}
 #endif
@@ -1128,7 +1131,8 @@ struct LobeInput {
     view: vec3f,
     /// The unit direction from the surface toward the main light.
     light: vec3f,
-    /// The unit half vector between the main light and the camera.
+    /// The unit half vector between the main light and the camera, or zero where the two cancel,
+    /// since no unit bisector exists there.
     half: vec3f,
     /// The surface's perceptual roughness, after the engine's filter.
     roughness: f32,
@@ -1845,7 +1849,7 @@ fn light_surface(
         normal,
         to_view,
         to_sun,
-        normalize(to_sun + to_view),
+        half_vector(to_sun, to_view),
         m.roughness,
         m.specular_blended,
         sun.specular,
