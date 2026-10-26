@@ -53,7 +53,7 @@ Every other finding of the review is fixed or settled. The table names the code,
 | R5-02 | skinning past GPU limits | [D-57](decisions/D-57-capacities.md) |
 | R5-03 | half-applied frame | `crates/null3d-render/src/frame.rs` |
 | R5-04 | mesh allocation fails inside the core and stops it | `crates/null3d-render/src/meshes.rs`, `tests/image/limits.spec.ts` |
-| R5-05 | texture arrays briefly double; [D-69](decisions/D-69-texture-budget.md) | `crates/null3d-render/src/textures.rs`, `crates/null3d-render/src/textures.rs` |
+| R5-05 | texture arrays briefly double; [D-69](decisions/D-69-texture-budget.md) | `crates/null3d-render/src/textures.rs` |
 | R5-06 | lit holes for narrow cameras; M2-R1 | `crates/null3d-render/src/shadows.rs` |
 | R5-07 | spot and point shadows stale after a layer change; M2-R9, [D-61](decisions/D-61-shadow-tile-redraws.md) | `crates/null3d-render/tests/shadow_tiles.rs` |
 | R5-08 | stale on a still animated character | `.dev/implementation-notes.md` |
@@ -63,7 +63,7 @@ Every other finding of the review is fixed or settled. The table names the code,
 | R6-03 | duplicate GLSL sources | `crates/null3d-shaders/src/typescript.rs` |
 | R7-01 | (see its fix group) | `crates/null3d-shaders/wgsl/lib/color.wgsl`, `crates/null3d-shaders/wgsl/lib/tonemap.wgsl` |
 | R7-02 | HALF roughness floor 0.089 | `crates/null3d-shaders/wgsl/lib/half.wgsl`, `crates/null3d-shaders/tests/build.rs` |
-| R7-03 | joint texture within 2,048 texels | `crates/null3d-render/src/skinning.rs`, `skin.wgsl` |
+| R7-03 | joint texture within 2,048 texels | `crates/null3d-render/src/skinning.rs`, `crates/null3d-shaders/wgsl/skin.wgsl` |
 | R8-01 | CSP-safe start | `packages/engine/src/shared/wasm.ts`, `packages/vite-plugin/src/index.ts` |
 | R8-02 | (see its fix group) | `tools/lib/size-report.ts` |
 | R8-03 | license notices, Draco and add-ons included | `packages/engine/THIRD-PARTY-NOTICES.txt`, `packages/vite-plugin/src/index.ts` |
