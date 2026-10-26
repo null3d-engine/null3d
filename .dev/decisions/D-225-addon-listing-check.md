@@ -449,11 +449,11 @@ alone.
 
 ## Addendum, 26 October 2026: a size budget warns
 
-The owner ruled that the add-on check warns, and does not fail, when an add-on goes over a size
-budget: "Add-ons are a choice so it's ok if they cause things to go over budget." The ruling covers
-the three size budgets alone: the code budget, the later-file budget and the shader-data budget. A
-file over one of them prints as WARN. It names each column over its figure, and the command exits 0.
-The page, cost and allocation gates keep failing as they do.
+The owner's ruling is "Just warn" when an add-on goes over a size budget. Its reason is "Add-ons
+are a choice so it's ok if they cause things to go over budget." The ruling covers the three size
+budgets alone: the code budget, the later-file budget and the shader-data budget. A file over one
+of them prints as WARN. It names each column over its figure, and the command exits 0. The page,
+cost and allocation gates keep failing as they do.
 
 One function decides the verdict and the status, `sizeOutcome` in
 `packages/cli/src/check-addon.js`. It returns PASS when every file holds to its budget and WARN when

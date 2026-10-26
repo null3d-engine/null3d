@@ -758,14 +758,18 @@ describe('allocationGate', () => {
 /**
  * An add-on whose entry minifies past the budget for code. Its manifest declares the plugin
  * interface, and a link to the installed packages lets the build resolve Vite and the plugin from
- * the add-on's own folder, as a package that installs them beside its manifest does.
+ * the add-on's own folder, as a package that installs them beside its manifest does. `source` adds
+ * lines before the entry's own, such as an import that the public-API gate refuses.
+ *
+ * @param {readonly string[]} [source]
  */
-function overBudgetAddon(): string {
+function overBudgetAddon(source: readonly string[] = []): string {
 	const folder = fixture({
 		'package.json': JSON.stringify({ name: '@acme/heavy' }),
 		// A literal that minifies to more than the raw budget and compresses far below the other two,
 		// so one column goes over and the warning names a single file.
 		'src/index.ts': [
+			...source,
 			"checkPluginInterface('@acme/heavy', { min: 1, max: 1 });",
 			`export const data = ${JSON.stringify('a'.repeat(70 * 1024))};`,
 			'',
@@ -827,6 +831,18 @@ describe('run', () => {
 		expect(printed()).toContain('over its 64.0 KB budget');
 		// The exit status follows the FAIL lines, so a warning leaves the run passing.
 		expect(printed()).not.toContain('FAIL');
+		expect(printed()).toContain('1 warning');
+	});
+
+	it('still exits 1 when a warning sits beside a failure', async () => {
+		// A type-only import refuses no build, so the sizes gate still warns beside the failure.
+		const folder = overBudgetAddon(["import type { internals } from '@null3d/engine/internal';"]);
+		expect(await run([folder, '--skip-browser'])).toBe(1);
+		expect(printed()).toContain('FAIL  public API: 1 import reaches past the engine');
+		expect(printed()).toContain(
+			'WARN  sizes: 1 file load more than the budget for a file after the start',
+		);
+		expect(printed()).toContain('1 failed');
 		expect(printed()).toContain('1 warning');
 	});
 
