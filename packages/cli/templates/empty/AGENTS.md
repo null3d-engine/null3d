@@ -6,6 +6,27 @@ Read the `null3d-develop` skill before you change the scene. If the project has
 `.claude/skills/null3d-develop/SKILL.md`, read that file first. If it does not, read the engine docs
 in `node_modules/@null3d/engine/docs/`. They match the installed version.
 
+## What the hook checks
+
+The hook holds one rule for each command and each edit. A rule with the action `refuse` blocks the
+call, and the agent must find another way. A rule with the action `flag` tells the agent, and the
+call goes on.
+
+| Rule | Action | What it checks |
+| --- | --- | --- |
+| `no-sleep` | refuse | A command that waits with `sleep`. |
+| `no-kill-by-name` | refuse | `pkill`, `killall`, or `kill` with a process name. |
+| `no-log-follow` | refuse | `tail -f`, `journalctl -f`, `docker logs -f` and their like. |
+| `no-planned-api` | flag | An import that the installed engine does not export. |
+| `no-allocation-in-onupdate` | flag | An object, array or string made inside `onUpdate`. |
+| `no-dom-in-sketch` | flag | A DOM name in `sketch.ts`. |
+
+Claude Code runs the hook through `.claude/settings.json`, and Codex runs it through
+`.codex/hooks.json`. Both run `.agent/agent-hook.mjs`, which takes its rules from
+`@null3d/cli/agent-rules` in the installed packages. The hook needs `bun install` to find the rules.
+
+The hook is optional: delete its entries in `.claude/settings.json` and `.codex/hooks.json`, or the
+
 ## Before you build a feature
 
 A request may need a capability that null3D has not built. A user who asks for such a feature brings
