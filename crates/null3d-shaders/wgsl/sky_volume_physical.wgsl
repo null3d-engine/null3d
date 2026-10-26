@@ -5,7 +5,7 @@
 // it in place of the flat layer, from the same cloud settings.
 //
 // The noise field and the shader load on the tier's first use. The physical sky's uniform block
-// carries the march's step count in its spare view value.
+// carries the march's step count in the fourth value of its view.
 #import null3d::globals::Frame
 #import null3d::tonemap
 #import null3d::backdrop::box_corner
