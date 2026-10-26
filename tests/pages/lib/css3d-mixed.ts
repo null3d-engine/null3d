@@ -29,19 +29,19 @@ export const LIGHT_DIRECTION: Vec3 = ((): Vec3 => {
 /** The frame's bars: their centre, size and depth, centred on the opening's plane. */
 export const BARS: readonly { position: Vec3; scale: Vec3 }[] = [
 	{
-		position: [0, FRAME.height / 2 + FRAME.thickness / 2, 0],
+		position: [0, FRAME.height / 2 + FRAME.thickness / 2, -FRAME.thickness / 2],
 		scale: [FRAME.width + FRAME.thickness * 2, FRAME.thickness, FRAME.thickness],
 	},
 	{
-		position: [0, -(FRAME.height / 2 + FRAME.thickness / 2), 0],
+		position: [0, -(FRAME.height / 2 + FRAME.thickness / 2), -FRAME.thickness / 2],
 		scale: [FRAME.width + FRAME.thickness * 2, FRAME.thickness, FRAME.thickness],
 	},
 	{
-		position: [-(FRAME.width / 2 + FRAME.thickness / 2), 0, 0],
+		position: [-(FRAME.width / 2 + FRAME.thickness / 2), 0, -FRAME.thickness / 2],
 		scale: [FRAME.thickness, FRAME.height, FRAME.thickness],
 	},
 	{
-		position: [FRAME.width / 2 + FRAME.thickness / 2, 0, 0],
+		position: [FRAME.width / 2 + FRAME.thickness / 2, 0, -FRAME.thickness / 2],
 		scale: [FRAME.thickness, FRAME.height, FRAME.thickness],
 	},
 ];
