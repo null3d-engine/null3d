@@ -381,8 +381,9 @@ render.setPassSteps(pressure, 24);  // from the next frame on
 
 A material or an effect that declares the texture as `texture_2d<f32>` samples the state that the
 last run wrote. A reader that wants both states declares it as `texture_2d_array<f32>` and names the
-layers: the first state holds the first `layers` layers, and the second the layers after them. A
-run writes the state that the run before read, so after an odd number of runs the last run wrote the
+layers: the first state holds the first `layers` layers, and the second the layers after them.
+`texture.layer` gives the first layer of the state that the last run wrote, so a reader of the array
+names the newest state without counting runs. A run writes the state that the run before read, so after an odd number of runs the last run wrote the
 state that the frame started from.
 
 `render.resetPass(pass)` starts the states again from empty. The next frame clears every layer

@@ -613,6 +613,8 @@ export interface CoreGlue extends CoreErrors {
 	failTextureReload(texture: number): void;
 	/** One of the texture store's numbers, by `TEXTURE_STAT_*` code; `texture` names one texture. */
 	textureStat(field: number, texture: number): number;
+	/** The array layer that a map of the texture samples now. */
+	textureLayer(texture: number): number;
 	/** Changes one of the texture store's settings, by `TEXTURE_OPTION_*` code. */
 	setTextureOption(option: number, value: number): number;
 	/**
@@ -1344,6 +1346,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'takeTextureReload',
 	'failTextureReload',
 	'textureStat',
+	'textureLayer',
 	'setTextureOption',
 	'setShadowTiles',
 	'setPerspectiveCamera',
