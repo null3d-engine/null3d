@@ -1466,6 +1466,65 @@ fn the_direct_path_sizes_its_instance_buffer_past_the_storage_binding() {
     );
 }
 
+/// The cluster pass binds the scene's patch table and its indices whole, so the storage binding
+/// bounds them. The direct path records no cluster pass and reads neither table, so it builds
+/// neither and draws the tree's mesh from its whole triangle list. A tree whose index table passes
+/// the binding still records there, while the culled path refuses it at the binding.
+#[test]
+fn a_direct_path_frame_builds_no_cluster_table() {
+    use null3d_render::frame::RecordError;
+    use null3d_render::gpu_driven::cluster_table_buffers;
+    use null3d_render::materials::Shading;
+    use null3d_render::patches::PatchTree;
+
+    /// The indices of one patch, past the binding below at four bytes each.
+    const INDICES: u32 = 300_000;
+    let binding = 1024 * 1024;
+    let tree = || {
+        PatchTree::new(
+            [0, 1, 2].repeat(INDICES as usize / 3),
+            vec![[0.0, 0.0, 0.0, 1.0]],
+            vec![[0, INDICES, 0, 0]],
+            0,
+            4,
+        )
+        .expect("a tree over the grid's four vertices")
+    };
+    let world = |direct_draws: bool| {
+        let mut world = World::with_config(RendererConfig {
+            direct_draws,
+            storage_binding_bytes: binding,
+            ..RendererConfig::default()
+        });
+        let mesh = world.add_object(&common::grid(1, 1), Shading::Lit);
+        world
+            .renderer
+            .set_mesh_patches(mesh, Some(tree()))
+            .expect("a tree of one patch, which the mesh's bucket draws");
+        world
+    };
+    let (patches, indices) = cluster_table_buffers();
+
+    let mut direct = world(true);
+    direct
+        .try_record(true)
+        .expect("the direct path builds no cluster table, so its size does not bound the frame");
+    assert!(
+        !direct
+            .commands()
+            .iter()
+            .any(|(op, o)| *op == Op::CreateBuffer && (o[0] == patches || o[0] == indices)),
+        "the direct path made a cluster table"
+    );
+
+    let mut culled = world(false);
+    assert_eq!(
+        culled.try_record(true),
+        Err(RecordError::BufferFull { bytes: binding }),
+        "the culled path binds the tables whole, so a table past the binding fails its frame"
+    );
+}
+
 #[test]
 fn a_material_that_keeps_its_display_color_draws_the_tone_mask() {
     use null3d_gpu::drawlist::template;
