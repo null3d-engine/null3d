@@ -8,9 +8,12 @@ import { run, toBase64 } from './lib/result';
 run('scene-depth', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
+	// The page's own switches reach the sketch, so a test can fix its render scale.
+	const sketch = new URL('./sketches/scene-depth-sketch.ts', import.meta.url);
+	sketch.search = location.search;
 	const engine = await createEngine({
 		canvas,
-		sketch: new URL('./sketches/scene-depth-sketch.ts', import.meta.url),
+		sketch,
 		maxPixelRatio: 1,
 	});
 	const frame = await engine.captureFrame();
