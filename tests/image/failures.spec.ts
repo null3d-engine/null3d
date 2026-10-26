@@ -82,9 +82,13 @@ for (const mode of THREADED_MODES) {
 	test(`a job worker that fails reaches onFailure, and the page never hangs, ${mode.name}`, async ({
 		page,
 	}) => {
+		// The engine starts job workers only once its frames show enough parallel work, and a slow
+		// GPU draws those frames slowly: the page waits for one before its own wait for the failure,
+		// so a slow run reports late rather than not at all.
+		test.setTimeout(150_000);
 		await failingJobWorker(page);
 		await page.goto(`failures.html?case=job-fault&jobs=2&${mode.query}`);
-		const result = await pageResult<FailureResult>(page, 60_000);
+		const result = await pageResult<FailureResult>(page, 140_000);
 		expect(result.error).toBeUndefined();
 		// E1404 after the start; on a slow GPU the failure can come during the start's setup, which
 		// then fails with E1405, as a setup that throws does.
