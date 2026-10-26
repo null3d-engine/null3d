@@ -685,4 +685,26 @@ describe('budgetWarnings', () => {
 	it('leaves a start over its budget to budgetProblems', () => {
 		expect(budgetWarnings(start(START_BUDGET.brotli + 1), downloads)).toEqual([]);
 	});
+
+	it('warns about each budgeted file past 97% of its budget in a column, as for a start', () => {
+		const file = 'shaders-area-lights-glsl-draw-index-half.js';
+		const raw = Math.floor(FIRST_USE_SHADER_BUDGET.raw * 0.998);
+		const sizes = new Map([
+			...start(Math.floor(START_BUDGET.brotli * 0.5)),
+			[file, size(raw, FIRST_USE_SHADER_BUDGET.gzip / 2, FIRST_USE_SHADER_BUDGET.brotli / 2)],
+		]);
+		expect(budgetWarnings(sizes, downloads, [])).toEqual([
+			`js/${file}, the shader builds of a feature that loads on first use, is ${raw.toLocaleString('en-US')} bytes uncompressed, past 97% of its ${FIRST_USE_SHADER_BUDGET.raw / 1024} KB budget, with ${(FIRST_USE_SHADER_BUDGET.raw - raw).toLocaleString('en-US')} bytes left`,
+		]);
+		sizes.set(
+			file,
+			size(
+				FIRST_USE_SHADER_BUDGET.raw + 1,
+				FIRST_USE_SHADER_BUDGET.gzip / 2,
+				FIRST_USE_SHADER_BUDGET.brotli / 2,
+			),
+		);
+		expect(budgetWarnings(sizes, downloads, [])).toEqual([]);
+		expect(budgetProblems(sizes, downloads, [])).toHaveLength(1);
+	});
 });
