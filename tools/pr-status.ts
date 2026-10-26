@@ -224,7 +224,12 @@ function landedTasks(): Set<string> {
 		// as ticked.
 		const claimed = lines.filter((line) => /^Task:\s/.test(line)).join('\n');
 		const files = lines.filter((line) => /^\S+\/\S*$/.test(line) && !/^Task:/.test(line));
-		const built = files.some((file) => CODE_ROOTS.some((root) => file.startsWith(root)));
+		// A test file is code wherever it lives: the guard test for a tool sits beside the tool, and
+		// without this a task whose whole work is a test in `tools/` could never land.
+		const built = files.some(
+			(file) =>
+				CODE_ROOTS.some((root) => file.startsWith(root)) || /\.(test|spec)\.[jt]s$/.test(file),
+		);
 		return built || header === '' ? claimed : '';
 	});
 	const claimed = out2.join('\n');
