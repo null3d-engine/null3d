@@ -63,7 +63,6 @@ const INCOMPLETE = new Set([
 	'M3-R22',
 	'M3-L4',
 	'M3-R29',
-	'M3-A2',
 	'M3-A9',
 	'M3-V5',
 	'M3-A11',
@@ -137,8 +136,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
 	'M3-R29':
 		"the fix, its unit test and the graphics line are on the branch, and the Mac's real-GPU picture set moved nothing; the software renderer's set has not run at this code, so the plan's question of which stored pictures moved is answered on one of the two sets only",
-	'M3-A2':
-		"the iPad Pro and the Galaxy S24 have timed the refresh, and their runs are recorded; the Mac's rows are still owed",
 	'M3-A9':
 		"the 1.8 m limit at High was the fixed tile size's fault. D-219 makes the tile size a setting on the owner's ruling, and each preset now defaults to a size that keeps the demo car at or above four times. The costs were taken at loads of 13.6 to 26.3 against the spec's own limit of 8",
 	'M3-A11':
