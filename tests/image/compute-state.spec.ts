@@ -6,6 +6,16 @@
 import { expect, type Page, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 
+/** One side of the cost case: the frame probe's medians and the format the pass got. */
+interface CostFigures {
+	frames: number;
+	seconds: number;
+	interval: number;
+	cpu: number;
+	gpu: number | null;
+	format: string | null;
+}
+
 interface StateResult {
 	ok: boolean;
 	tier: string;
@@ -17,15 +27,14 @@ interface StateResult {
 	left?: [number, number, number, number];
 	right?: [number, number, number, number];
 	same?: boolean;
-	/** The cost case's figures: the frame probe's medians, and the pass's texel memory. */
-	seconds?: number;
-	measuredFrames?: number;
-	interval?: number;
-	cpu?: number;
-	gpu?: number | null;
+	/** The cost case's figures: the frame probe's medians with the pass on and off. */
+	on?: CostFigures;
+	off?: CostFigures;
 	passBytes?: number;
 	/** Milliseconds that the read call took to return, in the slow-frame case. */
 	callMs?: number;
+	/** The four numbers of each texel of a region read, top row first. */
+	texels?: number[];
 	error?: string;
 }
 
@@ -56,6 +65,9 @@ for (const { tier, query } of TIERS) {
 		expect(result.tier).toBe(tier);
 		expect(result.values[0]).toBe(100);
 		expect(result.frames).toBeGreaterThanOrEqual(1);
+		// The field names each texel in green and blue, so a wrong row, column or flip shows.
+		expect(result.texels).toEqual([100, 1, 1, 1, 100, 2, 1, 1, 100, 1, 2, 1, 100, 2, 2, 1]);
+		console.log(`read ${tier}: ${result.frames} frames for the region`);
 	});
 
 	test(`a history pass of 40 runs reads what 40 frames of one run read on ${tier}`, async ({
@@ -93,15 +105,25 @@ for (const { tier, query } of TIERS) {
 	});
 
 	test(`a 40-step history pass measures on ${tier}`, async ({ page }) => {
-		const result = await stateCase(page, query, 'cost', 120_000);
-		expect(result.measuredFrames).toBeGreaterThan(0);
-		expect(result.interval).toBeGreaterThan(0);
-		expect(result.passBytes).toBe(256 * 256 * 8 * 4);
-		// The line the run records: frame interval, CPU, GPU where timed, and the pass's memory.
+		const result = await stateCase(page, query, 'cost', 150_000);
+		const on = result.on as CostFigures;
+		const off = result.off as CostFigures;
+		expect(on.frames).toBeGreaterThan(0);
+		expect(off.frames).toBeGreaterThan(0);
+		expect(on.interval).toBeGreaterThan(0);
+		// The frame stays within the weakest tier's 33.3 ms floor with the pass on.
+		expect(on.interval).toBeLessThanOrEqual(33.4);
+		if (on.gpu !== null) expect(on.gpu).toBeLessThanOrEqual(33.4);
+		// The compute paths hold four copies of one state's texels; WebGL2 holds three.
+		const copies = tier === 'webgl2' ? 3 : 4;
+		const texel = on.format === 'rgba16float' ? 8 : 4;
+		expect(result.passBytes).toBe(256 * 256 * copies * texel);
+		const side = (figures: CostFigures) =>
+			`${figures.interval.toFixed(2)} ms frame, ${figures.cpu.toFixed(2)} ms CPU, ` +
+			`${figures.gpu === null ? 'no GPU timer' : `${figures.gpu.toFixed(2)} ms GPU`}, ` +
+			`${figures.frames} frames`;
 		console.log(
-			`cost ${tier}: ${result.interval?.toFixed(2)} ms frame, ${result.cpu?.toFixed(2)} ms CPU, ` +
-				`${result.gpu === null || result.gpu === undefined ? 'no GPU timer' : `${result.gpu.toFixed(2)} ms GPU`}, ` +
-				`${result.measuredFrames} frames in ${result.seconds?.toFixed(1)} s, ${result.passBytes} bytes`,
+			`cost ${tier} (${on.format}, ${result.passBytes} bytes): on ${side(on)}; off ${side(off)}`,
 		);
 	});
 
@@ -109,6 +131,14 @@ for (const { tier, query } of TIERS) {
 		const result = await stateCase(page, query, 'kept');
 		// The left half shows the pass's white image, and the right half its zero coverage as light:
 		// a pass texture that lost its alpha would show white there.
+		expect(result.left?.[0] ?? 0).toBeGreaterThan(120);
+		expect(result.right?.[0] ?? 255).toBeLessThan(40);
+		expect(result.same).toBe(true);
+	});
+
+	test(`a stopped full-screen pass keeps its image and its alpha on ${tier}`, async ({ page }) => {
+		// The M3-V5 fault, on a full-screen pass rather than a compute pass.
+		const result = await stateCase(page, query, 'fs-kept');
 		expect(result.left?.[0] ?? 0).toBeGreaterThan(120);
 		expect(result.right?.[0] ?? 255).toBeLessThan(40);
 		expect(result.same).toBe(true);

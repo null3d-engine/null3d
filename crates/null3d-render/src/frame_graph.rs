@@ -1386,7 +1386,7 @@ impl FrameGraph {
         // may change, and read the depth's samples.
         self.fullscreen = FullscreenPasses::new(
             self.fullscreen_ids,
-            view_target_format(scene_color),
+            fullscreen_target_format(scene_color),
             self.gpu_culling && self.samples > 1,
         );
         self.compute = ComputePasses::new(self.compute_ids);
@@ -2838,7 +2838,9 @@ impl FrameGraph {
         self.view_images.clear();
         self.view_images.push(None);
         // A full-screen pass draws its target whole, with one sample, on both paths.
-        let one_sample = Target::color(self.view_target_format()).array().shown();
+        let one_sample = Target::color(fullscreen_target_format(self.scene_color))
+            .array()
+            .shown();
         self.fullscreen_views = 0;
         self.compute_views = 0;
         self.material_views = 0;
@@ -6131,6 +6133,17 @@ fn view_target_format(scene_color: SceneColor) -> u32 {
     }
 }
 
+/// The format of a full-screen pass's target: the view targets' format, with an alpha channel even
+/// where the scene color packs its color into 32 bits. A material that samples the pass's texture
+/// reads its alpha, and the packed format has none to give: the pass's shader writes an alpha that
+/// the target cannot hold, so every sampled alpha reads 1. That is the fault M3-V5 found.
+fn fullscreen_target_format(scene_color: SceneColor) -> u32 {
+    match view_target_format(scene_color) {
+        format::RG11B10_UFLOAT => format::RGBA16_FLOAT,
+        other => other,
+    }
+}
+
 /// The size that a view draws at: its target's size in texels, or the render size halved as many
 /// times as its target says.
 fn view_size(view: &View) -> Size {
@@ -7530,6 +7543,24 @@ mod tests {
                 FinalPass::UPLOAD_BYTES + BloomPass::UPLOAD_BYTES
             );
         }
+    }
+
+    #[test]
+    fn a_fullscreen_target_holds_the_alpha_that_its_shader_writes() {
+        // The packed HDR format has no alpha channel, so a full-screen pass's target takes
+        // rgba16float there. The 8-bit path's sRGB target already has one.
+        assert_eq!(
+            fullscreen_target_format(SceneColor::from_format(format::RG11B10_UFLOAT)),
+            format::RGBA16_FLOAT
+        );
+        assert_eq!(
+            fullscreen_target_format(SceneColor::from_format(format::RGBA8_UNORM_SRGB)),
+            format::RGBA8_UNORM_SRGB
+        );
+        assert_eq!(
+            fullscreen_target_format(SceneColor::from_format(format::RGBA16_FLOAT)),
+            format::RGBA16_FLOAT
+        );
     }
 
     #[test]
