@@ -50,6 +50,10 @@ const FORMAT: &str = "3";
 #[cfg(not(target_arch = "wasm32"))]
 const LIMIT_BYTES: u64 = 24 * 1024 * 1024 * 1024;
 
+/// How many bytes of a cache file a read takes from the disk at a time.
+#[cfg(not(target_arch = "wasm32"))]
+const READ_BUFFER: usize = 1 << 20;
+
 /// An entry written this recently stays when the folder is pruned, because the build that reads it
 /// may still be running.
 #[cfg(not(target_arch = "wasm32"))]
@@ -158,14 +162,14 @@ impl Cache {
     }
 
     /// One cache file in its stored form, when it was written under `key` and every dependency's
-    /// contents match `files`. The file's bytes are dropped once parsed, so the largest entry is
-    /// never held as bytes and as data at once.
+    /// contents match `files`. The file is parsed as it is read, so the largest entry, a file of
+    /// gigabytes, is never held as bytes and as data at once.
     #[cfg(not(target_arch = "wasm32"))]
     fn read_entry(&self, file: &str, key: &str, files: &BTreeMap<String, String>) -> Option<Entry> {
         let folder = self.folder.as_ref()?;
-        let bytes = fs::read(folder.join(file)).ok()?;
-        let entry: Entry = serde_json::from_slice(&bytes).ok()?;
-        drop(bytes);
+        let reader =
+            std::io::BufReader::with_capacity(READ_BUFFER, fs::File::open(folder.join(file)).ok()?);
+        let entry: Entry = serde_json::from_reader(reader).ok()?;
         if entry.key != key {
             return None;
         }

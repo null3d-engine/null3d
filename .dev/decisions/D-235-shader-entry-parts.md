@@ -93,3 +93,34 @@ CI runs twelve `shader-entries` jobs in place of eight. In run 40046196327, whic
 
 CI runs sixteen `shader-entries` jobs in place of twelve. In test run 40062880929, which compiled every entry and a new compiler, the twelve jobs compiled for 119 to 197 s each and took 2.4 to 3.9 minutes. About 45 s of each compile step built the compiler's program, which the per-entry cache now keeps for later runs of the same stamp. The jobs head the longest chain of a run that changes the shaders, and the enterprise runs 500 jobs at once. So sixteen jobs give each about 6.3% of the builds. The slowest should then compile for about 150 s, and take about 3 minutes.
 
+
+## Update, 26 October 2026: a build that compiles every entry
+
+The rows above measure builds that read every entry from the cache. The table below adds builds that compile every entry. In this section a GB is 10<sup>9</sup> bytes.
+
+Four things held the memory. Each one is now changed, and the modules stay byte for byte the same:
+
+- Each build kept its own copy of its sources until the last build ended. A read from the cache shares them, and a compiled build did not. Now each build's sources become the run's one copy of each text as the build ends.
+- Each thread's composers kept the library modules for every set of shader defs that the thread met. Now a thread's composers start again empty every 200 builds. On 7 threads, that cut the peak footprint from 6.51 GB to 3.45 GB, as rows 4 and 5 show. Only that count was measured. `NULL3D_SHADER_COMPOSER_BUILDS` sets another count, and 0 keeps the modules for the whole run.
+- The build rendered all 5,965 modules before it wrote the first one. Row 2 wrote them as 3.16 GB on disk. Now each module is written as soon as it renders, so the run holds only the modules that it renders at that moment.
+- A read of an entry held the file's bytes and the parsed entry at once. The cache file of `standard_maps` that row 2 wrote holds 2.41 GB. Now the read parses the file as it reads it.
+
+| Row | Build of 93720008d | Threads | Peak footprint | Peak resident | Processor time | Wall time |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Before the change, compiles every entry | 14 | 16.10 GB | 19.48 GB | 5,069 s | 412 s |
+| 2 | All four changes, compiles every entry | 14 | 3.87 GB | 5.40 GB | 5,259 s | 423 s |
+| 3 | Shared sources, modules written as they render | 14 | 9.06 GB | 9.47 GB | 4,759 s | 816 s |
+| 4 | The same as row 3 | 7 | 6.51 GB | 6.80 GB | 4,552 s | 858 s |
+| 5 | Row 4, with composers that start again every 200 builds | 7 | 3.45 GB | 4.52 GB | 4,537 s | 938 s |
+| 6 | Before the change, reads every entry | 14 | 6.79 GB | 7.09 GB | 66 s | 31 s |
+| 7 | All four changes, reads every entry | 14 | 3.49 GB | 3.71 GB | 66 s | 28 s |
+
+How the data was produced: each row ran `/usr/bin/time -l target/shader/shader-build --root <copy> --cache <folder> --stamp <name>` through the job queue. `NULL3D_SHADER_THREADS` set the thread count. The copy held only the manifest and the shader folder. Its output folder and its cache folder started empty. Rows 6 and 7 instead used the cache folder that the cold build of the same compiler wrote. The timing tool gave the peaks and the times. The processor time adds the user time and the system time.
+
+Rows 1 and 2 ran one after the other, as one timing run of the queue. No other queue job ran, but work outside the queue kept the 1-minute load at 21 to 28. Rows 3 to 7 shared the machine with other jobs, at loads that were not recorded. In every run, `diff -r` found the modules the same as those of the compiler before the change.
+
+One more full build ran outside the table. It was `bun tools/shaders.ts` on 14 threads, in a merge of this change onto the milestone branch at `05ba2c6f0`. Its report said that it compiled 80 entries and reused none. A sampler read the build program's resident memory once a second, at a load of about 23, beside a browser test. It saw 6.20 GB at most, so that build held at least 6.20 GB.
+
+The cost: rows 1 and 2 show 3% more wall time and 4% more processor time for the change. They ran at a load above the 8 that timing figures need. So they cannot tell the cost from noise, and a comparison on a quiet machine is still owed.
+
+The budget: a build that compiles every entry on 14 threads may hold 6.5 GB resident. Row 2 held 5.40 GB, and the build above held at least 6.20 GB. A read of every entry held 3.71 GB resident in row 7. A change that raises a peak states the new figure, measured as in the table. Two tests check the sharing. One in `crates/null3d-shaders/tests/cache.rs` builds a small manifest and checks that builds with the same WGSL hold one copy of it. With the sharing removed, it fails. A unit test in `output.rs` checks the WGSL module and both GLSL stages.
