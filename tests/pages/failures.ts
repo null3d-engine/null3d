@@ -7,6 +7,8 @@
 //   worker's script), and the page must hear E1404 while it stays responsive. The sketch gives the
 //   job workers parallel work, so the engine starts them. A failure during the start comes as the
 //   start's rejection.
+// - late-handler: the engine's frame step throws before the page attaches its failure handler, as a
+//   page that does its own work before it listens does. The first handler must still hear E1404.
 // - same-canvas: an engine starts, and is destroyed without a wait while a second one starts on the
 //   same canvas, as React's StrictMode does. A third start follows at once. With &pattern=then, the first start is destroyed once
 //   it resolves; with &pattern=abort, it is cancelled. The second must draw, with no more workers
@@ -58,6 +60,22 @@ async function firstFailure(engine: Engine): Promise<Record<string, unknown>> {
 	};
 }
 
+/**
+ * Resolves once the sketch has armed its frame-step fault. The engine's next clock read throws, and
+ * the sketch's message reaches the page after that, so the engine has failed by then.
+ */
+function faultArmed(engine: Engine): Promise<void> {
+	return new Promise((resolve) => {
+		// A message that arrived before this call is replayed inside it, before the remover is assigned.
+		let off = () => {};
+		off = engine.onSketchMessage((name) => {
+			if (name !== 'fault-armed') return;
+			off();
+			resolve();
+		});
+	});
+}
+
 /** The code of a failed call, or 'none'. */
 function codeOf(call: () => unknown): string {
 	try {
@@ -74,6 +92,16 @@ run('failures', async () => {
 		const faulty = new URL(sketch);
 		faulty.searchParams.set('fault', which === 'fault' ? 'step' : 'material');
 		return firstFailure(await started(faulty));
+	}
+	if (which === 'late-handler') {
+		const faulty = new URL(sketch);
+		faulty.searchParams.set('fault', 'step');
+		faulty.searchParams.set('report-armed', '');
+		const engine = await started(faulty);
+		// The engine fails before any handler listens, as it does when a page attaches its handler
+		// after its own work. The handler that attaches now must still hear the failure.
+		await faultArmed(engine);
+		return firstFailure(engine);
 	}
 	if (which === 'job-fault') {
 		const busy = new URL(sketch);
