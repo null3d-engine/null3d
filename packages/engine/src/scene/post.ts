@@ -622,11 +622,6 @@ export class Post implements ViewHolder {
 		 * texture, or `write` takes them.
 		 */
 		private readonly gradeTable?: { write(texels: Float32Array): number },
-		/**
-		 * True while the grading table holds the grade over high dynamic range light, read before
-		 * the tone curve, instead of display color (see `?grading=`).
-		 */
-		private readonly gradingHdr = false,
 	) {
 		this.effects = new EffectChain(core, templates, joinEffects);
 		core.holdViews(this);
@@ -815,8 +810,7 @@ export class Post implements ViewHolder {
 		if (grading === false) {
 			this.gradeValues = false;
 			this.gradeBakes++;
-			core.check(core.glue.setGradeValues(false), 'post.set', undefined, true);
-			core.check(core.glue.setGrade(0, false), 'post.set', undefined, true);
+			core.check(core.glue.setGrade(0), 'post.set', undefined, true);
 			return;
 		}
 		const values = resolveGrading(grading, this.gradeValues);
@@ -830,31 +824,24 @@ export class Post implements ViewHolder {
 		const table = this.gradeTable;
 		if (!values || !table) return;
 		const bake = ++this.gradeBakes;
-		const hdr = this.gradingHdr;
-		const done = ({ texels, grade }: { texels: Float32Array; grade: Float32Array }): void => {
+		const done = ({ texels }: { texels: Float32Array }): void => {
 			if (bake !== this.gradeBakes) return;
-			// The 8-bit path's shaders read the controls from the frame's output block, which the
-			// post-processing values carry.
-			const block = this.block();
-			for (let at = 0; at < grade.length; at++)
-				block[C.POST_VALUE_GRADE_WHITE_BALANCE + at] = grade[at] as number;
-			this.core.check(this.core.glue.setGradeValues(hdr), 'post.set', undefined, true);
 			const handle = table.write(texels);
-			this.core.check(this.core.glue.setGrade(handle, hdr), 'post.set', undefined, true);
+			this.core.check(this.core.glue.setGrade(handle), 'post.set', undefined, true);
 		};
 		// Bakes run one after another, so a later one replaces an earlier one's table when it lands.
 		this.gradeSettled = this.gradeSettled.then(() =>
 			import('../shared/tasks')
 				.then(({ runTaskWithError }) =>
-					runTaskWithError<{ texels: Float32Array; grade: Float32Array }>(
+					runTaskWithError<{ texels: Float32Array }>(
 						{ name: 'grade' },
-						{ values, hdr },
+						{ values },
 						[],
 						gradeError,
 					),
 				)
-				.then(({ texels, grade }) => {
-					done({ texels, grade });
+				.then(({ texels }) => {
+					done({ texels });
 				})
 				.catch((thrown: unknown) => {
 					if (DEV && !this.warnedNoGrade) {

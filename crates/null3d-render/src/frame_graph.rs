@@ -4454,10 +4454,8 @@ impl FrameGraph {
         let hdr = self.scene_color.is_hdr();
         let first = FinalInputs {
             grading: Grading {
-                // The grade over high dynamic range light runs in the first step, before the
-                // curve; the display-space table runs in the second, on display color.
-                grade: if grading.hdr { grading.grade } else { None },
-                hdr: grading.hdr,
+                // The built-in table grades display color, which the second step holds.
+                grade: None,
                 vignette: grading.vignette.filter(|_| hdr),
                 lut: None,
                 sharpen: None,
@@ -4483,7 +4481,7 @@ impl FrameGraph {
             grading: Grading {
                 vignette: grading.vignette.filter(|_| !hdr),
                 lut: grading.lut,
-                grade: if grading.hdr { None } else { grading.grade },
+                grade: grading.grade,
                 sharpen: grading.sharpen,
                 ..Grading::default()
             },
