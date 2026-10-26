@@ -3,7 +3,7 @@
 // intensity. The layer covers the whole sky with one colour, so the sky and the lake must show the
 // same value at either exposure, and the background's intensity dims the sky alone.
 import { createEngine } from '@null3d/engine';
-import { run } from './lib/result';
+import { progress, run } from './lib/result';
 
 const [WIDTH, HEIGHT] = [480, 270];
 /** The screen point of the sky, of the lake below it, and of the rough sphere against the sky. */
@@ -38,6 +38,7 @@ run('sky-layer-exposure', async () => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	progress('the first frame');
 	const frames = [];
 	for (const [stretch, settings] of STRETCHES.entries()) {
 		engine.postToSketch('set', settings);
@@ -52,6 +53,7 @@ run('sky-layer-exposure', async () => {
 				lake: mean(pixels, LAKE),
 				rough: mean(pixels, ROUGH),
 			});
+			progress(`stretch ${stretch}, capture ${k}`);
 		}
 	}
 	await engine.destroy();
