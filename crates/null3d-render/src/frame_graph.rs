@@ -912,6 +912,11 @@ pub(crate) struct FrameGraph {
     fallback_newest: [u8; MAX_VIEWS],
     fallback_draw: [u8; MAX_VIEWS],
     fallback_reset_seen: [u32; MAX_VIEWS],
+    /// The drawn size that each fallback pass's states belong to, its layers, and its template and
+    /// history flag, so a resize that leaves its fixed-size target alone leaves its state alone.
+    fallback_sized: [(u32, u32); MAX_VIEWS],
+    fallback_layers: [u32; MAX_VIEWS],
+    fallback_seen: [Option<(u32, bool)>; MAX_VIEWS],
     /// The views that are compute passes, as a mask of their places.
     compute_views: u32,
     /// The views whose targets a material of a scene draw may sample, as a mask of their places:
@@ -1248,6 +1253,9 @@ impl FrameGraph {
             fallback_newest: [0; MAX_VIEWS],
             fallback_draw: [0; MAX_VIEWS],
             fallback_reset_seen: [0; MAX_VIEWS],
+            fallback_sized: [(0, 0); MAX_VIEWS],
+            fallback_layers: [0; MAX_VIEWS],
+            fallback_seen: [None; MAX_VIEWS],
             compute_views: 0,
             material_views: 0,
             drawn_views: DrawnViews::default(),
@@ -4137,10 +4145,22 @@ impl FrameGraph {
                     list.push(Op::ClearTexture, &[target, 0, states])?;
                 }
             }
-            if self.textures_made {
+            // The states are the target's layers, so they start again only when this view's own
+            // size, layers or shader changes. A canvas resize leaves a fixed-size pass alone.
+            let drawn = view_size(&self.declared_views[place]).made(self.canvas, self.scale);
+            let layers = pass.layers.max(1);
+            let seen = (pass.template, pass.history);
+            if pass.history
+                && (self.fallback_sized[place] != drawn
+                    || self.fallback_layers[place] != layers
+                    || self.fallback_seen[place] != Some(seen))
+            {
                 self.fallback_state[place] = 0;
                 self.fallback_newest[place] = 0;
             }
+            self.fallback_sized[place] = drawn;
+            self.fallback_layers[place] = layers;
+            self.fallback_seen[place] = Some(seen);
             let ready = !pass.maps.any() || pass.maps.group != 0;
             let runs = ready && target.is_some() && self.fullscreen_runs(place);
             self.fallback_draw[place] = self.fallback_state[place];
@@ -5987,6 +6007,12 @@ impl FrameGraph {
         self.made.clear();
         self.layer_views.clear();
         self.made_views = 0;
+        self.fallback_state = [0; MAX_VIEWS];
+        self.fallback_newest = [0; MAX_VIEWS];
+        self.fallback_draw = [0; MAX_VIEWS];
+        self.fallback_sized = [(0, 0); MAX_VIEWS];
+        self.fallback_layers = [0; MAX_VIEWS];
+        self.fallback_seen = [None; MAX_VIEWS];
         self.canvas = (0, 0);
         self.final_pass.reset_gpu();
         self.accumulate.reset_gpu();
@@ -10175,7 +10201,7 @@ mod tests {
     }
 
     #[test]
-    fn probe_v13_p1_a_compute_reader_in_the_same_step_samples_the_copied_state() {
+    fn a_compute_reader_in_the_same_step_samples_the_copied_state() {
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
         let a = history_compute(true, 1, 1);
         let mut b = compute(true);
@@ -10197,7 +10223,7 @@ mod tests {
                     | Op::EndComputePass
                     | Op::SetComputePipeline
             ) {
-                eprintln!("P1 {index}: {op:?} {words:?}");
+                eprintln!("command {index}: {op:?} {words:?}");
             }
         }
         let copy = commands
@@ -10220,7 +10246,7 @@ mod tests {
     }
 
     #[test]
-    fn probe_v13_p2_a_canvas_resize_keeps_a_stopped_fixed_size_pass_at_its_newest_state() {
+    fn a_canvas_resize_keeps_a_stopped_fixed_size_pass_at_its_newest_state() {
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
         let mut view = history_compute(true, 2, 1);
         view.target_mut().size = Some((16, 16));
@@ -10246,7 +10272,7 @@ mod tests {
             .iter()
             .any(|texture| texture[0] == target);
         eprintln!(
-            "P2 the fixed-size target {target} remade at the resize: {remade}; now {:?}; textures made: {}",
+            "the fixed-size target {target} remade at the resize: {remade}; now {:?}; textures made: {}",
             frames.view_target(ViewId::from_index(1)),
             frames.textures_made
         );
@@ -10258,7 +10284,7 @@ mod tests {
     }
 
     #[test]
-    fn probe_v13_p3_a_canvas_resize_keeps_the_states_of_a_fixed_size_pass() {
+    fn a_canvas_resize_keeps_the_states_of_a_fixed_size_pass() {
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
         let mut view = history_compute(true, 1, 1);
         view.target_mut().size = Some((16, 16));
@@ -10274,7 +10300,7 @@ mod tests {
         let (prepared, uploaded, _r) = probe_frame(&mut frames, (128, 96));
         let target = frames.view_target(ViewId::from_index(1)).unwrap();
         eprintln!(
-            "P3 target remade at the resize: {}",
+            "target remade at the resize: {}",
             operands(&prepared, Op::CreateTexture)
                 .iter()
                 .any(|texture| texture[0] == target)
@@ -10290,7 +10316,7 @@ mod tests {
     }
 
     #[test]
-    fn probe_v13_p4_a_pass_resized_while_off_copies_states_of_its_new_size() {
+    fn a_pass_resized_while_off_copies_states_of_its_new_size() {
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
         let view = history_compute(true, 1, 1);
         frames.sync(&[View::default(), view]);
@@ -10321,5 +10347,91 @@ mod tests {
                 .any(|texture| Some((texture[1], texture[2])) == copied),
             "the copy of {copied:?} texels reads a state texture made at the first frame's size"
         );
+    }
+
+    #[test]
+    fn a_canvas_resize_keeps_a_stopped_fixed_size_fallback_at_its_newest_state() {
+        // WebGL2's form of probe P2: two runs, then the pass stops, then the canvas resizes.
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, false, false);
+        let mut view = fallback(2);
+        view.target_mut().size = Some((16, 16));
+        frames.sync(&[View::default(), view]);
+        frames
+            .request_fullscreen_pipelines(&mut PipelineCache::default(), &[View::default(), view]);
+        probe_frame(&mut frames, (64, 48));
+        assert_eq!(
+            frames.read_layer(1, u32::MAX),
+            1,
+            "two runs leave the second state"
+        );
+        let mut stopped = view;
+        stopped.fullscreen_pass_mut().unwrap().steps = 0;
+        frames.sync(&[View::default(), stopped]);
+        probe_frame(&mut frames, (64, 48));
+        assert_eq!(
+            frames.read_layer(1, u32::MAX),
+            1,
+            "a stopped pass keeps its newest state"
+        );
+        let target = frames.view_target(ViewId::from_index(1)).unwrap();
+        let (prepared, _u, _r) = probe_frame(&mut frames, (128, 96));
+        let remade = operands(&prepared, Op::CreateTexture)
+            .iter()
+            .any(|texture| texture[0] == target);
+        eprintln!(
+            "the fixed-size fallback target {target} remade at the resize: {remade}; now {:?}; textures made: {}; reader layer {}",
+            frames.view_target(ViewId::from_index(1)),
+            frames.textures_made,
+            frames.read_layer(1, u32::MAX)
+        );
+        assert!(
+            !remade,
+            "the fixed-size target keeps its texture through a canvas resize"
+        );
+        assert_eq!(
+            frames.read_layer(1, u32::MAX),
+            1,
+            "a canvas resize moves a stopped fixed-size WebGL2 pass's readers to its older state"
+        );
+    }
+
+    #[test]
+    fn a_canvas_resize_keeps_a_running_fixed_size_fallback_on_its_newest_state() {
+        // WebGL2's form of probe P3: one run a frame, then the canvas resizes. Each run must read
+        // the state that the frame before left, as the compute path does. The resize comes after
+        // an odd count of runs, so a run that starts again from the first state reads the other.
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, false, false);
+        let mut view = fallback(1);
+        view.target_mut().size = Some((16, 16));
+        frames.sync(&[View::default(), view]);
+        frames
+            .request_fullscreen_pipelines(&mut PipelineCache::default(), &[View::default(), view]);
+        probe_frame(&mut frames, (64, 48));
+        let target = frames.view_target(ViewId::from_index(1)).unwrap();
+        for (frame, canvas) in [(2, (64, 48)), (3, (64, 48)), (4, (128, 96))] {
+            let newest = frames.read_layer(1, u32::MAX);
+            let (prepared, _u, recorded) = probe_frame(&mut frames, canvas);
+            let remade = operands(&prepared, Op::CreateTexture)
+                .iter()
+                .any(|texture| texture[0] == target);
+            let copies: Vec<_> = operands(&recorded, Op::CopyTextureToTexture)
+                .into_iter()
+                .filter(|copy| copy[0] == target)
+                .collect();
+            eprintln!(
+                "frame {frame} at {canvas:?}: newest before {newest}; target remade {remade}; textures made {}; the run's copies {copies:?}; newest after {}",
+                frames.textures_made,
+                frames.read_layer(1, u32::MAX)
+            );
+            assert!(
+                !remade,
+                "the fixed-size target keeps its texture through a canvas resize"
+            );
+            assert_eq!(
+                copies.first().map(|copy| copy[4]),
+                Some(newest),
+                "frame {frame}: the run reads an older state, not the one that the frame before left"
+            );
+        }
     }
 }
