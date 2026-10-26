@@ -417,9 +417,9 @@ const red = data[(3 * width + 2) * 4];
 
 ### WebGL2
 
-WebGL2 has no compute shaders. A WebGL2 page runs the `fallback` WGSL as a full-screen pass, with the same values, textures, size, scale and pace. A pass with `history` runs its fragment form once for each step. The fragment form reads the state of the run before as `input.color`, which holds that state's texels at the pixel.
+WebGL2 has no compute shaders. A WebGL2 page runs the `fallback` WGSL as a full-screen pass. It gets the same values, textures, size, scale and pace. A pass with `history` runs its fragment form once for each step. The fragment form reads the state of the run before as `input.color`. That holds the state's texels at the pixel.
 
-A pass of several layers draws each layer in a pass of its own. `input.layer` gives the layer that the draw writes, from 0. Up to 32 layers work on WebGL2, and a pass of more throws E1220. The WebGPU paths draw up to 256. The values keep their positions: the fields of the fragment form's `struct Uniforms` start at the same floats as the compute block's `u0`. Give no fallback when the work needs atomics, shared memory or a write to a place that the shader chooses, because a fragment shader cannot do those. The call then throws E1220 on WebGL2. The engine draws a compute pass on WebGPU only.
+A pass of several layers draws each layer in a pass of its own. `input.layer` gives the layer that the draw writes, from 0. Up to 32 layers work on WebGL2, and a pass of more throws E1220. The WebGPU paths draw up to 128 with history and 256 without. The values keep their positions: the fields of the fragment form's `struct Uniforms` start at the same floats as the compute block's `u0`. Give no fallback when the work needs atomics or shared memory. A fragment shader cannot do those, and neither can it write to a place that the shader chooses. The call then throws E1220 on WebGL2. The engine draws a compute pass on WebGPU only.
 
 ### Switching and removing passes
 
