@@ -3245,13 +3245,15 @@ impl GpuDrivenRenderer {
             && let Some((texture, size)) = self.graph.read_target(read.view as usize)
         {
             read.layer = self.graph.read_layer(read.view as usize, read.layer);
-            crate::readback::record(
+            // A canvas that shrank since the call leaves the region past the edge, and a copy
+            // there would reject the frame's commands, so it is skipped for the read's timeout.
+            crate::readback::record_region(
                 list,
                 &read,
                 texture,
                 ids::PASS_READ_BUFFERS + read.ring,
                 false,
-                size.1,
+                size,
             )?;
         }
         self.tiles
