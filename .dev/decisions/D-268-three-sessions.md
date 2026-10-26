@@ -4,7 +4,7 @@ Status: decided by the owner on 26 October 2026. Date: 2026-10-26. Task: none.
 
 Summary: The milestone's work runs in three agent sessions. The landing session runs the
 helpers, merges their branches and keeps the ticks. The CI session checks and pushes each landing,
-and improves CI. The PR audit session audits the pull request's task ticks adversarially. A tick that
+keeps CI fast, and makes every build faster and lighter on memory. The PR audit session audits the pull request's task ticks adversarially. A tick that
 it refuses goes back to the list of unfinished tasks, with its finding.
 
 ## Question
@@ -46,7 +46,10 @@ The owner set up three sessions on 26 October 2026:
   landing checkout. It keeps the task ticks, the pull request's description (`bun run pr-status`)
   and the status notes.
 - The CI session checks each landing range and pushes it, as [D-259](D-259-landing-push-gate.md)
-  says. It also improves CI.
+  says. It keeps CI fast. Later the same day the owner widened its work to the build as a whole: it
+  makes every build faster and cuts the memory that each build needs, in CI and on the machines
+  that build the milestone. That covers the shader build, the page builds, the type check, the
+  test suites and the job queue's lanes.
 - The PR audit session audits the pull request's task ticks adversarially. A tick that it refuses
   goes back to the list of unfinished tasks, with its finding.
 
@@ -57,5 +60,7 @@ ticks again after they are given.
 ## Consequences
 
 - `AGENTS.md` and `.dev/pull-requests.md` name the three sessions and the audit of the ticks.
+- Work on the speed or the memory of a build goes to the CI session, and so does a task in the plan
+  that does such work.
 - A refused tick goes back into the status tool's list of unfinished tasks (`tools/pr-status.ts`),
   and the finding becomes the task's note there.
