@@ -408,6 +408,8 @@ const red = data[(3 * width + 2) * 4];
   after the call, and `frames` gives how many.
 - A region is at most 64 texels each way. `data` holds red, green, blue and alpha for each texel:
   8-bit color reads as a share of 255, and a float format gives the values the pass wrote.
+- On WebGL2 the fragment form writes the scene color's format. A read there gives that format's
+  values: 8-bit color clamps above 1, and 16-bit floats keep the values that the pass wrote.
 - `layer` names a layer, and it defaults to the state that the pass wrote last. Read one layer of a
   pass of several layers by naming it.
 - A stopped pass gives back the last texels that it wrote, because its texture keeps them.

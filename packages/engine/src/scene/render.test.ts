@@ -36,7 +36,7 @@ function setup(webgl2 = false) {
 	let next = 1;
 	const written = new Set<string>();
 	// The core's memory, with the block of values first and the block of texture handles after it.
-	const memory = new ArrayBuffer(512);
+	const memory = new ArrayBuffer(256 + 4 * 65536);
 	const values = new Float32Array(memory, 0, C.EFFECT_FLOATS);
 	const textures = new Uint32Array(memory, 256, C.EFFECT_TEXTURES);
 	const glue = {
@@ -76,7 +76,7 @@ function setup(webgl2 = false) {
 			return FORMAT_RGBA16_FLOAT + 1;
 		},
 		passReadAddress: () => 256,
-		passReadStride: () => 64,
+		passReadStride: () => 65536,
 		setPassValues(place: number) {
 			calls.push(['values', place, [...values], [...textures]]);
 			return 0;
@@ -126,6 +126,7 @@ function setup(webgl2 = false) {
 		calls,
 		cameras,
 		preloads,
+		memory,
 	};
 }
 
@@ -693,6 +694,22 @@ describe('render passes', () => {
 		expect([result.width, result.height, result.frames, result.data.length]).toEqual([2, 2, 1, 16]);
 		expect(thrown(() => render.readPass(pass, { width: 0, height: 1 })).code).toBe('E1220');
 		expect(thrown(() => render.readPass(pass, { width: 65, height: 1 })).code).toBe('E1220');
+	});
+
+	it('reads the rows of a region at the pitch that the copy spaces them by', async () => {
+		const { render, memory } = setup();
+		const pass = render.addPass(computePass({ history: true, steps: 1 }));
+		const slots = new Int32Array(64);
+		render.attachReadControl(slots);
+		const reading = render.readPass(pass, { x: 0, y: 0, width: 2, height: 2 });
+		// Half-float patterns: each copied row starts 256 bytes after the one before.
+		const halves = new Uint16Array(memory, 256, 512);
+		halves.set([0x3c00, 0, 0, 0x3c00, 0x4000, 0, 0, 0x3c00], 0);
+		halves.set([0x4200, 0, 0, 0x3c00, 0x4400, 0, 0, 0x3c00], 128);
+		Atomics.store(slots, 52, 1);
+		render.pollReads(slots);
+		const result = await reading;
+		expect([...result.data]).toEqual([1, 0, 0, 1, 2, 0, 0, 1, 3, 0, 0, 1, 4, 0, 0, 1]);
 	});
 
 	it('runs a compute pass of a WebGL2 page as its fragment form, or refuses it', () => {
