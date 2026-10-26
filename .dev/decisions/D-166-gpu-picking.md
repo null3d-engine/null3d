@@ -1,8 +1,9 @@
 # D-166: GPU picking: which object a pixel shows
 
 Status: decided. Built: the GPU pick on both GPU paths, and its texture coordinates from a raycast.
-Not built yet: the device proof of the depth test on the Mac, the iPad and an Adreno phone. Task:
-M2-D6, M3-A1.
+Also built: the rejection of a pick that waits when the GPU device is lost. Not built yet: the
+device proof of the depth test on the Mac, the iPad and an Adreno phone. Task: M2-D6, M3-A1,
+M3-R35.
 
 Summary: `scene.pick(x, y)` draws the camera's opaque objects once more into an id target of four
 bytes a pixel, and copies one pixel back through a promise. The depth test against the opaque pass
@@ -32,6 +33,9 @@ hits, to the pixel. These choices needed settling:
   answers the whole pick with a raycast. A raycast tests triangles, so it ignores masks. The
   public docs say so.
 - Picks wait in a queue of their own. Each answers in a frame after the one that records it.
+- A pick that waits for its read when the GPU device is lost is rejected with E1436. It is not
+  asked again on the new device. A pick still queued behind it was never recorded, so it goes to
+  the new device in its turn.
 
 ## Data
 
@@ -98,6 +102,19 @@ is unaffected. A click during a fast pan can name the object under the point in 
 The same rule makes a still camera answer. A frame with a pick's read must draw, so `frameRests`
 reports false for it. A rested frame would never copy the ids back.
 
+### A pick when the GPU device is lost
+
+A pick in flight waits for the GPU to copy its four bytes back. When the browser takes the device
+away, recovery replaces it and raises the GPU epoch, and every GPU object of the old device is
+gone. The read that the old device recorded never lands, so the pick's control slot stays unraised
+and polling waits forever.
+
+Each pick in flight therefore remembers the epoch it was recorded for. The frame loop rejects the
+pick once the epoch moves. Its promise settles with E1436, and the pick is not asked again on the
+new device. A pick in the queue behind it holds no read, so it is sent to the new device in its
+turn. Rejecting rather than re-asking is the owner's ruling, made for M3-R35: a repeated pick
+would answer from a later frame, after the scene may have moved.
+
 ### The rest of the scene
 
 A scene whose sources all have pick builds and draw opaque answers with the GPU. The core answers
@@ -149,8 +166,8 @@ describe the mesh's own triangle, and can differ from the drawn pose. The API pa
   resolve pass's bind group. They append the copy and the read after the graph records.
 - `crates/null3d-wasm` adds `requestPick`, `pickResultAddress`, `pickCoversScene`, `pickTargetId`
   and `pickTargetRow`.
-- `packages/engine/src/scene/picks.ts` holds the queue, the ring and the decoding. `scene.pick` is
-  the public call, and `docs/api/raycast` describes it.
+- `packages/engine/src/scene/picks.ts` holds the queue, the ring, the epoch of each read in flight
+  and the decoding. `scene.pick` is the public call, and `docs/api/raycast` describes it.
 - The three.js mapping takes no entry, as three.js offers no pixel pick. The raycast mapping
   entries stay as they are.
 - The device proof of the depth test that D-30's addendum asks for is still to run. It covers the
@@ -159,6 +176,8 @@ describe the mesh's own triangle, and can differ from the drawn pose. The API pa
   prototype G7 on the iPad and the cloud S25 follows.
 - Tests: `packages/engine/src/scene/picks.test.ts` checks the queue's decoding with the ray's
   frame. It also checks a pick that names no frame, another source and a mesh without coordinates.
-  `tests/image/pick-uv.spec.ts` compares a pick with a raycast and with the geometry on both GPU
-  paths. It covers a repeated set, a texture transform, a batch of rows that differ in scale, and a
-  mesh with no coordinates.
+  It rejects a pick whose device was lost, and sends the picks behind it to the new device.
+  `tests/image/pick.spec.ts` loses the device with a pick in flight, on both GPU paths, and checks
+  that the promise rejects with E1436. `tests/image/pick-uv.spec.ts` compares a pick with a raycast
+  and with the geometry on both GPU paths. It covers a repeated set, a texture transform, a batch of
+  rows that differ in scale, and a mesh with no coordinates.
