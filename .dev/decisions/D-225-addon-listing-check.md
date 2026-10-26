@@ -446,3 +446,24 @@ splitting. A test of `splitShaderData` holds the parts to the file's size. A tes
 fails a file whose inlined shader data is over the shader budget. A gate that stopped counting those
 bytes therefore cannot pass it. A test of `emptyShaders` holds the stand-in build to `.wgsl` files
 alone.
+
+## Addendum, 26 October 2026: a size budget warns
+
+The owner ruled that the add-on check warns, and does not fail, when an add-on goes over a size
+budget: "Add-ons are a choice so it's ok if they cause things to go over budget." The ruling covers
+the three size budgets alone: the code budget, the later-file budget and the shader-data budget. A
+file over one of them prints as WARN. It names each column over its figure, and the command exits 0.
+The page, cost and allocation gates keep failing as they do.
+
+One function decides the verdict and the status, `sizeOutcome` in
+`packages/cli/src/check-addon.js`. It returns PASS when every file holds to its budget and WARN when
+one does not. The print site prints what it returns. Only a FAIL result fails the run, so the
+printed status and the exit status cannot disagree.
+
+WARN is a result status that `test.js` counts beside passed, failed and skipped. A test runs the
+command on an add-on whose build is over the code budget. It requires the WARN line and an exit
+status of 0. With the earlier behavior, which failed the run, that test fails.
+
+The paragraph "What a file over a budget does" above records the gate before this ruling. It printed
+each column over its budget and exited 1. It now prints the same lines and exits 0. The engine's own
+size report does not change. It measures the engine's own files, which are not a choice.
