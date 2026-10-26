@@ -256,3 +256,102 @@ time with the pass off and on, and the load beside it.
 The iPad and the S24 run the same page through the `compute` device plan:
 `bun run devices:cloud --only bsipadpro13-safari --plan compute`, and the same with
 `--only bsgalaxys24-chrome`. Each runs six pages: the three GPU paths at scales 1 and 0.5.
+
+
+
+## Compute passes that keep their state
+
+The fluid wind of M3-V15 needs a pass that reads its own output from the run before: advection and
+each Jacobi step of the pressure solve read the state that the step before wrote. D-240 refused a
+pass that reads its own texture, because the render graph would make a cycle. This addendum keeps
+that refusal for every other loop and adds one option that closes the loop legally.
+
+**The two states.** `history: true` gives a pass two states. Two textures of `layers` array layers
+hold them, so a run writes one and samples the other through whole-texture views. Compatibility
+mode binds a whole array texture and nothing less, so the states cannot share one texture there. A
+run writes the state that the run before read, and the frame swaps the two textures between runs.
+Once the frame's runs have finished, the frame copies both states into the pass's target: the first
+state into the first `layers` layers, and the second into the layers after them. Readers sample the
+state that the last run wrote. A reader that wants both declares the target as
+`texture_2d_array<f32>`. A one-layer shader writes layer 0 as before, so the option changes nothing
+for a pass that does not use it.
+
+**The runs.** `steps` is the number of dispatches that a frame records: 40 runs of a pressure solve
+are one pass, not 40. `render.setPassSteps` changes it in a frame without an allocation. A pass
+that keeps no history runs once, and a call past one throws E1220. The state that the last run
+wrote is the one a reader samples; each run writes the state that the one before read, so an odd
+count leaves the state that the frame started from.
+
+**The layers.** `layers` is the array layers of each state, from 1 to 256, and 128 at most with
+history. A `'writes'` dispatch runs one workgroup along z for each layer, and the shader writes
+layer `id.z`. The pass texture has the states' layers, and its first layer in each state is the one
+a material or an effect samples.
+
+**The graph.** The pass's target is a kept target, as D-240 made it. The pass reads its own
+previous state through its own bind group, not through `Pass::reads`, so the graph adds no edge and
+finds no cycle. A page that names the pass's own texture in `textures` still throws E1504, and so
+does every other loop.
+
+**The order.** The states need no barrier of their own: each frame's commands are submitted in
+order, and a history pass's copies into the target are recorded between compute passes, before any
+pass that samples it. A reader in the same step therefore sees the state this frame wrote, and the
+frame before's writes finish before this frame's reads. The page's forty-runs-in-one-frame case
+reading the same as forty frames is the proof; a read that saw stale state would not count to forty.
+Keep that case: a change that adds a graph edge must keep it passing.
+
+**Readers.** A material or an effect that declares the pass's texture as `texture_2d<f32>` samples
+the state that the last run wrote: the engine writes that state's first layer into the map's layer
+each frame. A reader that declares `texture_2d_array<f32>` sees both states and names the layers
+itself. `texture.layer` gives the first layer of the state that the last run wrote. A reader of the
+array then names the newest state without counting its own runs.
+
+**A stopped pass.** A pass that does not run keeps the state that its last run wrote, because the
+graph keeps the target and does not clear it. A device loss or a target shape change makes the
+plan's textures again. The state then starts empty at the first one.
+
+**Reset.** `render.resetPass(pass)` asks the next frame to clear every layer of the target. The pass
+then starts again from the first, empty state. A lost device starts every texture empty, so the
+pass starts again from its seed as well.
+
+**A region read.** `render.readPass(pass, { x, y, width, height, layer })` resolves with four numbers
+for each texel of at most 64 by 64, row by row from the top left. It also gives the frames that the
+read took. A frame copies the region into one buffer of a four-buffer ring after the pass's runs. It
+then reads the buffer into engine memory. The GPU's read raises a control slot, and the sketch's
+frame loop answers the promise. No thread waits, so hard rule 4 holds. The layer defaults to the
+state that the pass wrote last, which a history pass needs because the state alternates. A stopped
+pass reads its kept image. The page checks answer a 2 by 2 region three frames after the call on
+WebGPU and compatibility mode, and four to five on WebGL2. A region that reaches past the pass's
+texture is refused with E1220 before a frame records it, because a copy past the end would reject
+the frame's commands. A canvas that shrinks between the call and that frame skips the copy and the
+call times out, so no copy past the edge reaches the GPU. The caller waits for the timeout and sees
+the same E1220 as a read that never lands; this shape is the trade for never copying past an edge.
+
+**WebGL2.** No compute shader runs there, so the fragment form keeps the same two states. Each run
+copies the state before from the target into a scratch texture. It then draws the pass into a layer
+view of the other state. Both states stay in the target's layers, so a reader sees the same two
+layers on both paths. The fragment form reads the state before as `input.color`.
+
+WebGL2 binds a texture array whole. It cannot sample one of its layers in a fragment shader, so the
+fragment form draws one layer at a time. A run of a pass of several layers copies the state
+before's layer into the scratch, then draws that layer. `input.layer` names the layer that the draw
+writes. Each layer has a block of its own in a buffer of the fragment forms, because the block
+carries the layer. Up to 32 layers work on WebGL2, and the call throws E1220 past them. The WebGPU
+paths draw 128 with history and 256 without. This is a limit of the path, not a dropped feature.
+
+**Cost and memory.** The target holds both states as `layers * 2` layers, and the two state
+textures hold them once more, so a history pass takes four times the texels of one state on the
+WebGPU paths. On WebGL2 the target holds both states and the fallback adds one scratch, so it takes
+three times. A frame
+that runs the pass copies both states into the target, `layers * 2` layer copies, and records one
+dispatch for each step. A WebGL2 history pass adds a scratch texture of one state and one copy for
+each run.
+
+**The figures.** The cost page runs a 256 by 256 history pass of 40 steps in one frame with an 8 by
+8 workgroup, and measures the same scene with the pass switched off, on every GPU path. A workgroup
+of one invocation and a measurement with no pass-off baseline are rejected: the first dispatches
+65,536 workgroups for a 256 by 256 pass, and the second cannot separate the pass's cost from the
+frame's. The figures are owed to a clean window. The only pair taken so far ran while the machine
+was busy, at a 1-minute load of 17.59 to 7.95 on a fourteen-core machine, so it is not a measurement
+for this record; the run record keeps it only to compare a clean run against. The pass holds 2 MiB
+of texels on the compute paths and 1.5 MiB on WebGL2. The iPad and the phone rows are owed to the landing session, as M3-V14's
+measurements cover the field that uses the pass first.

@@ -681,14 +681,23 @@ const waves = render.addPass({
   values: [time],                    // up to 32 numbers, read as eight vec4f in the block
   textures: [textures.fromPass(half)],          // group 1, in map-slot order
   fallback: { wgsl: wavesFragments }, // the fragment form that WebGL2 runs; without it, WebGL2 throws E1220
+  history: true,                     // (0.4) two states: each run reads the state of the run before
+  layers: 1,                         // array layers of each state; WebGL2 draws them one at a time, up to 32
+  steps: 40,                         // runs a frame, swapping the states; render.setPassSteps changes it
 });
 render.setPassUniforms(waves, [next]);  // allocates nothing
-const surface = materials.unlit({ map: textures.fromPass(waves) });  // reads the same frame
+render.setPassSteps(waves, 24);         // allocates nothing
+render.resetPass(waves);                // the next frame clears both states
+const surface = materials.unlit({ map: textures.fromPass(waves) });  // reads the newest state
+const { data, width, height, frames } = await render.readPass(waves, {
+  x: 0, y: 0, width: 8, height: 8,      // at most 64 each way; layer: the newest state by default
+});                                     // four floats for each texel, top row first, a few frames later
 ```
 
 - A pass runs only while a texture shows it or another pass or effect reads it. Scene and reflection passes draw the sun, its shadows, the ambient and environment light and fog. They draw the point and spot lights their view sees, and the scene's background; a scene pass with `clearColor` shows that color instead. A light that only the pass sees casts no shadow there. No pass draws ambient occlusion.
 - A custom material reads a reflection with `reflection_uv` from `null3d::reflection` and sets `s.reflection` (`shaders/surface-functions`, recipe 20).
 - A compute pass's texture is a storage texture on WebGPU. Materials, effects and passes sample it in the same frame, because the graph orders the pass before its readers. The shader reads the render size, the clock, the camera and its values from the block that a full-screen pass's WGSL also gets. The texture is read as a 2D array of one layer. WebGL2 runs the `fallback` fragment form, or the call throws when it gives none.
+- `history: true` keeps two states in the texture's layers: the first state's layers, then the second's. Binding 1 of group 0 holds the state that this run writes, and binding 2 the state of the run before, which the shader reads with `textureLoad(history, coord, id.z, 0)`. Each run writes the state that the run before read, and a frame of `steps` runs swaps them. A `texture_2d<f32>` map samples the state that the last run wrote; a `texture_2d_array<f32>` map sees both states. `render.readPass` answers through a promise and defaults to the newest state. `texture.layer` gives the first layer of that state. A stopped pass keeps its state and its image. On WebGL2 the fragment form reads the previous state as `input.color`, and `input.layer` names the layer that the draw writes. WebGL2 draws up to 32 layers one at a time. The WebGPU paths draw up to 128 with history and 256 without.
 - A full-screen pass's `input.uv` is (0, 0) at its top left. Pass textures hold their bottom row first: sample one at `effectPassUv(input.uv)`. `effectInputSize()` is the input image's size. A pass that reads the scene (input or depth) runs after the camera: materials showing it see the frame before; effects see the same frame.
 
 Passes are declarations: the engine checks them, orders them, and shares memory between their temporary textures. No sketch code runs during rendering.

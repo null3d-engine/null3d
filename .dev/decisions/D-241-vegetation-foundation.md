@@ -313,6 +313,19 @@ CI's software GPU the vegetation pages then take more than sixty seconds and tim
 samples the pass's texture: a leaf's cut-out draws as a filled square. Even the per-frame route
 would need the coverage moved into a color channel.
 
+**The alpha half, and its fix in M3-V13.** The HDR path packs the scene color into 11, 11 and 10
+bits, with no alpha, and a full-screen pass's target took that format, so the shader's alpha had
+nowhere to go and every sampled alpha read 1. A full-screen pass's target now takes rgba16float
+there, whose fourth channel holds the alpha, and a Rust test fails when the packed format comes
+back. The 8-bit path's target already had one, so compatibility mode and WebGL2 never have the
+packed target and cannot show the fault; the page check proves it on the WebGPU HDR path, where the
+old format reads a coverage of 234. The compute pass keeps its alpha in its own rgba16float target.
+
+**The image half.** The new cases stop a full-screen pass and a compute pass, and keep their image
+and their zero coverage on all three GPU paths; a case added late that paints once keeps its image
+too. They do not reproduce M3-V5's own route, so this record fixes the alpha half and shows the
+image holds on the routes it tests. It does not name a cause for M3-V5's lost image.
+
 **So the browser paints, and the engine keeps.** The pixels come from the same integer hashes that
 the shaders would use, so every device paints the same atlas and no file is downloaded. The engine
 makes each texture's mip levels, whose average alpha is the leaf's coverage, and a masked material
