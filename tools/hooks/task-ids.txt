@@ -410,7 +410,7 @@ M4-O4
 M4-O5
 M4-O6
 
-# Process labels, accepted on 15 October 2026, that no plan file names.
+# Process labels that no plan file names.
 M2-process
 M3-plan
 M3-R35
