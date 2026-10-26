@@ -98,7 +98,7 @@ fn surface(input: SurfaceInput) -> Surface {
     s.baseColor = vec3f(0.0);
     s.emissive = vec3f(coverage * 4.0);
     s.roughness = 1.0;
-    s.metallic = 0.0;
+    s.metalness = 0.0;
     return s;
 }
 `;

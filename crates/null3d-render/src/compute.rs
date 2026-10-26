@@ -7,11 +7,12 @@
 //! in group 1, as a custom effect does. Its block holds what an effect's block holds, so a shader
 //! reads the render size, the target size, the clock, the camera and its own values.
 //!
-//! A pass that keeps history holds two states in the target's layers: the first state takes the
-//! first layers and the second the layers after them. A run writes one state through a view of its
-//! layers and reads the other through a view of the other's layers, so one dispatch never writes
-//! and samples one subresource. The frame runs the pass's dispatch as often as the pass asks,
-//! swapping the states between runs, and readers name the state they want by its layer.
+//! A pass that keeps history holds its two states in textures of their own: a run writes one and
+//! reads the other, and every binding covers a whole texture, as compatibility mode requires. Once
+//! the frame's runs have finished, the frame copies both states into the target's layers: the first
+//! state into the first layers and the second into the layers after them. Readers name the state
+//! they want by its layer. The frame runs the pass's dispatch as often as the pass asks, swapping
+//! the states between runs.
 //!
 //! Each view's block uploads only when it changed, and each view's bind group is made again only
 //! when what it binds changed, so passes that stay still record only their dispatches.
@@ -21,6 +22,7 @@
 
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, format, layout as bind_layout, resource_kind,
+    texture_usage, view,
 };
 
 use crate::bloom::bytes_of;
@@ -41,12 +43,25 @@ pub(crate) struct ComputePassIds {
     pub(crate) first_history_group: u32,
     /// The compute pipeline of each view's pass, from this id on, by the view's place.
     pub(crate) first_pipeline: u32,
-    /// Two views of one state's layers for each view, from this id on, by the view's place.
+    /// One bind-group view of each state texture for each view, from this id on, by the view's
+    /// place.
     pub(crate) first_view: u32,
+    /// The two state textures of each view, from this id on, by the view's place.
+    pub(crate) first_state: u32,
 }
 
 /// Bytes of the uniform buffer: a block for each view.
 const BUFFER_BYTES: usize = MAX_VIEWS * BLOCK;
+
+/// The texture that holds one state of the pass at view place `place`.
+const fn state_texture(ids: ComputePassIds, place: usize, state: u32) -> u32 {
+    ids.first_state + (place * 2) as u32 + state
+}
+
+/// The bind-group view of that state texture, which covers all of its layers.
+const fn state_view(ids: ComputePassIds, place: usize, state: u32) -> u32 {
+    ids.first_view + (place * 2) as u32 + state
+}
 
 /// The bind group layout of a compute pass's group 0 for the target format `target`, or for a pass
 /// that writes the two buffers of an instance draw.
@@ -121,8 +136,14 @@ pub(crate) struct ComputePasses {
     /// What each view's groups bind, by the state that a group writes, or `None` before the group
     /// exists.
     bound: [[Option<Bound>; 2]; MAX_VIEWS],
-    /// The target that each view's state views look at, or 0 before they are made.
+    /// The target that a view's states are copied into, or 0 before the frame prepares them.
     viewed: [u32; MAX_VIEWS],
+    /// The size of each view's state textures, in texels.
+    sized: [(u32, u32); MAX_VIEWS],
+    /// True once each view's two state textures exist.
+    states: [bool; MAX_VIEWS],
+    /// True when each view's pass ran in this frame, so its states must reach the target.
+    ran: [bool; MAX_VIEWS],
     /// The state that each view's next run writes: 0 or 1.
     state: [u8; MAX_VIEWS],
     /// The state that the last run wrote, which readers sample.
@@ -149,6 +170,9 @@ impl ComputePasses {
             uploaded: [None; MAX_VIEWS],
             bound: [[None; 2]; MAX_VIEWS],
             viewed: [0; MAX_VIEWS],
+            sized: [(0, 0); MAX_VIEWS],
+            states: [false; MAX_VIEWS],
+            ran: [false; MAX_VIEWS],
             state: [0; MAX_VIEWS],
             newest: [0; MAX_VIEWS],
             draw_state: [0; MAX_VIEWS],
@@ -177,6 +201,7 @@ impl ComputePasses {
             self.seen[place] = Some(seen);
         }
         self.draw_state[place] = self.state[place];
+        self.ran[place] = pass.history && runs && pass.steps > 0;
         if pass.history && runs && pass.steps > 0 {
             // Each run writes the state that the one before read, so the last run of an odd count
             // leaves the state that the frame started from, and one of an even count the other.
@@ -203,6 +228,9 @@ impl ComputePasses {
         self.reset_seen[place] = pass.reset;
         self.state[place] = 0;
         self.newest[place] = 0;
+        // The states start empty, so the next frame makes their textures again.
+        self.states[place] = false;
+        self.ran[place] = false;
         true
     }
 
@@ -317,24 +345,49 @@ impl ComputePasses {
             }
             None if pass.history => {
                 let layers = pass.layers.max(1);
-                if self.viewed[place] != target {
-                    // Two views, one for each state's layers, which the two groups swap. The
-                    // states' subresources never overlap, so a run may write one and sample the
-                    // other.
+                // Two textures hold the states, so a run writes one and samples the other, and
+                // every binding covers a whole texture, which compatibility mode requires.
+                if textures_made || !self.states[place] {
+                    if self.states[place] {
+                        for state in 0..2u32 {
+                            list.push(Op::DestroyTexture, &[state_view(ids, place, state)])?;
+                            list.push(Op::DestroyTexture, &[state_texture(ids, place, state)])?;
+                        }
+                    }
+                    let code = if pass.format == 0 {
+                        format::RGBA16_FLOAT
+                    } else {
+                        pass.format
+                    };
                     for state in 0..2u32 {
+                        let texture = state_texture(ids, place, state);
                         list.push(
-                            Op::CreateBindView,
+                            Op::CreateTexture,
                             &[
-                                ids.first_view + (place * 2) as u32 + state,
-                                target,
-                                state * layers,
+                                texture,
+                                drawn.0.max(1),
+                                drawn.1.max(1),
                                 layers,
+                                code,
+                                texture_usage::STORAGE_BINDING
+                                    | texture_usage::TEXTURE_BINDING
+                                    | texture_usage::COPY_SRC
+                                    | texture_usage::COPY_DST,
+                                1,
+                                1,
+                                view::D2_ARRAY,
                             ],
                         )?;
+                        list.push(
+                            Op::CreateBindView,
+                            &[state_view(ids, place, state), texture, 0, layers],
+                        )?;
                     }
-                    self.viewed[place] = target;
+                    self.states[place] = true;
                     self.bound[place] = [None; 2];
                 }
+                self.viewed[place] = target;
+                self.sized[place] = drawn;
                 for state in 0..2u32 {
                     let bound = Bound {
                         target,
@@ -345,8 +398,8 @@ impl ComputePasses {
                     if !textures_made && self.bound[place][state as usize] == Some(bound) {
                         continue;
                     }
-                    let write = ids.first_view + (place * 2) as u32 + state;
-                    let read = ids.first_view + (place * 2) as u32 + (1 - state);
+                    let write = state_view(ids, place, state);
+                    let read = state_view(ids, place, 1 - state);
                     let group = match state {
                         0 => ids.first_group + place as u32,
                         _ => ids.first_history_group + place as u32,
@@ -456,6 +509,47 @@ impl ComputePasses {
         Ok(())
     }
 
+    /// Copies the view's two states into the target's blocks once the frame's runs have finished,
+    /// so a reader sees both states as layers of the pass's texture. A pass that did not run left
+    /// its target holding them, so nothing copies.
+    pub(crate) fn copy_states(
+        &self,
+        list: &mut DrawList,
+        place: usize,
+        pass: &Compute,
+    ) -> Result<(), RecordError> {
+        if !pass.history || !self.ran[place] || !self.states[place] {
+            return Ok(());
+        }
+        let target = self.viewed[place];
+        if target == 0 {
+            return Ok(());
+        }
+        let layers = pass.layers.max(1);
+        let (width, height) = self.sized[place];
+        for state in 0..2u32 {
+            list.push(
+                Op::CopyTextureToTexture,
+                &[
+                    state_texture(self.ids, place, state),
+                    0,
+                    0,
+                    0,
+                    0,
+                    target,
+                    0,
+                    0,
+                    0,
+                    state * layers,
+                    width,
+                    height,
+                    layers,
+                ],
+            )?;
+        }
+        Ok(())
+    }
+
     /// Forgets the GPU objects, so the next frame makes them again, after the thread that draws
     /// replaced the GPU. The states start empty again, so the first one is next.
     pub(crate) fn reset_gpu(&mut self) {
@@ -464,6 +558,9 @@ impl ComputePasses {
         self.uploaded = [None; MAX_VIEWS];
         self.bound = [[None; 2]; MAX_VIEWS];
         self.viewed = [0; MAX_VIEWS];
+        self.sized = [(0, 0); MAX_VIEWS];
+        self.states = [false; MAX_VIEWS];
+        self.ran = [false; MAX_VIEWS];
         self.state = [0; MAX_VIEWS];
         self.newest = [0; MAX_VIEWS];
         self.draw_state = [0; MAX_VIEWS];
@@ -583,6 +680,7 @@ mod tests {
             first_history_group: 20,
             first_pipeline: 30,
             first_view: 40,
+            first_state: 60,
         };
         let mut passes = ComputePasses::new(ids);
         passes.begin_frame(1, &pass, true, false);
@@ -623,6 +721,7 @@ mod tests {
             first_history_group: 20,
             first_pipeline: 30,
             first_view: 40,
+            first_state: 60,
         };
         let mut passes = ComputePasses::new(ids);
         assert_eq!(pass.target_layers(), 2);

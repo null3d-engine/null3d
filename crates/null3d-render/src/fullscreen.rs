@@ -281,6 +281,10 @@ impl FullscreenPasses {
         textures_made: bool,
     ) -> Result<(), RecordError> {
         let ids = self.ids;
+        if !self.created {
+            create_objects(list, ids)?;
+            self.created = true;
+        }
         let states = if pass.history { 2 } else { 1 };
         let layers = pass.layers.clamp(1, MAX_FALLBACK_LAYERS);
         let made = FallbackMade {
@@ -397,12 +401,18 @@ impl FullscreenPasses {
                 &[ids.layer_buffer, slot * BLOCK as u32, at, bytes],
             )?;
             let read = PassInputs {
-                color: if pass.history {
+                color: if inputs.color == 0 {
+                    ids.blank_color
+                } else if pass.history {
                     made.scratch
                 } else {
                     inputs.color
                 },
-                depth: inputs.depth,
+                depth: if pass.depth && inputs.depth != 0 {
+                    inputs.depth
+                } else {
+                    ids.blank_depth
+                },
             };
             if self.bound_layers[place][layer as usize] == Some((read, layout)) {
                 continue;

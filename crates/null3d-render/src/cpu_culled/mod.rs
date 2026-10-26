@@ -475,8 +475,10 @@ mod ids {
     pub const COMPUTE_HISTORY_GROUPS: u32 = COMPUTE_GROUPS + MAX_VIEWS as u32;
     /// One state view for each compute pass's two states, after the groups.
     pub const COMPUTE_VIEWS: u32 = COMPUTE_HISTORY_GROUPS + MAX_VIEWS as u32;
+    /// The two state textures of each compute pass, after the state views.
+    pub const COMPUTE_STATES: u32 = COMPUTE_VIEWS + 2 * MAX_VIEWS as u32;
     /// The bind groups of temporal anti-aliasing's resolve and copy, after the compute passes'.
-    pub const TAA_GROUPS: u32 = COMPUTE_VIEWS + 2 * MAX_VIEWS as u32;
+    pub const TAA_GROUPS: u32 = COMPUTE_STATES + 2 * MAX_VIEWS as u32;
     /// The bind groups of materials' maps, after temporal anti-aliasing's.
     pub const TEXTURE_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
 }
@@ -787,6 +789,7 @@ impl CpuCulledRenderer {
                             first_history_group: ids::COMPUTE_HISTORY_GROUPS,
                             first_pipeline: ids::COMPUTE_PIPELINES,
                             first_view: ids::COMPUTE_VIEWS,
+                            first_state: ids::COMPUTE_STATES,
                         },
                         dof: DofIds {
                             buffer: ids::DOF,

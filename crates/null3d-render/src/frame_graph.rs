@@ -5556,6 +5556,16 @@ impl FrameGraph {
                         list.truncate(start);
                     } else {
                         list.push(Op::EndComputePass, &[])?;
+                        // A history pass keeps its states in textures of their own, so the frame
+                        // copies them into its target's two blocks once its runs have finished.
+                        for &pass in plan.passes(step) {
+                            if let Role::Compute(view) = self.roles[pass.index()]
+                                && let Some(content) =
+                                    self.declared_views[view.index()].compute_pass()
+                            {
+                                self.compute.copy_states(list, view.index(), content)?;
+                            }
+                        }
                         // A buffer that a compute pass writes reaches the commands that read it
                         // after the pass, not inside one: a copy between buffers needs its own
                         // place outside every pass.
@@ -6681,21 +6691,29 @@ mod tests {
         assert_eq!(created[3], 2, "two states, one layer each");
         assert_ne!(created[5] & texture_usage::RENDER_ATTACHMENT, 0);
         assert_ne!(created[5] & texture_usage::COPY_SRC, 0);
-        // The pass takes the layout that binds the state of the run before, and each state's
-        // group writes one view of its layers and reads the other.
+        // The pass takes the layout that binds the state of the run before. Two state textures hold
+        // the states, and each state's group writes one and reads the other.
         let mut arena = UploadArena::default();
         arena.reset(frames.upload_bound());
         list.clear();
         frames
             .upload(&mut list, &mut arena, Output::default(), Grading::default())
             .unwrap();
+        let states: Vec<_> = operands(&list, Op::CreateTexture)
+            .into_iter()
+            .filter(|texture| texture[0] == 602 || texture[0] == 603)
+            .collect();
+        assert_eq!(states.len(), 2, "a texture for each state");
+        assert_ne!(states[0][5] & texture_usage::STORAGE_BINDING, 0);
+        assert_ne!(states[0][5] & texture_usage::COPY_SRC, 0);
         let views: Vec<_> = operands(&list, Op::CreateBindView)
             .into_iter()
-            .filter(|view| view[1] == target)
+            .filter(|view| view[0] == 502 || view[0] == 503)
             .collect();
         assert_eq!(
             views,
-            vec![vec![502, target, 0, 1], vec![503, target, 1, 1]]
+            vec![vec![502, 602, 0, 1], vec![503, 603, 0, 1]],
+            "each view covers all the layers of its state's texture"
         );
         let groups: Vec<_> = operands(&list, Op::CreateBindGroup)
             .into_iter()
@@ -6737,6 +6755,18 @@ mod tests {
                 vec![0, IDS.compute.first_group + 1, 0],
                 vec![0, IDS.compute.first_history_group + 1, 0],
                 vec![0, IDS.compute.first_group + 1, 0],
+            ]
+        );
+        // Once the runs have finished, both states reach the target's blocks, which readers sample.
+        let copies: Vec<_> = operands(&list, Op::CopyTextureToTexture)
+            .into_iter()
+            .filter(|copy| copy[5] == target)
+            .collect();
+        assert_eq!(
+            copies,
+            vec![
+                vec![602, 0, 0, 0, 0, target, 0, 0, 0, 0, 64, 48, 1],
+                vec![603, 0, 0, 0, 0, target, 0, 0, 0, 1, 64, 48, 1],
             ]
         );
         let view = frames.declared_views[1];
@@ -7037,6 +7067,7 @@ mod tests {
             first_history_group: 400,
             first_pipeline: 750,
             first_view: 500,
+            first_state: 600,
         },
         dof: DofIds {
             buffer: 13,
