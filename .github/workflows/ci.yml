@@ -120,18 +120,29 @@ jobs:
           path: target/typecheck
           key: typecheck-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: typecheck-${{ runner.os }}-
-      - run: bun run typecheck
+      # The unit tests run one group at a time, in one process, so they keep about one of the
+      # runner's cores busy. The type check runs its projects on the others, beside them: it starts
+      # here, and the step after the tests waits for it, prints what it printed and fails with it.
+      - name: Start the type check beside the unit tests
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-      - uses: actions/cache/save@v4
-        if: "!cancelled() && env.SAVE_CACHES == 'true' && hashFiles('target/typecheck/*.tsbuildinfo') != ''"
-        with:
-          path: target/typecheck
-          key: typecheck-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          (bun run typecheck > "$RUNNER_TEMP/typecheck.log" 2>&1; echo $? > "$RUNNER_TEMP/typecheck.status") &
       # The meshopt unit tests read the Khronos test file and build test files from the samples.
       - uses: ./.github/actions/samples
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
       - run: bun run test
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+      - name: The type check
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          while [ ! -f "$RUNNER_TEMP/typecheck.status" ]; do sleep 2; done
+          cat "$RUNNER_TEMP/typecheck.log"
+          exit "$(cat "$RUNNER_TEMP/typecheck.status")"
+      - uses: actions/cache/save@v4
+        if: "!cancelled() && env.SAVE_CACHES == 'true' && hashFiles('target/typecheck/*.tsbuildinfo') != ''"
+        with:
+          path: target/typecheck
+          key: typecheck-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
 
   heavy-checks:
     # The checks that hold gigabytes, each in a process of its own: the generated shader set beside
@@ -253,9 +264,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
-      # Each hash covers exactly the files that a part reads, so a part passes again only when
-      # none of them changed. The Rust tests' shader part reads only the shader crates, the crate
-      # they depend on, the Cargo files, the toolchain and nextest's settings. Their other parts run
+      # Each hash covers exactly the files that a part reads, so a part passes again only when none
+      # of them changed. The Rust tests' shader part reads only the shader crates, the crate they
+      # depend on, the Cargo files, the toolchain and nextest's settings. Their other parts run
       # every workspace test, which reads every crate and, outside them, the generated engine
       # modules that two crates check, a test fixture, a test page's table, the engine's error
       # codes, two add-ons' shaders, the test environments and the compiler's runner script. Nine
@@ -266,11 +277,11 @@ jobs:
       # scripts that run it: the shader crates, the build tool that builds the compiler, the
       # compiler's runner script and the three files of the Vite plugin that the runner imports,
       # which import no package. Not the whole of tools/lib: that folder holds the size report, the
-      # limits report and the cache's own rules, and a change to any of them used to purge this
-      # pass and rebuild every shard cold (22 October 2026). Not the whole plugin or the packages'
-      # lock either: from 23 to 24 October 2026, 12 of the 39 landings that changed the wider key
-      # changed only the plugin's other files and tests or the lock, and each such run rebuilt all
-      # the shards, about 80 job-minutes.
+      # limits report and the cache's own rules, and a change to any of them used to purge this pass
+      # and rebuild every shard cold (22 October 2026). Not the whole plugin or the packages' lock
+      # either: from 23 to 24 October 2026, 12 of the 39 landings that changed the wider key changed
+      # only the plugin's other files and tests or the lock, and each such run rebuilt all the
+      # shards, about 80 job-minutes.
       #
       # The plugin's hash names the files that decide what the compiler and the shader modules
       # hold, and the plugin and test helper that its tests import. Its tests' own hash names the
@@ -280,13 +291,17 @@ jobs:
       # no WGSL passes them again. The whole folders once made a key that changed with almost every
       # push, and each part took 5.5 to 6.8 minutes each time.
       #
+      # tools/lib/ci-passes.ts ends every key with a hash of the part's job as the workflow parses,
+      # with the repository's own actions that it runs, such as the step that builds the shader
+      # crates optimized, so those need no entry in a hash here.
+      #
       # A script that a part starts, or that such a script imports, belongs in its hash, and
       # tools/lib/ci-workflow.test.ts fails on one that a hash leaves out.
       - name: The hashes of the files that each part reads
         id: hashes
         run: |
           echo "rust-shaders=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml') }}" >> "$GITHUB_OUTPUT"
-          echo "rust-workspace=${{ hashFiles('crates/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml', '.github/actions/optimized-shader-crates/**', 'packages/engine/src/generated/gpu.ts', 'packages/engine/src/generated/core.ts', 'packages/engine/src/errors/codes.ts', 'tests/fixtures/light-clusters.bin', 'tests/pages/lib/dfg-table.ts', 'tests/pages/assets/environments/**', 'examples/addons/aurora/aurora.wgsl', 'examples/addons/car-paint/paint.wgsl', 'tools/shader-compiler.ts') }}" >> "$GITHUB_OUTPUT"
+          echo "rust-workspace=${{ hashFiles('crates/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml', 'packages/engine/src/generated/gpu.ts', 'packages/engine/src/generated/core.ts', 'packages/engine/src/errors/codes.ts', 'tests/fixtures/light-clusters.bin', 'tests/pages/lib/dfg-table.ts', 'tests/pages/assets/environments/**', 'examples/addons/aurora/aurora.wgsl', 'examples/addons/car-paint/paint.wgsl', 'tools/shader-compiler.ts') }}" >> "$GITHUB_OUTPUT"
           echo "shader-compiler=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shader-compiler.ts', 'packages/vite-plugin/src/compiler-calls.js', 'packages/vite-plugin/src/shader-compiler.ts', 'packages/vite-plugin/src/shader-types.ts', 'package.json') }}" >> "$GITHUB_OUTPUT"
           echo "plugin=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'tools/lib/wgsl-modules.ts', 'tools/lib/build-cache.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}" >> "$GITHUB_OUTPUT"
           echo "plugin-tests=${{ hashFiles('tests/fixtures/typed-uniforms/**', 'tests/pages/sketches/shaders/**') }}" >> "$GITHUB_OUTPUT"
@@ -550,7 +565,10 @@ jobs:
       # The WebAssembly files and the tools' modules, which the build script keeps under a key of
       # every input: the core's Rust sources, the flags, the toolchain and the wasm-bindgen and
       # wasm-opt releases. A run that changed none of them copies every file in place and runs no
-      # cargo, wasm-bindgen or wasm-opt, which took 118 s of run 39944103955's build job.
+      # cargo, wasm-bindgen or wasm-opt, which took 118 s of run 39944103955's build job. Each file
+      # set is an entry of its own in the folder, under its own key, so a run that changed only the
+      # shader compiler restores the newest earlier folder and copies the cores' files from it, and
+      # one that changed only a core keeps the tools' modules.
       - id: wasm-key
         run: bun tools/build-wasm.ts --cache-key | tee -a "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@v4
@@ -558,6 +576,7 @@ jobs:
         with:
           path: ~/.cache/null3d/wasm-artifacts
           key: wasm-artifacts-${{ runner.os }}-${{ steps.wasm-key.outputs.key }}
+          restore-keys: wasm-artifacts-${{ runner.os }}-
       # The shader caches between runs: a run builds only the shaders whose inputs changed.
       - name: Build the shader modules and the WebAssembly files that the test pages need
         uses: ./.github/actions/shaders
@@ -566,6 +585,11 @@ jobs:
       - id: entry-folder
         name: Name the entry folder that the shader build used
         run: bun tools/shaders.ts --entry-folder | tee -a "$GITHUB_OUTPUT"
+      # The folder keeps only this run's entries, so an earlier run's entries that it no longer
+      # needs do not grow it from save to save.
+      - name: Keep only this build's WebAssembly entries
+        if: steps.wasm.outputs.cache-hit != 'true' && env.SAVE_CACHES == 'true'
+        run: bun tools/build-wasm.ts --keep-current
       - uses: actions/cache/save@v4
         if: steps.wasm.outputs.cache-hit != 'true' && env.SAVE_CACHES == 'true'
         with:
@@ -1069,7 +1093,7 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "97:59:5:87:88:125:133:118:332:204:150:118:77:74:42:24:192:67:168:57:115:13:80:104:74:80:78:92"
+          PWTEST_SHARD_WEIGHTS: "74:50:10:10:150:130:145:152:280:215:154:128:115:73:51:26:85:116:104:110:94:44:94:301:84:82:80:49"
         run: bun run test:browser --grep-invert "@alone|$CITY_TESTS|$HEAVY_TESTS" --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
@@ -1159,7 +1183,7 @@ jobs:
       - name: The heavy browser tests, one at a time, on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "2:17:9:24:18:29:28:30:13:15:5:3"
+          PWTEST_SHARD_WEIGHTS: "17:11:17:18:21:24:26:33:12:17:8:4"
         run: bun run test:browser --grep "$HEAVY_TESTS" --grep-invert "@alone" --workers=1 --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -1470,8 +1494,9 @@ jobs:
     # SwiftShader, which draws S1's 100,000 boxes at under one frame a second, so the check draws
     # fewer boxes here, counts the frames that S1 steps, and judges them by CI's own budgets
     # (bench/allocation.ts). The Mac's gate keeps the full count on a real GPU. On SwiftShader the
-    # browser optimizes after fewer calls, so the warm-up is 1,200 frames and the job takes about 4
-    # minutes.
+    # browser optimizes after fewer calls, so the warm-up is 1,200 frames and each run takes about 4
+    # minutes. The WebGPU job runs a second time with `--canvas`, so S1's own places keep their own
+    # budgets and a canvas texture's refresh is judged by its budgets too.
     name: allocation (${{ matrix.gpu }})
     needs: [build, load-pages]
     if: *full-run
@@ -1512,6 +1537,11 @@ jobs:
           mode: download
       - name: Per-frame allocation in S1 on SwiftShader
         run: bun run bench:allocation --gpu ${{ matrix.gpu }}
+      # Only on WebGPU: on the software GPU's WebGL2 path the heap profiler charges bursts of
+      # compiled canvas code to a place at the root that no budget can name.
+      - name: Per-frame allocation with a canvas texture's refresh
+        if: matrix.gpu == 'webgpu'
+        run: bun run bench:allocation --canvas --gpu webgpu
 
   load-pages:
     # The production build of the benchmark pages, which the bench shards and the allocation jobs

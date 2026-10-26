@@ -7,13 +7,19 @@
 
 import { boxPrimitive, GltfBuilder } from './gltf-files';
 
+/**
+ * The address of a sample file on the dev server, as `sampleUrl` in tools/lib/samples.ts gives
+ * it. Pages cannot import that module, and the sample check reads the names given here.
+ */
+const sampleUrl = (path: string) => `/samples/${path}`;
+
 /** A model whose clips move properties, and the properties to compare. */
 export interface PropertyModel {
 	/** The name that the fixture and the page know the model by. */
 	id: string;
 	/**
-	 * The address of the file, relative to the test page, or empty for the file that `builtFile`
-	 * makes.
+	 * The address of the file, relative to the test page, or under `/samples/` for the sample
+	 * content. Empty for the file that `builtFile` makes.
 	 */
 	url: string;
 	clip: string;
@@ -27,8 +33,9 @@ export interface PropertyModel {
 }
 
 /**
- * The models: the two Khronos samples whose properties the engine animates, and a light that code
- * builds, because no Khronos sample moves a light's values.
+ * The models: every Khronos sample whose clip a `KHR_animation_pointer` moves, and a light that
+ * code builds, because no Khronos sample moves a light's values. The two small samples sit beside
+ * this repository's tests, and the large one in the sample content.
  */
 export const PROPERTY_MODELS: readonly PropertyModel[] = [
 	{
@@ -44,6 +51,27 @@ export const PROPERTY_MODELS: readonly PropertyModel[] = [
 		clip: 'BlinkingBlueLight',
 		times: [0, 0.45, 0.9, 1.5, 2.1],
 		keys: ['nodes/5/visible'],
+	},
+	{
+		id: 'cube-visibility',
+		url: 'assets/models/sources/khronos/CubeVisibility/CubeVisibility.gltf',
+		clip: 'BlinkingBlueCube',
+		times: [0, 0.25, 0.5, 0.75, 1.2, 1.6],
+		keys: ['nodes/5/visible'],
+	},
+	{
+		id: 'animation-pointer-uvs',
+		url: sampleUrl('sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs.gltf'),
+		clip: 'animation_0',
+		times: [0, 1.5, 3, 4.5, 5.9],
+		// The four texture transforms that three.js's animation-pointer plugin moves, of the
+		// sample's 103 channels. The plugin moves no other texture, and neither does the engine.
+		keys: [
+			'materials/10/baseColorOffset',
+			'materials/11/baseColorScale',
+			'materials/19/emissiveOffset',
+			'materials/20/emissiveScale',
+		],
 	},
 	{
 		id: 'pointer-light',

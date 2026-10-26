@@ -41,12 +41,9 @@ import {
 } from '../packages/vite-plugin/src/index.ts';
 import { shaderCacheFolder } from '../packages/vite-plugin/src/shader-cache.ts';
 import { cacheDir, cacheOff, pruneCacheLocked, secondsSince } from '../tools/lib/build-cache.ts';
-import {
-	DEFAULT_PACK_DIR,
-	PACKAGES,
-	type PackedPackage,
-	packPackages,
-} from '../tools/lib/packages.ts';
+import { DEFAULT_PACK_DIR, packPackages } from '../tools/lib/pack.ts';
+import { PACKAGES, type PackedPackage } from '../tools/lib/packages.ts';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { ASSET_SCENE } from './lib/asset-scene.ts';
 import { STRICT_POLICY } from './lib/content-security-policy.ts';
 
@@ -584,6 +581,7 @@ async function startsSiteDemos(project: string, build: BackgroundStep): Promise<
 }
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The fresh-project test');
 	const keep = process.argv.includes('--keep');
 	console.log('Packing the public packages');
 	const packed = await packPackages(ROOT, join(ROOT, DEFAULT_PACK_DIR));

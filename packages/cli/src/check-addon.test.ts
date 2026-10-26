@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { missingCoreFiles } from '../../../packages/vite-plugin/src/index.ts';
 import { MATERIAL_BUILDS_ADDRESS } from '../../../packages/vite-plugin/src/material-builds.ts';
+import { NO_CACHE } from '../../../packages/vite-plugin/src/shader-cache.ts';
 import { fixture } from '../../../tools/lib/fixture';
 import { FIRST_USE_SHADER_BUDGET, LATER_BUDGET } from '../../../tools/lib/size-report.ts';
 import { UsageError } from './args.js';
@@ -11,6 +13,8 @@ import {
 	allocationGate,
 	allocationOutcome,
 	budgetOf,
+	buildAddon,
+	emptyShaders,
 	engineVersions,
 	interfaceResult,
 	MAX_ALLOCATION_SAMPLES,
@@ -23,6 +27,7 @@ import {
 	run,
 	samplingIntervalFor,
 	sizeProblems,
+	splitShaderData,
 } from './check-addon.js';
 import { freePort } from './devtools.js';
 import type { CallFrame, ProfileNode } from './heap-profile.js';
@@ -121,6 +126,18 @@ describe('readAddon', () => {
 		expect(readAddon(fixture({ 'package.json': '{"name":"a"}' })).problems[0] ?? '').toStartWith(
 			'no entry file: ',
 		);
+	});
+});
+
+describe('the build tools', () => {
+	it('finds the Vite plugin through the manifest that the plugin exports', () => {
+		// The gates that compile WGSL and measure the build resolve `@null3d/vite-plugin/package.json`.
+		// Node refuses a sub-path that a package's `exports` does not name, and the two gates then
+		// skip, so the entry below is what keeps them running under the command's own node.
+		const manifest = JSON.parse(
+			readFileSync(join(import.meta.dirname, '../../vite-plugin/package.json'), 'utf8'),
+		) as { exports?: Record<string, unknown> };
+		expect(manifest.exports?.['./package.json']).toBe('./package.json');
 	});
 });
 
@@ -418,17 +435,17 @@ describe('sizeProblems', () => {
 
 	it('accepts a file at its budget in every column', () => {
 		expect(
-			sizeProblems([{ name: 'addon.js', raw: 64 * KB, gzip: 24 * KB, brotli: 17 * KB }]),
+			sizeProblems([{ name: 'addon.js', raw: 64 * KB, gzip: 24 * KB, brotli: 18 * KB }]),
 		).toEqual([]);
 	});
 
 	it('names each column of a file over its budget', () => {
 		expect(
-			sizeProblems([{ name: 'addon.js', raw: 65 * KB, gzip: 25 * KB, brotli: 18 * KB }]),
+			sizeProblems([{ name: 'addon.js', raw: 65 * KB, gzip: 25 * KB, brotli: 19 * KB }]),
 		).toEqual([
 			'addon.js is 65.0 KB raw, over its 64.0 KB budget',
 			'addon.js is 25.0 KB gzip, over its 24.0 KB budget',
-			'addon.js is 18.0 KB brotli, over its 17.0 KB budget',
+			'addon.js is 19.0 KB brotli, over its 18.0 KB budget',
 		]);
 	});
 
@@ -447,6 +464,109 @@ describe('sizeProblems', () => {
 		expect(sizeProblems([{ name, raw: 900 * KB, gzip: 160 * KB, brotli: 57 * KB }])).toEqual([
 			`${name} is 57.0 KB brotli, over its 56.0 KB budget`,
 		]);
+	});
+
+	/** A file of code that holds the compiled WGSL that the plugin inlined in it. */
+	const split = (code: number, shader: number) => ({
+		name: 'addon.js',
+		raw: code + shader,
+		gzip: 0,
+		brotli: 0,
+		code: { raw: code, gzip: 0, brotli: 0 },
+		shader: { raw: shader, gzip: 0, brotli: 0 },
+	});
+
+	it('answers each budget for its own part of a file that holds compiled WGSL', () => {
+		// Together the parts are past the code budget, which the shader data is not code for.
+		expect(sizeProblems([split(14 * KB, 75 * KB)])).toEqual([]);
+	});
+
+	it('names the code of a file that holds compiled WGSL', () => {
+		expect(sizeProblems([split(65 * KB, 75 * KB)])).toEqual([
+			'addon.js is 65.0 KB raw of code, over its 64.0 KB budget',
+		]);
+	});
+
+	it('holds the shader data inlined in a file to the shader budget', () => {
+		// The code keeps its budget, so a gate that stopped counting the inlined data would pass.
+		expect(sizeProblems([split(14 * KB, 2000 * KB)])).toEqual([
+			'addon.js is 2000.0 KB raw of shader data, over its 1792.0 KB budget',
+		]);
+	});
+
+	it('names a file that the shader data did not change by its whole size', () => {
+		expect(sizeProblems([split(65 * KB, 0)])).toEqual([
+			'addon.js is 65.0 KB raw, over its 64.0 KB budget',
+		]);
+	});
+});
+
+describe('splitShaderData', () => {
+	const file = (name: string, text: string) => ({ name, bytes: Buffer.from(text) });
+
+	it('gives each file that both builds wrote its code and the shader data beside it', () => {
+		const [full] = splitShaderData([file('addon.js', 'x'.repeat(4096))], [file('addon.js', 'x')]);
+		expect(full?.raw).toBe(4096);
+		expect(full?.code?.raw).toBe(1);
+		expect(full?.shader?.raw).toBe(4095);
+		expect(full?.code?.gzip).toBeGreaterThan(0);
+		expect(full?.code?.brotli).toBeGreaterThan(0);
+		// The parts add up to the whole, so no byte of the file is left out.
+		expect((full?.code?.raw ?? 0) + (full?.shader?.raw ?? 0)).toBe(4096);
+	});
+
+	it('gives a file that only the build with the plugin wrote its whole size alone', () => {
+		const [, shaderBuild] = splitShaderData(
+			[file('addon.js', 'code'), file('material-wgsl-0-0123abcd.js', 'builds')],
+			[file('addon.js', 'code')],
+		);
+		expect(shaderBuild?.code).toBeUndefined();
+		expect(shaderBuild?.shader).toBeUndefined();
+		expect(shaderBuild?.raw).toBe('builds'.length);
+	});
+
+	it('gives no shader bytes to a file that the shader data did not change', () => {
+		const [file_] = splitShaderData([file('addon.js', 'code')], [file('addon.js', 'code')]);
+		expect(file_?.shader).toEqual({ raw: 0, gzip: 0, brotli: 0 });
+	});
+});
+
+describe('emptyShaders', () => {
+	it('answers a WGSL import with an empty module, and every other file with nothing', () => {
+		const plugin = emptyShaders() as { enforce: string; load: (id: string) => unknown };
+		expect(plugin.enforce).toBe('pre');
+		expect(plugin.load('/project/src/grid.wgsl')).toBe('export default {};');
+		expect(plugin.load('/project/src/grid.wgsl?raw')).toBeUndefined();
+		expect(plugin.load('/project/src/wind.ts')).toBeUndefined();
+	});
+});
+
+/** An add-on whose entry imports a compute shader, so a build of it holds shader data. */
+const ADDON_FIXTURE = join(import.meta.dirname, '../../../tests/fixtures/check-addon-split');
+
+/**
+ * True where a build of the fixture can run. It needs the engine's core files, which the build job
+ * writes, as it writes the shader modules that a compile of the WGSL reads.
+ */
+const BUILDS = (missingCoreFiles(ADDON_FIXTURE) ?? []).length === 0;
+
+describe.skipIf(!BUILDS)('buildAddon', () => {
+	it('gives the shader data that the entry holds a part of its own', async () => {
+		// A build that reads no cache writes nothing into the fixture and announces no compile, so
+		// the fixture keeps no file of its own and no output escapes into a later test.
+		const before = process.env[NO_CACHE];
+		process.env[NO_CACHE] = '1';
+		try {
+			const built = await buildAddon(ADDON_FIXTURE, './src/index.ts');
+			expect(built.error).toBeUndefined();
+			const entry = (built.files ?? []).find((file) => file.name === 'addon.js');
+			// A build with no second pass, or a file that it did not split, leaves no shader part.
+			expect(entry?.shader?.raw ?? 0).toBeGreaterThan(0);
+			expect((entry?.code?.raw ?? 0) + (entry?.shader?.raw ?? 0)).toBe(entry?.raw ?? -1);
+		} finally {
+			if (before === undefined) delete process.env[NO_CACHE];
+			else process.env[NO_CACHE] = before;
+		}
 	});
 });
 

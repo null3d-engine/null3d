@@ -56,7 +56,7 @@ On 11 October 2026 the notes under the pages' titles stopped saying "Ships in nu
 
 ## The npm packages
 
-Twelve packages are public. Each one's `prepack` script runs `bun tools/build-package.ts <folder>`, which makes what its tarball holds besides the files that git keeps (`tools/lib/packages.ts`). Every tarball also holds both license files. The WebAssembly files come from `bun run build`, which runs first.
+Thirteen packages are public. Each one's `prepack` script runs `bun tools/build-package.ts <folder>`, which makes what its tarball holds besides the files that git keeps (`tools/lib/pack.ts`). Every tarball also holds both license files. The WebAssembly files come from `bun run build`, which runs first.
 
 | Package | What its tarball holds | What its pack step makes |
 | --- | --- | --- |
@@ -70,6 +70,7 @@ Twelve packages are public. Each one's `prepack` script runs `bun tools/build-pa
 | `@null3d/splats` | `lib/`, with its two shaders compiled into modules and their build sets beside them, the task module that the job workers import, and no raw `.wgsl` file | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/vegetation` | `lib/`, with its plant shader compiled into a module and the sets of its builds beside it, and no raw `.wgsl` file | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/water` | `lib/`, with its surface and underwater shaders compiled into modules and the sets of their builds beside them, and no raw `.wgsl` file | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
+| `@null3d/wind` | `lib/`, with its field, grid and projection shaders compiled into modules and the sets of their builds beside them, and no raw `.wgsl` file | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/three-compat` | `lib/`, with its two tone curves and three outline passes compiled into modules and the sets of their builds beside them, no raw `.wgsl` file, and `THIRD-PARTY-NOTICES.txt` with the three.js licence, which the Vite plugin adds to a build's notices. The plugin finds the file through the package's `./package.json` export, so the package keeps that export | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/cli` | `bin/` and `src/`, plain JavaScript with JSDoc types. The Basis Universal encoder in `vendor/`, and the asset tool's formats in `dist/assets.wasm` | Nothing |
 
@@ -153,6 +154,7 @@ This is part of making 0.1.0. npm cannot publish a package's first version throu
    npm publish target/packages/null3d-vegetation-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-three-compat-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-water-0.0.0.tgz --access public --provenance=false
+   npm publish target/packages/null3d-wind-0.0.0.tgz --access public --provenance=false
    ```
 
 5. On npmjs.com, open each of the twelve packages' settings, and add a trusted publisher: GitHub Actions, the owner `null3d-engine`, the repository `null3d` and the workflow `release.yml`.

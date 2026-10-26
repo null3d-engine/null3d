@@ -455,6 +455,84 @@ fn forty_thousand_copies_of_four_levels_take_one_copy_each() {
     assert_eq!(8 * rows * 64, 20_480_000);
 }
 
+/// The same forest as the test above, but its trees cast the sun's shadows in four cascades. The
+/// casters' layout is one copy list that every cascade draws, so the four cascades must not
+/// multiply the list.
+#[test]
+fn forty_thousand_casters_of_four_cascades_take_one_copy_each() {
+    let rows: u32 = 40_000;
+    let mut measured = Vec::new();
+    for with_levels in [false, true] {
+        let mut world = World::new();
+        world.cast_sun_shadows(4);
+        if with_levels {
+            give_levels_of(&mut world, &[0.01, 0.05, 0.2], 0b1110);
+        }
+        let slot = world.scene.slots().resolve(world.objects[0]).unwrap() as usize;
+        let material = world.scene.materials()[slot];
+        let batch = world
+            .batches
+            .create(rows, false, false, BALL, material, 0.9)
+            .unwrap();
+        {
+            let batch = world.batches.get_mut(batch).unwrap();
+            batch.set_active_count(rows).unwrap();
+            batch.set_shadows(null3d_core::scene::flags::CAST_SHADOWS);
+        }
+        world.record(true);
+        measured.push(copies(&world)[1]);
+    }
+    // `measured[0]` is the casters' list without levels, and `measured[1]` with them. The four
+    // cascades draw one copy list, so the list takes one copy for each of the 40,000 trees, and
+    // the levels add nothing to it: 2.56 MB. The removed rule kept a slice for every copy in every
+    // level, and the casters' list has four levels and no fading band, because its shadow
+    // pipelines take no fading build: 10.24 MB.
+    let per_copy = rows * 64;
+    assert_eq!(measured[1], measured[0], "{measured:?}");
+    for bytes in measured {
+        assert!(bytes >= per_copy && bytes < per_copy + 128, "{bytes}");
+    }
+    assert_eq!(4 * per_copy, 10_240_000);
+}
+
+/// A copy list that reserves room for more copies than the device's binding holds is refused, so
+/// the frame asks for no buffer the device cannot bind. The buffer's room to grow was rounded up
+/// and then down to the need, which asked for more than the binding.
+#[test]
+fn a_copy_list_past_the_binding_is_refused_rather_than_sized_over_it() {
+    use common::{BATCH_ROWS, SCENE_CAPACITY};
+    use null3d_gpu::drawlist::sizes;
+    use null3d_render::frame::RecordError;
+    use null3d_render::gpu_driven::RendererConfig;
+
+    // A batch whose rows name no local radius reserves room in every bucket of its levels, so its
+    // copies pass the sources that the binding holds.
+    let rows = 64;
+    let sources = SCENE_CAPACITY + 1 + BATCH_ROWS + rows;
+    let binding = sources * sizes::INSTANCE_STRIDE;
+    let mut world = World::with_config(RendererConfig {
+        storage_binding_bytes: binding,
+        ..RendererConfig::default()
+    });
+    give_levels_of(&mut world, &[0.01, 0.05, 0.2], 0b1110);
+    let slot = world.scene.slots().resolve(world.objects[0]).unwrap() as usize;
+    let material = world.scene.materials()[slot];
+    let batch = world
+        .batches
+        .create(rows, false, false, BALL, material, 0.0)
+        .unwrap();
+    world
+        .batches
+        .get_mut(batch)
+        .unwrap()
+        .set_active_count(rows)
+        .unwrap();
+    assert_eq!(
+        world.try_record(true),
+        Err(RecordError::BufferFull { bytes: binding })
+    );
+}
+
 #[test]
 fn a_bias_on_an_object_makes_its_levels_switch_nearer() {
     let mut world = cpu_world();
@@ -618,20 +696,13 @@ fn a_bias_divides_the_switch_of_one_object() {
         },
     ];
     let rule = LevelRule::new(360.0, 1.732, false, 1.0, 0.0);
-    println!("factor {}", rule.factor);
-    // Level 1 switches at 0.01 times the factor, halved by a bias of 2: 1.56 m.
-    println!(
-        "no bias at 1.606: {:?}",
-        rule.pick(&links, 0, 1.0, 0.5, 1.606, 1.0, DrawRange::NONE)
-    );
-    println!(
-        "bias 2 at 1.606: {:?}",
-        rule.pick(&links, 0, 1.0, 0.5, 1.606, 2.0, DrawRange::NONE)
-    );
-    println!(
-        "bias 2 at 1.481: {:?}",
-        rule.pick(&links, 0, 1.0, 0.5, 1.481, 2.0, DrawRange::NONE)
-    );
+    // Level 1 switches at 0.01 times the factor, 3.12 m. At 1.606 m it is over the threshold and
+    // the base level draws; a bias of 2 halves its switch to 1.56 m, so the same distance draws
+    // the level.
+    assert!(matches!(
+        rule.pick(&links, 0, 1.0, 0.5, 1.606, 1.0, DrawRange::NONE),
+        Picked::One(0)
+    ));
     assert!(matches!(
         rule.pick(&links, 0, 1.0, 0.5, 1.606, 2.0, DrawRange::NONE),
         Picked::One(1)

@@ -1,7 +1,7 @@
 // The shot command's timed script, run as a developer runs it. The first part runs it in a copy of
 // the fixture project, where a script drives the sketch through three states with a key, the
-// pointer and a property write. The second part drives the input demo through three states, and
-// each state's image must match its reference.
+// pointer and a property write. The second part drives the night town showcase through three
+// states, and each state's image must match its reference.
 import {
 	cpSync,
 	mkdirSync,
@@ -18,7 +18,14 @@ import { readPng } from '../../packages/cli/src/png.js';
 import { runCli } from '../lib/cli.ts';
 import { clearCandidate, compareWithReference, environmentNamed } from '../lib/images.ts';
 import { REPO_ROOT } from '../lib/server.ts';
-import { SCRIPT_RUNS, SCRIPT_STATES, SCRIPT_TEST, SCRIPT_TIER } from './script-runs.ts';
+import {
+	SCRIPT_RUNS,
+	SCRIPT_SIZE,
+	SCRIPT_STATES,
+	SCRIPT_TEST,
+	SCRIPT_TIER,
+	scriptPage,
+} from './script-runs.ts';
 
 const FIXTURE = join(REPO_ROOT, 'tests/fixtures/project');
 /** The fixture's three states, which its script names. */
@@ -105,18 +112,18 @@ test.describe('the fixture project through three states', () => {
 		expect(output).toContain('Drew parked at 3 s, frame 181, on webgl2: 320 x 180 pixels.');
 		expect(output).toContain('Dump at 2.5 s: "ball" position is');
 		expect(output).not.toContain('failed:');
-		// The states come from the script: each image differs from the ones before it. The demo's
+		// The states come from the script: each image differs from every other one. The showcase's
 		// images below compare with references instead.
 		const images = FIXTURE_STATES.map((state) => readFileSync(join(drawn, `tour-${state}.png`)));
 		expect(images[0]?.equals(images[1] as Buffer)).toBe(false);
+		expect(images[0]?.equals(images[2] as Buffer)).toBe(false);
 		expect(images[1]?.equals(images[2] as Buffer)).toBe(false);
 	});
 });
 
-test.describe('the input demo through three states', () => {
-	// The demo loads a sky environment and draws three frames, and the software GPU that CI uses
-	// takes minutes over them.
-	test.describe.configure({ timeout: 600_000 });
+test.describe('the night town showcase through three states', () => {
+	// Each state builds the whole town again, and the software GPU that CI uses draws it slowly.
+	test.describe.configure({ timeout: 900_000 });
 
 	/** The folder that the command writes its images into, removed after the tests. */
 	let drawn = '';
@@ -126,23 +133,23 @@ test.describe('the input demo through three states', () => {
 
 	// One run draws all three states, and each test compares one of its images with its reference.
 	test.beforeAll(async () => {
-		// The hook draws three states, and the software GPU that CI uses takes minutes over them.
-		test.setTimeout(600_000);
-		drawn = mkdtempSync(join(REPO_ROOT, 'target/cli-script-demo-'));
+		test.setTimeout(900_000);
+		drawn = mkdtempSync(join(REPO_ROOT, 'target/cli-script-showcase-'));
+		const environment = environmentNamed(test.info().project.name);
 		const run = await runCli(REPO_ROOT, [
 			'shot',
 			'--script',
-			join(REPO_ROOT, 'tests/image/demo-input.script'),
+			join(REPO_ROOT, 'tests/image/showcase-night-town.script'),
 			'--page',
-			'/tests/pages/image.html?sketch=/examples/input/sketch.ts&size=640x360&preset=high',
+			scriptPage(environment),
 			'--size',
-			'640x360',
+			`${SCRIPT_SIZE[0]}x${SCRIPT_SIZE[1]}`,
 			'--gpu',
 			SCRIPT_TIER,
 			'--timeout',
-			'120',
+			'180',
 			'--out',
-			join(drawn, 'demo.png'),
+			join(drawn, 'night-town.png'),
 		]);
 		code = run.code;
 		output = run.output;
@@ -157,11 +164,13 @@ test.describe('the input demo through three states', () => {
 			expect(code, output).toBe(0);
 			expect(output).toContain(`Drew ${state} at `);
 			expect(output).not.toContain('failed:');
+			// The script's property step widens the active camera's lens, and its dump reads it back.
+			if (state === 'wide') expect(output).toContain('Dump at 2 s: "#camera" fov is [60].');
 			const run = SCRIPT_RUNS.find((one) => one.test === `${SCRIPT_TEST}-${state}`);
 			expect(run).toBeDefined();
 			const place = { environment: environmentNamed(test.info().project.name) };
 			clearCandidate(run!, place);
-			const image = readPng(join(drawn, `demo-${state}.png`));
+			const image = readPng(join(drawn, `night-town-${state}.png`));
 			expect(compareWithReference(run!, place, image)).toEqual([]);
 		});
 });
