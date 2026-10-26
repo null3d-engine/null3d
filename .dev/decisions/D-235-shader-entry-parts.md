@@ -101,7 +101,7 @@ The rows above measure builds that read every entry from the cache. No row measu
 Four things held the memory. Each one is now changed, and the modules stay byte for byte the same:
 
 - Each build kept its own copy of its sources until the last build ended. A read from the cache shares them, and a compiled build did not. Now each build's sources become the run's one copy of each text as the build ends.
-- Each thread's composers kept the library modules for every set of shader defs that the thread met. By the end of the run, that was about 0.36 GB a thread. Now a thread's composers start again empty every 200 builds. This cost no measurable processor time: 4,537 s against 4,552 s on 7 threads. `NULL3D_SHADER_COMPOSER_BUILDS` sets another count, and 0 keeps the modules for the whole run.
+- Each thread's composers kept the library modules for every set of shader defs that the thread met. By footprint, that came to (9.06 GB − 6.51 GB) / 7 threads, about 0.36 GB a thread. Now a thread's composers start again empty every 200 builds. Only that count was measured. `NULL3D_SHADER_COMPOSER_BUILDS` sets another count, and 0 keeps the modules for the whole run.
 - The build rendered all 5,965 modules, 3 GB of text, before it wrote the first one. Now each module is written as soon as it renders, so the run holds only the modules that it renders at that moment.
 - A read of an entry held the file's bytes and the parsed entry at once: 2.3 GB of bytes for `standard_maps`. Now the read parses the file as it reads it.
 
@@ -109,16 +109,16 @@ In the table, a GB is 10<sup>9</sup> bytes.
 
 | Build of 93720008d | Threads | Peak footprint | Peak resident | Processor time | Wall time |
 | --- | --- | --- | --- | --- | --- |
-| Before the change, compiles every entry | 14 | not read | 17.45 GB | not read | 382 to 396 s |
+| Before the change, compiles every entry, back to back with the next row | 14 | 16.10 GB | 19.48 GB | 5,069 s | 412 s |
+| All four changes, compiles every entry, back to back with the row above | 14 | 3.87 GB | 5.40 GB | 5,259 s | 423 s |
 | Shared sources, modules written as they render | 14 | 9.06 GB | 9.47 GB | 4,759 s | 816 s |
 | The same | 7 | 6.51 GB | 6.80 GB | 4,552 s | 858 s |
 | The same, with composers that start again every 200 builds | 7 | 3.45 GB | 4.52 GB | 4,537 s | 938 s |
-| All four changes, through `bun tools/shaders.ts` | 14 | not read | 5.65 GB | 5,230 s | 497 s |
 | Before the change, reads every entry | 14 | 6.79 GB | 7.09 GB | 66 s | 31 s |
 | All four changes, reads every entry | 14 | 3.49 GB | 3.71 GB | 66 s | 28 s |
 
-How the data was produced: each row ran `/usr/bin/time -l target/shader/shader-build --root <copy> --cache <folder> --stamp <name>` through the job queue, with `NULL3D_SHADER_THREADS` set to the thread count. The copy held only the manifest and the shader folder, with an empty output folder, and the cache folder started empty. The rows that read every entry used the folder that the cold build of the same compiler wrote. The first row and the fifth ran `bun tools/shaders.ts` in a checkout, so the timing tool read only the resident peak of the largest process. In every run, `diff -r` found the modules the same as those of the compiler before the change.
+How the data was produced: each row ran `/usr/bin/time -l target/shader/shader-build --root <copy> --cache <folder> --stamp <name>`, with `NULL3D_SHADER_THREADS` set to the thread count. The copy held only the manifest and the shader folder, with an empty output folder, and the cache folder started empty. The rows that read every entry used the folder that the cold build of the same compiler wrote. The first two rows ran one after the other as one timing run of the job queue, with no other job of the queue on the machine. Other sessions' work outside the queue kept the 1-minute load at 21 to 28 through both. The other rows that compile every entry shared the machine with other jobs, so their times only bound the cost. In every run, `diff -r` found the modules the same as those of the compiler before the change.
 
-Every build that compiled every entry shared the machine with other sessions' jobs, so its wall time and its processor time only bound its cost. A comparison of the two compilers on an idle machine is still owed.
+The cost: the changed compiler took 3% more wall time and 4% more processor time than the old one, in the two rows measured back to back. The first build of 93720008d with the old compiler, through `bun tools/shaders.ts`, held 17.45 GB resident in 382 to 396 s. With all four changes, the same command held 5.65 GB resident in 497 s, on a busier machine. Those two ran outside the queue, as the shader build always does, so their times do not compare.
 
-The budget: a build that compiles every entry now holds less than 6 GB on 14 threads. A read of every entry holds less than 4 GB. A change that raises either peak states the new figure, measured as above. A test in `crates/null3d-shaders/tests/cache.rs` checks one thing: compiled builds with the same text hold one copy of it. With the sharing removed, the test fails.
+The budget: a build that compiles every entry now holds less than 6 GB resident on 14 threads. A read of every entry holds less than 4 GB. A change that raises either peak states the new figure, measured as above. Two tests check the sharing. One in `crates/null3d-shaders/tests/cache.rs` builds a small manifest and checks that builds with the same WGSL hold one copy of it; it fails with the sharing removed. A unit test in `output.rs` checks the WGSL module and both GLSL stages.

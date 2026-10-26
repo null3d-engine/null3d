@@ -509,8 +509,8 @@ fn compile_jobs(
 /// How many builds a thread compiles before its composers start again empty. A composer keeps the
 /// library modules it built for every set of shader defs it has met, so a thread that compiled
 /// thousands of builds held thousands of modules: about 0.36 GB a thread in a build of every shader.
-/// Starting again every few hundred builds cost no measurable processor time, because the modules
-/// that the next builds need are few and quick to build again (D-235).
+/// Starting again every 200 builds, with the other changes of D-235's update of 26 October 2026, cut
+/// a build of every shader on 14 threads from 16.10 to 3.87 GB, for 4% more processor time.
 const COMPOSER_BUILDS: usize = 200;
 
 /// [`COMPOSER_BUILDS`], or the count that NULL3D_SHADER_COMPOSER_BUILDS sets, where zero keeps the

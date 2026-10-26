@@ -285,4 +285,41 @@ mod tests {
             "two bits of one feature"
         );
     }
+
+    #[test]
+    fn builds_share_each_text_of_both_targets_and_keep_their_own_texts() {
+        let stage = |text: &str| GlslStage {
+            source: Arc::from(text),
+            uniform_blocks: Vec::new(),
+            textures: Vec::new(),
+        };
+        let build = |fragment: &str| VariantOutput {
+            permutation: 0,
+            wgsl: Some(WgslOutput {
+                source: Arc::from("module"),
+                pipelines: BTreeMap::new(),
+            }),
+            glsl: Some(BTreeMap::from([(
+                "main".to_owned(),
+                GlslProgram {
+                    vertex: stage("vertex"),
+                    fragment: stage(fragment),
+                },
+            )])),
+        };
+        let sources = SharedSources::default();
+        let (mut first, mut second) = (build("fragment"), build("another fragment"));
+        sources.share(&mut first);
+        sources.share(&mut second);
+        let texts =
+            |build: &mut VariantOutput| build.sources_mut().map(|s| Arc::clone(s)).collect();
+        let (one, two): (Vec<Arc<str>>, Vec<Arc<str>>) = (texts(&mut first), texts(&mut second));
+        assert!(Arc::ptr_eq(&one[0], &two[0]), "the WGSL module");
+        assert!(Arc::ptr_eq(&one[1], &two[1]), "the GLSL vertex stage");
+        assert!(
+            !Arc::ptr_eq(&one[2], &two[2]),
+            "fragment stages with other texts"
+        );
+        assert_eq!(*two[2], *"another fragment");
+    }
 }
