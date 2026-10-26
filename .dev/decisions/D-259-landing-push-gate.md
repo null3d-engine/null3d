@@ -91,8 +91,8 @@ them found that the test and the pack it calls also read these:
   `tests/pages/assets/models/asset-scene.glb`;
 - the root `docs/` folder and the two license files, which the pack copies into the packages;
 - the helpers that the test and the pack import, such as `tools/lib/packages.ts`;
-- the WebAssembly cores, the asset tool and the shader compiler, which the pack builds from
-  `crates/`.
+- the WebAssembly cores, the asset tool and the shader compiler, which `bun run build` makes from
+  `crates/` and the pack puts in the tarballs.
 
 CI's `packages` job has no pass key, so it runs on every push. A range that changed only `docs/`,
 or only the WGSL library in `crates/null3d-shaders/`, skipped the local test and could still fail
