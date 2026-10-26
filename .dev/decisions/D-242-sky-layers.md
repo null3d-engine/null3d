@@ -122,14 +122,15 @@ The engine cannot tell how fast a layer moves, because its animation lives insid
 layer declares `refresh`, the seconds between the map's captures of it, defaulting to one second;
 0 marks a layer that stands still, whose map then fills only when the sky or the layer's values
 change. A fill spreads over some twenty frames, a stage a frame, so a layer's look costs a rate:
-one fill each `refresh` seconds, 20 stage draws a second at the default. A page that asks for a
+one fill each `refresh` seconds, 15 stage draws a second at the default. A page that asks for a
 faster capture gets one fill after another with no idle stage, which is the most the map can do,
 and nothing is added to a frame.
 
 ### How the layer reaches the CPU sky light
 
-The light is measured from the map rather than modelled from the layer. At a fill's last stage a
-new fragment, `fs_feedback`, sums the map's chain of levels onto the nine spherical harmonics
+The light is measured from the map rather than modelled from the layer. At the stage that the page
+names, a new fragment, `fs_feedback`, sums the map's chain of levels onto the nine spherical
+harmonics
 coefficients of its diffuse light, in three.js's order and scale, on the same grid and with the same
 solid angles that the CPU's own projection of the core sky uses (`crates/null3d-render/
 src/sky_light.rs`). It draws nine texels of 32-bit words into an `RGBA32UI` target, which the frame
@@ -139,12 +140,61 @@ takes them as the map's diffuse light, in place of the CPU model's.
 
 Because the coefficients come from the texels the reflections read, the two places hold one sky by
 construction: no second implementation of the layer exists, the add-on writes nothing for it, and a
-layer of any shape lights the scene. The capture runs a stage or two before the fill's copy, so the
-read lands first and no frame draws the map's levels beside the core sky's light alone; until a
-new layer's first capture lands the map keeps the CPU model's own coefficients, so no frame loses
-its light and none flashes dark before the layer arrives. The picture test checks that order on
-every GPU tier: the light reaches the scene with the map's levels or a frame before them, never
-after.
+layer of any shape lights the scene. The capture runs a stage or two before the fill's copy, and
+the copy waits up to four frames for that read, so the levels usually publish with the light. A
+read slower than four frames publishes them first, as do a first fill after a device loss and a
+held frame, which never wait. Until a new layer's first capture lands the map keeps the CPU model's
+own coefficients, so no frame loses its light and none flashes dark before the layer arrives. The
+picture test checks that order on every GPU tier, within those limits.
+
+### The capture's stage, fixed 25 October 2026
+
+The first build recorded the capture only at the copy stage. The core puts the readback buffer in
+the command of the stage that the page names. So no fill ever summed the map's light. The
+reflections held the layer while the diffuse light kept the CPU model of the core sky. So
+`sky-layer-light` failed on all three GPU tiers, with a rough sphere that never turned green. Both
+backends now sum the light at the stage that the core names, before the copy publishes the levels.
+
+The WebGL2 layer's programs took the cube's texture unit from the sky draw, which samples no cube
+texture on that path. Installing a layer therefore failed the first stage with E1405, and no tier
+drew a map with it. The capture's own program names that unit now.
+
+Two smaller faults came with those. A capture draws the frame again to read it back, and the light
+capture ran a second time in that drawing, into a buffer whose read was still mapping it, which the
+device refused with E1305. The capture now runs only in the frame that the page draws. And the read
+of the nine coefficients took the first word of every third texel, where the target holds one texel
+each, so the diffuse light mixed the coefficients of different directions; it now reads each
+texel's first three words.
+
+The test that tells whether a capture landed compared only the first twenty-seven words. That is
+the number of coefficients, where their nine four-word texels take thirty-six. So a capture that
+moved only the last two coefficients read as unchanged, and the map kept the light before them. It
+now covers every word that the coefficients occupy, from 26 October 2026. A unit test moves only the
+last coefficient.
+
+The last fault was why the light arrived one fill after the levels. The drawing that a capture makes
+ran the frame's own command to make each buffer, and a second make destroys the buffer it makes and
+builds another. The light read of the ring then failed with "Buffer was destroyed before mapping was
+resolved", so its fill's light never landed and the map's next fill, a grace of frames later,
+supplied it one fill late. A capture now keeps the buffers that the frame made: three of the four
+light reads of a run failed this way. With that fixed, `sky-layer-light` passes the whole spec on
+webgpu, compatibility mode and webgl2 on SwiftShader, in 8 to 9 seconds on each tier at the Mac's
+load of 82 to 90 on 18 cores.
+
+A slow read still let the levels publish first. Full run 40172879653, at `89bd5640a` with the
+kept-buffers fix in, failed the order check on WebGL2: the mirror took the layer two frames before
+the rough sphere did, where the spec allows one. WebGPU and compatibility mode passed. Nothing held
+the copy for that read: it runs two stages before the copy, and the copy published the levels
+whether the read had landed or not. The copy now waits for the capture that its own fill made, up
+to four frames, and publishes without it after that; a read slower than four frames still publishes
+the levels first. The core's tests check that the copy waits and that a landing ends the wait.
+
+Two figures in the runs need their true reading. The scene suite passed 870 of 870 when it ran on a
+quieter machine; the checker, under load, measured 868 of the same 870, where two tests stopped at
+their time limit in files that this branch does not touch. And the back ends import only
+`environment-words`, while the two generator modules still import the steps module. Those modules
+load on first use, so a page that uses no feature downloads neither, and the download test passes
+10 of 10.
 
 ### The cost
 
@@ -155,7 +205,7 @@ after.
 | The read back | 256 bytes copied and mapped asynchronously, once a fill, a stage or two before the copy publishes the levels |
 | A frame | Nothing, and no frame waits: the projection and the read belong to the fill, the read is a map promise on WebGPU and a fence polled with a zero timeout on WebGL2, and a fill that cannot start while another runs starts on a later frame |
 | A still layer, `refresh` 0 | One fill when the layer is installed, replaced or changed, and when the sky moves past a step |
-| A moving layer | A rate: one fill each `refresh` seconds, so 20 stage draws a second at the default of 1 s, and a stage draw a frame while a fill runs. A page that asks for faster gets one fill after another with no idle stage, which is the most the map can do. The rate is the page's to choose: the engine does not slow it to the frame rate or hold it back |
+| A moving layer | A rate: one fill each `refresh` seconds, so 15 stage draws a second at the default of 1 s, and a stage draw a frame while a fill runs. A page that asks for faster gets one fill after another with no idle stage, which is the most the map can do. The rate is the page's to choose: the engine does not slow it to the frame rate or hold it back |
 
 The GPU projection mirrors the CPU's basis and solid angle in WGSL, as the engine's sky model is
 already mirrored between `null3d::atmosphere` and `sky_light.rs`. The two grids are the same, so a
@@ -169,10 +219,44 @@ sky, installs a green layer, removes it, and checks that each sphere takes the l
 loses it, and that neither shows it while the other does not beyond the frames that the light takes
 to follow the map. It runs on every GPU tier through the `sky` plan.
 
-The aurora demo's pictures move in both reference sets: its ice now mirrors the curtains and the ice
-and snow take their green from the sky's light, and the sketch's stand-in ambient light is gone. The
-references are redrawn from the first run after this change, on the Mac's GPU and with `CI=1`, and
-`.dev/image-tests.md` gains the remake's entry with its figures then.
+The aurora demo's six pictures were redrawn on 25 October 2026, in the form [image
+tests](../image-tests.md#references) records. The old ones were drawn on 24 October, before the
+layer reached the map, and they still held the demo's stand-in ambient light, which the demo no
+longer has. Against them the drawn picture differs in 48.9 per cent of its pixels by more than ten
+levels. The new picture's ice has a mean green of 6.6, where the old one's was 22.5. The manifest's
+tolerance weighs a pixel's colour distance rather than its levels, so those pixels passed it, and a
+passing comparison alone did not mean the same picture. The Mac's GPU drew that set, and CI's software GPU draws the other.
+
+`sky-layer-light` keeps no pictures: it reads the spheres' colours, so it needs no reference.
+
+The sun dimming had only its values' plumbing and the shader's multiply until 25 October 2026.
+`tests/image/sky-layer-sun.spec.ts` now draws it: a sky whose sun disc fills the middle of a narrow
+view, and a layer that covers nothing but hides the whole sun. It reads the disc's middle and a block
+of plain sky before the layer, with it, and after it is removed. The disc darkens by more than 40
+levels and comes back within 4, while the plain sky stays within 4. With the layer's `sun` given 0,
+the disc stays at 255 and the check fails, so the check fails without the effect. It passes on
+webgpu, compatibility mode and webgl2 on SwiftShader.
+
+The task's other proofs already stand on the branch. `tests/image/errors.spec.ts` runs in every
+engine mode and in the production build, and it asserts the E1223 refusal in a running sketch.
+
+The held frame's map may hold no aurora, and that is an inference. The checker measured the ice's
+green excess fall from +7.7 to -0.8 against the sky above, which is a blue sky with no curtains.
+The draw thread shows the map's build of the layer's shader present at every stage, and the light
+capture running. Its light can still miss a held frame: a held frame is drawn once, and the capture
+replays that drawing, so a light that lands after the frame's list is recorded cannot enter the
+picture. On a loaded machine the light read was queued at 0.87 seconds and landed at 4.1, while the
+capture answered at 5.65. The reflections are a separate question, and the checker's mechanism for
+them is that a layer installed during setup arrives after the first fill, and hold mode draws no
+later frame for the retry fill that would bring it in. That needs a proof, and one page can give it:
+install the layer during setup and read the ice on the first frames, blue first and green only after
+the next fill, or read one sky-map texel where the layer is bright. Until then it stays an
+inference.
+
+The demo's cloud coverage does not suppress the layer. The aurora's brightness scales by the clear
+fraction, about 0.96 at the demo's settings (`examples/addons/aurora/aurora.wgsl`), not by the
+coverage. A demo whose ice shows a plain blue sky is a look question under the owner's better-look
+rule, and it is with the owner.
 
 ### The map's light and a layer that never arrives
 
@@ -197,18 +281,18 @@ worker started, so it stopped as E1405. Four jobs of each CI run carried one of 
 and 40222451866. WebGPU was not affected: a bind group names every binding of its layout, so a
 program that reads no cube still has one bound.
 
-The layer-light page is red for a second cause. At this tip the capture of the map's light never
-runs, on any GPU tier. The stage split of `333a05a78` put the capture's buffer in the stage that the
+The layer-light page is red for a second cause. At `93720008d` the capture of the map's light never
+ran, on any GPU tier. The stage split of `333a05a78` put the capture's buffer in the stage that the
 page names, which draws. Both generators run the capture only in the copy stage, which has no
-draws. So no fill sums the map's light, and the rough sphere reads 0 in every capture. A stride
-fault in the CPU's read of the coefficients is a second, smaller fault. On the sky layer's branch,
-on the software GPU, the page takes the layer in the reflections and in the diffuse light on
-WebGPU, compatibility mode and WebGL2, and compatibility mode and WebGL2 passed the whole spec in
-one run (`8bebdff7f`). Its order check still fails under load, where the light can arrive one fill
-after the levels. That branch's D-242 records this as an open fault. That page therefore has a fix
-for each of its two causes, and this record holds the first.
+draws. So no fill summed the map's light, and the rough sphere read 0 in every capture. A stride
+fault in the CPU's read of the coefficients is a second, smaller fault, and the sky layer's branch
+carries the fix for both (`8bebdff7f`). On that branch the `sky-layer-light` page passes the whole
+spec on WebGPU, compatibility mode and WebGL2 on the software GPU, and the light reaches the scene
+with the levels. That page therefore has a fix for each of its two causes, and this record holds
+the first.
 
-The generator now asks the capture for that unit, which is its only use. The unit test
+The generator now asks the capture for that unit, which is its only use. On this branch that use
+runs, and the page's WebGL2 tier shows the capture binding the chain at that unit. The unit test
 `packages/engine/src/gpu/webgl2/environment.test.ts` builds a layer's programs with a stand-in host
 that answers each lookup from the generated shader build. It refuses with the same message when the
 programs' own code asks a program that samples no cube.

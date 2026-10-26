@@ -284,7 +284,7 @@ jobs:
       # shards, about 80 job-minutes.
       #
       # The plugin's hash names the files that decide what the compiler and the shader modules
-      # hold, and the plugin and test helper that its tests import. Its tests' own hash names the
+      # hold, and the plugin and test helpers that its tests import. Its tests' own hash names the
       # two files whose declarations they compare. The packing test's parts each key instead on the
       # `.wgsl` files and the scripts with tagged WGSL of their share of the test pages, the
       # fixtures and the demos, which the next step hashes: a change to a page or a demo that holds
@@ -303,7 +303,7 @@ jobs:
           echo "rust-shaders=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml') }}" >> "$GITHUB_OUTPUT"
           echo "rust-workspace=${{ hashFiles('crates/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml', 'packages/engine/src/generated/gpu.ts', 'packages/engine/src/generated/core.ts', 'packages/engine/src/errors/codes.ts', 'tests/fixtures/light-clusters.bin', 'tests/pages/lib/dfg-table.ts', 'tests/pages/assets/environments/**', 'examples/addons/aurora/aurora.wgsl', 'examples/addons/car-paint/paint.wgsl', 'tools/shader-compiler.ts') }}" >> "$GITHUB_OUTPUT"
           echo "shader-compiler=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shader-compiler.ts', 'packages/vite-plugin/src/compiler-calls.js', 'packages/vite-plugin/src/shader-compiler.ts', 'packages/vite-plugin/src/shader-types.ts', 'package.json') }}" >> "$GITHUB_OUTPUT"
-          echo "plugin=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'tools/lib/wgsl-modules.ts', 'tools/lib/build-cache.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}" >> "$GITHUB_OUTPUT"
+          echo "plugin=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'tools/lib/wgsl-modules.ts', 'tools/lib/build-cache.ts', 'tests/lib/run-budget.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}" >> "$GITHUB_OUTPUT"
           echo "plugin-tests=${{ hashFiles('tests/fixtures/typed-uniforms/**', 'tests/pages/sketches/shaders/**') }}" >> "$GITHUB_OUTPUT"
       - name: The parts' keys, and the jobs whose every part passed
         id: passes
@@ -923,7 +923,7 @@ jobs:
     # 40085184470, the end of that run, while the others had ended by 5.9. A part whose inputs
     # passed in an earlier run passes again, as the shader-compiler shards do. Its key, which the
     # passes job works out, names the files that decide what the compiler and the shader modules
-    # hold, the plugin and the test helper that its tests import, and the repository's WGSL that the
+    # hold, the plugin and the test helpers that its tests import, and the repository's WGSL that the
     # part compiles: the modules with WGSL of the test pages, the fixtures and the demos for the
     # packing test, which tools/lib/wgsl-modules.ts lists, and the two files whose declarations the
     # plugin's tests compare for the other part.
@@ -998,8 +998,10 @@ jobs:
     # The npm packages as a developer installs them: each public package packed as the publish job
     # packs it, and checked for every file it needs, then installed into a fresh Vite project where
     # the command-line tool's test command type checks the project and draws its sketch on every
-    # GPU tier, and Vite builds it for production. Then the project builds a page of its own layout
-    # around a copy of examples/, as the website does, and two demos must start from that build.
+    # GPU tier, and Vite builds it for production. Once that build has ended, the project also
+    # builds a page of its own layout around a copy of examples/, as the website does, beside the
+    # production build's start checks. Two demos, and a comparison in each engine, must start from
+    # the page's build.
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 20

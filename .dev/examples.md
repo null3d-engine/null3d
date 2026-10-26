@@ -53,7 +53,7 @@ The website's repository holds this repository as a git submodule, pinned to the
 
 Until the first npm release, the website builds the engine from the submodule instead: `bun install` and `bun run build` in the submodule, then the same config with the repository's `sourceResolve`.
 
-`bun run test:packages` checks this path in CI. After its fresh project passes, it copies `examples/` into the project, where a submodule would sit. Beside it, it writes a page of its own layout that imports only the list and `startDemo`, and builds that page against the packed tarballs, with `VITE_NULL3D_SAMPLES_BASE` set. Then the instances and security camera demos must start from the build, and so must Factory in each engine. Those make their content in code, so the check needs no sample files.
+`bun run test:packages` checks this path in CI. Once its fresh project has passed the `test` command and built for production, it copies `examples/` into the project, where a submodule would sit. Beside it, it writes a page of its own layout that imports only the list and `startDemo`, and builds that page against the packed tarballs, with `VITE_NULL3D_SAMPLES_BASE` set. That build runs while the production build's start checks do. Then the instances and security camera demos must start from the build, and so must Factory in each engine. Those make their content in code, so the check needs no sample files.
 
 ## The examples page of a clone
 

@@ -14,7 +14,7 @@
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { HEAVY_CHECKS } from './lib/heavy-checks.ts';
-import { budgetNote, checkTimeoutMs } from './lib/run-budget.ts';
+import { budgetNote, checkTimeoutMs, LOAD_FACTOR_ENV, loadFactor } from './lib/run-budget.ts';
 import { exactTestPath } from './lib/test-paths.ts';
 
 /** The repository, which the checks' files are relative to. */
@@ -25,7 +25,8 @@ const CEILING = './tests/lib/memory-ceiling.ts';
 let failed = 0;
 for (const { file, ceilingMiB } of HEAVY_CHECKS) {
 	const started = Date.now();
-	const timeout = checkTimeoutMs();
+	const factor = loadFactor();
+	const timeout = checkTimeoutMs(factor);
 	const result = spawnSync(
 		'bun',
 		[
@@ -39,7 +40,11 @@ for (const { file, ceilingMiB } of HEAVY_CHECKS) {
 		{
 			cwd: ROOT,
 			stdio: 'inherit',
-			env: { ...process.env, NULL3D_TEST_MEMORY_MIB: `${ceilingMiB}` },
+			env: {
+				...process.env,
+				NULL3D_TEST_MEMORY_MIB: `${ceilingMiB}`,
+				[LOAD_FACTOR_ENV]: `${factor}`,
+			},
 		},
 	);
 	const seconds = Math.round((Date.now() - started) / 1000);
