@@ -507,8 +507,8 @@ fn compile_jobs(
 }
 
 /// How many builds a thread compiles before its composers start again empty. A composer keeps the
-/// library modules it built for every set of shader defs it has met, so what a thread holds grows
-/// with every build it compiles. Starting again bounds it; D-235 gives the measured effect.
+/// library modules it built for every set of shader defs it has met. So what a thread holds grows
+/// with each new set that its builds bring, and starting again bounds it. D-235 gives the effect.
 const COMPOSER_BUILDS: usize = 200;
 
 /// [`COMPOSER_BUILDS`], or the count that NULL3D_SHADER_COMPOSER_BUILDS sets, where zero keeps the
