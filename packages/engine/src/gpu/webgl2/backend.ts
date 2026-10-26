@@ -2183,12 +2183,12 @@ export class WebGL2Backend {
 		if (source.target === gl.TEXTURE_2D_ARRAY && attachment === gl.COLOR_ATTACHMENT0) {
 			const right = sourceX + width;
 			const top = sourceY + height;
-			const program = this.beginSpareDraws(COPY_PROGRAM, source, right, top);
+			const program = this.beginSpareDraws(COPY_PROGRAM, source, source.format, right, top);
 			for (let k = 0; k < layers; k++) {
 				this.drawIntoSpare(program, source, sourceLevel, sourceLayer + k, right, top);
 				this.copyFromSpare(destination, level, x, y, layer + k, sourceX, sourceY, width, height);
 			}
-			this.endSpareDraws(source);
+			this.endSpareDraws(source, source.format);
 			return;
 		}
 		if (!this.copyFramebuffer) this.copyFramebuffer = gl.createFramebuffer();

@@ -3921,7 +3921,7 @@ pub fn set_light_map_texture(light: u32, texture: u32, size: u32) -> u32 {
                 light_tables::MAX_IMAGES as u32,
             ));
         }
-        0
+        Ok(0)
     })
 }
 
