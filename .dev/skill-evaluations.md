@@ -17,7 +17,7 @@ Result: with the skill, 55 of 60 graded expectations passed, 92%. Without it, 44
 | Skill | `skills/null3d-develop/SKILL.md`, SHA-256 `f5f7f480bf56026120e9112ffe3ecd51d3b01a41cf0c7e50b468d6f70871a76b`, 260 lines |
 | Cases | 10 cases and 60 expectations, from `evals.json` in the source tree |
 | Trigger queries | 20 queries, from `trigger-queries.json` in the source tree |
-| Date | 26 October 2026, on the milestone branch after the merge with main's line |
+| Date | 26 October 2026, on the task branch after it merged `m3-start` |
 | Model | deepseek-flash[1m] through the Claude Code command line |
 | Tools | read, file search and directory listing; no file writes, so every answer is the run's final message |
 | Environment | a copy of the repository at the merge commit, with both skills' `evals/` folders and this page removed, and no `.internal` folder |
@@ -37,17 +37,20 @@ Case 2's input file was copied to a folder outside the repository that holds onl
 
 Neither condition may read evaluation material. The copy the runs used holds no case file and no
 evaluation report, and both prompts forbid every evaluation folder and the maintainers' private
-folder. Every session's tool calls and tool results were searched for those paths and for the
-wording of the expectations. None matched.
+folder. Every session's tool calls and tool results were searched for the evaluation folders'
+paths, the case file's key names and the names of the run's files. None matched. A wider scan of
+the sessions found only harmless text: exclusion globs, a link to this page, and the deleted-file
+names noted below.
 
 One detail of the sanitized copy: its git status still names the deleted case file and the deleted
 `slow-sketch.ts` fixture. Those names therefore appear in a session's own file listing. Only the
 names were visible, not the contents, so the measurement is unaffected.
 
 Grading is blind per case. A separate model call receives the case's request, its expectations and
-both answers as A and B. The order swaps by case, and the judge is told to ignore any sentence about
-which sources the author used. It answers "pass" or "not pass" for each expectation, with a short
-reason. This page maps each side back through the recorded order.
+both answers as A and B. The order is a seeded random draw: the answer without the skill came
+first in cases 1 to 5, and the answer with it came first in cases 6 to 10. The judge is told to
+ignore any sentence about which sources the author used. It answers "pass" or "not pass" for each
+expectation, with a short reason. This page maps each side back through the recorded order.
 
 The trigger test gives a model the two skills' names and descriptions, and the 20 queries, and asks
 which skill applies to each. Two queries ask for a three.js port, and the port skill is the right
@@ -91,15 +94,26 @@ tools and engines chose none.
 - **Case 4, the baseline.** It sets no layer mask on picking and does not present `scene.raycast`.
 - **Case 9, both conditions.** Neither calls the raw-physics approach temporary until the add-on
   ships. The baseline also leaves out the library's own per-call objects.
-- **Cases 3 and 10, both conditions.** Neither answer suggests checking the WebGL2 path.
+- **Case 3 without the skill, and case 10 in both conditions.** None of those three answers suggests
+  checking the WebGL2 path. Case 3's answer with the skill names `?gpu=webgl2` and passes.
 
 ## Limits of this run
 
-- This is one run per case and condition. A model's answers vary between runs, so a one-point
-  difference is not a trend.
-- Two skill runs ended without a usable answer: case 1 gave a refusal with no code, and case 10
-  returned `{"ok": true}`. Both ran again with the same prompt, and the table uses the second
-  answers.
+- This is one graded run per case and condition. A model's answers vary between runs, so a
+  one-point difference is not a trend.
+- More runs happened than the table shows. Cases 1 and 2, both conditions, started twice and were
+  killed after 64 seconds with exit code 143. Those four starts produced no answer. Cases 3 and 4,
+  both conditions, ran to completion, but a second pair replaced them and neither old pair was
+  graded. Every run appends a line to the run summary. The kept file holds only the twenty graded
+  runs, so the killed and replaced runs are not in it.
+- Two skill runs ended with a saved answer that held no usable code. Case 10 returned
+  `{"ok": true}`. Case 1's first answer ended with "The code above is checked": the code sat in an
+  earlier message, which the harness does not keep. The run was repeated to get a complete answer,
+  and the table uses the second answers.
+- Case 9's sixth point is a known miss, not a grade to recover. Intake step 5 asks what a later
+  version changes. Step 2 asks for the step that adds a missing feature. The physics and text rows
+  in the skill and in the template name no such step, and no published page names one. The answer
+  with the skill therefore names no later version, and a rerun would not give one.
 - The time and token figures come from the command line's own report. The cache figures cover the
   context that the harness re-reads on each turn, so they are not a price.
 - The judge is one model call per case, so a judgement is not cross-checked. Each answer and verdict
@@ -111,6 +125,6 @@ tools and engines chose none.
   `@null3d/water` now answers. A baseline answer that chose the add-on lost five expectations, and
   the case rewarded a hand-rolled surface that the new table warns against. The request now asks
   for a liquid-mercury surface, which the add-on does not cover.
-- An earlier run on the same day was thrown away. Its agents could read the case file under
-  `skills/null3d-develop/evals/`, which holds the expectations, and one listed the helper's report
-  folder. No figure above comes from it.
+- An earlier run on the same day was thrown away. Its case 6 run with the skill read the case file
+  under `skills/null3d-develop/evals/`, which holds the expectations. It used that file's
+  phone-cost line. One run listed the helper's report folder. No figure above comes from it.
