@@ -37,6 +37,7 @@ import {
 	touchCacheEntry,
 	writeFileAtomic,
 } from './build-cache';
+import { refuseInQuietWindow } from './quiet-window';
 
 /** The folder that the shader build writes its modules into. */
 export const MODULE_DIR = 'packages/engine/src/generated';
@@ -369,6 +370,7 @@ export function announceColdBuild(entries: string): void {
  * 2026 a landing's commit waited 8 minutes behind a helper's build, at no processor time.
  */
 export function shaderModulesUnlessBusy(root: string): boolean {
+	refuseInQuietWindow('The shader build');
 	const inputs = inputHash(root);
 	if (isFresh(root, inputs) || restoreFromCache(root, inputs)) return true;
 	const holder = freshShadersRequired() ? undefined : liveLockHolder(shaderLock());
@@ -724,6 +726,7 @@ function pruneCaches(): void {
  * Returns true when it ran the build.
  */
 export function ensureShaderModules(root: string): boolean {
+	refuseInQuietWindow('The shader build');
 	const inputs = inputHash(root);
 	if (isFresh(root, inputs)) return false;
 	if (freshShadersRequired()) throw new Error(staleSetMessage(root));

@@ -36,3 +36,11 @@ Six tasks join M4:
 ## Consequences
 
 - `tools/hooks/task-ids.txt` lists M4-O1 to M4-O6, so commits can name them.
+- Until 26 October 2026, the built WebAssembly modules held the folders of the machine that built
+  them, and so its user name. The compiler wrote the Rust toolchain's folder and cargo's home into
+  their panic locations. The shader compiler module, which `@null3d/vite-plugin` publishes, held 183
+  such paths: 22 from the toolchain and 161 from 21 crates, such as naga and regex. The asset tool's
+  module, which `@null3d/cli` publishes, held 27, from the toolchain and 3 crates. The engine's two
+  cores held 9 and 20. The build now gives these folders fixed paths. It refuses a module that still
+  holds a folder of the machine. So no built file names the builder's machine, as M4-O5 asks of the
+  text ([Benchmarks](../benchmarks.md#download-size)).

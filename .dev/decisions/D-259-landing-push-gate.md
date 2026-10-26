@@ -42,7 +42,7 @@ The options do not change how anything looks.
 ## Decision
 
 The CI session checks and pushes. The landing session hands it each range with its base and head,
-and names the CI session's own commits in it. The CI session runs six checks on the range, and
+and names the CI session's own commits in it. The CI session runs seven checks on the range, and
 sends each slow one through the job queue:
 
 - `bun run limits`, read row by row;
@@ -51,14 +51,18 @@ sends each slow one through the job queue:
 - the size check, `bun run build:check-size`;
 - the whole unit suite, `bun run test`;
 - the heavy checks, `bun run test:heavy`: the tests that hold gigabytes of memory, which the unit
-  suite leaves out.
+  suite leaves out;
+- for a range that changes a file under `packages/`, the fresh-project test, `bun run test:packages`.
+  It needs `NULL3D_ENGINE_SHADERS` set to the engine's `src/generated` folder. It packs every public
+  package as CI's `packages` job does. On 26 October 2026 a range passed the other six checks and
+  failed that job, because the wind add-on's shader library did not compile when the package built.
 
 The CI session runs every unit test and every heavy check, not only the tests of the changed code.
 A test far from a change can pin a figure that the change moves. The add-on check command, the
 command line tool's `check-addon`, holds its own copy of the budget for each file that loads after
 the start. Its test compares that copy with the engine's.
 
-When all six checks pass, the CI session pushes with `NULL3D_MILESTONE_LANDING=1`. The push hook
+When all seven checks pass, the CI session pushes with `NULL3D_MILESTONE_LANDING=1`. The push hook
 reads the messages and trailers from where the branch left main, as CI's `commits` job does. It
 checks the merges and copies among the commits that the range adds. It also runs the guards over the
 tree, the quick check (`bun run check`) among them. A fresh helper reads the CI session's own
