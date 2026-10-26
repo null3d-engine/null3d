@@ -199,7 +199,7 @@ describe('the render scale steps', () => {
 	});
 
 	it('counts a step down late in the trial of a step up as its failure', () => {
-		// On the warm iPad, a step up held the target at first and fell behind 9 to 15 s later.
+		// On the warm iPad, a step up holds the target at first and falls behind 9 to 15 s later.
 		const { run, controller, untilStep } = controlled(500, 650, 600);
 		const raised = untilStep(EASY);
 		expect(controller.scale).toBe(650);
@@ -285,7 +285,7 @@ describe('the render scale steps', () => {
 describe('the trial of a step down', () => {
 	/**
 	 * Frames several times slower than `SLOW`, as on CI's software GPU after the step below the
-	 * whole scale turned on the two-step upscale (D-237).
+	 * whole scale turns on the two-step upscale (D-237).
 	 */
 	const SLOWER = { frame: 7 * SLOW.frame, delay: 7 * SLOW.delay };
 	/** The time at which a step down at `stepped` is taken back, when the frames after it are slower. */

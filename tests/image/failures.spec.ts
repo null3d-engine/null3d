@@ -48,6 +48,21 @@ for (const mode of ENGINE_MODES) {
 	});
 }
 
+// An engine can fail before a page attaches its handler, as a page that does its own work first
+// does. The first handler that attaches must still hear the failure.
+for (const mode of ENGINE_MODES) {
+	test(`a failure reported before the page listens reaches onFailure, ${mode.name}`, async ({
+		page,
+	}) => {
+		await page.goto(`failures.html?case=late-handler&${mode.query}`);
+		const result = await pageResult<FailureResult>(page, 30_000);
+		expect(result.error).toBeUndefined();
+		expect(result.codes[0]).toBe('E1404');
+		expect(result.messages[0]).toContain('the frame step failed on purpose');
+		expect(result.ticks).toBeGreaterThan(0);
+	});
+}
+
 for (const mode of ENGINE_MODES) {
 	test(`a custom material whose builds do not download reaches onFailure as E1424, ${mode.name}`, async ({
 		page,

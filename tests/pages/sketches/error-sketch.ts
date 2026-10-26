@@ -27,8 +27,8 @@ const caught: unknown[] = [];
 const FIX_WAIT_MS = 250;
 /**
  * The most the sketch waits for the fixes' text. A thread's first error fetches the text, and a
- * loaded machine or a production build can take longer than a second over it: on 20 October 2026
- * a run reported the short messages after the fixed wait.
+ * loaded machine or a production build can take longer than a second over it, so a fixed wait can
+ * report the short messages.
  */
 const FIX_LIMIT_MS = 15_000;
 /** A phrase that every message holds only once the fixes' text has arrived. */

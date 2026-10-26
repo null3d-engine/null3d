@@ -1,8 +1,8 @@
 # D-10: WebGL2 skinning
 
-Status: decided by its rule on 2026-10-02, and built on 2026-10-04. Date: 2026-10-02. Task: M1-L2. Test: T-21.
+Status: decided by its rule. Built by M2-C4: WebGL2 skins in the vertex shader of every pass. Task: M1-L2. Test: T-21.
 
-Summary: Skin in the vertex shader of every pass: transform feedback made frames slower on the S24+ in every case, and on the iPad in most. The skin bit doubles the WebGL2 mesh builds (+3.6 KB after Brotli per shader file), and skinned crowds stay instanced.
+Summary: Skin in the vertex shader of every pass. Transform feedback made frames slower on the S24+ in every case, and on the iPad in most. The SKIN builds load on first use, and skinned objects of one mesh and material draw as instances.
 
 ## Question
 
@@ -25,7 +25,7 @@ Each figure is the median of 12 batches of frames drawn back to back. Each batch
 
 ### Reference: the Mac
 
-MacBook Pro M5 Max, Chrome through Playwright (headless), 2 October 2026. GPU time from timer queries, per frame:
+MacBook Pro M5 Max, Chrome through Playwright (headless). GPU time from timer queries, per frame:
 
 | Characters | Cascades | Characters drawn: main / each cascade | Skinned once | Vertex shader, frame / GPU ms | Transform feedback, frame / GPU ms | Saved |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -36,7 +36,7 @@ Both paths drew the same image in both runs: no pixel differed.
 
 ### The S24+ and the iPad
 
-Run 20261002-133456-skinning, 2 October 2026: Galaxy S24+ with Chrome 154, and iPad Pro 11-inch with Safari 26.6.2. Neither browser has GPU timer queries, so the figures are whole frames in ms. "Saved" is the share of the vertex shader path's frame time that transform feedback saves; a negative share is a cost.
+Run 20261002-133456-skinning: Galaxy S24+ with Chrome 154, and iPad Pro 11-inch with Safari 26.6.2. Neither browser has GPU timer queries, so the figures are whole frames in ms. "Saved" is the share of the vertex shader path's frame time that transform feedback saves; a negative share is a cost.
 
 | Characters | Cascades | Characters drawn: main / each cascade | S24+: vertex shader | S24+: transform feedback | S24+: saved | iPad: vertex shader | iPad: transform feedback | iPad: saved |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -80,31 +80,29 @@ three.js's WebGL renderer also skins in the vertex shader. It reads the bone mat
 
 ## How the engine skins on WebGL2
 
-Task M2-C4 built the decision on the parts that it shares with M2-C3, the task of [D-20](D-20-webgpu-skinning.md). These are the joint texture, scene command 11 (`SET_SKIN`), the bounds that each pose moves, and `skinObject`. Both GPU paths read one joint texture. WebGPU skins in a compute pass, and WebGL2 in the vertex shader.
+Task M2-C4 built the decision on the parts that it shares with M2-C3, the task of [D-20](D-20-webgpu-skinning.md). These are the joint texture, scene command 11 (`SET_SKIN`), the bounds that each pose moves, and `skinObject`. Both GPU paths read one joint texture, and both skin in the vertex shader by default. WebGPU keeps a compute pass for the meshes that its vertex shaders cannot skin ([D-20](D-20-webgpu-skinning.md)).
 
-- Every WebGL2 template that draws a mesh builds with the `SKIN` permutation bit. These are the standard material with and without maps, and unlit with and without a map. They are also the test template of texture coordinates, the shadow depth template (cascades and the atlas's tiles) and the debug views. A skinned object's pipeline is its usual pipeline with the bit (`skinned_in_vertex_shader` in `skinning.rs`). Its vertex format keeps the joints and weights. The scene's buckets, the casters' buckets and the transparent pass's buckets all take the bit. In the transparent pass, the layout that both paths share gives each skinned object a bucket of its own. Its rows stay in the resident texture.
-- The vertex shader blends the vertex's four joints' 3 × 4 matrices by its weights, as they are, and skips a joint whose weight is 0. The code is `skin_of`, `skinned_point` and `skinned_direction` in `null3d::mesh`, which WebGPU's SKIN builds of `?skinning=vertex` share. It moves the position and turns the normal and the tangent by the blend in the mesh's space. The instance's world matrix then places them, and its normal matrix turns the normal. These are the steps of the WebGPU compute pass, and of three.js's `skinning_vertex` and `skinnormal_vertex` chunks. So every tier draws the skinning image tests' references: `skinning`, `skinning-shadows` and `skinning-quantized` pass on WebGL2 against the WebGPU images, on the Mac's GPU and on SwiftShader. A custom material's vertex offset moves the posed vertex, as on WebGPU, where the compute pass skins before any vertex shader runs.
+- Every WebGL2 template that draws a mesh builds with the `SKIN` permutation bit. These are the standard material with and without maps, and unlit with and without a map. They are also the test template of texture coordinates, the shadow depth template (cascades and the atlas's tiles) and the debug views. A skinned object's pipeline is its usual pipeline with the bit (`skinned_in_vertex_shader` in `skinning.rs`). Its vertex format keeps the joints and weights. The scene's buckets, the casters' buckets and the transparent pass's buckets all take the bit. In the transparent pass, the layout that both paths share gives each skinned object a bucket of its own. Its rows stay in the resident texture. The SKIN builds sit in the skinning feature's files, which a page downloads with its first skinned mesh ([D-56](D-56-first-use-shader-files.md)).
+- The vertex shader blends the vertex's four joints' 3 × 4 matrices by its weights, as they are, and skips a joint whose weight is 0. The code is `skin_of`, `skinned_point` and `skinned_direction` in `null3d::mesh`, which WebGPU's SKIN builds share. It moves the position and turns the normal and the tangent by the blend in the mesh's space. The instance's world matrix then places them, and its normal matrix turns the normal. These are the steps of the WebGPU compute pass, and of three.js's `skinning_vertex` and `skinnormal_vertex` chunks. So every tier draws the skinning image tests' references: `skinning`, `skinning-shadows` and `skinning-quantized` pass on WebGL2 against the WebGPU images, on the Mac's GPU and on SwiftShader. A custom material's vertex offset moves the posed vertex, as on WebGPU.
 - WebGL2's buckets group objects by mesh and material, and the job workers cull each object by its own sphere. So skinned objects of one mesh and material share a bucket, and a crowd draws in one instanced draw per part and pass. Each instance finds its joints through a second data texture. It holds the first joint of the animated instance that skins each source row. Its layout is the index list's: R32UI, 2,048 rows per texture row. Only scene objects are skinned, and a scene slot's row is its slot. The texture changes only with the scene's structure, and the upload writes the slots from the first skinned one to the last.
-- A bucket for each skinned object was rejected. It would need no second texture, since the draw's record could hold the first joint. But a crowd of 100 characters of one part with 3 cascades would make 400 draws a frame in place of 4. Firefox has no `WEBGL_multi_draw`, so each of those draws is a call there. On WebGPU, M2-C3 gives each skinned object its own bucket, because each draws its own region of skinned vertices.
-- GLSL has no binding numbers, so the WebGL2 backend gives each binding a slot (`GROUP_BASES` in `programs.ts`). Group 2, the data textures, grew from four bindings to six: the joint texture at binding 4 and the first joints at binding 5. The bases are now 0, 11, 14 and 20. Group 3's samplers take places 26 to 31, which are no texture units, so its textures stay below the upload unit (31).
-- Each frame writes the joint matrices of the animation step into the joint texture, straight from the step's buffer. WebGL2 rewrites a 32-bit float texture through the ring of pixel unpack buffers that #212 added for Safari. The first joints go through the frame's upload arena, and only after a structural change.
-- The skin state allocates only when the scene's structure changes. The allocation check's animated crowd (`bun run bench:allocation --animated 64`) now draws its characters as skinned meshes, on both GPU paths.
+- A bucket for each skinned object was rejected. It would need no second texture, since the draw's record could hold the first joint. But a crowd of 100 characters of one part with 3 cascades would make 400 draws a frame in place of 4. Firefox has no `WEBGL_multi_draw`, so each of those draws is a call there. WebGPU's vertex shaders share buckets the same way. Only the objects that its compute pass skins keep a bucket each, because each draws its own region of skinned vertices.
+- GLSL has no binding numbers, so the WebGL2 backend gives each binding a slot (`GROUP_BASES` in `programs.ts`). Group 2, the data textures, holds the joint texture at binding 4 and the first joints at binding 5.
+- Each frame writes the joint matrices of the animation step into the joint texture, straight from the step's buffer. WebGL2 rewrites a 32-bit float texture through the ring of pixel unpack buffers that Safari needs (#212). The first joints go through the frame's upload arena, and only after a structural change.
+- The skin state allocates only when the scene's structure changes. The allocation check's animated crowd (`bun run bench:allocation --animated 64`) draws its characters as skinned meshes, on both GPU paths.
 
 ### What the skin bit costs
 
-Each WebGL2 shader file doubles its builds of the mesh templates. Sizes from `bun run build`, Brotli at quality 11:
+The bit doubles the builds of the mesh templates in each WebGL2 shader file that holds them. Sizes from `bun run build`, Brotli at quality 11, for start files that held the SKIN builds:
 
-| File | Raw before | Raw after | Brotli before | Brotli after |
+| File | Raw without the bit | Raw with it | Brotli without the bit | Brotli with it |
 | --- | --- | --- | --- | --- |
 | `shaders-glsl.js` | 1,319.5 KB | 2,671.1 KB | 17.7 KB | 21.3 KB |
 | `shaders-glsl-draw-index-tone-map.js` | 1,515.6 KB | 3,057.4 KB | 18.1 KB | 22.0 KB |
 | The pipelined page (budget 100 KB) | 1,159.6 KB | 3,291.7 KB | 91.2 KB | 93.4 KB |
 
-The WGSL files do not change: WebGPU builds no skin variants. A page parses about twice the GLSL text it parsed before. [D-13](D-13-shader-variants.md) measured 9.6 ms in V8 on the Mac to compile 1,338 KB of GLSL module. So the skin bit adds about that much to a WebGL2 page's start on the Mac, and more on phones. The shader file loads while the engine starts its WebAssembly, so part of it overlaps other work.
+In such a file, a page parses about twice the GLSL text. [D-13](D-13-shader-variants.md) measured 9.6 ms in V8 on the Mac to compile 1,338 KB of GLSL module, and phones take longer. So the SKIN builds of both paths sit in the skinning feature's files, and a page without skinned meshes downloads and parses none of them ([D-56](D-56-first-use-shader-files.md)). Each device module also writes a repeated stage once, and each paragraph that several stages share once ([D-13](D-13-shader-variants.md#paragraphs-that-sources-share)).
 
-Sharing repeated stages would recover little. In `shaders-glsl-draw-index-tone-map.js`, 164 stages hold 2,971 KB of text. The 127 different stages among them hold 2,378 KB. The skin builds' fragment stages repeat the plain builds'. But each vertex stage is large on its own, because naga writes every struct and constant of the module into it.
-
-Custom materials build the standard material's template, so each custom material's WebGL2 builds double too. That makes 64 GLSL builds in place of 32, and 80 builds in all. Their WebGPU builds have no skin bit, because WebGPU's compute pass skins their meshes. One surface function's builds measured 1,883.8 KB raw and 17.0 KB after Brotli without the bit, and 3,443.4 KB and 22.7 KB with it. A sketch carries these builds in its own code. The alternative, building custom materials without the bit, would save that, but a skinned mesh with a custom material would then not draw on WebGL2. Both paths draw skinned custom materials today, so the bit stays.
+Custom materials build the standard material's template, so each custom material's WebGL2 builds double too: 64 GLSL builds in place of 32. One surface function's builds measured 1,883.8 KB raw and 17.0 KB after Brotli without the bit, and 3,443.4 KB and 22.7 KB with it. WebGL2 keeps these builds in the material's module, which a sketch carries in its own code. A custom material's WebGPU SKIN builds load with its first skinned mesh, by the owner's ruling ([D-20](D-20-webgpu-skinning.md#the-owners-ruling-on-the-size-of-the-skin-builds)). Building custom materials without the bit was rejected: a skinned mesh with a custom material would then not draw on WebGL2.
 
 ### How three.js does it
 

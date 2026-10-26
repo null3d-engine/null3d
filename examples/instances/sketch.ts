@@ -4,8 +4,9 @@
 // changes, so the setup writes it once, in square rings from the middle out. The Low preset of
 // phones then draws only the first rows, the middle of the field. A lamp hovers over the center of
 // the wave, which drifts by itself and follows the pointer, and lights the columns around it.
-// Batches cast no shadows yet, so the low sun, the sky's light, the lamp, ambient occlusion and fog
-// give the field its depth. Hover cars stream across the sky above the field in their own batches.
+// The demo leaves shadows off for the sun and the batch, so the low sun, the sky's light, the lamp,
+// ambient occlusion and fog give the field its depth. Hover cars stream across the sky above the
+// field in their own batches.
 import { defineSketch, timeOfDay, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
 import { createTraffic } from './traffic';

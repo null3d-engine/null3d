@@ -9,9 +9,9 @@
 //
 //   budget = 30 s × min(4, max(1, ceil(load ÷ cores)))
 //
-// An idle machine, or one loaded at most to its core count, gets 30 s. A load of 71 on 18 cores, as
-// on 26 October 2026, gives ceil(3.94) = 4, so 120 s; there a WebGL2 program reflection check took
-// 55.6 s. Each run's line names a budget above 30 s, which shows what a CI runner gets. The factor is
+// An idle machine, or one loaded at most to its core count, gets 30 s. A load of 71 on 18 cores
+// gives ceil(3.94) = 4, so 120 s; at that load a WebGL2 program reflection check takes 55.6 s.
+// Each run's line names a budget above 30 s, which shows what a CI runner gets. The factor is
 // coarse on purpose: a load of 19 on 18 cores doubles the budget, so a doubled budget says the
 // machine was busy, not that a check got slower. The cap keeps the budget at most four times the
 // idle one.

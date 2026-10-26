@@ -9,6 +9,6 @@
 
 ## Known issues
 
-Safari refused the engine's shared memory of 1024 MiB, out of memory.
-It kept the memory of earlier engines while their pages waited ([#223](https://github.com/null3d-engine/null3d/pull/223)).
-The runner now ends the turn of a browser that keeps refusing ([#221](https://github.com/null3d-engine/null3d/pull/221))
+Safari can refuse the engine's shared memory of 1024 MiB, out of memory.
+It keeps the memory of earlier engines while their pages wait ([#223](https://github.com/null3d-engine/null3d/pull/223)).
+The runner ends the turn of a browser that keeps refusing ([#221](https://github.com/null3d-engine/null3d/pull/221)).

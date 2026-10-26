@@ -88,6 +88,26 @@ export function mentionsBuildProcess(text: string): boolean {
 	return BUILD_PROCESS.test(text);
 }
 
+/** A month's name, in full or cut short, such as `October` or `Oct.` */
+const MONTH = String.raw`(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?`;
+
+/**
+ * A calendar date: a day, month and year in either order, a month and year, or an ISO date.
+ * Comments and docs state what holds now and git keeps when things happened, so a date in their
+ * text marks a log entry (AGENTS.md, hard rule 41).
+ */
+const CALENDAR_DATE = new RegExp(
+	String.raw`\b(?:\d{1,2} ${MONTH} \d{4}|${MONTH} \d{1,2},? \d{4}|${MONTH} \d{4}|\d{4}-[01]\d-[0-3]\d)\b`,
+);
+
+/** The words that let a paragraph or a comment keep an outside date that its reader needs. */
+export const OUTSIDE_DATE = 'outside date';
+
+/** The first calendar date in a text, such as `25 October 2026`, or undefined. */
+export function calendarDate(text: string): string | undefined {
+	return CALENDAR_DATE.exec(text)?.[0];
+}
+
 /** The command line tool run by the wrong name. Readers run it as `bunx @null3d/cli <command>`. */
 const WRONG_CLI = /\b(?:npx|bunx) null3d(?![\w/-])|`null3d [a-z]/;
 
@@ -386,6 +406,16 @@ export function checkDocsStyle(md: string, audience: DocsAudience = 'users'): St
 			}
 		}
 
+		const date = block.kind === 'table' ? undefined : calendarDate(text);
+		if (date && !raw.includes(`<!-- ${OUTSIDE_DATE} -->`))
+			add(
+				'dated_history',
+				'error',
+				block.line,
+				text,
+				`State what holds now, without "${date}": git keeps the history (AGENTS.md, hard rule 41). An outside date that the reader needs carries <!-- ${OUTSIDE_DATE} --> in its paragraph.`,
+			);
+
 		if (block.kind === 'heading') {
 			if (EMOJI.test(text))
 				add('heading_emoji', 'error', block.line, text, 'Remove the emoji from the heading.');
@@ -443,11 +473,13 @@ export function checkDocsStyle(md: string, audience: DocsAudience = 'users'): St
 
 /**
  * Every style finding in a commit subject, which becomes a line of the release notes. The
- * published docs' rules apply, and a reference to the maintainers' own records blocks, because
- * readers cannot look it up.
+ * published docs' rules apply, apart from the rule on dates, since the notes are a log by design.
+ * A reference to the maintainers' own records blocks, because readers cannot look it up.
  */
 export function checkSubject(subject: string): StyleFinding[] {
-	const findings = checkDocsStyle(subject).filter((f) => f.rule !== 'milestone_name');
+	const findings = checkDocsStyle(subject).filter(
+		(f) => f.rule !== 'milestone_name' && f.rule !== 'dated_history',
+	);
 	const add = (message: string) =>
 		findings.push({
 			rule: 'internal_reference',

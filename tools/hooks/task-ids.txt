@@ -381,6 +381,8 @@ M3-R22
 M3-R23
 M3-R24
 M3-R25
+M3-R30
+M3-R32
 M3-S1
 M3-T1
 M3-V1
@@ -408,6 +410,8 @@ M4-O4
 M4-O5
 M4-O6
 
-# Process labels, accepted on 15 October 2026, that no plan file names.
+# Process labels that no plan file names.
 M2-process
 M3-plan
+M3-R35
+M3-R36

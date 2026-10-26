@@ -1,8 +1,8 @@
 # D-186: A showcase page that sometimes never reaches its controls
 
-Status: decided. Date: 2026-10-16. Task: the showcase controls test on a software GPU.
+Status: decided: the fault is parked, and no fix is built. Task: the showcase controls test on a software GPU.
 
-Summary: On a software GPU the showcase page sometimes never reaches the state where its controls appear. The same address and browser reach them in four seconds in one run, and never in five minutes in another. The engine's own loading overlay stays at "Starting the sketch" while the engine says it draws on the page's own thread. Five copies of one demo drawing at once made this common: three reached their controls in 19 seconds, and two never did inside five minutes. The fault is parked, and no test budget covers it.
+Summary: On a software GPU the showcase page sometimes never reaches its controls, most often with several pages drawing at once. The same address and browser reach them in four seconds in one run, and never in five minutes in another. The fault is parked as the engine's start on a software GPU, and no test budget covers it.
 
 ## Question
 
@@ -21,7 +21,7 @@ In the stalled runs the overlay reads "Starting the sketch", and the canvas keep
 
 Two comments in `packages/engine/src/page/capabilities.ts` disagree about a quiet probe worker. `WORKER_PROBE_TIMEOUTS_MS` says the checks take milliseconds, so a worker quiet for five seconds has stalled. The note above `pageWorkerProbe` says a software renderer's links take seconds. A start's probe can then outlast its limits. The measurements here match the second.
 
-How the data was produced: on 16 October 2026, the showcase spec and a page probe ran on a Mac's software GPU. One run held a single page, and another held five at once. The figures are in the green-main landing task's run logs.
+How the data was produced: the showcase spec and a page probe ran on a Mac's software GPU. One run held a single page, and another held five at once. The figures are in the green-main landing task's run logs.
 
 ## Decision
 
