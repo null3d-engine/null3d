@@ -177,3 +177,11 @@ export const PickRead0 = 37;
 export const PickRead1 = 38;
 export const PickRead2 = 39;
 export const PickRead3 = 40;
+/**
+ * Each read of a compute pass's region: the thread that draws adds one once the read's bytes are
+ * in engine memory. The sketch takes a read's answer when its slot is not 0.
+ */
+export const PassRead0 = 52;
+export const PassRead1 = 53;
+export const PassRead2 = 54;
+export const PassRead3 = 55;

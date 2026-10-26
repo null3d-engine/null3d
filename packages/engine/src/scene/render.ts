@@ -25,6 +25,16 @@ import {
 import type { FeatureInstanceBuffer } from './feature-instances';
 import type { FeatureDescription } from './features';
 import type { CoreMemory } from './memory';
+import {
+	MAX_PASS_READ_SIDE,
+	NEWEST_LAYER,
+	type PassReadRegion,
+	type PassReadResult,
+	PassReads,
+} from './pass-reads';
+
+export type { PassReadRegion, PassReadResult } from './pass-reads';
+
 import type { CompiledWgsl } from './resources';
 import type { Camera, Scene, Vec3 } from './scene';
 import type { ShaderPreloads } from './shader-preloads';
@@ -288,6 +298,32 @@ export interface ComputePassOptions<Wgsl extends string | CompiledWgsl = string 
 	/** The storage texture's format. The default is `'rgba16float'`. */
 	readonly format?: ComputeFormat;
 	/**
+	 * The pass keeps two states, and each run reads the state of the run before and writes the
+	 * other. The texture holds the states as two ranges of layers: the first run's state, then the
+	 * other's. Readers sample the state that the last run wrote by its layer, which `Texture.layer`
+	 * gives once the pass is added.
+	 *
+	 * The shader reads the previous state from `@group(0) @binding(2) var history:
+	 * texture_2d_array<f32>;` at the layer `id.z` that it writes, and writes its own state through
+	 * `@group(0) @binding(1)` at that layer. The fragment form reads the state of the run before as
+	 * its input image, `input.color`. The call throws E1220 for a pass that fills an instance
+	 * draw's buffers, and on WebGL2 without a fallback.
+	 */
+	readonly history?: boolean;
+	/**
+	 * The array layers of each state: the texture has that many, or twice as many with `history`.
+	 * A `'writes'` dispatch runs one workgroup along z for each layer, so the shader writes layer
+	 * `id.z`. The default is 1. WebGL2's fragment form draws one layer, so a WebGL2 page keeps to
+	 * one layer and the call throws E1220 past it.
+	 */
+	readonly layers?: number;
+	/**
+	 * The runs that a frame records, swapping the two states between them, so a 40-step pressure
+	 * solve is one pass. It is 1 by default, and `render.setPassSteps` changes it. Zero runs keep
+	 * the states that the frame before left. A pass without `history` runs once.
+	 */
+	readonly steps?: number;
+	/**
 	 * The invocations along each axis of a workgroup. The default is the shader's
 	 * `@workgroup_size`. Another value throws, so a pass cannot dispatch another grid.
 	 */
@@ -369,6 +405,10 @@ export class RenderPass {
 	fallback = false;
 	/** @internal The textures that `textures.fromPass` made of it, which its removal destroys. */
 	readonly textures: { readonly live: boolean; destroy(): void }[] = [];
+	/** @internal The array layers of each state of a compute pass's texture. */
+	layers = 1;
+	/** @internal True when a compute pass keeps two states in its texture's layers. */
+	history = false;
 
 	/** @internal */
 	constructor(
@@ -424,6 +464,8 @@ export class Render {
 	private readonly passes: RenderPass[] = [];
 	/** True when a pass came since the last frame, with pipelines to build. */
 	private newPipelines = false;
+	/** The reads of compute passes' regions that the page waits for. */
+	private readonly reads: PassReads;
 
 	/** @internal */
 	constructor(
@@ -437,7 +479,9 @@ export class Render {
 		private readonly maxSize: number,
 		/** True when the page draws on WebGL2, which has no compute shaders. */
 		private readonly webgl2 = false,
-	) {}
+	) {
+		this.reads = new PassReads(core, webgl2);
+	}
 
 	/**
 	 * Adds a pass to the render graph, from the next frame on, and returns it. A scene pass draws
@@ -511,7 +555,7 @@ export class Render {
 	 * or the call throws when it gives none.
 	 */
 	private addCompute(options: ComputePassOptions, call: string): RenderPass {
-		const { fallback, size, scale, every, name: given, buffers } = options;
+		const { fallback, size, scale, every, name: given, buffers, history, layers, steps } = options;
 		const draws = buffers !== undefined;
 		const writes = draws ? '' : checkComputeTarget(options, call);
 		if (draws) checkComputeBuffers(options, call);
@@ -521,6 +565,9 @@ export class Render {
 		// A pass that fills buffers has no texture: its view keeps a 1 by 1 target that nothing
 		// samples, so that the render graph places it like any other compute pass.
 		const [width, height] = draws ? [1, 1] : (size ?? [0, 0]);
+		const states = draws ? 1 : (layers ?? 1);
+		const keepsHistory = !draws && history === true;
+		const runs = draws ? 1 : (steps ?? 1);
 		const values = new Float32Array(C.EFFECT_FLOATS);
 		const textures = new Uint32Array(C.EFFECT_TEXTURES);
 		writeComputeValues(values, options.values, call);
@@ -541,6 +588,11 @@ export class Render {
 					call,
 					`got the compute pass "${name}" on WebGL2, which has no compute shaders. Give the pass a fallback: WGSL written as a custom effect's that does the same work for each pixel.`,
 				);
+			if (states > 1)
+				throw invalid(
+					call,
+					`got the compute pass "${name}" on WebGL2 with ${states} layers. A fragment shader draws one layer at a time there, so a pass of several layers runs on WebGPU alone.`,
+				);
 			const frame = effectTemplate(this.templates, compiledPass(fallback.wgsl, call));
 			// A pass at the resolve or post point reads the scene color, so the fragment form runs
 			// after the camera's passes there, as the compute pass does.
@@ -557,6 +609,10 @@ export class Render {
 					frame,
 					0,
 					afterScene ? C.PASS_SOURCE_SCENE_COLOR : C.PASS_SOURCE_NONE,
+					1,
+					keepsHistory ? 1 : 0,
+					states,
+					runs,
 				),
 				call,
 			);
@@ -572,6 +628,8 @@ export class Render {
 				state,
 			);
 			pass.fallback = true;
+			pass.layers = states;
+			pass.history = keepsHistory;
 			return this.keep(pass);
 		}
 		const compiled = computeShader(options.wgsl, call);
@@ -601,12 +659,26 @@ export class Render {
 				buffers?.[0].buffer ?? 0,
 				buffers?.[1].buffer ?? 0,
 				buffers?.[1].bytes ?? 0,
+				keepsHistory ? 1 : 0,
+				states,
+				runs,
 			),
 			call,
 		);
-		return this.keep(
-			new RenderPass(place, 'compute', name, writes, width, height, undefined, undefined, state),
+		const pass = new RenderPass(
+			place,
+			'compute',
+			name,
+			writes,
+			width,
+			height,
+			undefined,
+			undefined,
+			state,
 		);
+		pass.layers = states;
+		pass.history = keepsHistory;
+		return this.keep(pass);
 	}
 
 	/** Adds a scene pass or a reflection pass. */
@@ -710,6 +782,10 @@ export class Render {
 				template,
 				compiled.depth ? C.EFFECT_DEPTH : 0,
 				source,
+				0,
+				0,
+				1,
+				1,
 			),
 			call,
 		);
@@ -778,6 +854,104 @@ export class Render {
 			undefined,
 			true,
 		);
+	}
+
+	/**
+	 * Changes the runs that a compute pass records in a frame, from the next frame on: each run
+	 * dispatches its workgroups and swaps the pass's two states. A 40-step pressure solve is one
+	 * pass of 40 runs. Zero runs keep the states that the frame before left. It allocates nothing.
+	 * Throws E1101 for a removed pass, E1220 for a pass of another kind or a count that is not a
+	 * whole number from 0 to 65535, and E1220 for more than one run of a pass without history.
+	 */
+	setPassSteps(pass: RenderPass, steps: number): void {
+		const call = 'render.setPassSteps';
+		checkPass(pass, call);
+		if (pass.kind !== 'compute')
+			throw invalid(
+				call,
+				`got the ${pass.kind} pass "${pass.name}"; only a compute pass runs steps.`,
+			);
+		if (!Number.isInteger(steps) || steps < 0 || steps > 65_535)
+			throw invalid(call, `got ${String(steps)} steps; it takes a whole number from 0 to 65535.`);
+		if (steps > 1 && !pass.history)
+			throw invalid(
+				call,
+				`got ${steps} steps for the pass "${pass.name}", which keeps no history. Give the pass history when it runs more than one step.`,
+			);
+		this.core.check(this.core.glue.setComputeSteps(pass.place, steps), call, undefined, true);
+	}
+
+	/**
+	 * Starts a compute pass's states again from empty, from the next frame on: the frame clears
+	 * both states before the pass's first run. A pass that keeps history then reads the first state
+	 * of the next run as zeros, and a stopped pass's texture reads black. It allocates nothing.
+	 * Throws E1101 for a removed pass and E1220 for a pass of another kind.
+	 */
+	resetPass(pass: RenderPass): void {
+		const call = 'render.resetPass';
+		checkPass(pass, call);
+		if (pass.kind !== 'compute')
+			throw invalid(
+				call,
+				`got the ${pass.kind} pass "${pass.name}"; only a compute pass keeps state.`,
+			);
+		this.core.check(this.core.glue.resetComputeState(pass.place), call, undefined, true);
+	}
+
+	/**
+	 * Reads a small region of a compute pass's texture through a promise, a few frames after the
+	 * call. No thread waits for it: a frame copies the region into a buffer, the GPU puts its bytes
+	 * in engine memory, and the sketch's frame loop answers the promise. The result holds four
+	 * numbers for each texel, its red, green, blue and alpha, row by row from the top left, and the
+	 * frames that the read took. A pass that does not run keeps its last image, so its texels read
+	 * as the frame before left them.
+	 *
+	 * Throws E1220 for a pass of another kind, a region that is not whole texels from 0 to 64 each
+	 * way, or a layer that the pass does not hold. The engine refuses a region that a pass has no
+	 * texture for, and one that waits more than 240 frames fails with E1220.
+	 */
+	readPass(pass: RenderPass, region: PassReadRegion): Promise<PassReadResult> {
+		const call = 'render.readPass';
+		checkPass(pass, call);
+		if (pass.kind !== 'compute')
+			throw invalid(
+				call,
+				`got the ${pass.kind} pass "${pass.name}"; only a compute pass keeps a texture that reads back.`,
+			);
+		const { x = 0, y = 0, width, height } = region;
+		const layer = region.layer ?? NEWEST_LAYER;
+		const whole = (value: number) => Number.isInteger(value) && value >= 0;
+		if (!whole(x) || !whole(y) || !whole(width) || !whole(height))
+			throw invalid(
+				call,
+				'got a region that is not whole texels from 0; give x, y, width and height as whole numbers from 0.',
+			);
+		if (layer !== NEWEST_LAYER && !whole(layer))
+			throw invalid(
+				call,
+				`got the layer ${String(layer)}; give a whole layer from 0, or leave it out for the state that the pass wrote last.`,
+			);
+		if (width < 1 || height < 1 || width > MAX_PASS_READ_SIDE || height > MAX_PASS_READ_SIDE)
+			throw invalid(
+				call,
+				`got a region of ${width} by ${height} texels; it takes 1 to ${MAX_PASS_READ_SIDE} each way.`,
+			);
+		return this.reads.read(pass.place, { x, y, width, height, layer });
+	}
+
+	/** @internal Gives the reads the engine's control block, when the frame loop starts. */
+	attachReadControl(slots: Int32Array): void {
+		this.reads.attach(slots);
+	}
+
+	/** @internal Answers each read whose bytes landed, at the end of a frame. */
+	pollReads(slots: Int32Array): void {
+		this.reads.poll(slots);
+	}
+
+	/** @internal Fails the reads that wait, when the engine stops. */
+	stopReads(): void {
+		this.reads.stop();
 	}
 
 	/**
@@ -868,6 +1042,9 @@ function checkOptions(options: RenderPassOptions, call: string, maxSize: number)
 							'values',
 							'fallback',
 							'buffers',
+							'history',
+							'layers',
+							'steps',
 						]
 					: ['wgsl', 'size', 'scale', 'input', 'textures', 'uniforms'];
 	for (const key of own) takes.add(key);
@@ -1215,7 +1392,28 @@ function checkCompute(
 	options: ComputePassOptions,
 	call: string,
 ): { readonly workgroup: ComputeWorkgroup; readonly format: ComputeFormat } {
-	const { dispatch, format = 'rgba16float' } = options;
+	const { dispatch, format = 'rgba16float', history, layers, steps } = options;
+	if (history !== undefined && typeof history !== 'boolean')
+		throw invalid(call, `got the history ${String(history)}; it takes true or false.`);
+	if (layers !== undefined && !(Number.isInteger(layers) && layers >= 1 && layers <= 256))
+		throw invalid(call, `got ${String(layers)} layers; it takes a whole number from 1 to 256.`);
+	if (history === true && (layers ?? 1) > 128)
+		throw invalid(
+			call,
+			`got ${String(layers)} layers for a pass with history, which holds two states: give 128 layers or fewer.`,
+		);
+	if (steps !== undefined && !(Number.isInteger(steps) && steps >= 0 && steps <= 65_535))
+		throw invalid(call, `got ${String(steps)} steps; it takes a whole number from 0 to 65535.`);
+	if ((steps ?? 1) > 1 && history !== true)
+		throw invalid(
+			call,
+			`got ${String(steps)} steps for a pass without history; give the pass history when it runs more than one step.`,
+		);
+	if (history === true && options.buffers !== undefined)
+		throw invalid(
+			call,
+			'got history with buffers; a pass that fills an instance draw keeps no state.',
+		);
 	if (!(format in FORMAT_CODE))
 		throw invalid(
 			call,

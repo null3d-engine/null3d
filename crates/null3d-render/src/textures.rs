@@ -473,6 +473,9 @@ struct TextureArray {
     /// For the target of a view: the view's place, and the target's GPU id once the render graph
     /// made it.
     pass: Option<(u32, Option<u32>)>,
+    /// The first layer of the state that a view's pass wrote last, which a map of the pass's
+    /// target samples: 0 for a pass that keeps one state.
+    pass_layer: u32,
     /// Layers still marked used whose textures move to a smaller array in the next recorded frame,
     /// which copies them out and frees them.
     leaving: u32,
@@ -498,6 +501,7 @@ impl TextureArray {
             grown_in: 0,
             left_in: 0,
             pass: None,
+            pass_layer: 0,
         }
     }
 
@@ -1534,7 +1538,8 @@ impl TextureStore {
         }
     }
 
-    /// The layer that a material samples a texture from, once its texels are on the GPU.
+    /// The layer that a material samples a texture from, once its texels are on the GPU. A map of
+    /// a pass's target takes the first layer of the state that the pass wrote last.
     pub fn ready_layer(&self, texture: Handle) -> Option<u32> {
         let slot = self.slot(texture).ok()?;
         let array = &self.arrays[slot.array as usize];
@@ -1542,7 +1547,21 @@ impl TextureStore {
             Some((_, target)) => target.is_some(),
             None => matches!(slot.state, State::Uploaded { .. }),
         };
-        ready.then_some(slot.layer)
+        ready.then_some(slot.layer + array.pass_layer)
+    }
+
+    /// Gives the maps of view `view`'s target the first layer of the state that its pass wrote
+    /// last, from this frame on.
+    pub fn set_pass_layer(&mut self, view: u32, layer: u32) {
+        for array in &mut self.arrays {
+            if array.live == 0 || array.pass.is_none_or(|(of, _)| of != view) {
+                continue;
+            }
+            if array.pass_layer != layer {
+                array.pass_layer = layer;
+                self.layers_changed = true;
+            }
+        }
     }
 
     /// Whether a texture's texels on the GPU come from an image that holds colors multiplied by

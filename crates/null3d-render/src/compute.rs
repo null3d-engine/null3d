@@ -7,6 +7,12 @@
 //! in group 1, as a custom effect does. Its block holds what an effect's block holds, so a shader
 //! reads the render size, the target size, the clock, the camera and its own values.
 //!
+//! A pass that keeps history holds two states in the target's layers: the first state takes the
+//! first layers and the second the layers after them. A run writes one state through a view of its
+//! layers and reads the other through a view of the other's layers, so one dispatch never writes
+//! and samples one subresource. The frame runs the pass's dispatch as often as the pass asks,
+//! swapping the states between runs, and readers name the state they want by its layer.
+//!
 //! Each view's block uploads only when it changed, and each view's bind group is made again only
 //! when what it binds changed, so passes that stay still record only their dispatches.
 //!
@@ -29,10 +35,14 @@ use crate::view::{Compute, MAX_VIEWS};
 pub(crate) struct ComputePassIds {
     /// The uniform buffer of every view's block.
     pub(crate) buffer: u32,
-    /// Group 0 of each view's pass, from this id on, by the view's place.
+    /// Group 0 of each view's first state, from this id on, by the view's place.
     pub(crate) first_group: u32,
+    /// Group 0 of each view's second state, from this id on, by the view's place.
+    pub(crate) first_history_group: u32,
     /// The compute pipeline of each view's pass, from this id on, by the view's place.
     pub(crate) first_pipeline: u32,
+    /// Two views of one state's layers for each view, from this id on, by the view's place.
+    pub(crate) first_view: u32,
 }
 
 /// Bytes of the uniform buffer: a block for each view.
@@ -51,17 +61,32 @@ pub(crate) const fn layout_of(target: u32, buffers: bool) -> u32 {
     }
 }
 
+/// The bind group layout of a compute pass's group 0 when it keeps history: the same entries, and
+/// the state of the run before as a sampled texture at binding 2.
+pub(crate) const fn history_layout_of(target: u32) -> u32 {
+    match target {
+        format::R32_FLOAT => bind_layout::COMPUTE_HISTORY_R32_FLOAT,
+        format::RGBA8_UNORM => bind_layout::COMPUTE_HISTORY_RGBA8_UNORM,
+        _ => bind_layout::COMPUTE_HISTORY_RGBA16_FLOAT,
+    }
+}
+
 /// The bit of a compute pipeline's format code that says the pass samples textures at group 1.
 /// The GPU side reads the bit and gives the pipeline the materials' maps layout as well as its
 /// target's layout.
 pub(crate) const PIPELINE_MAPS_BIT: u32 = 1 << 8;
 
+/// The bit of a compute pipeline's format code that says the pass keeps history, so its group 0
+/// also binds the state of the run before.
+pub(crate) const PIPELINE_HISTORY_BIT: u32 = 1 << 9;
+
 /// The format code that a compute pass's pipeline names for its bind group layouts: 0 for a pass
 /// that fills an instance draw's two buffers, and its target's format otherwise. A pass that keeps
 /// the default format writes rgba16float, which a code of 0 would also name, so the default is
 /// written out. A pass that samples textures sets the maps bit, since its pipeline takes the maps
-/// layout at group 1 and a pass without maps binds nothing there.
-pub(crate) const fn pipeline_format(format: u32, buffers: bool, maps: bool) -> u32 {
+/// layout at group 1 and a pass without maps binds nothing there. A pass with history sets the
+/// history bit, so its group 0 takes the layout that also binds the previous state.
+pub(crate) const fn pipeline_format(format: u32, buffers: bool, maps: bool, history: bool) -> u32 {
     let base = if buffers {
         0
     } else if format == 0 {
@@ -69,16 +94,19 @@ pub(crate) const fn pipeline_format(format: u32, buffers: bool, maps: bool) -> u
     } else {
         format
     };
-    if maps { base | PIPELINE_MAPS_BIT } else { base }
+    let maps = if maps { PIPELINE_MAPS_BIT } else { 0 };
+    let history = if history { PIPELINE_HISTORY_BIT } else { 0 };
+    base | maps | history
 }
 
-/// What a compute pass's group 0 binds: the target's texture, the layout of its group 0 and the
-/// target's size in texels.
+/// What a compute pass's group binds: the target's texture, the layout of its group 0, the
+/// target's size in texels, and the state that the group writes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Bound {
     target: u32,
     layout: u32,
     drawn: (u32, u32),
+    state: u32,
 }
 
 /// The passes' GPU objects and what the GPU holds of them, by view place.
@@ -86,12 +114,26 @@ struct Bound {
 pub(crate) struct ComputePasses {
     ids: ComputePassIds,
     created: bool,
-    /// The template that each view's pipeline was made for.
-    pipelines: [Option<u32>; MAX_VIEWS],
+    /// The template that each view's pipeline was made for, and its history flag.
+    pipelines: [Option<(u32, bool)>; MAX_VIEWS],
     /// The block that each view's part of the buffer holds, or `None` before its upload.
     uploaded: [Option<Block>; MAX_VIEWS],
-    /// What each view's group 0 binds, or `None` before the group exists.
-    bound: [Option<Bound>; MAX_VIEWS],
+    /// What each view's groups bind, by the state that a group writes, or `None` before the group
+    /// exists.
+    bound: [[Option<Bound>; 2]; MAX_VIEWS],
+    /// The target that each view's state views look at, or 0 before they are made.
+    viewed: [u32; MAX_VIEWS],
+    /// The state that each view's next run writes: 0 or 1.
+    state: [u8; MAX_VIEWS],
+    /// The state that the last run wrote, which readers sample.
+    newest: [u8; MAX_VIEWS],
+    /// The state that each view's first run of the frame writes, which its steps count from.
+    draw_state: [u8; MAX_VIEWS],
+    /// The reset count that each view's builder has acted on.
+    reset_seen: [u32; MAX_VIEWS],
+    /// The template and history flag that each view's state belongs to, so another pass at the
+    /// same place starts from empty.
+    seen: [Option<(u32, bool)>; MAX_VIEWS],
 }
 
 impl ComputePasses {
@@ -105,8 +147,63 @@ impl ComputePasses {
             created: false,
             pipelines: [None; MAX_VIEWS],
             uploaded: [None; MAX_VIEWS],
-            bound: [None; MAX_VIEWS],
+            bound: [[None; 2]; MAX_VIEWS],
+            viewed: [0; MAX_VIEWS],
+            state: [0; MAX_VIEWS],
+            newest: [0; MAX_VIEWS],
+            draw_state: [0; MAX_VIEWS],
+            reset_seen: [0; MAX_VIEWS],
+            seen: [None; MAX_VIEWS],
         }
+    }
+
+    /// Starts the view's frame: the state that its first run writes, and the state that its last
+    /// run leaves for readers. A frame of no runs, or of an even number of steps, leaves the state
+    /// that the frame before left. `textures_made` says the graph made the plan's textures again,
+    /// so both states are empty and the first one is next.
+    pub(crate) fn begin_frame(
+        &mut self,
+        place: usize,
+        pass: &Compute,
+        runs: bool,
+        textures_made: bool,
+    ) {
+        let seen = (pass.template, pass.history);
+        if textures_made || self.seen[place] != Some(seen) {
+            self.state[place] = 0;
+            self.newest[place] = 0;
+            self.viewed[place] = 0;
+            self.bound[place] = [None; 2];
+            self.seen[place] = Some(seen);
+        }
+        self.draw_state[place] = self.state[place];
+        if pass.history && runs && pass.steps > 0 {
+            // Each run writes the state that the one before read, so the last run of an odd count
+            // leaves the state that the frame started from, and one of an even count the other.
+            self.newest[place] = self.state[place] ^ ((pass.steps - 1) & 1) as u8;
+            self.state[place] ^= (pass.steps & 1) as u8;
+        }
+    }
+
+    /// The array layer of the state that a history pass last wrote, or 0 for a pass that keeps no
+    /// history. Readers sample the pass's texture from this layer.
+    pub(crate) fn reader_layer(&self, place: usize, pass: &Compute) -> u32 {
+        if !pass.history {
+            return 0;
+        }
+        u32::from(self.newest.get(place).copied().unwrap_or(0)) * pass.layers.max(1)
+    }
+
+    /// Starts the view at `place` again from the first state, after the page cleared its states.
+    /// Returns true, once for each request, when the builder must record the clear.
+    pub(crate) fn take_reset(&mut self, place: usize, pass: &Compute) -> bool {
+        if pass.reset == self.reset_seen[place] {
+            return false;
+        }
+        self.reset_seen[place] = pass.reset;
+        self.state[place] = 0;
+        self.newest[place] = 0;
+        true
     }
 
     /// Makes the buffer when the GPU lacks it, records the pipeline of the pass at view place
@@ -139,16 +236,23 @@ impl ComputePasses {
             )?;
             self.created = true;
         }
-        if self.pipelines[place] != Some(pass.template) {
+        let pipeline = (pass.template, pass.history);
+        if self.pipelines[place] != Some(pipeline) {
             list.push(
                 Op::CreateComputePipeline,
                 &[
                     ids.first_pipeline + place as u32,
                     pass.template,
-                    pipeline_format(pass.format, pass.buffers.is_some(), pass.maps.any()),
+                    pipeline_format(
+                        pass.format,
+                        pass.buffers.is_some(),
+                        pass.maps.any(),
+                        pass.history,
+                    ),
                 ],
             )?;
-            self.pipelines[place] = Some(pass.template);
+            self.pipelines[place] = Some(pipeline);
+            self.bound[place] = [None; 2];
         }
         let render = Size::Full.viewport(canvas, scale);
         let (width, height) = (drawn.0.max(1) as f32, drawn.1.max(1) as f32);
@@ -171,19 +275,23 @@ impl ComputePasses {
             list.push(Op::WriteBuffer, &[ids.buffer, offset, at, bytes])?;
             self.uploaded[place] = Some(block);
         }
-        let layout = layout_of(pass.format, pass.buffers.is_some());
-        let bound = Bound {
-            target,
-            layout,
-            drawn,
+        let layout = match pass.history {
+            true => history_layout_of(pass.format),
+            false => layout_of(pass.format, pass.buffers.is_some()),
         };
-        if !textures_made && self.bound[place] == Some(bound) {
-            return Ok(());
-        }
         match pass.buffers {
             // Group 0 of a pass that writes an instance draw: the pass's block, the draw's count
             // word and its per-instance rows.
             Some(buffers) => {
+                let bound = Bound {
+                    target,
+                    layout,
+                    drawn,
+                    state: 0,
+                };
+                if !textures_made && self.bound[place][0] == Some(bound) {
+                    return Ok(());
+                }
                 let words = [
                     ids.first_group + place as u32,
                     layout,
@@ -205,9 +313,79 @@ impl ComputePasses {
                     buffers.instances_bytes,
                 ];
                 list.push(Op::CreateBindGroup, &words)?;
+                self.bound[place][0] = Some(bound);
+            }
+            None if pass.history => {
+                let layers = pass.layers.max(1);
+                if self.viewed[place] != target {
+                    // Two views, one for each state's layers, which the two groups swap. The
+                    // states' subresources never overlap, so a run may write one and sample the
+                    // other.
+                    for state in 0..2u32 {
+                        list.push(
+                            Op::CreateBindView,
+                            &[
+                                ids.first_view + (place * 2) as u32 + state,
+                                target,
+                                state * layers,
+                                layers,
+                            ],
+                        )?;
+                    }
+                    self.viewed[place] = target;
+                    self.bound[place] = [None; 2];
+                }
+                for state in 0..2u32 {
+                    let bound = Bound {
+                        target,
+                        layout,
+                        drawn,
+                        state,
+                    };
+                    if !textures_made && self.bound[place][state as usize] == Some(bound) {
+                        continue;
+                    }
+                    let write = ids.first_view + (place * 2) as u32 + state;
+                    let read = ids.first_view + (place * 2) as u32 + (1 - state);
+                    let group = match state {
+                        0 => ids.first_group + place as u32,
+                        _ => ids.first_history_group + place as u32,
+                    };
+                    let words = [
+                        group,
+                        layout,
+                        3,
+                        0,
+                        resource_kind::BUFFER,
+                        ids.buffer,
+                        (place * BLOCK) as u32,
+                        BLOCK_BYTES as u32,
+                        1,
+                        resource_kind::TEXTURE,
+                        write,
+                        0,
+                        0,
+                        2,
+                        resource_kind::TEXTURE,
+                        read,
+                        0,
+                        0,
+                    ];
+                    list.push(Op::CreateBindGroup, &words)?;
+                    self.bound[place][state as usize] = Some(bound);
+                }
             }
             // Group 0: the pass's block, then the storage texture that it fills.
             None => {
+                let bound = Bound {
+                    target,
+                    layout,
+                    drawn,
+                    state: 0,
+                };
+                if !textures_made && self.bound[place][0] == Some(bound) {
+                    return Ok(());
+                }
                 let words = [
                     ids.first_group + place as u32,
                     layout,
@@ -224,23 +402,24 @@ impl ComputePasses {
                     0,
                 ];
                 list.push(Op::CreateBindGroup, &words)?;
+                self.bound[place][0] = Some(bound);
             }
         }
-        self.bound[place] = Some(bound);
         Ok(())
     }
 
     /// Records the dispatch of the pass at view place `place` inside the compute pass that the
-    /// render graph began. A pass without a pipeline or a bind group dispatches nothing, and its
-    /// target keeps its last image.
+    /// render graph began, once for each step that the pass asks for. A history pass swaps its two
+    /// states between steps, so a frame of `n` steps leaves the state that run `n` wrote. A pass
+    /// without a pipeline or a bind group dispatches nothing, and its target keeps its last image.
     pub(crate) fn record(
-        &self,
+        &mut self,
         list: &mut DrawList,
         place: usize,
         pass: &Compute,
         drawn: (u32, u32),
     ) -> Result<(), RecordError> {
-        if self.pipelines[place] != Some(pass.template) || self.bound[place].is_none() {
+        if self.pipelines[place] != Some((pass.template, pass.history)) {
             return Ok(());
         }
         if pass.maps.any() {
@@ -253,22 +432,42 @@ impl ComputePasses {
             Op::SetComputePipeline,
             &[self.ids.first_pipeline + place as u32],
         )?;
-        list.push(
-            Op::SetBindGroup,
-            &[0, self.ids.first_group + place as u32, 0],
-        )?;
+        let steps = if pass.history { pass.steps } else { 1 };
         let [x, y, z] = pass.workgroups(drawn);
-        list.push(Op::Dispatch, &[x, y, z])?;
+        let mut state = if pass.history {
+            self.draw_state[place]
+        } else {
+            0
+        };
+        for _ in 0..steps {
+            if self.bound[place][state as usize].is_none() {
+                return Ok(());
+            }
+            let group = match state {
+                0 => self.ids.first_group + place as u32,
+                _ => self.ids.first_history_group + place as u32,
+            };
+            list.push(Op::SetBindGroup, &[0, group, 0])?;
+            list.push(Op::Dispatch, &[x, y, z])?;
+            if pass.history {
+                state = 1 - state;
+            }
+        }
         Ok(())
     }
 
     /// Forgets the GPU objects, so the next frame makes them again, after the thread that draws
-    /// replaced the GPU.
+    /// replaced the GPU. The states start empty again, so the first one is next.
     pub(crate) fn reset_gpu(&mut self) {
         self.created = false;
         self.pipelines = [None; MAX_VIEWS];
         self.uploaded = [None; MAX_VIEWS];
-        self.bound = [None; MAX_VIEWS];
+        self.bound = [[None; 2]; MAX_VIEWS];
+        self.viewed = [0; MAX_VIEWS];
+        self.state = [0; MAX_VIEWS];
+        self.newest = [0; MAX_VIEWS];
+        self.draw_state = [0; MAX_VIEWS];
+        self.seen = [None; MAX_VIEWS];
     }
 }
 
@@ -300,20 +499,39 @@ mod tests {
     }
 
     #[test]
+    fn a_history_pass_takes_the_layout_that_binds_the_previous_state() {
+        assert_eq!(
+            history_layout_of(format::RGBA16_FLOAT),
+            bind_layout::COMPUTE_HISTORY_RGBA16_FLOAT
+        );
+        assert_eq!(
+            history_layout_of(format::R32_FLOAT),
+            bind_layout::COMPUTE_HISTORY_R32_FLOAT
+        );
+        assert_eq!(
+            history_layout_of(format::RGBA8_UNORM),
+            bind_layout::COMPUTE_HISTORY_RGBA8_UNORM
+        );
+    }
+
+    #[test]
     fn a_texture_pass_pipeline_names_its_format() {
         // The GPU side reads a format code of 0 as the instance buffers' layout, so a pass that
         // writes a texture names its format, and the default rgba16float as well.
-        assert_eq!(pipeline_format(0, false, false), format::RGBA16_FLOAT);
         assert_eq!(
-            pipeline_format(format::R32_FLOAT, false, false),
+            pipeline_format(0, false, false, false),
+            format::RGBA16_FLOAT
+        );
+        assert_eq!(
+            pipeline_format(format::R32_FLOAT, false, false, false),
             format::R32_FLOAT
         );
         assert_eq!(
-            pipeline_format(format::RGBA8_UNORM, false, false),
+            pipeline_format(format::RGBA8_UNORM, false, false, false),
             format::RGBA8_UNORM
         );
-        assert_eq!(pipeline_format(0, true, false), 0);
-        assert_eq!(pipeline_format(format::RGBA16_FLOAT, true, false), 0);
+        assert_eq!(pipeline_format(0, true, false, false), 0);
+        assert_eq!(pipeline_format(format::RGBA16_FLOAT, true, false, false), 0);
     }
 
     #[test]
@@ -321,13 +539,76 @@ mod tests {
         // A pass that samples textures takes the maps layout at group 1, and one without maps
         // binds nothing there, so its pipeline takes group 0 alone.
         assert_eq!(
-            pipeline_format(format::RGBA16_FLOAT, false, true),
+            pipeline_format(format::RGBA16_FLOAT, false, true, false),
             format::RGBA16_FLOAT | PIPELINE_MAPS_BIT
         );
         assert_eq!(
-            pipeline_format(0, true, true),
+            pipeline_format(0, true, true, false),
             PIPELINE_MAPS_BIT,
             "a pass that fills buffers and samples textures still takes the buffer layout"
         );
+    }
+
+    #[test]
+    fn a_history_pass_sets_the_history_bit() {
+        assert_eq!(
+            pipeline_format(format::RGBA16_FLOAT, false, true, true),
+            format::RGBA16_FLOAT | PIPELINE_MAPS_BIT | PIPELINE_HISTORY_BIT
+        );
+        assert_eq!(
+            pipeline_format(format::R32_FLOAT, false, false, true),
+            format::R32_FLOAT | PIPELINE_HISTORY_BIT
+        );
+    }
+
+    #[test]
+    fn a_history_pass_keeps_the_state_that_its_last_step_wrote() {
+        let pass = Compute {
+            template: 1,
+            workgroup: [8, 8, 1],
+            dispatch: None,
+            format: format::RGBA16_FLOAT,
+            after_scene: false,
+            values: [0.0; crate::effects::EFFECT_FLOATS],
+            maps: crate::effects::EffectMaps::NONE,
+            buffers: None,
+            history: true,
+            layers: 1,
+            steps: 3,
+            reset: 0,
+        };
+        let ids = ComputePassIds {
+            buffer: 1,
+            first_group: 10,
+            first_history_group: 20,
+            first_pipeline: 30,
+            first_view: 40,
+        };
+        let mut passes = ComputePasses::new(ids);
+        assert_eq!(pass.target_layers(), 2);
+        assert_eq!(pass.workgroups((64, 64)), [8, 8, 1]);
+        // An even count of steps leaves the state that the odd one wrote, so readers sample it.
+        passes.newest[1] = 1;
+        assert_eq!(passes.reader_layer(1, &pass), 1);
+    }
+
+    #[test]
+    fn a_layered_pass_runs_once_along_z_for_each_layer() {
+        let pass = Compute {
+            template: 1,
+            workgroup: [8, 8, 1],
+            dispatch: None,
+            format: format::RGBA16_FLOAT,
+            after_scene: false,
+            values: [0.0; crate::effects::EFFECT_FLOATS],
+            maps: crate::effects::EffectMaps::NONE,
+            buffers: None,
+            history: true,
+            layers: 4,
+            steps: 1,
+            reset: 0,
+        };
+        assert_eq!(pass.target_layers(), 8);
+        assert_eq!(pass.workgroups((64, 64)), [8, 8, 4]);
     }
 }

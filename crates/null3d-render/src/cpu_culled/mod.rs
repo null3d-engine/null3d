@@ -343,12 +343,17 @@ mod ids {
     pub const PICK_BUFFERS: u32 = BLANK_LAST + 1;
     /// The bind group of GPU picking's resolve pass.
     pub const PICK_GROUP: u32 = PICK_BUFFERS + crate::pick::RING as u32;
+    /// The buffers of compute pass reads, one for each read that may wait for the GPU.
+    pub const PASS_READ_BUFFERS: u32 = PICK_GROUP + 1;
     /// The buffers of the sky maps' light captures, one for each read that may wait for the GPU.
-    pub const SKY_LIGHT_BUFFERS: u32 = PICK_GROUP + 1;
+    pub const SKY_LIGHT_BUFFERS: u32 = PASS_READ_BUFFERS + crate::readback::RING as u32;
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = SKY_LIGHT_BUFFERS + crate::sky_maps::LIGHT_RING as u32;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
+    /// The scratch textures and state views of the fragment forms of compute passes, above every
+    /// other id so that their ids collide with none and cost the backends no room.
+    pub const FALLBACK_IDS: u32 = 1 << 20;
     /// The uniform buffer of the compute passes' blocks. WebGL2 runs no compute pass, so nothing
     /// uses these, and the graph's ids stay a table of one shape on both builders.
     pub const COMPUTE: u32 = TEXTURE_ARRAYS + 1;
@@ -466,8 +471,12 @@ mod ids {
     /// Group 0 of each compute pass. WebGL2 runs no compute pass, so nothing uses this band, and
     /// it keeps the builder's table the same shape as the other path's.
     pub const COMPUTE_GROUPS: u32 = MOTION_FRAME_GROUPS + 2 * RING;
+    /// Group 0 of each compute pass's second state, after the first states' groups.
+    pub const COMPUTE_HISTORY_GROUPS: u32 = COMPUTE_GROUPS + MAX_VIEWS as u32;
+    /// One state view for each compute pass's two states, after the groups.
+    pub const COMPUTE_VIEWS: u32 = COMPUTE_HISTORY_GROUPS + MAX_VIEWS as u32;
     /// The bind groups of temporal anti-aliasing's resolve and copy, after the compute passes'.
-    pub const TAA_GROUPS: u32 = COMPUTE_GROUPS + MAX_VIEWS as u32;
+    pub const TAA_GROUPS: u32 = COMPUTE_VIEWS + 2 * MAX_VIEWS as u32;
     /// The bind groups of materials' maps, after temporal anti-aliasing's.
     pub const TEXTURE_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
 }
@@ -762,11 +771,15 @@ impl CpuCulledRenderer {
                             first_group: ids::FULLSCREEN_GROUPS,
                             blank_color: ids::BLANK_PASS_COLOR,
                             blank_depth: ids::BLANK_PASS_DEPTH,
+                            first_view: ids::FALLBACK_IDS + MAX_VIEWS as u32,
+                            first_scratch: ids::FALLBACK_IDS,
                         },
                         compute: ComputePassIds {
                             buffer: ids::COMPUTE,
                             first_group: ids::COMPUTE_GROUPS,
+                            first_history_group: ids::COMPUTE_HISTORY_GROUPS,
                             first_pipeline: ids::COMPUTE_PIPELINES,
+                            first_view: ids::COMPUTE_VIEWS,
                         },
                         dof: DofIds {
                             buffer: ids::DOF,
@@ -1515,6 +1528,18 @@ impl CpuCulledRenderer {
         )?;
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         probe_grid::create_objects(list, ids::BLANK_PROBE_GRID)?;
+        // The buffers that a read of a compute pass's region lands in, one for each read that may
+        // wait for the GPU.
+        for ring in 0..crate::readback::RING as u32 {
+            list.push(
+                Op::CreateBuffer,
+                &[
+                    ids::PASS_READ_BUFFERS + ring,
+                    crate::readback::MAX_BYTES,
+                    buffer_usage::MAP_READ | buffer_usage::COPY_DST,
+                ],
+            )?;
+        }
         ao::create_blank(list, ids::BLANK_AO)?;
         transmission::create_blank(list, ids::BLANK_TRANSMISSION)?;
         list.push(
@@ -1886,6 +1911,8 @@ impl CpuCulledRenderer {
         let pick_drawing = self.pick_ready(input, requested);
         self.graph.set_picking_draws(pick_drawing);
         self.graph.prepare(list, input.canvas, input.render_scale)?;
+        self.graph
+            .apply_compute_layers(self.settings.textures_mut());
         let pick_frame = self.begin_pick(list, input, pick_drawing)?;
         self.pick.keep = if pick_frame.is_some() {
             crate::pick::KEEP_FRAMES
@@ -2618,6 +2645,21 @@ impl CpuCulledRenderer {
                 true,
             )?;
             self.settings.take_pick();
+        }
+        // A read of a compute pass's region copies it once the pass's runs have finished. WebGL2's
+        // target stores its first row at the image's bottom edge.
+        if let Some(mut read) = self.settings.take_pass_read()
+            && let Some((texture, size)) = self.graph.read_target(read.view as usize)
+        {
+            read.layer = self.graph.read_layer(read.view as usize, read.layer);
+            crate::readback::record(
+                list,
+                &read,
+                texture,
+                ids::PASS_READ_BUFFERS + read.ring,
+                true,
+                size.1,
+            )?;
         }
         self.tiles
             .finish(input.frame, created_pipelines, input.pipelines_built);

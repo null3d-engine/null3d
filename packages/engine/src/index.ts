@@ -241,6 +241,8 @@ export type {
 	ComputeWorkgroup,
 	FullscreenPassOptions,
 	PassInput,
+	PassReadRegion,
+	PassReadResult,
 	PassScale,
 	ReflectionPassOptions,
 	ReflectionPlane,

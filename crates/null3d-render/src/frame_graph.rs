@@ -199,7 +199,9 @@ use crate::ssr::{self, LastView, SsrIds, SsrPass, TraceFrame};
 use crate::subsurface::{self, SubsurfaceFrame, SubsurfaceIds, SubsurfacePass, SubsurfaceSources};
 use crate::taa::{self, TaaFrame, TaaIds, TaaPass, TaaSources};
 use crate::transmission::{TransmissionCopy, TransmissionIds};
-use crate::view::{CanvasRect, Compute, Fullscreen, PassSource, View, ViewId, ViewNames};
+use crate::view::{
+    CanvasRect, Compute, Fullscreen, MAX_VIEWS, PassSource, View, ViewId, ViewNames,
+};
 use crate::view_copy::{ViewCopies, ViewCopyIds};
 use crate::weighted::{self, WeightedIds, WeightedLayer};
 
@@ -903,6 +905,13 @@ pub(crate) struct FrameGraph {
     /// The compute passes' GPU objects.
     compute_ids: ComputePassIds,
     compute: ComputePasses,
+    /// The states that each fragment form of a compute pass keeps, by view place: the one that its
+    /// next run writes, the one that its last run wrote, the one that its next frame starts from,
+    /// and the reset count that it acted on.
+    fallback_state: [u8; MAX_VIEWS],
+    fallback_newest: [u8; MAX_VIEWS],
+    fallback_draw: [u8; MAX_VIEWS],
+    fallback_reset_seen: [u32; MAX_VIEWS],
     /// The views that are compute passes, as a mask of their places.
     compute_views: u32,
     /// The views whose targets a material of a scene draw may sample, as a mask of their places:
@@ -1235,6 +1244,10 @@ impl FrameGraph {
             ),
             compute_ids: ids.compute,
             compute: ComputePasses::new(ids.compute),
+            fallback_state: [0; MAX_VIEWS],
+            fallback_newest: [0; MAX_VIEWS],
+            fallback_draw: [0; MAX_VIEWS],
+            fallback_reset_seen: [0; MAX_VIEWS],
             compute_views: 0,
             material_views: 0,
             drawn_views: DrawnViews::default(),
@@ -2407,8 +2420,10 @@ impl FrameGraph {
                 target.shown,
                 target.reads,
                 target.rect.is_some(),
-                view.fullscreen_pass().map(|pass| pass.template),
-                view.compute_pass().map(|pass| (pass.template, pass.format)),
+                view.fullscreen_pass()
+                    .map(|pass| (pass.template, pass.fallback, pass.history, pass.layers)),
+                view.compute_pass()
+                    .map(|pass| (pass.template, pass.format, pass.history, pass.layers)),
             )
         };
         let same = self.declared
@@ -2701,6 +2716,42 @@ impl FrameGraph {
         Some(self.texture_id(surface))
     }
 
+    /// The texture of the view at `place` and its size, for a read of its region. `None` while the
+    /// plan gives the view no texture, as a pass that nothing reads.
+    pub(crate) fn read_target(&self, place: usize) -> Option<(u32, (u32, u32))> {
+        let view = *self.declared_views.get(place)?;
+        let texture = self.view_target(ViewId::from_index(place))?;
+        Some((texture, view_size(&view).made(self.canvas, self.scale)))
+    }
+
+    /// The layer that a read of the view at `place` copies: the layer it names, or the first layer
+    /// of the state that the pass wrote last when it names the largest number.
+    pub(crate) fn read_layer(&self, place: usize, layer: u32) -> u32 {
+        if layer != u32::MAX {
+            layer
+        } else {
+            self.reader_layer(place)
+        }
+    }
+
+    /// The first layer of the state that the view's pass wrote last, or 0 for a pass without one.
+    fn reader_layer(&self, place: usize) -> u32 {
+        let Some(view) = self.declared_views.get(place) else {
+            return 0;
+        };
+        if let Some(pass) = view.compute_pass() {
+            return self.compute.reader_layer(place, pass);
+        }
+        if let Some(pass) = view.fullscreen_pass().filter(|pass| pass.fallback) {
+            return if pass.history {
+                u32::from(self.fallback_newest[place]) * pass.layers.max(1)
+            } else {
+                0
+            };
+        }
+        0
+    }
+
     /// True when the view culls in two phases against its depth pyramid.
     pub(crate) fn occludes(&self, view: ViewId) -> bool {
         self.pyramid_depths
@@ -2832,15 +2883,27 @@ impl FrameGraph {
             // target needs a valid format all the same.
             let shape = if compute {
                 let code = view.compute_pass().map_or(0, |pass| pass.format);
+                let layers = view.compute_pass().map_or(1, |pass| pass.target_layers());
                 Target::color(if code == 0 {
                     format::RGBA16_FLOAT
                 } else {
                     code
                 })
+                .layers(layers)
                 .array()
                 .shown()
+                .clearable()
+                .copy_source()
             } else if fullscreen {
-                one_sample
+                match view.fullscreen_pass() {
+                    // The fragment form of a compute pass keeps the states in the same layers that
+                    // the compute pass's target holds, so a page reads its images on both paths.
+                    Some(pass) if pass.fallback => one_sample
+                        .layers(pass.layers.max(1) * if pass.history { 2 } else { 1 })
+                        .clearable()
+                        .copy_source(),
+                    _ => one_sample,
+                }
             } else {
                 kept
             };
@@ -3218,7 +3281,13 @@ impl FrameGraph {
         names: &ViewPassNames,
         index: usize,
     ) {
-        let mut pass = Pass::new(names.opaque.clone(), PassKind::Fullscreen)
+        // The fragment form of a compute pass draws outside a render step, like a compute pass, so
+        // the graph orders it among the compute passes: its runs happen before its readers.
+        let kind = match fullscreen.fallback {
+            true => PassKind::Compute,
+            false => PassKind::Fullscreen,
+        };
+        let mut pass = Pass::new(names.opaque.clone(), kind)
             .size(view_size(view))
             .writes(names.color.clone());
         match fullscreen.source {
@@ -4018,7 +4087,82 @@ impl FrameGraph {
             self.canvas = canvas;
         }
         self.textures_made = (compiled || resized || rescaled) && self.make_textures(list)?;
+        self.begin_compute_frame(list)?;
         Ok(())
+    }
+
+    /// Starts each compute pass's frame: the state that its first run writes, and the state that
+    /// its last run leaves for the frame's readers. A pass that does not run this frame keeps the
+    /// state that the frame before left, and a frame that made the plan's textures again starts
+    /// from the first, empty state. A page that asked the pass to start again clears both states
+    /// here, before the frame's passes read them.
+    fn begin_compute_frame(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+        for place in 1..self.declared_views.len() {
+            if self.compute_views & (1 << place) == 0 {
+                continue;
+            }
+            let view = self.declared_views[place];
+            let Some(pass) = view.compute_pass() else {
+                continue;
+            };
+            let target = self.view_target(ViewId::from_index(place));
+            if self.compute.take_reset(place, pass)
+                && let Some(target) = target
+            {
+                list.push(Op::ClearTexture, &[target, 0, pass.target_layers()])?;
+            }
+            let ready = !pass.maps.any() || pass.maps.group != 0;
+            let runs = ready && target.is_some() && self.compute_runs(place);
+            self.compute
+                .begin_frame(place, pass, runs, self.textures_made);
+        }
+        // The fragment form of a compute pass on WebGL2 keeps its states in the full-screen pass.
+        for place in 1..self.declared_views.len() {
+            if self.fullscreen_views & (1 << place) == 0 {
+                continue;
+            }
+            let view = self.declared_views[place];
+            let Some(pass) = view.fullscreen_pass().filter(|pass| pass.fallback) else {
+                continue;
+            };
+            let target = self.view_target(ViewId::from_index(place));
+            if pass.reset != self.fallback_reset_seen[place] {
+                self.fallback_reset_seen[place] = pass.reset;
+                self.fallback_state[place] = 0;
+                self.fallback_newest[place] = 0;
+                if let Some(target) = target {
+                    let states = pass.layers.max(1) * if pass.history { 2 } else { 1 };
+                    list.push(Op::ClearTexture, &[target, 0, states])?;
+                }
+            }
+            if self.textures_made {
+                self.fallback_state[place] = 0;
+                self.fallback_newest[place] = 0;
+            }
+            let ready = !pass.maps.any() || pass.maps.group != 0;
+            let runs = ready && target.is_some() && self.fullscreen_runs(place);
+            self.fallback_draw[place] = self.fallback_state[place];
+            if pass.history && runs && pass.steps > 0 {
+                self.fallback_newest[place] =
+                    self.fallback_state[place] ^ ((pass.steps - 1) & 1) as u8;
+                self.fallback_state[place] ^= (pass.steps & 1) as u8;
+            }
+        }
+        Ok(())
+    }
+
+    /// Gives the texture that shows each compute pass its layer of the state that the frame's
+    /// last run wrote, so a material or effect that samples the pass sees the newest state.
+    pub(crate) fn apply_compute_layers(&self, textures: &mut crate::textures::TextureStore) {
+        for place in 1..self.declared_views.len() {
+            let view = self.declared_views[place];
+            let compute = self.compute_views & (1 << place) != 0 && view.compute_pass().is_some();
+            let fallback = self.fullscreen_views & (1 << place) != 0
+                && view.fullscreen_pass().is_some_and(|pass| pass.fallback);
+            if compute || fallback {
+                textures.set_pass_layer(place as u32, self.reader_layer(place));
+            }
+        }
     }
 
     /// True when `group`'s pipelines are built, as the last frame found them.
@@ -4722,6 +4866,7 @@ impl FrameGraph {
             let Some(pass) = view.fullscreen_pass() else {
                 continue;
             };
+            let drawn = view_size(&view).made(self.canvas, self.scale);
             let color = match pass.source {
                 PassSource::SceneColor => self.sampled_id(SCENE_COLOR),
                 PassSource::OutlineMask if self.fullscreen_outline => self.sampled_id(OUTLINE_MASK),
@@ -4736,7 +4881,24 @@ impl FrameGraph {
                 color: color.unwrap_or(0),
                 depth: depth.unwrap_or(0),
             };
-            let drawn = view_size(&view).made(self.canvas, self.scale);
+            if pass.fallback {
+                // The fragment form reads the state before from its own scratch texture, which a
+                // step fills from the state that it is not writing.
+                let Some(target) = self.view_target(ViewId::from_index(place)) else {
+                    continue;
+                };
+                self.fullscreen.prepare_fallback(
+                    list,
+                    arena,
+                    (place, pass, target, inputs),
+                    drawn,
+                    frame,
+                    clock,
+                    inverse,
+                    made,
+                )?;
+                continue;
+            }
             self.fullscreen.prepare(
                 list,
                 arena,
@@ -5305,11 +5467,27 @@ impl FrameGraph {
         self.two_step_report
     }
 
+    /// True when every pass of the step is the fragment form of a compute pass. WebGL2 records
+    /// those draws itself, because its path runs no compute pass.
+    fn is_fallback_step(&self, plan: &Plan, step: &Step) -> bool {
+        let passes = plan.passes(step);
+        !passes.is_empty()
+            && passes.iter().all(|&pass| {
+                matches!(
+                    self.roles[pass.index()],
+                    Role::Fullscreen(view)
+                        if self.declared_views[view.index()]
+                            .fullscreen_pass()
+                            .is_some_and(|content| content.fallback)
+                )
+            })
+    }
+
     /// Records the plan's passes for [`FrameGraph::record`], and notes the words that a still view
     /// changes in `marks`.
     #[allow(clippy::too_many_arguments)]
     fn record_steps(
-        &self,
+        &mut self,
         list: &mut DrawList,
         clear: impl Fn(ViewId) -> [f32; 4],
         skips: impl Fn(Role) -> bool,
@@ -5330,6 +5508,32 @@ impl FrameGraph {
         for step in plan.steps() {
             match step.kind {
                 StepKind::Compute => {
+                    // The fragment form of a compute pass on WebGL2 draws in render passes of its
+                    // own, not in a compute pass that its path cannot run.
+                    if self.is_fallback_step(plan, step) {
+                        for &pass in plan.passes(step) {
+                            let Role::Fullscreen(view) = self.roles[pass.index()] else {
+                                continue;
+                            };
+                            let place = view.index();
+                            let Some(content) = self.declared_views[place].fullscreen_pass() else {
+                                continue;
+                            };
+                            if !content.fallback {
+                                continue;
+                            }
+                            if let Some(target) = self.view_target(view) {
+                                self.fullscreen.record_fallback(
+                                    list,
+                                    place,
+                                    content,
+                                    target,
+                                    self.fallback_draw[place],
+                                )?;
+                            }
+                        }
+                        continue;
+                    }
                     let start = list.len();
                     list.push(Op::BeginComputePass, &[])?;
                     let begun = list.len();
@@ -5770,6 +5974,9 @@ impl FrameGraph {
         self.last_view = None;
         self.fullscreen.reset_gpu();
         self.compute.reset_gpu();
+        self.fallback_state = [0; MAX_VIEWS];
+        self.fallback_newest = [0; MAX_VIEWS];
+        self.fallback_draw = [0; MAX_VIEWS];
         if let Some(effects) = self.effect_pass.as_mut() {
             effects.reset_gpu();
         }
@@ -6068,6 +6275,11 @@ mod tests {
     fn fullscreen(source: PassSource, shown: bool) -> View {
         let pass = Fullscreen {
             template: 70,
+            fallback: false,
+            history: false,
+            layers: 1,
+            steps: 1,
+            reset: 0,
             source,
             depth: false,
             values: [0.0; effects::EFFECT_FLOATS],
@@ -6095,6 +6307,10 @@ mod tests {
                 values: [0.0; effects::EFFECT_FLOATS],
                 maps: EffectMaps::NONE,
                 buffers: None,
+                history: false,
+                layers: 1,
+                steps: 1,
+                reset: 0,
             },
             ViewTarget {
                 shown,
@@ -6119,6 +6335,10 @@ mod tests {
                     instances: 42,
                     instances_bytes: 4096,
                 }),
+                history: false,
+                layers: 1,
+                steps: 1,
+                reset: 0,
             },
             ViewTarget {
                 shown: false,
@@ -6314,6 +6534,240 @@ mod tests {
             .prepare(&mut list, (64, 48), RenderScale::FULL)
             .unwrap();
         assert_eq!(step_of(&frames, "Opaque1"), None);
+    }
+
+    /// The fragment form of a compute pass that keeps history, with `steps` runs a frame: the form
+    /// a WebGL2 page draws.
+    fn fallback(steps: u32) -> View {
+        let pass = Fullscreen {
+            template: 70,
+            fallback: true,
+            history: true,
+            layers: 1,
+            steps,
+            reset: 0,
+            source: PassSource::None,
+            depth: false,
+            values: [0.0; effects::EFFECT_FLOATS],
+            maps: EffectMaps::NONE,
+        };
+        View::fullscreen(
+            pass,
+            ViewTarget {
+                shown: true,
+                ..ViewTarget::default()
+            },
+        )
+    }
+
+    #[test]
+    fn a_fallback_pass_draws_each_run_into_a_state_and_reads_the_other() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, false, false);
+        let view = fallback(2);
+        frames.sync(&[View::default(), view]);
+        frames
+            .request_fullscreen_pipelines(&mut PipelineCache::default(), &[View::default(), view]);
+        let mut list = DrawList::with_capacity(512);
+        frames
+            .prepare(&mut list, (64, 48), RenderScale::FULL)
+            .unwrap();
+        let target = frames
+            .view_target(ViewId::from_index(1))
+            .expect("the frame makes the target");
+        let created = operands(&list, Op::CreateTexture)
+            .into_iter()
+            .find(|texture| texture[0] == target)
+            .expect("the plan makes the target");
+        assert_eq!(created[3], 2, "two states, one layer each");
+        assert_ne!(created[5] & texture_usage::COPY_SRC, 0);
+        assert_ne!(created[5] & texture_usage::COPY_DST, 0);
+        // Its own scratch texture reads the state that a run does not write, and the two views
+        // draw into one state each.
+        let mut arena = UploadArena::default();
+        arena.reset(frames.upload_bound());
+        list.clear();
+        frames
+            .upload(&mut list, &mut arena, Output::default(), Grading::default())
+            .unwrap();
+        let scratch = IDS.fullscreen.first_scratch + 1;
+        assert!(operands(&list, Op::CreateTexture).iter().any(|texture| {
+            texture[0] == scratch && texture[3] == 1 && texture[5] & texture_usage::COPY_DST != 0
+        }));
+        let views: Vec<_> = operands(&list, Op::CreateTextureView)
+            .into_iter()
+            .filter(|view| view[1] == target)
+            .collect();
+        assert_eq!(
+            views,
+            vec![
+                vec![IDS.fullscreen.first_view + 2, target, 0, 0],
+                vec![IDS.fullscreen.first_view + 3, target, 0, 1],
+            ]
+        );
+        assert!(
+            operands(&list, Op::CreateBindGroup)
+                .iter()
+                .any(|group| group[0] == IDS.fullscreen.first_group + 1 && group[10] == scratch)
+        );
+        // Two runs copy the state before into the scratch and draw the next state: first state 1
+        // copied and state 0 drawn, then the other way.
+        list.clear();
+        frames
+            .record(
+                &mut list,
+                |_| [0.0; 4],
+                |_| true,
+                |_: &mut DrawList, _: Role| Ok(()),
+                |_| Ok(()),
+                |_| Ok(()),
+                |_| Ok(()),
+            )
+            .unwrap();
+        let copies: Vec<_> = operands(&list, Op::CopyTextureToTexture)
+            .into_iter()
+            .filter(|copy| copy[0] == target)
+            .collect();
+        assert_eq!(copies.len(), 2);
+        assert_eq!(copies[0][4], 1, "the first run copies state 1");
+        assert_eq!(copies[1][4], 0, "the second run copies state 0");
+        let draws: Vec<_> = operands(&list, Op::BeginRenderPass)
+            .into_iter()
+            .filter(|pass| {
+                pass[0] == IDS.fullscreen.first_view + 2 || pass[0] == IDS.fullscreen.first_view + 3
+            })
+            .collect();
+        assert_eq!(
+            draws.iter().map(|pass| pass[0]).collect::<Vec<_>>(),
+            vec![IDS.fullscreen.first_view + 2, IDS.fullscreen.first_view + 3]
+        );
+        assert_eq!(operands(&list, Op::Draw).len(), 2);
+        assert_eq!(
+            frames.read_layer(1, u32::MAX),
+            1,
+            "two runs leave the second state"
+        );
+    }
+
+    /// A compute pass of template 80 that keeps `steps` runs of history over `layers` layers.
+    fn history_compute(shown: bool, steps: u32, layers: u32) -> View {
+        let mut view = compute(shown);
+        let pass = view.compute_pass_mut().expect("a compute view has a pass");
+        pass.history = true;
+        pass.layers = layers;
+        pass.steps = steps;
+        view
+    }
+
+    #[test]
+    fn a_history_pass_swaps_its_two_states_and_readers_sample_the_last_one() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        frames.sync(&[View::default(), history_compute(true, 3, 1)]);
+        let mut list = DrawList::with_capacity(512);
+        frames
+            .prepare(&mut list, (64, 48), RenderScale::FULL)
+            .unwrap();
+        // The target holds both states as two layers, and a copy or a clear may read it.
+        let target = frames
+            .view_target(ViewId::from_index(1))
+            .expect("the frame makes the target");
+        let created = operands(&list, Op::CreateTexture)
+            .into_iter()
+            .find(|texture| texture[0] == target)
+            .expect("the plan makes the target");
+        assert_eq!(created[3], 2, "two states, one layer each");
+        assert_ne!(created[5] & texture_usage::RENDER_ATTACHMENT, 0);
+        assert_ne!(created[5] & texture_usage::COPY_SRC, 0);
+        // The pass takes the layout that binds the state of the run before, and each state's
+        // group writes one view of its layers and reads the other.
+        let mut arena = UploadArena::default();
+        arena.reset(frames.upload_bound());
+        list.clear();
+        frames
+            .upload(&mut list, &mut arena, Output::default(), Grading::default())
+            .unwrap();
+        let views: Vec<_> = operands(&list, Op::CreateBindView)
+            .into_iter()
+            .filter(|view| view[1] == target)
+            .collect();
+        assert_eq!(
+            views,
+            vec![vec![502, target, 0, 1], vec![503, target, 1, 1]]
+        );
+        let groups: Vec<_> = operands(&list, Op::CreateBindGroup)
+            .into_iter()
+            .filter(|group| {
+                group[0] == IDS.compute.first_group + 1
+                    || group[0] == IDS.compute.first_history_group + 1
+            })
+            .collect();
+        assert_eq!(groups.len(), 2);
+        for group in &groups {
+            assert_eq!(group[1], bind_layout::COMPUTE_HISTORY_RGBA16_FLOAT);
+        }
+        assert_eq!(groups[0][10], 502, "the first state writes its own view");
+        assert_eq!(groups[0][15], 503, "and reads the second state");
+        assert_eq!(groups[1][10], 503);
+        assert_eq!(groups[1][15], 502);
+        // Three runs alternate the groups, and leave the first state for the frame's readers: each
+        // run writes the state that the one before read.
+        list.clear();
+        frames
+            .record(
+                &mut list,
+                |_| [0.0; 4],
+                |_| true,
+                |_: &mut DrawList, _: Role| Ok(()),
+                |_| Ok(()),
+                |_| Ok(()),
+                |_| Ok(()),
+            )
+            .unwrap();
+        assert_eq!(operands(&list, Op::Dispatch), vec![vec![8, 6, 1]; 3]);
+        let bound: Vec<_> = operands(&list, Op::SetBindGroup)
+            .into_iter()
+            .filter(|group| group[0] == 0)
+            .collect();
+        assert_eq!(
+            bound,
+            vec![
+                vec![0, IDS.compute.first_group + 1, 0],
+                vec![0, IDS.compute.first_history_group + 1, 0],
+                vec![0, IDS.compute.first_group + 1, 0],
+            ]
+        );
+        let view = frames.declared_views[1];
+        let pass = view.compute_pass().expect("the view keeps its pass");
+        assert_eq!(
+            frames.compute.reader_layer(1, pass),
+            0,
+            "three runs leave the first state"
+        );
+    }
+
+    #[test]
+    fn a_reset_clears_both_states_before_the_pass_runs() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        let mut view = history_compute(true, 1, 1);
+        view.compute_pass_mut()
+            .expect("a compute view has a pass")
+            .reset = 1;
+        frames.sync(&[View::default(), view]);
+        let mut list = DrawList::with_capacity(256);
+        frames
+            .prepare(&mut list, (64, 48), RenderScale::FULL)
+            .unwrap();
+        let target = frames
+            .view_target(ViewId::from_index(1))
+            .expect("the frame makes the target");
+        let clears: Vec<_> = operands(&list, Op::ClearTexture)
+            .into_iter()
+            .filter(|clear| clear[0] == target)
+            .collect();
+        assert_eq!(
+            clears,
+            vec![vec![target, 0, 2]],
+            "a clear of both states comes before the frame's passes"
+        );
     }
 
     #[test]
@@ -6568,11 +7022,15 @@ mod tests {
             first_group: 150,
             blank_color: 905,
             blank_depth: 906,
+            first_view: 940,
+            first_scratch: 960,
         },
         compute: ComputePassIds {
             buffer: 23,
             first_group: 300,
+            first_history_group: 400,
             first_pipeline: 750,
+            first_view: 500,
         },
         dof: DofIds {
             buffer: 13,

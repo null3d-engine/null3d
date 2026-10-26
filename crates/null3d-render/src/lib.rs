@@ -117,6 +117,7 @@ pub mod probe_grid;
 pub mod probe_shading;
 pub mod probes;
 pub mod queries;
+pub mod readback;
 pub mod shadow_tiles;
 pub mod shadows;
 pub mod skinning;
