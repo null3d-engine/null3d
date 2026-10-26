@@ -7,13 +7,13 @@
 // or arithmetic on one.
 import ts from 'typescript';
 
-/** The calls of Bun's test module that take a budget, by the position of that budget among their arguments. */
+/** The calls of Bun's test module that take a budget, by the budget's place among their arguments. */
 const BUDGET_ARGUMENT: Readonly<Record<string, number>> = { it: 2, test: 2, setDefaultTimeout: 0 };
 
 /** The helper that grows a stated budget with the run's load. */
 const SCALED = 'scaledBudget';
 
-/** The name at the root of a call's callee: `it` for `it`, `it.skip`, `it.if(ok)` and `test.each(rows)`. */
+/** The name at the root of a callee: `it` for `it.skip` or `it.if(ok)`, `test` for `test.each(x)`. */
 function rootName(callee: ts.Expression): string | undefined {
 	if (ts.isIdentifier(callee)) return callee.text;
 	if (ts.isPropertyAccessExpression(callee)) return rootName(callee.expression);
@@ -77,7 +77,7 @@ function budgetCalls(source: ts.SourceFile): Map<string, string> {
 	return calls;
 }
 
-/** The lines, counted from 1, at which a test file states a budget that does not grow with the load. */
+/** The lines, counted from 1, at which a test file states a budget that does not grow with load. */
 export function bareBudgetLines(file: string, text: string): number[] {
 	const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, false);
 	const calls = budgetCalls(source);
