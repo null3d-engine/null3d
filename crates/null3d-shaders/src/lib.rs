@@ -39,9 +39,7 @@ mod textures;
 mod typescript;
 mod uniforms;
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::collections::BTreeSet;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 #[cfg(not(target_arch = "wasm32"))]
 use std::num::NonZeroUsize;
@@ -342,7 +340,8 @@ fn build_entries(
     stats: &mut CacheStats,
 ) -> Result<Vec<BTreeMap<String, VariantOutput>>, BuildError> {
     // The listed words, as the cache key names them: an entry built for one list is not the entry
-    // that a build of another list may reuse.
+    // that a build of another list may reuse. The shader compiler has no cache, so it names none.
+    #[cfg(not(target_arch = "wasm32"))]
     let listed = inputs
         .only
         .iter()
