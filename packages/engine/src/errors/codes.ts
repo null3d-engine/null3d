@@ -532,6 +532,13 @@ const DOCS = {
 			'E1435: createEngine() could not read the recording https://example.com/bug.n3dr: the file is not a null3D recording: it does not start with the format marker. Save the recording again, or ask for a new one.',
 		since: '0.3',
 	},
+	E1436: {
+		title: 'Pick lost with the GPU',
+		cause:
+			'A pick waited for the GPU to copy its pixel back when the browser took the GPU away. The engine started a new device, but the frame that recorded the pick drew on the lost device, so its read never lands. The pick is rejected rather than repeated on the new device.',
+		example: 'E1436: pick() was waiting for its read when the GPU was lost.',
+		since: '0.3',
+	},
 	E1501: {
 		title: 'Render space full',
 		cause:
