@@ -2,8 +2,8 @@
 
 Status: decided by the owner on 25 October 2026. The same day, a fault passed the tests that the CI
 session ran on the code that a landing changed. So the CI session now runs all the unit tests and
-all the tests that hold gigabytes of memory, on every landing that it pushes. Date: 2026-10-25.
-Task: none.
+all the tests that hold gigabytes of memory, on every landing that it pushes. The update of 26
+October 2026 below runs the fresh-project test on every range too. Date: 2026-10-25. Task: none.
 
 Summary: The coordinator's landing session merges helpers' branches, and the CI session checks each
 range and pushes it to the milestone branch. The CI session refuses a range that fails a check, and
@@ -57,7 +57,7 @@ sends each slow one through the job queue:
   `tests/fresh-project.ts`. It needs `NULL3D_ENGINE_SHADERS` set to the engine's `src/generated`
   folder. It packs every public package as CI's `packages` job does. On 26 October 2026 a range
   passed the other six checks and failed that job, because the wind add-on's shader library did not
-  compile when the package built.
+  compile when the package built. The update of 26 October 2026 below runs it on every range.
 
 The CI session runs every unit test and every heavy check, not only the tests of the changed code.
 A test far from a change can pin a figure that the change moves. The add-on check command, the
@@ -79,6 +79,26 @@ The owner added a rule for tasks the same day: a task is not done because its au
 helper reports a task complete, a fresh agent tries to disprove it, against the task's finish line,
 the helper's evidence and the code. Only its cleared verdict lets the task be ticked or its branch
 land. The checker is never the author, and never the session that pushes that branch.
+
+## Update, 26 October 2026: the fresh-project test on every range
+
+The four paths above are not all that the fresh-project test reads. A read of the branch that named
+them found that the test and the pack it calls also read these:
+
+- the project template, `tests/fixtures/fresh-project/`, and the root `package.json`, whose pins
+  the project installs;
+- `tsconfig.web.base.json`, which the test copies for the website build, and the model
+  `tests/pages/assets/models/asset-scene.glb`;
+- the root `docs/` folder and the two license files, which the pack copies into the packages;
+- the helpers that the test and the pack import, such as `tools/lib/packages.ts`;
+- the WebAssembly cores, the asset tool and the shader compiler, which the pack builds from
+  `crates/`.
+
+CI's `packages` job has no pass key, so it runs on every push. A range that changed only `docs/`,
+or only the WGSL library in `crates/null3d-shaders/`, skipped the local test and could still fail
+that job. A full list would have to follow every import and every copy, and nothing would keep it
+full. So the CI session now runs the fresh-project test on every range, as CI runs its job on every
+push. The seven checks are then the same for every range. `.dev/pull-requests.md` says the same.
 
 ## Consequences
 
