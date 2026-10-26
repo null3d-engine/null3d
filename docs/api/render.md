@@ -427,8 +427,9 @@ const red = data[(3 * width + 2) * 4];
 - Throws E1220 for a pass of another kind, a region that is not whole texels, or one larger than 64
   each way. A region that reaches past the pass's texture throws E1220 at once, before a frame
   records it. A canvas that shrinks between the call and the frame that copies the region skips the
-  copy, so the call fails after 240 frames rather than reading past the edge. A pass with no
-  texture gives no answer either.
+  copy, so the call fails after 240 frames rather than reading past the edge; a page sees the same
+  E1220 as a slow read that never lands, and cannot tell the two apart. A pass with no texture gives
+  no answer either.
 
 ### WebGL2
 
