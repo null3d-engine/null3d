@@ -50,9 +50,8 @@ export default defineSketch(async (ctx) => {
 
 	const paint = (color: string, roughness = 0.7, flatShading = false) =>
 		materials.standard({ color, roughness, flatShading });
-	// The lake's ice: a dark mirror, so the aurora stands in it at the sky's own sharpness while the
-	// body of the ice stays night-dark.
-	const ice = materials.standard({ color: '#5d7686', roughness: 0.06, metalness: 1 });
+	// The lake's ice: glossy enough to hold the moon and the sky's last light.
+	const ice = materials.standard({ color: '#16232f', roughness: 0.16, metalness: 0.0 });
 	const plane = geometry.plane({ width: 4000, height: 4000 });
 	scene.createMesh({
 		mesh: plane,
