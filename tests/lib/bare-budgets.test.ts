@@ -45,6 +45,31 @@ describe('bareBudgetLines', () => {
 		].join('\n');
 		expect(bareBudgetLines('a.test.ts', text)).toEqual([]);
 	});
+
+	it('finds a budget that a setup or teardown hook states without scaling it', () => {
+		const text = [
+			"import { afterAll, afterEach, beforeAll, beforeEach, onTestFinished } from 'bun:test';",
+			'beforeAll(async () => {}, 60_000);',
+			'beforeEach(() => {}, { timeout: 5000 });',
+			'const LIMIT = 30_000;',
+			'afterAll(() => {}, LIMIT);',
+			'afterEach(() => {}, 10 * 1000);',
+			"describe('a', () => { onTestFinished(() => {}, 2000); });",
+		].join('\n');
+		expect(bareBudgetLines('a.test.ts', text)).toEqual([2, 3, 5, 6, 7]);
+	});
+
+	it('passes a hook budget that scales, and finds a fixed one under a renamed import', () => {
+		const text = [
+			"import { afterAll as teardown, beforeEach } from 'bun:test';",
+			'const LIMIT = scaledBudget(30_000);',
+			'beforeEach(() => {});',
+			'beforeEach(() => {}, scaledBudget(5000));',
+			'teardown(() => {}, { timeout: LIMIT });',
+			'teardown(() => {}, 2000);',
+		].join('\n');
+		expect(bareBudgetLines('a.test.ts', text)).toEqual([6]);
+	});
 });
 
 describe('the test files', () => {

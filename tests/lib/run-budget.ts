@@ -33,7 +33,9 @@ export const MAX_LOAD_FACTOR = 4;
 /** The environment variable through which a run hands its load factor to a group's process. */
 export const LOAD_FACTOR_ENV = 'NULL3D_LOAD_FACTOR';
 
-/** How many times the idle budget a group that starts now gets, at `load` on the machine's `cores`. */
+/**
+ * How many times the idle budget a group that starts now gets, at `load` on the machine's `cores`.
+ */
 export function loadFactor(load = loadavg()[0] ?? 0, cores = availableParallelism()): number {
 	return Math.min(MAX_LOAD_FACTOR, Math.max(1, Math.ceil(load / cores)));
 }
