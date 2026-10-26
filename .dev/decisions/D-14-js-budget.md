@@ -970,7 +970,7 @@ materials do.
 and uncompressed figures stay at 320 KB and 1,792 KB, and the add-on's largest file passes both with
 room. The rise leaves about 5% above the measured figure, as the 22 October rise did. A first-use
 file that a page never opens still costs it nothing, so the rise costs only the devices that draw
-water.
+water. The owner approved the rise on 26 October 2026, answering "yes raise it".
 
 ## The start's budget rises to 191 KB, 25 October 2026
 

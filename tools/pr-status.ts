@@ -131,7 +131,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-F4':
 		'unticked by its check at 652fd235b: the captured frame is one side of the comparison rather than the comparison itself, D-258 claims more than that frame settles, not every figure has a recorded run, and the evidence entry is missing. ae46e947d states the viewer-side limit in D-258 lines 78 to 82 instead of closing it, so the owner has not ruled whether an engine-to-viewer comparison is owed',
 	'M3-L2':
-		"unticked by the round 24 audit: the fix for the cluster tables' sizing is right by reading, but no test holds it — the new test passes its own 4,096-byte limit to the table builder, so it passes on the old code too, and no test runs the direct path with a cluster tree, so a revert fails nothing. Two owner rulings stay open: the texture-coordinate weight's exemption is the coordinator's rather than the owner's, and the S24-class phone row rests on a labelled cloud S25",
+		"unticked by the round 24 audit: the fix for the cluster tables' sizing is right by reading, but no test holds it. The direct-path test is owed: put the old cap back and watch it fail",
 	'M3-E7':
 		'unticked by the round 18 audit: the car-paint clause is met, but the hook answers only the main light, so the paint glints under the sun and stays smooth under the point light that both the Showroom and the test page carry. The record declines the other lights as a larger change, which hard rule 40 forbids. Either point and spot lights call the lobe too, or the owner rules that the main light alone stands',
 	'M3-K4':
@@ -145,7 +145,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-A11':
 		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
 	'M3-E10':
-		'the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the widening (`1441b441d`) and the aurora cube-unit fix (`06fade99b`, `fc2487164`) are on this branch, while the light sum, the coefficient stride and the aurora pictures are on `fix/m3-sky-layer-light`',
+		"the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the widening (`1441b441d`) and the aurora cube-unit fix (`06fade99b`, `fc2487164`) are on this branch. The round 24 audit of `check-e10-aurora.md` records that the tip's capture never runs (N1) and that the evidence line claims light the tip does not make (N3); the light sum, the coefficient stride and the aurora pictures are on `fix/m3-sky-layer-light`",
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
