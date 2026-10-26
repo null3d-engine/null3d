@@ -640,7 +640,7 @@ describe('render passes', () => {
 		const call = calls[0] as unknown[];
 		// The three numbers after the buffer operands are history, layers and steps.
 		expect(call.slice(15, 18)).toEqual([1, 2, 3]);
-		expect(pass.layers).toBe(2);
+		expect(pass.arrayLayers).toBe(2);
 		expect(pass.history).toBe(true);
 		render.setPassSteps(pass, 40);
 		expect(calls[1]).toEqual(['compute-steps', 1, 40]);
@@ -659,7 +659,6 @@ describe('render passes', () => {
 		expect(add(computePass({ layers: 0 })).code).toBe('E1220');
 		expect(add(computePass({ history: true, layers: 129 })).code).toBe('E1220');
 		expect(add(computePass({ history: 'yes' as never })).code).toBe('E1220');
-		const { render: webgl2 } = setup(true);
 		const fallback = {
 			kind: 'effect',
 			uniforms: [],
@@ -669,8 +668,14 @@ describe('render passes', () => {
 			variants: {},
 			pieces: { group: {}, fold: {} },
 		};
+		// A WebGL2 page draws up to 32 layers of the fragment form, one layer at a time.
+		const { render: layered } = setup(true);
+		expect(() =>
+			layered.addPass(computePass({ layers: 3, fallback: { wgsl: fallback } })),
+		).not.toThrow();
+		const { render: many } = setup(true);
 		expect(
-			thrown(() => webgl2.addPass(computePass({ layers: 3, fallback: { wgsl: fallback } }))).code,
+			thrown(() => many.addPass(computePass({ layers: 33, fallback: { wgsl: fallback } }))).code,
 		).toBe('E1220');
 	});
 

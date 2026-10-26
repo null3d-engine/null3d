@@ -1789,7 +1789,7 @@ impl FrameGraph {
             0
         };
         let fullscreen = if self.fullscreen_views != 0 {
-            FullscreenPasses::UPLOAD_BYTES
+            FullscreenPasses::UPLOAD_BYTES + self.fullscreen.upload_bound(&self.declared_views)
         } else {
             0
         };
@@ -6600,8 +6600,8 @@ mod tests {
         assert_eq!(
             views,
             vec![
-                vec![IDS.fullscreen.first_view + 2, target, 0, 0],
-                vec![IDS.fullscreen.first_view + 3, target, 0, 1],
+                vec![IDS.fullscreen.first_view + 2 * 32, target, 0, 0],
+                vec![IDS.fullscreen.first_view + 3 * 32, target, 0, 1],
             ]
         );
         assert!(
@@ -6633,12 +6633,16 @@ mod tests {
         let draws: Vec<_> = operands(&list, Op::BeginRenderPass)
             .into_iter()
             .filter(|pass| {
-                pass[0] == IDS.fullscreen.first_view + 2 || pass[0] == IDS.fullscreen.first_view + 3
+                pass[0] == IDS.fullscreen.first_view + 2 * 32
+                    || pass[0] == IDS.fullscreen.first_view + 3 * 32
             })
             .collect();
         assert_eq!(
             draws.iter().map(|pass| pass[0]).collect::<Vec<_>>(),
-            vec![IDS.fullscreen.first_view + 2, IDS.fullscreen.first_view + 3]
+            vec![
+                IDS.fullscreen.first_view + 2 * 32,
+                IDS.fullscreen.first_view + 3 * 32
+            ]
         );
         assert_eq!(operands(&list, Op::Draw).len(), 2);
         assert_eq!(
@@ -7024,6 +7028,8 @@ mod tests {
             blank_depth: 906,
             first_view: 940,
             first_scratch: 960,
+            first_layer_group: 2000,
+            layer_buffer: 2100,
         },
         compute: ComputePassIds {
             buffer: 23,

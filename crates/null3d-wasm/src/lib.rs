@@ -249,9 +249,8 @@ struct Engine {
     pick_results: Box<[u32; null3d_render::pick::RING * null3d_render::pick::RESULT_WORDS]>,
     /// The bytes that a read of a compute pass's region lands in, one region for each read of its
     /// ring.
-    pass_read_bytes: Box<
-        [u8; null3d_render::readback::RING as usize * null3d_render::readback::MAX_BYTES as usize],
-    >,
+    pass_read_bytes:
+        Box<[u8; null3d_render::readback::RING * null3d_render::readback::MAX_BYTES as usize]>,
     /// True when the last recorded frame drew a pick and copied its ids back, so the thread that
     /// draws must take that frame.
     pick_recorded: bool,
@@ -664,8 +663,7 @@ pub fn init_engine(
         query_rays: Vec::new(),
         pick_results: Box::new([0; null3d_render::pick::RING * null3d_render::pick::RESULT_WORDS]),
         pass_read_bytes: Box::new(
-            [0; null3d_render::readback::RING as usize
-                * null3d_render::readback::MAX_BYTES as usize],
+            [0; null3d_render::readback::RING * null3d_render::readback::MAX_BYTES as usize],
         ),
         pick_recorded: false,
         pick_covered: false,

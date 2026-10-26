@@ -313,11 +313,14 @@ pass reads its kept image.
 **WebGL2.** No compute shader runs there, so the fragment form keeps the same two states. Each run
 copies the state before from the target into a scratch texture. It then draws the pass into a layer
 view of the other state. Both states stay in the target's layers, so a reader sees the same two
-layers on both paths. The fragment form reads the state before as `input.color`. WebGL2 binds a
-texture array whole and cannot sample one of its layers in a fragment shader, so its fragment form
-draws one layer: the call throws E1220 for several layers on a WebGL2 page. A pass that needs a
-volume runs on WebGPU and in compatibility mode, which both draw the several-layer form. This is a
-documented limit of the path, not a dropped feature. The layers work on both WebGPU paths.
+layers on both paths. The fragment form reads the state before as `input.color`.
+
+WebGL2 binds a texture array whole and cannot sample one of its layers in a fragment shader, so the
+fragment form draws one layer at a time. A run of a pass of several layers copies the state
+before's layer into the scratch, then draws that layer. `input.layer` names the layer that the draw
+writes. Each layer has a block of its own in a buffer of the fragment forms, because the block
+carries the layer. Up to 32 layers work on WebGL2, and the call throws E1220 past them. The WebGPU
+paths draw 256. This is a limit of the path, not a dropped feature.
 
 **Cost and memory.** The two states take twice the target's texels, and a history pass records one
 dispatch for each step. A WebGL2 history pass adds a scratch texture of one state and one copy for

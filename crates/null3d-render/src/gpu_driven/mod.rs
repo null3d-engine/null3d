@@ -1113,6 +1113,13 @@ impl GpuDrivenRenderer {
                             blank_depth: ids::BLANK_PASS_DEPTH,
                             first_view: ids::FALLBACK_IDS + MAX_VIEWS as u32,
                             first_scratch: ids::FALLBACK_IDS,
+                            first_layer_group: ids::FALLBACK_IDS
+                                + MAX_VIEWS as u32
+                                + MAX_VIEWS as u32 * 2 * crate::fullscreen::MAX_FALLBACK_LAYERS,
+                            layer_buffer: ids::FALLBACK_IDS
+                                + MAX_VIEWS as u32
+                                + MAX_VIEWS as u32 * 2 * crate::fullscreen::MAX_FALLBACK_LAYERS
+                                + MAX_VIEWS as u32 * crate::fullscreen::MAX_FALLBACK_LAYERS,
                         },
                         compute: ComputePassIds {
                             buffer: ids::COMPUTE,

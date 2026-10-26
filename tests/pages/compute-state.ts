@@ -33,7 +33,7 @@ run('compute-state', async () => {
 				() => reject(new Error(`${CASE}: the sketch sent no "${type}" within 30 s`)),
 				30_000,
 			);
-			const off = engine.onMessage((name) => {
+			const off = engine.onSketchMessage((name) => {
 				if (name !== type) return;
 				clearTimeout(timer);
 				off();
@@ -52,7 +52,7 @@ run('compute-state', async () => {
 	if (CASE === 'kept') {
 		await waitMessage('running');
 		const before = await engine.captureFrame();
-		engine.postMessage('stop');
+		engine.postToSketch('stop');
 		await waitMessage('stopped');
 		// A few frames pass with the pass switched off.
 		await new Promise((resolve) => setTimeout(resolve, 250));
@@ -72,7 +72,7 @@ run('compute-state', async () => {
 			() => reject(new Error(`${CASE}: the sketch reported no state within 30 s`)),
 			30_000,
 		);
-		const off = engine.onMessage((type, data) => {
+		const off = engine.onSketchMessage((type, data) => {
 			if (type !== 'state') return;
 			clearTimeout(timer);
 			off();
