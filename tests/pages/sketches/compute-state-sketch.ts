@@ -51,7 +51,7 @@ const FALLBACK = /* wgsl */ `
 fn effect(input: EffectInput) -> vec4f {
     // The state of the run before arrives as the input image. The green and blue channels name the
     // texel, as the compute shader's do.
-    let cell = floor(input.uv * effect_block.drawn.xy);
+    let cell = floor(input.uv * input.size);
     return vec4f(input.color.r + 1.0, cell.x, cell.y, 1.0);
 }
 `;
