@@ -634,10 +634,11 @@ export interface QualitySettings {
 	 */
 	physicalSky: boolean;
 	/**
-	 * The steps of each ray of the sky's volumetric cloud tier. Above 0 the sky and its environment
-	 * map draw volumetric clouds in place of the flat layer, from the same cloud settings, with
-	 * this many steps along each ray; 0 draws the flat layer, as the lighter presets do. It changes
-	 * during play. The noise field and the tier's shaders load at its first use.
+	 * The steps of each ray of the sky's volumetric cloud tier. Above 0 the sky draws volumetric
+	 * clouds in place of the flat layer, from the same cloud settings, with this many steps along
+	 * each ray; 0 draws the flat layer, as the lighter presets do. It changes during play. The noise
+	 * field and the tier's shaders load at its first use. The sky's environment map marches at most
+	 * 16 steps, and draws them only from a start above 0, because it picks its tier's shaders then.
 	 */
 	cloudSteps: number;
 	/**

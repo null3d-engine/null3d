@@ -26,18 +26,20 @@ that never draws them from paying?
   that clouds cover, density their solidity, elevation their height, scale their size, speed and time
   their drift. The flat layer's coverage goes to zero in the shader values while the tier draws, so
   no frame draws both.
-- **The flat tiers download nothing.** The tier is four shaders of their own in the shader
-  manifest's `[first_use.clouds]` family (the two backgrounds and the two sky-map steps), and the
-  noise field is a 64-cube that the renderer generates and uploads on the tier's first frame. The
-  sky's own shaders and the environment generator's shader stay as they were.
+- **The flat tiers download nothing.** The tier is four shaders of its own. The manifest's
+  `[first_use.clouds]` family holds the two backgrounds, and the two sky-map steps are first-use
+  entries of their own. The noise field is a 64-cube that the renderer generates and uploads on
+  the tier's first frame. The sky's own shaders and the environment generator's shader stay as
+  they were.
 - **The cost is a setting.** `cloudSteps` is a live quality setting: Low 0, Medium 0, High 32,
   Ultra 48. 0 draws the flat layer; above 0 the sky marches that many steps along each ray. The
   preset table publishes it, so the tier's cost is visible beside the settings it trades against.
   WebGL2 and WebGPU's compatibility mode cap their presets at Medium, so a page there reaches the
   tier through the setting alone.
 - **Both skies, and their maps.** The analytic sky and the physical sky each draw the march over
-  their own light, and each sky map's steps draw it in the same place of the map that the flat layer
-  took: the generator's `sky` step for the analytic sky, and its `panorama` step for the physical
+  their own light, and each sky map's steps draw it, at most 16 a ray, in the same place of the map
+  that the flat layer took: the generator's `sky` step for the analytic sky, and its `panorama` step
+  for the physical
   sky, which reads the panorama that the physical pass filled without its flat layer.
 - **The clouds light the scene as the flat layer did.** The CPU diffuse light keeps its model of the
   flat layer, driven by the same settings. The lights, the shadows and the fog therefore keep the
@@ -101,12 +103,9 @@ simpler light of the panorama costs nothing that a viewer can see.
 - A page on Low or Medium downloads no cloud shader and makes no noise field. The engine test that
   a page which uses no feature that loads on first use downloads none of their files covers the
   family.
-- `quality.set({ cloudSteps })` changes the tier during play. The sky shows the change in its next
-  frame; a sky map takes it when its next fill starts, which a change of the sky's values starts. A
-  page that turns the tier on after its first frame shows no clouds in its existing sky map until
-  the sky changes again, because the map's cloud shaders load with the map's generator at the page's
-  start. Recorded as a limit rather than a fault: the preset chooses the tier, and a page that
-  starts on High or Ultra has the clouds in its map from its first fill.
+- `quality.set({ cloudSteps })` changes the sky during play. The sky's environment map keeps the
+  tier its page started with, because the map picks its cloud shaders at the page's start, so a
+  page that starts at 0 keeps a flat map for the whole run.
 - A sky layer (D-242) draws after the cloud tier's draw, so an aurora stands over the clouds. The
   layer's draw is that branch's; the background pass's cloud draw comes before it.
 - The image tests `clouds-volume` and `clouds-flat` compare the High tier with the flat layer of the

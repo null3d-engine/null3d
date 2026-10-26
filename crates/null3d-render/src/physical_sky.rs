@@ -183,7 +183,7 @@ pub struct Air {
 struct SkyUniform {
     air: Air,
     /// The camera's distance from the planet's center, the top of the air, the background's
-    /// intensity, and a spare.
+    /// intensity, and the cloud march's step count, 0 for the flat layer.
     view: [f32; 4],
     sun: [f32; 4],
     moon: [f32; 4],

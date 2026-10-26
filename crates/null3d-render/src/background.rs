@@ -205,7 +205,8 @@ struct BackdropUniform {
     cloud_place: [f32; 4],
     /// A plain color, exposed linear color, and 1 when the background draws it, else 0.
     color: [f32; 4],
-    /// What of the sun the sky draws, which scales its disc and glow, then three spare values.
+    /// What of the sun the sky draws, which scales its disc and glow, then the cloud march's step
+    /// count, 0 for the flat layer, then two spare values.
     layer: [f32; 4],
 }
 

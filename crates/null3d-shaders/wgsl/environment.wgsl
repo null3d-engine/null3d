@@ -45,7 +45,8 @@ struct Step {
     /// divided by a power of two, so that a sun past the largest shared-exponent value keeps its
     /// light, and the draws that fill the map multiply it back in.
     gain: f32,
-    spare_b: f32,
+    /// The cloud march's step count, 0 while the draw takes no part in the tier, then a spare.
+    cloud_steps: f32,
     spare_c: f32,
 }
 

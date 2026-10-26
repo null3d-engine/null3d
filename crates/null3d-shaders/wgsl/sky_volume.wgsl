@@ -5,7 +5,7 @@
 // settings keep their meaning on every tier.
 //
 // The noise field and the shader load on the tier's first use, so a page that draws the flat layer
-// downloads neither. The shader binds the background's own uniform block, whose spare layer value
+// downloads neither. The shader binds the background's own uniform block, whose second layer value
 // carries the march's step count.
 #import null3d::globals::Frame
 #import null3d::tonemap

@@ -1253,8 +1253,8 @@ export function effectPlan(
 		clouds: [
 			['-32', ['steps=32']],
 			['-16', ['steps=16']],
-			// Four times the High preset's steps: the march's cost follows its steps, so a device
-			// with no GPU timer that holds this frame bounds the High tier's cost at a quarter of it.
+			// Twice the High preset's steps: the march's cost follows its steps, so a device with
+			// no GPU timer that holds this frame bounds the High tier's cost at half of it.
 			['-stress', ['steps=64', 'heavy']],
 		],
 	};
