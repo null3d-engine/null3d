@@ -173,9 +173,16 @@ builds another. The light read of the ring then failed with "Buffer was destroye
 resolved", so its fill's light never landed and the map's next fill, a grace of frames later,
 supplied it one fill late. A capture now keeps the buffers that the frame made: three of the four
 light reads of a run failed this way. With that fixed, `sky-layer-light` passes the whole spec on
-webgpu, compatibility mode and webgl2 on SwiftShader, and the light reaches the scene with the
-levels. The run took 8 to 9 seconds on each tier, at the Mac's load of 82 to 90 on 18 cores. The
-fault was never the machine: it was the destroyed buffer, and it happened at every load.
+webgpu, compatibility mode and webgl2 on SwiftShader, in 8 to 9 seconds on each tier at the Mac's
+load of 82 to 90 on 18 cores.
+
+A slow read still let the levels publish first. Full run 40172879653, at `89bd5640a` with the
+kept-buffers fix in, failed the order check on WebGL2: the mirror took the layer at frame 17 and the
+rough sphere at 19, where the spec allows the light to follow by one frame. WebGPU and compatibility
+mode passed. Nothing held the copy for that read: it runs two stages before the copy, and the copy
+published the levels whether the read had landed or not. The copy now waits for the capture that
+its own fill made, up to four frames, and publishes without it after that. The core's tests check
+that the copy waits and that a landing ends the wait.
 
 Two figures in the runs need their true reading. The scene suite passed 870 of 870 when it ran on a
 quieter machine; the checker, under load, measured 868 of the same 870, where two tests stopped at
