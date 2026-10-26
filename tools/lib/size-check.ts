@@ -212,3 +212,17 @@ export function growthProblems(
 				: `${change.file} grew ${growthText(change)} after Brotli, from ${bytes(change.base)} to ${bytes(change.head)} bytes, and no Size-Growth trailer names it`,
 		);
 }
+
+/**
+ * A warning of the size check as the log prints it. Under GitHub Actions it is an annotation, which
+ * the run's page shows, since a line in a long log goes unread; the annotation's text escapes `%`
+ * and line breaks.
+ */
+export function warningLine(
+	warning: string,
+	env: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+	if (!env.GITHUB_ACTIONS) return `warning: ${warning}`;
+	const text = warning.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+	return `::warning title=Size check::${text}`;
+}

@@ -125,6 +125,7 @@ import {
 	nearLimit,
 	nearLimitWarnings,
 	overLimit,
+	warningLine,
 } from './lib/size-check';
 import {
 	keepSizeMemo,
@@ -1462,8 +1463,7 @@ function checkGrowth(sizes: Record<string, SizeEntry>, ref: string | undefined):
 	const summary = process.env.GITHUB_STEP_SUMMARY;
 	if (summary)
 		appendFileSync(summary, growthSummary(changes, explainedBy, `\`${short}\`, ${base.why}`));
-	for (const warning of nearLimitWarnings(changes, explainedBy))
-		console.warn(`warning: ${warning}`);
+	for (const warning of nearLimitWarnings(changes, explainedBy)) console.warn(warningLine(warning));
 	return growthProblems(changes, explainedBy);
 }
 
@@ -1628,7 +1628,7 @@ async function main(): Promise<void> {
 		.map(([file]) => `${file} is over its 600 KB Brotli budget`);
 	problems.push(...budgetProblems(parts));
 	const growth = options.checkSize ? checkGrowth(sizes, options.base) : [];
-	for (const warning of budgetWarnings(parts)) console.warn(`warning: ${warning}`);
+	for (const warning of budgetWarnings(parts)) console.warn(warningLine(warning));
 	for (const p of [...problems, ...growth]) console.error(`error: ${p}`);
 	if (growth.length > 0) {
 		console.error('');

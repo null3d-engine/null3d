@@ -943,6 +943,9 @@ export class WebGL2Backend {
 			const a = i + 1;
 			switch (op) {
 				case G.OP_CREATE_BUFFER:
+					// A capture draws the frame again, and the buffers of that frame exist already:
+					// making one again would destroy the buffer that a read waits on.
+					if (this.canvasTarget && this.buffers[words[a] as number]) break;
 					this.counts.objects++;
 					this.createBuffer(words[a] as number, words[a + 1] as number, words[a + 2] as number);
 					break;
@@ -1810,8 +1813,10 @@ export class WebGL2Backend {
 					? undefined
 					: variantFor(this.images.shaders.get(template)?.variants ?? {}, 0, 'glsl');
 			const capture = words[a + LIGHT_BUFFER_WORD] as number;
+			// A capture draws the frame again to read it back, and the light capture already ran in
+			// the frame that it draws again.
 			const readback =
-				capture === 0
+				capture === 0 || this.canvasTarget
 					? undefined
 					: (this.need(this.buffers, capture, 'buffer').buffer as WebGLBuffer);
 			code.skyStage(
