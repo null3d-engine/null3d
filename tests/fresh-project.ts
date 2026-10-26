@@ -602,6 +602,8 @@ async function main(): Promise<void> {
 			`${JSON.stringify(projectManifest(packed, pinned, examplesPinned), null, '\t')}\n`,
 		);
 		step('Install', project, 'bun', ['install']);
+		// The site's build needs only the installed packages, so it runs beside every step below.
+		site = startSiteBuild(project);
 		// The installed command, as `bunx @null3d/cli` runs it in a project that installs the tool.
 		const cli = join(project, 'node_modules/.bin/null3d');
 		// The upgrade takes the version of the engine that the packages ship with.
@@ -649,7 +651,6 @@ async function main(): Promise<void> {
 		if (!existsSync(notices)) throw new Error(`the production build writes no ${NOTICES_FILE}`);
 		if (readFileSync(notices, 'utf8') !== `${expected}\n`)
 			throw new Error(`the production build's ${NOTICES_FILE} differs from the packages' notices`);
-		site = startSiteBuild(project);
 		await startsUnderStrictPolicy(join(project, 'dist'));
 		await playsOffline(join(project, 'dist'));
 		await startsSiteDemos(project, site);
