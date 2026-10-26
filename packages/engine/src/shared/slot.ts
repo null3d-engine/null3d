@@ -130,10 +130,10 @@ export const JobsYieldAddress = 36;
 export const FrameRest0 = 33;
 export const FrameRest1 = 34;
 /**
- * Nonzero where the page turns the still-camera accumulation off, such as in hold mode and the
- * image tests: a still view then draws every frame as it moves.
+ * Nonzero where the page turns the still-camera accumulation off, such as in hold mode, a replay
+ * and the image tests: a still view then draws every frame as it moves.
  */
-export const StillOff = 35;
+export const StillOff = 57;
 /**
  * The programs that may still be compiling in the background on WebGL2, as the thread that draws
  * found them at its last frame, for the development probe of the two-step pass.

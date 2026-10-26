@@ -9,7 +9,8 @@ import * as Slot from './slot';
 /** Int32 slots of the control block, read as `Slot.Running`. */
 export { Slot };
 
-const SLOT_COUNT = 57;
+/** The Int32 slots at the start of the control block, one for every name in the slot table. */
+export const SLOT_COUNT = 58;
 /** Int32 values per input event record. */
 export const INPUT_EVENT_INTS = 8;
 /** Input events the ring holds, a power of two; older unread events are overwritten. */
