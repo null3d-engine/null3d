@@ -15,7 +15,7 @@ A decision record settles one design question with measured data. It states the 
 5. When the record changes, keep its status and summary current.
 6. Take each figure from its run's own log or report, in stated units. Name the run: the command,
    the threads, the load, the method and the commit. Say what else ran beside it. Never compare two
-   figures that two methods measured. On 26 October 2026, readers refused one record three times
+   figures that two methods measured. On 26 October 2026, readers refused one record several times
    for figures that claimed more than their runs showed.
 
 No file lists the records by hand, so a pull request that adds a record changes no file that other pull requests change. [D-84](D-84-generated-decision-list.md) gives the reasons. `bun run docs:check` and the commit hook refuse a record without its title, status or summary, and two records with one number.
