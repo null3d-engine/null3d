@@ -312,6 +312,28 @@ export interface CoreGlue extends CoreErrors {
 	 * frame's camera finds the texture coordinates of its pixel.
 	 */
 	pickFrame(): number;
+	/**
+	 * Asks the next recorded frame to copy a region of the compute pass at view place `place` back
+	 * into engine memory: `x` and `y` texels from the texture's stored first row, `width` and
+	 * `height` its size, `layer` its array layer, `ring` the read of the readback ring, and `slot`
+	 * the control slot that rises once the bytes land. Returns 0 when another read waits, the
+	 * target's format code plus one when the frame copies the region, or -1 as a 32-bit number when
+	 * the pass or the region cannot be read.
+	 */
+	requestPassRead(
+		place: number,
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+		layer: number,
+		ring: number,
+		slot: number,
+	): number;
+	/** The address in engine memory of the readback ring's regions, one after another. */
+	passReadAddress(): number;
+	/** The bytes of one readback ring region. */
+	passReadStride(): number;
 	/** The object or batch id that a pick's source key names, or 0 for a key that names nothing. */
 	pickTargetId(key: number): number;
 	/** The instance row that a pick's source key names, or 0 for an object of the scene. */
@@ -665,6 +687,10 @@ export interface CoreGlue extends CoreErrors {
 		template: number,
 		flags: number,
 		source: number,
+		fallback: number,
+		history: number,
+		layers: number,
+		steps: number,
 	): number;
 	/**
 	 * Adds a compute pass named `pass`, which runs the compiled WGSL of compute pipeline template
@@ -691,6 +717,9 @@ export interface CoreGlue extends CoreErrors {
 		countsBuffer: number,
 		instancesBuffer: number,
 		instancesBytes: number,
+		history: number,
+		layers: number,
+		steps: number,
 	): number;
 	/**
 	 * Gives the compute pass of view place `place` the uniforms at `effectValues` and the textures
@@ -698,6 +727,10 @@ export interface CoreGlue extends CoreErrors {
 	 * texture that closes a loop of passes.
 	 */
 	setComputeValues(place: number): number;
+	/** Gives the compute pass of view place `place` the runs that a frame records. */
+	setComputeSteps(place: number, steps: number): number;
+	/** Asks the compute pass of view place `place` to clear both states before its next run. */
+	resetComputeState(place: number): number;
 	/**
 	 * Adds a view that draws the scene into a rectangle of the canvas, which the first four call
 	 * values name: its left and top, then its width and height, as fractions of the canvas. The
@@ -1262,6 +1295,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'pickFrame',
 	'pickTargetId',
 	'pickTargetRow',
+	'requestPassRead',
+	'passReadAddress',
+	'passReadStride',
 	'createShapeMesh',
 	'meshArrays',
 	'createMeshFromArrays',
@@ -1317,6 +1353,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'addFullscreenPass',
 	'addComputePass',
 	'setComputeValues',
+	'setComputeSteps',
+	'resetComputeState',
 	'addSceneView',
 	'setSceneViewRect',
 	'removeSceneView',

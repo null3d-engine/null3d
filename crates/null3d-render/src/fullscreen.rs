@@ -13,7 +13,10 @@
 //! group is made again only when what it reads changed, so passes that stay still record only
 //! their draws.
 
-use null3d_gpu::drawlist::{DrawList, Op, format, layout as bind_layout, permutation, state_flags};
+use null3d_gpu::drawlist::{
+    DrawList, NO_TARGET, Op, format, layout as bind_layout, pass_flags, permutation, state_flags,
+    texture_usage, view,
+};
 
 use crate::bloom::bytes_of;
 use crate::camera::Mat4;
@@ -41,6 +44,21 @@ pub(crate) struct FullscreenIds {
     pub(crate) blank_color: u32,
     /// The texel that a pass which reads no depth binds in its place.
     pub(crate) blank_depth: u32,
+    /// Two views of a fallback pass's target, one for each state, from this id on by the view's
+    /// place.
+    pub(crate) first_view: u32,
+    /// The scratch texture of a fallback pass's read state, from this id on by the view's place.
+    pub(crate) first_scratch: u32,
+}
+
+/// What a fallback pass's scratch texture and state views were made for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FallbackMade {
+    target: u32,
+    drawn: (u32, u32),
+    scratch: u32,
+    /// The states that the target holds, and so the layer views that it draws into.
+    states: u32,
 }
 
 /// What a pass reads this frame: its input image and its depth, as textures of the draw list.
@@ -84,6 +102,8 @@ pub(crate) struct FullscreenPasses {
     uploaded: [Option<Block>; MAX_VIEWS],
     /// What each view's bind group reads, with its layout, or `None` before the group exists.
     bound: [Option<(PassInputs, u32)>; MAX_VIEWS],
+    /// What each fallback pass's scratch texture and state views were made for.
+    fallback: [Option<FallbackMade>; MAX_VIEWS],
 }
 
 impl FullscreenPasses {
@@ -101,6 +121,7 @@ impl FullscreenPasses {
             created: false,
             uploaded: [None; MAX_VIEWS],
             bound: [None; MAX_VIEWS],
+            fallback: [None; MAX_VIEWS],
         }
     }
 
@@ -206,6 +227,167 @@ impl FullscreenPasses {
         Ok(())
     }
 
+    /// Prepares the fragment form of a compute pass that keeps history: its scratch texture holds
+    /// the state that each step reads, and its group samples that state as the pass's input image.
+    /// The target's two states are viewed one at a time, so a step draws into one while it reads
+    /// the other through the scratch.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn prepare_fallback(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+        (place, pass, target, inputs): (usize, &Fullscreen, u32, PassInputs),
+        drawn: (u32, u32),
+        (canvas, scale): ((u32, u32), RenderScale),
+        clock: [f32; 2],
+        inverse_projection: Option<Mat4>,
+        textures_made: bool,
+    ) -> Result<(), RecordError> {
+        let ids = self.ids;
+        let made = FallbackMade {
+            target,
+            drawn,
+            scratch: ids.first_scratch + place as u32,
+            states: if pass.history { 2 } else { 1 },
+        };
+        if textures_made || self.fallback[place] != Some(made) {
+            if let Some(old) = self.fallback[place] {
+                list.push(Op::DestroyTexture, &[old.scratch])?;
+                for state in 0..old.states {
+                    list.push(
+                        Op::DestroyTexture,
+                        &[ids.first_view + (place * 2) as u32 + state],
+                    )?;
+                }
+            }
+            if pass.history {
+                // The scratch holds the state that each run reads. A pass without history reads
+                // its own input image instead.
+                let (width, height) = (drawn.0.max(1), drawn.1.max(1));
+                list.push(
+                    Op::CreateTexture,
+                    &[
+                        made.scratch,
+                        width,
+                        height,
+                        1,
+                        self.format,
+                        texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
+                        1,
+                        1,
+                        view::D2,
+                    ],
+                )?;
+            }
+            for state in 0..made.states {
+                list.push(
+                    Op::CreateTextureView,
+                    &[
+                        ids.first_view + (place * 2) as u32 + state,
+                        target,
+                        0,
+                        state,
+                    ],
+                )?;
+            }
+            self.fallback[place] = Some(made);
+            self.bound[place] = None;
+        }
+        let inputs = if pass.history {
+            PassInputs {
+                color: made.scratch,
+                depth: 0,
+            }
+        } else {
+            inputs
+        };
+        self.prepare(
+            list,
+            arena,
+            (place, pass, inputs),
+            drawn,
+            (canvas, scale),
+            clock,
+            inverse_projection,
+            textures_made,
+        )
+    }
+
+    /// Records the runs of a fallback pass: each step copies the state that it reads into the
+    /// scratch texture, then draws the next state into the other state's layer. The target keeps
+    /// both states as its two layers, so a reader samples either. A pass without history draws
+    /// once, into its only layer.
+    pub(crate) fn record_fallback(
+        &self,
+        list: &mut DrawList,
+        place: usize,
+        pass: &Fullscreen,
+        target: u32,
+        state: u8,
+    ) -> Result<(), RecordError> {
+        let Some((_, _, pipeline)) = self.pipelines[place] else {
+            return Ok(());
+        };
+        let Some(made) = self.fallback[place].filter(|made| made.target == target) else {
+            return Ok(());
+        };
+        let ids = self.ids;
+        let (width, height) = made.drawn;
+        let steps = if pass.history { pass.steps } else { 1 };
+        let mut state = state;
+        for _ in 0..steps {
+            let read = 1 - state;
+            if pass.history {
+                // The state that this run reads goes into the scratch texture that it samples.
+                list.push(
+                    Op::CopyTextureToTexture,
+                    &[
+                        target,
+                        0,
+                        0,
+                        0,
+                        u32::from(read),
+                        made.scratch,
+                        0,
+                        0,
+                        0,
+                        0,
+                        width,
+                        height,
+                        1,
+                    ],
+                )?;
+            }
+            list.push(
+                Op::BeginRenderPass,
+                &[
+                    ids.first_view + (place * 2) as u32 + u32::from(state),
+                    NO_TARGET,
+                    NO_TARGET,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    pass_flags::STORE_COLOR,
+                ],
+            )?;
+            list.push(Op::SetPipeline, &[pipeline])?;
+            list.push(Op::SetBindGroup, &[0, ids.first_group + place as u32, 0])?;
+            if pass.maps.any() {
+                if pass.maps.group == 0 {
+                    list.push(Op::EndRenderPass, &[])?;
+                    return Ok(());
+                }
+                list.push(Op::SetBindGroup, &[1, pass.maps.group, 0])?;
+            }
+            list.push(Op::Draw, &[3, 1, 0, 0])?;
+            list.push(Op::EndRenderPass, &[])?;
+            state = read;
+        }
+        Ok(())
+    }
+
     /// Records the pass at view place `place` inside the render pass that the render graph began
     /// into its target. A pass whose textures have no bind group yet, or that has no pipeline,
     /// draws nothing, and its target keeps its last image.
@@ -239,6 +421,7 @@ impl FullscreenPasses {
         self.created = false;
         self.uploaded = [None; MAX_VIEWS];
         self.bound = [None; MAX_VIEWS];
+        self.fallback = [None; MAX_VIEWS];
     }
 }
 
