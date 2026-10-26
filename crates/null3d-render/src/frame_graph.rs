@@ -7590,6 +7590,26 @@ mod tests {
     }
 
     #[test]
+    fn a_fullscreen_target_takes_a_format_with_alpha_where_the_scene_color_packs() {
+        // The packed HDR scene color has no alpha channel, so the plan gives a full-screen pass's
+        // target rgba16float instead: a shader that writes an alpha has a channel to write it to.
+        let mut frames = frame_graph(format::RG11B10_UFLOAT, Antialias::Fxaa, true, false);
+        frames.sync(&[View::default(), fullscreen(PassSource::SceneColor, true)]);
+        let mut list = DrawList::with_capacity(512);
+        frames
+            .prepare(&mut list, (64, 48), RenderScale::FULL)
+            .unwrap();
+        let target = frames
+            .view_target(ViewId::from_index(1))
+            .expect("the view's target");
+        let created = operands(&list, Op::CreateTexture)
+            .into_iter()
+            .find(|texture| texture[0] == target)
+            .expect("the plan makes the target");
+        assert_eq!(created[4], format::RGBA16_FLOAT);
+    }
+
+    #[test]
     fn one_sample_modes_draw_the_scene_color_that_the_final_pass_reads_on_both_paths() {
         for scene_color in [format::RGBA16_FLOAT, format::CANVAS] {
             for antialias in [Antialias::Fxaa, Antialias::None] {

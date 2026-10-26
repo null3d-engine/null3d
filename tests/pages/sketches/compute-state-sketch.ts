@@ -342,6 +342,17 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 			await wait(10);
 			page.post('measuring', { format: shown.format });
 			return;
+		} else if (CASE === 'refuse') {
+			render.setPassSteps(field, 1);
+			await wait(1);
+			// A 4 by 4 pass: x 3 with width 2 reaches past its right edge.
+			let refused = 0;
+			try {
+				await render.readPass(field, { x: 3, y: 3, width: 2, height: 2 });
+			} catch (error) {
+				refused = (error as { code?: string }).code === 'E1220' ? 1 : 0;
+			}
+			values[0] = refused;
 		} else if (CASE === 'slow') {
 			render.setPassSteps(field, 1);
 			await wait(1);
