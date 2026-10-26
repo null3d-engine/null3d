@@ -1,6 +1,6 @@
 # D-143: Physical sky and aerial perspective
 
-Status: design decided by the helper of M2-EX26, for the owner's review. The owner approved the demo's look. Built: the physical sky is on main (`3dce97f60`), with the day's light and exposure under "The light through the day". The figures of cost and size are under Data. The owner's review of the design is pending. Task: M2-EX26; the moon and the sunset light: M2-EX8.
+Status: design decided by the helper of M2-EX26, for the owner's review. The owner approved the demo's look. Built: the physical sky is on main (`3dce97f60`), with the day's light and exposure under "The light through the day". The figures of cost and size are under Data. The owner's review of the design, and of the fixes that this record gives, is pending. Task: M2-EX26; the moon and the sunset light: M2-EX8.
 
 Summary: `scene.setBackground({ atmosphere })` draws a physical sky of Rayleigh and Mie scattering and ozone from Hillaire's three lookup tables, as Unreal Engine and Bevy do. The same air hazes distant objects in each surface's fog step, and the sky's environment, moon, stars, clouds and day's light follow it. Low draws three.js's analytic sky instead, matched in brightness, and nothing runs or downloads while no scene uses it.
 
