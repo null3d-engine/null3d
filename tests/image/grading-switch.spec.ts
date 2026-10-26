@@ -13,6 +13,8 @@ interface SwitchWindow {
 	intervalMedian: number;
 	intervalP99: number;
 	uploadMean: number;
+	/** The frames that the upload mean is over, which can be one more than `frames`. */
+	uploadFrames: number;
 	presentedFps: number;
 	skippedDraws: number;
 	gpuObjects: number;
@@ -60,10 +62,13 @@ for (const { query, tier } of TIERS)
 		expect(result.failures).toEqual([]);
 		// The bake's table is the change's only upload. One of the two windows near the change
 		// carries it: their frames' bytes rise by a table over the steady traffic. This can fail,
-		// where a sum of the windows' means alone could not.
-		const nearFrames = result.landed.frames + result.next.frames;
+		// where a sum of the windows' means alone could not. Each mean multiplies by the frames that
+		// it is over: a window's frame count can be one fewer, and in a short window that frame's
+		// share of the table is enough to fail the check.
+		const nearFrames = result.landed.uploadFrames + result.next.uploadFrames;
 		const nearBytes =
-			result.landed.uploadMean * result.landed.frames + result.next.uploadMean * result.next.frames;
+			result.landed.uploadMean * result.landed.uploadFrames +
+			result.next.uploadMean * result.next.uploadFrames;
 		expect(nearBytes - result.before.uploadMean * nearFrames).toBeGreaterThan(TABLE_BYTES * 0.9);
 		// The uploads stop with the changes: a run that kept uploading would leave the after window
 		// as busy as the changing one.
