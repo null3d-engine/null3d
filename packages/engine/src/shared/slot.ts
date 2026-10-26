@@ -159,9 +159,11 @@ export const TwoStepScale = 47;
  * engine memory. The sketch takes a read's answer when its slot is not 0.
  */
 /**
- * The generation of the newest plan's texture list, as the sketch thread recorded it. A list
- * recorded under an older generation names textures that the newer plan replaced, so the thread
- * that draws takes that frame without drawing it, as it does a frame of an older GPU epoch.
+ * The generation of the newest plan's texture list, as the sketch thread recorded it. A capture
+ * replays a list long after its frame was recorded, so it draws only a list recorded under this
+ * generation: an older list names textures that the newer plan replaced. The frame loop draws its
+ * frames in the order they were recorded, and each list carries the textures that it makes and
+ * releases, so a later plan does not make an earlier frame unsafe.
  */
 export const PlanEpoch = 48;
 /** The plan generation each frame parity's draw list was recorded under. */
@@ -175,9 +177,9 @@ export const FramePlan1 = 50;
 export const SkyLight = 51;
 /**
  * The frames that the thread that draws took and drew none of, because each was recorded for a GPU
- * device or a plan that the frame after replaced. A skipped list never draws again, so the work
- * that only it records, such as a probe's capture, is lost. A page reports the count around a
- * change, so a lost result names a skip as its cause.
+ * device that the browser took away. A skipped list never draws again, so the work that only it
+ * records, such as a probe's capture, is lost. A page reports the count around a change, so a lost
+ * result names a skip as its cause.
  */
 export const FramesSkipped = 52;
 export const PickRead0 = 37;
