@@ -5,7 +5,7 @@
 // and not the background's intensity. The map's light reaches a rough surface beside it, whose
 // brightness follows the same exposure; the `sky-layer-light` page holds that light's own color.
 import { expect, test } from '@playwright/test';
-import { pageResult } from '../lib/page-result.ts';
+import { pageResultWhileProgressing } from '../lib/page-result.ts';
 
 interface Capture {
 	stretch: number;
@@ -29,6 +29,14 @@ const HALVED = 0.85;
 const LIT = 10;
 /** How far the captures at the end of a stretch must agree, in levels of 255. */
 const STEADY = 3;
+/**
+ * The run fails when its page notes no new step for this long. The page notes a step at its first
+ * frame and after each capture. CI's software GPU runs the page several times slower than a
+ * desktop, so a wait on each step leaves a slow machine room and still fails a stuck page.
+ */
+const STALL_MS = 30_000;
+/** The most time the run may take in all. */
+const RUN_LIMIT_MS = 4 * 60_000;
 const TIERS = { webgpu: 'webgpu', compat: 'webgpu-compat', webgl2: 'webgl2' } as const;
 
 /** The mean of a stretch's last few captures of `place`. */
@@ -52,12 +60,13 @@ for (const gpu of Object.keys(TIERS) as (keyof typeof TIERS)[])
 	test(`a sky layer takes the scene's exposure in the sky and its reflection on ${gpu}`, async ({
 		page,
 	}) => {
-		test.setTimeout(120_000);
+		test.setTimeout(RUN_LIMIT_MS);
 		await page.goto(`sky-layer-exposure.html?gpu=${gpu}&fps=20`);
-		const result = await pageResult<{ error?: string; tier: string; frames: Capture[] }>(
-			page,
-			90_000,
-		);
+		const result = await pageResultWhileProgressing<{
+			error?: string;
+			tier: string;
+			frames: Capture[];
+		}>(page, STALL_MS);
 		expect(result.error).toBeUndefined();
 		expect(result.tier).toBe(TIERS[gpu]);
 		const { frames } = result;
