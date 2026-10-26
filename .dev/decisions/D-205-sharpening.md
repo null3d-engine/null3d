@@ -105,6 +105,11 @@ pages skipped.
 The cloud devices control neither heat nor display settings, so their figures are guides. The GPU
 times come from each device's own timer and do not follow the display's rate.
 
+The Galaxy S25 answers the finish line's "S24+": the owner ruled that this cloud phone closes the
+S24+ line. The cloud iPad Pro 13 stands in for the team's iPad Pro 11-inch (2018), which did not
+run, as [Device sessions](../devices.md#which-device-runs-a-check) allows. Its GPU is much faster
+than the team's tablet's, so its figure guides that tablet's cost rather than giving it.
+
 ## Decision
 
 The sharpening is a value of the post-processing settings, from 0 for off to 1 for the most. It
@@ -129,9 +134,12 @@ the upscaled image would need the upscale again for each of the four neighbors.
   frame and are unaffected.
 - The image tests `sharpen` and `sharpen-8-bit` draw a wall of small boxes at the most that the value
   takes, on both GPU paths. Their threshold is tighter than the default, because the sharpening moves
-  an edge by about 10 steps, which the default threshold would not count.
+  an edge by about 10 steps, which the default threshold would not count: 0.02 against the real GPU's
+  references and 0.05 against the software GPU's. A picture that lost the sharpening moves 6 to 9
+  per cent of the pixels, so both sets fail it. The software set is CI's own drawing, as
+  [D-238](D-238-gate-pictures-from-ci.md) asks.
 - The sharpening keeps each pixel's coverage and sharpens premultiplied color, as the upscale does
   below a render scale of 1, so a transparent canvas's edges sharpen the same way there.
 - The sharpening adds 0.948 ms on an iPad Pro 13 at the whole canvas's scale, and 1.376 ms on a
-  Galaxy S25. It adds nothing at half scale on either. WebGL2 on the iPad and on both phones has no
-  GPU timer, and the Galaxy S24 has no WebGPU adapter. Those rows keep the frame interval alone.
+  Galaxy S25. It adds nothing at half scale on either. WebGL2 gives no GPU timer on the iPad and on
+  both phones, and the Galaxy S24 has no WebGPU adapter. Those rows keep the frame interval alone.
