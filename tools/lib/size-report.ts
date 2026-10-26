@@ -1107,9 +1107,8 @@ export const FIRST_USE_SHADER_BUDGET: Budget = {
  * The share of a budget that a start or a file may reach in any column before the build prints a
  * warning: 97%. A start or a file that passes it has little room for the next feature, so the
  * report names it while the build still passes. The owner asked for this warning on the start in
- * M3-T1. It covers every budgeted file as well: on 26 October 2026 the largest first-use shader file
- * stood at 99.8% of its uncompressed budget with no word from the build, and a branch then took it
- * past.
+ * M3-T1. It covers every budgeted file as well, because a first-use shader file can stand at 99.8%
+ * of its uncompressed budget with no word from the build, and the next branch then takes it past.
  */
 export const NEAR_BUDGET_SHARE = 0.97;
 
