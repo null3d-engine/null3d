@@ -101,7 +101,7 @@ The rows above measure builds that read every entry from the cache. No row measu
 Four things held the memory. Each one is now changed, and the modules stay byte for byte the same:
 
 - Each build kept its own copy of its sources until the last build ended. A read from the cache shares them, and a compiled build did not. Now each build's sources become the run's one copy of each text as the build ends.
-- Each thread's composers kept the library modules for every set of shader defs that the thread met, about 0.36 GB a thread by the end of the run. Now a thread's composers start again empty every 200 builds. This cost no measurable processor time: 4,537 s against 4,552 s on 7 threads. `NULL3D_SHADER_COMPOSER_BUILDS` sets another count, and 0 keeps the modules for the whole run.
+- Each thread's composers kept the library modules for every set of shader defs that the thread met. By the end of the run, that was about 0.36 GB a thread. Now a thread's composers start again empty every 200 builds. This cost no measurable processor time: 4,537 s against 4,552 s on 7 threads. `NULL3D_SHADER_COMPOSER_BUILDS` sets another count, and 0 keeps the modules for the whole run.
 - The build rendered all 5,965 modules, 3 GB of text, before it wrote the first one. Now each module is written as soon as it renders, so the run holds only the modules that it renders at that moment.
 - A read of an entry held the file's bytes and the parsed entry at once: 2.3 GB of bytes for `standard_maps`. Now the read parses the file as it reads it.
 
@@ -121,4 +121,4 @@ How the data was produced: each row ran `/usr/bin/time -l target/shader/shader-b
 
 Every build that compiled every entry shared the machine with other sessions' jobs, so its wall time and its processor time only bound its cost. A comparison of the two compilers on an idle machine is still owed.
 
-The budget: a build that compiles every entry now holds less than 6 GB on 14 threads, and a read of every entry less than 4 GB. A change that raises either peak states the new figure, measured as above. `crates/null3d-shaders/tests/cache.rs` checks that compiled builds with the same text hold one copy of it. With the sharing removed, the test fails.
+The budget: a build that compiles every entry now holds less than 6 GB on 14 threads. A read of every entry holds less than 4 GB. A change that raises either peak states the new figure, measured as above. A test in `crates/null3d-shaders/tests/cache.rs` checks one thing: compiled builds with the same text hold one copy of it. With the sharing removed, the test fails.
