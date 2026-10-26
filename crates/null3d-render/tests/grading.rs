@@ -254,7 +254,7 @@ fn check_grade<B: FrameBuilder>(mut world: World<B>) {
         .create_volume(32, 32, 32, format::RGBA16_FLOAT)
         .unwrap();
     textures.set_data(table, 32, 32).unwrap().0.fill(0);
-    world.renderer.settings_mut().set_grade(Some(table), false);
+    world.renderer.settings_mut().set_grade(Some(table));
     // The texels upload in the next frames, and the group binds the table in the frame that finds
     // them on the GPU.
     let mut graded = None;
@@ -279,7 +279,7 @@ fn check_grade<B: FrameBuilder>(mut world: World<B>) {
     );
 
     // A table that the sketch turns off binds the blank one again.
-    world.renderer.settings_mut().set_grade(None, false);
+    world.renderer.settings_mut().set_grade(None);
     let commands = world.step(&mut mock, false);
     assert_eq!(bound_grade(&commands), Some(blank));
 }

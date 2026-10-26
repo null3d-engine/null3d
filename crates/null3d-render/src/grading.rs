@@ -100,13 +100,8 @@ pub(crate) struct Grading {
     /// The table's GPU texture id, with its scale and offset (see [`Lut::placement`]).
     pub(crate) lut: Option<(u32, [f32; 4], [f32; 4])>,
     /// The GPU texture id of the built-in grading table, or `None` while the sketch grades with
-    /// none. It maps a display color to its graded color, or, while `hdr` says so, it maps the
-    /// LogC code of high dynamic range light to that light's graded light, which the pass maps
-    /// with the tone curve.
+    /// none. It maps a display color to its graded color.
     pub(crate) grade: Option<u32>,
-    /// True while the table holds the grade over high dynamic range light, so the pass reads it
-    /// before the tone curve instead of after.
-    pub(crate) hdr: bool,
     pub(crate) vignette: Option<Vignette>,
     /// The sharpening's strength, from 0 for off to 1 for the most, at the whole canvas's render
     /// scale only. The second step of the two-step pass applies it.
