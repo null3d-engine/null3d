@@ -48,6 +48,31 @@ pub struct PassRead {
     pub texel_bytes: u32,
 }
 
+/// True when a read's region lies inside a texture of `size` texels. A canvas that shrank after
+/// the call can leave the region past the edge.
+pub fn fits(read: &PassRead, size: (u32, u32)) -> bool {
+    read.x.saturating_add(read.width) <= size.0 && read.y.saturating_add(read.height) <= size.1
+}
+
+/// Records a read's copy and its buffer read, when the region lies inside the texture of `size`.
+/// Returns false, with no command recorded, when the region reaches past it: a copy there would
+/// reject the frame's commands, so the read waits for its timeout instead. `size` is the texture's
+/// size at the frame that copies it, which a canvas that shrank since the call has changed.
+pub fn record_region(
+    list: &mut DrawList,
+    read: &PassRead,
+    texture: u32,
+    buffer: u32,
+    rows_from_bottom: bool,
+    size: (u32, u32),
+) -> Result<bool, RecordError> {
+    if !fits(read, size) {
+        return Ok(false);
+    }
+    record(list, read, texture, buffer, rows_from_bottom, size.1)?;
+    Ok(true)
+}
+
 /// The copied rows of a read, and the buffer it reads: a copy of the region follows the pass, and
 /// the read raises the request's slot once its bytes land. `rows_from_bottom` is true on WebGL2,
 /// whose first stored row of a target that a pass drew is the image's bottom row.
@@ -127,6 +152,33 @@ mod tests {
         assert_eq!(commands[0].operands[9..11], [4, 5]);
         assert_eq!(commands[1].op, Op::ReadBuffer);
         assert_eq!(commands[1].operands, [9, 0, 256 * 5, 128, 52]);
+    }
+
+    #[test]
+    fn a_region_past_the_textures_edge_is_not_copied() {
+        let mut list = DrawList::with_capacity(16);
+        let read = PassRead {
+            view: 1,
+            x: 1,
+            y: 1,
+            width: 2,
+            height: 2,
+            layer: 0,
+            ring: 0,
+            slot: 52,
+            destination: 0,
+            texel_bytes: 8,
+        };
+        // The texture the read was asked against, and the smaller one a shrunken canvas leaves.
+        assert!(record_region(&mut list, &read, 7, 9, false, (4, 4)).unwrap());
+        assert_eq!(null3d_gpu::drawlist::decode(list.words()).count(), 2);
+        list.clear();
+        assert!(!record_region(&mut list, &read, 7, 9, false, (2, 2)).unwrap());
+        assert_eq!(list.len(), 0, "no copy past the edge reaches the frame");
+        assert!(
+            !fits(&read, (2, 4)),
+            "x 1 with width 2 reaches past a 2-wide texture"
+        );
     }
 
     #[test]
