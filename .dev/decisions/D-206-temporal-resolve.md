@@ -1,6 +1,6 @@
 # D-206: The temporal resolve's second look, and the techniques that waited on it
 
-Status: decided by task M3-A11 from its own measurements: the temporal resolve does not ship. [D-179](D-179-technique-rulings.md) leaves TAA to this task, and leaves the many-lights prototype (M3-F3) and the temporal upscaler (M3-F10) to the same answer, so all three are dropped. The capture and plan-generation fixes are built, and the prototype stays behind an internal setting that is off on every preset. The owner may change the ruling. Task: M3-A11.
+Status: decided by task M3-A11 from its own measurements. The two faults that refused the resolve are fixed, and the engine's own paths pass on both GPU paths with MSAA and one sample. The quality bar of D-129 was then measured on both paths at each preset, and the resolve did not beat the presets, so it does not ship. [D-179](D-179-technique-rulings.md) leaves TAA to this task, and leaves the many-lights prototype (M3-F3) and the temporal upscaler (M3-F10) to the same answer. The owner may change the ruling. Task: M3-A11.
 
 Summary: The temporal resolve does not ship for 0.1.0. Against D-129's quality bar, on both GPU paths at every preset, it adds noise to still thin lines, smears grass that moves by itself, and draws softer and farther from a 64-sample reference than the presets. It costs about 1 ms on WebGPU in light scenes and 9.1 ms in the Creek on WebGL2, and TAA is dropped with the shipping of many lights and the temporal upscaler.
 
@@ -170,3 +170,48 @@ A prototype without the guard can still capture correctly on a given engine, bec
 2. A rejection that does not drop the history at sub-pixel edges, so still thin lines settle. The neighborhood clamp alone holds them better, but the depth rejection that replaces it is what crawls.
 3. A sharper resolve: the grass loses a fifth of its sharpness, and the preset's MSAA is already sharp.
 4. Figures from phones, where the WebGL2 cost is the worry.
+
+## a taken frame is judged stale before the sketch is woken
+
+The rule of 24 October fixed one fault and opened another. The frame loop judged a taken frame stale after it woke the sketch thread. The sketch could record the next frame during that wake. When the next frame's plan had made its targets again, the loop skipped the frame that it had taken, whole. A skipped list never draws a second time, so the work that only that frame recorded was lost without a word.
+
+The `probe-capture` picture failed twice in 16 full runs, both times on WebGL2. The floor kept the first capture's map, pixel for pixel. The page had asked for a capture after the sphere moved. The plan's texture list changed in the capture frame, and again in the frame after. The capture views' depth target enters it in the capture frame and leaves it in the frame after (`crates/null3d-render/src/graph/compile.rs`, `crates/null3d-render/src/frame.rs`). The wake let the frame after be recorded before the loop drew the capture frame. That skip dropped the six capture passes and the probe's filter, and the probe had cleared its request when the frame was recorded (`crates/null3d-render/src/probes.rs`). Nothing asked for the capture again. WebGL2 ignores a texture that was never made, without an error, so the run still reported success.
+
+### What a skipped list loses
+
+A skipped list never draws again, so everything that only that frame recorded is lost. The fault audit checked each kind of one-shot work against the code. These are lost: texture creates and deletes, picks, probe captures, generated maps, sky fills, texture uploads and canvas regions. Mesh and material edits and shadow tiles are lost too, and so are the compute pipelines that a pass makes once. These are safe: the pipelines that a frame's meshes draw with, timings and the temporal history, because each is rebuilt or replaced by later frames.
+
+Some of those losses reach beyond a picture:
+
+- The render graph records the textures it makes and releases, and remembers them as made at record time (`crates/null3d-render/src/frame_graph.rs`). A skipped list leaves the GPU without them, and the next frame does not make them again.
+- The probe array's remake does the same for the probes' maps and their generation (`crates/null3d-render/src/probes.rs`).
+- Each pass that makes its compute pipelines once, on its first recorded frame, loses them with a skipped list, the exposure, effects and final passes among them (`crates/null3d-render/src/exposure.rs`, `effects.rs`, `final_pass.rs`).
+- A GPU loss is safe because it forgets all of that bookkeeping (`crates/null3d-render/src/frame_graph.rs`, `crates/null3d-render/src/probes.rs`) and every probe captures again. The plan-generation skip had no such reset.
+
+The frame after a skipped one usually makes or releases the entries that moved, so the GPU's textures commonly converge. That is luck, and nothing guarantees it. A captured map does not converge, and neither does a texture whose entry the next plan leaves as it is.
+
+### The fix
+
+The frame loop now judges the frame before it stores the take and wakes the sketch (`packages/engine/src/render/loop.ts`). The sketch records no frame after one that the loop has not taken, so the answer holds until the frame draws. A frame therefore draws unless its own list was recorded for a GPU device that the browser took away. A plan change never skips a frame in these two loops, because frames draw in the order the sketch recorded them, and each list carries the textures it makes and releases.
+
+The hold loop follows the same rule. It draws the held frames from the first to the published one, in that order, so a plan that the second held frame changed cannot make the first unsafe. A scene with one probe and screen-space reflections draws two held frames. The first creates every object and captures the probe, and the second reads the first. The old rule skipped the first, with its creates and its capture, and the second then named objects that were never made.
+
+A capture still checks the plan's generation, because it replays a list long after its frame was recorded (`packages/engine/src/render/scene-renderer.ts`).
+
+The probe's request had a second way to die with no skip. A draw whose pipeline is still building draws nothing, and the frame loop stops waiting for new pipelines after the first full frame. A capture of an object whose material no camera draw had used yet could therefore filter a map that lacked the object. A capture now keeps its request until a frame draws with every pipeline built. A frame recorded before any frame has been drawn ends the request at once, because each frame waits for its pipelines until then: a held scene records every frame before the thread that draws draws one, so no held frame needs a second capture for that alone. The shadow tiles keep their tile's draw the same way (`crates/null3d-render/src/probes.rs`, `crates/null3d-render/src/shadow_tiles.rs`).
+
+The other repair, a re-arm of the probe whose capture frame was skipped, was rejected. It would repair the probe alone, while a skipped list also loses the render graph's textures and the passes' pipelines. It would also capture twice when the page asks for a capture while a re-arm waits, because both requests reach the same probe. This fix restores the rule that all of that work relies on. Task M3-F8 made it.
+
+The probe page now reports the frames that the thread that draws skipped, as `framesSkipped` in its result. The `probe-capture` test requires it to be 0. The test pages' watch notes the same counter in its trail. A future failure names a skip as its cause. The page does not ask for the capture again, because a retry would hide the fault.
+
+### What this does not fix
+
+A pick in flight across a GPU loss never answers: the loss resets the picking buffers and sends nothing back to the page (`crates/null3d-render/src/pick.rs`). A page waits forever for that answer. It belongs to task M3-R35.
+
+### The proof
+
+`packages/engine/src/render/loop.test.ts` holds two new tests. One records the next frame under a newer plan during the wake, and the taken frame still draws. The other draws two held frames whose plans differ. Both fail on the code before the fix. The probe's unit test, `a_capture_keeps_its_request_until_the_pipelines_it_needs_are_built`, ends the request in a frame recorded before any frame is drawn, and keeps it in a later frame while its pipelines build.
+
+The builder tests hold the rule. `packages/engine/src/render/loop.test.ts` draws both held frames when the later one records a newer plan. `crates/null3d-render/tests/probes.rs` captures two probes across the two held frames on both builders, starting from the round 26 checker's reproduction. The `probe-capture` picture carries the rule on every tier, and the `probe-blend` picture proves it on WebGL2. The `probe-blend` references on WebGPU and compatibility mode were drawn on 21 October, before this fix, and hold the lost-probe fault, so task M3-R36 owns that fault and those references. No reference image changed with this fix.
+
+This rule stands: a list from an older plan is never replayed after a newer plan made its targets again. The change stops the frame loop and the hold loop from applying that rule to frames that draw in the order they were recorded.
