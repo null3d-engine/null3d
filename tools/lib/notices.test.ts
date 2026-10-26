@@ -125,6 +125,58 @@ describe('noticesProblems', () => {
 			'examples/addons/lens-kit: has no entry',
 		);
 	});
+
+	test('refuses shipped code that names an upstream its notices leave out', () => {
+		const root = fixture({
+			...files([ENGINE_ROW, WIND_ROW]),
+			'crates/null3d-shaders/wgsl/dof.wgsl': '// It is the gather of KinoBokeh.\n',
+		});
+		expect(noticesProblems(root).join('\n')).toContain(
+			'packages/engine: its shipped code names KinoBokeh, and THIRD-PARTY-NOTICES.txt does not',
+		);
+	});
+
+	test('accepts shipped code whose notices name its upstream', () => {
+		const root = fixture({
+			...files([ENGINE_ROW, WIND_ROW]),
+			'packages/engine/THIRD-PARTY-NOTICES.txt':
+				'three.js 0.186.1 and KinoBokeh, under the MIT License.',
+			'crates/null3d-shaders/wgsl/dof.wgsl': '// It is the gather of KinoBokeh.\n',
+		});
+		expect(noticesProblems(root)).toEqual([]);
+	});
+
+	test('refuses an add-on that names an upstream and ships no notices', () => {
+		const root = fixture({
+			...files([ENGINE_ROW, WIND_ROW]),
+			'packages/wind/src/index.ts': '// It follows FidelityFX RCAS.\n',
+		});
+		expect(noticesProblems(root).join('\n')).toContain(
+			'packages/wind: its shipped code names AMD FidelityFX, and the package ships no THIRD-PARTY-NOTICES.txt',
+		);
+	});
+
+	test('refuses a decision record that claims a port the notices leave out', () => {
+		const root = fixture({
+			...files([ENGINE_ROW, WIND_ROW]),
+			'.dev/decisions/D-999-a-port.md':
+				'The depth of field is the gather of KinoBokeh, which the shader ports.\n',
+		});
+		expect(noticesProblems(root).join('\n')).toContain(
+			".dev/decisions/D-999-a-port.md: claims KinoBokeh as a port, and the engine's THIRD-PARTY-NOTICES.txt does not name it",
+		);
+	});
+
+	test('accepts a decision record whose claimed port the engine notices name', () => {
+		const root = fixture({
+			...files([ENGINE_ROW, WIND_ROW]),
+			'packages/engine/THIRD-PARTY-NOTICES.txt':
+				'three.js 0.186.1 and KinoBokeh, under the MIT License.',
+			'.dev/decisions/D-999-a-port.md':
+				'The depth of field is the gather of KinoBokeh, which the shader ports.\n',
+		});
+		expect(noticesProblems(root)).toEqual([]);
+	});
 });
 
 describe('the repository', () => {
