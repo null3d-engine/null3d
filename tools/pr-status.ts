@@ -120,6 +120,8 @@ const NOTES: Readonly<Record<string, string>> = {
  * because both describe the same task and only one of them can be true.
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
+	'M3-F8':
+		"unticked by the round 27 audit although its branch lands: the capture guard's fix proves the two-probe picture on WebGL2, and the WebGPU and compatibility references recorded the lost-probe fault, so those paths prove nothing until M3-R36 draws them again. Its tick also waits on M3-R35, the pick that never settles after a GPU loss, which the record places under this task.",
 	'M3-R18':
 		'unticked by audit round 21, after two rounds of reading had passed it: the finish line asks every package notices to list its upstreams, and four ported upstreams are named nowhere. KinoBokeh and Unity post-processing stack v1 behind the depth-of-field gather, AMD FidelityFX FSR 1 RCAS and Qualcomm Snapdragon GSR 1 behind the final pass, each fetched and compared by hand against the shader source. The gap earlier rounds missed is which package ships the text: the engine npm package leaves the compiled shaders out, while the Vite plugin shader compiler carries the full text of every engine shader and names none of these upstreams, nor three.js, nor Filament. The guard that would catch it, tying an attribution claim to the notices of the package that ships that code, does not exist yet',
 	'M3-R14':
