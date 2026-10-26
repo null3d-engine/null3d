@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import type { GlslProgram, ShaderVariant } from '../../generated/shaders';
 import { ENVIRONMENT_SHADER } from '../../generated/shaders-environment-glsl';
 import { buildLayer } from './environment';
-import { type ProgramHost, slotOf } from './programs';
+import { type ProgramHost, textureUnitOf, textureUnitsOf } from './programs';
 
 /** The environment shader's WebGL2 build, by pipeline, which a map's generator is given. */
 const GLSL = ENVIRONMENT_SHADER.webgl2.glsl as Readonly<Record<string, GlslProgram>>;
@@ -10,21 +10,20 @@ const GLSL = ENVIRONMENT_SHADER.webgl2.glsl as Readonly<Record<string, GlslProgr
 /** The variant of the layer that a page sends; the stand-in host reads none of its text. */
 const LAYER = { permutation: 0, wgsl: null, glsl: GLSL } as ShaderVariant<string>;
 
+/** A uniform location for the numbering, which counts a texture whose uniform the build declares. */
+const LOCATION = {} as WebGLUniformLocation;
+
 /**
- * The texture unit that the backend gives a binding of a program: its place among the slots that
- * the program's stages declare, in the order the backend visits them. A stage that reads no
- * texture at a binding has no uniform for it, so the lookup refuses, as the backend does.
+ * The texture unit that the backend gives a binding of a build, through the backend's own
+ * numbering. The build lists only the textures that each program reads, so every one has a uniform
+ * here, where a linked program drops the textures its driver never reads.
  */
 function unitOf(built: GlslProgram, group: number, binding: number): number {
-	const slots: number[] = [];
-	for (const texture of [...built.vertex.textures, ...built.fragment.textures]) {
-		const slot = slotOf(texture.group, texture.binding);
-		if (!slots.includes(slot)) slots.push(slot);
-	}
-	const at = slots.indexOf(slotOf(group, binding));
-	if (at < 0)
-		throw new Error(`a WebGL2 program reads no texture at group ${group}, binding ${binding}`);
-	return at;
+	return textureUnitOf(
+		textureUnitsOf(built, () => LOCATION),
+		group,
+		binding,
+	);
 }
 
 /**

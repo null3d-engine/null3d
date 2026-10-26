@@ -12,8 +12,9 @@ import { counted } from './text.js';
  * The result of one check, as the test command prints it.
  *
  * @typedef {object} Outcome
- * @property {'PASS' | 'FAIL' | 'SKIP' | 'SAVED'} status SAVED marks an image that became its
- *   reference.
+ * @property {'PASS' | 'WARN' | 'FAIL' | 'SKIP' | 'SAVED'} status SAVED marks an image that became
+ *   its reference; WARN marks a result that the owner accepts, such as an add-on over a size
+ *   budget, and it does not fail the run.
  * @property {string} text What was checked, and the reason for a failure or a skip.
  * @property {string[]} [details] Lines under the result, such as the errors that a check printed.
  */

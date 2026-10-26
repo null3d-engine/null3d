@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { missingCoreFiles } from '../../../packages/vite-plugin/src/index.ts';
 import { MATERIAL_BUILDS_ADDRESS } from '../../../packages/vite-plugin/src/material-builds.ts';
@@ -550,6 +550,15 @@ const ADDON_FIXTURE = join(import.meta.dirname, '../../../tests/fixtures/check-a
  */
 const BUILDS = (missingCoreFiles(ADDON_FIXTURE) ?? []).length === 0;
 
+/**
+ * CI's unit job downloads the build job's files before its tests, so there the core files are
+ * always present. A file missing there means the job lost it, and the build checks below would pass
+ * while they checked nothing, so the job fails instead.
+ */
+it.if(Boolean(process.env.CI))('finds the core files in CI, so the build checks run there', () => {
+	expect(missingCoreFiles(ADDON_FIXTURE)).toEqual([]);
+});
+
 describe.skipIf(!BUILDS)('buildAddon', () => {
 	it('gives the shader data that the entry holds a part of its own', async () => {
 		// A build that reads no cache writes nothing into the fixture and announces no compile, so
@@ -755,6 +764,34 @@ describe('allocationGate', () => {
 	});
 });
 
+/**
+ * An add-on whose entry minifies past the budget for code. Its manifest declares the plugin
+ * interface, and a link to the installed packages lets the build resolve Vite and the plugin from
+ * the add-on's own folder, as a package that installs them beside its manifest does. `source` adds
+ * lines before the entry's own, such as an import that the public-API gate refuses.
+ *
+ * @param {readonly string[]} [source]
+ */
+function overBudgetAddon(source: readonly string[] = []): string {
+	const folder = fixture({
+		'package.json': JSON.stringify({ name: '@acme/heavy' }),
+		// A literal that minifies to more than the raw budget and compresses far below the other two,
+		// so one column goes over and the warning names a single file.
+		'src/index.ts': [
+			...source,
+			"checkPluginInterface('@acme/heavy', { min: 1, max: 1 });",
+			`export const data = ${JSON.stringify('a'.repeat(70 * 1024))};`,
+			'',
+		].join('\n'),
+	});
+	symlinkSync(
+		join(import.meta.dirname, '../../../node_modules'),
+		join(folder, 'node_modules'),
+		'dir',
+	);
+	return folder;
+}
+
 describe('run', () => {
 	const log = spyOn(console, 'log').mockImplementation(() => {});
 	afterEach(() => log.mockClear());
@@ -792,6 +829,30 @@ describe('run', () => {
 		});
 		expect(await run([folder])).toBe(0);
 		expect(printed()).toContain('PASS  public API: 1 file imports only the engine');
+	});
+
+	it('warns, and exits 0, when a built file goes over a size budget', async () => {
+		const folder = overBudgetAddon();
+		expect(await run([folder, '--skip-browser'])).toBe(0);
+		expect(printed()).toContain(
+			'WARN  sizes: 1 file load more than the budget for a file after the start',
+		);
+		expect(printed()).toContain('over its 64.0 KB budget');
+		// The exit status follows the FAIL lines, so a warning leaves the run passing.
+		expect(printed()).not.toContain('FAIL');
+		expect(printed()).toContain('1 warning');
+	});
+
+	it('still exits 1 when a warning sits beside a failure', async () => {
+		// A type-only import refuses no build, so the sizes gate still warns beside the failure.
+		const folder = overBudgetAddon(["import type { internals } from '@null3d/engine/internal';"]);
+		expect(await run([folder, '--skip-browser'])).toBe(1);
+		expect(printed()).toContain('FAIL  public API: 1 import reaches past the engine');
+		expect(printed()).toContain(
+			'WARN  sizes: 1 file load more than the budget for a file after the start',
+		);
+		expect(printed()).toContain('1 failed');
+		expect(printed()).toContain('1 warning');
 	});
 
 	it('prints the help without checking anything', async () => {
