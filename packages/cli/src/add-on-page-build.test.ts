@@ -67,8 +67,8 @@ describe('a page build with source maps', () => {
 						bytes += statSync(path).size;
 					}
 					// The gate reads each mapping and each source's path, never a source's text, and a map
-					// that carried the text would copy the build's code. On 24 October 2026 the maps of
-					// this build made 10 MB.
+					// that carried the text would copy the build's code. The maps of a build that carried it
+					// made 10 MB.
 					expect(bytes).toBeLessThan(64 * 1024 * 1024);
 					// A script of the build names the shader file at the address where the linked file now
 					// sits, so a page that loads the build fetches what the shader build wrote.

@@ -25,7 +25,7 @@ How much of the engine's JavaScript may a page download at its start, in each th
 | Each generated combination table, whose name holds `-combos` | 96 KB | 24 KB | 16 KB |
 | Each shader file that loads on a feature's first use | 1,792 KB | 320 KB | 56 KB |
 
-The size report prints a warning for each start past 97% of its Brotli budget, so a start that is about to pass it is named while the build still passes.
+The size report prints a warning for each column of each start and each budgeted file past 97% of its budget. So a start or a file that is about to pass its budget is named while the build still passes. Under GitHub Actions the size check prints its warnings as annotations, which the run's page shows.
 
 ### The start
 
@@ -55,7 +55,7 @@ Shader text compresses far better than code, so the JavaScript files' proportion
 
 - Brotli, 56 KB. A feature's surface function rides every build of the standard material, as the engine's own material families do. The largest set of `@null3d/water`'s builds measures 53.3 KB after Brotli, 241.8 KB after gzip and 1,204.5 KB uncompressed. The add-on listing's size gate holds an add-on's files to these same figures ([D-225](D-225-addon-listing-check.md)), and a test keeps the two Brotli figures equal. The figure leaves about 5% above that set. A first-use file that a page never opens costs it nothing, so the figure costs only the devices that draw the feature.
 - gzip, 320 KB. Browsers download over HTTPS with Brotli wherever the host offers it, so the Brotli limit binds. Only a host without Brotli sends gzip, and a feature's file loads only on that feature's first use.
-- Uncompressed, 1,792 KB. The coat and sheen family's largest file fills it, since that family's code rides over a hundred builds ([D-215](D-215-iridescence-and-anisotropy.md)).
+- Uncompressed, 1,792 KB. The coat and sheen family's largest file fills it, since that family's code rides over a hundred builds ([D-215](D-215-iridescence-and-anisotropy.md)). That file, `js/shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-draw-index-tone-map-half.js`, measures 1,788.5 KB at commits `4a3eceaea` and `c7f0868e6`, 99.8% of the figure, and five of its siblings are past 97%. A line in the lit shader repeats once for each build that the file holds. So a few lines that a branch counts at one to three kilobytes cost the file about 13 KB, and take it past its budget.
 
 ### Combination tables
 
@@ -226,116 +226,53 @@ The same build without and with the split, in bytes after Brotli:
 
 The parts of the largest start that moved: `js/page.js` falls from 31,563 to 28,925 bytes, `js/sketch-worker.js` from 68,127 to 68,062, and `js/page-check.js` (188 bytes) joins `page.js`.
 
-| Part | Before | After | Change |
-| --- | ---: | ---: | ---: |
-| `js/page.js` | 31,563 | 28,925 | -2,638 |
-| `js/sketch-worker.js` | 68,127 | 68,062 | -65 |
-| `js/page-check.js` | 188 | in `page.js` | -188 |
+The modes that run the sketch on the page change little. Their sketch runner sits in `js/page-sketch-runner.js` rather than in the worker, and the engine gives the governor and its settings to the thread that draws in that mode too, so the page still loads the module.
 
-The modes that run the sketch on the page change little. Their sketch runner sits in
-`js/page-sketch-runner.js` rather than in the worker, and the engine gives the governor and its
-settings to the thread that draws in that mode too, so the page still loads the module.
+### Trims still owed
 
-The largest start is 2,383 bytes under the 191 KB line, so the build passes again at 98.8% of it.
-The line does not move: this change pays back the raises of 24 and 25 October and leaves room for
-about two of the features that follow.
+Each of these trims returns start bytes to every page that does not use the feature:
 
-### What this change ruled out
+- The cluster levels' culling pass. Its compute shader takes 9,738 bytes of WGSL, 2,736 after Brotli, in every page's start, although only the WebGPU path builds its pipeline. In pipelined WebGL2 mode it adds 650 bytes, where it compresses beside the shader text already there. The trim builds the pass with the builds that load on a feature's first use, as a material's shader does. A page that never draws a cluster tree then downloads none of it, and WebGL2 keeps its start. [D-213](D-213-cluster-levels.md) holds the drawing method and its numbers.
+- The compute pass's option checks and the instance draw's adapter. They put their Rust and their adapter code into every start. The trim loads both with their first use, so a page that adds neither downloads neither.
+- `scene/light-probes.ts` in the page's start: 1,638 bytes uncompressed, about 780 after Brotli. The page's own code reaches none of it. Two chunks that a page may load later both read it, so the bundler keeps it in the start for them. Its pieces cannot simply move, because the constants that both halves read would then sit in the start instead, so the split needs three modules for under a kilobyte.
+- One copy of the shared helpers for the page and every worker. `shared/images.ts` sits in three start files at 4,465, 4,603 and about 3,700 uncompressed bytes, and `shared/metrics.ts` in the same three at 5,828, 3,710 and about 2,400. That is about 25 KB uncompressed. The trim ships the engine's workers prebuilt beside shared files, so each worker takes the shared file from the browser's cache, as the page loaded it first. It is a change to how the package builds, not a change to the engine's code.
 
-- **The shader device file, 53,283 bytes.** It is 28% of the start and the largest part after the
-  sketch worker. [The section of 22 October](#where-the-starts-bytes-are-22-october-2026) measured
-  that removing whole templates and whole permutation builds saves about 1 KB for 193,000 characters
-  of text, because Brotli already holds the near copies once. The file is a floor until the shader
-  library itself shrinks.
-- **The combination key tables, 29,374 bytes uncompressed in `js/render-worker.js`.** They list every
-  feature set that has a shader module of its own, and they compress to about 2.3 KB alone. They are
-  written by the shader build, and one reader takes them as the renderer starts, so moving them would
-  add a download to the path that builds its first pipelines. Splitting them needs a change to the
-  shader build and a rebuild of every shader module, which is far more than this trim is worth.
-- **The fog write, the picks and the pointer events out of the sketch worker, about 7.5 KB
-  uncompressed.** [The section of 22 October](#the-fog-picks-and-pointer-event-move-measured-and-dropped-22-october-2026)
-  measured this at 1,453 bytes *more* in each threaded start: a small module that leaves a large file
-  compresses worse alone than inside it, and the pieces here are each a few kilobytes.
-- **One copy of the shared helpers for the page and every worker.** `shared/images.ts` sits in three
-  start files at 4,465, 4,603 and about 3,700 bytes, and `shared/metrics.ts` in the same three at
-  5,828, 3,710 and about 2,400. That is about 25 KB uncompressed, and moving it needs the build step
-  of [option G](#options-for-the-rest), which ships the engine's workers prebuilt beside shared
-  files. It is a change to how the package builds, not a change to the engine's code.
-- **The hold-mode script performer and the page's replay code, about 1.5 KB uncompressed each.** Both
-  run only in a test page. A part that leaves a start pays for its own file, and at this size it
-  pays about what it saves.
-- **`scene/light-probes.ts` in the page's start, 1,638 bytes uncompressed, about 780 after Brotli.**
-  The page's own code reaches none of it. Two chunks that a page may load later both read it, so the
-  bundler keeps it in the start for them. Its pieces cannot simply move, because the constants that
-  both halves read would then sit in the start instead, so the split needs three modules for under a
-  kilobyte. This is the next trim worth taking if the room runs out again.
+## Rejected options
 
-## The start's budget rises to 194 KB, 25 October 2026
+- The fog write, the picks and the objects' pointer events on first use. The moves themselves take about 1.1 KB out of each threaded start. But the error class then becomes a file of its own in each start (789 and 603 bytes), and a 1.6 KB file compresses far worse alone than inside a 90 KB chunk. With the churn in the page's and the worker's starts, the move costs each start more than it saves:
 
-The grading work's branch measured WebGL2's pipelined start at 197,411 bytes after Brotli in a local
-build, 803 bytes over the 192 KB line. Its own addition is small. It holds the switch that picks
-where the grading table takes its input, the values that the 8-bit path's shaders read, and the code
-that routes the grade to each path. The day's other landings had already filled the room.
+  | Start | Without the move | With the move | Difference |
+  | --- | --- | --- | --- |
+  | pipelined, WebGL2 | 182,116 | 183,569 | +1,453 |
+  | pipelined, WebGPU | 166,159 | 167,612 | +1,453 |
+  | low latency, WebGL2 | 178,803 | 180,171 | +1,368 |
+  | low latency, WebGPU | 162,854 | 164,208 | +1,354 |
+  | drawing on the main thread, WebGL2 | 180,088 | 181,521 | +1,433 |
+  | drawing on the main thread, WebGPU | 164,326 | 165,794 | +1,468 |
+  | single-threaded, WebGL2 | 168,992 | 169,558 | +566 |
+  | single-threaded, WebGPU | 153,230 | 153,831 | +601 |
+  | sketch on the main thread, WebGL2 | 172,716 | 173,302 | +586 |
+  | sketch on the main thread, WebGPU | 156,759 | 157,345 | +586 |
 
-The budget rises to 194 KB, or 198,656 bytes, leaving 1,245 bytes of room. The owner's rule of
-22 October allows the start's budget to rise as needed without asking, reaffirmed on 25 October. The
-second grading design's bake loads only in the grade task's worker file, which has its own budget.
-A page that never grades therefore pays nothing for it. The trims owed above still stand as the next
-work that touches the start's size.
+- The pointers' dispatcher on first use. `queries.ts` reads its hit-field constants, which keeps the whole module in the start. A module of its own for those constants, `scene/pointer-fields.ts`, makes the split possible. It would save between nothing and about 700 bytes on the threaded starts, since a split module compresses worse than the same code in a chunk.
+- A smaller shader device file. It is 28% of the start, and Brotli already holds its near copies once ([Where the start's bytes are](#where-the-starts-bytes-are)).
+- The combination key tables out of the render worker: 29,374 bytes uncompressed, about 2.3 KB alone after Brotli. One reader takes them as the renderer starts, so moving them adds a download to the path that builds its first pipelines. Splitting them needs a change to the shader build and a rebuild of every shader module.
+- The combination tables split into more files, to keep them under 64 KB uncompressed. That needs a change to the shader build and to the loader, which the owner judged not worth it.
+- The hold-mode script performer and the page's replay code on first use, about 1.5 KB uncompressed each. Both run only in a test page. A part that leaves a start pays for its own file, and at this size it pays about what it saves.
+- First-use modules split further, by shader template. It only moves bytes between files: a page still downloads the same builds, in more requests. It also needs a new loader key, since the tables are keyed by feature set, and it does nothing for the start.
+- Builds that a page draws with moved out of the start's shader module into a first-use file. That delays the first drawn frame for ordinary materials, which [D-56](D-56-first-use-shader-files.md) forbids: no frame draws a feature half done.
+- A first-use module of its own for the screen-space reflections' lit code. It would add about 900 GLSL programs and a rebalance of the Safari shard guard, for half a kilobyte.
+- The error fix text in development builds only. A release build's message would then say where to read the fix, not the fix itself, which bends design principle 10. The table loads at the first error instead.
+- An entry file of the render worker for each GPU path. The page starts its workers before it probes the GPU, so their scripts and the core's loader download while the core does. A worker for one path could start only after the probe, about a round trip later.
+- Steering the bundler to keep the renderers' shared code in the start file. A bare import keeps a module only when the bundler finds side effects in it, which held for one of the eight modules. Re-exports through one module change nothing, since the bundler follows them to each name's own module. A module of re-exports that loads beside the path's file split the page's start file into four.
 
-## The start's budget rises to 196 KB, 25 October 2026
+## Consequences
 
-The merge that landed the day's tooling work measured WebGL2's pipelined start at 196,291 bytes
-after Brotli against the 194 KB line, 2,365 bytes left and past the warning at 97 per cent. Two
-changes had grown it. The sky layer's generator rides both bundles, so `page-environment-generator.js`
-grew 16.2 per cent, from 6,175 to 7,177 bytes, and `sketch-worker-environment-generator.js` 15.7 per
-cent, from 6,174 to 7,142. The WebGL2 page grew 2.0 per cent, from 14,184 to 14,473, for a cause not
-yet found.
-
-The owner said to raise the line. It rises to 196 KB, or 200,704 bytes, leaving 4,413 bytes of room.
-The owner's rule of 22 October allows the start's budget to rise as needed without asking, reaffirmed
-on 25 October. The trims owed above still stand as the next work that touches the start's size, and
-the growth of the two generator files carries its own `Size-Growth:` trailers on the commit that
-explains them.
-
-## The start's budget goes to 256 KB for now, 25 October 2026
-
-The owner raised it again the same afternoon, to 256 KB or 262,144 bytes, and described the figure
-as one for now. The reason is time: the work that closes the milestone's feature list should not stop
-for a crossing while the trims run beside it. At the measured 196,291 bytes it leaves 65,853 bytes of
-room.
-
-The line is headroom, not a target. The owner placed the reduction in M4: the line comes down and the
-trimming is done as part of that milestone, not during M3's push to finish its features. A crossing
-before then is read the same way it was today. The raises buy time, and the trims are the work that
-returns the line to something the project would choose on purpose.
-
-## The later files to 18 KB after Brotli, 25 October 2026
-
-The cap on each file that loads after the start rose twice in the last days of the milestone. It went
-from 16 KB to 17 KB on 22 October 2026, because the glTF worker grew to 16,832 bytes with D-215's
-thin film and stretched lobe (`39886b397`). It went from 17 KB to 18 KB on 25 October 2026, on the
-owner's word (`4fec8751b`): the worker had 67 bytes of room under the old figure, and mapping the
-texture-transform pointers that three.js moves takes it about 57 bytes past that line. The
-alternative was to drop the loader's checks for a malformed transform and for a material that moves
-two, so the owner raised the figure by a kilobyte.
-
-The gzip figure stays at 24 KB and the uncompressed one at 64 KB. This is headroom, not a target:
-the first trim that wins bytes back takes them, and the glTF worker stays the only file near the
-line. `d09e9ddfb` makes the add-on check follow the same figure. The M2 table of gzip and
-uncompressed budgets above records the figures as they stood on 4 October 2026.
-
-## The warning covers every budgeted file, 26 October 2026
-
-The warning at 97 per cent covered only the start. A file with a budget of its own passed in silence
-until it crossed. On the pushed milestone tip, 4a3eceaea, and again on c7f0868e6, the largest
-first-use shader file was
-`js/shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-draw-index-tone-map-half.js`.
-It was 1,788.5 KB uncompressed, 99.8 per cent of its 1,792 KB budget, and five of its siblings were
-past 97 per cent. A branch merged with the milestone then measured it at 1,844,611 bytes, over the
-budget. The branch had estimated its own cost at one to three kilobytes. A few lines in the lit shader
-repeat once for each build that the file holds, so they cost about 13 KB.
-
-`budgetWarnings` now reads the same list of starts and files as `budgetProblems`. It warns about
-each column of each one that passes 97 per cent of its budget without passing it. Under GitHub
-Actions, the size check prints its warnings as annotations, which the run's page shows.
+- `tools/lib/size-report.ts` holds the budgets: `START_BUDGET`, `LATER_BUDGET`, `COMBOS_BUDGET` and `FIRST_USE_SHADER_BUDGET`. It measures each file in three columns (`COLUMNS`, `measure`), and each budget is a `Budget` with a size for each column. `budgetProblems` gives one problem for each column over its budget. `budgetWarnings` reads the same starts and files, and warns for each column of each one past `NEAR_BUDGET_SHARE` of its budget without passing it. The size report prints every column with its share of the budget.
+- `DOWNLOADS` in `tools/lib/size-report.ts` holds each thread mode on each GPU path, and `drawingParts` names the files that each thread that draws loads on demand. A path's start counts its own renderers, the shared file and its own largest shader file. Every start counts the probe worker's `draw-path-probe.ts` (1,134 bytes after Brotli), since every device with WebGPU probes that path whichever path the page draws with.
+- A feature that a page does not use loads its code in a part that `ENGINE_PARTS` names with the part that loads it. `LATER_PARTS` names the parts that load later, and the report prints them in a section of their own. The engine test "a page that uses no feature that loads on first use downloads none of their files" checks every such part. It runs in every thread mode on both GPU paths, on the dev server and in a production build. It also checks that a page downloads its own GPU path's renderers and not the other path's.
+- A file that loads on demand must not keep code of the start's files alive through a development check. It reads the development constant itself.
+- The offline file list (`null3d-files.json`, D-102) puts both paths' renderers and the shared file in `start`. So a cached game also starts offline on the path that its first visit did not draw with. A unit test of `offline.ts` checks the list, and `bun run test:packages` starts the fresh project offline on both paths. A page that switches paths, such as a benchmark page, runs each path in a load of its own. It downloads each path's renderers the first time it draws with that path.
+- `ADDON_SHADER_BUDGET` in the add-on check equals `FIRST_USE_SHADER_BUDGET.brotli`, and a test keeps the two equal.
+- A pull request that moves code to first use states how the code loads, and the round trip that its first use costs.
+- AGENTS.md, the README and [Benchmarks](../benchmarks.md#download-size) give the budgets in all three columns. The hosting guide tells developers to serve the engine's files with Brotli, and gives the gzip and uncompressed sizes of the start.
