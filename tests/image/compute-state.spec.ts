@@ -114,9 +114,10 @@ for (const { tier, query } of TIERS) {
 		// The frame stays within the weakest tier's 33.3 ms floor with the pass on.
 		expect(on.interval).toBeLessThanOrEqual(33.4);
 		if (on.gpu !== null) expect(on.gpu).toBeLessThanOrEqual(33.4);
-		// The compute paths hold four copies of one state's texels; WebGL2 holds three.
+		// The compute paths hold four rgba16float copies of one state's texels; WebGL2 holds three
+		// in the scene color's format.
 		const copies = tier === 'webgl2' ? 3 : 4;
-		const texel = on.format === 'rgba16float' ? 8 : 4;
+		const texel = tier === 'webgl2' && on.format !== 'rgba16float' ? 4 : 8;
 		expect(result.passBytes).toBe(256 * 256 * copies * texel);
 		const side = (figures: CostFigures) =>
 			`${figures.interval.toFixed(2)} ms frame, ${figures.cpu.toFixed(2)} ms CPU, ` +
