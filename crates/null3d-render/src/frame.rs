@@ -3885,10 +3885,16 @@ impl SceneSettings {
                 2.0 * pixel_ratio / pixels.0.max(1) as f32,
                 2.0 * pixel_ratio / pixels.1.max(1) as f32,
             ],
-            occlusion: if view_id == ViewId::CAMERA
-                && (self.ao().is_some() || self.contact_reach().is_some())
-            {
-                ao::frame_values(self.ao(), canvas, scale, self.screen_scale())
+            occlusion: if view_id == ViewId::CAMERA {
+                let mut values = if self.ao().is_some() || self.contact_reach().is_some() {
+                    ao::frame_values(self.ao(), canvas, scale, self.screen_scale())
+                } else {
+                    [0.0; 4]
+                };
+                // The scene target keeps the canvas's height at every render scale, which custom
+                // materials turn their pixel rows by on WebGL2.
+                values[1] = canvas.1.max(1) as f32;
+                values
             } else {
                 [0.0; 4]
             },

@@ -1134,9 +1134,10 @@ pub fn update_batches(frame: u32) -> u32 {
 
 /// Finds the frame's visible objects on the job workers, where the frame builder culls on the CPU,
 /// for a canvas of this size in device pixels. Call it before `recordFrame`, with the same `scale`
-/// and `built`: the render scale in thousandths, which the choice of levels of detail reads, and
-/// the newest frame that the thread that draws drew with every pipeline built. The views cull at
-/// the canvas's full size.
+/// and `built`: the render scale in thousandths, which the choice of levels of detail reads and
+/// which the views' frame values carry, and the newest frame that the thread that draws drew with
+/// every pipeline built. The frame values that the cull builds are the ones its frame draws with,
+/// so they must be the render size's, as `recordFrame`'s are.
 #[wasm_bindgen(js_name = cullFrame)]
 pub fn cull_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32) -> u32 {
     let Some(jobs) = JOBS.get() else {
@@ -1145,7 +1146,7 @@ pub fn cull_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32) -
     with_engine(|e| {
         let scale = RenderScale::from_thousandths(scale);
         e.renderer.settings_mut().set_level_scale(scale);
-        let (renderer, input) = e.frame(frame, (width, height), RenderScale::FULL, jobs, built);
+        let (renderer, input) = e.frame(frame, (width, height), scale, jobs, built);
         match renderer.cull(&input) {
             Ok(()) => 0,
             Err(error) => record_failure(error),

@@ -207,6 +207,11 @@ const FOG_VOLUME_SKETCH = 'tests/pages/sketches/fog-volume-sketch.ts';
 const FOG_VOLUME_SIZE = [480, 270] as const;
 /** The hero shadow's picture size, large enough to see the tile's texels on the car's shadow. */
 const HERO_SIZE = [640, 360] as const;
+/**
+ * The Creek picture size at a render scale below the whole canvas: nearly square, as a large live
+ * page draws, so the view crops the sides the way the owner's recording does.
+ */
+const CREEK_SCALE_SIZE = [320, 279] as const;
 
 /**
  * The volumetric fog: the sun's rays between the pillars, and the street lamps' cones at night with
@@ -1390,6 +1395,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		tiers: ['webgpu', 'webgl2'],
 		modes: ALL_MODES,
+	},
+	// The materials recipe's own page with the render scale fixed at 0.75, the floor at High. The
+	// recipe builds its place from the pixel and reads the scene's depth there, so it shows the same
+	// wrong-place fault when the engine maps the place through the depth copy's size.
+	{
+		name: 'scene-depth-render-scale',
+		page: 'tests/pages/scene-depth.html',
+		size: [320, 180],
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['renderScale=0.75'],
 	},
 	// A beach and a pond whose water meets a bed that rises to the surface, an island and two stones.
 	// The surface function reads the copy of the opaque scene's depth and fades the water over a band
@@ -3186,6 +3202,28 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(demo.name === 'hero-shadow' && { size: HERO_SIZE }),
 		};
 	}),
+	// Creek on a near-square canvas at a render scale below the whole canvas, from the opening view
+	// and from the low pass along the bank. The scene draws into a corner of the depth copy, which
+	// keeps the whole canvas's size, so a custom material that reads the scene's depth must map its
+	// place through the image's size. Before that mapping the river draws dry over most of its
+	// length, and water covers the near bank below a straight screen line at the scale. Hold mode
+	// has no governor, so the sketch fixes the scale that a large live page reaches by itself.
+	{
+		name: 'creek-render-scale-opening',
+		sketch: 'examples/showcase/creek/sketch.ts?render-scale=0.75',
+		size: CREEK_SCALE_SIZE,
+		hold: 0.5,
+		swiftShaderSwitches: ['preset=low'],
+		timeoutSeconds: 300,
+	},
+	{
+		name: 'creek-render-scale-route',
+		sketch: 'examples/showcase/creek/sketch.ts?render-scale=0.75',
+		size: CREEK_SCALE_SIZE,
+		hold: 17,
+		swiftShaderSwitches: ['preset=low'],
+		timeoutSeconds: 300,
+	},
 	// The hero demo at both tile sizes. The car stands in the same place and its shadow falls the
 	// same way; the larger tile draws its edge sharper, which shows that the detail the preset pays
 	// for is kept, not smeared. The demo's own test, `demo-hero-shadow`, draws High at the default

@@ -142,9 +142,20 @@ const ALWAYS_REFLECT = params.get('reflect') === 'always';
 const REFLECT_SCALE = Number(params.get('reflection-scale')) || undefined;
 /** The parts of the scene that the address leaves out, for the bisect of the Apple WebGPU stall. */
 const WITHOUT = new Set((params.get('without') ?? '').split(',').filter(Boolean));
+/**
+ * The render scale that the address fixes, for the picture tests that draw below the whole canvas,
+ * or undefined to leave the scale to the governor.
+ */
+const RENDER_SCALE = Number(params.get('render-scale')) || undefined;
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, quality, page, time } = ctx;
+	if (RENDER_SCALE !== undefined)
+		await quality.set({
+			minRenderScale: RENDER_SCALE,
+			maxRenderScale: RENDER_SCALE,
+			governor: false,
+		});
 	const detail = DETAIL[quality.preset];
 	reportLoading(ctx);
 	const [sky, room] = await Promise.all([

@@ -628,13 +628,17 @@ fn specular_color_texel(layer: f32, at: MapUv) -> vec4f {
 @group(1) @binding(0) var scene_depth_copy: texture_2d<f32>;
 #endif
 
-/// The texel of the copy of the scene's depth that holds the image's place `uv`, counted from the
-/// top left. A place outside the image reads the nearest texel inside it.
-fn scene_depth_texel(uv: vec2f) -> vec2u {
-    let size = textureDimensions(scene_depth_copy);
-    let pixel = vec2u(clamp(uv * vec2f(size), vec2f(0.0), vec2f(size) - 1.0));
+/// The texel of the copy of the scene's depth at `place`, a place on the image counted from the top
+/// left, where the image covers `image_size` pixels of the copy's corner at this render scale. The
+/// copy keeps the canvas's size, and below the whole render scale the image draws into a corner of
+/// it, so a place on the image lands at the image size's texel within the copy, not at the copy
+/// size's. A place outside the image, or a copy of one texel, reads the nearest texel it holds.
+fn scene_depth_texel(place: vec2f, image_size: vec2u) -> vec2u {
+    let copy = vec2u(textureDimensions(scene_depth_copy));
+    let held = min(image_size, copy);
+    let pixel = vec2u(clamp(place * vec2f(held), vec2f(0.0), vec2f(held) - 1.0));
 #ifdef WEBGL2
-    return vec2u(pixel.x, size.y - 1u - pixel.y);
+    return vec2u(pixel.x, copy.y - 1u - pixel.y);
 #else
     return pixel;
 #endif
@@ -643,7 +647,11 @@ fn scene_depth_texel(uv: vec2f) -> vec2u {
 /// The scene's depth at `uv`, counted from the top left: 1 at the camera's near plane and 0 at its
 /// far plane, as `null3d::depth` describes, and 0 where nothing drew or no copy exists yet.
 fn sceneDepth(uv: vec2f) -> f32 {
-    return textureLoad(scene_depth_copy, scene_depth_texel(uv), 0).x;
+    return textureLoad(
+        scene_depth_copy,
+        scene_depth_texel(uv, vec2u(engine_frame.target_size.xy)),
+        0,
+    ).x;
 }
 
 /// The distance in front of the camera of the surface that the scene's depth at `uv` shows, in
@@ -2357,9 +2365,11 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     input.frontFacing = front;
 #ifdef CUSTOM
     // Pixel rows count upward on WebGL2, so its rows turn to count from the top, as on WebGPU.
+    // The target keeps the canvas's height at every render scale, while the frame's render size
+    // may be smaller, so the turn counts from the target's height rather than the render size's.
     var coord = in.clip.xyz;
 #ifdef WEBGL2
-    coord.y = engine_frame.target_size.y - coord.y;
+    coord.y = engine_frame.occlusion.y - coord.y;
 #endif
     input.fragCoord = coord;
 #endif

@@ -42,7 +42,20 @@ fn surface(input: SurfaceInput) -> Surface {
 /** The flat rotation that lays a plane, made in x and y, on the ground. */
 const FLAT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] as const;
 
-export default defineSketch(({ scene, materials, geometry }) => {
+const params = new URL(import.meta.url).searchParams;
+/**
+ * The render scale that the address fixes, for the picture test that draws the recipe below the
+ * whole canvas, or undefined to leave the scale to the governor.
+ */
+const RENDER_SCALE = Number(params.get('renderScale')) || undefined;
+
+export default defineSketch(async ({ scene, materials, geometry, quality }) => {
+	if (RENDER_SCALE !== undefined)
+		await quality.set({
+			minRenderScale: RENDER_SCALE,
+			maxRenderScale: RENDER_SCALE,
+			governor: false,
+		});
 	scene.setBackground('#0d1a22');
 	scene.setActiveCamera(
 		scene.createPerspectiveCamera({
