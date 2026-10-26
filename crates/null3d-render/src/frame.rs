@@ -2144,22 +2144,34 @@ impl SceneSettings {
     /// uniform, whose intensity takes the frame's exposure. A frame builder asks after the frame's
     /// uploads, so a held frame, which uploads everything, draws with the environment.
     pub(crate) fn environment_map(&self, blank: u32) -> (u32, EnvironmentUniform) {
-        let ready = self.environment.and_then(|environment| {
+        let ready = self.live_environment().and_then(|environment| {
             Some((environment, self.textures.ready_cube(environment.texture)?))
         });
         match ready {
-            Some((mut environment, (map, levels))) => {
-                if let Some((sh, gain)) = self.sky_maps.light(environment.texture) {
-                    environment.sh = sh;
-                    environment.intensity *= gain;
-                }
-                (
-                    map,
-                    environment.uniform(levels, self.drawn_output().exposure),
-                )
-            }
+            Some((environment, (map, levels))) => (
+                map,
+                environment.uniform(levels, self.drawn_output().exposure),
+            ),
             None => (blank, EnvironmentUniform::default()),
         }
+    }
+
+    /// The scene's environment while it sets one, with the light that its sky reports now in place
+    /// of the light it was made with. A sky's map refreshes over several frames, and its light
+    /// follows, so the frames that read the environment's light read the sky as it stands.
+    fn live_environment(&self) -> Option<Environment> {
+        let mut environment = self.environment?;
+        if let Some((sh, gain)) = self.sky_maps.light(environment.texture) {
+            environment.sh = sh;
+            environment.intensity *= gain;
+        }
+        Some(environment)
+    }
+
+    /// The average radiance of the scene's sky now, which a probe grid's baked light is scaled
+    /// against, or 0 while the scene has no environment.
+    fn sky_luminance(&self) -> f32 {
+        self.live_environment().map_or(0.0, |env| env.luminance())
     }
 
     /// The GPU id of the grid's 3D texture, once its texels are on the GPU, or `blank` while the
@@ -2171,7 +2183,10 @@ impl SceneSettings {
             .probe_grid
             .and_then(|grid| Some((grid, self.textures.ready_volume(grid.texture)?)))
         {
-            Some((grid, (map, _))) => (map, grid.uniform(self.drawn_output().exposure)),
+            Some((grid, (map, _))) => (
+                map,
+                grid.uniform(self.drawn_output().exposure, self.sky_luminance()),
+            ),
             None => (blank, ProbeGridUniform::default()),
         }
     }

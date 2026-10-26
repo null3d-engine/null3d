@@ -622,6 +622,7 @@ export class Assets {
 			origin: grid.origin,
 			spacing: grid.spacing,
 			counts: grid.counts,
+			skyLuminance: grid.skyLuminance,
 		};
 	}
 

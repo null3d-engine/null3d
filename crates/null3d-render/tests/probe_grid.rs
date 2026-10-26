@@ -53,6 +53,7 @@ fn grid(texture: Handle) -> ProbeGrid {
         counts: COUNTS,
         intensity: 0.5,
         environment_weight: 1.0,
+        sky_luminance: 0.0,
     }
 }
 

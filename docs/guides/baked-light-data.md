@@ -8,7 +8,7 @@ summary: "One file format for probe grids and light maps baked outside the engin
 
 # Baked light data
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The format is stable: version 1 holds the members that this page lists, and a reader ignores members that it does not know. A change that an earlier reader would misread takes a new version number. A directional light map bends its light with a normal map, as the light of the bake came from a direction.
+> Roadmap step 0.3, first released in null3D 0.1.0. The format is stable: version 2 holds the members that this page lists, and a reader ignores members that it does not know. A change that an earlier reader would misread takes a new version number. A directional light map bends its light with a normal map, as the light of the bake came from a direction.
 
 ```mermaid
 flowchart LR
@@ -27,7 +27,7 @@ A file is JSON. Three members come first:
 | Member | Value |
 | --- | --- |
 | `format` | The string `null3d.baked-light` |
-| `version` | The whole number `1`. A reader refuses any other version |
+| `version` | The whole number `2`. A reader refuses any other version |
 | `kind` | `probe-grid` or `light-map` |
 
 The rest of the file depends on its kind. A reader ignores members that it does not know. A bake tool may write members that an earlier engine leaves out, and the file still reads. The `version` number changes only when a reader that predates the file would read it wrongly. This engine refuses any version that it does not know.
@@ -36,17 +36,20 @@ The large values are base64. Decode them as bytes, not as text.
 
 ## A probe grid
 
-A probe grid file holds the four values of `LightProbeGridData`. They are the grid's origin, its spacing, its probe counts and its coefficients.
+A probe grid file holds every value of `LightProbeGridData`. They are the grid's origin, its spacing, its probe counts, its coefficients, each probe's weight and its sky occlusion, and the sky's brightness when the grid was baked.
 
 ```json
 {
 	"format": "null3d.baked-light",
-	"version": 1,
+	"version": 2,
 	"kind": "probe-grid",
 	"origin": [0, 1, 0],
 	"spacing": [1, 1, 1],
 	"counts": [2, 2, 2],
-	"coefficients": "AAAAAAAAAD4AAIA+AADAPgAAAD8AACA/AABAPwAAYD8AAIA/AACQPwAAoD8AALA/AADAPwAA0D8AAOA/AADwPwAAAEAAAAhAAAAQQAAAGEAAACBAAAAoQAAAMEAAADhAAABAQAAASEAAAFBAAABYQAAAYEAAAGhAAABwQAAAeEAAAIBAAACEQAAAiEAAAIxAAACQQAAAlEAAAJhAAACcQAAAoEAAAKRAAACoQAAArEAAALBAAAC0QAAAuEAAALxAAADAQAAAxEAAAMhAAADMQAAA0EAAANRAAADYQAAA3EAAAOBAAADkQAAA6EAAAOxAAADwQAAA9EAAAPhAAAD8QAAAAEEAAAJBAAAEQQAABkEAAAhBAAAKQQAADEEAAA5BAAAQQQAAEkEAABRBAAAWQQAAGEEAABpBAAAcQQAAHkEAACBBAAAiQQAAJEEAACZBAAAoQQAAKkEAACxBAAAuQQAAMEEAADJBAAA0QQAANkEAADhBAAA6QQAAPEEAAD5B"
+	"skyLuminance": 0.85,
+	"coefficients": "AAAAAAAAAD4AAIA+AADAPgAAAD8AACA/AABAPwAAYD8AAIA/AACQPwAAoD8AALA/AADAPwAA0D8AAOA/AADwPwAAAEAAAAhAAAAQQAAAGEAAACBAAAAoQAAAMEAAADhAAABAQAAASEAAAFBAAABYQAAAYEAAAGhAAABwQAAAeEAAAIBAAACEQAAAiEAAAIxAAACQQAAAlEAAAJhAAACcQAAAoEAAAKRAAACoQAAArEAAALBAAAC0QAAAuEAAALxAAADAQAAAxEAAAMhAAADMQAAA0EAAANRAAADYQAAA3EAAAOBAAADkQAAA6EAAAOxAAADwQAAA9EAAAPhAAAD8QAAAAEEAAAJBAAAEQQAABkEAAAhBAAAKQQAADEEAAA5BAAAQQQAAEkEAABRBAAAWQQAAGEEAABpBAAAcQQAAHkEAACBBAAAiQQAAJEEAACZBAAAoQQAAKkEAACxBAAAuQQAAMEEAADJBAAA0QQAANkEAADhBAAA6QQAAPEEAAD5B",
+	"validity": "AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8=",
+	"skyOcclusion": "AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8="
 }
 ```
 
@@ -55,16 +58,19 @@ A probe grid file holds the four values of `LightProbeGridData`. They are the gr
 | `origin` | The grid's corner of least x, y and z, in meters: three numbers |
 | `spacing` | The distance between probes along each axis, in meters: three numbers above 0 |
 | `counts` | The probes along each axis: three whole numbers of 2 or more |
+| `skyLuminance` | The sky's average brightness when the grid was baked: a number of 0 or more, and 0 keeps the baked light as it is |
 | `coefficients` | Base64 of 12 32-bit floats for each probe, little-endian |
+| `validity` | Base64 of one 32-bit float for each probe, from 0 to 1: its weight in the filter |
+| `skyOcclusion` | Base64 of one 32-bit float for each probe, from 0 to 1: the share of the sky that reaches it |
 
-The probes run x fastest, then y, then z. Each probe holds four RGB coefficients in the order that the shader reads them: L0, then L1 along y, z and x. The 12 floats are three for L0 and three for each L1 axis. `bakeProbes` writes the same values. A bake that a tool makes therefore matches the engine's own bake for the same scene.
+The probes run x fastest, then y, then z. Each probe holds four RGB coefficients in the order that the shader reads them: L0, then L1 along y, z and x. The 12 floats are three for L0 and three for each L1 axis, and they hold the light that surfaces send back, with no sky light. A probe's weight is 0 where it sits inside geometry or in a gap narrower than the grid's spacing, so its light does not leak into the space beside it. `bakeProbes` writes the same values. A bake that a tool makes therefore matches the engine's own bake for the same scene.
 
 ## A light map
 
 ```json
 {
 	"format": "null3d.baked-light",
-	"version": 1,
+	"version": 2,
 	"kind": "light-map",
 	"width": 2,
 	"height": 2,

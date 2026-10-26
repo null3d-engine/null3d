@@ -1816,12 +1816,14 @@ fn light_surface(
         let around = probe_surrounding(relative, normal, reflection_normal(m, normal, to_view), to_view, m.roughness);
         var irradiance = around.irradiance;
         let radiance = mix(around.radiance, reflection.rgb, mirrored);
-        // The probe grid takes the environment's diffuse light over where the sketch sets one.
+        // The probe grid takes the environment's diffuse light over where the sketch sets one. The
+        // grid's sky term is the light that it takes over, times the share of the sky that reaches
+        // the probes there, so a sky that moves needs no new bake.
 #ifdef PROBE_GRID
         if has_probe_grid(engine_frame.probe_grid) {
             // `relative` is from this view's own camera, so a reflection's view reads its own place.
             let world = engine_frame.camera_world.xyz + relative;
-            irradiance = mix(irradiance, probe_grid_irradiance(engine_frame.probe_grid, world, normal), engine_frame.probe_grid.params.y);
+            irradiance = mix(irradiance, probe_grid_irradiance(engine_frame.probe_grid, world, normal, irradiance), engine_frame.probe_grid.params.y);
         }
 #endif
         var image = indirect_specular(m, radiance, irradiance, dfg);

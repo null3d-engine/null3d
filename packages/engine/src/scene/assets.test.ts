@@ -498,10 +498,12 @@ describe('baked light files', () => {
 		expect(Array.from(grid.origin)).toEqual([0, 1, 0]);
 		expect(Array.from(grid.spacing)).toEqual([1, 1, 1]);
 		expect(grid.counts).toEqual([2, 2, 2]);
-		// The texture is a 3D texture of half floats: one sub-volume of L1 for each of three.
+		// The texture is a 3D texture of half floats: three sub-volumes of L1 and one of the mask.
 		expect(volumes.map(([w, h, d, format]) => [w, h, d, format])).toEqual([
-			[2, 2, 12, 'rgba16float'],
+			[2, 2, 16, 'rgba16float'],
 		]);
+		// The file's sky brightness reaches the grid's options, so a day cycle scales its light.
+		expect(grid.skyLuminance).toBe(0.75);
 	});
 
 	test('loads a light map baked outside the engine as a linear-light texture', async () => {
@@ -538,7 +540,7 @@ describe('baked light files', () => {
 		serve({
 			'https://game.example/light/hdr.json': `{
   "format": "null3d.baked-light",
-  "version": 1,
+  "version": 2,
   "kind": "light-map",
   "width": 1,
   "height": 1,
@@ -564,14 +566,14 @@ describe('baked light files', () => {
 	test('refuses a broken file with E1434, and names the fault', async () => {
 		serve({
 			'https://game.example/light/version.json':
-				'{"format":"null3d.baked-light","version":2,"kind":"probe-grid"}',
+				'{"format":"null3d.baked-light","version":3,"kind":"probe-grid"}',
 			'https://game.example/light/count.json':
-				'{"format":"null3d.baked-light","version":1,"kind":"probe-grid","origin":[0,0,0],"spacing":[1,1,1],"counts":[2,2,2],"coefficients":"AAAA"}',
+				'{"format":"null3d.baked-light","version":2,"kind":"probe-grid","origin":[0,0,0],"spacing":[1,1,1],"counts":[2,2,2],"coefficients":"AAAA"}',
 			'https://game.example/light/cut.json': fixture('light-map').slice(0, 60),
 		});
 		const assets = new Assets(fakeTextures().textures, PAGE);
 		expect(await codeOf(assets.loadLightProbeGrid('/light/version.json'))).toBe(
-			'E1434: assets.loadLightProbeGrid() could not read https://game.example/light/version.json: its version is 2, and this engine reads version 1.',
+			'E1434: assets.loadLightProbeGrid() could not read https://game.example/light/version.json: its version is 3, and this engine reads version 2.',
 		);
 		expect(await codeOf(assets.loadLightProbeGrid('/light/count.json'))).toBe(
 			'E1434: assets.loadLightProbeGrid() could not read https://game.example/light/count.json: its coefficients hold 3 bytes, not a whole number of 4-byte floats.',
@@ -592,11 +594,16 @@ describe('baked light files', () => {
 	test('writes the same file that the fixture holds', async () => {
 		const coefficients = new Float32Array(96);
 		for (let at = 0; at < coefficients.length; at++) coefficients[at] = at * 0.125;
+		const validity = new Float32Array(8).fill(1);
+		validity[2] = 0.25;
 		const grid = new LightProbeGridData(
 			new Float32Array([0, 1, 0]),
 			new Float32Array([1, 1, 1]),
 			[2, 2, 2],
 			coefficients,
+			validity,
+			new Float32Array([1, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]),
+			0.75,
 		);
 		const bytes = await new Assets(fakeTextures().textures, PAGE).lightProbeGridFile(grid);
 		expect(new TextDecoder().decode(bytes)).toBe(fixture('probe-grid'));

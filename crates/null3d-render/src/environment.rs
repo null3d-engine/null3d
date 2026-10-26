@@ -53,7 +53,18 @@ pub struct EnvironmentUniform {
     pub params: [f32; 4],
 }
 
+/// The weights of the red, green and blue channels in a color's brightness, as Rec. 709 gives
+/// them, which is the brightness that tone mapping works on.
+const LUMINANCE: [f32; 3] = [0.2126, 0.7152, 0.0722];
+
 impl Environment {
+    /// The average radiance of the light around the scene: the brightness of the first coefficient,
+    /// which is the light averaged over the whole sphere, times the environment's intensity.
+    pub(crate) fn luminance(&self) -> f32 {
+        let [r, g, b] = self.sh[0];
+        (r * LUMINANCE[0] + g * LUMINANCE[1] + b * LUMINANCE[2]) * self.intensity
+    }
+
     /// The uniform values for a map whose cube texture has `levels` mip levels on the GPU, in a
     /// frame whose exposure is `exposure`. The shaders add the environment's light to exposed
     /// color, as every light's, so its intensity takes the exposure.

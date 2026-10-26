@@ -452,11 +452,15 @@ function createProbeGrid({ scene, textures }: SketchContext): void {
 		coefficients[at + 1] = 0.35;
 		coefficients[at + 2] = 0.4;
 	}
+	// Every probe carries its whole weight and sees the whole sky: the sample is the cost of the
+	// reads, not of the light.
 	const grid = new LightProbeGridData(
 		new Float32Array([-S1_EXTENT, 0, -S1_EXTENT]),
 		new Float32Array([(2 * S1_EXTENT) / 3, S1_EXTENT, (2 * S1_EXTENT) / 3]),
 		counts,
 		coefficients,
+		new Float32Array(counts[0] * counts[1] * counts[2]).fill(1),
+		new Float32Array(counts[0] * counts[1] * counts[2]).fill(1),
 	);
 	scene.setLightProbeGrid({
 		texture: grid.toTexture(textures),

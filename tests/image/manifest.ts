@@ -2124,6 +2124,20 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			timeoutSeconds: 60,
 		}),
 	),
+	// A room split by a partition whose middle the grid's own probe plane runs through, so the probes
+	// inside the partition bake the light of the half that stands open to the sky (D-179 ruling 12):
+	// the picture with the mask keeps that light out of the roofed half, and `?unmasked` draws the
+	// same room with every probe at its whole weight, which is the leak that the mask removes. The
+	// two are read together: the masked picture alone cannot show what it prevented.
+	...(['', 'unmasked'] as const).map(
+		(variant): ImageTest => ({
+			name: variant ? `probe-grid-wall-${variant}` : 'probe-grid-wall',
+			sketch: `tests/pages/sketches/probe-grid-wall-sketch.ts${variant ? `?${variant}` : ''}`,
+			hold: 0,
+			size: [320, 180],
+			timeoutSeconds: 60,
+		}),
+	),
 	// The room's light with a hemisphere light added, which the parity test compares with three.js:
 	// the hemisphere light adds to the environment's light, and the environment's intensity does
 	// not scale it.

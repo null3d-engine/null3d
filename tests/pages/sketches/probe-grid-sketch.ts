@@ -97,6 +97,7 @@ export default defineSketch(async ({ scene, assets, materials, geometry, texture
 		origin: grid.origin,
 		spacing: grid.spacing,
 		counts: grid.counts,
+		skyLuminance: grid.skyLuminance,
 	});
 	return {};
 });

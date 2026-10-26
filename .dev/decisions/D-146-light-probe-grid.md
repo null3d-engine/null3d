@@ -127,3 +127,36 @@ faults above reached main.
   swarm, so the allocation sample covers the lit draws' grid reads on both GPU paths.
 - **Docs (M-61).** [Lighting](../../docs/concepts/lighting.md) has a "Light probe grid" section: what
   takes its light, its limits, its cost and its first-use loading. The scene page links to it.
+
+## Addendum, 25 October 2026: the validity mask, leak-reduced sampling and sky occlusion
+
+M3-F1 built the two "later" items above, as D-179's rulings 12 and 13 ask. The grid stays L1.
+
+- **The validity mask.** The bake casts six more rays at each probe: one pair along each axis,
+  inward from outside the cell, so the nearest surface on each side gives the free space that the
+  probe sits in. A probe whose free space along an axis is narrower than the grid's spacing there
+  sits in geometry, or in a gap that the grid cannot resolve. Its weight falls from 1 at 1.15 cells
+  to 0 at 0.85, so a wall's boundary does not pop. The rays cost about a tenth more than the bake's
+  own, and the mask needs no new API. A ray from outside a wall hits its front face, which the
+  scene's raycast does report. A ray that starts inside the wall does not.
+- **Leak-reduced sampling.** The texture gains a fourth sub-volume: sky occlusion times the weight
+  in red, the weight in alpha. The coefficients travel premultiplied by the weight, and the shader
+  divides the filtered result by the filtered weight, which drops the probes without weight and
+  gives the rest their share again. That is Unity 6's rule, done in one hardware-filtered read
+  instead of eight corner reads. Where no probe with weight surrounds the surface, the surface takes
+  the environment's own light rather than no light.
+- **Sky occlusion.** The probes hold no sky light. The share of the rays that reached the sky is the
+  probe's sky occlusion, and each surface takes the live environment's irradiance at its normal
+  times it. The sky's light therefore follows a day cycle with no new bake, and the sky keeps its
+  direction, which a scalar occlusion alone would lose. The one bounce that the bake counts stays
+  baked, and the frame scales it by the sky's brightness now against the bake's, so night dims it.
+- **Cost.** 32 bytes per probe, up from 24, and four filtered reads per lit pixel, up from three.
+  The z side of a grid falls from 83 probes to 62, because four sub-volumes of `nz + 2` slices share
+  the 256-texel side. Every grid in the repository is far below both figures.
+- **The residual limit.** Light still crosses a wall that lies between two probe planes when no
+  probe sits in the wall: a uniform grid of probes with hardware filtering cannot see geometry
+  smaller than a cell. The wall scene's pictures read together show what the mask removes, and the
+  limit is stated in the same words on [Lighting](../../docs/concepts/lighting.md#light-probe-grid).
+- **The format.** A baked light file carries the weights, the sky occlusion and the bake's sky
+  brightness, so a grid baked by another tool keeps the same behavior (version 2 of
+  [D-243](D-243-baked-light-format.md)).

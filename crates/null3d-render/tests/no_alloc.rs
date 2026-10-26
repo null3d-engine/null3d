@@ -1599,6 +1599,7 @@ fn probe_grid_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
         counts: [4, 4, 4],
         intensity: 1.0,
         environment_weight: 1.0,
+        sky_luminance: 0.0,
     };
     world.renderer.settings_mut().set_probe_grid(Some(grid));
     feature_allocations(

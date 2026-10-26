@@ -136,7 +136,7 @@ struct ProbeGrid {
     /// The probes along each axis, and the depth of one sub-volume along z, `nz + 2`.
     counts: vec4f,
     /// The grid's intensity times the frame's exposure, the share of the environment's diffuse
-    /// light that the grid takes over, and two spares.
+    /// light that the grid takes over, the sky's brightness now against the bake's, and a spare.
     params: vec4f,
 }
 

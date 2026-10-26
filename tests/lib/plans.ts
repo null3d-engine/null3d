@@ -255,6 +255,8 @@ export type Check =
 	| { kind: 'effect'; effect: CostedEffect; tier: Tier; scale: number }
 	/** The environment cost page: the built-in room off and on in turns, over layers of planes. */
 	| { kind: 'environment'; tier: Tier }
+	/** The probe grid's cost page: the grid off and on in turns, over layers of lit planes. */
+	| { kind: 'probe-grid'; tier: Tier }
 	/** The grass cost page: a field of blades still and swaying by their row values, in turns. */
 	| { kind: 'grass'; tier: Tier }
 	/** The alpha-mask cost page: masked lit quads opaque and masked in turns, with and without MSAA. */
@@ -1384,6 +1386,23 @@ export function environmentPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * What the probe grid costs on each GPU path: layers of lit planes fill the window, and the page
+ * times its frames without and with a grid over them, in turns. The grid's light is four filtered
+ * reads of one 3D texture for each lit pixel, so the difference over the layers is its cost. D-146's
+ * addendum records the figures, which the cloud Pixel 9's WebGL2 path has to keep within its limit.
+ */
+export function probeGridPlan(): PlanItem<Check>[] {
+	return TIERS.map((tier) =>
+		pageItem(
+			`probe-grid-${tier}`,
+			'probe-grid-cost',
+			{ kind: 'probe-grid', tier },
+			{ switches: [`gpu=${tier}`], timeoutSeconds: EFFECT_TIMEOUT_SECONDS },
+		),
+	);
+}
+
+/**
  * What row values cost on each GPU path: a field of 100,000 grass blades under the sun's shadows,
  * still in the standard material and swaying out of step with a tint each, from their rows'
  * values, in turns. D-127 records the results.
@@ -2246,6 +2265,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
+	'probe-grid': probeGridPlan,
 	grass: grassPlan,
 	'alpha-mask-cost': alphaMaskPlan,
 	'cluster-cost': clusterCostPlan,
@@ -3165,6 +3185,7 @@ export function judge(
 			return [];
 		case 'effect':
 		case 'environment':
+		case 'probe-grid':
 		case 'grass':
 		case 'alpha-mask': {
 			const cost = result as ItemResult & { failures?: string[]; on?: { intervalMs?: number } };
@@ -3175,7 +3196,9 @@ export function judge(
 						? 'the grass swaying'
 						: check.kind === 'alpha-mask'
 							? 'the mask on'
-							: 'the environment';
+							: check.kind === 'probe-grid'
+								? 'the probe grid'
+								: 'the environment';
 			return [
 				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
 				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${feature} on`]),

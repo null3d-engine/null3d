@@ -326,8 +326,10 @@ pub mod light_probe_value {
     pub const INTENSITY: u32 = 9;
     /// The share of the environment's diffuse light that the grid takes over.
     pub const ENVIRONMENT_WEIGHT: u32 = 10;
+    /// The average radiance of the sky when the grid was baked, which scales its baked light.
+    pub const SKY_LUMINANCE: u32 = 11;
     /// The values in the block.
-    pub const COUNT: u32 = 11;
+    pub const COUNT: u32 = 12;
 }
 
 /// The places of the background's values in the block that `backgroundValues` gives: 32-bit floats

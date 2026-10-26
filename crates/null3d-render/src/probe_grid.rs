@@ -33,6 +33,9 @@ pub struct ProbeGrid {
     pub intensity: f32,
     /// The share of the environment's diffuse light that the grid takes over.
     pub environment_weight: f32,
+    /// The average radiance of the sky when the grid was baked, which scales its baked light
+    /// against the sky's own brightness in each frame.
+    pub sky_luminance: f32,
 }
 
 /// The grid's part of the frame uniform, laid out as the shaders' `ProbeGrid`.
@@ -48,9 +51,12 @@ pub struct ProbeGridUniform {
 }
 
 impl ProbeGrid {
-    /// The uniform values for a frame whose exposure is `exposure`. The shaders add the grid's
-    /// light to exposed color, as every light's, so its intensity takes the exposure.
-    pub(crate) fn uniform(&self, exposure: f32) -> ProbeGridUniform {
+    /// The uniform values for a frame whose exposure is `exposure`, and whose environment's
+    /// average radiance is `sky`. The shaders add the grid's light to exposed color, as every
+    /// light's, so its intensity takes the exposure. The grid's baked light, which is one bounce of
+    /// the sky, is scaled by the sky's brightness now against the brightness that it was baked
+    /// with, so a day cycle dims it with the sky.
+    pub(crate) fn uniform(&self, exposure: f32, sky: f32) -> ProbeGridUniform {
         let mut origin = [0.0; 4];
         origin[..3].copy_from_slice(&self.origin);
         origin[3] = 1.0;
@@ -58,6 +64,13 @@ impl ProbeGrid {
         for (out, spacing) in inverse_spacing.iter_mut().zip(self.spacing) {
             *out = if spacing > 0.0 { 1.0 / spacing } else { 0.0 };
         }
+        // A grid baked without a sky keeps its baked light, and one whose scene has no sky now has
+        // nothing to scale against, so both take a factor of 1.
+        let scale = if self.sky_luminance > 0.0 && sky > 0.0 {
+            sky / self.sky_luminance
+        } else {
+            1.0
+        };
         ProbeGridUniform {
             origin,
             inverse_spacing,
@@ -67,7 +80,7 @@ impl ProbeGrid {
                 self.counts[2] as f32,
                 (self.counts[2] + 2) as f32,
             ],
-            params: [self.intensity * exposure, self.environment_weight, 0.0, 0.0],
+            params: [self.intensity * exposure, self.environment_weight, scale, 0.0],
         }
     }
 }

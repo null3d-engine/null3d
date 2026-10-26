@@ -660,7 +660,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "scene.setLightProbeGrid with a grid that bakeProbes bakes in the sketch",
-      "notes": "three.js's grid stores L2 spherical harmonics per probe. null3D's stores L1, which takes three texture reads per pixel in place of seven. The light keeps its direction, but small bright patches spread a little wider. three.js adds the grid's light to the environment's diffuse light; null3D's grid takes the environment's place. To add it as three.js does, set environmentWeight: 0. Bake the grid again with bakeProbes.",
+      "notes": "three.js's grid stores L2 spherical harmonics per probe. null3D's stores L1, which takes four texture reads per pixel in place of seven. The light keeps its direction, but small bright patches spread a little wider. null3D's bake gives a probe inside geometry no weight, so its light stays out of the space beside it, and it keeps the share of the sky that each probe sees separate, so a day cycle needs no new bake; three.js's grid has neither. three.js adds the grid's light to the environment's diffuse light; null3D's grid takes the environment's place. To add it as three.js does, set environmentWeight: 0. Bake the grid again with bakeProbes.",
       "docs": "api/scene",
       "detect": "\\bLightProbeGrid\\b"
     },

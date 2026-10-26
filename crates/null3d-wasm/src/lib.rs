@@ -4444,6 +4444,7 @@ pub fn set_light_probe_grid(texture: u32) -> u32 {
             counts,
             intensity: value(at::INTENSITY),
             environment_weight: value(at::ENVIRONMENT_WEIGHT),
+            sky_luminance: value(at::SKY_LUMINANCE),
         }));
         0
     })

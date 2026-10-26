@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readBakedLight, writeBakedProbeGrid } from './baked-light';
 import { Environment } from './environment';
-import { bakeProbes, LightProbeGridData } from './light-probes';
+import { bakeProbes, LightProbeGridData, MOST_PROBES } from './light-probes';
 import type { RaycastBatchHits } from './queries';
 import type { Scene } from './scene';
 import type { Texture } from './textures';
@@ -54,6 +54,10 @@ test('reads a probe grid that a tool outside the engine baked', () => {
 	expect(grid.coefficients[0]).toBe(0);
 	expect(grid.coefficients[1]).toBe(0.125);
 	expect(grid.coefficients[95]).toBe(11.875);
+	// The weights, the share of the sky that each probe sees, and the sky's brightness at the bake.
+	expect(Array.from(grid.validity)).toEqual([1, 1, 0.25, 1, 1, 1, 1, 1]);
+	expect(Array.from(grid.skyOcclusion)).toEqual([1, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]);
+	expect(grid.skyLuminance).toBe(0.75);
 });
 
 test('reads a light map that a tool outside the engine baked', () => {
@@ -108,13 +112,16 @@ test('a grid that the engine bakes writes the format and reads back the same', (
 	expect(Array.from(file.grid.spacing)).toEqual(Array.from(grid.spacing));
 	expect(file.grid.counts).toEqual(grid.counts);
 	expect(Array.from(file.grid.coefficients)).toEqual(Array.from(grid.coefficients));
+	expect(Array.from(file.grid.validity)).toEqual(Array.from(grid.validity));
+	expect(Array.from(file.grid.skyOcclusion)).toEqual(Array.from(grid.skyOcclusion));
+	expect(file.grid.skyLuminance).toBe(grid.skyLuminance);
 });
 
 test('a version that the engine does not read is named', () => {
-	expect(refusal(changed('probe-grid', 'version', '2'))).toBe(
-		'its version is 2, and this engine reads version 1',
+	expect(refusal(changed('probe-grid', 'version', '3'))).toBe(
+		'its version is 3, and this engine reads version 2',
 	);
-	expect(refusal(fixture('probe-grid').replace('"version": 1,', ''))).toBe('it has no version');
+	expect(refusal(fixture('probe-grid').replace('"version": 2,', ''))).toBe('it has no version');
 });
 
 test('a file of another kind or another format is named', () => {
@@ -177,7 +184,7 @@ test('a placement or a size that a grid cannot take is named', () => {
 		'its counts are not three whole numbers',
 	);
 	expect(refusal(changed('probe-grid', 'counts', '[2, 2, 300]'))).toBe(
-		'its counts give 300 probes along z, more than the 83 that a grid holds',
+		`its counts give 300 probes along z, more than the ${MOST_PROBES[2]} that a grid holds`,
 	);
 	expect(refusal(changed('probe-grid', 'spacing', '[1, 0, 1]'))).toBe(
 		'its spacing along y is 0, and it takes a number above 0',
