@@ -213,6 +213,9 @@ pub struct Probes {
     /// The image id of the generator that the thread that draws runs each probe's filter with,
     /// once the sketch sent it.
     generator: Option<u32>,
+    /// The frame whose list created the last pipeline that a capture may draw with. A capture
+    /// frame keeps its request until the thread that draws built every pipeline up to it.
+    last_new_pipeline: u32,
 }
 
 impl Default for Probes {
@@ -230,6 +233,7 @@ impl Default for Probes {
             turn: 0,
             faces: [None; 6],
             generator: None,
+            last_new_pipeline: 0,
         }
     }
 }
@@ -377,9 +381,22 @@ impl Probes {
 
     /// Records the frame's work on the probes' maps, ahead of the frame's passes: the array and
     /// the chain when the size or the layers changed. Then readies the filter of the probe that
-    /// captures in this frame, whose map the frame's lit passes read.
-    pub(crate) fn record(&mut self, list: &mut DrawList, light: Shape) -> Result<(), RecordError> {
+    /// captures in this frame, whose map the frame's lit passes read. A frame whose list created
+    /// pipelines, or that draws while pipelines are still building, keeps the probe's request: a
+    /// draw whose pipeline is not built draws nothing, so that frame's map may lack what it caught.
+    /// The request ends in the first frame that draws with every pipeline built.
+    pub(crate) fn record(
+        &mut self,
+        list: &mut DrawList,
+        light: Shape,
+        frame: u32,
+        created_pipelines: bool,
+        pipelines_built: u32,
+    ) -> Result<(), RecordError> {
         self.filter = None;
+        if created_pipelines {
+            self.last_new_pipeline = frame;
+        }
         let Some(textures) = self.textures else {
             return Ok(());
         };
@@ -432,7 +449,10 @@ impl Probes {
             let (array, chain) = textures.pair(self.pair);
             self.filter = Some([array, chain, slot as u32, code, a, b, c, d, e, f]);
             probe.ready = true;
-            probe.due = false;
+            // A draw whose pipeline is still building draws nothing, so this frame's map may lack
+            // the objects that it caught. Keep the request until the thread that draws built every
+            // pipeline that the engine created, as the shadow tiles keep their tile's draw.
+            probe.due = !crate::pipelines::built_by(self.last_new_pipeline, pipelines_built);
         }
         Ok(())
     }
@@ -552,6 +572,7 @@ impl Probes {
         self.retired = None;
         self.filter = None;
         self.capturing = None;
+        self.last_new_pipeline = 0;
         for probe in self.probes.iter_mut().flatten() {
             probe.ready = false;
             probe.due = true;
@@ -716,12 +737,32 @@ mod tests {
         }
     }
 
-    /// One frame of the probes: the capture's pick, the graph's targets, then the record.
+    /// One frame of the probes: the capture's pick, the graph's targets, then the record. The frame
+    /// creates no pipeline, and the thread that draws has built every pipeline before it.
     fn frame(probes: &mut Probes, list: &mut DrawList) {
+        frame_with(probes, list, 0, false, 0);
+    }
+
+    /// One frame of the probes, with the figures a builder gives: the frame's number, whether its
+    /// list created a pipeline, and the newest frame that the thread that draws drew with every
+    /// pipeline built.
+    fn frame_with(
+        probes: &mut Probes,
+        list: &mut DrawList,
+        frame: u32,
+        created: bool,
+        built: u32,
+    ) {
         probes.pick_capture(true);
         probes.set_faces([Some(20); 6]);
         let shape = light(probes);
-        probes.record(list, shape).unwrap();
+        probes.record(list, shape, frame, created, built).unwrap();
+    }
+
+    /// True when the next frame would capture the probe, from the request that it kept.
+    fn asks_to_capture(probes: &mut Probes) -> bool {
+        probes.pick_capture(true);
+        probes.capturing().is_some()
     }
 
     fn all() -> (CellPosition, Frustum) {
@@ -765,6 +806,32 @@ mod tests {
     }
 
     #[test]
+    fn a_capture_keeps_its_request_until_the_pipelines_it_needs_are_built() {
+        let mut probes = Probes::default();
+        probes.set_textures(TEXTURES);
+        probes.set_generator(3);
+        probes.set(0, probe_at(0.0)).unwrap();
+        let mut list = DrawList::with_capacity(1024);
+        // Frame 1 creates the pipelines that the capture views draw with, and the thread that
+        // draws has built none of them when the frame records.
+        frame_with(&mut probes, &mut list, 1, true, 0);
+        assert!(probes.filter().is_some(), "the frame that captures filters");
+        assert!(
+            asks_to_capture(&mut probes),
+            "the map may lack an object whose pipeline was still building"
+        );
+        // Frame 2 still draws while the pipeline builds, so the request stays again.
+        frame_with(&mut probes, &mut list, 2, false, 0);
+        assert!(asks_to_capture(&mut probes));
+        // Frame 3 draws with every pipeline built, so its capture ends the request.
+        frame_with(&mut probes, &mut list, 3, false, 3);
+        assert!(
+            !asks_to_capture(&mut probes),
+            "a capture with every pipeline built ends it"
+        );
+    }
+
+    #[test]
     fn no_probe_captures_before_the_filter_code_arrives() {
         let mut probes = Probes::default();
         probes.set_textures(TEXTURES);
@@ -775,7 +842,7 @@ mod tests {
         probes.set_generator(3);
         probes.pick_capture(false);
         let shape = light(&probes);
-        probes.record(&mut list, shape).unwrap();
+        probes.record(&mut list, shape, 0, false, 0).unwrap();
         assert_eq!(probes.filter(), None, "the generator has not arrived");
         frame(&mut probes, &mut list);
         assert!(probes.filter().is_some());
@@ -807,7 +874,7 @@ mod tests {
         probes.pick_capture(true);
         probes.set_faces([None; 6]);
         let shape = light(&probes);
-        probes.record(&mut list, shape).unwrap();
+        probes.record(&mut list, shape, 0, false, 0).unwrap();
         assert_ne!(
             probes.array().unwrap().1,
             generation,
@@ -853,12 +920,12 @@ mod tests {
         probes.set(0, probe_at(0.0)).unwrap();
         let mut list = DrawList::with_capacity(1024);
         let shape = light(&probes);
-        probes.record(&mut list, shape).unwrap();
+        probes.record(&mut list, shape, 0, false, 0).unwrap();
         assert_eq!(made_and_destroyed(&list), (vec![7, 8], vec![]));
         probes.set(2, probe_at(5.0)).unwrap();
         let mut list = DrawList::with_capacity(1024);
         let shape = light(&probes);
-        probes.record(&mut list, shape).unwrap();
+        probes.record(&mut list, shape, 0, false, 0).unwrap();
         assert_eq!(
             made_and_destroyed(&list),
             (vec![9, 10], vec![]),
@@ -872,7 +939,7 @@ mod tests {
         // The next frame destroys the ids of the pair it replaced.
         let mut list = DrawList::with_capacity(1024);
         let shape = light(&probes);
-        probes.record(&mut list, shape).unwrap();
+        probes.record(&mut list, shape, 0, false, 0).unwrap();
         assert_eq!(made_and_destroyed(&list), (vec![], vec![7, 8]));
         assert_eq!(probes.array().unwrap().0, 9, "the shared array stays");
     }

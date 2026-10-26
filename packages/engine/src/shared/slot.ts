@@ -173,6 +173,13 @@ export const FramePlan1 = 50;
  * them by comparing the words that landed with the ones before, so nothing reads this slot.
  */
 export const SkyLight = 51;
+/**
+ * The frames that the thread that draws took and drew none of, because each was recorded for a GPU
+ * device or a plan that the frame after replaced. A skipped list never draws again, so the work
+ * that only it records, such as a probe's capture, is lost. A page reports the count around a
+ * change, so a lost result names a skip as its cause.
+ */
+export const FramesSkipped = 52;
 export const PickRead0 = 37;
 export const PickRead1 = 38;
 export const PickRead2 = 39;
