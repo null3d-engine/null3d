@@ -98,10 +98,10 @@ reflections alone. Its measurements explain what the wider line costs, below.
 The wider line looks better wherever a scene shows its sky more than once. Without the layer in the
 map, the aurora demo's ice holds the moon and the stars and no curtain. The snow then needs a dim
 ambient light of the sketch's own that no measure of the sky gives it. With the layer in the map,
-the ice mirrors the curtains at the sky's own sharpness, and the ice and the snow take the aurora's
-green from above, so the demo carries no light of its own for it. The cost is met within the frame
-budget by taking it per change rather than per frame (below), which is a cheaper technique of the
-same look, not a smaller look.
+the snow takes the aurora's green from above, so the demo carries no light of its own for it. The
+ice that would mirror the curtains at the sky's own sharpness waits for M3-R27. The cost is met
+within the frame budget by taking it per change rather than per frame (below), which is a cheaper
+technique of the same look, not a smaller look.
 
 ### How the layer reaches the map
 
