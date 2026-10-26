@@ -104,12 +104,13 @@ const HELD_MEMORY_FAILURE =
 	/\bE1109\b|\bE1302\b|Out of memory|lost (its|the) (GPU|context)|context lost|did not get back the memory/i;
 
 /**
- * A worker that did not start because its script, or a module it imports, did not load (E1405). In
- * CI's Firefox on Linux, a worker's load failed now and then on pages that load the same files
- * every time, so a new runner page sorts a passing fault from a page that cannot load its files.
+ * A sketch, render or job worker that did not start because its script, or a module it imports, did
+ * not load (E1405). In CI's Firefox on Linux, a worker's load failed now and then on pages that load
+ * the same files every time, so a new runner page sorts a passing fault from a page that cannot load
+ * its files.
  */
 const MODULE_LOAD_FAILURE =
-	/\bE1405: the (sketch|render) worker did not start: (its script( at \S+?, or a file that it imports,)? did not load|error loading dynamically imported module|.+\(the (sketch|render) worker's script is )/;
+	/\bE1405: the (sketch|render|job) worker did not start: (its script( at \S+?, or a file that it imports,)? did not load|error loading dynamically imported module|.+\(the (sketch|render|job) worker's script is )/;
 
 /**
  * Whether a page's failure earns one more run in a new runner page. A browser that draws with WebKit

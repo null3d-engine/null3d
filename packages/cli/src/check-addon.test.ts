@@ -550,6 +550,15 @@ const ADDON_FIXTURE = join(import.meta.dirname, '../../../tests/fixtures/check-a
  */
 const BUILDS = (missingCoreFiles(ADDON_FIXTURE) ?? []).length === 0;
 
+/**
+ * CI's unit job downloads the build job's files before its tests, so there the core files are
+ * always present. A file missing there means the job lost it, and the build checks below would pass
+ * while they checked nothing, so the job fails instead.
+ */
+it.if(Boolean(process.env.CI))('finds the core files in CI, so the build checks run there', () => {
+	expect(missingCoreFiles(ADDON_FIXTURE)).toEqual([]);
+});
+
 describe.skipIf(!BUILDS)('buildAddon', () => {
 	it('gives the shader data that the entry holds a part of its own', async () => {
 		// A build that reads no cache writes nothing into the fixture and announces no compile, so
