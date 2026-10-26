@@ -94,10 +94,11 @@ export const MODELS_HDR = sampleUrl('sources/hdri/polyhaven/venice_sunset/venice
 const STUDIO_HDR = sampleUrl('sources/hdri/polyhaven/studio_small_09/studio_small_09_2k.hdr');
 
 /**
- * The two Khronos iridescence sphere models, each packed into one binary glTF so the model scenes'
- * build ships it as one file. They are temporary fixtures: their durable home is the sample
- * content, and they go when those assets are pinned. The originals are the Khronos glTF variants,
- * under CC0, with the same meshes, materials and textures.
+ * The three Khronos iridescence test models, each one binary glTF so the model scenes' build ships
+ * it as one file. They are temporary fixtures: their durable home is the sample content, and they
+ * go when those assets are pinned. The originals are Khronos models under CC0, with the same meshes,
+ * materials and textures. The sphere grids pack their glTF variant, and Suzanne is Khronos's own
+ * binary file.
  */
 const IRIDESCENCE_DIELECTRIC = new URL(
 	'../../tests/pages/assets/models/sources/khronos/IridescenceDielectricSpheres/IridescenceDielectricSpheres.glb',
@@ -105,6 +106,10 @@ const IRIDESCENCE_DIELECTRIC = new URL(
 ).href;
 const IRIDESCENCE_METALLIC = new URL(
 	'../../tests/pages/assets/models/sources/khronos/IridescenceMetallicSpheres/IridescenceMetallicSpheres.glb',
+	import.meta.url,
+).href;
+const IRIDESCENCE_SUZANNE = new URL(
+	'../../tests/pages/assets/models/sources/khronos/IridescenceSuzanne/IridescenceSuzanne.glb',
 	import.meta.url,
 ).href;
 
@@ -120,9 +125,9 @@ const IRIDESCENCE_METALLIC = new URL(
  * equivalents of four Khronos test models whose originals need an environment map, transmission or
  * lights of their own: KHR_materials_specular's factors and textures, KHR_materials_ior's indices
  * with the specular values, KHR_materials_iridescence's films, and KHR_materials_anisotropy's
- * stretched highlights. Those scenes' own lights light them. The Khronos iridescence sphere grids
- * draw under a neutral studio, as their own viewer draws them, from temporary fixtures that the
- * sample content replaces. The vendor name's file is the instancing model as
+ * stretched highlights. Those scenes' own lights light them. The Khronos iridescence models draw
+ * under a neutral studio, as their own viewer draws them, from temporary fixtures that the sample
+ * content replaces. The vendor name's file is the instancing model as
  * gltfpack compresses it (tests/lib/meshopt-fixtures.ts), which the repository keeps. The Khronos
  * name's file covers every mode and filter. The Draco scenes draw the sample content's skinned
  * Draco model, and the coordinates test model as Draco's encoder compresses it
@@ -209,10 +214,11 @@ export const MODEL_SCENES = {
 		ownLights: true,
 		timeoutSeconds: LAYERS_SECONDS,
 	},
-	// The two Khronos iridescence sphere test models, lit by a neutral studio as their own viewer
-	// draws them. The dielectric grid runs over the base index of refraction, the film's thickness
-	// and the film's index. The metal grid replaces the base index with the base color. The hand-made
-	// scene above keeps the film's two maps, which these files do not use.
+	// The three Khronos iridescence test models, lit by a neutral studio as their own viewer draws
+	// them. The dielectric grid runs over the base index of refraction, the film's thickness and the
+	// film's index. The metal grid replaces the base index with the base color. Suzanne's third head
+	// carries a thickness texture and transmission. The hand-made scene above keeps the film's two
+	// maps, which the sphere grids do not use.
 	'iridescence-dielectric': {
 		url: IRIDESCENCE_DIELECTRIC,
 		environment: true,
@@ -231,6 +237,18 @@ export const MODEL_SCENES = {
 		ambientOnly: true,
 		frame: { center: [0, 0, 0], radius: 9 },
 		view: [0.35, 0.28, 1],
+		timeoutSeconds: LAYERS_SECONDS,
+	},
+	// Three heads in a row, one of each of the file's materials. The third carries a thickness
+	// texture and transmission, so its film varies over the surface and the light behind shows.
+	'iridescence-suzanne': {
+		url: IRIDESCENCE_SUZANNE,
+		environment: true,
+		environmentHdr: STUDIO_HDR,
+		environmentIntensity: 0.35,
+		ownLights: true,
+		frame: { center: [0, 0, 0], radius: 3.2 },
+		view: [0.12, 0.06, 1],
 		timeoutSeconds: LAYERS_SECONDS,
 	},
 	anisotropy: {

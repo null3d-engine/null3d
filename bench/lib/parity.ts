@@ -126,6 +126,7 @@ export const SPECULAR_AA_LIMITS = {
 	'gltf-iridescence': 0.3,
 	'gltf-iridescence-dielectric': 0.6,
 	'gltf-iridescence-metallic': 2.7,
+	'gltf-iridescence-suzanne': 2.7,
 	'gltf-anisotropy': 0.6,
 	'gltf-toy-car': 0.32,
 } as const;
@@ -445,6 +446,7 @@ const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 	iridescence: SPECULAR_AA_LIMITS['gltf-iridescence'],
 	'iridescence-dielectric': SPECULAR_AA_LIMITS['gltf-iridescence-dielectric'],
 	'iridescence-metallic': SPECULAR_AA_LIMITS['gltf-iridescence-metallic'],
+	'iridescence-suzanne': SPECULAR_AA_LIMITS['gltf-iridescence-suzanne'],
 	anisotropy: SPECULAR_AA_LIMITS['gltf-anisotropy'],
 	'toy-car': SPECULAR_AA_LIMITS['gltf-toy-car'],
 };
@@ -468,7 +470,7 @@ const MODEL_COMPAT_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>>
  * attributes black, and its WebGLRenderer draws them as null3D does. It also leaves out color morph
  * targets: r186 packs them into its morph texture, but its vertex stage adds only the positions'
  * and the normals' deltas. On the Khronos metal iridescence grid it draws the film as no colour,
- * and its two renderers then differ in 11.5% of the pixels.
+ * and its two renderers then differ in 5.929% of the pixels on the Mac.
  */
 const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set([
 	'meshopt-khr',

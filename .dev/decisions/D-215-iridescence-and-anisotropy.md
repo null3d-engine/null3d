@@ -128,7 +128,8 @@ spheres fill the picture.
 | metallic | SwiftShader | 2.274% | 2.556% | 2.112% |
 
 three.js's two renderers differ by 0.368% on the dielectric scene on the Mac. On the metal grid they
-differ by 11.5%, because r186's WebGPURenderer draws the film without its colors. The metal scene
+differ by 5.929% on the Mac and 5.954% under SwiftShader, because r186's WebGPURenderer draws the
+film without its colors. The metal scene
 therefore takes WebGLRenderer's frame as the reference on every tier, as `WEBGL_ONLY_MODELS` lists.
 
 The dielectric scene takes a limit of 0.6%. Its largest share is 0.527%, and the early frame at a
@@ -138,9 +139,16 @@ puts each limit just above the largest measured share. The anisotropy scene's 0.
 largest share of 2.556%. Its highlights are large and thin, so the two specular anti-aliasing
 kernels cross more pixels there than on any other scene.
 
-CI's run 40226184684 drew these tests on its Linux SwiftShader and passed. Its browser shard 5 ran
-all 98 of its tests green, with the six images that this machine drew. The two drawings are
+CI's run 40226184684 drew these tests on its Linux SwiftShader and passed. Its browser shard 7 ran
+all 141 of its tests green, with the six images that this machine drew. The two drawings are
 therefore equal.
+
+The run's other red jobs belong to other work. The aurora's E1408 and `sky-layer-light` are the
+sky-layer branch's, and the landing range holds the fix. `program-units` is `fix/m3-program-units`'s.
+The canvas allocation check is `ci/allocation-canvas`'s. Two Firefox picture differences have no
+branch yet: `demo-skyway` misses its tolerance by 0.081 points and `demo-canvas-screen` by 0.115.
+The CLI replay drew five frames where the test asks for more than five, and no branch owns that
+either.
 
 A run that dropped `KHR_materials_iridescence` in the loader changed 0.914% of the dielectric
 scene's pixels on each tier. It changed 7.55% to 7.77% of the metal scene's. Both are above the
@@ -150,20 +158,19 @@ The loader needs no change for the texture units. D-215's slot sharing gives the
 the light map's and the specular maps' places, so no stage takes a new unit. The Khronos files use
 no iridescence map, so these runs drop none.
 
-Each model is a temporary fixture in this repository, under
+Each model is a temporary fixture in the engine repository, under
 `tests/pages/assets/models/sources/khronos/`. Their durable home is the sample content, which keeps
-each file with its licence and SHA-256. A prepared change for the sample-assets repository adds both
-models, which are CC0. The change is not pushed, because the assets and the pin are the owner's
-decision. When it lands, these fixtures are deleted and the two addresses in
+each file with its licence and SHA-256. A prepared change for the sample-assets repository adds all
+three models, which are CC0. That change waits in a local copy for the owner, and the pull request to
+that repository is owed to them. When it lands, these fixtures are deleted and the two addresses in
 `bench/scenes/gltf-models.ts` name the samples. The pin bump is owed until then.
 
-The other two Khronos iridescence samples stay out. IridescenceSuzanne is a CC0 binary glTF of
-508 KB, and it would join as a third temporary fixture. It brings no parameter that the sphere grids
-lack. It is more than twice the size of each sphere fixture, so it waits for the pin with them.
-CompareIridescence shows the Khronos logo, which its licence covers as a Khronos trademark. The
-sample rules accept only CC0 and CC BY, so the engine cannot carry it.
+The fourth Khronos iridescence sample stays out. CompareIridescence shows the Khronos logo, which
+its licence covers as a Khronos trademark. The sample rules accept only CC0 and CC BY, so the engine
+cannot carry it.
 
-Each fixture is one binary glTF, of 225 KB for the dielectric model and 216 KB for the metal model.
-It packs the Khronos glTF variant's JSON, its buffer and its guides texture. The JSON objects, the
+The three fixtures are one binary glTF each, of 225 KB for the dielectric model, 216 KB for the
+metal model and 508 KB for Suzanne. The sphere grids pack the Khronos glTF variant's JSON, its
+buffer and its guides texture. Suzanne is Khronos's binary file as published. The JSON objects, the
 buffer bytes and the texture bytes are identical to the source's. One file avoids three committed
 files with relative addresses, which a build renames.
