@@ -338,17 +338,17 @@ The contract, which the docs page and the TSDoc give:
 
 WebGL2 gives each shader stage 16 texture units. The lit shader reads most of them, so an add-on's material that adds textures of its own could pass a stage's share, and the device would then fail to link the program: the draw would show nothing and report no reason. M3-D7 refuses it first.
 
-`prepareProgram` in `packages/engine/src/gpu/webgl2/programs.ts` counts the distinct texture slots that each stage declares, before it numbers them, and calls `checkStageUnits`. A stage past 16 throws E1209 with the count and the limit. The count reads the composed GLSL's declared textures rather than the linked program's, since a driver removes a texture that the shader never reads and the declared list is the bound that a device without the removal rule would see.
+`prepareProgram` in `packages/engine/src/gpu/webgl2/programs.ts` counts the distinct texture slots that each stage declares, before it numbers them, and calls `checkStageUnits`. A stage past the units that the device reports for it throws E1209 with the count and the limit. The count reads the composed GLSL's declared textures rather than the linked program's, since a driver removes a texture that the shader never reads and the declared list is the bound that a device without the removal rule would see.
 
 The refusal comes at the first draw of a material, when its program is prepared, and not at `materials.shader()`. An add-on's shader can arrive as a first-use loader, so the material's variants may be empty when it is created, while the program always has its composed source. WebGPU needs no such check: the engine's own layouts already stay within its 16 sampled textures, and a device refusal there names E1305.
 
-The test add-on is a stage of 17 declared textures in `programs.test.ts`, beside the existing test that every build of the engine's own shaders stays within the units.
+The boundary tests in `programs.test.ts` hold a stage of 17 declared textures against an explicit limit. The same file checks that every build of the engine's own shaders stays within the units.
 
 ### Addendum, 25 October 2026: the count runs before the link, against the device's units
 
 The count above ran after `prepareProgram` read the program's link result. On a device with 16 units, a stage of 17 textures therefore threw the driver's plain link error, and E1209 never came. The count now runs first, on the declared sources of both stages. It compares against the units that the device reports for each stage (`MAX_VERTEX_TEXTURE_IMAGE_UNITS` and `MAX_TEXTURE_IMAGE_UNITS`), rather than the 16 that every device gives. A device that reports more units lets a larger stage link.
 
-The browser test `tests/image/program-units.spec.ts` builds a program by hand, with one texture more than the device's fragment stage holds. It reads the link result before the engine does. It then checks that the engine throws E1209 with the device's real count. `programs.test.ts` keeps the boundary tests with an explicit limit.
+The browser test `tests/image/program-units.spec.ts` builds a lit custom material through the public API, as a page builds one, and draws it. The material declares six textures of its own. Its fragment stage reads 12 units: six of the engine's lighting and six of its own. A WebGL2 device promises at least 16, so no compliant device refuses that material. The page therefore makes its own context report 10 fragment units, as a reduced driver would, and keeps the device's own count in its result. The engine throws E1209 with both numbers, which shows the refusal is the allocator's and not the driver's. A unit test in `programs.test.ts` holds the order: its device links the program, and the engine throws E1209 without asking for the link result.
 
 ## Addendum, 23 October 2026: H1's storage surface is one texture at a fixed binding
 

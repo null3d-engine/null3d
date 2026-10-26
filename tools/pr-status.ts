@@ -164,7 +164,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-V4':
 		'no device has timed the new generator, so the device figures are of the stand-in it replaced; no Mac, iPad or S24 GPU or memory figure exists, and no check-addon run is recorded',
 	'M3-D7':
-		'no test add-on or material reaches E1209: the browser test uses an internal entry, and it fails in CI because the software GPU accepts the program it builds',
+		'the fix is on `fix/m3-d7-material-units` and awaits a fresh audit: the browser test drives a lit custom material with six textures through the public API, on a context that reports fewer units than the device has, since no compliant WebGL2 device refuses a public material that reads 12 of the 16 units its stages are promised',
 	'M3-D9':
 		'no record shows the listing check passing on vegetation, and its one run skipped the shader and size checks',
 	'M3-F2':
