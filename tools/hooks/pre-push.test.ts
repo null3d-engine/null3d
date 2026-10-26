@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { exactTestPath } from '../../tests/lib/test-paths';
 import {
 	addedStatusLines,
 	baseOf,
@@ -281,7 +282,7 @@ describe('guardSteps', () => {
 		expect(guardSteps().map((step) => [step.lane, step.command.join(' ')])).toEqual([
 			['DIRECT', 'bun tools/decisions.ts --check'],
 			['DIRECT', 'bun run check'],
-			['DIRECT', `bun test ${GUARD_TESTS.join(' ')}`],
+			['DIRECT', `bun test ${GUARD_TESTS.map(exactTestPath).join(' ')}`],
 		]);
 		for (const file of GUARD_TESTS) expect(existsSync(file), file).toBe(true);
 	});
@@ -373,7 +374,7 @@ describe('plan', () => {
 			['DIRECT', 'bun run check'],
 			[
 				'DIRECT',
-				'bun test tools/lib/release.test.ts tools/lib/cdn.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts tools/lib/ci-workflow.test.ts tools/lib/size-report.test.ts',
+				'bun test ./tools/lib/release.test.ts ./tools/lib/cdn.test.ts ./tools/lib/network-use.test.ts ./tests/lib/priority-setup.test.ts ./tools/lib/ci-workflow.test.ts ./tools/lib/size-report.test.ts',
 			],
 		]);
 	});
@@ -388,7 +389,7 @@ describe('plan', () => {
 			['DIRECT', 'bun run check'],
 			[
 				'DIRECT',
-				'bun test tools/lib/release.test.ts tools/lib/cdn.test.ts tools/lib/network-use.test.ts tests/lib/priority-setup.test.ts tools/lib/ci-workflow.test.ts tools/lib/size-report.test.ts',
+				'bun test ./tools/lib/release.test.ts ./tools/lib/cdn.test.ts ./tools/lib/network-use.test.ts ./tests/lib/priority-setup.test.ts ./tools/lib/ci-workflow.test.ts ./tools/lib/size-report.test.ts',
 			],
 			['CPU_ONLY', 'cargo check --workspace'],
 			['CPU_ONLY', 'cargo nextest run --no-fail-fast --profile ci -p null3d-render'],

@@ -4,7 +4,7 @@
 // the replay's facts in its JSON report.
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import { runCli } from '../lib/cli.ts';
 import { REPO_ROOT } from '../lib/server.ts';
 
@@ -14,6 +14,19 @@ interface RecordingPage {
 	recordingReady?: boolean;
 	recordingError?: string;
 	null3dEngine?: { saveRecording(): Promise<Uint8Array | undefined> };
+}
+
+/**
+ * Waits until the session has posted `count` frame lines, so the recording holds that many frames.
+ * The session runs frames at the speed of the machine that draws them, and a software GPU draws a
+ * few a second, so a fixed span of time records too short a session there.
+ */
+async function waitForFrames(page: Page, count: number): Promise<void> {
+	await page.waitForFunction(
+		(needed: number) => ((globalThis as RecordingPage).recordingLog?.length ?? 0) >= needed,
+		count,
+		{ timeout: 60_000 },
+	);
 }
 
 // The test records a session in a browser and the command starts its own dev server and browser,
@@ -30,10 +43,18 @@ test('null3d shot --replay draws the last frame of a recording', async ({ page }
 		{ timeout: 30_000 },
 	);
 	expect(await page.evaluate(() => (globalThis as RecordingPage).recordingError)).toBeUndefined();
+	await waitForFrames(page, 4);
+	// A frame that reads the key holds the press in the recording. Waiting for that frame, rather
+	// than for a fixed time, leaves the session long enough at any rate the machine draws.
 	await page.keyboard.down('w');
-	await page.waitForTimeout(300);
+	await page.waitForFunction(
+		() =>
+			((globalThis as RecordingPage).recordingLog ?? []).some((line) => line.split('|')[3] === '1'),
+		undefined,
+		{ timeout: 60_000 },
+	);
 	await page.keyboard.up('w');
-	await page.waitForTimeout(200);
+	await waitForFrames(page, 10);
 	const bytes = await page.evaluate(async () => {
 		const engine = (globalThis as RecordingPage).null3dEngine;
 		if (engine === undefined) throw new Error('the page has no engine');
