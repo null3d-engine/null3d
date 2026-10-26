@@ -392,6 +392,13 @@ starts the states empty, as it starts every texture, so a pass begins again from
 
 A pass that does not run keeps the state that its last run wrote, as it keeps its image.
 
+A pass with history costs four times the memory of one state. The target holds both states as
+`layers * 2` layers, and the pass keeps two state textures of `layers` layers each. At
+`rgba16float` that is 32 bytes for each texel of one state, and at `r32float` 16 bytes. Size a
+history pass for its grid, not the canvas: 128 by 128 takes 512 KiB, and 256 by 256 takes 2 MiB.
+The 8192 by 8192 side that the device allows would take 2 GiB, which no page should choose by
+accident. `render.dumpGraph()` does not list the state textures, so budget them beside its figures.
+
 ### Reading a region back
 
 `render.readPass(pass, region)` reads a small region of a compute pass's texture, through a promise:
