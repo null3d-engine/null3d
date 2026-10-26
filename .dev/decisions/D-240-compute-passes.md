@@ -264,13 +264,15 @@ each Jacobi step of the pressure solve read the state that the step before wrote
 pass that reads its own texture, because the render graph would make a cycle. This addendum keeps
 that refusal for every other loop and adds one option that closes the loop legally.
 
-**The two states.** `history: true` gives a pass two states in one texture. The target holds
-`layers * 2` array layers: the first state takes the first `layers`, and the second the layers after
-them. A run binds a view of the state that it writes, at group 0 binding 1 as before, and a view of
-the other state at binding 2, which the shader reads with `textureLoad(history, coord, id.z, 0)`.
-The two views cover different layers, so one subresource is never both written and sampled, which
-WebGPU requires. The frame swaps the views between runs. A one-layer shader writes layer 0 as
-before, so the option changes nothing for a pass that does not use it.
+**The two states.** `history: true` gives a pass two states. Two textures of `layers` array layers
+hold them, so a run writes one and samples the other through whole-texture views. Compatibility
+mode binds a whole array texture and nothing less, so the states cannot share one texture there. A
+run writes the state that the run before read, and the frame swaps the two textures between runs.
+Once the frame's runs have finished, the frame copies both states into the pass's target: the first
+state into the first `layers` layers, and the second into the layers after them. Readers sample the
+state that the last run wrote. A reader that wants both declares the target as
+`texture_2d_array<f32>`. A one-layer shader writes layer 0 as before, so the option changes nothing
+for a pass that does not use it.
 
 **The runs.** `steps` is the number of dispatches that a frame records: 40 runs of a pressure solve
 are one pass, not 40. `render.setPassSteps` changes it in a frame without an allocation. A pass
@@ -283,10 +285,10 @@ history. A `'writes'` dispatch runs one workgroup along z for each layer, and th
 layer `id.z`. The pass texture has the states' layers, and its first layer in each state is the one
 a material or an effect samples.
 
-**The graph.** The pass's target is a kept target, as D-240 made it. The pass reads its own target
-through its own bind group, not through `Pass::reads`, so the graph adds no edge and finds no
-cycle. A page that names the pass's own texture in `textures` still throws E1504, and so does every
-other loop.
+**The graph.** The pass's target is a kept target, as D-240 made it. The pass reads its own
+previous state through its own bind group, not through `Pass::reads`, so the graph adds no edge and
+finds no cycle. A page that names the pass's own texture in `textures` still throws E1504, and so
+does every other loop.
 
 **Readers.** A material or an effect that declares the pass's texture as `texture_2d<f32>` samples
 the state that the last run wrote: the engine writes that state's first layer into the map's layer
@@ -322,7 +324,9 @@ writes. Each layer has a block of its own in a buffer of the fragment forms, bec
 carries the layer. Up to 32 layers work on WebGL2, and the call throws E1220 past them. The WebGPU
 paths draw 128 with history and 256 without. This is a limit of the path, not a dropped feature.
 
-**Cost and memory.** The two states take twice the target's texels. A history pass records one
+**Cost and memory.** The target holds both states as `layers * 2` layers, and the two state
+textures hold them once more, so a history pass takes four times the texels of one state. A frame
+that runs the pass copies both states into the target, `layers * 2` layer copies, and records one
 dispatch for each step. A WebGL2 history pass adds a scratch texture of one state and one copy for
 each run. The swap's GPU time and memory on the Mac, an iPad and a phone are owed, as M3-V14's
 measurements cover the field that uses it first.

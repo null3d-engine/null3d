@@ -23,7 +23,7 @@ interface StateResult {
 /** The GPU paths that the page runs, and the switch that chooses each. */
 const TIERS = [
 	{ tier: 'webgpu', query: 'gpu=webgpu' },
-	{ tier: 'compat', query: 'gpu=compat' },
+	{ tier: 'webgpu-compat', query: 'gpu=compat' },
 	{ tier: 'webgl2', query: 'gpu=webgl2' },
 ] as const;
 
