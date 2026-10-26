@@ -40,9 +40,9 @@ The environment that the page builds is a `rgb9e5ufloat` map of 256 texels and 6
 path, as `Environment.format`, `.size` and `.levels` report. A mirror reads level 0
 (`environment.wgsl`), so the lake samples the map's centre faces, as the sky does.
 
-The layer before the fix entered the scene without the scene's exposure. Its template multiplied
-the layer's colour by the background's intensity alone, where the core sky, the objects and the
-map's fill all take the exposure. This record gives no figure for that drawing. The page's pre-fix
+The layer before the fix entered the scene without the scene's exposure or the background's
+intensity. Its template applied no scale to the layer's colour, where the core sky, the objects and
+the map's fill all take the exposure. This record gives no figure for that drawing. The page's pre-fix
 picture needs a shader compiler built without that line, and the plugin's compiler carries the
 engine's WGSL inside it.
 
