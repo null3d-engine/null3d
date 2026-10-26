@@ -746,13 +746,7 @@ mod tests {
     /// One frame of the probes, with the figures a builder gives: the frame's number, whether its
     /// list created a pipeline, and the newest frame that the thread that draws drew with every
     /// pipeline built.
-    fn frame_with(
-        probes: &mut Probes,
-        list: &mut DrawList,
-        frame: u32,
-        created: bool,
-        built: u32,
-    ) {
+    fn frame_with(probes: &mut Probes, list: &mut DrawList, frame: u32, created: bool, built: u32) {
         probes.pick_capture(true);
         probes.set_faces([Some(20); 6]);
         let shape = light(probes);
