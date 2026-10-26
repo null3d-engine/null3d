@@ -92,6 +92,13 @@ for (const gpu of Object.keys(TIERS) as (keyof typeof TIERS)[])
 			for (const frame of lastTwo)
 				expect(Math.abs(green(frame[place]) - withLayer), text).toBeLessThanOrEqual(STEADY);
 		}
+		// The figures of every run, which a passing test otherwise discards: the settled green of
+		// each place before the layer, with it, and after it was removed.
+		console.log(
+			`sky layer light on ${gpu}: ${places
+				.map((place) => `${place} ${greens[place].map((value) => value.toFixed(1)).join(' ')}`)
+				.join(', ')}`,
+		);
 		// The light follows the map's own texels, so it reaches the scene with them or a frame
 		// before them, never after: no frame shows the layer in the mirror beside the core sky's
 		// light alone.

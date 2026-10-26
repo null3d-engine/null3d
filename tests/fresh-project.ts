@@ -1,19 +1,20 @@
 // The packed packages in a fresh project, as a developer installs them from npm. It packs every
 // public package as the publish job does, makes a new Vite project in a temporary folder outside
 // the repository, so that no file of the repository can stand in for a missing one, and installs
-// the tarballs there with Bun. In that project it runs the command-line tool's test command twice:
+// the tarballs there with Bun. In that project it shows first that the command-line tool's upgrade
+// moves a manifest's null3D packages to one version. Then it runs the tool's test command twice:
 // once to keep the images of the first run as the references, then once to match them. The test
 // command type checks the project against the packages' declarations, and draws the project's
-// sketch on every GPU tier. It shows next that the command's upgrade moves a manifest's null3D
-// packages to one version. Then the tool optimizes a model, and last, it builds the project for
+// sketch on every GPU tier. Then the tool optimizes a model, and last, it builds the project for
 // production. The build must hold the engine's third-party notices, and its page must start the
 // threaded engine in a browser under a strict Content-Security-Policy, whatever test switches the
-// address holds. Last, the project's service worker caches the build on a first visit, and the
-// page must start the threaded engine again with the server stopped, on both GPU paths. While those
-// two checks run, the project builds a page of its own layout around a copy of this repository's
-// examples folder, as a website that holds the repository as a submodule does. Two demos, and a
-// comparison in each engine, must start from that build. Run `bun run build` first, for the WebAssembly files. Run
-// from the repository root:
+// address holds. Last, the project's service worker caches the build on a first visit, and the page
+// must start the threaded engine again with the server stopped, on both GPU paths. Once the test
+// command has run for the last time, the project also builds a page of its own layout around a copy
+// of this repository's examples folder, as a website that holds the repository as a submodule does.
+// That build runs beside the asset tool, the production build and its checks. Two demos, and a
+// comparison in each engine, must start from it. Run `bun run build` first, for the WebAssembly
+// files. Run from the repository root:
 //   bun run test:packages [--keep]    --keep leaves the project's folder in place after a pass
 import { spawn, spawnSync } from 'node:child_process';
 import {
@@ -126,7 +127,10 @@ function step(
 interface BackgroundStep {
 	/** Waits for the command's end, prints its output, and fails as `step` does when it failed. */
 	finish(): Promise<void>;
-	/** Stops the command, when a step before its end failed. */
+	/**
+	 * Stops the command if it still runs, and names the file of its output when `finish` has not
+	 * shown it.
+	 */
 	stop(): void;
 }
 
@@ -151,6 +155,7 @@ function stepInBackground(
 		env: { ...process.env, ...env },
 	});
 	closeSync(output);
+	let shown = false;
 	// Why the command failed, or nothing when it passed.
 	const ended = new Promise<string | undefined>((resolve) => {
 		child.once('error', (error) => resolve(error.message));
@@ -163,10 +168,15 @@ function stepInBackground(
 			const failure = await ended;
 			console.log(`\n${title}, which ran while the steps above did:`);
 			process.stdout.write(readFileSync(log, 'utf8'));
+			shown = true;
 			if (failure) throw new Error(`${title} failed with ${failure}`);
 		},
 		stop() {
-			if (child.exitCode === null && child.signalCode === null) child.kill();
+			const running = child.exitCode === null && child.signalCode === null;
+			if (running) child.kill();
+			// A step that fails first leaves this one's output unshown, so say where it is.
+			if (!shown)
+				console.log(`\n${title}${running ? ' was stopped' : ' ended'}. Its output is in ${log}`);
 		},
 	};
 }
@@ -507,7 +517,9 @@ const SITE_SHADER_CACHE_BYTES = 4 * 1024 * 1024 * 1024;
  * Starts the build of a website's page of its own layout around a copy of the repository's examples
  * folder, as a website does that holds the repository as a submodule and installs the packages from
  * npm. The build takes the packages from the project's tarballs and reads nothing of the project's
- * own build, so it runs while the checks of that build do.
+ * own build, so it runs beside the asset tool, the production build and that build's checks. It
+ * starts after the project's last run of the test command, whose dev server would otherwise scan
+ * the copied examples and the page.
  */
 function startSiteBuild(project: string): BackgroundStep {
 	const copy = join(project, 'null3d');
@@ -614,6 +626,10 @@ async function main(): Promise<void> {
 			);
 		step('Keep the first images as references', project, cli, ['test', '--update-references']);
 		step('Match the references', project, cli, ['test']);
+		// The site's build needs only the installed packages, so it runs beside every step below. Its
+		// copy of the examples and its page sit in the project's folder, where the test command's dev
+		// server would scan them, so it starts once that command has run for the last time.
+		site = startSiteBuild(project);
 		// The asset tool from the tarball: its encoder, its worker and its dependencies.
 		mkdirSync(join(project, 'models'));
 		copyFileSync(join(ROOT, ASSET_SCENE.source), join(project, 'models/scene.glb'));
@@ -649,7 +665,6 @@ async function main(): Promise<void> {
 		if (!existsSync(notices)) throw new Error(`the production build writes no ${NOTICES_FILE}`);
 		if (readFileSync(notices, 'utf8') !== `${expected}\n`)
 			throw new Error(`the production build's ${NOTICES_FILE} differs from the packages' notices`);
-		site = startSiteBuild(project);
 		await startsUnderStrictPolicy(join(project, 'dist'));
 		await playsOffline(join(project, 'dist'));
 		await startsSiteDemos(project, site);

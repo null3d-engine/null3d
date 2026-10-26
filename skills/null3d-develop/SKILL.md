@@ -84,7 +84,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 1. Pin down the target when the request leaves it open: devices, frame rate and the WebGL2 path. Assume phones matter unless told otherwise.
 2. Read the doc pages for the features involved (section 1).
 3. Make the change in small steps. Scene logic goes in `sketch.ts`; DOM, HTML UI and audio go in `page.ts`.
-4. Look at the result. `bunx vite` serves the project, and the null3D Vite plugin adds the right headers. `bunx @null3d/cli shot --out shot.png` renders one frame headless. Open the image: code that compiles can still draw nothing.
+4. Look at the result. `bunx vite` serves the project, and the null3D Vite plugin adds the right headers. `bunx @null3d/cli shot --out shot.png` renders one frame headless. Open the image: code that compiles can still draw nothing. Read `references/testing-and-debugging.md` before trusting a picture.
 5. Check the cost with `bunx @null3d/cli bench`, or with `await engine.measure(5)` on the page while it runs. Compare the frame phases with the preset's budget (`references/performance.md`).
 6. Add or update a test. Anything visual gets a hold-mode image test in `null3d.json` (`references/testing-and-debugging.md`). Run `bunx @null3d/cli test`, and open each failed image.
 7. If the change touches rendering, check the WebGL2 path: add `?gpu=webgl2` to the dev URL, or run `bunx @null3d/cli test --gpu webgl2`.

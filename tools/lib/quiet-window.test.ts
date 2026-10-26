@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { scaledBudget } from '../../tests/lib/run-budget.ts';
 import { cacheDir, HEAVY_SLOT_ENV } from './build-cache';
 import {
 	QUIET_FILE_ENV,
@@ -74,27 +75,31 @@ describe('refuseInQuietWindow', () => {
 });
 
 describe('the tools that build or drive a browser', () => {
-	it('refuse to start while a marker stands, before they do any work', () => {
-		const env: NodeJS.ProcessEnv = { ...process.env, ...withMarker('a timing run') };
-		delete env[HEAVY_SLOT_ENV];
-		delete env[QUIET_PASSED_ENV];
-		const root = join(import.meta.dirname, '../..');
-		for (const [tool, what] of [
-			['tools/shaders.ts', 'The shader build'],
-			['tools/build-wasm.ts', 'The WebAssembly build'],
-			['tools/build-test-pages.ts', 'The test page build'],
-		] as const) {
-			const run = spawnSync(process.execPath, [join(root, tool)], {
-				cwd: root,
-				env,
-				encoding: 'utf8',
-			});
-			expect(run.status, tool).toBe(1);
-			expect(run.stderr, tool).toContain(
-				`${what} did not start: a timing run holds this machine quiet`,
-			);
-		}
-	}, 60_000);
+	it(
+		'refuse to start while a marker stands, before they do any work',
+		() => {
+			const env: NodeJS.ProcessEnv = { ...process.env, ...withMarker('a timing run') };
+			delete env[HEAVY_SLOT_ENV];
+			delete env[QUIET_PASSED_ENV];
+			const root = join(import.meta.dirname, '../..');
+			for (const [tool, what] of [
+				['tools/shaders.ts', 'The shader build'],
+				['tools/build-wasm.ts', 'The WebAssembly build'],
+				['tools/build-test-pages.ts', 'The test page build'],
+			] as const) {
+				const run = spawnSync(process.execPath, [join(root, tool)], {
+					cwd: root,
+					env,
+					encoding: 'utf8',
+				});
+				expect(run.status, tool).toBe(1);
+				expect(run.stderr, tool).toContain(
+					`${what} did not start: a timing run holds this machine quiet`,
+				);
+			}
+		},
+		scaledBudget(60_000),
+	);
 });
 
 describe('each guarded entry point', () => {

@@ -910,16 +910,9 @@ export interface CoreGlue extends CoreErrors {
 	setLut(texture: number): number;
 	/**
 	 * Grades the canvas color with the built-in grading table in a 3D texture, or with none for 0,
-	 * from the next frame on: a job worker baked the sketch's grading values into it. `hdr` says
-	 * the table holds the grade over high dynamic range light, which the pass reads before the tone
-	 * curve, instead of display color.
+	 * from the next frame on: a job worker baked the sketch's grading values into it.
 	 */
-	setGrade(texture: number, hdr: boolean): number;
-	/**
-	 * Sets the grading controls that the 8-bit path's shaders apply before their tone curve from
-	 * the post-processing values, or clears them.
-	 */
-	setGradeValues(on: boolean): number;
+	setGrade(texture: number): number;
 	/**
 	 * Turns the vignette on with the post-processing values' intensity, size, falloff and roundness,
 	 * or off.
@@ -1384,7 +1377,6 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOcclusionBuffer',
 	'setLut',
 	'setGrade',
-	'setGradeValues',
 	'setVignette',
 	'setSharpen',
 	'environmentValues',

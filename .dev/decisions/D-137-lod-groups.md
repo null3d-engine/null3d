@@ -438,10 +438,10 @@ fraction of the mesh's size. The unit test reads the error itself, which is the 
 adds: `counts a texture that would slide, where a flat surface otherwise simplifies free` holds the
 bent grid's coarsest error above 0.11 units.
 
-The coordinator accepted the exemption from a picture for the weight on 26 October 2026, and that
-acceptance was the coordinator's alone. The owner has not ruled on it. The picture above now proves
-what the exemption covered, so the owner can confirm or drop the exemption with that proof in front
-of them.
+The owner ruled the weight question moot on 26 October 2026. `asset-bent-grid` is the weight's
+picture: without the weight, 10.0 percent of its pixels differ against the picture tests' 0.1
+percent limit, and it passed on all three tiers and in Firefox and Safari in run 40248658928. The
+exemption is therefore gone, and the picture is the weight's proof.
 
 ## Addendum: the level pictures place each copy by its own distance (22 October 2026, M3-L2)
 
