@@ -13,5 +13,9 @@ A decision record settles one design question with measured data. It states the 
 3. Start with the line `# D-<number>: <title>`. Under it, write a `Status:` paragraph and a `Summary:` paragraph. The status says what is decided and what is pending, with dates. The summary gives the choice and its main figures in one to three sentences.
 4. Where the options differ in how the result looks, the `## Look` section says which looks better, and the decision takes that one ([hard rule 40](../../AGENTS.md#hard-rules)). Effort and schedule are no reason to take the worse look. Another hard rule may limit a cost, such as frame time. A quality preset or a cheaper technique of the same look then meets it, and the section says how. A record whose options look the same says so in one line.
 5. When the record changes, keep its status and summary current.
+6. Take each figure from its run's own log or report, in stated units. Name the run: the command,
+   the threads, the load, the method and the commit. Say what else ran beside it. Never compare two
+   figures that two methods measured. On 26 October 2026, readers refused one record three times
+   for figures that claimed more than their runs showed.
 
 No file lists the records by hand, so a pull request that adds a record changes no file that other pull requests change. [D-84](D-84-generated-decision-list.md) gives the reasons. `bun run docs:check` and the commit hook refuse a record without its title, status or summary, and two records with one number.
