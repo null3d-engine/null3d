@@ -1,6 +1,6 @@
 # D-230: The starter template's agent hook
 
-Status: decided and built. The project made from the template was installed, built and used with the hook on. Task: M3-R16.
+Status: decided and built. The project made from the template was installed, built and used with the hook on, which [the Mac run](../tested-devices/macbook-pro-chrome/20261027-032736-template-install.md) records. Task: M3-R16.
 
 Summary: A new project from `bunx @null3d/cli create` ships an `AGENTS.md` and one agent hook. Claude Code and Codex each run that hook. It refuses waiting with `sleep`, stopping a process by name and following a log. It flags an allocation in `onUpdate`, a DOM name in the sketch and an import that the installed engine does not export. Every rule lives in `@null3d/cli/agent-rules`, so the hook and any other null3D tool share one definition.
 
@@ -14,11 +14,11 @@ A rule ships only when the hook can check it from the call itself, or from the p
 
 ## Decision
 
-The template holds one hook and one settings file for each agent, and `.agent/agent-hook.mjs` holds the hook itself. Claude Code runs it through `.claude/settings.json`, before each Bash command and each file edit. Codex runs it through `.codex/hooks.json`, before each Bash command and each `apply_patch`. One hook file serves both agents, because two copies would drift. The hook finds the project from `CLAUDE_PROJECT_DIR`, from the call's `cwd`, or from the process's working directory. It reads no project file except the one an edit writes.
+The template holds one hook and one settings file for each agent, and `.agent/agent-hook.mjs` holds the hook itself. Claude Code runs it through `.claude/settings.json`, before each Bash command and each file edit. Codex runs it through `.codex/hooks.json`, before each Bash command and each `apply_patch`. One hook file serves both agents, because two copies would drift. The owner chose this design over the inline script in `.claude/agent-hook.mjs`, which held the rules themselves. The rules move to one shared module, so both agents and any later tool read the same definition. The hook finds the project from `CLAUDE_PROJECT_DIR`, from the call's `cwd`, or from the process's working directory. It reads no project file except the one an edit writes.
 
 Codex documents two shapes that the hook reads. A `PreToolUse` hook answers with `hookSpecificOutput.additionalContext` for text that the model sees without a block. An `apply_patch` call carries the whole patch in `tool_input.command`. The hook reads `command` first and falls back to `patch`, `input` and `arguments`, so a build that moves the text does not turn the check off.
 
-The rules live in `packages/cli/src/agent-rules.js`, which the package exports as `@null3d/cli/agent-rules`. The command-line tool is their home, because it ships the templates and the hook. The hook reads that module from the installed package, so a rule has one definition, one message and one test. A lint rule takes the same module when it is built.
+The rules live in `packages/cli/src/agent-rules.js`, which the package exports as `@null3d/cli/agent-rules`. The command-line tool is their home, because it ships the templates and the hook. The hook reads that module from the installed package, so a rule has one definition, one message and one test. A lint rule takes the same module when it is built. No lint plugin ships yet, and this task's finish line does not ask for one.
 
 The rules take two actions. The three command rules refuse the call, because the agent can choose another command at once. The three source rules flag it, because a text scan cannot prove an allocation, and a refusal would block sound code. A flag answers with `hookSpecificOutput.additionalContext`, which Claude Code and Codex both document as text that the model reads without a block. A refusal exits with code 2 and writes the reason to stderr, which both agents read as a block.
 

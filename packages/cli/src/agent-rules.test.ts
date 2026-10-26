@@ -126,6 +126,45 @@ describe('no-sleep', () => {
 			expect(commandRule(command)).toBeNull();
 		}
 	});
+
+	it('refuses a wait inside a loop, a condition, a subshell, a group or eval', () => {
+		for (const command of [
+			'until curl -s localhost:5173; do sleep 1; done',
+			'while true; do sleep 1; done',
+			'for i in 1 2 3; do sleep 1; done',
+			'if true; then sleep 5; fi',
+			'if true; then echo go; else sleep 5; fi',
+			'(sleep 5)',
+			'( sleep 5 )',
+			'{ sleep 5; }',
+			'! sleep 5',
+			'eval sleep 5',
+			"eval 'sleep 5'",
+			'echo $(sleep 5)',
+			'echo "$(sleep 5)"',
+			'echo `sleep 5`',
+			'bash -c "until curl -s localhost:5173; do sleep 1; done"',
+		]) {
+			expect(commandRule(command)).toBe('no-sleep');
+		}
+	});
+
+	it('allows a compound command whose bodies do not wait', () => {
+		for (const command of [
+			'until grep -q ready ready.txt; do cat status.log; done',
+			'if [ -f ready ]; then bun run build; fi',
+			'for name in a b; do echo $name; done',
+			'(bun run test)',
+			'{ bun run build; }',
+			'eval echo hello',
+			'echo "$(date)"',
+			"echo '$(sleep 5)'",
+			'echo "a $(echo b)"',
+			'grep -n "do sleep" notes.txt',
+		]) {
+			expect(commandRule(command)).toBeNull();
+		}
+	});
 });
 
 describe('no-kill-by-name', () => {
@@ -145,6 +184,8 @@ describe('no-kill-by-name', () => {
 			'pidof vite | xargs kill',
 			'ps aux | grep vite | xargs kill',
 			'bash -c "killall node"',
+			'for p in 1 2 3; do pkill -P $p; done',
+			'if true; then killall node; fi',
 		]) {
 			expect(commandRule(command)).toBe('no-kill-by-name');
 		}
@@ -238,10 +279,18 @@ describe('no-planned-api', () => {
 	it('allows an import that the engine exports', () => {
 		const declarations = engineRoot();
 		expect(
-			sourceRule("import { createEngine, defineSketch } from '@null3d/engine';\n", declarations),
+			sourceRule(
+				'src/page.ts',
+				"import { createEngine, defineSketch } from '@null3d/engine';\n",
+				declarations,
+			),
 		).toBeNull();
 		expect(
-			sourceRule("import type { createEngine } from '@null3d/engine';\n", declarations),
+			sourceRule(
+				'src/page.ts',
+				"import type { createEngine } from '@null3d/engine';\n",
+				declarations,
+			),
 		).toBeNull();
 	});
 
