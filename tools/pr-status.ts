@@ -47,7 +47,6 @@ const INCOMPLETE = new Set([
 	'M3-D9',
 	'M3-F2',
 	'M3-R16',
-	'M3-R17',
 	'M3-R20',
 	'M3-E2',
 	'M3-E4',
@@ -66,7 +65,6 @@ const INCOMPLETE = new Set([
 	'M3-R22',
 	'M3-L4',
 	'M3-A2',
-	'M3-A8',
 	'M3-A9',
 	'M3-V5',
 	'M3-A11',
@@ -135,8 +133,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
 	'M3-A2':
 		"the iPad Pro and the Galaxy S24 have timed the refresh, and their runs are recorded; the Mac's rows are still owed",
-	'M3-A8':
-		'the shipped design is a display-color table with no tone curve, which replaced the HDR input D-199 has the owner approving',
 	'M3-A9':
 		"the 4x shadow detail holds only for an object up to 1.8 m on High, and the costs were taken at loads of 13.6 to 26.3 against the spec's own limit of 8",
 	'M3-A11':
@@ -170,8 +166,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-F2':
 		"a 100,000-splat cloud becomes one chunk and cannot stream; the streaming test's last recorded CI failure predates the chunking fix, and no pass has been recorded since",
 	'M3-R16': 'no project made from the template is installed, built and used with the hook on',
-	'M3-R17':
-		"the evaluation's own record says it does not reach the gate, and the skill text it evaluates differs from the pinned version",
 	'M3-R20': 'the record gives 1.25 to 2.42 seconds against a finish line that asks for under one',
 	'M3-E2':
 		'its finish line was rewritten to match the build without an owner ruling, and that ruling is still open',
