@@ -381,10 +381,11 @@ impl Probes {
 
     /// Records the frame's work on the probes' maps, ahead of the frame's passes: the array and
     /// the chain when the size or the layers changed. Then readies the filter of the probe that
-    /// captures in this frame, whose map the frame's lit passes read. A frame whose list created
-    /// pipelines, or that draws while pipelines are still building, keeps the probe's request: a
-    /// draw whose pipeline is not built draws nothing, so that frame's map may lack what it caught.
-    /// The request ends in the first frame that draws with every pipeline built.
+    /// captures in this frame, whose map the frame's lit passes read. A frame that draws while a
+    /// pipeline it needs is still building keeps the probe's request: that draw draws nothing, so
+    /// the frame's map may lack what it caught. The request ends in the first frame that draws with
+    /// every pipeline built, and any frame recorded before the thread that draws has drawn one ends
+    /// it too, since each frame waits for its pipelines until then.
     pub(crate) fn record(
         &mut self,
         list: &mut DrawList,
@@ -450,9 +451,14 @@ impl Probes {
             self.filter = Some([array, chain, slot as u32, code, a, b, c, d, e, f]);
             probe.ready = true;
             // A draw whose pipeline is still building draws nothing, so this frame's map may lack
-            // the objects that it caught. Keep the request until the thread that draws built every
-            // pipeline that the engine created, as the shadow tiles keep their tile's draw.
-            probe.due = !crate::pipelines::built_by(self.last_new_pipeline, pipelines_built);
+            // the objects that it caught. Until the thread that draws has drawn a frame, each frame
+            // waits for its pipelines, so every pipeline draws then: a held scene records every
+            // frame before the thread that draws draws one, and no held frame needs a second
+            // capture for that alone. After the first drawn frame, keep the request until the
+            // thread that draws built every pipeline that the engine created, as the shadow tiles
+            // keep their tile's draw.
+            probe.due =
+                !crate::pipelines::built_by_or_first(self.last_new_pipeline, pipelines_built);
         }
         Ok(())
     }
@@ -799,6 +805,7 @@ mod tests {
         assert_eq!(probes.filter(), None, "a probe captures once");
     }
 
+    /// Is a request needed after a capture in this frame, given the figures a builder gives?
     #[test]
     fn a_capture_keeps_its_request_until_the_pipelines_it_needs_are_built() {
         let mut probes = Probes::default();
@@ -806,19 +813,28 @@ mod tests {
         probes.set_generator(3);
         probes.set(0, probe_at(0.0)).unwrap();
         let mut list = DrawList::with_capacity(1024);
-        // Frame 1 creates the pipelines that the capture views draw with, and the thread that
-        // draws has built none of them when the frame records.
+        // A held scene records its frames before the thread that draws draws one. Until it has drawn
+        // a frame, each frame waits for its pipelines, so the capture's draw sees every object.
         frame_with(&mut probes, &mut list, 1, true, 0);
         assert!(probes.filter().is_some(), "the frame that captures filters");
+        assert!(
+            !asks_to_capture(&mut probes),
+            "no frame has drawn, so every frame waits for its pipelines"
+        );
+        // A later capture in a frame that creates pipelines: the draw may run before they build, so
+        // the request stays.
+        probes.capture(0);
+        frame_with(&mut probes, &mut list, 2, true, 1);
+        assert!(probes.filter().is_some());
         assert!(
             asks_to_capture(&mut probes),
             "the map may lack an object whose pipeline was still building"
         );
-        // Frame 2 still draws while the pipeline builds, so the request stays again.
-        frame_with(&mut probes, &mut list, 2, false, 0);
+        // Frame 3 still draws while the pipeline builds, so the request stays again.
+        frame_with(&mut probes, &mut list, 3, false, 1);
         assert!(asks_to_capture(&mut probes));
-        // Frame 3 draws with every pipeline built, so its capture ends the request.
-        frame_with(&mut probes, &mut list, 3, false, 3);
+        // Frame 4 draws with every pipeline built, so its capture ends the request.
+        frame_with(&mut probes, &mut list, 4, false, 4);
         assert!(
             !asks_to_capture(&mut probes),
             "a capture with every pipeline built ends it"

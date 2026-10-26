@@ -376,6 +376,14 @@ pub fn built_by(created: u32, pipelines_built: u32) -> bool {
     !frame_after(created, pipelines_built)
 }
 
+/// True when the thread that draws has built the pipelines that frame `created` made, or has not
+/// drawn a frame yet: until it has drawn one, each frame waits for its pipelines, so every pipeline
+/// draws then. A held scene records every frame before the thread that draws draws one, so no held
+/// frame needs work kept back for that alone.
+pub fn built_by_or_first(created: u32, pipelines_built: u32) -> bool {
+    pipelines_built == 0 || built_by(created, pipelines_built)
+}
+
 /// True when a pipeline of `template` reads the frame's clock from the frame's values: the physical
 /// sky, whose stars twinkle, and every custom material, whose shaders may read the time. The
 /// still-camera comparison leaves the clock out (see [`crate::still`]), so a frame that draws with
