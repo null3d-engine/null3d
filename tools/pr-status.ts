@@ -62,6 +62,7 @@ const INCOMPLETE = new Set([
 	'M3-R12',
 	'M3-R22',
 	'M3-L4',
+	'M3-R30',
 	'M3-R29',
 	'M3-A9',
 	'M3-V5',
@@ -134,6 +135,8 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"unticked by the tick audit, and the tick before it was wrong: the mixed port leaves out the example's depth-writing cut-out plane, so room edges and two strips about ten pixels wide draw across the embedded page; the comparison hides both 3D canvases before it compares, so it can only see the HTML layers; and the engine has no depth-only material, which the fix needs",
 	'M3-L4':
 		'the vertex-morphing study has no decision record and nothing of it is built, the impostor blend has no measurement, and no iPad, phone or GPU-time figure exists',
+	'M3-R30':
+		"unticked by the round 28 read although its fix landed: run 40350518899 at 90632ae36 had the job-worker test silent in the pipelined and low-latency modes on SwiftShader — `failures.spec.ts:82` received an empty string where it asks for E1404 or E1405 — while the other two modes passed, so a path still loses the worker's failure, and a run with two silent modes fails the done-when whatever a rate of repeats shows. The fix closed the window before any handler listens; the cause is open.",
 	'M3-R29':
 		"the fix, its unit test and the graphics line are on the branch, and the Mac's real-GPU picture set moved nothing; the software renderer's set has not run at this code, so the plan's question of which stored pictures moved is answered on one of the two sets only",
 	'M3-A9':
