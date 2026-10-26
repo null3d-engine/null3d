@@ -629,12 +629,15 @@ fn specular_color_texel(layer: f32, at: MapUv) -> vec4f {
 #endif
 
 /// The texel of the copy of the scene's depth that holds the image's place `uv`, counted from the
-/// top left. A place outside the image reads the nearest texel inside it.
+/// top left. The copy keeps the canvas's size, and below the whole render scale the image draws
+/// into a corner of it, so a place on the image lands at the render size's texel within the copy.
+/// A place outside the image, or a copy of one texel, reads the nearest texel that the copy holds.
 fn scene_depth_texel(uv: vec2f) -> vec2u {
-    let size = textureDimensions(scene_depth_copy);
-    let pixel = vec2u(clamp(uv * vec2f(size), vec2f(0.0), vec2f(size) - 1.0));
+    let copy = vec2u(textureDimensions(scene_depth_copy));
+    let image = min(vec2u(engine_frame.target_size.xy), copy);
+    let pixel = vec2u(clamp(uv * vec2f(image), vec2f(0.0), vec2f(image) - 1.0));
 #ifdef WEBGL2
-    return vec2u(pixel.x, size.y - 1u - pixel.y);
+    return vec2u(pixel.x, copy.y - 1u - pixel.y);
 #else
     return pixel;
 #endif
