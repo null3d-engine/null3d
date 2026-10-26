@@ -49,13 +49,6 @@ describe('parseSwitches', () => {
 		});
 	});
 
-	it('picks where the grading table takes its input with ?grading=', () => {
-		expect(parseSwitches('?grading=hdr').grading).toBe('hdr');
-		expect(parseSwitches('?grading=display').grading).toBe('display');
-		for (const bad of ['HDR', 'light', '', 'hdrx'])
-			expect(parseSwitches(`?grading=${bad}`).grading).toBe('display');
-	});
-
 	it('sizes the software occlusion buffer with ?occlusion-buffer=, and leaves it to the core otherwise', () => {
 		expect(parseSwitches('?occlusion-buffer=384x216').occlusionBuffer).toBe(384 * 216);
 		expect(parseSwitches('?occlusion-buffer=256x144').occlusionBuffer).toBe(256 * 144);

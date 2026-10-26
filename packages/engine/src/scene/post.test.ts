@@ -100,10 +100,7 @@ function post(
 				luts.push([texture, at(C.POST_VALUE_LUT_INTENSITY), ...domain, ...top]);
 				return 0;
 			},
-			setGrade(_texture: number, _hdr: boolean) {
-				return 0;
-			},
-			setGradeValues(_on: boolean) {
+			setGrade(_texture: number) {
 				return 0;
 			},
 			setVignette(on: boolean) {
