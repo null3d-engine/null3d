@@ -24,6 +24,8 @@ interface StateResult {
 	cpu?: number;
 	gpu?: number | null;
 	passBytes?: number;
+	/** Milliseconds that the read call took to return, in the slow-frame case. */
+	callMs?: number;
 	error?: string;
 }
 
@@ -80,6 +82,14 @@ for (const { tier, query } of TIERS) {
 		// The engine rebuilds the device and every texture; the counter then starts from empty.
 		const result = await stateCase(page, query, 'loss', 90_000);
 		expect(result.values).toEqual([2, 1]);
+	});
+
+	test(`a slow frame delays a read and never blocks it on ${tier}`, async ({ page }) => {
+		const result = await stateCase(page, query, 'slow', 90_000);
+		expect(result.values[0]).toBe(1);
+		// The call returns at once; the 150 ms update delays the frame that answers it.
+		expect(result.callMs ?? 1000).toBeLessThan(50);
+		expect(result.frames).toBeGreaterThanOrEqual(1);
 	});
 
 	test(`a 40-step history pass measures on ${tier}`, async ({ page }) => {

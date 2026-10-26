@@ -12,6 +12,8 @@ interface StateReport {
 	case: string;
 	values: number[];
 	frames: number;
+	/** Milliseconds that the read call took to return, for the slow-frame case. */
+	callMs?: number;
 }
 
 /** The red, green, blue and alpha of one captured pixel. */
