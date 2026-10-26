@@ -1,7 +1,7 @@
 // Runs the sketch that keeps a compute pass's state between runs, with the case that the URL names,
 // and reports the texels that it read back and the frames that the reads took. The pass, its
 // fallback and its readbacks run on the GPU tier that the URL's switches ask for.
-import { createEngine } from '@null3d/engine';
+import { createEngine, type FrameMetrics } from '@null3d/engine';
 import { run } from './lib/result';
 
 const params = new URLSearchParams(location.search);
@@ -52,6 +52,35 @@ run('compute-state', async () => {
 			pixels[at + 3] as number,
 		];
 	};
+	if (CASE === 'cost') {
+		// The sketch starts 40 runs a frame and asks for the frame probe, which measures them.
+		const measured = await new Promise<FrameMetrics>((resolve, reject) => {
+			const timer = setTimeout(
+				() => reject(new Error('the sketch did not start measuring within 30 s')),
+				30_000,
+			);
+			const off = engine.onSketchMessage((name) => {
+				if (name !== 'measuring') return;
+				clearTimeout(timer);
+				off();
+				void engine.measure(3).then(resolve, reject);
+			});
+		});
+		// The pass takes four times its state's texels: the target's two blocks and two states.
+		const bytes = 256 * 256 * 8 * 4;
+		await engine.destroy();
+		return {
+			tier,
+			mode,
+			case: CASE,
+			measuredFrames: measured.frames,
+			seconds: measured.seconds,
+			interval: measured.intervalMs.median,
+			cpu: measured.cpuMs.median,
+			gpu: measured.gpuMs?.median ?? null,
+			passBytes: bytes,
+		};
+	}
 	if (CASE === 'kept') {
 		await waitMessage('running');
 		const before = await engine.captureFrame();

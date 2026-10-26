@@ -163,7 +163,7 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 		wgsl: kept ? CONSTANT : layered ? LAYERS : COMPUTE,
 		fallback: { wgsl: layered ? LAYERS_FRAGMENTS : kept ? CONSTANT_FRAGMENTS : FALLBACK },
 		format: 'rgba16float',
-		size: kept ? [64, 64] : [4, 4],
+		size: CASE === 'cost' ? [256, 256] : kept ? [64, 64] : [4, 4],
 		history: !kept && !layered,
 		layers: layered ? 3 : 1,
 		// Every case starts without a run, and the sequence below asks for the runs that it counts.
@@ -313,6 +313,12 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 			await wait(1);
 			render.setPassSteps(field, 0);
 			values[1] = await read();
+		} else if (CASE === 'cost') {
+			// The page measures the running pass with the engine's frame probe.
+			render.setPassSteps(field, 40);
+			await wait(10);
+			page.post('measuring');
+			return;
 		}
 		page.post('state', { case: CASE, values, frames: readFrames });
 	})();
