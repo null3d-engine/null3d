@@ -1159,3 +1159,19 @@ The line is headroom, not a target. The owner placed the reduction in M4: the li
 trimming is done as part of that milestone, not during M3's push to finish its features. A crossing
 before then is read the same way it was today. The raises buy time, and the trims are the work that
 returns the line to something the project would choose on purpose.
+
+## The warning covers every budgeted file, 26 October 2026
+
+The warning at 97 per cent covered only the start. A file with a budget of its own passed in silence
+until it crossed. On the pushed milestone tip, 4a3eceaea, and again on c7f0868e6, the largest
+first-use shader file was
+`js/shaders-area-lights-and-coat-sheen-and-displacement-and-row-values-glsl-draw-index-tone-map-half.js`.
+It was 1,788.5 KB uncompressed, 99.8 per cent of its 1,792 KB budget, and five of its siblings were
+past 97 per cent. A branch merged with the milestone then measured it at 1,844,611 bytes, over the
+budget. The branch had estimated its own cost at one to three kilobytes. A few lines in the lit shader
+repeat once for each build that the file holds, so they cost about 13 KB.
+
+`budgetWarnings` now reads the same list of starts and files as `budgetProblems`. It warns about
+each column of each one that passes 97 per cent of its budget without passing it. Under GitHub
+Actions, the size check prints its warnings as annotations, which the run's page shows.
+
