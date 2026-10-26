@@ -99,9 +99,7 @@ The 0.2 to 0.7 ms quoted above came from the Medium preset's frame, measured bef
 stand-in color became a load. It does not show that the iPads are free of the charge.
 
 The prepass's stand-in color is the only attachment of this kind in the engine, as D-269's search
-shows. The frame-graph test walks every step of the ambient occlusion frame and refuses a color that
-a pass loads and then discards. This decision's rule therefore stands unchanged for the three steps'
-targets.
+shows, so this decision's rule stands unchanged for the three steps' targets.
 
 ## Consequences
 
