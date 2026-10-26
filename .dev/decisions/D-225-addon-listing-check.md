@@ -106,18 +106,84 @@ A custom effect that reads the scene's depth cannot join the effect before it, s
 
 ## Recorded run of the foundation add-ons
 
-The command ran over every foundation add-on that held a package, from a fresh worktree after `bun install` and `bun run build`. Each run exited 0. The run belongs to commit `2d761dabf`, and this table is its only record.
+The command ran over every foundation add-on that holds a package: the twelve of [D-173](D-173-addon-hooks.md) ruling 4 and vegetation ([D-241](D-241-vegetation-foundation.md)), less physics and MSDF text, which hold no package. The worktree was fresh, after `bun install` and the pages-only build, and every run went through the job queue. Each run exited 0, and the whole job took 647 seconds with a memory peak of 2.6 GB. The run belongs to commit `dc1e9d557`, and this table is its only record.
 
-| Add-on | package | public API | interface | shaders | sizes | page and cost |
-| --- | --- | --- | --- | --- | --- | --- |
-| `@null3d/controls` | PASS | PASS | PASS | PASS | PASS | SKIP |
-| `@null3d/geometry` | PASS | PASS | PASS | PASS | PASS | SKIP |
-| `@null3d/impostors` | PASS | PASS | PASS | PASS | PASS | SKIP |
-| `@null3d/particles` | PASS | PASS | PASS | PASS | PASS | SKIP |
-| `@null3d/splats` | PASS | PASS | PASS | PASS | PASS | SKIP |
-| `@null3d/terrain` | PASS | PASS | PASS | PASS | PASS | SKIP |
+| Add-on | package | public API | interface | shaders | sizes | page | cost | allocation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `@null3d/controls` | PASS | PASS | PASS | PASS | PASS | SKIP | SKIP | SKIP |
+| `@null3d/geometry` | PASS | PASS | PASS | PASS | PASS | SKIP | SKIP | SKIP |
+| `@null3d/impostors` | PASS | PASS | PASS | PASS | PASS | SKIP | SKIP | SKIP |
+| `@null3d/particles` | PASS | PASS | PASS | PASS | PASS | SKIP | SKIP | SKIP |
+| `@null3d/splats` | PASS | PASS | PASS | PASS | PASS | SKIP | SKIP | SKIP |
+| `@null3d/terrain` | PASS | PASS | PASS | PASS | PASS | SKIP | SKIP | SKIP |
+| `@null3d/three-compat` | PASS | PASS | PASS | PASS | PASS | SKIP | SKIP | SKIP |
+| `@null3d/vegetation` | PASS | PASS | PASS | PASS | PASS | SKIP | SKIP | SKIP |
+| `@null3d/water` | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+| `@null3d/wind` | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 
-Every run skipped the page and cost gates with the command's reason: a foundation add-on's package carries no `null3d.json`, because its page is a demo in `examples/`. `@null3d/three-compat`, `@null3d/water` and `@null3d/wind` have their figures in [The size gates](#the-size-gates). Physics and MSDF text hold no package, so they have no run ([D-173](D-173-addon-hooks.md) ruling 4). Vegetation ([D-241](D-241-vegetation-foundation.md)) has no recorded run.
+The eight packages without a `null3d.json` skipped the page, cost and allocation gates with the command's own reason: a foundation add-on's page is a demo in `examples/`. Water and wind carry a page of their own, so all three gates ran on them: the page started from another origin under the strict policy, and the cost and allocation gates measured each preset.
+
+The shader and size gates ran on every add-on, which the run's own lines show:
+
+```text
+controls
+PASS  shaders: 2 files built with WGSL for WebGPU and WebGL2
+PASS  sizes: the largest file is 48.2 KB raw, 12.6 KB gzip, 11.0 KB brotli, within budget
+
+geometry
+PASS  shaders: 2 files built with WGSL for WebGPU and WebGL2
+PASS  sizes: the largest file is 41.0 KB raw, 12.0 KB gzip, 10.5 KB brotli, within budget
+
+impostors
+PASS  shaders: 14 files built with WGSL for WebGPU and WebGL2
+PASS  sizes: 14 files within budget, the largest code file at 26.8 KB raw, 7.6 KB gzip, 6.0 KB brotli, the largest shader build at 830.1 KB raw, 152.1 KB gzip, 42.3 KB brotli, 2.2 KB of shader data inlined in 1 code file, within the shader budget
+
+particles
+PASS  shaders: 2 files built with WGSL for WebGPU and WebGL2
+PASS  sizes: the largest file is 26.8 KB raw, 7.6 KB gzip, 6.1 KB brotli, within budget
+
+splats
+PASS  shaders: 22 files built with WGSL for WebGPU and WebGL2
+PASS  sizes: 22 files within budget, the largest code file at 31.6 KB raw, 10.6 KB gzip, 9.3 KB brotli, the largest shader build at 914.0 KB raw, 167.8 KB gzip, 45.2 KB brotli, 3.8 KB of shader data inlined in 1 code file, within the shader budget
+
+terrain
+PASS  shaders: 14 files built with WGSL for WebGPU and WebGL2
+PASS  sizes: 14 files within budget, the largest code file at 26.8 KB raw, 7.6 KB gzip, 6.0 KB brotli, the largest shader build at 725.3 KB raw, 136.7 KB gzip, 35.9 KB brotli, 2.5 KB of shader data inlined in 1 code file, within the shader budget
+
+three-compat
+PASS  shaders: 12 files built with WGSL for WebGPU and WebGL2
+PASS  sizes: 12 files within budget, the largest code file at 26.8 KB raw, 7.6 KB gzip, 6.0 KB brotli, the largest shader build at 32.4 KB raw, 5.8 KB gzip, 5.0 KB brotli, 23.9 KB of shader data inlined in 1 code file, within the shader budget
+
+vegetation
+PASS  shaders: 16 files built with WGSL for WebGPU and WebGL2
+PASS  sizes: 16 files within budget, the largest code file at 52.6 KB raw, 14.7 KB gzip, 12.6 KB brotli, the largest shader build at 729.5 KB raw, 138.4 KB gzip, 36.2 KB brotli, 2.5 KB of shader data inlined in 1 code file, within the shader budget
+
+water
+PASS  shaders: 16 files built with WGSL for WebGPU and WebGL2
+PASS  sizes: 16 files within budget, the largest code file at 26.8 KB raw, 7.6 KB gzip, 6.0 KB brotli, the largest shader build at 1216.1 KB raw, 234.9 KB gzip, 53.6 KB brotli, 95.1 KB of shader data inlined in 1 code file, within the shader budget
+
+wind
+PASS  shaders: 4 files built with WGSL for WebGPU and WebGL2
+PASS  sizes: 4 files within budget, the largest code file at 26.8 KB raw, 7.6 KB gzip, 6.0 KB brotli, the largest shader build at 20.7 KB raw, 5.0 KB gzip, 3.9 KB brotli, 84.6 KB of shader data inlined in 1 code file, within the shader budget
+```
+
+Water's largest shader build is the closest to a budget: 53.6 KB after Brotli against 56 KB. No add-on needed a raised budget.
+
+Water's and wind's browser gates printed these lines:
+
+```text
+water
+PASS  page: the page starts from another origin under the strict policy, threaded and single-threaded
+PASS  cost per preset: low 2.88 ms of GPU time, medium 4.73 ms of GPU time, high 3.45 ms of GPU time, ultra 2.63 ms of GPU time per frame, on Chrome 156.0.8078.48
+PASS  allocation per preset: low 0 bytes, medium 0 bytes, high 0 bytes, ultra 0 bytes per frame in the add-on's own code, on Chrome 156.0.8078.48
+
+wind
+PASS  page: the page starts from another origin under the strict policy, threaded and single-threaded
+PASS  cost per preset: low 0.45 ms of GPU time, medium 0.70 ms of GPU time, high 1.04 ms of GPU time, ultra 2.12 ms of GPU time per frame, on Chrome 156.0.8078.48
+PASS  allocation per preset: low 210 bytes, medium 208 bytes, high 203 bytes, ultra 196 bytes per frame in the add-on's own code, on Chrome 156.0.8078.48
+```
+
+Wind's allocation gate names the places in the add-on's own code: `write src/wind.ts` allocated 148 bytes per frame on Low, falling to 136 on Ultra, and `now` and `turn` in the same file allocated about a byte or none. Water's measured no allocation in its own code.
 
 `tests/fixtures/d9-addon` gave the page and cost gates their run. All seven gates passed on it:
 
@@ -136,6 +202,8 @@ FAIL  public API: 1 import reaches past the engine's public entry points
 FAIL  shaders: the build failed, so its WGSL compiled for neither GPU path
       "./internal" is not exported under the conditions ["module", "browser", "production", "import"]
 ```
+
+The refusal's tests are load-bearing. With the branch that refuses a non-public engine entry point taken out of `importProblem`, five tests of `check-addon.test.ts` fail: the three `publicApiProblems` cases that name `@null3d/engine/internal` and `@null3d/engine/scene`, and the two `run` cases that require exit 1 for the broken fixture.
 
 ## The allocation gate (M3-D9a)
 
