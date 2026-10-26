@@ -4350,7 +4350,7 @@ impl FrameGraph {
         let ao_built = steps_built && self.screen_steps();
         self.note_built(BuiltGroup::Screen, ao_built, FrameGraph::declare_again);
         self.note_built(BuiltGroup::Bloom, built, FrameGraph::enable_outputs);
-        let (format, permutation) = (self.view_target_format(), self.scene_color.permutation());
+        let permutation = self.scene_color.permutation();
         let transmission_built = self.copy_wanted() && {
             // WebGL2 has no multisampled textures: its backend gives the copy a copy of one sample.
             let multisampled = self.gpu_culling && self.samples > 1;
@@ -4419,14 +4419,6 @@ impl FrameGraph {
             particle_depth_built,
             FrameGraph::declare_again,
         );
-        let views = self.view_colors.len() > 1;
-        self.view_copy_built = match self.view_copies.as_mut() {
-            Some(copies) if views => {
-                let id = copies.request_pipeline(pipelines, format, permutation);
-                pipelines.built(id, pipelines_built)
-            }
-            _ => false,
-        };
     }
 
     /// The format of the targets that the copies fill on WebGPU: the scene color's, or on the
@@ -4452,6 +4444,7 @@ impl FrameGraph {
     pub(crate) fn request_fullscreen_pipelines(
         &mut self,
         pipelines: &mut PipelineCache,
+        pipelines_built: u32,
         views: &[View],
     ) {
         for (place, view) in views.iter().enumerate() {
@@ -4459,6 +4452,16 @@ impl FrameGraph {
                 self.fullscreen.request_pipeline(pipelines, place, pass);
             }
         }
+        // The views that this frame declares, not the ones declared last frame: a view that appears
+        // first in this frame, such as a reflection probe's capture views, asks for its copy now.
+        let (format, permutation) = (self.view_target_format(), self.scene_color.permutation());
+        self.view_copy_built = match self.view_copies.as_mut() {
+            Some(copies) if views.len() > 1 => {
+                let id = copies.request_pipeline(pipelines, format, permutation);
+                pipelines.built(id, pipelines_built)
+            }
+            _ => false,
+        };
     }
 
     /// Asks for the pipeline of the final pass's fold build while the sketch folds effects and the
@@ -6629,8 +6632,11 @@ mod tests {
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, false, false);
         let view = fallback(2);
         frames.sync(&[View::default(), view]);
-        frames
-            .request_fullscreen_pipelines(&mut PipelineCache::default(), &[View::default(), view]);
+        frames.request_fullscreen_pipelines(
+            &mut PipelineCache::default(),
+            0,
+            &[View::default(), view],
+        );
         let mut list = DrawList::with_capacity(512);
         frames
             .prepare(&mut list, (64, 48), RenderScale::FULL)
@@ -10373,8 +10379,11 @@ mod tests {
         let mut view = fallback(2);
         view.target_mut().size = Some((16, 16));
         frames.sync(&[View::default(), view]);
-        frames
-            .request_fullscreen_pipelines(&mut PipelineCache::default(), &[View::default(), view]);
+        frames.request_fullscreen_pipelines(
+            &mut PipelineCache::default(),
+            0,
+            &[View::default(), view],
+        );
         probe_frame(&mut frames, (64, 48));
         assert_eq!(
             frames.read_layer(1, u32::MAX),
@@ -10421,8 +10430,11 @@ mod tests {
         let mut view = fallback(1);
         view.target_mut().size = Some((16, 16));
         frames.sync(&[View::default(), view]);
-        frames
-            .request_fullscreen_pipelines(&mut PipelineCache::default(), &[View::default(), view]);
+        frames.request_fullscreen_pipelines(
+            &mut PipelineCache::default(),
+            0,
+            &[View::default(), view],
+        );
         probe_frame(&mut frames, (64, 48));
         let target = frames.view_target(ViewId::from_index(1)).unwrap();
         for (frame, canvas) in [(2, (64, 48)), (3, (64, 48)), (4, (128, 96))] {
@@ -10450,5 +10462,30 @@ mod tests {
                 "frame {frame}: the run reads an older state, not the one that the frame before left"
             );
         }
+    }
+
+    /// The builders ask for a frame's pipelines before they sync its views, so a view that appears
+    /// first in this frame, such as a reflection probe's capture views, must be asked for with the
+    /// views that the frame declares. A view whose copy pipeline waits for the next frame has no
+    /// image in this one, and a held picture has no next frame to wait for.
+    #[test]
+    fn a_view_first_declared_in_a_frame_has_its_target_in_that_frame() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        frames.sync(&[View::default()]);
+        probe_frame(&mut frames, (64, 48));
+        let view = shown();
+        // In the builders' order: the pipelines are asked for before the views are synced.
+        frames.request_pipelines(&mut PipelineCache::default(), 0);
+        frames.request_fullscreen_pipelines(
+            &mut PipelineCache::default(),
+            0,
+            &[View::default(), view],
+        );
+        frames.sync(&[View::default(), view]);
+        probe_frame(&mut frames, (64, 48));
+        assert!(
+            frames.view_target(ViewId::from_index(1)).is_some(),
+            "the frame that first declares a view has its image"
+        );
     }
 }
