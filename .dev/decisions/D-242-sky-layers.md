@@ -192,11 +192,16 @@ worker started, so it stopped as E1405. Four jobs of each CI run carried one of 
 and 40222451866. WebGPU was not affected: a bind group names every binding of its layout, so a
 program that reads no cube still has one bound.
 
-The layer-light page is red for a second cause. On the software GPU the capture of the map's light
-reads its texels at the wrong stride. The rough sphere then takes none of the light, and every
-capture reads 0 there. The sky layer's branch carries that fix, which raises the reading to 126 on
-all three tiers. That page therefore has a fix for each of its two causes, and this record holds
-the first.
+The layer-light page is red for a second cause. At this tip the capture of the map's light never
+runs, on any GPU tier. The stage split of `333a05a78` put the capture's buffer in the stage that the
+page names, which draws. Both generators run the capture only in the copy stage, which has no
+draws. So no fill sums the map's light, and the rough sphere reads 0 in every capture. A stride
+fault in the CPU's read of the coefficients is a second, smaller fault. On the sky layer's branch,
+on the software GPU, the page takes the layer in the reflections and in the diffuse light on
+WebGPU, compatibility mode and WebGL2, and compatibility mode and WebGL2 passed the whole spec in
+one run (`8bebdff7f`). Its order check still fails under load, where the light can arrive one fill
+after the levels. That branch's D-242 records this as an open fault. That page therefore has a fix
+for each of its two causes, and this record holds the first.
 
 The generator now asks the capture for that unit, which is its only use. The unit test
 `packages/engine/src/gpu/webgl2/environment.test.ts` builds a layer's programs with a stand-in host

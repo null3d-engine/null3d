@@ -495,6 +495,44 @@ fn forty_thousand_casters_of_four_cascades_take_one_copy_each() {
     assert_eq!(4 * per_copy, 10_240_000);
 }
 
+/// A copy list that reserves room for more copies than the device's binding holds is refused, so
+/// the frame asks for no buffer the device cannot bind. The buffer's room to grow was rounded up
+/// and then down to the need, which asked for more than the binding.
+#[test]
+fn a_copy_list_past_the_binding_is_refused_rather_than_sized_over_it() {
+    use common::{BATCH_ROWS, SCENE_CAPACITY};
+    use null3d_gpu::drawlist::sizes;
+    use null3d_render::frame::RecordError;
+    use null3d_render::gpu_driven::RendererConfig;
+
+    // A batch whose rows name no local radius reserves room in every bucket of its levels, so its
+    // copies pass the sources that the binding holds.
+    let rows = 64;
+    let sources = SCENE_CAPACITY + 1 + BATCH_ROWS + rows;
+    let binding = sources * sizes::INSTANCE_STRIDE;
+    let mut world = World::with_config(RendererConfig {
+        storage_binding_bytes: binding,
+        ..RendererConfig::default()
+    });
+    give_levels_of(&mut world, &[0.01, 0.05, 0.2], 0b1110);
+    let slot = world.scene.slots().resolve(world.objects[0]).unwrap() as usize;
+    let material = world.scene.materials()[slot];
+    let batch = world
+        .batches
+        .create(rows, false, false, BALL, material, 0.0)
+        .unwrap();
+    world
+        .batches
+        .get_mut(batch)
+        .unwrap()
+        .set_active_count(rows)
+        .unwrap();
+    assert_eq!(
+        world.try_record(true),
+        Err(RecordError::BufferFull { bytes: binding })
+    );
+}
+
 #[test]
 fn a_bias_on_an_object_makes_its_levels_switch_nearer() {
     let mut world = cpu_world();
