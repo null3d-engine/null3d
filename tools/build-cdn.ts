@@ -5,10 +5,12 @@
 //   bun tools/build-cdn.ts [--out <folder>]
 import { join, resolve } from 'node:path';
 import { buildCdn, CDN_ENTRY, CDN_OUT, shownSize } from './lib/cdn';
+import { refuseInQuietWindow } from './lib/quiet-window';
 
 const root = join(import.meta.dirname, '..');
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The CDN build');
 	const args = process.argv.slice(2);
 	const at = args.indexOf('--out');
 	if (at >= 0 && args[at + 1] === undefined)

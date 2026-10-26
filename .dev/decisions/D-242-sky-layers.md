@@ -254,6 +254,54 @@ both places lack it together rather than one of them; the next fill that any cha
 it in. The page sends a layer's shader when the sketch installs it, so a fill in the same frame
 normally has it.
 
+## Addendum, 26 October 2026: the cube's texture unit on WebGL2
+
+A layer's map asked the WebGL2 backend for the texture units of its programs. It asked the wrong
+program for the chain's cube: the unit belongs to the capture of the map's light, whose fragment
+sums the chain. The program that draws a layer's sky samples no cube at all, whether it draws over
+the analytic sky or over a panorama. A stage that samples no texture at a binding loses that
+uniform, so the backend's lookup refused the request. The message was "a WebGL2 program reads no
+texture at group 0, binding 1".
+
+Two pages met it, with two codes. The aurora demo holds its picture, so `demo-aurora` stopped as
+E1408 on WebGL2 in Chrome, in Safari and in Firefox. The `sky-layer-light` page failed while its
+worker started, so it stopped as E1405. Four jobs of each CI run carried one of the two, 40163662542
+and 40222451866. WebGPU was not affected: a bind group names every binding of its layout, so a
+program that reads no cube still has one bound.
+
+The layer-light page is red for a second cause. On the software GPU the capture of the map's light
+reads its texels at the wrong stride. The rough sphere then takes none of the light, and every
+capture reads 0 there. The sky layer's branch carries that fix, which raises the reading to 126 on
+all three tiers. That page therefore has a fix for each of its two causes, and this record holds
+the first.
+
+The generator now asks the capture for that unit, which is its only use. The unit test
+`packages/engine/src/gpu/webgl2/environment.test.ts` builds a layer's programs with a stand-in host
+that answers each lookup from the generated shader build. It refuses with the same message when the
+programs' own code asks a program that samples no cube.
+
+The fault came with the layer's reach into the map on 25 October 2026 (`1441b441d`). It is not a
+fault of the per-map transform work, which touched other files.
+
+### What the comparison shows
+
+`demo-aurora` passes 3 of 3 on the Mac's GPU and 3 of 3 on the software GPU, the WebGL2 tier among
+them. A pass does not show that no pixel moved. The comparison counts a pixel only past a color
+distance, so a frame can pass with much of it changed.
+
+The review compared the six aurora pictures that the fixed engine draws with their checked-in
+references. Against those references, 0.000 to 0.012 per cent of pixels counted as different,
+under the 0.1 per cent limit. More than ten levels separated 48.86 to 48.92 per cent of the
+pictures' pixels, and the mean channel difference was about 5.2 levels. The test therefore says
+nothing about those pictures.
+
+The references are those of 24 October 2026, and they are stale for the code in this branch's own
+base. The sky layer's work moved the demo's light in `1441b441d`. The redraw of the aurora
+references sits on the unmerged `origin/fix/m3-sky-layer-light` branch (`89bd5640a`, `ac51f07b6`).
+
+This change alters no draw and no reference, so it cannot move a picture. The pictures that differ
+differ because of the work the branch already carries, and they keep their references here.
+
 ### The task line
 
 "H8, sky layers: an add-on draws over the background and dims the sun, and the layer reaches the

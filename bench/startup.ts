@@ -39,6 +39,7 @@ import {
 import { buildStartupPages, prepareLoads, STARTUP_PAGES_DIR } from '../tests/lib/load-server.ts';
 import { slug } from '../tests/lib/runs.ts';
 import { DEBUG_PORT, PREVIEW_PORT, startPreview } from '../tests/lib/server.ts';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import {
 	closePagesAt,
 	connectPhoneChrome,
@@ -277,6 +278,7 @@ function loadLine(
 }
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The startup run');
 	const options = parseArgs(process.argv.slice(2));
 	buildStartupPages();
 	const preview = await startPreview(STARTUP_PAGES_DIR, PREVIEW_PORT, '/tests/pages/engine.html');
