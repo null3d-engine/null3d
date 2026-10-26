@@ -230,6 +230,7 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 	}
 
 	let readFrames = 0;
+	let callMs: number | undefined;
 	/**
 	 * The texel at the top-left of `layer`, or of the state that the pass wrote last when `layer` is
 	 * left out.
@@ -319,8 +320,23 @@ export default defineSketch(({ scene, geometry, materials, textures, render, pag
 			await wait(10);
 			page.post('measuring');
 			return;
+		} else if (CASE === 'slow') {
+			render.setPassSteps(field, 1);
+			await wait(1);
+			render.setPassSteps(field, 0);
+			const started = performance.now();
+			const reading = render.readPass(field, { x: 0, y: 0, width: 1, height: 1 });
+			// The call returned before the stall: the answer comes from the frame loop, not the call.
+			callMs = performance.now() - started;
+			const until = performance.now() + 150;
+			for (let spin = 0; performance.now() < until; spin++) {
+				if (spin < 0) break;
+			}
+			const result = await reading;
+			values[0] = result.data[0] as number;
+			readFrames = result.frames;
 		}
-		page.post('state', { case: CASE, values, frames: readFrames });
+		page.post('state', { case: CASE, values, frames: readFrames, callMs });
 	})();
 
 	return { onUpdate: wake };
