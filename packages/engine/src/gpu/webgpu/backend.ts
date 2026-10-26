@@ -555,7 +555,11 @@ export class WebGPUBackend {
 					? undefined
 					: variantFor(this.images.shaders.get(template)?.variants ?? {}, 0, 'wgsl');
 			const capture = words[a + LIGHT_BUFFER_WORD] as number;
-			const readback = capture === 0 ? undefined : this.need(this.buffers, capture, 'buffer');
+			// A capture draws the frame again to read it back, and the light capture already ran in
+			// the frame that it draws again: a second draw would write a buffer whose read is still
+			// mapping it, which the device refuses.
+			const readback =
+				capture === 0 || this.canvasTarget ? undefined : this.need(this.buffers, capture, 'buffer');
 			code.skyStage(
 				this.device,
 				encoder,
@@ -980,6 +984,10 @@ export class WebGPUBackend {
 			const a = i + 1;
 			switch (op) {
 				case G.OP_CREATE_BUFFER: {
+					// A capture draws the frame again, and the buffers of that frame exist already:
+					// making one again would destroy the buffer that a read is still mapping it from,
+					// and the read would fail with the buffer gone.
+					if (this.canvasTarget && this.buffers[words[a] as number] !== undefined) break;
 					this.counts.objects++;
 					this.releaseBuffer(words[a] as number);
 					// A buffer of indirect draws is also a source of copies: of each draw's arguments
