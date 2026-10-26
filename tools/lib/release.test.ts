@@ -32,6 +32,49 @@ const repoRoot = join(import.meta.dir, '../..');
 const commit = (subject: string, body = '', hash = 'abc1234') =>
 	parseCommit({ subject, body, hash });
 
+/**
+ * The variables with which a git hook names the repository it guards to every process it starts.
+ * Git obeys them over the working directory, so code that must keep to a repository of its own
+ * removes them.
+ */
+const HOOK_REPOSITORY_VARIABLES = [
+	'GIT_DIR',
+	'GIT_WORK_TREE',
+	'GIT_INDEX_FILE',
+	'GIT_COMMON_DIR',
+	'GIT_OBJECT_DIRECTORY',
+	'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+	'GIT_NAMESPACE',
+	'GIT_PREFIX',
+] as const;
+
+/**
+ * The environment for a git command that must read the repository its own working directory names.
+ * The user's settings and hooks stay out, and so do a runner's repository and a hook's repository,
+ * which would otherwise outrank the directory.
+ */
+function repositoryFreeEnv(): NodeJS.ProcessEnv {
+	const env: NodeJS.ProcessEnv = {
+		...process.env,
+		GIT_CONFIG_GLOBAL: '/dev/null',
+		GIT_CONFIG_SYSTEM: '/dev/null',
+	};
+	for (const name of ['GITHUB_REPOSITORY', 'GITHUB_SERVER_URL', 'GITHUB_API_URL']) delete env[name];
+	for (const name of HOOK_REPOSITORY_VARIABLES) delete env[name];
+	return env;
+}
+
+/** A git command that keeps to the folder it runs in, under the test's own identity. */
+function gitIn(dir: string) {
+	const env = repositoryFreeEnv();
+	return (...args: string[]) =>
+		execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
+			cwd: dir,
+			env,
+			encoding: 'utf8',
+		}).trim();
+}
+
 /** The lines under a heading of the notes, up to the next heading of the same level. */
 function extractSection(notes: string, heading: string): string {
 	const rest = notes.slice(notes.indexOf(heading) + heading.length);
@@ -245,38 +288,8 @@ describe('the notes of a history with branch merges', () => {
 	// to a crawl, and a loaded Mac runs them at background priority, so the limit is generous.
 	it('list every commit since the last release once, whichever branch brought it', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'null3d-release-notes-'));
-		// The user's own git settings, such as commit signing and hooks, stay out of the test.
-		const env: NodeJS.ProcessEnv = {
-			...process.env,
-			GIT_CONFIG_GLOBAL: '/dev/null',
-			GIT_CONFIG_SYSTEM: '/dev/null',
-		};
-		// The release command links its commits when it knows the repository, and the notes built in
-		// this process are told nothing of one. A runner sets that knowledge in the environment, so
-		// it comes out here: both sides then render the same history the same way.
-		for (const name of ['GITHUB_REPOSITORY', 'GITHUB_SERVER_URL', 'GITHUB_API_URL'])
-			delete env[name];
-		// A hook that runs this file, such as the push hook, hands the repository it guards to every
-		// process it starts. A git command told where the repository is ignores the working directory
-		// it is given, so the history built here would be committed to the repository being pushed,
-		// moving its branches. The test owns this folder and nothing else.
-		for (const name of [
-			'GIT_DIR',
-			'GIT_WORK_TREE',
-			'GIT_INDEX_FILE',
-			'GIT_OBJECT_DIRECTORY',
-			'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-			'GIT_COMMON_DIR',
-			'GIT_NAMESPACE',
-			'GIT_PREFIX',
-		])
-			delete env[name];
-		const git = (...args: string[]) =>
-			execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
-				cwd: dir,
-				env,
-				encoding: 'utf8',
-			}).trim();
+		const env = repositoryFreeEnv();
+		const git = gitIn(dir);
 		const commitOn = (subject: string) => {
 			git('commit', '--quiet', '--allow-empty', '-m', subject);
 			return git('rev-parse', 'HEAD');
@@ -355,6 +368,69 @@ describe('the notes of a history with branch merges', () => {
 		};
 		await expect(read()).rejects.toThrow('git log no-such-tag..HEAD failed');
 	});
+});
+
+describe('a repository named by a git hook', () => {
+	// The push hook runs this file and hands the repository it guards to every process it starts. This
+	// builds a repository of the same shape, a linked worktree included, and names it to the history
+	// helper and to the reader. Neither may reach it: the helper would commit into the worktree and
+	// make the shared config bare, and the reader would read the wrong history.
+	it('leaves the repository the hook names unchanged', async () => {
+		const root = mkdtempSync(join(tmpdir(), 'null3d-hook-guard-'));
+		const guarded = join(root, 'guarded');
+		const linked = join(root, 'linked');
+		const history = join(root, 'history');
+		const guard = gitIn(root);
+		try {
+			mkdirSync(guarded);
+			mkdirSync(history);
+			guard('init', '--quiet', '--initial-branch=main', guarded);
+			writeFileSync(join(guarded, 'README.md'), '# Guarded\n');
+			guard('-C', guarded, 'add', '.');
+			guard('-C', guarded, 'commit', '--quiet', '-m', 'chore: the repository a hook guards');
+			guard('-C', guarded, 'worktree', 'add', '--quiet', '-b', 'guarded-branch', linked);
+
+			// A linked worktree's git directory holds its branch, and the config it shares holds a bare
+			// flag that a re-initialisation sets, so the three name the damage the fault did.
+			const state = () => ({
+				refs: guard('-C', guarded, 'for-each-ref', '--format=%(refname) %(objectname)'),
+				head: gitIn(linked)('rev-parse', 'HEAD'),
+				bare: guard('-C', guarded, 'config', '--local', '--get', 'core.bare'),
+			});
+			const before = state();
+
+			const saved = HOOK_REPOSITORY_VARIABLES.map((name) => [name, process.env[name]] as const);
+			process.env.GIT_DIR = join(guarded, '.git', 'worktrees', 'linked');
+			try {
+				// The helper that builds the notes test's history, run in a folder of its own.
+				const build = gitIn(history);
+				build('init', '--quiet', '--initial-branch=main');
+				writeFileSync(join(history, 'README.md'), '# History\n');
+				build('add', '.');
+				build('commit', '--quiet', '-m', 'chore: start');
+				build('commit', '--quiet', '--allow-empty', '-m', 'feat(engine): ship it');
+				build('switch', '--quiet', '-c', 'late');
+
+				// Building that history must not have reached the repository the hook named.
+				const after = state();
+				expect(after.refs).toBe(before.refs);
+				expect(after.head).toBe(before.head);
+				expect(after.bare).toBe(before.bare);
+
+				// The reader reads that history, not the one the hook named.
+				const read: string[] = [];
+				for await (const entry of readCommits(history, 'HEAD')) read.push(entry.description);
+				expect(read).toEqual(['ship it', 'start']);
+			} finally {
+				for (const [name, value] of saved) {
+					if (value === undefined) delete process.env[name];
+					else process.env[name] = value;
+				}
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	}, 30_000);
 });
 
 describe('the changelog file', () => {
