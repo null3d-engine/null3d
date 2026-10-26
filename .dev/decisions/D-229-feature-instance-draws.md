@@ -116,9 +116,9 @@ page's count.
 - The public API is experimental. Its planned first user, the splats add-on (M3-F2), cannot take
   it: splats draw through the engine's transparent instance batch, whose rows the job workers sort
   back to front, and a GPU-written count would skip that sort; their count also changes only when
-  the camera or the budget crosses a threshold, not every frame. The first-user outcome stays unmet
-  until an add-on whose count a compute shader writes each frame takes the hook; no vegetation or
-  hair add-on exists yet.
+  the camera or the budget crosses a threshold, not every frame. The first real user is the night
+  town's pines, a shipped demo whose compute pass writes the count every frame (the addendum
+  below).
 - The proof is a picture: `tests/pages/sketches/feature-instances-compute-sketch.ts` fills no
   instance row on the CPU, its compute shader writes 42 rows and the count word, and the draw shows
   exactly 42 quads. The count in that picture is what the shader wrote.
