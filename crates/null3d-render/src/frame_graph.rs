@@ -4483,7 +4483,6 @@ impl FrameGraph {
                 lut: grading.lut,
                 grade: grading.grade,
                 sharpen: grading.sharpen,
-                ..Grading::default()
             },
             fold: None,
             exposure: None,
