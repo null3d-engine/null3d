@@ -1,19 +1,29 @@
-// Finds a time budget that a test file states without `scaledBudget`. Bun lets a check state its own
-// budget, as the third argument of `it` or `test` or through `setDefaultTimeout`, and that budget wins
-// over the run's. The run's budget grows with the machine's load (`tests/lib/run-budget.ts`), so a
-// budget that does not grow with it stays put while the run's grows, and on a loaded machine it can
-// be the smaller of the two. A stated budget is therefore a call of `scaledBudget`, or a constant of
-// the same file whose value is one, and anything else fails: a number, a constant that holds a number,
-// or arithmetic on one.
+// Finds a time budget that a test file states without `scaledBudget`. Bun lets a check, a setup or
+// teardown hook, or a whole file state a budget of its own, and that budget wins over the run's.
+// The run's budget grows with the machine's load (`tests/lib/run-budget.ts`), so a budget that does
+// not grow with it stays put while the run's grows, and on a loaded machine it can be the smaller
+// of the two. So a stated budget is a call of `scaledBudget` or a constant of the same file that
+// holds one. Anything else fails: a number, a constant that holds a number, or arithmetic on one.
 import ts from 'typescript';
 
-/** The calls of Bun's test module that take a budget, by the budget's place among their arguments. */
-const BUDGET_ARGUMENT: Readonly<Record<string, number>> = { it: 2, test: 2, setDefaultTimeout: 0 };
+/** Bun's test calls that take a budget, by the budget's place among their arguments. */
+const BUDGET_ARGUMENT: Readonly<Record<string, number>> = {
+	it: 2,
+	test: 2,
+	setDefaultTimeout: 0,
+	beforeAll: 1,
+	beforeEach: 1,
+	afterAll: 1,
+	afterEach: 1,
+	onTestFinished: 1,
+};
 
 /** The helper that grows a stated budget with the run's load. */
 const SCALED = 'scaledBudget';
 
-/** The name at the root of a callee: `it` for `it.skip` or `it.if(ok)`, `test` for `test.each(x)`. */
+/**
+ * The name at the root of a callee: `it` for `it.skip` or `it.if(ok)`, `test` for `test.each(x)`.
+ */
 function rootName(callee: ts.Expression): string | undefined {
 	if (ts.isIdentifier(callee)) return callee.text;
 	if (ts.isPropertyAccessExpression(callee)) return rootName(callee.expression);
