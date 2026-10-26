@@ -43,7 +43,6 @@ const INCOMPLETE = new Set([
 	'M3-B3',
 	'M3-B5',
 	'M3-V4',
-	'M3-D7',
 	'M3-D9',
 	'M3-F2',
 	'M3-R16',
@@ -164,8 +163,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the glints draw and are tested in both sets; its cost per preset is owed (D-255), which needs a quiet GPU',
 	'M3-V4':
 		'no device has timed the new generator, so the device figures are of the stand-in it replaced; no Mac, iPad or S24 GPU or memory figure exists, and no check-addon run is recorded',
-	'M3-D7':
-		'the fix is on `fix/m3-d7-material-units` and awaits a fresh audit: the browser test drives a lit custom material with six textures through the public API, on a context that reports fewer units than the device has, since no compliant WebGL2 device refuses a public material that reads 12 of the 16 units its stages are promised',
 	'M3-D9':
 		'no record shows the listing check passing on vegetation, and its one run skipped the shader and size checks',
 	'M3-F2':
