@@ -1748,12 +1748,12 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: eighteen `vec4f`s. The row holds the
+    /// Bytes of one material's row in the material table: thirty-two `vec4f`s. The row holds the
     /// base values, the transmission's values, the attenuation's, the clear coat's, the sheen's,
-    /// the diffuse transmission's, the subsurface scatter's, the iridescence's, the anisotropy's
-    /// and the light map's transform. On WebGL2 each row is a row of eighteen `RGBA32_FLOAT`
-    /// texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 288;
+    /// the diffuse transmission's, the subsurface scatter's, the iridescence's, the anisotropy's,
+    /// the light map's transform, and the transforms of the maps of the slots from the second up.
+    /// On WebGL2 each row is a row of thirty-two `RGBA32_FLOAT` texels of a data texture.
+    pub const MATERIAL_BYTES: u32 = 512;
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;
@@ -2958,10 +2958,11 @@ mod tests {
                 "const VALUES_ROW_SHIFT: u32 = {}u;",
                 shift(sizes::ROW_VALUES_PER_TEXTURE_ROW)
             ),
-            // The last of a material row's texels on WebGL2, one per vec4f.
+            // The texel of a material's row where the maps' own transforms start, one per vec4f:
+            // the last fourteen of the row's texels, two for each of the seven maps.
             format!(
-                "textureLoad(materials, vec2u({}u, id), 0)",
-                sizes::MATERIAL_BYTES / 16 - 1
+                "const MATERIAL_MAP_UV_TEXEL: u32 = {}u;",
+                sizes::MATERIAL_BYTES / 16 - 14
             ),
             format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
             format!("const MAX_CELLS: u32 = {}u;", sizes::MAX_CELLS),

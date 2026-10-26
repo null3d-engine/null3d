@@ -1715,7 +1715,7 @@ export class Mesh extends Object3D {
 
 	/**
 	 * Raises or lowers the threshold that picks this mesh's levels of detail, as Godot's
-	 * `lod_bias` does. A bias above 1 makes every switch happen farther away, so the object draws
+	 * `lod_bias` does. A bias above 1 makes every switch happen nearer, so the object draws
 	 * coarser levels. A bias below 1 keeps its detail, which a hero object wants. The bias
 	 * multiplies the threshold of the level switches and of the distance at which the object
 	 * hides, so both move by the same factor. The default is 1. The object's mesh needs levels
@@ -3212,9 +3212,9 @@ function writeProperty(
 		const material = target as Material;
 		if (!material.live) return;
 		if (binding.components === 2) {
-			// A pair is where the maps sit on the texture coordinates.
+			// A pair is where a map sits on the texture coordinates: one map's, or every map's.
 			if (binding.name === 'uvOffset' || binding.name === 'uvScale')
-				material.writeUvPair(binding.name, mixed(0), mixed(1));
+				material.writeUvPair(binding.name, mixed(0), mixed(1), binding.slot);
 			return;
 		}
 		if (binding.components === 1) material.writeUniform(binding.name, mixed(0));

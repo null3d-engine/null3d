@@ -156,7 +156,9 @@ The times never fall back. The command names the line that is wrong for a line t
 
 ### Objects in a script
 
-A step names an object by the name that the scene gave it. `#camera` names the active camera. The last dot separates the object from the property. An object's name may have dots of its own: `Cube.001.position` writes the position of the object named `Cube.001`.
+A step names an object by the name that the scene gave it. `#camera` names the active camera. A `set` step splits the name from the property at the last dot. So an object's name may have dots of its own: `Cube.001.position` writes the position of the object named `Cube.001`.
+
+A `dump` step splits at the last dot only when the part after it is a property name, such as `position`. An object whose own name ends in such a word therefore cannot be dumped whole. `dump Cube.001.position` names the object `Cube.001` and its position.
 
 A property is one that `animateProperty` takes. Every object has `position` (three numbers), `rotation` (four numbers, as a quaternion), `scale` (three numbers) and `visible` (a flag). A camera adds `fov`, `near`, `far` and, for an orthographic camera, `height`. A light adds `intensity`, `color` (three numbers from 0 to 1), `range`, `decay`, `angle` and `penumbra`.
 
@@ -363,7 +365,7 @@ bunx @null3d/cli check-addon addons/splats
 | public API | the add-on's shipped code imports only `@null3d/engine` and `@null3d/engine/stats` |
 | interface | the entry declares the plugin interface range that it works with, or, for a `@null3d/...` package, pins the exact engine version |
 | shaders | a build compiles the add-on's WGSL for WebGPU and WebGL2 |
-| sizes | each file that the add-on loads after the start holds to its budget |
+| sizes | each file that the add-on loads after the start holds to its budget: its own code to the budget for code, and the compiled WGSL that the build inlined in it to the budget for shader builds. The gate warns, and does not fail, when a file goes over a budget |
 | page | the page starts from another origin under the strict policy, and its cost is measured per quality preset |
 | allocation | the bytes per frame that the add-on's own code allocates, on each quality preset |
 

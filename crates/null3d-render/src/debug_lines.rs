@@ -25,7 +25,7 @@ use null3d_core::cells::CellPosition;
 use null3d_gpu::drawlist::sizes::LINE_VERTEX_BYTES;
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage, state_flags, template};
 
-use crate::frame::{RecordError, UploadArena, bind_frame_group, grown_size};
+use crate::frame::{RecordError, UploadArena, bind_frame_group, grown_size_within};
 use crate::pipelines::{DepthBias, DrawKey, PassTargets, PipelineCache};
 
 /// Points that one frame draws as lines, two points per line: each point's position in world
@@ -209,15 +209,16 @@ impl LinesPass {
     }
 
     /// Uploads the frame's lines relative to the camera, whose position `camera` gives, into a
-    /// vertex buffer large enough for them. They draw with the pipeline that `request_pipeline`
-    /// asked for. Without lines or without a camera, it records nothing, and the pass draws
-    /// nothing.
+    /// vertex buffer large enough for them, at most `buffer_bytes`. They draw with the pipeline that
+    /// `request_pipeline` asked for. Without lines or without a camera, it records nothing, and the
+    /// pass draws nothing.
     pub(crate) fn upload(
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
         lines: &DebugLines<'_>,
         camera: Option<&CellPosition>,
+        buffer_bytes: u32,
     ) -> Result<(), RecordError> {
         self.points = 0;
         let Some(camera) = camera.filter(|_| !lines.is_empty()) else {
@@ -225,7 +226,7 @@ impl LinesPass {
         };
         let bytes = Self::upload_bytes(lines) as u32;
         if bytes > self.buffer_bytes {
-            self.buffer_bytes = grown_size(bytes, u32::MAX);
+            self.buffer_bytes = grown_size_within(bytes, buffer_bytes)?;
             list.push(
                 Op::CreateBuffer,
                 &[
@@ -276,6 +277,7 @@ impl LinesPass {
 mod tests {
     use super::*;
     use null3d_core::cells::split;
+    use null3d_gpu::drawlist::decode;
 
     /// The positions and colors of the vertices that `lines` writes for a camera at `camera`.
     fn vertices(lines: &DebugLines<'_>, camera: [f64; 3]) -> Vec<([f32; 3], u32)> {
@@ -349,5 +351,56 @@ mod tests {
         assert!(store.lines().is_empty());
         assert!(!store.set_points(65));
         assert!(store.lines().is_empty());
+    }
+
+    /// The sizes that a frame's list made its line buffer with.
+    fn created(list: &DrawList) -> Vec<u32> {
+        decode(list.words())
+            .filter_map(|command| {
+                let command = command.expect("the buffer commands decode");
+                (command.op == Op::CreateBuffer).then_some(command.operands[1])
+            })
+            .collect()
+    }
+
+    /// The vertex buffer that a frame's lines take binds at a vertex slot and no group reads it, so
+    /// the largest buffer of its path bounds it. A line set past that buffer refuses the frame
+    /// rather than ask the device for a buffer it rejects.
+    #[test]
+    fn a_line_buffer_is_capped_at_the_largest_buffer_of_its_path() {
+        let limit = 1024;
+        let camera = CellPosition::default();
+        let mut pass = LinesPass::new(0);
+        // Four points take 64 bytes, within the limit, and the buffer holds them with room to
+        // grow.
+        let positions = [0.0f64; 12];
+        let colors = [0u32; 4];
+        let lines = DebugLines::new(&positions, &colors);
+        let mut list = DrawList::with_capacity(64);
+        let mut arena = UploadArena::default();
+        arena.reset(4096);
+        pass.upload(&mut list, &mut arena, &lines, Some(&camera), limit)
+            .expect("the lines fit the buffer");
+        let made = created(&list);
+        let [size] = made[..] else {
+            panic!("one buffer: {made:?}");
+        };
+        assert!(size >= lines.points() as u32 * LINE_VERTEX_BYTES);
+        assert!(size <= limit, "{size} bytes past the {limit}-byte limit");
+        // Sixty-six points take 1056 bytes, past the limit.
+        let positions = [0.0f64; 198];
+        let colors = [0u32; 66];
+        let lines = DebugLines::new(&positions, &colors);
+        let mut list = DrawList::with_capacity(64);
+        let mut arena = UploadArena::default();
+        arena.reset(4096);
+        assert_eq!(
+            pass.upload(&mut list, &mut arena, &lines, Some(&camera), limit),
+            Err(RecordError::BufferFull { bytes: limit })
+        );
+        assert!(
+            created(&list).is_empty(),
+            "a buffer was made past the limit"
+        );
     }
 }
