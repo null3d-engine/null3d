@@ -42,6 +42,8 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-A5':
 		'`createVertexDraw` in `packages/engine/src/scene/scene.ts:4848`; `examples/rain/sketch.ts`',
 	'M3-A7': '`limit_hdr` maps NaN to zero: `crates/null3d-shaders/wgsl/lib/color.wgsl:35-38`',
+	'M3-A8':
+		"Grading controls are `post.set({ grading })`, with white balance, lift, gamma, gain, saturation and split toning, baked by a job worker into a 32-texel display-colour table that the final pass reads after the tone curve on both GPU paths; the tone curve stays a calculation, so a custom curve still works. `packages/engine/src/scene/grading.test.ts` holds an analytic reference written in the test file, with the white-balance tint and luma pinned in closed form. The table's worst error is 0.91 of an 8-bit step on a 17-point grid and 1.71 on 49 points, and 2.03 at a saturated yellow where the grade clamps a channel; 2.03 is over L8's one-step tolerance and is the owner's accepted cost (D-214, 26 October 2026). The light table measured worse and the owner ruled it out, so the display table stands and the light table came out. `tests/image/grading-switch.spec.ts` shows a value change stalling no frame on WebGPU, compatibility mode and WebGL2: the landing window carries one 262,144-byte table upload from a job worker, builds no GPU object or pipeline, skips no draw, and keeps the display's frame interval. The grading, vignette and dark-tone pictures pass on the Mac's real GPU",
 	'M3-D2':
 		'Version check in each foundation add-on (`packages/engine/src/shared/version.ts`); `packages/cli/src/upgrade.js`',
 	'M3-D3': "E1417's message names the add-on: `packages/engine/src/errors/codes.ts:417`",
