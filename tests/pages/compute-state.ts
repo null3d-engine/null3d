@@ -91,9 +91,9 @@ run('compute-state', async () => {
 		const on = await measureWhen('measuring');
 		engine.postToSketch('baseline');
 		const off = await measureWhen('measuring-off');
-		// The compute paths hold the target's two blocks and two state textures; WebGL2 holds the
-		// target's two and one scratch. The texel size follows the format the device got.
-		const texel = on.format === 'rgba16float' ? 8 : 4;
+		// The compute paths hold the target's two blocks and two state textures, both rgba16float;
+		// WebGL2 holds the target's two and one scratch, in the scene color's format.
+		const texel = tier === 'webgl2' ? (on.format === 'rgba16float' ? 8 : 4) : 8;
 		const copies = tier === 'webgl2' ? 3 : 4;
 		await engine.destroy();
 		return {

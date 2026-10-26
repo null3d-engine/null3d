@@ -1239,7 +1239,7 @@ impl FrameGraph {
             fullscreen_ids: ids.fullscreen,
             fullscreen: FullscreenPasses::new(
                 ids.fullscreen,
-                view_target_format(scene_color),
+                fullscreen_target_format(scene_color),
                 gpu_culling && antialias.samples() > 1,
             ),
             compute_ids: ids.compute,
