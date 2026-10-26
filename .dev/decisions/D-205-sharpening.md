@@ -1,19 +1,17 @@
 # D-205: Sharpening at the whole canvas's render scale, in the final pass
 
-Status: decided by the M3-A10 task on 21 October 2026, for the owner's review. Built: the
-`post.set({ sharpen })` value, RCAS in `final.wgsl`, the two-step pass at the whole canvas's scale,
-the image tests and the cost page. The Mac's cost and the iPad's and the phones' costs are recorded
-below. Date: 2026-10-21. Task: M3-A10.
+Status: decided by the M3-A10 task, for the owner's review. Built: the `post.set({ sharpen })`
+value, RCAS in `final.wgsl`, the two-step pass at the whole canvas's scale, the image tests and the
+cost page. The Mac's cost and the iPad's and the phones' costs are recorded below. Task: M3-A10.
 
 Summary: A sharpening value from 0 to 1 sharpens display color with FSR 1's RCAS in the second step
-of the final pass. That step now draws at the whole canvas's render scale while the value is set. It
-is off by default, and a page that leaves it off draws the frame it drew before: no extra pass, and
-no changed pixel.
+of the final pass. That step draws at the whole canvas's render scale while the value is set. It is
+off by default, and a page that leaves it off draws no extra pass and no changed pixel.
 
 ## Question
 
-Below a render scale of 1 the final pass has sharpened its upscale since M2-F10, with the sharpening
-built into GSR 1. A page at the whole canvas's scale had no sharpening at all, and no way to ask for
+Below a render scale of 1 the final pass sharpens its upscale, with the sharpening built into GSR 1
+(M2-F10). Without a value, a page at the whole canvas's scale has no sharpening and no way to ask for
 one. How does the engine sharpen a full-resolution image without the work that M2-F10 removed below
 scale 1, and what does the value mean below scale 1?
 
@@ -64,13 +62,13 @@ four taps that cross each pixel. That is the cost the rule counts, and no preset
 scale 0.5 the value adds nothing on any path, because the upscale sharpens there already.
 
 How the data was produced: a local Playwright run of the cost page through `heavy.sh` in the quiet
-window. The run took one test at a time on 24 October 2026. Each test waited until the 1-minute load
+window, the run that commit `8d3c1fbb6` records. The run took one test at a time. Each test waited until the 1-minute load
 fell under 8 and printed it before and after. The device column gives those readings. The load rose
 to 9.1 after the compatibility-mode half-scale test, when other work started. That test's two sides
 read the same figure.
 
-The same page ran on the iPad and on two phones through BrowserStack Automate on 24 October 2026,
-one session at a time. Each side is the median of three turns of two seconds. Each device ran both
+The same page ran on the iPad and on two phones through BrowserStack Automate, one session at a
+time ([the iPad's run](../tested-devices/ipad-pro-13-safari/20261024-201742-sharpen.md), [the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261024-201742-sharpen.md) and [the S24's](../tested-devices/galaxy-s24-sm-s921b-chrome/20261024-202547-sharpen.md)). Each side is the median of three turns of two seconds. Each device ran both
 render scales on each GPU path that it has. The iPad's window was 1,032 by 1,264 CSS pixels at 2x,
 and its display ran at 59 Hz. The phones' window was 360 by 621 CSS pixels at 3x, and their
 displays ran at 30 Hz.
@@ -100,8 +98,8 @@ phone GPU.
 
 WebGL2 gives no GPU timer on the iPad or on either phone, and both Android displays ran at 30 Hz.
 So those four rows hold the frame interval alone, and the value fits inside a frame there. On the
-S24 the render worker's CPU time rose from 0.955 ms to 1.125 ms with the value on at the whole
-canvas's scale. It did not rise at half scale. The S24 has no WebGPU adapter, so its two WebGPU
+S24 the render worker's CPU time is 1.125 ms with the value on at the whole canvas's scale, and
+0.955 ms off. At half scale the two are the same. The S24 has no WebGPU adapter, so its two WebGPU
 pages skipped.
 
 The cloud devices control neither heat nor display settings, so their figures are guides. The GPU
@@ -113,7 +111,8 @@ The sharpening is a value of the post-processing settings, from 0 for off to 1 f
 draws in the second step of the two-step pass, with FSR 1's RCAS over the four texels that cross each
 pixel. A sketch that sets it draws those two steps at every render scale, so the sharpening reads
 display color after one tone curve for each pixel. The first step's settings carry no sharpening, and
-neither do the one-pass build or the still build. Each of them draws its frame as before.
+neither do the one-pass build or the still build. Each of them draws its frame as it does without
+the value.
 
 Below a render scale of 1 the second step sharpens its upscale with GSR 1's own edge-aware
 sharpening, which D-195 ships and every preset gets. The value adds nothing there: a second RCAS over
@@ -122,8 +121,7 @@ the upscaled image would need the upscale again for each of the four neighbors.
 ## Consequences
 
 - `post.set({ sharpen })` is public API, on `api/post` and in the post-processing concepts page. The
-  three.js mapping gains a `SharpenNode` row, and its FSR 1 row no longer says that the engine has no
-  sharpening control.
+  three.js mapping has a `SharpenNode` row, and its FSR 1 row names the sharpening value.
 - The two-step pass's target and its unfused effects come with the value, as D-167 says of a
   droppable render scale: a sketch whose render scale can drop already pays both.
 - A still view keeps drawing while the sharpening is set: the sharpening draws in the moving frame's

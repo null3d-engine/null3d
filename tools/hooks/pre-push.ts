@@ -1,16 +1,15 @@
-// Pre-push guard for pushes to main (D-157's addendum of 15 October 2026). A push to the milestone
-// branch is refused unless the session that checks each landing sets NULL3D_MILESTONE_LANDING=1: a
-// helper saves its work on its own branch, the coordinator merges it, and that session, the CI
-// session since 25 October 2026 (D-259), checks the range and pushes it. The landing's push is
-// refused when this checkout does not hold the pushed commit as its HEAD, the branch's commit on
-// the remote, or a copy of the remote's main. It first checks the commits as a push to main does:
-// the messages and trailers from where the branch left main, as CI's `commits` job reads them, and
-// the merges and copies among the commits it adds. Then it runs the guards that read the whole
-// repository, which a merge can break with no conflict: the decision records' numbers, and the
-// unit tests that hold the release guide, the shipped network calls and the timing specs'
-// switches to every package and spec in the tree, and the repository's quick check, with the
-// lint, the picture references and the add-on checks. They take seconds, where the unit suite
-// takes minutes, and without them each such fault showed only a CI run later.
+// Pre-push guard for pushes to main (D-157). A push to the milestone branch is refused unless the
+// session that checks each landing sets NULL3D_MILESTONE_LANDING=1: a helper saves its work on its
+// own branch, the coordinator merges it, and that session, the CI session (D-259), checks the range
+// and pushes it. The landing's push is refused when this checkout does not hold the pushed commit
+// as its HEAD, the branch's commit on the remote, or a copy of the remote's main. It first checks
+// the commits as a push to main does: the messages and trailers from where the branch left main, as
+// CI's `commits` job reads them, and the merges and copies among the commits it adds. Then it runs
+// the guards that read the whole repository, which a merge can break with no conflict: the decision
+// records' numbers, and the unit tests that hold the release guide, the shipped network calls and
+// the timing specs' switches to every package and spec in the tree, and the repository's quick
+// check, with the lint, the picture references and the add-on checks. They take seconds, where the
+// unit suite takes minutes, and without them each such fault shows only a CI run later.
 // With NULL3D_LANDING_CRATE_TESTS=1, a landing that changes Rust also runs the tests of the crates
 // it changes, in the queue's CPU lane, which can wait long on a loaded machine. A landing may also
 // add no problem to the milestone status: the status tool's check (`bun tools/pr-status.ts
@@ -35,10 +34,10 @@
 // A machine's job queue runs the steps when git's `null3d.jobQueue` setting, or the environment's
 // NULL3D_JOB_QUEUE, names its script: the trailer check in its quick lane, the cargo steps in its
 // CPU lane, so a push does not load a busy machine outside the queue. The guards over the tree run
-// outside it: they are a few seconds of work, and on a loaded machine the wait for a quick slot plus
-// their run passed the lane's five-minute limit and refused two landings on 25 October 2026, which
-// left only the emergency trailer to get past a slow machine. Elsewhere the steps run
-// directly. The emergency bypass is a `Push-Check-Skipped: <reason>` trailer on a pushed commit.
+// outside it: they are a few seconds of work, and inside it on a loaded machine the wait for a
+// quick slot plus their run would pass the lane's five-minute limit and refuse the landing, which
+// leaves only the emergency trailer to get past a slow machine. Elsewhere the steps run directly.
+// The emergency bypass is a `Push-Check-Skipped: <reason>` trailer on a pushed commit.
 // git opens the connection to the remote before it runs this check, and holds it, silent, for the
 // whole check, so the machine's ssh must keep that connection alive: a peer closes a quiet one after
 // a few minutes, and git then writes the push into a socket that has gone. The push ends with no
@@ -61,8 +60,8 @@ export const SKIP_TRAILER = 'Push-Check-Skipped';
 /** The milestone branch, which only the session that checks each landing pushes. */
 export const MILESTONE_REF = 'refs/heads/m3-start';
 /**
- * The variable that names the session that checks and pushes each landing, the CI session since
- * 25 October 2026 (D-259). A helper leaves it unset, so its push to the milestone branch is refused.
+ * The variable that names the session that checks and pushes each landing, the CI session
+ * (D-259). A helper leaves it unset, so its push to the milestone branch is refused.
  */
 export const LANDING_VARIABLE = 'NULL3D_MILESTONE_LANDING';
 /**
@@ -292,9 +291,9 @@ export const LANDING_CRATE_TESTS = 'NULL3D_LANDING_CRATE_TESTS';
  * tests of the crates it changes, in the queue's CPU lane. With `added`, the commits are those after
  * `added.base`, and their messages are read from `added.mainBase`, where the branch left main. The
  * commit and guard checks run outside the queue and take seconds. The crate tests are opt-in: on a
- * loaded machine the CPU lane's slots stay busy for an hour, and on 25 October 2026 a landing's push
- * waited there 27 minutes without starting cargo, until its timeout killed the push and left the
- * hook waiting. CI's Rust tests still catch a crate's fault, one run after the landing.
+ * loaded machine the CPU lane's slots stay busy for an hour, so a landing's push can wait there 27
+ * minutes or more without starting cargo, until its timeout kills the push and leaves the hook
+ * waiting. CI's Rust tests still catch a crate's fault, one run after the landing.
  */
 export function landingSteps(
 	files: readonly string[],

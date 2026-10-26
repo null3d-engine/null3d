@@ -747,9 +747,9 @@ const MAX_EARLY_MESSAGES = 256;
  * The longest that a request may wait for a worker's answer, in milliseconds. The slowest answer is
  * a capture: the thread that draws waits for a frame's pipelines for up to `BUILD_WAIT_LIMIT_MS`
  * before it draws, reads the frame back and encodes it. On a software renderer that work costs
- * minutes, and the forest demo's held frame passed a minute on CI's SwiftShader, so this figure
- * sits well above the slowest frame that was measured and below the image tests' own limit. A
- * thread that stops taking messages then fails the request with a named error instead of leaving
+ * minutes, and the forest demo's held frame takes more than a minute on CI's SwiftShader, so this
+ * figure sits well above the slowest frame that was measured and below the image tests' own limit.
+ * A thread that stops taking messages then fails the request with a named error instead of leaving
  * the page to wait with no end.
  */
 export const WORKER_REPLY_LIMIT_MS = 300_000;

@@ -500,8 +500,8 @@ export function loadServer(): Plugin {
  * How long a caller keeps asking a server that has not answered yet, and how long it waits between
  * asks. The route answers from the builds on disk and compresses nothing, so an ask is normally
  * answered in one round trip. A device reaches the Mac's HTTPS server over the Mac's own name, where
- * a single fetch can still time out: measured on 15 October 2026, a fetch failed with `The operation
- * timed out.` after 361 seconds, while the same call over HTTP waited and succeeded. So a caller asks
+ * a single fetch can still time out: a fetch can fail with `The operation timed out.` after 361
+ * seconds, while the same call over HTTP waits and succeeds. So a caller asks
  * again rather than let one attempt's timeout end the run, and the server prints one line when it
  * answers, which names the builds it serves and the files they hold.
  */
@@ -525,7 +525,7 @@ export async function prepareLoads(serverUrl: string, needed: readonly string[])
 	const answer = (await response.json().catch(() => ({}))) as Partial<Readiness> & {
 		error?: string;
 	};
-	// A server from before the benchmark pages' build served the startup build alone.
+	// A server that predates the benchmark pages' build serves the startup build alone.
 	const served = answer.builds ?? ['startup'];
 	const missing = needed.filter((name) => !served.includes(name));
 	if (response.ok && missing.length === 0) return;

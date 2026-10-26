@@ -69,8 +69,8 @@ const PRODUCTION_SERVER = {
 	reuseExistingServer: false,
 	// The chain builds seven pages before the preview serves them, and on a slow runner the default
 	// minute runs out partway through: the run then fails as if the server never started, with every
-	// build it finished in the log. A busy CI machine took the chain past five minutes on 19 October
-	// 2026 while each build was still finishing.
+	// build it finished in the log. A busy CI machine can take the chain past five minutes while each
+	// build is still finishing.
 	timeout: 900_000,
 };
 

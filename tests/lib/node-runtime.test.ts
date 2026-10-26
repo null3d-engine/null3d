@@ -1,8 +1,7 @@
 // Playwright and Vite load their configs, the specs and every module that these import under Node,
 // which has no `Bun` global and no `bun:` modules. A tool that a spec reaches and that calls Bun's
-// own API throws "Bun is not defined" only there: on 25 October 2026 the package build's process
-// runner did, inside the CDN picture test, and a full run failed all seven of its tests, while the
-// unit tests, which Bun runs, passed. This test follows those imports and refuses a module they
+// own API throws "Bun is not defined" only there, so a full run fails while the unit tests, which
+// Bun runs, pass. This test follows those imports and refuses a module they
 // reach that uses Bun's API, so the fault shows in every run, not only in a full one.
 
 import { describe, expect, it } from 'bun:test';

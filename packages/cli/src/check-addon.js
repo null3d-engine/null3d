@@ -72,8 +72,8 @@ const VERSION_CALL = /checkAddonVersion\(\s*['"]([^'"]+)['"]\s*,\s*VERSION\s*\)/
 
 /**
  * The budget of each column for a file that an add-on loads after the start (D-14). It follows the
- * engine's own figure for the same kind of file, which rose to 18 KB on 25 October 2026 for the glTF
- * worker's texture-transform pointers; an add-on may not take more room than the engine allows it.
+ * engine's own figure for the same kind of file, which has room for the glTF worker's
+ * texture-transform pointers; an add-on may not take more room than the engine allows it.
  */
 export const ADDON_FILE_BUDGET = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 18 * 1024 };
 
@@ -693,7 +693,7 @@ function largestSizes(files, part = 'all') {
  * The sizes gate's result: PASS when every file that the build wrote holds to its budget, and WARN
  * when one goes over. The three size budgets are the code budget, the later-file budget and the
  * shader-data budget. An add-on is a choice, so a file over one of them warns rather than fails the
- * check (owner ruling, 26 October 2026). The page, cost and allocation gates still fail.
+ * check (owner's ruling). The page, cost and allocation gates still fail.
  *
  * @param {readonly BuiltFileSize[]} files
  * @returns {Outcome}

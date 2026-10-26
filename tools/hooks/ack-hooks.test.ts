@@ -10,7 +10,7 @@ import {
 	effectiveMessage,
 	isExemptCommit,
 } from './check-docs-ack';
-import { audienceOf, isStyleChecked, subjectOf } from './check-docs-style';
+import { audienceOf, isStyleChecked, keepsDates, subjectOf } from './check-docs-style';
 import { gpuBearingFiles, gpuCheckProblem } from './check-gpu-ack';
 import { macReferencesProblem, unmatchedSwiftShaderReferences } from './check-mac-references';
 import { touchesRust } from './check-rust';
@@ -275,6 +275,19 @@ describe('the docs style hook', () => {
 		expect(audienceOf('.dev/benchmarks.md')).toBe('contributors');
 		expect(audienceOf('.dev/decisions/D-01-gpu-layer.md')).toBe('contributors');
 		expect(audienceOf('README.md')).toBe('users');
+	});
+
+	it('lets only the release notes and the device run files keep dates', () => {
+		expect(keepsDates('CHANGELOG.md')).toBe(true);
+		expect(keepsDates('.dev/tested-devices/pixel-9-chrome/20261006-jitter.md')).toBe(true);
+		for (const path of [
+			'.dev/tested-devices/pixel-9-chrome/README.md',
+			'.dev/tested-devices.md',
+			'.dev/decisions/D-01-gpu-layer.md',
+			'AGENTS.md',
+			'docs/concepts/backends.md',
+		])
+			expect(keepsDates(path)).toBe(false);
 	});
 
 	it('reads the subject line, which becomes a changelog entry', () => {

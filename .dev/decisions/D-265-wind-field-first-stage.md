@@ -1,8 +1,10 @@
 # D-265: The wind field's first stage, before a pass keeps its state
 
-Status: decided. Date: 2026-10-26. Task: M3-V15. [D-241](D-241-vegetation-foundation.md) puts the
-fluid wind in an add-on of its own, and [D-173](D-173-addon-hooks.md)'s addendum of 25 October 2026
-makes it the twelfth foundation.
+Status: decided. Built: stage one, the analytic field in `@null3d/wind`. Not built yet: stage two,
+the advected core with its forces and fixed step, which waits on M3-V13. By the owner's ruling,
+M3-V15 waits for M3-V13 and stays not done until stage two is built. Task: M3-V15.
+[D-241](D-241-vegetation-foundation.md) puts the fluid wind in an add-on of its own, and
+[D-173](D-173-addon-hooks.md) makes it the twelfth foundation.
 
 Summary: The fluid wind needs a solver that carries its state between frames, and the engine refuses
 one (E1504). That read is M3-V13, which is not built. The wind add-on therefore starts with a field
@@ -17,7 +19,7 @@ simulation that the plan describes.
 
 ## Question
 
-What can the wind add-on build now, so that a plant reads one field, when the engine cannot keep a
+What can the wind add-on build before M3-V13, so that a plant reads one field, when the engine cannot keep a
 pass's state between frames?
 
 ## Rule
@@ -43,18 +45,19 @@ M3-V13 is not on `m3-start`: `git log --all --grep="M3-V13"` finds no commit, `t
 has no entry for it, and no engine pass option names a history or a swap. The plan puts it before
 M3-V15, so the field's memory is owed to that task, not to this one.
 
-No timing run was made for this record: the machine was shared and the night's rules bar benchmark
-and timing runs. Every cost figure for the field stays owed to M3-V14.
+No timing run was made for this record, because the shared machine's rules barred benchmark and
+timing runs. Every cost figure for the field is owed to M3-V14.
 
 ## Decision
 
-The field is built in two stages. M3-V15 builds the first.
+The field is built in two stages, both under M3-V15.
 
-**Stage one, this task.** The analytic wind is incompressible by construction. Its swirl is the curl
+**Stage one, built.** The analytic wind is incompressible by construction. Its swirl is the curl
 of one stream function in the ground plane, a push is a vortex, and a gust turns in rings about its
 own center. Its base flow is constant along the ground and slower near it. No pressure solve is
-therefore needed to keep the air's volume. The test holds the discrete form's divergence under a thousandth of the field's
-speed, so the air keeps its volume without one.
+therefore needed to keep the air's volume. The test holds the discrete form's divergence under a
+thousandth of the field's speed, so the air keeps its volume without one.
+
 A grid that follows the camera samples that field into one `rgba16float` texture, which a reader
 samples with one texture read. The texture holds the wind across the ground and the local speed in
 its fourth channel.
@@ -69,7 +72,7 @@ confinement and the pressure solve that the plan describes. The field keeps two 
 mixes them by the time between the field's steps, and a wake lasts after the body that made it has
 gone. The grid, the box, the outputs, the sampling function and every reader stay as they are.
 
-**The pressure projection is left out for now, on purpose.** This field is incompressible by
+**The pressure projection is left out on purpose.** This field is incompressible by
 construction, so a projection would remove nothing and no frame would run it. The code that ran it
 would be dead. The test above is the measure that says so. The projection returns with the drag
 input from the vegetation add-on's grid of canopy cover, which M3-V17 gives the wind. Drag adds
@@ -103,18 +106,18 @@ divergence, and the projection removes it.
   the gate first runs. It does not belong in the picture page, which would move every picture for a
   measure it does not need. Until then, a source test holds the functions that a frame calls to the forms that
   allocate: an object literal, an array literal, a function expression, a for-of and a `new`.
-- **The size gate charged the add-on's own shader data to the code budget:** at head `8d66b64ca`,
-  the command in `docs/guides/add-ons.md`, `bunx @null3d/cli check-addon packages/wind
-  --skip-browser`, builds the add-on and reports its entry at 89.5 KB raw against a 64 KB code
-  budget. The WebGL2 fallback effect's compiled data is most of it: the same build with that import
-  removed makes an entry of 13.8 KB at that head. Water fails the same gate at 109.2 KB at that
-  head. `--skip-browser` leaves out the page, cost and allocation gates, which this record names
-  owed. M3-R25 later moved an entry's inlined shader data to the shader budget, so both entries pass
-  with no budget changed.
-- **A check that used to skip, and what it still needs:** the command runs under node, and the Vite
-  plugin did not export its `package.json`. Node refused the path, the tool found no plugin, and it
-  printed a skip for the shader and size gates. It still exited 0 when every other gate passed, so a
-  skipped check read as a pass. The plugin now exports its manifest, and
-  `packages/cli/src/check-addon.test.ts` pins it. In a checkout whose plugin has no built files,
+- **The add-on's own shader data counts against the shader budget:** the WebGL2 fallback effect's
+  compiled data is most of the add-on's entry. At head `8d66b64ca`, the command in
+  `docs/guides/add-ons.md`, `bunx @null3d/cli check-addon packages/wind --skip-browser`, reports the
+  entry at 89.5 KB raw, and 13.8 KB with that import removed. Water's entry is 109.2 KB at that
+  head. At that head the `sizes` gate failed on each add-on's own entry against the 64 KB code
+  budget. M3-R25 counts an entry's inlined shader data in the
+  shader budget, so both entries pass with no budget changed. `--skip-browser` leaves out the page,
+  cost and allocation gates, which this record names owed.
+- **The plugin's manifest, and what the check needs:** the command runs under node, and it finds the
+  Vite plugin through the plugin's exported `package.json`. Without that export, node refuses the
+  path, the tool finds no plugin and prints a skip for the shader and size gates. It then exits 0
+  when every other gate passes, so a skipped check reads as a pass. The plugin exports its manifest,
+  and `packages/cli/src/check-addon.test.ts` pins it. In a checkout whose plugin has no built files,
   node cannot load the plugin's TypeScript source: the shader gate fails and sizes skips. Build the
   plugin with `bun tools/build-package.ts vite-plugin`, or run the command with bun.

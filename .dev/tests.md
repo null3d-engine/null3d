@@ -10,7 +10,7 @@ The unit tests run in a few processes, one for each group of them, so what each 
 - A single file that imports the whole set makes the process large on its own. The same file that reads the set's text costs a fraction of that.
 - A generated set is not the only thing a test holds for good. The WebAssembly texture transcoder's heap grows when a check feeds it hostile files, and it does not shrink, so a check that does that holds every growth it has made. The malformed-file checks reach 1.7 GB of memory that way, from a handful of changed files, each of them a few kilobytes on disk.
 - The script leaves out the checks that hold gigabytes, and caps the run. `bun run test:heavy` runs those checks, each in a process of its own under a ceiling of its own (`tests/heavy-checks.ts`). Both read one list of them, `tests/lib/heavy-checks.ts`: a file the unit run left out and no runner named would run nowhere, and the two halves of the list must not drift apart.
-- The files of a group run in the order that the filesystem hands them over. That order is stable on one machine, and it differs between machines. A test that installs a stand-in for a global, such as `Worker`, cannot rely on being the first to touch it. On 17 October 2026 that order hid a fault from the Mac and showed it on CI. The worker starter kept the constructor of the first start, so the capabilities test's stand-in went unused and its probe talked to a real worker. Two things made that a fault in the starter rather than in the test. Its own test comment claimed the starter keeps the first class it wraps, which was the belief the fault rested on and is now gone. And a page that replaces its `Worker`, and not only a test, would have broken the same way, because the cache held a constructor the caller had since put aside.
+- The files of a group run in the order that the filesystem hands them over. That order is stable on one machine, and it differs between machines. A test that installs a stand-in for a global, such as `Worker`, cannot rely on being the first to touch it. So the order can hide a fault on one machine and show it on another. A worker starter that keeps the constructor of its first start is such a fault. A test's stand-in installed later goes unused, and its probe talks to a real worker. The fault is in the starter, not in the test. A page that replaces its `Worker` breaks the same way, because the cache holds a constructor that the caller has put aside.
 
 ## Forcing the order the files run in
 
@@ -22,7 +22,9 @@ bun test --preload ./start-one-worker.ts --conditions=null3d-source packages/eng
 
 A folder whose copy of the file that starts the worker is named to run before a copy of the failing test works as well.
 
-## What the run cost on 16 October 2026
+## What the run costs when tests hold the set
+
+These figures come from a unit run in which tests imported the generated set, and the bundler builds ran in the shared process.
 
 | Work | Peak memory | Time |
 | --- | --- | --- |
@@ -36,11 +38,11 @@ A folder whose copy of the file that starts the worker is named to run before a 
 
 The last row is the shape to copy. A count, a size or a name is almost always readable from the file's text, and it costs about a hundredth of the memory.
 
-The largest single cause was not a file that reads the set but two that build it. The packages group, run in a process of its own, cost 12.3 GB. Most of that was two of its files: `packages/engine/src/math/tree-shaking.test.ts` at 7.8 GB, and `packages/engine/src/debug/release.test.ts` at 5.6 GB. Each builds the engine with the bundler, whose bundle holds the 890 MB of shader code and a copy of it.
+The largest single cause is not a file that reads the set but two that build it. In that run the packages group, in a process of its own, cost 12.3 GB. Most of that was two of its files: `packages/engine/src/math/tree-shaking.test.ts` at 7.8 GB, and `packages/engine/src/debug/release.test.ts` at 5.6 GB. Each builds the engine with the bundler, whose bundle holds the 890 MB of shader code and a copy of it.
 
-That run was one of the causes of an incident the same day: several helper agents on one machine pushed it past 70 GB, and the owner stopped the session. A test that holds a generated set in memory is not only slow; it can take the machine down with it.
+Several helper agents that each run such a unit run on one machine push it past 70 GB, and the session has to stop. So a test that holds a generated set in memory is slow, and it can take the machine down with it.
 
-## What the same checks cost now
+## What the same checks cost under the rules
 
 | Work | Peak memory | Time |
 | --- | --- | --- |
@@ -55,8 +57,8 @@ That run was one of the causes of an incident the same day: several helper agent
 | `packages/engine/src/math/tree-shaking.test.ts`, in a process of its own | 7.8 GB | 30 s |
 | `packages/engine/src/debug/release.test.ts`, in a process of its own | 5.6 GB | 11 s |
 
-The checks that hold gigabytes still do, one process at a time, each under a ceiling set from its
-own figure: the two bundler builds cost the most, because the engine's 890 MB of shader code is in
+The checks that hold gigabytes run one process at a time, each under a ceiling set from its own
+figure. The bundler builds cost the most, because the engine's 890 MB of shader code is in
 the bundle they read and in the bundler's copy of it. What a group of the unit run holds is bounded
 by the group, and the run's peak is its largest group rather than the sum of every file's memory.
 
@@ -78,11 +80,11 @@ by the group, and the run's peak is its largest group rather than the sum of eve
 - The unit script caps the run with `NULL3D_TEST_MEMORY_MIB` and runs `tests/lib/memory-ceiling.ts` as a preload. That watch reads the run's own memory ten times a second. A run that holds more than the ceiling stops with a message that names it, rather than growing until another agent suffers. `bun run test:heavy` sets the same variable for each check's process.
 - A run that does not set the variable is not capped, so a developer who runs `bun test` directly keeps their own limits.
 - The watch reads memory between turns of the event loop. A burst that one synchronous step holds is caught at that step's next turn.
-- Bun's own knobs are not ceilings. `BUN_JSC_forceRAMSize` and `--max-old-space-size` set the size that the JavaScript heap grows towards. A run that allocates fast passes them without failing: on 16 October 2026 a process held 2 GB with `BUN_JSC_forceRAMSize` at 512 MB, and exited 0.
-- On 19 October 2026 the M2 shader split made one bundler build of the engine hold 5.2 to 9.6 GB, depending on the run. The checks that build the engine now run one build each, in a process of its own: two tree-shaking checks, two release renderer checks and the release runner check. Each of those ceilings is 12,288 MiB, and the release runner's is 4,096. A CI runner holds 16 GB, so the ceiling guards a runaway and not a machine's worth of memory.
-- On 21 October 2026 the quaternion tree-shaking check held 12,390 MiB and 12,474 MiB in two CI runs, past its 12,288 MiB ceiling, after the night's shader changes grew the shader text a little. One build cannot be split, so the check now builds without the text: `tests/lib/tree-shaking-build.ts` points every shader module at an empty module, in the page's build and the workers' builds alike. The checks read only the math helpers' code, so they test what they did. Each now holds about 1.5 GB, against 15.5 GB before on the Mac, and their ceilings fall from 12,288 MiB to 3,072 MiB.
-- Later that day the release renderer check built the production and the development bundle in one process and reached 12,484 MiB, past its ceiling. The two builds now run as two checks, one for each build: the release check proves the markers are absent, and the development check proves they are present, so neither proof depends on the other build having finished.
-- On 25 October 2026 the add-on check's page build reached 13,120 MiB on CI, and its ceiling had risen to 14,336 MiB. The peak was the engine's 2.8 GB shader set, which the build read and wrote as a copy for the page and for each worker. The build now links the files that the shader build wrote beside the scripts that name them, so no shader bytes pass through the bundler. The same build peaked at 790 MiB here and took 8 s. Its ceiling falls to 1,536 MiB when the page gates pass with the new build. [D-225](decisions/D-225-addon-listing-check.md) gives the figures and the reason.
+- Bun's own knobs are not ceilings. `BUN_JSC_forceRAMSize` and `--max-old-space-size` set the size that the JavaScript heap grows towards. A run that allocates fast passes them without failing: a process held 2 GB with `BUN_JSC_forceRAMSize` at 512 MB, and exited 0.
+- With the shader set as M2 splits it, one bundler build of the engine holds 5.2 to 9.6 GB, depending on the run. So the checks that build the engine run one build each, in a process of its own: two tree-shaking checks, two release renderer checks and the release runner check. The two release renderer checks' ceilings are 12,288 MiB each, and the release runner's is 4,096. A CI runner holds 16 GB, so the ceiling guards a runaway and not a machine's worth of memory.
+- A tree-shaking check builds without the shader text. `tests/lib/tree-shaking-build.ts` points every shader module at an empty module, in the page's build and the workers' builds alike. With the text, the quaternion check held 12,390 MiB and 12,474 MiB in two CI runs, past a ceiling of 12,288 MiB. One build cannot be split. The checks read only the math helpers' code, so they test the same thing without it. Each holds about 1.5 GB, against 15.5 GB with the text on the Mac, and its ceiling is 3,072 MiB.
+- The release renderer check builds the production and the development bundle as two checks, one for each build. In one process the two builds reach 12,484 MiB, past the ceiling. The release check proves the markers are absent, and the development check proves they are present, so neither proof depends on the other build having finished.
+- A page build of the add-on check that reads the engine's 2.8 GB shader set reached 13,120 MiB on CI. It writes a copy of the set for the page and for each worker. The check's ceiling of 14,336 MiB holds that build. The build that links the files the shader build wrote, beside the scripts that name them, passes no shader bytes through the bundler. It peaks at 790 MiB on the Mac and takes 8 s. The ceiling falls to 1,536 MiB when the page gates pass with it. [D-225](decisions/D-225-addon-listing-check.md) gives the figures and the reason.
 - The ceiling is the smallest figure the measured run fits under, with room for a busy machine. [Branches and parallel work](pull-requests.md) covers why the machine matters: several copies of the repository run at once during parallel work.
 - Raise the ceiling only for a measured need, and say in the commit message what needed it. A test that needs more than the ceiling usually needs splitting.
 - A check that reaches its ceiling stops with exit status 1. Its message names the ceiling and the variable that set it, and points here. Split the check, or give it a process of its own with a ceiling of its own, as `tests/heavy-checks.ts` does.

@@ -279,7 +279,8 @@ describe('findEngineParts', () => {
 		// The reader and the worker are listed before the files that load them, as in the engine's
 		// list. The assets file names the reader and a panorama file, and the panorama file names a
 		// worker that bundles a copy of the reader, two steps down from the assets file. Linux and
-		// macOS list the build's files in different orders, and the reader once took the worker.
+		// macOS list the build's files in different orders, and in one of them the reader can take
+		// the worker.
 		const ordered = [
 			{ name: 'page.js', module: 'page/engine.ts' },
 			{ name: 'page-reader.js', module: 'scene/reader.ts', loadedBy: 'page-assets.js' },

@@ -130,7 +130,7 @@
 //                       that comes only now and then
 //   --shields on|off    the state of Brave's Shields for the dev server's site, which the runner
 //                       cannot read: it goes into each Brave result and the run's summary. No
-//                       plan tests Brave any more; it runs only where a run names it
+//                       plan tests Brave; it runs only where a run names it
 //   --quiet-cap <s>     a runner page that sends nothing for this many seconds on a page counts as
 //                       stopped, however long the page may take, so a new runner page takes over
 //                       sooner. For a browser in front, as on CI's machines, whose runner page

@@ -1,12 +1,12 @@
 # D-233: A memory register for the stats overlay
 
-Status: decided, 23 October 2026. Task: M3-R3.
+Status: decided and built. Task: M3-R3.
 
 Summary: Each engine table and allocator reports the bytes that it reserves, uses and has used at most. The stats overlay's card lists these areas by system, in a development build. A report allocates nothing and runs only while the card shows, so a shipped page pays no frame time for it. On Battle, the rows that D-130 measured reproduce its per-object figures to the byte. They are 263 for the scene's rows, 17 for the cells, 12 for the levels and 48 for the bucket keys.
 
 ## Question
 
-The overlay shows one engine memory figure: the WebAssembly memory's size. D-130's per-object study was done by hand. Which tables own the memory? How does the overlay show each one's reserved, used and peak bytes, without costing a page that does not look?
+Without a register, the overlay shows one engine memory figure: the WebAssembly memory's size, and D-130's per-object study is done by hand. Which tables own the memory? How does the overlay show each one's reserved, used and peak bytes, without costing a page that does not look?
 
 ## Rule
 
@@ -31,7 +31,7 @@ The areas cover the tables that D-130's study named, plus the animation table, w
 | `draw lists` | The recorded draw lists and the still-camera snapshots |
 | `animation` | Skeletons, clips, animated instances and their joint matrices |
 
-Battle on the Mac, 23 October 2026, Chrome, WebGPU, the High preset, every effect on. Each run measured at a fixed count with `tests/pages/compare.html?compare=battle&engine=null3d&gpu=webgpu&measure=<count>&seconds=12&warmup=2`, the overlay's card opened, and each row's exact bytes read from its tooltip:
+Battle on the Mac, Chrome, WebGPU, the High preset, every effect on. Each run measured at a fixed count with `tests/pages/compare.html?compare=battle&engine=null3d&gpu=webgpu&measure=<count>&seconds=12&warmup=2`, the overlay's card opened, and each row's exact bytes read from its tooltip:
 
 | Row | 1,500 units, 4,604 objects | 3,000 units, 9,182 objects | Bytes per object added | D-130's figure |
 | --- | --- | --- | --- | --- |
@@ -47,7 +47,7 @@ Battle on the Mac, 23 October 2026, Chrome, WebGPU, the High preset, every effec
 | `animation` | 13,496,772 | 26,907,076 | 8,940 per unit | not measured |
 | Engine WebAssembly memory | 99,418,112 | 127,074,304 | 6,041 | the method |
 
-How the data was produced: two runs of the comparison page in the worktree's development server, through `heavy.sh`. They ran on 23 October 2026, at 1,500 and 3,000 units. `battleObjects` gives the objects at each count. The engine's WebAssembly memory comes from the page's own measurement over each run.
+How the data was produced: two runs of the comparison page in the worktree's development server, through `heavy.sh`. One ran at 1,500 units and one at 3,000. `battleObjects` gives the objects at each count. The engine's WebAssembly memory comes from the page's own measurement over each run.
 
 - The four rows that D-130 measured on the Factory scene match to the byte. The scene's rows take 263 B per object against 263, the cells 17 against 17, and the levels 12 against 12. The bucket keys take 48 against the 48 of D-130's one shared table. The register uses D-130's method: two scene sizes, and the bytes between them. A shared table therefore appears once.
 - The instance batches keep the capacity the page asked for at both counts. Their row does not grow. The animation table grows with the units, not the objects. Each unit has a skeleton and a joint buffer of its own.
@@ -64,4 +64,4 @@ The register reports each live table's reserved, used and peak bytes, and the ca
 - The areas are named in `packages/engine/src/shared/memory-area.ts`, in the core's order. A new area takes a constant in both files and one `account` call.
 - The sketch thread fills the register while the page's card is open. It publishes three numbers per area in the metrics buffer's header, beside the memory figures. The card's `Memory by system` section shows them, and `debug.frameStats().memoryAreas` gives them to a sketch.
 - A production build defines no development flag, so the runner never asks for a report and the area rows stay hidden.
-- The material, mesh and texture tables and the CPU culling scratch of the WebGL2 path are not areas yet. They scale with the content and the path rather than with the scene's objects, so D-130's per-object comparison did not name them. A later area takes a constant, a name and an `account` call.
+- The material, mesh and texture tables and the CPU culling scratch of the WebGL2 path are not areas. They scale with the content and the path rather than with the scene's objects, so D-130's per-object comparison did not name them. A later area takes a constant, a name and an `account` call.

@@ -9,6 +9,8 @@
 
 ## Known issues
 
-In the first session, the engine refused 3 pages for memory (E1109) after 20 pages, so the runner ended the session ([D-12](../../decisions/D-12-memory-budgets.md))
+Under BrowserStack Automate, the engine can refuse pages for memory (E1109) after about 20 pages.
+The runner then ends the session and starts a new one ([run](20261004-earlier-runs.md), [D-12](../../decisions/D-12-memory-budgets.md)).
 
-Under BrowserStack Automate, Safari keeps the memory of engines in frames that a live page removed, as on the cloud iPhone 16. So `frame-destroyed-restarts-pipelined` fails with E1109 once the room is gone, which took 2 to 5 starts on 11 October 2026 ([Where Automate differs from Live](../../devices.md#where-automate-differs-from-live)).
+Under BrowserStack Automate, Safari keeps the memory of engines in frames that a live page removed, as on the cloud iPhone 16.
+So `frame-destroyed-restarts-pipelined` fails with E1109 once the room is gone, which takes 2 to 5 starts ([run](20261011-121744-smoke.md), [run](20261011-133156-smoke.md), [Where Automate differs from Live](../../devices.md#where-automate-differs-from-live)).

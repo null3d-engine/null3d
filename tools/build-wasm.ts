@@ -1326,8 +1326,8 @@ function resolveBase(choice: BaseChoice): Base {
 /**
  * Why the base worktree is locked. `git worktree list` shows it, and `git worktree remove` and
  * `git worktree prune` refuse a locked worktree, so a tidy-up of the clone's worktrees leaves it.
- * On 24 October 2026 a sweep of worktrees whose commit had landed removed a base worktree while its
- * page build ran, and the check failed with ENOENT on a file that the build had just written.
+ * Without the lock, a sweep of worktrees whose commit has landed can remove a base worktree while
+ * its page build runs, and the check fails with ENOENT on a file that the build has just written.
  */
 const BASE_TREE_LOCK =
 	'the size check of tools/build-wasm.ts builds its base commit here, and reuses this worktree';
@@ -1337,7 +1337,7 @@ function checkoutBaseTree(tree: string, sha: string): boolean {
 	if (existsSync(join(tree, '.git'))) {
 		const args = ['checkout', '--force', '--quiet', '--detach', sha];
 		if (spawnSync('git', args, { cwd: tree }).status === 0) {
-			// A worktree from before the lock gets it now; a locked one refuses a second lock.
+			// A worktree without the lock gets it here; a locked one refuses a second lock.
 			spawnSync('git', ['worktree', 'lock', '--reason', BASE_TREE_LOCK, tree], { cwd: root });
 			return false;
 		}

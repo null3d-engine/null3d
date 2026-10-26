@@ -2,9 +2,9 @@
 
 The plan asks for an evaluation of each skill. Its cases run with and without the skill, and the
 run records the expectation pass rate, the time and the tokens. A set of trigger queries tests
-whether the skill's description finds the requests that it should. This page records the run of
-26 October 2026 for `skills/null3d-develop`, on the final form of its feature-intake section and
-its "search before you hand-roll" table.
+whether the skill's description finds the requests that it should. This page records the run for
+`skills/null3d-develop`, on the final form of its feature-intake section and its "search before you
+hand-roll" table.
 
 Result: with the skill, 55 of 60 graded expectations passed, 92%. Without it, 44 of 60 passed,
 73%. The trigger queries selected the right skill for 20 of 20. The skill therefore meets the
@@ -128,10 +128,10 @@ tools and engines chose none.
   re-check one.
 - The baseline keeps the engine's docs. The comparison therefore measures what the skill adds on
   top of the docs, not against a model with no material about null3D.
-- Case 3's request changed before this run. The old request asked for a water surface, which
-  `@null3d/water` now answers. A baseline answer that chose the add-on lost five expectations, and
-  the case rewarded a hand-rolled surface that the new table warns against. The request now asks
-  for a liquid-mercury surface, which the add-on does not cover.
-- An earlier run on the same day was thrown away. Its case 6 run with the skill read the case file
-  under `skills/null3d-develop/evals/`, which holds the expectations. It used that file's
-  phone-cost line. One run listed the helper's report folder. No figure above comes from it.
+- Case 3 asks for a liquid-mercury surface, which `@null3d/water` does not cover. For a water
+  surface the add-on is the answer, so a baseline answer that chose it would lose five
+  expectations. The case would then reward a hand-rolled surface that the skill's table warns
+  against.
+- No figure above comes from a run that read a case file. A thrown-away run's case 6 session with
+  the skill read the case file under `skills/null3d-develop/evals/`, which holds the expectations,
+  and used that file's phone-cost line. One of its sessions listed the helper's report folder.

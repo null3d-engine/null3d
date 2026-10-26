@@ -1,8 +1,8 @@
 # D-250: A timed script that hold mode performs
 
-Status: decided by the helper of M3-R14 on 23 October 2026, for the owner's review. Date:
-2026-10-23. Task: M3-R14. Built: the engine performs a script in hold mode, the `shot` command
-draws each of its shot steps, and a `test` entry takes a script.
+Status: decided by the helper of M3-R14, for the owner's review. Built: the engine performs a
+script in hold mode, the `shot` command draws each of its shot steps, and a `test` entry takes a
+script. A script drives the night town showcase's image tests. Task: M3-R14.
 
 Summary: A text script lists steps at sketch times: key presses, pointer events, property writes,
 dumps and shots. Hold mode performs the input and property steps on the sketch thread, and the
@@ -75,8 +75,8 @@ step, so a state that a script names is the same state on any machine and at any
 references therefore show the state that their steps name, not whatever the machine happened to be
 doing when the picture was taken.
 
-On 26 October 2026 this Mac's Chrome 155 on the real GPU drew the night town script twice, two and
-a half minutes apart, with the command below and the High preset:
+For commit `33122b8eb`, whose run logs are not kept, the Mac's Chrome 155 drew the night town
+script twice on the real GPU, two and a half minutes apart. It ran the command below at the High preset:
 
 ```text
 bun packages/cli/bin/null3d.js shot --script tests/image/showcase-night-town.script --page
@@ -95,12 +95,13 @@ The two runs wrote byte-identical images for all three states. The SHA-256 value
   a hold, and `page.js` holds the program's types.
 - The engine's `page/hold.ts` holds the program's types, and `sketch/runner.ts` performs it.
   `scene/scene.ts` gives the property reads and writes, and the closest names for a message.
-- The docs page for the command describes the steps. The addendum of 26 October 2026 below says
-  which showcase the image tests drive and what those tests compare.
+- The docs page for the command describes the steps. [The showcase and the image
+  tests](#the-showcase-and-the-image-tests) says which showcase the image tests drive and what
+  those tests compare.
 - M3-R15's input and frame-time recorder can feed this format later, so a recording from a phone
   becomes a script.
 
-## Addendum, 26 October 2026: the showcase and the image tests
+## The showcase and the image tests
 
 The task's Done-when names a showcase. `tests/image/showcase-night-town.script` drives the night
 town showcase through three states on WebGL2. They are `opening` at 0.5 s, `wide` at 2 s and
@@ -114,28 +115,26 @@ script's writes.
 drives a key, the pointer, a property write and a dump. That test checks that each of the three
 images differs from the other two, and those images have no references. In the repository the
 spec draws the showcase script at 320 by 180 pixels and compares each of the three images with its
-reference. On 26 October 2026 the spec passed four of four on this Mac's Chrome in 38.5 seconds,
-and all three images matched their references. The runs are `script-demo-night-town-opening`,
-`-wide` and `-square` in `tests/image/script-runs.ts`. The opening run borrows the reference of
-the manifest's
+reference. For the same commit, the spec passed four of four on the Mac's Chrome in 38.5 seconds, and all three images
+matched their references. The runs are `script-demo-night-town-opening`, `-wide` and `-square` in
+`tests/image/script-runs.ts`. The opening run borrows the reference of the manifest's
 `demo-night-town`, which holds the same frame and keeps the only picture of it. The other two runs
 keep their own references. The real GPU draws at the High preset, and the software GPU at Low, as
 the image manifest's showcase tests do.
 
-The real GPU's references are on the branch. The software GPU's two references come from CI: the
-pushed branch's run drew them and saved them as candidates, and accepting those made them
-references. Run 40223500231 drew them on `33122b8eb`. Every commit after it changed only
-documentation, the remake command, or the pictures, so the scene is unchanged. Each test then
-compares against the picture that the same run drew. The next run on the branch is the green one
-for that set. The branch keeps no local-reference note, because neither software picture is kept
-from a local drawing.
+The real GPU's references are in the repository. The software GPU's two references come from CI:
+run 40223500231 drew them on `33122b8eb` and saved them as candidates, and accepting those made
+them references. Up to the merge of this work (`adea85ab8`), every later commit of
+the work changed only documentation, the remake command or the pictures, so the scene drawn for
+those references stayed the same. A passing CI run that compares the committed software references is still
+owed. No local-reference note covers them, because neither software picture comes from a local
+drawing.
 
-The earlier version of this addendum drove `examples/input`, a basic demo, because a showcase was
-thought to need input steps. That is not so: a showcase's camera moves with the sketch time. The
-input demo's script and references are therefore gone, and the fixture project still drives the
+The rejected option drove `examples/input`, a basic demo, for its input steps. A showcase needs no
+input steps for its states, because its camera moves with the sketch time. So the night town script
+replaces the input demo, whose script and references are gone, and the fixture project drives the
 key and pointer steps.
 
-The engine's unit tests run in CI's `docs-and-tools` job, which runs `bun run test`. The branch is
-pushed. This Mac ran the suite on 26 October 2026 while the machine was loaded. It reported 4,279
-tests across 357 files, with 41 tests skipped. The command-line tool's script tests pass, 11 of
-11.
+The engine's unit tests run in CI's `docs-and-tools` job, which runs `bun run test`. A run of the
+suite on the loaded Mac, whose log is not kept, reported 4,279 tests across 357 files, with 41 tests skipped. The
+command-line tool's script tests pass, 11 of 11.

@@ -173,10 +173,10 @@ describe('the display rate guard', () => {
 describe('the background priority guard', () => {
 	const mac = process.platform === 'darwin';
 	// A process at background priority gets almost no processor time while the machine runs more
-	// work than it has cores: on 25 October 2026, at a load of 60 to 100, such a child printed nothing
-	// in 30 s. The tests below that wait for what such a child prints cannot then tell the guard's
-	// refusal from a start that never ran, so they skip, and say so. The rule is tested at any
-	// load, and so is the priority that taskpolicy gives a child, which needs no time to read.
+	// work than it has cores: at a load of 60 to 100, such a child prints nothing in 30 s. The tests
+	// below that wait for what such a child prints cannot then tell the guard's refusal from a start
+	// that never ran, so they skip, and say so. The rule is tested at any load, and so is the
+	// priority that taskpolicy gives a child, which needs no time to read.
 	const load = loadavg()[0] ?? 0;
 	const starved = mac && load > availableParallelism();
 	if (starved)

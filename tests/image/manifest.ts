@@ -617,7 +617,7 @@ const DARK_TONES_SKETCH = 'tests/pages/sketches/dark-tones-sketch.ts';
  * Dark tones on every tier. A strong vignette over a flat dark background: the dither runs last,
  * after the vignette, so its noise keeps one step of depth in the dark corners. The 8-bit path
  * darkens the linear value of display color instead of HDR color, and must still draw the HDR
- * path's image: on 5 October 2026 no pixel differed past the threshold. A point light's
+ * path's image, with no pixel past the threshold. A point light's
  * falloff over a dark floor: a long dark gradient. On WebGL2 the packed small float format must
  * draw the gradient as 16-bit floats do, with no bands. Core WebGPU draws in that format already
  * where the device can.

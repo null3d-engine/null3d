@@ -1,7 +1,7 @@
 // Gives each indexed indirect draw of a render pass a buffer of draw arguments of its own. Safari
 // 26 clamps the arguments of every indirect draw into one scratch slot per buffer, and nothing
 // orders a draw's fetch of its clamped arguments before the next draw's clamp writes the slot
-// again (WebKit bug 321876, fixed in WebKit in August 2026). Draws from one buffer in a pass then
+// again (WebKit bug 321876, fixed in WebKit's source). Draws from one buffer in a pass then
 // race: a draw can run with the next draw's counts, or a mix of the two, and a large draw followed
 // by another stalls the GPU until macOS resets it. Before such a pass begins, the backend copies
 // each draw's arguments into a small buffer of its own, so every draw gets its own slot.
@@ -9,7 +9,7 @@
 // It does so only in Apple's WebKit. Chrome checks each indexed indirect draw on the GPU before
 // its render pass, with one small compute pass for each buffer that the pass's draws read. A buffer
 // for each draw then costs a compute pass for each draw, and the render passes no longer overlap:
-// in Chrome on the Mac that doubled the GPU time of a scene with shadow cascades. No feature test
+// in Chrome on the Mac that doubles the GPU time of a scene with shadow cascades. No feature test
 // can show the fault without hanging the GPU, so the user agent decides.
 
 import * as G from '../../generated/gpu';
@@ -22,14 +22,15 @@ const ARGUMENT_BYTES = 20;
 const NO_SOURCE = 0xffffffff;
 /**
  * The first Safari version, as WebKit's user agents number it, whose WebKit has the fix. No
- * release had it in October 2026, so every version copies.
+ * Safari release has it, so every version copies.
  */
 const FIRST_FIXED_WEBKIT = Number.POSITIVE_INFINITY;
 
 /**
- * Whether a browser with `userAgent` runs Apple's WebKit from before the fix, which needs each
+ * Whether a browser with `userAgent` runs Apple's WebKit without the fix, which needs each
  * indirect draw's own copy. A WebKit that gives no version is taken to need it. Browsers on iOS
- * that freeze the version they give at 18 then keep copying after the fix, which costs only time.
+ * that freeze the version they give at 18 then keep copying even with the fix, which costs only
+ * time.
  */
 export function needsOwnArguments(userAgent: string): boolean {
 	if (!isAppleWebKit(userAgent)) return false;
@@ -47,7 +48,7 @@ export class IndirectArguments {
 	private next = 0;
 
 	/**
-	 * Copies when `copying` is true, as Apple's WebKit from before the fix needs. Otherwise each
+	 * Copies when `copying` is true, as Apple's WebKit without the fix needs. Otherwise each
 	 * draw reads the buffer that the draw list names. `memory` counts the copies' bytes with the
 	 * rest of the backend's GPU memory.
 	 */

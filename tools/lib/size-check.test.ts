@@ -207,8 +207,8 @@ describe('chooseBase', () => {
 
 describe('nearLimitWarnings', () => {
 	it('names a file that grew to just under the limit, as CI can fail it', () => {
-		// The render worker's WebGL2 file on 26 October 2026: 22 bytes under the limit on the Mac,
-		// and over it in CI's build of the same commit.
+		// The render worker's WebGL2 file, measured: 22 bytes under the limit on the Mac, and over it
+		// in CI's build of the same commit.
 		const changes = compareSizes(
 			record({ 'js/render-worker-webgl2.js': 14_138 }),
 			record({ 'js/render-worker-webgl2.js': 14_399 }),

@@ -1,8 +1,8 @@
 # D-251: A recording of input and frame times for bug reports
 
-Status: decided by the helper of M3-R15 on 25 October 2026, for the owner's review. Date:
-2026-10-25. Task: M3-R15. Built: the engine records a session's frames and the input that the sketch
-read, saves them as a small file, and replays the file on any machine.
+Status: decided by the helper of M3-R15, for the owner's review. Built: the engine records a
+session's frames and the input that the sketch read, saves them as a small file, and replays the
+file on any machine. Task: M3-R15.
 
 Summary: A page that opens with `?record` records what its sketch read at each frame: the frame's
 step and the input records. The recording holds the session's random seed, so the sketch's setup
@@ -50,7 +50,7 @@ records that the reader consumed captures the truth, so a replay that writes the
 the ring gives the same frames from the same code.
 
 **The frame timeline.** Each frame stores its step in seconds as an `f64`, and the replay sums the
-steps to get the sketch time, as the live clock did. A step rounded to microseconds or milliseconds
+steps to get the sketch time, as the live clock does. A step rounded to microseconds or milliseconds
 drifts: over an hour, half a microsecond a frame is nearly two milliseconds, which moves a fixed
 step from one frame to the next and changes the sketch's state. The values of `x` and `y` are
 `f32`, exactly as the input ring holds them.
