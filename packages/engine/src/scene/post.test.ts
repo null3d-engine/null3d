@@ -50,14 +50,6 @@ function post(
 		...[1, 0.1, 0.9, 0.5, 3, 1, -4, 4, 0],
 		...[1, 100, 0.5, 0.5],
 		...[0],
-		// The grading controls' defaults: unit white balance factors and saturation, no lift, unit
-		// gamma and gain, and no split toning.
-		...[1, 1, 1, 1],
-		...[0, 0, 0, 0],
-		...[1, 1, 1, 0],
-		...[1, 1, 1, 0],
-		...[0, 0, 0, 0],
-		...[0, 0, 0, 0],
 	);
 	expect(block.length).toBe(C.POST_VALUE_COUNT);
 	let views = 0;

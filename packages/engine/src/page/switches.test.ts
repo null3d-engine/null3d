@@ -35,7 +35,6 @@ describe('parseSwitches', () => {
 			queue: undefined,
 			jobs: undefined,
 			join: true,
-			grading: 'display',
 			memoryMiB: undefined,
 			preset: undefined,
 			hold: undefined,

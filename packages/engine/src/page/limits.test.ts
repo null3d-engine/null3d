@@ -99,7 +99,6 @@ const PLAIN: DeviceOptions = {
 	compression: undefined,
 	cells: true,
 	join: true,
-	grading: 'display',
 	skinning: 'vertex',
 	indexInstances: false,
 	direct: 'auto',

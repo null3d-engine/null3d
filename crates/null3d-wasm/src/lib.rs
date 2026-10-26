@@ -325,11 +325,6 @@ impl Engine {
     fn post_values3(&self, place: u32) -> [f32; 3] {
         std::array::from_fn(|k| self.post_value(place + k as u32))
     }
-
-    /// Four post-processing values from `place` on.
-    fn post_values4(&self, place: u32) -> [f32; 4] {
-        std::array::from_fn(|k| self.post_value(place + k as u32))
-    }
 }
 
 impl Engine {

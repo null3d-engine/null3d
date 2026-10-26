@@ -833,12 +833,7 @@ export class Post implements ViewHolder {
 		this.gradeSettled = this.gradeSettled.then(() =>
 			import('../shared/tasks')
 				.then(({ runTaskWithError }) =>
-					runTaskWithError<{ texels: Float32Array }>(
-						{ name: 'grade' },
-						{ values },
-						[],
-						gradeError,
-					),
+					runTaskWithError<{ texels: Float32Array }>({ name: 'grade' }, { values }, [], gradeError),
 				)
 				.then(({ texels }) => {
 					done({ texels });
