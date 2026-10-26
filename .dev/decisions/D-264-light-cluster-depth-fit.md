@@ -105,9 +105,16 @@ adds. That is more than three times the Mac's floor of 0.3 ms.
   and the census says the fit recovers about half of it.
 - Before the task closes, the before-and-after figures are owed on the Mac, the iPad and an
   S24-class phone, with the pictures unchanged and the new pass costing less than half the saving.
-- The implementation shape is a depth reduction pass, header words in the light grid, and the slice
-  arithmetic moved into the clustering shaders. It is 12 files and about 540 lines, or one and a
-  half to two days with the runs.
+- Built: the light grid's words begin with an eight-word header that holds the slicing. A
+  one-thread dispatch at the start of the light-clustering pass fits the slices to the depth that
+  the last frame measured and writes the header. A reduction pass after the camera view's opaque
+  pass samples one texel of each block of 16 and writes the nearest and farthest reversed depth
+  into one buffer that the fit reads; a multisampled depth is read at its first sample. WebGL2
+  keeps the CPU's slicing in the frame uniform and its old slice lookup, so that path reads no
+  header and pays nothing new.
+- Costs: the reduction reads the scene depth, so a frame with a local light cannot keep its depth
+  in transient memory. The graph declares the pass only when the camera sees a local light, so a
+  scene without one pays nothing. A lit fragment reads the header's eight words once.
 - WebGL2 keeps today's slicing as its documented fallback. The pictures stay identical, because a
   light out of range multiplies to exactly zero.
 

@@ -38,6 +38,9 @@
 
 /// Bits of a cluster's word that hold where its lights start in the light grid.
 const START_BITS: u32 = 23u;
+/// The words of the light grid's header, before the clusters' words: the slicing that finds a
+/// position's slice.
+const HEADER_WORDS: u32 = 8u;
 
 /// The kind of a rectangle light's record: the core's `RECT`. Kinds from it on are area lights.
 const KIND_RECT: u32 = 6u;
@@ -90,6 +93,26 @@ fn grid_word(i: u32) -> u32 {
     return textureLoad(light_data, at, 0)[within & 3u];
 #else
     return light_grid[i];
+#endif
+}
+
+/// The header's first four words: the row that gives a position's depth along the view, divided by
+/// the depth that adds 1 to the slice depth, and the row's bias.
+fn grid_header() -> vec4u {
+#ifdef WEBGL2
+    return textureLoad(light_data, vec2u(GRID_COLUMN, 0u), 0);
+#else
+    return vec4u(light_grid[0], light_grid[1], light_grid[2], light_grid[3]);
+#endif
+}
+
+/// The header's next four words: the slices per doubling, 1 when the slicing is fitted to the
+/// depth, the slice start and the depth that adds 1 to the slice depth.
+fn grid_header_more() -> vec4u {
+#ifdef WEBGL2
+    return textureLoad(light_data, vec2u(GRID_COLUMN + 1u, 0u), 0);
+#else
+    return vec4u(light_grid[4], light_grid[5], light_grid[6], light_grid[7]);
 #endif
 }
 
@@ -153,14 +176,30 @@ fn cluster_lights(relative: vec3f) -> vec2u {
     }
     let clip = frame.view_proj * vec4f(relative, 1.0);
     let tile = clamp(floor((clip.xy / clip.w * 0.5 + 0.5) * grid.xy), vec2f(0.0), grid.xy - 1.0);
+#ifdef WEBGL2
+    // WebGL2's slicing is the CPU's, in the frame uniform, and its grid lists no fitted slices.
     let slice_depth = max(dot(frame.cluster_depth, vec4f(relative, 1.0)), 1.0);
     let slice = floor(log2(slice_depth) * grid.w);
     if slice >= grid.z {
         return vec2u(0u);
     }
+#else
+    // The header holds the CPU's slicing, or the slicing that the GPU fitted to the measured
+    // depth. A fitted slicing clamps a position past its last slice to the last slice, which stays
+    // open, so the position still gets every light that reaches it.
+    let row = bitcast<vec4f>(grid_header());
+    let more = bitcast<vec4f>(grid_header_more());
+    let slice_depth = max(dot(row, vec4f(relative, 1.0)), 1.0);
+    var slice = max(floor(log2(slice_depth) * more.x), 0.0);
+    if more.y > 0.5 {
+        slice = min(slice, grid.z - 1.0);
+    } else if slice >= grid.z {
+        return vec2u(0u);
+    }
+#endif
     let tiles = vec2u(grid.xy);
     let cluster = (u32(slice) * tiles.y + u32(tile.y)) * tiles.x + u32(tile.x);
-    let word = grid_word(cluster);
+    let word = grid_word(HEADER_WORDS + cluster);
     return vec2u(word & ((1u << START_BITS) - 1u), word >> START_BITS);
 }
 

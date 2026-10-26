@@ -22,7 +22,8 @@ use crate::light_grid::{CLUSTER_PARAMS_BYTES, LightGrids, ViewLights};
 use crate::view::{MAX_VIEWS, ViewId};
 
 /// The compute pipelines of the light clustering pass, in the order the pass dispatches them.
-const PIPELINES: [(u32, u32); 3] = [
+const PIPELINES: [(u32, u32); 4] = [
+    (ids::LIGHT_FIT, template::LIGHT_FIT),
     (ids::LIGHT_COUNT, template::LIGHT_COUNT),
     (ids::LIGHT_PLACE, template::LIGHT_PLACE),
     (ids::LIGHT_WRITE, template::LIGHT_WRITE),
@@ -56,12 +57,13 @@ pub(super) fn create(
             usage::STORAGE | usage::COPY_DST,
         ),
         (ids::light_grid(view), grid.max_words() * 4, usage::STORAGE),
+        (ids::LIGHT_REDUCTION, 8, usage::STORAGE),
     ];
     for &(id, size, flags) in &buffers {
         list.push(Op::CreateBuffer, &[id, size, flags])?;
     }
-    let mut entries = [0u32; 3 + 3 * 5];
-    entries[..3].copy_from_slice(&[ids::light_group(view), bind_layout::LIGHT_CLUSTERS, 3]);
+    let mut entries = [0u32; 3 + 4 * 5];
+    entries[..3].copy_from_slice(&[ids::light_group(view), bind_layout::LIGHT_CLUSTERS, 4]);
     for (binding, &(buffer, _, _)) in buffers.iter().enumerate() {
         let at = 3 + binding * 5;
         entries[at..at + 5].copy_from_slice(&[binding as u32, resource_kind::BUFFER, buffer, 0, 0]);
@@ -124,8 +126,10 @@ impl LightClusters {
             let group = ids::light_group(ViewId::from_index(index));
             list.push(Op::SetBindGroup, &[0, group, 0])?;
             for (id, template) in PIPELINES {
-                // One workgroup adds up the counts of every cluster.
-                let groups = if template == template::LIGHT_PLACE {
+                // The fit and the summing run one workgroup: the fit's writes one thread, and the
+                // sum adds every cluster.
+                let groups = if template == template::LIGHT_PLACE || template == template::LIGHT_FIT
+                {
                     [1, 1, 1]
                 } else {
                     workgroups

@@ -27,6 +27,8 @@
 const WORKGROUP_SIZE: u32 = 128u;
 /// Bits of a cluster's word that hold where its lights start in the light grid.
 const START_BITS: u32 = 23u;
+/// The words of the light grid's header, before the clusters' words.
+const HEADER_WORDS: u32 = 8u;
 /// The most planes between tiles that the parameters hold. They hold the bounds of 32 slices.
 const MAX_PLANES: u32 = 32u;
 /// A tile rectangle that holds no tile.
@@ -51,6 +53,12 @@ struct ClusterParams {
     bounds: array<vec4f, 16>,
     /// The planes between the columns of tiles, then between the rows.
     planes: array<vec4f, MAX_PLANES>,
+    /// The near plane, the far plane, the view depth where the last slice ends, and 1 for a
+    /// perspective lens.
+    fit: vec4f,
+    /// The CPU's slicing, for a frame that fits none: the slices per doubling, the slice start and
+    /// the depth that adds 1 to the slice depth.
+    plain: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> params: ClusterParams;
@@ -59,6 +67,9 @@ struct ClusterParams {
 @group(0) @binding(1) var<storage, read> lights: array<vec4f>;
 /// One word per cluster, then the light index list.
 @group(0) @binding(2) var<storage, read_write> grid: array<u32>;
+/// The depth reduction: the nearest reversed depth that the last frame sampled in word 0, and the
+/// farthest above the background's in word 1, as float bits.
+@group(0) @binding(3) var<storage, read> reduction: array<u32>;
 
 /// The tile rectangles of the lights of the workgroup's run that reach its slice, in any order,
 /// and each one's light, counted from the run's first.
@@ -91,6 +102,25 @@ fn tile_span(first: u32, tiles: u32, center: vec3f, reach: f32) -> vec2u {
     return found;
 }
 
+/// The depths along the view where slice `slice` starts and ends. A fitted slicing computes them
+/// from the header, and leaves the first slice open to the near plane and the last open to the
+/// end of the lights' reach. An unfitted slicing reads the CPU's bounds.
+fn slice_bounds(slice: u32) -> vec2f {
+    if bitcast<f32>(grid[5u]) < 0.5 {
+        let pair = params.bounds[slice / 2u];
+        return select(pair.xy, pair.zw, (slice & 1u) == 1u);
+    }
+    let per_doubling = bitcast<f32>(grid[4u]);
+    let start = bitcast<f32>(grid[6u]);
+    let unit = bitcast<f32>(grid[7u]);
+    let at = (exp2(f32(slice) / per_doubling) - 1.0) * unit + start;
+    let next = (exp2(f32(slice + 1u) / per_doubling) - 1.0) * unit + start;
+    let near = select(at, params.fit.x, slice == 0u);
+    let far = select(next, params.fit.z, slice + 1u >= params.shape.z);
+    let margin = params.reach.y * (abs(near) + abs(far) + unit);
+    return vec2f(near - margin, far + margin);
+}
+
 /// The tiles of slice `slice` that light `light` reaches, packed as the bytes first column, last
 /// column, first row and last row, or NO_TILES.
 fn rect(light: u32, slice: u32) -> u32 {
@@ -99,8 +129,7 @@ fn rect(light: u32, slice: u32) -> u32 {
     let r = position_range.w;
     let row = params.depth_row;
     let depth = row.x * p.x + row.y * p.y + row.z * p.z + row.w;
-    let pair = params.bounds[slice / 2u];
-    let bounds = select(pair.xy, pair.zw, (slice & 1u) == 1u);
+    let bounds = slice_bounds(slice);
     let inverse_scale = params.forward.w;
     // The part of the sphere inside the slice, as offsets along the view from its center.
     let below = (bounds.x - depth) * inverse_scale;
@@ -187,7 +216,7 @@ fn count_lights(
         workgroupBarrier();
     }
     if tile < tiles {
-        grid[slice * tiles + tile] = found;
+        grid[HEADER_WORDS + slice * tiles + tile] = found;
     }
 }
 
@@ -202,7 +231,7 @@ fn place_lights(@builtin(local_invocation_index) local: u32) {
     let end = min(first + each, clusters);
     var total = 0u;
     for (var c = first; c < end; c++) {
-        total += min(grid[c], per_cluster);
+        total += min(grid[HEADER_WORDS + c], per_cluster);
     }
     totals[local] = total;
     workgroupBarrier();
@@ -219,14 +248,14 @@ fn place_lights(@builtin(local_invocation_index) local: u32) {
     // The clusters before this thread's run keep their counts until the index list is full.
     var used = totals[local] - total;
     for (var c = first; c < end; c++) {
-        let wanted = min(grid[c], per_cluster);
+        let wanted = min(grid[HEADER_WORDS + c], per_cluster);
         let start = min(used, room);
         let kept = min(used + wanted, room) - start;
         var word = 0u;
         if kept > 0u {
-            word = (clusters + start) | (kept << START_BITS);
+            word = (HEADER_WORDS + clusters + start) | (kept << START_BITS);
         }
-        grid[c] = word;
+        grid[HEADER_WORDS + c] = word;
         used += wanted;
     }
 }
@@ -243,7 +272,7 @@ fn write_lights(
     let at = vec2u(tile % tiles_x, tile / tiles_x);
     var word = 0u;
     if tile < tiles {
-        word = grid[slice * tiles + tile];
+        word = grid[HEADER_WORDS + slice * tiles + tile];
     }
     let start = word & ((1u << START_BITS) - 1u);
     let kept = word >> START_BITS;
@@ -268,4 +297,47 @@ fn write_lights(
         }
         workgroupBarrier();
     }
+}
+
+/// Fits the slices to the depth that the last frame measured, and writes the header that the
+/// clustering dispatches and the fragment shaders read. One workgroup of one thread, first in the
+/// pass. A frame without a measurement, an orthographic lens, or a scene whose depth spans less
+/// than one doubling keeps the CPU's slicing.
+@compute @workgroup_size(1)
+fn fit_lights() {
+    let fit = params.fit;
+    // The reduction of the last frame: the nearest and the farthest depth it saw.
+    let nearest_bits = reduction[0];
+    let farthest_bits = reduction[1];
+    var per_doubling = params.plain.x;
+    var start = params.plain.y;
+    var unit = params.plain.z;
+    var fitted = 0.0;
+    // Reversed depth is 1 at the near plane and 0 at the far plane, and a positive float orders as
+    // its bits do. The fit puts the measured nearest depth at the start of the second slice and
+    // the measured farthest at the end of the last, and leaves both end slices open.
+    if params.reach.z > 0.5 && fit.w > 0.5 && nearest_bits > 0u && farthest_bits != 0xffffffffu {
+        let span = fit.y - fit.x;
+        let near_depth = fit.x * fit.y / (span * bitcast<f32>(nearest_bits) + fit.x);
+        let far_depth = min(
+            fit.x * fit.y / (span * bitcast<f32>(farthest_bits) + fit.x),
+            fit.z,
+        );
+        if near_depth > fit.x && far_depth > near_depth * 1.05 {
+            per_doubling = (f32(params.shape.z) - 1.0) / log2(far_depth / near_depth);
+            start = near_depth * exp2(-1.0 / per_doubling);
+            unit = start;
+            fitted = 1.0;
+        }
+    }
+    let row = params.depth_row;
+    let scaled = row / unit;
+    grid[0u] = bitcast<u32>(scaled.x);
+    grid[1u] = bitcast<u32>(scaled.y);
+    grid[2u] = bitcast<u32>(scaled.z);
+    grid[3u] = bitcast<u32>((row.w - start) / unit + 1.0);
+    grid[4u] = bitcast<u32>(per_doubling);
+    grid[5u] = bitcast<u32>(fitted);
+    grid[6u] = bitcast<u32>(start);
+    grid[7u] = bitcast<u32>(unit);
 }

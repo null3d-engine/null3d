@@ -14,8 +14,8 @@ use null3d_core::lights::{POINT_CONE, VisibleLight, kind};
 use null3d_gpu::drawlist::sizes;
 use null3d_render::camera::{Affine, Lens, Orthographic, Perspective};
 use null3d_render::light_grid::{
-    ClusterParams, DEFAULT_GRID, FADE_FRAMES, GridShape, GridView, LightGrid, LightLimits,
-    START_BITS, area_light_at_camera,
+    ClusterParams, DEFAULT_GRID, FADE_FRAMES, GridShape, GridView, HEADER_WORDS, LightGrid,
+    LightLimits, START_BITS, area_light_at_camera,
 };
 
 /// Runs `f` with a job system whose workers are native threads.
@@ -220,7 +220,7 @@ fn the_clusters_list_what_a_search_of_every_cluster_and_light_finds() {
     }
     assert_eq!(
         grid.words().len(),
-        DEFAULT_GRID.clusters() as usize + listed
+        HEADER_WORDS as usize + DEFAULT_GRID.clusters() as usize + listed
     );
     // Most lights miss most clusters, and every light reaches some.
     assert!(listed < lights.len() * DEFAULT_GRID.clusters() as usize / 20);
@@ -288,7 +288,7 @@ fn caps_keep_the_first_lights_of_a_cluster_and_the_nearest_lights_of_the_frame()
     };
     let mut grid = LightGrid::new(shape, limits);
     grid.assign(&jobs, &view, &lights);
-    assert_eq!(grid.words().len(), shape.clusters() as usize + 20);
+    assert_eq!(grid.words().len(), HEADER_WORDS as usize + shape.clusters() as usize + 20);
     assert!(grid.cluster_lights(far).is_empty());
 
     // Past the frame's cap, the nearest lights stay, in the order of the list.
@@ -313,7 +313,7 @@ fn a_grid_without_lights_in_its_depth_lists_none() {
     assert_eq!(grid.uniform().grid[2], DEFAULT_GRID.slices as f32);
     grid.assign(&jobs, &view, &[]);
     assert_eq!(grid.uniform().grid[2], 0.0);
-    assert_eq!(grid.words().len(), DEFAULT_GRID.clusters() as usize);
+    assert_eq!(grid.words().len(), HEADER_WORDS as usize + DEFAULT_GRID.clusters() as usize);
     assert_eq!(grid.cluster_at([0.0, 0.0, -5.0]), None);
     // A light wholly behind the near plane reaches no slice.
     grid.assign(&jobs, &view, &[light([0.0, 0.0, 1.0], 0.5, false, 1)]);
@@ -335,7 +335,7 @@ fn slices_end_where_the_farthest_light_ends() {
     assert_eq!(cluster / DEFAULT_GRID.tiles(), last);
     assert_eq!(grid.cluster_at([0.0, 0.0, -24.1]), None);
     // The word of that cluster names the light.
-    let word = grid.words()[cluster as usize];
+    let word = grid.words()[(HEADER_WORDS + cluster) as usize];
     assert_eq!(word >> START_BITS, 1);
 }
 

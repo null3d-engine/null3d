@@ -258,10 +258,11 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
 
     // Lit and unlit, and the final pass's, made for frames whose render scale drops.
     assert_eq!(count(&commands, Op::CreateRenderPipeline), 3);
-    // Culling and the three steps of light clustering. The cluster levels' pass waits for a tree
-    // of cluster patches before it builds its pipeline, whose shader loads on first use, and this
+    // Culling, the fit and the three steps of light clustering, and the depth reduction's clear
+    // and reduce for each of its two depth builds. The cluster levels' pass waits for a tree of
+    // cluster patches before it builds its pipeline, whose shader loads on first use, and this
     // world holds none.
-    assert_eq!(count(&commands, Op::CreateComputePipeline), 4);
+    assert_eq!(count(&commands, Op::CreateComputePipeline), 9);
     assert_eq!(count(&commands, Op::ResizeCanvas), 1);
     // The color and depth targets, the shadow map and the shadow atlas, one texel each while no
     // light casts shadows, the blank array that holds the light tables and the probes' maps, the
@@ -604,10 +605,11 @@ fn pipelines_follow_the_shading_model_and_objects_sharing_a_mesh_and_material_sh
     world.record(true);
     let first = world.commands();
     // Pipelines depend on the shading model, not on materials: lit, unlit, the final pass, the
-    // culling pass and light clustering's three. The cluster levels' pass waits for a tree, and
-    // this world holds none.
+    // culling pass, light clustering's fit and three steps, and the depth reduction's clear and
+    // reduce for each of its two depth builds. The cluster levels' pass waits for a tree, and this
+    // world holds none.
     assert_eq!(count(&first, Op::CreateRenderPipeline), 3);
-    assert_eq!(count(&first, Op::CreateComputePipeline), 4);
+    assert_eq!(count(&first, Op::CreateComputePipeline), 9);
     // One draw per mesh and material: the world's three, one for the ten boxes, one per ball.
     assert_eq!(count(&first, Op::DrawIndexedIndirect), 3 + 1 + 10);
 
@@ -1125,14 +1127,23 @@ fn the_gpu_lists_the_lights_in_frames_whose_lights_changed() {
     world.lights = vec![light(-5.0), light(-9.0)];
     world.record(true);
     mock.replay(world.renderer.list(1).words()).unwrap();
-    // The CPU uploads the light list and the parameters, and the GPU fills the grid in three
-    // steps, before the culling pass: a run of tiles of each slice, then every cluster in one
-    // workgroup, then the runs of tiles again.
+    // The CPU uploads the light list and the parameters. The GPU fits the slices in one
+    // workgroup, fills the grid in three steps (a run of tiles of each slice, then every cluster
+    // in one workgroup, then the runs of tiles again), reduces the depth in a clear and a
+    // dispatch, and culls the view.
     assert_eq!(uploads(&world), both);
     let tiles = [DEFAULT_GRID.tiles().div_ceil(128), DEFAULT_GRID.slices, 1];
     let found = dispatches(&world);
-    assert_eq!(found.len(), 4);
-    assert_eq!(found[..3], [tiles.to_vec(), vec![1, 1, 1], tiles.to_vec()]);
+    assert_eq!(found.len(), 7);
+    assert_eq!(
+        found[..4],
+        [
+            vec![1, 1, 1],
+            tiles.to_vec(),
+            vec![1, 1, 1],
+            tiles.to_vec()
+        ]
+    );
 
     // Nothing uploads while the lights and the view stay, but the GPU fills the grid again, in
     // case the thread that draws skipped the dispatches of pipelines it was still building.
@@ -1140,7 +1151,7 @@ fn the_gpu_lists_the_lights_in_frames_whose_lights_changed() {
     world.record(false);
     mock.replay(world.renderer.list(2).words()).unwrap();
     assert!(uploads(&world).is_empty());
-    assert_eq!(dispatches(&world).len(), 4);
+    assert_eq!(dispatches(&world).len(), 7);
 
     // A light that moves uploads the list again.
     world.frame = 3;
@@ -1148,7 +1159,7 @@ fn the_gpu_lists_the_lights_in_frames_whose_lights_changed() {
     world.record(false);
     mock.replay(world.renderer.list(3).words()).unwrap();
     assert_eq!(uploads(&world), both);
-    assert_eq!(dispatches(&world).len(), 4);
+    assert_eq!(dispatches(&world).len(), 7);
 
     // Without lights the shaders skip the grid, and the GPU fills none.
     world.frame = 4;

@@ -50,11 +50,16 @@
 //! # What the shaders read
 //!
 //! [`LightGrid::lights`] lists the lights in the order the index list numbers them, as the core's
-//! 80-byte [`VisibleLight`] records. [`LightGrid::words`] holds one 32-bit word per cluster, then
-//! the index list. A cluster's word holds where its lights start in the words in its low
+//! 80-byte [`VisibleLight`] records. [`LightGrid::words`] holds the header's [`HEADER_WORDS`] words,
+//! then one 32-bit word per cluster, then the index list. The header holds the slicing that finds a
+//! position's slice: the row that gives its depth along the view and the row's bias, then the
+//! slices per doubling, a flag, and the slice's start and unit. On WebGPU the fit's dispatch
+//! overwrites it from the depth that the frame before measured, so a cluster covers a smaller part
+//! of the view's depth. A cluster's word holds where its lights start in the words in its low
 //! [`START_BITS`] bits, and how many there are in the bits above. Clusters count across the tiles
-//! of a row first, then up the rows, then along the slices. [`GridUniform`] holds what a shader
-//! needs to find a position's cluster: [`LightGrid::cluster_at`] does what the shaders do.
+//! of a row first, then up the rows, then along the slices. [`GridUniform`] holds the CPU's slicing
+//! in the frame uniform: [`LightGrid::cluster_at`] does what the shaders do when the slices are not
+//! fitted.
 
 use null3d_core::jobs::JobSystem;
 use null3d_core::lights::{LightShadow, LightView, VisibleLight, kind};
@@ -74,6 +79,20 @@ const _: () = assert!(size_of::<VisibleLight>() == LIGHT_RECORD_BYTES as usize);
 pub const START_BITS: u32 = 23;
 /// The most lights that one cluster lists: the most its word's count holds.
 pub const MAX_PER_CLUSTER: u32 = (1 << (32 - START_BITS)) - 1;
+/// The words of the grid's header, before the clusters' words. They hold the slicing that finds a
+/// position's slice: the row that gives its depth along the view and the row's bias, then the
+/// slices per doubling, a flag for a slicing fitted to the depth, the slice start and its unit. The
+/// shaders read them from the grid, because a slicing fitted on the GPU cannot reach a uniform that
+/// the CPU writes.
+pub const HEADER_WORDS: u32 = 8;
+/// The word of the header that holds the slices per doubling.
+pub const HEADER_DOUBLING: u32 = 4;
+/// The word of the header that is 1 when the slicing is fitted to the depth.
+pub const HEADER_FITTED: u32 = 5;
+/// The word of the header that holds the slice start, in the units of the view's depth.
+pub const HEADER_START: u32 = 6;
+/// The word of the header that holds the depth that adds 1 to the slice depth.
+pub const HEADER_UNIT: u32 = 7;
 /// The most tiles across or up the view.
 pub const MAX_TILES: u32 = 254;
 /// The most lights that one frame lists.
@@ -268,6 +287,12 @@ pub struct ClusterParams {
     pub bounds: [[f32; 4]; (GPU_MAX_SLICES / 2) as usize],
     /// The planes between the columns of tiles, then between the rows.
     pub planes: [[f32; 4]; GPU_MAX_PLANES as usize],
+    /// The near plane, the far plane, the view depth where the last slice ends, and 1 for a
+    /// perspective lens. The GPU's fit reads them to fit the slices to the depth.
+    pub fit: [f32; 4],
+    /// The CPU's slicing, for a frame whose slices the GPU does not fit: the slices per doubling,
+    /// the slice start, and the depth that adds 1 to the slice depth.
+    pub plain: [f32; 4],
 }
 
 /// Bytes of [`ClusterParams`].
@@ -317,6 +342,15 @@ struct Slicing {
     unit: f32,
     /// Slices per doubling of the slice depth.
     per_doubling: f32,
+    /// The view depth where the last slice ends: the end of the farthest visible light, or the far
+    /// plane.
+    end: f32,
+    /// The near plane's distance.
+    near: f32,
+    /// The far plane's distance.
+    far: f32,
+    /// True for a perspective lens, whose view starts at the camera.
+    perspective: bool,
     /// One over the length of the depth row's direction: the world units per unit of the view's
     /// depth.
     inverse_scale: f32,
@@ -390,6 +424,8 @@ pub struct LightGrid {
     view_proj: Mat4,
     slicing: Slicing,
     uniform: GridUniform,
+    /// True when the GPU may fit this grid's slices to the measured depth: the camera view's grid.
+    fits: bool,
 }
 
 impl LightGrid {
@@ -424,11 +460,12 @@ impl LightGrid {
             frame: 1,
             rects: vec![NO_TILES; shape.slices as usize * lights],
             counts: vec![0; clusters],
-            words: vec![0; clusters + limits.indices as usize],
+            words: vec![0; (HEADER_WORDS as usize) + clusters + limits.indices as usize],
             used: 0,
             view_proj: [0.0; 16],
             slicing: Slicing::default(),
             uniform: GridUniform::default(),
+            fits: false,
         }
     }
 
@@ -447,9 +484,10 @@ impl LightGrid {
         self.limits.area_lights = cap;
     }
 
-    /// The most words the grid gives the shaders: a word per cluster and the whole index list.
+    /// The most words the grid gives the shaders: the header, a word per cluster, and the whole
+    /// index list.
     pub fn max_words(&self) -> u32 {
-        self.shape.clusters() + self.limits.indices
+        HEADER_WORDS + self.shape.clusters() + self.limits.indices
     }
 
     /// The lights the grid lists, as the index list numbers them.
@@ -457,15 +495,15 @@ impl LightGrid {
         &self.lights
     }
 
-    /// One word per cluster, then the entries of the index list in use: see the module
-    /// documentation.
+    /// The header's slicing words, one word per cluster, then the entries of the index list in use:
+    /// see the module documentation.
     pub fn words(&self) -> &[u32] {
-        &self.words[..(self.shape.clusters() + self.used) as usize]
+        &self.words[..(HEADER_WORDS + self.shape.clusters() + self.used) as usize]
     }
 
     /// The lights that a cluster lists, as indices into [`LightGrid::lights`].
     pub fn cluster_lights(&self, cluster: u32) -> &[u32] {
-        let word = self.words[cluster as usize];
+        let word = self.words[(HEADER_WORDS + cluster) as usize];
         let start = (word & ((1 << START_BITS) - 1)) as usize;
         &self.words[start..start + (word >> START_BITS) as usize]
     }
@@ -524,12 +562,21 @@ impl LightGrid {
         ];
         out.depth_row = s.row;
         out.forward = [s.forward[0], s.forward[1], s.forward[2], s.inverse_scale];
-        out.reach = [1.0 + MARGIN, MARGIN, 0.0, 0.0];
+        // The third value lets the fit run for the camera view's grid alone: another view's depth
+        // differs, so it keeps the CPU's slicing.
+        out.reach = [1.0 + MARGIN, MARGIN, if self.fits { 1.0 } else { 0.0 }, 0.0];
         for (pair, out) in self.bounds.chunks(2).zip(&mut out.bounds) {
             *out = [0.0; 4];
             out[..pair.len() * 2].copy_from_slice(pair.as_flattened());
         }
         out.planes[..self.planes.len()].copy_from_slice(&self.planes);
+        out.fit = [
+            s.near,
+            s.far,
+            s.end,
+            if s.perspective { 1.0 } else { 0.0 },
+        ];
+        out.plain = [s.per_doubling, s.start, s.unit, 0.0];
     }
 
     /// The workgroups of the GPU's counting and writing dispatches: a run of tiles of one slice
@@ -624,7 +671,7 @@ impl LightGrid {
                 for (light, &rect) in rects[s * stride..s * stride + lights].iter().enumerate() {
                     for_each_tile(rect, |x, y| {
                         let tile = y * tiles_x + x;
-                        let word = unsafe { words.read(s * tiles + tile) };
+                        let word = unsafe { words.read(HEADER_WORDS as usize + s * tiles + tile) };
                         let written = placed[tile];
                         if written < word >> START_BITS {
                             let at = (word & ((1 << START_BITS) - 1)) + written;
@@ -647,6 +694,7 @@ impl LightGrid {
         self.view_proj = view.view_proj;
         let Some(work) = self.slice(&view.depth) else {
             self.uniform = GridUniform::default();
+            self.zero_header();
             return None;
         };
         self.set_planes();
@@ -811,6 +859,10 @@ impl LightGrid {
             start,
             unit,
             per_doubling: 1.0,
+            end: start,
+            near: depth.near,
+            far: depth.far,
+            perspective: depth.perspective,
             inverse_scale: 1.0 / scale,
             row: depth.row,
             forward: [rx / scale, ry / scale, rz / scale],
@@ -827,6 +879,10 @@ impl LightGrid {
         }
         // At least a little depth, so the logarithm of the last slice's end is above 0.
         let end = end.max(start + unit * 1e-3);
+        slicing.end = end;
+        slicing.near = depth.near;
+        slicing.far = depth.far;
+        slicing.perspective = depth.perspective;
         let slices = self.shape.slices;
         slicing.per_doubling = slices as f32 / slicing.slice_depth(end).log2();
         let mut near = slicing.slice_start(0);
@@ -866,7 +922,25 @@ impl LightGrid {
                 slicing.per_doubling,
             ],
         };
+        self.write_header();
         Some(work)
+    }
+
+    /// Writes the header's slicing words, which the shaders read to find a position's slice, from
+    /// the CPU's slicing. On WebGPU the fit's dispatch overwrites them from the reduced depth.
+    fn write_header(&mut self) {
+        let [a, b, c, d] = self.uniform.depth;
+        let header = &mut self.words[..HEADER_WORDS as usize];
+        header[..4].copy_from_slice(&[a.to_bits(), b.to_bits(), c.to_bits(), d.to_bits()]);
+        header[HEADER_DOUBLING as usize] = self.slicing.per_doubling.to_bits();
+        header[HEADER_FITTED as usize] = 0;
+        header[HEADER_START as usize] = self.slicing.start.to_bits();
+        header[HEADER_UNIT as usize] = self.slicing.unit.to_bits();
+    }
+
+    /// Empties the header, for a grid that lists no light.
+    fn zero_header(&mut self) {
+        self.words[..HEADER_WORDS as usize].fill(0);
     }
 
     /// Sets the planes between the tiles' columns and rows from the view-projection matrix.
@@ -898,12 +972,15 @@ impl LightGrid {
         let clusters = self.shape.clusters();
         let (per_cluster, room) = (self.limits.per_cluster, self.limits.indices);
         let mut used = 0;
-        for (word, count) in self.words.iter_mut().zip(&mut self.counts) {
+        for (word, count) in self.words[HEADER_WORDS as usize..]
+            .iter_mut()
+            .zip(&mut self.counts)
+        {
             let kept = (*count).min(per_cluster).min(room - used);
             *word = if kept == 0 {
                 0
             } else {
-                (clusters + used) | (kept << START_BITS)
+                (HEADER_WORDS + clusters + used) | (kept << START_BITS)
             };
             used += kept;
             *count = 0;
@@ -979,7 +1056,7 @@ pub(crate) struct ViewLights {
 impl ViewLights {
     /// A grid whose clusters' lights the job workers list, or with `on_gpu`, the GPU's light
     /// clustering passes.
-    fn with_assignment(limits: LightLimits, on_gpu: bool) -> Self {
+    fn with_assignment(limits: LightLimits, on_gpu: bool, fits: bool) -> Self {
         let grid = LightGrid::new(DEFAULT_GRID, limits);
         let words = if on_gpu {
             CLUSTER_PARAMS_BYTES / 4
@@ -993,7 +1070,11 @@ impl ViewLights {
             held_lights: Vec::with_capacity(limits.lights as usize),
             held: false,
             room: 0,
-            grid,
+            grid: {
+                let mut grid = grid;
+                grid.fits = fits;
+                grid
+            },
         }
     }
 
@@ -1126,7 +1207,7 @@ impl LightGrids {
     /// light clustering passes do.
     pub(crate) fn new(limits: LightLimits, on_gpu: bool) -> Self {
         let mut views: Vec<Option<ViewLights>> = (0..MAX_VIEWS).map(|_| None).collect();
-        views[ViewId::CAMERA.index()] = Some(ViewLights::with_assignment(limits, on_gpu));
+        views[ViewId::CAMERA.index()] = Some(ViewLights::with_assignment(limits, on_gpu, true));
         Self {
             views,
             limits,
@@ -1198,7 +1279,7 @@ impl LightGrids {
             return;
         };
         if place.is_none() && !lights.is_empty() {
-            *place = Some(ViewLights::with_assignment(self.limits, self.on_gpu));
+            *place = Some(ViewLights::with_assignment(self.limits, self.on_gpu, false));
         }
         if let Some(grid) = place.as_mut() {
             grid.assign(input.jobs, frame, lights);
@@ -1284,6 +1365,7 @@ mod tests {
         };
         for line in [
             format!("const START_BITS: u32 = {START_BITS}u;"),
+            format!("const HEADER_WORDS: u32 = {HEADER_WORDS}u;"),
             format!(
                 "const WORD_ROW_SHIFT: u32 = {}u;",
                 shift(sizes::GRID_WORDS_PER_TEXTURE_ROW)
@@ -1300,10 +1382,10 @@ mod tests {
         ] {
             assert!(lights.contains(&line), "lib/lights.wgsl lacks {line}");
         }
-        // The shader finds its cluster from the frame's two vectors, and the start of a
-        // cluster's lights fits below the count for every list the limits allow.
+        // The shader finds its cluster from the header's slicing, and the start of a cluster's
+        // lights fits below the count for every list the limits allow.
         assert_eq!(size_of::<GridUniform>(), 32);
-        assert!(DEFAULT_GRID.clusters() + MAX_INDICES < 1 << START_BITS);
+        assert!(HEADER_WORDS + DEFAULT_GRID.clusters() + MAX_INDICES < 1 << START_BITS);
     }
 
     #[test]
@@ -1313,6 +1395,7 @@ mod tests {
         for line in [
             format!("const WORKGROUP_SIZE: u32 = {GPU_WORKGROUP_SIZE}u;"),
             format!("const START_BITS: u32 = {START_BITS}u;"),
+            format!("const HEADER_WORDS: u32 = {HEADER_WORDS}u;"),
             format!("const MAX_PLANES: u32 = {GPU_MAX_PLANES}u;"),
             format!(
                 "const LIGHT_VECTORS: u32 = {}u;",
@@ -1320,13 +1403,16 @@ mod tests {
             ),
             format!("bounds: array<vec4f, {}>,", GPU_MAX_SLICES / 2),
             "planes: array<vec4f, MAX_PLANES>,".to_owned(),
+            "fit: vec4f,".to_owned(),
+            "plain: vec4f,".to_owned(),
         ] {
             assert!(shader.contains(&line), "light_clusters.wgsl lacks {line}");
         }
-        // Five vectors, then the slices' bounds and the planes.
+        // Five vectors, then the slices' bounds, the planes, the fit's values and the CPU's
+        // slicing.
         assert_eq!(
             CLUSTER_PARAMS_BYTES,
-            (5 + GPU_MAX_SLICES / 2 + GPU_MAX_PLANES) * 16
+            (5 + GPU_MAX_SLICES / 2 + GPU_MAX_PLANES + 2) * 16
         );
         assert!(LightGrid::fits_gpu(DEFAULT_GRID));
     }
@@ -1367,6 +1453,10 @@ mod tests {
             start: 0.5,
             unit: 0.5,
             per_doubling: 2.0,
+            end: 10.0,
+            near: 0.5,
+            far: 100.0,
+            perspective: true,
             inverse_scale: 1.0,
             row: [0.0, 0.0, -1.0, 0.0],
             forward: [0.0, 0.0, -1.0],

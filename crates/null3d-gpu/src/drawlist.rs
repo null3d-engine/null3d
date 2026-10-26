@@ -936,6 +936,13 @@ pub mod layout {
     /// the exposure as a storage texture of `RGBA32_FLOAT`, which the final pass reads. Only WebGPU
     /// has it.
     pub const EXPOSURE: u32 = 40;
+    /// Group 0 of the light clusters' depth reduction: its blocks' uniform block, the light grid
+    /// that it writes, and the view's depth target of one sample, which it reads as a float
+    /// texture. Only WebGPU has it.
+    pub const LIGHT_DEPTH: u32 = 62;
+    /// [`LIGHT_DEPTH`] for a multisampled depth target, whose sample 0 it reads. Only WebGPU has
+    /// it.
+    pub const LIGHT_DEPTH_MS: u32 = 63;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -2091,6 +2098,18 @@ pub mod template {
     /// engine's vertex shaders read rows relative to their view's camera, and a page writes world
     /// rows (D-229). WebGPU only.
     pub const FEATURE_ROWS: u32 = 83;
+    /// The light clusters' depth reduction: reads the view's depth and writes its nearest and
+    /// farthest into the light grid's header. WebGPU only.
+    pub const LIGHT_DEPTH: u32 = 84;
+    /// [`LIGHT_DEPTH`] from a multisampled depth target, whose sample 0 it reads. WebGPU only.
+    pub const LIGHT_DEPTH_MS: u32 = 85;
+    /// Clears the depth reduction's buffer: one thread, before the reduction fills it. WebGPU only.
+    pub const LIGHT_DEPTH_CLEAR: u32 = 86;
+    /// [`LIGHT_DEPTH_CLEAR`] from a multisampled depth target. WebGPU only.
+    pub const LIGHT_DEPTH_CLEAR_MS: u32 = 87;
+    /// Light clustering's fit: one thread that fits the slices to the measured depth and writes
+    /// the grid's header, before the counting dispatch. WebGPU only.
+    pub const LIGHT_FIT: u32 = 88;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -2098,7 +2117,7 @@ pub mod template {
 
     /// Every engine template with its name, in id order: the constants that the TypeScript replay
     /// loop reads, and the templates whose groups [`super::groups`] knows.
-    pub const NAMES: [(&str, u32); 83] = [
+    pub const NAMES: [(&str, u32); 88] = [
         ("INSTANCED_LIT", INSTANCED_LIT),
         ("INSTANCED_UNLIT", INSTANCED_UNLIT),
         ("INSTANCED_TEXCOORDS", INSTANCED_TEXCOORDS),
@@ -2181,6 +2200,11 @@ pub mod template {
         ("TAA_RESOLVE_MS", TAA_RESOLVE_MS),
         ("TAA_COPY", TAA_COPY),
         ("FEATURE_ROWS", FEATURE_ROWS),
+        ("LIGHT_DEPTH", LIGHT_DEPTH),
+        ("LIGHT_DEPTH_MS", LIGHT_DEPTH_MS),
+        ("LIGHT_DEPTH_CLEAR", LIGHT_DEPTH_CLEAR),
+        ("LIGHT_DEPTH_CLEAR_MS", LIGHT_DEPTH_CLEAR_MS),
+        ("LIGHT_FIT", LIGHT_FIT),
         ("CUSTOM_FIRST", CUSTOM_FIRST),
     ];
 }
@@ -2298,6 +2322,11 @@ pub mod groups {
         (template::LIGHT_COUNT, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_PLACE, own!(layout::LIGHT_CLUSTERS)),
         (template::LIGHT_WRITE, own!(layout::LIGHT_CLUSTERS)),
+        (template::LIGHT_DEPTH, own!(layout::LIGHT_DEPTH)),
+        (template::LIGHT_DEPTH_MS, own!(layout::LIGHT_DEPTH_MS)),
+        (template::LIGHT_DEPTH_CLEAR, own!(layout::LIGHT_DEPTH)),
+        (template::LIGHT_DEPTH_CLEAR_MS, own!(layout::LIGHT_DEPTH_MS)),
+        (template::LIGHT_FIT, own!(layout::LIGHT_CLUSTERS)),
         (template::SKIN, own!(layout::SKIN)),
         (template::OUTLINE_MASK, MESH),
         (template::TONE_MASK, MESH),
@@ -2568,6 +2597,8 @@ const GENERATED_LAYOUTS: &[(&str, u32)] = &[
     ("FRAME_PARALLAX", layout::FRAME_PARALLAX),
     ("DEPTH", layout::DEPTH),
     ("LIGHT_CLUSTERS", layout::LIGHT_CLUSTERS),
+    ("LIGHT_DEPTH", layout::LIGHT_DEPTH),
+    ("LIGHT_DEPTH_MS", layout::LIGHT_DEPTH_MS),
     ("BLOOM", layout::BLOOM),
     ("FINAL_BLOOM", layout::FINAL_BLOOM),
     ("JOINTS", layout::JOINTS),

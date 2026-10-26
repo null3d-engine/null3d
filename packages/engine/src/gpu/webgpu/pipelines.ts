@@ -43,6 +43,8 @@ import {
 	LAYOUT_INSTANCE_INDEX,
 	LAYOUT_JOINTS,
 	LAYOUT_LIGHT_CLUSTERS,
+	LAYOUT_LIGHT_DEPTH,
+	LAYOUT_LIGHT_DEPTH_MS,
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_MATERIAL_MAPS_PARALLAX,
 	LAYOUT_MATERIAL_MAPS_SCENE,
@@ -135,6 +137,11 @@ import {
 	TEMPLATE_INSTANCED_UNLIT,
 	TEMPLATE_INSTANCED_UNLIT_MAP,
 	TEMPLATE_LIGHT_COUNT,
+	TEMPLATE_LIGHT_DEPTH,
+	TEMPLATE_LIGHT_DEPTH_CLEAR,
+	TEMPLATE_LIGHT_DEPTH_CLEAR_MS,
+	TEMPLATE_LIGHT_DEPTH_MS,
+	TEMPLATE_LIGHT_FIT,
 	TEMPLATE_LIGHT_PLACE,
 	TEMPLATE_LIGHT_WRITE,
 	TEMPLATE_LINE,
@@ -367,6 +374,7 @@ export const SKIN_BUILDS = [
 
 /** The compute templates of light clustering: each one's entry point in the light clustering shader. */
 const LIGHT_ENTRY_POINTS: Readonly<Record<number, string>> = {
+	[TEMPLATE_LIGHT_FIT]: 'fit_lights',
 	[TEMPLATE_LIGHT_COUNT]: 'count_lights',
 	[TEMPLATE_LIGHT_PLACE]: 'place_lights',
 	[TEMPLATE_LIGHT_WRITE]: 'write_lights',
@@ -637,6 +645,10 @@ export class Pipelines {
 	private readonly clusterLayout: GPUPipelineLayout;
 	private readonly lightLayout: GPUPipelineLayout;
 	private readonly lightClusters: WgslShader | undefined;
+	private readonly lightDepth: WgslShader | undefined;
+	private readonly lightDepthMs: WgslShader | undefined;
+	private readonly lightDepthLayout: GPUPipelineLayout;
+	private readonly lightDepthMsLayout: GPUPipelineLayout;
 	private readonly skinLayout: GPUPipelineLayout;
 	/** The skinning pass's builds, which arrive with the skinning feature's shader file. */
 	private readonly skin: ShaderVariants;
@@ -895,11 +907,33 @@ export class Pipelines {
 			],
 			true,
 		);
-		// Light clustering's parameters, the light list, and the light grid that it fills.
+		// Light clustering's parameters, the light list, the light grid that it fills, and the
+		// depth reduction that its fit reads.
 		this.defineLayout(LAYOUT_LIGHT_CLUSTERS, 'light clusters', [
 			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{ binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+		]);
+		// The light clusters' depth reduction: its blocks, the light grid whose header it writes,
+		// and the view's depth as a float texture. The multisampled layout reads sample 0.
+		this.defineLayout(LAYOUT_LIGHT_DEPTH, 'light depth', [
+			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{
+				binding: 2,
+				visibility: GPUShaderStage.COMPUTE,
+				texture: { sampleType: 'unfilterable-float' },
+			},
+		]);
+		this.defineLayout(LAYOUT_LIGHT_DEPTH_MS, 'light depth ms', [
+			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{
+				binding: 2,
+				visibility: GPUShaderStage.COMPUTE,
+				texture: { sampleType: 'unfilterable-float', multisampled: true },
+			},
 		]);
 		// The joint texture, which the builds that skin in the vertex shader read.
 		this.defineLayout(LAYOUT_JOINTS, 'joints', [
@@ -1554,6 +1588,14 @@ export class Pipelines {
 			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_CLUSTERS)],
 		});
 		this.lightClusters = variantFor(shaders.light_clusters, 0, 'wgsl')?.wgsl ?? undefined;
+		this.lightDepth = variantFor(shaders.light_depth, 0, 'wgsl')?.wgsl ?? undefined;
+		this.lightDepthMs = variantFor(shaders.light_depth_ms, 0, 'wgsl')?.wgsl ?? undefined;
+		this.lightDepthLayout = device.createPipelineLayout({
+			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_DEPTH)],
+		});
+		this.lightDepthMsLayout = device.createPipelineLayout({
+			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_DEPTH_MS)],
+		});
 		this.skinLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_SKIN)] });
 		this.skin = shaders.skin;
 		this.exposureHistogram = shaders.exposure_histogram;
@@ -2048,6 +2090,29 @@ export class Pipelines {
 				label: `exposure ${exposureEntry}`,
 				layout: this.exposureLayout,
 				compute: { module: this.module('exposure histogram', shader), entryPoint: exposureEntry },
+			};
+		}
+		if (
+			template === TEMPLATE_LIGHT_DEPTH ||
+			template === TEMPLATE_LIGHT_DEPTH_MS ||
+			template === TEMPLATE_LIGHT_DEPTH_CLEAR ||
+			template === TEMPLATE_LIGHT_DEPTH_CLEAR_MS
+		) {
+			const multisampled =
+				template === TEMPLATE_LIGHT_DEPTH_MS ||
+				template === TEMPLATE_LIGHT_DEPTH_CLEAR_MS;
+			const clear =
+				template === TEMPLATE_LIGHT_DEPTH_CLEAR ||
+				template === TEMPLATE_LIGHT_DEPTH_CLEAR_MS;
+			const shader = multisampled ? this.lightDepthMs : this.lightDepth;
+			if (!shader) throw new Error("the device's shader modules have no light depth shader");
+			return {
+				label: clear ? 'light depth clear' : 'light depth',
+				layout: multisampled ? this.lightDepthMsLayout : this.lightDepthLayout,
+				compute: {
+					module: this.module('light depth', shader),
+					entryPoint: clear ? 'clear_reduction' : 'reduce_depth',
+				},
 			};
 		}
 		const entryPoint = LIGHT_ENTRY_POINTS[template];
