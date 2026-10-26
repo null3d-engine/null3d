@@ -167,6 +167,8 @@ A pick before the first frame answers `null`. The engine has not drawn the camer
 
 A pick costs one more draw of the camera's opaque objects, one read of four bytes, and one raycast for the texture coordinates. Picks wait in a queue of their own. Each answers in a frame after the one that records it. A hidden object, an object off the camera's layers, and a pixel that no object covers answer `null`.
 
+A pick that waits for its read when the browser takes the GPU away is rejected with [E1436](../errors/E1436.md). The engine starts a new device, but the frame that recorded the pick drew on the lost one, so the read never lands. Ask for the pick again: the new device answers a new pick. A pick still queued behind it goes to the new device in its turn.
+
 ## Overlap queries
 
 | Call | Returns |
