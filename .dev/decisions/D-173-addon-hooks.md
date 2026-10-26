@@ -348,7 +348,9 @@ The test add-on is a stage of 17 declared textures in `programs.test.ts`, beside
 
 The count above ran after `prepareProgram` read the program's link result. On a device with 16 units, a stage of 17 textures therefore threw the driver's plain link error, and E1209 never came. The count now runs first, on the declared sources of both stages. It compares against the units that the device reports for each stage (`MAX_VERTEX_TEXTURE_IMAGE_UNITS` and `MAX_TEXTURE_IMAGE_UNITS`), rather than the 16 that every device gives. A device that reports more units lets a larger stage link.
 
-The browser test `tests/image/program-units.spec.ts` builds a program by hand, with one texture more than the device's fragment stage holds. It reads the link result before the engine does. It then checks that the engine throws E1209 with the device's real count. `programs.test.ts` keeps the boundary tests with an explicit limit.
+CI's software GPU reports 32 units for each stage, and a context has 64 in all. The engine keeps a unit for uploads, so it hands a stage at most 31. That driver then accepts a 32-texture stage that the engine refuses. A page that declared one texture past the engine's handout therefore saw the driver link the program. The test then failed in CI.
+
+The browser test `tests/image/program-units.spec.ts` builds a program by hand, with one texture past the device's own fragment stage. The driver refuses it on every device. It has 33 textures on the software GPU, whose stage has 32 units, and 17 on the Mac's GPU, whose stage has 16. The page reads the link result before the engine does. It then checks that the engine throws E1209 with the declared count and the units that it hands out. `programs.test.ts` keeps the boundary tests with an explicit limit.
 
 ## Addendum, 23 October 2026: H1's storage surface is one texture at a fixed binding
 

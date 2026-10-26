@@ -1,6 +1,6 @@
 // Checks the WebGL2 texture-unit allocator against the units that the device reports. A fragment
-// shader declares one texture more than the engine hands a stage, and the engine must refuse it
-// with E1209 before it reads the link result: the program must not reach the page as a plain link
+// shader declares one texture more than the device's own fragment stage, and the engine must refuse
+// it with E1209 before it reads the link result: the program must not reach the page as a plain link
 // failure. The program is built by hand, so the declared list is the device's real count rather
 // than a made-up one, and the page also reports whether the driver refused the program by itself.
 import {
@@ -68,7 +68,9 @@ run('program-units', async () => {
 	};
 	// The units that the engine hands out, which keep the last of the context's units for uploads.
 	const units = stageTextureUnits(gl);
-	const declared = units[1] + 1;
+	// One texture past the device's own fragment stage, which the driver must refuse. The engine
+	// hands out no more units than the device reports, so its count refuses the program as well.
+	const declared = device.fragment + 1;
 	const built = build(gl, VERTEX_SOURCE, fragmentSource(declared));
 	const driverLinked = gl.getProgramParameter(built.program, gl.LINK_STATUS) as boolean;
 	const stage = {

@@ -160,7 +160,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-V4':
 		'no device has timed the new generator, so the device figures are of the stand-in it replaced; no Mac, iPad or S24 GPU or memory figure exists, no check-addon run is recorded, and the software-GPU species pictures fail in CI',
 	'M3-D7':
-		'no test add-on or material reaches E1209: the browser test uses an internal entry, and it fails in CI because the software GPU accepts the program it builds',
+		'no test add-on or material reaches E1209: the browser test uses an internal entry',
 	'M3-D9':
 		'no record shows the listing check passing on vegetation, and its one run skipped the shader and size checks',
 	'M3-F2':
