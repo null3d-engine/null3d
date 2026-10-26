@@ -116,10 +116,11 @@ tools and engines chose none.
   `{"ok": true}`. Case 1's first answer ended with "The code above is checked": the code sat in an
   earlier message, which the harness does not keep. The run was repeated to get a complete answer,
   and the table uses the second answers.
-- Case 9's sixth point is a known miss, not a grade to recover. Intake step 5 asks what a later
-  version changes. Step 2 asks for the step that adds a missing feature. The physics and text rows
-  in the skill and in the template name no such step, and no published page names one. The answer
-  with the skill therefore names no later version, and a rerun would not give one.
+- Case 9's sixth point is a known miss. Intake step 5 asks what a later version changes, and step
+  2 asks for the step that adds a missing feature. The physics and text rows in the skill and in the
+  template name no step, and neither does `guides/physics`. The port mapping does:
+  `docs/porting/threejs-mapping.md` gives step 0.3 for MSDF text and for `@null3d/rapier`. The
+  answer with the skill therefore names no later version.
 - The time and token figures come from the command line's own report. The cache figures cover the
   context that the harness re-reads on each turn, so they are not a price.
 - The judge is one model call per case, so a judgement is not cross-checked. Each answer and verdict
