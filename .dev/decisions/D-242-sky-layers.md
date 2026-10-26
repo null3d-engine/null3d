@@ -269,14 +269,18 @@ worker started, so it stopped as E1405. Four jobs of each CI run carried one of 
 and 40222451866. WebGPU was not affected: a bind group names every binding of its layout, so a
 program that reads no cube still has one bound.
 
-The layer-light page is red for a second cause. On the software GPU the capture of the map's light
-reads its texels at the wrong stride. The rough sphere then takes none of the light, and every
-capture reads 0 there. The sky layer's branch carries that fix, which raises the reading to 126 on
-all three tiers. At the branch's merged tip, `0e84de2a8`, the spec passes on all three tiers on
-the software GPU. That page therefore has a fix for each of its two causes, and this record holds
+The layer-light page is red for a second cause. At `93720008d` the capture of the map's light never
+ran, on any GPU tier. The stage split of `333a05a78` put the capture's buffer in the stage that the
+page names, which draws. Both generators run the capture only in the copy stage, which has no
+draws. So no fill summed the map's light, and the rough sphere read 0 in every capture. A stride
+fault in the CPU's read of the coefficients is a second, smaller fault, and the sky layer's branch
+carries the fix for both (`8bebdff7f`). On that branch the `sky-layer-light` page passes the whole
+spec on WebGPU, compatibility mode and WebGL2 on the software GPU, and the light reaches the scene
+with the levels. That page therefore has a fix for each of its two causes, and this record holds
 the first.
 
-The generator now asks the capture for that unit, which is its only use. The unit test
+The generator now asks the capture for that unit, which is its only use. On this branch that use
+runs, and the page's WebGL2 tier shows the capture binding the chain at that unit. The unit test
 `packages/engine/src/gpu/webgl2/environment.test.ts` builds a layer's programs with a stand-in host
 that answers each lookup from the generated shader build. It refuses with the same message when the
 programs' own code asks a program that samples no cube.
