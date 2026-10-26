@@ -2931,6 +2931,24 @@ pub fn texture_stat(field: u32, texture: u32) -> f64 {
     value
 }
 
+/// The array layer that a map of `texture` samples on the GPU: the first layer of the state that a
+/// pass wrote last, for a pass that keeps two states, and the texture's own first layer otherwise.
+/// 0 while no image of the texture is on the GPU.
+#[wasm_bindgen(js_name = textureLayer)]
+pub fn texture_layer(texture: u32) -> u32 {
+    let mut layer = 0;
+    with_engine(|e| {
+        layer = e
+            .renderer
+            .settings()
+            .textures()
+            .ready_layer(Handle::from_raw(texture))
+            .unwrap_or(0);
+        0
+    });
+    layer
+}
+
 // Sets up the shadow atlas of point and spot lights: its most tiles, from 0, which turns their
 // shadows off, the texels on each side of each tile, and whether point lights cast shadows.
 /// Sets up the shadow atlas of point and spot lights.

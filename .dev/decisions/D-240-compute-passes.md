@@ -293,8 +293,8 @@ does every other loop.
 **Readers.** A material or an effect that declares the pass's texture as `texture_2d<f32>` samples
 the state that the last run wrote: the engine writes that state's first layer into the map's layer
 each frame. A reader that declares `texture_2d_array<f32>` sees both states and names the layers
-itself. `texture.layer` is not a public call yet; the wind add-on knows the layer from its own run
-count.
+itself. `texture.layer` gives the first layer of the state that the last run wrote, so a reader of
+the array names the newest state without counting its own runs.
 
 **A stopped pass.** A pass that does not run keeps the state that its last run wrote, because the
 graph keeps the target and does not clear it. A device loss or a target shape change makes the
