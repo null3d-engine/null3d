@@ -284,7 +284,6 @@ async function start(
 				shaderBits: 0,
 				cellCulling: true,
 				joinEffects: true,
-				gradingHdr: false,
 				depthPrepass: false,
 				skinning: C.SKINNING_VERTEX,
 				indexInstances: false,
