@@ -322,3 +322,84 @@ Tasks, each with its first user:
 - The water add-on: river and lake in M3, after splats, then the FFT ocean before 1.0 ([D-179](D-179-technique-rulings.md)). The docs' water recipe and the Creek use it.
 - The `three-compat` add-on in M3, with Reinhard, Cineon and `OutlinePass`'s glow ([D-179](D-179-technique-rulings.md)).
 - M3-B1 to M3-B6 live in `examples/addons/`.
+**What shows it.** The hook's visible user is the splats add-on, which brings its demo. No demo shows a job-worker task on its own, so this change adds no demo (M3-F2 owns that one).
+## the texture-unit allocator of M3-D7
+
+WebGL2 gives each shader stage 16 texture units. The lit shader reads most of them, so an add-on's material that adds textures of its own could pass a stage's share, and the device would then fail to link the program: the draw would show nothing and report no reason. M3-D7 refuses it first.
+
+`prepareProgram` in `packages/engine/src/gpu/webgl2/programs.ts` counts the distinct texture slots that each stage declares, before it numbers them, and calls `checkStageUnits`. A stage past the units that the device reports for it throws E1209 with the count and the limit. The count reads the composed GLSL's declared textures rather than the linked program's, since a driver removes a texture that the shader never reads and the declared list is the bound that a device without the removal rule would see.
+
+The refusal comes at the first draw of a material, when its program is prepared, and not at `materials.shader()`. An add-on's shader can arrive as a first-use loader, so the material's variants may be empty when it is created, while the program always has its composed source. WebGPU needs no such check: the engine's own layouts already stay within its 16 sampled textures, and a device refusal there names E1305.
+
+The boundary tests in `programs.test.ts` hold a stage of 17 declared textures against an explicit limit. The same file checks that every build of the engine's own shaders stays within the units.
+
+### the count runs before the link, against the device's units
+
+The count above ran after `prepareProgram` read the program's link result. On a device with 16 units, a stage of 17 textures therefore threw the driver's plain link error, and E1209 never came. The count now runs first, on the declared sources of both stages. It compares against the units that the device reports for each stage (`MAX_VERTEX_TEXTURE_IMAGE_UNITS` and `MAX_TEXTURE_IMAGE_UNITS`), rather than the 16 that every device gives. A device that reports more units lets a larger stage link.
+
+The browser test `tests/image/program-units.spec.ts` builds a lit custom material through the public API, as a page builds one, and draws it. The material declares six textures of its own. Its fragment stage reads 12 units: six of the engine's lighting and six of its own. A WebGL2 device promises at least 16, so no compliant device refuses that material. The page therefore makes its own context report 10 fragment units, as a reduced driver would, and keeps the device's own count in its result. The engine throws E1209 with both numbers, which shows the refusal is the allocator's and not the driver's. A unit test in `programs.test.ts` holds the order: its device links the program, and the engine throws E1209 without asking for the link result.
+
+## H1's storage surface is one texture at a fixed binding
+
+Status: decided by the coordinator. Task: M3-E8.
+
+An add-on's compute pass writes one storage texture at a fixed binding of the pass's group. The add-on's uniforms and sampled textures follow it in the same layout that a full-screen effect uses. The shader download and the bind group layout stay the same whatever a scene uses, so an add-on does not pay for a surface that it ignores.
+
+**Rejected: declared storage bindings.** The pass would declare each binding by name, kind, format and access, and the engine would build the layout. That covers a ping-pong pair or a storage buffer in one pass. It also makes the shader download and the layout depend on the add-on, gives every page the code for a surface that it may not use, and turns one fixed thing to test into a set. A pass that needs two textures uses two passes and swaps its target.
+
+**Consequences.** A ping-pong pair is two passes. A storage buffer waits for the first user that needs one, and M3-E9's GPU-written count buffer reuses this surface rather than bringing a second one. The target's default format is `rgba16float`. The call refuses on WebGL2, which has no compute, and the docs give the full-screen fallback.
+
+## vegetation is the eleventh foundation
+
+The owner made vegetation a foundation add-on ([D-241](D-241-vegetation-foundation.md)). It passes ruling 4's test, because many kinds of project use plants and other developers' style packs build on it. It holds the species generator, the scatter, the grass, the leaf material, the wind and the hand-off to impostors. Themed species packs stay content for other developers, as the "vegetation styles" of the owner's answer of 14 October. Rule 13 in AGENTS.md lists it. H2's GPU-written draws gain a second user that needs the shadow views: the near grass, which casts shadows (M3-E9).
+
+## what M3-E2's line covers
+
+M3-E2's plan line read "splat sorting runs on the job workers on WebGL2 through it". An audit read
+"splat sorting" as the per-splat depth sort, which left the task unmet. That sort is not the hook's,
+and the hook cannot honestly carry it.
+
+- An answer reaches the thread that queued the task between two frames, as the contract above says.
+  The transparent pass needs the rows' order inside the frame that draws them, so an order that a
+  task returns can only reach a later frame.
+- The engine's transparent pass culls and sorts every blended batch's rows back to front on the job
+  workers, inside the frame's own job chunks (`crates/null3d-core/src/depth_sort.rs`). The batch
+  takes rows, a count and dirty marks, and no order that a caller gives: the pass's sort replaces
+  any order in which the rows arrived ([D-54](D-54-addon-modules.md)).
+- So a second sort in the add-on would be discarded by the engine's sort. To keep it, the add-on
+  would also re-upload every row in the new order in every frame, and the engine would still sort
+  them again. That duplicates the one place that orders blended draws, which D-54 rejects.
+
+What runs through the hook is the add-on's selection. The task sorts the cloud's chunks by their
+distance to the camera, lowers their detail levels where the budget runs out, and answers each
+chunk's prefix; the sketch packs those rows between two frames. The engine's transparent pass then
+sorts the chosen rows back to front on its job workers, on both GPU paths, as it does for every
+blended draw. The allocation check covers the whole path
+([Benchmarks](../benchmarks.md#allocation-and-profiling)).
+
+The line, as M3-E2 should read: "the splats add-on's selection, which splats draw and each chunk's
+prefix, nearest first, runs on the job workers on WebGL2 through the hook, the engine's transparent
+pass sorts the chosen rows there, and the allocation check covers the path."
+
+H5's table row above says "Splat sorting" as the first user, and this addendum reads that as the
+add-on's selection. [Tasks on the job workers](../../docs/api/tasks.md) now says the same.
+
+## wind is the twelfth foundation, and one add-on may build on another
+
+The owner made the fluid wind an add-on of its own, working name `@null3d/wind`
+([D-241](D-241-vegetation-foundation.md), the addendum on fluid wind). It passes ruling 4's test:
+vegetation, particles and water read the field, and so would later add-ons for hair or weather.
+Rule 13 in AGENTS.md lists it.
+
+Vegetation is the first foundation that depends on another add-on. The rule for that:
+
+- An add-on imports another add-on only by its package name, or by a sub-path that the package
+  exports. It never imports a relative path into the other add-on's folder.
+- It lists the other add-on as a dependency at the exact version. Every foundation pins the exact
+  engine version and releases with the engine, so the two always release in step.
+- It never copies the other add-on's code. Each feature lives in one place, as rule 11 says.
+
+M3-V15 extended `tools/check-addon-imports.ts` with the wind add-on. It refuses a relative import
+from one package into another package's folder, and an import of a sub-path that the other package
+does not export. `tools/lib/addon-imports.test.ts` covers both refusals, and a fixture that holds one
+import of each.
