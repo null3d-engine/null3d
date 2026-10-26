@@ -65,6 +65,7 @@ const INCOMPLETE = new Set([
 	'M3-R22',
 	'M3-L4',
 	'M3-A2',
+	'M3-A8',
 	'M3-A9',
 	'M3-V5',
 	'M3-A11',
@@ -83,6 +84,8 @@ const INCOMPLETE = new Set([
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
+	'M3-A8':
+		'the evidence measures the worst error at 2.03 of an 8-bit step at a saturated yellow, and the prototype sets the tolerance at one step, so the values do not match within it; the record leaves that to the owner, who has not ruled. The display table against the light one behind the switch is the same open ruling',
 	'M3-A9':
 		'the hero tile and its cost figures are in: a still hero adds no pass, a moving one adds a depth pass of 0.028 to 0.037 ms, and WebGL2 reads the tile for 0.27 ms less than the cascades (D-219)',
 	'M3-E6':
