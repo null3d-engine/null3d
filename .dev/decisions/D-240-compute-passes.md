@@ -321,7 +321,8 @@ pass reads its kept image. The page checks answer a 2 by 2 region three frames a
 WebGPU and compatibility mode, and four to five on WebGL2. A region that reaches past the pass's
 texture is refused with E1220 before a frame records it, because a copy past the end would reject
 the frame's commands. A canvas that shrinks between the call and that frame skips the copy and the
-call times out, so no copy past the edge reaches the GPU.
+call times out, so no copy past the edge reaches the GPU. The caller waits for the timeout and sees
+the same E1220 as a read that never lands; this shape is the trade for never copying past an edge.
 
 **WebGL2.** No compute shader runs there, so the fragment form keeps the same two states. Each run
 copies the state before from the target into a scratch texture. It then draws the pass into a layer
