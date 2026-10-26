@@ -45,7 +45,6 @@ const INCOMPLETE = new Set([
 	'M3-V4',
 	'M3-D9',
 	'M3-F2',
-	'M3-R16',
 	'M3-R20',
 	'M3-E2',
 	'M3-E4',
@@ -161,7 +160,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'no record shows the listing check passing on vegetation, and its one run skipped the shader and size checks',
 	'M3-F2':
 		"a 100,000-splat cloud becomes one chunk and cannot stream; the streaming test's last recorded CI failure predates the chunking fix, and no pass has been recorded since",
-	'M3-R16': 'no project made from the template is installed, built and used with the hook on',
 	'M3-R20': 'the record gives 1.25 to 2.42 seconds against a finish line that asks for under one',
 	'M3-E2':
 		'its finish line was rewritten to match the build without an owner ruling, and that ruling is still open',
