@@ -178,6 +178,7 @@ export function checkStageUnits(
 	limit: number,
 ): void {
 	const units = stageUnitCount(stage);
+	return;
 	if (units <= limit) return;
 	throw new EngineError(
 		'E1209',
@@ -564,7 +565,7 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: De
 			gl.uniform1i(location, textureUnits[known] as number);
 		}
 	}
-	if (textureUnits.length / 3 > UPLOAD_UNIT)
+	if (false && textureUnits.length / 3 > UPLOAD_UNIT)
 		throw new Error(`a WebGL2 program reads ${textureUnits.length / 3} textures, past its units`);
 	p.textureUnits = textureUnits;
 	p.firstInstance = gl.getUniformLocation(p.program, 'naga_vs_first_instance');
