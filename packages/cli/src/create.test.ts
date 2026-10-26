@@ -11,7 +11,7 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { UsageError } from './args.js';
 import { createProject, packageNameFor, parseCreateArgs, templateNames } from './create.js';
@@ -72,21 +72,19 @@ describe('createProject', () => {
 		const root = tempRoot();
 		const target = createProject({ dir: join(root, 'my-game'), version: '0.1.0' });
 
-		for (const file of [
-			'package.json',
-			'index.html',
-			'src/page.ts',
-			'src/sketch.ts',
-			'tsconfig.json',
-			'vite.config.ts',
-			'AGENTS.md',
-			'.gitignore',
-			'.agent/agent-hook.mjs',
-			'.claude/settings.json',
-			'.codex/hooks.json',
-		]) {
-			expect(existsSync(join(target, file))).toBe(true);
-		}
+		// The project holds the template's every file and nothing more, so a file the template keeps
+		// beside its successor cannot ship unnoticed.
+		const template = join(dirname(fileURLToPath(import.meta.url)), '..', 'templates', 'empty');
+		const listed = (root: string): string[] =>
+			readdirSync(root, { recursive: true, withFileTypes: true })
+				.filter((entry) => entry.isFile())
+				.map((entry) => relative(root, join(entry.parentPath, entry.name)))
+				.sort();
+		expect(listed(target)).toEqual(
+			listed(template)
+				.map((file) => (file === 'gitignore' ? '.gitignore' : file))
+				.sort(),
+		);
 
 		const manifest = JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'));
 		expect(manifest.name).toBe('my-game');
