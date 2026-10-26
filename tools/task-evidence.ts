@@ -62,7 +62,7 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-D5': '`examples/addons/README.md` and the six add-ons in that layout',
 	'M3-D6': 'The plugin interface version check: `packages/engine/src/shared/version.ts`',
 	'M3-D9':
-		"`bunx @null3d/cli check-addon` runs the engine's gates on one add-on: `packages/cli/src/check-addon.js`, which refuses `tests/fixtures/d9-addon-internal` for importing `@null3d/engine/internal`; D-225 records the run over every foundation add-on and the fixture's page and cost gates",
+		"`bunx @null3d/cli check-addon` runs the engine's gates on one add-on: `packages/cli/src/check-addon.js`, which refuses `tests/fixtures/d9-addon-internal` for importing `@null3d/engine/internal`; D-225 records the run at `dc1e9d557` over all ten foundation add-ons, where every shader and size gate ran rather than skipped, the closest to a limit is water at 53.6 KB Brotli against 56, and the internal-import fixture fails with exit 1; D-225 also records the run over every foundation add-on and the fixture's page and cost gates",
 	'M3-D9a':
 		"The allocation gate of `check-addon`: the engine's profiler now lives once in `packages/cli/src/heap-profile.js`, `devtools.js` and `source-names.js`, and the benchmarks import it; the gate reports the add-on's own bytes per frame on each preset, and fails when the page runs none of the add-on's code; D-225 records the figures that the two fixtures gave",
 	'M3-E1':

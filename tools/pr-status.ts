@@ -39,11 +39,11 @@ const ON_BRANCH = new Set(['M3-E9', 'M3-V2']);
 // A tick states that the task is done, so a task those audits found short of its own line is not
 // ticked here until the gap closes, whatever code it already has.
 const INCOMPLETE = new Set([
+	'M3-R16',
 	'M3-B2',
 	'M3-B3',
 	'M3-B5',
 	'M3-V4',
-	'M3-D9',
 	'M3-F2',
 	'M3-R20',
 	'M3-E2',
@@ -89,8 +89,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"the compute pass and its WebGL2 fragment form are built and tested, and the wind add-on fills its field through the hook with a compute pass. The owner's 25 October ruling adds M3-V13's history to the hook, and the first-user outcome the plan names still waits on M3-F9's ocean",
 	'M3-B1':
 		'the pictures hold every lens mark now, and the streak and grain ones were tightened after they proved nothing at the default threshold: each mark moves about 2.8 per cent of the pixels against a half per cent limit. The cost per preset is still owed — it needs a machine idle enough for a quiet timing run, and the fleet has not given one since this morning',
-	'M3-D9':
-		"the command and its refusal are tested, and the two gate faults its first runs found are fixed: the size gate held compiled shader-build files to the code budget, and the fixture sketch never moved so no frame drew. D-225 records the run over the six foundations that had a package on 24 October, where every run skipped the page and cost gates; physics, MSDF text, water, three-compat and vegetation had no run, and the wind package came later. Both fixtures ran their gates, and the size fix brought three-compat's entry from 181.9 KB to 27.8 KB",
 	'M3-L1':
 		'the iPad and phone figures the section asks for are in D-137; what remains is the phone GPU time that the fade item asks for',
 	'M3-L3':
@@ -116,8 +114,6 @@ const NOTES: Readonly<Record<string, string>> = {
  * because both describe the same task and only one of them can be true.
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
-	'M3-R18':
-		'unticked by audit round 21, after two rounds of reading had passed it: the finish line asks every package notices to list its upstreams, and four ported upstreams are named nowhere. KinoBokeh and Unity post-processing stack v1 behind the depth-of-field gather, AMD FidelityFX FSR 1 RCAS and Qualcomm Snapdragon GSR 1 behind the final pass, each fetched and compared by hand against the shader source. The gap earlier rounds missed is which package ships the text: the engine npm package leaves the compiled shaders out, while the Vite plugin shader compiler carries the full text of every engine shader and names none of these upstreams, nor three.js, nor Filament. The guard that would catch it, tying an attribution claim to the notices of the package that ships that code, does not exist yet',
 	'M3-R14':
 		"unticked by the round 19 audit: the script causes one change and then reverts it, since the opening is the demo's own held frame with no step, the camera route has already moved two fifths of a leg by the second state, and the third only undoes the lens. The showcase reads keys, so one state reached by key or pointer steps alone would meet the plain reading of the plan. Its software claim is also wrong: the four passing tests compared against Mac-drawn pictures that live on a commit on no branch, and the committed CI-drawn references have never been compared in a passing run",
 	'M3-V15':
@@ -156,8 +152,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the glints draw and are tested in both sets; its cost per preset is owed (D-255), which needs a quiet GPU',
 	'M3-V4':
 		'no device has timed the new generator, so the device figures are of the stand-in it replaced; no Mac, iPad or S24 GPU or memory figure exists, and no check-addon run is recorded',
-	'M3-D9':
-		'no record shows the listing check passing on vegetation, and its one run skipped the shader and size checks',
 	'M3-F2':
 		"a 100,000-splat cloud becomes one chunk and cannot stream; the streaming test's last recorded CI failure predates the chunking fix, and no pass has been recorded since",
 	'M3-R20': 'the record gives 1.25 to 2.42 seconds against a finish line that asks for under one',
