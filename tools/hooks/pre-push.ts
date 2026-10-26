@@ -313,7 +313,15 @@ export function landingSteps(
 	return tests ? [...checks, tests] : checks;
 }
 
-const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' }).trim();
+/**
+ * How much a `git log` of the pull request's range may print. The default of one mebibyte is lost
+ * once the range holds a night's worth of commits with their evidence in the messages, and the read
+ * then fails with ENOBUFS rather than a verdict on the range.
+ */
+const BUFFER = 64 * 1024 * 1024;
+
+const git = (...args: string[]) =>
+	execFileSync('git', args, { encoding: 'utf8', maxBuffer: BUFFER }).trim();
 
 /** The status check's problem lines in its output: each `stale: …` or `owed: …` line, in order. */
 export function statusLines(output: string): string[] {
