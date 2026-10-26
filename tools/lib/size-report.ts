@@ -1026,11 +1026,7 @@ export function downloadSizes(
  * first trim that wins bytes back takes them.
  *
  * The frame figures behind `measure()` and the error-fix table load on their first use, which
- * keeps them out of the start. These trims still pay the line back:
- * - The cluster levels' culling pass draws its shader into the start of every page, 2.7 KB after
- *   Brotli and 650 bytes of the measured start, although only the WebGPU path builds its pipeline.
- *   Loading that shader on the feature's first use, as a material's shader loads, returns it to
- *   pages that never draw a cluster tree and keeps it out of WebGL2's start.
+ * keeps them out of the start. This trim still pays the line back:
  * - Compute passes and the draws that read the count a GPU writes put their Rust and their glue
  *   into every start. Loading the compute pass and the instance draw's adapter with their first
  *   use keeps them out of pages that use neither.
