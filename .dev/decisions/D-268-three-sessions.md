@@ -64,7 +64,7 @@ ticks again after they are given.
 
 ## Addendum, 26 October 2026: the build's speed and memory
 
-Later the same day, the owner widened the CI session's work. Besides its work above, the CI
+Later the same day, the owner widened the CI session's work. Besides the work above, the CI
 session makes every build faster and cuts the memory that each build needs. That holds in CI and
 on the machines that build the milestone. It covers the shader build, the page builds, the type
 check, the test suites and the job queue's lanes.
