@@ -50,8 +50,7 @@ aurora looks, change the constants in `aurora.wgsl`.
   camera that flies through it passes under it.
 - The sky's environment map holds the aurora: the layer's WGSL is built into the shader that fills
   the map, so a surface that reflects the map shows the curtains, and a map that a layer moves fills
-  again on the layer's `refresh`, so its reflection follows the curtains at that rate. The map's
-  light does not hold the aurora: the capture that sums the map's levels never runs, so the aurora
+  again on the layer's `refresh`, so its reflection follows the curtains at that rate. The aurora
   lights nothing, and a scene that the aurora should light needs a light of its own. The demo's own
   ice is a rough dielectric, and its plane at ground level does not reach the demo's frame (M3-R27).
 
