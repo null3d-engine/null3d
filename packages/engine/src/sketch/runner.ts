@@ -1053,6 +1053,7 @@ export class SketchRunner {
 			glue.setPhysicalSky(settings.physicalSky) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0 ||
 			glue.setParallax(settings.parallax) !== 0 ||
+			glue.setMomentTransparency(settings.momentTransparency) !== 0 ||
 			glue.setSoftParticles(settings.softParticles) !== 0
 		)
 			this.report(coreFailure(glue, 'quality.set'));

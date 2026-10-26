@@ -57,6 +57,10 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 
 Most settings change during play. The preset tables' "Changes" column names the ones that stay fixed from the start, which the page's `createEngine` options set.
 
+### Moment transparency
+
+`momentTransparency` blends the blended surfaces in a layer that needs no sort, and it keeps more of each surface's own color than `blending: 'weighted'` does. The setting is fixed at the start, and every preset leaves it off. Its row in [Quality preset tables](../concepts/quality-preset-tables.md#settings-of-each-preset) gives what it costs. [Moment transparency](materials.md#moment-transparency) describes the layer and the surfaces that it draws.
+
 [GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) compares the anti-aliasing modes on each GPU path.
 
 `quality.set(settings)` changes the settings it gets and keeps the others. It takes the settings that change during play, applies them from the next frame on, and returns a promise that resolves at once. Another setting, or a value outside the setting's range, throws [E1213](../errors/E1213.md) and changes nothing. So does a `minRenderScale` above `maxRenderScale`, an option of `createEngine` with a value that its setting does not take, and a preset name that `createEngine` does not know. To move both ends of the render scale's range past each other, give both in one call.

@@ -899,6 +899,11 @@ export interface CoreGlue extends CoreErrors {
 	/** Lets materials with parallax draw it, or draws them with their displacement alone. */
 	setParallax(on: boolean): number;
 	/**
+	 * Draws the blended surfaces in the camera's moment transparency layer from the next frame on,
+	 * as the quality preset's `momentTransparency` says.
+	 */
+	setMomentTransparency(on: boolean): number;
+	/**
 	 * Sets the pixels that software occlusion culling's buffer holds about from the next frame
 	 * on, or 0 for the core's default, where the path culls on the CPU.
 	 */
@@ -1381,6 +1386,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setFeatureInstanceRows',
 	'setSoftwareOcclusion',
 	'setParallax',
+	'setMomentTransparency',
 	'setOcclusionBuffer',
 	'setLut',
 	'setGrade',

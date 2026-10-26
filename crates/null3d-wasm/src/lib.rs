@@ -4548,6 +4548,18 @@ pub fn set_parallax(on: bool) -> u32 {
     })
 }
 
+/// Draws the blended surfaces in the camera's moment transparency layer, or back to front in the
+/// transparent pass, from the next frame on, as the quality preset's `momentTransparency` says.
+#[wasm_bindgen(js_name = setMomentTransparency)]
+pub fn set_moment_transparency(on: bool) -> u32 {
+    with_engine(|e| {
+        if e.renderer.settings_mut().set_moment_transparency(on) {
+            e.structure_changed = true;
+        }
+        0
+    })
+}
+
 /// Turns software occlusion culling on or off from the next frame on, where the frame builder
 /// culls on the CPU: objects with the occluder flag then hide what lies wholly behind them.
 #[wasm_bindgen(js_name = setSoftwareOcclusion)]

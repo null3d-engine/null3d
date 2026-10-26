@@ -92,6 +92,17 @@ enable draw_index;
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 
+/// The depth along the view of a position relative to the camera: the clip position's w for a
+/// perspective camera, and the distance from the camera's plane for an orthographic one, whose
+/// `camera_position` holds the unit direction toward it.
+fn view_depth(relative: vec3f) -> f32 {
+    let eye = frame.camera_position;
+    if eye.w == 0.0 {
+        return -dot(relative, eye.xyz);
+    }
+    return (frame.view_proj * vec4f(relative, 1.0)).w;
+}
+
 /// An index list entry, or an entry of the bucket table, holds its row, cluster or bucket in the
 /// bits below CELL_SHIFT, and the index of the row's grid cell above them.
 const CELL_SHIFT: u32 = 23u;

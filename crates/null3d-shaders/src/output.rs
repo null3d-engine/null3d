@@ -87,6 +87,11 @@ pub struct FirstUseFeatures {
     /// that lists its name ([`shared_bits`], decision record D-156). An unshared bit counts for
     /// every template.
     pub listed: BTreeMap<String, u32>,
+    /// The bits of [`Self::bits`] that name their shaders in the manifest's `bit_shaders`: those
+    /// count only for the shaders that they name, whether or not another template names the same
+    /// value. The moment layer's pass uses the outline mask's value this way, so the outline
+    /// mask's own builds keep their device modules (decision record D-260).
+    pub limited: u32,
 }
 
 /// The character that joins the names of the features that a build needs, in the key of its files.
@@ -99,7 +104,8 @@ impl FirstUseFeatures {
     /// feature another template names too counts only for a template that lists its name, because
     /// a shared value names a different feature in each template (decision record D-156).
     pub fn file_of(&self, shader: &str, permutation: u32) -> Option<String> {
-        let allowed = self.listed.get(shader).copied().unwrap_or(0) | !shared_bits();
+        let allowed =
+            self.listed.get(shader).copied().unwrap_or(0) | (!shared_bits() & !self.limited);
         let mut features: BTreeSet<&str> = self
             .bits
             .iter()
@@ -193,10 +199,36 @@ pub struct GlslTexture {
 #[cfg(test)]
 mod tests {
     use null3d_gpu::drawlist::permutation::{
-        ALPHA_COVERAGE, ALPHA_HASH, AREA_LIGHTS, BLOOM, FXAA, MORPH, SAMPLE_MASK,
+        ALPHA_COVERAGE, ALPHA_HASH, AREA_LIGHTS, BLOOM, FXAA, MORPH, OUTLINE_VISIBLE, SAMPLE_MASK,
     };
 
     use super::*;
+
+    #[test]
+    fn a_bit_that_names_its_shaders_takes_only_their_builds() {
+        // The moment layer's pass takes the outline mask's value, and the manifest's first-use
+        // table names the six mesh templates that the bit serves: the outline mask's own builds
+        // keep their device modules (decision record D-260).
+        let mut first_use = FirstUseFeatures::default();
+        first_use.bits.insert(OUTLINE_VISIBLE, "moment".to_owned());
+        first_use.limited = OUTLINE_VISIBLE;
+        first_use.listed.insert("lit".to_owned(), OUTLINE_VISIBLE);
+        assert_eq!(
+            first_use.file_of("lit", OUTLINE_VISIBLE).as_deref(),
+            Some("moment")
+        );
+        assert_eq!(
+            first_use.file_of("outline_mask", OUTLINE_VISIBLE),
+            None,
+            "the value names no build of the outline mask here"
+        );
+        // A bit without a list still counts for every template, as before.
+        first_use.bits.insert(MORPH, "morphing".to_owned());
+        assert_eq!(
+            first_use.file_of("lit", MORPH).as_deref(),
+            Some("morphing")
+        );
+    }
 
     #[test]
     fn a_build_that_needs_several_features_has_files_of_its_own() {
