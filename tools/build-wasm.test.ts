@@ -608,23 +608,38 @@ describe('runBuilds', () => {
 			(line, stderr) => printed.push([line.replace(/\d+ s/, 'N s'), stderr]),
 		);
 		await expect(run).rejects.toThrow('the broken build failed; its whole log is above');
-		// The builds' lines mix as they come, each with its build's name; the slow build ran to its
-		// end after the broken one failed; and the failed build's log then printed again in one piece.
-		expect(printed).toEqual([
-			['[slow] slow starts', false],
-			['[broken] broken starts', false],
-			['[quick] quick starts', false],
-			['[quick] quick ends', false],
-			['[quick] done in N s', false],
-			['[broken] error: cargo build failed', true],
-			['[broken] failed after N s', true],
-			['[slow] slow ends', false],
-			['[slow] done in N s', false],
-			[
-				'\nthe whole log of the broken build, which failed after N s:\nbroken starts\nerror: cargo build failed',
-				true,
-			],
+		// The builds run at once, so their lines may mix in any order. Each build's own lines keep
+		// the order that it emits them, after its start, and the failed build's whole log prints
+		// once, after every build has ended.
+		const lines = printed.map(([line]) => line);
+		const ofBuild = (name: string) => lines.filter((line) => line.startsWith(`[${name}] `));
+		expect(ofBuild('slow')).toEqual([
+			'[slow] slow starts',
+			'[slow] slow ends',
+			'[slow] done in N s',
 		]);
+		expect(ofBuild('broken')).toEqual([
+			'[broken] broken starts',
+			'[broken] error: cargo build failed',
+			'[broken] failed after N s',
+		]);
+		expect(ofBuild('quick')).toEqual([
+			'[quick] quick starts',
+			'[quick] quick ends',
+			'[quick] done in N s',
+		]);
+		const whole = printed.at(-1);
+		expect(whole?.[1]).toBe(true);
+		expect(whole?.[0]).toContain('the whole log of the broken build, which failed after N s:');
+		expect(whole?.[0]).toContain('broken starts');
+		expect(whole?.[0]).toContain('error: cargo build failed');
+		// The whole log comes last, so no build's own line follows it.
+		expect(lines.slice(0, -1).every((line) => /^\[(slow|broken|quick)\] /.test(line))).toBe(true);
+		// The error lines go to stderr, and the progress lines do not.
+		const stderrOf = (line: string) => printed.find(([text]) => text === line)?.[1];
+		expect(stderrOf('[broken] error: cargo build failed')).toBe(true);
+		expect(stderrOf('[broken] failed after N s')).toBe(true);
+		expect(stderrOf('[slow] done in N s')).toBe(false);
 	});
 
 	it('names every build that failed, in the order of the builds', async () => {

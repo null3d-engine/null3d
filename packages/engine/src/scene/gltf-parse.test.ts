@@ -11,6 +11,7 @@ import {
 	GltfBuilder,
 	type GltfJson,
 	iorBuilder,
+	maskedTransmissionBuilder,
 	morphBuilder,
 	shipBuilder,
 	specularBuilder,
@@ -671,6 +672,43 @@ describe('materials, textures and lights', () => {
 				"material 1's transmissionTexture, which it leaves out beside a specular texture",
 			]),
 		);
+	});
+
+	test('a masked material keeps its transmission, volume and maps', () => {
+		const b = texturedBuilder().uses('KHR_materials_transmission').uses('KHR_materials_volume');
+		const [painted] = b.json.materials as [GltfJson, GltfJson];
+		painted.extensions = {
+			...painted.extensions,
+			KHR_materials_transmission: {
+				transmissionFactor: 0.6,
+				transmissionTexture: { index: 0 },
+			},
+			KHR_materials_volume: { thicknessFactor: 0.3, thicknessTexture: { index: 1 } },
+		};
+		const data = parse(b.glb());
+		const glass = data.materials[0];
+		// The cut-out decides which pixels draw, and the light from behind fills the rest.
+		expect(glass?.alphaMode).toBe('mask');
+		expect(glass?.transmission).toMatchObject({ factor: 0.6, thickness: 0.3 });
+		expect(glass?.maps.transmissionMap).toBeDefined();
+		expect(glass?.maps.thicknessMap).toBeDefined();
+		expect(data.notes.some((note) => note.includes('alpha mode MASK'))).toBe(false);
+	});
+
+	test('the masked glass picture-test file keeps its cut-out and its maps', () => {
+		const data = parse(maskedTransmissionBuilder().glb());
+		const [backdrop, mapped, plain] = data.materials;
+		expect(backdrop?.unlit).toBe(true);
+		// Both panes cut the same holes; one takes its transmission and thickness from maps.
+		expect(mapped?.alphaMode).toBe('mask');
+		expect(mapped?.transmission).toMatchObject({ factor: 1, thickness: 0.6 });
+		expect(mapped?.maps.transmissionMap).toBeDefined();
+		expect(mapped?.maps.thicknessMap).toBeDefined();
+		expect(mapped?.maps.clearcoatMap).toBeDefined();
+		expect(plain?.alphaMode).toBe('mask');
+		expect(plain?.transmission).toMatchObject({ factor: 1, thickness: 0.6 });
+		expect(plain?.maps.transmissionMap).toBeUndefined();
+		expect(plain?.maps.thicknessMap).toBeUndefined();
 	});
 
 	test('KHR_materials_dispersion gives the volume its dispersion', () => {

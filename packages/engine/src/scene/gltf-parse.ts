@@ -418,24 +418,13 @@ function layersOf(
 
 /**
  * How a material lets light through, from its KHR_materials_transmission and KHR_materials_volume
- * extensions, or none for a transmission factor of 0. A masked material lets no light through, as
- * the engine draws such a material with no mask.
+ * extensions, or none for a transmission factor of 0. A masked material keeps its transmission:
+ * its cut-out leaves the pixels that let light through, as three.js draws one.
  */
-function transmissionOf(
-	extensions: Entry,
-	what: string,
-	masked: boolean,
-	notes: string[],
-): TransmissionData | undefined {
+function transmissionOf(extensions: Entry, what: string): TransmissionData | undefined {
 	const transmission = extensions.KHR_materials_transmission as Entry | undefined;
 	const factor = unit(transmission?.transmissionFactor ?? 0, `${what}'s transmissionFactor`);
 	if (factor === 0) return undefined;
-	if (masked) {
-		notes.push(
-			`${what} lets light through with the alpha mode MASK, which the engine does not draw`,
-		);
-		return undefined;
-	}
 	const volume = (extensions.KHR_materials_volume ?? {}) as Entry;
 	return { factor, ...volumeOf(volume, what) };
 }
@@ -1498,7 +1487,7 @@ export function parseGltf(
 		const alphaMode = String(material.alphaMode ?? 'OPAQUE');
 		if (alphaMode !== 'OPAQUE' && alphaMode !== 'MASK' && alphaMode !== 'BLEND')
 			broken(`${what} has the alpha mode ${alphaMode}`);
-		const transmission = transmissionOf(extensions, what, alphaMode === 'MASK', notes);
+		const transmission = transmissionOf(extensions, what);
 		// The transmission and thickness textures take the specular textures' slots, and the loader
 		// keeps the specular textures, since the material API takes one family of the two. A layered
 		// material's specular textures stay out, and its own layer maps fill those slots instead: its
