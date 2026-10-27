@@ -650,6 +650,11 @@ pub mod param {
     /// of the light slot, and each specular slot names its own family, since one may hold a layer map
     /// while the other holds a transmission or a thickness map.
     pub const LAYER_MAPS_KIND: usize = 66;
+    /// The strength of the volume's dispersion, 0 or more, in materials that let light through:
+    /// 20 divided by the Abbe number, as glTF's `KHR_materials_dispersion` gives it. Each color
+    /// channel bends by its own index of refraction, so the light from behind separates into
+    /// colors. 0 bends every channel alike.
+    pub const DISPERSION: usize = 67;
     /// How a light map's texture coordinates stretch along u and along v: 2 floats. The scale is
     /// 1 by default, which leaves the coordinates alone.
     pub const LIGHT_MAP_SCALE: usize = 68;
@@ -682,7 +687,7 @@ pub mod param {
     pub const DECAL_EDGE_FADE: usize = IOR;
 
     /// The floats of the value that starts at `at`, for a value that sketches set, or `None` for
-    /// the flags, the map layers, a spare float or a float inside a value.
+    /// the flags, the map layers or a float inside a value.
     pub const fn width(at: usize) -> Option<usize> {
         // Each map transform of the slots from the second up is the row that gives u, and the row
         // that gives v, 4 floats further on.
@@ -724,7 +729,8 @@ pub mod param {
             | IRIDESCENCE_THICKNESS_MIN
             | IRIDESCENCE_THICKNESS_MAX
             | ANISOTROPY
-            | ANISOTROPY_ROTATION => Some(1),
+            | ANISOTROPY_ROTATION
+            | DISPERSION => Some(1),
             _ => None,
         }
     }
@@ -1999,6 +2005,7 @@ mod tests {
             (param::IRIDESCENCE_THICKNESS_MAX, 1),
             (param::ANISOTROPY, 1),
             (param::ANISOTROPY_ROTATION, 1),
+            (param::DISPERSION, 1),
         ];
         // Each map of the slots from the second up keeps the two rows of its transform apart from
         // the material's.
