@@ -1017,6 +1017,9 @@ pub struct GpuDrivenRenderer {
     /// The capacity that each feature-instance draw's buffers were made for, by id from 1, or 0
     /// before they exist.
     feature_capacity: Vec<u32>,
+    /// The count of readiness changes that the layouts were built at, so a change builds them
+    /// again: a draw whose feature stops being ready leaves every view's buckets.
+    feature_readiness: u64,
     /// The conversion of feature-instance rows to the camera-relative rows that the draws read.
     feature_rows: FeatureRows,
 }
@@ -1271,6 +1274,7 @@ impl GpuDrivenRenderer {
             copy_views: Vec::new(),
             copy_offsets: crate::frame::CellOffsets::default(),
             feature_capacity: vec![0; crate::feature_instances::MAX_FEATURE_INSTANCES as usize],
+            feature_readiness: 0,
             feature_rows: FeatureRows::default(),
             dfg_pending: false,
             bound_environment: ids::BLANK_ENVIRONMENT,
@@ -1453,8 +1457,14 @@ impl GpuDrivenRenderer {
         // A draw whose count the GPU writes needs the indirect path: the direct path reads every
         // count on the CPU and creates no indirect buffer for the frame's count copy. The first
         // frame picks the builder's path, so a scene that holds such a draw takes the indirect one.
-        if !self.created && !self.settings.feature_instances().is_empty() {
-            self.config.direct_draws = false;
+        // A draw that arrives after that frame has no indirect draw to reach, so the frame refuses
+        // it rather than draw nothing.
+        if !self.settings.feature_instances().is_empty() {
+            if !self.created {
+                self.config.direct_draws = false;
+            } else if self.config.direct_draws {
+                return Err(RecordError::FeatureDrawAfterFirstFrame);
+            }
         }
         let parity = input.parity();
         let shadow = self.settings.shadow_frame(input);
@@ -1548,8 +1558,10 @@ impl GpuDrivenRenderer {
             || self.graph.depth_prepass() != self.layout_prepass
             || self.redraws_wanted() != self.redraws_built
             || picking != self.layouts_picked
-            || skinned_appear;
+            || skinned_appear
+            || self.settings.feature_instances().readiness() != self.feature_readiness;
         if upload_everything {
+            self.feature_readiness = self.settings.feature_instances().readiness();
             let limit = max_sources(self.config.storage_binding_bytes);
             self.settings
                 .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
@@ -2548,12 +2560,12 @@ impl GpuDrivenRenderer {
             .filter(|(_, frame)| frame.is_some())
             .fold(0u32, |mask, (index, _)| mask | 1 << index);
         // The reset that each view's culling uploads zeroes the indirect counts, so the page's
-        // counts go into the templates first: a shadow view draws them, because the add-on's
-        // compute writes the main view's count alone.
+        // counts go into the templates of the views that the frame's count copy does not reach:
+        // the camera's mirrors and probes, and the outline, skin and motion views. The camera's own
+        // view and every shadow view take the add-on's count word instead.
         let features = self.settings.feature_instances();
         let radii = input.scene.world(parity).radii();
         self.layout.set_feature_counts(features, radii);
-        self.casters.set_feature_counts(features, radii);
         self.outlined.set_feature_counts(features, radii);
         self.scattering.set_feature_counts(features, radii);
         self.moving.set_feature_counts(features, radii);
@@ -2971,9 +2983,10 @@ impl GpuDrivenRenderer {
             camera.map(|frame| &frame.camera),
             lines_bytes,
         )?;
-        // The culling reset zeroed the indirect draws, so the page's counts reach them from here,
-        // and the frame copies the add-on's own counts over them once every compute step ended.
-        self.copy_feature_counts(list, input.scene.world(parity).radii())?;
+        // The culling reset zeroed the indirect draws, so the page's count reaches the camera's
+        // view from here, and the frame copies the add-on's own count over it once every compute
+        // step ended.
+        self.copy_feature_counts(list, input.scene.world(parity).radii(), camera_view_mask())?;
 
         let (layout, casters, culling, lines) =
             (&self.layout, &self.casters, &self.culling, &self.lines);
@@ -3001,6 +3014,13 @@ impl GpuDrivenRenderer {
 
             _ => frames[view.index()].is_some(),
         };
+        // The shadow views draw the add-on's count word too, because a near instance of the draw
+        // casts a shadow: the frame copies the word into each drawn shadow view's indirect draws.
+        let shadow_count_views = (0..MAX_CASCADES)
+            .map(ViewId::cascade)
+            .chain((0..MAX_TILES).map(ViewId::tile))
+            .filter(|&view| drawn(view))
+            .fold(0u64, |mask, view| mask | 1 << view.index());
         let layout_of = |view: ViewId| match view {
             ViewId::OUTLINE => outlined,
             ViewId::SUBSURFACE => scattering,
@@ -3227,10 +3247,24 @@ impl GpuDrivenRenderer {
             // the only place a compute write is certainly final for the pass that reads it.
             |_| Ok(()),
             // Every compute write is final before the first render pass: the frame converts the
-            // feature-instance rows, then copies each count word into the indirect draws.
+            // feature-instance rows, then copies each count word into the indirect draws of the
+            // camera's view and of every shadow view.
             |list| {
                 feature_rows.record(list, feature_table)?;
-                copy_feature_counts(list, feature_layout, feature_table, feature_radii)
+                copy_feature_counts(
+                    list,
+                    feature_layout,
+                    feature_table,
+                    feature_radii,
+                    camera_view_mask(),
+                )?;
+                copy_feature_counts(
+                    list,
+                    casters,
+                    feature_table,
+                    feature_radii,
+                    shadow_count_views,
+                )
             },
             |list| {
                 if motion_on {
@@ -3369,18 +3403,20 @@ impl GpuDrivenRenderer {
     }
 
     /// Copies each feature-instance draw's count word into the instance count of its bucket's
-    /// indirect draws. The main view takes the add-on's word, which its compute pass writes each
-    /// frame; a view of a light's shadows takes the page's count, because the add-on's compute
-    /// writes the main view's count alone.
-    /// The count that a view of a light's shadows draws for feature-instance draw `id`, or `None`
-    /// when no shadow view draws it. A shadow view takes the page's count, because the add-on's
-    /// compute writes the main view's count alone.
-    pub fn feature_shadow_count(&self, id: u32) -> Option<u32> {
-        self.casters.feature_template_count(id)
-    }
-
-    fn copy_feature_counts(&self, list: &mut DrawList, radii: &[f32]) -> Result<(), RecordError> {
-        copy_feature_counts(list, &self.layout, self.settings.feature_instances(), radii)
+    /// indirect draws in `views`, as a mask of the views' places in the view list.
+    fn copy_feature_counts(
+        &self,
+        list: &mut DrawList,
+        radii: &[f32],
+        views: u64,
+    ) -> Result<(), RecordError> {
+        copy_feature_counts(
+            list,
+            &self.layout,
+            self.settings.feature_instances(),
+            radii,
+            views,
+        )
     }
 
     /// True when this frame draws the pick that waits: the resolve pipeline and the pick pipeline
@@ -3882,34 +3918,45 @@ impl FrameBuilder for GpuDrivenRenderer {
     }
 }
 
-/// The add-on's count words of the feature-instance draws, copied into the main view's indirect
-/// draws. A feature's compute pass writes each word before the pass that draws it, so the frame
-/// copies the word again once every compute step has ended and before the first render step.
+/// The mask of the camera's own view: the one place in the view list that the camera's layout
+/// draws for a page's camera.
+const fn camera_view_mask() -> u64 {
+    1 << ViewId::CAMERA.index()
+}
+
+/// The add-on's count words of the feature-instance draws, copied into the indirect draws of
+/// `views`, as a mask of their places in the view list. A feature's compute pass writes each word
+/// before the pass that draws it, so the frame copies the word again once every compute step has
+/// ended and before the first render step. The camera's own view and every shadow view take it, so
+/// an instance that the GPU counts draws and casts its shadow by that same count.
 fn copy_feature_counts(
     list: &mut DrawList,
     layout: &Layout,
     features: &crate::feature_instances::FeatureInstanceTable,
     radii: &[f32],
+    views: u64,
 ) -> Result<(), RecordError> {
-    if features.is_empty() {
+    if features.is_empty() || views == 0 {
         return Ok(());
     }
     for bucket in layout.buckets.iter().filter(|bucket| bucket.feature != 0) {
-        // A hidden object's entry keeps the reset's 0, so its draw draws nothing.
-        if layout::feature_hidden(radii, bucket) {
+        // A hidden object's entry keeps the reset's 0, so its draw draws nothing, and a draw whose
+        // feature is not ready copies nothing either.
+        if layout::feature_hidden(radii, bucket) || !features.is_ready(bucket.feature) {
             continue;
         }
-        for index in bucket.first_draw..bucket.first_draw + bucket.draws {
-            list.push(
-                Op::CopyBufferToBuffer,
-                &[
-                    ids::feature_count(bucket.feature),
-                    0,
-                    ids::indirect(ViewId::CAMERA),
-                    index * INDIRECT_BYTES + 4,
-                    4,
-                ],
-            )?;
+        let count = ids::feature_count(bucket.feature);
+        let mut places = views;
+        while places != 0 {
+            let place = places.trailing_zeros() as usize;
+            places &= places - 1;
+            let indirect = ids::indirect(ViewId::from_index(place));
+            for index in bucket.first_draw..bucket.first_draw + bucket.draws {
+                list.push(
+                    Op::CopyBufferToBuffer,
+                    &[count, 0, indirect, index * INDIRECT_BYTES + 4, 4],
+                )?;
+            }
         }
     }
     Ok(())

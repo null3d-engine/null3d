@@ -1,16 +1,20 @@
 # D-229: Draws whose instance count the GPU writes
 
-Status: decided by the helper of M3-E9, for the owner's review; the owner chose to convert the rows
-on the GPU. Built: the opaque main-view path on WebGPU and the CPU-filled batch on WebGL2. On WebGPU
-the add-on's compute pass binds the count and the rows. After the last compute step, the engine
-converts the rows and copies the count into the indirect draw. Not built: the transparent and
-shadow-many paths, and GPU counts in the shadow views, which draw the page's count. Task: M3-E9.
+Status: decided, for the owner's review; the owner chose to convert the rows on the GPU. Built: the
+opaque main-view path on WebGPU and the CPU-filled batch on WebGL2; the
+count copied into the indirect draw of the camera's view and of every shadow view that draws, after
+the last compute step; the conversion of the world rows to camera-relative rows; the `ready`
+callback that gates a draw; and the night town's pines, the hook's first real user. Not built: the
+transparent path, a draw in a reflection or a scene pass, and a shadow count of the casters' own,
+since one conversion and one count serve every view. Task: M3-E9.
 
-Summary: An add-on's instance draw reserves one indirect entry in each view's draw buffer, and its
-compute pass writes a count and world-space rows. After the last compute step, the engine converts
-the rows to camera-relative space and copies the count into the entry. On WebGL2 the page fills an
-unculled instance batch; the draw runs in the main view alone, and shadow views draw the page's
-count.
+Summary: An add-on's instance draw reserves one indirect entry in each view's draw buffer, and the
+engine copies the add-on's count word into that entry after every compute step and before the pass.
+The count word and the per-instance buffer are engine-created buffers of the draw, so the add-on's
+compute pass writes them like any other storage and the engine adds no second compute surface.
+WebGL2 has no compute, so the draw is an unculled instance batch that the page fills, and the same
+shader reads the same rows on both paths. The draw records at the opaque point in the main view
+alone; the shadow views read the same converted rows and the same GPU-written count.
 
 ## Question
 
@@ -28,6 +32,9 @@ capacity and the docs say so.
 
 The count's buffer and the draw's indirect arguments are the engine's, not the add-on's: an add-on
 that handed the engine a raw buffer would own a surface that the engine must validate and keep.
+
+A session fixes its GPU path at its first frame. A draw that arrives later cannot take a path that
+has no indirect draw, so the frame refuses it with an error rather than draw nothing.
 
 ## Data
 
@@ -54,7 +61,7 @@ const description = defineFeature({ name: 'splats', frame: 'opaque', kind: 'draw
 const draw = await scene.addComputeInstances(description, { shader, vertices, capacity, count });
 draw.counts     // the engine's one-word count buffer, for the add-on's compute pass
 draw.instances  // the engine's capacity of 16-float instance rows, for the same pass
-draw.setCount(n);                        // the page's count, and a shadow view's count
+draw.setCount(n);                        // the count word's start, and the CPU path's count
 draw.setInstances(rows, n);              // the CPU fill, on WebGL2 and before compute
 ```
 
@@ -89,9 +96,22 @@ same picture on both paths.
   direct-draw path, which the start-up probe picks on Apple's GPUs
   ([D-174](D-174-apple-gpu-direct-draws.md)), counts every draw on the CPU. It makes no indirect
   buffer, so the count copy would have nowhere to write. The first frame picks the path before it
-  creates any path state. An add-on that creates such a draw after the first frame is not supported
-  on that path. The frame then names a buffer that does not exist, and it stops. The sketch's setup
-  creates its draw before the first frame, so the shipped sketches take the indirect path.
+  creates any path state, and a scene that holds such a draw takes the indirect path then. A draw
+  that the scene adds after that frame cannot draw on the direct path, and the frame refuses it
+  ([A draw that arrives after the first frame](#a-draw-that-arrives-after-the-first-frame)). The
+  sketch's setup creates the shipped draws before the first frame, so they take the indirect path.
+
+### A draw that arrives after the first frame
+
+The path choice is final. A device that draws directly keeps no indirect draw, and no frame builds
+one later. A draw that the scene adds after the first frame therefore cannot draw its count. The
+frame returns an error, which the page receives as E1506, instead of drawing nothing and saying
+nothing. The message tells the page to create the draw in the sketch's setup and await it there.
+
+The render test `a_draw_made_after_the_first_frame_is_refused_on_the_direct_path` records a first
+frame on the direct path, adds a draw, and expects `FeatureDrawAfterFirstFrame`. Its neighbour
+`a_draw_made_after_the_first_frame_draws_on_the_indirect_path` records the same sequence without the
+direct path, and the draw reaches the indirect entry and its count copy.
 
 ### WebGL2
 
@@ -101,11 +121,34 @@ same picture on both paths.
   matrix does not split, which the docs state.
 - `setCount` sets the batch's active count, and the CPU path draws exactly that many rows.
 
-### Shadow views
+### The shadow views take the GPU's count
 
-The add-on's compute writes the main view's count alone. A shadow view draws the page's
-`setCount` count, which the frame puts into the casters' indirect template before the reset uploads
-it.
+A shadow view draws the instances that the GPU counts. The vegetation add-on's GPU grass is such a
+caster: near grass casts shadows, and its shadows must follow the count that the GPU wrote. No
+shadow view falls back to the page's count for a draw that the copy reaches.
+
+The frame copies each draw's count word into the bucket's reserved indirect entries of the camera's
+own view and of every shadow view that draws in the frame, once every compute step has ended and
+before the first render step, as it already did for the camera. A cascade and a tile each own a copy
+of the casters' indirect buffer, so the copy reaches one of them per drawn view. The casters'
+indirect template stays at the reset's zero: a shadow view that the copy does not reach draws
+nothing rather than a stale page count. The page's count still fills the templates of the views the
+copy does not reach: the camera's mirrors, probes and canvas views, and the outline, skin and motion
+views.
+
+The render test `a_shadow_view_draws_the_count_that_the_gpu_writes` checks that each cascade's
+indirect buffer takes the count word after the last compute dispatch and before the first render
+pass. The limits unit test (`pipelines.test.ts`) counts the two layouts this hook adds: the
+conversion's (`LAYOUT_FEATURE_ROWS`) and the add-on compute pass's
+(`LAYOUT_COMPUTE_INSTANCE_BUFFERS`).
+
+Consequences:
+
+- No API reports a GPU-written count: the CPU cannot read it, and `feature_shadow_count` does not
+  exist.
+- A hidden draw copies nothing into any view, so it casts no shadow either.
+- The per-frame cost is one 4-byte copy for each draw entry of each drawn shadow view, beside the
+  camera's.
 
 ### Rejected
 
@@ -122,14 +165,19 @@ it.
 - **Converting the rows as they reach the buffer.** The engine would add the camera offset to a
   page's rows when it uploads them, and give the add-on's compute pass the camera offset in its
   block. That repeats an upload of the drawn rows in every frame where the camera moves.
+- **Moving a session to the indirect path after its first frame.** The direct path builds no
+  indirect buffers, no cull pipeline and no bundles. A late move would rebuild every GPU object of
+  the session in the middle of a frame. The engine refuses the draw instead, and its error names
+  the fault.
 
 ## Consequences
 
 - The public API is experimental. Its planned first user, the splats add-on (M3-F2), cannot take
   it: splats draw through the engine's transparent instance batch, whose rows the job workers sort
   back to front, and a GPU-written count would skip that sort; their count also changes only when
-  the camera or the budget crosses a threshold, not every frame. The first-user outcome stays unmet
-  until an add-on whose count a compute shader writes each frame takes the hook.
+  the camera or the budget crosses a threshold, not every frame. The first real user is the night
+  town's pines, a shipped demo whose compute pass writes the count every frame
+  ([The hook's first real user](#the-hooks-first-real-user)).
 - The proof is a picture: `tests/pages/sketches/feature-instances-compute-sketch.ts` fills no
   instance row on the CPU, its compute shader writes 42 rows and the count word, and the draw shows
   exactly 42 quads. The count in that picture is what the shader wrote.
@@ -174,10 +222,10 @@ block carries no camera, and a page's camera moves after it has written its rows
   live count converts only its live rows.
 - The conversion reads the world buffer and writes the second buffer, rather than changing the
   world buffer in place. In place, each frame would subtract the camera again from rows that the
-  frame before had converted, unless the page re-uploaded its rows or the add-on's compute rewrote
-  every live row every frame. The second buffer makes the conversion a function of the world rows
-  alone, so both update paths serve it.
-- The bind group of a draw is `layout::FEATURE_ROWS` (59): the camera's block, the count word, the
+  previous frame had already converted, unless the page re-uploaded its rows or the add-on's
+  compute rewrote every live row every frame. The second buffer makes the conversion a function of
+  the world rows alone, so both update paths serve it.
+- The bind group of a draw is `layout::FEATURE_ROWS` (60): the camera's block, the count word, the
   world rows and the rows it writes. The pipeline is `template::FEATURE_ROWS` (83). The camera's
   block is the conversion's own 16-byte uniform buffer, not the add-on compute block: the second
   buffer needs a fourth binding, so the conversion cannot share the add-on's group, and the compute
@@ -201,9 +249,9 @@ block carries no camera, and a page's camera moves after it has written its rows
 ### Limits
 
 - The conversion uses the main view's camera. A shadow cascade or a tile reads the same
-  camera-relative rows with its own light's view projection, so a feature-instance draw that casts
-  shadows draws them from the main camera's rows. The draw runs in the main view alone; a
-  conversion for each view would serve shadows if they are needed.
+  camera-relative rows with its own light's view projection, and its view frame carries that same
+  camera, so one conversion serves every view. A per-view conversion would subtract the same
+  position in each view.
 - The add-on's compute pass must run before the first render step, as a pass of `band: 'before'`
   does. A pass after the scene writes rows too late for the opaque pass to read them.
 
@@ -214,5 +262,104 @@ block carries no camera, and a page's camera moves after it has written its rows
   or dispatch.
 - A render test asserts the draw reads the second buffer and that the group binds the camera's
   block, the count word, the world rows and the rows it writes.
+- A render test, `every_cascade_reads_rows_relative_to_the_main_camera`, shows that one conversion
+  of the rows serves every shadow view.
 - The image tests draw the two instance sketches on every tier and thread mode, and a test forces
   the direct-draw path to prove that the routing to the indirect path draws the same frame.
+
+## The `ready` callback gates the draw
+
+`docs/api/features.md` promises that a feature whose `ready` callback answers false costs nothing:
+no pass, no target, and none of its code or shaders downloads. The engine asks that callback.
+
+The sketch's thread calls each instance draw's `ready` once each frame, before the frame's
+commands, and tells the core when the answer changes. A draw whose feature is not ready keeps its
+bucket, so the views keep their offsets, but records no draw in any view, copies no count word and
+converts no rows. The layout is built again in the frame the answer changes, which re-records each
+view's bundle. A description without a `ready` callback registers no poll at all, so the common
+case costs nothing.
+
+The render test `a_draw_records_nothing_while_its_feature_is_not_ready` reads both answers from the
+recorded commands: the ready frame copies the count word and draws the reserved indirect entry, and
+the unready frame does neither. The adapter's tests check that the page's `ready` reaches the core
+once per change, and that the WebGL2 batch draws none of its rows while unready.
+
+## The shadow picture
+
+The picture test `feature-instances-shadow` proves the geometry. A compute pass fills a field of
+standing discs over the whole capacity and counts six rows of seven. The page sets the count to the
+whole capacity. The sun's shadows on the ground show the counted rows alone: the rows past the count
+throw no shadow. A post beside the field casts a shadow of its own, so the picture names this draw's
+shadow and not only a shadow in general.
+
+A missing shadow usually comes from the picture's framing or from the surface, not from the
+renderer. Two such faults hide it:
+
+- A sun that travels away from the camera puts each disc's shadow behind it and into the next disc
+  of the row. Nothing on the ground shows, though the shadow map holds it.
+- A thin single-sided surface is culled by the shadow pass when the light reaches its back. It then
+  writes no depth at all.
+
+Aim the sun toward the camera, and give the discs `doubleSided`, so every shadow shows. The API page
+for instance draws names both. A reader who sees a missing shadow checks the framing and the
+surface's sides before suspecting the engine.
+
+The conversion subtracts the main camera's position, and a shadow view reads rows relative to its
+own camera. On that reading, each view would need its own converted rows. That is false. A cascade's
+view frame carries the main camera (`crates/null3d-render/src/shadows.rs`,
+`ShadowFrame::view_frame`). Its matrix takes positions relative to that camera, and it rejects a
+point left in world coordinates, which the test `every_cascade_reads_rows_relative_to_the_main_camera`
+shows. So the frame's one conversion is the conversion that every view needs, and a per-view
+conversion would subtract the same position in each view. A shadow atlas's tiles are fitted the same
+way. The conversion stays one per frame, and no per-view version exists.
+
+## The WebGL2 row split costs no allocation
+
+The WebGL2 row split allocates nothing. It writes the batch's arrays directly, and each column's
+length is a square root of the squares; `Math.hypot` would keep an array for every row, at about 24
+bytes each. The allocation check passes on both GPU paths, at 6.4 s on WebGPU and 3.4 s on WebGL2.
+
+## The hook's first real user
+
+The hook needs a real user, because a hook that nobody calls is unproven. The splats add-on cannot
+take it, so the first user is a shipped demo: the night town's pines, in
+`examples/showcase/night-town/trees.ts`. That demo draws 90 to 400 identical snow pines that ring
+the town, each casting shadows. The count follows the quality preset.
+
+The pines record through the hook. The page writes each pine's world matrix once with
+`setInstances`. A compute pass writes the count word for the current preset, and
+`render.setPassUniforms` changes the pass's values when the preset changes. Their material is a
+surface function that returns `defaultSurface`, so the lighting is the standard material's, and the
+draw casts and receives shadows as the batch did.
+
+The claims below are about the WebGPU path.
+
+Two measurements, because one alone proves too little. The picture is the first. `demo-night-town`
+draws the frame that its references hold on WebGPU, in compatibility mode and on WebGL2. The match
+supports the inference that the hook's rows, its count word, the conversion and the shadow views'
+count draw what a plain instance batch drew. A surface-function material on an instance draw needs
+nothing new in the engine.
+
+A picture that matches alone cannot show that the hook drew it. A page that ignored the hook and
+drew from its own count would match just as well. So only the two WebGPU tiers, core and
+compatibility mode, leave the page's count at the pines' capacity, and there the pass's word is the
+only one that thins them. On WebGL2 the page's count draws the pines, as the WebGL2 path says.
+
+The second measurement sets that word to two values. `tests/image/pine-count.spec.ts` holds the
+demo's frame at one preset, at 320 by 180, and changes only the count: the preset's own count
+against the capacity. The page's count stays at the capacity on WebGPU in both frames. The test
+compares pictures and reads no count. It shows that the frame moves when that one input moves, and
+that two frames of one count match. A page that ignored the hook would draw the capacity both times
+and show no change. The inference is therefore that the draw follows the pass's word. The picture
+checks on each tier show that the pines drawn are the demo's pines.
+
+The run at head 4947bbc78, in this Mac's Chrome at 320 by 180 and after the shared queue's load
+gate, moved 14.89 per cent of the frame at Low on WebGPU and 14.92 on WebGL2, between 90 and 400,
+and 3.20 and 3.21 at High, between 320 and 400. Two frames of one count moved 0.00 per cent in each
+case, and the four cases took 21.0 s. With the count shader's store replaced by a constant in a
+local copy, Low and High on WebGPU both moved 0.00 per cent between the two counts, and the test
+failed. The test therefore has teeth: the picture moves only while the shader reads the word.
+
+One limit belongs to the author's machine, not to the hook. The demo's software-GPU picture times
+out at 180 s there, and the unchanged demo times out the same way. That reference therefore comes
+from CI, as the demo's other software references do.
