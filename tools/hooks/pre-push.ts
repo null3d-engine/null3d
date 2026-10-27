@@ -52,6 +52,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { exactTestPath } from '../../tests/lib/test-paths';
+import { repositoryEnv } from '../lib/git-env';
 import { touchesRust } from './check-rust';
 import { keptCommits } from './check-trailers';
 
@@ -362,18 +363,6 @@ export function statusRefusal(
 /** The plan that the status check reads, relative to the tree that it runs in. */
 const STATUS_PLAN = '.internal/plan/m3-breakdown.md';
 
-/**
- * `env` without the variables that pin git to the pushing checkout. In a linked worktree's hook git
- * sets GIT_DIR to that worktree's own folder, and a git or tool run in another worktree would then
- * read the pushing checkout's history and write into its index.
- */
-function ownTree(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-	const copy = { ...env };
-	for (const name of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_PREFIX'])
-		delete copy[name];
-	return copy;
-}
-
 /** A reading of the status check: its problem lines, and whether the check ran at all. */
 export interface StatusReading {
 	lines: string[];
@@ -388,7 +377,7 @@ export interface StatusReading {
 export function statusOf(dir: string, env: NodeJS.ProcessEnv = process.env): StatusReading {
 	const run = spawnSync('bun', ['tools/pr-status.ts', '--check'], {
 		cwd: dir,
-		env: ownTree(env),
+		env: repositoryEnv(env),
 		encoding: 'utf8',
 		maxBuffer: 64 * 1024 * 1024,
 	});
@@ -409,7 +398,7 @@ export function statusAt(
 	root = '.',
 	env: NodeJS.ProcessEnv = process.env,
 ): StatusReading {
-	const clean = ownTree(env);
+	const clean = repositoryEnv(env);
 	const run = (cwd: string, ...args: string[]) =>
 		execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], {
 			cwd,

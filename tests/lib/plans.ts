@@ -1482,6 +1482,34 @@ export function clusterCostPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * The GPU paths of the history cost plan, with the tier that each draws on.
+ */
+const HISTORY_PATHS = [
+	['webgpu', 'webgpu'],
+	['compat', 'webgpu'],
+	['webgl2', 'webgl2'],
+] as const;
+
+/**
+ * What a compute pass's history costs: the compute-state page's cost case, which runs a 256 by 256
+ * pass of 40 steps in a frame and measures three seconds, then measures three seconds again with
+ * the pass switched off. A history pass keeps two states and copies the newest one, and the WebGL2
+ * fragment form draws each step into its own target, so each path's own figure shows. The page
+ * reports the frame interval and the CPU time, the GPU time where the device times it, and the
+ * bytes that the pass's texel memory takes. M3-V13 records the figures.
+ */
+export function historyCostPlan(): PlanItem<Check>[] {
+	return HISTORY_PATHS.map(([path, tier]) =>
+		pageItem(
+			`history-cost-${path}`,
+			'compute-state',
+			{ kind: 'probe', tier },
+			{ switches: [`gpu=${path}`, 'case=cost'], timeoutSeconds: 180 },
+		),
+	);
+}
+
+/**
  * The two-step probe: the sharpening's sketch with `?two-step=report`, a development page that logs
  * the two-step pass's answers once its frame is on screen, with the browser and the WebGL2 path's
  * compile state. One page holds the frame the image test draws, as the manifest runs it, and one
@@ -2281,6 +2309,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	grass: grassPlan,
 	'alpha-mask-cost': alphaMaskPlan,
 	'cluster-cost': clusterCostPlan,
+	'history-cost': historyCostPlan,
 	'lod-cost': lodCostPlan,
 	'two-step': twoStepPlan,
 	sky: skyPlan,

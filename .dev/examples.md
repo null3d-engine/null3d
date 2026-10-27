@@ -560,8 +560,11 @@ Night town draws its window panes through the facades example add-on
   Each pane's light rises on a damped spring once the wave reaches it.
 - The panes draw the add-on's timber finish for their frames, so the wall finish that the pages
   carry and the pane's frame agree. The house walls keep the scene's own timber texture.
-- The add-on's own cost, per GPU path and preset, is owed. The cost test needs a quiet computer,
-  and the Mac's load has stayed above the quiet threshold. The add-on's README gives the command.
+- The add-on's own cost is about 1.0 ms of GPU time a frame against a plain wall on both WebGPU
+  paths at every preset, and 0.85 ms at Low down to 0.05 ms at Ultra on WebGL2, at 1920 by 1080 in
+  a quiet window on the Mac's M3 Max in Chrome 156
+  ([run](tested-devices/macbook-pro-m3-max-chrome/20261027-093120-facades-cost.md)). The add-on's
+  README gives the figures and the command.
 
 ### Skyway (M3-C1)
 
@@ -683,13 +686,15 @@ and a hero car with two screens.
   draws a mark that a later call sets.
 - **The lens's cost.** The add-on's README holds the look's cost per preset. The cost test times
   the whole look against the same scene without it. It draws at 1920 x 1080 with a render scale of
-  1, and runs as `NULL3D_LENS_COST=1 bun run test:browser -- lens-cost.spec.ts`. Its figures are
-  owed: the run needs a quiet computer, and the Mac's load has stayed above the quiet threshold. On
-  the Skyway scene at a load of 36, the effect alone added about 0.7 to 0.9 ms of GPU at every
-  preset on WebGPU, and 0.7 ms at Low and 3.2 ms at Medium on WebGL2. The core's vignette and
-  grade add nothing to a frame, since they run in the final pass; the sharpening value adds the
-  first step's pass at the whole render scale. A look that leaves all four of the effect's values
-  at 0 adds no effect at all.
+  1, and runs as `NULL3D_LENS_COST=1 bun run test:browser -- lens-cost.spec.ts`. The quiet run
+  on the Mac's M3 Max in Chrome 156 gives the look 0.45 ms at Low and 0.76 ms at
+  Ultra on WebGPU, 0.61 and 1.40 in compatibility mode, and 0.91 and 1.05 on WebGL2, while the
+  other presets read within half a millisecond of zero or below it. The add-on's README holds all
+  twelve cells with each line's load, and that spread is the figure's own accuracy
+  ([run](tested-devices/macbook-pro-m3-max-chrome/20261027-092740-lens-cost.md)). The core's
+  vignette and grade add nothing to a frame, since they run in the final pass; the sharpening value
+  adds the first step's pass at the whole render scale. A look that leaves all four of the effect's
+  values at 0 adds no effect at all.
 - **On a phone**, WebGL2 runs Medium at most. That preset draws 30,000 cars, about 900 towers, 180
   lights, the rain and reflections at a quarter of the render size. Medium doubles the cars and
   raises the reflection scale. A cloud Galaxy S24 measured two windows in a row at Low. The first 5

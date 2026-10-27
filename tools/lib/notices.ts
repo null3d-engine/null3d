@@ -14,6 +14,73 @@ export const NOTICES_FILE = 'THIRD-PARTY-NOTICES.txt';
 /** A licence whose text a copy has to carry, as the page names it. */
 const LICENCE = /\b(?:MIT|Apache|BSD|ISC|Zlib|Unlicense)\b/;
 
+/** A project whose code a package ships, and the words that name it. */
+interface Upstream {
+	/** The name to give in a failure. */
+	readonly name: string;
+	/** The text that a package's notices must hold, lowercased. */
+	readonly notice: string;
+	/** How shipped source names the project. */
+	readonly pattern: RegExp;
+	/** How a decision record names the project where it claims the port. */
+	readonly claim: RegExp;
+}
+
+/**
+ * The projects whose code the packages translate or copy. A package whose shipped text names one
+ * carries it in its notices file. A method or a formula from a paper is not a project, so it does
+ * not belong here.
+ */
+const UPSTREAMS: readonly Upstream[] = [
+	{ name: 'three.js', notice: 'three.js', pattern: /three\.js/i, claim: /three\.js/i },
+	{ name: 'Filament', notice: 'filament', pattern: /Filament/, claim: /Filament/ },
+	{ name: 'KinoBokeh', notice: 'kinobokeh', pattern: /KinoBokeh/, claim: /KinoBokeh/ },
+	{
+		name: "Unity's post-processing stack v1",
+		notice: "unity's post-processing stack",
+		pattern: /Unity['’]?s?\s+post-processing|Unity Technologies/i,
+		claim: /Unity['’]?s?\s+post-processing|Unity post-processing|Unity Technologies/i,
+	},
+	{
+		name: 'AMD FidelityFX',
+		notice: 'amd fidelityfx',
+		pattern: /FidelityFX/,
+		claim: /FidelityFX|FSR ?1\b/i,
+	},
+	{
+		name: 'Qualcomm Snapdragon GSR',
+		notice: 'qualcomm snapdragon',
+		pattern: /Qualcomm|Snapdragon/,
+		claim: /Snapdragon GSR|GSR ?1\b|Qualcomm Innovation Center/i,
+	},
+];
+
+/** The words with which a decision record claims that code is a port. */
+const PORT_CLAIM =
+	/\b(?:port(?:s|ed|ing)?|transcrib\w*|copied|translated|adapted|derived|gather\s+of|follows?)\b/i;
+
+/** The source trees whose text a package ships, beside the files under its own source folder. */
+const SHIPPED_TREES: Readonly<Record<string, readonly string[]>> = {
+	engine: [
+		'packages/engine/src',
+		'crates/null3d-shaders/wgsl',
+		'crates/null3d-render/src',
+		'crates/null3d-core/src',
+		'crates/null3d-assets-wasm/src',
+	],
+	'vite-plugin': ['packages/vite-plugin/src', 'crates/null3d-shaders/wgsl'],
+	cli: ['packages/cli/src', 'crates/null3d-assets-wasm/src'],
+};
+
+/** A shipped source file whose text names an upstream. */
+const SOURCE_FILE = /\.(?:wgsl|rs|ts|js|mjs|cjs)$/;
+
+/**
+ * A path outside the shipped source: a test, or a generated file. A generated shader module holds
+ * compiled text from the WGSL sources that the check already reads.
+ */
+const EXCLUDED_PATH = /(?:\.test\.|\.spec\.|\/tests?\/|\/__tests__\/|\/generated\/)/;
+
 /** One package's row of the page's per-package table. */
 interface Entry {
 	readonly thirdParty: string;
@@ -59,10 +126,95 @@ function manifestOf(dir: string): { files?: string[]; exports?: Record<string, u
 	}
 }
 
+/** Every source file under `folder`, in path order, without its tests. */
+function sourceFiles(folder: string): string[] {
+	if (!existsSync(folder)) return [];
+	const files: string[] = [];
+	for (const entry of readdirSync(folder, { withFileTypes: true }).sort((a, b) =>
+		a.name.localeCompare(b.name),
+	)) {
+		const path = join(folder, entry.name);
+		if (entry.isDirectory()) {
+			if (!EXCLUDED_PATH.test(`${path}/`)) files.push(...sourceFiles(path));
+		} else if (SOURCE_FILE.test(entry.name) && !EXCLUDED_PATH.test(path)) {
+			files.push(path);
+		}
+	}
+	return files;
+}
+
+/** A text with its comment markers and runs of whitespace folded to one space each. */
+function folded(text: string): string {
+	return text.replace(/\/\*|\*\/|\/\/|\s+/g, ' ').trim();
+}
+
+/**
+ * The ways that an upstream's claim and the notices disagree: shipped code that names a project
+ * whose notice its package leaves out, or a decision record that claims a port that the engine's
+ * notices leave out.
+ */
+function upstreamProblems(root: string): string[] {
+	const problems: string[] = [];
+	const packageRoot = join(root, 'packages');
+	if (!existsSync(packageRoot)) return problems;
+	for (const name of readdirSync(packageRoot).sort()) {
+		const dir = join(packageRoot, name);
+		const trees = SHIPPED_TREES[name] ?? [`packages/${name}/src`];
+		const text = folded(
+			trees
+				.map((tree) =>
+					sourceFiles(join(root, tree))
+						.map((file) => readFileSync(file, 'utf8'))
+						.join('\n'),
+				)
+				.join('\n'),
+		);
+		if (text === '') continue;
+		const noticesPath = join(dir, NOTICES_FILE);
+		const hasNotices = existsSync(noticesPath);
+		const notices = hasNotices ? folded(readFileSync(noticesPath, 'utf8')).toLowerCase() : '';
+		for (const upstream of UPSTREAMS) {
+			if (!upstream.pattern.test(text) || notices.includes(upstream.notice)) continue;
+			problems.push(
+				hasNotices
+					? `packages/${name}: its shipped code names ${upstream.name}, and ${NOTICES_FILE} does not`
+					: `packages/${name}: its shipped code names ${upstream.name}, and the package ships no ${NOTICES_FILE}`,
+			);
+		}
+	}
+	const engineNoticesPath = join(packageRoot, 'engine', NOTICES_FILE);
+	const engineNotices = existsSync(engineNoticesPath)
+		? folded(readFileSync(engineNoticesPath, 'utf8')).toLowerCase()
+		: '';
+	const decisionsRoot = join(root, '.dev/decisions');
+	if (!existsSync(decisionsRoot)) return problems;
+	const seen = new Set<string>();
+	for (const file of readdirSync(decisionsRoot)
+		.filter((name) => name.endsWith('.md'))
+		.sort()) {
+		const page = readFileSync(join(decisionsRoot, file), 'utf8');
+		for (const paragraph of page.split(/\n\s*\n/)) {
+			const text = folded(paragraph);
+			if (!PORT_CLAIM.test(text)) continue;
+			for (const upstream of UPSTREAMS) {
+				const key = `${file}: ${upstream.name}`;
+				if (!upstream.claim.test(text) || engineNotices.includes(upstream.notice)) continue;
+				if (seen.has(key)) continue;
+				seen.add(key);
+				problems.push(
+					`.dev/decisions/${file}: claims ${upstream.name} as a port, and the engine's ${NOTICES_FILE} does not name it`,
+				);
+			}
+		}
+	}
+	return problems;
+}
+
 /**
  * Every way that the packages under `root` and the notices page disagree, as `path: problem`:
  * a package with no entry, an entry with no package, a package whose notices the page leaves out,
- * a notices file that its tarball would not carry, or an example add-on that the page leaves out.
+ * a notices file that its tarball would not carry, an example add-on that the page leaves out, or
+ * shipped code and a decision record that claim an upstream that the notices leave out.
  */
 export function noticesProblems(root: string): string[] {
 	const problems: string[] = [];
@@ -122,5 +274,6 @@ export function noticesProblems(root: string): string[] {
 			problems.push(
 				`examples/addons/${name}: has no entry on ${NOTICES_PAGE}. Name its upstream and license, or say that it ships only its own code`,
 			);
+	problems.push(...upstreamProblems(root));
 	return problems;
 }

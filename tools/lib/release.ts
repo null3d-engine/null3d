@@ -9,6 +9,7 @@ import { PAGES, pagePath } from './docs';
 import { checkDocsStyle, DECISION_RECORD_SOURCE, INTERNAL_REFERENCE_SOURCE } from './docs-style';
 import { readIfExists } from './files';
 import { parseFrontMatter } from './frontmatter';
+import { repositoryEnv } from './git-env';
 
 export interface ParsedCommit {
 	/** Lowercased commit type, such as `feat`; empty when the subject is not conventional. */
@@ -53,27 +54,6 @@ export function parseCommit({ subject, body, hash }: RawCommit): ParsedCommit {
 		hash,
 		pr,
 	};
-}
-
-/**
- * The environment of a git command that must read the repository its own working directory names.
- * A hook that starts this code hands its repository to every process it starts, and git obeys that
- * over the directory, so the variables that name a repository come out here.
- */
-function repositoryEnv(): NodeJS.ProcessEnv {
-	const env: NodeJS.ProcessEnv = { ...process.env };
-	for (const name of [
-		'GIT_DIR',
-		'GIT_WORK_TREE',
-		'GIT_INDEX_FILE',
-		'GIT_COMMON_DIR',
-		'GIT_OBJECT_DIRECTORY',
-		'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-		'GIT_NAMESPACE',
-		'GIT_PREFIX',
-	])
-		delete env[name];
-	return env;
 }
 
 /**

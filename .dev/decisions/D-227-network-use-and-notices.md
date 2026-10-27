@@ -2,16 +2,18 @@
 
 Status: decided by the helper of M3-R18, for the owner's review. Built: the two docs pages, the
 network guard, the notices guard and the notices files of the packages that ship another project's
-code. Pending: four ported upstreams appear in no notices file. They are KinoBokeh and Unity's
-post-processing stack v1 behind the depth-of-field gather, and AMD FidelityFX FSR 1 RCAS and
-Snapdragon GSR 1 behind the final pass. The Vite plugin ships every engine shader's text, but its
-notices name none of these, nor three.js or Filament. Task: M3-R18.
+code. The notices now name the four ported shader techniques that the audit found missing:
+KinoBokeh and Unity's post-processing stack v1 behind the depth-of-field gather, and AMD FidelityFX
+FSR 1 RCAS and Snapdragon GSR 1 behind the final pass, with AMD's SSSR march under the same AMD
+text. The Vite plugin ships every engine shader's text, so its notices name these too, and three.js
+and Filament. Task: M3-R18.
 
 Summary: The engine, its loader and its add-ons contact no server of their own. A unit test records
 every `fetch` call site and every absolute address in every folder that a package ships. A new call
 fails until the record and the docs say what it downloads. Every package that ships another
-project's code has a notices file, but four ported shader techniques are named in none of them yet.
-A second guard pairs the notices page with the packages.
+project's code has a notices file, and the notices name every upstream whose code the package's
+shipped text carries. A second guard pairs the notices page with the packages, and a third fails
+when shipped code or a decision record claims a port that the notices do not name.
 
 ## Question
 
@@ -32,6 +34,10 @@ does each package ship, and which license does each part carry?
   a loopback server.
 - A package whose code comes from another project ships a `THIRD-PARTY-NOTICES.txt` with the
   license texts that the licenses ask a copy to carry.
+- A package's notices name every upstream whose code its shipped text carries. The guard reads the
+  source trees that each package ships, including the engine's shader library for the Vite plugin,
+  and fails when one names a known upstream that the notices leave out. A decided record that calls
+  a known upstream a port must find its name in the engine's notices too.
 - The notices page has one row for every package, with its upstream, its version where one applies,
   and its license. A package with no upstream says that it ships only its own code.
 
@@ -76,7 +82,15 @@ earcut, and the Basis encoder and ufbx. They also cover these parts:
   curves and the HDR reader. It also names the ported GTAO, Poisson denoise and wide-line shaders
   in `crates/null3d-shaders/wgsl`. The engine's shader library follows Filament's specular
   anti-aliasing kernel, its anisotropic highlight and the two constants of AgX's punchy look. So
-  the notices name Filament's Apache License 2.0.
+  the notices name Filament's Apache License 2.0, with its copyright line.
+- The engine's depth of field ports KinoBokeh and follows the composite of Unity's post-processing
+  stack v1, so its notices carry both MIT texts. Nothing comes from the stack's second version: its
+  licence binds code to Unity-dependent projects, so code ported from it could not ship here at all,
+  whatever a notices file says. Its final pass translates AMD FidelityFX FSR 1's
+  RCAS and ports Qualcomm Snapdragon GSR 1's upscale, and its screen-space reflections follow AMD
+  FidelityFX SSSR's march, so the notices carry AMD's MIT text and Qualcomm's BSD 3-Clause text.
+  The Vite plugin's compiler embeds every engine shader, so the plugin's notices name the same
+  upstreams, beside three.js and Filament.
 - The controls package ports three.js's controls. Its source says that the camera math follows
   three.js's OrbitControls and MapControls step for step. The fly, first-person, drag and transform
   controls follow three.js's controls of those names. The sequence and the numbers match, not only
@@ -98,10 +112,21 @@ check's required files name the notice too. The Vite plugin finds a package's no
 export, so each one reaches `null3d-third-party-notices.txt` in a production build. Every example
 add-on is named too.
 
-Evidence: the 22 network tests and the 10 notices tests pass. A `fetch` added to
+The same guard reads the source trees that each package ships and fails when one names a known
+upstream that the package's notices leave out. It folds comment markers and whitespace before it
+matches, so a claim that wraps across two comment lines still counts. For the engine it reads the
+shader library, the render core, the core and the asset module; for the Vite plugin it reads its own
+source and the shader library that its compiler embeds. A decision record that calls a known
+upstream a port must find the name in the engine's notices. A test file, a method from a paper and
+an upstream that no package ships are outside the check.
+
+Evidence: the 22 network tests and the 15 notices tests pass. A `fetch` added to
 `packages/terrain/src/index.ts` fails one test, the repository check, which reports the call and
 its host. Renaming `instantiateWasm` in `gltf-draco.ts` fails the vendor check. Removing the wind
-row from the page fails the notices check.
+row from the page fails the notices check. With the KinoBokeh section taken out of the engine's
+notices, the repository check fails and names `packages/engine` and KinoBokeh; a fixture test plants
+the same claim in a shader and in a decision record and watches each fail, then passes once the
+notice names it.
 
 ## Consequences
 
@@ -109,6 +134,7 @@ row from the page fails the notices check.
   docs page to update.
 - Every package that ships another project's code has a notices file, among them
   `@null3d/engine`, `@null3d/cli`, `@null3d/vite-plugin`, `@null3d/controls` and
-  `@null3d/geometry`. The other add-ons ship only their own code. The four ported upstreams in the
-  status are still missing from those files.
+  `@null3d/geometry`. The other add-ons ship only their own code. The engine's and the Vite
+  plugin's notices name every ported shader upstream, and a new claim of one fails the unit run
+  until its notice follows.
 - The guards change no engine code path, so they change no network behavior.

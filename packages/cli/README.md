@@ -6,7 +6,7 @@ You do not need this tool to use the engine. Install `@null3d/engine` from npm, 
 
 null3D is in early development. This version has seven commands:
 
-- `create` writes a new project from a template, with an `AGENTS.md` for AI agents and a Claude Code hook.
+- `create` writes a new project from a template, with an `AGENTS.md` for AI agents and one hook that Claude Code and Codex both run.
 - `shot` draws one frame of your project's page in a headless browser and saves it as a PNG file.
 - `test` type checks your project and runs its lint script. Then it compares the image tests that `null3d.json` lists with their reference images.
 - `bench` measures the engine on a production build of your page: CPU time per frame by thread, GPU time and frame rates, over fresh runs.
