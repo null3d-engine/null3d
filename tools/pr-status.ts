@@ -54,7 +54,6 @@ const INCOMPLETE = new Set([
 	'M3-E4a',
 	'M3-E6',
 	'M3-E8',
-	'M3-L1',
 	'M3-L3',
 	'M3-R12',
 	'M3-R22',
@@ -81,8 +80,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"both first users follow the preset: splats' budget, and the water add-on's reflection cadence, which doubles the wait at each frame-budget step up to every sixteenth frame. The overlay part of the task is not built: D-199's decision 4 asks for one GPU timing scope per built-in step and per add-on feature, and D-173 for each add-on's GPU time, while the add-on rows hold no GPU time and the overlay shows one frame total",
 	'M3-E8':
 		"the compute pass and its WebGL2 fragment form are built and tested, and the wind add-on fills its field through the hook with a compute pass. The owner's 25 October ruling adds M3-V13's history to the hook, and the first-user outcome the plan names still waits on M3-F9's ocean",
-	'M3-L1':
-		'the iPad and phone figures the section asks for are in D-137; what remains is the phone GPU time that the fade item asks for',
 	'M3-L3':
 		'the WebGPU path draws the patches, but D-213 records the WebGL2 multi-draw path and the whole-level fallback as not built, and D-231 holds the GPU time',
 	'M3-R22':
@@ -164,7 +161,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-V5':
 		"every vegetation picture passes in both reference sets on both GPUs and the crowns keep their coverage at three distances, and the leaf cells now hold a spray of lobed, veined, damaged leaves instead of one smooth shape. Its author's verdict is that the atlas is at least as good as Creek's as a texture, and that the crown is still paler and flatter because the material lights it with one uniform light while Creek's texture carries painted shadowing, which belongs to M3-V7. The task's line asks the owner to judge the two side by side, and the paint time per device is owed too",
 	'M3-V1':
-		'Creek has no WebGPU figure on any device, and no vegetation task after it has its own budget per preset',
+		"Creek's WebGPU figure is in the S25's vegetation run but not yet in D-241's data, which still says there is none; D-241 budgets Low and Medium only, so High and Ultra, and the later V tasks' own budgets per preset, are owed",
 };
 
 /** The plan's groups, by the first letter of a task's part, in the plan's order. */
