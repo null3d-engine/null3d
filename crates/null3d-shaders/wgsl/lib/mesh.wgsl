@@ -837,6 +837,7 @@ fn finish_exposed(c: vec3f, pixel: vec2f) -> vec4f {
     return null3d::tonemap::finish(
         c,
         pixel,
+        frame.occlusion.y,
         frame.output,
         frame.target_size.xy,
         frame.vignette,
@@ -856,7 +857,13 @@ fn finish_material(m: Material, c: vec3f, pixel: vec2f) -> vec4f {
 fn finish_exposed_material(m: Material, c: vec3f, pixel: vec2f) -> vec4f {
 #ifdef TONE_MAP
     if (keeps_display_color(m)) {
-        return null3d::tonemap::finish_unmapped(c, pixel, frame.target_size.xy, frame.vignette);
+        return null3d::tonemap::finish_unmapped(
+            c,
+            pixel,
+            frame.occlusion.y,
+            frame.target_size.xy,
+            frame.vignette,
+        );
     }
 #endif
     return finish_exposed(c, pixel);
