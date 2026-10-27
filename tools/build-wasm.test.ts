@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
@@ -11,9 +11,16 @@ import {
 	baseTreeDamaged,
 	buildCodeHash,
 	buildLog,
+	cargoHomeRemap,
 	cargoTargetBase,
 	checkHeapStart,
+	checkNoMachineFolders,
+	compilerOptions,
+	currentArtifactKeys,
+	keepOnlyArtifacts,
+	librarySourceRemap,
 	lockedVersion,
+	machineFolders,
 	parseOptions,
 	readArtifacts,
 	releaseTarget,
@@ -43,6 +50,7 @@ describe('parseOptions', () => {
 			prebuilt: false,
 			printBase: false,
 			cacheKey: false,
+			keepCurrent: false,
 			noCache: false,
 		});
 		expect(parseOptions(['--check-size', '--base', 'origin/main'])).toEqual({
@@ -54,6 +62,7 @@ describe('parseOptions', () => {
 			prebuilt: false,
 			printBase: false,
 			cacheKey: false,
+			keepCurrent: false,
 			noCache: false,
 		});
 		expect(parseOptions(['--check-size', '--prebuilt'])).toMatchObject({
@@ -68,6 +77,7 @@ describe('parseOptions', () => {
 		expect(parseOptions(['--sizes-only']).sizesOnly).toBe(true);
 		expect(parseOptions(['--names']).keepNames).toBe(true);
 		expect(parseOptions(['--no-cache']).noCache).toBe(true);
+		expect(parseOptions(['--keep-current']).keepCurrent).toBe(true);
 		expect(parseOptions(['--pages-only', '--names', '--no-cache'])).toMatchObject({
 			pagesOnly: true,
 			keepNames: true,
@@ -217,6 +227,73 @@ describe('checkHeapStart', () => {
 	});
 });
 
+describe('librarySourceRemap', () => {
+	const sysroot = '/Users/someone/.rustup/toolchains/nightly-2026-09-26-aarch64-apple-darwin';
+
+	it("names the library source by the toolchain's own fixed path", () => {
+		const version = 'rustc 1.92.0-nightly\nbinary: rustc\ncommit-hash: 5ceaf6608eb3\nhost: x\n';
+		expect(librarySourceRemap(sysroot, version)).toBe(
+			`--remap-path-prefix=${sysroot}/lib/rustlib/src/rust=/rustc/5ceaf6608eb3`,
+		);
+	});
+
+	it('fails when the compiler names no commit, rather than build bytes that differ by machine', () => {
+		expect(() => librarySourceRemap(sysroot, 'rustc 1.92.0\ncommit-hash: unknown\n')).toThrow(
+			'no commit hash',
+		);
+	});
+});
+
+describe('cargoHomeRemap', () => {
+	it("names cargo's home, where the downloaded crates' sources live, by a fixed path", () => {
+		expect(cargoHomeRemap('/home/runner/.cargo')).toBe(
+			'--remap-path-prefix=/home/runner/.cargo=/cargo',
+		);
+	});
+});
+
+describe('machineFolders', () => {
+	it('gives each folder one trailing slash, so a path inside it matches', () => {
+		expect(machineFolders(['/home/runner/.cargo/', '/home/runner//', '/srv/null3d'])).toEqual([
+			'/home/runner/.cargo/',
+			'/home/runner/',
+			'/srv/null3d/',
+		]);
+	});
+
+	it('leaves out the root folder, which starts every absolute path', () => {
+		expect(machineFolders(['/', '/home/runner'])).toEqual(['/home/runner/']);
+	});
+});
+
+describe('compilerOptions', () => {
+	it("hands cargo a variant's options in order, then the added ones, each whole", () => {
+		const added = ['--remap-path-prefix=/Users/some one/.cargo=/cargo'];
+		const options = compilerOptions(VARIANTS[1]!.rustflags, added).CARGO_ENCODED_RUSTFLAGS;
+		expect(options?.split('\x1f')).toEqual([...VARIANTS[1]!.rustflags.split(' '), ...added]);
+		expect(compilerOptions(VARIANTS[0]!.rustflags, []).CARGO_ENCODED_RUSTFLAGS).toBe(
+			VARIANTS[0]!.rustflags.split(' ').join('\x1f'),
+		);
+	});
+});
+
+describe('checkNoMachineFolders', () => {
+	const folders = ['/home/runner/.rustup/toolchains/x/', '/home/runner/'];
+	const module = (text: string) => new TextEncoder().encode(`\0asm${text}`);
+
+	it('passes a module whose paths are all fixed or relative', () => {
+		const paths = '/rustc/5ceaf66/library/core/src/str.rs crates/null3d-render/src/taa.rs';
+		expect(() => checkNoMachineFolders(module(paths), folders, 'the core')).not.toThrow();
+	});
+
+	it('names each folder of the build machine that the module holds', () => {
+		const path = '/home/runner/.rustup/toolchains/x/lib/rustlib/src/rust/library/core/src/str.rs';
+		expect(() => checkNoMachineFolders(module(path), folders, 'the core')).toThrow(
+			"the core holds the build machine's folder /home/runner/.rustup/toolchains/x/ and /home/runner/",
+		);
+	});
+});
+
 const TOOLS: ToolVersions = {
 	rust: 'channel = "nightly-2026-09-26"',
 	bindgen: '0.2.129-aarch64-apple-darwin',
@@ -243,13 +320,36 @@ describe('artifactsKey', () => {
 		expect(key).toMatch(/^[0-9a-f]{64}$/);
 		expect(artifactsKey()).toBe(key);
 	});
+
+	it('names an entry for each core variant and one for the tools, each its own key', () => {
+		const keys = currentArtifactKeys();
+		expect(keys).toHaveLength(VARIANTS.length + 1);
+		expect(new Set(keys).size).toBe(keys.length);
+	});
+});
+
+describe('keepOnlyArtifacts', () => {
+	it('removes every entry but the named ones, and leaves a lock and an entry that a build is writing', () => {
+		const base = mkdtempSync(join(tmpdir(), 'null3d-artifacts-'));
+		try {
+			for (const name of ['a', 'b', 'c', 'd.123.partial']) mkdirSync(join(base, name));
+			writeFileSync(join(base, 'e.lock'), '');
+			expect(keepOnlyArtifacts(base, new Set(['a'])).sort()).toEqual(['b', 'c']);
+			expect(readdirSync(base).sort()).toEqual(['a', 'd.123.partial', 'e.lock']);
+			expect(keepOnlyArtifacts(join(base, 'missing'), new Set())).toEqual([]);
+		} finally {
+			rmSync(base, { recursive: true, force: true });
+			rmSync(`${base}.prune.lock`, { recursive: true, force: true });
+		}
+	});
 });
 
 describe('buildCodeHash', () => {
 	it('changes with this script or with the module that rewrites the glue', () => {
 		// Both decide what an entry holds: the script sets the flags and the staging, and the glue
 		// module rewrites every built module. Neither is a Rust source, so neither reaches the
-		// sources' stamp, and without this an edit here kept serving an entry an earlier version wrote.
+		// sources' stamp, and without this an edit here would keep serving an entry an earlier version
+		// wrote.
 		const root = mkdtempSync(join(tmpdir(), 'null3d-code-'));
 		try {
 			for (const file of ['tools/build-wasm.ts', 'tools/lib/core-sources.ts']) {

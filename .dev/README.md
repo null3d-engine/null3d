@@ -6,7 +6,7 @@ These guides hold the detail behind [AGENTS.md](../AGENTS.md), so that file can 
 | --- | --- |
 | [Benchmarks](benchmarks.md) | How to run the benchmarks and read their numbers, the benchmark job in CI and its expected-change trailer, the sweeps for open defaults, allocation sampling and profiling |
 | [Benchmark results](benchmark-results.md) | Every benchmark scene's figures against three.js, one row per device, browser, GPU path, date and commit, and the archive of each run's records that feeds them |
-| [Code review, October 2026](code-review-2026-10.md) | The library code review of 4 October 2026: the high findings by fix group, the order of the fixes, the code issues that the technique review found, and the challenges to recorded decisions |
+| [Code review](code-review.md) | The findings of the library code review that are still open, each with its reason and its fix |
 | [Decision records](decisions/README.md) | Design choices settled by measurement: the question, the rule, the data and the outcome of each. `bun run decisions` prints the list of records from the records themselves |
 | [Device sessions](devices.md) | The device runner and its plans, which device runs each check, and how to set up and run the Android phone, the iPad, the Mac's browser apps and BrowserStack's device cloud |
 | [Driver bug reports](driver-bugs.md) | Faults of GPU drivers and browsers that the engine works around, each with its device, its smallest known case and its workaround, ready to report upstream |
@@ -17,8 +17,8 @@ These guides hold the detail behind [AGENTS.md](../AGENTS.md), so that file can 
 | [Releases](releases.md) | How a release is made, versions, and the one-time setup |
 | [Sample content](sample-content.md) | The large models, textures and environments that tests and benchmarks load: where they live, how to fetch and use them, how to add one, and why they are not in this repository |
 | [Skill evaluations](skill-evaluations.md) | The run of the develop skill's cases with and without the skill, its trigger queries, the pass rates, the time and tokens, and the limits of the method |
-| [Technique review, October 2026](technique-review-2026-10.md) | The comparison of null3D's techniques with eight engines' source: the ranked changes, the porting verdicts, the `three-compat` add-on, the prototypes and their pass rules, the gaps, the web search results with their sources, where earlier reports were wrong, and the newer techniques of October 2026 with what three.js gained |
+| [Technique review](technique-review.md) | null3D's techniques against eight engines' source: the open changes and gaps, the porting verdicts, the `three-compat` add-on, the prototypes and their pass rules, the web search results with their sources, and the newer techniques that other engines and three.js offer |
 | [Test memory](tests.md) | How the unit tests share one process, what the run costs in memory, the rules that keep a test small, and the ceiling the unit script sets |
 | [Tested devices](tested-devices.md) | Every device and browser that null3D has run on, with the facts and the known issues, a folder of runs for each, and how to add a run |
 
-A guide or a decision record follows AGENTS.md's writing rules, as a contributor file.
+A guide or a decision record follows AGENTS.md's writing rules, as a contributor file. It states what holds now, with the reasons, and keeps no log of what happened when ([hard rule 41](../AGENTS.md#hard-rules)).

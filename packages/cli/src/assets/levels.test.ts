@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Document, type Node, type Primitive } from '@gltf-transform/core';
+import { Document, type Node, NodeIO, type Primitive } from '@gltf-transform/core';
+import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
+import { MeshoptDecoder } from 'meshoptimizer';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { MODELS_DIR, terrainDocument } from './cluster-fixture.js';
 import {
 	orderLevels,
@@ -13,7 +16,7 @@ import {
 	storeLevels,
 	storeStages,
 } from './levels.js';
-import { lodOf } from './lod-extension.js';
+import { lodOf, MSFTLod } from './lod-extension.js';
 import { buildStagedModel, STAGED_FILE } from './staged-fixture.js';
 
 /** The most cards a mesh of trees has in the test, and each card's side. */
@@ -344,6 +347,11 @@ describe('the coarsest-first vertex order', () => {
 });
 
 describe('texture coordinates in the levels error', () => {
+	// The picture `asset-bent-grid` covers this weight: its grid's coarsest level switches about
+	// 4.8 m out, so a finer level draws near the camera, and without the weight the coarsest level
+	// draws there with its texture scrambled. The test below reads the error itself: with the
+	// shipped weight of one sixty-fourth of the grid's longest side, the bent grid reports a
+	// coarsest error above 0.11 units. D-137 gives the picture's figures.
 	it('counts a texture that would slide, where a flat surface otherwise simplifies free', async () => {
 		// A flat grid simplifies to a few triangles with no geometric error. Texture coordinates
 		// that repeat across it keep the simplifier from sliding them, so a level's error grows.
@@ -356,6 +364,9 @@ describe('texture coordinates in the levels error', () => {
 		const flatError = await worst(flat);
 		const bentError = await worst(bent);
 		expect(flatError).toBeGreaterThan(0);
+		expect(flatError).toBeLessThan(0.001);
+		expect(bentError).toBeGreaterThan(0.11);
+		expect(bentError).toBeLessThan(0.12);
 		expect(bentError).toBeGreaterThan(flatError * 2);
 	});
 });
@@ -449,13 +460,28 @@ describe('levels as separate downloads', () => {
 });
 
 describe('the staged test model', () => {
-	it('holds what the tool builds from the heightfield, and its stages beside it', async () => {
-		const model = await buildStagedModel();
-		const committed = readFileSync(join(MODELS_DIR, STAGED_FILE));
-		expect(Buffer.from(model.glb).equals(committed)).toBe(true);
-		for (const [name, bytes] of model.stages) {
-			const file = readFileSync(join(MODELS_DIR, name));
-			expect(Buffer.from(bytes).equals(file), name).toBe(true);
-		}
-	}, 180_000);
+	it(
+		'holds what the tool builds from the heightfield, and its stages beside it',
+		async () => {
+			const model = await buildStagedModel();
+			const committed = readFileSync(join(MODELS_DIR, STAGED_FILE));
+			expect(Buffer.from(model.glb).equals(committed)).toBe(true);
+			for (const [name, bytes] of model.stages) {
+				const file = readFileSync(join(MODELS_DIR, name));
+				expect(Buffer.from(bytes).equals(file), name).toBe(true);
+			}
+			// The file draws its coarsest level, which the step leaves as a prefix of the reordered
+			// stream: it names 515 vertices and its largest index is 514.
+			await MeshoptDecoder.ready;
+			const io = new NodeIO()
+				.registerExtensions([...ALL_EXTENSIONS, MSFTLod])
+				.registerDependencies({ 'meshopt.decoder': MeshoptDecoder });
+			const doc = await io.readBinary(model.glb);
+			const prim = doc.getRoot().listMeshes()[0]?.listPrimitives()[0];
+			const used = new Set(prim?.getIndices()?.getArray() ?? []);
+			expect(used.size).toBe(515);
+			expect(Math.max(...used)).toBe(514);
+		},
+		scaledBudget(180_000),
+	);
 });

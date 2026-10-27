@@ -9,8 +9,8 @@ const GUIDE = '.dev/releases.md';
 
 const read = (path: string) => readFileSync(join(ROOT, path), 'utf8');
 
-// The owner chose one release workflow with no pull request and no GitHub App on 15 October 2026
-// (.dev/releases.md, "Making a release"). Publishing to npm through trusted publishing also fixes
+// The owner chose one release workflow with no pull request and no GitHub App (.dev/releases.md,
+// "Making a release"). Publishing to npm through trusted publishing also fixes
 // the workflow's file name, which the guide names.
 describe('the Release workflow', () => {
 	it('is one workflow, which opens no pull request and needs no app', () => {

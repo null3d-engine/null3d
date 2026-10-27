@@ -17,7 +17,7 @@ export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	{ file: 'tests/lib/shader-set.test.ts', ceilingMiB: 7168 },
 	// The engine's programs and pipelines, read for every build the build wrote. It reads the whole
 	// generated set as the WebGPU pipelines check does, so it holds the same ceiling: the two draw
-	// kinds and the level bands added builds, and its measured peak passed six thousand.
+	// kinds and the level bands add builds, and its measured peak is above six thousand.
 	{ file: 'packages/engine/src/gpu/webgl2/programs.test.ts', ceilingMiB: 7168 },
 	// The WebGPU pipeline layouts, read for every build the build wrote.
 	{ file: 'packages/engine/src/gpu/webgpu/pipelines.test.ts', ceilingMiB: 7168 },
@@ -33,12 +33,11 @@ export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	// and does not shrink, so the checks hold every growth they have made.
 	{ file: 'packages/engine/src/scene/malformed-files.test.ts', ceilingMiB: 2560 },
 	// A page of the add-on check's fixture, built with the source maps that the allocation gate reads.
-	// It holds the engine's generated shaders, which the page resolves from source: measured on
-	// 24 October 2026, the build peaked at 10,520 MiB, and the maps carried no source text. After the
-	// vegetation package and four new pages joined the build, CI measured 12,930 MiB and 13,120 MiB
-	// on 25 October (runs 40125822864 and 40127501793), past the 12,288 ceiling more often than not,
-	// so the ceiling went to 14 GB. CI's Linux runners have 16 GB. The cost is the engine's build in
-	// the page's own process, which a ceiling cannot fix; that question waits for the owner.
+	// It holds the engine's generated shaders, which the page resolves from source, and the maps
+	// carry no source text. With the vegetation package in the build, CI measures 12,930 MiB and
+	// 13,120 MiB (runs 40125822864 and 40127501793), past 12,288 MiB more often than not, so the
+	// ceiling is 14 GB. CI's Linux runners have 16 GB. The cost is the engine's build in the page's
+	// own process, which a ceiling cannot fix; that question waits for the owner.
 	{ file: 'packages/cli/src/add-on-page-build.test.ts', ceilingMiB: 14336 },
 ];
 

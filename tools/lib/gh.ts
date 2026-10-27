@@ -1,7 +1,7 @@
 // Runs the GitHub CLI for the tools that read CI runs, and runs it again after a server error or a
 // lost connection. GitHub's API answers HTTP 502 now and then, most often for a run of a hundred jobs
-// or more, and a connection to it times out now and then. Either stopped a tool that reads a run's
-// jobs, logs or artifacts.
+// or more, and a connection to it times out now and then. Either would stop a tool that reads a
+// run's jobs, logs or artifacts.
 
 /** How many times a command runs before its server error stands. */
 const TRIES = 5;

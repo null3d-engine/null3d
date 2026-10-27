@@ -282,12 +282,13 @@ post.removeEffect(vignette);
 ```
 
 - Exactly `fn effect(input: EffectInput) -> vec4f`; the build rejects another signature.
-- `EffectInput` has five fields:
+- `EffectInput` has six fields:
   - `color`: the pixel's linear HDR color, multiplied by coverage in alpha.
   - `uv`: (0, 0) at the top left, (1, 1) at the bottom right.
   - `pixel`: the pixel's center, in pixels from the top left.
   - `size`: the render size in pixels.
   - `time`: the sketch time in seconds.
+  - `layer`: the array layer the draw writes, from 0; an effect writes 0.
 - Other pixels: `effectColor(uv)` reads with a linear filter, and `effectPixel(vec2i)` reads one pixel exactly. Both clamp to the image's edge.
 - Depth: `effectDepth(uv)` (1 near, 0 far, 0 where nothing drew), `effectViewPosition(uv)` (z negative in front) and `effectDistance(uv)` (world units along the view). Calling one makes the effect read depth, on all three GPU paths.
 - Uniforms: `struct Uniforms`, read as `uniforms.name`, with the types and the 32-number limit of section 4. TypeScript types `uniforms` and `setEffectUniform` from the struct.

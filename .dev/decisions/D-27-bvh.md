@@ -1,8 +1,8 @@
 # D-27: The trees behind raycasts and spatial queries
 
-Status: decided. Date: 2026-10-03. Task: M2-D1.
+Status: decided. Built: the trees, the queries over them, the capsule test and the stored format. Not built yet: queries that test a skinned character by its capsules; they test its bind pose ([D-30](D-30-scene-queries.md#skinned-characters)). Task: M2-D1.
 
-Summary: Four-child nodes tested four boxes at a time. Mesh trees and the static objects use the SAH build, which answers rays twice as fast in a city block; dynamic objects use the Morton build in each frame that queries. One subtree per grid cell keeps rays precise 6,378 km out. Builds cost 0.20 to 0.30 µs per triangle in WebAssembly.
+Summary: Four-child nodes test four boxes at a time, and one subtree per grid cell keeps rays precise 6,378 km out. Mesh trees and the static objects use the SAH build, which answers rays twice as fast in a city block; dynamic objects use the Morton build in each frame that queries. Mesh trees build at 0.20 to 0.30 µs per triangle in WebAssembly.
 
 ## Question
 
@@ -28,7 +28,7 @@ The question has five parts:
 
 ## Data
 
-All figures come from the Rust benchmarks on the MacBook Pro (18 cores), with the release profile. Several other helpers were building and testing on the machine at the same time, at load averages of 28 to 230. The tables give the run at the lowest load, a load average of about 30, which still had more threads waiting than cores. Earlier runs at higher loads were up to four times slower. Under load, the speedup from more threads is smaller than on an idle machine.
+All figures come from the Rust benchmarks on the MacBook Pro (18 cores), with the release profile. Several other helpers were building and testing on the machine at the same time, at load averages of 28 to 230. The tables give the run at the lowest load, a load average of about 30, which still had more threads waiting than cores. Runs at higher loads were up to four times slower. Under load, the speedup from more threads is smaller than on an idle machine.
 
 ### Mesh trees
 
@@ -40,9 +40,9 @@ A height field of random heights, built with the SAH build on one thread. "Brute
 | 100,352 | 23.9 ms | 26.2 ms | 0.76 ms | 15,691 | 21.5 | 0.56 µs | |
 | 999,698 | 250 ms | 298 ms | 6.2 ms | 130,894 | 18.7 | 0.65 µs | |
 
-So a mesh's tree costs 0.20 to 0.30 µs per triangle in WebAssembly, within the budget of 1 µs. A phone's core is slower than the Mac's, and nobody has measured its build times yet.
+So a mesh's tree costs 0.20 to 0.30 µs per triangle in WebAssembly, within the budget of 1 µs. A phone's core is slower than the Mac's, and no run has measured its build times.
 
-The first version of the build read each primitive's box through its index on every pass. It took 1.07 s for a million triangles at a load of about 180. The build now copies the boxes once into a packed array, which each split bins and partitions in order. Parts of up to 16 primitives split by sorting along each axis instead of by bins. With both changes, the same build took 0.29 s at a load of about 120.
+The build copies the boxes once into a packed array, which each split bins and partitions in order. Parts of up to 16 primitives split by sorting along each axis instead of by bins. Another build read each primitive's box through its index on every pass, and binned every part. It took 1.07 s for a million triangles at a load of about 180. The packed build took 0.29 s at a load of about 120.
 
 ### The top level
 
@@ -64,7 +64,7 @@ Random boxes of similar size flatter the Morton build. A city block is closer to
 | Build, one thread | 6.9 ms | 1.1 ms |
 | One ray | 0.29 µs | 0.56 µs |
 
-The Morton build sorts objects by their centres alone, so a building's box shares nodes with the small props around it. The SAH build weighs each box's size, and keeps buildings and props apart.
+The Morton build sorts objects by their centers alone, so a building's box shares nodes with the small props around it. The SAH build weighs each box's size, and keeps buildings and props apart.
 
 ### A frame that queries
 
@@ -80,7 +80,7 @@ The dynamic rebuild costs 0.03 to 0.06 µs per object on one thread, within the 
 
 ### How the data was produced
 
-- Native: `cargo test -p null3d-core --release --test bench -- --ignored --nocapture --test-threads=1 bench_bvh`, on 3 October 2026, three runs. The benchmarks are `bench_bvh_mesh`, `bench_bvh_top_level`, `bench_bvh_city` and `bench_bvh_scene_sync`.
+- Native: `cargo test -p null3d-core --release --test bench -- --ignored --nocapture --test-threads=1 bench_bvh`, three runs. The benchmarks are `bench_bvh_mesh`, `bench_bvh_top_level`, `bench_bvh_city` and `bench_bvh_scene_sync`.
 - WebAssembly: a small crate exports the mesh build and the Morton build over the same inputs. It is built for `wasm32-unknown-unknown` with SIMD, as the engine is. Node 24 ran it, and each figure is the fastest of 3 to 101 builds.
 - Answers: `crates/null3d-core/tests/bvh.rs` compares every query with brute force. Its inputs are random meshes, soups of long thin triangles, a terrain grid and spheres. Its scenes span many cells, near the origin and 6,378 km from it. `tests/bvh_no_alloc.rs` counts allocations in 57 frames of syncs and queries.
 
@@ -103,7 +103,7 @@ Rejected: nodes of two children. They need twice the nodes and one box test per 
 | Static objects | SAH, subtrees of up to 1,024 objects on the job workers | After objects are created or destroyed, change between static and dynamic, or a static object changes cell. A static object that moves in its cell only refits the boxes |
 | Dynamic objects | Morton codes and the radix sort that clusters already use; subtrees of up to 1,024 objects on the job workers | In each frame that runs a query, and only then |
 
-The SAH build bins box centres into 16 bins along each axis, and splits where the expected cost of a ray is least. Parts of up to 16 primitives sort along each axis and test every split, which is exact and cheaper than binning at that size. From 32 levels down, parts split in the middle of their run instead, so no input can make a tree deeper than 48 levels.
+The SAH build bins box centers into 16 bins along each axis, and splits where the expected cost of a ray is least. Parts of up to 16 primitives sort along each axis and test every split, which is exact and cheaper than binning at that size. From 32 levels down, parts split in the middle of their run instead, so no input can make a tree deeper than 48 levels.
 
 The static tree keeps the SAH build because it answers rays twice as fast in the city block. Queries run many times between changes to static objects. The build costs 2.2 ms for 20,000 objects on 8 threads, and runs only in a frame that queries after a structural change. Such a frame already rebuilds the renderer's tables. A refit costs at most a tenth of a build, so static objects that move only refit.
 
@@ -111,7 +111,7 @@ Both builds that run on the job workers give each subtree its own slots in the n
 
 ### Precise rays
 
-Object bounds are relative to the centres of their grid cells, as the renderer keeps them. The top level builds one subtree per cell, in that cell's frame. A query takes its origin in 64-bit floats, and moves it into each cell's frame in 64-bit floats before it rounds to 32 bits. The test `far_rays_are_as_precise_as_near_ones` builds the same 200 objects at the origin and 6,378 km away. 300 rays at each place find the same objects at the same distances, to the bit.
+Object bounds are relative to the centers of their grid cells, as the renderer keeps them. The top level builds one subtree per cell, in that cell's frame. A query takes its origin in 64-bit floats, and moves it into each cell's frame in 64-bit floats before it rounds to 32 bits. The test `far_rays_are_as_precise_as_near_ones` builds the same 200 objects at the origin and 6,378 km away. 300 rays at each place find the same objects at the same distances, to the bit.
 
 The ray-box test follows Ize's "Robust BVH Ray Traversal" (2013). It widens the far end of each slab by 4 float steps, the most its rounding can lose. Every stored box is also widened by one float step on each side. A ray that runs exactly in a box's face then still enters it. Without the widening, a ray straight down a grid line of a terrain could skip the boxes on one side.
 
@@ -133,9 +133,9 @@ three.js's `Raycaster` tests each object's bounding sphere and box, then each tr
 
 ## Consequences
 
-- `crates/null3d-core/src/bvh/` holds the trees, the queries, the capsules and the stored format. `SceneBvh` keeps the scene's two top-level trees. `SceneStorage` gained `structure_epoch()` and `created()`. The trees follow structural changes through them, and leave the renderer's flag alone.
-- M2-D2 builds the public queries on `SceneBvh`, `TopTree` and `MeshBvh`, and adds instance batch rows to the top level. It writes the "how queries find objects" part of the `api/raycast` docs page from this record. [D-30](D-30-scene-queries.md) records those queries. It also gives each item the box of its mesh, moved by its world matrix, in place of the box around its bounding sphere.
+- `crates/null3d-core/src/bvh/` holds the trees, the queries, the capsules and the stored format. `SceneBvh` keeps the scene's two top-level trees. `SceneStorage` has `structure_epoch()` and `created()`. The trees follow structural changes through them, and leave the renderer's flag alone.
+- M2-D2 builds the public queries on `SceneBvh`, `TopTree` and `MeshBvh`, and adds instance batch rows to the top level. It writes the "how queries find objects" part of the `api/raycast` docs page from this record. [D-30](D-30-scene-queries.md) records those queries. Each item takes the box of its mesh, moved by its world matrix, not the box around its bounding sphere.
 - M2-A2 keeps the CPU copy of a mesh's positions and indices when queries need them, and builds its tree on a job worker at load.
 - The asset tool stores trees for large meshes with `MeshBvh::to_bytes()` ([D-50](D-50-blockers-and-stored-trees.md)). When the reader refuses a stored tree, the mesh builds one instead.
-- The skinning tasks give the capsules from the joint matrices.
+- Queries will take the capsules from the joint matrices of the skinning tasks. Without them, queries test a skinned character in its bind pose.
 - The benchmarks in `crates/null3d-core/tests/bench.rs` measure the budgets again after any change to the builds.

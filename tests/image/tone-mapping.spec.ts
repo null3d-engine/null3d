@@ -99,9 +99,9 @@ for (const tone of [...TONE_MAPPINGS, ...ADDON_TONE_MAPPINGS])
 
 /**
  * The exposure in stops of the bright tiles test: it lights the brightest tiles to about 250, past
- * where the half precision builds once clipped each channel at 64. On CI's software GPU that clip
- * drew colored tiles 5 to 7 steps of 255 from full precision under AgX and Neutral, toward white or
- * another hue.
+ * the 64 at which a half precision build could clip each channel. On CI's software GPU such a clip
+ * draws colored tiles 5 to 7 steps of 255 from full precision under AgX and Neutral, toward white
+ * or another hue.
  */
 const BRIGHT_STOPS = 4;
 

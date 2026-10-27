@@ -1,6 +1,7 @@
 # D-256: a depth-reading material carries textures
 
-Status: decided. Date: 24 October 2026. Task: M3-E4a.
+Status: decided. Built: the maps' group of seven slots for a depth-reading material, on every GPU
+path. Task: M3-E4a.
 
 Summary: A custom material that reads the copy of the scene's depth takes a maps' group of seven
 slots, under a layout of its own, which leaves the fragment stage's sixteenth sampled texture for
@@ -19,8 +20,8 @@ fragment stage. Which binding does the engine give up, and what does that cost?
   compatibility mode and WebGL2.
 - Each stage's sampled textures, samplers and storage textures stay within the default limits that
   every device offers, and the figures are written down.
-- A material that reads neither the depth nor a map pays nothing measurable: the same bindings, the
-  same GPU objects and the same draw list words as before.
+- A material that reads neither the depth nor a map pays nothing measurable: the design adds no
+  binding, no GPU object and no draw list word to it.
 - A material that still cannot fit is refused with a message that names what to drop.
 
 ## Data
@@ -32,7 +33,7 @@ The count in each GPU path's fragment stage:
 | `LAYOUT_FRAME` sampled textures | 8 (bindings 2, 3, 4, 9, 10, 11, 12, 15) | 8 | reads only what it uses |
 | `LAYOUT_MATERIAL_MAPS` sampled textures | 8 | 8 | 8 slots, units only for reads |
 | `LAYOUT_MATERIAL_SCENE` sampled texture | 1 | 1 | 1 |
-| A material with the depth and the maps, today | 17 | 17 | 3 units |
+| A material with the depth and a full maps' group | 17 | 17 | 3 units |
 | The limit that binds | `maxSampledTexturesPerShaderStage` 16 | 16 | 16 texture units per stage |
 | Option A: the copy as a read-only storage texture | 16 sampled, 1 storage | 16 sampled, 1 of 4 storage | 3 units |
 | Option B: a maps' group of seven slots | 16 sampled | 16 sampled | 3 units |
@@ -57,7 +58,7 @@ The counted bindings, by option:
 
 How the data was produced: the layouts in `packages/engine/src/gpu/webgpu/pipelines.ts`, the slot
 count in `crates/null3d-gpu/src/drawlist.rs`, and the limits in the plan's table of the devices'
-reported limits (24 October 2026). A stage's count includes every entry of every group's layout
+reported limits. A stage's count includes every entry of every group's layout
 whether or not the shader reads it, as `null3d-gpu`'s mock and
 `packages/engine/src/gpu/webgpu/pipelines.test.ts` judge.
 
@@ -91,7 +92,7 @@ carries the copy's layout at that group too; `drawlist::groups` records it there
   the depth's, `JOINTS_AFTER_SCENE`, in `crates/null3d-shaders`.
 - **Cost on a material that reads neither:** its maps' group keeps the same layout, the same
   eighteen entries and the same ninety-three words in the draw list, and its pipelines, shader
-  builds and draws are unchanged. No GPU object is added.
+  builds and draws stay the same. No GPU object is added.
 - **Tests:** `crates/null3d-render/tests/custom_materials.rs` counts the two groups' bindings and
   words on both frame builders; `crates/null3d-shaders/tests/material.rs` checks the joint
   texture's group in the shading and culled builds; `pipelines.test.ts` counts the fragment stage's

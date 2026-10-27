@@ -33,7 +33,7 @@ use null3d_gpu::drawlist::{
 use crate::bloom::{Area, CornerMap, bytes_of};
 use crate::frame::{LINEAR_LEVEL, RecordError, UploadArena, clamp_sampler};
 use crate::graph::{RenderScale, Size};
-use crate::pipelines::{DepthBias, PipelineCache, PipelineKey, built_by};
+use crate::pipelines::{DepthBias, PipelineCache, PipelineKey, built_by_or_first};
 
 /// How the meter averages the scene's brightness.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -290,7 +290,7 @@ impl ExposurePass {
         if self.path(meter) == Meter::Histogram {
             return self
                 .compute_frame
-                .is_some_and(|frame| pipelines_built == 0 || built_by(frame, pipelines_built));
+                .is_some_and(|frame| built_by_or_first(frame, pipelines_built));
         }
         let ids = *self
             .pipelines

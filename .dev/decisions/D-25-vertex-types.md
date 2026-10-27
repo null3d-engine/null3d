@@ -1,6 +1,6 @@
 # D-25: Vertex attribute types, and plain integers on WebGPU
 
-Status: decided. Date: 2026-10-03. Task: M2-A1.
+Status: decided and built. Task: M2-A1.
 
 Summary: Take every type that glTF's `KHR_mesh_quantization` allows for each attribute, and keep it on the GPU. WebGPU reads plain integers as normalized fractions, and a pipeline constant multiplies them back: integer meshes drew their float twins' image exactly on the Mac's GPU and on SwiftShader.
 
@@ -38,8 +38,8 @@ three.js builds each shader for its geometry, so its WebGPU renderer can declare
 | The image test `vertex-types` against its float twin, Chrome on the Mac's GPU, WebGPU, compatibility mode and WebGL2 | No pixel differs, at a threshold of 0 | `bun run test:images -g vertex-types`, 2026-10-03 |
 | The same with SwiftShader, the software GPU of CI | 0 of 129,600 pixels differ, on each tier | `CI=1 bun run test:images -g vertex-types`, 2026-10-03 |
 | The same test with the WebGPU constants left out | 7.3% of the pixels differ, and the test fails | a run with the constants removed |
-| The engine's JavaScript of a pipelined page, after Brotli | 84.9 KB before, 86.8 KB after. The checks and copies of typed arrays take about 1 KB, and the type tables of both GPU paths about 0.5 KB | `bun run build:check-size` against main, 2026-10-03 |
-| The core's WebAssembly, after Brotli | 148.2 KB before, 150.2 KB after (+1.4%) | the same run |
+| The engine's JavaScript of a pipelined page, after Brotli | 86.8 KB, against 84.9 KB without the types. The checks and copies of typed arrays take about 1 KB, and the type tables of both GPU paths about 0.5 KB | `bun run build:check-size` against main, 2026-10-03 |
+| The core's WebAssembly, after Brotli | 150.2 KB, against 148.2 KB without the types (+1.4%) | the same run |
 
 ## Decision
 
@@ -54,7 +54,7 @@ The types each attribute takes follow glTF:
 | Color, joint weights | Floats, normalized unsigned 8-bit and 16-bit integers |
 | Joints | Plain unsigned 8-bit and 16-bit integers, which shaders read as whole numbers |
 
-A format keeps the six bits that say which optional attributes a vertex has. Above them, each attribute has a type field that holds the place of its type in its own list. Each list starts with the default type, so a format of floats keeps the number it had before types existed. The fields fit in 27 bits. Every attribute takes whole 4-byte words, as glTF lays them out. The GPU reads the whole slot, padding included, so three 16-bit values read as `unorm16x4`. WebGPU has no three-component 8-bit or 16-bit formats. ANGLE on Direct3D converts such formats on the CPU. glTF files already hold this padding. So whole words take no more memory than the file, and they avoid both problems.
+A format keeps the six bits that say which optional attributes a vertex has. Above them, each attribute has a type field that holds the place of its type in its own list. Each list starts with the default type, so a format of floats has every type field at 0. The fields fit in 27 bits. Every attribute takes whole 4-byte words, as glTF lays them out. The GPU reads the whole slot, padding included, so three 16-bit values read as `unorm16x4`. WebGPU has no three-component 8-bit or 16-bit formats. ANGLE on Direct3D converts such formats on the CPU. glTF files already hold this padding. So whole words take no more memory than the file, and they avoid both problems.
 
 On WebGL2, joints go through `vertexAttribIPointer` and every other integer through `vertexAttribPointer`, normalized or not. The `vertex-types` test reads both kinds on every tier.
 
@@ -62,5 +62,5 @@ On WebGL2, joints go through `vertexAttribIPointer` and every other integer thro
 
 - On WebGPU, the most negative plain signed value reads one step high: -128 reads as -127, and -32768 as -32767. A normalized read clamps at -1. glTF exporters write plain positions as unsigned integers, so files rarely hold it.
 - A custom full shader reads raw attributes. It passes positions and texture coordinates through the `mesh_` functions to draw plain integer meshes the same on both paths. The custom shaders guide and the develop skill say so.
-- Formats now split buckets and pipelines by type, as they split them by attribute.
+- Formats split buckets and pipelines by type, as they split them by attribute.
 - The GPU skinning tasks read joints at location 6 and weights at location 7, which the formats already place.

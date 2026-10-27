@@ -96,10 +96,10 @@
 // that the first `timeOfDay` call made, for the allocation sample of the helper's per-frame form.
 // `--prepass` turns the depth prepass on, in any scene.
 // `--terrain` and `--impostors` fail the check while their add-ons stand as they are: measured on
-// the Mac on 15 October 2026, the terrain's update allocated 1908 bytes per frame in the heightfield
-// sampling, 1871 in the chunks it evicts and 1163 more in the same sampling, about 5 KB in all, and
-// the impostors' batch update allocated 187 KB per frame with 23 KB in the sampling beside it. Both
-// add-ons must stop allocating in their per-frame update, which their owners owe.
+// the Mac, the terrain's update allocates 1908 bytes per frame in the heightfield sampling, 1871 in
+// the chunks it evicts and 1163 more in the same sampling, about 5 KB in all, and the impostors'
+// batch update allocates 187 KB per frame with 23 KB in the sampling beside it. Both add-ons must
+// stop allocating in their per-frame update, which their owners owe.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -183,6 +183,7 @@ import {
 } from '../packages/cli/src/heap-profile.js';
 import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { attachWorkers, DevTools, evaluate, pagesAt, sleep, within } from './lib/devtools';
 import { pagePath } from './lib/parity';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
@@ -269,7 +270,7 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  *   so the browser may keep it in a lower tier, where each fraction it computes is a new number.
  *   With a mouse move about every third frame, S5 and S6 took 2 to 11 bytes per frame there.
  * - the wake path's slot change, which the sketch worker reads each frame: measured on the Mac at
- *   High on 15 October 2026, it took 17.5 bytes per frame, up to 19.7;
+ *   High, it takes 17.5 bytes per frame, up to 19.7;
  * - the frame's pending reads, which the render worker maps after it submits: each read makes a
  *   promise with its reactions, about 18 bytes, and S1 reads once a frame, so it took 18.2 bytes
  *   per frame, up to 20.4.
@@ -414,10 +415,10 @@ export const DAY_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number
  * rectangle and the copy of it into engine memory, which the profiler attributes to the copy at
  * each read, and the render passes that make the texture's mip levels again. The refresh adds no
  * place of its own, and the sketch changes one rectangle object in place, so the sample holds the
- * browser's and the engine's work alone. Measured on 25 October 2026: the copy place read 145.1
- * bytes per frame on the Mac's WebGPU path, 140.7 on its WebGL2 and 131.3 on CI's SwiftShader; the
- * mip levels read 169.5 on the Mac's WebGPU path and 165.9 on SwiftShader, whose windows reached
- * 202.7, and WebGL2 makes them without a render pass.
+ * browser's and the engine's work alone. Measured, the copy place reads 145.1 bytes per frame on
+ * the Mac's WebGPU path, 140.7 on its WebGL2 and 131.3 on CI's SwiftShader; the mip levels read
+ * 169.5 on the Mac's WebGPU path and 165.9 on SwiftShader, whose windows reach 202.7, and WebGL2
+ * makes them without a render pass.
  */
 export const CANVAS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': { 'setRegion scene/textures.ts': 192 },
@@ -461,8 +462,8 @@ const OTHER_BUDGET = 4;
  * frames, and the bytes each may allocate per call. The browser calls the render worker at the
  * display's rate, so a slow GPU steps fewer frames per call: on SwiftShader a frame that takes a
  * second takes about 50 calls, and the browser's own per-call objects then weigh about 50 times as
- * much per frame. On 20 October 2026 two runs read 865 and 965 bytes per frame at (IDLE) and 470
- * and 560 at (JS), while a run of the same code whose warm-up was 2.6 times faster read 698 in all.
+ * much per frame. Two runs read 865 and 965 bytes per frame at (IDLE) and 470 and 560 at (JS),
+ * while a run of the same code whose warm-up was 2.6 times faster read 698 in all.
  * Judging these two per call removes the runner's speed from the figure. The budgets equal the
  * per-frame budgets of a real GPU, where each call draws one frame.
  */
@@ -479,8 +480,8 @@ const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 2
  * ask on SwiftShader, which keeps its sketch in the browser's middle tier: the profiler then charges
  * a call's promise objects to the inlined frame step, `pose`, where the Mac charges them to the
  * loader's places. So `pose` is judged per call here too. The figures come from the Mac's WebGL2 run
- * and SwiftShader runs on 24 October 2026 with `--splats` and the task asked about once a frame,
- * with room above them. The add-on's frame step makes no array and no number object.
+ * and SwiftShader runs with `--splats` and the task asked about once a frame, with room above them.
+ * The add-on's frame step makes no array and no number object.
  */
 const TASK_CALL_BUDGETS: Readonly<Record<string, number>> = {
 	'pose null3d/s1-sketch.ts': 128,
@@ -528,9 +529,9 @@ const REPLAY = 'replay webgpu/backend.ts';
  * Functions whose objects the check counts in their caller's place. The browser counts an object in
  * the function that makes it, or in the caller where it inlines that function, and the canvas
  * texture and its view moved between `colorView` and the replay from run to run while their sum
- * held: in five runs of 24 October 2026 on SwiftShader, `colorView` read 7.3 to 52.8 bytes per frame
- * and the replay 76.8 to 100.8, their sum 101.5 to 129.6. With samples of 420 frames, `colorView`
- * read 30.5. Counted in the replay, the two read the same whichever way the inlining fell.
+ * held: in five runs on SwiftShader, `colorView` read 7.3 to 52.8 bytes per frame and the replay
+ * 76.8 to 100.8, their sum 101.5 to 129.6. With samples of 420 frames, `colorView` read 30.5.
+ * Counted in the replay, the two read the same whichever way the inlining falls.
  */
 const COUNTED_IN_CALLER: ReadonlyMap<string, string> = new Map([
 	['colorView webgpu/backend.ts', REPLAY],
@@ -543,9 +544,9 @@ type WorkerBudgets = Partial<Record<(typeof WORKERS)[number], Record<string, num
 /**
  * The bytes per frame that the WebGPU replay may allocate for each render pass or compute pass that
  * a switch or a scene adds on top of S1's: the browser's encoder of the pass, which it makes for
- * each pass. Measured on the Mac at High: (2026-10-15) the pass-heavy switches added 25.5 to 34.4
- * bytes per pass over S1's own figure — 24 for `--tile-shadows`, 28 for `--bloom`, 26 for `--dof`,
- * 34 for `--fog` and 25 for `--passes` — so 32 covers them with room for sampling noise.
+ * each pass. Measured on the Mac at High, the pass-heavy switches add 25.5 to 34.4 bytes per pass
+ * over S1's own figure: 24 for `--tile-shadows`, 28 for `--bloom`, 26 for `--dof`, 34 for `--fog`
+ * and 25 for `--passes`. So 32 covers them with room for sampling noise.
  */
 const PASS_REPLAY_BYTES = 32;
 
@@ -585,8 +586,8 @@ const SSR_BUDGETS: WorkerBudgets = {
 
 /**
  * What `--weighted` writes through the staging ring each frame: the blended rows' weights, which the
- * page uploads as its rows move. Measured on the Mac on 15 October 2026: the write took 123.5 bytes
- * per frame against the 96 that a page without the switch takes, up to 124.1.
+ * page uploads as its rows move. Measured on the Mac: the write takes 123.5 bytes per frame
+ * against the 96 that a page without the switch takes, up to 124.1.
  */
 const WEIGHTED_BUDGETS: WorkerBudgets = {
 	'render-worker': { 'write webgpu/staging.ts': 32 },
@@ -809,6 +810,7 @@ async function reachFrames(frames: () => Promise<number>, target: number): Promi
 }
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The allocation check');
 	const args = process.argv.slice(2);
 	const option = (name: string, fallback: number) => {
 		const at = args.indexOf(name);
