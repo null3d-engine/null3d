@@ -1,0 +1,13 @@
+Plans: a hand run of T-32, the script-tag build, in Safari 26.2 on the server Mac on 2026-10-27. The tree was the milestone branch at `dc1e9d557`. The run served `target/cdn` from one origin and the test pages from another, with no bundler and no Playwright. It opened each case with `open -a Safari` so the window was in front. The first three cases used `tests/pages/cdn-try.html`. They ran single-threaded with no isolation headers, and single-threaded through an import map. The third ran threaded with the isolation headers, where every worker starts from a `blob:` address. The fourth case used `tests/pages/cdn-addon.html` with the terrain add-on, threaded on core WebGPU. A hand-run page on the page's origin embedded each test page. It copied the page's own frame read-back into the window title, which the run read.
+
+Result: 4 passed, 0 failed. The page reported no error in any case.
+
+Single-threaded with no isolation headers: build `single`, threaded false, mapped false, frame 2648 x 1550. The center pixel was (222, 89, 1, 255), the orange box over the dark background.
+
+Single-threaded through an import map: mapped true, with the same frame and the same center pixel.
+
+Threaded with the isolation headers: build `threaded`, threaded true, with the same frame and the same center pixel. The threaded WebAssembly file loaded, so every worker started from its `blob:` address.
+
+The terrain add-on, threaded on core WebGPU: tier `webgpu`, frame 2648 x 1550. The ground covered 0.489 of the frame, with mean color (49.0, 79.7, 34.8), where green is above blue and red. The add-on's compiled shader module came from the CDN.
+
+The landings from `dc1e9d557` to `ce417ea20` changed no engine source, no add-on source, no worker bootstrap, no loader and neither test page. The one change near the builder, in `tools/lib/packages.ts`, moves a CLI template file's path and does not touch an engine or add-on build. This run therefore shows the build at `ce417ea20`. The only CDN output that changed is the third-party notices text, which no page loads.
