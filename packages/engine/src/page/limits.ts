@@ -23,6 +23,7 @@ import { softwareRenderer } from '../shared/software';
 import type {
 	CompressionFamily,
 	DepthMode,
+	PrepassColor,
 	ShadowDepthBits,
 	SkinningSwitch,
 	Switches,
@@ -45,6 +46,13 @@ const ANTIALIAS_CODES: Record<AntialiasMode, number> = {
 	none: C.ANTIALIAS_NONE,
 	fxaa: C.ANTIALIAS_FXAA,
 	msaa: C.ANTIALIAS_MSAA,
+};
+
+/** The core's code of each way that a prepass starts its stand-in color, and the default. */
+const PREPASS_COLOR_CODES: Record<PrepassColor, number> = {
+	load: C.PREPASS_COLOR_LOAD,
+	clear: C.PREPASS_COLOR_CLEAR,
+	none: C.PREPASS_COLOR_NONE,
 };
 
 /** The parts of the capability report that decide how the engine uses the device. */
@@ -163,6 +171,11 @@ export interface CoreDevice {
 	 */
 	depthPrepass: boolean;
 	/**
+	 * How a depth prepass that a screen step splits from the opaque pass starts the stand-in color
+	 * that it never draws, from the ?prepass-color= switch (`PREPASS_COLOR_*`).
+	 */
+	prepassColor: number;
+	/**
 	 * The core's code of WebGPU's skinning mode: the vertex shader of each pass, or the skinning
 	 * pass, with or without its savings.
 	 */
@@ -244,6 +257,7 @@ export type DeviceOptions = Pick<
 	| 'compression'
 	| 'cells'
 	| 'join'
+	| 'prepassColor'
 	| 'skinning'
 	| 'indexInstances'
 	| 'direct'
@@ -452,6 +466,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		cellCulling: options.cells,
 		joinEffects: options.join,
 		depthPrepass: options.depthPrepass,
+		prepassColor: PREPASS_COLOR_CODES[options.prepassColor ?? 'none'],
 		skinning: SKINNING_CODES[options.skinning],
 		shadowDepthBits: options.shadowDepthBits,
 		largeWorld: options.largeWorld,
