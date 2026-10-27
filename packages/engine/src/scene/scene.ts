@@ -660,6 +660,12 @@ export interface DirectionalShadowOptions {
 	 * that moves draws the larger tile again in every frame.
 	 */
 	heroTileSize?: 1024 | 2048 | 4096;
+	/**
+	 * How much of the light's shadow it draws, from 0 for none to 1, the default, for all of it.
+	 * The shader mixes each shadow lookup toward full light by the rest, as three.js's
+	 * `LightShadow.intensity` does. It needs no new shader variant.
+	 */
+	intensity?: number;
 }
 
 /**
@@ -712,6 +718,12 @@ export interface LightShadowOptions {
 	 * times the sine of its angle to the light. The default is 0.02.
 	 */
 	normalBias?: number;
+	/**
+	 * How much of the light's shadow it draws, from 0 for none to 1, the default, for all of it.
+	 * The shader mixes each shadow lookup toward full light by the rest, as three.js's
+	 * `LightShadow.intensity` does.
+	 */
+	intensity?: number;
 }
 
 /**
@@ -889,6 +901,7 @@ const LIGHT_LIMITS: Record<number, readonly [string, number, number, string]> = 
 	[C.LIGHT_VALUE_PENUMBRA]: ['penumbra', 0, 1, 'from 0 to 1'],
 	[C.LIGHT_VALUE_SHADOW_BIAS]: ['shadow bias', 0, Number.MAX_VALUE, 'at least 0'],
 	[C.LIGHT_VALUE_SHADOW_NORMAL_BIAS]: ['shadow normal bias', 0, Number.MAX_VALUE, 'at least 0'],
+	[C.LIGHT_VALUE_SHADOW_INTENSITY]: ['shadow intensity', 0, 1, 'from 0 to 1'],
 	[C.LIGHT_VALUE_SHADOW_CASCADES]: ['shadow cascades', 1, 4, 'a whole number from 1 to 4'],
 	[C.LIGHT_VALUE_SHADOW_MAP_SIZE]: [
 		'shadow map size',
@@ -918,6 +931,7 @@ const SHADOW_NUMBERS = [
 	['distance', C.LIGHT_VALUE_SHADOW_DISTANCE],
 	['contactDistance', C.LIGHT_VALUE_SHADOW_CONTACT],
 	['heroTileSize', C.LIGHT_VALUE_HERO_SIZE],
+	['intensity', C.LIGHT_VALUE_SHADOW_INTENSITY],
 ] as const;
 
 /** The direction a new directional or spot light points: straight down. */

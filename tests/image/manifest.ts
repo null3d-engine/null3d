@@ -1750,6 +1750,25 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// The same scene with the sun's shadow thinned, at each of the three values of its intensity:
+	// none, half and all of it, which is the default. The shadows lighten toward no shadow as the
+	// value falls, and the lit surfaces around them do not change.
+	...(
+		[
+			['none', 0],
+			['half', 0.5],
+			['full', 1],
+		] as const
+	).map(
+		([name, intensity]): ImageTest => ({
+			name: `shadows-intensity-${name}`,
+			sketch: `tests/pages/sketches/shadow-scene-sketch.ts?intensity=${intensity}`,
+			hold: 0,
+			size: [480, 270],
+			sameOnEveryTier: true,
+			tolerance: { maxDiffRatio: 0.005 },
+		}),
+	),
 	// Car-sized boxes standing on a street, in the last cascade from above, and from a low angle in
 	// the first cascade and in the last. Each box's shadow must meet its base with no lit line
 	// between them.
