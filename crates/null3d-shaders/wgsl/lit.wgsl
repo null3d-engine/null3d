@@ -223,7 +223,7 @@ fn pick_color(key: u32) -> vec4f {
 #endif
 #ifdef TRANSMISSION
 #import null3d::globals::{MaterialTransmission}
-#import null3d::mesh::{NO_FOG, layer_maps_kind_of, material_transmission}
+#import null3d::mesh::{NO_FOG, layer_maps_kind_of, material_dispersion, material_transmission}
 #import null3d::refraction::{transmitted_light}
 #ifdef TONE_MAP
 #import null3d::fog::{fog_factor}
@@ -338,6 +338,10 @@ var<private> transmission_row: MaterialTransmission;
 /// through names 2 for the slots that hold its transmission and thickness maps, so `with_maps`
 /// reads them instead of the specular maps.
 var<private> layer_maps_kinds: u32;
+
+/// The strength of the volume's dispersion, which spreads the light through it over three rays,
+/// one per color.
+var<private> volume_dispersion: f32;
 
 /// The diffuse light that `light_surface` gathers, of which the light through the surface takes
 /// the transmission's share.
@@ -2167,6 +2171,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         transmission_row.values.z,
         transmission_row.attenuation,
         object_scale,
+        volume_dispersion,
     ) * pbr.diffuse * (1.0 - fresnel);
 #ifdef TONE_MAP
     let emitted = s.emissive * engine_frame.output.exposure;
@@ -2318,6 +2323,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef TRANSMISSION
     transmission_row = material_transmission(in.material);
     layer_maps_kinds = layer_maps_kind_of(in.material);
+    volume_dispersion = material_dispersion(in.material);
     object_scale = in.scale;
 #else ifdef TRANSLUCENCY
     translucency_row = material_translucency(in.material);

@@ -100,7 +100,9 @@ export const MODELS_HDR = sampleUrl('sources/hdri/polyhaven/venice_sunset/venice
  * sheen and glass in one model. The Khronos grid of KHR_materials_anisotropy draws beside the
  * code-built scene, so a strict comparison covers the real file too. The Khronos linear
  * interpolation test compares a factor with the value that a texture samples, so a transfer
- * function applied after filtering changes its picture.
+ * function applied after filtering changes its picture, and the test of KHR_materials_dispersion
+ * draws its prisms in front of a patterned cloth, so the colors that each dispersion strength
+ * separates show.
  */
 export const MODEL_SCENES = {
 	'metal-rough': {
@@ -204,6 +206,16 @@ export const MODEL_SCENES = {
 		).href,
 		environment: true,
 		timeoutSeconds: GRID_SECONDS,
+	},
+	// The Khronos test of KHR_materials_dispersion: prisms over five indices of refraction and five
+	// dispersion strengths, in front of a patterned cloth. The transmission shader bends one ray
+	// through each prism without dispersion and three with it, so the colors separate.
+	dispersion: {
+		url: new URL(
+			'../../tests/pages/assets/models/sources/khronos/DispersionTest/DispersionTest.glb',
+			import.meta.url,
+		).href,
+		timeoutSeconds: LAYERS_SECONDS,
 	},
 	'morph-primitives': {
 		url: sampleUrl('sources/khronos/MorphPrimitivesTest/glTF-Binary/MorphPrimitivesTest.glb'),
