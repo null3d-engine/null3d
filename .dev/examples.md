@@ -686,14 +686,20 @@ and a hero car with two screens.
   because the default would not see either mark. A later `set` that raises a mark builds the effect
   then. One that lowers every mark to 0 drops it again. So a kit made with every mark at 0 still
   draws a mark that a later call sets.
-- **The lens's cost.** The add-on's README holds the look's cost per preset. The cost test times
-  the whole look against the same scene without it. It draws at 1920 x 1080 with a render scale of
-  1, and runs as `NULL3D_LENS_COST=1 bun run test:browser -- lens-cost.spec.ts`. The quiet run on
-  the Mac's M3 Max in Chrome 156 gives the look 0.45 ms at Low and 0.76 ms at Ultra on WebGPU, 0.61
-  and 1.40 in compatibility mode, and 0.91 and 1.05 on WebGL2, while the other presets read within
-  half a millisecond of zero or below it. The add-on's README holds all twelve cells with each
-  line's load, and that spread is the figure's own accuracy
-  ([run](tested-devices/macbook-pro-m3-max-chrome/20261027-092740-lens-cost.md)). The core's
+- **The lens's cost.** The add-on's README holds the look's cost per preset and each mark's. The
+  cost test times the whole look against the same scene without it. It draws at a canvas of
+  3840 x 2160 CSS pixels with the pixel ratio held at 2, a 7680 x 4320 buffer, with a render scale
+  of 1, and runs as `NULL3D_LENS_COST=1 bun run test:browser -- lens-cost.spec.ts`. Each side takes
+  five rounds, in the opposite order on alternate rounds. The quiet run on the Mac's M3 Max in
+  Chrome 156 gives the look 2.00 ms at Low and 1.27 at Ultra on WebGPU, 5.42 and 2.00 in
+  compatibility mode, and 1.41 and 1.46 on WebGL2. Ten of the twelve cells keep their whole range
+  above zero; compatibility High's and WebGL2 Medium's cross it. The four cells that the earlier,
+  smaller run put at or below zero now read 3.41 at WebGPU Medium, 2.02 at WebGPU High, 1.64 at
+  WebGL2 Medium and 0.71 at WebGL2 High; three of the four keep their range above zero, and WebGL2
+  Medium's does not, its range running from -7.02 to 1.64. Seven of the twenty-one marks resolve
+  their own cost at the highest preset their path allows, between 0.38 and 1.58 ms. The add-on's
+  README holds every cell with its range
+  ([run](tested-devices/macbook-pro-m3-max-chrome/20261027-103454-lens-cost.md)). The core's
   vignette and grade add nothing to a frame, since they run in the final pass; the sharpening value
   adds the first step's pass at the whole render scale. A look that leaves all four of the effect's
   values at 0 adds no effect at all.
