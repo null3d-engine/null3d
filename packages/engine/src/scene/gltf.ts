@@ -1440,6 +1440,7 @@ class FileMaterials {
 			options.attenuationDistance = volume.attenuationDistance;
 		}
 		if (m.transmission) options.transmission = m.transmission.factor;
+		if (m.dispersion > 0) options.dispersion = m.dispersion;
 		if (m.diffuseTransmission) {
 			options.diffuseTransmission = m.diffuseTransmission.factor;
 			options.diffuseTransmissionColor = m.diffuseTransmission.color;
@@ -1630,6 +1631,8 @@ function propertyBase(target: RigPropertyTarget, data: GltfData): Float32Array |
 				return Float32Array.from(m.specularColor);
 			case 'transmission':
 				return one(m.transmission?.factor);
+			case 'dispersion':
+				return one(m.dispersion);
 			case 'thickness':
 				return one(m.transmission?.thickness ?? m.diffuseTransmission?.thickness);
 			case 'clearcoat':

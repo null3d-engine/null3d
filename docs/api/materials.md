@@ -137,6 +137,7 @@ A surface with `transmission` lets the light behind it through, as three.js's `M
 | `transmission` | How much light passes through. That share of the surface's diffuse light becomes the light from behind it, times the base color. The surface's reflections stay, so glass still shows its highlights and the environment |
 | `transmissionMap` | The same share, per texel, in red. Its red multiplies `transmission`. A material with it takes no `specularIntensityMap`, since the two share a slot |
 | `ior` | How far the light bends where it enters the volume. Glass is 1.5, water 1.33 |
+| `dispersion` | How strongly the light that passes through separates into colors, 0 or more: 20 divided by the Abbe number, as glTF's `KHR_materials_dispersion` gives it. A diamond's 0.36 is weak and rutile's 2.04 is strong. Each color bends by its own index of refraction, so the edges of a prism or a gem show a rainbow. 0 bends every color alike |
 | `thickness` | How deep the volume is. The light leaves it this far along the bent direction, so a thicker volume shows what lies behind it farther away. 0 is a thin wall, such as a window pane, which bends nothing |
 | `thicknessMap` | The thickness, per texel, in green. Its green multiplies `thickness`. A material with it takes no `specularColorMap`, since the two share a slot |
 | `roughness` | How much the light from behind blurs: none at 0, and very blurred at 1. An `ior` of 1 blurs nothing |
@@ -152,7 +153,7 @@ const tinted = materials.standard({
 });
 ```
 
-Give `transmission` when you create the material, even as 0, to change it later with `set`. The option picks the shader that samples what lies behind the surface. A material created without it lets no light through.
+Give `transmission` when you create the material, even as 0, to change it later with `set`. The option picks the shader that samples what lies behind the surface. A material created without it lets no light through. `dispersion` needs no such choice: `set` changes it at any time, and it shows on a material that `transmission` lets light through.
 
 ### How it draws
 
@@ -161,6 +162,7 @@ After the camera's view draws its opaque objects, the engine copies their colors
 - Only opaque objects show through. Another surface that lets light through, or a blended one, does not show through glass in front of it.
 - The copy keeps the opaque objects' depth too. A bent ray can land on an opaque object in front of the surface, such as a flower on the bank of a stream. The surface then shows what lies straight behind it instead. three.js shows the flower's color in the water there.
 - The volume is a model, not a ray through the real shape. A ball with `thickness` set to its diameter looks right through its middle. three.js uses the same model.
+- With `dispersion`, light follows three rays, one per color, each bent by a slightly different index of refraction. Red takes the lowest index, as three.js draws it. Each color keeps the light that its own ray reaches, so a gem's edges separate white light into colors.
 - `thickness` is in the mesh's own units, and the object's scale multiplies it.
 - Such a surface takes the `opaque` or `blend` alpha mode. `mask` and `hash` throw E1217.
 - Views other than the camera's, such as [scene passes](render.md#scene-passes) and [reflection passes](render.md#reflection-passes), have no copy. There the surface shows the environment's light along the bent ray.
@@ -168,7 +170,7 @@ After the camera's view draws its opaque objects, the engine copies their colors
 
 ### Cost of transmission
 
-Nothing of it runs, and none of its code or shaders download, until the first surface that lets light through draws. Then each frame copies the camera's opaque colors once and makes the blurred copies. The camera's opaque and see-through objects then draw in two render passes instead of one. The shaders of such surfaces load on their first use. To load them before the first frame instead, list `'transmission'` in `createEngine`'s `preload` option.
+Nothing of it runs, and none of its code or shaders download, until the first surface that lets light through draws. Then each frame copies the camera's opaque colors once and makes the blurred copies. The camera's opaque and see-through objects then draw in two render passes instead of one. The shaders of such surfaces load on their first use. To load them before the first frame instead, list `'transmission'` in `createEngine`'s `preload` option. A material with `dispersion` samples the copy three times, once for each color; a material without it samples the copy once.
 
 ## Light through thin surfaces
 
