@@ -472,9 +472,9 @@ export class Terrain {
 	}
 
 	/**
-	 * The distance from a block's low corner to the farthest vertex that was just written into it.
-	 * A mesh keeps the sphere it was made with, so a block that takes another's mesh gives the object
-	 * the sphere of the ground that it now holds.
+	 * The sphere a block of this level reports: centred on the block's middle, with the radius to the
+	 * farthest corner of the level's ground. One sphere serves every block of a level, so a block that
+	 * takes another's mesh keeps it, and a cell crossing writes no new bounds.
 	 */
 	private blockSphere(
 		level: number,
