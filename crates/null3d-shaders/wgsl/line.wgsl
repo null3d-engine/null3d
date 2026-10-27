@@ -188,7 +188,7 @@ fn lit_color(m: Material, base: vec3f, relative: vec3f) -> vec3f {
     let compensation = multiscatter_compensation(pbr.specular_blended, dfg);
     let to_light = -engine_frame.sun_direction.xyz;
     let sun = direct_light(pbr, normal, normal, to_light, engine_frame.sun_color.rgb, compensation);
-    let clustered = clustered_light(pbr, relative, normal, normal, compensation);
+    let clustered = clustered_light(pbr, relative, normal, normal, normal, compensation);
     let ambient = indirect_diffuse(pbr, ambient_light(normal), dfg);
     let direct = sun.diffuse + sun.specular + clustered.diffuse + clustered.specular;
     return direct + ambient + exposed(m.emissive.rgb * m.strengths.w);
