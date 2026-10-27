@@ -26,19 +26,17 @@ interface DebugViews {
 	active: string | undefined;
 }
 
-/** The key of the thread's registry on its global object. */
-const KEY = Symbol.for('null3d.addonDebugViews');
-
 /** The thread's global object, which holds the registry that every copy of this module shares. */
 type Thread = { [key: symbol]: DebugViews | undefined };
 
-/** The registry of this thread. */
+/** The registry of this thread. The module holds no top-level work, so a release build drops it. */
 function registry(): DebugViews {
 	const thread = globalThis as Thread;
-	const held = thread[KEY];
+	const key = Symbol.for('null3d.addonDebugViews');
+	const held = thread[key];
 	if (held !== undefined) return held;
 	const created: DebugViews = { views: new Map(), active: undefined };
-	thread[KEY] = created;
+	thread[key] = created;
 	return created;
 }
 
