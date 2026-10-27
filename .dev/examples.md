@@ -560,8 +560,11 @@ Night town draws its window panes through the facades example add-on
   Each pane's light rises on a damped spring once the wave reaches it.
 - The panes draw the add-on's timber finish for their frames, so the wall finish that the pages
   carry and the pane's frame agree. The house walls keep the scene's own timber texture.
-- The add-on's own cost, per GPU path and preset, is owed. The cost test needs a quiet computer,
-  and the Mac's load has stayed above the quiet threshold. The add-on's README gives the command.
+- The add-on's own cost is about 1.0 ms of GPU time a frame against a plain wall on both WebGPU
+  paths at every preset, and 0.85 ms at Low down to 0.05 ms at Ultra on WebGL2, at 1920 by 1080 in
+  a quiet window on the Mac's M3 Max in Chrome 156
+  ([run](tested-devices/macbook-pro-m3-max-chrome/20261027-093120-facades-cost.md)). The add-on's
+  README gives the figures and the command.
 
 ### Skyway (M3-C1)
 
