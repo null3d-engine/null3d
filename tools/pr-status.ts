@@ -41,7 +41,6 @@ const ON_BRANCH = new Set(['M3-E9', 'M3-V2']);
 const INCOMPLETE = new Set([
 	'M3-V13',
 	'M3-B1',
-	'M3-V3',
 	'M3-B3',
 	'M3-B5',
 	'M3-V4',
@@ -54,7 +53,6 @@ const INCOMPLETE = new Set([
 	'M3-E4a',
 	'M3-E6',
 	'M3-E8',
-	'M3-L1',
 	'M3-L3',
 	'M3-R12',
 	'M3-R22',
@@ -63,7 +61,6 @@ const INCOMPLETE = new Set([
 	'M3-V5',
 	'M3-A11',
 	'M3-R1',
-	'M3-O1',
 	'M3-G2',
 	'M3-G3',
 	'M3-R4',
@@ -81,8 +78,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		"both first users follow the preset: splats' budget, and the water add-on's reflection cadence, which doubles the wait at each frame-budget step up to every sixteenth frame. The overlay part of the task is not built: D-199's decision 4 asks for one GPU timing scope per built-in step and per add-on feature, and D-173 for each add-on's GPU time, while the add-on rows hold no GPU time and the overlay shows one frame total",
 	'M3-E8':
 		"the compute pass and its WebGL2 fragment form are built and tested, and the wind add-on fills its field through the hook with a compute pass. The owner's 25 October ruling adds M3-V13's history to the hook, and the first-user outcome the plan names still waits on M3-F9's ocean",
-	'M3-L1':
-		'the iPad and phone figures the section asks for are in D-137; what remains is the phone GPU time that the fade item asks for',
 	'M3-L3':
 		'the WebGPU path draws the patches, but D-213 records the WebGL2 multi-draw path and the whole-level fallback as not built, and D-231 holds the GPU time',
 	'M3-R22':
@@ -126,14 +121,21 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the widening (`1441b441d`) and the aurora cube-unit fix (`06fade99b`, `fc2487164`) are on this branch. The round 24 audit of the aurora fix (findings N1 and N3) records that the tip's capture never runs and that the evidence line claims light the tip does not make; the light sum, the coefficient stride and the aurora pictures are on `fix/m3-sky-layer-light`",
 	'M3-R1':
 		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
-	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
+	'M3-R27':
+		"the owner saw the redrawn aurora beside the current pictures on all three Mac paths and ruled that the lake reflection looks too blurry, so the lake drawing is not accepted yet: find where the blur comes from — how the ice samples the sky, whether the material's roughness picks a blurred level of the environment map, or the reflection's own resolution — sharpen it, show the owner, and then redraw the six demo-aurora references in both sets. The ice-plane fix waits with it so the aurora is redrawn once",
+	'M3-G5':
+		'its branch, `fix/m3-g5-masked-transmission` at `305624b36`, is 14 commits ahead and unmerged. The check refuses it until the branch carries a `GPU-Checked:` line, which blocks the landing; its pushed tip has no CI run; the parity load figures are not in the logs; the mirror figure 0.0325 is WebGPU alone, where compatibility reads 0.0327 and WebGL2 0.0328; the ceiling comment grows by an unstated figure; and the cold build was not taken on a quiet machine',
+	'M3-R23':
+		"`fix/m3-r23-today` at `6fa3fec9e` is 16 commits ahead and unmerged. The owner's tenth ruling closed the bar and the iPad frame-time sentence is fixed. It still owes a `GPU-Checked:` line, because the branch changes WebGL2's backend; a D-266 number that does not collide with the landed D-266; the merge; and the unit tests and the ambient-occlusion pictures",
+	'M3-V2':
+		'`fix/m3-v2-surface-inputs` at `86baced95` is refused by `check-v2-tip.md`, and its helper is fixing the findings',
 	'M3-G2': 'no Khronos iridescence sample is tested',
 	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',
 	'M3-R4': 'D-247 does not compare frame time, and the Mac GPU figure is owed',
 	'M3-R19':
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
 	'M3-B1':
-		"the lens run does not resolve a cost: four of its twelve cells are at or under zero, the compatibility and WebGL2 High and Ultra rows run at Medium's settings yet differ by more than a millisecond, and the WebGPU off side alone wanders 1.41 to 2.16 ms, so the spread is the run's rather than the look's. To close it, hold the GPU's clock steady by drawing the look several times a frame and dividing, or on a larger canvas; take more rounds and print each cell's spread; and time each effect alone, since the page skips the taps of a value left at zero. Or the owner rules that a bound of about 1.4 ms everywhere meets the line",
+		"the re-run at four times the pixels does not resolve the cost either: its off side reads 2.72 to 5.03 ms on WebGPU and 8.24 to 11.23 on WebGL2 across the presets, more than most marks cost, so the scene's own variation still swamps the look, and the GPU idles through most of each frame. Seven of the twenty-one marks keep their whole range above zero but that is not resolution: WebGL2 grain is 0.38 with a range to 9.40 and WebGL2 vignette 1.16 with a range to 5.90, and the WebGPU presets read Low 2.00, Medium 3.41 and Ultra 1.27, out of order for the same work. The method to close it: draw the look, or one mark, sixteen to thirty-two times a frame and divide; on WebGPU read the look's own pass from the per-pass timer (0.065536 ms steps), not the whole frame's difference; and alternate the sides every frame or few frames so a clock change hits both. Grade and vignette run inside the final pass and add no pass, so read that pass's part with each on and off, or state the design reason and show the part unchanged within a step. WebGL2's whole-frame figure spans the shared timeline, so those rows need another measure or must say they are not a cost",
 	'M3-B3':
 		"the Showroom tablet the task names is M3-C2's work, which is not built; the screen demo's software-GPU pictures were redrawn from CI on 25 October and no longer stand in the way",
 	'M3-B5':
@@ -147,8 +149,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"whether the approved hook table stands against hard rule 8 is the owner's to decide, and the tick waits on that",
 	'M3-K3':
 		"the spot-map picture covers the cookie on every path and passes; what remains is the owner's call on whether a 128 by 128 pixels-only cookie looks good enough, which the better-look rule raises",
-	'M3-V3':
-		'the compute pass reports its own time on the side where the page turns it off, so a turned-off pass either still dispatches or still times; the page and the engine must say which, each device cost must be restated or retimed, and the Mac timer step of 0.065536 ms must be stated, because one step sits below its resolution',
 	'M3-V6':
 		'the same placement is shown only on two Android phones in Chrome, so no second JavaScript engine has placed it, and no iPad run exists; the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
 	'M3-V13':
@@ -158,7 +158,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-V5':
 		"every vegetation picture passes in both reference sets on both GPUs and the crowns keep their coverage at three distances, and the leaf cells now hold a spray of lobed, veined, damaged leaves instead of one smooth shape. Its author's verdict is that the atlas is at least as good as Creek's as a texture, and that the crown is still paler and flatter because the material lights it with one uniform light while Creek's texture carries painted shadowing, which belongs to M3-V7. The task's line asks the owner to judge the two side by side, and the paint time per device is owed too",
 	'M3-V1':
-		'Creek has no WebGPU figure on any device, and no vegetation task after it has its own budget per preset',
+		"Creek's WebGPU figure is in the S25's vegetation run but not yet in D-241's data, which still says there is none; D-241 budgets Low and Medium only, so High and Ultra, and the later V tasks' own budgets per preset, are owed",
 };
 
 /** The plan's groups, by the first letter of a task's part, in the plan's order. */
