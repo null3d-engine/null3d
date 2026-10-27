@@ -294,6 +294,14 @@ describe('creating lights', () => {
 		expect(tableRow(plain).values).toEqual([]);
 	});
 
+	test('a light draws all of its shadow unless the option gives another, and the option is from 0 to 1', () => {
+		const { scene, tableRow } = fakeCore();
+		// Leaving it out writes nothing, so the core's default, all of it, stands.
+		const plain = scene.createDirectionalLight({ castShadows: true, shadow: {} });
+		expect(tableRow(plain).values[C.LIGHT_VALUE_SHADOW_INTENSITY]).toBeUndefined();
+		expect(thrown(() => plain.setShadow({ intensity: 1.5 })).code).toBe('E1108');
+	});
+
 	test("a directional light's hero object reaches the core, through its options and its setter", () => {
 		const { scene, tableRow } = fakeCore();
 		const hero = scene.createGroup();
