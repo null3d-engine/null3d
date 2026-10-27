@@ -126,7 +126,7 @@ export const SPECULAR_AA_LIMITS = {
 	'gltf-iridescence': 0.3,
 	'gltf-iridescence-dielectric': 0.6,
 	'gltf-iridescence-metallic': 2.7,
-	'gltf-iridescence-suzanne': 2.7,
+	'gltf-iridescence-suzanne': 0.4,
 	'gltf-anisotropy': 0.6,
 	'gltf-toy-car': 0.32,
 } as const;
