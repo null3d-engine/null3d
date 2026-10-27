@@ -214,6 +214,22 @@ describe('createProject', () => {
 		});
 		expect(patch.status).toBe(0);
 		expect(patch.stdout).toContain('has no DOM');
+
+		const twoFiles = runCodex(codexEdit, {
+			tool_name: 'apply_patch',
+			tool_input: {
+				command: [
+					'*** Begin Patch',
+					'*** Add File: src/scene/page.ts',
+					'+const el = document.body;',
+					'*** Add File: src/scene/sketch.ts',
+					'+const el = document.body;',
+					'*** End Patch',
+				].join('\n'),
+			},
+		});
+		expect(twoFiles.status).toBe(0);
+		expect(twoFiles.stdout).toContain('src/scene/sketch.ts');
 	});
 
 	it('makes a name that npm accepts from the folder', () => {
