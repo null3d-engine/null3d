@@ -23,7 +23,7 @@ const ROOT = join(import.meta.dirname, '..');
 const CEILING = './tests/lib/memory-ceiling.ts';
 
 let failed = 0;
-for (const { file, ceilingMiB } of HEAVY_CHECKS) {
+for (const { file, ceilingMiB, env } of HEAVY_CHECKS) {
 	const started = Date.now();
 	const factor = loadFactor();
 	const timeout = checkTimeoutMs(factor);
@@ -44,13 +44,20 @@ for (const { file, ceilingMiB } of HEAVY_CHECKS) {
 				...process.env,
 				NULL3D_TEST_MEMORY_MIB: `${ceilingMiB}`,
 				[LOAD_FACTOR_ENV]: `${factor}`,
+				...env,
 			},
 		},
 	);
 	const seconds = Math.round((Date.now() - started) / 1000);
 	const outcome = result.status === 0 ? 'passed' : `failed with ${result.status}`;
+	// The parts of one check differ only by the environment that each runs with, so the line names it.
+	const part = env
+		? ` (${Object.entries(env)
+				.map(([name, value]) => `${name}=${value}`)
+				.join(' ')})`
+		: '';
 	console.log(
-		`heavy-checks: ${file} ${outcome} in ${seconds}s, under ${ceilingMiB} MiB${budgetNote(timeout)}`,
+		`heavy-checks: ${file} ${outcome} in ${seconds}s, under ${ceilingMiB} MiB${part}${budgetNote(timeout)}`,
 	);
 	if (result.status !== 0) failed += 1;
 }
