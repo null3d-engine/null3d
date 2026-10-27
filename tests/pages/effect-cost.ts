@@ -23,7 +23,10 @@
 // and fxaa on HDR color, so two loads with count=0 give the cost of the move to HDR color. The effect's scene fills the window at the render scale that ?scale= fixes, 1 by default,
 // with the governor off. After a warm-up, the page measures play with the effect off and on in
 // turns, three times each, and reports the medians of each side's GPU time per frame, where the
-// device has a GPU timer, of its frame interval and CPU time, and of each thread's CPU time. With
+// device has a GPU timer, of its frame interval and CPU time, and of each thread's CPU time.
+// ?seconds= sets the length of each turn, which turns the sides over every few frames when it is
+// short, and ?repeat= has the lens sketch draw the look that many times in each frame, so the page
+// can divide the effect's fraction of a millisecond above the GPU clock's step. With
 // ?gltiming it also reports each side's WebGL calls on the thread that draws, with their time and
 // count per frame. The device runner's bloom and ao
 // plans run it on each GPU path at the scales of 1 and 0.5. With bloom, ?size= sets the quality
@@ -34,12 +37,13 @@
 // ?heavy makes the GPU the limit where it has no timer: 8 effects by default, at the display's
 // whole pixel ratio, so the frame interval shows what joining saves.
 import { createEngine } from '@null3d/engine';
+import { EFFECT_MAX } from '../../packages/engine/src/generated/core';
 import {
 	GL_TIMING_CHANNEL,
 	GL_TIMING_REQUEST,
 	type GlTimingReport,
 } from '../../packages/engine/src/gpu/webgl2/call-timing';
-import { featureCost } from './lib/feature-cost';
+import { type FeatureCostOptions, featureCost } from './lib/feature-cost';
 import { requestJoinTiming } from './lib/join-timing';
 import { overlayMemory, waitForOverlay } from './lib/overlay-figures';
 import { run } from './lib/result';
@@ -99,6 +103,17 @@ const look = params.get('look');
 const rounds = params.get('rounds');
 if (rounds !== null && !(Number.isSafeInteger(Number(rounds)) && Number(rounds) >= 1))
 	throw new Error(`the page takes no round count ${rounds}`);
+/** The seconds of each side's measurement, which turns the sides over every few frames. */
+const seconds = params.get('seconds');
+if (seconds !== null && !(Number(seconds) > 0))
+	throw new Error(`the page takes no measurement length ${seconds}`);
+/** How many times the sketch draws its effect in each frame, where the sketch repeats one. */
+const repeat = params.get('repeat');
+if (
+	repeat !== null &&
+	!(Number.isSafeInteger(Number(repeat)) && Number(repeat) >= 1 && Number(repeat) <= EFFECT_MAX)
+)
+	throw new Error(`the page repeats an effect between 1 and ${EFFECT_MAX} times, not ${repeat}`);
 const asked = params.get('effect') ?? 'bloom';
 if (!Object.hasOwn(SKETCHES, asked)) throw new Error(`the page measures no effect ${asked}`);
 const effect = asked as Effect;
@@ -116,7 +131,7 @@ run('effect-cost', async () => {
 	const sketch = new URL(SKETCHES[effect], import.meta.url);
 	const kind = params.get('kind');
 	const area = `${kind === null ? '' : `&kind=${kind}`}${params.has('image') ? '&image' : ''}`;
-	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${meter === null ? '' : `&meter=${meter}`}${slices === null ? '' : `&slices=${slices}`}${steps === null ? '' : `&steps=${steps}`}${strength === null ? '' : `&strength=${strength}`}${aoScale === null ? '' : `&aoscale=${aoScale}`}${area}${moving ? '&moving' : ''}${base === null ? '' : `&base=${base}`}${fill === null ? '' : `&fill=${fill}`}${background === null ? '' : `&background=${background}`}${night ? '&night' : ''}${look === null ? '' : `&look=${encodeURIComponent(look)}`}`;
+	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${meter === null ? '' : `&meter=${meter}`}${slices === null ? '' : `&slices=${slices}`}${steps === null ? '' : `&steps=${steps}`}${strength === null ? '' : `&strength=${strength}`}${aoScale === null ? '' : `&aoscale=${aoScale}`}${area}${moving ? '&moving' : ''}${base === null ? '' : `&base=${base}`}${fill === null ? '' : `&fill=${fill}`}${background === null ? '' : `&background=${background}`}${night ? '&night' : ''}${look === null ? '' : `&look=${encodeURIComponent(look)}`}${repeat === null ? '' : `&repeat=${repeat}`}`;
 	const engine = await createEngine({
 		canvas,
 		sketch,
@@ -169,6 +184,9 @@ run('effect-cost', async () => {
 				msPerFrame: +(ms / Math.max(1, glFrames[side])).toFixed(4),
 				callsPerFrame: +(calls / Math.max(1, glFrames[side])).toFixed(2),
 			}));
+	const costOptions: FeatureCostOptions = { alternate: true };
+	if (rounds !== null) costOptions.rounds = Number(rounds);
+	if (seconds !== null) costOptions.seconds = Number(seconds);
 	const { off, on } = await featureCost(
 		engine,
 		async (drawn) => {
@@ -181,7 +199,7 @@ run('effect-cost', async () => {
 			await built;
 		},
 		glSnapshot,
-		rounds === null ? undefined : { rounds: Number(rounds), alternate: true },
+		costOptions,
 	);
 	// The memory figures come from the overlay, which samples the GPUs' tables and the wasm file.
 	// It shows after the timing, so its sampling costs none of the frames above.
@@ -217,6 +235,9 @@ run('effect-cost', async () => {
 		heavy,
 		joinBuilds,
 		antialias,
+		// The seconds of each measurement, and how many times the sketch drew its effect in a frame.
+		seconds: seconds === null ? null : Number(seconds),
+		repeat: repeat === null ? 1 : Number(repeat),
 		// The window in CSS pixels and the screen's pixel ratio: the preset's cap on the ratio sets
 		// the drawing buffer's size from them.
 		window: [innerWidth, innerHeight],

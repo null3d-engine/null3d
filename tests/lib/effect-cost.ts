@@ -24,6 +24,10 @@ export interface Side {
 	intervalRoundsMs?: number[];
 	/** Each round's CPU time, where the page reports its rounds. */
 	cpuRoundsMs?: number[];
+	/** Each part's median in each round, by name, in the order the rounds ran. */
+	passRoundsMs?: Record<string, number[]>;
+	/** The step between the GPU's timestamps, where the device rounds them. */
+	stepMs?: number | null;
 }
 
 /** What a cost page publishes. */

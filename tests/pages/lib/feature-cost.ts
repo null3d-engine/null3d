@@ -32,6 +32,10 @@ export interface SideCost {
 	intervalRoundsMs: number[];
 	/** Each round's CPU time, in the order the rounds ran. */
 	cpuRoundsMs: number[];
+	/** Each part's median in each round, by name, in the order the rounds ran. */
+	passRoundsMs: Record<string, number[]>;
+	/** The step between the GPU's timestamps, as the last measurement that saw one reported it. */
+	stepMs: number | null;
 }
 
 /** How a cost page measures its sides. */
@@ -43,6 +47,14 @@ export interface FeatureCostOptions {
 	alternate?: boolean;
 	/** The rounds of each side. Three by default, and an even count is best with `alternate`. */
 	rounds?: number;
+	/**
+	 * Seconds of each measurement. Two by default. A short measurement turns the sides over every
+	 * few frames, which shares a clock's drift between them, while it gives the GPU timer fewer
+	 * sampled frames to median.
+	 */
+	seconds?: number;
+	/** Seconds of play before the first measurement. Two by default. */
+	warmUpSeconds?: number;
 }
 
 /** The middle of some numbers, or null without any. */
@@ -65,7 +77,10 @@ export async function featureCost(
 	measured?: (side: 'off' | 'on') => Promise<void>,
 	options: FeatureCostOptions = {},
 ): Promise<{ off: SideCost; on: SideCost }> {
-	await new Promise((resolve) => setTimeout(resolve, WARM_UP_SECONDS * 1000));
+	await new Promise((resolve) =>
+		setTimeout(resolve, (options.warmUpSeconds ?? WARM_UP_SECONDS) * 1000),
+	);
+	const seconds = options.seconds ?? SECONDS;
 	const sides = {
 		off: {
 			gpuMs: [] as number[],
@@ -73,6 +88,7 @@ export async function featureCost(
 			cpuMs: [] as number[],
 			draws: [] as number[],
 			passes: new Map<string, number[]>(),
+			steps: [] as number[],
 		},
 		on: {
 			gpuMs: [] as number[],
@@ -80,6 +96,7 @@ export async function featureCost(
 			cpuMs: [] as number[],
 			draws: [] as number[],
 			passes: new Map<string, number[]>(),
+			steps: [] as number[],
 		},
 	};
 	const threads = { off: new Map<string, number[]>(), on: new Map<string, number[]>() };
@@ -89,11 +106,12 @@ export async function featureCost(
 			options.alternate && round % 2 === 1 ? (['on', 'off'] as const) : (['off', 'on'] as const);
 		for (const side of order) {
 			await turn(side === 'on');
-			const stats = await engine.measure(SECONDS);
+			const stats = await engine.measure(seconds);
 			if (stats.gpuMs) sides[side].gpuMs.push(stats.gpuMs.median);
 			sides[side].intervalMs.push(stats.intervalMs.median);
 			sides[side].cpuMs.push(stats.cpuMs.median);
 			sides[side].draws.push(stats.drawCalls.median);
+			if (stats.gpuStepMs !== null) sides[side].steps.push(stats.gpuStepMs);
 			for (const pass of stats.gpuPassMs ?? []) {
 				const values = sides[side].passes.get(pass.name) ?? [];
 				values.push(pass.ms.median);
@@ -121,6 +139,10 @@ export async function featureCost(
 		gpuRoundsMs: [...sides[side].gpuMs],
 		intervalRoundsMs: [...sides[side].intervalMs],
 		cpuRoundsMs: [...sides[side].cpuMs],
+		passRoundsMs: Object.fromEntries(
+			[...sides[side].passes].map(([name, values]) => [name, values]),
+		),
+		stepMs: sides[side].steps.length > 0 ? (sides[side].steps.at(-1) as number) : null,
 	});
 	return { off: summary('off'), on: summary('on') };
 }
