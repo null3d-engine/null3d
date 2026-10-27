@@ -62,7 +62,7 @@ const SKELETON = 4;
 /** The most culling spheres that one frame draws, so a forest of copies does not fill the frame. */
 const MAX_CULL_SPHERES = 128;
 /** The color of a culling sphere. */
-const CULL_SPHERE_COLOR = 0xffffffff;
+const CULL_SPHERE_COLOR = 0xffffff;
 
 /** The color of a skeleton line's joint end and parent end: blue and green, as three.js's. */
 const JOINT_BLUE = 0xffff0000;

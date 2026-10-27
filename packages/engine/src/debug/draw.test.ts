@@ -47,7 +47,9 @@ const PAGE = 65536;
  * arrays grow they move, keeping their points, as a growing vector can. It records the points of
  * each frame, and gives world matrices from a table.
  */
-function fakeCore() {
+function fakeCore(
+	levelMeshes: { handle: number; mesh: { radius: number; levels: readonly unknown[] } }[] = [],
+) {
 	const memory = new WebAssembly.Memory({ initial: 1, maximum: 1024 });
 	let positionsAt = 0;
 	let colorsAt = 0;
@@ -112,6 +114,9 @@ function fakeCore() {
 	const shadowCameras: (Camera | undefined)[] = [];
 	const scene = {
 		setShadowCamera: (camera: Camera | undefined) => shadowCameras.push(camera),
+		forEachLevelMesh(visit: (object: unknown) => boolean) {
+			for (const object of levelMeshes) if (!visit(object)) return;
+		},
 	} as unknown as Scene;
 	const draw = new DebugDraw(core, HOST, scene);
 	return { core, draw, frames, reserves, matrices, memory, views, shadowCameras };
@@ -513,6 +518,23 @@ describe('debug.view', () => {
 		} finally {
 			unregisterAddonDebugView('terrain-levels');
 		}
+	});
+});
+
+describe('debug.cullingSpheres', () => {
+	test('draws one sphere for each object whose mesh has levels, until turned off', () => {
+		const { draw, frames, matrices } = fakeCore([
+			{ handle: 21, mesh: { radius: 2, levels: [{}] } },
+			{ handle: 22, mesh: { radius: 1, levels: [{}] } },
+		]);
+		matrices.set(21, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
+		matrices.set(22, [2, 0, 0, 5, 0, 2, 0, 0, 0, 0, 2, 0]);
+		draw.cullingSpheres(true);
+		draw.flush(1, 1);
+		expect(frames[0]?.length).toBe(6 * 32 * 2);
+		draw.cullingSpheres(false);
+		draw.flush(1, 1);
+		expect(frames.length).toBe(1);
 	});
 });
 
