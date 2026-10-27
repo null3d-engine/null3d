@@ -2270,14 +2270,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
-	// lights through an orthographic camera. Then the same floor under a hemisphere light, under
-	// three rectangle lights, under the same lights showing an image, and under three tube lights. The parity test compares the grid of 16,
-	// the spot lights, the hemisphere light and the rectangle lights with three.js.
+	// lights through an orthographic camera. Then the same floor under three directional lights,
+	// under a hemisphere light, under three rectangle lights, under the same lights showing an
+	// image, and under three tube lights. The parity test compares the grid of 16, the three
+	// directional lights, the spot lights, the hemisphere light and the rectangle lights with
+	// three.js.
 	...(
 		[
 			['lights-1', 'lights=1'],
 			['lights-16', 'lights=16'],
 			['lights-256', 'lights=256'],
+			['lights-fills', 'scene=fills'],
 			['lights-spot', 'scene=spot'],
 			['lights-ortho', 'lights=16&camera=ortho'],
 			['lights-hemisphere', 'scene=hemisphere'],

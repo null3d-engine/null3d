@@ -119,6 +119,7 @@ export const SPECULAR_AA_LIMITS = {
 	'environment-venice-hdr': 0.17,
 	'environment-room-hemisphere': 0.4,
 	'lights-16': 0.15,
+	'lights-fills': 0.15,
 	'gltf-metal-rough': 0.34,
 	'gltf-specular': 0.16,
 	'gltf-ior': 0.21,
@@ -577,6 +578,14 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		twin: `${TWINS}/lights.html?lights=16`,
 		sketchSwitches: NO_TONE,
 		limit: SPECULAR_AA_LIMITS['lights-16'],
+	},
+	// Three directional lights: the first lights the floor and the other two fill and rim it, as
+	// three.js's three DirectionalLights do.
+	{
+		test: 'lights-fills',
+		twin: `${TWINS}/lights.html?scene=fills`,
+		sketchSwitches: NO_TONE,
+		limit: SPECULAR_AA_LIMITS['lights-fills'],
 	},
 	{ test: 'lights-spot', twin: `${TWINS}/lights.html?scene=spot`, sketchSwitches: NO_TONE },
 	{

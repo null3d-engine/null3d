@@ -391,6 +391,38 @@ export function shipBuilder(): GltfBuilder {
 	return b;
 }
 
+/** The directional lights of `sunsBuilder`, with the direction each light travels. */
+const SUNS = [
+	{ name: 'Key', direction: [-1, -1.5, -2], color: [1, 1, 1], intensity: 2 },
+	{ name: 'Fill', direction: [2, -0.6, -1], color: [0.2, 0.4, 0.8], intensity: 1 },
+	{ name: 'Rim', direction: [0, -0.3, 2], color: [0.8, 0.2, 0.4], intensity: 1 },
+] as const;
+
+/**
+ * A file of three directional lights, which a load must keep: a white key from the front right, a
+ * blue fill from the left and a red rim from behind.
+ */
+export function sunsBuilder(): GltfBuilder {
+	const b = new GltfBuilder();
+	b.uses('KHR_lights_punctual');
+	b.json.extensions = {
+		KHR_lights_punctual: {
+			lights: SUNS.map(({ color, intensity }) => ({
+				type: 'directional',
+				color: [...color],
+				intensity,
+			})),
+		},
+	};
+	for (const [k, sun] of SUNS.entries())
+		b.node({
+			name: sun.name,
+			rotation: shineAlong(sun.direction),
+			extensions: { KHR_lights_punctual: { light: k } },
+		});
+	return b;
+}
+
 /** A column-major 4 × 4 matrix that moves points by `-x, -y, -z`: a joint's inverse bind matrix. */
 function untranslate(x: number, y: number, z: number): number[] {
 	return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -x, -y, -z, 1];
@@ -854,8 +886,8 @@ interface GridSphere {
  * entry of a row, 1 m apart, the first row on top. A sphere with `uv` reads the texture
  * coordinates (u, 0.5) at every vertex, so it shows one texel of its maps. A directional key
  * light from the front right and a point light behind the grid light it, so the reflection shows
- * head on and at grazing angles. The engine's surfaces show one directional light, so the light
- * from behind is a point light.
+ * head on and at grazing angles. The light from behind is a point light, so its falloff tests the
+ * reflection at a grazing angle as well.
  */
 function sphereGrid(b: GltfBuilder, rows: readonly (readonly GridSphere[])[]): GltfBuilder {
 	const sphere = sphereArrays(0.4);

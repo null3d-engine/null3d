@@ -195,6 +195,94 @@ fn lights_reach_the_frame_on_webgl2() {
     )));
 }
 
+/// The directional lights after the main one reach each view's uniform block, with their travel
+/// directions and exposed colors, and the count says how many light the frame.
+fn fills_reach_the_frame<B: FrameBuilder>(mut world: World<B>) {
+    let mut lights = LightTable::new();
+    // The main light points straight down, and the others forward, up and tilted.
+    let (_, main) = light(
+        &mut world,
+        &mut lights,
+        kind::DIRECTIONAL,
+        [0.0; 3],
+        -FRAC_PI_2,
+    );
+    let (_, forward) = light(&mut world, &mut lights, kind::DIRECTIONAL, [0.0; 3], 0.0);
+    let (up_object, up) = light(
+        &mut world,
+        &mut lights,
+        kind::DIRECTIONAL,
+        [0.0; 3],
+        FRAC_PI_2,
+    );
+    let (_, tilted) = light(
+        &mut world,
+        &mut lights,
+        kind::DIRECTIONAL,
+        [0.0; 3],
+        FRAC_PI_2 / 2.0,
+    );
+    lights.set_value(main, value::INTENSITY, 2.0).unwrap();
+    lights
+        .set_color(forward, color::MAIN, [0.2, 0.4, 0.6])
+        .unwrap();
+    lights.set_color(up, color::MAIN, [1.0, 0.5, 0.25]).unwrap();
+    lights
+        .set_color(tilted, color::MAIN, [0.5, 1.0, 0.5])
+        .unwrap();
+    record(&mut world, &mut lights);
+
+    let u = camera_uniform(&world);
+    // Asserts that a direction matches the one a rotation gives, to within rounding.
+    fn close(got: [f32; 4], want: [f32; 4]) {
+        for k in 0..3 {
+            assert!((got[k] - want[k]).abs() < 1e-5, "{got:?} is not {want:?}");
+        }
+    }
+    close(u.sun_direction, [0.0, -1.0, 0.0, 0.0]);
+    assert_eq!(u.sun_color, [2.0, 2.0, 2.0, 0.0]);
+    assert_eq!(u.fill_count, [3.0, 0.0, 0.0, 0.0]);
+    close(u.fill_direction[0], [0.0, 0.0, -1.0, 0.0]);
+    close(u.fill_direction[1], [0.0, 1.0, 0.0, 0.0]);
+    let root = std::f32::consts::FRAC_1_SQRT_2;
+    close(u.fill_direction[2], [0.0, root, -root, 0.0]);
+    assert_eq!(u.fill_color[0], [0.2, 0.4, 0.6, 0.0]);
+    assert_eq!(u.fill_color[1], [1.0, 0.5, 0.25, 0.0]);
+    assert_eq!(u.fill_color[2], [0.5, 1.0, 0.5, 0.0]);
+
+    // A fifth directional light gives no light, and a hidden fill leaves its slot dark.
+    let (_, fifth) = light(&mut world, &mut lights, kind::DIRECTIONAL, [0.0; 3], 0.0);
+    lights
+        .set_color(fifth, color::MAIN, [0.9, 0.9, 0.9])
+        .unwrap();
+    record(&mut world, &mut lights);
+    assert_eq!(camera_uniform(&world).fill_count, [3.0, 0.0, 0.0, 0.0]);
+
+    // A hidden fill gives its slot to the light created after it.
+    world.frame += 1;
+    let hide = Command::set_visible(up_object, false);
+    world.scene.apply_commands(&[hide], world.frame).unwrap();
+    record(&mut world, &mut lights);
+    let u = camera_uniform(&world);
+    assert_eq!(u.fill_count, [3.0, 0.0, 0.0, 0.0]);
+    assert_eq!(u.fill_color[1], [0.5, 1.0, 0.5, 0.0]);
+    assert_eq!(u.fill_color[2], [0.9, 0.9, 0.9, 0.0]);
+}
+
+#[test]
+fn fills_reach_the_frame_on_webgpu() {
+    fills_reach_the_frame(World::build(GpuDrivenRenderer::new(
+        RendererConfig::default(),
+    )));
+}
+
+#[test]
+fn fills_reach_the_frame_on_webgl2() {
+    fills_reach_the_frame(World::build(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    )));
+}
+
 /// The frame reports the cascades of the main directional light's shadows, which the quality
 /// governor lightens, and 0 once the light casts none.
 #[test]

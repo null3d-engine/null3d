@@ -29,7 +29,7 @@ enable draw_index;
 #import null3d::globals::{Material}
 #import null3d::lighting::{direct_light, dfg_lut, indirect_diffuse, multiscatter_compensation}
 #import null3d::lighting::{pbr_material, with_specular}
-#import null3d::lights::{clustered_light}
+#import null3d::lights::{clustered_light, fill_light}
 #endif
 
 /// The factor that undoes the packing of the tiny values: 2^32.
@@ -175,8 +175,8 @@ fn closest_line_to_line(p1: vec3f, p2: vec3f, p3: vec3f, p4: vec3f) -> vec2f {
 
 #ifdef LIT
 /// The light that a line reflects toward the camera, as a standard material with the line's color
-/// reflects it from a surface that faces the camera: the sun, the point and spot lights of its
-/// cluster and the ambient and hemisphere lights, plus the light it gives off. `relative` is the point on the line
+/// reflects it from a surface that faces the camera: the directional lights, the point and spot
+/// lights of its cluster and the ambient and hemisphere lights, plus the light it gives off. `relative` is the point on the line
 /// relative to the camera. The frame's lights are exposed, and the light it gives off takes the
 /// exposure here.
 fn lit_color(m: Material, base: vec3f, relative: vec3f) -> vec3f {
@@ -188,9 +188,11 @@ fn lit_color(m: Material, base: vec3f, relative: vec3f) -> vec3f {
     let compensation = multiscatter_compensation(pbr.specular_blended, dfg);
     let to_light = -engine_frame.sun_direction.xyz;
     let sun = direct_light(pbr, normal, normal, to_light, engine_frame.sun_color.rgb, compensation);
+    let fill = fill_light(pbr, normal, normal, compensation);
     let clustered = clustered_light(pbr, relative, normal, normal, compensation);
     let ambient = indirect_diffuse(pbr, ambient_light(normal), dfg);
-    let direct = sun.diffuse + sun.specular + clustered.diffuse + clustered.specular;
+    let direct = sun.diffuse + sun.specular + fill.diffuse + fill.specular + clustered.diffuse
+        + clustered.specular;
     return direct + ambient + exposed(m.emissive.rgb * m.strengths.w);
 }
 #endif

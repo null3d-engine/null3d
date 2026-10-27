@@ -2266,6 +2266,10 @@ export class Light extends Object3D {
  * Light from one direction, like sunlight. It travels along the light's -Z axis, which
  * `setDirection`, `lookAt` and the light's parents turn. Its position does not matter.
  *
+ * Up to four directional lights light surfaces at once. The first one created casts the shadows,
+ * when `castShadows` is on, and up to three more light as fill and rim lights, without shadows.
+ * A fifth directional light gives no light.
+ *
  * @category api/lights
  */
 export class DirectionalLight extends Light {

@@ -1,6 +1,7 @@
 // Measures what an effect costs on this device: ?effect=bloom (the default), ?effect=ao,
 // ?effect=dof, ?effect=subsurface, ?effect=exposure, ?effect=fog, ?effect=contact (the sun's contact
-// shadows, with ?steps= steps per march, 8 by default), ?effect=sky, ?effect=effects, ?effect=tone,
+// shadows, with ?steps= steps per march, 8 by default), ?effect=fills (one more directional light
+// than the side before, from ?count= directional lights, 4 by default), ?effect=sky, ?effect=effects, ?effect=tone,
 // ?effect=vignette, ?effect=sharpen, ?effect=lens or ?effect=motion names it. The effects effect adds ?count=
 // custom effects, 4 by default, to bloom's scene. Motion measures the motion vectors with their
 // debug view, so it runs in development builds only. ?effect=area measures ?count= area lights over the light scenes' floor,
@@ -61,6 +62,7 @@ const SKETCHES = {
 	effects: './sketches/effects-cost-sketch.ts',
 	motion: './sketches/motion-cost-sketch.ts',
 	area: './sketches/area-cost-sketch.ts',
+	fills: './sketches/fill-cost-sketch.ts',
 	sky: './sketches/sky-cost-sketch.ts',
 	vignette: './sketches/vignette-cost-sketch.ts',
 	sharpen: './sketches/sharpen-cost-sketch.ts',

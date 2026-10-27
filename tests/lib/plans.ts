@@ -1178,7 +1178,8 @@ export type CostedEffect =
 	| 'effects'
 	| 'sky'
 	| 'sharpen'
-	| 'compute';
+	| 'compute'
+	| 'fills';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1280,6 +1281,8 @@ export function effectPlan(
 		sharpen: [['', []]],
 		// A compute pass whose output a vertex offset reads, for the vegetation wind path's budgets.
 		compute: [['', []]],
+		// The fills plan times its own pages, at one render scale each.
+		fills: [['', []]],
 	};
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
@@ -1339,6 +1342,27 @@ export function effectPlan(
 				})
 			: [];
 	return [...pages, ...twin, ...repro];
+}
+
+/**
+ * What one more directional light costs on each GPU path: the effect cost page's floor of shapes,
+ * timed with one fewer fill light and with the next one, in turns, at counts of 2 to 4. The
+ * difference between the two sides is one fill light's cost. D-270 records the figures.
+ */
+export function fillsCostPlan(): PlanItem<Check>[] {
+	return TIERS.flatMap((tier) =>
+		[2, 3, 4].map((count) =>
+			pageItem(
+				`fills-${tier}-${count}`,
+				'effect-cost',
+				{ kind: 'effect', effect: 'fills', tier, scale: 1 },
+				{
+					switches: [`gpu=${tier}`, 'scale=1', 'effect=fills', `count=${count}`],
+					timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	);
 }
 
 /**
@@ -2334,6 +2358,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	sharpen: () => effectPlan('sharpen'),
 	compute: () => effectPlan('compute'),
 	'physical-sky': () => effectPlan('sky'),
+	'fills-cost': fillsCostPlan,
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
