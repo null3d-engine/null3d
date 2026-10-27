@@ -75,8 +75,9 @@ step, so a state that a script names is the same state on any machine and at any
 references therefore show the state that their steps name, not whatever the machine happened to be
 doing when the picture was taken.
 
-For commit `33122b8eb`, whose run logs are not kept, the Mac's Chrome 155 drew the night town
-script twice on the real GPU, two and a half minutes apart. It ran the command below at the High preset:
+The Mac's Chrome 156 drew the night town script twice on the real GPU, 46 minutes apart. The
+second drawing came from the image test's own run of the command line tool, which compares each
+image with its reference. The first ran the command below at the High preset:
 
 ```text
 bun packages/cli/bin/null3d.js shot --script tests/image/showcase-night-town.script --page
@@ -85,9 +86,9 @@ bun packages/cli/bin/null3d.js shot --script tests/image/showcase-night-town.scr
 ```
 
 The two runs wrote byte-identical images for all three states. The SHA-256 values were
-`7c93e8ec835abfa52130509ad012be466d170b3923f442e8b031daf7b49b3967` for `opening`,
-`7c904be490549d802918d7ba81855523cac251d8dc86cf60a3a7a8881eefcb53` for `wide`, and
-`3f534a0f3e875995f9fa6b436b45e440e11a48a5ab9b76696cb71be0f2bd93f0` for `square`.
+`4d2eeae1eaac0f8b7e6db179c14550a2d8565670e8f07c50123a971c582f8843` for `turned`,
+`200e850a0591b058648c0949ad25923c109658433658fa9e83c9ddb16536c7fa` for `walked`, and
+`221735b5b7b63afd4add45e3b22ee07b8248f94528bea21dbf90595df4a65cff` for `closer`.
 
 ## Consequences
 
@@ -104,36 +105,31 @@ The two runs wrote byte-identical images for all three states. The SHA-256 value
 ## The showcase and the image tests
 
 The task's Done-when names a showcase. `tests/image/showcase-night-town.script` drives the night
-town showcase through three states on WebGL2. They are `opening` at 0.5 s, `wide` at 2 s and
-`square` at 30 s. The scene's camera follows a route of the sketch time, and hold mode sets that
-time exactly, so each state is a fixed pose. A `set` step widens the active camera's lens to 60
-degrees for the second state, and a `dump` step reads the value back. A second `set` step returns
-the scene's own lens before the third state. The states therefore show both the route and the
-script's writes.
+town showcase through three states on WebGL2. They are `turned` at 2 s, `walked` at 3.5 s and
+`closer` at 5 s. The `c` key takes the camera off its route at the opening view, where it holds
+still. A left pointer drag then turns it around the square, the `w` key walks it toward the town,
+and the wheel brings it closer. Every state therefore comes from a key or pointer step that the
+showcase already reads, and no step undoes an earlier one. A `dump` step at each shot time reads
+the camera's position. The spec requires each state's position to stand more than a meter from the
+route's opening and from the other states' positions.
 
 `tests/image/cli-script.spec.ts` runs a script in two places. In the fixture project the script
 drives a key, the pointer, a property write and a dump. That test checks that each of the three
 images differs from the other two, and those images have no references. In the repository the
 spec draws the showcase script at 320 by 180 pixels and compares each of the three images with its
-reference. For the same commit, the spec passed four of four on the Mac's Chrome in 38.5 seconds, and all three images
-matched their references. The runs are `script-demo-night-town-opening`, `-wide` and `-square` in
-`tests/image/script-runs.ts`. The opening run borrows the reference of the manifest's
-`demo-night-town`, which holds the same frame and keeps the only picture of it. The other two runs
-keep their own references. The real GPU draws at the High preset, and the software GPU at Low, as
-the image manifest's showcase tests do.
+reference. On this Mac the spec passed four of four on Chrome's real GPU in 10.0 seconds, and all
+three images matched their references. The runs are `script-demo-night-town-turned`, `-walked` and `-closer` in
+`tests/image/script-runs.ts`, and each keeps its own references. The real GPU draws at the High
+preset, and the software GPU at Low, as the image manifest's showcase tests do.
 
-The real GPU's references are in the repository. The software GPU's two references come from CI:
-run 40223500231 drew them on `33122b8eb` and saved them as candidates, and accepting those made
-them references. Up to the merge of this work (`adea85ab8`), every later commit of
-the work changed only documentation, the remake command or the pictures, so the scene drawn for
-those references stayed the same. A passing CI run that compares the committed software references is still
-owed. No local-reference note covers them, because neither software picture comes from a local
-drawing.
+The real GPU's three references are in the repository, drawn on this Mac. The software GPU's
+references are drawn on CI's SwiftShader: the spec saves each new picture as a candidate, and
+accepting one makes it a reference. A local run with `CI=1` then compares those references, since
+CI's machines draw the software pictures and this Mac checks them before a push.
 
-The rejected option drove `examples/input`, a basic demo, for its input steps. A showcase needs no
-input steps for its states, because its camera moves with the sketch time. So the night town script
-replaces the input demo, whose script and references are gone, and the fixture project drives the
-key and pointer steps.
+The rejected option drove `examples/input`, a basic demo, for its input steps. The showcase reads
+its own camera keys and the pointer, so the night town script drives those. The fixture project
+still shows a property write and a dump.
 
 The engine's unit tests run in CI's `docs-and-tools` job, which runs `bun run test`. A run of the
 suite on the loaded Mac, whose log is not kept, reported 4,279 tests across 357 files, with 41 tests skipped. The

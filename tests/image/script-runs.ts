@@ -14,7 +14,7 @@ import {
 export const SCRIPT_TEST = 'script-demo-night-town';
 
 /** The states that the showcase's script draws, in time order. */
-export const SCRIPT_STATES = ['opening', 'wide', 'square'] as const;
+export const SCRIPT_STATES = ['turned', 'walked', 'closer'] as const;
 
 /** The tier that the script test draws and keeps references on. */
 export const SCRIPT_TIER = 'webgl2';
@@ -28,19 +28,9 @@ const SHOWCASE_PAGE =
 
 /** The sketch time of each state, in seconds. */
 const SHOWCASE_HOLD: Readonly<Record<(typeof SCRIPT_STATES)[number], number>> = {
-	opening: 0.5,
-	wide: 2,
-	square: 30,
-};
-
-/**
- * The reference that each state compares with. The opening state is the demo's own held frame, so
- * it borrows that test's reference and keeps no picture of its own.
- */
-const SHOWCASE_REFERENCE: Readonly<Record<(typeof SCRIPT_STATES)[number], string>> = {
-	opening: 'demo-night-town',
-	wide: `${SCRIPT_TEST}-wide`,
-	square: `${SCRIPT_TEST}-square`,
+	turned: 2,
+	walked: 3.5,
+	closer: 5,
 };
 
 /** The states' runs, each with the reference that its image must match. */
@@ -54,16 +44,13 @@ export const SCRIPT_RUNS: ImageRun[] = SCRIPT_STATES.map((state) => ({
 	timeoutSeconds: 180,
 	size: SCRIPT_SIZE,
 	expect: {},
-	reference: { test: SHOWCASE_REFERENCE[state], tier: SCRIPT_TIER, devices: [] },
+	reference: { test: `${SCRIPT_TEST}-${state}`, tier: SCRIPT_TIER, devices: [] },
 	// The software GPU draws every showcase at its Low preset, as the image manifest does, which
 	// keeps its run short.
 	swiftShaderSwitches: ['preset=low'],
 	// The command-line tool draws these, in its own spec rather than the image page. That spec saves
-	// a picture without a reference as a candidate. The opening state borrows the demo's reference,
-	// so that test draws it.
-	...(state !== 'opening' && {
-		make: `{ci}NULL3D_PRODUCTION_PAGES=skip bun run test:browser image/cli-script.spec.ts, which saves the new picture as a candidate, then bun run images:review --accept ${SHOWCASE_REFERENCE[state]}`,
-	}),
+	// a picture without a reference as a candidate, which `images:review` then accepts.
+	make: `{ci}NULL3D_PRODUCTION_PAGES=skip bun run test:browser image/cli-script.spec.ts, which saves the new picture as a candidate, then bun run images:review --accept ${SCRIPT_TEST}-${state}`,
 	tolerance: TOLERANCE,
 	deviceTolerance: DEVICE_TOLERANCE,
 }));
