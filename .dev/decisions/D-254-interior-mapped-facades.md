@@ -63,7 +63,7 @@ The two wall pages hold 256 KB each, about 342 KB with their mip levels. The cod
 The material costs about 1.0 ms of GPU time a frame against a plain wall, at 1920 by 1080 with a
 render scale of 1, on both WebGPU paths at every preset. WebGL2 reads 0.85 ms at Low and falls to
 0.05 ms at Ultra, as its plain wall grows from 1.83 to 3.15 ms while the facade wall stays near 2.7
-to 3.2 ms. Every row held the display's 16.665 ms interval. The quiet run of 27 October 2026 on
+to 3.2 ms. Every row held the display's 16.665 ms interval. The quiet run on
 the Mac's M3 Max in Chrome 156 held a load of 2.0 to 2.9, and it is [the record](../tested-devices/macbook-pro-m3-max-chrome/20261027-093120-facades-cost.md).
 The cost test waits for a load under 8, and its command is in the add-on's README.
 
