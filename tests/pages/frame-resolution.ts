@@ -3,9 +3,14 @@
 // the frame back: the paint's change across and its change down must sit at the middle of the image
 // at every scale. A place measured against the canvas's size rather than the size the scene drew at
 // puts both changes further across and down, and at half the scale the paint does not change at all.
+// With ?vignette the page reads the mean brightness of the top and bottom bands instead, which match
+// only while the vignette's center lies at the middle of the drawn image.
 import { createEngine } from '@null3d/engine';
-import { FRAME_RESOLUTION_SCALES } from './lib/render-scale';
+import { FRAME_RESOLUTION_SCALES, VIGNETTE_SCALES } from './lib/render-scale';
 import { run } from './lib/result';
+
+/** True when the page draws the plain plane with the vignette on, as ?vignette asks. */
+const VIGNETTE = new URLSearchParams(location.search).has('vignette');
 
 interface Frame {
 	width: number;
@@ -29,6 +34,23 @@ function changePlaces({ width, height, pixels }: Frame): { across: number; down:
 }
 
 /**
+ * The mean brightness of a band of rows at the middle of the image: the top and bottom band are the
+ * same distance from a centered vignette, whatever the tone curve does to it.
+ */
+function bandMean({ width, height, pixels }: Frame, top: number, bottom: number): number {
+	const left = Math.floor((width * 3) / 8);
+	const right = Math.floor((width * 5) / 8);
+	let sum = 0;
+	let count = 0;
+	for (let y = top; y < bottom; y++)
+		for (let x = left; x < right; x++) {
+			sum += pixels[4 * (y * width + x)] as number;
+			count++;
+		}
+	return count > 0 ? sum / count : 0;
+}
+
+/**
  * The first place along a line of `length` pixels whose value reaches halfway between the smallest
  * and the largest of them. A line that never changes gives its first place, so a frame with no
  * paint fails too.
@@ -48,9 +70,12 @@ function turn(length: number, value: (place: number) => number): number {
 run('frame-resolution', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
+	const sketch = new URL('./sketches/frame-resolution-sketch.ts', import.meta.url);
+	// The page's own switches reach the sketch, so ?vignette turns its vignette on.
+	sketch.search = location.search;
 	const engine = await createEngine({
 		canvas,
-		sketch: new URL('./sketches/frame-resolution-sketch.ts', import.meta.url),
+		sketch,
 		maxPixelRatio: 1,
 	});
 	const failures: string[] = [];
@@ -59,7 +84,9 @@ run('frame-resolution', async () => {
 	const scales: number[] = [];
 	const across: number[] = [];
 	const down: number[] = [];
-	for (const scale of FRAME_RESOLUTION_SCALES) {
+	const top: number[] = [];
+	const bottom: number[] = [];
+	for (const scale of VIGNETTE ? VIGNETTE_SCALES : FRAME_RESOLUTION_SCALES) {
 		const drawn = new Promise<number>((resolve) => {
 			const off = engine.onSketchMessage((name, data) => {
 				if (name !== 'drawn') return;
@@ -69,10 +96,26 @@ run('frame-resolution', async () => {
 		});
 		engine.postToSketch('scale', scale);
 		scales.push(await drawn);
-		const places = changePlaces(await engine.captureFrame());
-		across.push(places.across);
-		down.push(places.down);
+		const frame = await engine.captureFrame();
+		if (VIGNETTE) {
+			const quarter = Math.floor(frame.height / 4);
+			top.push(bandMean(frame, 0, quarter));
+			bottom.push(bandMean(frame, frame.height - quarter, frame.height));
+		} else {
+			const places = changePlaces(frame);
+			across.push(places.across);
+			down.push(places.down);
+		}
 	}
 	await engine.destroy();
-	return { tier: engine.capabilities.tier, mode: engine.mode, scales, across, down, failures };
+	return {
+		tier: engine.capabilities.tier,
+		mode: engine.mode,
+		scales,
+		across,
+		down,
+		top,
+		bottom,
+		failures,
+	};
 });
