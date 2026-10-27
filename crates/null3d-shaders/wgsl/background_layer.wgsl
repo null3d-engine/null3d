@@ -54,6 +54,7 @@ fn fs(in: LayerOut) -> @location(0) vec4f {
     let finished = null3d::tonemap::finish(
         drawn.color * layer.view.w * frame.output.exposure,
         in.clip.xy,
+        frame.occlusion.y,
         frame.output,
         frame.target_size.xy,
         frame.vignette,
