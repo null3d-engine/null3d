@@ -62,7 +62,6 @@ const INCOMPLETE = new Set([
 	'M3-V5',
 	'M3-A11',
 	'M3-R1',
-	'M3-O1',
 	'M3-G2',
 	'M3-G3',
 	'M3-R4',
@@ -129,7 +128,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"`fix/m3-r23-today` at `6fa3fec9e` is 16 commits ahead and unmerged. The owner's tenth ruling closed the bar and the iPad frame-time sentence is fixed. It still owes a `GPU-Checked:` line, because the branch changes WebGL2's backend; a D-266 number that does not collide with the landed D-266; the merge; and the unit tests and the ambient-occlusion pictures",
 	'M3-V2':
 		'`fix/m3-v2-surface-inputs` at `86baced95` is refused by `check-v2-tip.md`, and its helper is fixing the findings',
-	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
 	'M3-G2': 'no Khronos iridescence sample is tested',
 	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',
 	'M3-R4': 'D-247 does not compare frame time, and the Mac GPU figure is owed',

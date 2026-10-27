@@ -1,6 +1,6 @@
 Plans: a hand run of T-32, the script-tag build, in Firefox 158.0.1 on the server Mac on 2026-10-27. The tree was the milestone branch at `dc1e9d557`. The run served `target/cdn` from one origin and the test pages from another, with no bundler and no Playwright. It opened each case with `open -a Firefox` so the window was in front. The first three cases used `tests/pages/cdn-try.html`. They ran single-threaded with no isolation headers, and single-threaded through an import map. The third ran threaded with the isolation headers, where every worker starts from a `blob:` address. The fourth case used `tests/pages/cdn-addon.html` with the terrain add-on, threaded on core WebGPU. A hand-run page on the page's origin embedded each test page. It copied the page's own frame read-back into the window title, which the run read.
 
-Result: 4 passed, 0 failed. The page reported no error in any case.
+Result: 4 passed, 0 failed. The page reported no error in any case. No log file is kept: the page's own frame read-back, copied into its window title, is the record.
 
 Single-threaded with no isolation headers: build `single`, threaded false, mapped false, frame 2560 x 1412. The center pixel was (221, 87, 0, 255), the orange box over the dark background.
 
