@@ -3184,6 +3184,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...DEMOS.map((demo): ImageTest => {
 		const switches = [
 			...(demo.largeWorld ? ['largeWorld'] : []),
+			// A demo with a backdrop draws over a page, so the image page starts the engine on the
+			// see-through canvas that the demo's own start asks for.
+			...(demo.backdrop ? ['transparent'] : []),
 			// The engine reads the page's switch, but not the demo's option, which a sketch test has no
 			// page to pass. Both take the 8-bit path that the demo's own start takes.
 			...(demo.hdr === false ? ['hdr=off'] : []),

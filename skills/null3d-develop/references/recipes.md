@@ -279,6 +279,8 @@ ui.trackLabel(head, 'title', { transform: 'billboard', rotation: 0.1 });        
 
 The engine moves a plane's element into a container of its own inside the element's parent, and writes its matrix. Keep that parent over the canvas. Planes count against `createEngine({ maxLabels3d })`, 256 by default.
 
+To show a page under the drawn scene, start the engine with `createEngine({ transparent: true })`, put the labels' layer below the canvas, and set no background. A plane at the page writes its depth and no color with `materials.unlit({ colorWrite: false })`, so the scene behind the page never draws over it, while a glass object in front still shows the page through itself. Size the plane like the label: an element's CSS pixels are the scene's units. Docs: `guides/ui-overlays#a-page-under-the-scene`, `api/materials#invisible-surfaces-that-hide`.
+
 ## 8. Loading screen with progress and warm-up
 
 ```ts

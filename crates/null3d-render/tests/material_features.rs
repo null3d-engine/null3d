@@ -1,8 +1,9 @@
 //! Material features that choose a pipeline, drawn by both frame builders: double-sided materials
 //! cull no faces, vertex colors pick their shader variant on meshes that have colors, masked
 //! materials pick the variant that discards fragments, and the depth options and the depth bias
-//! set the pipeline's depth state. Checked through the mock backend, which rejects what a real GPU
-//! would, and by decoding the lists.
+//! set the pipeline's depth state. A material that writes no color draws before the materials that
+//! do, so its depth holds back their color. Checked through the mock backend, which rejects what a
+//! real GPU would, and by decoding the lists.
 
 mod common;
 
@@ -331,6 +332,71 @@ fn masks_and_depth_options_choose_the_pipeline_on_webgl2() {
             ..CpuCulledConfig::default()
         };
         check_mask_and_depth(World::build(CpuCulledRenderer::new(config)));
+    }
+}
+
+/// The place in a frame's commands of the first draw with the pipeline `id`: a bundle's indirect
+/// draw on WebGPU, or a draw or multi-draw of a run on WebGL2.
+fn first_draw_with(commands: &[(Op, Vec<u32>)], id: u32) -> Option<usize> {
+    let mut current = None;
+    commands.iter().enumerate().find_map(|(k, (op, o))| {
+        match op {
+            Op::SetPipeline => current = Some(o[0]),
+            Op::DrawIndexed | Op::MultiDrawIndexed | Op::DrawIndexedIndirect
+                if current == Some(id) =>
+            {
+                return Some(k);
+            }
+            _ => {}
+        }
+        None
+    })
+}
+
+/// A surface that writes no color draws before the surfaces that write color, whatever order their
+/// pipeline keys sort in, so the depth it writes holds back their color.
+fn check_holdout<B: FrameBuilder>(mut world: World<B>) {
+    let plain = triangle(false);
+    add(&mut world, &plain, Shading::Lit, 0);
+    add(&mut world, &plain, Shading::Lit, feature::NO_COLOR_WRITE);
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(1).words())
+        .unwrap();
+    let commands = world.commands();
+    let pipeline = |state: u32| {
+        commands
+            .iter()
+            .find_map(|(op, o)| {
+                (*op == Op::CreateRenderPipeline
+                    && o[1] == template::INSTANCED_LIT
+                    && o[6] == state)
+                    .then_some(o[0])
+            })
+            .unwrap_or_else(|| panic!("no lit pipeline with state {state}: {commands:?}"))
+    };
+    let colored = first_draw_with(&commands, pipeline(0)).expect("the colored surface draws");
+    let holdout = first_draw_with(&commands, pipeline(state_flags::NO_COLOR_WRITE))
+        .expect("the depth-only surface draws");
+    assert!(
+        holdout < colored,
+        "the depth-only surface draws first: {holdout} against {colored}"
+    );
+}
+
+#[test]
+fn a_holdout_draws_before_the_colored_surfaces_on_webgpu() {
+    check_holdout(World::new());
+}
+
+#[test]
+fn a_holdout_draws_before_the_colored_surfaces_on_webgl2() {
+    for multi_draw in [true, false] {
+        let config = CpuCulledConfig {
+            multi_draw,
+            ..CpuCulledConfig::default()
+        };
+        check_holdout(World::build(CpuCulledRenderer::new(config)));
     }
 }
 
