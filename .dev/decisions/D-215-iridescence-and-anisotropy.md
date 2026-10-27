@@ -152,7 +152,9 @@ browser shard 7 ran all 141 of its tests green, with the six images that this ma
 drawings are therefore equal.
 
 The Suzanne scene keeps six pictures, three tiers in each set. Its three Mac pictures and its three
-SwiftShader pictures pass against those files.
+SwiftShader pictures pass against those files. CI's run 40442817152 drew its SwiftShader pictures on
+its Linux machines, in browser shard 7 of 28, which passed all 141 of its tests. The two drawings are
+therefore equal.
 
 The run's other red jobs belong to other work. The aurora's E1408 and `sky-layer-light` are the
 sky-layer branch's, and the landing range holds the fix. `program-units` is `fix/m3-program-units`'s.
