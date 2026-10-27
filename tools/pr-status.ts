@@ -59,7 +59,6 @@ const INCOMPLETE = new Set([
 	'M3-A9',
 	'M3-V5',
 	'M3-A11',
-	'M3-R1',
 	'M3-G2',
 	'M3-R4',
 	'M3-R19',
