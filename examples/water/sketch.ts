@@ -69,6 +69,7 @@ export default defineSketch(async (ctx) => {
 			{ map: layers.snow, tile: 14, roughness: 0.8 },
 		],
 		maxLevel: 6,
+		camera,
 	});
 
 	// Boulders along the river's banks. They break the water, and the add-on's foam map draws the

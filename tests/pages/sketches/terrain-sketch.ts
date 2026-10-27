@@ -1,18 +1,28 @@
 // Terrain of the terrain add-on, in hold mode: a height field drawn as a camera-centred quadtree of
 // blocks, with grass, soil, rock and snow blended by a splat map filled from the height and slope.
 // The camera stands still, so the held frame catches the blocks at the finest level around it and
-// the coarse blocks of the far hills. The seed and the height function are fixed, so every run
-// draws the same frame on every GPU path.
+// the coarse blocks of the far hills, which light from normals baked over the whole ground. The
+// seed and the height function are fixed, so every run draws the same frame on every GPU path.
+//
+// `normals=vertex` lights from the meshes' own normals instead, and `blend=off` drops the layers'
+// heights, so a test can compare each feature with its absence.
 import { defineSketch, math } from '@null3d/engine';
-import { createTerrain, terrainTextures } from '@null3d/terrain';
+import { createTerrain, type TerrainLayer, terrainTextures } from '@null3d/terrain';
 
 const SIZE = 512;
+const switches = new URL(import.meta.url).searchParams;
+const bakedNormals = switches.get('normals') !== 'vertex';
+const contrast = switches.get('blend') === 'off' ? 0 : undefined;
 
-/** The height of the ground at a point: hills with a valley that runs along z. */
+/**
+ * The height of the ground at a point: hills with a valley that runs along z, and small folds
+ * finer than a far block's cells, so a block's own vertices would miss them.
+ */
 function ground(x: number, z: number): number {
 	const hills = 30 * Math.sin(x * 0.011) * Math.cos(z * 0.009) + 8 * Math.sin(x * 0.05 + z * 0.03);
 	const valley = -16 * Math.exp(-(z * z) / (2 * 120 * 120));
-	return hills + valley + 6;
+	const folds = 1.4 * Math.sin(x * 0.31 + z * 0.21) + 0.6 * Math.sin(x * 0.63 - z * 0.47);
+	return hills + valley + folds + 6;
 }
 
 export default defineSketch((ctx) => {
@@ -30,18 +40,21 @@ export default defineSketch((ctx) => {
 	scene.setActiveCamera(camera);
 
 	const layers = terrainTextures(ctx.textures, { size: 96, seed: 3 });
+	const blend = (layer: TerrainLayer): TerrainLayer =>
+		contrast === undefined ? layer : { ...layer, contrast };
 	const terrain = createTerrain(ctx, {
 		size: SIZE,
 		height: ground,
 		resolution: 256,
 		layers: [
-			{ map: layers.grass, tile: 5 },
-			{ map: layers.soil, tile: 9 },
-			{ map: layers.rock, tile: 6, roughness: 0.85 },
-			{ map: layers.snow, tile: 12, roughness: 0.7 },
+			blend({ map: layers.grass, tile: 5 }),
+			blend({ map: layers.soil, tile: 9 }),
+			blend({ map: layers.rock, tile: 6, roughness: 0.85 }),
+			blend({ map: layers.snow, tile: 12, roughness: 0.7 }),
 		],
 		maxLevel: 5,
-		split: 2.2,
+		camera,
+		bakedNormals,
 	});
 	// Place a few stones on the ground with the field's own height, to show the sampler.
 	const heightfield = terrain.heightfield;
@@ -59,6 +72,6 @@ export default defineSketch((ctx) => {
 			receiveShadows: true,
 		});
 	}
-	terrain.update([-90, 0, 150]);
+	terrain.update([-90, 46, 150]);
 	return {};
 });

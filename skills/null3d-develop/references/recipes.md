@@ -759,7 +759,7 @@ export default defineSketch((ctx) => {
       { map: layers.snow, tile: 12, roughness: 0.7 },
     ],
     maxLevel: 6,
-    split: 2.1,
+    camera,
   });
 
   // Seat an object on the ground with heightAt, since the terrain carries no collision.
@@ -783,7 +783,7 @@ export default defineSketch((ctx) => {
 });
 ```
 
-The quadtree splits a block only when the camera comes near it, so a still camera costs no work. Read `heightAt` and `normalAt` to place objects, and call `terrain.destroy()` to free the ground. The layers blend by a splat map that the add-on fills from the height and the slope by default. Give `splat` to paint the weights yourself. Docs: `api/terrain`.
+The quadtree splits a block by the screen error of its cells. The camera's position, field of view and the preset's `lodThreshold` set that error, so a still camera costs no work. Every pixel lights from normals that the add-on bakes over the ground, so the far hills keep their relief. Set `bakedNormals: false` to light from the mesh's own normals. Read `heightAt` and `normalAt` to place objects, and call `terrain.destroy()` to free the ground. The layers blend by a splat map that the add-on fills from the height and the slope by default. Each layer's own height pushes it through its neighbours at a boundary, and `contrast` sets how strongly. Give `splat` to paint the weights yourself. Docs: `api/terrain`.
 
 ## 23. Outdoor land with an edge the camera never sees
 
