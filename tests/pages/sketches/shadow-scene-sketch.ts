@@ -6,7 +6,8 @@
 // share of each cascade that blends into the next, from the preset's otherwise. ?distance= places
 // the whole scene that many meters from the world's origin, along the large-world flights'
 // direction (lib/jitter.ts), so the checks measure the shadows of a large world; the page then
-// starts the engine with `largeWorld` on.
+// starts the engine with `largeWorld` on. ?intensity= sets how much of its shadow the sun draws,
+// from 0 for none to 1, the default.
 import { defineSketch } from '@null3d/engine';
 import { FLIGHT_DIRECTION } from '../lib/jitter';
 import { SHADOW_SCENE } from '../lib/shadow-check';
@@ -15,6 +16,9 @@ const params = new URL(import.meta.url).searchParams;
 const blend = params.get('blend');
 const distance = Number(params.get('distance') ?? 0);
 if (!Number.isFinite(distance)) throw new Error('?distance= must be a number of meters');
+// How much of its shadow the sun draws, from 0 for none to 1, the default, for all of it.
+const intensity = Number(params.get('intensity') ?? 1);
+if (!Number.isFinite(intensity)) throw new Error('?intensity= must be a number from 0 to 1');
 /** A place of the scene, moved to the scene's distance from the origin. */
 const at = ([x, y, z]: readonly number[]): [number, number, number] => [
 	(x ?? 0) + FLIGHT_DIRECTION[0] * distance,
@@ -40,7 +44,7 @@ export default defineSketch(({ scene, materials, geometry, quality }) => {
 		direction: SHADOW_SCENE.sun,
 		intensity: 3,
 		castShadows: true,
-		shadow: SHADOW_SCENE.shadow,
+		shadow: { ...SHADOW_SCENE.shadow, intensity },
 	});
 	scene.createAmbientLight({ intensity: 0.5 });
 	const both = { castShadows: true, receiveShadows: true };

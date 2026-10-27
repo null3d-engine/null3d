@@ -35,7 +35,7 @@ struct ShadowCascades {
     texels: vec4f,
     /// The light's bias toward the light and its normal bias, in meters, then 1 when receivers pick
     /// their cascade by their distance from the camera, or 0 by their distance along its view, and
-    /// 0.
+    /// the share of its shadow that the light draws, from 0 to 1.
     biases: vec4f,
     /// The texels on each side of each layer, the size of one texel in texture coordinates, the
     /// texels on each side of the filter's square: 3 or 5, or less for the comparison sampler's
@@ -338,13 +338,23 @@ fn sun_hero(relative: vec3f, mesh_normal: vec3f, to_light: vec3f) -> f32 {
     return filtered(shadows.tiles.kernel, uv, u32(params.w) - 1u, clip.z);
 }
 
-/// How much of the main directional light reaches a point: 1 in full light, 0 in full shadow.
+/// How much of the main directional light reaches a point: 1 in full light, 0 in full shadow,
+/// mixed toward full light by the share of its shadow that the light draws.
+fn sun_shadow(relative: vec3f, mesh_normal: vec3f, plane_normal: vec3f, to_light: vec3f) -> f32 {
+    return mix(
+        1.0,
+        sun_shadow_unmixed(relative, mesh_normal, plane_normal, to_light),
+        shadows.cascades.biases.w,
+    );
+}
+
+/// The shadow lookup that `sun_shadow` mixes, with the light's own shadow strength left out.
 /// `relative` is the point's position relative to the main camera: in another view, its position
 /// relative to that view's camera plus the frame's `shadow_origin`. `mesh_normal` is the surface's
 /// unit normal before a normal map bends it, which moves the point off its own surface before the
 /// lookup, `plane_normal` the unit normal of the triangle's plane turned toward the light, which
 /// each stored depth compares with, and `to_light` the unit direction toward the light.
-fn sun_shadow(relative: vec3f, mesh_normal: vec3f, plane_normal: vec3f, to_light: vec3f) -> f32 {
+fn sun_shadow_unmixed(relative: vec3f, mesh_normal: vec3f, plane_normal: vec3f, to_light: vec3f) -> f32 {
     // The hero object draws its own shadow into a tile of the atlas, fitted tightly to it. A
     // receiver inside that box reads it before the cascades, whose texels are far coarser there.
     let hero = sun_hero(relative, mesh_normal, to_light);
@@ -506,7 +516,8 @@ fn cube_face(direction: vec3f) -> u32 {
     return select(5u, 4u, direction.z > 0.0);
 }
 
-/// How much of a point or spot light reaches a point: 1 in full light, 0 in full shadow. `first`
+/// How much of a point or spot light reaches a point: 1 in full light, 0 in full shadow, mixed
+/// toward full light by the share of its shadow that the light draws. `first`
 /// is the light's first tile. `relative` is the point's position relative to the main camera, as
 /// `sun_shadow` takes it, `mesh_normal` the surface's unit normal before a normal map bends it,
 /// which moves the sample off its own surface, `to_light` the unit direction toward the light, and
@@ -533,5 +544,7 @@ fn light_shadow(first: u32, relative: vec3f, mesh_normal: vec3f, to_light: vec3f
     // WebGL2 keeps the rows of a drawn texture bottom first.
     uv.y = 1.0 - uv.y;
 #endif
-    return filtered(shadows.tiles.kernel, uv, tile, ndc.z);
+    // The light's shadow strength rides in the fourth value's half step past its tile count.
+    let intensity = (params.w - floor(params.w)) * 2.0;
+    return mix(1.0, filtered(shadows.tiles.kernel, uv, tile, ndc.z), intensity);
 }
