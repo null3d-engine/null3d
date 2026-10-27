@@ -2039,7 +2039,13 @@ fn the_sun_shadow_loops_run_the_same_passes_at_every_pixel() {
     // The cascade count comes from the uniforms, so it is the same at every pixel of a draw. A
     // fixed MAX_CASCADES passes slowed S4's scene pass at Low on Apple's GPUs.
     let shadows = library_module("shadows");
-    let sun = function_text(&shadows, "sun_shadow");
+    // The light's strength mixes around the lookup, so the loops live in the function it mixes.
+    let sun = function_text(&shadows, "sun_shadow_unmixed");
+    let mixed = function_text(&shadows, "sun_shadow");
+    assert!(
+        mixed.contains("sun_shadow_unmixed("),
+        "the strength must mix the lookup: {mixed}"
+    );
     let loops: Vec<&str> = sun
         .lines()
         .map(str::trim)
