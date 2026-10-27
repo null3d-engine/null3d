@@ -141,7 +141,7 @@ enable draw_index;
 #endif
 #import null3d::ibl::{reflected_direction}
 #import null3d::lighting::{horizon_occlusion, indirect_specular, specular_occlusion}
-#import null3d::lights::{clustered_light, fill_light}
+#import null3d::lights::{clustered_light, direct_surface_light, FILL_LIGHT_SLOTS}
 #ifndef PARALLAX
 #import null3d::ssr::{screen_reflection}
 #endif
@@ -1884,9 +1884,29 @@ fn light_surface(
 #endif
     var sun = direct_light(m, normal, to_view, to_sun, sun_color, compensation);
     // The fill directional lights add their light beside the main light's, without its shadows.
-    let fill = fill_light(m, normal, to_view, compensation);
-    sun.diffuse += fill.diffuse;
-    sun.specular += fill.specular;
+    let fills = min(u32(engine_frame.sun_color.w), FILL_LIGHT_SLOTS);
+    for (var k = 0u; k < fills; k++) {
+        let direction = select(
+            select(engine_frame.fill_dir_a, engine_frame.fill_dir_b, k == 1u),
+            engine_frame.fill_dir_c,
+            k == 2u,
+        );
+        let color = select(
+            select(engine_frame.fill_col_a, engine_frame.fill_col_b, k == 1u),
+            engine_frame.fill_col_c,
+            k == 2u,
+        );
+        let fill = direct_surface_light(
+            m,
+            normal,
+            to_view,
+            -direction.xyz,
+            color.rgb,
+            compensation,
+        );
+        sun.diffuse += fill.diffuse;
+        sun.specular += fill.specular;
+    }
 #ifdef CUSTOM_LOBE
     // The material's own lobe adds its specular beside the base lobe's for the main light. It
     // knows the light, the view and the half vector, which a surface function cannot see.

@@ -938,10 +938,9 @@ struct Lighting {
     sun_direction: [f32; 4],
     sun_color: [f32; 4],
     /// The directional lights after the main one, which cast no shadows: each one's travel
-    /// direction and its exposed color, and how many light the frame.
+    /// direction and its exposed color. Their count is the sun color's fourth float.
     fill_direction: [[f32; 4]; MAX_FILL_DIRECTIONAL_LIGHTS],
     fill_color: [[f32; 4]; MAX_FILL_DIRECTIONAL_LIGHTS],
-    fill_count: u32,
     ambient: [f32; 4],
     /// The light that the hemisphere lights add along each world axis, as the frame's uniform
     /// holds it.
@@ -1217,7 +1216,6 @@ impl SceneSettings {
                 sun_color: [0.0; 4],
                 fill_direction: [[0.0, -1.0, 0.0, 0.0]; MAX_FILL_DIRECTIONAL_LIGHTS],
                 fill_color: [[0.0; 4]; MAX_FILL_DIRECTIONAL_LIGHTS],
-                fill_count: 0,
                 ambient: [0.0; 4],
                 hemisphere: [[0.0; 4]; 3],
                 sun_shadow: None,
@@ -3249,7 +3247,7 @@ impl SceneSettings {
                 [fill.direction[0], fill.direction[1], fill.direction[2], 0.0];
             self.lighting.fill_color[k] = [fill.color[0], fill.color[1], fill.color[2], 0.0];
         }
-        self.lighting.fill_count = count.min(MAX_FILL_DIRECTIONAL_LIGHTS as u32);
+        self.lighting.sun_color[3] = count.min(MAX_FILL_DIRECTIONAL_LIGHTS as u32) as f32;
     }
 
     /// The ambient light's exposed color: its linear color times its intensity and the exposure.
@@ -3900,7 +3898,6 @@ impl SceneSettings {
             sun_color: self.lighting.sun_color,
             fill_direction: self.lighting.fill_direction,
             fill_color: self.lighting.fill_color,
-            fill_count: [self.lighting.fill_count as f32, 0.0, 0.0, 0.0],
             ambient: self.lighting.ambient,
             hemisphere: self.lighting.hemisphere,
             output: output.uniform(),

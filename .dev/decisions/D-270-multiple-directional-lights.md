@@ -1,6 +1,6 @@
 # D-270: More than one directional light
 
-Status: decided. Built: the core's light gather, the renderer's frame values and the shaders light up to four directional lights. They do so on WebGPU, its compatibility mode and WebGL2, with no new pipeline. Six first-use shader files pass their uncompressed budget by up to 18,744 bytes, which needs the owner's ruling. The iPad and S24 cost runs are pending. Task: M3-K9.
+Status: decided. Built: the core's light gather, the renderer's frame values and the shaders light up to four directional lights. They do so on WebGPU, its compatibility mode and WebGL2, with no new pipeline. Two first-use shader files pass their uncompressed budget by up to 12,802 bytes, which needs the owner's ruling. The iPad and S24 cost runs are pending. Task: M3-K9.
 
 Summary: A frame lights surfaces with up to four directional lights. The first one created casts the shadows. Up to three more light as fill and rim lights, without shadows, from three slots in the frame's values. A fifth directional light gives no light.
 
@@ -46,7 +46,7 @@ Three colored directional lights show three lit sides on the floor of shapes and
 
 ## Decision
 
-Option A. The core gathers the directional lights that the view sees, in creation order, in `LightTable::gather`. The first is the main light, and it keeps the shadows. The next three become `FrameLights::fills`, and a further one is dropped. The renderer writes their directions and exposed colors into six vectors of the frame's uniform block, with a count in a seventh. The block grows from 992 to 1,104 bytes. The shader library's `fill_light` adds `direct_light` for each slot that the count names, with no shadow lookup. The three slots are blocks of their own, gated by the count. A loop over them compiles to more GLSL than the first-use shader files' uncompressed budget allows. The lit material and lit lines call it. The coat and sheen layer and the translucency's back light treat each fill as the point and spot lights treat theirs.
+Option A. The core gathers the directional lights that the view sees, in creation order, in `LightTable::gather`. The first is the main light, and it keeps the shadows. The next three become `FrameLights::fills`, and a further one is dropped. The renderer writes their directions and exposed colors into six vectors of the frame's uniform block, and the count into the fourth float of the sun's color. The block grows from 992 to 1,088 bytes. The lit material's surface function and the lit lines loop over the count and add `direct_surface_light` for each fill, with no shadow lookup. The coat and sheen layer and the translucency's back light treat each fill as the point and spot lights treat theirs.
 
 ## Consequences
 
@@ -54,6 +54,6 @@ Option A. The core gathers the directional lights that the view sees, in creatio
 - The image tests add `lights-fills`, a floor under three directional lights. It has a twin in the parity list, which compares it with three.js's three `DirectionalLight`s.
 - The glTF page test loads a file of three directional lights, and checks that every one reaches the scene.
 - The references of `demo-gizmos` and `demo-css3d-labels` are drawn again, in both sets. Their scenes already set a second directional light, which now lights.
-- The frame's values grow by 112 bytes per view. The slot that holds them aligns to 256 bytes, so it grows by 256 bytes, from 1,024 to 1,280. A scene with no fill light pays one branch in the lit shaders.
-- The fill code grows every lit variant. Six first-use GLSL combination files pass their Brotli and gzip budgets, but pass their uncompressed budget by 858 to 18,744 bytes. The owner's ruling on that budget is pending.
+- The frame's values grow by 96 bytes per view. The slot that holds them aligns to 256 bytes, so it grows by 256 bytes, from 1,024 to 1,280. A scene with no fill light pays one branch in the lit shaders.
+- The fill code grows every lit variant. Two first-use GLSL combination files pass their Brotli and gzip budgets, but pass their uncompressed budget by 11,576 and 12,802 bytes. The owner's ruling on that budget is pending.
 - `bun run test:browser -- fill-cost.spec.ts` with `NULL3D_FILL_COST` set times one more light on each GPU path. The `fills-cost` device plan does the same on a device.

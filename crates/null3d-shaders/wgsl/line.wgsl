@@ -29,7 +29,7 @@ enable draw_index;
 #import null3d::globals::{Material}
 #import null3d::lighting::{direct_light, dfg_lut, indirect_diffuse, multiscatter_compensation}
 #import null3d::lighting::{pbr_material, with_specular}
-#import null3d::lights::{clustered_light, fill_light}
+#import null3d::lights::{clustered_light, direct_surface_light, FILL_LIGHT_SLOTS}
 #endif
 
 /// The factor that undoes the packing of the tiny values: 2^32.
@@ -187,12 +187,33 @@ fn lit_color(m: Material, base: vec3f, relative: vec3f) -> vec3f {
     let dfg = dfg_lut(1.0, pbr.roughness);
     let compensation = multiscatter_compensation(pbr.specular_blended, dfg);
     let to_light = -engine_frame.sun_direction.xyz;
-    let sun = direct_light(pbr, normal, normal, to_light, engine_frame.sun_color.rgb, compensation);
-    let fill = fill_light(pbr, normal, normal, compensation);
+    var sun = direct_light(pbr, normal, normal, to_light, engine_frame.sun_color.rgb, compensation);
+    let fills = min(u32(engine_frame.sun_color.w), FILL_LIGHT_SLOTS);
+    for (var k = 0u; k < fills; k++) {
+        let direction = select(
+            select(engine_frame.fill_dir_a, engine_frame.fill_dir_b, k == 1u),
+            engine_frame.fill_dir_c,
+            k == 2u,
+        );
+        let color = select(
+            select(engine_frame.fill_col_a, engine_frame.fill_col_b, k == 1u),
+            engine_frame.fill_col_c,
+            k == 2u,
+        );
+        let fill = direct_surface_light(
+            pbr,
+            normal,
+            normal,
+            -direction.xyz,
+            color.rgb,
+            compensation,
+        );
+        sun.diffuse += fill.diffuse;
+        sun.specular += fill.specular;
+    }
     let clustered = clustered_light(pbr, relative, normal, normal, compensation);
     let ambient = indirect_diffuse(pbr, ambient_light(normal), dfg);
-    let direct = sun.diffuse + sun.specular + fill.diffuse + fill.specular + clustered.diffuse
-        + clustered.specular;
+    let direct = sun.diffuse + sun.specular + clustered.diffuse + clustered.specular;
     return direct + ambient + exposed(m.emissive.rgb * m.strengths.w);
 }
 #endif
