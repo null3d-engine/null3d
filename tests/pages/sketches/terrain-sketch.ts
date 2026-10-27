@@ -14,6 +14,43 @@ const switches = new URL(import.meta.url).searchParams;
 const bakedNormals = switches.get('normals') !== 'vertex';
 const contrast = switches.get('blend') === 'off' ? 0 : undefined;
 
+const hash = (x: number, y: number) => {
+	let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
+	h = Math.imul(h ^ (h >>> 13), 1274126177);
+	return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+const smooth = (t: number) => t * t * (3 - 2 * t);
+
+/** Value noise, from -1 to 1. */
+function noise(x: number, y: number): number {
+	const xi = Math.floor(x);
+	const yi = Math.floor(y);
+	const u = smooth(x - xi);
+	const v = smooth(y - yi);
+	return (
+		math.lerp(
+			math.lerp(hash(xi, yi), hash(xi + 1, yi), u),
+			math.lerp(hash(xi, yi + 1), hash(xi + 1, yi + 1), u),
+			v,
+		) *
+			2 -
+		1
+	);
+}
+
+/** Octaves of noise, each twice as fine and half as strong. */
+function fbm(x: number, y: number, octaves: number): number {
+	let sum = 0;
+	let amplitude = 0.5;
+	let scale = 1;
+	for (let o = 0; o < octaves; o++) {
+		sum += amplitude * noise(x * scale, y * scale);
+		amplitude *= 0.5;
+		scale *= 2;
+	}
+	return sum;
+}
+
 /**
  * The height of the ground at a point: hills with a valley that runs along z, and small folds
  * finer than a far block's cells, so a block's own vertices would miss them.
@@ -21,11 +58,8 @@ const contrast = switches.get('blend') === 'off' ? 0 : undefined;
 function ground(x: number, z: number): number {
 	const hills = 30 * Math.sin(x * 0.011) * Math.cos(z * 0.009) + 8 * Math.sin(x * 0.05 + z * 0.03);
 	const valley = -16 * Math.exp(-(z * z) / (2 * 120 * 120));
-	// Three crossing waves, so the folds look like the ground's own bumps rather than a ridge pattern.
-	const folds =
-		0.8 * Math.sin(x * 0.23 + z * 0.17) +
-		0.5 * Math.sin(x * 0.41 - z * 0.31 + 1.7) +
-		0.3 * Math.sin(x * 0.59 + z * 0.47 + 4.1);
+	// Bumps about 20 meters across and finer, which a far block's cells span many of.
+	const folds = 4 * fbm(x * 0.05 + 5.1, z * 0.05 - 2.3, 2);
 	return hills + valley + folds + 6;
 }
 
@@ -51,10 +85,10 @@ export default defineSketch((ctx) => {
 		height: ground,
 		resolution: 256,
 		layers: [
-			blend({ map: layers.grass, tile: 5 }),
-			blend({ map: layers.soil, tile: 9 }),
-			blend({ map: layers.rock, tile: 6, roughness: 0.85 }),
-			blend({ map: layers.snow, tile: 12, roughness: 0.7 }),
+			blend({ map: layers.grass, tile: 5, heightFrom: 'alpha' }),
+			blend({ map: layers.soil, tile: 9, heightFrom: 'alpha' }),
+			blend({ map: layers.rock, tile: 6, roughness: 0.85, heightFrom: 'alpha' }),
+			blend({ map: layers.snow, tile: 12, roughness: 0.7, heightFrom: 'alpha' }),
 		],
 		maxLevel: 5,
 		camera,

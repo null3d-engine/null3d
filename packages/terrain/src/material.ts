@@ -24,7 +24,8 @@ export interface TerrainLayer {
 	contrast?: number;
 	/**
 	 * Where the layer's height comes from at each texel: its map's brightness, the default, or the
-	 * map's alpha channel for a map that keeps a height there.
+	 * map's alpha channel for a map that keeps a height there. The maps that `terrainTextures`
+	 * makes keep one in alpha.
 	 */
 	heightFrom?: 'brightness' | 'alpha';
 }
