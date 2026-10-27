@@ -1,16 +1,17 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import {
-	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { UsageError } from './args.js';
 import { createProject, packageNameFor, parseCreateArgs, templateNames } from './create.js';
 
@@ -27,6 +28,11 @@ function tempRoot() {
 afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
+
+/** The tools that an agent settings file runs the hook before. */
+function hookMatchers(settings: { hooks: { PreToolUse: { matcher: string }[] } }) {
+	return settings.hooks.PreToolUse.map((hook) => hook.matcher);
+}
 
 /** What parsing `args` throws, as the message a person sees. */
 function mistake(args: string[]): string {
@@ -65,21 +71,29 @@ describe('createProject', () => {
 		const root = tempRoot();
 		const target = createProject({ dir: join(root, 'my-game'), version: '0.1.0' });
 
-		for (const file of [
-			'package.json',
+		// Every file the project holds, relative to its folder, in one sorted list.
+		const listed = (root: string): string[] =>
+			readdirSync(root, { recursive: true, withFileTypes: true })
+				.filter((entry) => entry.isFile())
+				.map((entry) => relative(root, join(entry.parentPath, entry.name)))
+				.sort();
+
+		// The template holds exactly these files. The list is written out rather than read from the
+		// template folder, so a file left in the folder shows up as a project file that no line here
+		// names.
+		expect(listed(target)).toEqual([
+			'.agent/agent-hook.mjs',
+			'.claude/settings.json',
+			'.codex/hooks.json',
+			'.gitignore',
+			'AGENTS.md',
 			'index.html',
+			'package.json',
 			'src/page.ts',
 			'src/sketch.ts',
 			'tsconfig.json',
 			'vite.config.ts',
-			'AGENTS.md',
-			'.gitignore',
-			'.claude/settings.json',
-			'.claude/agent-hook.mjs',
-			'.codex/hooks.json',
-		]) {
-			expect(existsSync(join(target, file))).toBe(true);
-		}
+		]);
 
 		const manifest = JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'));
 		expect(manifest.name).toBe('my-game');
@@ -108,88 +122,124 @@ describe('createProject', () => {
 		}
 	});
 
-	it('turns the hook on for commands and for edits', () => {
-		const root = tempRoot();
-		const target = createProject({ dir: join(root, 'my-game'), version: '0.1.0' });
-		const settings = JSON.parse(readFileSync(join(target, '.claude/settings.json'), 'utf8'));
-		const hooks = settings.hooks.PreToolUse;
-
-		expect(hooks.map((hook: { matcher: string }) => hook.matcher)).toEqual([
-			'Bash',
-			'Edit|Write|MultiEdit',
-		]);
-		expect(hooks[0].hooks[0].command).toContain('.claude/agent-hook.mjs" bash');
-		expect(hooks[1].hooks[0].command).toContain('.claude/agent-hook.mjs" edit');
-	});
-
-	it('turns the hook on for Codex too', () => {
-		const root = tempRoot();
-		const target = createProject({ dir: join(root, 'my-game'), version: '0.1.0' });
-		const config = JSON.parse(readFileSync(join(target, '.codex/hooks.json'), 'utf8'));
-		const hooks = config.hooks.PreToolUse;
-
-		expect(hooks.map((hook: { matcher: string }) => hook.matcher)).toEqual([
-			'Bash',
-			'Edit|Write|apply_patch',
-		]);
-		// Codex runs the same hook script as Claude Code, so the rules live in one place.
-		expect(hooks[0].hooks[0].command).toContain('.claude/agent-hook.mjs" bash');
-		expect(hooks[1].hooks[0].command).toContain('.claude/agent-hook.mjs" edit');
-	});
-
-	it('runs its hooks in the project that it makes', () => {
+	it('turns the hook on for commands and for edits, in both agents', () => {
 		const root = tempRoot();
 		const target = createProject({ dir: join(root, 'my-game'), version: '0.1.0' });
 		const claude = JSON.parse(readFileSync(join(target, '.claude/settings.json'), 'utf8'));
 		const codex = JSON.parse(readFileSync(join(target, '.codex/hooks.json'), 'utf8'));
-		interface HookConfig {
-			hooks: {
-				PreToolUse: { matcher: string; hooks: { command: string }[] }[];
-			};
+
+		expect(hookMatchers(claude)).toEqual(['Bash', 'Edit|Write|MultiEdit']);
+		expect(hookMatchers(codex)).toEqual(['Bash', 'Edit|Write|apply_patch']);
+		for (const settings of [claude, codex]) {
+			expect(settings.hooks.PreToolUse[0].hooks[0].command).toContain('.agent/agent-hook.mjs');
+			expect(settings.hooks.PreToolUse[1].hooks[0].command).toContain('.agent/agent-hook.mjs');
 		}
-		const command = (config: HookConfig, matcher: string) =>
-			config.hooks.PreToolUse.find((group) => group.matcher === matcher)?.hooks[0]?.command ?? '';
-		// The commands that each host runs, as each host configures them in this project.
-		const bashCommands = [command(claude, 'Bash'), command(codex, 'Bash')];
-		const editCommands = [
-			command(claude, 'Edit|Write|MultiEdit'),
-			command(codex, 'Edit|Write|apply_patch'),
-		];
-		const run = (value: string, call: unknown) =>
-			spawnSync('sh', ['-c', value], {
+	});
+
+	it('runs every hook that a new project installs', () => {
+		const root = tempRoot();
+		const target = createProject({ dir: join(root, 'my-game'), version: '0.1.0' });
+		const link = join(target, 'node_modules', '@null3d', 'cli');
+		mkdirSync(join(target, 'node_modules', '@null3d'), { recursive: true });
+		symlinkSync(fileURLToPath(new URL('..', import.meta.url)), link, 'dir');
+
+		const claude = JSON.parse(readFileSync(join(target, '.claude/settings.json'), 'utf8'));
+		const codex = JSON.parse(readFileSync(join(target, '.codex/hooks.json'), 'utf8'));
+		const commands = (settings: { hooks: { PreToolUse: { hooks: { command: string }[] }[] } }) =>
+			settings.hooks.PreToolUse.map((hook) => hook.hooks[0]?.command ?? '');
+		const [claudeBash = '', claudeEdit = ''] = commands(claude);
+		const [codexBash = '', codexEdit = ''] = commands(codex);
+
+		/** Runs a command's hook the way Claude Code does. */
+		const runClaude = (command: string, call: object) =>
+			spawnSync('sh', ['-c', command], {
 				cwd: target,
 				input: JSON.stringify(call),
 				encoding: 'utf8',
 				env: { ...process.env, CLAUDE_PROJECT_DIR: target },
 			});
-		for (const value of bashCommands) {
-			// The project's own build command passes, and a forbidden command is refused.
-			const allowed = run(value, { tool_name: 'Bash', tool_input: { command: 'bun run build' } });
-			expect(allowed.stderr).toBe('');
-			expect(allowed.status).toBe(0);
-			const refused = run(value, { tool_name: 'Bash', tool_input: { command: 'sleep 5' } });
+		const withoutProjectDir = { ...process.env };
+		delete withoutProjectDir.CLAUDE_PROJECT_DIR;
+		/** Runs a command's hook the way Codex does, from the project's source folder. */
+		const runCodex = (command: string, call: object) =>
+			spawnSync('sh', ['-c', command], {
+				cwd: join(target, 'src'),
+				input: JSON.stringify({ cwd: target, ...call }),
+				encoding: 'utf8',
+				env: withoutProjectDir,
+			});
+
+		const domInSketch = {
+			tool_name: 'Write',
+			tool_input: {
+				file_path: 'src/sketch.ts',
+				content: 'const el = document.querySelector("canvas");\n',
+			},
+		};
+		const domInPage = {
+			tool_name: 'Write',
+			tool_input: {
+				file_path: 'src/page.ts',
+				content: 'const el = document.querySelector("canvas");\n',
+			},
+		};
+
+		for (const { run, bash, edit } of [
+			{ run: runClaude, bash: claudeBash, edit: claudeEdit },
+			{ run: runCodex, bash: codexBash, edit: codexEdit },
+		]) {
+			const refused = run(bash, { tool_name: 'Bash', tool_input: { command: 'sleep 5' } });
 			expect(refused.status).toBe(2);
 			expect(refused.stderr).toContain('do not wait with sleep');
-		}
-		// The project's own sketch passes the edit rule, and an edit that reaches the DOM is refused.
-		const sketch = readFileSync(join(target, 'src/sketch.ts'), 'utf8');
-		for (const value of editCommands) {
-			const allowed = run(value, {
-				tool_name: 'Write',
-				tool_input: { file_path: 'src/sketch.ts', content: sketch },
+
+			const poll = run(bash, {
+				tool_name: 'Bash',
+				tool_input: { command: 'until curl -s localhost:5173; do sleep 1; done' },
 			});
-			expect(allowed.stderr).toBe('');
+			expect(poll.status).toBe(2);
+			expect(poll.stderr).toContain('do not wait with sleep');
+
+			const allowed = run(bash, {
+				tool_name: 'Bash',
+				tool_input: { command: 'bun run build' },
+			});
 			expect(allowed.status).toBe(0);
-			const refused = run(value, {
-				tool_name: 'Write',
-				tool_input: {
-					file_path: 'src/sketch.ts',
-					content: 'const canvas = document.querySelector("canvas");\n',
-				},
-			});
-			expect(refused.status).toBe(2);
-			expect(refused.stderr).toContain('has no DOM');
+			expect(allowed.stderr).toBe('');
+
+			const flagged = run(edit, domInSketch);
+			expect(flagged.status).toBe(0);
+			expect(flagged.stdout).toContain('has no DOM');
+
+			const allowedPage = run(edit, domInPage);
+			expect(allowedPage.status).toBe(0);
+			expect(allowedPage.stdout).toBe('');
 		}
+
+		const patch = runCodex(codexEdit, {
+			tool_name: 'apply_patch',
+			tool_input: {
+				command:
+					'*** Begin Patch\n*** Add File: src/scene/sketch.ts\n+const el = document.body;\n*** End Patch',
+			},
+		});
+		expect(patch.status).toBe(0);
+		expect(patch.stdout).toContain('has no DOM');
+
+		const twoFiles = runCodex(codexEdit, {
+			tool_name: 'apply_patch',
+			tool_input: {
+				command: [
+					'*** Begin Patch',
+					'*** Add File: src/scene/page.ts',
+					'+const el = document.body;',
+					'*** Add File: src/scene/sketch.ts',
+					'+const el = document.body;',
+					'*** End Patch',
+				].join('\n'),
+			},
+		});
+		expect(twoFiles.status).toBe(0);
+		expect(twoFiles.stdout).toContain('src/scene/sketch.ts');
 	});
 
 	it('makes a name that npm accepts from the folder', () => {
@@ -230,6 +280,18 @@ describe('createProject', () => {
 		expect(() => createProject({ dir: target, version: '0.1.0' })).toThrow('.claude/settings.json');
 		expect(readFileSync(settings, 'utf8')).toBe(own);
 		expect(readdirSync(join(target, '.claude'))).toEqual(['settings.json']);
+	});
+
+	it('leaves an existing Codex hooks file as it is', () => {
+		const root = tempRoot();
+		const target = join(root, 'game');
+		mkdirSync(join(target, '.codex'), { recursive: true });
+		const hooks = join(target, '.codex', 'hooks.json');
+		const own = '{"hooks":{"PreToolUse":[]}}\n';
+		writeFileSync(hooks, own);
+
+		expect(() => createProject({ dir: target, version: '0.1.0' })).toThrow('.codex/hooks.json');
+		expect(readFileSync(hooks, 'utf8')).toBe(own);
 	});
 
 	it('does not overwrite the settings of a project that it made before', () => {
