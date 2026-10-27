@@ -7,13 +7,16 @@
 //
 // The look's cost is a fraction of a millisecond, and the GPU clock steps at 0.065536 ms, so the
 // page draws on a canvas four times the size of the one a 1080p window gives at this pixel ratio:
-// 3840 by 2160 CSS at a pixel ratio of 2 is a 7680 by 4320 drawing buffer. Each side takes seven
-// rounds, with the sides in the opposite order on alternate rounds, and the line prints the
-// lowest and highest difference between the sides' rounds, which is the cell's own spread.
+// 3840 by 2160 CSS at a pixel ratio of 2 is a 7680 by 4320 drawing buffer. Each side takes five
+// rounds, with the sides in the opposite order on alternate rounds, and the line prints the lowest
+// and highest difference between the sides' rounds, which is the cell's own spread.
 //
-// NULL3D_LENS_PRESETS sets the presets, NULL3D_LENS_GPUS the GPU paths. NULL3D_LENS_MARKS adds one
-// run for each mark it names, with every other value at 0, so each mark's own cost shows. Each
-// test waits for a quiet computer and prints the load beside its figures (tests/lib/effect-cost.ts).
+// A mark is pixel work over the same screen area, and the preset does not change it, so each mark
+// runs at one preset on each path: the highest that path allows. The whole look runs at every
+// preset. NULL3D_LENS_PRESETS sets those presets, and NULL3D_LENS_GPUS the GPU paths.
+// NULL3D_LENS_MARKS adds one run for each mark it names, with every other value at 0, so each
+// mark's own cost shows. Each test waits for a quiet computer and prints the load beside its
+// figures (tests/lib/effect-cost.ts).
 
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
@@ -33,8 +36,14 @@ test.use(TIMING_BROWSER);
 const presets = (process.env.NULL3D_LENS_PRESETS ?? 'low,medium,high,ultra').split(',');
 const paths = (process.env.NULL3D_LENS_GPUS ?? 'webgpu,compat,webgl2').split(',');
 const marks = (process.env.NULL3D_LENS_MARKS ?? '').split(',').filter(Boolean);
+/** The highest preset that each GPU path allows, which is where a mark's cost is measured. */
+const HIGHEST_PRESET: Readonly<Record<string, string>> = {
+	webgpu: 'ultra',
+	compat: 'medium',
+	webgl2: 'medium',
+};
 /** The rounds of each side, with the sides in the opposite order on alternate rounds. */
-const ROUNDS = 7;
+const ROUNDS = 5;
 /** The canvas's CSS size, and the pixel ratio held for both sides. */
 const SIZE = { width: 3840, height: 2160 } as const;
 const PIXEL_RATIO = 2;
@@ -97,9 +106,10 @@ for (const gpu of paths)
 		});
 
 for (const mark of marks)
-	for (const gpu of paths)
-		for (const preset of presets)
-			test(`lens kit's ${mark} on ${gpu} at ${preset}, timed off and on`, async ({ page }) => {
-				test.skip(!process.env.NULL3D_LENS_COST, 'set NULL3D_LENS_COST to time the lens kit');
-				await timeLook(page, { gpu, preset, mark });
-			});
+	for (const gpu of paths) {
+		const preset = HIGHEST_PRESET[gpu] ?? 'medium';
+		test(`lens kit's ${mark} on ${gpu} at ${preset}, timed off and on`, async ({ page }) => {
+			test.skip(!process.env.NULL3D_LENS_COST, 'set NULL3D_LENS_COST to time the lens kit');
+			await timeLook(page, { gpu, preset, mark });
+		});
+	}
