@@ -154,11 +154,13 @@ drawings are therefore equal.
 The Suzanne scene keeps six pictures, three tiers in each set. Its three Mac pictures and its three
 SwiftShader pictures pass against those files. CI's run 40442817152 drew its SwiftShader pictures on
 its Linux machines, in browser shard 7 of 28, which passed all 141 of its tests. The two drawings are
-therefore equal.
+therefore equal. That run's other red jobs are other work: the aurora's E1408, `sky-layer-light`,
+`program-units`, and a video texture that sent no frame. None of them runs an iridescence test.
 
-The run's other red jobs belong to other work. The aurora's E1408 and `sky-layer-light` are the
-sky-layer branch's, and the landing range holds the fix. `program-units` is `fix/m3-program-units`'s.
-The canvas allocation check is `ci/allocation-canvas`'s. Two Firefox picture differences have no
+The earlier run's other red jobs belong to other work. The aurora's E1408 and `sky-layer-light` are
+the sky-layer branch's, and the landing range holds the fix. `program-units` is
+`fix/m3-program-units`'s. The canvas allocation check is `ci/allocation-canvas`'s. Two Firefox
+picture differences have no
 branch yet: `demo-skyway` misses its tolerance by 0.081 points and `demo-canvas-screen` by 0.115.
 The CLI replay drew five frames where the test asks for more than five, and no branch owns that
 either.
