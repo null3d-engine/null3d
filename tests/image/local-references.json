@@ -185,6 +185,12 @@
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
 	},
+	"chromium-swiftshader/webgpu/skinning-shadows.png": {
+		"test": "skinning-shadows",
+		"tier": "webgpu",
+		"date": "2026-10-27",
+		"reason": "drawn on this Mac's SwiftShader from the branch that redrew the skinning-shadow picture; the branch was not pushed when the set was drawn"
+	},
 	"chromium-swiftshader/webgpu/wind-cards-later.png": {
 		"test": "wind-cards-later",
 		"tier": "webgpu",
