@@ -164,7 +164,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-R16': 'no project made from the template is installed, built and used with the hook on',
 	'M3-R20': 'the record gives 1.25 to 2.42 seconds against a finish line that asks for under one',
 	'M3-E2':
-		'its finish line was rewritten to match the build without an owner ruling, and that ruling is still open',
+		'the owner ruled that the rewritten line stands, and the fresh allocation run and the evidence wording are on the branch; the tick waits on a fresh audit read',
 	'M3-E4':
 		"whether the approved hook table stands against hard rule 8 is the owner's to decide, and the tick waits on that",
 	'M3-K3':
