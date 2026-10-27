@@ -9,3 +9,5 @@ Single-threaded through an import map: mapped true, with the same frame and the 
 Threaded with the isolation headers: build `threaded`, threaded true, with the same frame and the same center pixel. The threaded WebAssembly file loaded, so every worker started from its `blob:` address.
 
 The terrain add-on, threaded on core WebGPU: tier `webgpu`, frame 2648 x 1550. The ground covered 0.489 of the frame, with mean color (49.0, 79.7, 34.8), where green is above blue and red. The add-on's compiled shader module came from the CDN.
+
+The landings from `dc1e9d557` to `ce417ea20` changed no engine source, no add-on source, no worker bootstrap, no loader and neither test page. The one change near the builder, in `tools/lib/packages.ts`, moves a CLI template file's path and does not touch an engine or add-on build. This run therefore shows the build at `ce417ea20`. The only CDN output that changed is the third-party notices text, which no page loads.
