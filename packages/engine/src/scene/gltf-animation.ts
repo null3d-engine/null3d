@@ -207,6 +207,7 @@ const POINTER_MATERIAL_VALUES: ReadonlyMap<string, string> = new Map([
 	['extensions/KHR_materials_specular/specularFactor', 'specularIntensity'],
 	['extensions/KHR_materials_specular/specularColorFactor', 'specularColor'],
 	['extensions/KHR_materials_transmission/transmissionFactor', 'transmission'],
+	['extensions/KHR_materials_dispersion/dispersion', 'dispersion'],
 	['extensions/KHR_materials_volume/thicknessFactor', 'thickness'],
 ]);
 
