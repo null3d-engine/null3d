@@ -174,6 +174,10 @@ accepted that margin: "the iPad 10's 0.64 and 0.52 ms margin is accepted".
   the stand-in color. The `ao-prepass-color-clear` picture draws the same frame as `ao-wide`.
 - A prepass that attaches no color draws into a depth-only framebuffer, whose draw buffers are
   `NONE`. The framebuffer holds one per depth target, as a shadow cascade's does.
+- The WebGL2 prepass's pipeline names no color target. Its build's fragment stage writes nothing,
+  so one pipeline draws into the opaque pass's color or into the prepass's depth-only pass. The
+  frame builds no second pipeline when a screen step splits the two passes. WebGL2 ignores a
+  pipeline's color format, and the mock backend checks the color only when a pipeline writes one.
 - The engine's docs name the exception that a target is not cleared at its first write, which D-193
   gives. They also give the reason: on Safari's WebGL2 path an unwritten color costs time that
   follows its size.
