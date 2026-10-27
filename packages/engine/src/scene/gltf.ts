@@ -762,6 +762,21 @@ async function loadStages(
 	}
 }
 
+/**
+ * Warns, in a development build alone, about each extension that a file uses and that neither the
+ * loader nor a registered add-on reads: its data does not draw. A package that reads one is named,
+ * so a page that imports it draws the file's data.
+ */
+export function warnUnreadExtensions(data: GltfData, address: URL, call: string): void {
+	if (!DEV) return;
+	for (const { name, addon } of data.unread ?? [])
+		console.warn(
+			addon
+				? `${call}() loaded ${address}, which uses ${name}, an extension that the engine does not read. Import ${addon}, which reads it.`
+				: `${call}() loaded ${address}, which uses ${name}, an extension that the engine does not read, so its data does not draw.`,
+		);
+}
+
 /** The prefab of a parsed file, once its textures and materials exist. */
 async function buildPrefab(
 	context: GltfContext,
@@ -946,6 +961,7 @@ async function buildPrefab(
 	const { parts, bounds } = partsOf(template, data, meshes, instancing);
 	if (DEV && data.notes.length > 0)
 		console.warn(`${call}() left out parts of ${address}: ${data.notes.join('; ')}.`);
+	warnUnreadExtensions(data, address, call);
 	if (DEV && data.draco)
 		console.warn(
 			`${call}() loaded ${address}, whose meshes use Draco compression. Draco's decoder adds about 60 KB to the page's download, and decodes slower than meshopt. Convert the file to meshopt with \`bunx @null3d/cli assets optimize\`.`,
