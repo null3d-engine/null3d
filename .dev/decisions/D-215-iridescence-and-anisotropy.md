@@ -120,7 +120,7 @@ The second half is why this is not a one-line change. A material with no map nev
 ### Consequences
 
 - An untextured anisotropy material loads the standard material's maps template on its first use. That template already loads on first use for every textured standard material. A page that draws this case downloads it, where a page without it does not.
-- The model scenes draw the real Khronos AnisotropyStrengthTest, a 94,444-byte file that the repository keeps beside its tests, since the sample rule lets a file that size stay in this repository. [Sample content](../sample-content.md) names it. Its pictures sit in both reference sets. CI drew the SwiftShader set, and it differs from the Mac set in 0.016% of the pixels or less. It compares with three.js on all three tiers: 0.521%, 0.403% and 0.511% of the pixels differ on the Mac's GPU. The scene's limit is 0.6%. With the loader's old zeroing put back, the picture differs in 1.474% of WebGPU's pixels.
+- The model scenes draw the real Khronos AnisotropyStrengthTest, a 94,444-byte file that the repository keeps beside its tests, since the sample rule lets a file that size stay in this repository. [Sample content](../sample-content.md) names it. Its pictures sit in both reference sets. CI drew the SwiftShader set, and it differs from the Mac set in 0.016% of the pixels or less. It compares with three.js on all three tiers: 0.521%, 0.403% and 0.511% of the pixels differ on the Mac's GPU, and 0.507%, 0.382% and 0.506% on SwiftShader. The scene's limit is 0.6%. With the loader's old zeroing put back, the picture differs in 1.474% of WebGPU's pixels.
 - [Image tests](../image-tests.md) gives the comparison's figures.
 
 ## Addendum, 25 October 2026: the first-use shader budget rises to 53 KB
