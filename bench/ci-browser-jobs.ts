@@ -13,11 +13,41 @@ import {
 	REPOSITORY,
 	type WorkflowJob,
 	type WorkflowRun,
+	wholeCommit,
 } from './lib/gate.ts';
 
 const commit = process.argv[2];
 if (!commit) {
 	console.error('usage: bun bench/ci-browser-jobs.ts <commit>');
+	process.exit(2);
+}
+
+/**
+ * The environment of a git command that must read the repository its own working directory names.
+ * A hook that starts this tool hands its repository to every process it starts, and git obeys that
+ * over the directory, so the variables that name a repository come out here.
+ */
+function repositoryEnv(): NodeJS.ProcessEnv {
+	const env: NodeJS.ProcessEnv = { ...process.env };
+	for (const name of [
+		'GIT_DIR',
+		'GIT_WORK_TREE',
+		'GIT_INDEX_FILE',
+		'GIT_COMMON_DIR',
+		'GIT_OBJECT_DIRECTORY',
+		'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+		'GIT_NAMESPACE',
+		'GIT_PREFIX',
+	])
+		delete env[name];
+	return env;
+}
+
+const sha = wholeCommit(commit, (args) =>
+	execFileSync('git', args, { encoding: 'utf8', env: repositoryEnv() }),
+);
+if (sha === null) {
+	console.error(`ci-browser-jobs: ${commit} is not a commit of this repository`);
 	process.exit(2);
 }
 
@@ -31,7 +61,7 @@ const runs = JSON.parse(
 		'--repo',
 		REPOSITORY,
 		'--commit',
-		commit,
+		sha,
 		'--workflow',
 		'ci.yml',
 		'--json',
