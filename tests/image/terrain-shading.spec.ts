@@ -4,8 +4,9 @@
 // that moves this much could not match the reference, and a switch that the sketch never reads
 // leaves the two pictures equal, which fails too.
 //
-// The normals are drawn at the Low preset. Low's level-of-detail threshold picks coarser blocks
-// than High, which is where a block's own vertices lose the far hills' relief.
+// The normals are drawn at the Low preset with `coarse=on`, which makes every block's cells span
+// the ground's small folds. A block's own vertices then lose the far hills' relief, and the baked
+// normals keep it.
 import { expect, test } from '@playwright/test';
 import type { Tier } from '../../bench/lib/parity.ts';
 import { compareImages, percent, TOLERANCE } from '../../packages/cli/src/compare.js';
@@ -61,8 +62,8 @@ for (const tier of ['webgpu', 'compat', 'webgl2'] as const)
 	}) => {
 		// Four loads of the terrain scene per tier, and the software GPU draws each slowly.
 		test.setTimeout(420_000);
-		const baked = await draw(page, tier, 'normals=baked', 'low');
-		const vertex = await draw(page, tier, 'normals=vertex', 'low');
+		const baked = await draw(page, tier, 'normals=baked&coarse=on', 'low');
+		const vertex = await draw(page, tier, 'normals=vertex&coarse=on', 'low');
 		const blended = await draw(page, tier, 'blend=on', 'high');
 		const flat = await draw(page, tier, 'blend=off', 'high');
 		for (const [name, data] of [
