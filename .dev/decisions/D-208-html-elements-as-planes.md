@@ -1,6 +1,6 @@
 # D-208: HTML elements as planes of the scene
 
-Status: decided. Built: the label system's planes and the ports. Open faults: the mixed port leaves out the example's depth-writing cut-out plane, so room edges and two strips about ten pixels wide draw across the embedded page. The comparison hides both 3D canvases before it compares, so it sees only the HTML layers. The engine has the depth-only material that the fix needs, a material with `colorWrite: false`. Task: M3-K4.
+Status: decided. Built: the label system's planes and the ports. Open faults: the mixed port leaves out the example's depth-writing cut-out plane, so room edges and two strips about ten pixels wide draw across the embedded page. The comparison hides both 3D canvases before it compares, so it sees only the HTML layers. The engine's material with `colorWrite: false` is the depth-only surface that the fix needs. Task: M3-K4.
 
 Summary: A label whose `transform` is `'world'` or `'billboard'` is an HTML element that CSS turns with the scene's perspective, with three.js's `CSS3DRenderer` matrices. The sketch composes the matrices, and the page writes one `matrix3d` per element and the camera's transform on one container. The matrices take a table set of their own, so a page that shows no such label can hold none.
 
