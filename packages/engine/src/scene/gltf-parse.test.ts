@@ -93,9 +93,35 @@ describe('the container', () => {
 			'E1417',
 			'it requires KHR_materials_variants, which the engine does not read',
 		]);
-		// One that the file only uses is left alone.
-		expect(() => parse(shipBuilder().uses('KHR_materials_clearcoat').glb())).not.toThrow();
-		expect(() => parse(shipBuilder().uses('KHR_materials_unlit', true).glb())).not.toThrow();
+	});
+
+	test('a used extension that nothing reads is listed, with an add-on that reads it', () => {
+		const unread = (file: Uint8Array, handled: readonly string[] = []) => {
+			const data = parseGltf(readContainer(file, URL_OF, handled), new Map(), URL_OF, {}, handled);
+			return data.unread;
+		};
+		// The loader reads these two, so the file lists nothing.
+		expect(unread(shipBuilder().uses('KHR_materials_clearcoat').glb())).toBeUndefined();
+		expect(unread(shipBuilder().uses('KHR_materials_unlit', true).glb())).toBeUndefined();
+		// The asset tool's own extensions sit on primitives, which the loader reads.
+		expect(unread(shipBuilder().uses('NULL3D_mesh_bvh').glb())).toBeUndefined();
+		// An add-on that reads one is named, and a file with its handler reads it too.
+		expect(unread(shipBuilder().uses('KHR_gaussian_splatting').glb())).toEqual([
+			{ name: 'KHR_gaussian_splatting', addon: '@null3d/splats' },
+		]);
+		expect(
+			unread(shipBuilder().uses('KHR_gaussian_splatting').glb(), ['KHR_gaussian_splatting']),
+		).toBeUndefined();
+		// Nothing reads this one, so no package is named.
+		expect(unread(shipBuilder().uses('KHR_materials_variants').glb())).toEqual([
+			{ name: 'KHR_materials_variants' },
+		]);
+		// A name that the file lists twice comes once.
+		const twice = shipBuilder().uses('KHR_materials_variants');
+		twice.json.extensionsUsed?.push('KHR_materials_variants');
+		expect(unread(twice.glb())).toEqual([{ name: 'KHR_materials_variants' }]);
+		// A file that lists no extension has no note.
+		expect(unread(shipBuilder().glb())).toBeUndefined();
 	});
 });
 
