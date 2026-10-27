@@ -16,6 +16,11 @@ interface FakeBlock {
 	visible: boolean;
 	destroyed: boolean;
 	meshDestroyed: boolean;
+	/** The vertices the block's mesh was made with, which its bounds must hold. */
+	positions: Float32Array;
+	/** The sphere the object was given, and how many times it was given one. */
+	bounds: { center: readonly [number, number, number]; radius: number } | undefined;
+	boundsCalls: number;
 }
 
 /**
@@ -39,6 +44,7 @@ function fakeContext() {
 			// The ground writes a block's vertices into whichever mesh it holds, so the mesh's side
 			// follows the ground it now carries.
 			fromArrays: (arrays: { positions: Float32Array }) => {
+				const kept = arrays.positions.slice();
 				const mesh: FakeMesh = {
 					side: sideOf(arrays.positions),
 					destroyed: false,
@@ -49,16 +55,20 @@ function fakeContext() {
 						if (name === 'positions') this.side = sideOf(values);
 					},
 				};
+				(mesh as FakeMesh & { positions: Float32Array }).positions = kept;
 				return mesh;
 			},
 		},
 		scene: {
-			createMesh: ({ mesh }: { mesh: FakeMesh }) => {
+			createMesh: ({ mesh }: { mesh: FakeMesh & { positions?: Float32Array } }) => {
 				const block: FakeBlock = {
 					mesh,
 					visible: true,
 					destroyed: false,
 					meshDestroyed: false,
+					positions: mesh.positions ?? new Float32Array(0),
+					bounds: undefined,
+					boundsCalls: 0,
 				};
 				blocks.push(block);
 				return {
@@ -66,7 +76,10 @@ function fakeContext() {
 						block.visible = visible;
 					},
 					setPosition: () => {},
-					setBounds: () => {},
+					setBounds: (center: readonly [number, number, number], radius: number) => {
+						block.bounds = { center: [center[0], center[1], center[2]], radius };
+						block.boundsCalls++;
+					},
 					destroy: () => {
 						block.destroyed = true;
 						block.meshDestroyed = mesh.destroyed;
@@ -221,5 +234,51 @@ describe('terrain updates', () => {
 	test('createTerrain refuses a split or blocksPerUpdate out of range', () => {
 		expect(() => terrain({ split: 9 })).toThrow('up to 8');
 		expect(() => terrain({ blocksPerUpdate: 0 })).toThrow('blocksPerUpdate');
+	});
+});
+
+describe('terrain block spheres', () => {
+	test("a block's bounds are centred on its middle and hold every vertex of its mesh", () => {
+		const t = terrain({
+			height: (x: number, z: number) => Math.sin(x / 40) * 20 + Math.cos(z / 60) * 12,
+		});
+		settle(t, 10, 10);
+		expect(t.blocks.length).toBeGreaterThan(0);
+		for (const block of t.blocks) {
+			expect(block.bounds).toBeDefined();
+			const { center, radius } = block.bounds as {
+				center: readonly [number, number, number];
+				radius: number;
+			};
+			let farthest = 0;
+			let corner = 0;
+			for (let at = 0; at < block.positions.length; at += 3) {
+				const x = block.positions[at] as number;
+				const y = block.positions[at + 1] as number;
+				const z = block.positions[at + 2] as number;
+				farthest = Math.max(farthest, Math.hypot(x - center[0], y - center[1], z - center[2]));
+				corner = Math.max(corner, Math.hypot(x, y, z));
+			}
+			expect(farthest).toBeLessThanOrEqual(radius + 1e-3);
+			// The sphere sits on the block's middle across its two sides, not on its low corner.
+			let maxX = 0;
+			let maxZ = 0;
+			for (let at = 0; at < block.positions.length; at += 3) {
+				maxX = Math.max(maxX, block.positions[at] as number);
+				maxZ = Math.max(maxZ, block.positions[at + 2] as number);
+			}
+			expect(center[0]).toBeCloseTo(maxX / 2, 6);
+			expect(center[2]).toBeCloseTo(maxZ / 2, 6);
+			expect(corner).toBeGreaterThan(0);
+		}
+	});
+
+	test('a cell crossing gives no block that already draws new bounds', () => {
+		const t = terrain({ maxBlocks: 64 });
+		settle(t, 10, 10);
+		const existing = t.blocks.slice();
+		settle(t, 200, 10);
+		expect(existing.length).toBeGreaterThan(0);
+		for (const block of existing) expect(block.boundsCalls).toBe(1);
 	});
 });
