@@ -359,3 +359,34 @@ for (const mode of THREADED_MODES) {
 		await expect.poll(async () => (await count(JOB_STOPPED)) - (await count(JOB_STARTED))).toBe(0);
 	});
 }
+
+/** What the engine warns once it has started a second copy of a sketch worker that did not load. */
+const SKETCH_RETRIED =
+	/null3D: the sketch worker did not load its script at \S*sketch-worker\S*, so the engine started a second copy/;
+
+// The sketch worker carries the sketch, so a page whose first copy of it does not load has nothing
+// to draw with: the engine starts one more copy, and the page's result must still arrive. A page
+// that hangs here is the shape of failure that the pipelined pages showed in Firefox.
+for (const gpu of ['webgpu', 'webgl2'] as const) {
+	test(`a start whose sketch worker does not load once starts it again, pipelined on ${gpu}`, async ({
+		page,
+	}) => {
+		let sketchLoads = 0;
+		await page
+			.context()
+			.route(/\/sketch-worker\.ts/, (route) =>
+				++sketchLoads === 1 ? route.abort('connectionreset') : route.continue(),
+			);
+		await page.goto(`shared-memory.html?room=off&cycles=1&gpu=${gpu}`);
+		const result = await pageResult<RestartResult>(page, 30_000);
+		const engine = result.kinds.engine;
+		expect(engine?.error).toBeUndefined();
+		expect(engine?.cycles).toBe(1);
+		const trail = () =>
+			page.evaluate(() =>
+				(globalThis as { __null3dProgress?: string[] }).__null3dProgress?.join('\n'),
+			);
+		await expect.poll(trail).toMatch(SKETCH_RETRIED);
+		await expectReleased(page, 1);
+	});
+}
