@@ -361,6 +361,7 @@ const paint = materials.standard({
   forceSinglePass: false,                      // (0.2) with 'blend' and doubleSided: one draw for both faces
   blending: 'normal',                          // with 'blend': 'normal', 'additive', 'multiply' or 'weighted' (0.2)
   depthWrite: true, depthTest: true,           // fixed at creation
+  colorWrite: true,                            // false writes depth and no color, so it hides what lies behind it
   depthBias: { constant: 0, slopeScale: 0 },   // three.js's polygonOffset, for decals
   wireframe: false,                            // (0.2) each triangle's edges as lines, any material
   toneMapped: true,                            // false keeps the display color on both paths; a blended surface keeps the curve on the HDR path
