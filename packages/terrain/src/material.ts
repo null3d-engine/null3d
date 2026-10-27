@@ -17,9 +17,9 @@ export interface TerrainLayer {
 	/** The layer's roughness, from 0 to 1. The default is 1. */
 	roughness?: number;
 	/**
-	 * How strongly the layer's own height pushes it through the layers beside it where their
-	 * weights meet, from 0 to 1: rocks show through the grass at a boundary instead of fading into
-	 * it. The default is 0.5, and 0 blends by the splat map's weights alone.
+	 * How strongly the layer's own height scales its weight, from 0 to 1: rocks show through the
+	 * grass at a boundary instead of fading into it. The default is 1, and 0 blends by the splat
+	 * map's weights alone.
 	 */
 	contrast?: number;
 	/**
@@ -58,7 +58,7 @@ export interface SplatMaterial {
 /** The default meters that one repeat of a layer's map covers. */
 const DEFAULT_TILE = 8;
 /** The default strength of a layer's height against its neighbours. */
-const DEFAULT_CONTRAST = 0.5;
+const DEFAULT_CONTRAST = 1;
 /** A white texel, for a layer that the caller leaves out. */
 const WHITE = new Uint8Array([255, 255, 255, 255]);
 

@@ -13,6 +13,8 @@ const SIZE = 512;
 const switches = new URL(import.meta.url).searchParams;
 const bakedNormals = switches.get('normals') !== 'vertex';
 const contrast = switches.get('blend') === 'off' ? 0 : undefined;
+/** A coarse error draws blocks whose cells span the ground's small folds. */
+const coarse = switches.get('coarse') === 'on';
 
 const hash = (x: number, y: number) => {
 	let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
@@ -93,6 +95,7 @@ export default defineSketch((ctx) => {
 		maxLevel: 5,
 		camera,
 		bakedNormals,
+		...(coarse ? { error: 120 } : {}),
 	});
 	// Place a few stones on the ground with the field's own height, to show the sampler.
 	const heightfield = terrain.heightfield;

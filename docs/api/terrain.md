@@ -85,7 +85,7 @@ A skirt hangs from the edge of each block, a little below the ground. Where a fi
 
 The ground's material blends up to four layers. Each layer is a tiled color map with its own repeat distance and roughness. A splat map, one channel per layer, gives the weight of each layer at each point.
 
-A layer also carries a height at each texel. Its map's brightness gives that height by default, or its alpha channel where `heightFrom` says `'alpha'`. The four maps that `terrainTextures` makes keep a height in their alpha channel, so give their layers `heightFrom: 'alpha'`. At a boundary between two layers, the heights push one through the other. Rock then shows through the grass in ragged patches rather than in a smooth cross-fade. `contrast` sets how strongly a layer pushes, from 0 to 1. The default is 0.5, and 0 blends by the splat map's weights alone.
+A layer also carries a height at each texel. Its map's brightness gives that height by default, or its alpha channel where `heightFrom` says `'alpha'`. The four maps that `terrainTextures` makes keep a height in their alpha channel, so give their layers `heightFrom: 'alpha'`. At a boundary between two layers, the heights push one through the other. Rock then shows through the grass in ragged patches rather than in a smooth cross-fade. `contrast` sets how strongly a layer's height scales its weight, from 0 to 1. The default is 1, and 0 blends by the splat map's weights alone.
 
 The default splat map comes from the ground itself. Grass takes the low, gentle ground, soil the higher dry ground, rock the steep slopes, and snow the ground above. Give `splat` to paint the weights yourself. `terrainTextures` makes the four layer maps in code, or give any `Texture` from `textures.fromData` or `assets`.
 

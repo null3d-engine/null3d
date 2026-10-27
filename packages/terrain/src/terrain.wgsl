@@ -51,14 +51,11 @@ fn surface(input: SurfaceInput) -> Surface {
         mix(sqrt(dot(c2.rgb, vec3f(0.2126, 0.7152, 0.0722))), c2.a, material.layerAlpha.z),
         mix(sqrt(dot(c3.rgb, vec3f(0.2126, 0.7152, 0.0722))), c3.a, material.layerAlpha.w),
     );
-    // A layer's height acts in share of the weight that the splat map gives it, so a bright rock
-    // texel never appears across a meadow where the rock layer has no place, and the effect fades
-    // in smoothly along the outer edge of a layer's band.
-    let present = sqrt(weights);
-    var blend = max(
-        weights + (heights - vec4f(0.5)) * material.layerContrast * present,
-        vec4f(0.0),
-    );
+    // A layer's height scales the weight that the splat map gives it, so a higher texel wins the
+    // meeting with a lower one and a layer keeps its place entirely where the splat map gives it
+    // no weight. A contrast of 0 leaves the weights as the splat map gives them.
+    let scale = vec4f(1.0 - material.layerContrast) + heights * (material.layerContrast * 2.0);
+    var blend = max(weights * scale, vec4f(0.0));
     var total = blend.x + blend.y + blend.z + blend.w;
     if (total < 0.0001) {
         // Every layer sank under the others, so the weights alone decide.
