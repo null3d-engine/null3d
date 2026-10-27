@@ -1505,7 +1505,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		// The sharpening widens a one-step difference at an edge to about 10 steps, so CI's software
 		// GPU on another machine may count more pixels than the tight threshold allows. Its threshold
 		// is tighter than the default for the same reason as the real GPU's: a picture that lost the
-		// sharpening moves 6 to 9 per cent of the image, and the default would not count it.
+		// sharpening moves about 7 per cent of the image, and the default would not count it.
 		swiftShaderTolerance: { threshold: 0.05, maxDiffRatio: 0.005 },
 	},
 	{

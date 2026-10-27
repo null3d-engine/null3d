@@ -61,6 +61,11 @@ mode and 0.382 ms on WebGL2. Each is the cost of one more full-screen pass at th
 four taps that cross each pixel. That is the cost the rule counts, and no preset setting changes. At
 scale 0.5 the value adds nothing on any path, because the upscale sharpens there already.
 
+Chrome rounds a GPU timestamp to a 65.536 µs step unless a run turns the rounding off. The Mac's
+run did not, so each whole-scale WebGPU and compatibility figure is a whole multiple of that step,
+and each of those costs is ±0.066 ms. The WebGL2 figures come from timer queries and are not
+rounded.
+
 How the data was produced: a local Playwright run of the cost page through `heavy.sh` in the quiet
 window, the run that commit `8d3c1fbb6` records. The run took one test at a time. Each test waited until the 1-minute load
 fell under 8 and printed it before and after. The device column gives those readings. The load rose
@@ -69,7 +74,8 @@ read the same figure.
 
 The same page ran on the iPad and on two phones through BrowserStack Automate, one session at a
 time ([the iPad's run](../tested-devices/ipad-pro-13-safari/20261024-201742-sharpen.md), [the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261024-201742-sharpen.md) and [the S24's](../tested-devices/galaxy-s24-sm-s921b-chrome/20261024-202547-sharpen.md)). Each side is the median of three turns of two seconds. Each device ran both
-render scales on each GPU path that it has. The iPad's window was 1,032 by 1,264 CSS pixels at 2x,
+render scales on WebGPU and WebGL2, the two paths that each has. The iPad's window was 1,032 by
+1,264 CSS pixels at 2x,
 and its display ran at 59 Hz. The phones' window was 360 by 621 CSS pixels at 3x, and their
 displays ran at 30 Hz.
 
@@ -88,8 +94,9 @@ displays ran at 30 Hz.
 
 At the whole canvas's scale the sharpening adds 0.948 ms on the iPad, which is 20 percent of its
 4.686 ms frame. On the Galaxy S25 it adds 1.376 ms, which is 36 percent of that device's 3.801 ms
-frame. At half scale it adds nothing on either device, as on the Mac. The two sides of each pair
-agree within the run's noise.
+frame. At half scale it adds nothing on either device, as on the Mac. The S25's four WebGPU
+figures sit on whole multiples of 65.536 µs, Chrome's timestamp step, so each is ±0.066 ms; the
+iPad's Safari figures are not on that step.
 
 The iPad draws at 2,064 by 2,528 pixels, where one full-screen pass costs 0.948 ms. The Mac's
 1,920 by 1,080 pixels cost 0.393 ms on the same path. So the tablet pays about 2.4 times as much
@@ -135,8 +142,9 @@ the upscaled image would need the upscale again for each of the four neighbors.
 - The image tests `sharpen` and `sharpen-8-bit` draw a wall of small boxes at the most that the value
   takes, on both GPU paths. Their threshold is tighter than the default, because the sharpening moves
   an edge by about 10 steps, which the default threshold would not count: 0.02 against the real GPU's
-  references and 0.05 against the software GPU's. A picture that lost the sharpening moves 6 to 9
-  per cent of the pixels, so both sets fail it. The software set is CI's own drawing, as
+  references and 0.05 against the software GPU's. A picture that lost the sharpening moves about 7
+  per cent of the pixels, so both sets fail it, where the software GPU's own drawing of the test
+  differs from the real GPU's in 0.2 per cent. The software set is CI's own drawing, as
   [D-238](D-238-gate-pictures-from-ci.md) asks.
 - The sharpening keeps each pixel's coverage and sharpens premultiplied color, as the upscale does
   below a render scale of 1, so a transparent canvas's edges sharpen the same way there.
