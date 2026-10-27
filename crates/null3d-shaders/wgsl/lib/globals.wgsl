@@ -182,7 +182,7 @@ struct MaterialRow {
     /// each group of shared slots holds (two bits each: 0 for the light map's slot, 2 for the
     /// specular intensity map's and 4 for the specular color map's; 0 is the clear coat's and the
     /// sheen's, 1 iridescence's and the anisotropy's, and 2 the transmission and thickness maps'),
-    /// and a spare.
+    /// and the volume's dispersion.
     anisotropy: vec4f,
     /// The scale of a light map's texture coordinates along u and v, then their offset along u
     /// and v. The identity leaves the coordinates as the mesh gives them.
