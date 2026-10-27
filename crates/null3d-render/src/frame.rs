@@ -3425,6 +3425,7 @@ impl SceneSettings {
             map_size: shadow.map_size,
             bias: shadow.bias,
             normal_bias: shadow.normal_bias,
+            intensity: shadow.intensity,
             distance,
             filter: quality.filter,
             blend: quality.blend,
