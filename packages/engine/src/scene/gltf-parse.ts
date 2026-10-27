@@ -57,6 +57,7 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_materials_ior',
 	'KHR_materials_transmission',
 	'KHR_materials_volume',
+	'KHR_materials_dispersion',
 	'KHR_materials_diffuse_transmission',
 	'KHR_materials_volume_scatter',
 	'KHR_materials_clearcoat',
@@ -73,16 +74,46 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_draco_mesh_compression',
 	'NEEDLE_lightmaps',
 	'NEEDLE_components',
+	// The asset tool's own extensions, which sit on a primitive: the stored tree that raycasts
+	// walk, the blocker that hides what lies behind it, and the tree of cluster patches.
+	'NULL3D_mesh_bvh',
+	'NULL3D_occluder',
+	'NULL3D_clusters',
 ];
 
 /**
  * The glTF extensions that an add-on reads, with the package that reads it. A file that requires
  * one of them without that add-on fails with E1417, whose message names the package to import.
- * An add-on that registers a handler reads its extensions, and no message names it.
+ * An add-on that registers a handler reads its extensions, and no message names it. A file that
+ * only uses one of them draws without its data, and development builds name the package that
+ * reads it.
  */
 export const ADDON_EXTENSIONS: Readonly<Record<string, string>> = {
 	KHR_gaussian_splatting: '@null3d/splats',
 };
+
+/**
+ * The extensions that a file lists in `extensionsUsed` and that neither the loader nor a
+ * registered add-on reads, each with the add-on's package where one reads it. A name that the file
+ * lists twice comes once. The loader warns about them in development builds alone.
+ */
+function unreadExtensions(
+	json: Json,
+	handled: readonly string[],
+): { name: string; addon?: string }[] | undefined {
+	let unread: { name: string; addon?: string }[] | undefined;
+	const seen = new Set<string>();
+	for (const value of list(json.extensionsUsed, 'extensionsUsed')) {
+		const name = typeof value === 'string' ? value : String(value);
+		if (READ_EXTENSIONS.includes(name) || handled.includes(name) || seen.has(name)) continue;
+		seen.add(name);
+		const addon = ADDON_EXTENSIONS[name];
+		const found = addon ? { name, addon } : { name };
+		if (unread) unread.push(found);
+		else unread = [found];
+	}
+	return unread;
+}
 
 /**
  * The extensions that give a texture an image in another format, in the order the loader takes
@@ -415,6 +446,16 @@ function volumeOf(volume: Entry, what: string): VolumeData {
 		attenuationColor: [color[0] as number, color[1] as number, color[2] as number],
 		attenuationDistance: distance,
 	};
+}
+
+/**
+ * The volume's dispersion, from KHR_materials_dispersion: 20 divided by the Abbe number, 0 or more,
+ * and 0 for a material without the extension.
+ */
+function dispersionOf(extension: Entry | undefined, what: string): number {
+	const dispersion = finite(extension?.dispersion ?? 0, `${what}'s dispersion`);
+	if (dispersion < 0) broken(`${what}'s dispersion is ${dispersion}, and it takes 0 or more`);
+	return dispersion;
 }
 
 /**
@@ -762,6 +803,8 @@ export interface MaterialData {
 	specularIntensity: number;
 	/** KHR_materials_specular's specular color factor: linear RGB, which may exceed 1. */
 	specularColor: [number, number, number];
+	/** KHR_materials_dispersion's strength, 0 or more: 20 divided by the Abbe number. */
+	dispersion: number;
 	/**
 	 * KHR_materials_transmission's factor, with KHR_materials_volume's values, for a material
 	 * that lets light through: none for a factor of 0.
@@ -932,6 +975,12 @@ export interface GltfData {
 	/** What the parser left out, such as points and lines, for a warning in development builds. */
 	notes: string[];
 	/**
+	 * The extensions that the file uses and that neither the loader nor a registered add-on reads,
+	 * in the file's order, for a warning in development builds. Each entry names the extension and,
+	 * when a foundation add-on reads it, the package to import.
+	 */
+	unread?: { name: string; addon?: string }[];
+	/**
 	 * The texture use of each light map that `NEEDLE_lightmaps` registers, by the map's index, or
 	 * -1 for an entry that the engine does not take. A node's Needle `MeshRenderer` names one by
 	 * its index.
@@ -951,6 +1000,7 @@ export interface GltfData {
 interface Json {
 	asset?: { version?: unknown; extras?: unknown };
 	extensionsRequired?: unknown;
+	extensionsUsed?: unknown;
 	extensions?: {
 		KHR_lights_punctual?: { lights?: unknown };
 		NEEDLE_lightmaps?: unknown;
@@ -1074,6 +1124,7 @@ export function parseGltf(
 	const { json } = container;
 	const decode = decoders.meshopt;
 	const notes: string[] = [];
+	const unread = unreadExtensions(json, handled);
 	let sourceBytes = container.bytes;
 	for (const bytes of externalBuffers.values()) sourceBytes += bytes.length;
 	const budget = new FileBudget(sourceBytes, broken);
@@ -1604,6 +1655,7 @@ export function parseGltf(
 				specularColor[1] as number,
 				specularColor[2] as number,
 			],
+			dispersion: dispersionOf(extensions.KHR_materials_dispersion as Entry | undefined, what),
 			maps,
 		};
 		if (transmission) data.transmission = transmission;
@@ -1692,6 +1744,7 @@ export function parseGltf(
 		notes,
 		lightMaps,
 	};
+	if (unread) data.unread = unread;
 	if (animation) data.animation = animation;
 	if (draco) data.draco = true;
 	const shaders = parseShaders(json);

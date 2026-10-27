@@ -84,6 +84,8 @@ export default defineSketch(async ({ scene, assets, page }) => {
 	const codes = {
 		broken: await codeOf(addressOf(broken.glb())),
 		required: await codeOf(addressOf(shipBuilder().uses('KHR_materials_variants', true).glb())),
+		// The same extension used but not required loads, and a development build notes it.
+		used: await codeOf(addressOf(shipBuilder().uses('KHR_materials_variants').glb())),
 		missing: await codeOf(addressOf(missing.gltf(bin), 'model/gltf+json')),
 		loop: await codeOf(addressOf(loop.glb())),
 		huge: await codeOf(addressOf(huge.glb())),
