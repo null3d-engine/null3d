@@ -355,6 +355,9 @@ The owner made vegetation a foundation add-on ([D-241](D-241-vegetation-foundati
 
 ## what M3-E2's line covers
 
+Status: the owner's ruling of 26 October settles the line. The hook carries the add-on's selection,
+and the engine's transparent pass sorts the chosen rows.
+
 M3-E2's plan line read "splat sorting runs on the job workers on WebGL2 through it". An audit read
 "splat sorting" as the per-splat depth sort, which left the task unmet. That sort is not the hook's,
 and the hook cannot honestly carry it.
@@ -377,11 +380,11 @@ sorts the chosen rows back to front on its job workers, on both GPU paths, as it
 blended draw. The allocation check covers the whole path
 ([Benchmarks](../benchmarks.md#allocation-and-profiling)).
 
-The line, as M3-E2 should read: "the splats add-on's selection, which splats draw and each chunk's
+The line, as M3-E2 reads: "the splats add-on's selection, which splats draw and each chunk's
 prefix, nearest first, runs on the job workers on WebGL2 through the hook, the engine's transparent
 pass sorts the chosen rows there, and the allocation check covers the path."
 
-H5's table row above says "Splat sorting" as the first user, and this addendum reads that as the
+H5's table row above says "Splat sorting" as the first user, and the owner's ruling reads that as the
 add-on's selection. [Tasks on the job workers](../../docs/api/tasks.md) now says the same.
 
 ## wind is the twelfth foundation, and one add-on may build on another
