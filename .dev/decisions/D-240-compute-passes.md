@@ -247,15 +247,23 @@ the useful figure is the on side's total.
 | compatibility mode | 67.5 MiB | 2.2 MiB | 6.6 MiB | 85.5 MiB |
 | WebGL2 | 115.4 MiB | 0.6 MiB | 7.6 MiB | 133.4 MiB |
 
-The GPU time is not measured yet. The cost harness measures only while the machine's 1-minute load
-is under 8. The Mac's load stood between 100 and 200 in every attempt, so none recorded a figure.
-Take it in a quiet window with
-`NULL3D_COMPUTE_COST=1 bun run test:browser -- compute-cost.spec.ts`, which prints each path's GPU
-time with the pass off and on, and the load beside it.
+The GPU time is in, from a quiet-window run and the device plan, at the whole render scale unless
+the row says otherwise. The Mac's WebGPU path reads 1.84 ms with the pass off and 1.90 with it on,
+a difference of one step of Chrome's 0.065536 ms timestamp, and its WebGL2 path 3.87 and 3.95; at
+half scale the WebGPU pair reads 2.56 and 2.56, inside the timer's round. The cloud iPad reads 4.76
+against 5.18 ms on WebGPU and 3.95 against 4.27 at half scale, and the cloud Galaxy S25 3.15 against
+4.06 and 4.13 against 4.65. Safari and Chrome on Android report no WebGL2 timer, so those rows give
+the busiest thread's CPU time instead. The frame's pass list names the engine's own compute pass,
+one for each compute step of the frame, not the sketch's pass: the graph runs a pass only while it
+is enabled and not culled, so the switched-off side dispatches nothing for the sketch's pass, and
+its cost, with its vertex reads, is the whole-frame difference above. The runs are
+[the Mac's](../tested-devices/macbook-pro-m3-max-chrome/20261027-003222-compute.md),
+[the iPad's](../tested-devices/ipad-pro-13-safari/20261026-235238-compute.md) and
+[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261027-002006-compute.md).
 
-The iPad and the S24 run the same page through the `compute` device plan:
+The iPad and the S24-class phone run the same page through the `compute` device plan:
 `bun run devices:cloud --only bsipadpro13-safari --plan compute`, and the same with
-`--only bsgalaxys24-chrome`. Each runs six pages: the three GPU paths at scales 1 and 0.5.
+`--only bsgalaxys25-chrome`. Each runs three paths at scales 1 and 0.5, six pages in all.
 
 
 
