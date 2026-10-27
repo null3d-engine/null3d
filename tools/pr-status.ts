@@ -39,6 +39,7 @@ const ON_BRANCH = new Set(['M3-E9', 'M3-V2']);
 // A tick states that the task is done, so a task those audits found short of its own line is not
 // ticked here until the gap closes, whatever code it already has.
 const INCOMPLETE = new Set([
+	'M3-V13',
 	'M3-B1',
 	'M3-V3',
 	'M3-B3',
@@ -153,6 +154,8 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the compute pass reports its own time on the side where the page turns it off, so a turned-off pass either still dispatches or still times; the page and the engine must say which, each device cost must be restated or retimed, and the Mac timer step of 0.065536 ms must be stated, because one step sits below its resolution',
 	'M3-V6':
 		'the same placement is shown only on two Android phones in Chrome, so no second JavaScript engine has placed it, and no iPad run exists; the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
+	'M3-V13':
+		"the Mac's WebGL2 row cannot be the pass's GPU time: the raw file reads 11.08 ms in an 8.28 ms frame, and the busiest thread falls when 40 draws are added, so the query spans more than the frame's work and the figure must be retimed or the query restated. The Mac record also repeats the stale-slot sentence that the frame statistics rule out. And its GPU check is owed: the two lines on the branch read not judged, so a judged `bench:gpu-check` in a quiet window closes it",
 	'M3-E4a':
 		'the material change is on the branch with the water work, but the task asks for a material that declares the scene depth beside two textures on WebGPU, compatibility and WebGL2, and for the cost of a material that reads neither; its helper is finishing that proof',
 	'M3-V5':
