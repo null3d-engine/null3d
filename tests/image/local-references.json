@@ -1,16 +1,4 @@
 {
-	"chromium-swiftshader/compat/feature-instances-shadow.png": {
-		"test": "feature-instances-shadow",
-		"tier": "compat",
-		"date": "2026-10-25",
-		"reason": "M3-E9's picture draws no text and no 2D canvas, so this Mac's Chromium and CI's SwiftShader round the same frame alike. CI run 40223106242 compared it on both tiers and passed, so the reference stands until a later CI drawing replaces it."
-	},
-	"chromium-swiftshader/webgpu/feature-instances-shadow.png": {
-		"test": "feature-instances-shadow",
-		"tier": "webgpu",
-		"date": "2026-10-25",
-		"reason": "M3-E9's picture draws no text and no 2D canvas, so this Mac's Chromium and CI's SwiftShader round the same frame alike. CI run 40223106242 compared it on both tiers and passed, so the reference stands until a later CI drawing replaces it."
-	},
 	"chromium-swiftshader/compat/asset-bent-grid.png": {
 		"test": "asset-bent-grid",
 		"tier": "compat",
@@ -22,6 +10,18 @@
 		"tier": "compat",
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/compat/demo-depth-only.png": {
+		"test": "demo-depth-only",
+		"tier": "compat",
+		"date": "2026-10-27",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
+	},
+	"chromium-swiftshader/compat/feature-instances-shadow.png": {
+		"test": "feature-instances-shadow",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "M3-E9's picture draws no text and no 2D canvas, so this Mac's Chromium and CI's SwiftShader round the same frame alike. CI run 40223106242 compared it on both tiers and passed, so the reference stands until a later CI drawing replaces it."
 	},
 	"chromium-swiftshader/compat/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -53,6 +53,24 @@
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
 	},
+	"chromium-swiftshader/compat/wind-cards-later.png": {
+		"test": "wind-cards-later",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/compat/wind-cards.png": {
+		"test": "wind-cards",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/compat/wind-wake.png": {
+		"test": "wind-wake",
+		"tier": "compat",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
 	"chromium-swiftshader/webgl2/asset-bent-grid.png": {
 		"test": "asset-bent-grid",
 		"tier": "webgl2",
@@ -64,6 +82,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgl2/demo-depth-only.png": {
+		"test": "demo-depth-only",
+		"tier": "webgl2",
+		"date": "2026-10-27",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
 	},
 	"chromium-swiftshader/webgl2/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -95,6 +119,24 @@
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
 	},
+	"chromium-swiftshader/webgl2/wind-cards-later.png": {
+		"test": "wind-cards-later",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/webgl2/wind-cards.png": {
+		"test": "wind-cards",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
+	"chromium-swiftshader/webgl2/wind-wake.png": {
+		"test": "wind-wake",
+		"tier": "webgl2",
+		"date": "2026-10-25",
+		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
+	},
 	"chromium-swiftshader/webgpu/asset-bent-grid.png": {
 		"test": "asset-bent-grid",
 		"tier": "webgpu",
@@ -106,6 +148,18 @@
 		"tier": "webgpu",
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch was not pushed yet, so no CI run could draw it"
+	},
+	"chromium-swiftshader/webgpu/demo-depth-only.png": {
+		"test": "demo-depth-only",
+		"tier": "webgpu",
+		"date": "2026-10-27",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
+	},
+	"chromium-swiftshader/webgpu/feature-instances-shadow.png": {
+		"test": "feature-instances-shadow",
+		"tier": "webgpu",
+		"date": "2026-10-25",
+		"reason": "M3-E9's picture draws no text and no 2D canvas, so this Mac's Chromium and CI's SwiftShader round the same frame alike. CI run 40223106242 compared it on both tiers and passed, so the reference stands until a later CI drawing replaces it."
 	},
 	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -130,42 +184,6 @@
 		"tier": "webgpu",
 		"date": "2026-10-25",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that moved the picture; the branch was not pushed yet, so no CI run could draw it"
-	},
-	"chromium-swiftshader/compat/wind-cards-later.png": {
-		"test": "wind-cards-later",
-		"tier": "compat",
-		"date": "2026-10-25",
-		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
-	},
-	"chromium-swiftshader/compat/wind-cards.png": {
-		"test": "wind-cards",
-		"tier": "compat",
-		"date": "2026-10-25",
-		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
-	},
-	"chromium-swiftshader/compat/wind-wake.png": {
-		"test": "wind-wake",
-		"tier": "compat",
-		"date": "2026-10-25",
-		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
-	},
-	"chromium-swiftshader/webgl2/wind-cards-later.png": {
-		"test": "wind-cards-later",
-		"tier": "webgl2",
-		"date": "2026-10-25",
-		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
-	},
-	"chromium-swiftshader/webgl2/wind-cards.png": {
-		"test": "wind-cards",
-		"tier": "webgl2",
-		"date": "2026-10-25",
-		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
-	},
-	"chromium-swiftshader/webgl2/wind-wake.png": {
-		"test": "wind-wake",
-		"tier": "webgl2",
-		"date": "2026-10-25",
-		"reason": "the Mac's Chromium draws CI's SwiftShader images byte for byte, as the image test manifest says, and this branch cannot push for a CI run yet"
 	},
 	"chromium-swiftshader/webgpu/wind-cards-later.png": {
 		"test": "wind-cards-later",

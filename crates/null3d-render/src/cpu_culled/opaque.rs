@@ -814,6 +814,7 @@ mod tests {
             pairs: false,
             pick: 0,
             pick_textures: 0,
+            holdout: false,
         }
     }
 
