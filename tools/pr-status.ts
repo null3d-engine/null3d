@@ -100,8 +100,6 @@ const NOTES: Readonly<Record<string, string>> = {
  * because both describe the same task and only one of them can be true.
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
-	'M3-R14':
-		"unticked by the round 19 audit: the script causes one change and then reverts it, since the opening is the demo's own held frame with no step, the camera route has already moved two fifths of a leg by the second state, and the third only undoes the lens. The showcase reads keys, so one state reached by key or pointer steps alone would meet the plain reading of the plan. Its software claim is also wrong: the four passing tests compared against Mac-drawn pictures that live on a commit on no branch, and the committed CI-drawn references have never been compared in a passing run",
 	'M3-V15':
 		"unticked by the round 24 audit: no allocation run and no full check-addon run exist for the wind (only the sizes gate, which passes since M3-R25), the gust call is a fading push at one place rather than a gust that travels, a device without float targets reads still air rather than the analytic field, the sampling function is a copy that reads the box's edge rather than a function in the add-on's WGSL namespace with the analytic far field. The owner ruled that M3-V15 waits for M3-V13 with no split into two stages. It stays not done until the solver, the forces and the fixed step are built on M3-V13's repeated pass",
 	'M3-F4':
