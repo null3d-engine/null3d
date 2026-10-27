@@ -244,7 +244,9 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  * most bytes per frame each may allocate:
  * - frame timers, which get a new number object from the browser's clock at each reading;
  * - the sketch worker's frame wait in the frame loop, which the runner holds: the result and promise
- *   of `Atomics.waitAsync`, the await on that promise, and settling it between tasks;
+ *   of `Atomics.waitAsync`, the await on that promise, and settling it between tasks. The browser
+ *   counts the wait's objects in `slotChange` or in `runPipelined` as it inlines that call, so the
+ *   check counts both places in the loop (`COUNTED_IN_CALLER`), whose budget holds one wait a frame;
  * - the render worker's WebGPU objects: the command encoder, the passes, the command buffer, and
  *   the canvas texture and its view. Each render pass adds its encoder, about 17 bytes. S4's two
  *   shadow passes and nine more uploads per frame put its replay 46 to 48 bytes above S1's. The
@@ -269,8 +271,6 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  * - the sketch worker's reading of pointer events. It runs at the input's rate, not the frame's,
  *   so the browser may keep it in a lower tier, where each fraction it computes is a new number.
  *   With a mouse move about every third frame, S5 and S6 took 2 to 11 bytes per frame there.
- * - the wake path's slot change, which the sketch worker reads each frame: measured on the Mac at
- *   High, it takes 17.5 bytes per frame, up to 19.7;
  * - the frame's pending reads, which the render worker maps after it submits: each read makes a
  *   promise with its reactions, about 18 bytes, and S1 reads once a frame, so it took 18.2 bytes
  *   per frame, up to 20.4.
@@ -279,7 +279,6 @@ export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> =
 	'sketch-worker': {
 		'frame sketch/runner.ts': 240,
 		'runPipelined sketch/runner.ts': 128,
-		'slotChange shared/wake.ts': 20,
 		'(IDLE)': 96,
 		'(anonymous) null3d/sketch-common.ts': 48,
 		'views scene/scene.ts': 16,
@@ -413,12 +412,15 @@ export const DAY_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number
 /**
  * Places that allocate with `--canvas`, on top of `BUDGETS`: the browser's image data for the
  * rectangle and the copy of it into engine memory, which the profiler attributes to the copy at
- * each read, and the render passes that make the texture's mip levels again. The refresh adds no
- * place of its own, and the sketch changes one rectangle object in place, so the sample holds the
- * browser's and the engine's work alone. Measured, the copy place reads 145.1 bytes per frame on
- * the Mac's WebGPU path, 140.7 on its WebGL2 and 131.3 on CI's SwiftShader; the mip levels read
- * 169.5 on the Mac's WebGPU path and 165.9 on SwiftShader, whose windows reach 202.7, and WebGL2
- * makes them without a render pass.
+ * each read, and the render passes that make the texture's mip levels again. In some runs the
+ * browser counts the image data in `refresh` instead, where it inlines the copy, so the check
+ * counts both places in `setRegion` (`COUNTED_IN_CALLER`) and this budget holds their sum. The
+ * refresh adds no place of its own, and the sketch changes one rectangle object in place, so the
+ * sample holds the browser's and the engine's work alone. Measured, the copy reads 145.1 bytes per
+ * frame on the Mac's WebGPU path, 140.7 on its WebGL2 and 131.3 on CI's SwiftShader, with the
+ * image data's 10.8 to 19.5 bytes on `refresh` in the runs that counted it there; the mip levels
+ * read 169.5 on the Mac's WebGPU path and 165.9 on SwiftShader, whose windows reach 202.7, and
+ * WebGL2 makes them without a render pass.
  */
 export const CANVAS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': { 'setRegion scene/textures.ts': 192 },
@@ -527,15 +529,27 @@ const REPLAY = 'replay webgpu/backend.ts';
 
 /**
  * Functions whose objects the check counts in their caller's place. The browser counts an object in
- * the function that makes it, or in the caller where it inlines that function, and the canvas
- * texture and its view moved between `colorView` and the replay from run to run while their sum
- * held: in five runs on SwiftShader, `colorView` read 7.3 to 52.8 bytes per frame and the replay
- * 76.8 to 100.8, their sum 101.5 to 129.6. With samples of 420 frames, `colorView` read 30.5.
- * Counted in the replay, the two read the same whichever way the inlining falls.
+ * the function that makes it, or in the caller where it inlines that function, so a change to the
+ * code's inlining moves the bytes between the two while their sum holds. Counted in the caller,
+ * they read the same whichever way the inlining fell.
+ *
+ * The canvas texture and its view moved between `colorView` and the replay from run to run: in five
+ * runs on SwiftShader, `colorView` read 7.3 to 52.8 bytes per frame and the replay 76.8 to 100.8,
+ * their sum 101.5 to 129.6. With samples of 420 frames, `colorView` read 30.5.
+ *
+ * The frame wait's result and promise move between `slotChange` and the frame loop that awaits
+ * them: readings put 20.4 and 56.2 bytes per frame at the two places, and 45.6 and 33.6 with a
+ * counter in the wait, while their sums held at 76.6 and 79.2.
+ *
+ * The canvas read's image data moves the same way: the browser may count it in `refresh` where it
+ * inlines the region's copy into the caller. Counted in `setRegion`, the two read the same
+ * whichever way the inlining falls, and the canvas budget holds their sum.
  */
-const COUNTED_IN_CALLER: ReadonlyMap<string, string> = new Map([
+export const COUNTED_IN_CALLER: ReadonlyMap<string, string> = new Map([
 	['colorView webgpu/backend.ts', REPLAY],
 	['targetView webgpu/backend.ts', REPLAY],
+	['slotChange shared/wake.ts', 'runPipelined sketch/runner.ts'],
+	['refresh scene/textures.ts', 'setRegion scene/textures.ts'],
 ]);
 
 /** Budgets of places by worker, in bytes per frame. */

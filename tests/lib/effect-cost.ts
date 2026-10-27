@@ -18,6 +18,12 @@ export interface Side {
 	/** Each part of the frame's GPU time, where the device times its passes. */
 	passes?: { name: string; ms: number | null }[];
 	threads: Record<string, number | null>;
+	/** Each round's GPU time, where the page reports its rounds. */
+	gpuRoundsMs?: number[];
+	/** Each round's frame interval, where the page reports its rounds. */
+	intervalRoundsMs?: number[];
+	/** Each round's CPU time, where the page reports its rounds. */
+	cpuRoundsMs?: number[];
 }
 
 /** What a cost page publishes. */

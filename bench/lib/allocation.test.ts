@@ -15,6 +15,9 @@ import {
 } from '../../packages/cli/src/heap-profile.js';
 import {
 	BUDGETS,
+	CANVAS_BUDGETS,
+	COUNTED_IN_CALLER,
+	DAY_BUDGETS,
 	PAGE_SWITCHES,
 	placeBudget,
 	SKY_ENVIRONMENT_BUDGETS,
@@ -196,21 +199,33 @@ describe('budgets', () => {
 			SWIFTSHADER_BUDGETS,
 			...PAGE_SWITCHES.flatMap(({ budgets }) => (budgets ? [budgets] : [])),
 		];
-		for (const table of tables) {
-			for (const places of Object.values(table)) {
-				for (const place of Object.keys(places ?? {})) {
-					const [name, file] = place.split(' ');
-					if (!name || !file || file === '(built-in)') continue;
-					const found = sources
-						.filter((path) => path.endsWith(`/${file}`))
-						.some(
-							(path) =>
-								name === '(anonymous)' || defines(readFileSync(join(root, path), 'utf8'), name),
-						);
-					if (!found) stale.push(place);
-				}
-			}
+		const places = [
+			...tables.flatMap((table) =>
+				Object.values(table).flatMap((byWorker) => Object.keys(byWorker ?? {})),
+			),
+			...COUNTED_IN_CALLER.keys(),
+		];
+		for (const place of places) {
+			const [name, file] = place.split(' ');
+			if (!name || !file || file === '(built-in)') continue;
+			const found = sources
+				.filter((path) => path.endsWith(`/${file}`))
+				.some(
+					(path) => name === '(anonymous)' || defines(readFileSync(join(root, path), 'utf8'), name),
+				);
+			if (!found) stale.push(place);
 		}
 		expect(stale).toEqual([]);
+	});
+
+	test('count a place in a caller whose budget holds it', () => {
+		const tables = [BUDGETS, CANVAS_BUDGETS, DAY_BUDGETS];
+		const budgeted = new Set(
+			tables.flatMap((table) =>
+				Object.values(table).flatMap((byWorker) => Object.keys(byWorker ?? {})),
+			),
+		);
+		const unbudgeted = [...COUNTED_IN_CALLER.values()].filter((place) => !budgeted.has(place));
+		expect(unbudgeted).toEqual([]);
 	});
 });
