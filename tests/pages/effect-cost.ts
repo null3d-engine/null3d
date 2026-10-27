@@ -89,6 +89,16 @@ const count = params.get('count') ?? (heavy ? '8' : null);
 const antialias = params.get('antialias');
 if (antialias !== null && antialias !== 'msaa' && antialias !== 'fxaa' && antialias !== 'none')
 	throw new Error(`the page takes no anti-aliasing mode ${antialias}`);
+/** A pixel ratio held for both sides, for a cost that the canvas size would otherwise hide. */
+const pixelRatio = params.get('pixel-ratio');
+if (pixelRatio !== null && !(Number(pixelRatio) >= 0.5))
+	throw new Error(`the page takes no pixel ratio ${pixelRatio}`);
+/** A case's own look, such as one mark of an effect, passed on to its sketch. */
+const look = params.get('look');
+/** The rounds of each side, with the sides in the opposite order on alternate rounds. */
+const rounds = params.get('rounds');
+if (rounds !== null && !(Number.isSafeInteger(Number(rounds)) && Number(rounds) >= 1))
+	throw new Error(`the page takes no round count ${rounds}`);
 const asked = params.get('effect') ?? 'bloom';
 if (!Object.hasOwn(SKETCHES, asked)) throw new Error(`the page measures no effect ${asked}`);
 const effect = asked as Effect;
@@ -106,12 +116,12 @@ run('effect-cost', async () => {
 	const sketch = new URL(SKETCHES[effect], import.meta.url);
 	const kind = params.get('kind');
 	const area = `${kind === null ? '' : `&kind=${kind}`}${params.has('image') ? '&image' : ''}`;
-	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${meter === null ? '' : `&meter=${meter}`}${slices === null ? '' : `&slices=${slices}`}${steps === null ? '' : `&steps=${steps}`}${strength === null ? '' : `&strength=${strength}`}${aoScale === null ? '' : `&aoscale=${aoScale}`}${area}${moving ? '&moving' : ''}${base === null ? '' : `&base=${base}`}${fill === null ? '' : `&fill=${fill}`}${background === null ? '' : `&background=${background}`}${night ? '&night' : ''}`;
+	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${meter === null ? '' : `&meter=${meter}`}${slices === null ? '' : `&slices=${slices}`}${steps === null ? '' : `&steps=${steps}`}${strength === null ? '' : `&strength=${strength}`}${aoScale === null ? '' : `&aoscale=${aoScale}`}${area}${moving ? '&moving' : ''}${base === null ? '' : `&base=${base}`}${fill === null ? '' : `&fill=${fill}`}${background === null ? '' : `&background=${background}`}${night ? '&night' : ''}${look === null ? '' : `&look=${encodeURIComponent(look)}`}`;
 	const engine = await createEngine({
 		canvas,
 		sketch,
 		antialias: antialias ?? undefined,
-		maxPixelRatio: heavy ? devicePixelRatio : undefined,
+		maxPixelRatio: heavy ? devicePixelRatio : pixelRatio === null ? undefined : Number(pixelRatio),
 	});
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
@@ -171,6 +181,7 @@ run('effect-cost', async () => {
 			await built;
 		},
 		glSnapshot,
+		rounds === null ? undefined : { rounds: Number(rounds), alternate: true },
 	);
 	// The memory figures come from the overlay, which samples the GPUs' tables and the wasm file.
 	// It shows after the timing, so its sampling costs none of the frames above.
