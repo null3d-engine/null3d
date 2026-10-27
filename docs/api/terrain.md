@@ -18,7 +18,7 @@ flowchart LR
     splat --> screen["The ground"]
 ```
 
-The `@null3d/terrain` package draws a height field as terrain. It divides the ground into a quadtree of blocks. A block near the camera draws a fine grid, and a block far away draws a coarse grid over more ground. The ground near the camera then keeps its detail, and the far hills stay cheap. One material blends up to four tiled color layers over every block by a splat map.
+The `@null3d/terrain` package draws a height field as terrain. It divides the ground into a quadtree of blocks. A block near the camera draws a fine grid, and a block far away draws a coarse grid over more ground. The ground near the camera then keeps its detail, and the far hills stay cheap. Every pixel takes its normal from a map baked over the whole ground, so a coarse block still shows the relief of the hills. One material blends up to four tiled color layers over every block by a splat map, and each layer's own height shows it through its neighbours where two layers meet.
 
 The package is built on the engine's public API. Its surface function ships compiled, so your build does not compile it, and the package needs no extra setup for it.
 
@@ -44,6 +44,7 @@ export default defineSketch((ctx) => {
   const terrain = createTerrain(ctx, {
     size: 800,
     height: ground,
+    camera,
     layers: [
       { map: layers.grass, tile: 6, roughness: 1 },
       { map: layers.soil, tile: 10, roughness: 1 },
@@ -68,15 +69,23 @@ export default defineSketch((ctx) => {
 
 `createTerrain` samples a height field once, into a flat array of heights. The height comes from a function or from a height map held as a `Float32Array`. Later reads, such as `heightAt`, interpolate between the four samples around the point.
 
-The ground is a quadtree. The root block covers the whole ground with a coarse grid. A block splits into four when the camera comes close to its edge. Its `maxLevel` sets the finest level, and its `split` sets the distance at which a block splits, up to 8 times the block's size. The default of 6 puts the camera's own block at about a meter of detail over a 1,200 meter ground.
+The ground is a quadtree. The root block covers the whole ground with a coarse grid. A block splits into four while one of its cells would show more screen error than the ground allows.
 
-Each block is one mesh whose vertices carry the heights. The height field never changes shape after `createTerrain`. Once a block is made, the engine reuses it. The terrain picks its blocks again only when the camera moves into a new cell of the finest level. A still camera therefore costs no work at all.
+The error is the size of that cell projected through the camera's field of view. A narrow view therefore keeps detail farther out. A camera high above the ground draws the ground under it coarser. The camera's distance to each block's own height box sets that projection too.
+
+The `error` option sets the allowed error in pixels. The default follows the quality preset's `lodThreshold`, so Low draws coarser blocks and Ultra draws finer ones. `maxLevel` sets the finest level. The default of 6 puts the camera's own block at about a meter of detail over a 1,200 meter ground.
+
+Each block is one mesh whose vertices carry the heights. The height field never changes shape after `createTerrain`. Once a block is made, the engine reuses it. The terrain picks its blocks again when the camera crosses a cell of the finest level, rises by one such cell, or draws through a different lens or buffer size. A still camera therefore costs no work at all.
+
+Every pixel lights from a normal map that `createTerrain` bakes from the height field's slopes. A far block covers ground in cells larger than the height samples, so its own vertices cannot show the small hills. The normal map keeps that relief at every distance. Set `bakedNormals: false` to light from the mesh's own normals instead.
 
 A skirt hangs from the edge of each block, a little below the ground. Where a fine block meets a coarse one, the two edges do not match, and the skirt covers the gap. The skirt hides the seam without a vertex morph, which is the main difference from Strugar's CDLOD. On a very steep seam a thin sliver of skirt can still show.
 
 ## Layers and the splat map
 
 The ground's material blends up to four layers. Each layer is a tiled color map with its own repeat distance and roughness. A splat map, one channel per layer, gives the weight of each layer at each point.
+
+A layer also carries a height at each texel. Its map's brightness gives that height by default, or its alpha channel where `heightFrom` says `'alpha'`. At a boundary between two layers, the heights push one through the other. Rock then shows through the grass in ragged patches rather than in a smooth cross-fade. `contrast` sets how strongly a layer pushes, from 0 to 1. The default is 0.5, and 0 blends by the splat map's weights alone.
 
 The default splat map comes from the ground itself. Grass takes the low, gentle ground, soil the higher dry ground, rock the steep slopes, and snow the ground above. Give `splat` to paint the weights yourself. `terrainTextures` makes the four layer maps in code, or give any `Texture` from `textures.fromData` or `assets`.
 
@@ -86,7 +95,7 @@ The terrain carries no collision. Read `heightAt(x, z)` and `normalAt(x, z, out)
 
 ## Speed
 
-A terrain draws one mesh per visible block. The blocks near the camera are the most and the finest, and the few coarse blocks cover the rest. A 1,200 meter ground at the default settings draws about 200 blocks, near 130,000 triangles, whatever the camera does. A block splits or merges only when the camera crosses a cell. A crossing can need tens of new blocks, so each `update` builds at most `blocksPerUpdate` of them, 16 by default. The ground draws its last complete selection until the new one is built, and `terrain.building` is true meanwhile. The first update builds its whole selection, so call it in the setup if that frame matters. A block that the view leaves gives up its mesh to the next block that the ground needs. A terrain that follows a moving camera therefore builds meshes only until it holds `maxBlocks` of them, and its frame path allocates nothing. `terrain.setVisible(false)` hides the ground, and `setVisible(true)` shows the current selection again.
+A terrain draws one mesh per visible block. The blocks near the camera are the most and the finest, and the few coarse blocks cover the rest. A 1,200 meter ground at the default settings draws about 200 blocks, near 130,000 triangles, from a camera near the ground. A higher camera or a wider field of view draws fewer and coarser blocks, and the Low preset draws coarser blocks than High. A block splits or merges only when the camera moves far enough to need other blocks. A crossing can need tens of new blocks, so each `update` builds at most `blocksPerUpdate` of them, 16 by default. The ground draws its last complete selection until the new one is built, and `terrain.building` is true meanwhile. The first update builds its whole selection, so call it in the setup if that frame matters. A block that the view leaves gives up its mesh to the next block that the ground needs. A terrain that follows a moving camera therefore builds meshes only until it holds `maxBlocks` of them, and its frame path allocates nothing. `terrain.setVisible(false)` hides the ground, and `setVisible(true)` shows the current selection again.
 
 A sketch that never imports `@null3d/terrain` ships no terrain code and starts no terrain work. The package follows the engine's add-on rules: its surface function ships compiled, and its builds load when a terrain first draws.
 

@@ -2700,7 +2700,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 2,
 	},
 	// Terrain of the terrain add-on: a height field drawn as a camera-centred quadtree of blocks,
-	// with grass, soil, rock and snow blended by a splat map, and stones seated with heightAt.
+	// lit per pixel from normals baked over the ground, with grass, soil, rock and snow blended by
+	// a splat map and each layer's own height, and stones seated with heightAt.
 	{
 		name: 'terrain',
 		sketch: 'tests/pages/sketches/terrain-sketch.ts',
