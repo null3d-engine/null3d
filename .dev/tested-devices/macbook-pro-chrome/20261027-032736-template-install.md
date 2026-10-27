@@ -29,9 +29,9 @@ at 1280 by 720 pixels and 1.5 s. Both runs report `ok: true`, frame 91, `errors:
 `warnings: []`, and both pictures show the template's blue cube.
 
 The hook ran the way each agent runs it: the configured command from that agent's settings file,
-through `sh -c`, with the call as JSON on stdin. Claude's calls set `CLAUDE_PROJECT_DIR` to the
-project. Codex's calls ran from `src` without that variable, so the command's folder walk-up was
-used.
+through `sh -c`, with the call as JSON on stdin. No live Claude Code or Codex session was involved.
+Claude's calls set `CLAUDE_PROJECT_DIR` to the project. Codex's calls ran from `src` without that
+variable, so the command's folder walk-up was used.
 
 | Call | Exit | Result |
 | --- | --- | --- |

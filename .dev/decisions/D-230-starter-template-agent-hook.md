@@ -1,6 +1,6 @@
 # D-230: The starter template's agent hook
 
-Status: decided and built. The project made from the template was installed, built and used with the hook on, which [the Mac run](../tested-devices/macbook-pro-chrome/20261027-032736-template-install.md) records. Task: M3-R16.
+Status: decided and built. The project made from the template was installed, built and used with the hook on, which [the install run](../tested-devices/macbook-pro-chrome/20261027-032736-template-install.md) records. [The hook replay](../tested-devices/macbook-pro-chrome/20261027-080217-agent-hook-replay.md) drives every call through both agents' configured commands with JSON on stdin. It refuses a wait inside a polling loop. Task: M3-R16.
 
 Summary: A new project from `bunx @null3d/cli create` ships an `AGENTS.md` and one agent hook. Claude Code and Codex each run that hook. It refuses waiting with `sleep`, stopping a process by name and following a log. It flags an allocation in `onUpdate`, a DOM name in the sketch and an import that the installed engine does not export. Every rule lives in `@null3d/cli/agent-rules`, so the hook and any other null3D tool share one definition.
 
