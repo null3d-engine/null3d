@@ -153,11 +153,11 @@ Where the ports differ from the examples, and why:
 
 The label system carries every capability that the examples need but one, with no special case in a
 page. The one is the mixed example's cut-out plane, which needs a depth-only surface. The engine
-draws it with a material that writes depth and no color. The port draws no such plane yet, which
-M3-K4's remaining work covers. It takes a billboard that follows its object's scale, and an orthographic lens.
-It hides the element of a hidden object, which the molecules port checks with one atom. It also
-carries an element that holds a live iframe. It holds a page with more planes than the default
-capacity (`maxLabels3d`), over a see-through canvas.
+draws it with a material that writes depth and no color, and the port draws no such plane yet, which
+M3-K4's remaining work covers. The other capabilities are built: a billboard that follows its
+object's scale, an orthographic lens, a hidden object that hides its element, which the molecules
+port checks with one atom, an element that holds a live iframe, and a page with more planes than the
+default capacity (`maxLabels3d`), over a see-through canvas.
 
 Each of the six ports with a two-stage page ran on WebGPU and on WebGL2, twelve tests in all, for commit `6bdcf8e83`, whose run log is not kept. It compared its layer of elements with three.js's own draw of the same data, at 960
 by 540 pixels. A figure is the share of the picture that differed.
