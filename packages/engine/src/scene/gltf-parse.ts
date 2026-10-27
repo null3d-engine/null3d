@@ -57,6 +57,7 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_materials_ior',
 	'KHR_materials_transmission',
 	'KHR_materials_volume',
+	'KHR_materials_dispersion',
 	'KHR_materials_diffuse_transmission',
 	'KHR_materials_volume_scatter',
 	'KHR_materials_clearcoat',
@@ -429,6 +430,16 @@ function volumeOf(volume: Entry, what: string): VolumeData {
 }
 
 /**
+ * The volume's dispersion, from KHR_materials_dispersion: 20 divided by the Abbe number, 0 or more,
+ * and 0 for a material without the extension.
+ */
+function dispersionOf(extension: Entry | undefined, what: string): number {
+	const dispersion = finite(extension?.dispersion ?? 0, `${what}'s dispersion`);
+	if (dispersion < 0) broken(`${what}'s dispersion is ${dispersion}, and it takes 0 or more`);
+	return dispersion;
+}
+
+/**
  * How a material lets light through to its other side, from its
  * KHR_materials_diffuse_transmission and KHR_materials_volume extensions, or none without the
  * extension. KHR_materials_transmission wins where the material lets light through that way too,
@@ -773,6 +784,8 @@ export interface MaterialData {
 	specularIntensity: number;
 	/** KHR_materials_specular's specular color factor: linear RGB, which may exceed 1. */
 	specularColor: [number, number, number];
+	/** KHR_materials_dispersion's strength, 0 or more: 20 divided by the Abbe number. */
+	dispersion: number;
 	/**
 	 * KHR_materials_transmission's factor, with KHR_materials_volume's values, for a material
 	 * that lets light through: none for a factor of 0.
@@ -1615,6 +1628,7 @@ export function parseGltf(
 				specularColor[1] as number,
 				specularColor[2] as number,
 			],
+			dispersion: dispersionOf(extensions.KHR_materials_dispersion as Entry | undefined, what),
 			maps,
 		};
 		if (transmission) data.transmission = transmission;

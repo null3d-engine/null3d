@@ -59,7 +59,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 
 ## 2. MeshPhysicalMaterial
 
-`materials.standard` takes the index of refraction, specular, transmission, clear coat, sheen, iridescence and anisotropy options of `MeshPhysicalMaterial` (0.2 for the first five and 0.3 for the last two) with the same names and formulas:
+`materials.standard` takes the index of refraction, specular, transmission, dispersion, clear coat, sheen, iridescence and anisotropy options of `MeshPhysicalMaterial` with the same names and formulas (0.2, except iridescence, anisotropy and dispersion at 0.3):
 
 | three.js | null3D | Notes |
 | --- | --- | --- |
@@ -68,6 +68,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `specularIntensity`, `specularIntensityMap` | Same names | The map's alpha multiplies the intensity; load it linear |
 | `specularColor`, `specularColorMap` | Same names | The map is sRGB. Linear components above 1 carry over |
 | `transmission`, `thickness`, `attenuationColor`, `attenuationDistance` | Same names | Give `transmission` at creation, even as 0, to change it later. Only opaque objects show through: three.js also shows the back faces of double-sided glass. Where the bent ray lands on an opaque object in front of the surface, null3D shows what lies straight behind the surface, and three.js shows that object's color |
+| `dispersion` | Same name (0.3) | 20 divided by the Abbe number, and 0 bends every color alike. It shows only with `transmission`, and `set` changes it at any time. Each color takes its own bent ray, with red at the lowest index, as three.js draws it. Load `KHR_materials_dispersion` files as three.js's `GLTFLoader` does |
 | `transmissionMap`, `thicknessMap` | Same names (0.3) | The transmission map's red multiplies the transmission and the thickness map's green multiplies the thickness, as three.js reads them. They take the specular maps' slots, so a material with them takes no `specularIntensityMap` or `specularColorMap`: keep the transmission maps, which change the look more, or draw the material without one pair. A layered material keeps them beside its layers unless a layer map fills the same slot: `clearcoatNormalMap` and `iridescenceThicknessMap` share the transmission map's slot, and the sheen's maps and `anisotropyMap` share the thickness map's |
 | `clearcoat`, `clearcoatRoughness`, `clearcoatNormalScale`, `clearcoatMap`, `clearcoatRoughnessMap`, `clearcoatNormalMap` | Same names | Give a clear coat option at creation, even as 0, to change it later. `clearcoatMap` and `clearcoatRoughnessMap` must be one texture (coat in red, roughness in green) |
 | `sheen`, `sheenColor`, `sheenRoughness`, `sheenColorMap`, `sheenRoughnessMap` | `sheenColor` times `sheen`, and the same other names | No `sheen` option: multiply it into `sheenColor`. three.js's `sheen` defaults to 0, so a material without it has no sheen: leave the sheen options out. The two maps must be one texture (roughness in alpha) |
@@ -76,13 +77,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 
 A material with a clear coat or a sheen takes no `lightMap`, `specularIntensityMap`, `specularColorMap` or `diffuseTransmission`: the layers' maps take their places. Bake the light map into the base color, or split the object across two materials.
 
-glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_clearcoat`, `KHR_materials_sheen`, `KHR_materials_iridescence` and `KHR_materials_anisotropy` load into these options. `KHR_materials_diffuse_transmission` loads into `diffuseTransmission` and `diffuseTransmissionColor` (0.2), which light leaves and petals from behind; three.js's `GLTFLoader` ignores that extension. The draft `KHR_materials_volume_scatter` loads into `subsurfaceRadius` and `subsurfaceColor` (0.2), whose blur spreads skin's light under its surface on the High and Ultra presets; three.js has no such blur. The transmission and thickness textures load into `transmissionMap` and `thicknessMap`. These workarounds apply:
-
-| three.js property | Workaround | Visual cost |
-| --- | --- | --- |
-| `dispersion` | Not available | |
-
-Tell the user which of these a scene relies on before porting it. Glass and car-paint showcases depend on them heavily.
+glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_dispersion`, `KHR_materials_clearcoat`, `KHR_materials_sheen`, `KHR_materials_iridescence` and `KHR_materials_anisotropy` load into these options. `KHR_materials_diffuse_transmission` loads into `diffuseTransmission` and `diffuseTransmissionColor` (0.2), which light leaves and petals from behind; three.js's `GLTFLoader` ignores that extension. The draft `KHR_materials_volume_scatter` loads into `subsurfaceRadius` and `subsurfaceColor` (0.2), whose blur spreads skin's light under its surface on the High and Ultra presets; three.js has no such blur. The transmission and thickness textures load into `transmissionMap` and `thicknessMap`.
 
 ## 3. MeshBasicMaterial
 

@@ -66,6 +66,7 @@ import {
 	MATERIAL_PARAM_DECAL_FADE_START,
 	MATERIAL_PARAM_DIFFUSE_TRANSMISSION,
 	MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR,
+	MATERIAL_PARAM_DISPERSION,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
 	MATERIAL_PARAM_ENV_INTENSITY,
@@ -160,6 +161,7 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_IRIDESCENCE_THICKNESS_MAX, 1],
 	[MATERIAL_PARAM_ANISOTROPY, 1],
 	[MATERIAL_PARAM_ANISOTROPY_ROTATION, 1],
+	[MATERIAL_PARAM_DISPERSION, 1],
 	[MATERIAL_PARAM_DECAL_FADE_START, 1],
 	[MATERIAL_PARAM_DECAL_FADE_END, 1],
 	[MATERIAL_PARAM_DECAL_EDGE_FADE, 1],
@@ -1009,6 +1011,15 @@ describe('Material.set', () => {
 			[4, MAP_SLOT_COAT_NORMAL, 7, 0],
 		]);
 		expect(table).toHaveLength(4);
+	});
+
+	test('gives a transmission material its dispersion, which set changes at any time', () => {
+		const { table, materials } = fakeCore();
+		const glass = materials.standard({ transmission: 1, dispersion: 0.36 });
+		expect((table[0] as number[])[MATERIAL_PARAM_DISPERSION]).toBe(0.36);
+		glass.set({ dispersion: 2.04 });
+		expect((table[0] as number[])[MATERIAL_PARAM_DISPERSION]).toBe(2.04);
+		expect(thrown(() => glass.set({ dispersion: -1 })).code).toBe('E1108');
 	});
 
 	test('refuses diffuse transmission beside layers and the weighted blending', () => {
