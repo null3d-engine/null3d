@@ -160,7 +160,7 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-V6':
 		'the same placement is shown only on two Android phones in Chrome, so no second JavaScript engine has placed it, and no iPad run exists; the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
 	'M3-V13':
-		'the history pass keeps its state between frames and its pictures pass on every tier, but no GPU time and memory are recorded for its repeated pass on the iPad, a phone or this Mac, so its branch check is owed',
+		'the history pass keeps its state between frames and its pictures pass on every tier, and its GPU time and memory are recorded on the iPad and a phone; its Mac row and its branch check are owed',
 	'M3-E4a':
 		'the material change is on the branch with the water work, but the task asks for a material that declares the scene depth beside two textures on WebGPU, compatibility and WebGL2, and for the cost of a material that reads neither; its helper is finishing that proof',
 	'M3-V5':
