@@ -1,6 +1,6 @@
 # D-202: One feature description for add-on hooks
 
-Status: decided. The owner put the add-on hooks into M3 and asked for one public feature description before H3 ([D-199](D-199-m4-features-and-study-tasks-in-m3.md)). Built: the shape, `defineFeature`, `FeatureRegistry` and the checks, the draw adapter (M3-E1) and the preset and stats link (M3-E6), whose GPU time per add-on row is still pending. The scene inputs (M3-E4) are built too, with their first user, water's soft shores. The helper of M3-E4 decided that first user's design, for the owner's review. Task: M3-R1.
+Status: decided. The owner put the add-on hooks into M3 and asked for one public feature description before H3 ([D-199](D-199-m4-features-and-study-tasks-in-m3.md)). Built: the shape, `defineFeature`, `FeatureRegistry` and the checks, the draw adapter (M3-E1), the full-screen adapter (M3-R1) and the preset and stats link (M3-E6), whose GPU time per add-on row is still pending. The scene inputs (M3-E4) are built too, with their first user, water's soft shores. The helper of M3-E4 decided that first user's design, for the owner's review. Task: M3-R1.
 
 Summary: Every add-on render hook declares one `FeatureDescription`, which `defineFeature` checks and a `FeatureRegistry` holds, and E1223 reports each mistake. A description gives a frame point, kind, order band, view mask, reads and writes, outputs with neutral defaults, lighting slots and lifecycle callbacks. H3, H7 and the preset and stats link build on it, and H4, H5, H6 and H9 need payloads of their own.
 
@@ -343,3 +343,118 @@ limit: [D-256](D-256-depth-reading-materials-and-textures.md) gives a depth-read
 group of seven slots. That record also weighs a frame group without the light probe grid. A
 shore that keeps its analytic bed depth, as the Creek does, was rejected because it gives no soft
 shore from the copy. M3-E4's first user declares no textures.
+
+## The full-screen adapter and the built-in test (M3-R1)
+
+Task M3-R1. `post.addFeatureEffect(description, options)` places a `'fullscreen'` description at the
+`'resolve'` point in the chain of custom effects. The pass reads the scene's color, and its depth
+when the description declares it, and writes the color. The adapter makes the effect while the
+feature is ready, and removes it while it is not. It asks `ready` again on each quality change. The
+adapter loads on first use. A test sketch declares depth of field with the real preset's
+`dofSamples` and draws it through the adapter. A browser spec then compares the frames of the two
+GPU paths.
+
+### The call
+
+`post.addFeatureEffect(description, options)` takes a checked description and the pass's own
+declaration: its compiled WGSL, its first uniform values and its textures, as `post.addEffect`
+takes them. It returns a `FeatureEffect` with the live `effect`, `draws`, `setUniform`, `refresh`
+and `destroy`. The call is async, because the adapter is a first-use chunk.
+
+| Description field | What the adapter reads |
+| --- | --- |
+| `kind` | `'fullscreen'` alone. Another kind throws E1223. |
+| `frame` | `'resolve'` alone. No public pass draws an add-on's effect after the tone curve, so `'post'` throws E1223. |
+| `views` | `['main']` alone. |
+| `reads` | `'sceneColor'`, which every effect reads, and `'sceneDepth'` when the WGSL calls `effectDepth`, `effectViewPosition` or `effectDistance`. The two must agree, in both directions. |
+| `writes` | `['sceneColor']` alone. |
+| `band`, `order` | The chain's order. The band ranges do not overlap and stay in their order, so the description's order reaches the chain as it is. |
+| `ready` | Whether the effect is in the chain. False costs no pass, no target and no shader download. |
+| `destroy` | Called once by the handle's `destroy`. |
+| `outputs`, `provides` | Refused: the effect chain publishes no texture and provides no lighting slot. |
+
+The band places a full-screen feature among the sketch's other effects. The chain has one seat in
+the frame: after the exposure, and before bloom and the tone curve. A band therefore cannot move a
+pass against the engine's own bloom or depth of field. The docs state that limit.
+
+### The built-in test
+
+`tests/pages/sketches/feature-effect-sketch.ts` declares depth of field against the description. Its
+reads are `'sceneColor'` and `'sceneDepth'`, its write is `'sceneColor'`, and its frame point is
+`'resolve'`. A `FeatureHost` runs its `quality` callback with the engine's preset. The pass's tap
+count is the preset's `dofSamples`: 0 on Low, 22 on Medium, 43 on High and 71 on Ultra. Its `ready`
+callback returns `samples > 0`, so Low keeps the effect out of the chain. The sketch draws a row of
+posts at different distances through a golden-angle gather, so the blur follows the distance from
+the focus. The test ships nothing and moves no built-in.
+
+`tests/image/feature-effect.spec.ts` holds the frame at 0 seconds in one browser and compares runs
+of it. It needs no reference picture, as `direct-draws.spec.ts` does not. Each path is checked on
+its own, because each GPU path draws its own edges and each tier keeps its own references. The
+spec proves two separate things, and no single number carries both:
+
+- **Placement.** On WebGPU and on WebGL2, the frame with the pass must differ from the frame with
+  `?dof=off` in at least 2% of its pixels. At Medium on this Mac it changed 45.5868% of the pixels on
+  WebGPU and 37.9149% on WebGL2. The pass therefore reached the picture on both paths.
+- **The ready gate.** The sketch publishes the adapter's own `draws` answer, and the spec requires
+  false at Low, where `dofSamples` is 0, and true at Medium, where it is 22. The picture cannot carry
+  this check. A pass whose tap count is 0 returns its input unchanged, so a frame that ran the pass
+  anyway would match one that did not. The check runs on WebGPU alone, and that is enough. The gate is
+  TypeScript in the adapter, and the same code runs for every rendering path. The test also requires
+  the run's held frame, so a page that failed to draw cannot pass it silently. A unit test holds the
+  same rule without a GPU: `keeps the effect of a feature that is not ready out of the chain` asserts
+  that the effect chain received no effect.
+
+The runs are at Medium, a preset that both paths run. WebGL2 caps its preset at Medium, so a run
+at High would compare WebGPU's High against WebGL2's Medium.
+
+Add the feature to its `FeatureHost` before placing it. The host's quality callback and the
+adapter's `ready` check both run on the same quality change, in the order that they were
+registered. The feature's own values are therefore current only if the host came first.
+
+### Size
+
+The description's own code did not change. The method and its first-use loader sit in the start's
+runner chunk. The size report gives `js/page-sketch-runner.js` at 215,009 bytes and 61,356 after
+Brotli. An earlier landing checkout's build holds 214,410 and 61,276 for the same chunk. The
+adapter therefore adds 599 bytes before compression and 80 after Brotli against that build. The two
+tips differ by other commits, so that figure shows the order of the cost rather than an exact one.
+The adapter is a chunk of its own: `js/page-feature-effects.js` at 3,526 bytes, 1,136 after Brotli,
+and `js/sketch-worker-feature-effects.js` at 3,535 bytes, 1,149 after Brotli. Both stay under the
+first-use budget of 16 KB after Brotli, and a page that places no feature effect downloads neither.
+
+### What stays open
+
+- The draw, instance, compute and sky-layer adapters do not call `ready` yet; only this adapter
+  does. A hook that needs a draw to stop costs nothing until then.
+- `resize` and `reset` are declared and checked, and no adapter calls them; an add-on that keeps
+  targets or history keeps its own size and reset state.
+- The effect reads the color and depth alone. Normals, motion vectors, history and the shadow atlas
+  need a binding that the effect chain does not add yet.
+- The registry's outputs and lighting slots are declared and given one owner each. Nothing binds a
+  registered output as a texture yet, and nothing reads a slot's provider. A reader of an output
+  names the texture that a compute pass writes, through `textures.fromPass`. The registry's neutral
+  default is therefore a checked declaration, not yet a bound texture.
+
+### Each hook's adapter
+
+The description expresses what the hooks already do. The gaps that remain are in the adapters'
+delivery, and the list above names them. The table gives each hook's adapter and the description
+fields that the adapter reads:
+
+| Hook | Its adapter | Description fields it reads |
+| --- | --- | --- |
+| H1, a compute pass whose output reads in the same frame | `render.addPass({ kind: 'compute', description })` | `frame`, `kind`, `order`, one `outputs` name |
+| H2, draws whose count the GPU writes | `render.addPass({ kind: 'compute', buffers })` and `scene.addComputeInstances` | `frame`, `kind`, `order` |
+| H3, a new kind of draw | `scene.addFeatureDraw` and `scene.addFeatureInstances` | `frame`, `kind`, `band`, `order`, `views` |
+| H4, material lobes | Its own material hook, not a frame feature | none |
+| H5, add-on tasks | `runTask` and a task descriptor, not a frame feature | the data part: `outputs`, `ready` and `destroy` |
+| H6, a baked-data format | Its own file format, not a frame feature | the data part: `outputs` with a neutral default |
+| H7, scene inputs | `sceneInputs` on a material, and the effect depth helpers | `reads` and the shared resource names |
+| H8, sky layers | `scene.setSkyLayer` | `frame`, `kind`, `provides`, `views` |
+| H9, glTF extension handlers | `registerGltfExtension`, not a frame feature | none |
+| Presets, budgets and stats | `FeatureHost` and the stats message | `settings`, `budget`, `memory`, `quality` |
+| A full-screen pass | `post.addFeatureEffect` | `frame`, `kind`, `band`, `order`, `reads`, `writes`, `views`, `ready`, `destroy` |
+
+The texture-unit allocator, the namespaces and the plugin interface version are platform work, not
+frame features. The description carries them through the add-on's namespace and the interface
+range, not through a field.
