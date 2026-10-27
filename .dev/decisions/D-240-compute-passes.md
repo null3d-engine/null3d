@@ -350,8 +350,30 @@ each run.
 8 workgroup, and measures the same scene with the pass switched off, on every GPU path. A workgroup
 of one invocation and a measurement with no pass-off baseline are rejected: the first dispatches
 65,536 workgroups for a 256 by 256 pass, and the second cannot separate the pass's cost from the
-frame's. The figures are owed to a clean window. The only pair taken so far ran while the machine
-was busy, at a 1-minute load of 17.59 to 7.95 on a fourteen-core machine, so it is not a measurement
-for this record; the run record keeps it only to compare a clean run against. The pass holds 2 MiB
-of texels on the compute paths and 1.5 MiB on WebGL2. The iPad and the phone rows are owed to the landing session, as M3-V14's
-measurements cover the field that uses the pass first.
+frame's. The difference between the two sides is the pass's cost where the timer separates them. The
+page turns the pass off with `render.setPassEnabled`, and the graph leaves it out, so the
+switched-off frame records no pass and dispatches nothing.
+
+| Device | Run | WebGPU off, on (ms) | compatibility off, on (ms) | WebGL2 |
+| --- | --- | --- | --- | --- |
+| MacBook Pro, Apple M3 Max, Chrome 156 | 20261027-013423-history-cost | 0.459, 0.524 | 0.328, 0.524 | 0.339, 11.080, the whole frame |
+| iPad Pro 13-inch, Safari 26.6.1 | 20261027-010154-history-cost | 0.080, 0.574 | 0.079, 0.543 | no timer; CPU 0.74, 4.27 |
+| Galaxy S25, Chrome 152 | 20261027-010335-history-cost | 0.328, 4.325 | 0.328, 4.325 | no timer; CPU 0.48, 0.79 |
+
+The pass costs 0.066 ms on the Mac's WebGPU path, 0.197 ms in its compatibility mode, 0.49 and
+0.46 ms on the iPad, and 4.0 ms on both Galaxy S25 paths. The Galaxy S25 stands in for the S24 class
+by the owner's ruling.
+
+The Mac's WebGPU timer shows whole steps of 0.065536 ms: 0.066 ms is one step and lies below the
+timer's resolution, and 0.197 ms is three. The Galaxy S25's timer shows the same step, so its 4.0 ms
+is 61 steps. The iPad's timer reports exact times.
+
+On WebGL2 the Mac's timer wraps a frame's replay in one `TIME_ELAPSED` query, so its row is the
+whole frame's GPU work with the pass inside it, not the pass's cost. The span passes the 8.28 ms
+frame interval, so it takes in more than this frame's commands: the query's markers bound a span of
+the GPU's shared timeline. That row records what the timer reads, and it does not separate the pass.
+The iPad and the Galaxy S25 have no WebGL2 GPU timer, so their WebGL2 rows give the busiest thread's
+CPU time.
+
+The pass holds 2 MiB of texels on the compute paths and 1.5 MiB on WebGL2. The run files are in
+`.dev/tested-devices/`, and their raw results are in `/Users/ram/dev/null3d-devices/target/runs/`.
