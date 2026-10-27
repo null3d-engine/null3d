@@ -111,14 +111,36 @@ function cell(
 	const between =
 		on.passRoundsMs?.['between passes'] !== undefined &&
 		off.passRoundsMs?.['between passes'] !== undefined;
-	// A pass past the seven that the engine times joins the last timed pass's slot, so that pass's
-	// growth carries the effect's work where no pass of the on side is named on its own.
-	const last = onNames.filter((name) => name !== 'between passes').at(-1);
+	const shared = onNames.filter(
+		(name) => name !== 'between passes' && name !== 'copies' && offNames.has(name),
+	);
+	/** A render pass's place in the frame, from its name, or -1 for another part. */
+	const order = (name: string) => {
+		const match = /^render (\d+)$/.exec(name);
+		return match === null ? -1 : Number(match[1]);
+	};
+	/** How far a shared pass's median time moved from off to on. */
+	const growth = (name: string) => {
+		const drawn = on.passes?.find((pass) => pass.name === name)?.ms;
+		const plain = off.passes?.find((pass) => pass.name === name)?.ms;
+		return drawn === null || drawn === undefined || plain === null || plain === undefined
+			? null
+			: drawn - plain;
+	};
+	// A pass past the seven that the engine times joins the last timed pass's slot, so the pass that
+	// grew carries the effect's work where none of the look's own passes is named on its own. A run
+	// with no repeat reads the last render pass, which is the final pass.
+	const grown = shared
+		.map((name) => ({ name, ms: growth(name) }))
+		.filter((pass): pass is { name: string; ms: number } => pass.ms !== null)
+		.sort((a, b) => b.ms - a.ms)[0]?.name;
+	const lastRender = [...shared].sort((a, b) => order(b) - order(a))[0];
+	const target = repeat > 1 ? (grown ?? lastRender) : (lastRender ?? grown);
 	const source =
 		added.length > 0
 			? `passes ${added.join(', ')}${between ? ' and the tail' : ''}`
-			: last !== undefined
-				? `pass ${last}`
+			: target !== undefined
+				? `pass ${target}`
 				: between
 					? 'between passes'
 					: 'whole frame';
@@ -142,8 +164,8 @@ function cell(
 			return sum;
 		}
 		const [drawn, plain] =
-			last !== undefined
-				? [partRound(on, last, round), partRound(off, last, round)]
+			target !== undefined
+				? [partRound(on, target, round), partRound(off, target, round)]
 				: between
 					? [partRound(on, 'between passes', round), partRound(off, 'between passes', round)]
 					: [on.gpuRoundsMs?.[round], off.gpuRoundsMs?.[round]];
