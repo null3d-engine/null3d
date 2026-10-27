@@ -3048,7 +3048,7 @@ export function judge(
 			const relinked = (result.relinked ?? []) as { shader: string; log: string }[];
 			if (relinked.length > 0)
 				context?.note?.(
-					`${relinked.length} ${relinked.length === 1 ? 'program' : 'programs'} linked at the second try after Safari's random Metal fault: ${relinked.map(({ shader, log }) => `${shader} (${metalFaultLine(log)})`).join('; ')}`,
+					`${relinked.length} ${relinked.length === 1 ? 'program' : 'programs'} linked again after Safari's random Metal fault: ${relinked.map(({ shader, log }) => `${shader} (${metalFaultLine(log)})`).join('; ')}`,
 				);
 			// A part holds one share of the builds, and the browser's extension decides which of them
 			// it can compile at all: a browser without `WEBGL_multi_draw` cannot compile the builds
