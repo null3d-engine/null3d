@@ -352,7 +352,7 @@ const paint = materials.standard({
   clearcoat: 0, clearcoatRoughness: 0,        // (0.2) car paint, varnish: give a layer option at creation to have the layers
   sheenColor: '#000000', sheenRoughness: 1,   // (0.2) velvet and cloth; black gives no sheen; no light or specular maps and no diffuseTransmission with layers
   iridescence: 0, iridescenceIor: 1.3, iridescenceThicknessRange: [100, 400],  // (0.3) soap bubbles, beetles, oil: a thin film tints the reflection; no light or specular maps and no coat or sheen maps
-  anisotropy: 0, anisotropyRotation: 0,       // (0.3) brushed metal: the highlight stretches along the tangent; needs a map, whose coordinates give the tangent frame
+  anisotropy: 0, anisotropyRotation: 0,       // (0.3) brushed metal: the highlight stretches along the tangent, which the mesh's tangents or the coordinates give; no map needed
   opacity: 1,                                  // part of the alpha that 'mask' tests and 'blend' blends
   doubleSided: false, vertexColors: false, flatShading: false,  // fixed at creation
   contactShadows: true,                        // (0.2) fixed at creation; false on grass, leaf cards and other thin surfaces that crowd or sway, where contact shadows darken and flicker
@@ -465,7 +465,7 @@ On WebGL2 the maps of one standard material share six textures on the GPU. Maps 
 ## 11. Assets (`api/assets`)
 
 ```ts
-assets.onProgress((loaded, total, url) => page.post('loading', loaded / total));  // returns a remover
+assets.onProgress((loaded, total, url) => page.post('loading', Math.min(1, loaded / Math.max(total, loaded))));  // returns a remover
 await assets.preload(['/tex/bricks.png', '/level.json']);      // later loads take these from memory
 const data = await assets.loadJson('/level.json');             // also loadBinary, loadTexture
 const bitmap = await assets.loadImageBitmap('/ui/logo.png', { colorSpace, flipY, premultipliedAlpha });
@@ -630,6 +630,7 @@ post.set({
 post.set({ toneMapping: curveWgsl });   // (0.2) WGSL with fn toneCurve(color: vec3f) -> vec3f in place of a built-in curve
 const fx = post.addEffect({ wgsl, uniforms: { size: 4 }, order: 0 });  // (0.2) WGSL with fn effect(input: EffectInput) -> vec4f; per-pixel effects join into one pass, at most 8
 post.addEffect({ wgsl: streakWgsl, bloomLevel: 2 });  // (0.3) WGSL that calls effectBloom(input.uv) reads that level of bloom's chain: a streak or a glare without its own blur; draws in a pass of its own
+const dof = await post.addFeatureEffect(description, { wgsl, uniforms: { focus: 8 } });  // (0.3) an add-on's full-screen pass from a feature description at the 'resolve' point, reading the scene's color and depth and writing the color; it draws only while the description's ready() is true
 post.setEffectUniform(fx, 'size', 8);   // (0.2) allocates nothing
 post.removeEffect(fx);                  // (0.2)
 ```

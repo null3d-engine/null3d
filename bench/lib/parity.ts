@@ -124,6 +124,9 @@ export const SPECULAR_AA_LIMITS = {
 	'gltf-ior': 0.21,
 	'gltf-iridescence': 0.3,
 	'gltf-anisotropy': 0.6,
+	// The Khronos grid of the stretched lobe, whose highlights cross more of the anti-aliasing
+	// kernels than a round one.
+	'gltf-anisotropy-strength': 0.6,
 	'gltf-toy-car': 0.32,
 } as const;
 
@@ -441,6 +444,7 @@ const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 	ior: SPECULAR_AA_LIMITS['gltf-ior'],
 	iridescence: SPECULAR_AA_LIMITS['gltf-iridescence'],
 	anisotropy: SPECULAR_AA_LIMITS['gltf-anisotropy'],
+	'anisotropy-strength': SPECULAR_AA_LIMITS['gltf-anisotropy-strength'],
 	'toy-car': SPECULAR_AA_LIMITS['gltf-toy-car'],
 };
 

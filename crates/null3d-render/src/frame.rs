@@ -55,7 +55,7 @@ use crate::light_grid::DEFAULT_AREA_LIGHT_CAP;
 use crate::light_tables::LightTables;
 use crate::materials::{
     MAP_SLOTS, MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, NO_UNIT, Shading,
-    blend_state, feature,
+    blend_state, feature, param,
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Page, UpdateError};
 use crate::motion;
@@ -2858,7 +2858,11 @@ impl SceneSettings {
         for id in 0..count {
             let shading = self.materials.shading(id);
             let samples = match shading {
-                Ok(Shading::Lit) => self.has_live_map(id),
+                // An anisotropic material draws through the maps template even with no map, which
+                // reads the group's placeholders where a slot has no live map.
+                Ok(Shading::Lit) => {
+                    self.has_live_map(id) || self.materials.features(id) & feature::ANISOTROPY != 0
+                }
                 Ok(Shading::Custom(custom)) => custom.textures > 0,
                 _ => false,
             };
@@ -3716,6 +3720,13 @@ impl SceneSettings {
         }
         let uv0 = format & vertex::UV0 != 0;
         let live = |slot: MapSlot| self.textures.is_live(self.materials.map(id, slot));
+        // The anisotropy's frame comes from the mesh's tangents or its texture coordinates, so a
+        // material with a stretch draws through the maps template even with no map of its own.
+        let anisotropic = self
+            .materials
+            .rows(id..id + 1)
+            .get(param::ANISOTROPY)
+            .is_some_and(|&value| value > 0.0);
         if shading == Shading::UnlitMap && !(uv0 && live(MapSlot::BaseColor)) {
             shading = Shading::Unlit;
         }
@@ -3725,7 +3736,7 @@ impl SceneSettings {
         if shading == Shading::Particle && live(MapSlot::BaseColor) {
             shading = Shading::ParticleMap;
         }
-        if shading == Shading::Lit && uv0 && self.has_live_map(id) {
+        if shading == Shading::Lit && uv0 && (self.has_live_map(id) || anisotropic) {
             shading = Shading::StandardMaps;
         }
         let needs = shading.attributes();
@@ -3743,9 +3754,9 @@ impl SceneSettings {
         let hashed = own_way && has(feature::ALPHA_HASH);
         let covers = own_way && has(feature::ALPHA_TO_COVERAGE) && !hashed;
         let tangents = shading == Shading::StandardMaps
-            && live(MapSlot::Normal)
-            && self.materials.normal_slot_holds_normals(id)
-            && format & vertex::TANGENT != 0;
+            && format & vertex::TANGENT != 0
+            && (anisotropic
+                || (live(MapSlot::Normal) && self.materials.normal_slot_holds_normals(id)));
         let displaced = shading == Shading::StandardMaps && self.displaces(id);
         let wireframe = has(feature::WIREFRAME);
         let bumped = shading == Shading::StandardMaps && !wireframe && self.materials.bumps(id);

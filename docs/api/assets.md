@@ -16,7 +16,7 @@ The `assets` object of the sketch context downloads files and decodes them. Ever
 import { defineSketch } from '@null3d/engine';
 
 export default defineSketch(async ({ assets, page }) => {
-  assets.onProgress((loaded, total) => page.post('loading', loaded / total));
+  assets.onProgress((loaded, total) => page.post('loading', Math.min(1, loaded / Math.max(total, loaded))));
   await assets.preload(['/tex/bricks.png', '/tex/bricks-normal.png', '/levels/one.json']);
 
   const bricks = await assets.loadTexture('/tex/bricks.png', { wrap: 'repeat' });
@@ -293,12 +293,13 @@ A relative address resolves against the page's address, in every thread mode, as
 
 `preload` downloads files ahead of the loads that use them, all at once, and resolves when every file has arrived. The next load of each address takes its file from memory, so it downloads nothing. The files wait in memory until then.
 
-`onProgress` calls its handler each time a download finishes, with two counts: the files downloaded so far and the files asked for so far. A download that fails counts as finished too, so a loading bar still reaches its end. The counts cover every download of the `assets` calls, not only those of `preload`. A load that takes a preloaded file counts no further.
+`onProgress` calls its handler as a download's bytes arrive and when one finishes or fails, with two counts: the bytes downloaded so far and the bytes expected so far, which are the lengths of the responses that gave one and 0 while none has. A response with no length still counts its bytes into the first count, so a page draws `Math.min(1, loaded / Math.max(total, loaded))`. A download that fails counts as finished too, so a loading bar reaches its end: it counts the bytes its response announced, or one byte when it announced none. Each call names the address whose bytes moved.
 
 ```ts
 assets.onProgress((loaded, total, url) => page.post('loading', { loaded, total, url }));
 await assets.preload(['/tex/a.png', '/tex/b.png', '/tex/c.png']);
-// The handler got (1, 3), (2, 3) and (3, 3), in the order the files arrived.
+// The handler gets each file's bytes as they arrive: (40_000, 120_000) while a.png downloads, then
+// (120_000, 120_000) as the last of the three arrives.
 ```
 
 [Loading screens and warm-up](../guides/loading-screens.md) shows a whole loading screen.

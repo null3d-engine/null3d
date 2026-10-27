@@ -59,9 +59,7 @@ const INCOMPLETE = new Set([
 	'M3-A9',
 	'M3-V5',
 	'M3-A11',
-	'M3-R1',
 	'M3-G2',
-	'M3-G3',
 	'M3-R4',
 	'M3-R19',
 	'M3-V1',
@@ -114,8 +112,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
 	'M3-E10':
 		"the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the widening (`1441b441d`) and the aurora cube-unit fix (`06fade99b`, `fc2487164`) are on this branch. The round 24 audit of the aurora fix (findings N1 and N3) records that the tip's capture never runs and that the evidence line claims light the tip does not make; the light sum, the coefficient stride and the aurora pictures are on `fix/m3-sky-layer-light`",
-	'M3-R1':
-		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
 	'M3-R27':
 		"the owner saw the redrawn aurora beside the current pictures on all three Mac paths and ruled that the lake reflection looks too blurry, so the lake drawing is not accepted yet: find where the blur comes from — how the ice samples the sky, whether the material's roughness picks a blurred level of the environment map, or the reflection's own resolution — sharpen it, show the owner, and then redraw the six demo-aurora references in both sets. The ice-plane fix waits with it so the aurora is redrawn once",
 	'M3-G5':
@@ -123,7 +119,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-V2':
 		'`fix/m3-v2-surface-inputs` at `86baced95` is refused by `check-v2-tip.md`, and its helper is fixing the findings',
 	'M3-G2': 'no Khronos iridescence sample is tested',
-	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',
 	'M3-R4': 'D-247 does not compare frame time, and the Mac GPU figure is owed',
 	'M3-R19':
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
