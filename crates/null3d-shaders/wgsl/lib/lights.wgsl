@@ -311,7 +311,7 @@ fn clustered_light(
 }
 
 /// The directional lights after the main one that one frame can light a surface with. The frame
-/// keeps their directions and colors in this many slots, and `fill_count.x` says how many are set.
+/// keeps their directions and colors in this many slots, and `fill_n.x` says how many are set.
 const FILL_LIGHT_SLOTS: u32 = 3u;
 
 /// The light that the frame's fill directional lights give a surface: the directional lights
@@ -321,32 +321,21 @@ const FILL_LIGHT_SLOTS: u32 = 3u;
 /// them; it serves the main light alone.
 fn fill_light(m: PbrMaterial, normal: vec3f, to_view: vec3f, compensation: vec3f) -> Reflected {
     var sum = Reflected(vec3f(0.0), vec3f(0.0));
-    let count = min(u32(frame.fill_count.x), FILL_LIGHT_SLOTS);
-    if count == 0u {
-        return sum;
-    }
-    let directions = array<vec4f, FILL_LIGHT_SLOTS>(
-        frame.fill_direction_first,
-        frame.fill_direction_second,
-        frame.fill_direction_third,
-    );
-    let colors = array<vec4f, FILL_LIGHT_SLOTS>(
-        frame.fill_color_first,
-        frame.fill_color_second,
-        frame.fill_color_third,
-    );
-    for (var k = 0u; k < count; k++) {
-        let to_light = -directions[k].xyz;
-        let reflected = direct_surface_light(
-            m,
-            normal,
-            to_view,
-            to_light,
-            colors[k].rgb,
-            compensation,
+    let n = min(u32(frame.fill_n.x), FILL_LIGHT_SLOTS);
+    for (var k = 0u; k < n; k++) {
+        let direction = select(
+            select(frame.fill_dir_a, frame.fill_dir_b, k == 1u),
+            frame.fill_dir_c,
+            k == 2u,
         );
-        sum.diffuse += reflected.diffuse;
-        sum.specular += reflected.specular;
+        let color = select(
+            select(frame.fill_col_a, frame.fill_col_b, k == 1u),
+            frame.fill_col_c,
+            k == 2u,
+        );
+        let l = direct_surface_light(m, normal, to_view, -direction.xyz, color.rgb, compensation);
+        sum.diffuse += l.diffuse;
+        sum.specular += l.specular;
     }
     return sum;
 }
