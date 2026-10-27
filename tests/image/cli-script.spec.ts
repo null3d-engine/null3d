@@ -159,15 +159,38 @@ test.describe('the night town showcase through three states', () => {
 		rmSync(drawn, { recursive: true, force: true });
 	});
 
+	/** The pose that the route holds at its opening, which the script's first step leaves. */
+	const OPENING = [-30, 30, -40] as const;
+
+	/** How far apart two positions stand, in meters. */
+	const apart = (a: readonly number[], b: readonly number[]): number =>
+		Math.hypot(
+			(a[0] as number) - (b[0] as number),
+			(a[1] as number) - (b[1] as number),
+			(a[2] as number) - (b[2] as number),
+		);
+
+	/** The camera positions that the script's dumps read, in the order of their times. */
+	const dumpedPositions = (text: string): { at: number; position: number[] }[] =>
+		[...text.matchAll(/Dump at ([\d.]+) s: "#camera" position is (\[[^\]]*\])\./g)].map(
+			(match) => ({ at: Number(match[1]), position: JSON.parse(match[2] as string) as number[] }),
+		);
+
 	for (const state of SCRIPT_STATES)
 		test(`${SCRIPT_TEST}-${state} on ${SCRIPT_TIER}`, async () => {
 			expect(code, output).toBe(0);
 			expect(output).toContain(`Drew ${state} at `);
 			expect(output).not.toContain('failed:');
-			// The script's property step widens the active camera's lens, and its dump reads it back.
-			if (state === 'wide') expect(output).toContain('Dump at 2 s: "#camera" fov is [60].');
 			const run = SCRIPT_RUNS.find((one) => one.test === `${SCRIPT_TEST}-${state}`);
 			expect(run).toBeDefined();
+			// Each state's camera stands away from the route's opening and from the other states: a
+			// state that its steps left unmoved, or that a later step undid, would meet this figure.
+			const dumps = dumpedPositions(output);
+			const mine = dumps.find((one) => one.at === run!.hold);
+			expect(mine, output).toBeDefined();
+			expect(apart(mine!.position, OPENING)).toBeGreaterThan(1);
+			for (const other of dumps)
+				if (other !== mine) expect(apart(mine!.position, other.position)).toBeGreaterThan(1);
 			const place = { environment: environmentNamed(test.info().project.name) };
 			clearCandidate(run!, place);
 			const image = readPng(join(drawn, `night-town-${state}.png`));
