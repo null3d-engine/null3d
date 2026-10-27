@@ -1428,8 +1428,14 @@ impl GpuDrivenRenderer {
         // A draw whose count the GPU writes needs the indirect path: the direct path reads every
         // count on the CPU and creates no indirect buffer for the frame's count copy. The first
         // frame picks the builder's path, so a scene that holds such a draw takes the indirect one.
-        if !self.created && !self.settings.feature_instances().is_empty() {
-            self.config.direct_draws = false;
+        // A draw that arrives after that frame has no indirect draw to reach, so the frame refuses
+        // it rather than draw nothing.
+        if !self.settings.feature_instances().is_empty() {
+            if !self.created {
+                self.config.direct_draws = false;
+            } else if self.config.direct_draws {
+                return Err(RecordError::FeatureDrawAfterFirstFrame);
+            }
         }
         let parity = input.parity();
         let shadow = self.settings.shadow_frame(input);

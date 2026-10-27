@@ -12,7 +12,7 @@ use null3d_gpu::drawlist::{
 };
 use null3d_gpu::mock::MockBackend;
 use null3d_render::feature_instances::{INSTANCE_BYTES, INSTANCE_FLOATS};
-use null3d_render::frame::FrameBuilder;
+use null3d_render::frame::{FrameBuilder, RecordError};
 use null3d_render::gpu_driven::{
     RendererConfig, feature_buffer_ids, feature_relative_buffer, view_indirect_buffer,
 };
@@ -117,6 +117,53 @@ fn a_device_that_chose_the_direct_path_draws_a_feature_draw_indirectly() {
             .any(|(op, o)| *op == Op::CopyBufferToBuffer && o[0] == counts),
         "the count reaches the indirect draw"
     );
+}
+
+#[test]
+fn a_draw_made_after_the_first_frame_is_refused_on_the_direct_path() {
+    // The direct path fixes its choice on the first frame and keeps no indirect draw. A draw that
+    // the scene adds after that frame cannot draw its count, so the frame refuses it and names the
+    // fault instead of drawing nothing.
+    let direct = RendererConfig {
+        direct_draws: true,
+        ..RendererConfig::default()
+    };
+    let mut world = World::with_config(direct);
+    world.record(true);
+    add_draw(&mut world, 16, 5);
+    assert_eq!(
+        world.try_record(true),
+        Err(RecordError::FeatureDrawAfterFirstFrame)
+    );
+}
+
+#[test]
+fn a_draw_made_after_the_first_frame_draws_on_the_indirect_path() {
+    // The indirect path makes the draw's indirect entry and its count copy whenever the draw
+    // arrives, so a frame after the first one takes it.
+    let mut world = World::new();
+    world.record(true);
+    let counts = add_draw(&mut world, 16, 5);
+    assert!(world.try_record(true).is_ok());
+    let commands = world.commands();
+    assert!(
+        commands
+            .iter()
+            .any(|(op, o)| *op == Op::CopyBufferToBuffer && o[0] == counts),
+        "the count reaches the indirect draw"
+    );
+}
+
+/// Makes a draw of `capacity` instances on the world's first object, with `count` as the page's
+/// count, and returns the draw's count word.
+fn add_draw(world: &mut World, capacity: u32, count: u32) -> u32 {
+    let handle = world.objects[0];
+    world.scene.set_local_radius(handle, 1.0).unwrap();
+    let slot = world.scene.resolve(handle).unwrap();
+    let table = world.renderer.settings_mut().feature_instances_mut();
+    let id = table.create(slot, capacity).unwrap();
+    assert!(table.set_count(id, count));
+    feature_buffer_ids(id).1
 }
 
 #[test]

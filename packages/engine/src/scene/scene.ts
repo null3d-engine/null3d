@@ -4774,7 +4774,9 @@ export class Scene implements ViewHolder {
 	 *
 	 * Throws E1223 for a description that the adapter cannot place or a capacity that it cannot
 	 * take, E1215, E1216 and E1217 for WGSL and values that `materials.shader` refuses, E1206 for
-	 * vertex data that makes no mesh, and E1406 when the adapter does not download.
+	 * vertex data that makes no mesh, and E1406 when the adapter does not download. A draw that
+	 * arrives after the first frame on a device that draws directly fails the frame with E1506:
+	 * create it in the setup, and await this call there.
 	 */
 	async addComputeInstances<const Wgsl extends string | CompiledWgsl = string | CompiledWgsl>(
 		description: FeatureDescription,

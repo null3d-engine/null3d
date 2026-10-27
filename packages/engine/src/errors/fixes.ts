@@ -150,6 +150,8 @@ export const ERROR_FIXES = {
 		'Break the loop: a pass cannot read its own texture. To show a mirror in a mirror, add a pass for the inner mirror first, and let the outer pass read its texture.',
 	E1505:
 		"Draw into targets of one size and one sample count in each pass, and into at most four color targets. If the message names only the engine's own passes, report it with the message, the browser and the quality preset.",
+	E1506:
+		"Create the draw in the sketch's setup, and await addComputeInstances() there, before the first frame. A device that draws directly fixes that choice at its first frame, and cannot take a draw whose count the GPU writes after it. Destroy the draw to let the frames draw again.",
 } satisfies Record<string, string>;
 
 /**

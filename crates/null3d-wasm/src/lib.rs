@@ -164,6 +164,9 @@ mod codes {
     pub const NOT_READY: u32 = 1403;
     /// A mesh, material or GPU buffer is full, or an id names nothing (details say which).
     pub const RENDER: u32 = 1501;
+    /// A draw whose instance count the GPU writes arrived after the first frame, on a device that
+    /// draws directly.
+    pub const FEATURE_DRAW_AFTER_FIRST_FRAME: u32 = 1506;
 }
 
 /// Details of `codes::RENDER` failures.
@@ -417,6 +420,9 @@ fn record_failure(error: RecordError) -> u32 {
         RecordError::UploadsFull => (render_detail::UPLOADS_FULL, 0),
         RecordError::ShadowAtlasTooLarge { megabytes } => {
             (render_detail::SHADOW_ATLAS_TOO_LARGE, megabytes)
+        }
+        RecordError::FeatureDrawAfterFirstFrame => {
+            return fail(codes::FEATURE_DRAW_AFTER_FIRST_FRAME, [0, 0]);
         }
         RecordError::OutOfMemory { bytes } => {
             return core_failure(CoreError::OutOfMemory { bytes });
