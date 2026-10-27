@@ -465,7 +465,7 @@ On WebGL2 the maps of one standard material share six textures on the GPU. Maps 
 ## 11. Assets (`api/assets`)
 
 ```ts
-assets.onProgress((loaded, total, url) => page.post('loading', loaded / total));  // returns a remover
+assets.onProgress((loaded, total, url) => page.post('loading', Math.min(1, loaded / Math.max(total, loaded))));  // returns a remover
 await assets.preload(['/tex/bricks.png', '/level.json']);      // later loads take these from memory
 const data = await assets.loadJson('/level.json');             // also loadBinary, loadTexture
 const bitmap = await assets.loadImageBitmap('/ui/logo.png', { colorSpace, flipY, premultipliedAlpha });
