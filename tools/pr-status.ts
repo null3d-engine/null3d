@@ -133,7 +133,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 	'M3-O1': 'the test runs only in Chromium on Linux, with no Safari or Firefox run on record',
 	'M3-G2': 'no Khronos iridescence sample is tested',
 	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',
-	'M3-R3': 'no 5% match is shown for the upload arenas or the shadow casters',
 	'M3-R4': 'D-247 does not compare frame time, and the Mac GPU figure is owed',
 	'M3-R19':
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
