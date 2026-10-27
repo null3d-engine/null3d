@@ -124,8 +124,10 @@ preset, and the software GPU at Low, as the image manifest's showcase tests do.
 
 The real GPU's three references are in the repository, drawn on this Mac. The software GPU's
 references are drawn on CI's SwiftShader: the spec saves each new picture as a candidate, and
-accepting one makes it a reference. CI run `40445667147` drew the three, and a local run with
-`CI=1` then compared them and passed four of four in 1.4 minutes.
+accepting one makes it a reference. CI run `40445667147` drew the three and saved them as
+candidates, and it failed only because those references did not exist yet, as a run that draws new
+references does. A local run with `CI=1` then compared the accepted references and passed four of
+four in 1.4 minutes.
 
 The rejected option drove `examples/input`, a basic demo, for its input steps. The showcase reads
 its own camera keys and the pointer, so the night town script drives those. The fixture project
