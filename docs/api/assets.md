@@ -159,7 +159,7 @@ The loader calls `load` once for each primitive that carries one of the handler'
 
 `load` returns one part, a list of parts, or nothing, which draws nothing. A part is `{ mesh, material }`. The loader places the parts at the primitive's node, so copies of the model draw them, and `prefab.destroy()` frees them. A primitive that a handler claims draws only what the handler returns. The other primitives of the same mesh draw as usual. `load` may return a promise.
 
-A file that requires an extension which an add-on reads loads with that add-on's handler. Without it, the load fails with [E1417](../errors/E1417.md), and the message names the package to import. For example, the message for `KHR_gaussian_splatting` names `@null3d/splats`. A file that only uses such an extension, and does not require it, draws without that extension's data when no handler reads it.
+A file that requires an extension which an add-on reads loads with that add-on's handler. Without it, the load fails with [E1417](../errors/E1417.md), and the message names the package to import. For example, the message for `KHR_gaussian_splatting` names `@null3d/splats`. A file that only uses such an extension, and does not require it, draws without that extension's data when no handler reads it. Development builds warn about each name in a file's `extensionsUsed` that neither the loader nor a registered handler reads. When an add-on reads the extension, the warning names the package to import. Production builds print nothing.
 
 ## Color grading tables
 
