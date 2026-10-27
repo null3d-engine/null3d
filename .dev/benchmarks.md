@@ -205,6 +205,8 @@ The GPU check needs a quiet computer only while it times. So it runs in two step
 
 On the owner's Mac, `--measure` holds the quiet window for about 3.75 minutes and builds nothing. A check that also builds holds it for 6.6 to 14.3 minutes, most of it for builds. A first `--prepare` with an empty cache took 30 minutes in the CPU lane, while other builds ran. [D-109](decisions/D-109-gpu-time-guard.md#two-steps-and-a-shared-baseline) gives the figures.
 
+Two builds of the same engine moved s4 high by about 5 per cent, so a smaller change is the check's own spread.
+
 Add `--shard 2/3` to run only the pages of one shard, as a CI shard does. Each run writes its record to `runs.json` beside its summary. `bun run bench:run --merge <folder>` judges the records under a folder as one comparison, as the report job does. It needs no browser, and fails only when the records miss a page: the verdict is in `summary.json`.
 
 ## Visual figures and captured frames
