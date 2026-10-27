@@ -38,18 +38,27 @@ export async function framesDrawn(engine: Engine, seconds = 0.5, windows = 10): 
 }
 
 /**
- * Measures the engine for `seconds`, and again in the same window while that window holds no frame:
- * a software GPU on a busy machine can take longer than one window for a frame, and the figures of
- * a window without one say nothing about the work the engine does. The last measurement comes back
- * after `windows` windows, whatever it holds.
+ * Measures the engine for `seconds`, then again for twice as long each time while the measurement
+ * holds no frame: a software GPU on a busy machine can take longer than one window for a frame, and
+ * a window without one says nothing about the work the engine does. A repeat of the same window
+ * never holds a frame that does not fit, so each further window doubles. The last measurement comes
+ * back after `windows` measurements, whatever it holds.
  */
 export async function measureDrawing(
 	engine: Engine,
 	seconds: number,
-	windows = 10,
+	windows = 4,
 ): Promise<FrameMetrics> {
-	let stats = await engine.measure(seconds);
-	for (let window = 1; window < windows && stats.frames === 0; window++)
-		stats = await engine.measure(seconds);
+	let stats: FrameMetrics | undefined;
+	await measureUntil(
+		engine,
+		seconds,
+		windows - 1,
+		(more) => {
+			stats = more;
+		},
+		() => (stats?.frames ?? 0) > 0,
+	);
+	if (!stats) throw new Error('the page took no measurement');
 	return stats;
 }

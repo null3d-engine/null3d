@@ -98,7 +98,9 @@ export const MODELS_HDR = sampleUrl('sources/hdri/polyhaven/venice_sunset/venice
  * KHR_materials_clearcoat and KHR_materials_sheen draw under the sun, and two of them also under the
  * HDR environment, whose light the coat reflects and the sheen gathers. The toy car has a coat, a
  * sheen and glass in one model. The Khronos grid of KHR_materials_anisotropy draws beside the
- * code-built scene, so a strict comparison covers the real file too.
+ * code-built scene, so a strict comparison covers the real file too. The Khronos linear
+ * interpolation test compares a factor with the value that a texture samples, so a transfer
+ * function applied after filtering changes its picture.
  */
 export const MODEL_SCENES = {
 	'metal-rough': {
@@ -182,6 +184,16 @@ export const MODEL_SCENES = {
 		file: () => anisotropyBuilder().glb(),
 		ownLights: true,
 		timeoutSeconds: LAYERS_SECONDS,
+	},
+	// Khronos's linear interpolation test: a sphere whose emissive factor is 0.5 green beside one
+	// that samples the same value from a 2 by 1 texture. The two must draw the same green, so a
+	// texture decoded after its texels filter shows a difference. The repository keeps this CC0
+	// file, 13 KB, beside its tests.
+	'texture-linear-interpolation': {
+		url: new URL(
+			'../../tests/pages/assets/models/sources/khronos/TextureLinearInterpolationTest/TextureLinearInterpolationTest.glb',
+			import.meta.url,
+		).href,
 	},
 	// The Khronos test grid: the stretch of KHR_materials_anisotropy over seven strengths against
 	// seven roughnesses, whose polished surfaces reflect the environment's light.
