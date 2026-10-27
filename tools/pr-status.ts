@@ -40,7 +40,6 @@ const ON_BRANCH = new Set(['M3-V2']);
 // ticked here until the gap closes, whatever code it already has.
 const INCOMPLETE = new Set([
 	'M3-B1',
-	'M3-B3',
 	'M3-B5',
 	'M3-V4',
 	'M3-F2',
@@ -122,8 +121,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
 	'M3-B1':
 		"the re-run at four times the pixels does not resolve the cost either: its off side reads 2.72 to 5.03 ms on WebGPU and 8.24 to 11.23 on WebGL2 across the presets, more than most marks cost, so the scene's own variation still swamps the look, and the GPU idles through most of each frame. Seven of the twenty-one marks keep their whole range above zero but that is not resolution: WebGL2 grain is 0.38 with a range to 9.40 and WebGL2 vignette 1.16 with a range to 5.90, and the WebGPU presets read Low 2.00, Medium 3.41 and Ultra 1.27, out of order for the same work. The method to close it: draw the look, or one mark, sixteen to thirty-two times a frame and divide; on WebGPU read the look's own pass from the per-pass timer (0.065536 ms steps), not the whole frame's difference; and alternate the sides every frame or few frames so a clock change hits both. Grade and vignette run inside the final pass and add no pass, so read that pass's part with each on and off, or state the design reason and show the part unchanged within a step. WebGL2's whole-frame figure spans the shared timeline, so those rows need another measure or must say they are not a cost",
-	'M3-B3':
-		"the Showroom tablet the task names is M3-C2's work, which is not built; the screen demo's software-GPU pictures were redrawn from CI on 25 October and no longer stand in the way",
 	'M3-B5':
 		'the glints draw and are tested in both sets; its cost per preset is owed (D-255), which needs a quiet GPU',
 	'M3-V4':
