@@ -71,7 +71,7 @@ Row `i` starts at index `i * 3` in an array of 3 floats per row, and at `i * 4` 
 
 The arrays are `Float32Array` views of engine memory. The engine's memory can grow when the scene grows: new meshes, batches, materials and lights, and textures made or updated from data. In the single-threaded build, growth empties every older view, and a write to an empty view does nothing. So read the arrays from the batch each time you use them, such as at the start of `onUpdate`. Do not keep them from the setup. A read allocates nothing while the memory keeps its size.
 
-To turn rows, write quaternions. The engine normalizes each one, so a value that is not unit length still only turns its row and never stretches or shears it. The [math helpers](../api/math.md) make them without allocating:
+To turn rows, write quaternions. The engine scales a rotation more than one per cent off unit length. A mistyped quaternion therefore only turns its row, and never stretches or shears it. The [math helpers](../api/math.md) make them without allocating:
 
 ```ts
 import { defineSketch, quat } from '@null3d/engine';
