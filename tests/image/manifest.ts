@@ -1872,6 +1872,27 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tolerance: { maxDiffRatio: 0.005 },
 		reference: 'spot-shadows',
 	},
+	// The same scene with the two spot lights' shadows thinned at each of their intensity values:
+	// none, half and all of it, which is the default. The tile each light casts into carries the
+	// value beside its tile count, so these pictures are the test that a point or spot light reads
+	// its shadow strength where the shader expects it.
+	...(
+		[
+			['none', 0],
+			['half', 0.5],
+			['full', 1],
+		] as const
+	).map(
+		([name, intensity]): ImageTest => ({
+			name: `spot-shadows-intensity-${name}`,
+			sketch: `tests/pages/sketches/spot-shadows-sketch.ts?intensity=${intensity}`,
+			hold: 0,
+			size: [480, 270],
+			switches: ['shadowTileSize=1024'],
+			sameOnEveryTier: true,
+			tolerance: { maxDiffRatio: 0.005 },
+		}),
+	),
 	// Point light shadows: one point light among casters on every side, whose shadows fall across
 	// the six tiles of its cube onto the ground and a wall. The switch turns point light shadows
 	// on, as the presets of WebGL2 and compatibility mode leave them off.
