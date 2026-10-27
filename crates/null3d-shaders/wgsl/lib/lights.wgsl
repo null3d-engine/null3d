@@ -204,8 +204,9 @@ fn spot_map(
 /// The light that a PBR surface reflects toward the camera from the point, spot and area lights of
 /// its cluster, as three.js's `RE_Direct_Physical` gives it for each point and spot light, and its
 /// `RE_Direct_RectArea_Physical` for each area light. `relative` is the
-/// surface's position relative to the camera, `normal` its unit normal, and `to_view` the unit
-/// direction toward the camera. `compensation` comes from `multiscatter_compensation`. In the
+/// surface's position relative to the camera, `normal` its unit normal, `mesh_normal` that normal
+/// before a normal map bends it, which moves a shadow lookup off the surface, and `to_view` the
+/// unit direction toward the camera. `compensation` comes from `multiscatter_compensation`. In the
 /// TRANSLUCENCY builds each light also adds the light that reaches the surface's back, shadowed
 /// from the side that it falls on (null3d::translucency). COAT_SHEEN builds each light lights the
 /// surface's clear coat and sheen too (null3d::coat_sheen).
@@ -213,6 +214,7 @@ fn clustered_light(
     m: PbrMaterial,
     relative: vec3f,
     normal: vec3f,
+    mesh_normal: vec3f,
     to_view: vec3f,
     compensation: vec3f,
 ) -> Reflected {
@@ -261,10 +263,10 @@ fn clustered_light(
         if tile > 0.5 && strength > 0.0 {
             let seen = relative + frame.shadow_origin.xyz;
 #ifdef TRANSLUCENCY
-            let side = lit_side(normal, to_light);
+            let side = lit_side(mesh_normal, to_light);
             strength *= light_shadow(u32(tile) - 1u, seen, side, to_light, gap);
 #else
-            strength *= light_shadow(u32(tile) - 1u, seen, normal, to_light, gap);
+            strength *= light_shadow(u32(tile) - 1u, seen, mesh_normal, to_light, gap);
 #endif
         }
 #endif

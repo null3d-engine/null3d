@@ -132,7 +132,8 @@ fn no_plane() -> ReceiverPlane {
     return ReceiverPlane(vec2f(0.0), -2.0, vec2f(0.0));
 }
 
-/// How far a receiver moves before its shadow lookup, relative to its position. `normal` is its unit
+/// How far a receiver moves before its shadow lookup, relative to its position. `normal` is the
+/// mesh's unit normal before a normal map bends it, as three.js offsets a receiver along its vertex
 /// normal, `to_light` the unit direction toward the light, `biases` the light's bias toward the
 /// light and normal bias in meters, and `texel` the size of a shadow map texel at the point. Each
 /// bias keeps its size in meters in every cascade, so it does not jump where one cascade gives way
@@ -149,9 +150,11 @@ fn bias_offset(normal: vec3f, to_light: vec3f, biases: vec2f, texel: f32) -> vec
     return to_light * (capped.x * slope) + normal * (capped.y * sine);
 }
 
-/// The plane of a receiver at `relative`, with unit normal `normal` and unit direction `to_light`
+/// The plane of a receiver at `relative`, with unit normal `plane_normal` and unit direction `to_light`
 /// toward the light, in the texels of a cascade whose matrix is `view_proj` and whose layers have
-/// `size` texels on each side. The cascade's projection is orthographic: each row of the matrix's
+/// `size` texels on each side. The normal is the plane of the mesh's triangle, turned toward the
+/// light: it is the geometry that the shadow map holds, so a normal map does not move the plane off
+/// the triangle that casts the depth. The cascade's projection is orthographic: each row of the matrix's
 /// upper 3 x 3 part is one of the light's axes, scaled. So the plane stays a plane in the map, and
 /// the depth's change per texel comes straight from the normal in the light's axes: along each
 /// axis, the normal's share there over its share toward the light, scaled by the rows' sizes. The
@@ -160,17 +163,17 @@ fn bias_offset(normal: vec3f, to_light: vec3f, biases: vec2f, texel: f32) -> vec
 fn receiver_plane(
     view_proj: mat4x4f,
     relative: vec3f,
-    normal: vec3f,
+    plane_normal: vec3f,
     to_light: vec3f,
     size: f32,
 ) -> ReceiverPlane {
-    let cosine = dot(normal, to_light);
+    let cosine = dot(plane_normal, to_light);
     if cosine <= 0.0 {
         return no_plane();
     }
     // The normal in clip space's axes: each component is the normal's share along that axis, times
     // the row's size.
-    let n = (view_proj * vec4f(normal, 0.0)).xyz;
+    let n = (view_proj * vec4f(plane_normal, 0.0)).xyz;
     if abs(n.z) < 1e-12 {
         return no_plane();
     }
@@ -317,12 +320,12 @@ fn sun_biases(cascade: u32) -> vec2f {
 /// where the hero's box does not reach the point, which the cascades then shadow. The box holds
 /// the object's own shadow alone, so a point outside it in the light's view sees no caster of the
 /// tile's.
-fn sun_hero(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
+fn sun_hero(relative: vec3f, mesh_normal: vec3f, to_light: vec3f) -> f32 {
     let params = shadows.hero.params;
     if params.w < 0.5 {
         return -1.0;
     }
-    let offset = bias_offset(normal, to_light, params.yz, params.x);
+    let offset = bias_offset(mesh_normal, to_light, params.yz, params.x);
     let clip = shadows.hero.view_proj * vec4f(relative + offset, 1.0);
     if clip.z < 0.0 || clip.z > 1.0 || max(abs(clip.x), abs(clip.y)) > 1.0 {
         return -1.0;
@@ -337,13 +340,14 @@ fn sun_hero(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
 
 /// How much of the main directional light reaches a point: 1 in full light, 0 in full shadow.
 /// `relative` is the point's position relative to the main camera: in another view, its position
-/// relative to that view's camera plus the frame's `shadow_origin`. `normal` is its unit normal,
-/// which moves the point off its own surface before the lookup, and `to_light` the unit direction toward
-/// the light.
-fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
+/// relative to that view's camera plus the frame's `shadow_origin`. `mesh_normal` is the surface's
+/// unit normal before a normal map bends it, which moves the point off its own surface before the
+/// lookup, `plane_normal` the unit normal of the triangle's plane turned toward the light, which
+/// each stored depth compares with, and `to_light` the unit direction toward the light.
+fn sun_shadow(relative: vec3f, mesh_normal: vec3f, plane_normal: vec3f, to_light: vec3f) -> f32 {
     // The hero object draws its own shadow into a tile of the atlas, fitted tightly to it. A
     // receiver inside that box reads it before the cascades, whose texels are far coarser there.
-    let hero = sun_hero(relative, normal, to_light);
+    let hero = sun_hero(relative, mesh_normal, to_light);
     if hero >= 0.0 {
         return hero;
     }
@@ -379,7 +383,7 @@ fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
     var clip = vec4f(0.0);
     for (var k = 0u; k < count; k++) {
         if cascade == MAX_CASCADES && k >= first {
-            let at = sun_clip(k, relative, normal, to_light);
+            let at = sun_clip(k, relative, mesh_normal, to_light);
             if sun_holds(at) {
                 cascade = k;
                 clip = at;
@@ -389,27 +393,27 @@ fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
     if cascade == MAX_CASCADES {
         return 1.0;
     }
-    var lit = sun_layer(cascade, clip, relative, normal, to_light);
+    var lit = sun_layer(cascade, clip, relative, plane_normal, to_light);
     // In the band at the cascade's far end, the shadow fades linearly into the next cascade's, which
     // the next box holds there. Only the band's receivers read a second layer.
     let band = shadows.cascades.bands[cascade];
     if cascade == first && cascade + 1u < count && distance > band {
         let next = cascade + 1u;
-        let at = sun_clip(next, relative, normal, to_light);
+        let at = sun_clip(next, relative, mesh_normal, to_light);
         if sun_holds(at) {
             let weight = (distance - band) / max(shadows.cascades.ends[cascade] - band, 1e-6);
-            lit = mix(lit, sun_layer(next, at, relative, normal, to_light), min(weight, 1.0));
+            lit = mix(lit, sun_layer(next, at, relative, plane_normal, to_light), min(weight, 1.0));
         }
     }
     return mix(lit, 1.0, smoothstep(end * (1.0 - FADE_SHARE), end, along));
 }
 
-/// The clip position in cascade `cascade` of a receiver at `relative`, with unit normal `normal`
-/// and unit direction `to_light` toward the light, after the light's biases at that cascade's
-/// texels move it.
-fn sun_clip(cascade: u32, relative: vec3f, normal: vec3f, to_light: vec3f) -> vec4f {
+/// The clip position in cascade `cascade` of a receiver at `relative`, with the mesh's unit normal
+/// `mesh_normal` and unit direction `to_light` toward the light, after the light's biases at that
+/// cascade's texels move it.
+fn sun_clip(cascade: u32, relative: vec3f, mesh_normal: vec3f, to_light: vec3f) -> vec4f {
     let texel = shadows.cascades.texels[cascade];
-    let offset = bias_offset(normal, to_light, sun_biases(cascade), texel);
+    let offset = bias_offset(mesh_normal, to_light, sun_biases(cascade), texel);
     return shadows.cascades.view_proj[cascade] * vec4f(relative + offset, 1.0);
 }
 
@@ -422,15 +426,22 @@ fn sun_holds(clip: vec4f) -> bool {
 
 /// How much of the main directional light reaches a receiver through cascade `cascade`, where the
 /// receiver lies at `clip` in the cascade's clip space (`sun_clip`), blended over the filter's
-/// square of texels.
-fn sun_layer(cascade: u32, clip: vec4f, relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
+/// square of texels. `plane_normal` is the unit normal of the receiver's triangle, turned toward
+/// the light, which the filter compares each stored depth with.
+fn sun_layer(
+    cascade: u32,
+    clip: vec4f,
+    relative: vec3f,
+    plane_normal: vec3f,
+    to_light: vec3f,
+) -> f32 {
     var uv = clip.xy * vec2f(0.5, -0.5) + 0.5;
 #ifdef WEBGL2
     // WebGL2 keeps the rows of a drawn texture bottom first.
     uv.y = 1.0 - uv.y;
 #endif
     let m = shadows.cascades.view_proj[cascade];
-    let plane = receiver_plane(m, relative, normal, to_light, shadows.cascades.kernel.x);
+    let plane = receiver_plane(m, relative, plane_normal, to_light, shadows.cascades.kernel.x);
     return sun_filtered(shadows.cascades.kernel, uv, cascade, clip.z, plane);
 }
 
@@ -497,12 +508,14 @@ fn cube_face(direction: vec3f) -> u32 {
 
 /// How much of a point or spot light reaches a point: 1 in full light, 0 in full shadow. `first`
 /// is the light's first tile. `relative` is the point's position relative to the main camera, as
-/// `sun_shadow` takes it, `normal` its unit normal, `to_light` the unit direction toward the light, and `gap` the distance to it.
+/// `sun_shadow` takes it, `mesh_normal` the surface's unit normal before a normal map bends it,
+/// which moves the sample off its own surface, `to_light` the unit direction toward the light, and
+/// `gap` the distance to it.
 /// The light's biases are in meters, up to one texel of the tile at the point's distance from the
 /// light (`bias_offset`). A point outside its tile's view is lit.
-fn light_shadow(first: u32, relative: vec3f, normal: vec3f, to_light: vec3f, gap: f32) -> f32 {
+fn light_shadow(first: u32, relative: vec3f, mesh_normal: vec3f, to_light: vec3f, gap: f32) -> f32 {
     let params = shadows.tiles.params[first];
-    let moved = relative + bias_offset(normal, to_light, params.yz, params.x * gap);
+    let moved = relative + bias_offset(mesh_normal, to_light, params.yz, params.x * gap);
     var tile = first;
     if params.w > 1.5 {
         tile += cube_face(moved - (relative + to_light * gap));

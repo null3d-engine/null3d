@@ -1796,10 +1796,13 @@ fn has_surrounding() -> bool {
 /// `occlusion` darkens the ambient and hemisphere lights and the environment's diffuse light, and
 /// its specular light as three.js's `computeSpecularOcclusion` does. The environment's specular
 /// light also fades where the shading `normal` reflects the view below the mesh's own
-/// `vertex_normal`. `contact` is the share of the sun's light that the sun's contact shadows let
-/// through. `relative` is the surface's position relative to the camera, `to_view` points from the
-/// surface toward the camera, and `dfg` holds the split-sum terms at the surface's roughness and
-/// view angle. `reflection` holds light from the mirror direction and its share, from screen-space
+/// `vertex_normal`. The sun and the clustered lights move their shadow lookups off the surface by
+/// the mesh's own normal, `vertex_normal`, before a normal map bends it, and the sun compares each
+/// stored depth with the plane of the mesh's triangle, `face_normal`, turned toward the sun.
+/// `contact` is the share of the sun's light that the sun's contact shadows let through. `relative`
+/// is the surface's position relative to the camera, `to_view` points from the surface toward the
+/// camera, and `dfg` holds the split-sum terms at the surface's roughness and view angle.
+/// `reflection` holds light from the mirror direction and its share, from screen-space
 /// reflections and a custom material's planar reflection, which takes the place of that share of
 /// the reflection probes' and the environment's reflection, with or without either. `lobe_values`
 /// holds the material's own values for its lobe function, which the engine calls for the main
@@ -1810,6 +1813,7 @@ fn light_surface(
     relative: vec3f,
     normal: vec3f,
     vertex_normal: vec3f,
+    face_normal: vec3f,
     to_view: vec3f,
     dfg: vec2f,
     extra: vec3f,
@@ -1829,7 +1833,7 @@ fn light_surface(
     // the surface itself in its way.
     let seen = relative + engine_frame.shadow_origin.xyz;
     let facing = dot(normal, to_sun) > 0.0;
-    sun_color *= sun_shadow(seen, lit_side(normal, to_sun), to_sun) * select(1.0, contact, facing);
+    sun_color *= sun_shadow(seen, lit_side(vertex_normal, to_sun), face_normal, to_sun) * select(1.0, contact, facing);
 #else
     // A surface that faces away from the sun gets none of its light whatever the shadow map
     // holds, so it skips the lookup and the filter's reads. A coat that faces the sun still
@@ -1841,7 +1845,7 @@ fn light_surface(
     let facing = dot(normal, to_sun);
 #endif
     if facing > 0.0 {
-        sun_color *= sun_shadow(relative + engine_frame.shadow_origin.xyz, normal, to_sun) * contact;
+        sun_color *= sun_shadow(relative + engine_frame.shadow_origin.xyz, vertex_normal, face_normal, to_sun) * contact;
     }
 #endif
 #endif
@@ -1869,7 +1873,7 @@ fn light_surface(
     gather_back_light(normal, to_sun, sun_color);
     back_indirect = ambient_light(-normal) * occlusion;
 #endif
-    let clustered = clustered_light(m, relative, normal, to_view, compensation);
+    let clustered = clustered_light(m, relative, normal, vertex_normal, to_view, compensation);
     let n_dot_v = saturate(dot(normal, to_view));
     let surrounding_light = ambient_light(normal) + extra;
 #ifdef COAT_SHEEN
@@ -1935,12 +1939,15 @@ fn light_surface(
 /// camera sees what lies behind it. The exposure and the tone mapping apply, and the scene's fog does
 /// not, as three.js applies them to that material. Only the main directional light's shadows fall on
 /// it. The mesh must receive shadows, so a build without `RECEIVE_SHADOWS` draws nothing.
-fn shadow_catcher(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
+/// `face_normal` is the unit normal of the triangle's plane, turned toward the sun, which each
+/// stored depth compares with.
+fn shadow_catcher(s: Surface, input: SurfaceInput, face_normal: vec3f, pixel: vec4f) -> vec4f {
     var shadow = 0.0;
 #ifdef RECEIVE_SHADOWS
     shadow = 1.0 - sun_shadow(
         input.relativePosition + engine_frame.shadow_origin.xyz,
-        s.normal,
+        input.normal,
+        face_normal,
         -engine_frame.sun_direction.xyz,
     );
 #endif
@@ -1974,6 +1981,12 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #else
     let face = cross(dpdx(input.relativePosition), dpdy(input.relativePosition));
 #endif
+    // The plane of the mesh's triangle, turned toward the sun: the shadow filter compares each
+    // stored depth with this plane, and the map holds the triangles themselves, so a normal map's
+    // tilt must not move it. The turn gives the plane the side that the light's projection reads.
+    let plane_normal = normalize(
+        select(face, -face, dot(face, engine_frame.sun_direction.xyz) > 0.0),
+    );
     // The alpha tests' derivatives come here too, before the shadow-catcher branch: a derivative
     // must run in uniform control flow, and everything after the branch depends on it.
 #ifdef ALPHA_HASH
@@ -1983,7 +1996,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let alpha_width = fwidth(s.alpha);
 #endif
     if (u32(material_row.strengths.z) & SHADOW_CATCHER_FLAG) != 0u {
-        return shadow_catcher(s, input, pixel);
+        return shadow_catcher(s, input, plane_normal, pixel);
     }
     // The material's dielectric specular values, times its specular maps in the MAPS builds.
     var specular = material_row.specular;
@@ -2112,6 +2125,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         input.relativePosition,
         normal,
         input.normal,
+        plane_normal,
         input.viewDirection,
         dfg,
         s.irradiance * engine_frame.output.exposure,
