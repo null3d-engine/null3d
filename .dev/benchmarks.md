@@ -204,6 +204,7 @@ The GPU check needs a quiet computer only while it times. So it runs in two step
 
 - A control tree answers whether one call costs enough to move it. Commit the change in a second checkout, and run `--prepare --base <checkout>` from the checkout that times; a `--prepare` inside the control prepares it as a branch instead. A control with the aerial perspective left out of `lib/mesh.wgsl` gave four readings that moved +1.0%, −7.8%, +7.3% and +2.1%. That is inside the machine's own variation, so every mesh build keeps the call.
 - A task that changes a benchmark page needs a control for another reason. The tool judges no times when the pages differ between the two builds, since each build runs its own commit's pages. So the control carries the task's new pages and leaves out only the engine change, and both builds then draw the same scene.
+- Time the branch after it merges the milestone, not before. A line taken earlier describes a tree that no longer exists, and the shader and render files that the check times often move with the merge. Three branches in one night were refused for a line that measured their work on the milestone of the day before.
 
 On the owner's Mac, `--measure` holds the quiet window for about 3.75 minutes and builds nothing. A check that also builds holds it for 6.6 to 14.3 minutes, most of it for builds. A first `--prepare` with an empty cache took 30 minutes in the CPU lane, while other builds ran. [D-109](decisions/D-109-gpu-time-guard.md#two-steps-and-a-shared-baseline) gives the figures.
 
