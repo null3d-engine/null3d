@@ -46,7 +46,7 @@ Three colored directional lights show three lit sides on the floor of shapes and
 
 ## Decision
 
-Option A. The core gathers the directional lights that the view sees, in creation order, in `LightTable::gather`. The first is the main light, and it keeps the shadows. The next three become `FrameLights::fills`, and a further one is dropped. The renderer writes their directions and exposed colors into six vectors of the frame's uniform block, and the count into the fourth float of the sun's color. The block grows from 992 to 1,088 bytes. The lit material's surface function and the lit lines loop over the count and add `direct_surface_light` for each fill, with no shadow lookup. The coat and sheen layer and the translucency's back light treat each fill as the point and spot lights treat theirs.
+Option A. The core gathers the directional lights that the view sees, in creation order, in `LightTable::gather`. The first is the main light, and it keeps the shadows. The next three become `FrameLights::fills`, and a further one is dropped. The renderer writes their directions and exposed colors into six vectors of the frame's uniform block. It writes their count into the fourth float of the sun's color. The block grows from 992 to 1,088 bytes. The lit material's surface function and the lit lines loop over the count and add `direct_surface_light` for each fill, with no shadow lookup. The coat and sheen layer and the translucency's back light treat each fill as the point and spot lights treat theirs.
 
 ## Consequences
 
