@@ -68,7 +68,7 @@ sub-pixels at every distance and shimmers far away.
 
 - The demos show the add-on: `canvas-screen` draws four panels with three rates and a close console
   panel, the picking demo's wall plan is a screen, and the showroom demo has a tablet. The Skyway
-  cockpit follows when the interior work in that demo settles.
+  cockpit draws from the same add-on, after the interior work in that demo settled.
 - `docs/guides/screens.md` and the cookbook's screen recipe give the calls and their limits, and the
   develop skill's recipe points at them.
 - `examples/addons/screens/map.test.ts` holds the coordinate mapping: the corners, the middle, the
