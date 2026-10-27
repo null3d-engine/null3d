@@ -186,11 +186,15 @@ struct MaterialRow {
     /// The scale of a light map's texture coordinates along u and v, then their offset along u
     /// and v. The identity leaves the coordinates as the mesh gives them.
     light_map_uv: vec4f,
-    /// The transforms of the maps of the slots from the second up, two `vec4f`s each: the 2 x 3
+    /// The layers of the transmission and thickness maps in the texture arrays of the specular
+    /// slots, which the shader samples through those slots' bindings: the transmission map's layer,
+    /// then the thickness map's, each a negative value where the map draws nothing.
+    volume: vec4f,
+    /// The transforms of the maps of the row slots from the second up, two `vec4f`s each: the 2 x 3
     /// matrix's row that gives u, then the row that gives v. The base color map's two rows are
     /// `Material::uv_u` and `Material::uv_v`, in the values that every shader reads. A map whose
     /// transform is the identity reads the coordinates as the mesh gives them.
-    map_uv: array<vec4f, 14>,
+    map_uv: array<vec4f, 18>,
 }
 
 /// The values of a material that lets light through: its row's `transmission` and `attenuation`.

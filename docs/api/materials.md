@@ -135,10 +135,10 @@ A surface with `transmission` lets the light behind it through, as three.js's `M
 | Value | What it does |
 | --- | --- |
 | `transmission` | How much light passes through. That share of the surface's diffuse light becomes the light from behind it, times the base color. The surface's reflections stay, so glass still shows its highlights and the environment |
-| `transmissionMap` | The same share, per texel, in red. Its red multiplies `transmission`. A material with it takes no `specularIntensityMap`, since the two share a slot |
+| `transmissionMap` | The same share, per texel, in red. Its red multiplies `transmission`. It keeps a row slot of its own and samples the specular intensity map's texture array at its own layer, so a `specularIntensityMap` draws beside it where the two textures share an array |
 | `ior` | How far the light bends where it enters the volume. Glass is 1.5, water 1.33 |
 | `thickness` | How deep the volume is. The light leaves it this far along the bent direction, so a thicker volume shows what lies behind it farther away. 0 is a thin wall, such as a window pane, which bends nothing |
-| `thicknessMap` | The thickness, per texel, in green. Its green multiplies `thickness`. A material with it takes no `specularColorMap`, since the two share a slot |
+| `thicknessMap` | The thickness, per texel, in green. Its green multiplies `thickness`. It keeps a row slot of its own and samples the specular color map's texture array at its own layer, so a `specularColorMap` draws beside it where the two textures share an array |
 | `roughness` | How much the light from behind blurs: none at 0, and very blurred at 1. An `ior` of 1 blurs nothing |
 | `attenuationColor`, `attenuationDistance` | The color of the volume. White light takes `attenuationColor` after `attenuationDistance` inside it, and a deeper color farther in. The default absorbs nothing |
 
@@ -164,7 +164,7 @@ After the camera's view draws its opaque objects, the engine copies their colors
 - `thickness` is in the mesh's own units, and the object's scale multiplies it.
 - Such a surface takes the `opaque` or `blend` alpha mode. `mask` and `hash` throw E1217.
 - Views other than the camera's, such as [scene passes](render.md#scene-passes) and [reflection passes](render.md#reflection-passes), have no copy. There the surface shows the environment's light along the bent ray.
-- A material with `transmissionMap` or `thicknessMap` takes no `specularIntensityMap` and no `specularColorMap`, because the two families of map read the same slots. Development builds throw E1217 for a material that asks for both. A layered material keeps the two maps beside a clear coat, a sheen, iridescence or anisotropy, as long as no layer map fills the slot that one of them takes: the transmission map shares the specular intensity map's slot with `clearcoatNormalMap` and `iridescenceThicknessMap`, and the thickness map shares the specular color map's slot with the sheen's maps and `anisotropyMap`. A development build throws E1217 for each such clash.
+- `transmissionMap` and `thicknessMap` keep row slots of their own and sample the specular slots' texture arrays at layers of their own, so a specular map draws beside them. Two textures share an array when their size and format agree, as two textures from data of one size do. A specular color texture is sRGB and a thickness texture is linear, so those two never share an array: a development build throws E1217 for them. A layered material keeps the two maps beside a clear coat, a sheen, iridescence or anisotropy, as long as no layer map fills the array that one of them samples: `clearcoatNormalMap` and `iridescenceThicknessMap` fill the specular intensity slot's array, and the sheen's maps and `anisotropyMap` fill the specular color slot's. A development build throws E1217 for each such clash.
 
 ### Cost of transmission
 
@@ -282,7 +282,7 @@ Give any of these values, or a layer map, when you create the material, to chang
 
 The layers' maps take the places of the light map and the specular maps. So a material with a clear coat, a sheen, iridescence or anisotropy takes no `lightMap`, `specularIntensityMap` or `specularColorMap`, and no `diffuseTransmission`. Development builds throw E1217 for them, and production builds draw the material without them. Its `specularIntensity` and `specularColor` values still apply. Give `clearcoatMap` and `clearcoatRoughnessMap` as one texture, with the coat in red and its roughness in green, and `sheenColorMap` and `sheenRoughnessMap` as one texture, with the roughness in alpha. glTF packs them this way, and two textures for a pair throw E1217. An sRGB texture keeps its alpha linear, so one sRGB texture holds the sheen's color and roughness.
 
-A material with `transmission` keeps its `transmissionMap` and `thicknessMap` in the two specular slots beside the layers, if no layer map fills the slot that one of them takes. The transmission map shares the specular intensity map's slot with `clearcoatNormalMap` and `iridescenceThicknessMap`, and the thickness map shares the specular color map's slot with `sheenColorMap`, `sheenRoughnessMap` and `anisotropyMap`. A development build throws E1217 for a material that asks for two maps of one slot.
+A material with `transmission` keeps its `transmissionMap` and `thicknessMap` in row slots of their own, sampling the specular slots' arrays beside the layers, if no layer map fills the array that one of them samples. `clearcoatNormalMap` and `iridescenceThicknessMap` fill the specular intensity slot's array, and `sheenColorMap`, `sheenRoughnessMap` and `anisotropyMap` fill the specular color slot's. A development build throws E1217 for a material that asks for two maps of one slot.
 
 ### How the layers draw
 
@@ -334,7 +334,7 @@ Give any of these values, or a map, when you create the material, to change the 
 | `iridescenceThicknessMap` | G, linear | Mixes `iridescenceThicknessRange` between its two values |
 | `anisotropyMap` | RG direction, B strength, linear | Red and green give the direction in the tangent plane, and blue multiplies `anisotropy` |
 
-A material with these maps takes no `lightMap` and no specular maps, since the maps take their places. A material takes the maps of a clear coat and a sheen, or the maps of iridescence and the anisotropy: the coat's and the sheen's maps fill every place. Development builds throw E1217 for a material that asks for both families. Production builds keep the coat's and the sheen's maps and draw the others' values alone. The glTF loader keeps the coat's and the sheen's maps and notes the others. A material with `transmission` keeps its `transmissionMap` and `thicknessMap` beside these maps where the slot of one stays free: `iridescenceThicknessMap` fills the transmission map's slot and `anisotropyMap` fills the thickness map's, so a material takes one of each pair.
+A material with these maps takes no `lightMap` and no specular maps, since the maps take their places. A material takes the maps of a clear coat and a sheen, or the maps of iridescence and the anisotropy: the coat's and the sheen's maps fill every place. Development builds throw E1217 for a material that asks for both families. Production builds keep the coat's and the sheen's maps and draw the others' values alone. The glTF loader keeps the coat's and the sheen's maps and notes the others. A material with `transmission` keeps its `transmissionMap` and `thicknessMap` beside these maps where the array of one stays free: `iridescenceThicknessMap` fills the transmission map's array and `anisotropyMap` fills the thickness map's, so a material takes one of each pair.
 
 A material with `anisotropy` needs a map, because the direction it stretches along comes from the surface's tangent frame, which the shader builds from the texture coordinates. Three.js builds that frame from the coordinates too. A material with anisotropy and no map throws E1217.
 
@@ -442,14 +442,14 @@ const brick = materials.standard({
 | `specularColorMap` | Standard | RGB, sRGB | Multiplies `specularColor` |
 | `diffuseTransmissionMap` | Standard with `diffuseTransmission` | A, linear | Its alpha multiplies `diffuseTransmission` |
 | `diffuseTransmissionColorMap` | Standard with `diffuseTransmission` | RGB, sRGB | Multiplies `diffuseTransmissionColor` |
-| `transmissionMap` | Standard with `transmission` | R, linear | Its red multiplies `transmission`, in the place of the specular intensity map |
-| `thicknessMap` | Standard with `transmission` | G, linear | Its green multiplies `thickness`, in the place of the specular color map |
+| `transmissionMap` | Standard with `transmission` | R, linear | Its red multiplies `transmission`. It keeps a row slot of its own, in the specular intensity map's texture array |
+| `thicknessMap` | Standard with `transmission` | G, linear | Its green multiplies `thickness`. It keeps a row slot of its own, in the specular color map's texture array |
 | `clearcoatMap`, `clearcoatRoughnessMap`, `clearcoatNormalMap`, `sheenColorMap`, `sheenRoughnessMap` | Standard | See "Maps of the layers" | The maps of the clear coat and the sheen, in place of the light map and the specular maps |
 | `iridescenceMap`, `iridescenceThicknessMap`, `anisotropyMap` | Standard | See "Maps of iridescence and anisotropy" | The maps of the thin film and the stretched lobe, in the same places |
 
 A material with `diffuseTransmission` takes the two diffuse transmission maps in the places of the specular maps, and takes no specular maps. A material without it, or with a clear coat, a sheen, iridescence or anisotropy, takes no diffuse transmission maps. Development builds throw E1217 for either.
 
-A material with `transmission` may take `transmissionMap` and `thicknessMap` in the places of the specular maps, and then takes no specular maps. A layered material keeps them beside its layers, unless a layer map fills the slot that one of them takes. Development builds throw E1217 for a material that asks for two maps of one slot, and for the two maps without `transmission`.
+A material with `transmission` may take `transmissionMap` and `thicknessMap` beside the specular maps: each keeps a row slot of its own and samples the specular slot's texture array at a layer of its own. Give both together only where the two textures share an array, as two textures of the same size and format do; a transmission map keeps its own layer and its own transform either way. A layered material keeps them beside its layers, unless a layer map fills the slot that one of them samples. Development builds throw E1217 for a map without `transmission`, and for a map whose slot a layer map fills.
 
 The maps of a material are fixed when you create it. A mesh needs texture coordinates to show them, and a mesh without them draws the material without its maps. A map reads the set of coordinates that its texture's `uvSet` names. Light maps usually use the second set, so load them with `uvSet: 1`. A mesh without a second set gives its first set to such a map.
 

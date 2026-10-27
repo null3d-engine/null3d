@@ -1448,28 +1448,32 @@ export function parseGltf(
 		if (alphaMode !== 'OPAQUE' && alphaMode !== 'MASK' && alphaMode !== 'BLEND')
 			broken(`${what} has the alpha mode ${alphaMode}`);
 		const transmission = transmissionOf(extensions, what, alphaMode === 'MASK', notes);
-		// The transmission and thickness textures take the specular textures' slots, and the loader
-		// keeps the specular textures, since the material API takes one family of the two. A layered
-		// material's specular textures stay out, and its own layer maps fill those slots instead: its
-		// transmission and thickness textures fit beside the one layer map of the light slot.
+		// The transmission and thickness textures keep row slots of their own beside the specular
+		// textures, each sampling the specular slot's texture array at its own layer. A layered
+		// material's specular textures stay out, since its layer maps fill those slots: its
+		// transmission and thickness textures fit beside the one layer map of the light slot, but
+		// not beside a layer map that fills their slot.
 		const transmissionExtension = extensions.KHR_materials_transmission as Entry | undefined;
 		const volume = (extensions.KHR_materials_volume ?? {}) as Entry;
-		const specularTexture = specular.specularTexture ?? specular.specularColorTexture;
-		const intensityTaken = layered
-			? (layerMaps.coatNormal ?? layerMaps.iridescenceThickness) !== undefined
-			: specularTexture !== undefined;
-		const colorTaken = layered
-			? (layerMaps.sheenColor ?? layerMaps.sheenRoughness ?? layerMaps.anisotropy) !== undefined
-			: specularTexture !== undefined;
+		const intensityTaken =
+			layered && (layerMaps.coatNormal ?? layerMaps.iridescenceThickness) !== undefined;
+		const colorTaken =
+			layered &&
+			(layerMaps.sheenColor ?? layerMaps.sheenRoughness ?? layerMaps.anisotropy) !==
+				undefined;
+		// A specular texture is linear, like the transmission texture, so the two share a texture
+		// array when their images have one size and format. A specular color texture is sRGB, so a
+		// thickness texture never shares its array: the two stay apart.
+		const colorTexture = !layered && specular.specularColorTexture !== undefined;
 		const takesTransmissionMap =
 			transmission !== undefined &&
 			transmissionExtension?.transmissionTexture !== undefined &&
 			!intensityTaken;
 		const takesThicknessMap =
-			transmission !== undefined && volume.thicknessTexture !== undefined && !colorTaken;
-		// A layered material loses a volume texture only to the layer map of its slot. Another
-		// material loses both beside a specular texture, since the material API takes one family
-		// of the two.
+			transmission !== undefined &&
+			volume.thicknessTexture !== undefined &&
+			!colorTaken &&
+			!colorTexture;
 		const intensityOwner =
 			layerMaps.coatNormal !== undefined
 				? "the clear coat's normal texture"
@@ -1478,20 +1482,24 @@ export function parseGltf(
 			layerMaps.sheenColor !== undefined || layerMaps.sheenRoughness !== undefined
 				? "the sheen's texture"
 				: 'the anisotropy texture';
-		const intensityReason = layered
-			? `where ${intensityOwner} fills the same slot`
-			: 'beside a specular texture';
-		const colorReason = layered
-			? `where ${colorOwner} fills the same slot`
-			: 'beside a specular texture';
 		if (
 			transmission !== undefined &&
 			transmissionExtension?.transmissionTexture !== undefined &&
 			intensityTaken
 		)
-			notes.push(`${what}'s transmissionTexture, which it leaves out ${intensityReason}`);
-		if (transmission !== undefined && volume.thicknessTexture !== undefined && colorTaken)
-			notes.push(`${what}'s thicknessTexture, which it leaves out ${colorReason}`);
+			notes.push(
+				`${what}'s transmissionTexture, which it leaves out where ${intensityOwner} fills the same slot`,
+			);
+		if (transmission !== undefined && volume.thicknessTexture !== undefined) {
+			if (colorTaken)
+				notes.push(
+					`${what}'s thicknessTexture, which it leaves out where ${colorOwner} fills the same slot`,
+				);
+			else if (colorTexture)
+				notes.push(
+					`${what}'s thicknessTexture, which it leaves out beside a specular color texture, whose sRGB texels never share its texture array`,
+				);
+		}
 		const slots = {
 			map: useTexture(pbr.baseColorTexture, 'srgb', `${what}'s baseColorTexture`),
 			metalnessRoughnessMap: useTexture(

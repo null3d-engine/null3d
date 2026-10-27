@@ -507,9 +507,9 @@ fn material_light_map_uv(id: u32) -> vec4f {
 #endif
 }
 
-/// The texel of a material's row where the transforms of the maps of the slots from the second up
-/// start, two texels for each.
-const MATERIAL_MAP_UV_TEXEL: u32 = 18u;
+/// The texel of a material's row where the transforms of the maps of the row slots from the second
+/// up start, two texels for each.
+const MATERIAL_MAP_UV_TEXEL: u32 = 19u;
 
 /// The two rows of a 2 x 3 matrix that places a map on the texture coordinates: the row that gives
 /// u, then the row that gives v. Each row's fourth float is a spare.
@@ -527,6 +527,17 @@ fn material_map_uv(id: u32, slot: u32) -> MapUvRows {
 #else
     let at = (slot - 1u) * 2u;
     return MapUvRows(materials[id].map_uv[at], materials[id].map_uv[at + 1u]);
+#endif
+}
+
+/// The layers of material `id`'s transmission and thickness maps in the specular slots' texture
+/// arrays: the transmission map's layer, then the thickness map's, each negative where the map
+/// draws nothing. A shader reads each through the slot's binding at that layer.
+fn material_volume_layers(id: u32) -> vec2f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(18u, id), 0).xy;
+#else
+    return materials[id].volume.xy;
 #endif
 }
 

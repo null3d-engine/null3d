@@ -4,6 +4,8 @@ import { ERROR_FIXES } from '../errors/fixes';
 import {
 	MAP_ROW_SLOT_COAT,
 	MAP_ROW_SLOT_SHEEN_COLOR,
+	MAP_ROW_SLOT_THICKNESS,
+	MAP_ROW_SLOT_TRANSMISSION,
 	MAP_SLOT_ANISOTROPY,
 	MAP_SLOT_BASE_COLOR,
 	MAP_SLOT_BUMP,
@@ -789,12 +791,21 @@ describe('Material.set', () => {
 		// A clear coat's roughness map leaves the slot to a different coat map.
 		const coat = slotOwners({ clearcoatMap: tex, clearcoatRoughnessMap: texture(2) }, 0, true);
 		expect(coat[MAP_ROW_SLOT_COAT]).toBe('clearcoatMap');
-		// A transmission map leaves the specular intensity map's slot to that map, and a thickness
-		// map leaves the specular color map's slot to that one.
-		const volume = slotOwners({ transmissionMap: tex, specularIntensityMap: texture(2) }, 0, false);
+		// A transmission map keeps a row slot of its own, as a thickness map does, so the slot of a
+		// specular map stays with it.
+		const volume = slotOwners(
+			{ transmission: 1, transmissionMap: tex, specularIntensityMap: texture(2) },
+			0,
+			false,
+		);
+		expect(volume[MAP_ROW_SLOT_TRANSMISSION]).toBe('transmissionMap');
 		expect(volume[MAP_SLOT_SPECULAR_INTENSITY]).toBe('specularIntensityMap');
-		const thickness = slotOwners({ thicknessMap: tex, specularColorMap: texture(2) }, 0, false);
-		expect(thickness[MAP_SLOT_SPECULAR_COLOR]).toBe('specularColorMap');
+		const thickness = slotOwners(
+			{ transmission: 1, thicknessMap: tex, specularIntensityMap: texture(2) },
+			0,
+			false,
+		);
+		expect(thickness[MAP_ROW_SLOT_THICKNESS]).toBe('thicknessMap');
 		// A translucent material keeps the diffuse transmission map and leaves out the specular one.
 		const thin = slotOwners(
 			{ diffuseTransmissionMap: tex, specularIntensityMap: texture(2) },
@@ -924,21 +935,32 @@ describe('Material.set', () => {
 			thicknessMap: texture(6, 1),
 		});
 		expect((features[0] ?? 0) & MATERIAL_FEATURE_TRANSMISSION).toBe(MATERIAL_FEATURE_TRANSMISSION);
-		// They take the two slots that the specular maps leave free, and read the same channels.
+		// They keep row slots of their own, each sampling the specular slot's texture array.
 		expect(maps).toEqual([
 			[1, MAP_SLOT_TRANSMISSION, 5, 0],
 			[1, MAP_SLOT_THICKNESS, 6, 1],
 		]);
-		// A material that asks for the specular maps too is refused, never drawn without one.
-		const specular = thrown(() =>
+		// A specular map keeps its own slot beside the transmission map, and draws with it.
+		materials.standard({
+			transmission: 0.8,
+			transmissionMap: texture(8),
+			specularIntensityMap: texture(9),
+		});
+		expect(maps.slice(-2)).toEqual([
+			[2, MAP_SLOT_SPECULAR_INTENSITY, 9, 0],
+			[2, MAP_SLOT_TRANSMISSION, 8, 0],
+		]);
+		// A specular color texture is sRGB, so it never shares a texture array with a linear
+		// thickness texture: the pair is refused rather than drawn without one.
+		const colorThickness = thrown(() =>
 			materials.standard({
 				transmission: 0.8,
-				transmissionMap: texture(5),
-				specularIntensityMap: texture(5),
+				thicknessMap: texture(6),
+				specularColorMap: texture(7),
 			}),
 		);
-		expect(specular.message).toStartWith(
-			'E1217: materials.standard() got specularIntensityMap with transmissionMap;',
+		expect(colorThickness.message).toStartWith(
+			'E1217: materials.standard() got thicknessMap with specularColorMap;',
 		);
 		const opaque = thrown(() => materials.standard({ thicknessMap: texture(5) }));
 		expect(opaque.message).toStartWith(
@@ -959,8 +981,8 @@ describe('Material.set', () => {
 			transmissionMap: texture(5),
 			thicknessMap: texture(6, 1),
 		});
-		expect(maps.at(-2)).toEqual([2, MAP_SLOT_TRANSMISSION, 5, 0]);
-		expect(maps.at(-1)).toEqual([2, MAP_SLOT_THICKNESS, 6, 1]);
+		expect(maps.at(-2)).toEqual([3, MAP_SLOT_TRANSMISSION, 5, 0]);
+		expect(maps.at(-1)).toEqual([3, MAP_SLOT_THICKNESS, 6, 1]);
 		const coatNormal = thrown(() =>
 			materials.standard({
 				transmission: 0.8,
@@ -992,9 +1014,9 @@ describe('Material.set', () => {
 			thicknessMap: texture(6, 1),
 		});
 		expect(maps.slice(-3)).toEqual([
-			[3, MAP_SLOT_TRANSMISSION, 5, 0],
-			[3, MAP_SLOT_THICKNESS, 6, 1],
-			[3, MAP_SLOT_COAT, 7, 0],
+			[4, MAP_SLOT_TRANSMISSION, 5, 0],
+			[4, MAP_SLOT_THICKNESS, 6, 1],
+			[4, MAP_SLOT_COAT, 7, 0],
 		]);
 		// One specular slot may hold a layer map while the other holds a volume map: a coat normal
 		// map fills the specular intensity slot, so only the thickness map fits beside it.
@@ -1005,10 +1027,10 @@ describe('Material.set', () => {
 			thicknessMap: texture(6),
 		});
 		expect(maps.slice(-2)).toEqual([
-			[4, MAP_SLOT_THICKNESS, 6, 0],
-			[4, MAP_SLOT_COAT_NORMAL, 7, 0],
+			[5, MAP_SLOT_THICKNESS, 6, 0],
+			[5, MAP_SLOT_COAT_NORMAL, 7, 0],
 		]);
-		expect(table).toHaveLength(4);
+		expect(table).toHaveLength(5);
 	});
 
 	test('refuses diffuse transmission beside layers and the weighted blending', () => {
