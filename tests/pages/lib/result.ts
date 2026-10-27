@@ -102,6 +102,27 @@ const BrowserWorker = Worker;
 /** Workers the page started and has not stopped, and the workers it stopped. */
 const workerCounts = { live: 0, stopped: 0 };
 
+/**
+ * The worker roles whose first start the page makes fail, from ?fail-first-worker=. Each fails once,
+ * so the engine starts a second copy of the worker and the page must still reach its result. A
+ * value names one role, or both roles separated by a comma.
+ */
+const FAILED_FIRST = new Set(
+	(new URLSearchParams(location.search).get('fail-first-worker') ?? '').split(',').filter(Boolean),
+);
+/** The roles whose first start the page has already made fail. */
+const FAILED_ROLE = new Set<string>();
+/** The address that a worker told to fail at its first start loads instead, which no server serves. */
+const MISSING_WORKER = '/tests/pages/lib/worker-that-does-not-load.js';
+
+/**
+ * The role of an engine worker, from its name, such as `sketch` from `null3d-sketch`, or undefined
+ * for a worker that the engine does not name, such as a decoder's task worker.
+ */
+function roleOf(name: string): string | undefined {
+	return name.startsWith('null3d-') ? name.slice('null3d-'.length) : undefined;
+}
+
 /** The workers the page started and has not stopped. */
 export function liveWorkers(): number {
 	return workerCounts.live;
@@ -135,11 +156,16 @@ function reloadWorker(name: string, url: string | URL, options: WorkerOptions | 
  * then names the workers that are running, and whether a second copy of the worker loads.
  */
 globalThis.Worker = class extends BrowserWorker {
-	constructor(url: string | URL, options?: WorkerOptions) {
-		super(url, options);
-		const name = options?.name ?? String(url).split('/').pop()?.split('?')[0] ?? 'worker';
+	constructor(script: string | URL, options?: WorkerOptions) {
+		const name = options?.name ?? String(script).split('/').pop()?.split('?')[0] ?? 'worker';
+		const role = roleOf(name);
+		// A worker whose first start the page makes fail loads an address that no server serves, so
+		// the browser reports the failure the network would give, and the engine starts a copy.
+		const fails = role !== undefined && FAILED_FIRST.has(role) && !FAILED_ROLE.has(role);
+		if (fails) FAILED_ROLE.add(role);
+		super(fails ? MISSING_WORKER : script, options);
 		workerCounts.live++;
-		progress(`${name}: started`);
+		progress(`${name}: started${fails ? ' (its script fails to load on purpose)' : ''}`);
 		this.addEventListener('message', ({ data }: MessageEvent) => {
 			const { type, step } = (data ?? {}) as { type?: unknown; step?: unknown };
 			if (type !== 'sketch-message')
@@ -153,7 +179,7 @@ globalThis.Worker = class extends BrowserWorker {
 			progress(
 				`${name}: failed: its script or a file it imports did not load; ${workerCounts.live} workers running, ${workerCounts.stopped} stopped`,
 			);
-			reloadWorker(name, url, options);
+			reloadWorker(name, script, options);
 		});
 	}
 
@@ -187,6 +213,9 @@ export async function publish(name: string, result: Record<string, unknown>): Pr
 		userAgent: navigator.userAgent,
 		url: location.href,
 		...result,
+		// A page that made a worker's first start fail publishes how many roles it forced, so a test
+		// that forces one cannot pass on a page that never did.
+		...(FAILED_ROLE.size > 0 ? { failedWorkerStarts: FAILED_ROLE.size } : {}),
 		...(fellBack && !('trail' in result) ? { trail: [...trail] } : {}),
 	};
 	window.__null3dResult = report;

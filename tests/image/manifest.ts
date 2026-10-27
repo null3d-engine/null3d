@@ -1396,6 +1396,20 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// A small static scene: lit and unlit meshes, a hierarchy and an instance batch.
 	{ name: 'scene', sketch: 'tests/pages/sketches/boxes-sketch.ts', hold: 0, modes: ALL_MODES },
+	// The engine starts a second copy of a worker whose script did not load, and the page must still
+	// draw: the first start of the sketch and render workers loads an address that no server serves,
+	// as a dropped request does in the wild. A page that goes silent after the second copy fails here
+	// on every run, and a page that recovers draws the scene's own picture. Both roles fail, so the
+	// count of forced starts proves that the switch reached them.
+	{
+		name: 'worker-reload-draws',
+		sketch: 'tests/pages/sketches/boxes-sketch.ts',
+		hold: 0,
+		switches: ['fail-first-worker=sketch,render'],
+		reference: 'scene',
+		expect: { failedWorkerStarts: 2 },
+		tiers: ['webgl2'],
+	},
 	// A water sheet whose custom material reads the copy of the opaque scene's depth: shallow
 	// edges stay pale, deep water darkens, and foam shows where a box nearly touches the sheet.
 	// Both GPU paths and every thread mode must bind the copy the same way.
