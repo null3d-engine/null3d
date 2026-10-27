@@ -46,17 +46,20 @@ enable draw_index;
 /// The light that each fragment adds in the overdraw view, as linear color.
 const OVERDRAW_STEP: vec3f = vec3f(0.05, 0.025, 0.01);
 
-/// The levels view's colors, one for each level of detail from the base mesh down, as sRGB.
-const LEVEL_COLORS = array<vec3f, 8>(
-    vec3f(0.20, 0.45, 0.95),
-    vec3f(0.20, 0.80, 0.35),
-    vec3f(0.95, 0.85, 0.20),
-    vec3f(0.95, 0.50, 0.15),
-    vec3f(0.90, 0.20, 0.20),
-    vec3f(0.85, 0.30, 0.80),
-    vec3f(0.20, 0.85, 0.85),
-    vec3f(0.70, 0.70, 0.70),
-);
+/// The levels view's color for a level of detail, from the base mesh down, as sRGB. The levels
+/// past the last one take the last color.
+fn level_color(level: u32) -> vec3f {
+    switch level {
+        case 0u: { return vec3f(0.20, 0.45, 0.95); }
+        case 1u: { return vec3f(0.20, 0.80, 0.35); }
+        case 2u: { return vec3f(0.95, 0.85, 0.20); }
+        case 3u: { return vec3f(0.95, 0.50, 0.15); }
+        case 4u: { return vec3f(0.90, 0.20, 0.20); }
+        case 5u: { return vec3f(0.85, 0.30, 0.80); }
+        case 6u: { return vec3f(0.20, 0.85, 0.85); }
+        default: { return vec3f(0.70, 0.70, 0.70); }
+    }
+}
 /// The two sRGB colors of the levels view's marker for a source that the size rule or a draw
 /// range hid. The marker alternates them in squares, so it reads as a mark rather than a level.
 const HIDDEN_DARK: vec3f = vec3f(0.22, 0.0, 0.28);
@@ -163,7 +166,7 @@ fn tint(level: u32, hidden: bool, pixel: vec2f) -> vec3f {
         let cell = (u32(pixel.x) >> 2u) ^ (u32(pixel.y) >> 2u);
         return srgb_to_linear(select(HIDDEN_DARK, HIDDEN_LIGHT, (cell & 1u) == 0u));
     }
-    return srgb_to_linear(LEVEL_COLORS[min(level, 7u)]);
+    return srgb_to_linear(level_color(level));
 }
 
 @fragment
