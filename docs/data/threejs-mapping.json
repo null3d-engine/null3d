@@ -711,13 +711,13 @@
     {
       "id": "shadow-params",
       "category": "Lights and shadows",
-      "three": "light.shadow.mapSize / bias / normalBias / radius / camera",
+      "three": "light.shadow.mapSize / bias / normalBias / intensity / radius / camera",
       "status": "changed",
       "since": "0.1",
-      "target": "shadow: { mapSize, bias, normalBias, cascades, distance } in the directional light's options, or light.setShadow()",
-      "notes": "mapSize is one number, the texels on each side. bias and normalBias are in meters, where three.js gives bias in depth units, so start from the defaults. The directional light's map stores 16-bit depth, so in each cascade bias covers at least 1.5 of its depth steps, about 2 cm in a far cascade 200 m out. radius and blurSamples become the shadowFilter quality setting, 3 or 5 texels on each side. shadow.camera has no equivalent: the cascades fit the camera's view.",
+      "target": "shadow: { mapSize, bias, normalBias, intensity, cascades, distance } in the directional light's options, or light.setShadow()",
+      "notes": "mapSize is one number, the texels on each side. bias and normalBias are in meters, where three.js gives bias in depth units, so start from the defaults. The directional light's map stores 16-bit depth, so in each cascade bias covers at least 1.5 of its depth steps, about 2 cm in a far cascade 200 m out. radius and blurSamples become the shadowFilter quality setting, 3 or 5 texels on each side. shadow.camera has no equivalent: the cascades fit the camera's view. intensity is 0 to 1 and carries over as it stands: the shader mixes each shadow lookup toward full light by the rest, at no cost to the frame.",
       "docs": "concepts/shadows",
-      "detect": "\\.shadow\\.(mapSize|bias|normalBias|camera|radius|blurSamples)\\b"
+      "detect": "\\.shadow\\.(mapSize|bias|normalBias|intensity|camera|radius|blurSamples)\\b"
     },
     {
       "id": "legacy-lights",
