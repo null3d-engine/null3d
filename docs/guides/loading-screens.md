@@ -31,7 +31,7 @@ A loading screen covers the canvas while the engine starts and the sketch loads 
 import { defineSketch } from '@null3d/engine';
 
 export default defineSketch(async ({ assets, page, scene }) => {
-  assets.onProgress((loaded, total) => page.post('loading', loaded / total));
+  assets.onProgress((loaded, total) => page.post('loading', Math.min(1, loaded / Math.max(total, loaded))));
   await assets.preload(['/levels/one.json', '/tex/terrain.png', '/tex/rocks.png']);
 
   const level = await assets.loadJson('/levels/one.json');
