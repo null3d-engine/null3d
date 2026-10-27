@@ -1671,6 +1671,57 @@ mod tests {
     /// A camera far from the world's origin, in its own cell, as the core places it.
     const FAR_OUT: [f64; 3] = [977.0 * 1024.0 + 3.3, 5.0, -2.0e5 - 0.7];
 
+    #[test]
+    fn every_cascade_reads_rows_relative_to_the_main_camera() {
+        // A frame converts a feature-instance draw's world rows once, relative to the main camera,
+        // and every shadow view reads those rows through its own light's matrix. That matrix takes
+        // positions relative to the main camera, so the one conversion serves every view: a
+        // conversion for each view would subtract the same position in each of them.
+        let camera = CellPosition {
+            cell: [7, -3, 11],
+            local: [1.5, 0.25, -2.0],
+        };
+        let frame = ShadowFrame {
+            cascades: fit_cascades(
+                &turned(0.0),
+                camera.absolute(),
+                &LENS,
+                16.0 / 9.0,
+                DOWN_AND_ACROSS,
+                &SETTINGS,
+            ),
+            settings: SETTINGS,
+            camera,
+            layers: 1,
+            drawn: 0b111,
+            depth: CascadeDepth::default(),
+            clock: [0.0; 4],
+            hero: None,
+        };
+        // A point below the camera and in front of it, and the same point left in world
+        // coordinates, as a draw that skipped the conversion would hand the shadow view.
+        let relative = [0.0, -4.0, -6.0];
+        let world: [f32; 3] = std::array::from_fn(|k| camera.absolute()[k] as f32 + relative[k]);
+        let mut held = 0;
+        for cascade in 0..SETTINGS.cascades as usize {
+            let view = frame.view_frame(cascade);
+            assert_eq!(
+                view.camera, camera,
+                "cascade {cascade} carries the main camera"
+            );
+            let [x, y, _] = project(&view.uniform.view_proj, relative);
+            if x.abs() < 1.0 && y.abs() < 1.0 {
+                held += 1;
+            }
+            let [x, y, _] = project(&view.uniform.view_proj, world);
+            assert!(
+                x.abs() > 1.0 || y.abs() > 1.0,
+                "cascade {cascade} holds world rows, so its matrix takes them unconverted"
+            );
+        }
+        assert!(held > 0, "a cascade holds the camera-relative point");
+    }
+
     /// The texel of each cascade's layer that holds the world's point `point`, as fractions of
     /// texels, seen from a camera at `position` turned by `yaw` degrees, or `None` where the
     /// point is outside a cascade's box.

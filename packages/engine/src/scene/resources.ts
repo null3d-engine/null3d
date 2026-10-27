@@ -1309,8 +1309,9 @@ export interface StandardValues extends MaterialOptions {
 	/**
 	 * How far the specular reflection stretches along one direction of the surface, from 0 (round)
 	 * to 1, as three.js's `anisotropy`: brushed metal shows a highlight across its grooves rather
-	 * than around. A material with it needs a map, whose coordinates give the surface's tangent
-	 * frame. Give it, or `anisotropyRotation`, when you create the material, to change it later.
+	 * than around. A material with a map takes the stretch's direction from the mesh's tangents or
+	 * from the map's coordinates; a material without one takes a frame square to the surface.
+	 * Give it, or `anisotropyRotation`, when you create the material, to change it later.
 	 * The default is 0.
 	 */
 	anisotropy?: number;
@@ -2860,11 +2861,6 @@ function checkFeatures(options: StandardOptions, call: string): void {
 			`${call}() got diffuseTransmission with the 'weighted' blending; a material of the weighted blending lets no light through to its other side. Give it the 'normal' blending.`,
 		);
 	if (hasLayers(options)) checkLayerMaps(options, call);
-	if (options.anisotropy !== undefined && !MAP_OPTIONS.some(([key]) => options[key] !== undefined))
-		throw new EngineError(
-			'E1217',
-			`${call}() got anisotropy with no map. The direction that the reflection stretches along comes from the surface's texture coordinates, so give the material a map.`,
-		);
 	if (options.parallax && !options.displacementMap)
 		throw new EngineError(
 			'E1217',

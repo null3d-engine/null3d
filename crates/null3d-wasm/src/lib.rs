@@ -61,6 +61,7 @@ use null3d_render::fog_volume::{self, Volumetric};
 use null3d_render::frame::{
     CanvasOutput, FrameBuilder, FrameInput, LevelQuality, RecordError, SceneSettings,
 };
+use null3d_render::frame_graph::PrepassColor;
 use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
@@ -164,6 +165,9 @@ mod codes {
     pub const NOT_READY: u32 = 1403;
     /// A mesh, material or GPU buffer is full, or an id names nothing (details say which).
     pub const RENDER: u32 = 1501;
+    /// A draw whose instance count the GPU writes arrived after the first frame, on a device that
+    /// draws directly.
+    pub const FEATURE_DRAW_AFTER_FIRST_FRAME: u32 = 1506;
 }
 
 /// Details of `codes::RENDER` failures.
@@ -419,6 +423,9 @@ fn record_failure(error: RecordError) -> u32 {
         RecordError::ShadowAtlasTooLarge { megabytes } => {
             (render_detail::SHADOW_ATLAS_TOO_LARGE, megabytes)
         }
+        RecordError::FeatureDrawAfterFirstFrame => {
+            return fail(codes::FEATURE_DRAW_AFTER_FIRST_FRAME, [0, 0]);
+        }
         RecordError::OutOfMemory { bytes } => {
             return core_failure(CoreError::OutOfMemory { bytes });
         }
@@ -529,7 +536,10 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// 8-bit path. `antialias` is the anti-aliasing mode's code; an unknown code takes MSAA.
 /// `transparent` keeps the canvas clear where nothing draws. Without `cell_culling`, culling tests
 /// every object, with no grid cells skipped first. With `depth_prepass`, each camera view draws its
-/// opaque objects' depth before it shades them. `skinning` is the code of WebGPU's skinning mode
+/// opaque objects' depth before it shades them. `prepass_color` is how such a prepass starts the
+/// stand-in color that it never draws, where a screen step splits it from the opaque pass
+/// (`constants::prepass_color`), which a benchmark page measures on WebGL2. `skinning` is the code
+/// of WebGPU's skinning mode
 /// (`constants::SKINNING`): the skinning pass with or without its savings, or the vertex shader of
 /// each pass; an unknown code takes the default. With `index_instances`, WebGPU's vertex shaders
 /// read each culled instance by index from storage buffers, not from a copy that the culling
@@ -558,6 +568,7 @@ pub fn init_engine(
     transparent: bool,
     cell_culling: bool,
     depth_prepass: bool,
+    prepass_color: u32,
     skinning: u32,
     index_instances: bool,
     large_world: bool,
@@ -618,6 +629,7 @@ pub fn init_engine(
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
                 cell_culling,
                 depth_prepass,
+                prepass_color: PrepassColor::from_code(prepass_color),
                 cascade_depth,
                 ..CpuCulledConfig::default()
             }))
@@ -4136,8 +4148,8 @@ pub fn destroy_feature_instances(id: u32) -> u32 {
     })
 }
 
-/// Sets the count that a shadow view draws and that a page without compute sets for a draw whose
-/// instance count the GPU writes.
+/// Sets the count that a page without compute draws for a draw whose instance count the GPU
+/// writes. The count word starts each frame from it.
 #[wasm_bindgen(js_name = setFeatureInstanceCount)]
 pub fn set_feature_instance_count(id: u32, count: u32) -> u32 {
     with_engine(|e| {
@@ -4146,6 +4158,20 @@ pub fn set_feature_instance_count(id: u32, count: u32) -> u32 {
             .feature_instances_mut()
             .set_count(id, count);
         0
+    })
+}
+
+/// Tells the engine whether the add-on's feature draws now, for a draw whose instance count the GPU
+/// writes. A draw that is not ready records no draw, no conversion and no count copy.
+#[wasm_bindgen(js_name = setFeatureInstanceReady)]
+pub fn set_feature_instance_ready(id: u32, ready: bool) -> u32 {
+    with_engine(|e| {
+        u32::from(
+            !e.renderer
+                .settings_mut()
+                .feature_instances_mut()
+                .set_ready(id, ready),
+        )
     })
 }
 

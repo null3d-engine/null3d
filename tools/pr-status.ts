@@ -32,14 +32,13 @@ const PARTIAL: Readonly<Record<string, string>> = {
 };
 
 /** Tasks whose work is on a helper branch, whether or not part of it has reached this branch. */
-const ON_BRANCH = new Set(['M3-E9', 'M3-V2']);
+const ON_BRANCH = new Set(['M3-V2']);
 
 /** A task that a commit names, but that the audit of the branch found unfinished. */
 // The branch's audits read every ticked task against its own "Done when" and its section's rule.
 // A tick states that the task is done, so a task those audits found short of its own line is not
 // ticked here until the gap closes, whatever code it already has.
 const INCOMPLETE = new Set([
-	'M3-V13',
 	'M3-B1',
 	'M3-B3',
 	'M3-B5',
@@ -60,9 +59,7 @@ const INCOMPLETE = new Set([
 	'M3-A9',
 	'M3-V5',
 	'M3-A11',
-	'M3-R1',
 	'M3-G2',
-	'M3-G3',
 	'M3-R4',
 	'M3-R19',
 	'M3-V1',
@@ -82,8 +79,6 @@ const NOTES: Readonly<Record<string, string>> = {
 		'the WebGPU path draws the patches, but D-213 records the WebGL2 multi-draw path and the whole-level fallback as not built, and D-231 holds the GPU time',
 	'M3-R22':
 		"the shader cache on the branch is D-248's change, not this task's: it reuses every entry when a compiler change leaves the compiled program identical, 0 compiled and 79 reused in 19 s, where the same change cost an hour. The task's own change, three entries instead of four for every module kind, is on `feat/m3-r22-entry-set` and not on this branch, and the determinism list here still holds `lit`; the two checks' CI times remain unmeasured",
-	'M3-E9':
-		"the engine half is built and CI has compared its pictures: the count word reaches the main view's indirect entry after the last compute dispatch, an unculled draw reads the add-on's rows and draws that count, and the compute picture fills no row on the CPU. What the task still wants: a first user, since the splats cannot take the hook and V8's blade path is the one in sight; GPU counts in the shadow views, which today take the page's count; and the allocation check and the no-draw-before-ready test from its design note",
 	'M3-F3':
 		"dropped with the temporal resolve it waited on (D-206); M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
 	'M3-F10':
@@ -101,8 +96,6 @@ const NOTES: Readonly<Record<string, string>> = {
  * because both describe the same task and only one of them can be true.
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
-	'M3-R14':
-		"unticked by the round 19 audit: the script causes one change and then reverts it, since the opening is the demo's own held frame with no step, the camera route has already moved two fifths of a leg by the second state, and the third only undoes the lens. The showcase reads keys, so one state reached by key or pointer steps alone would meet the plain reading of the plan. Its software claim is also wrong: the four passing tests compared against Mac-drawn pictures that live on a commit on no branch, and the committed CI-drawn references have never been compared in a passing run",
 	'M3-V15':
 		"unticked by the round 24 audit: no allocation run and no full check-addon run exist for the wind (only the sizes gate, which passes since M3-R25), the gust call is a fading push at one place rather than a gust that travels, a device without float targets reads still air rather than the analytic field, the sampling function is a copy that reads the box's edge rather than a function in the add-on's WGSL namespace with the analytic far field. The owner ruled that M3-V15 waits for M3-V13 with no split into two stages. It stays not done until the solver, the forces and the fixed step are built on M3-V13's repeated pass",
 	'M3-F4':
@@ -119,18 +112,13 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		'five of the six study fixes that D-199 made test cases were never built or tested, and fog jitter and thin rain are untested',
 	'M3-E10':
 		"the owner ruled that a sky layer reaches both the environment map and the CPU sky light; the widening (`1441b441d`) and the aurora cube-unit fix (`06fade99b`, `fc2487164`) are on this branch. The round 24 audit of the aurora fix (findings N1 and N3) records that the tip's capture never runs and that the evidence line claims light the tip does not make; the light sum, the coefficient stride and the aurora pictures are on `fix/m3-sky-layer-light`",
-	'M3-R1':
-		'the depth-of-field test runs on no GPU path, and no adapter can take a full-screen feature yet',
 	'M3-R27':
 		"the owner saw the redrawn aurora beside the current pictures on all three Mac paths and ruled that the lake reflection looks too blurry, so the lake drawing is not accepted yet: find where the blur comes from — how the ice samples the sky, whether the material's roughness picks a blurred level of the environment map, or the reflection's own resolution — sharpen it, show the owner, and then redraw the six demo-aurora references in both sets. The ice-plane fix waits with it so the aurora is redrawn once",
 	'M3-G5':
 		'its branch, `fix/m3-g5-masked-transmission` at `305624b36`, is 14 commits ahead and unmerged. The check refuses it until the branch carries a `GPU-Checked:` line, which blocks the landing; its pushed tip has no CI run; the parity load figures are not in the logs; the mirror figure 0.0325 is WebGPU alone, where compatibility reads 0.0327 and WebGL2 0.0328; the ceiling comment grows by an unstated figure; and the cold build was not taken on a quiet machine',
-	'M3-R23':
-		"`fix/m3-r23-today` at `6fa3fec9e` is 16 commits ahead and unmerged. The owner's tenth ruling closed the bar and the iPad frame-time sentence is fixed. It still owes a `GPU-Checked:` line, because the branch changes WebGL2's backend; a D-266 number that does not collide with the landed D-266; the merge; and the unit tests and the ambient-occlusion pictures",
 	'M3-V2':
 		'`fix/m3-v2-surface-inputs` at `86baced95` is refused by `check-v2-tip.md`, and its helper is fixing the findings',
 	'M3-G2': 'no Khronos iridescence sample is tested',
-	'M3-G3': 'no Khronos anisotropy sample is tested, and anisotropy with no texture draws with none',
 	'M3-R4': 'D-247 does not compare frame time, and the Mac GPU figure is owed',
 	'M3-R19':
 		'the iPad ran at High with the governor on rather than at the pinned scale, and no comparison with the earlier pair was made',
@@ -151,8 +139,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"the spot-map picture covers the cookie on every path and passes; what remains is the owner's call on whether a 128 by 128 pixels-only cookie looks good enough, which the better-look rule raises",
 	'M3-V6':
 		'the same placement is shown only on two Android phones in Chrome, so no second JavaScript engine has placed it, and no iPad run exists; the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
-	'M3-V13':
-		"the Mac's WebGL2 row cannot be the pass's GPU time: the raw file reads 11.08 ms in an 8.28 ms frame, and the busiest thread falls when 40 draws are added, so the query spans more than the frame's work and the figure must be retimed or the query restated. The Mac record also repeats the stale-slot sentence that the frame statistics rule out. And its GPU check is owed: the two lines on the branch read not judged, so a judged `bench:gpu-check` in a quiet window closes it",
 	'M3-E4a':
 		'the material change is on the branch with the water work, but the task asks for a material that declares the scene depth beside two textures on WebGPU, compatibility and WebGL2, and for the cost of a material that reads neither; its helper is finishing that proof',
 	'M3-V5':

@@ -114,6 +114,9 @@ struct RenderPipeline {
     /// The template the pipeline was made from.
     template: u32,
     formats: Formats,
+    /// True when the pipeline writes no color: its fragment stage has no output, so the pass's
+    /// color target, or its absence, does not apply to it.
+    ignores_color: bool,
 }
 
 /// A bind group: the layout it was made with, and the buffers and textures it binds.
@@ -1306,6 +1309,11 @@ impl MockBackend {
                                 format::NONE
                             },
                         },
+                        // A prepass pipeline draws with a shading build whose fragment stage writes
+                        // nothing. WebGL2 draws it into the opaque pass's color, or into a
+                        // depth-only pass of its own, and one build fits both (D-269).
+                        ignores_color: o[3] == format::NONE
+                            && o[6] & state_flags::NO_COLOR_WRITE != 0,
                     },
                 );
             }
@@ -1364,7 +1372,10 @@ impl MockBackend {
                     None => self.pass.expect("in a render pass").formats,
                 };
                 check(
-                    pipeline.formats == drawn,
+                    pipeline.formats.samples == drawn.samples
+                        && pipeline.formats.depth == drawn.depth
+                        && pipeline.formats.second == drawn.second
+                        && (pipeline.formats.color == drawn.color || pipeline.ignores_color),
                     op,
                     "a pipeline draws into the formats and sample count of its pass or bundle",
                 )?;
@@ -1973,6 +1984,57 @@ mod tests {
             ),
             "the one-sample canvas cannot pair with multisampled depth"
         );
+    }
+
+    #[test]
+    fn a_pipeline_that_names_no_color_fits_a_pass_with_or_without_one() {
+        // The WebGL2 prepass draws with a shading build that writes nothing: into the opaque
+        // pass's color, or into a depth-only pass of its own when a screen step splits them
+        // (D-269).
+        let run = |pipeline: [u32; 10], pass: [u32; 9]| {
+            let mut list = DrawList::with_capacity(256);
+            setup(&mut list);
+            list.push(Op::CreateRenderPipeline, &pipeline).unwrap();
+            list.push(Op::BeginRenderPass, &pass).unwrap();
+            list.push(Op::SetPipeline, &[pipeline[0]]).unwrap();
+            MockBackend::default().replay(list.words())
+        };
+        let prepass = [
+            2,
+            template::INSTANCED_LIT,
+            permutation::PREPASS,
+            format::NONE,
+            format::DEPTH32_FLOAT,
+            4,
+            state_flags::NO_COLOR_WRITE,
+            0,
+            0,
+            0,
+        ];
+        let depth_only = [NO_TARGET, NO_TARGET, MSAA_DEPTH, 0, 0, 0, 0, 0, 0];
+        let with_color = [MSAA_COLOR, NO_TARGET, MSAA_DEPTH, 0, 0, 0, 0, 0, 0];
+        assert!(run(prepass, depth_only).is_ok());
+        assert!(run(prepass, with_color).is_ok());
+        // A pipeline that does write color still needs the pass to name that color.
+        let shading = [
+            2,
+            template::INSTANCED_LIT,
+            0,
+            format::CANVAS,
+            format::DEPTH32_FLOAT,
+            4,
+            0,
+            0,
+            0,
+            0,
+        ];
+        assert!(matches!(
+            run(shading, depth_only),
+            Err(MockError::Invalid {
+                op: Op::SetPipeline,
+                ..
+            })
+        ));
     }
 
     // Ids of the texture test below.

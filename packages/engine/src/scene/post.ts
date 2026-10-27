@@ -13,11 +13,15 @@
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
+import { reasonOf } from '../errors/message';
 import * as C from '../generated/core';
 import { hexValue, invalidColor } from '../math/hex';
 import type { Vec3Like } from '../math/types';
+import type { Quality } from '../sketch/quality';
 import { type ColorInput, writeLinearColor } from './color';
 import { type Effect, EffectChain, type EffectOptions } from './effects';
+import type { FeatureEffect, FeatureEffectOptions } from './feature-effects';
+import type { FeatureDescription } from './features';
 import type { GradeValues, GradingSettings, Rgb } from './grading';
 import { Lut } from './lut';
 import type { CoreMemory, ViewHolder } from './memory';
@@ -622,6 +626,11 @@ export class Post implements ViewHolder {
 		 * texture, or `write` takes them.
 		 */
 		private readonly gradeTable?: { write(texels: Float32Array): number },
+		/**
+		 * The sketch's quality, whose changes ask a feature again whether it draws. A post object
+		 * without it leaves a feature's `ready` callback to the calls that the add-on makes.
+		 */
+		private readonly featureQuality?: Quality,
 	) {
 		this.effects = new EffectChain(core, templates, joinEffects);
 		core.holdViews(this);
@@ -675,6 +684,39 @@ export class Post implements ViewHolder {
 	/** Removes an effect from the next frame on. Removing an effect twice does nothing. */
 	removeEffect<Values>(effect: Effect<Values>): void {
 		this.effects.remove(effect as Effect, 'post.removeEffect');
+	}
+
+	/**
+	 * An add-on's full-screen pass, declared by a feature description with the kind `'fullscreen'`
+	 * at the `'resolve'` point. The description gives the place where the pass runs, what it reads
+	 * and writes, and whether it draws at all. The options give the WGSL, its first values and its
+	 * textures, as `addEffect` takes them. The adapter loads on first use.
+	 *
+	 * The effect runs while the feature is ready. The adapter asks again when the quality changes,
+	 * so a feature that the preset or the sketch switches off costs no pass and no target. Its
+	 * values stay, and apply when it draws again.
+	 *
+	 * Throws E1223 for a description that this adapter cannot place, and the errors of `addEffect`
+	 * for WGSL and values that the chain refuses. E1406 when the adapter does not download.
+	 */
+	async addFeatureEffect<const Wgsl extends string | CompiledWgsl>(
+		description: FeatureDescription,
+		options: FeatureEffectOptions<Wgsl>,
+	): Promise<FeatureEffect<UniformValues<Wgsl>>> {
+		const call = 'addFeatureEffect';
+		const features = await loadFeatureEffects(call);
+		return features.createFeatureEffect(
+			description,
+			options,
+			{
+				addEffect: (effectOptions) => this.addEffect(effectOptions as EffectOptions) as Effect,
+				removeEffect: (effect) => this.removeEffect(effect),
+				setUniform: (effect, name, value) => this.setEffectUniform(effect, name, value),
+				watch: (handler) => this.featureQuality?.onChange(() => handler()) ?? (() => {}),
+				fail: (detail) => new EngineError('E1223', detail),
+			},
+			call,
+		);
 	}
 
 	/**
@@ -1500,4 +1542,19 @@ function checkGrading(grading: GradingSettings | false | undefined): void {
 	if (!split) return;
 	checkRange('grading.splitToning.balance', split.balance, -1, 1);
 	checkRange('grading.splitToning.strength', split.strength, 0, 1);
+}
+
+/**
+ * The full-screen feature adapter, which loads at the first call that places a feature, so a page
+ * that places none downloads none of it. Throws E1406 when its code does not download.
+ */
+async function loadFeatureEffects(call: string): Promise<typeof import('./feature-effects')> {
+	try {
+		return await import('./feature-effects');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the feature effect code did not download for ${call}(): ${reasonOf(error)}.`,
+		);
+	}
 }

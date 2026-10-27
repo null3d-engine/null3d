@@ -1186,6 +1186,36 @@ const EFFECT_TIMEOUT_SECONDS = 60;
 export const EFFECT_SCALES = [1, 0.5] as const;
 
 /**
+ * The way each plan item makes a depth prepass start the stand-in color that it never draws, for
+ * the ambient occlusion cost page: the two candidate fixes and the load that the engine made before
+ * the run chose one. The page tells them apart by their rise with ambient occlusion on.
+ */
+const PREPASS_COLOR_VARIANTS = ['load', 'clear', 'none'] as const;
+
+/**
+ * What each way of starting the prepass's stand-in color costs the ambient occlusion cost page on
+ * WebGL2, at the render scales of the ao plan. Safari's WebGL2 path pays for a framebuffer whose
+ * color was never written and then invalidated, by an amount that follows the texture's size
+ * (WebKit bug 328158), so the same page measures each way against its own frames with ambient
+ * occlusion off. The three pages draw the same image, so a way that looks different is a fault.
+ */
+export function prepassColorPlan(): PlanItem<Check>[] {
+	return EFFECT_SCALES.flatMap((scale) =>
+		PREPASS_COLOR_VARIANTS.map((variant) =>
+			pageItem(
+				`ao-prepass-color-webgl2-${scale * 100}-${variant}`,
+				'effect-cost',
+				{ kind: 'effect', effect: 'ao', tier: 'webgl2', scale },
+				{
+					switches: ['gpu=webgl2', `scale=${scale}`, 'effect=ao', `prepass-color=${variant}`],
+					timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	);
+}
+
+/**
  * What an effect costs on each GPU path at each render scale: the effect's scene fills the window,
  * and the page times its frames with the effect off and on in turns. Ambient occlusion turns the
  * depth prepass on with it, so the ao plan also times each page with the prepass on in both
@@ -2295,6 +2325,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	ao: () => effectPlan('ao'),
 	'ao-calls': () => effectPlan('ao', true),
 	'ao-calls-sync': () => effectPlan('ao', 'sync'),
+	'ao-prepass-color': prepassColorPlan,
 	dof: () => effectPlan('dof'),
 	subsurface: () => effectPlan('subsurface'),
 	contact: () => effectPlan('contact'),

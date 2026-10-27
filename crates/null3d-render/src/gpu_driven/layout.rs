@@ -238,6 +238,9 @@ pub(super) struct Bucket {
     pub(super) feature: u32,
     /// The most instances that the feature draw's buffer holds, 0 for a bucket of the engine's own.
     pub(super) feature_capacity: u32,
+    /// True while the add-on's feature says that the draw draws, and true for a bucket of the
+    /// engine's own. A bucket whose feature is not ready records no draw in any view.
+    pub(super) feature_ready: bool,
     /// The scene slot of the object that places the feature draw, or `u32::MAX` for a bucket of the
     /// engine's own.
     pub(super) feature_slot: u32,
@@ -1301,6 +1304,7 @@ impl Layout {
                 cluster,
                 feature: feature.unwrap_or(0),
                 feature_capacity: record.map_or(0, |(_, capacity, _)| capacity),
+                feature_ready: feature.is_none_or(|id| settings.feature_instances().is_ready(id)),
                 feature_slot: object.unwrap_or(u32::MAX),
             });
             *base += count;
@@ -1485,18 +1489,12 @@ impl Layout {
         Ok(())
     }
 
-    /// The count that a view drawing this layout draws for feature-instance draw `id`, or `None`
-    /// when the layout holds no bucket for it.
-    pub(super) fn feature_template_count(&self, id: u32) -> Option<u32> {
-        let bucket = self.buckets.iter().find(|bucket| bucket.feature == id)?;
-        Some(self.indirect_template[(bucket.first_draw * sizes::INDIRECT_WORDS + 1) as usize])
-    }
-
-    /// Sets each feature-instance draw's count in the template that a frame's reset uploads. A
-    /// shadow view draws that count, because the add-on's compute writes the main view's count
-    /// alone. The culling shader never visits these buckets, so it keeps the count as it is.
-    /// `radii` holds each scene slot's world radius: a hidden object draws nothing, as its draw
-    /// would in any other bucket, so its count is 0.
+    /// Sets each feature-instance draw's count in the template that a frame's reset uploads, for
+    /// the views that the frame's count copy does not reach: the camera's mirrors and probes, and
+    /// the outline, skin and motion views. The camera's own view and every shadow view take the
+    /// add-on's count word instead. The culling shader never visits these buckets, so it keeps the
+    /// count as it is. `radii` holds each scene slot's world radius: a hidden object draws
+    /// nothing, as its draw would in any other bucket, so its count is 0.
     pub(super) fn set_feature_counts(
         &mut self,
         features: &crate::feature_instances::FeatureInstanceTable,
@@ -2437,11 +2435,10 @@ mod tests {
                 .unwrap_or_else(|| panic!("the draw with the bounds {bounds} has a bucket"));
             assert_eq!(feature_capacity, 40);
             let count_word = (first_draw * sizes::INDIRECT_WORDS + 1) as usize;
-            // The template that the frame's reset uploads keeps the page's count, which a shadow
-            // view draws.
+            // The template that the frame's reset uploads holds the page's count for the camera's
+            // mirrors and probes, which the frame's count copy does not reach.
             assert_eq!(layout.indirect_template[count_word], 0);
             layout.set_feature_counts(settings.feature_instances(), scene.world(1).radii());
-            assert_eq!(layout.feature_template_count(id), Some(6));
             assert_eq!(layout.indirect_template[count_word], 6);
         }
     }

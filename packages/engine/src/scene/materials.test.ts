@@ -1163,7 +1163,10 @@ describe('Material.set', () => {
 			{ anisotropyRotation: Number.NaN },
 		])
 			expect(thrown(() => film.set(values)).code).toBe('E1108');
-		expect(thrown(() => materials.standard({ anisotropy: 0.5 })).code).toBe('E1217');
+		// The stretch needs no map: a material without one takes a frame square to the surface.
+		materials.standard({ anisotropy: 0.5 });
+		expect((features[3] ?? 0) & MATERIAL_FEATURE_ANISOTROPY).toBe(MATERIAL_FEATURE_ANISOTROPY);
+		expect(row(3)[MATERIAL_PARAM_ANISOTROPY]).toBe(0.5);
 		const clash = thrown(() =>
 			materials.standard({ clearcoatMap: texture(5), iridescenceMap: texture(9) }),
 		);
