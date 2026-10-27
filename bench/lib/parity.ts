@@ -427,8 +427,11 @@ const NO_TONE = 'tone=none';
 /**
  * The limits of the glTF model scenes whose images three.js's rule would fail for reasons outside
  * the loader, with the largest share measured on the Mac (`.dev/image-tests.md` records them). The
- * lamp's stained glass takes its transmission from a map, which null3D does not draw: 0.16% to
- * 0.18% of the pixels differ, all on the glass. The instanced cubes have black faces beside white
+ * lamp's masked glass keeps its transmission map now, so it differs from three.js in 0.107% to
+ * 0.118% of its pixels, against the 0.093% by which three.js's two renderers differ, in fine marks
+ * on the clear-coated metal rim and the beads, and on the glass's own highlights. The masked glass scene differs in 0.220% on WebGL2,
+ * in a one-pixel column at each pane's outer edge, where alpha to coverage takes a whole sample at
+ * each step, as the alpha-coverage scene does. The instanced cubes have black faces beside white
  * ones at hundreds of edges, which compatibility mode's 8-bit path averages after it encodes the
  * colors: 0.41% differ there, and none on the other tiers. The same cubes compressed with meshopt
  * take the same limit, for the same edges. The clear coat test's tiles that show the coat alone
@@ -437,7 +440,8 @@ const NO_TONE = 'tone=none';
  * limits, and the toy car's glossy trim, glass and coat take it too.
  */
 const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
-	ktx2: 0.5,
+	ktx2: 0.13,
+	'transmission-mask': ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT,
 	clearcoat: 0.15,
 	'metal-rough': SPECULAR_AA_LIMITS['gltf-metal-rough'],
 	specular: SPECULAR_AA_LIMITS['gltf-specular'],

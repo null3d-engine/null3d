@@ -444,6 +444,22 @@ describe('Material.set', () => {
 		]);
 	});
 
+	test('transmission keeps a masked surface and refuses only the hash', () => {
+		const { features, materials } = fakeCore();
+		materials.standard({ alphaMode: 'mask', alphaCutoff: 0.4, transmission: 0.5 });
+		expect(features).toEqual([
+			MATERIAL_FEATURE_ALPHA_MASK |
+				MATERIAL_FEATURE_ALPHA_TO_COVERAGE |
+				MATERIAL_FEATURE_TRANSMISSION,
+		]);
+		const hashed = thrown(() => materials.standard({ alphaMode: 'hash', transmission: 0.5 }));
+		expect(hashed.code).toBe('E1217');
+		expect(hashed.message).toStartWith(
+			"E1217: materials.standard() got transmission with the alpha mode 'hash'; a material that lets light through takes 'opaque', 'mask' or 'blend'.",
+		);
+		expect(features).toHaveLength(1);
+	});
+
 	test('passes a material that writes depth alone, which the opaque pass draws first', () => {
 		const { features, materials } = fakeCore();
 		materials.unlit({ colorWrite: false });

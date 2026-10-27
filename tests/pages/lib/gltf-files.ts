@@ -1199,3 +1199,118 @@ export function anisotropyBuilder(): GltfBuilder {
 		),
 	]);
 }
+
+/** The texels across and down each image that the masked glass and its backdrop read. */
+const MASKED_GLASS_TEXELS = [16, 8] as const;
+
+/**
+ * A small glTF file for a surface that both masks its alpha and lets light through, as the
+ * StainedGlassLamp's stained glass does: two glass panes in front of an unlit striped backdrop,
+ * with the same cut-out bars on both. The left pane takes a transmission texture in its red and a
+ * thickness texture in its green, and the right pane takes neither. Every pattern mirrors about the
+ * middle column, so the picture is symmetric except where those two maps change the left pane.
+ */
+export function maskedTransmissionBuilder(): GltfBuilder {
+	const b = new GltfBuilder()
+		.uses('KHR_materials_transmission')
+		.uses('KHR_materials_volume')
+		.uses('KHR_materials_clearcoat')
+		.uses('KHR_materials_unlit');
+	const [across, down] = MASKED_GLASS_TEXELS;
+	const image = (pixel: (x: number, y: number) => readonly number[]): number => {
+		const rgba = new Uint8Array(across * down * 4);
+		for (let y = 0; y < down; y++)
+			for (let x = 0; x < across; x++) rgba.set(pixel(x, y), 4 * (y * across + x));
+		const view = b.view(pngBytes(across, down, rgba));
+		b.json.images ??= [];
+		b.json.textures ??= [];
+		b.json.samplers ??= [{ magFilter: 9728, minFilter: 9728, wrapS: 33071, wrapT: 33071 }];
+		b.json.images.push({ bufferView: view, mimeType: 'image/png' });
+		return b.json.textures.push({ source: b.json.images.length - 1, sampler: 0 }) - 1;
+	};
+	// Two bars of each pane draw nothing, at the same place on both panes.
+	const cutout = image((x) => [
+		255,
+		255,
+		255,
+		x === 2 || x === 3 || x === across - 4 || x === across - 3 ? 0 : 255,
+	]);
+	// The share of the light from behind, least across the middle of the pane.
+	const transmission = image((x) => [x >= 4 && x <= 11 ? 0 : 255, 0, 0, 255]);
+	// The volume's depth, thin in the lower half of the pane and thick in its upper half.
+	const thickness = image((_x, y) => [0, y < down / 2 ? 51 : 230, 0, 255]);
+	// The clear coat over both panes: the same on each, so only the two maps tell them apart.
+	const coat = image(() => [255, 40, 255, 255]);
+	// The backdrop's stripes, in a pattern that mirrors about the middle of the image.
+	const STRIPES = [
+		[210, 74, 58],
+		[242, 239, 230],
+		[61, 111, 214],
+		[242, 239, 230],
+	];
+	const backdrop = image((x) => [
+		...(STRIPES[Math.min(x, across - 1 - x) % STRIPES.length] as number[]),
+		255,
+	]);
+	/** A quad of `width` by `height` in the xy plane, facing +Z, with its maps over 0 to 1. */
+	const quad = (width: number, height: number): GltfJson => {
+		const w = width / 2;
+		const h = height / 2;
+		return {
+			attributes: {
+				POSITION: b.positions(new Float32Array([-w, -h, 0, w, -h, 0, w, h, 0, -w, h, 0])),
+				NORMAL: b.accessor(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]), 3),
+				TEXCOORD_0: b.accessor(new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), 2),
+			},
+			indices: b.accessor(new Uint16Array([0, 1, 2, 0, 2, 3]), 1),
+		};
+	};
+	const glass = (name: string, mapped: boolean): GltfJson => ({
+		name,
+		pbrMetallicRoughness: {
+			baseColorFactor: [0.12, 0.12, 0.14, 1],
+			baseColorTexture: { index: cutout },
+			metallicFactor: 0,
+			roughnessFactor: 0,
+		},
+		alphaMode: 'MASK',
+		alphaCutoff: 0.5,
+		extensions: {
+			KHR_materials_transmission: {
+				transmissionFactor: 1,
+				...(mapped ? { transmissionTexture: { index: transmission } } : {}),
+			},
+			KHR_materials_volume: {
+				thicknessFactor: 0.6,
+				...(mapped ? { thicknessTexture: { index: thickness } } : {}),
+			},
+			KHR_materials_clearcoat: { clearcoatFactor: 1, clearcoatTexture: { index: coat } },
+		},
+	});
+	const wall = quad(8, 5);
+	b.node({
+		name: 'Backdrop',
+		mesh: b.mesh([
+			{
+				...wall,
+				material: b.material({
+					name: 'backdrop',
+					pbrMetallicRoughness: { baseColorTexture: { index: backdrop } },
+					extensions: { KHR_materials_unlit: {} },
+				}),
+			},
+		]),
+		translation: [0, 0, -1],
+	});
+	const pane = quad(3.2, 3);
+	for (const [name, mapped, x] of [
+		['Glass mapped', true, -2],
+		['Glass plain', false, 2],
+	] as const)
+		b.node({
+			name,
+			mesh: b.mesh([{ ...pane, material: b.material(glass(name, mapped)) }]),
+			translation: [x, 0, 0.2],
+		});
+	return b;
+}
