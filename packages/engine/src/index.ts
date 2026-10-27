@@ -135,6 +135,7 @@ export type {
 	FeatureInstancesOptions,
 	FeatureRowOptions,
 } from './scene/feature-draws';
+export type { FeatureEffect, FeatureEffectOptions } from './scene/feature-effects';
 export type { FeatureHandle, FeatureHostOptions } from './scene/feature-host';
 export { FeatureHost } from './scene/feature-host';
 export type {
