@@ -15,7 +15,9 @@ import {
 } from '../../packages/cli/src/heap-profile.js';
 import {
 	BUDGETS,
+	CANVAS_BUDGETS,
 	COUNTED_IN_CALLER,
+	DAY_BUDGETS,
 	PAGE_SWITCHES,
 	placeBudget,
 	SKY_ENVIRONMENT_BUDGETS,
@@ -217,8 +219,11 @@ describe('budgets', () => {
 	});
 
 	test('count a place in a caller whose budget holds it', () => {
+		const tables = [BUDGETS, CANVAS_BUDGETS, DAY_BUDGETS];
 		const budgeted = new Set(
-			Object.values(BUDGETS).flatMap((byWorker) => Object.keys(byWorker ?? {})),
+			tables.flatMap((table) =>
+				Object.values(table).flatMap((byWorker) => Object.keys(byWorker ?? {})),
+			),
 		);
 		const unbudgeted = [...COUNTED_IN_CALLER.values()].filter((place) => !budgeted.has(place));
 		expect(unbudgeted).toEqual([]);
