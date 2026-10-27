@@ -1459,8 +1459,7 @@ export function parseGltf(
 			layered && (layerMaps.coatNormal ?? layerMaps.iridescenceThickness) !== undefined;
 		const colorTaken =
 			layered &&
-			(layerMaps.sheenColor ?? layerMaps.sheenRoughness ?? layerMaps.anisotropy) !==
-				undefined;
+			(layerMaps.sheenColor ?? layerMaps.sheenRoughness ?? layerMaps.anisotropy) !== undefined;
 		// A specular texture is linear, like the transmission texture, so the two share a texture
 		// array when their images have one size and format. A specular color texture is sRGB, so a
 		// thickness texture never shares its array: the two stay apart.

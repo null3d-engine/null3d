@@ -2043,11 +2043,7 @@ function skipsMap(key: keyof StandardMaps, features: number): boolean {
  */
 function skipsTransmissionMap(options: StandardOptions, key: keyof StandardMaps): boolean {
 	if (!TRANSMISSION_MAPS.has(key)) return false;
-	return (
-		options.transmission === undefined ||
-		options.diffuseTransmission !== undefined ||
-		options.specularIntensityMap !== undefined
-	);
+	return options.transmission === undefined || options.diffuseTransmission !== undefined;
 }
 
 /** The values of a clear coat, a sheen, iridescence or anisotropy, any of which gives a material its layers. */

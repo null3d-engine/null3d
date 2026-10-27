@@ -637,9 +637,9 @@ describe('materials, textures and lights', () => {
 		expect(second?.maps.specularIntensityMap).toBeDefined();
 		expect(second?.maps.transmissionMap).toBeDefined();
 		expect(second?.maps.thicknessMap).toBeUndefined();
-		expect(
-			data.notes.filter((note) => /transmissionTexture|thicknessTexture/.test(note)),
-		).toEqual([]);
+		expect(data.notes.filter((note) => /transmissionTexture|thicknessTexture/.test(note))).toEqual(
+			[],
+		);
 		expect(third?.transmission).toBeUndefined();
 		expect(third?.maps.transmissionMap).toBeUndefined();
 		expect(third?.maps.thicknessMap).toBeUndefined();
