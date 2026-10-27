@@ -41,6 +41,7 @@ export interface CoreGlue extends CoreErrors {
 		transparent: boolean,
 		cellCulling: boolean,
 		depthPrepass: boolean,
+		prepassColor: number,
 		skinning: number,
 		indexInstances: boolean,
 		largeWorld: boolean,
@@ -924,6 +925,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setFeatureInstanceCount(id: number, count: number): number;
 	/**
+	 * Tells the engine whether the add-on's feature draws now. A draw that is not ready records no
+	 * draw, no conversion and no count copy. Returns 1 for a draw that does not exist.
+	 */
+	setFeatureInstanceReady(id: number, ready: boolean): number;
+	/**
 	 * Writes `count` per-instance rows from `values` at row `start`, as the engine's instance
 	 * buffers hold them: three world-matrix rows, then the ids. Returns 0, or 1 for values that a
 	 * draw does not take.
@@ -1413,6 +1419,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'featureInstanceCountBuffer',
 	'setFeatureInstanceCount',
 	'setFeatureInstanceRows',
+	'setFeatureInstanceReady',
 	'setSoftwareOcclusion',
 	'setParallax',
 	'setOcclusionBuffer',

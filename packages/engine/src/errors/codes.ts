@@ -230,7 +230,7 @@ const DOCS = {
 	E1223: {
 		title: 'Invalid feature description',
 		cause:
-			'defineFeature(), FeatureRegistry.add(), addFeatureDraw(), scene.setSkyLayer() or a compute pass of render.addPass() got a description that it cannot take: an unknown option, a name that is empty or longer than 64 characters, a frame point or kind that does not exist or does not go together, an order outside its band, an unknown resource, lighting slot or view, a resource or view without a frame point, an output with no neutral default, a feature name or output name that another feature has, a lighting slot that another feature provides, a draw at a frame point, view or alpha mode that the draw adapter does not place, a sky layer that does not record at the background point, as a draw, providing the sky and drawing in the three views, or a compute pass at a frame point, view, scene resource read or output that the compute adapter does not place.',
+			'defineFeature(), FeatureRegistry.add(), addFeatureDraw(), post.addFeatureEffect(), scene.setSkyLayer() or a compute pass of render.addPass() got a description that it cannot take: an unknown option, a name that is empty or longer than 64 characters, a frame point or kind that does not exist or does not go together, an order outside its band, an unknown resource, lighting slot or view, a resource or view without a frame point, an output with no neutral default, a feature name or output name that another feature has, a lighting slot that another feature provides, a draw at a frame point, view or alpha mode that the draw adapter does not place, a full-screen effect at another frame point or view, writing another resource, reading one the effect chain does not bind, publishing an output, providing a slot, or disagreeing with its WGSL about the scene depth, a sky layer that does not record at the background point, as a draw, providing the sky and drawing in the three views, or a compute pass at a frame point, view, scene resource read or output that the compute adapter does not place.',
 		example:
 			"E1223: FeatureRegistry.add() got the slot 'ao', which the feature 'ambient-occlusion' provides already. One feature provides each lighting slot.",
 		since: '0.3',
@@ -331,7 +331,7 @@ const DOCS = {
 	E1406: {
 		title: 'Engine file not downloaded',
 		cause:
-			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder, and the first with Draco compression the Draco decoder. The first color grading table loads its readers, and the first environment its reader. The first sprite or point batch loads the sprite code, and the first line batch the line code. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
+			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder, and the first with Draco compression the Draco decoder. The first color grading table loads its readers, and the first environment its reader. The first sprite or point batch loads the sprite code, and the first line batch the line code. The first feature draw, instance draw or full-screen effect loads that adapter. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
 		example:
 			'E1406: the threaded engine core did not download from /assets/null3d_bg-3f9c1a2b.wasm: HTTP 404.',
 		since: '0.1',
@@ -574,6 +574,14 @@ const DOCS = {
 			"A render pass draws into targets that one GPU render pass cannot hold together. A target can have another size than the pass, or the targets can have different sample counts. The pass can also draw into two depth targets, into a whole texture array instead of one layer, or into no target. It can draw into more than four color targets, or into color targets of more than 32 bytes per sample, which some devices cannot hold. A resolve pass fails the same way when it cannot resolve its target into the canvas. That target must be multisampled, in the canvas's format and size, and read by no other running pass.",
 		example: 'E1505: the pass "Blur" draws at half size into "sceneColor", which is full size.',
 		since: '0.1',
+	},
+	E1506: {
+		title: 'Feature draw after the first frame',
+		cause:
+			'A draw whose instance count the GPU writes was created after the engine recorded its first frame, on a device that draws its scene directly. The direct path counts every draw on the CPU and keeps no indirect draw, so the frame has nowhere to copy the count. The frame records no draw.',
+		example:
+			'E1506: the frame failed: a draw whose instance count the GPU writes arrived after the first frame, and this device draws directly.',
+		since: '0.3',
 	},
 } satisfies Record<ErrorCode, Omit<ErrorEntry, 'fix'>>;
 

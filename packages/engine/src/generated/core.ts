@@ -470,6 +470,10 @@ export const CAMERA_TARGET_VIEW = 0;
 export const CAMERA_TARGET_SHADOWS = 1;
 export const CAMERA_TARGET_PASS_VIEWS = 2;
 
+export const PREPASS_COLOR_LOAD = 0;
+export const PREPASS_COLOR_CLEAR = 1;
+export const PREPASS_COLOR_NONE = 2;
+
 export const SHADOW_CASTERS_CASCADE_MASK = 255;
 export const SHADOW_CASTERS_TILES = 256;
 

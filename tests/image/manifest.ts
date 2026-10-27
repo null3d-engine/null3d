@@ -547,6 +547,17 @@ function aoTests(): ImageTest[] {
 			tiers: ['webgpu', 'webgl2'],
 			reference: 'ao-wide',
 		},
+		// The ways of starting the prepass's stand-in color draw the same image, since no pass reads
+		// it: the engine's default gives the prepass a depth-only framebuffer, and `clear` keeps a
+		// color and clears it (D-269). Only WebGL2 takes the switch. The default needs no test of its
+		// own, since `ao-wide` draws it already, and that reference was drawn before the change, so an
+		// unchanged match shows that the image did not move.
+		{
+			...test('ao-prepass-color-clear', '?ao=wide'),
+			tiers: ['webgl2'],
+			switches: ['prepass-color=clear'],
+			reference: 'ao-wide',
+		},
 	];
 }
 
@@ -2838,6 +2849,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'feature-instances-compute',
 		sketch: 'tests/pages/sketches/feature-instances-compute-sketch.ts',
+		hold: 0,
+		tiers: ['webgpu', 'compat'],
+	},
+	// The shadow-side proof of an instance draw: the compute shader fills the whole capacity of
+	// discs and counts 42, the page sets the count to the capacity, and the ground's shadows show
+	// 42 discs. A shadow view that drew the page's count would fill the empty corner too.
+	{
+		name: 'feature-instances-shadow',
+		sketch: 'tests/pages/sketches/feature-instances-shadow-sketch.ts',
 		hold: 0,
 		tiers: ['webgpu', 'compat'],
 	},

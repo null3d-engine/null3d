@@ -76,6 +76,8 @@ const DISCARD_DEPTH = [DEPTH_ATTACHMENT];
 const COLOR_ATTACHMENT1 = 0x8ce1;
 /** The draw buffers of a framebuffer with two color targets. */
 const TWO_DRAW_BUFFERS = [COLOR_ATTACHMENT0, COLOR_ATTACHMENT1];
+/** The draw buffer of a pass that draws into depth alone. */
+const NO_DRAW_BUFFERS = [0];
 const DISCARD_BOTH = [COLOR_ATTACHMENT0, DEPTH_ATTACHMENT];
 /** The color that a cleared texture's layer takes: black, fully transparent. */
 const CLEAR_ZERO = new Float32Array([0, 0, 0, 0]);
@@ -2372,9 +2374,19 @@ export class WebGL2Backend {
 		return color.pairFramebuffer;
 	}
 
-	/** The framebuffer with only `target` in it. */
+	/**
+	 * The framebuffer with only `target` in it. A depth target draws with no draw buffer, so the
+	 * pass never names a color that it does not write. Safari's WebGL2 path costs time for a color
+	 * that a pass binds and invalidates without writing it, and that time follows the target's
+	 * size (WebKit bug 328158).
+	 */
 	private soloFramebuffer(target: GlTexture): WebGLFramebuffer {
-		if (!target.soloFramebuffer) target.soloFramebuffer = this.makeFramebuffer(target, null);
+		if (!target.soloFramebuffer) {
+			const framebuffer = this.makeFramebuffer(target, null);
+			if (target.format.attachment === this.gl.DEPTH_ATTACHMENT)
+				this.gl.drawBuffers(NO_DRAW_BUFFERS);
+			target.soloFramebuffer = framebuffer;
+		}
 		return target.soloFramebuffer;
 	}
 

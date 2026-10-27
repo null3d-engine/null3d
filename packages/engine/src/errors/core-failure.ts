@@ -182,6 +182,11 @@ export function coreFailure(core: CoreErrors, call: string, what = 'an object'):
 					: `${name} failed: the render graph does not compile.`,
 			);
 		}
+		case 1506:
+			return error(
+				'E1506',
+				`${name} failed: a draw whose instance count the GPU writes arrived after the first frame, and this device draws directly.`,
+			);
 		default: {
 			const id = `E${code}`;
 			return error(

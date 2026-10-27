@@ -3410,6 +3410,8 @@ export class Scene implements ViewHolder {
 	private readonly imageTasks = new Set<Promise<void>>();
 	/** @internal The picture that failed to write, once: the frame loop reports it. */
 	private imageFailure: unknown;
+	/** @internal The draws that answer each frame whether their feature is ready. */
+	private readonly readiness: Array<() => void> = [];
 
 	/** @internal Starts the area lights' tables' load, once, which loads their code on first use. */
 	private loadAreaTables(): void {
@@ -4772,7 +4774,9 @@ export class Scene implements ViewHolder {
 	 *
 	 * Throws E1223 for a description that the adapter cannot place or a capacity that it cannot
 	 * take, E1215, E1216 and E1217 for WGSL and values that `materials.shader` refuses, E1206 for
-	 * vertex data that makes no mesh, and E1406 when the adapter does not download.
+	 * vertex data that makes no mesh, and E1406 when the adapter does not download. A draw that
+	 * arrives after the first frame on a device that draws directly fails the frame with E1506:
+	 * create it in the setup, and await this call there.
 	 */
 	async addComputeInstances<const Wgsl extends string | CompiledWgsl = string | CompiledWgsl>(
 		description: FeatureDescription,
@@ -4792,10 +4796,33 @@ export class Scene implements ViewHolder {
 				materials: makers.materials,
 				createMesh: (mesh, material, place) => this.createMesh({ mesh, material, ...place }),
 				createBatch: (mesh, material, count) => this.createInstances(mesh, count, { material }),
+				watchReady: (poll) => this.watchReady(poll),
 				fail: (detail) => new EngineError('E1223', detail),
 			},
 			call,
 		);
+	}
+
+	/**
+	 * @internal Asks `poll` before each frame's work, and forgets it when the returned function is
+	 * called. A feature-instance draw reports each frame whether its feature's `ready` callback
+	 * says that it draws.
+	 */
+	private watchReady(poll: () => void): () => void {
+		this.readiness.push(poll);
+		return () => {
+			const at = this.readiness.indexOf(poll);
+			if (at >= 0) this.readiness.splice(at, 1);
+		};
+	}
+
+	/**
+	 * @internal Asks each feature draw whether it draws now. The sketch's thread calls it before
+	 * the frame's commands, so a feature that stops drawing takes no room in that frame.
+	 */
+	pollReadiness(): void {
+		const polls = this.readiness;
+		for (let k = 0; k < polls.length; k++) polls[k]?.();
 	}
 
 	/**

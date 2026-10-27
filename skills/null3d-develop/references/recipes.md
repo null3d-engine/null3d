@@ -283,7 +283,7 @@ The engine moves a plane's element into a container of its own inside the elemen
 
 ```ts
 // sketch.ts
-assets.onProgress((loaded, total) => page.post('loading', loaded / total));
+assets.onProgress((loaded, total) => page.post('loading', Math.min(1, loaded / Math.max(total, loaded))));
 await assets.preload(['/levels/one.json', '/tex/terrain.png', '/tex/rocks.png']);
 const level = await assets.loadJson<Level>('/levels/one.json');   // from memory: preload downloaded it
 const terrain = await assets.loadTexture('/tex/terrain.png', { wrap: 'repeat', anisotropy: 8 });
