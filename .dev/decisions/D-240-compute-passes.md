@@ -350,8 +350,17 @@ each run.
 8 workgroup, and measures the same scene with the pass switched off, on every GPU path. A workgroup
 of one invocation and a measurement with no pass-off baseline are rejected: the first dispatches
 65,536 workgroups for a 256 by 256 pass, and the second cannot separate the pass's cost from the
-frame's. The figures are owed to a clean window. The only pair taken so far ran while the machine
-was busy, at a 1-minute load of 17.59 to 7.95 on a fourteen-core machine, so it is not a measurement
-for this record; the run record keeps it only to compare a clean run against. The pass holds 2 MiB
-of texels on the compute paths and 1.5 MiB on WebGL2. The iPad and the phone rows are owed to the landing session, as M3-V14's
-measurements cover the field that uses the pass first.
+frame's. The frame's pass list names the engine's own compute pass, one for each compute step, not
+this pass; the graph runs a pass only while it is enabled and not culled, so the switched-off side
+dispatches nothing for it, and each figure is the whole frame's difference.
+
+The figures are in. On the Mac, in a quiet window at a load of 2.1 to 2.7, the pass costs 0.066 ms
+on WebGPU, one step of Chrome's 0.065536 ms timestamp and below its resolution, 0.197 ms in
+compatibility mode, and 10.74 ms in the WebGL2 fragment form, where each of the 40 steps is a state
+copy and a full-screen pass. The cloud iPad reads 0.49 ms on WebGPU and 0.46 in compatibility mode,
+and the cloud Galaxy S25 4.0 ms on both. WebGL2 has no timer on either device: its fallback shows on
+the busiest thread, 0.74 to 4.27 ms on the iPad and 0.48 to 0.79 on the phone. The pass holds 2 MiB
+of texels on the compute paths and 1.5 MiB on WebGL2. The runs are
+[the Mac's](../tested-devices/macbook-pro-m3-max-chrome/20261027-013423-history-cost.md),
+[the iPad's](../tested-devices/ipad-pro-13-safari/20261027-010154-history-cost.md) and
+[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261027-010335-history-cost.md).
