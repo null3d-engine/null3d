@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../../tests/lib/run-budget.ts';
+import { everyWgslShader } from '../../../../../tests/lib/shader-builds.ts';
 import * as G from '../../generated/gpu';
-import { type DeviceShaders, everyShader, type ShaderVariants } from '../../generated/shaders';
+import type { DeviceShaders, ShaderVariants } from '../../generated/shaders';
 import type { CustomShader } from '../../shared/images';
 import { engineTemplates } from '../webgl2/programs';
 import { COMPUTE_MAPS_BIT, Pipelines } from './pipelines';
@@ -13,8 +14,12 @@ afterAll(() => {
 	for (const name of Object.keys(GLOBALS)) delete scope[name];
 });
 
-/** Every shader build the shader compiler wrote, as this device's pipeline builders see them. */
-const SHADERS = await everyShader();
+/**
+ * Every WGSL build the shader compiler wrote, as this device's pipeline builders see them. The
+ * pipeline layouts come from the WGSL side of a build alone, and the WebGL2 modules hold most of
+ * the set's bytes, so the check reads the WGSL modules and holds a fraction of the whole set.
+ */
+const SHADERS = await everyWgslShader();
 
 /** WebGPU's default limits, which every device offers and the engine stays within. */
 const LIMITS = {
