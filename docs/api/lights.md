@@ -8,7 +8,7 @@ summary: "Directional, point, spot, hemisphere, ambient, rectangle and tube ligh
 
 # Lights
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the light from the sky, the light of hemisphere lights, rectangle and tube lights and contact shadows. Step 0.3 adds pictures that a spot light projects over its cone. The API is experimental, so it can still change between versions. Surfaces show only the first directional light, so a second one adds no light.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the light from the sky, the light of hemisphere lights, rectangle and tube lights and contact shadows. Step 0.3 adds pictures that a spot light projects over its cone. The API is experimental, so it can still change between versions. Surfaces show up to four directional lights: the first casts the shadows, and three more add fill and rim light.
 
 A light is a scene object, like a mesh or a camera. It has a position, a rotation, a parent and layers, and `setVisible` and `destroy` work on it. Each kind of light has a class and a create call of its own. The standard material reflects lights, and the unlit material ignores them.
 
@@ -115,7 +115,7 @@ Every setter allocates nothing, `setColor` and `setGroundColor` included. So `on
 
 In this version:
 
-- Surfaces show one directional light: the first one you created that is visible and shares a layer with the camera.
+- Surfaces show up to four directional lights that are visible and share a layer with the camera: the first four you created. The first one lights and casts the shadows. The next three light as fill and rim lights, without shadows. A fifth directional light gives no light.
 - Every ambient light that is visible and shares a layer with the camera adds its light.
 - Point and spot lights light the surfaces that their ranges reach. Each frame the engine finds the ones whose ranges reach into the camera's view. It lists each one in the clusters of the view that it reaches. The camera lists up to 1,024 of them, the nearest, and up to 128 in each cluster. [Lighting and environment](../concepts/lighting.md#clustered-forward-shading) explains clusters.
 - Rectangle and tube lights light the surfaces that their ranges reach, in the same clusters. The quality preset's `areaLights` caps how many one frame shades: 4 on Low, 8 on Medium, 16 on High and 32 on Ultra. Past it, the ones that give the camera the most light shade: the brightest and largest for their distance. A light that joins or leaves them fades over a few frames, so none switches on or off at once. [Area lights](#area-lights) says more.

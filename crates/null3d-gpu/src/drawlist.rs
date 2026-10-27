@@ -1704,15 +1704,16 @@ pub mod sizes {
     /// Bytes per compacted instance that a vertex shader reads by index: the source's index in a
     /// whole 16-byte entry, which the culling shader writes as one vector.
     pub const INDEX_STRIDE: u32 = 16;
-    /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
-    /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
-    /// materials read, the camera's near and far distances, ambient occlusion's values, the
-    /// environment's 208 bytes, the hemisphere lights' three vectors, the view's offset for
-    /// shadow lookups, the camera's view and projection matrices, which custom materials read,
-    /// screen-space reflections' matrix into the frame before's view and their two vectors, a
-    /// still view's jitter, which the scene's vertex shaders add, the physical sky's aerial
-    /// perspective's six vectors, and the vignette that the 8-bit path's fragment shaders apply.
-    pub const FRAME_UNIFORM_BYTES: u32 = 992;
+    /// Bytes of the per-frame uniform block: the view-projection matrix, five vectors, the fill
+    /// directional lights' six vectors and their count, the output settings, the fog's 48 bytes,
+    /// the light grid's two vectors, three vectors that custom materials read, the camera's near
+    /// and far distances, ambient occlusion's values, the environment's 208 bytes, the hemisphere
+    /// lights' three vectors, the view's offset for shadow lookups, the camera's view and
+    /// projection matrices, which custom materials read, screen-space reflections' matrix into
+    /// the frame before's view and their two vectors, a still view's jitter, which the scene's
+    /// vertex shaders add, the physical sky's aerial perspective's six vectors, and the vignette
+    /// that the 8-bit path's fragment shaders apply.
+    pub const FRAME_UNIFORM_BYTES: u32 = 1104;
     /// Bytes of the output settings: the exposure, the tone mapping, the flags and the render
     /// size.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;

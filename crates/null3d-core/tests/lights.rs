@@ -13,8 +13,8 @@ use null3d_core::handle::Handle;
 use null3d_core::jobs::JobSystem;
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{
-    FrameLights, LightShadow, LightTable, LightView, NOT_VISIBLE, POINT_CONE, VisibleLight, color,
-    farthest_receiver_distance, kind, ladder_distance, value,
+    FillLight, FrameLights, LightShadow, LightTable, LightView, NOT_VISIBLE, POINT_CONE,
+    VisibleLight, color, farthest_receiver_distance, kind, ladder_distance, value,
 };
 use null3d_core::scene::{Command, SceneStorage, flags};
 
@@ -338,6 +338,95 @@ fn the_first_directional_light_created_that_is_shown_is_the_main_light() {
     world.lights.destroy(second_row).unwrap();
     world.lights.destroy(third_row).unwrap();
     assert_eq!(world.frame(None), FrameLights::default());
+}
+
+#[test]
+fn directional_lights_after_the_first_fill_the_frame_in_creation_order() {
+    let mut world = World::new();
+    // The main light points straight down, and the others along -X, +X, +Y and -Z.
+    let (_, main) = world.light(
+        kind::DIRECTIONAL,
+        [0.0; 3],
+        turn([1.0, 0.0, 0.0], -FRAC_PI_2),
+    );
+    world.lights.set_value(main, value::INTENSITY, 2.0).unwrap();
+    let (_, left) = world.light(
+        kind::DIRECTIONAL,
+        [0.0; 3],
+        turn([0.0, 1.0, 0.0], FRAC_PI_2),
+    );
+    world
+        .lights
+        .set_color(left, color::MAIN, [0.25, 0.5, 1.0])
+        .unwrap();
+    let (_, right) = world.light(
+        kind::DIRECTIONAL,
+        [0.0; 3],
+        turn([0.0, 1.0, 0.0], -FRAC_PI_2),
+    );
+    world
+        .lights
+        .set_color(right, color::MAIN, [1.0, 0.5, 0.25])
+        .unwrap();
+
+    let lit = world.frame(Some(&origin_view()));
+    assert_close(lit.sun_direction, [0.0, -1.0, 0.0]);
+    assert_eq!(lit.sun_color, [2.0; 3]);
+    assert_eq!(lit.fill_count, 2);
+    assert_close(lit.fills[0].direction, [-1.0, 0.0, 0.0]);
+    assert_eq!(lit.fills[0].color, [0.25, 0.5, 1.0]);
+    assert_close(lit.fills[1].direction, [1.0, 0.0, 0.0]);
+    assert_eq!(lit.fills[1].color, [1.0, 0.5, 0.25]);
+    assert_eq!(lit.fills[2], FillLight::NONE);
+
+    // Two more directional lights fill the remaining slot, and the one created last gives no
+    // light.
+    let (up, _) = world.light(
+        kind::DIRECTIONAL,
+        [0.0; 3],
+        turn([1.0, 0.0, 0.0], FRAC_PI_2),
+    );
+    let (_, back) = world.light(kind::DIRECTIONAL, [0.0; 3], NO_TURN);
+    let lit = world.frame(Some(&origin_view()));
+    assert_eq!(lit.fill_count, 3);
+    assert_close(lit.fills[2].direction, [0.0, 1.0, 0.0]);
+    assert_eq!(lit.fills[2].color, [1.0; 3]);
+    // The fifth directional light gives no light.
+    assert!(
+        lit.fills
+            .iter()
+            .all(|fill| fill.direction != [0.0, 0.0, -1.0])
+    );
+    assert_eq!(world.lights.value(back, value::INTENSITY).unwrap(), 1.0);
+
+    // A hidden fill gives its slot to the light created after it.
+    world.commands.push(Command::set_visible(up, false));
+    let lit = world.frame(Some(&origin_view()));
+    assert_eq!(lit.fill_count, 3);
+    assert_close(lit.fills[2].direction, [0.0, 0.0, -1.0]);
+
+    // A light created last in an earlier light's row keeps its creation order, so the fills stay
+    // behind the lights created before it.
+    world.lights.destroy(main).unwrap();
+    let (_, later) = world.light(
+        kind::DIRECTIONAL,
+        [0.0; 3],
+        turn([1.0, 0.0, 0.0], FRAC_PI_2),
+    );
+    assert_eq!(later, main);
+    let lit = world.frame(Some(&origin_view()));
+    assert_close(lit.sun_direction, [-1.0, 0.0, 0.0]);
+    assert_eq!(lit.sun_color, [0.25, 0.5, 1.0]);
+    assert_eq!(lit.fill_count, 3);
+    assert_close(lit.fills[0].direction, [1.0, 0.0, 0.0]);
+    assert_close(lit.fills[1].direction, [0.0, 0.0, -1.0]);
+    assert_close(lit.fills[2].direction, [0.0, 1.0, 0.0]);
+
+    // The exposure scales the fill's color with the main light's.
+    world.exposure = 0.5;
+    let lit = world.frame(Some(&origin_view()));
+    assert_eq!(lit.sun_color, [0.125, 0.25, 0.5]);
+    assert_eq!(lit.fills[0].color, [0.5, 0.25, 0.125]);
 }
 
 #[test]

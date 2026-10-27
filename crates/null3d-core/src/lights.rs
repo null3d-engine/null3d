@@ -20,7 +20,9 @@
 //! an ancestor's, or shares no layer with the view. Of the others:
 //!
 //! - The directional light created first gives the frame's main light: the direction its light
-//!   travels and its color times its intensity.
+//!   travels and its color times its intensity. The next three directional lights, in creation
+//!   order, give the frame's fill lights: each with its own direction and color, and no shadows. A
+//!   further directional light gives no light.
 //! - Ambient lights add up.
 //! - Hemisphere lights add up too. A hemisphere light gives a surface three.js's blend from its
 //!   ground color to its sky color, by the weight `0.5 * dot(normal, up) + 0.5`. That blend is
@@ -302,6 +304,35 @@ pub struct LightView {
     pub layers: u32,
 }
 
+/// The most directional lights after the first that light one frame: the fill and rim lights. The
+/// first directional light created keeps the shadows, and this many more light surfaces with it.
+/// A further directional light gives no light.
+pub const MAX_FILL_DIRECTIONAL_LIGHTS: usize = 3;
+
+/// A directional light after the frame's main light: the direction its light travels, of length 1,
+/// and its linear color times its intensity and the frame's exposure. It casts no shadows.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FillLight {
+    /// The direction the light travels, of length 1.
+    pub direction: [f32; 3],
+    /// Its linear color times its intensity and the exposure: black when unused.
+    pub color: [f32; 3],
+}
+
+impl FillLight {
+    /// A slot that gives no light. Its direction matches [`FrameLights::default`]'s sun.
+    pub const NONE: FillLight = FillLight {
+        direction: [0.0, -1.0, 0.0],
+        color: [0.0; 3],
+    };
+}
+
+impl Default for FillLight {
+    fn default() -> Self {
+        Self::NONE
+    }
+}
+
 /// What the directional and ambient lights give one frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FrameLights {
@@ -311,6 +342,12 @@ pub struct FrameLights {
     /// The main directional light's linear color times its intensity and the exposure: black when
     /// there is none.
     pub sun_color: [f32; 3],
+    /// The directional lights after the main one, in the order they were created, up to
+    /// [`MAX_FILL_DIRECTIONAL_LIGHTS`]. They light every surface the main light reaches, without
+    /// shadows. The rest of the slots are [`FillLight::NONE`].
+    pub fills: [FillLight; MAX_FILL_DIRECTIONAL_LIGHTS],
+    /// The entries of [`FrameLights::fills`] that light the frame.
+    pub fill_count: u32,
     /// The light that reaches a surface from every direction: the sum of the ambient lights'
     /// linear colors times their intensities, plus half the sum of each hemisphere light's sky and
     /// ground colors times its intensity, all times the exposure.
@@ -331,6 +368,8 @@ impl Default for FrameLights {
         Self {
             sun_direction: [0.0, -1.0, 0.0],
             sun_color: [0.0; 3],
+            fills: [FillLight::NONE; MAX_FILL_DIRECTIONAL_LIGHTS],
+            fill_count: 0,
             ambient: [0.0; 3],
             hemisphere: [[0.0; 3]; 3],
             sun_shadow: None,
@@ -474,6 +513,56 @@ impl Row {
         values: [0.0; value::LAST as usize + 1],
         hero: Handle::NONE,
     };
+}
+
+/// A directional light that a gather kept: its creation order, its row, its scene slot and its
+/// exposed color. The gather keeps the ones created first, for the main light and the fills.
+#[derive(Clone, Copy, Debug)]
+struct KeptDirectional {
+    order: u32,
+    row: usize,
+    slot: usize,
+    color: [f32; 3],
+}
+
+impl KeptDirectional {
+    /// A slot that no light fills: a creation order past any real one.
+    const NONE: KeptDirectional = KeptDirectional {
+        order: u32::MAX,
+        row: 0,
+        slot: 0,
+        color: [0.0; 3],
+    };
+}
+
+/// Keeps a directional light among the ones created first, in creation order, dropping the light
+/// created last once the slots are full.
+fn keep_directional(
+    kept: &mut [KeptDirectional],
+    shown: &mut usize,
+    order: u32,
+    row: usize,
+    slot: usize,
+    color: [f32; 3],
+) {
+    let at = kept[..*shown]
+        .iter()
+        .position(|k| k.order > order)
+        .unwrap_or(*shown);
+    if at == kept.len() {
+        return;
+    }
+    let end = (*shown).min(kept.len() - 1);
+    for k in (at..end).rev() {
+        kept[k + 1] = kept[k];
+    }
+    kept[at] = KeptDirectional {
+        order,
+        row,
+        slot,
+        color,
+    };
+    *shown = (*shown + 1).min(kept.len());
 }
 
 /// The scene's lights, one row each. See the module documentation.
@@ -716,7 +805,11 @@ impl LightTable {
         exposure: f32,
     ) -> FrameLights {
         let mut frame = FrameLights::default();
-        let mut main_order = None;
+        // One slot more than the fills, for the main light, as the table reserved room for these
+        // when it grew.
+        const KEPT: usize = MAX_FILL_DIRECTIONAL_LIGHTS + 1;
+        let mut kept = [KeptDirectional::NONE; KEPT];
+        let mut shown = 0;
         self.visible.clear();
         self.shadows.clear();
         let layers = view.map_or(ALL_LAYERS, |v| v.layers);
@@ -753,19 +846,7 @@ impl LightTable {
                     }
                 }
                 kind::DIRECTIONAL => {
-                    if main_order.is_none_or(|main| row.order < main) {
-                        main_order = Some(row.order);
-                        frame.sun_direction = forward(world.matrix(s));
-                        frame.sun_color = lit;
-                        let casts = scene.flags()[s] & flags::CAST_SHADOWS != 0;
-                        frame.sun_shadow = casts.then(|| {
-                            // A hero object that the sketch destroyed leaves the light without one.
-                            let hero = (row.hero != Handle::NONE)
-                                .then(|| scene.resolve(row.hero).ok())
-                                .flatten();
-                            SunShadow::of(&row.values, scene.layers()[s], hero)
-                        });
-                    }
+                    keep_directional(&mut kept, &mut shown, row.order, index, s, lit)
                 }
                 kind::POINT | kind::SPOT => {
                     let Some(view) = view else {
@@ -817,6 +898,27 @@ impl LightTable {
                 _ => {}
             }
         }
+        if shown > 0 {
+            let main = kept[0];
+            frame.sun_direction = forward(world.matrix(main.slot));
+            frame.sun_color = main.color;
+            let row = &self.rows[main.row];
+            let casts = scene.flags()[main.slot] & flags::CAST_SHADOWS != 0;
+            frame.sun_shadow = casts.then(|| {
+                // A hero object that the sketch destroyed leaves the light without one.
+                let hero = (row.hero != Handle::NONE)
+                    .then(|| scene.resolve(row.hero).ok())
+                    .flatten();
+                SunShadow::of(&row.values, scene.layers()[main.slot], hero)
+            });
+        }
+        if shown > 1 {
+            for (fill, kept) in frame.fills.iter_mut().zip(&kept[1..shown]) {
+                fill.direction = forward(world.matrix(kept.slot));
+                fill.color = kept.color;
+            }
+        }
+        frame.fill_count = shown.saturating_sub(1) as u32;
         frame
     }
 

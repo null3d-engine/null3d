@@ -85,7 +85,8 @@ run('replay', async () => {
 
 	const view = lookAt([0, 6, 10], [0, 0, 0]);
 	const viewProj = multiply(perspectiveReversed((60 * Math.PI) / 180, 1, 0.1, 100), view);
-	// The frame's values. The fog's and the light grid's stay 0: no fog, and no point or spot light.
+	// The frame's values. The fill directional lights, the fog's values and the light grid's stay
+	// 0: no fill light, no fog, and no point or spot light.
 	const frame = new Float32Array(G.SIZE_FRAME_UNIFORM_BYTES / 4);
 	frame.set(viewProj, 0);
 	frame.set([0, 6, 10, 1], 16);
@@ -93,11 +94,13 @@ run('replay', async () => {
 	const length = Math.hypot(...sun);
 	frame.set([sun[0]! / length, sun[1]! / length, sun[2]! / length, 0], 20);
 	frame.set([3, 3, 3, 0], 24);
-	frame.set([0.4, 0.4, 0.4, 0], 28);
+	// The fill directional lights' three direction slots, three color slots and count lie from
+	// index 28, so the ambient light follows them.
+	frame.set([0.4, 0.4, 0.4, 0], 56);
 	// The output settings: an exposure of 1 and no tone mapping, so the 8-bit target holds the lit
 	// colors encoded as sRGB.
-	frame[32] = 1;
-	new Uint32Array(frame.buffer)[33] = C.TONE_MAPPING_NONE;
+	frame[60] = 1;
+	new Uint32Array(frame.buffer)[61] = C.TONE_MAPPING_NONE;
 	// Two rows of the material table, each starting with its color and opacity. The shader reads
 	// nothing else of them.
 	const materials = new Float32Array((2 * G.SIZE_MATERIAL_BYTES) / 4);

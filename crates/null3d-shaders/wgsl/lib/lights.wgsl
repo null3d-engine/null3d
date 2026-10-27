@@ -201,6 +201,30 @@ fn spot_map(
     return light_image(i32(light.up_image.w) - 1, uv, level);
 }
 
+/// The light that one direct light gives a PBR surface, as three.js's `RE_Direct_Physical` computes
+/// it. `color` is the light's color after its fall-off and its shadows. In the COAT_SHEEN builds
+/// the light enters the surface's clear coat and sheen first (null3d::coat_sheen), and in the
+/// TRANSLUCENCY builds it also adds the share that reaches the surface's back
+/// (null3d::translucency).
+fn direct_surface_light(
+    m: PbrMaterial,
+    normal: vec3f,
+    to_view: vec3f,
+    to_light: vec3f,
+    color: vec3f,
+    compensation: vec3f,
+) -> Reflected {
+    var incoming = color;
+#ifdef COAT_SHEEN
+    // The layers gather their light first, and the sheen keeps part of it from the base.
+    incoming *= layered_light(normal, to_view, to_light, incoming);
+#endif
+#ifdef TRANSLUCENCY
+    gather_back_light(normal, to_light, incoming);
+#endif
+    return direct_light(m, normal, to_view, to_light, incoming, compensation);
+}
+
 /// The light that a PBR surface reflects toward the camera from the point, spot and area lights of
 /// its cluster, as three.js's `RE_Direct_Physical` gives it for each point and spot light, and its
 /// `RE_Direct_RectArea_Physical` for each area light. `relative` is the
@@ -272,14 +296,55 @@ fn clustered_light(
         if (light.up_image.w > 0.5) {
             incoming *= spot_map(light, relative, normal, to_view, to_light);
         }
-#ifdef COAT_SHEEN
-        // The layers gather their light first, and the sheen keeps part of it from the base.
-        incoming *= layered_light(normal, to_view, to_light, incoming);
-#endif
-        let reflected = direct_light(m, normal, to_view, to_light, incoming, compensation);
-#ifdef TRANSLUCENCY
-        gather_back_light(normal, to_light, incoming);
-#endif
+        let reflected = direct_surface_light(
+            m,
+            normal,
+            to_view,
+            to_light,
+            incoming,
+            compensation,
+        );
+        sum.diffuse += reflected.diffuse;
+        sum.specular += reflected.specular;
+    }
+    return sum;
+}
+
+/// The directional lights after the main one that one frame can light a surface with. The frame
+/// keeps their directions and colors in this many slots, and `fill_count.x` says how many are set.
+const FILL_LIGHT_SLOTS: u32 = 3u;
+
+/// The light that the frame's fill directional lights give a surface: the directional lights
+/// created after the main one, which casts the shadows. They are fill and rim lights, so a surface
+/// takes them from a distance with no shadows and no contact shadows. `compensation` holds the
+/// split-sum compensation, as `direct_light` takes it. The material's own lobe adds nothing for
+/// them; it serves the main light alone.
+fn fill_light(m: PbrMaterial, normal: vec3f, to_view: vec3f, compensation: vec3f) -> Reflected {
+    var sum = Reflected(vec3f(0.0), vec3f(0.0));
+    let count = min(u32(frame.fill_count.x), FILL_LIGHT_SLOTS);
+    if count == 0u {
+        return sum;
+    }
+    let directions = array<vec4f, FILL_LIGHT_SLOTS>(
+        frame.fill_direction_first,
+        frame.fill_direction_second,
+        frame.fill_direction_third,
+    );
+    let colors = array<vec4f, FILL_LIGHT_SLOTS>(
+        frame.fill_color_first,
+        frame.fill_color_second,
+        frame.fill_color_third,
+    );
+    for (var k = 0u; k < count; k++) {
+        let to_light = -directions[k].xyz;
+        let reflected = direct_surface_light(
+            m,
+            normal,
+            to_view,
+            to_light,
+            colors[k].rgb,
+            compensation,
+        );
         sum.diffuse += reflected.diffuse;
         sum.specular += reflected.specular;
     }

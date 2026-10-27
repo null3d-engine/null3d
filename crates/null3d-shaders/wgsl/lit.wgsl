@@ -141,7 +141,7 @@ enable draw_index;
 #endif
 #import null3d::ibl::{reflected_direction}
 #import null3d::lighting::{horizon_occlusion, indirect_specular, specular_occlusion}
-#import null3d::lights::{clustered_light}
+#import null3d::lights::{clustered_light, fill_light}
 #ifndef PARALLAX
 #import null3d::ssr::{screen_reflection}
 #endif
@@ -1820,7 +1820,8 @@ fn has_surrounding() -> bool {
 }
 
 /// The light that a surface reflects toward the camera from the scene's lights: the sun, less
-/// where its shadows fall, the point and spot lights of the surface's cluster, the ambient and
+/// where its shadows fall, the fill directional lights, the point and spot lights of the
+/// surface's cluster, the ambient and
 /// hemisphere lights, `extra` irradiance such as a light map's, and the light around it, from the
 /// reflection probes and the environment, times the material's factor of it. That light adds to
 /// the ambient and hemisphere lights, as three.js adds the environment's, and neither its
@@ -1882,6 +1883,10 @@ fn light_surface(
     sun_color *= layered_light(normal, to_view, to_sun, sun_color);
 #endif
     var sun = direct_light(m, normal, to_view, to_sun, sun_color, compensation);
+    // The fill directional lights add their light beside the main light's, without its shadows.
+    let fill = fill_light(m, normal, to_view, compensation);
+    sun.diffuse += fill.diffuse;
+    sun.specular += fill.specular;
 #ifdef CUSTOM_LOBE
     // The material's own lobe adds its specular beside the base lobe's for the main light. It
     // knows the light, the view and the half vector, which a surface function cannot see.

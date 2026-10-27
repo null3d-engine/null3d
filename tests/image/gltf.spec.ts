@@ -21,6 +21,7 @@ interface GltfResult {
 		bounds: number[][];
 		materials: number;
 		faceWeights: number[];
+		sunLights: boolean[];
 		codes: Record<string, string>;
 	};
 }
@@ -49,6 +50,8 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			expect(rounded(recorded.bounds[1])).toEqual([1, 0.85, 0.5]);
 			// The face's shape keys are sparse accessors of 8-bit and 16-bit indices.
 			expect(recorded.faceWeights).toEqual([0.5, 0, 0]);
+			// The file's three directional lights all reach the scene.
+			expect(recorded.sunLights).toEqual([true, true, true]);
 			expect(recorded.codes).toEqual({
 				broken: 'E1416',
 				required: 'E1417',
