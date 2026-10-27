@@ -113,10 +113,12 @@ NULL3D_FACADE_COST=1 bun run test:browser -- facades-cost.spec.ts
 ```
 
 Its figures are about 1.0 ms of GPU time a frame against a plain wall at 1920 by 1080, on both
-WebGPU paths at every preset, and 0.85 ms at Low down to 0.05 ms at Ultra on WebGL2, where the
-plain wall grows with the preset. They were measured on a MacBook Pro with an Apple M3 Max in
-Chrome 156, at a load of 2.0 to 2.9, and every row held the display's 16.665 ms interval. The run
-needs the load under 8.
+WebGPU paths at every preset, and 0.85 ms at Low and 0.05 to 0.49 ms at Medium, High and Ultra on
+WebGL2. Compatibility mode and WebGL2 stop at Medium, so their High and Ultra cells measure
+Medium's work, and the spread over those three cells is the run's; the material costs under about
+half a millisecond there. They were measured on a MacBook Pro with an Apple M3 Max in Chrome 156,
+at a load of 2.0 to 2.9, and every row held the display's 16.665 ms interval. The run needs the
+load under 8.
 
 ## Limits
 
