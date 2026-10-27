@@ -61,6 +61,7 @@ use null3d_render::fog_volume::{self, Volumetric};
 use null3d_render::frame::{
     CanvasOutput, FrameBuilder, FrameInput, LevelQuality, RecordError, SceneSettings,
 };
+use null3d_render::frame_graph::PrepassColor;
 use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
@@ -529,7 +530,10 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// 8-bit path. `antialias` is the anti-aliasing mode's code; an unknown code takes MSAA.
 /// `transparent` keeps the canvas clear where nothing draws. Without `cell_culling`, culling tests
 /// every object, with no grid cells skipped first. With `depth_prepass`, each camera view draws its
-/// opaque objects' depth before it shades them. `skinning` is the code of WebGPU's skinning mode
+/// opaque objects' depth before it shades them. `prepass_color` is how such a prepass starts the
+/// stand-in color that it never draws, where a screen step splits it from the opaque pass
+/// (`constants::prepass_color`), which a benchmark page measures on WebGL2. `skinning` is the code
+/// of WebGPU's skinning mode
 /// (`constants::SKINNING`): the skinning pass with or without its savings, or the vertex shader of
 /// each pass; an unknown code takes the default. With `index_instances`, WebGPU's vertex shaders
 /// read each culled instance by index from storage buffers, not from a copy that the culling
@@ -558,6 +562,7 @@ pub fn init_engine(
     transparent: bool,
     cell_culling: bool,
     depth_prepass: bool,
+    prepass_color: u32,
     skinning: u32,
     index_instances: bool,
     large_world: bool,
@@ -618,6 +623,7 @@ pub fn init_engine(
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
                 cell_culling,
                 depth_prepass,
+                prepass_color: PrepassColor::from_code(prepass_color),
                 cascade_depth,
                 ..CpuCulledConfig::default()
             }))
