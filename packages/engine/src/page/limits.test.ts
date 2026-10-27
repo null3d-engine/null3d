@@ -52,6 +52,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	cellCulling: true,
 	joinEffects: true,
 	depthPrepass: false,
+	prepassColor: C.PREPASS_COLOR_LOAD,
 	skinning: C.SKINNING_VERTEX,
 	indexInstances: false,
 	directDraws: false,
@@ -109,6 +110,7 @@ const PLAIN: DeviceOptions = {
 	antialias: 'msaa',
 	transparent: false,
 	depthPrepass: false,
+	prepassColor: undefined,
 	largeWorld: false,
 	expectedObjects: 0,
 	gpuOcclusion: false,
@@ -326,6 +328,15 @@ describe('coreDevice on WebGL2', () => {
 		expect(coreDevice('webgl2', none, PLAIN).capabilities).toBe(0);
 		const refused = report({ floatRenderTargets: { rgba16f: refusedTarget } });
 		expect(coreDevice('webgl2', refused, PLAIN).capabilities).toBe(0);
+	});
+
+	it('passes the way the prepass starts its stand-in color, and the default without a switch', () => {
+		const code = (prepassColor: DeviceOptions['prepassColor']) =>
+			coreDevice('webgl2', report({}), { ...PLAIN, prepassColor }).prepassColor;
+		expect(code(undefined)).toBe(C.PREPASS_COLOR_NONE);
+		expect(code('load')).toBe(C.PREPASS_COLOR_LOAD);
+		expect(code('clear')).toBe(C.PREPASS_COLOR_CLEAR);
+		expect(code('none')).toBe(C.PREPASS_COLOR_NONE);
 	});
 
 	it('flags each compressed texture family whose extension the context turned on', () => {

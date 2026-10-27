@@ -449,6 +449,19 @@ pub mod camera_target {
     pub const PASS_VIEWS: u32 = 2;
 }
 
+/// How a depth prepass that a screen step splits from the opaque pass starts the stand-in color
+/// that it never draws, in `initEngine`'s `prepass_color`. A benchmark page picks it with
+/// ?prepass-color=. `NONE` is the default that the device run chose (D-269).
+pub mod prepass_color {
+    /// Starts it from what the texture holds, then invalidates it. The engine's behavior before the
+    /// device run, kept for measurement.
+    pub const LOAD: u32 = 0;
+    /// Clears it. The device run showed that the clear does not remove the charge.
+    pub const CLEAR: u32 = 1;
+    /// Gives the prepass a depth-only framebuffer, with no color attachment.
+    pub const NONE: u32 = 2;
+}
+
 /// The settings that `setTextureOption` changes.
 pub mod texture_option {
     /// The texel bytes that one frame may upload.
@@ -1428,6 +1441,14 @@ pub fn typescript() -> String {
                 ("VIEW", camera_target::VIEW),
                 ("SHADOWS", camera_target::SHADOWS),
                 ("PASS_VIEWS", camera_target::PASS_VIEWS),
+            ],
+        ),
+        (
+            "PREPASS_COLOR",
+            &[
+                ("LOAD", prepass_color::LOAD),
+                ("CLEAR", prepass_color::CLEAR),
+                ("NONE", prepass_color::NONE),
             ],
         ),
         (
