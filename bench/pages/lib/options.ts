@@ -1,7 +1,7 @@
 // The address switches that benchmark pages share. Each check fails with a message that says how to
 // fix the address, and the page publishes that message as its error.
 
-import { HOLD_TIME, MEASURE_SECONDS, WARMUP_SECONDS } from '../../scenes/spec';
+import { HOLD_TIME } from '../../scenes/spec';
 
 export interface RunOptions {
 	/**
@@ -19,13 +19,8 @@ export interface RunOptions {
 	keep: boolean;
 	/** `?n=`: the instance count, or null to use the scene's default. */
 	count: number | null;
-	/** The warm-up of a timed run: `?seconds=`, or the protocol's without the switch. */
-	warmupSeconds: number;
-	/**
-	 * The measured time of a timed run: `?measure=`, or else `?seconds=`, or the protocol's. A run
-	 * that must count more frames measures longer without warming up longer.
-	 */
-	measureSeconds: number;
+	/** `?seconds=`: the warm-up and the measured time of a run, or null to use the protocol's. */
+	seconds: number | null;
 	/**
 	 * `?soak=`: minutes to run the scene, measured once a minute, instead of a timed run, or null
 	 * without the switch.
@@ -60,8 +55,8 @@ export interface RunOptions {
 	 */
 	antialias: 'none' | 'fxaa' | 'msaa' | null;
 	/**
-	 * `?maxPixelRatio=`: the highest pixel ratio that a null3D page draws at, in place of the preset's
-	 * cap on a page that fills the window and the protocol's on one that does not, or null for those.
+	 * `?maxPixelRatio=`: the highest pixel ratio that a null3D page which fills the window draws at,
+	 * in place of the preset's cap, or null for the preset's.
 	 */
 	maxPixelRatio: number | null;
 	/**
@@ -118,13 +113,10 @@ export function pageReport(params: URLSearchParams): 'hold' | 'demo' | 'soak' | 
 const whole = (v: number) => Number.isSafeInteger(v) && v > 0;
 
 /**
- * Reads `?hold`, `?demo`, `?keep`, `?n=`, `?seconds=`, `?measure=`, `?soak=`, `?shadows=`, `?far=`,
- * `?governor=`, the shadow quality settings, `?antialias=` and `?maxPixelRatio=`.
+ * Reads `?hold`, `?demo`, `?keep`, `?n=`, `?seconds=`, `?soak=`, `?shadows=`, `?far=`, `?governor=`,
+ * the shadow quality settings, `?antialias=` and `?maxPixelRatio=`.
  */
 export function readRunOptions(params: URLSearchParams): RunOptions {
-	const seconds = (name: string) =>
-		readNumber(params, name, (v) => Number.isFinite(v) && v > 0, 'a number of seconds above 0');
-	const both = seconds('seconds');
 	return {
 		hold:
 			params.get('hold') === ''
@@ -143,8 +135,12 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 			(v) => Number.isSafeInteger(v) && v > 0,
 			'a whole number above 0',
 		),
-		warmupSeconds: both ?? WARMUP_SECONDS,
-		measureSeconds: seconds('measure') ?? both ?? MEASURE_SECONDS,
+		seconds: readNumber(
+			params,
+			'seconds',
+			(v) => Number.isFinite(v) && v > 0,
+			'a number of seconds above 0',
+		),
 		soak: readNumber(
 			params,
 			'soak',
