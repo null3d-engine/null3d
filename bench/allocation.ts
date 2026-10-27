@@ -413,12 +413,15 @@ export const DAY_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number
 /**
  * Places that allocate with `--canvas`, on top of `BUDGETS`: the browser's image data for the
  * rectangle and the copy of it into engine memory, which the profiler attributes to the copy at
- * each read, and the render passes that make the texture's mip levels again. The refresh adds no
- * place of its own, and the sketch changes one rectangle object in place, so the sample holds the
- * browser's and the engine's work alone. Measured, the copy place reads 145.1 bytes per frame on
- * the Mac's WebGPU path, 140.7 on its WebGL2 and 131.3 on CI's SwiftShader; the mip levels read
- * 169.5 on the Mac's WebGPU path and 165.9 on SwiftShader, whose windows reach 202.7, and WebGL2
- * makes them without a render pass.
+ * each read, and the render passes that make the texture's mip levels again. In some runs the
+ * browser counts the image data in `refresh` instead, where it inlines the copy, so the check
+ * counts both places in `setRegion` (`COUNTED_IN_CALLER`) and this budget holds their sum. The
+ * refresh adds no place of its own, and the sketch changes one rectangle object in place, so the
+ * sample holds the browser's and the engine's work alone. Measured, the copy reads 145.1 bytes per
+ * frame on the Mac's WebGPU path, 140.7 on its WebGL2 and 131.3 on CI's SwiftShader, with the
+ * image data's 10.8 to 19.5 bytes on `refresh` in the runs that counted it there; the mip levels
+ * read 169.5 on the Mac's WebGPU path and 165.9 on SwiftShader, whose windows reach 202.7, and
+ * WebGL2 makes them without a render pass.
  */
 export const CANVAS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': { 'setRegion scene/textures.ts': 192 },
@@ -532,10 +535,15 @@ const REPLAY = 'replay webgpu/backend.ts';
  * held: in five runs on SwiftShader, `colorView` read 7.3 to 52.8 bytes per frame and the replay
  * 76.8 to 100.8, their sum 101.5 to 129.6. With samples of 420 frames, `colorView` read 30.5.
  * Counted in the replay, the two read the same whichever way the inlining falls.
+ *
+ * The canvas read's image data moves the same way: the browser may count it in `refresh` where it
+ * inlines the region's copy into the caller. Counted in `setRegion`, the two read the same
+ * whichever way the inlining falls, and the canvas budget holds their sum.
  */
 const COUNTED_IN_CALLER: ReadonlyMap<string, string> = new Map([
 	['colorView webgpu/backend.ts', REPLAY],
 	['targetView webgpu/backend.ts', REPLAY],
+	['refresh scene/textures.ts', 'setRegion scene/textures.ts'],
 ]);
 
 /** Budgets of places by worker, in bytes per frame. */
