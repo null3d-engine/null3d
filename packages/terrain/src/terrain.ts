@@ -91,6 +91,8 @@ interface Block {
 	key: number;
 	readonly object: Mesh;
 	readonly mesh: MeshGeometry;
+	/** The level whose mesh this block holds, which a block only takes a mesh of. */
+	level: number;
 	stamp: number;
 	shown: boolean;
 }
@@ -139,8 +141,16 @@ export class Terrain {
 	/** The vertices of the block being written, which every block writes into in turn. */
 	private readonly positions: Float32Array;
 	private readonly normals: Float32Array;
-	/** The center of a block's own sphere, which holds every block at its own corner. */
-	private readonly center: [number, number, number] = [0, 0, 0];
+	/**
+	 * The sphere of each level's blocks: centred on the block's middle and reaching its farthest
+	 * vertex, so one level's bounds hold every block of that level and a reused block keeps them.
+	 */
+	private readonly spheres = new Map<
+		number,
+		{ center: [number, number, number]; radius: number }
+	>();
+	/** The level that `scanOldest` looks for while `evict` frees a block. */
+	private scanLevel = 0;
 	/** The block and the key that `scanOldest` found, which `evict` takes. */
 	private oldest: Block | undefined = undefined;
 	private oldestKey = 0;
@@ -161,7 +171,7 @@ export class Terrain {
 	};
 	/** Notes the oldest block that the newest selection leaves out and that no longer draws. */
 	private readonly scanOldest = (block: Block, key: number): void => {
-		if (block.stamp === this.stamp) return;
+		if (block.stamp === this.stamp || block.level !== this.scanLevel) return;
 		// A block that draws holds the last complete selection, which stays whole until the newest
 		// one is built, so its mesh is not free yet.
 		if (block.shown) return;
@@ -397,12 +407,13 @@ export class Terrain {
 			this.positions,
 			this.normals,
 		);
-		let block = this.takeBlock();
+		let block = this.takeBlock(level);
 		if (block) {
+			// The mesh is the level's own, so it already carries that level's sphere: a crossing
+			// gives the object a new place and leaves the bounds, and the draw table, alone.
 			block.mesh.updateVertices('positions', this.positions);
 			block.mesh.updateVertices('normals', this.normals);
 			block.object.setPosition(originX, 0, originZ);
-			block.object.setBounds(this.center, this.blockRadius());
 		} else {
 			const mesh = this.context.geometry.fromArrays({
 				positions: this.positions,
@@ -417,9 +428,12 @@ export class Terrain {
 				castShadows: this.cast,
 				receiveShadows: this.receive,
 			});
-			block = { key, object, mesh, stamp: this.stamp, shown: false };
+			const { center, radius } = this.blockSphere(level, blockSize, skirt);
+			object.setBounds(center, radius);
+			block = { key, object, mesh, level, stamp: this.stamp, shown: false };
 		}
 		block.key = key;
+		block.level = level;
 		block.stamp = this.stamp;
 		block.object.setVisible(false);
 		blocks.set(key, block);
@@ -431,10 +445,12 @@ export class Terrain {
 	 * unused among the blocks the newest selection leaves out. Undefined while the ground holds fewer
 	 * meshes than `maxBlocks`, or while every mesh it holds draws, where the new block builds one.
 	 */
-	private takeBlock(): Block | undefined {
-		const waiting = this.unpark();
+	private takeBlock(level: number): Block | undefined {
+		const waiting = this.unpark(level);
 		if (waiting) return waiting;
-		if (this.blocks.size + this.spareCount >= this.maxBlocks && this.evict()) return this.unpark();
+		if (this.blocks.size + this.spareCount >= this.maxBlocks && this.evict(level)) {
+			return this.unpark(level);
+		}
 		return undefined;
 	}
 
@@ -443,12 +459,16 @@ export class Terrain {
 		this.spares[this.spareCount++] = block;
 	}
 
-	/** Takes the last parked block, or undefined when none waits. */
-	private unpark(): Block | undefined {
-		if (this.spareCount === 0) return undefined;
-		const taken = this.spares[--this.spareCount] as Block;
-		this.spares[this.spareCount] = undefined as unknown as Block;
-		return taken;
+	/** Takes the last parked block of `level`, or undefined when none of that level waits. */
+	private unpark(level: number): Block | undefined {
+		for (let i = this.spareCount - 1; i >= 0; i--) {
+			const block = this.spares[i] as Block;
+			if (block.level !== level) continue;
+			for (let k = i; k < this.spareCount - 1; k++) this.spares[k] = this.spares[k + 1] as Block;
+			this.spares[--this.spareCount] = undefined as unknown as Block;
+			return block;
+		}
+		return undefined;
 	}
 
 	/**
@@ -456,26 +476,32 @@ export class Terrain {
 	 * A mesh keeps the sphere it was made with, so a block that takes another's mesh gives the object
 	 * the sphere of the ground that it now holds.
 	 */
-	private blockRadius(): number {
-		const { positions } = this;
-		let radius = 0;
-		for (let at = 0; at < positions.length; at += 3) {
-			const x = positions[at] as number;
-			const y = positions[at + 1] as number;
-			const z = positions[at + 2] as number;
-			const distance = Math.sqrt(x * x + y * y + z * z);
-			if (distance > radius) radius = distance;
-		}
-		return radius;
+	private blockSphere(
+		level: number,
+		blockSize: number,
+		skirt: number,
+	): { center: [number, number, number]; radius: number } {
+		const cached = this.spheres.get(level);
+		if (cached) return cached;
+		const { min, max } = this.field;
+		const low = min - skirt;
+		const center: [number, number, number] = [blockSize / 2, (low + max) / 2, blockSize / 2];
+		// The block's box: its middle across the two sides, its middle in height, and the distance
+		// from there to a corner at the top or the bottom of the ground.
+		const radius = Math.hypot(blockSize / Math.SQRT2, (max - low) / 2);
+		const sphere = { center, radius };
+		this.spheres.set(level, sphere);
+		return sphere;
 	}
 
 	/**
 	 * Parks the oldest block that the newest selection leaves out and that no longer draws, for the
 	 * next block to take. False when every block either belongs to the newest selection or draws.
 	 */
-	private evict(): boolean {
+	private evict(level: number): boolean {
 		this.oldest = undefined;
 		this.oldestKey = 0;
+		this.scanLevel = level;
 		this.blocks.forEach(this.scanOldest);
 		const oldest = this.oldest;
 		if (!oldest) return false;
