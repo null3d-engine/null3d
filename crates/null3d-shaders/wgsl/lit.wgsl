@@ -227,7 +227,7 @@ fn pick_color(key: u32) -> vec4f {
 #import null3d::refraction::{transmitted_light}
 #ifdef TONE_MAP
 #import null3d::fog::{fog_factor}
-#import null3d::tonemap::{encode, tone_map, vignette}
+#import null3d::tonemap::{encode, tone_map, vignette, vignette_place}
 #endif
 #endif
 #ifdef TRANSLUCENCY
@@ -2267,7 +2267,11 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     // joins after the tone mapping, as far as the fog lets it.
     let unfogged = (u32(material_row.strengths.z) & NO_FOG) != 0u;
     let fog = select(fog_factor(engine_frame.fog, input.relativePosition), 0.0, unfogged);
-    let shade = vignette(pixel.xy, engine_frame.target_size.xy, engine_frame.vignette);
+    let shade = vignette(
+        vignette_place(pixel.xy, engine_frame.occlusion.y),
+        engine_frame.target_size.xy,
+        engine_frame.vignette,
+    );
     let shaded = fogged(layered, input.relativePosition, material_row) * shade;
     let keeps = keeps_display_color(material_row);
     let toned = select(
