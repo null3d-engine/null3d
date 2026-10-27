@@ -166,6 +166,13 @@ function checkProgram(
  */
 const BATCH = 32;
 
+/**
+ * How many times a program whose link met Safari's random Metal fault is linked again. The fault is
+ * random, and a page can meet it twice in a row for the same program, so one retry leaves a job to
+ * chance.
+ */
+const RELINK_ATTEMPTS = 2;
+
 /** The seconds that the page expects for its WGSL modules, after its GLSL programs. */
 const AFTER_GLSL_SECONDS = 30;
 
@@ -174,9 +181,10 @@ const AFTER_GLSL_SECONDS = 30;
  * draw index are skipped, with a note, when the browser lacks `WEBGL_multi_draw`. Every compile and
  * link of a batch starts before its first status read, so a driver that compiles in the background
  * works on many programs at once. Where the browser has `KHR_parallel_shader_compile`, the page
- * waits for them without blocking, so the runner page around it keeps its own clock. Programs whose
- * link met Safari's random Metal fault link once more, with the engine's comment at the end of each
- * source, and go to `relinked` with the first log. A second failure counts as a failure. Each batch
+ * waits for them without blocking, so the runner page around it keeps its own clock. A program whose
+ * link met Safari's random Metal fault is linked again, up to `RELINK_ATTEMPTS` times, with the
+ * engine's comment at the end of each source. One that links goes to `relinked` with the first
+ * attempt's log; one that meets the fault until its attempts run out counts as a failure. Each batch
  * is checked and deleted before the next starts, and the page yields between batches, so that
  * status reads get answers without that extension too.
  */
@@ -205,21 +213,42 @@ export async function checkGlslPrograms(
 			.map(([name, program]) => startProgram(gl, name, program));
 		if (parallel) await finished(gl, parallel, pending);
 		checkContext(gl, first, compiled.length);
-		const retries: PendingProgram[] = [];
+		/** The programs whose link met Safari's random Metal fault, with the first attempt's log. */
+		const retries: { pending: PendingProgram; log: string }[] = [];
 		for (const p of pending) {
 			if (metalFault(gl, p)) {
-				relinked.push({ shader: p.name, stage: 'link', log: gl.getProgramInfoLog(p.linked) ?? '' });
-				retries.push(startProgram(gl, p.name, p.program, RELINK_TAIL));
+				const log = gl.getProgramInfoLog(p.linked) ?? '';
+				retries.push({ pending: startProgram(gl, p.name, p.program, RELINK_TAIL), log });
 			} else {
 				checkProgram(gl, p, failures, removed);
 			}
 			release(gl, p);
 		}
-		if (parallel) await finished(gl, parallel, retries);
-		checkContext(gl, first, compiled.length);
-		for (const p of retries) {
-			checkProgram(gl, p, failures, removed);
-			release(gl, p);
+		// The fault can strike twice in one page, so a program whose retry met it again is retried
+		// while its attempts last. A note is written only for a retry that linked; otherwise the
+		// program's own failure entry is the whole truth about it.
+		for (let attempt = 0; attempt < RELINK_ATTEMPTS && retries.length > 0; attempt++) {
+			if (parallel)
+				await finished(
+					gl,
+					parallel,
+					retries.map(({ pending: p }) => p),
+				);
+			checkContext(gl, first, compiled.length);
+			const again: { pending: PendingProgram; log: string }[] = [];
+			for (const { pending: p, log } of retries) {
+				const before = failures.length;
+				checkProgram(gl, p, failures, removed);
+				if (gl.getProgramParameter(p.linked, gl.LINK_STATUS) === true) {
+					relinked.push({ shader: p.name, stage: 'link', log });
+				} else if (metalFault(gl, p) && attempt + 1 < RELINK_ATTEMPTS) {
+					failures.length = before;
+					again.push({ pending: startProgram(gl, p.name, p.program, RELINK_TAIL), log });
+				}
+				release(gl, p);
+			}
+			retries.length = 0;
+			retries.push(...again);
 		}
 		const checked = first + pending.length;
 		progress(
