@@ -2,7 +2,7 @@
 
 Status: decided by the helper of M3-E8, for the owner's review. Built: the pass, both GPU paths
 and the tests, as the consequences list, and the wait of every pass that draws a reader (M3-V3).
-Pending: the compute path's GPU time on the Mac, the iPad and the S24. Tasks: M3-E8, M3-V3.
+Tasks: M3-E8, M3-V3.
 
 Summary: A compute pass is a render pass of the graph whose target is a storage texture that
 materials, effects and other passes sample in the same frame. The add-on gives a compiled compute
@@ -247,15 +247,48 @@ the useful figure is the on side's total.
 | compatibility mode | 67.5 MiB | 2.2 MiB | 6.6 MiB | 85.5 MiB |
 | WebGL2 | 115.4 MiB | 0.6 MiB | 7.6 MiB | 133.4 MiB |
 
-The GPU time is not measured yet. The cost harness measures only while the machine's 1-minute load
-is under 8. The Mac's load stood between 100 and 200 in every attempt, so none recorded a figure.
-Take it in a quiet window with
-`NULL3D_COMPUTE_COST=1 bun run test:browser -- compute-cost.spec.ts`, which prints each path's GPU
-time with the pass off and on, and the load beside it.
+**The GPU time.** The difference between the sides is the feature's cost. It holds the pass, the
+vertex offset's texture reads in every pass that draws the material, and the custom material's own
+work. The per-pass figures do not separate the pass's own dispatch. The page turns the pass off
+with `render.setPassEnabled`, and the next frame's graph leaves it out. The frame records no
+compute pass for it and dispatches nothing. A live reader does not keep a switched-off pass
+running: the compute-state cost case draws one, and its off side loses the whole pass.
 
-The iPad and the S24 run the same page through the `compute` device plan:
-`bun run devices:cloud --only bsipadpro13-safari --plan compute`, and the same with
-`--only bsgalaxys24-chrome`. Each runs six pages: the three GPU paths at scales 1 and 0.5.
+The frame runs one GPU compute pass, which the engine's own compute fills on both sides. A sketch's
+compute pass joins it when on, and its dispatch is inside that figure. The timer's `compute 1` part
+therefore reads the same on both sides, within a timer step. On the off side it is the engine's
+compute cost, not the pass's. The part follows the render scale on the iPad: 0.0207 ms at scale 1
+and 0.0109 at 0.5. The pass's target stays 512 by 512.
+
+| Device | Run | Window (CSS px, ratio) | Scale | GPU off (ms) | GPU on (ms) | Difference (ms) | `compute 1` off, on (ms) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| iPad Pro 13-inch, Safari 26.6.1 | 20261026-235238-compute | 1,032 by 1,264 at 2x | 1 | 4.760 | 5.181 | 0.422 | 0.0207, 0.0210 |
+| | | | 0.5 | 3.946 | 4.271 | 0.325 | 0.0109, 0.0127 |
+| Galaxy S25, Chrome 152 | 20261027-002006-compute | 360 by 621 at 3x | 1 | 3.146 | 4.063 | 0.918 | 0.2621, 0.2621 |
+| | | | 0.5 | 4.129 | 4.653 | 0.524 | 0.2621, 0.2621 |
+| MacBook Pro, Apple M3 Max, Chrome 156 | 20261027-003222-compute | 1,200 by 723 at 2x | 1 | 1.835 | 1.901 | 0.066 | 0, 0.0655 |
+| | | | 0.5 | 2.556 | 2.556 | 0 | 0.0655, 0.0655 |
+
+The three runs are in `/Users/ram/dev/null3d-devices/target/runs/`. The commands are
+`bun run devices:cloud --only bsipadpro13-safari --plan compute`,
+`bun run devices:cloud --only bsgalaxys25-chrome --plan compute`, and
+`bun tests/real-browsers.ts --plan compute "Google Chrome"`. Each runs six pages: the three GPU
+paths at both scales. The iPad ran at 59 Hz and the Galaxy S25 at 30 Hz. Each GPU time stands on
+the GPU's own timer.
+
+The Mac's WebGPU timer shows whole steps of 0.065536 ms: 1.835 ms is 28 steps, 1.901 ms is 29 and
+2.556 ms is 39. One step is the smallest figure that machine can show, so its whole-scale
+difference is one step and its half-scale difference is below one. Its render parts each rose by
+one step at half scale, and the frame's span stayed the same because the GPU overlaps them. The
+Galaxy S25's timer shows the same step, so its part is four steps. The iPad's timer reports exact
+times. Its `compute 1` part reads 0.0003 ms higher with the pass on at scale 1, and 0.0018 ms at
+0.5. That bounds the pass's own dispatch there. The Mac's WebGL2 timer is finer: its frame rose
+from 3.870 to 3.950 ms at scale 1 and from 3.879 to 3.989 ms at 0.5. The iPad and the Galaxy S25
+have no WebGL2 GPU timer, so their WebGL2 rows give the CPU time of the busiest thread.
+
+The cost harness measures only while the machine's 1-minute load is under 8. Take a finer Mac
+figure in a quiet window with `NULL3D_COMPUTE_COST=1 bun run test:browser -- compute-cost.spec.ts`.
+It prints each path's GPU time with the pass off and on, and the load beside it.
 
 
 
