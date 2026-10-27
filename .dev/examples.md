@@ -683,13 +683,15 @@ and a hero car with two screens.
   draws a mark that a later call sets.
 - **The lens's cost.** The add-on's README holds the look's cost per preset. The cost test times
   the whole look against the same scene without it. It draws at 1920 x 1080 with a render scale of
-  1, and runs as `NULL3D_LENS_COST=1 bun run test:browser -- lens-cost.spec.ts`. Its figures are
-  owed: the run needs a quiet computer, and the Mac's load has stayed above the quiet threshold. On
-  the Skyway scene at a load of 36, the effect alone added about 0.7 to 0.9 ms of GPU at every
-  preset on WebGPU, and 0.7 ms at Low and 3.2 ms at Medium on WebGL2. The core's vignette and
-  grade add nothing to a frame, since they run in the final pass; the sharpening value adds the
-  first step's pass at the whole render scale. A look that leaves all four of the effect's values
-  at 0 adds no effect at all.
+  1, and runs as `NULL3D_LENS_COST=1 bun run test:browser -- lens-cost.spec.ts`. The quiet run of
+  27 October 2026, on the Mac's M3 Max in Chrome 156, gives the look 0.45 ms at Low and 0.76 ms at
+  Ultra on WebGPU, 0.61 and 1.40 in compatibility mode, and 0.91 and 1.05 on WebGL2, while the
+  other presets read within half a millisecond of zero or below it. The add-on's README holds all
+  twelve cells with each line's load, and that spread is the figure's own accuracy
+  ([run](tested-devices/macbook-pro-m3-max-chrome/20261027-092740-lens-cost.md)). The core's
+  vignette and grade add nothing to a frame, since they run in the final pass; the sharpening value
+  adds the first step's pass at the whole render scale. A look that leaves all four of the effect's
+  values at 0 adds no effect at all.
 - **On a phone**, WebGL2 runs Medium at most. That preset draws 30,000 cars, about 900 towers, 180
   lights, the rain and reflections at a quarter of the render size. Medium doubles the cars and
   raises the reflection scale. A cloud Galaxy S24 measured two windows in a row at Low. The first 5
