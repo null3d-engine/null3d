@@ -293,7 +293,8 @@ pub(crate) fn fades_its_way(key: DrawKey) -> bool {
     ) && key.permutation & NO_FADE == 0
 }
 
-/// True when a bucket key draws a fading level.
+/// True when a bucket key draws with the fading build, which lists the fade value or, in a levels
+/// debug view, the level code beside each entry.
 pub(crate) fn is_fade_key(key: &BucketKey) -> bool {
     key.0.permutation & permutation::LOD_FADE != 0
 }
