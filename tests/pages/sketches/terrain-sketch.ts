@@ -21,7 +21,11 @@ const contrast = switches.get('blend') === 'off' ? 0 : undefined;
 function ground(x: number, z: number): number {
 	const hills = 30 * Math.sin(x * 0.011) * Math.cos(z * 0.009) + 8 * Math.sin(x * 0.05 + z * 0.03);
 	const valley = -16 * Math.exp(-(z * z) / (2 * 120 * 120));
-	const folds = 1.4 * Math.sin(x * 0.31 + z * 0.21) + 0.6 * Math.sin(x * 0.63 - z * 0.47);
+	// Three crossing waves, so the folds look like the ground's own bumps rather than a ridge pattern.
+	const folds =
+		0.8 * Math.sin(x * 0.23 + z * 0.17) +
+		0.5 * Math.sin(x * 0.41 - z * 0.31 + 1.7) +
+		0.3 * Math.sin(x * 0.59 + z * 0.47 + 4.1);
 	return hills + valley + folds + 6;
 }
 

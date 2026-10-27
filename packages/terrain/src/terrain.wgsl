@@ -43,15 +43,18 @@ fn surface(input: SurfaceInput) -> Surface {
     let c3 = textureSample(layerThree, layerThreeSampler, at / material.tiles.w);
     // A layer's height: the brightness of its texel, which rises where the texel looks higher, or
     // its alpha channel where the map keeps a height there. Mid darkness stands at the meeting.
+    // `sqrt` spreads the linear brightness the way the eye reads it, so dark grass and bright rock
+    // differ as much here as they look.
     let heights = vec4f(
-        mix(dot(c0.rgb, vec3f(0.2126, 0.7152, 0.0722)), c0.a, material.layerAlpha.x),
-        mix(dot(c1.rgb, vec3f(0.2126, 0.7152, 0.0722)), c1.a, material.layerAlpha.y),
-        mix(dot(c2.rgb, vec3f(0.2126, 0.7152, 0.0722)), c2.a, material.layerAlpha.z),
-        mix(dot(c3.rgb, vec3f(0.2126, 0.7152, 0.0722)), c3.a, material.layerAlpha.w),
+        mix(sqrt(dot(c0.rgb, vec3f(0.2126, 0.7152, 0.0722))), c0.a, material.layerAlpha.x),
+        mix(sqrt(dot(c1.rgb, vec3f(0.2126, 0.7152, 0.0722))), c1.a, material.layerAlpha.y),
+        mix(sqrt(dot(c2.rgb, vec3f(0.2126, 0.7152, 0.0722))), c2.a, material.layerAlpha.z),
+        mix(sqrt(dot(c3.rgb, vec3f(0.2126, 0.7152, 0.0722))), c3.a, material.layerAlpha.w),
     );
-    // A layer that the splat map gives no weight stays out, so a bright rock texel never appears
-    // across a meadow where the rock layer has no place at all.
-    let present = ceil(weights);
+    // A layer's height acts in share of the weight that the splat map gives it, so a bright rock
+    // texel never appears across a meadow where the rock layer has no place, and the effect fades
+    // in smoothly along the outer edge of a layer's band.
+    let present = sqrt(weights);
     var blend = max(
         weights + (heights - vec4f(0.5)) * material.layerContrast * present,
         vec4f(0.0),
