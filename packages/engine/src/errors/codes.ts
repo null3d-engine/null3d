@@ -568,6 +568,14 @@ const DOCS = {
 		example: 'E1505: the pass "Blur" draws at half size into "sceneColor", which is full size.',
 		since: '0.1',
 	},
+	E1506: {
+		title: 'Feature draw after the first frame',
+		cause:
+			'A draw whose instance count the GPU writes was created after the engine recorded its first frame, on a device that draws its scene directly. The direct path counts every draw on the CPU and keeps no indirect draw, so the frame has nowhere to copy the count. The frame records no draw.',
+		example:
+			'E1506: the frame failed: a draw whose instance count the GPU writes arrived after the first frame, and this device draws directly.',
+		since: '0.3',
+	},
 } satisfies Record<ErrorCode, Omit<ErrorEntry, 'fix'>>;
 
 /** Every code's docs text with its fix, in code order. */

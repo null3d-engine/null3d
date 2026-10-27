@@ -148,6 +148,7 @@ On WebGL2, each row's matrix is split into a position, a rotation and a scale th
 - The conversion uses the main view's camera, so every view, the shadows included, reads the rows converted for that camera. A shadow view draws the add-on's count word too, so the instances that cast shadows are the instances that the GPU counts.
 - The shadow views cull the faces that point away from the light, as every caster does. A thin surface, such as a leaf or a standing disc, therefore casts nothing while the light reaches its back. Give such a draw `doubleSided` to cast from either side.
 - The add-on's compute pass must run before the scene draws: use `band: 'before'`, as the example does. Rows that it writes after the scene are too late for that frame's opaque pass.
+- Create the draw in the sketch's setup, and await `addComputeInstances()` before the first frame. A device that draws the scene directly fixes that choice at its first frame. Such a device cannot take a draw whose count the GPU writes later. The frame then fails with [E1506](../errors/E1506.md).
 - The feature description's `reads`, `writes`, `outputs` and `provides` stay with the [feature registry](features.md).
 
 [The API reference](reference/feature-instances.md) lists every export of this page with its type and description. The engine's doc comments make it.
