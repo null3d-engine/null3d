@@ -28,7 +28,7 @@ null3D draws with WebGPU where the browser offers it, and with WebGL2 everywhere
 | WebGPU compatibility mode | Chrome 146+ on devices that have only OpenGL ES 3.1 or Direct3D 11 | Compute shaders and indirect draws on older GPUs | About 45% of these devices allow no storage buffers in vertex shaders; 16-bit float targets cannot use MSAA; uniform bindings stop at 16 KB |
 | WebGL2 | Every other supported browser: iPhones and iPads on iOS and iPadOS 18, Android phones without WebGPU (including phones with Samsung Xclipse GPUs), Firefox on Android and Linux | Instancing, uniform buffers, MSAA | No compute shaders, no indirect draws, no storage buffers |
 
-These facts were checked in September 2026. Browser support changes often, so this table can go out of date. At run time, the engine's feature tests decide.
+Browser support changes often, so this table can go out of date. At run time, the engine's feature tests decide.
 
 ## How each path draws
 
@@ -91,7 +91,7 @@ The engine draws reversed depth: the near plane stores 1 and the far plane store
 | WebGL2 with the `EXT_clip_control` extension | Reversed, in a 32-bit float buffer | Out to 10 km |
 | WebGL2 without it | Reversed, in WebGL2's range from -1 to 1 | Out to about 250 m |
 
-WebGL2 maps depth into a range from -1 to 1, which loses most of the precision that reversed depth gives. The `EXT_clip_control` extension sets the range from 0 to 1, as on WebGPU. In September 2026, Chrome, Safari and Brave had it on a MacBook Pro. So did Chrome on a Galaxy S24+, and Safari and Brave on an iPad Pro. Firefox on macOS did not. Without the extension, the engine keeps reversed depth in the range from -1 to 1. In every browser tested, that fought in fewer pixels than standard depth.
+WebGL2 maps depth into a range from -1 to 1, which loses most of the precision that reversed depth gives. The `EXT_clip_control` extension sets the range from 0 to 1, as on WebGPU. In the engine's tests, Chrome, Safari and Brave have it on a MacBook Pro. So do Chrome on a Galaxy S24+, and Safari and Brave on an iPad Pro. Firefox on macOS does not. Without the extension, the engine keeps reversed depth in the range from -1 to 1. In every browser tested, that fought in fewer pixels than standard depth.
 
 The distances come from the engine's depth precision test on a MacBook Pro, with the camera's near plane at 0.1 m. The field `engine.capabilities.depth` says which depth the device draws: `reversed`, or `reversed-gl` on WebGL2 without the extension. In both, depth textures such as [shadow maps](shadows.md) hold the same values as on WebGPU. Shaders that read depth then work the same on every tier. The `?depth=standard` switch below gives a third value, `standard`.
 

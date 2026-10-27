@@ -186,7 +186,7 @@ export interface AcceptOptions {
 	localReason?: string;
 	/** The record of local software-GPU references; the repository's file by default. */
 	record?: string;
-	/** The day that a local reference records, in the form 2026-10-25. */
+	/** The day that a local reference records, in the form `2026-10-25`. */
 	today?: string;
 }
 

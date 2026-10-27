@@ -32,6 +32,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { REPO_ROOT } from '../tests/lib/server.ts';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { cachedBaseline, prepareBaseline, readPreparedBaseline, run } from './lib/baseline-cache';
 import type { Comparison } from './lib/compare';
 import {
@@ -195,6 +196,7 @@ function measure(options: GpuCheckOptions): void {
 }
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The GPU check');
 	const options = parseGpuCheckArgs(process.argv.slice(2));
 	if (options.steps !== 'measure') await prepare(options);
 	if (options.steps !== 'prepare') measure(options);

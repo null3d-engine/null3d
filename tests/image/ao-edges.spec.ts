@@ -1,8 +1,8 @@
 // Ambient occlusion at the image's last row and column, on every tier. The horizon step rebuilds
-// each surface's normal from the depths beside it. At the corner's right and bottom edges, the
-// neighbor outside the corner once read the edge texel's own depth and position, which left no
-// direction to build a normal from, and the image showed dark dots along its bottom row and right
-// column. The references held the dots, so the image comparison could not catch them. This spec
+// each surface's normal from the depths beside it. At the corner's right and bottom edges, a
+// neighbor outside the corner that reads the edge texel's own depth and position leaves no
+// direction to build a normal from, and the image shows dark dots along its bottom row and right
+// column. References that hold the dots keep the image comparison from catching them, so this spec
 // compares the occlusion's images with the scene without it: occlusion must darken the edge
 // pixels about as much as the pixels one in from the edge.
 import { expect, type Page, test } from '@playwright/test';

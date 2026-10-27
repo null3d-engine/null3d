@@ -275,6 +275,7 @@ export async function runPipelined(
 ): Promise<void> {
 	const { slots } = controlViews(control);
 	sketch.context.scene.attachPickControl(slots);
+	sketch.context.render.attachReadControl(slots);
 	try {
 		while (Atomics.load(slots, Slot.Running) !== 0) {
 			const paused = Atomics.load(slots, Slot.Paused);
@@ -647,7 +648,6 @@ export class SketchRunner {
 			templates,
 			device.joinEffects,
 			new GradeTable(textures),
-			device.gradingHdr,
 		);
 		this.render = new Render(
 			this.core,
@@ -849,6 +849,7 @@ export class SketchRunner {
 			console.error(error);
 		}
 		this.context.scene.stopPicks();
+		this.render.stopReads();
 		this.core.stop();
 		stopHelperWorkers();
 		this.restoreRandom?.();
@@ -1796,8 +1797,10 @@ export class SketchRunner {
 			jobRecord.commitMicros(glue.takeJobBusyUs(k));
 		}
 		this.growJobs(glue, asked);
-		// A pick whose read landed answers now, before the next frame's update.
+		// A pick whose read landed answers now, before the next frame's update, and so does a read
+		// of a compute pass's region.
 		this.context.scene.pollPicks(this.sketch.control.slots);
+		this.render.pollReads(this.sketch.control.slots);
 		return frame;
 	}
 }

@@ -20,8 +20,8 @@ export default defineSketch(({ scene, materials, geometry, post, quality }) => {
 	if (SHARPEN !== null) post.set({ sharpen: Number(SHARPEN) });
 	// The sharpening draws in the second step of the two-step pass, which exists only below the
 	// canvas's scale, and its edge vote reads the texels the upscale made. The frame-budget
-	// governor lowers the render scale on a slow machine, so a loaded Mac drew this wall through a
-	// different path from the one the references hold. The captured frame draws at full size
+	// governor lowers the render scale on a slow machine, so a loaded Mac can draw this wall through
+	// a different path from the one the references hold. The captured frame draws at full size
 	// whatever the machine's speed.
 	quality.set({ minRenderScale: 1, maxRenderScale: 1 });
 	// An orthographic view keeps each box's edge on the same pixels at every device's canvas.

@@ -1,12 +1,12 @@
 # D-102: Offline play: the build's file list and the game's own service worker
 
-Status: decided, 2026-10-08. Date: 2026-10-08. Task: M2-R20.
+Status: decided and built. Task: M2-R20.
 
 Summary: Each production build with the Vite plugin writes `null3d-files.json` beside the page. It holds a `start` group, a group per feature that loads on first use, and a version. A game's own service worker caches the start and the features that it uses. On the engine test page's build, the start is 6.7 MB, skinning 5.2 MB and the whole build 17.8 MB, uncompressed. The hosting guide shows a 25-line worker, and the fresh-project test proves that it starts the threaded engine with the server stopped.
 
 ## Question
 
-Games must play with no network after their first visit (owner, 4 October 2026). The owner ruled that the game's own service worker does the caching and that null3D ships none. What must the engine and the Vite plugin give such a worker, so that it caches what the game needs and no more? And how does the page stay cross-origin isolated when the worker answers it?
+Games must play with no network after their first visit, by the owner's ruling. The owner also ruled that the game's own service worker does the caching and that null3D ships none. What must the engine and the Vite plugin give such a worker, so that it caches what the game needs and no more? And how does the page stay cross-origin isolated when the worker answers it?
 
 ## Rule
 
@@ -17,7 +17,7 @@ Games must play with no network after their first visit (owner, 4 October 2026).
 
 ## Data
 
-The engine test page's production build (`bunx vite build`, Vite 8.3.1, main at efead8b5d), sizes of the files as they are and after gzip at level 9. Cache Storage keeps the bodies as they arrive, without the transfer's compression.
+The engine test page's production build (`bunx vite build`, Vite 8.3.1, at efead8b5d), sizes of the files as they are and after gzip at level 9. Cache Storage keeps the bodies as they arrive, without the transfer's compression.
 
 | Group | Files | Uncompressed | gzip |
 | --- | --- | --- | --- |
@@ -47,7 +47,7 @@ The offline reload in each browser. The fresh project's production build has the
 | Safari 26.6.2, the owner's Mac | Threaded, isolated; 59 files cached | Threaded, isolated, under the worker's control | offline-check-1791390521124 |
 | Firefox 157, the owner's Mac | Threaded, isolated; 59 files cached | Threaded, isolated, under the worker's control; only the browser's own `favicon.ico` request failed | offline-check-1791390669975 |
 
-How the browser runs were made: a script served the build with the isolation headers. It added a reporting script to the page, which posted to a second port. The page reported its first start once the cache held the page. The script then stopped the server, and the page reloaded itself and reported again. Last, the page removed its worker and caches and closed its window. Safari and Firefox ran on 2026-10-08 from the branch at 95aa3f907.
+How the browser runs were made: a script served the build with the isolation headers. It added a reporting script to the page, which posted to a second port. The page reported its first start once the cache held the page. The script then stopped the server, and the page reloaded itself and reported again. Last, the page removed its worker and caches and closed its window. Safari and Firefox ran at 95aa3f907.
 
 ## Decision
 

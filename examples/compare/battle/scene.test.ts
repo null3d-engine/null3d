@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import {
 	type MeshData,
 	SIM_STEP,
@@ -184,30 +185,34 @@ describe('flights, particles and lights', () => {
 	});
 
 	// Simulates 25 seconds of the largest count, which takes several seconds on a busy machine.
-	test('the particles fit their layers, with finite values and colors that the engines draw', () => {
-		for (const count of [BATTLE_HOLD.count, 4000]) {
-			const state = stepped(count, 25);
-			const pools = particleCapacity(state);
-			const fire = createSpriteRows(pools.fire);
-			const smoke = createSpriteRows(pools.smoke);
-			writeParticles(state, state.time, fire, smoke);
-			expect(fire.count).toBeGreaterThan(0);
-			expect(smoke.count).toBeGreaterThan(0);
-			expect(fire.count).toBeLessThan(pools.fire);
-			expect(smoke.count).toBeLessThan(pools.smoke);
-			for (const rows of [fire, smoke]) {
-				for (let i = 0; i < rows.count * 4; i++) {
-					expect(Number.isFinite(rows.colors[i] as number)).toBe(true);
-					expect(rows.colors[i]).toBeGreaterThanOrEqual(0);
-				}
-				for (let i = 0; i < rows.count; i++) {
-					expect(rows.colors[i * 4 + 3]).toBeLessThanOrEqual(1);
-					expect(rows.frames[i]).toBeLessThan(16);
-					expect(rows.sizes[i * 2]).toBeGreaterThan(0);
+	test(
+		'the particles fit their layers, with finite values and colors that the engines draw',
+		() => {
+			for (const count of [BATTLE_HOLD.count, 4000]) {
+				const state = stepped(count, 25);
+				const pools = particleCapacity(state);
+				const fire = createSpriteRows(pools.fire);
+				const smoke = createSpriteRows(pools.smoke);
+				writeParticles(state, state.time, fire, smoke);
+				expect(fire.count).toBeGreaterThan(0);
+				expect(smoke.count).toBeGreaterThan(0);
+				expect(fire.count).toBeLessThan(pools.fire);
+				expect(smoke.count).toBeLessThan(pools.smoke);
+				for (const rows of [fire, smoke]) {
+					for (let i = 0; i < rows.count * 4; i++) {
+						expect(Number.isFinite(rows.colors[i] as number)).toBe(true);
+						expect(rows.colors[i]).toBeGreaterThanOrEqual(0);
+					}
+					for (let i = 0; i < rows.count; i++) {
+						expect(rows.colors[i * 4 + 3]).toBeLessThanOrEqual(1);
+						expect(rows.frames[i]).toBeLessThan(16);
+						expect(rows.sizes[i * 2]).toBeGreaterThan(0);
+					}
 				}
 			}
-		}
-	}, 30_000);
+		},
+		scaledBudget(30_000),
+	);
 
 	test('a blast keeps its slot while its smoke lingers', () => {
 		const state = stepped(600, 30);

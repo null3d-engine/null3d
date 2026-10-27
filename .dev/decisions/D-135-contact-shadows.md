@@ -1,8 +1,8 @@
 # D-135: Contact shadows
 
-Status: decided by the helper of M2-F12 on 11 October 2026, for the owner's review. It changes where [D-53](D-53-technique-defaults.md) ruling 6 runs the march: at ambient occlusion's half size, not in the lit shader. Built: contact shadows are on main (`60fe5ef01`). The owner's review is pending. Date: 2026-10-11. Task: M2-F12.
+Status: decided by the helper of M2-F12, for the owner's review. It runs the march of [D-53](D-53-technique-defaults.md) ruling 6 at ambient occlusion's half size, not in the lit shader. Built: contact shadows are on main (`60fe5ef01`). Task: M2-F12.
 
-Summary: The main directional light draws contact shadows: short shadows found in the camera's depth, which close the lit gap that the cascades leave where small objects meet the ground. Ambient occlusion's half-size horizon step marches them toward the sun through its depth copy, and its denoise blurs them by depth and normal into the fourth channel of its screen texture. The opaque pass reads that channel with the four reads it already makes for ambient occlusion, and multiplies the sun's light by it. `shadow: { contactDistance }` sets the reach (0.3 m by default), and the `contactShadowSteps` quality setting sets the steps: 8 on High, 16 on Ultra, 4 on WebGL2's Medium, none on Low.
+Summary: The main directional light draws contact shadows: short shadows found in the camera's depth, which close the lit gap that cascades leave under small objects. Ambient occlusion's half-size steps march and blur them into the fourth channel of their screen texture, which the opaque pass reads with the reads it makes already. `shadow: { contactDistance }` sets the reach (0.3 m by default); `contactShadowSteps` gives 8 steps on High, 16 on Ultra, 4 on WebGL2's Medium and none on Low.
 
 ## Question
 
@@ -14,12 +14,12 @@ The showcase scenes need small, sharp shadows where objects touch the ground: st
 - One look on all three GPU paths, with image references on the Mac's GPU and on SwiftShader.
 - Prototype S3's rule: under 0.5 ms of GPU time on the Galaxy S25 at High.
 - Zero cost while they draw nothing: no pass, no prepass, no texture read in the opaque pass ([design principle 8](../../AGENTS.md#design-principles)).
-- No new texture binding in the opaque pass. Its WebGPU fragment stage reads 15 of the 16 textures that every device allows, and lit fog takes the last.
+- No new texture binding in the opaque pass. Its WebGPU fragment stage reads 15 of the 16 textures that every device allows, and the parallax builds take the last ([D-136](D-136-bump-displacement-wireframe.md)).
 - No allocation per frame ([hard rule 1](../../AGENTS.md#hard-rules)).
 
 ## Prototype S3
 
-Prototype S3 (4 and 5 October 2026) timed contact shadows inside the lit pass: 8 steps over 0.3 m through ambient occlusion's half-size depth, at every pixel of the render size. Its scene had no shadow map, so every pixel that faced the sun marched. That is the worst case.
+Prototype S3 timed contact shadows inside the lit pass: 8 steps over 0.3 m through ambient occlusion's half-size depth, at every pixel of the render size. Its scene had no shadow map, so every pixel that faced the sun marched. That is the worst case.
 
 | Device | Render size | Cost of contact shadows |
 | --- | --- | --- |
@@ -58,11 +58,11 @@ Contact shadows read ambient occlusion's depth step: the depth prepass's depth, 
 
 The contact-only mode needs no new pipeline: the steps' shaders skip the occlusion by a value in their uniform block. The horizon step's target holds the occlusion, the normal's x and y, and the contact shadows. The normal faces the camera, so the denoise rebuilds its z from x and y.
 
-A first version marched in the denoise, and ran only the depth copy and the denoise without ambient occlusion. Its shadows had ragged, noisy edges, as the march's noise had no blur after it ([The noise](#the-noise)).
+A march in the denoise, with only the depth copy and the denoise running without ambient occlusion, leaves ragged, noisy edges, as no blur follows the march's noise ([The noise](#the-noise)).
 
 ### The shared screen texture
 
-The coordinator ruled on 11 October 2026 how the features share ambient occlusion's screen texture. D-134 holds the same rule.
+The coordinator set how the features share ambient occlusion's screen texture. [D-134](D-134-screen-space-reflections.md) holds the same rule.
 
 | Channel | Value | Neutral value |
 | --- | --- | --- |
@@ -72,7 +72,7 @@ The coordinator ruled on 11 October 2026 how the features share ambient occlusio
 | w | The share of the sun's light that contact shadows let through | 1 |
 
 - The trace step of screen-space reflections runs first and writes z. It passes x, y and w through, or writes their neutral values.
-- Ambient occlusion's denoise runs last, also when only contact shadows draw. It writes x, y and w, and copies z through unchanged. Before reflections merge, it writes z = 0.
+- Ambient occlusion's denoise runs last, also when only contact shadows draw. It writes x, y and w, and copies z through unchanged.
 - When ambient occlusion and contact shadows are off, the reflections' step writes last and leaves x, y and w neutral.
 - The blank texture, which the opaque pass binds while the steps draw nothing, holds the neutral values. A frame that reads it before the steps' pipelines build keeps every light.
 - The frame's `occlusion` values keep their meaning: x is ambient occlusion's strength, 0 when it is off. z and w describe the texture's grid while any step draws, and the opaque pass reads the texture only then.
@@ -82,7 +82,7 @@ The coordinator ruled on 11 October 2026 how the features share ambient occlusio
 From the surface at each texel, a ray goes toward the sun for `contactDistance` meters. A ray toward the camera stops short of the camera's plane. The ray's two ends project onto the screen. The march takes its steps between them, where the depth value changes linearly, so each step's depth is exact.
 
 - A step is in shadow when the ray lies behind the depth copy's surface by more than a bias and less than a thickness. The bias is 0.4% of the surface's distance from the camera. The thickness is half the reach, so a ray behind a thin pole does not stay in shadow.
-- The depth copy holds each texel's depth at one point, its center. A step between two centers compares the ray with the depth that the start texel's slope predicts at the step's own point. The slope comes from the start's nearer neighbour on each axis, so an object's edge does not bend it. Without this, flat ground seen at a low angle shaded itself in rows of dots: on the Mac, the walking demo's far ground changed in 31% to 49% of its pixels, and the morph test's eggs gained dots along their sides.
+- The depth copy holds each texel's depth at one point, its center. A step between two centers compares the ray with the depth that the start texel's slope predicts at the step's own point. The slope comes from the start's nearer neighbor on each axis, so an object's edge does not bend it. Without this, flat ground seen at a low angle shades itself in rows of dots: on the Mac, the walking demo's far ground changes in 31% to 49% of its pixels, and the morph test's eggs gain dots along their sides.
 - Interleaved gradient noise jitters each texel's steps. The denoise then blurs them ([The noise](#the-noise)).
 - A hit's shadow fades over the last half of the reach, so each shadow ends softly.
 - Shadows fade over the last 5% of the screen at each edge, where rays leave the depth copy.
@@ -90,11 +90,11 @@ From the surface at each texel, a ray goes toward the sun for `contactDistance` 
 
 ### The noise
 
-Each texel starts its march at its own jittered point. Without a blur, the edges of the shadows are ragged: in the stone garden demo's low sun, each pebble's long contact shadow had a fringe of dots along its sides (12 October 2026). The four depth-aware reads of the opaque pass blend only neighbouring texels, which is too little.
+Each texel starts its march at its own jittered point. Without a blur, the edges of the shadows are ragged: in the stone garden demo's low sun, each pebble's long contact shadow has a fringe of dots along its sides. The four depth-aware reads of the opaque pass blend only neighboring texels, which is too little.
 
 | Option | Verdict |
 | --- | --- |
-| Leave the noise | Rejected by the coordinator on 12 October 2026. The engine's default must be the best technique, and the noise shows in every scene that uses contact shadows |
+| Leave the noise | Rejected by the coordinator. The engine's default must be the best technique, and the noise shows in every scene that uses contact shadows |
 | More steps, or no jitter | Rejected. Without jitter, the shadows' ends step in bands one step long. 16 steps cost 0.2 ms more than 8 on the Mac at 1080p, and their jitter still needs a blur |
 | A wider read in the opaque pass | Rejected. Every pixel of the render size would pay the reads, in the heaviest shader of the frame |
 | Blur in ambient occlusion's denoise | Chosen. The horizon step marches, and the denoise's 16 taps, which three.js's denoise reads already, blur the result |
@@ -125,7 +125,7 @@ The governor's last step lowers the steps to 4. It comes after the steps of ambi
 
 ## Cost
 
-The contact cost spec (`tests/image/contact-cost.spec.ts`) times the effect cost page's contact scene with contact shadows off and on, in turns, three times each. It ran on the Mac (Apple M5 Max, Chrome) in a quiet window on 13 October 2026, with the blur, at 1920 x 1080 with a pixel ratio of 1, at loads of 3.4 to 6.1. The figures are the medians of the GPU time per frame, in ms. The scene is small, so the prepass costs almost nothing in it.
+The contact cost spec (`tests/image/contact-cost.spec.ts`) times the effect cost page's contact scene with contact shadows off and on, in turns, three times each. It ran on the Mac (Apple M5 Max, Chrome) in a quiet window, with the blur, at 1920 x 1080 with a pixel ratio of 1, at loads of 3.4 to 6.1. The figures are the medians of the GPU time per frame, in ms. The scene is small, so the prepass costs almost nothing in it.
 
 | GPU path | Steps | Off, scale 1 | On, scale 1 | Off, scale 0.5 | On, scale 0.5 |
 | --- | --- | --- | --- | --- | --- |
@@ -138,31 +138,31 @@ The contact cost spec (`tests/image/contact-cost.spec.ts`) times the effect cost
 | WebGL2 | 16 (Ultra) | 2.724 | 3.867 (+1.14) | 1.751 | 2.403 (+0.65) |
 
 - Most of the cost is fixed: the depth copy, the horizon step and the denoise, each a pass over half the render size. 16 steps add 0.2 ms to 8 at scale 1.
-- The blur costs about 0.4 ms at scale 1 and 0.2 ms at scale 0.5. The same spec without the blur, on 12 October 2026 at loads of 5 to 8, gave +0.52 ms for 4 and 8 steps on WebGPU at scale 1 and +0.33 ms at scale 0.5. That version ran one pass less without ambient occlusion, and its denoise did not blur.
+- The blur costs about 0.4 ms at scale 1 and 0.2 ms at scale 0.5. The same spec on a build without the blur, at loads of 5 to 8, gave +0.52 ms for 4 and 8 steps on WebGPU at scale 1 and +0.33 ms at scale 0.5. That build ran one pass less without ambient occlusion, and its denoise did not blur.
 - With ambient occlusion on, contact shadows add no pass: the horizon step marches and the denoise blurs within the passes that ambient occlusion runs anyway.
 - With the prepass kept on for both sides (`?prepass=on`), WebGPU gave the same figures, except 8 steps at scale 1: +1.05 ms. So in this scene the prepass costs nothing that the timer sees. In a scene of many vertices, it costs a second pass over them ([quality presets](../../docs/concepts/quality-presets.md#the-depth-prepass)).
 - The CPU time did not change: under 0.03 ms either way.
-- `bun run bench:gpu-check` passed on the same day: S4 at High went from 3.97 to 4.79 ms of GPU time (+21%), under the check's limit of 25%. S4 at Medium and S6 at both presets did not change.
+- `bun run bench:gpu-check` passed: S4 at High went from 3.97 to 4.79 ms of GPU time (+21%), under the check's limit of 25%. S4 at Medium and S6 at both presets did not change.
 - Prototype S3's inline march cost 0.41 to 0.48 ms on the same Mac at 3,024 x 1,520, without a blur. On the S25 the inline march cost 2.2 ms at scale 1, so the march is dear there. Only the S25's figure can show what the half-size steps cost there.
-- Medium on WebGPU stays at 0 steps (the coordinator's request of 11 October). Even 4 steps cost 0.92 ms on the Mac at 1080p, which is over the 0.5 ms that S3's rule allows on the S25, before the prepass of a heavy scene.
-- The S25 figure at High follows the next cloud sitting.
+- Medium on WebGPU stays at 0 steps (the coordinator's request). Even 4 steps cost 0.92 ms on the Mac at 1080p, which is over the 0.5 ms that S3's rule allows on the S25, before the prepass of a heavy scene.
+- The S25 has no figure at High yet.
 
 ## Budgets
 
-The figures compare this branch's build with main's (be8606696), on 12 October 2026, after Brotli.
+The figures compare the feature's build with main's (be8606696), after Brotli.
 
 - JavaScript: one light option, one quality setting and one governor step. The sketch runner grows by 175 bytes, the page by 29 and the core's glue by 23.
 - WebAssembly: the steps' mode and their uniform values. The threaded core grows by 290 bytes and the single-threaded core by 638 (1.7 KB before compression).
-- Shaders: the march sits in ambient occlusion's first-use shader file, which loads only when ambient occlusion or contact shadows first draw. It grows by 982 bytes in WGSL, to 4.2 KB, and by 956 in GLSL, to 4.4 KB. A first-use shader file may take 32 KB. The lit shader's start files gain the read of the fourth channel: 94 bytes in WGSL and 114 in GLSL.
+- Shaders: the march sits in ambient occlusion's first-use shader file, which loads only when ambient occlusion or contact shadows first draw. It grows by 982 bytes in WGSL, to 4.2 KB, and by 956 in GLSL, to 4.4 KB. The lit shader's start files gain the read of the fourth channel: 94 bytes in WGSL and 114 in GLSL.
 - No file passed its budget. The two ambient occlusion shader files grew by 28% and 31%, more than the size check allows without a reason. A `Size-Growth` trailer names them, with the march as the reason.
 
 ## Allocation
 
 The engine's code allocates nothing per frame for contact shadows. On WebGPU, though, the browser makes an encoder object for each render pass. With ambient occlusion off, contact shadows add four render passes: the depth prepass's own pass, the depth copy, the horizon step and the denoise. `bench/allocation.ts` allows 5 x 64 bytes more in scenes whose sun casts shadows, at bloom's allowance per pass, from the figures below. With ambient occlusion on, contact shadows add no pass. WebGL2 makes no such objects.
 
-On 13 October 2026, `bun run bench:allocation --scene s4` ran on this branch and on main in turns, at loads of 22 to 27. The WebGPU replay allocated 656 to 674 bytes per frame on the branch, and 344 to 353 on main. So contact shadows add 310 to 330 bytes per frame. The first allowance, 4 x 64, came from a version without the blur, whose contact-only mode ran one pass less. Main itself is over its budget of 320 in that sample, and with `--ao` alone it allocates 508 to 509 bytes per frame against 320. The coordinator made main's replay excess a task of its own (M2-R32). S4 on WebGL2 and S1 with `--batch-shadows --ao` on both paths passed.
+`bun run bench:allocation --scene s4` ran on the feature's build and on main in turns, at loads of 22 to 27. The WebGPU replay allocated 656 to 674 bytes per frame with contact shadows, and 344 to 353 on main. So contact shadows add 310 to 330 bytes per frame. In that sample main's own replay went over its budget of 320 bytes, and with `--ao` alone it took 508 to 509 bytes per frame. Task M2-R32 holds that excess. S4 on WebGL2 and S1 with `--batch-shadows --ao` on both paths passed.
 
-The same check found that `post.set` boxed ambient occlusion's intensity on every call, on main as well. It read each group's numbers by keys from a list. It now reads each setting by its own name ([the implementation notes](../implementation-notes.md#hot-paths-without-allocation)).
+`post.set` reads each setting by its own name, so a call boxes no number. Read by keys from a list, ambient occlusion's intensity boxed on every call ([the implementation notes](../implementation-notes.md#hot-paths-without-allocation)).
 
 ## three.js
 
@@ -170,27 +170,27 @@ three.js draws no contact shadows. Ports get them on High and Ultra with no chan
 
 ## Tests
 
-- Image tests: `contact-shadows`, `-ao`, `-steps-4`, `-off` and the stone garden demo, on all three GPU paths, with references in both sets. On 12 October 2026, after the blur, the full runs gave 981 passes on the Mac's GPU and 991 on SwiftShader. The changed images were the garden demo, the creek demo's grass and the grass rows, where objects meet the ground. Each was checked by eye and accepted, and a rerun of those tests passed 40 of 40 in each set.
+- Image tests: `contact-shadows`, `-ao`, `-steps-4`, `-off` and the stone garden demo, on all three GPU paths, with references in both sets. With the blur, the full runs gave 981 passes on the Mac's GPU and 991 on SwiftShader. The blur changed the garden demo, the creek demo's grass and the grass rows, where objects meet the ground. Each new image was checked by eye, and those tests pass 40 of 40 in each set.
 - The frame graph's unit tests check that contact shadows alone run ambient occlusion's three steps.
 - The governor's unit tests check its step that lowers the steps.
-- `cargo test --workspace`: 1,195 pass, 0 fail. `bun run test`: all pass once the Mac's load allowed the timed tests to finish.
+- `cargo test --workspace`: 1,195 pass, 0 fail. `bun run test`: all pass while the Mac's load lets the timed tests finish.
 
-### Checks before landing on 13 October 2026
+### Checks on the merge of main
 
-The branch merged main through `8055ac743`. Its build, size check, lint and type check passed. Unit tests passed 2,823 cases and skipped 33.
+The feature's branch with main merged through `8055ac743` passes its build, size check, lint and type check. Unit tests pass 2,823 cases and skip 33.
 
-The affected image tests passed all 71 cases on the Mac's GPU and all 71 on SwiftShader. This includes every changed reference and S5. S5's Mac references still matched, so only its SwiftShader reference changed.
+The affected image tests pass all 71 cases on the Mac's GPU and all 71 on SwiftShader. This includes every changed reference and S5. S5's Mac references match, so only its SwiftShader reference changed.
 
-The quality and stats browser tests passed 76 cases on the Mac's GPU. SwiftShader passed 73 and skipped three pipeline warm-up cases. The stats checks included the production build.
+The quality and stats browser tests pass 76 cases on the Mac's GPU. SwiftShader passes 73 and skips three pipeline warm-up cases. The stats checks included the production build.
 
-## Addendum, 20 October 2026: masked surfaces and the screen texture
+## Masked surfaces and the screen texture
 
-The owner saw dark, blocky streaks on the Creek's flower petals. The petals are masked, double-sided cards (a cutoff of 0.5). The depth prepass leaves out every draw that discards by its alpha or by a fading level's dither (`DrawKey::prepass`). So the half-size screen texture of ambient occlusion and contact shadows holds the grass behind each petal, with the grass's contact shadows. The petal still read that texture. No texel lay within 3% of the petal's depth, so the nearest texel in depth spoke for it ([D-21](D-21-effect-chain.md#ambient-occlusion)), and the petal took the grass's darkening in blocks of the texture's texels. A petal against the sky read empty texels and looked clean.
+The depth prepass leaves out every draw that discards by its alpha or by a fading level's dither (`DrawKey::prepass`). So where a masked card stands in front of other geometry, the half-size screen texture of ambient occlusion and contact shadows holds the surface behind it, with that surface's contact shadows. No texel then lies within 3% of the card's depth, and the nearest texel in depth would speak for it ([D-21](D-21-effect-chain.md#ambient-occlusion)). The card would take the darkening of what lies behind it, in blocks of the texture's texels. The Creek's flower petals, masked double-sided cards with a cutoff of 0.5, show such dark, blocky streaks over the grass under that rule. A petal against the sky reads empty texels and looks clean.
 
-The rule now: a surface that the prepass leaves out, the ALPHA_MASK builds (the hashed and covered builds carry that bit) and the LOD_FADE builds, takes no screen values and no reflection hit where no texel lies at its depth. A masked surface that lies at a texel's depth, such as a leaf on the ground, still takes the texel's values. Surfaces in the prepass keep the nearest texel for their thin edges. Surfaces that let light through count as blended and take none, as before. A constant that the build's bits set, `NEAREST_SPEAKS` in `lib/gtao.wgsl`, picks the rule. So `screen_read` keeps one text in every build, and the builds keep sharing their shader text.
+The rule: a surface that the prepass leaves out, the ALPHA_MASK builds (the hashed and covered builds carry that bit) and the LOD_FADE builds, takes no screen values and no reflection hit where no texel lies at its depth. A masked surface that lies at a texel's depth, such as a leaf on the ground, still takes the texel's values. Surfaces in the prepass keep the nearest texel for their thin edges. Surfaces that let light through count as blended and take none. A constant that the build's bits set, `NEAREST_SPEAKS` in `lib/gtao.wgsl`, picks the rule. So `screen_read` keeps one text in every build, and the builds keep sharing their shader text.
 
-The image test `alpha-mask-ao` guards it. A masked card stands 0.35 m to 0.65 m in front of thin blades, about 2 m from the camera, with ambient occlusion and contact shadows on. The gap is 15% or more of the card's depth, past the 3% within which a texel speaks for it. Its references show the card evenly lit, with no blocks. No other image test moved with this rule, on the Mac's GPU or on SwiftShader: the `alpha-*`, `ao-*`, `contact-shadows*`, `shadows-contact*` and `lod-fade*` tests kept their pictures.
+The image test `alpha-mask-ao` guards it. A masked card stands 0.35 m to 0.65 m in front of thin blades, about 2 m from the camera, with ambient occlusion and contact shadows on. The gap is 15% or more of the card's depth, past the 3% within which a texel speaks for it. Its references show the card evenly lit, with no blocks. The rule moves no other image test, on the Mac's GPU or on SwiftShader: the `alpha-*`, `ao-*`, `contact-shadows*`, `shadows-contact*` and `lod-fade*` tests keep their pictures.
 
-## Addendum, 20 October 2026: thin surfaces
+## Thin surfaces
 
-[D-198](D-198-contact-shadows-on-thin-surfaces.md) adds two rules after the owner saw the Creek's grass shimmer. A face that the camera sees from the side away from the sun takes no contact shadow, as the march from it runs through the surface itself. A material with `contactShadows: false` takes none, and keeps the shadow map's shadows. The Creek's grass uses it, since the march takes each thin blade for a solid wall and swaying blades switched its hits on and off.
+[D-198](D-198-contact-shadows-on-thin-surfaces.md) adds two rules, for grass that would shimmer. A face that the camera sees from the side away from the sun takes no contact shadow, as the march from it runs through the surface itself. A material with `contactShadows: false` takes none, and keeps the shadow map's shadows. The Creek's grass uses it: the march takes each thin blade for a solid wall, and swaying blades switch its hits on and off.

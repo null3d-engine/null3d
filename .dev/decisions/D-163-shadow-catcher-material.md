@@ -1,6 +1,6 @@
 # D-163: The shadow-catcher material reuses the lit template
 
-Status: decided. Date: 13 October 2026. Task: M2-E5.
+Status: decided and built. Task: M2-E5.
 
 Summary: `materials.shadowCatcher` draws only the main directional light's shadows, as three.js's `ShadowMaterial`. It is the lit template with a material row flag, so it adds no shader builds, templates or pipelines, and a page that draws shadows pays nothing new. The image test passes on all three tiers.
 
@@ -23,7 +23,7 @@ The lit template already computes the main directional light's shadow for a surf
 | New generated GPU constants | none | a template id |
 | Cost to a page that never draws one | an unused branch on a value | the lit template stays; a new template would be added only if used |
 
-How the data was produced: reading the shader manifest (`crates/null3d-shaders/shaders.toml`), the material table (`crates/null3d-render/src/materials.rs`) and the engine's pipeline tables (`packages/engine/src/gpu/webgpu/pipelines.ts`, `packages/engine/src/gpu/webgl2/programs.ts`) on main at `ecdd66a13`, 13 October 2026. The row flag sits beside `flag::FLAT_SHADING`, `flag::BLEND` and `flag::NO_FOG`, which the shaders already test at run time "with no cost worth a shader variant".
+How the data was produced: reading the shader manifest (`crates/null3d-shaders/shaders.toml`), the material table (`crates/null3d-render/src/materials.rs`) and the engine's pipeline tables (`packages/engine/src/gpu/webgpu/pipelines.ts`, `packages/engine/src/gpu/webgl2/programs.ts`) on main at `ecdd66a13`. The row flag sits beside `flag::FLAT_SHADING`, `flag::BLEND` and `flag::NO_FOG`, which the shaders already test at run time "with no cost worth a shader variant".
 
 ## Decision
 

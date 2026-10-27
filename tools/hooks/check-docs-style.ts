@@ -37,6 +37,16 @@ export function audienceOf(path: string): DocsAudience {
 	return CONTRIBUTOR_FILES.has(path) || isGuide(path) ? 'contributors' : 'users';
 }
 
+/**
+ * Logs by design, whose dates are data: the release notes, and each device's run files, whose
+ * names and plans carry the run's date. A device folder's README states what holds now.
+ */
+export function keepsDates(path: string): boolean {
+	return (
+		path === CHANGELOG || /^\.dev\/tested-devices\/[^/]+\/(?!README\.md$)[^/]+\.md$/.test(path)
+	);
+}
+
 function publishedFiles(root: string): string[] {
 	const packageReadmes = readdirSync(join(root, 'packages'))
 		.map((name) => `packages/${name}/README.md`)
@@ -110,7 +120,9 @@ function main(): void {
 		} catch {
 			continue; // deleted in this commit
 		}
-		const findings = checkDocsStyle(content, audienceOf(file));
+		const findings = checkDocsStyle(content, audienceOf(file)).filter(
+			(f) => f.rule !== 'dated_history' || !keepsDates(file),
+		);
 		if (findings.length > 0) results.push({ file, findings });
 	}
 

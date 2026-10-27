@@ -1,12 +1,12 @@
 # D-164: Textures keep their maps after the GPU is lost on phones and tablets
 
-Status: decided. Date: 13 October 2026. Task: M2-R6.
+Status: decided by the owner, and built. Task: M2-R6.
 
-Summary: After a GPU loss the engine uploads a texture's texels again where it still holds a copy. It now keeps a copy of each image and of each data texture after their upload on a phone and a tablet. Keeping the copies costs about one more copy of each image in memory. The `keepTextureCopies` option of `createEngine` turns that on or off on any device, and desktops free the copies as before.
+Summary: After a GPU loss the engine uploads a texture's texels again where it still holds a copy. It keeps a copy of each image and of each data texture after their upload on a phone and a tablet. Keeping the copies costs about one more copy of each image in memory. The `keepTextureCopies` option of `createEngine` turns that on or off on any device, and desktops free the copies.
 
 ## Question
 
-A WebGPU device or a WebGL2 context can be lost, and the engine then starts a new device and redraws the scene. A texture from a KTX2 file comes back, because the engine loads its file again. A texture that maps an image from `loadTexture` or `textures.fromImageBitmap` draws without its map instead. So does one from `textures.fromData`. The engine freed its copy of their texels once the upload was done (#76). The owner ruled on 8 October 2026 at 14:34 that the engine keeps a CPU copy of each texture's image. It does so on phones and tablets only, with a setting to turn it off. How is that offered, and what does it cost?
+A WebGPU device or a WebGL2 context can be lost, and the engine then starts a new device and redraws the scene. A texture from a KTX2 file comes back, because the engine loads its file again. A texture that maps an image from `loadTexture` or `textures.fromImageBitmap` comes back only from a copy of its texels. So does one from `textures.fromData`. When the engine frees that copy after the upload (#76), the texture draws without its map. The owner decided that the engine keeps a CPU copy of each texture's image. It does so on phones and tablets only, with a setting to turn it off. How is that offered, and what does it cost?
 
 ## Rule
 
@@ -16,7 +16,7 @@ A WebGPU device or a WebGL2 context can be lost, and the engine then starts a ne
 
 ## Data
 
-**What the copy is.** For a texture from an image, it is the decoded image that the engine holds during its upload. For a texture from data, it is the store's own copy of those texels. So the change turns a peak that load already paid into a steady cost. Its size is the decoded size of each image, four bytes a texel before any mip level. A data texture adds its own bytes.
+**What the copy is.** For a texture from an image, it is the decoded image that the engine holds during its upload. For a texture from data, it is the store's own copy of those texels. So the copy turns a peak that load already pays into a steady cost. Its size is the decoded size of each image, four bytes a texel before any mip level. A data texture adds its own bytes.
 
 | Image | One copy |
 | --- | --- |
@@ -26,7 +26,7 @@ A WebGPU device or a WebGL2 context can be lost, and the engine then starts a ne
 
 The two 512 x 512 PNG textures of the `texture-budget` image test hold 2.7 MiB on the GPU with their mip levels. Keeping their copies adds 2.0 MiB, so the cost is comparable to the GPU memory of the textures themselves. A texture from a KTX2 file keeps no such copy: its texels are the file's blocks, and the engine loads the file again instead ([D-69](D-69-texture-budget.md)).
 
-How the data was produced: the worked sizes follow from the image sizes, which the `texture-budget` image test page sets on 2026-10-07 and [D-69](D-69-texture-budget.md) records. No new device run was needed, because the copy is the engine's own data, not a GPU figure.
+How the data was produced: the worked sizes follow from the image sizes, which the `texture-budget` image test page sets and [D-69](D-69-texture-budget.md) records. No new device run was needed, because the copy is the engine's own data, not a GPU figure.
 
 ## Decision
 

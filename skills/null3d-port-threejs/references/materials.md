@@ -126,7 +126,7 @@ To draw the whole main pass with one material, as three.js's `scene.overrideMate
 | No color space (data textures) | `colorSpace: 'linear'` |
 | `flipY` (TextureLoader default true) | `flipY: true`; glTF textures always use `false` |
 | `wrapS`, `wrapT` | `wrap: 'repeat' | 'clamp' | 'mirror'`, or `[u, v]` |
-| `repeat`, `offset`, `rotation` | The material's `uvTransform: { repeat, offset, rotation }`. Every map of the material shares it, where three.js keeps one per texture |
+| `repeat`, `offset`, `rotation` | The material's `uvTransform: { repeat, offset, rotation }`, which places every map. `mapUvTransforms` gives one map its own, which is where three.js keeps each texture's |
 | `center` | Bake into `offset`: rotating about center c equals rotating about the origin, then offsetting by c minus the rotated c |
 | `anisotropy` | `anisotropy`, from 1 to 16 |
 | `magFilter`, `minFilter` (`NearestFilter`) | `filter: 'nearest'` |
