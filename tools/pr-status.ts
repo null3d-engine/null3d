@@ -41,7 +41,6 @@ const ON_BRANCH = new Set(['M3-E9', 'M3-V2']);
 const INCOMPLETE = new Set([
 	'M3-V13',
 	'M3-B1',
-	'M3-V3',
 	'M3-B3',
 	'M3-B5',
 	'M3-V4',
@@ -148,8 +147,6 @@ const AUDIT_GAPS: Readonly<Record<string, string>> = {
 		"whether the approved hook table stands against hard rule 8 is the owner's to decide, and the tick waits on that",
 	'M3-K3':
 		"the spot-map picture covers the cookie on every path and passes; what remains is the owner's call on whether a 128 by 128 pixels-only cookie looks good enough, which the better-look rule raises",
-	'M3-V3':
-		'the compute pass reports its own time on the side where the page turns it off, so a turned-off pass either still dispatches or still times; the page and the engine must say which, each device cost must be restated or retimed, and the Mac timer step of 0.065536 ms must be stated, because one step sits below its resolution',
 	'M3-V6':
 		'the same placement is shown only on two Android phones in Chrome, so no second JavaScript engine has placed it, and no iPad run exists; the ground maps use trigonometry and a fractional power whose rounding can differ between engines. No placement budget is stated for the section, and the Mac figure has no raw record',
 	'M3-V13':
