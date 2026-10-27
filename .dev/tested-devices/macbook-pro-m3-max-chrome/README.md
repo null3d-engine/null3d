@@ -9,4 +9,4 @@
 
 ## Known issues
 
-None recorded.
+A Chrome window that the runner opens in the background and parks reports its page hidden on this machine, and a hidden page gets no animation frames. The plans that time frames run with `--front`, which opens the window in front at its own size ([run](20261026-235422-tree-generation.md)).
